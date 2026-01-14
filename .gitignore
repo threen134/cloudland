@@ -70,7 +70,6 @@ cloudrc.local
 /sci/autom4te.cache
 /src/remotexec/remotexec*.pb.*
 .vscode
-/scripts/backend
 /commitID
 **/.DS_Store
 .github/
