@@ -51,7 +51,9 @@ func deleteInterfaces(ctx context.Context, instance *model.Instance, vrrpInstanc
 			return
 		}
 		for _, inst := range instances {
-			hyperSet[inst.Hyper] = struct{}{}
+			if inst.Hyper >= 0 {
+				hyperSet[inst.Hyper] = struct{}{}
+			}
 		}
 		vrrpIfaces := []*model.Interface{}
 		err = db.Where("router_id = ?", routerID).Find(&vrrpIfaces).Error
@@ -60,7 +62,9 @@ func deleteInterfaces(ctx context.Context, instance *model.Instance, vrrpInstanc
 			return
 		}
 		for _, iface := range vrrpIfaces {
-			hyperSet[iface.Hyper] = struct{}{}
+			if iface.Hyper >= 0 {
+				hyperSet[iface.Hyper] = struct{}{}
+			}
 		}
 	}
 	hyperList := fmt.Sprintf("group-fdb-%d", hyperNode)
@@ -117,7 +121,7 @@ func deleteInterfaces(ctx context.Context, instance *model.Instance, vrrpInstanc
 			command := fmt.Sprintf("/opt/cloudland/scripts/backend/del_fwrule.sh <<EOF\n%s\nEOF", fdbJson)
 			err = HyperExecute(ctx, control, command)
 			if err != nil {
-				logger.Error("Execute floating ip failed", err)
+				logger.Error("Execute deleting fdb rules failed", err)
 				return
 			}
 		}
@@ -163,17 +167,20 @@ func ClearVM(ctx context.Context, args []string) (status string, err error) {
 		logger.Error("Failed to delete interfaces", err)
 		return
 	}
-	instance.Hostname = fmt.Sprintf("%s-%d", instance.Hostname, instance.CreatedAt.Unix())
-	instance.Status = model.InstanceStatusDeleted
-	instance.Reason = reason
-	instance.Interfaces = nil
-	err = db.Save(instance).Error
-	if err != nil {
-		return
-	}
 	if err = db.Delete(instance).Error; err != nil {
 		logger.Error("Failed to delete instance, %v", err)
 		return
 	}
+	// Unscoped update
+	err = db.Model(&model.Instance{}).Unscoped().Where("id = ?", instance.ID).Updates(map[string]interface{}{
+		"hostname": fmt.Sprintf("%s-%d", instance.Hostname, instance.CreatedAt.Unix()),
+		"status":   model.InstanceStatusDeleted,
+		"reason":   reason,
+	}).Error
+	if err != nil {
+		logger.Error("Failed to update instance, %v", err)
+		return
+	}
+
 	return
 }

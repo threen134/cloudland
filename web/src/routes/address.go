@@ -16,10 +16,10 @@ import (
 
 type AddressAdmin struct{}
 
-func (a *AddressAdmin) GetAddressByUUID(ctx context.Context, uuID string, subnet *model.Subnet) (addr *model.Address, err error) {
+func (a *AddressAdmin) GetAddressByUUID(ctx context.Context, uuID string) (addr *model.Address, err error) {
 	ctx, db := GetContextDB(ctx)
 	addr = &model.Address{}
-	err = db.Preload("Subnet").Where("uuid = ? and subnet_id = ?", uuID, subnet.ID).Take(addr).Error
+	err = db.Preload("Subnet").Where("uuid = ?", uuID).Take(addr).Error
 	if err != nil {
 		logger.Error("Failed to query address, %v", err)
 		return nil, NewCLError(ErrAddressNotFound, "Address not found", err)
@@ -43,10 +43,24 @@ func (a *AddressAdmin) Update(ctx context.Context, addr *model.Address) (err err
 		return NewCLError(ErrPermissionDenied, "Not authorized for this operation", err)
 	}
 
-	if err = db.Model(addr).Save(addr).Error; err != nil {
+	if err = db.Model(&model.Address{}).Where("id = ?", addr.ID).Updates(map[string]interface{}{
+		"remark":   addr.Remark,
+		"reserved": addr.Reserved,
+	}).Error; err != nil {
 		logger.Error("Failed to update address, %v", err)
 		return NewCLError(ErrAddressUpdateFailed, "Failed to update address", err)
 	}
 
+	return
+}
+
+func (a *AddressAdmin) ListBySubnetID(ctx context.Context, subnetID int64) (addresses []*model.Address, err error) {
+	ctx, db := GetContextDB(ctx)
+	addresses = []*model.Address{}
+	err = db.Preload("Subnet").Where("subnet_id = ?", subnetID).Order("id").Find(&addresses).Error
+	if err != nil {
+		logger.Error("Failed to query addresses for subnet, %v", err)
+		return nil, NewCLError(ErrDatabaseError, "Failed to list addresses", err)
+	}
 	return
 }

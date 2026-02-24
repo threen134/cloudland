@@ -133,13 +133,13 @@ func AllocateAddress(ctx context.Context, subnet *model.Subnet, ifaceID int64, i
 	ctx, db := GetContextDB(ctx)
 	address = &model.Address{}
 	if ipaddr == "" {
-		err = db.Set("gorm:query_option", "FOR UPDATE").Where("subnet_id = ? and allocated = ? and reserved = ? and address != ?", subnet.ID, false, false, subnet.Gateway).Take(address).Error
+		err = db.Set("gorm:query_option", "FOR UPDATE").Where("subnet_id = ? and allocated = ? and reserved = ? and address != ?", subnet.ID, false, false, subnet.Gateway).Order("address::inet").Take(address).Error
 	} else {
 		if !strings.Contains(ipaddr, "/") {
 			preSize, _ := net.IPMask(net.ParseIP(subnet.Netmask).To4()).Size()
 			ipaddr = fmt.Sprintf("%s/%d", ipaddr, preSize)
 		}
-		err = db.Set("gorm:query_option", "FOR UPDATE").Where("subnet_id = ? and allocated = ? and reserved = ? and address = ?", subnet.ID, false, false, ipaddr).Take(address).Error
+		err = db.Set("gorm:query_option", "FOR UPDATE").Where("subnet_id = ? and allocated = ? and reserved = ? and address = ?", subnet.ID, false, false, ipaddr).Order("address::inet").Take(address).Error
 	}
 	if err != nil {
 		logger.Error("Failed to query address, %v", err)
@@ -472,6 +472,14 @@ func GetInstanceNetworks(ctx context.Context, instance *model.Instance, ifaces [
 			ID:      fmt.Sprintf("network%d", netID),
 		}
 		if iface.PrimaryIf {
+			if iface.Name != "eth0" {
+				iface.Name = "eth0"
+				err = db.Model(iface).Updates(map[string]interface{}{"name": iface.Name}).Error
+				if err != nil {
+					logger.Error("Update interface name ", err)
+					return
+				}
+			}
 			gateway := strings.Split(subnet.Gateway, "/")[0]
 			instRoute := &NetworkRoute{Network: "0.0.0.0", Netmask: "0.0.0.0", Gateway: gateway}
 			instNetwork.Routes = append(instNetwork.Routes, instRoute)

@@ -20,6 +20,7 @@
     <pae/>
   </features>
   <cpu mode='host-model' check='none'>
+    <topology sockets='1' cores='VM_CPU' threads='1'/>
     <feature policy='VM_NESTED' name='VM_VIRT_FEATURE'/>
   </cpu>
   <clock offset='utc'/>
@@ -44,7 +45,6 @@
       <address type='pci' domain='0x0000' bus='0x00' slot='0x01' function='0x2'/>
     </controller>
     <controller type='scsi' index='0' model='virtio-scsi'>
-      <address type='pci' domain='0x0000' bus='0x01' slot='0x01' function='0x1'/>
     </controller>
     <serial type='pty'>
       <target port='0'/>

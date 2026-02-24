@@ -11,13 +11,14 @@ ID=$3
 vm_ID=inst-$ID
 state="failed"
 
-for i in {1..1800}; do
+for i in {1..600}; do
+    sleep 3
     vm_state=$(virsh domstate $vm_ID)
     if [ -n "$vm_state" ]; then
         state="completed"
         vm_xml=$xml_dir/$vm_ID/${vm_ID}.xml
         virsh define $vm_xml
-        virsh autostart $vm_ID
+        virsh autostart $vm_ID --disable
 
         # Update vm_instance_map metrics - add VM to current hypervisor
         echo "Updating vm_instance_map metrics: adding VM $vm_ID to current hypervisor"
@@ -26,7 +27,6 @@ for i in {1..1800}; do
         echo "|:-COMMAND-:| migrate_vm.sh '$migrate_ID' '$task_ID' '$ID' '$SCI_CLIENT_ID' '$state'"
         exit 0
     fi
-    sleep 1
 done
 
 state="timeout"

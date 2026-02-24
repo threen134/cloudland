@@ -228,7 +228,7 @@ func (a *SubnetAdmin) GetSubnet(ctx context.Context, reference *BaseReference) (
 	return
 }
 
-func (a *SubnetAdmin) Update(ctx context.Context, id int64, name, subnetType string, ipGroup *model.IpGroup) (err error) {
+func (a *SubnetAdmin) Update(ctx context.Context, id int64, name, subnetType string, ipGroup *model.IpGroup, priority int32) (err error) {
 	logger.Debugf("Updating subnet with ID: %d, name: %s, subnetType: %s, ipGroup: %+v", id, name, subnetType, ipGroup)
 	ctx, db, newTransaction := StartTransaction(ctx)
 	defer func() {
@@ -239,8 +239,9 @@ func (a *SubnetAdmin) Update(ctx context.Context, id int64, name, subnetType str
 	}()
 
 	updates := map[string]interface{}{
-		"name": name,
-		"type": subnetType,
+		"name":     name,
+		"type":     subnetType,
+		"priority": priority,
 	}
 
 	if ipGroup != nil {
@@ -319,7 +320,7 @@ func setRouting(ctx context.Context, subnet *model.Subnet, routeOnly bool) (err 
 	return
 }
 
-func (a *SubnetAdmin) Create(ctx context.Context, vlan int, name, network, gateway, start, end, rtype, dns, domain string, dhcp bool, router *model.Router, ipGroup *model.IpGroup) (subnet *model.Subnet, err error) {
+func (a *SubnetAdmin) Create(ctx context.Context, vlan int, name, network, gateway, start, end, rtype, dns, domain string, dhcp bool, router *model.Router, ipGroup *model.IpGroup, priority int32) (subnet *model.Subnet, err error) {
 	logger.Debugf("Creating subnet with vlan: %d, name: %s, network: %s, gateway: %s, start: %s, end: %s, rtype: %s, dns: %s, domain: %s, dhcp: %t, router: %+v, ipGroup: %+v", vlan, name, network, gateway, start, end, rtype, dns, domain, dhcp, router, ipGroup)
 	memberShip := GetMemberShip(ctx)
 	ctx, db, newTransaction := StartTransaction(ctx)
@@ -420,6 +421,7 @@ func (a *SubnetAdmin) Create(ctx context.Context, vlan int, name, network, gatew
 		Type:         rtype,
 		RouterID:     routerID,
 		GroupID:      groupID,
+		Priority:     priority,
 	}
 	err = db.Create(subnet).Error
 	if err != nil {
@@ -441,6 +443,7 @@ func (a *SubnetAdmin) Create(ctx context.Context, vlan int, name, network, gatew
 		err = db.Create(address).Error
 		if err != nil {
 			logger.Error("Database create address failed, %v", err)
+			return
 		}
 		if ip.String() == end {
 			break
@@ -580,6 +583,51 @@ func (a *SubnetAdmin) CountIdleAddressesForSubnet(ctx context.Context, subnet *m
 	}
 
 	return idleCount, nil
+}
+
+func (a *SubnetAdmin) CountAddressStatistics(ctx context.Context, subnet *model.Subnet) (total, allocated, reserved, available int64, err error) {
+	ctx, db := GetContextDB(ctx)
+
+	// 统计总数
+	err = db.Model(&model.Address{}).
+		Where("subnet_id = ?", subnet.ID).
+		Count(&total).Error
+	if err != nil {
+		err = NewCLError(ErrDatabaseError, fmt.Sprintf("Failed to count total addresses for subnet %s", subnet.UUID), err)
+		return
+	}
+
+	// 统计已分配数量
+	err = db.Model(&model.Address{}).
+		Where("subnet_id = ? AND allocated = ?", subnet.ID, "t").
+		Count(&allocated).Error
+	if err != nil {
+		err = NewCLError(ErrDatabaseError, fmt.Sprintf("Failed to count allocated addresses for subnet %s", subnet.UUID), err)
+		return
+	}
+
+	// 统计已预留数量
+	err = db.Model(&model.Address{}).
+		Where("subnet_id = ? AND reserved = ?", subnet.ID, "t").
+		Count(&reserved).Error
+	if err != nil {
+		err = NewCLError(ErrDatabaseError, fmt.Sprintf("Failed to count reserved addresses for subnet %s", subnet.UUID), err)
+		return
+	}
+
+	// 统计可用数量 (既未分配也未预留)
+	err = db.Model(&model.Address{}).
+		Where("subnet_id = ?", subnet.ID).
+		Where("allocated = ?", "f").
+		Where("reserved = ?", "f").
+		Where("address != ?", subnet.Gateway).
+		Count(&available).Error
+	if err != nil {
+		err = NewCLError(ErrDatabaseError, fmt.Sprintf("Failed to count available addresses for subnet %s", subnet.UUID), err)
+		return
+	}
+
+	return
 }
 
 func (a *SubnetAdmin) List(ctx context.Context, offset, limit int64, order, query, intQuery string) (total int64, subnets []*model.Subnet, err error) {
@@ -926,7 +974,13 @@ func (v *SubnetView) Patch(c *macaron.Context, store session.Store) {
 	// 	c.HTML(http.StatusBadRequest, "error")
 	// 	return
 	// }
-	err = subnetAdmin.Update(c.Req.Context(), id, name, subnet.Type, ipGroup)
+	priority := c.QueryInt64("priority")
+	if priority < 0 || priority > 100000 {
+		c.Data["ErrorMsg"] = "Priority out of range(0~100000)"
+		c.HTML(400, "error")
+		return
+	}
+	err = subnetAdmin.Update(c.Req.Context(), id, name, subnet.Type, ipGroup, int32(priority))
 	if err != nil {
 		logger.Error("Create subnet failed", err)
 		c.Data["ErrorMsg"] = err.Error()
@@ -984,7 +1038,13 @@ func (v *SubnetView) Create(c *macaron.Context, store session.Store) {
 			return
 		}
 	}
-	_, err = subnetAdmin.Create(ctx, vlan, name, network, gateway, start, end, rtype, dns, domain, dhcp, router, ipGroup)
+	priority := c.QueryInt64("priority")
+	if priority < 0 || priority > 100000 {
+		c.Data["ErrorMsg"] = "Priority out of range(0~100000)"
+		c.HTML(400, "error")
+		return
+	}
+	_, err = subnetAdmin.Create(ctx, vlan, name, network, gateway, start, end, rtype, dns, domain, dhcp, router, ipGroup, int32(priority))
 	if err != nil {
 		logger.Error("Create subnet failed ", err)
 		c.Data["ErrorMsg"] = err.Error()

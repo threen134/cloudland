@@ -54,7 +54,7 @@ func (a *MigrationAdmin) Create(ctx context.Context, name string, instances []*m
 			err = NewCLError(ErrHypervisorNotFound, "Failed to find target hypervisor", err)
 			return
 		}
-		if targetHyper.Status != 1 {
+		if targetHyper.Status == 10 {
 			err = NewCLError(ErrHypervisorInvalidState, "Target hypervisor is in wrong state", nil)
 			logger.Error("Target hypervisor is in wrong state")
 			return
@@ -73,7 +73,7 @@ func (a *MigrationAdmin) Create(ctx context.Context, name string, instances []*m
 		}
 		status := "in_progress"
 		migrationType := "cold"
-		if sourceHyper.Status == 1 && !force {
+		if sourceHyper.Status != 10 && !force {
 			migrationType = "warm"
 		}
 		if instance.Hyper == tgtHyper {
@@ -140,7 +140,7 @@ func (a *MigrationAdmin) Create(ctx context.Context, name string, instances []*m
 				err = nil
 				continue
 			}
-			rcNeeded := fmt.Sprintf("cpu=%d memory=%d disk=%d network=%d", instance.Cpu, instance.Memory*1024, instance.Disk*1024*1024, 0)
+			rcNeeded := fmt.Sprintf("cpu=%d memory=%d disk=%d network=%d", instance.Cpu, instance.Memory*1024, int64(instance.Disk)*1024*1024, 0)
 			control = "select=" + hyperGroup + rcNeeded
 		}
 		err = db.Model(instance).Update("status", model.InstanceStatusMigrating).Error

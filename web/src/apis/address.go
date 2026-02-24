@@ -33,105 +33,171 @@ type AddressResponse struct {
 	Subnet    *ResourceReference `json:"subnet,omitempty"`
 }
 
-type AddressPatchPayload struct {
-	Remark string `json:"remark" binding:"omitempty,max=512"`
+type AddressRemarkPayload struct {
+	Addresses []*BaseID `json:"addresses" binding:"required,min=1"`
+	Remark    string    `json:"remark" binding:"omitempty,max=512"`
 }
 
 type AddressUpdateLockPayload struct {
-	Lock bool `json:"lock" binding:"omitempty"`
+	Addresses []*BaseID `json:"addresses" binding:"required,min=1"`
+	Lock      bool      `json:"lock" binding:"omitempty"`
 }
 
-// @Summary patch an address
-// @Description patch an address
+// @Summary batch patch addresses
+// @Description batch patch addresses with unified remark
 // @tags Network
 // @Accept  json
 // @Produce json
-// @Param   message  body   AddressPatchPayload  true   "Address patch payload"
-// @Router /subnets/{id}/addresses/{address_id} [patch]
-// @Success 200 {object} AddressResponse
+// @Param   message  body   AddressRemarkPayload  true   "Address patch payload"
+// @Router /addresses/remark [patch]
+// @Success 200 {array} AddressResponse
 // @Failure 400 {object} common.APIError "Bad request"
 // @Failure 401 {object} common.APIError "Not authorized"
-func (v *AddressAPI) Patch(c *gin.Context) {
+func (v *AddressAPI) Remark(c *gin.Context) {
 	ctx := c.Request.Context()
-	subnetUUID := c.Param("id")
-	addressUUID := c.Param("address_id")
 
-	payload := &AddressPatchPayload{}
+	payload := &AddressRemarkPayload{}
 	if err := c.ShouldBindJSON(payload); err != nil {
+		logger.Errorf("Invalid input JSON %+v", err)
 		ErrorResponse(c, http.StatusBadRequest, "Invalid input JSON", err)
 		return
 	}
 
-	subnet, err := subnetAdmin.GetSubnetByUUID(ctx, subnetUUID)
-	if err != nil {
-		ErrorResponse(c, http.StatusBadRequest, "Invalid subnet", err)
-		return
+	addresses := make([]*model.Address, 0, len(payload.Addresses))
+	for _, addr := range payload.Addresses {
+		address, err := addressAdmin.GetAddressByUUID(ctx, addr.ID)
+		if err != nil {
+			logger.Errorf("Failed to query address %s, %v", addr.ID, err)
+			ErrorResponse(c, http.StatusBadRequest, "Invalid address", err)
+			return
+		}
+		address.Remark = payload.Remark
+		addresses = append(addresses, address)
 	}
-	addr, err := addressAdmin.GetAddressByUUID(ctx, addressUUID, subnet)
-	if err != nil {
-		ErrorResponse(c, http.StatusBadRequest, "Invalid address", err)
-		return
+
+	responses := make([]*AddressResponse, 0, len(addresses))
+	for _, addr := range addresses {
+		err := addressAdmin.Update(ctx, addr)
+		if err != nil {
+			logger.Errorf("Failed to update address: %s %v", addr.Address, err)
+			ErrorResponse(c, http.StatusInternalServerError, "Failed to update address "+addr.Address, err)
+			return
+		}
+		addrResp, err := v.getAddressResponse(ctx, addr)
+		if err != nil {
+			logger.Errorf("Failed to get response for address %s: %v", addr.Address, err)
+			ErrorResponse(c, http.StatusInternalServerError, "Internal error", err)
+			return
+		}
+		responses = append(responses, addrResp)
 	}
-	addr.Remark = payload.Remark
-	err = addressAdmin.Update(ctx, addr)
-	if err != nil {
-		ErrorResponse(c, http.StatusBadRequest, "Failed to update address", err)
-		return
-	}
-	addrResp, err := v.getAddressResponse(ctx, addr)
-	if err != nil {
-		ErrorResponse(c, http.StatusInternalServerError, "Internal error", err)
-		return
-	}
-	c.JSON(http.StatusOK, addrResp)
+	c.JSON(http.StatusOK, responses)
 }
 
-// @Summary update address lock
-// @Description lock or unlock an address
+// @Summary batch update address lock
+// @Description batch lock or unlock addresses
 // @tags Network
 // @Accept  json
 // @Produce json
-// @Param   message  body   AddressUpdateLockPayload  true   "Address lock or unlock payload"
-// @Router /subnets/{id}/addresses/{address_id}/update-lock [patch]
-// @Success 200 {object} AddressResponse
+// @Param   message  body   AddressUpdateLockPayload  true   "batch lock or unlock payload"
+// @Router /addresses/update-lock [patch]
+// @Success 200 {array} AddressResponse
 // @Failure 400 {object} common.APIError "Bad request"
 // @Failure 401 {object} common.APIError "Not authorized"
 func (v *AddressAPI) UpdateLock(c *gin.Context) {
 	ctx := c.Request.Context()
-	subnetUUID := c.Param("id")
-	addressUUID := c.Param("address_id")
 
 	payload := &AddressUpdateLockPayload{}
 	if err := c.ShouldBindJSON(payload); err != nil {
+		logger.Errorf("Invalid input JSON %+v", err)
 		ErrorResponse(c, http.StatusBadRequest, "Invalid input JSON", err)
 		return
 	}
 
+	addresses := make([]*model.Address, 0, len(payload.Addresses))
+	for _, addr := range payload.Addresses {
+		address, err := addressAdmin.GetAddressByUUID(ctx, addr.ID)
+		if err != nil {
+			logger.Errorf("Failed to query address %s, %v", addr.ID, err)
+			ErrorResponse(c, http.StatusBadRequest, "Invalid address", err)
+			return
+		}
+		address.Reserved = payload.Lock
+		addresses = append(addresses, address)
+	}
+
+	responses := make([]*AddressResponse, 0, len(addresses))
+	for _, addr := range addresses {
+		err := addressAdmin.Update(ctx, addr)
+		if err != nil {
+			logger.Errorf("Failed to update address: %s %v", addr.Address, err)
+			ErrorResponse(c, http.StatusInternalServerError, "Failed to update address "+addr.Address, err)
+			return
+		}
+		addrResp, err := v.getAddressResponse(ctx, addr)
+		if err != nil {
+			logger.Errorf("Failed to get response for address %s: %v", addr.Address, err)
+			ErrorResponse(c, http.StatusInternalServerError, "Internal error", err)
+			return
+		}
+		responses = append(responses, addrResp)
+	}
+	c.JSON(http.StatusOK, responses)
+}
+
+type AddressListResponse struct {
+	Offset    int                `json:"offset"`
+	Total     int                `json:"total"`
+	Limit     int                `json:"limit"`
+	Addresses []*AddressResponse `json:"addresses"`
+}
+
+// @Summary list IP addresses by subnet UUID
+// @Description list all IP addresses for a subnet identified by UUID
+// @tags Network
+// @Accept  json
+// @Produce json
+// @Success 200 {object} AddressListResponse
+// @Failure 400 {object} common.APIError "Bad request"
+// @Failure 401 {object} common.APIError "Not authorized"
+// @Router /addresses/{uuid} [get]
+func (v *AddressAPI) ListIpBySubnetUUID(c *gin.Context) {
+	ctx := c.Request.Context()
+	subnetUUID := c.Param("uuid")
+
+	// Validate subnet exists
 	subnet, err := subnetAdmin.GetSubnetByUUID(ctx, subnetUUID)
 	if err != nil {
+		logger.Errorf("Failed to query subnet %s, %v", subnetUUID, err)
 		ErrorResponse(c, http.StatusBadRequest, "Invalid subnet", err)
 		return
 	}
-	addr, err := addressAdmin.GetAddressByUUID(ctx, addressUUID, subnet)
+
+	// Get addresses for the subnet
+	addresses, err := addressAdmin.ListBySubnetID(ctx, subnet.ID)
 	if err != nil {
-		ErrorResponse(c, http.StatusBadRequest, "Invalid address", err)
+		logger.Errorf("Failed to list addresses for subnet %s, %v", subnetUUID, err)
+		ErrorResponse(c, http.StatusInternalServerError, "Failed to list addresses", err)
 		return
 	}
 
-	addr.Reserved = payload.Lock
-	//addr.Allocated = payload.Lock || addr.Interface > 0
+	// Build response
+	addressListResp := &AddressListResponse{
+		Total:  len(addresses),
+		Offset: 0,
+		Limit:  len(addresses),
+	}
+	addressListResp.Addresses = make([]*AddressResponse, len(addresses))
+	for i, addr := range addresses {
+		addressListResp.Addresses[i], err = v.getAddressResponse(ctx, addr)
+		if err != nil {
+			logger.Errorf("Failed to get address response, %v", err)
+			ErrorResponse(c, http.StatusInternalServerError, "Internal error", err)
+			return
+		}
+	}
 
-	err = addressAdmin.Update(ctx, addr)
-	if err != nil {
-		ErrorResponse(c, http.StatusBadRequest, "Failed to update address", err)
-		return
-	}
-	addrResp, err := v.getAddressResponse(ctx, addr)
-	if err != nil {
-		ErrorResponse(c, http.StatusInternalServerError, "Internal error", err)
-		return
-	}
-	c.JSON(http.StatusOK, addrResp)
+	c.JSON(http.StatusOK, addressListResp)
 }
 
 func (v *AddressAPI) getAddressResponse(ctx context.Context, addr *model.Address) (addrResp *AddressResponse, err error) {
