@@ -84,3 +84,8 @@ features
 **/*.egg-info/
 **/*.pyc
 login.info
+
+# Local development files
+/api.http
+/login.sh
+/rest_api.md
