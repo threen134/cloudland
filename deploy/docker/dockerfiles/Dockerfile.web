@@ -71,6 +71,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN mkdir -p /opt/cloudland/web/conf
 
 COPY --from=builder /out/clapi /opt/cloudland/web/clapi
+COPY web/docs/ /opt/cloudland/web/docs/
+COPY web/templates/ /opt/cloudland/web/templates/
 COPY web/conf/locale/ /opt/cloudland/web/conf/locale/
 
 WORKDIR /opt/cloudland/web
