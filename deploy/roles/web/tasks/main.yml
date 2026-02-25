@@ -5,19 +5,27 @@
     owner: cland
     group: cland
 
+#安装证书工具：通过apt包管理器安装gnutls-bin（包含certtool工具），用于后续证书生成，
+#该步骤标记为web_conf（可通过ansible-playbook -t web_conf仅执行该类操作）。
 - name: install certtool
   apt: name=gnutls-bin state=latest
   tags: [web_conf]
 
+# 生成证书
 - name: generate cland certs
   script: gencert.sh
   tags: [web_conf]
 
+# 配置web服务
+# 通过ifconfig命令解析指定网卡（vnc_device变量）的 IPv4 地址，
+#将结果注册到public_ip变量中。
 - name: register public_ip
   command: bash -c "ifconfig {{ vnc_device }} | grep 'inet ' | awk '{print $2}'"
   register: public_ip
   tags: [web_conf]
 
+# 渲染核心配置文件：基于 Jinja2 模板config.toml.j2，
+#注入公网 IP（public_addr）变量，生成最终的config.toml配置文件并写入指定路径。
 - name: cloudland base config file
   vars:
     public_addr: "{{ public_ip.stdout_lines[0] }}"
@@ -26,54 +34,61 @@
     dest: /opt/cloudland/web/conf/config.toml
   tags: [web_conf]
 
+# 拷贝服务文件
 - name: copy service files
   copy:
     src: "{{ item.src }}"
     dest: "{{ item.dest }}"
     mode: preserve
   with_items:
-    - {src: 'clbase.service', dest: '/lib/systemd/system', owner: 'root'}
-    - {src: 'clbase.sh', dest: '/usr/local/bin', owner: 'cland'}
-    - {src: 'clapi.service', dest: '/lib/systemd/system', owner: 'root'}
-    - {src: 'clapi.sh', dest: '/usr/local/bin', owner: 'cland'}
+    - { src: "clbase.service", dest: "/lib/systemd/system", owner: "root" }
+    - { src: "clbase.sh", dest: "/usr/local/bin", owner: "cland" }
+    - { src: "clapi.service", dest: "/lib/systemd/system", owner: "root" }
+    - { src: "clapi.sh", dest: "/usr/local/bin", owner: "cland" }
   tags: [web_srv]
 
+# 启动 web 服务
 - name: start clbase services
-  systemd: 
+  systemd:
     name: clbase
     enabled: yes
     state: restarted
   tags: [web_srv]
 
+# 启动 API 服务
 - name: start clapi services
-  systemd: 
+  systemd:
     name: clapi
     enabled: yes
     state: restarted
   tags: [web_srv]
 
+# 配置 virt-console-proxy 服务 VNC  服务
 - name: copy sci binaries
-  copy: 
+  copy:
     src: /opt/libvirt-console-proxy
     dest: /opt
     mode: preserve
   tags: [console]
   when: inventory_hostname != ansible_hostname
 
+# 创建 virt-console-proxy 证书目录 VNC证书
 - name: generate console proxy certs
   script: console_cert.sh
   tags: [console]
 
+# 渲染 virt-console-proxy 服务配置文件
 - name: generate console proxy service
   template:
     src: consoleproxy.service.j2
     dest: /lib/systemd/system/consoleproxy.service
   tags: [console]
-  
+
+# 启动 virt-console-proxy 服务
 - name: start virt console proxy
-  systemd: 
+  systemd:
     name: consoleproxy
     enabled: yes
     daemon_reload: yes
     state: restarted
-  tags: [fe_srv,console]
+  tags: [fe_srv, console]

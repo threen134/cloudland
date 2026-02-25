@@ -1,3 +1,5 @@
+# 使用file模块创建核心目录/opt/cloudland和系统目录/usr/bin；
+# 指定目录属主为cland用户，确保权限基础。
 - name: creates cloudland directory
   file:
     path: "{{ item }}"
@@ -8,24 +10,29 @@
     - /usr/bin
   tags: [sync]
 
+#使用synchronize模块（基于 rsync）同步/opt/cloudland目录到目标主机的/opt目录；
+# 排除cache/log/db目录（避免同步临时 / 数据文件）；
+# 仅在跨主机部署时执行（非本地主机）。
 - name: synchronize cloudland
   synchronize:
     src: "{{ item.src }}"
     dest: "{{ item.dest }}"
     rsync_opts: "--exclude=cache,--exclude=log,--exclude=db"
   with_items:
-    - {src: '/opt/cloudland', dest: '/opt', owner: 'cland'}
+    - { src: "/opt/cloudland", dest: "/opt", owner: "cland" }
   tags: [sync]
   when: inventory_hostname != ansible_hostname
 
+# 包含两组拷贝任务，分别处理sci二进制文件和cloudland相关二进制
 - name: copy sci binaries
-  copy: 
+  copy:
     src: /opt/sci
     dest: /opt
     mode: preserve
   tags: [sci]
   when: inventory_hostname != ansible_hostname
 
+# 创建目录
 - name: create directores
   file:
     path: "{{ item }}"
@@ -33,12 +40,13 @@
     owner: cland
     group: cland
   with_items:
-    - '/opt/cloudland/cache'
-    - '/opt/cloudland/cache/image'
-    - '/opt/cloudland/cache/instance'
-    - '/opt/cloudland/cache/router'
+    - "/opt/cloudland/cache"
+    - "/opt/cloudland/cache/image"
+    - "/opt/cloudland/cache/instance"
+    - "/opt/cloudland/cache/router"
   tags: [fe_dir]
 
+# 创建目录
 - name: create sysconfig directory
   file:
     path: "/etc/sysconfig"
@@ -47,45 +55,50 @@
     group: root
   tags: [fe_dir]
 
+# 拷贝文件
 - name: copy cloudland and sci binaries
-  copy: 
+  copy:
     src: "{{ item.src }}"
     dest: "{{ item.dest }}"
     owner: "{{ item.owner }}"
     group: "{{ item.owner }}"
     mode: preserve
   with_items:
-    - {src: '/opt/cloudland/lib64', dest: '/opt/cloudland', owner: 'cland'}
-    - {src: '/opt/cloudland/bin', dest: '/opt/cloudland', owner: 'cland'}
-    - {src: '/opt/cloudland/scripts', dest: '/opt/cloudland', owner: 'cland'}
-    - {src: '/opt/sci', dest: '/opt', owner: 'root'}
+    - { src: "/opt/cloudland/lib64", dest: "/opt/cloudland", owner: "cland" }
+    - { src: "/opt/cloudland/bin", dest: "/opt/cloudland", owner: "cland" }
+    - { src: "/opt/cloudland/scripts", dest: "/opt/cloudland", owner: "cland" }
+    - { src: "/opt/sci", dest: "/opt", owner: "root" }
   tags: [fe_bin]
   when: inventory_hostname != ansible_hostname
 
+# 生成/opt/cloudland/etc/hosts.list文件, 不是/etc/hosts
 - name: generate host file
   template:
     src: host.list.j2
     dest: /opt/cloudland/etc/host.list
   tags: [gen_host_list]
 
+# 拷贝服务文件
 - name: copy cloudland service files
   copy:
     src: "{{ item.src }}"
     dest: "{{ item.dest }}"
     mode: preserve
   with_items:
-    - {src: 'cloudland.service', dest: '/lib/systemd/system', owner: 'root'}
-    - {src: 'cloudland.sh', dest: '/usr/local/bin', owner: 'cland'}
+    - { src: "cloudland.service", dest: "/lib/systemd/system", owner: "root" }
+    - { src: "cloudland.sh", dest: "/usr/local/bin", owner: "cland" }
   tags: [fe_srv]
 
+# 创建环境文件
 - name: create cloudland environment file
   template:
     src: cloudland.j2
     dest: /etc/sysconfig/cloudland
   tags: [fe_srv]
- 
+
+  # 启动服务
 - name: start cloudland services
-  systemd: 
+  systemd:
     name: cloudland
     enabled: yes
     daemon_reload: yes

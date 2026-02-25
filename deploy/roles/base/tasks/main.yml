@@ -1,41 +1,51 @@
+#这是一段 Ansible Playbook 任务代码，核心作用是「确保目标主机的系统主机名与 Ansible 清单中的主机名一致」
 - name: ensure hostname set correctly
   hostname: name={{inventory_hostname}}
   tags: [hosts]
 
+# 遍历 inventory 中所有主机，输出每个主机的「实际连接 IP」和「清单主机名」，常用于生成 hosts 文件
 - name: ensure hosts set correctly
   template: src=hosts.j2 dest=/etc/hosts
   tags: [hosts]
 
+# 用于修改 Linux 系统的最大打开文件数限制
 - name: change system max open files
   copy:
     src: files/limits.conf
     dest: /etc/security/limits.d/cloudland.conf
   tags: [sysfd]
 
+# 安装 NTP 服务
 - name: install ntp service
   apt: name=ntp state=latest
   tags: [ntp]
 
+# 启动 NTP 服务
 - name: start ntp service
   service: name=ntp state=started enabled=yes
   tags: [ntp]
 
+# 删除 unattended-upgrade 服务
+# 用于自动升级软件包 该组件是 Debian/Ubuntu 系统默认的「自动无人值守升级」工具，用于后台自动安装安全更新等）
 - name: remove unattended-upgrade
   apt: name=unattended-upgrade state=absent
   tags: [upgrade]
 
+# 升级所有软件包
 - name: upgrade all packages
   apt: 
     name: '*'
     state: latest
   tags: [upgrade]
 
+# 创建 cland 用户
 - name: create cland user
   user:
     name: cland
     create_home: yes
     shell: '/bin/bash'
 
+# 配置 cland 用户 sudo 权限
 - name: config cland user sudoer
   lineinfile: 
     dest: /etc/sudoers.d/cland
@@ -43,6 +53,7 @@
     create: true
     line: 'cland ALL=(ALL) NOPASSWD:ALL'
 
+# 屏蔽 ufw 服务
 - name: mask firewall service
   systemd:
     service: ufw
@@ -51,6 +62,7 @@
   tags: [firewall]
   ignore_errors: yes
 
+# 创建 firewall.sh 脚本
 - name: allow basic firewall rules
   script: firewall.sh
   tags: [firewall]

@@ -1,18 +1,25 @@
 #!/bin/bash
 
+# 创建一个带当前时间戳的日志文件
 datetime=$(date +'%Y-%m-%d-%H:%M:%S')
 logfile=/tmp/allinone-deploy-$datetime.log
 echo "Install is in progress... Log file is $logfile"
 exec &> >(tee $logfile)
 
+# 设置 cloudland 根目录
 cland_root_dir=/opt/cloudland
+# 获取当前目录
 cd $(dirname $0)
+# 检查当前目录是否为 cloudland/deploy 目录
 [ $PWD != "$cland_root_dir/deploy" ] && echo "Please clone cloudland into /opt" && exit 1
 net_conf=$cland_root_dir/deploy/netconf.yml
 
+# Create cland user 
 useradd -m -s /bin/bash cland
 echo 'cland ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/cland
+# 改变 cland 用户的密码
 chown -R cland.cland $cland_root_dir
+# 初始化网络配置文件 netconf.yml（若不存在则从示例文件复制）；
 mkdir $cland_root_dir/{bin,deploy,etc,lib6,log,run,sci,scripts,src,web,cache} $cland_root_dir/cache/{image,instance,dnsmasq,meta,router,volume,xml} 2>/dev/null
 [ ! -s "$net_conf" ] && cp ${net_conf}.example $net_conf
 
@@ -84,11 +91,15 @@ function gen_hosts()
 
     net_dev=$(cat $net_conf | grep 'network_device:' | cut -d: -f2)
     myip=$(ifconfig $net_dev | grep 'inet ' | awk '{print $2}')
+    # 获取并输出系统主机名的 “短名称”（short hostname），仅返回主机名的核心部分，会自动剔除可能存在的域名后缀
     hname=$(hostname -s)
+    # 把本机的 host ip 对写入host 文件,尾部追加
     bash -c "echo '$myip $hname' >> /etc/hosts"
+    # 写入host.list文件
     echo $hname > $cland_root_dir/etc/host.list
     mkdir -p $cland_root_dir/deploy/hosts
     virt_type=kvm-x86_64
+    # 写入ansible hosts文件
     cat > $cland_root_dir/deploy/hosts/hosts <<EOF
 [hyper]
 $hname ansible_host=$myip ansible_ssh_private_key_file=$cland_ssh_dir/cland.key client_id=0 zone_name=zone0 virt_type=$virt_type
@@ -107,15 +118,21 @@ $hname ansible_host=$myip ansible_ssh_private_key_file=$cland_ssh_dir/cland.key
 EOF
 }
 
+# 构建所有组件
 git config --global --add safe.directory /opt/cloudland
+#   构建SCI
 diff /opt/sci/lib64/libsci.so.0.0.0 $cland_root_dir/sci/libsci/.libs/libsci.so.0.0.0
 [ $? -ne 0 ] && build_sci
+#   构建cloudland
 diff $cland_root_dir/bin/cloudland $cland_root_dir/src/cloudland
 [ $? -ne 0 ] && build_cland
 
+# 产生host file
 gen_hosts
 cd $cland_root_dir/deploy
+#   构建web
 build_web
+#   构建libvirt console proxy
 build_console_proxy
 chown -R cland.cland $cland_root_dir
 
