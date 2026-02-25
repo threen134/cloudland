@@ -1,0 +1,5 @@
+# 在此文件中每行一个 hostname，列出所有 hyper 计算节点
+# 示例:
+# hyper01
+# hyper02
+# hyper03

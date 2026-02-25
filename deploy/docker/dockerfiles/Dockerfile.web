@@ -1,0 +1,92 @@
+# =============================================================================
+# CloudLand Web 服务 (clbase + clapi + alarm_rules_manager)
+# 构建: docker build -f dockerfiles/Dockerfile.web -t cloudland-web ../../
+# 
+# 多目标构建:
+#   docker build --target clbase -f dockerfiles/Dockerfile.web -t cloudland-clbase ../../
+#   docker build --target clapi  -f dockerfiles/Dockerfile.web -t cloudland-clapi ../../
+#   docker build --target alarm-rules-manager -f dockerfiles/Dockerfile.web -t cloudland-alarm-rules-manager ../../
+# =============================================================================
+
+# ---- Stage 1: Go 编译 ----
+FROM golang:1.21 AS builder
+
+WORKDIR /build
+
+# 先复制 go.mod/go.sum 利用缓存
+COPY web/go.mod web/go.sum ./
+RUN go mod download
+
+# 复制 web 源码
+COPY web/ ./
+
+# 生成版本号
+RUN git config --global --add safe.directory /build 2>/dev/null; \
+    echo "docker-build" > .version
+
+# 编译 clbase
+RUN cd cmds/base && go build -o /out/clbase -ldflags "-X \"main.Version=$(cat /build/.version)\""
+
+# 编译 clapi
+RUN cd cmds/api && go build -o /out/clapi -ldflags "-X \"main.Version=$(cat /build/.version)\""
+
+# 编译 alarm_rules_manager (静态编译)
+RUN cd cmds/alarm_rules_manager && CGO_ENABLED=0 go build -o /out/alarm_rules_manager -ldflags "-X \"main.Version=$(cat /build/.version)\"" alarm_rules_manager.go
+
+# ---- Stage 2: clbase 运行时 ----
+FROM ubuntu:22.04 AS clbase
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates gnutls-bin \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN mkdir -p /opt/cloudland/web/conf /opt/cloudland/web/public
+
+COPY --from=builder /out/clbase /opt/cloudland/web/clbase
+COPY web/public/ /opt/cloudland/web/public/
+
+WORKDIR /opt/cloudland/web
+
+COPY deploy/docker/scripts/web-entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
+EXPOSE 5443
+
+ENTRYPOINT ["/entrypoint.sh"]
+CMD ["./clbase", "--daemon"]
+
+# ---- Stage 3: clapi 运行时 ----
+FROM ubuntu:22.04 AS clapi
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN mkdir -p /opt/cloudland/web/conf
+
+COPY --from=builder /out/clapi /opt/cloudland/web/clapi
+
+WORKDIR /opt/cloudland/web
+
+COPY deploy/docker/scripts/web-entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
+EXPOSE 8255
+
+ENTRYPOINT ["/entrypoint.sh"]
+CMD ["./clapi", "--daemon"]
+
+# ---- Stage 4: alarm-rules-manager ----
+FROM alpine:3.18 AS alarm-rules-manager
+
+RUN apk add --no-cache ca-certificates
+
+COPY --from=builder /out/alarm_rules_manager /opt/cloudland/web/bin/alarm_rules_manager
+
+EXPOSE 8256
+
+ENTRYPOINT ["/opt/cloudland/web/bin/alarm_rules_manager"]

@@ -1,0 +1,274 @@
+# =============================================================================
+# CloudLand 控制面 Docker Compose 编排文件
+#
+# 使用方法:
+#   1. cp .env.example .env && 编辑 .env
+#   2. bash scripts/init-certs.sh
+#   3. docker compose up -d --build
+#
+# 服务清单:
+#   postgres        - PostgreSQL 数据库
+#   cloudland       - 主控服务 (SCI 通信)
+#   clbase          - Web 管理界面
+#   clapi           - REST API
+#   consoleproxy    - VNC 控制台代理
+#   nginx           - 反向代理 / SSL 终端
+#   prometheus      - 监控指标采集
+#   alertmanager    - 告警管理
+#   grafana         - 监控仪表盘
+#   alarm-rules-mgr - 告警规则管理
+# =============================================================================
+
+services:
+
+  # ---------- 数据库 ----------
+  postgres:
+    image: postgres:14
+    container_name: cloudland-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-d6Passwd}
+      POSTGRES_DB: ${POSTGRES_DB:-cloudland}
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+      - ./scripts/init-db.sql:/docker-entrypoint-initdb.d/init-db.sql:ro
+    ports:
+      - "5432:5432"
+    networks:
+      - cloudland
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ---------- CloudLand 主控 ----------
+  cloudland:
+    build:
+      context: ../../
+      dockerfile: deploy/docker/dockerfiles/Dockerfile.cloudland
+    image: cloudland-cland:latest
+    container_name: cloudland-cland
+    restart: unless-stopped
+    # 使用 host 网络以便与外部 hyper 节点通信 (SCI 协议)
+    network_mode: host
+    environment:
+      SCI_DEVICE_NAME: ${NETWORK_DEVICE:-eth0}
+      MANAGEMENT_VIP: ${MANAGEMENT_VIP:-127.0.0.1}
+      SCI_LISTENER_PORT: "9988"
+      RPC_SERVER_ENDPOINT: "0.0.0.0:5006"
+      RPC_REMOTE_ENDPOINT: "0.0.0.0:5005"
+      LD_LIBRARY_PATH: /opt/sci/lib64
+    volumes:
+      - ./volumes/host.list:/opt/cloudland/etc/host.list:ro
+      - cland_log:/opt/cloudland/log
+      - cland_cache:/opt/cloudland/cache
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # ---------- clbase (Web 管理界面) ----------
+  clbase:
+    build:
+      context: ../../
+      dockerfile: deploy/docker/dockerfiles/Dockerfile.web
+      target: clbase
+    image: cloudland-clbase:latest
+    container_name: cloudland-clbase
+    restart: unless-stopped
+    environment:
+      PUBLIC_IP: ${PUBLIC_IP:-127.0.0.1}
+      DB_HOST: postgres
+      DB_PORT: "5432"
+      DB_USER: ${POSTGRES_USER:-postgres}
+      DB_PASSWORD: ${POSTGRES_PASSWORD:-d6Passwd}
+      DB_NAME: ${POSTGRES_DB:-cloudland}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-passw0rd}
+      CLOUDLAND_HOST: ${MANAGEMENT_VIP:-127.0.0.1}
+      MONITOR_HOST: prometheus
+      MONITOR_PORT: "9090"
+    volumes:
+      - ./volumes/certs:/certs:ro
+    ports:
+      - "5443:5443"
+      - "5005:5005"
+    networks:
+      - cloudland
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # ---------- clapi (REST API) ----------
+  clapi:
+    build:
+      context: ../../
+      dockerfile: deploy/docker/dockerfiles/Dockerfile.web
+      target: clapi
+    image: cloudland-clapi:latest
+    container_name: cloudland-clapi
+    restart: unless-stopped
+    environment:
+      PUBLIC_IP: ${PUBLIC_IP:-127.0.0.1}
+      DB_HOST: postgres
+      DB_PORT: "5432"
+      DB_USER: ${POSTGRES_USER:-postgres}
+      DB_PASSWORD: ${POSTGRES_PASSWORD:-d6Passwd}
+      DB_NAME: ${POSTGRES_DB:-cloudland}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-passw0rd}
+      CLOUDLAND_HOST: ${MANAGEMENT_VIP:-127.0.0.1}
+      MONITOR_HOST: prometheus
+      MONITOR_PORT: "9090"
+    volumes:
+      - ./volumes/certs:/certs:ro
+    ports:
+      - "8255:8255"
+    networks:
+      - cloudland
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # ---------- Console Proxy (VNC) ----------
+  consoleproxy:
+    build:
+      context: ../../
+      dockerfile: deploy/docker/dockerfiles/Dockerfile.consoleproxy
+    image: cloudland-consoleproxy:latest
+    container_name: cloudland-consoleproxy
+    restart: unless-stopped
+    volumes:
+      - ./volumes/certs/console:/certs/console:ro
+    ports:
+      - "9443:9443"
+    networks:
+      - cloudland
+    depends_on:
+      - clbase
+
+  # ---------- Nginx 反向代理 ----------
+  nginx:
+    image: nginx:1.25-alpine
+    container_name: cloudland-nginx
+    restart: unless-stopped
+    volumes:
+      - ./config/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./config/nginx/ssl.conf:/etc/nginx/conf.d/ssl.conf:ro
+      - ./volumes/certs/nginx:/certs/nginx:ro
+      - image_cache:/opt/cloudland/cache/image
+    ports:
+      - "80:80"
+      - "443:443"
+      - "4000:4000"
+    networks:
+      - cloudland
+    depends_on:
+      - clbase
+      - clapi
+      - consoleproxy
+
+  # ---------- Prometheus ----------
+  prometheus:
+    image: prom/prometheus:v2.48.0
+    container_name: cloudland-prometheus
+    restart: unless-stopped
+    user: "nobody"
+    volumes:
+      - ./config/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.retention.time=720h"
+      - "--storage.tsdb.path=/prometheus"
+      - "--web.enable-lifecycle"
+    ports:
+      - "9090:9090"
+    networks:
+      - cloudland
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:9090/-/healthy"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+
+  # ---------- Alertmanager ----------
+  alertmanager:
+    image: quay.io/prometheus/alertmanager:v0.26.0
+    container_name: cloudland-alertmanager
+    restart: unless-stopped
+    user: "65534:65534"
+    volumes:
+      - ./volumes/alertmanager:/data
+      - /etc/localtime:/etc/localtime:ro
+    # alertmanager.yml 需根据实际环境配置，默认提供空配置
+    command:
+      - "--storage.path=/data"
+      - "--data.retention=720h"
+    ports:
+      - "9093:9093"
+    networks:
+      - cloudland
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:9093/-/healthy"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+
+  # ---------- Grafana ----------
+  grafana:
+    image: grafana/grafana-oss:10.2.0
+    container_name: cloudland-grafana
+    restart: unless-stopped
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+    volumes:
+      - grafana_data:/var/lib/grafana
+    ports:
+      - "3000:3000"
+    networks:
+      - cloudland
+    depends_on:
+      prometheus:
+        condition: service_healthy
+
+  # ---------- Alarm Rules Manager ----------
+  alarm-rules-mgr:
+    build:
+      context: ../../
+      dockerfile: deploy/docker/dockerfiles/Dockerfile.web
+      target: alarm-rules-manager
+    image: cloudland-alarm-rules-manager:latest
+    container_name: cloudland-alarm-rules-mgr
+    restart: unless-stopped
+    environment:
+      ALARM_RULES_LISTEN: "0.0.0.0:8256"
+    ports:
+      - "8256:8256"
+    networks:
+      - cloudland
+    depends_on:
+      prometheus:
+        condition: service_healthy
+
+# ---------- 网络 ----------
+networks:
+  cloudland:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.28.0.0/16
+
+# ---------- 持久化卷 ----------
+volumes:
+  pg_data:
+    name: cloudland-pg-data
+  prometheus_data:
+    name: cloudland-prometheus-data
+  grafana_data:
+    name: cloudland-grafana-data
+  cland_log:
+    name: cloudland-cland-log
+  cland_cache:
+    name: cloudland-cland-cache
+  image_cache:
+    name: cloudland-image-cache

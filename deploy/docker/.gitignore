@@ -1,0 +1,4 @@
+# Docker 部署运行时文件（不入版本管理）
+.env
+volumes/certs/
+volumes/alertmanager/

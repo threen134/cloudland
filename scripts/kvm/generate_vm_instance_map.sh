@@ -1,6 +1,9 @@
 #!/bin/bash
 set -euo pipefail
 
+#该 Bash 脚本的核心功能是生成并维护 Prometheus 监控指标文件，建立虚拟机（VM）的域名（domain）
+#与实例 ID（instance_id）之间的映射关系，同时区分虚拟机的正常模式（normal）和救援模式（rescue），
+#并关联对应的宿主机（hypervisor）信息。
 # Configuration directories
 XML_DIR="/opt/cloudland/cache/xml"
 PROM_DIR="/var/lib/node_exporter"

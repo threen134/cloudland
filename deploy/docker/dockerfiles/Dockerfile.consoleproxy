@@ -1,0 +1,38 @@
+# =============================================================================
+# CloudLand Console Proxy (VNC)
+# 构建: docker build -f dockerfiles/Dockerfile.consoleproxy -t cloudland-consoleproxy ../../
+# =============================================================================
+
+# ---- Stage 1: 编译 ----
+FROM golang:1.21 AS builder
+
+RUN apt-get update && apt-get install -y --no-install-recommends git ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN git clone https://github.com/libvirt/libvirt-console-proxy.git /build/libvirt-console-proxy
+
+WORKDIR /build/libvirt-console-proxy
+
+RUN go build -o /out/virtconsoleproxyd cmd/virtconsoleproxyd/virtconsoleproxyd.go
+
+# ---- Stage 2: 运行时 ----
+FROM ubuntu:22.04
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY --from=builder /out/virtconsoleproxyd /usr/local/bin/virtconsoleproxyd
+
+RUN mkdir -p /certs/console
+
+EXPOSE 9443
+
+ENTRYPOINT ["virtconsoleproxyd", \
+    "--resolver-mode", "external", \
+    "--resolver-uri", "http://clbase:5005/consoleresolver", \
+    "--listen-tls-ca", "/certs/console/cacert.pem", \
+    "--listen-tls-cert", "/certs/console/servercert.pem", \
+    "--listen-tls-key", "/certs/console/serverkey.pem", \
+    "--listen-addr", "0.0.0.0:9443", \
+    "--connect-insecure"]

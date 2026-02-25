@@ -1,0 +1,46 @@
+# CloudLand Prometheus 配置 (Docker 版)
+# 基于 deploy/roles/monitor/tasks/main.yml 中的配置
+
+global:
+  scrape_interval: 30s
+  evaluation_interval: 30s
+  scrape_timeout: 20s
+
+rule_files:
+  - /etc/prometheus/rules_enabled/*.yml
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: ["alertmanager:9093"]
+
+scrape_configs:
+  - job_name: "prometheus"
+    static_configs:
+      - targets: ["localhost:9090"]
+
+  # 计算节点 node_exporter 指标采集
+  # 在此添加你的 hyper 计算节点，格式:
+  # - job_name: 'prometheus_node_exporter'
+  #   static_configs:
+  #     - targets: ['HYPER_IP_1:9101']
+  #       labels:
+  #         node_type: 'compute'
+  #     - targets: ['HYPER_IP_2:9101']
+  #       labels:
+  #         node_type: 'compute'
+
+  # libvirt exporter 指标采集
+  # - job_name: 'prometheus_libvirt_exporter'
+  #   static_configs:
+  #     - targets: ['HYPER_IP_1:9177']
+  #     - targets: ['HYPER_IP_2:9177']
+
+  # CloudLand exporter 指标采集
+  # - job_name: 'cloudland_exporter'
+  #   scrape_interval: 60s
+  #   static_configs:
+  #     - targets: ['alarm-rules-manager:9102']
+  #       labels:
+  #         node_type: 'control'
+  #         exporter_type: 'cloudland'
