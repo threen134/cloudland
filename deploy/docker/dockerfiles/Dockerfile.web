@@ -46,6 +46,7 @@ RUN mkdir -p /opt/cloudland/web/conf /opt/cloudland/web/public
 
 COPY --from=builder /out/clbase /opt/cloudland/web/clbase
 COPY web/public/ /opt/cloudland/web/public/
+COPY web/templates/ /opt/cloudland/web/templates/
 COPY web/conf/locale/ /opt/cloudland/web/conf/locale/
 
 WORKDIR /opt/cloudland/web
