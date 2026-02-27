@@ -46,6 +46,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libssl3 libjsoncpp25 \
     iproute2 net-tools \
     ca-certificates \
+    openssh-client rsync \
     && rm -rf /var/lib/apt/lists/* \
     && useradd -m -s /bin/bash cland
 

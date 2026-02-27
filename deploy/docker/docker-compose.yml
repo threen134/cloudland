@@ -62,6 +62,7 @@ services:
       LD_LIBRARY_PATH: /opt/sci/lib64
     volumes:
       - ./volumes/host.list:/opt/cloudland/etc/host.list:ro
+      - ../.ssh:/opt/cloudland/deploy/.ssh:ro
       - cland_log:/opt/cloudland/log
       - cland_cache:/opt/cloudland/cache
     depends_on:
@@ -92,6 +93,7 @@ services:
     volumes:
       - ./volumes/certs:/certs:ro
       - ./volumes/certs/cland/selfsigned.crt:/etc/ssl/certs/alarm_rules_manager.crt:ro
+      - ../.ssh:/opt/cloudland/deploy/.ssh:ro
     ports:
       - "${INTERNAL_IP:-127.0.0.1}:5443:5443"
       - "${INTERNAL_IP:-0.0.0.0}:5005:5005"
@@ -125,6 +127,7 @@ services:
     volumes:
       - ./volumes/certs:/certs:ro
       - ./volumes/certs/cland/selfsigned.crt:/etc/ssl/certs/alarm_rules_manager.crt:ro
+      - ../.ssh:/opt/cloudland/deploy/.ssh:ro
     ports:
       - "${INTERNAL_IP:-0.0.0.0}:8255:8255"
     networks:

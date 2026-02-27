@@ -108,15 +108,34 @@ vi .env
 | `POSTGRES_PASSWORD` | 数据库密码 | 自定义强密码 |
 | `ADMIN_PASSWORD` | 管理员登录密码 | 自定义强密码 |
 
-### 第二步：生成证书
+### 第二步：生成证书与 SSH 密钥配置
 
-```bash
-# 安装证书工具（如未安装）
-sudo apt install -y gnutls-bin openssl
+1. **生成通讯证书**
 
-# 生成证书
-bash scripts/init-certs.sh
-```
+   ```bash
+   # 安装证书工具（如未安装）
+   sudo apt install -y gnutls-bin openssl
+
+   # 生成证书
+   bash scripts/init-certs.sh
+   ```
+
+2. **准备与分发 SSH 密钥**
+
+   CloudLand 主控需要通过 SSH 免密登录到各个计算节点执行任务（例如虚机热迁移）。默认 `docker-compose.yml` 会将宿主机的 `../.ssh` 挂载到容器内。
+
+   因此，你需要在**宿主机**上执行以下操作：
+
+   ```bash
+   # 在部署目录 /opt/cloudland/deploy/ 下创建 .ssh 目录
+   mkdir -p /opt/cloudland/deploy/.ssh
+
+   # 生成指定的 SSH 密钥对 (不可设置密码)
+   ssh-keygen -t rsa -N "" -f /opt/cloudland/deploy/.ssh/cland.key
+
+   # 稍后在添加计算节点时，需要将生成的公钥（cland.key.pub）
+   # 追加到每个计算节点 root (或 cland) 用户的 ~/.ssh/authorized_keys 中！
+   ```
 
 ### 第三步：启动服务
 
@@ -262,11 +281,25 @@ apt install -y qemu-system-x86 qemu-utils bridge-utils ipcalc ipset \
 pip3 install pyparsing
 ```
 
-#### 2. 创建 cland 用户
+#### 2. 创建 cland 用户与配置 SSH 免密
 
 ```bash
 useradd -m -s /bin/bash cland
 echo 'cland ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/cland
+
+# 配置 SSH 免密访问
+mkdir -p /home/cland/.ssh
+# 将控制节点的 /opt/cloudland/deploy/.ssh/cland.key.pub 内容复制到 authorized_keys 中
+# echo "ssh-rsa AAAAB3NzaC1..." > /home/cland/.ssh/authorized_keys
+chown -R cland:cland /home/cland/.ssh
+chmod 700 /home/cland/.ssh
+chmod 600 /home/cland/.ssh/authorized_keys
+
+# 为了支持热迁移等底层操作，同样建议给目标机的 root 用户配置免密
+mkdir -p /root/.ssh
+# echo "ssh-rsa AAAAB3NzaC1..." >> /root/.ssh/authorized_keys
+chmod 700 /root/.ssh
+chmod 600 /root/.ssh/authorized_keys
 ```
 
 #### 3. 复制文件

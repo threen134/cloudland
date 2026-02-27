@@ -40,6 +40,7 @@ ENV DEBIAN_FRONTEND=noninteractive
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates gnutls-bin \
+    openssh-client rsync \
     && rm -rf /var/lib/apt/lists/*
 
 RUN mkdir -p /opt/cloudland/web/conf /opt/cloudland/web/public
@@ -66,6 +67,7 @@ ENV DEBIAN_FRONTEND=noninteractive
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
+    openssh-client rsync \
     && rm -rf /var/lib/apt/lists/*
 
 RUN mkdir -p /opt/cloudland/web/conf
