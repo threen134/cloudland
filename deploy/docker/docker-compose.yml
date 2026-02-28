@@ -34,11 +34,11 @@ services:
       - pg_data:/var/lib/postgresql/data
       - ./scripts/init-db.sql:/docker-entrypoint-initdb.d/init-db.sql:ro
     ports:
-      - "5432:5432"
+      - "${DB_LISTEN_IP:-127.0.0.1}:5432:5432"
     networks:
       - cloudland
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres}"]
+      test: [ "CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres}" ]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -57,8 +57,8 @@ services:
       SCI_DEVICE_NAME: ${NETWORK_DEVICE:-eth0}
       MANAGEMENT_VIP: ${MANAGEMENT_VIP:-127.0.0.1}
       SCI_LISTENER_PORT: "9988"
-      RPC_SERVER_ENDPOINT: "0.0.0.0:5006"
-      RPC_REMOTE_ENDPOINT: "0.0.0.0:5005"
+      RPC_SERVER_ENDPOINT: "${INTERNAL_IP:-0.0.0.0}:5006"
+      RPC_REMOTE_ENDPOINT: "${INTERNAL_IP:-0.0.0.0}:5005"
       LD_LIBRARY_PATH: /opt/sci/lib64
     volumes:
       - ./volumes/host.list:/opt/cloudland/etc/host.list:ro
@@ -78,6 +78,7 @@ services:
     container_name: cloudland-clbase
     restart: unless-stopped
     environment:
+      # 用于生成发往前端的 VNC Console 代理地址，不控制本容器物理监听 IP
       PUBLIC_IP: ${PUBLIC_IP:-127.0.0.1}
       DB_HOST: postgres
       DB_PORT: "5432"
@@ -91,8 +92,8 @@ services:
     volumes:
       - ./volumes/certs:/certs:ro
     ports:
-      - "5443:5443"
-      - "5005:5005"
+      - "${INTERNAL_IP:-127.0.0.1}:5443:5443"
+      - "${INTERNAL_IP:-0.0.0.0}:5005:5005"
     networks:
       - cloudland
     depends_on:
@@ -109,6 +110,7 @@ services:
     container_name: cloudland-clapi
     restart: unless-stopped
     environment:
+      # 用于生成发往前端的 VNC Console 代理地址，不控制本容器物理监听 IP
       PUBLIC_IP: ${PUBLIC_IP:-127.0.0.1}
       DB_HOST: postgres
       DB_PORT: "5432"
@@ -122,7 +124,7 @@ services:
     volumes:
       - ./volumes/certs:/certs:ro
     ports:
-      - "8255:8255"
+      - "${INTERNAL_IP:-0.0.0.0}:8255:8255"
     networks:
       - cloudland
     depends_on:
@@ -140,7 +142,7 @@ services:
     volumes:
       - ./volumes/certs/console:/certs/console:ro
     ports:
-      - "9443:9443"
+      - "${INTERNAL_IP:-127.0.0.1}:9443:9443"
     networks:
       - cloudland
     depends_on:
@@ -186,7 +188,7 @@ services:
     networks:
       - cloudland
     healthcheck:
-      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:9090/-/healthy"]
+      test: [ "CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:9090/-/healthy" ]
       interval: 15s
       timeout: 5s
       retries: 3
@@ -209,7 +211,7 @@ services:
     networks:
       - cloudland
     healthcheck:
-      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:9093/-/healthy"]
+      test: [ "CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:9093/-/healthy" ]
       interval: 15s
       timeout: 5s
       retries: 3
