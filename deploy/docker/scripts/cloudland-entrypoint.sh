@@ -13,6 +13,9 @@ echo "    SCI_LISTENER_PORT=$SCI_LISTENER_PORT"
 if [ ! -f /opt/cloudland/etc/host.list ]; then
     echo "警告: /opt/cloudland/etc/host.list 不存在，使用空白文件"
     touch /opt/cloudland/etc/host.list
+else
+    echo "==> 规范化 host.list (移除注释和空行，防止 SCI 秩映射错误)"
+    sed -i '/^#/d; /^$/d' /opt/cloudland/etc/host.list
 fi
 
 # 在容器中直接启动 cloudland，不使用 VIP 检查循环

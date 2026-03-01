@@ -507,7 +507,11 @@ fi
 log "15/15 - 更新 host.list 并重启 cloudland 容器"
 
 HOST_LIST="$DEPLOY_DIR/volumes/host.list"
-grep -q "^${HOSTNAME}$" "$HOST_LIST" 2>/dev/null || echo "$HOSTNAME" >> "$HOST_LIST"
+# 确保主机名在列表中且文件格式规范（无注释、无空行、保持唯一）
+touch "$HOST_LIST"
+echo "$HOSTNAME" >> "$HOST_LIST"
+# 使用 awk 清洗：移除以 # 开头的行、空白行，并保持条目唯一但不打乱原有顺序
+awk '!/^#/ && NF {if (!seen[$0]++) print}' "$HOST_LIST" > "${HOST_LIST}.tmp" && mv "${HOST_LIST}.tmp" "$HOST_LIST"
 
 cd "$DEPLOY_DIR"
 docker compose restart cloudland
