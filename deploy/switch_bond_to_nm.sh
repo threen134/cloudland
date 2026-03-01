@@ -442,6 +442,7 @@ verify_switch() {
     local bond="$1"
 
     echo ""
+    
     log_info "========== 验证结果 =========="
 
     # NM 设备状态
