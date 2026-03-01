@@ -281,21 +281,24 @@ docker compose restart cloudland
 
 #### 执行一键部署
 
-1. **直接传参执行**：
+1. **配置文件传参执行 (推荐)**：
 
-   您可以直接在一行命令中挂载所有环境参数来执行初始化（请根据您的实际网络替换 IP 和网卡）：
+   在执行脚本之前，先准备好本节点的配置参数文件。脚本会自动尝试读取当前目录下的 `compute.env`。
 
    ```bash
    cd /opt/cloudland/deploy/docker/scripts
    
-   sudo \
-     CONTROLLER_IP="10.193.191.96" \
-     HOSTNAME="worknode01" \
-     NETWORK_DEVICE="bond0" \
-     VLAN_DEVICE="bond1" \
-     SCI_CLIENT_ID=0 \
-     bash deploy-compute-node.sh
+   # 由模板复制生成配置文件
+   cp compute.env.example compute.env
+   
+   # 编辑参数 (必须按实际环境修改 CONTROLLER_IP, HOSTNAME 等)
+   vi compute.env
+   
+   # 执行部署
+   sudo bash deploy-compute-node.sh
    ```
+   
+   *(注：如果您不想创建文件，脚本依然完全支持向上游兼容的 `CONTROLLER_IP="..." bash deploy-compute-node.sh` 内联环境变量直接注入方式。)*
 
 2. **更新控制节点 Host 列表**：
 

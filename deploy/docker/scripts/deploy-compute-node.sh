@@ -5,8 +5,16 @@
 # ============================================================
 set -euo pipefail
 
-# ============ 环境变量配置 (支持通过 ENV 传入参数) ============
-# 用法示例： CONTROLLER_IP="10.193.191.96" NETWORK_DEVICE="bond0" bash deploy-compute-node.sh
+# ============ 读取配置文件 ============
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ENV_FILE="$SCRIPT_DIR/compute.env"
+
+if [ -f "$ENV_FILE" ]; then
+    echo -e "\033[1;32m[INFO] 检测到配置文件 $ENV_FILE，正在加载参数...\033[0m"
+    source "$ENV_FILE"
+fi
+
+# ============ 环境变量配置 (回退默认值) ============
 CONTROLLER_IP="${CONTROLLER_IP:-192.168.1.100}"       # 控制节点 IP
 HOSTNAME="${HOSTNAME:-hyper01}"                       # 本节点的 hostname
 NETWORK_DEVICE="${NETWORK_DEVICE:-eth0}"              # 物理网卡名 (跑 VXLAN)
