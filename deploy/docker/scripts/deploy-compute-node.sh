@@ -96,7 +96,18 @@ iptables -I INPUT -s 192.168.0.0/16 -j ACCEPT
 iptables -P INPUT DROP
 iptables -P FORWARD DROP
 iptables -P OUTPUT ACCEPT
+
+# 针对 Docker 同机混部的优化：放行 Web 端口
+if command -v docker &>/dev/null; then
+    iptables -I INPUT -p tcp -m multiport --dports 80,443,4000 -j ACCEPT
+fi
+
 iptables-save -c > /etc/iptables.rules
+
+# 恢复 Docker 的专属网络转发链 (如 DOCKER-USER)
+if command -v docker &>/dev/null && systemctl is-active --quiet docker; then
+    systemctl restart docker || true
+fi
 
 # 持久化 iptables
 mkdir -p /etc/network/if-pre-up.d /etc/network/if-post-down.d
