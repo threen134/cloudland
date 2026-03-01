@@ -44,7 +44,7 @@ ENV DEBIAN_FRONTEND=noninteractive
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libssl3 libjsoncpp25 \
-    iproute2 net-tools \
+    iproute2 net-tools netbase \
     ca-certificates \
     openssh-client rsync \
     && rm -rf /var/lib/apt/lists/* \
