@@ -302,21 +302,30 @@ chmod 700 /root/.ssh
 chmod 600 /root/.ssh/authorized_keys
 ```
 
-#### 3. 复制文件
 
-从控制节点复制以下文件到计算节点：
+#### 3. 同步源码并编译安装
+
+由于控制节点采用 Docker 部署，宿主机并没有现成的包含 `sci` 库和 `cloudlet` 等二进制文件的 `/opt/sci` 等目录。因此需要在计算节点自行同步源码并编译：
 
 ```bash
 CONTROLLER=192.168.1.100
 
-# SCI 库
-rsync -avz $CONTROLLER:/opt/sci/ /opt/sci/
-
-# CloudLand 脚本和二进制
-rsync -avz --exclude=cache --exclude=log --exclude=db \
+# 同步控制节点的 CloudLand 源码到计算节点
+rsync -avz --exclude=cache --exclude=log --exclude=db --exclude=.git \
     $CONTROLLER:/opt/cloudland/ /opt/cloudland/
 
-# 创建必要目录
+# 安装编译必需的依赖
+apt update && apt install -y build-essential autoconf automake libtool make g++ libssl-dev libjsoncpp-dev
+
+# 编译并安装 SCI 库
+cd /opt/cloudland/sci
+./configure && make && make install
+
+# 编译并安装 CloudLand 二进制（生成 cloulet 等）
+cd /opt/cloudland/src
+make clean && make && make install
+
+# 创建必要目录并设置权限
 mkdir -p /opt/cloudland/{log,run,cache}
 mkdir -p /opt/cloudland/cache/{backup,image,instance,meta,router,volume,dnsmasq,xml,qemu_agent}
 chown -R cland:cland /opt/cloudland
