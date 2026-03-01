@@ -264,93 +264,50 @@ cd /opt/cloudland/deploy/docker
 docker compose restart cloudland
 ```
 
-### 方法二：手动部署单个计算节点
+### 方法二：手动部署单个计算节点 (同机混部脚本)
 
-适用于快速添加单个节点。
+适用于快速添加单个计算节点，也支持与控制面在同一台宿主机跑。
 
-#### 1. 在计算节点上安装依赖
+脚本通过 **环境变量** 实现参数化配置。目前支持的所有核心配置项及默认值如下：
 
-```bash
-# 基础包
-apt update && apt install -y jq wget mkisofs network-manager net-tools python3-pip
+| 环境变量 | 说明 | 默认值 |
+| :--- | :--- | :--- |
+| `CONTROLLER_IP` | 控制节点的 IP 地址（必填） | `192.168.1.100` |
+| `HOSTNAME` | 本计算节点的名称 | `hyper01` |
+| `NETWORK_DEVICE` | 承载 VXLAN 等管理的内部网卡名 | `eth0` |
+| `VLAN_DEVICE` | 承载外网 VLAN 流量的网卡名 | (同 `NETWORK_DEVICE`) |
+| `DNS_SERVER` | 虚拟机默认 DNS | `8.8.8.8` |
+| `SCI_CLIENT_ID` | 节点ID，必须全局唯一并严格递增 | `0` |
 
-# KVM/虚拟化
-apt install -y qemu-system-x86 qemu-utils bridge-utils ipcalc ipset \
-    keepalived iputils-arping libvirt-daemon libvirt-daemon-system \
-    libvirt-daemon-system-systemd libvirt-clients dnsmasq dnsmasq-utils conntrack
+#### 执行一键部署
 
-# Python
-pip3 install pyparsing
-```
+1. **直接传参执行**：
 
-#### 2. 创建 cland 用户与配置 SSH 免密
+   您可以直接在一行命令中挂载所有环境参数来执行初始化（请根据您的实际网络替换 IP 和网卡）：
 
-```bash
-useradd -m -s /bin/bash cland
-echo 'cland ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/cland
+   ```bash
+   cd /opt/cloudland/deploy/docker/scripts
+   
+   sudo \
+     CONTROLLER_IP="10.193.191.96" \
+     HOSTNAME="worknode01" \
+     NETWORK_DEVICE="bond0" \
+     VLAN_DEVICE="bond1" \
+     SCI_CLIENT_ID=0 \
+     bash deploy-compute-node.sh
+   ```
 
-# 配置 SSH 免密访问
-mkdir -p /home/cland/.ssh
-# 将控制节点的 /opt/cloudland/deploy/.ssh/cland.key.pub 内容复制到 authorized_keys 中
-# echo "ssh-rsa AAAAB3NzaC1..." > /home/cland/.ssh/authorized_keys
-chown -R cland:cland /home/cland/.ssh
-chmod 700 /home/cland/.ssh
-chmod 600 /home/cland/.ssh/authorized_keys
+2. **更新控制节点 Host 列表**：
 
-# 为了支持热迁移等底层操作，同样建议给目标机的 root 用户配置免密
-mkdir -p /root/.ssh
-# echo "ssh-rsa AAAAB3NzaC1..." >> /root/.ssh/authorized_keys
-chmod 700 /root/.ssh
-chmod 600 /root/.ssh/authorized_keys
-```
+   在控制节点上将新计算节点的 hostname 添加到数据库中，使其被主控纳管：
 
+   ```bash
+   echo "worknode01" >> /opt/cloudland/deploy/docker/volumes/host.list
+   docker compose restart cloudland
+   ```
 
-#### 3. 同步源码并编译安装
-
-由于控制节点采用 Docker 部署，宿主机并没有现成的包含 `sci` 库和 `cloudlet` 等二进制文件的 `/opt/sci` 等目录。因此需要在计算节点自行同步源码并编译：
-
-```bash
-CONTROLLER=192.168.1.100
-
-# 同步控制节点的 CloudLand 源码到计算节点
-rsync -avz --exclude=cache --exclude=log --exclude=db --exclude=.git \
-    $CONTROLLER:/opt/cloudland/ /opt/cloudland/
-
-# 安装编译必需的依赖
-apt update && apt install -y build-essential autoconf automake libtool make g++ libssl-dev libjsoncpp-dev
-
-# 编译并安装 SCI 库
-cd /opt/cloudland/sci
-./configure && make && make install
-
-# 编译并安装 CloudLand 二进制（生成 cloulet 等）
-cd /opt/cloudland/src
-make clean && make && make install
-
-# 创建必要目录并设置权限
-mkdir -p /opt/cloudland/{log,run,cache}
-mkdir -p /opt/cloudland/cache/{backup,image,instance,meta,router,volume,dnsmasq,xml,qemu_agent}
-chown -R cland:cland /opt/cloudland
-```
-
-#### 4. 配置 cloudrc.local
-
-编辑 `/opt/cloudland/scripts/cloudrc.local`：
-
-```bash
-# 网络设备名
-network_device=eth0
-# VXLAN 设备
-vxlan_device=eth0
-# 域名
-domain=example.com
-# DNS 服务器
-dns_server=8.8.8.8
-# 超卖比
-cpu_over_ratio=1
-mem_over_ratio=1
-disk_over_ratio=1
-```
+> **同机混部架构特别提示：** 
+> 我们的 `deploy-compute-node.sh` 内置了“防冲突自愈机制”。如果它检测到本节点运行着 `cloudland-nginx` 容器，将会智能放行 Web 端口并通过重启 Docker 来修复被清空的 `DOCKER-USER` iptables 防火墙链路。
 
 #### 5. 配置并启动 scid
 

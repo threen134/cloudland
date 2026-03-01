@@ -5,24 +5,25 @@
 # ============================================================
 set -euo pipefail
 
-# ============ 用户必须修改的配置 ============
-CONTROLLER_IP="192.168.1.100"       # 控制节点 IP（即本机）
-HOSTNAME="hyper01"                  # 本节点的 hostname
-NETWORK_DEVICE="eth0"               # 物理网卡名 (跑 VXLAN)
-VLAN_DEVICE="eth1"                  # 物理网卡名 (跑 VLAN)
-DOMAIN="example.com"                # 域名
-DNS_SERVER="8.8.8.8"                # DNS
-SCI_CLIENT_ID=0                     # 计算节点编号（唯一递增）
-ZONE_NAME="zone0"                   # 可用区名称
-VIRT_TYPE="kvm-x86_64"              # 虚拟化类型
-CLOUDLAND_DIR="/opt/cloudland"      # CloudLand 安装目录
+# ============ 环境变量配置 (支持通过 ENV 传入参数) ============
+# 用法示例： CONTROLLER_IP="10.193.191.96" NETWORK_DEVICE="bond0" bash deploy-compute-node.sh
+CONTROLLER_IP="${CONTROLLER_IP:-192.168.1.100}"       # 控制节点 IP
+HOSTNAME="${HOSTNAME:-hyper01}"                       # 本节点的 hostname
+NETWORK_DEVICE="${NETWORK_DEVICE:-eth0}"              # 物理网卡名 (跑 VXLAN)
+VLAN_DEVICE="${VLAN_DEVICE:-$NETWORK_DEVICE}"         # 物理网卡名 (跑 VLAN)
+DOMAIN="${DOMAIN:-example.com}"                       # 域名
+DNS_SERVER="${DNS_SERVER:-8.8.8.8}"                   # DNS
+SCI_CLIENT_ID="${SCI_CLIENT_ID:-0}"                   # 计算节点编号（唯一递增）
+ZONE_NAME="${ZONE_NAME:-zone0}"                       # 可用区名称
+VIRT_TYPE="${VIRT_TYPE:-kvm-x86_64}"                  # 虚拟化类型
+CLOUDLAND_DIR="${CLOUDLAND_DIR:-/opt/cloudland}"      # CloudLand 安装目录
 DEPLOY_DIR="$CLOUDLAND_DIR/deploy/docker"
 
 # ============ 可选配置 ============
-WDS_ADDRESS=""                      # WDS 存储地址（留空则不使用）
-WDS_ADMIN=""                        # WDS 管理员
-WDS_PASS=""                         # WDS 密码
-WDS_POOL_ID=""                      # WDS 存储池 ID
+WDS_ADDRESS="${WDS_ADDRESS:-}"                      # WDS 存储地址（留空则不使用）
+WDS_ADMIN="${WDS_ADMIN:-}"                          # WDS 管理员
+WDS_PASS="${WDS_PASS:-}"                            # WDS 密码
+WDS_POOL_ID="${WDS_POOL_ID:-}"                      # WDS 存储池 ID
 
 # 其他计算节点列表（用于 /etc/hosts，格式: "IP HOSTNAME" 每行一条）
 # 如只有本机则留空
