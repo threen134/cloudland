@@ -12,10 +12,15 @@ mkdir -p "$CERT_DIR"/{cland,nginx,console}
 
 echo "==> 检查证书工具..."
 if ! command -v certtool &>/dev/null; then
-    echo "错误: 需要安装 gnutls-bin (certtool)"
-    echo "  Ubuntu/Debian: sudo apt install gnutls-bin"
-    echo "  CentOS/RHEL:   sudo yum install gnutls-utils"
-    exit 1
+    echo "未检测到 certtool，尝试自动安装 (gnutls-bin)..."
+    if command -v apt-get &>/dev/null; then
+        sudo apt-get update -qq && sudo DEBIAN_FRONTEND=noninteractive apt-get install -y gnutls-bin
+    elif command -v yum &>/dev/null; then
+        sudo yum install -y gnutls-utils
+    else
+        echo "错误: 无法确定包管理器。请手动安装 gnutls-bin 或 gnutls-utils"
+        exit 1
+    fi
 fi
 
 # ----- 1. CloudLand Web 证书 (clbase / clapi 使用) -----

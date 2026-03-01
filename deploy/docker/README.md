@@ -137,11 +137,13 @@ vi .env
    # 追加到每个计算节点 root (或 cland) 用户的 ~/.ssh/authorized_keys 中！
    ```
 
-### 第三步：启动服务
+### 第三步：启动控制面服务
+
+我们提供了一键自动化部署脚本，它将自动检查并安装 Docker 依赖、生成证书，最后拉起微服务集群：
 
 ```bash
-# 构建并启动所有服务
-docker compose up -d --build
+# 自动安装 Docker（如缺失），初始化证书并启动容器
+sudo bash scripts/deploy-control-node.sh
 
 # 查看启动状态
 docker compose ps
