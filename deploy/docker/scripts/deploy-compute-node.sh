@@ -5,6 +5,25 @@
 # ============================================================
 set -euo pipefail
 
+if [[ $EUID -ne 0 ]]; then
+   echo "错误: 本脚本必须以 root 权限运行"
+   exit 1
+fi
+
+# 检查操作系统版本 (必须为 Ubuntu 22)
+if [ -f /etc/os-release ]; then
+    . /etc/os-release
+    if [ "$ID" != "ubuntu" ] || [ "${VERSION_ID%%.*}" != "22" ]; then
+        echo "错误: 本脚本仅支持 Ubuntu 22 版本 (如 22.04)。"
+        echo "当前系统: ${NAME:-未知} ${VERSION_ID:-未知}"
+        exit 1
+    fi
+else
+    echo "错误: 无法识别操作系统。本脚本仅支持 Ubuntu 22 版本。"
+    exit 1
+fi
+
+
 # ============ 读取配置文件 ============
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ENV_FILE="$SCRIPT_DIR/compute.env"
