@@ -61,6 +61,7 @@ if [ ! -f ".env" ]; then
     log "初始化计算节点列表..."
     mkdir -p volumes
     : > volumes/host.list
+    chmod 0666 volumes/host.list
 fi
 
 # 预先创建并执行 Alertmanager 挂载目录权限 (UID 65534 为 nobody)
