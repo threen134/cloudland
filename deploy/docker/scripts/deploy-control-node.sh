@@ -71,6 +71,11 @@ if [ ! -f ".env" ]; then
             fi
         fi
     done
+    
+    # 初始化 host.list 为空文件 (如果是第一次部署)
+    log "初始化计算节点列表..."
+    mkdir -p volumes
+    : > volumes/host.list
 fi
 
 # 再次检查关键变量是否已配置
