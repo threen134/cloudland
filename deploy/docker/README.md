@@ -86,15 +86,58 @@
 
 ## 快速开始
 
-### 第一步：配置环境变量
+### 方式一：一键自动部署 (推荐)
+
+如果您想在全新的环境中快速完成部署（例如直接在您的云服务器上执行），只需在 bash 中运行以下命令：
 
 ```bash
+# 1. 设置配置参数
+export PUBLIC_IP=1.2.3.4
+export INTERNAL_IP=192.168.1.100
+export NETWORK_DEVICE=eth0
+export MANAGEMENT_VIP=192.168.1.100
+export DB_LISTEN_IP=127.0.0.1
+export POSTGRES_USER=postgres
+export POSTGRES_PASSWORD=your_db_password
+export POSTGRES_DB=cloudland
+export ADMIN_PASSWORD=your_admin_password
+
+# 2. 执行一键部署脚本
+curl -sSL https://raw.githubusercontent.com/threen134/cloudland/master/deploy/docker/scripts/deploy-control-node.sh | sudo -E bash
+```
+
+> **💡 参数说明：**
+> 
+> | 变量名 | 必填 | 详细说明 (来自 .env.example) |
+> | :--- | :--- | :--- |
+> | `PUBLIC_IP` | 是 | **公网/外部 IP**：用于 Web UI、REST API 以及 VNC 控制台代理的主入口。 |
+> | `INTERNAL_IP` | 是 | **内部管理网 IP**：用于组件间 RPC 通信及计算节点（Hyper）与控制节点间的 SCI 通信（9988 端口）。 |
+> | `NETWORK_DEVICE` | 是 | **管理网卡名**：`cloudland` 主控监听的网络设备（对应 `INTERNAL_IP` 所在的网卡）。 |
+> | `MANAGEMENT_VIP` | 是 | **管理 VIP**：单节点部署填 `INTERNAL_IP` 即可。 |
+> | `DB_LISTEN_IP` | 否 | **数据库监听 IP**：推荐 `127.0.0.1` 或内网地址，确保数据库不暴露给公网。 |
+> | `POSTGRES_PASSWORD` | 是 | **数据库密码**：PostgreSQL 的连接密码。 |
+> | `ADMIN_PASSWORD` | 是 | **管理员密码**：CloudLand Web 管理界面的登录密码。 |
+>
+> **💡 执行说明：**
+> 1. 以上命令将自动完成：克隆代码、安装 Docker、配置网络与证书，并一键启动所有容器。
+> 2. **必须使用 `sudo -E`**：这能确保您在当前 Shell 中 `export` 的环境变量能正确传递给脚本执行环境。
+
+---
+
+### 方式二：手动分步部署
+
+如果您需要更细致地进行配置，可以按以下步骤操作。
+
+#### 第一步：克隆仓库与配置环境变量
+
+```bash
+git clone https://github.com/threen134/cloudland.git /opt/cloudland
 cd /opt/cloudland/deploy/docker
 
 # 复制环境变量模板
 cp .env.example .env
 
-# 编辑配置（至少修改以下项）
+# 编辑配置（至少修改 PUBLIC_IP, NETWORK_DEVICE 等）
 vi .env
 ```
 
@@ -108,47 +151,23 @@ vi .env
 | `POSTGRES_PASSWORD` | 数据库密码 | 自定义强密码 |
 | `ADMIN_PASSWORD` | 管理员登录密码 | 自定义强密码 |
 
-### 第二步：生成证书与 SSH 密钥配置
+#### 第二步：执行配置脚本
 
-1. **生成通讯证书**
-
-   ```bash
-   # 安装证书工具（如未安装）
-   sudo apt install -y gnutls-bin openssl
-
-   # 生成证书
-   bash scripts/init-certs.sh
-   ```
-
-2. **准备与分发 SSH 密钥**
-
-   CloudLand 主控需要通过 SSH 免密登录到各个计算节点执行任务（例如虚机热迁移）。默认 `docker-compose.yml` 会将宿主机的 `../.ssh` 挂载到容器内。
-
-   因此，你需要在**宿主机**上执行以下操作：
-
-   ```bash
-   # 在部署目录 /opt/cloudland/deploy/ 下创建 .ssh 目录
-   mkdir -p /opt/cloudland/deploy/.ssh
-
-   # 生成指定的 SSH 密钥对 (不可设置密码)
-   ssh-keygen -t rsa -N "" -f /opt/cloudland/deploy/.ssh/cland.key
-
-   # 稍后在添加计算节点时，需要将生成的公钥（cland.key.pub）
-   # 追加到每个计算节点 root (或 cland) 用户的 ~/.ssh/authorized_keys 中！
-   ```
-
-### 第三步：启动控制面服务
-
-我们提供了一键自动化部署脚本，它将自动检查并安装 Docker 依赖、生成证书，最后拉起微服务集群：
+即使是手动部署，我们也建议运行以下脚本来自动化证书生成和初始设置：
 
 ```bash
-# 自动安装 Docker（如缺失），初始化证书并启动容器
 sudo bash scripts/deploy-control-node.sh
+```
 
-# 查看启动状态
+> **注意**：生成的 SSH 公钥 (`deploy/.ssh/cland.key.pub`) 之后需要手动分发到计算节点，详见下文“添加计算节点”部分。
+
+### 第三步：验证服务
+
+```bash
+# 查看容器启动状态
 docker compose ps
 
-# 查看日志
+# 查看实时日志
 docker compose logs -f
 ```
 

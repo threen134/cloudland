@@ -1,10 +1,12 @@
 #!/bin/bash
 # ============================================================
 # CloudLand 控制节点一键部署脚本 (Docker 方式)
+# 支持环境变量注入，适用于 curl | bash 部署
 # ============================================================
 set -euo pipefail
 
 CLOUDLAND_DIR="${CLOUDLAND_DIR:-/opt/cloudland}"
+REPO_URL="${REPO_URL:-https://github.com/threen134/cloudland.git}"
 DEPLOY_DIR="$CLOUDLAND_DIR/deploy/docker"
 
 log() { echo -e "\n\033[1;32m[$(date '+%H:%M:%S')] $1\033[0m"; }
@@ -15,44 +17,105 @@ if [[ $EUID -ne 0 ]]; then
    exit 1
 fi
 
-cd "$DEPLOY_DIR"
+# ============ 0. 检查并准备仓库 ============
+if [ ! -d "$CLOUDLAND_DIR" ]; then
+    log "检测到目录 $CLOUDLAND_DIR 不存在，正在准备环境..."
+    if ! command -v git &>/dev/null; then
+        warn "未检测到 git，尝试安装..."
+        apt-get update && apt-get install -y git
+    fi
+    log "正在克隆 CloudLand 仓库..."
+    git clone "$REPO_URL" "$CLOUDLAND_DIR"
+fi
 
-# ============ 1. 检查配置 ============
-log "1/4 - 检查基础配置"
-if [ ! -f ".env" ]; then
-    warn "未找到 .env 文件！"
-    echo "请先复制并配置环境变量："
-    echo "  cp .env.example .env"
-    echo "  vi .env"
+if [ ! -d "$DEPLOY_DIR" ]; then
+    echo "错误: 部署目录 $DEPLOY_DIR 不存在，请检查仓库路径。"
     exit 1
 fi
 
-# ============ 2. 安装 Docker ============
-log "2/4 - 检查 Docker 环境"
+cd "$DEPLOY_DIR"
+
+# ============ 1. 检查配置与环境变量注入 ============
+log "1/5 - 检查基础配置"
+
+# 如果没有 .env，则从 .env.example 创建，并注入当前环境变量
+if [ ! -f ".env" ]; then
+    log "未找到 .env 文件，正在从模板初始化..."
+    cp .env.example .env
+    
+    # 定义需要注入的环境变量
+    vars=("PUBLIC_IP" "INTERNAL_IP" "MANAGEMENT_VIP" "NETWORK_DEVICE" "DB_LISTEN_IP" "POSTGRES_USER" "POSTGRES_PASSWORD" "POSTGRES_DB" "ADMIN_PASSWORD")
+    for var in "${vars[@]}"; do
+        val="${!var:-}"
+        if [ -n "$val" ]; then
+            log "注入环境变量: $var=$val"
+            # 使用 sed 替换。注意：这里假设 .env.example 格式为 VAR=VALUE
+            if grep -q "^${var}=" .env; then
+                sed -i "s|^${var}=.*|${var}=${val}|" .env
+            else
+                echo "${var}=${val}" >> .env
+            fi
+        fi
+    done
+fi
+
+# 再次检查关键变量是否已配置
+required_vars=("PUBLIC_IP" "INTERNAL_IP" "NETWORK_DEVICE" "MANAGEMENT_VIP")
+missing_vars=()
+for var in "${required_vars[@]}"; do
+    # 同时检查当前环境和 .env 文件
+    val_in_env=$(grep "^${var}=" .env | cut -d'=' -f2- || echo "")
+    if [[ -z "${!var:-}" && -z "$val_in_env" ]]; then
+        missing_vars+=("$var")
+    fi
+done
+
+if [ ${#missing_vars[@]} -ne 0 ]; then
+    warn "缺少关键配置项: ${missing_vars[*]}"
+    echo "请在使用 curl | bash 部署时通过环境变量传入，例如："
+    echo "  PUBLIC_IP=x.x.x.x NETWORK_DEVICE=eth0 curl -sSL ... | sudo bash"
+    echo "或者手动编辑 $DEPLOY_DIR/.env 文件。"
+    exit 1
+fi
+
+# ============ 2. 网络迁移 (可选/检查) ============
+log "2/5 - 迁移网络管理 (networkd -> NetworkManager)"
+if [ -f "scripts/switch_bond_to_nm.sh" ]; then
+    # 按计划迁移 bond0 和 bond1
+    bash scripts/switch_bond_to_nm.sh bond0 || warn "bond0 迁移跳过或已完成"
+    bash scripts/switch_bond_to_nm.sh bond1 || warn "bond1 迁移跳过或已完成"
+fi
+
+# ============ 3. 准备凭证 ============
+log "3/5 - 生成 SSH 密钥凭证"
+mkdir -p "$CLOUDLAND_DIR/deploy/.ssh"
+if [ ! -f "$CLOUDLAND_DIR/deploy/.ssh/cland.key" ]; then
+    ssh-keygen -t rsa -f "$CLOUDLAND_DIR/deploy/.ssh/cland.key" -N ""
+    echo "SSH 密钥已生成."
+else
+    echo "SSH 密钥已存在，跳过生成."
+fi
+
+# ============ 4. 安装 Docker ============
+log "4/5 - 检查 Docker 环境"
 if ! command -v docker &>/dev/null || ! docker compose version &>/dev/null; then
     warn "未检测到 Docker 或 Docker Compose，开始自动安装..."
     curl -fsSL https://get.docker.com -o get-docker.sh
     sh get-docker.sh
     rm -f get-docker.sh
     systemctl enable --now docker
-    if ! command -v docker &>/dev/null; then
-        echo "错误: Docker 安装失败，请手动检查网络后重试"
-        exit 1
-    fi
 else
     echo "Docker 环境已就绪."
 fi
 
-# ============ 3. 生成证书 ============
-log "3/4 - 生成控制面安全证书"
+# ============ 5. 启动服务与证书 ============
+log "5/5 - 启动 CloudLand 控制面服务"
 bash scripts/init-certs.sh
-
-# ============ 4. 启动容器 ============
-log "4/4 - 启动 CloudLand 控制面服务"
-docker compose pull || warn "部分官方镜像拉取失败，尝试回退本地构建..."
+docker compose pull || warn "部分官方镜像拉取失败，尝试本地构建..."
 docker compose up -d --build
 
-log "✅ 控制面部署已启动！"
-echo "您可以通过命令检查服务状态："
+log "✅ 控制面部署已完成！"
+echo "Web 访问地址: https://$(grep '^PUBLIC_IP=' .env | cut -d'=' -f2-)"
+echo "常用维护命令："
 echo "  cd $DEPLOY_DIR && docker compose ps"
 echo "  cd $DEPLOY_DIR && docker compose logs -f"

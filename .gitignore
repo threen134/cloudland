@@ -89,3 +89,5 @@ login.info
 /api.http
 /login.sh
 /rest_api.md
+deploy/docker/implementation_plan.md
+deploy/docker/.run.sh
