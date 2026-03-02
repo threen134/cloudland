@@ -518,18 +518,18 @@ func (a *OrgAdmin) Delete(ctx context.Context, org *model.Organization) (err err
 		}
 	}
 
-	// Soft delete org (append timestamp to name and slug for uniqueness)
-	timestamp := org.CreatedAt.Unix()
-	org.Name = fmt.Sprintf("%s-deleted-%d", org.Name, timestamp)
-	org.Slug = fmt.Sprintf("%s-deleted-%d", org.Slug, timestamp)
-	if err = db.Model(org).Updates(map[string]interface{}{"name": org.Name, "slug": org.Slug}).Error; err != nil {
-		logger.Error("DB failed to update org name", err)
-		err = NewCLError(ErrOrgUpdateFailed, "Failed to update organization name", err)
-		return
-	}
+	// Soft delete org first, then rename with Unscoped to avoid stale name on delete failure
 	if err = db.Delete(org).Error; err != nil {
 		logger.Error("DB failed to delete organization, %v", err)
 		err = NewCLError(ErrOrgDeleteFailed, "Failed to delete organization", err)
+		return
+	}
+	timestamp := org.CreatedAt.Unix()
+	org.Name = fmt.Sprintf("%s-deleted-%d", org.Name, timestamp)
+	org.Slug = fmt.Sprintf("%s-deleted-%d", org.Slug, timestamp)
+	if err = db.Model(&model.Organization{}).Unscoped().Where("id = ?", org.ID).Updates(map[string]interface{}{"name": org.Name, "slug": org.Slug}).Error; err != nil {
+		logger.Error("DB failed to update org name", err)
+		err = NewCLError(ErrOrgUpdateFailed, "Failed to update organization name", err)
 		return
 	}
 

@@ -393,16 +393,16 @@ func (a *UserAdmin) Delete(ctx context.Context, user *model.User) (err error) {
 			return
 		}
 	}
-	// Soft delete user, make email unique-safe
-	user.Email = fmt.Sprintf("%s-deleted-%d", user.Email, user.CreatedAt.Unix())
-	if err = db.Model(user).Update("email", user.Email).Error; err != nil {
-		logger.Error("DB failed to update user email for deletion", err)
-		err = NewCLError(ErrUserUpdateFailed, "Failed to update user email", err)
-		return
-	}
+	// Soft delete user first, then rename with Unscoped to avoid stale email on delete failure
 	if err = db.Delete(user).Error; err != nil {
 		logger.Error("DB failed to delete user", err)
 		err = NewCLError(ErrUserDeleteFailed, "Failed to delete user", err)
+		return
+	}
+	user.Email = fmt.Sprintf("%s-deleted-%d", user.Email, user.CreatedAt.Unix())
+	if err = db.Model(&model.User{}).Unscoped().Where("id = ?", user.ID).Update("email", user.Email).Error; err != nil {
+		logger.Error("DB failed to update user email for deletion", err)
+		err = NewCLError(ErrUserUpdateFailed, "Failed to update user email", err)
 		return
 	}
 	return
