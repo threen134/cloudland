@@ -86,7 +86,7 @@
 
 ## 快速开始
 
-### 方式一：一键自动部署 (推荐)
+### 第一步：一键自动部署 (推荐)
 
 如果您想在全新的环境中快速完成部署（例如直接在您的云服务器上执行），只需在 bash 中运行以下命令：
 
@@ -121,77 +121,29 @@ curl -sSL https://raw.githubusercontent.com/threen134/cloudland/master/deploy/do
 > **💡 执行说明：**
 > 1. 以上命令将自动完成：克隆代码、安装 Docker、配置网络与证书，并一键启动所有容器。
 > 2. **必须使用 `sudo -E`**：这能确保您在当前 Shell 中 `export` 的环境变量能正确传递给脚本执行环境。
+> 3. **SSH 密钥**：脚本会自动在 `deploy/.ssh/` 下生成 CloudLand 所需 `cland.key` 密钥对。
 
----
+### 第二步：检查与验证
 
-### 方式二：手动分步部署
+部署完成后，您可以分别通过 CLI 和浏览器验证各服务状态。
 
-如果您需要更细致地进行配置，可以按以下步骤操作。
-
-#### 第一步：克隆仓库与配置环境变量
-
-```bash
-git clone https://github.com/threen134/cloudland.git /opt/cloudland
-cd /opt/cloudland/deploy/docker
-
-# 复制环境变量模板
-cp .env.example .env
-
-# 编辑配置（至少修改 PUBLIC_IP, NETWORK_DEVICE 等）
-vi .env
-```
-
-**必须修改的配置项：**
-
-| 变量 | 说明 | 示例 |
-|------|------|------|
-| `PUBLIC_IP` | 控制节点的 IP 地址 | `192.168.1.100` |
-| `MANAGEMENT_VIP` | 管理 VIP（单节点填同 PUBLIC_IP） | `192.168.1.100` |
-| `NETWORK_DEVICE` | 控制节点的网卡名 | `eth0` |
-| `POSTGRES_PASSWORD` | 数据库密码 | 自定义强密码 |
-| `ADMIN_PASSWORD` | 管理员登录密码 | 自定义强密码 |
-
-#### 第二步：执行配置脚本
-
-即使是手动部署，我们也建议运行以下脚本来自动化证书生成和初始设置：
+#### CLI 验证
 
 ```bash
-sudo bash scripts/deploy-control-node.sh
-```
-
-> **注意**：生成的 SSH 公钥 (`deploy/.ssh/cland.key.pub`) 之后需要手动分发到计算节点，详见下文“添加计算节点”部分。
-
-### 第三步：验证服务
-
-```bash
-# 查看容器启动状态
+# 1. 检查容器运行状态
 docker compose ps
 
-# 查看实时日志
+# 2. 检查实时服务日志 (Ctrl+C 退出)
 docker compose logs -f
-```
 
-### 第四步：验证
-
-```bash
-# 检查所有容器状态
-docker compose ps
-
-# 验证 Web 界面
+# 3. 验证 Web 路由
 curl -k https://localhost:443
-# 应返回 HTML 页面
 
-# 验证 API
+# 4. 验证 API 连通性 (应返回 JSON)
 curl -k https://localhost:443/api/v1/
-# 应返回 JSON
 
-# 验证 Prometheus
+# 5. 验证监控服务健康状态
 curl http://localhost:9090/-/healthy
-# 应返回 "Prometheus Server is Healthy."
-
-# 验证 Grafana
-curl http://localhost:3000/api/health
-# 应返回 {"commit":"...","database":"ok",...}
 ```
 
 **访问方式：**
