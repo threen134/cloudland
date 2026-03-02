@@ -52,25 +52,10 @@ cd "$DEPLOY_DIR"
 # ============ 1. 检查配置与环境变量注入 ============
 log "1/5 - 检查基础配置"
 
-# 如果没有 .env，则从 .env.example 创建，并注入当前环境变量
+# 如果没有 .env，则从 .env.example 创建
 if [ ! -f ".env" ]; then
     log "未找到 .env 文件，正在从模板初始化..."
     cp .env.example .env
-    
-    # 定义需要注入的环境变量
-    vars=("PUBLIC_IP" "INTERNAL_IP" "MANAGEMENT_VIP" "NETWORK_DEVICE" "DB_LISTEN_IP" "POSTGRES_USER" "POSTGRES_PASSWORD" "POSTGRES_DB" "ADMIN_PASSWORD")
-    for var in "${vars[@]}"; do
-        val="${!var:-}"
-        if [ -n "$val" ]; then
-            log "注入环境变量: $var=$val"
-            # 使用 sed 替换。注意：这里假设 .env.example 格式为 VAR=VALUE
-            if grep -q "^${var}=" .env; then
-                sed -i "s|^${var}=.*|${var}=${val}|" .env
-            else
-                echo "${var}=${val}" >> .env
-            fi
-        fi
-    done
     
     # 初始化 host.list 为空文件 (如果是第一次部署)
     log "初始化计算节点列表..."
@@ -78,8 +63,35 @@ if [ ! -f ".env" ]; then
     : > volumes/host.list
 fi
 
+# 预先创建并执行 Alertmanager 挂载目录权限 (UID 65534 为 nobody)
+log "执行 Alertmanager 目录权限..."
+mkdir -p volumes/alertmanager
+chown -R 65534:65534 volumes/alertmanager
+
+# 定义需要注入的环境变量
+vars=("PUBLIC_IP" "INTERNAL_IP" "MANAGEMENT_VIP" "NETWORK_DEVICE" "DB_LISTEN_IP" "POSTGRES_USER" "POSTGRES_PASSWORD" "POSTGRES_DB" "ADMIN_PASSWORD")
+
+# 注入环境变量到 .env (如果当前 Shell 环境中有定义)
+for var in "${vars[@]}"; do
+    val="${!var:-}"
+    if [ -n "$val" ]; then
+        if grep -q "^${var}=" .env; then
+            current_val=$(grep "^${var}=" .env | cut -d'=' -f2-)
+            if [ "$val" != "$current_val" ]; then
+                log "注入/覆盖环境变量: $var=********"
+                # 转义 sed 分隔符
+                escaped_val=$(echo "$val" | sed 's/[&/\]/\\&/g')
+                sed -i "s|^${var}=.*|${var}=${escaped_val}|" .env
+            fi
+        else
+            log "追加环境变量: $var=********"
+            echo "${var}=${val}" >> .env
+        fi
+    fi
+done
+
 # 再次检查关键变量是否已配置
-required_vars=("PUBLIC_IP" "INTERNAL_IP" "NETWORK_DEVICE" "MANAGEMENT_VIP")
+required_vars=("PUBLIC_IP" "INTERNAL_IP" "NETWORK_DEVICE" "MANAGEMENT_VIP" "ADMIN_PASSWORD")
 missing_vars=()
 for var in "${required_vars[@]}"; do
     # 同时检查当前环境和 .env 文件
@@ -91,11 +103,23 @@ done
 
 if [ ${#missing_vars[@]} -ne 0 ]; then
     warn "缺少关键配置项: ${missing_vars[*]}"
-    echo "请在使用 curl | bash 部署时通过环境变量传入，例如："
-    echo "  PUBLIC_IP=x.x.x.x NETWORK_DEVICE=eth0 curl -sSL ... | sudo bash"
+    echo "请在使用 curl | bash 部署时通过环境变量传入 (并确保使用 sudo -E)，例如："
+    echo "  PUBLIC_IP=x.x.x.x ADMIN_PASSWORD=xxxx curl -sSL ... | sudo -E bash"
     echo "或者手动编辑 $DEPLOY_DIR/.env 文件。"
     exit 1
 fi
+
+# 显示当前使用的关键配置摘要 (脱敏)
+echo -e "\n--- 部署配置摘要 ---"
+for var in "${required_vars[@]}"; do
+    val=$(grep "^${var}=" .env | cut -d'=' -f2-)
+    if [[ "$var" == *"PASSWORD"* ]]; then
+        echo "  $var: ********"
+    else
+        echo "  $var: $val"
+    fi
+done
+echo -e "-------------------\n"
 
 # ============ 2. 网络迁移 (可选/检查) ============
 log "2/5 - 迁移网络管理 (networkd -> NetworkManager)"
