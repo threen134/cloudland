@@ -17,6 +17,20 @@ if [[ $EUID -ne 0 ]]; then
    exit 1
 fi
 
+# 检查操作系统版本 (须为 Ubuntu 22.x)
+if [ -f /etc/os-release ]; then
+    . /etc/os-release
+    if [ "$ID" != "ubuntu" ] || [[ ! "$VERSION_ID" =~ ^22 ]]; then
+        echo "错误: 本脚本仅支持 Ubuntu 22.x 版本 (如 22.04)。"
+        echo "当前系统: ${NAME:-未知} ${VERSION_ID:-未知}"
+        exit 1
+    fi
+else
+    echo "错误: 无法识别操作系统。本脚本仅支持 Ubuntu 22.x 版本。"
+    exit 1
+fi
+
+
 # ============ 0. 检查并准备仓库 ============
 if [ ! -d "$CLOUDLAND_DIR" ]; then
     log "检测到目录 $CLOUDLAND_DIR 不存在，正在准备环境..."
@@ -115,7 +129,11 @@ docker compose pull || warn "部分官方镜像拉取失败，尝试本地构建
 docker compose up -d --build
 
 log "✅ 控制面部署已完成！"
-echo "Web 访问地址: https://$(grep '^PUBLIC_IP=' .env | cut -d'=' -f2-)"
+PUBLIC_IP=$(grep '^PUBLIC_IP=' .env | cut -d'=' -f2-)
+echo "Web 访问地址: https://${PUBLIC_IP}"
+echo "API 文档: https://${PUBLIC_IP}:443/api/v1/"
+echo "监控服务: http://${PUBLIC_IP}:9090/-/healthy"
+
 echo "常用维护命令："
 echo "  cd $DEPLOY_DIR && docker compose ps"
 echo "  cd $DEPLOY_DIR && docker compose logs -f"
