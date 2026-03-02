@@ -171,18 +171,30 @@ pip3 install pyparsing
 # ============ 4. SSH 配置 ============
 log "4/15 - 配置 SSH 免密"
 
-SSH_DIR="$CLOUDLAND_DIR/deploy/.ssh"
 mkdir -p /home/cland/.ssh /root/.ssh
 
-# 公钥 → authorized_keys
-if [ -f "$SSH_DIR/cland.key.pub" ]; then
-    cp "$SSH_DIR/cland.key.pub" /home/cland/.ssh/authorized_keys
-    cat "$SSH_DIR/cland.key.pub" >> /root/.ssh/authorized_keys
-    # 分发私钥到本机（用于计算节点间迁移）
-    cp "$SSH_DIR/cland.key" /root/.ssh/id_rsa
+# 探测密钥路径 (优先级: 脚本同级 .ssh, CloudLand 默认部署路径)
+SEARCH_PATHS=("$SCRIPT_DIR/.ssh" "$CLOUDLAND_DIR/deploy/.ssh")
+FIND_PUB=""
+FIND_PRIV=""
+
+for p in "${SEARCH_PATHS[@]}"; do
+    if [ -f "$p/cland.key.pub" ] && [ -f "$p/cland.key" ]; then
+        FIND_PUB="$p/cland.key.pub"
+        FIND_PRIV="$p/cland.key"
+        log "找到 SSH 密钥: $p"
+        break
+    fi
+done
+
+if [ -n "$FIND_PUB" ]; then
+    cp "$FIND_PUB" /home/cland/.ssh/authorized_keys
+    cat "$FIND_PUB" >> /root/.ssh/authorized_keys
+    cp "$FIND_PRIV" /root/.ssh/id_rsa
     chmod 600 /root/.ssh/id_rsa
 else
-    warn "未找到 $SSH_DIR/cland.key.pub，请先执行 ssh-keygen"
+    warn "未能在以下路径找到 cland.key 及其公钥: ${SEARCH_PATHS[*]}"
+    warn "请确保密钥已上传至脚本同级目录或指定部署目录。"
 fi
 
 chown -R cland:cland /home/cland/.ssh
@@ -523,17 +535,22 @@ else
 fi
 
 # ============ 15. 更新控制节点 host.list ============
-log "15/15 - 更新 host.list 并重启 cloudland 容器"
-
-HOST_LIST="$DEPLOY_DIR/volumes/host.list"
-# 确保主机名在列表中且文件格式规范（无注释、无空行、保持唯一）
-touch "$HOST_LIST"
-echo "$HOSTNAME" >> "$HOST_LIST"
-# 使用 awk 清洗：移除以 # 开头的行、空白行，并保持条目唯一但不打乱原有顺序
-awk '!/^#/ && NF {if (!seen[$0]++) print}' "$HOST_LIST" > "${HOST_LIST}.tmp" && mv "${HOST_LIST}.tmp" "$HOST_LIST"
-
-cd "$DEPLOY_DIR"
-docker compose restart cloudland
+# 仅当检测到控制面容器运行在本机时执行
+if command -v docker &>/dev/null && docker ps --format '{{.Names}}' | grep -q 'cloudland-nginx'; then
+    log "15/15 - 检测到控制面在本机，更新 host.list 并重启容器"
+    HOST_LIST="$DEPLOY_DIR/volumes/host.list"
+    mkdir -p "$(dirname "$HOST_LIST")"
+    touch "$HOST_LIST"
+    echo "$HOSTNAME" >> "$HOST_LIST"
+    # 使用 awk 清洗：移除以 # 开头的行、空白行，并保持条目唯一但不打乱原有顺序
+    awk '!/^#/ && NF {if (!seen[$0]++) print}' "$HOST_LIST" > "${HOST_LIST}.tmp" && mv "${HOST_LIST}.tmp" "$HOST_LIST"
+    
+    cd "$DEPLOY_DIR"
+    docker compose restart cloudland
+else
+    log "15/15 - 未检测到控制面容器，跳过 host.list 更新"
+    echo "提示：若此节点为新加入的计算节点，请手动将其 hostname ($HOSTNAME) 添加到控制节点的 $DEPLOY_DIR/volumes/host.list 文件中。"
+fi
 
 log "✅ 部署完成！"
 echo ""
