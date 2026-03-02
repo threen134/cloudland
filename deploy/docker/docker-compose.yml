@@ -61,7 +61,7 @@ services:
       RPC_REMOTE_ENDPOINT: "${INTERNAL_IP:-0.0.0.0}:5005"
       LD_LIBRARY_PATH: /opt/sci/lib64
     volumes:
-      - ./volumes/host.list:/opt/cloudland/etc/host.list:ro
+      - ./volumes/host.list:/opt/cloudland/etc/host.list
       - ../.ssh:/opt/cloudland/deploy/.ssh:ro
       - cland_log:/opt/cloudland/log
       - cland_cache:/opt/cloudland/cache

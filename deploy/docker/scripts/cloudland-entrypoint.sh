@@ -9,13 +9,15 @@ echo "    MANAGEMENT_VIP=$MANAGEMENT_VIP"
 echo "    SCI_DEVICE_NAME=$SCI_DEVICE_NAME"
 echo "    SCI_LISTENER_PORT=$SCI_LISTENER_PORT"
 
-# 生成 host.list（如果外部未挂载）
+# 生成 host.list（处理挂载的文件）
 if [ ! -f /opt/cloudland/etc/host.list ]; then
     echo "警告: /opt/cloudland/etc/host.list 不存在，使用空白文件"
     touch /opt/cloudland/etc/host.list
 else
-    echo "==> 规范化 host.list (移除注释和空行，防止 SCI 秩映射错误)"
-    sed -i '/^#/d; /^$/d' /opt/cloudland/etc/host.list
+    echo "==> 规范化 host.list (使用 cat 覆写，防止 inode 锁定)"
+    sed '/^#/d; /^$/d' /opt/cloudland/etc/host.list > /tmp/host.list.tmp
+    cat /tmp/host.list.tmp > /opt/cloudland/etc/host.list
+    rm -f /tmp/host.list.tmp
 fi
 
 # 在容器中直接启动 cloudland，不使用 VIP 检查循环

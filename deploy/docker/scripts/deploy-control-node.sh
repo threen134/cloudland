@@ -131,6 +131,9 @@ docker compose up -d --build
 log "✅ 控制面部署已完成！"
 PUBLIC_IP=$(grep '^PUBLIC_IP=' .env | cut -d'=' -f2-)
 echo "Web 访问地址: https://${PUBLIC_IP}"
+ADMIN_PASSWORD=$(grep '^ADMIN_PASSWORD=' .env | cut -d'=' -f2-)
+echo "默认用户名: admin"
+echo "默认密码: ${ADMIN_PASSWORD:-passw0rd}"
 echo "API 文档: https://${PUBLIC_IP}:443/api/v1/"
 echo "监控服务: http://${PUBLIC_IP}:9090/-/healthy"
 
