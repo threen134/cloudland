@@ -59,7 +59,6 @@ services:
       SCI_LISTENER_PORT: "9988"
       RPC_SERVER_ENDPOINT: "${INTERNAL_IP:-0.0.0.0}:5006"
       RPC_REMOTE_ENDPOINT: "${INTERNAL_IP:-0.0.0.0}:5005"
-      SCI_REMOTE_SHELL: ssh
       LD_LIBRARY_PATH: /opt/sci/lib64
     volumes:
       - ./volumes/host.list:/opt/cloudland/etc/host.list
