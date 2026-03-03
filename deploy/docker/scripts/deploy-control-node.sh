@@ -30,6 +30,16 @@ else
     exit 1
 fi
 
+# ============ 0. 准备系统环境 ============
+log "0/5 - 配置系统时区为 UTC"
+if command -v timedatectl &>/dev/null; then
+    timedatectl set-timezone UTC
+    echo "系统时区已设置为 UTC。"
+else
+    ln -sf /usr/share/zoneinfo/UTC /etc/localtime
+    echo "通过 link 方式将系统时区设置为 UTC。"
+fi
+
 
 # ============ 0. 检查并准备仓库 ============
 if [ ! -d "$CLOUDLAND_DIR" ]; then

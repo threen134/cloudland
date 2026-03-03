@@ -23,6 +23,16 @@ else
     exit 1
 fi
 
+# ============ 0. 准备系统环境 ============
+echo -e "\033[1;32m[INFO] 配置系统时区为 UTC...\033[0m"
+if command -v timedatectl &>/dev/null; then
+    timedatectl set-timezone UTC
+    echo "系统时区已设置为 UTC。"
+else
+    ln -sf /usr/share/zoneinfo/UTC /etc/localtime
+    echo "通过 link 方式将系统时区设置为 UTC。"
+fi
+
 
 # ============ 读取配置文件 ============
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -543,7 +553,8 @@ if command -v docker &>/dev/null && docker ps --format '{{.Names}}' | grep -q 'c
     touch "$HOST_LIST"
     echo "$HOSTNAME" >> "$HOST_LIST"
     # 使用 awk 清洗：移除以 # 开头的行、空白行，并保持条目唯一但不打乱原有顺序
-    awk '!/^#/ && NF {if (!seen[$0]++) print}' "$HOST_LIST" > "${HOST_LIST}.tmp" && mv "${HOST_LIST}.tmp" "$HOST_LIST"
+    # 使用 cat 覆写而非 mv，保持 inode 不变，避免破坏 Docker bind mount
+    awk '!/^#/ && NF {if (!seen[$0]++) print}' "$HOST_LIST" > "${HOST_LIST}.tmp" && cat "${HOST_LIST}.tmp" > "$HOST_LIST" && rm -f "${HOST_LIST}.tmp"
     
     cd "$DEPLOY_DIR"
     docker compose restart cloudland

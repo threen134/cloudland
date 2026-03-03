@@ -208,7 +208,6 @@ services:
     volumes:
       - ./volumes/alertmanager:/data
       - ./config/alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
-      - /etc/localtime:/etc/localtime:ro
     # alertmanager.yml 需根据实际环境配置
     command:
       - "--config.file=/etc/alertmanager/alertmanager.yml"
