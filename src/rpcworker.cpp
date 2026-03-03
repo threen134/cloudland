@@ -399,13 +399,24 @@ void RpcWorker::runServer() {
   } catch (const CommonException &e) {
     log_error("SCI frontend initialization failed (CommonException): %s",
               e.getErrMsg());
+    fprintf(stderr, "[CLAND] SCI frontend initialization failed: %s\n",
+            e.getErrMsg());
+    http.stop();
+    if (httpThread.joinable()) httpThread.join();
     throw;
   } catch (const std::exception &e) {
     log_error("SCI frontend initialization failed (std::exception): %s",
               e.what());
+    fprintf(stderr, "[CLAND] SCI frontend initialization failed: %s\n",
+            e.what());
+    http.stop();
+    if (httpThread.joinable()) httpThread.join();
     throw;
   } catch (...) {
     log_error("SCI frontend initialization failed (Unknown exception)");
+    fprintf(stderr, "[CLAND] SCI frontend initialization failed: unknown\n");
+    http.stop();
+    if (httpThread.joinable()) httpThread.join();
     throw;
   }
 
