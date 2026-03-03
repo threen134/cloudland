@@ -424,6 +424,7 @@ func main() {
 	port := 8256
 	listenHost := "0.0.0.0"
 
+	fmt.Printf("Initializing Alarm Rules Manager...\n")
 	if listenEnv := os.Getenv("ALARM_RULES_LISTEN"); listenEnv != "" {
 		parts := strings.Split(listenEnv, ":")
 		if len(parts) == 2 {
@@ -432,21 +433,25 @@ func main() {
 				port = p
 			}
 		}
+		fmt.Printf("Using ALARM_RULES_LISTEN environment variable: %s (host=%s, port=%d)\n", listenEnv, listenHost, port)
+	} else {
+		fmt.Printf("ALARM_RULES_LISTEN not set, using default: %s:%d\n", listenHost, port)
 	}
 	certFile := ""
 	if certEnv := os.Getenv("ALARM_RULES_CERT"); certEnv != "" {
 		certFile = certEnv
+		fmt.Printf("Using ALARM_RULES_CERT environment variable: %s\n", certFile)
 	} else {
-		fmt.Printf("start server failed with invalid certFile")
+		fmt.Printf("ERROR: ALARM_RULES_CERT environment variable must be set\n")
 		os.Exit(1)
 	}
 	keyFile := ""
 	if keyEnv := os.Getenv("ALARM_RULES_KEY"); keyEnv != "" {
 		keyFile = keyEnv
+		fmt.Printf("Using ALARM_RULES_KEY environment variable: %s\n", keyFile)
 	} else {
-		fmt.Printf("start server failed with invalid keyFile")
+		fmt.Printf("ERROR: ALARM_RULES_KEY environment variable must be set\n")
 		os.Exit(1)
-
 	}
 
 	server := NewAlarmRulesManager(port, certFile, keyFile)

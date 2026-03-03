@@ -55,10 +55,12 @@ func init() {
 	viper.Set("GoVersion", strings.Title(runtime.Version()))
 	viper.SetConfigFile("conf/config.toml")
 	if err := viper.ReadInConfig(); err != nil {
-		fmt.Printf("Failed to load configuration file %+v", err)
+		fmt.Printf("Failed to load configuration file %+v\n", err)
 		os.Exit(1)
 	}
+	fmt.Printf("Configuration loaded successfully from conf/config.toml\n")
 	rlog.InitLogger("clapi.log")
+	fmt.Printf("Logger initialized, logs are being written to clapi.log\n")
 	/*
 		file := "/opt/cloudland/log/clapi.log"
 		logFile, err := os.OpenFile(file, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0766)

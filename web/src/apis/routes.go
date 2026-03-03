@@ -20,18 +20,27 @@ import (
 var logger = log.MustGetLogger("apis")
 
 func Run() (err error) {
-	logger.Info("Start to run cloudland api service")
+	logger.Info("Starting cloudland api daemon...")
 	r := Register()
 	cert := viper.GetString("rest.cert")
 	key := viper.GetString("rest.key")
 	listen := viper.GetString("rest.listen")
-	logger.Infof("cert: %s, key: %s\n", cert, key)
+	if listen == "" {
+		listen = ":8080" // Default port if not specified
+		logger.Warningf("rest.listen not set, using default port %s", listen)
+	}
+
+	logger.Infof("Server configuration: cert=%s, key=%s, listen=%s", cert, key, listen)
 	if cert != "" && key != "" {
-		logger.Infof("Running https service listening on %s\n", listen)
-		r.RunTLS(listen, cert, key)
+		logger.Infof("Running HTTPS service on %s", listen)
+		err = r.RunTLS(listen, cert, key)
 	} else {
-		logger.Infof("Running http service on %s\n", listen)
-		r.Run(listen)
+		logger.Infof("Running HTTP service on %s", listen)
+		err = r.Run(listen)
+	}
+
+	if err != nil {
+		logger.Errorf("Web server failed to start: %v", err)
 	}
 	return
 }
@@ -44,6 +53,7 @@ func Run() (err error) {
 // @BasePath /api/v1
 func Register() (r *gin.Engine) {
 	r = gin.Default()
+	r.Use(Logger())
 
 	r.POST("/api/v1/login", userAPI.LoginPost)
 	r.GET("/api/v1/version", versionAPI.Get)

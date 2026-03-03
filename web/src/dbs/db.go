@@ -23,7 +23,7 @@ import (
 
 	"github.com/jinzhu/gorm"
 	_ "github.com/jinzhu/gorm/dialects/postgres"
-//	_ "github.com/jinzhu/gorm/dialects/sqlite"
+	// _ "github.com/jinzhu/gorm/dialects/sqlite"
 )
 
 var (
@@ -53,9 +53,12 @@ func openDB() (db *gorm.DB) {
 		dbUrl = "cland.db"
 	}
 	var err error
+	fmt.Printf("Attempting to open database: type=%s, url=%s\n", dbType, dbUrl)
 	if db, err = gorm.Open(dbType, dbUrl); err != nil {
+		fmt.Printf("FAILED to open database: %v\n", err)
 		panic(err)
 	}
+	fmt.Printf("Database connection established successfully\n")
 
 	if testMode || dbDebug {
 		db.LogMode(true)
@@ -99,6 +102,7 @@ func doAutoMigrate(db *gorm.DB) {
 	logger, _ := startLogging(context.Background(), "doAutoMigrate")
 	defer logger.Finish()
 	if needToMigrate {
+		logger.Infof("Starting database auto-migration for %d objects", len(objects))
 		names := tableNames(db)
 		for i := 0; i < len(objects); i++ {
 			obj := objects[i]
@@ -114,6 +118,7 @@ func doAutoMigrate(db *gorm.DB) {
 				}
 			}
 		}
+		logger.Infof("Database auto-migration completed")
 		needToMigrate = false
 	}
 }
@@ -131,6 +136,7 @@ func doAutoUpgrade(db *gorm.DB) (err error) {
 	if !needToUpgrade || len(grades) == 0 {
 		return
 	}
+	logger.Infof("Starting database auto-upgrade for %d tasks", len(grades))
 	names := []string{}
 	for name, _ := range grades {
 		names = append(names, name)
@@ -147,6 +153,7 @@ func doAutoUpgrade(db *gorm.DB) (err error) {
 			continue
 		}
 	}
+	logger.Infof("Database auto-upgrade completed")
 	needToUpgrade = false
 	return
 }

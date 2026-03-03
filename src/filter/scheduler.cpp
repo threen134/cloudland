@@ -34,8 +34,14 @@ pthread_t rthread;
 void *report_thread(void *param)
 {
     int myID;
+    int port = -1;
+    char hostname[MAXHOST] = {0};
     int status = 0;
     SCI_Query(SCI_AGENT_ID, &myID);
+    SCI_Query(SCI_LISTENER_PORT, &port);
+    ::gethostname(hostname, sizeof(hostname));
+    fprintf(stderr, "[SCHEDULER] report_thread started: agent_id=%d listening on %s:%d\n",
+            myID, hostname, port);
     ResourceManager * rcManager = (ResourceManager *)param;
     while (status == 0) {
         sleep(5);
@@ -43,40 +49,54 @@ void *report_thread(void *param)
         report_topology(0, myID);
         SCI_Query(HEALTH_STATUS, &status);
     }
+    fprintf(stderr, "[SCHEDULER] report_thread agent id=%d exiting with status=%d\n", myID, status);
 
     return NULL;
 }
 
 int filter_initialize(void **user_param)
 {
+    fprintf(stderr, "[SCHEDULER] filter_initialize called\n");
     ResourceManager * rcManager = new ResourceManager();
     *user_param = rcManager;
-    pthread_create(&rthread, NULL, &report_thread, rcManager);
+    int rc = pthread_create(&rthread, NULL, &report_thread, rcManager);
+    if (rc != 0) {
+        fprintf(stderr, "[SCHEDULER] filter_initialize: pthread_create failed rc=%d\n", rc);
+        return SCI_ERR_EXCEPTION;
+    }
+    fprintf(stderr, "[SCHEDULER] filter_initialize succeeded\n");
 
     return SCI_SUCCESS;
 }
 
 int filter_terminate(void *user_param)
 {
+    fprintf(stderr, "[SCHEDULER] filter_terminate called\n");
     pthread_join(rthread, NULL);
     ResourceManager *rcManager = (ResourceManager *)user_param;
     delete rcManager;
+    fprintf(stderr, "[SCHEDULER] filter_terminate done\n");
 
     return SCI_SUCCESS;
 }
 
-int bcast_message(int msgID, int group, void *buffer, int size) 
+int bcast_message(int msgID, int group, void *buffer, int size)
 {
     int rc, num;
     int *children = NULL;
 
     rc = SCI_Group_query(group, GROUP_SUCCESSOR_NUM, &num);
-    if (num > 0) {
-        children = new int[num];
-        rc = SCI_Group_query(group, GROUP_SUCCESSOR, children);
-        rc = SCI_Filter_bcast(SCHEDULE_FILTER, num, children, 1, &buffer, &size);
-        delete []children;
+    if (num <= 0) {
+        fprintf(stderr, "[SCHEDULER] bcast_message: no successors in group, msgID=%d\n", msgID);
+        return rc;
     }
+    children = new int[num];
+    rc = SCI_Group_query(group, GROUP_SUCCESSOR, children);
+    rc = SCI_Filter_bcast(SCHEDULE_FILTER, num, children, 1, &buffer, &size);
+    if (rc != SCI_SUCCESS) {
+        fprintf(stderr, "[SCHEDULER] bcast_message: SCI_Filter_bcast failed rc=%d msgID=%d\n", rc, msgID);
+    }
+    delete []children;
 
     return rc;
 }
@@ -96,6 +116,10 @@ int upload_message(int msgID, int myID, int group, char *control, char *message)
     bufs[0] = packer.getPackedMsg();
     sizes[0] = packer.getPackedMsgLen();
     rc = SCI_Filter_upload(SCI_FILTER_NULL, group, 1, bufs, sizes);
+    if (rc != SCI_SUCCESS) {
+        fprintf(stderr, "[SCHEDULER] upload_message failed rc=%d msgID=%d myID=%d control=%s\n",
+                rc, msgID, myID, control);
+    }
 
     return rc;
 }
@@ -259,8 +283,17 @@ int filter_input(void *user_param, sci_group_t group, void *buffer, int size)
             long network = (int)getValue(control, "network=", NULL);
             int bestID = rcManager->getBestBranch(cpu, memory, disk, network, group);
             if (bestID != -1) {
+                fprintf(stderr, "[SCHEDULER] filter_input: scheduled msgID=%d to node %d"
+                        " (cpu=%ld memory=%ld disk=%ld)\n", msgID, bestID, cpu, memory, disk);
                 rc = SCI_Filter_bcast(SCHEDULE_FILTER, 1, &bestID, 1, &buffer, &size);
+                if (rc != SCI_SUCCESS) {
+                    fprintf(stderr, "[SCHEDULER] filter_input: SCI_Filter_bcast to node %d failed rc=%d\n",
+                            bestID, rc);
+                }
             } else {
+                fprintf(stderr, "[SCHEDULER] filter_input: no available node for msgID=%d"
+                        " (cpu=%ld memory=%ld disk=%ld), returning error=resource\n",
+                        msgID, cpu, memory, disk);
                 rc = upload_message(msgID, myID, group, "error=resource", message);
             }
         }
