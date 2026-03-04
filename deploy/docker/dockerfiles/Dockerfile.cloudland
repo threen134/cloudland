@@ -89,5 +89,7 @@ RUN chmod +x /entrypoint.sh
 
 EXPOSE 9988 5005 5006
 
+VOLUME ["/opt/cloudland/log", "/opt/cloudland/cache"]
+
 USER cland
 ENTRYPOINT ["/entrypoint.sh"]
