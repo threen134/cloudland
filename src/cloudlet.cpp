@@ -224,6 +224,13 @@ int main(int argc, char *argv[]) {
   sigset_t sigs_to_block;
   sigset_t old_sigs;
 
+  const char *logDir = getenv("SCI_LOG_DIRECTORY");
+  if (logDir == NULL) {
+    logDir = "/opt/cloudland/log";
+  }
+  Loger::getInstance()->init(logDir, "cloudlet.log", Loger::INFORMATION,
+                             Loger::ENABLE);
+
   log_info("Cloudlet starting up, pid=%d", getpid());
   try {
     set_oom_adj(-1000);

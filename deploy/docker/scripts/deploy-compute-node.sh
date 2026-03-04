@@ -43,14 +43,14 @@ if [ -f "$ENV_FILE" ]; then
     source "$ENV_FILE"
 fi
 
-# ============ 环境变量配置 (回退默认值) ============
-CONTROLLER_IP="${CONTROLLER_IP:-192.168.1.100}"       # 控制节点 IP
-HOSTNAME="${HOSTNAME:-hyper01}"                       # 本节点的 hostname
-NETWORK_DEVICE="${NETWORK_DEVICE:-eth0}"              # 物理网卡名 (跑 VXLAN)
-VLAN_DEVICE="${VLAN_DEVICE:-$NETWORK_DEVICE}"         # 物理网卡名 (跑 VLAN)
-DOMAIN="${DOMAIN:-example.com}"                       # 域名
-DNS_SERVER="${DNS_SERVER:-8.8.8.8}"                   # DNS
-SCI_CLIENT_ID="${SCI_CLIENT_ID:-0}"                   # 计算节点编号（唯一递增）
+# ============ 环境变量配置 (必填参数) ============
+CONTROLLER_IP="${CONTROLLER_IP:?错误: 必须设置 CONTROLLER_IP}"                 # 控制节点 IP
+HOSTNAME="${HOSTNAME:?错误: 必须设置 HOSTNAME}"                                 # 本节点的 hostname
+NETWORK_DEVICE="${NETWORK_DEVICE:?错误: 必须设置 NETWORK_DEVICE}"               # 物理网卡名 (跑 VXLAN)
+VLAN_DEVICE="${VLAN_DEVICE:-$NETWORK_DEVICE}"                                   # 物理网卡名 (跑 VLAN)
+DOMAIN="${DOMAIN:?错误: 必须设置 DOMAIN}"                                         # 域名
+DNS_SERVER="${DNS_SERVER:?错误: 必须设置 DNS_SERVER}"                             # DNS
+SCI_CLIENT_ID="${SCI_CLIENT_ID:?错误: 必须设置 SCI_CLIENT_ID}"                    # 计算节点编号（唯一递增）
 ZONE_NAME="${ZONE_NAME:-zone0}"                       # 可用区名称
 VIRT_TYPE="${VIRT_TYPE:-kvm-x86_64}"                  # 虚拟化类型
 CLOUDLAND_DIR="${CLOUDLAND_DIR:-/opt/cloudland}"      # CloudLand 安装目录
