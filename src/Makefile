@@ -1,11 +1,12 @@
 HOST_SYSTEM = $(shell uname | cut -f 1 -d_)
 SYSTEM ?= $(HOST_SYSTEM)
 CPP = g++
-CPPFLAGS = -g -Wall -Icommon -Ifilter -I/opt/sci/include -std=c++11 -DCPPHTTPLIB_OPENSSL_SUPPORT
+CPPFLAGS = -g -Wall -I. -Icommon -Ifilter -I/opt/sci/include -I../sci/include -std=c++11 -DCPPHTTPLIB_OPENSSL_SUPPORT
 LDFLAGS = -Lcommon -lcmn -ljsoncpp -L/opt/sci/lib64 -L/opt/sci/lib -lsci -pthread -lcrypto -lssl
 
 ifeq ($(SYSTEM),Darwin)
 LDFLAGS += -L/usr/local/lib -ldl
+CPPFLAGS += -I/opt/homebrew/opt/openssl/include -I/opt/homebrew/include
 else
 LDFLAGS += -L/usr/local/lib -Wl,--no-as-needed -Wl,--as-needed -ldl
 endif

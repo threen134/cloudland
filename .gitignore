@@ -92,3 +92,5 @@ login.info
 deploy/docker/implementation_plan.md
 deploy/docker/.run.sh
 deploy/docker/.run.compute.sh
+src/.cache/*
+compile_commands.json

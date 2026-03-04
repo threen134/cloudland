@@ -81,8 +81,8 @@ void Loger::rename(const char *directory, int level, int m) {
   }
 }
 
-void Loger::print(int level, char *srcFile, int srcLine, const char *format,
-                  ...) {
+void Loger::print(int level, const char *srcFile, int srcLine,
+                  const char *format, ...) {
   if (mode != ENABLE)
     return;
 
@@ -105,7 +105,8 @@ void Loger::print(int level, char *srcFile, int srcLine, const char *format,
     fprintf(fp, "%s", tmMsg);
     fprintf(fp, " %s ", (char *)logHeader[level]);
     vfprintf(fp, format, args);
-    fprintf(fp, " (%s:%d|%lu)\n", srcFile, srcLine, pthread_self());
+    fprintf(fp, " (%s:%d|%lu)\n", srcFile, srcLine,
+            (unsigned long)pthread_self());
     fclose(fp);
   }
 

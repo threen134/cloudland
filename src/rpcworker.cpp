@@ -10,7 +10,11 @@ SPDX-License-Identifier: Apache-2.0
 #include "packer.hpp"
 #include "rpcworker.hpp"
 
+#ifdef __APPLE__
+#include <json/json.h>
+#else
 #include <jsoncpp/json/json.h>
+#endif
 #include <thread>
 
 #define CLOUDLET_PATH "/opt/cloudland/bin/cloudlet"
@@ -121,7 +125,7 @@ void RemoteExecServiceImpl::Execute(const Request &request,
   Json::Reader reader;
   Json::Value value;
   if (!reader.parse(request.body, value)) {
-    log_error("Failed to parse request body: %s", request.body.c_str());
+    log_error("Failed to parse request body, body: %s", request.body.c_str());
     response.status = BadRequest_400;
     response.set_content(R"({"error": "fail to parse"})", "application/json");
     return;
@@ -246,7 +250,7 @@ void RemoteExecServiceImpl::Execute(const Request &request,
 }
 
 FrontBack::FrontBack(string rHost, int rPort)
-    : remoteHost(rHost), remotePort(rPort) {}
+    : remotePort(rPort), remoteHost(rHost) {}
 
 void FrontBack::ExecuteAsync(int msg_id, int extra, char *ctl, char *cmd,
                              char *trace) {
@@ -290,7 +294,7 @@ string FrontBack::Execute(int msg_id, int extra, char *ctl, char *cmd,
   if ((res->status != OK_200) || (!reader.parse(res->body, value))) {
     string errMsg = "Failed to parse response body";
     log_info("Failed to parse response body, status: %d, body: %s", res->status,
-             res->body);
+             res->body.c_str());
     return errMsg;
   }
   string status = value["status"].asString();
@@ -303,7 +307,7 @@ RemoteExecServiceImpl::RemoteExecServiceImpl(NetLayer &sci)
 RpcWorker::RpcWorker() : rpcClient(NULL) { initConn(); }
 
 void RpcWorker::initConn() {
-  char *envp = getenv("RPC_REMOTE_ENDPOINT");
+  const char *envp = getenv("RPC_REMOTE_ENDPOINT");
   if (envp == NULL) {
     envp = RPC_REMOTE_ENDPOINT;
     log_info("RPC_REMOTE_ENDPOINT not set, using default: %s", envp);
@@ -337,8 +341,8 @@ RpcWorker::~RpcWorker() {
 }
 
 void RpcWorker::runServer() {
-  char *bePath = getenv("CLOUDLET_PATH");
-  char *hFile = getenv("CLOUD_HOST_FILE");
+  const char *bePath = getenv("CLOUDLET_PATH");
+  const char *hFile = getenv("CLOUD_HOST_FILE");
   if (bePath == NULL) {
     bePath = CLOUDLET_PATH;
     log_info("CLOUDLET_PATH not set, using default: %s", bePath);
@@ -354,7 +358,7 @@ void RpcWorker::runServer() {
 
   string serverAddress = "localhost";
   int serverPort = 50051;
-  char *sAddr = getenv("RPC_SERVER_ENDPOINT");
+  const char *sAddr = getenv("RPC_SERVER_ENDPOINT");
   if (sAddr == NULL) {
     sAddr = RPC_SERVER_ENDPOINT;
     log_info("RPC_SERVER_ENDPOINT not set, using default: %s", sAddr);
@@ -394,7 +398,7 @@ void RpcWorker::runServer() {
   log_info("Initializing SCI frontend with backend=%s hostfile=%s", bePath,
            hFile);
   try {
-    sciNet.initFE(bePath, hFile, this);
+    sciNet.initFE(const_cast<char *>(bePath), const_cast<char *>(hFile), this);
     log_info("SCI frontend initialized successfully");
   } catch (const CommonException &e) {
     log_error("SCI frontend initialization failed (CommonException): %s",
@@ -402,7 +406,8 @@ void RpcWorker::runServer() {
     fprintf(stderr, "[CLAND] SCI frontend initialization failed: %s\n",
             e.getErrMsg());
     http.stop();
-    if (httpThread.joinable()) httpThread.join();
+    if (httpThread.joinable())
+      httpThread.join();
     throw;
   } catch (const std::exception &e) {
     log_error("SCI frontend initialization failed (std::exception): %s",
@@ -410,13 +415,15 @@ void RpcWorker::runServer() {
     fprintf(stderr, "[CLAND] SCI frontend initialization failed: %s\n",
             e.what());
     http.stop();
-    if (httpThread.joinable()) httpThread.join();
+    if (httpThread.joinable())
+      httpThread.join();
     throw;
   } catch (...) {
     log_error("SCI frontend initialization failed (Unknown exception)");
     fprintf(stderr, "[CLAND] SCI frontend initialization failed: unknown\n");
     http.stop();
-    if (httpThread.joinable()) httpThread.join();
+    if (httpThread.joinable())
+      httpThread.join();
     throw;
   }
 
