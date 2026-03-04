@@ -94,3 +94,4 @@ deploy/docker/.run.sh
 deploy/docker/.run.compute.sh
 src/.cache/*
 compile_commands.json
+deploy/docker/.run.*

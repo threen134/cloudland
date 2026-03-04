@@ -245,24 +245,27 @@ do_switch() {
     systemctl enable NetworkManager --now 2>/dev/null || true
     sleep 1
 
-    # 2) 修改 NM 全局配置，允许管理 bond 和 ethernet 设备（持久化）
+    # 2) 修改 NM 全局配置，允许管理 bond/ethernet/bridge/vlan 设备（持久化）
     local nm_global_conf="/usr/lib/NetworkManager/conf.d/10-globally-managed-devices.conf"
     if [[ -f "$nm_global_conf" ]]; then
         local current_conf
         current_conf=$(cat "$nm_global_conf")
         if echo "$current_conf" | grep -q "unmanaged-devices=\*"; then
-            # 检查是否已经有 bond 和 ethernet 的例外
+            # 检查是否已经有所需类型的例外
             local needs_update=false
-            echo "$current_conf" | grep -q "except:type:bond" || needs_update=true
-            echo "$current_conf" | grep -q "except:type:ethernet" || needs_update=true
+            local required_types=(bond ethernet bridge vlan)
+            for rtype in "${required_types[@]}"; do
+                echo "$current_conf" | grep -q "except:type:${rtype}" || needs_update=true
+            done
 
             if $needs_update; then
-                log_info "正在修改 NM 全局配置，允许管理 bond/ethernet 设备 ..."
-                # 在 unmanaged-devices 行追加 bond 和 ethernet 例外
+                log_info "正在修改 NM 全局配置，允许管理 bond/ethernet/bridge/vlan 设备 ..."
+                # 在 unmanaged-devices 行追加缺失的类型例外
                 local new_unmanaged
                 new_unmanaged=$(echo "$current_conf" | grep "^unmanaged-devices=" | sed 's/$//')
-                echo "$new_unmanaged" | grep -q "except:type:bond" || new_unmanaged+=",except:type:bond"
-                echo "$new_unmanaged" | grep -q "except:type:ethernet" || new_unmanaged+=",except:type:ethernet"
+                for rtype in "${required_types[@]}"; do
+                    echo "$new_unmanaged" | grep -q "except:type:${rtype}" || new_unmanaged+=",except:type:${rtype}"
+                done
                 # 替换原文件中的 unmanaged-devices 行
                 sed -i "s|^unmanaged-devices=.*|${new_unmanaged}|" "$nm_global_conf"
                 log_info "NM 全局配置已更新（持久化）"
