@@ -328,6 +328,7 @@ int Launcher::launch()
         int times = 0;
         while (true) {
             if (topology.routingList->allRouted()) {
+                rc = SCI_SUCCESS;
                 break;
             }
             if (times >= (waitTimes * 1000000  / WAIT_INTERVAL)) {

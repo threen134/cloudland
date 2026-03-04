@@ -20,23 +20,6 @@ else
     rm -f /tmp/host.list.tmp
 fi
 
-# 配置 SSH 密钥，供 SCI 外部启动器使用
-if [ -f /opt/cloudland/deploy/.ssh/cland.key ]; then
-    echo "==> 配置 SSH 密钥 (SCI 外部启动器)"
-    mkdir -p ~/.ssh
-    chmod 700 ~/.ssh
-    cat > ~/.ssh/config << 'EOF'
-Host *
-    StrictHostKeyChecking no
-    UserKnownHostsFile /dev/null
-    IdentityFile /opt/cloudland/deploy/.ssh/cland.key
-    LogLevel ERROR
-EOF
-    chmod 600 ~/.ssh/config
-else
-    echo "警告: /opt/cloudland/deploy/.ssh/cland.key 不存在，SCI SSH 启动器可能失败"
-fi
-
 # 在容器中直接启动 cloudland，不使用 VIP 检查循环
 # （容器的生命周期由 Docker 管理）
 exec /opt/cloudland/bin/cloudland
