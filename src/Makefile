@@ -44,7 +44,7 @@ threadpool.o: threadpool.cpp
 	$(CPP) -g -Wall -pthread -std=c++11 -c -o $@ $<
 
 clean:
-	rm -f *.o common/*.o common/*.a remotexec/*.o remotexec/*.a remotexec/*.pb.cc remotexec/*.pb.h filter/*.so filter/*.o cloudland cloudlet cloudctl
+	rm -f *.o common/*.o common/*.a remotexec/*.o remotexec/*.a remotexec/*.pb.cc remotexec/*.pb.h filter/*.so filter/*.o cloudland cloudlet
 
 install:
 	mkdir -p /opt/cloudland/bin /opt/cloudland/lib64

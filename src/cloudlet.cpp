@@ -30,10 +30,10 @@ string hostList;
 void backHandler(void *user_param, sci_group_t group, void *buffer, int size) {
   int rc, my_id;
   char *p = (char *)buffer;
-  int ctLen = 0;
   Packer packer((char *)buffer);
   int id = packer.unpackInt();
   int extra = packer.unpackInt();
+  (void)extra;
   char *control = packer.unpackStr();
   char *command = NULL;
   char *inter = strstr(control, "inter=");
@@ -68,6 +68,7 @@ void backHandler(void *user_param, sci_group_t group, void *buffer, int size) {
     char *filepath = packer.unpackStr();
     int filesize = packer.unpackInt();
     int checksum = packer.unpackInt();
+    (void)checksum;
     int fileseek = packer.unpackInt();
     int clen;
     char *content = packer.unpackStr(&clen);
@@ -100,7 +101,6 @@ void backHandler(void *user_param, sci_group_t group, void *buffer, int size) {
   }
   command = packer.unpackStr();
   if ((inter != NULL) || (toall != NULL) || (grp != NULL) || (select != NULL)) {
-    int bytes = 0;
     void *bufs[1];
     int sizes[1];
     FILE *fp = NULL;
@@ -123,6 +123,13 @@ void backHandler(void *user_param, sci_group_t group, void *buffer, int size) {
     }
     char *p = fgets(tmp, sizeof(tmp), fp);
     while (p != NULL) {
+      // Strip trailing newline to prevent empty lines in log_info
+      string out_line(tmp);
+      if (!out_line.empty() && out_line.back() == '\n') {
+        out_line.pop_back();
+      }
+      log_info("backHandler: node %d cmd output: %s", my_id, out_line.c_str());
+
       Packer resp;
       resp.packInt(id);
       resp.packInt(my_id);
@@ -215,11 +222,10 @@ void set_oom_adj(int s) {
 }
 
 int main(int argc, char *argv[]) {
-  int rc, bytes, myID;
+  int rc, myID;
   int status = 0;
   int msgID = 0;
   char result[1024] = {0};
-  char ctl[16] = "report";
   FILE *fp = NULL;
   sigset_t sigs_to_block;
   sigset_t old_sigs;
@@ -267,8 +273,7 @@ int main(int argc, char *argv[]) {
                   REPORT_RC_CMD, errno);
       } else {
         p = fgets(result, sizeof(result) - 1, fp);
-        log_info("Node %d report output starts with: %s", myID,
-                 result ? result : "(null)");
+        log_info("Node %d report output starts with: %s", myID, result);
       }
       packer.packStr(result);
       packer.packStr("");
