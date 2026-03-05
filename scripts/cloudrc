@@ -315,3 +315,9 @@ function ensure_image_cached()
     ) 9>"$lock"
     return $?
 }
+
+function sync_vm()
+{
+    ID=$1
+    sed -i "/$1/d" $image_dir/old_inst_list
+}
