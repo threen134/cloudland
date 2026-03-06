@@ -61,7 +61,7 @@ func TestDBMAutomigrate(t *testing.T) {
 	}
 }
 
-func ExampleTestBool() {
+func Example_testBool() {
 	type MyTestBool struct {
 		gorm.Model
 		Slims bool
@@ -81,7 +81,7 @@ func ExampleTestBool() {
 	// 2
 }
 
-func ExampleTestHasOne() {
+func Example_testHasOne() {
 	type TestAddress struct {
 		gorm.Model
 		Address1 string

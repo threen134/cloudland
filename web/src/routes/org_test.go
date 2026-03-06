@@ -13,6 +13,7 @@ History:
 package routes
 
 import (
+	"context"
 	"fmt"
 	"strconv"
 	"testing"
@@ -35,18 +36,19 @@ func TestRole(t *testing.T) {
 }
 
 func TestOrgCreate(t *testing.T) {
-	userAdmin.Delete(0)
-	orgAdmin.Delete(0)
+	ctx := context.Background()
+	DB().Where("1=1").Delete(&model.User{})
+	DB().Where("1=1").Delete(&model.Organization{})
 	username := "admin"
 	password := "admin"
-	admin, err := userAdmin.Create(username, password)
+	admin, err := userAdmin.Create(ctx, username, password, "")
 	if err != nil {
 		t.Fatal(err)
 	}
 	owner := admin.ID
-	defer userAdmin.Delete(0)
-	defer orgAdmin.Delete(0)
-	org, err := orgAdmin.Create("admin", strconv.FormatInt(owner, 10))
+	defer DB().Where("1=1").Delete(&model.User{})
+	defer DB().Where("1=1").Delete(&model.Organization{})
+	org, err := orgAdmin.Create(ctx, "admin", strconv.FormatInt(owner, 10), "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -64,7 +66,7 @@ func TestOrgCreate(t *testing.T) {
 	if member.Role != model.Owner {
 		t.Fatal(member)
 	}
-	if member.User.Username != "admin" {
+	if member.UserName != "admin" {
 		t.Fatal(member)
 	}
 }

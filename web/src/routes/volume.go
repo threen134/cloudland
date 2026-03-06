@@ -918,7 +918,7 @@ func (v *VolumeView) Resize(c *macaron.Context, store session.Store) {
 	volume, err := volumeAdmin.Get(ctx, int64(volumeID))
 	if err != nil {
 		logger.Error("Volume query failed", err)
-		c.Data["ErrorMsg"] = fmt.Sprintf("Volume query failed", err)
+		c.Data["ErrorMsg"] = fmt.Sprintf("Volume query failed: %v", err)
 		c.HTML(http.StatusBadRequest, "error")
 		return
 	}

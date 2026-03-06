@@ -605,7 +605,7 @@ func (v *InterfaceView) Edit(c *macaron.Context, store session.Store) {
 	_, err = instanceAdmin.Get(ctx, int64(instanceID))
 	if err != nil {
 		logger.Error("Instance query failed", err)
-		c.Data["ErrorMsg"] = fmt.Sprintf("Instance query failed", err)
+		c.Data["ErrorMsg"] = fmt.Sprintf("Instance query failed: %v", err)
 		c.HTML(http.StatusBadRequest, "error")
 		return
 	}
@@ -693,7 +693,7 @@ func (v *InterfaceView) New(c *macaron.Context, store session.Store) {
 	instance, err := instanceAdmin.Get(ctx, int64(instanceID))
 	if err != nil {
 		logger.Error("Instance query failed", err)
-		c.Data["ErrorMsg"] = fmt.Sprintf("Instance query failed", err)
+		c.Data["ErrorMsg"] = fmt.Sprintf("Instance query failed: %v", err)
 		c.HTML(http.StatusBadRequest, "error")
 		return
 	}
@@ -736,7 +736,7 @@ func (v *InterfaceView) Create(c *macaron.Context, store session.Store) {
 	instance, err := instanceAdmin.Get(ctx, int64(instanceID))
 	if err != nil {
 		logger.Error("Instance query failed", err)
-		c.Data["ErrorMsg"] = fmt.Sprintf("Instance query failed", err)
+		c.Data["ErrorMsg"] = fmt.Sprintf("Instance query failed: %v", err)
 		c.HTML(http.StatusBadRequest, "error")
 		return
 	}

@@ -32,19 +32,23 @@ func TestQuery(t *testing.T) {
 	db.Create(&TestQuery01{
 		Name: "Test02",
 	})
-	rs, err := query("select * from test_query01")
+	rs := []TestQuery01{}
+	err := db.Find(&rs).Error
 	if err != nil || len(rs) != 3 {
 		t.Fatal(rs, err)
 	}
-	affected, err := execSql("update test_query01 set age = 10")
-	if err != nil || affected != 2 {
-		t.Fatal(affected, err)
+	db.Model(&TestQuery01{}).Update("age", 10)
+	affected := db.RowsAffected
+	if affected != 2 {
+		t.Fatal(affected)
 	}
-	affected, err = execSql("delete from test_query01 where age = 10")
-	if err != nil || affected != 2 {
-		t.Fatal(affected, err)
+	db.Where("age = 10").Delete(&TestQuery01{})
+	affected = db.RowsAffected
+	if affected != 2 {
+		t.Fatal(affected)
 	}
-	rs, err = query("select * from test_query01")
+	rs = []TestQuery01{}
+	err = db.Find(&rs).Error
 	if err != nil || len(rs) != 1 {
 		t.Fatal(rs, err)
 	}

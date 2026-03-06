@@ -140,6 +140,7 @@ void RemoteExecServiceImpl::Execute(const Request &request,
   packer.packInt(extra);
   packer.packStr(control);
   packer.packStr(command);
+  packer.packStr(trace);
   char *inter = strstr(control, "inter=");
   char *select = strstr(control, "select=");
   char *group = strstr(control, "group=");
@@ -152,8 +153,9 @@ void RemoteExecServiceImpl::Execute(const Request &request,
   char *message = packer.getPackedMsg();
   int length = packer.getPackedMsgLen();
 
-  log_info("Received message id: %d, extra: %d, control: %s, command: %s",
-           msgID, extra, control, command);
+  log_info(
+      "Received message id: %d, extra: %d, control: %s, command: %s, trace: %s",
+      msgID, extra, control, command, trace.c_str());
   try {
     if (inter != NULL) {
       int node = -1;
@@ -267,8 +269,8 @@ void FrontBack::ExecuteAsync(int msg_id, int extra, char *ctl, char *cmd,
 
 string FrontBack::Execute(int msg_id, int extra, char *ctl, char *cmd,
                           char *trace) {
-  log_info("Forwarding to backend %s:%d msg_id: %d ctl: %s cmd: %s",
-           remoteHost.c_str(), remotePort, msg_id, ctl, cmd);
+  log_info("Forwarding to backend %s:%d msg_id: %d ctl: %s cmd: %s trace: %s",
+           remoteHost.c_str(), remotePort, msg_id, ctl, cmd, trace);
   Json::Value content;
   Json::StreamWriterBuilder writerBuilder;
   ostringstream cstream;
@@ -386,10 +388,12 @@ void RpcWorker::runServer() {
     int level = root.get("level", 1).asInt();
     if (hostname.empty() || id < 0) {
       res.status = 400;
-      res.set_content(R"({"error":"hostname and non-negative id required"})", "application/json");
+      res.set_content(R"({"error":"hostname and non-negative id required"})",
+                      "application/json");
       return;
     }
-    log_info("API: Adding backend node %s with ID %d level %d", hostname.c_str(), id, level);
+    log_info("API: Adding backend node %s with ID %d level %d",
+             hostname.c_str(), id, level);
     int result = sciNet.addBackend(id, hostname.c_str(), level);
     Json::Value resp;
     Json::FastWriter writer;
@@ -439,7 +443,8 @@ void RpcWorker::runServer() {
     }
   });
 
-  log_info("Initializing SCI frontend with backend=%s (API registration mode)", bePath);
+  log_info("Initializing SCI frontend with backend=%s (API registration mode)",
+           bePath);
   try {
     sciNet.initFE(const_cast<char *>(bePath), this);
     log_info("SCI frontend initialized successfully");

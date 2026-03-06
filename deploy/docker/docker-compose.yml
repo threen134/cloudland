@@ -233,6 +233,7 @@ services:
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
     volumes:
       - grafana_data:/var/lib/grafana
+      - ./config/grafana/provisioning/datasources:/etc/grafana/provisioning/datasources:ro
     ports:
       - "3000:3000"
     networks:
@@ -241,6 +242,37 @@ services:
     depends_on:
       prometheus:
         condition: service_healthy
+
+  # ---------- Loki ----------
+  loki:
+    image: grafana/loki:2.9.2
+    container_name: cloudland-loki
+    restart: unless-stopped
+    volumes:
+      - ./config/loki/loki-config.yaml:/etc/loki/local-config.yaml:ro
+      - loki_data:/loki
+    command: -config.file=/etc/loki/local-config.yaml
+    ports:
+      - "3100:3100"
+    networks:
+      cloudland:
+        ipv4_address: 172.28.0.81
+
+  # ---------- Promtail ----------
+  promtail:
+    image: grafana/promtail:2.9.2
+    container_name: cloudland-promtail
+    restart: unless-stopped
+    volumes:
+      - ./config/promtail/promtail-config.yaml:/etc/promtail/config.yml:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - cland_log:/opt/cloudland/log:ro
+    command: -config.file=/etc/promtail/config.yml
+    networks:
+      cloudland:
+        ipv4_address: 172.28.0.82
+    depends_on:
+      - loki
 
   # ---------- Alarm Rules Manager ----------
   alarm-rules-mgr:
@@ -290,3 +322,5 @@ volumes:
     name: cloudland-cland-cache
   image_cache:
     name: cloudland-image-cache
+  loki_data:
+    name: cloudland-loki-data

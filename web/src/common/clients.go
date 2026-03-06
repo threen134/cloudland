@@ -19,6 +19,7 @@ import (
 	"io/ioutil"
 	"net/http"
 
+	"github.com/google/uuid"
 	"github.com/spf13/viper"
 )
 
@@ -101,7 +102,19 @@ func HyperExecute(ctx context.Context, control, command string) (err error) {
 		remoteExecPath = viper.GetString("sci.endpoint") + "/internal/execute"
 	}
 	logger.Debugf("remotePath: %s, jsonPayload: %v", remoteExecPath, payload)
-	resp, err := http.Post(remoteExecPath, "application/json", payload)
+
+	req, err := http.NewRequest("POST", remoteExecPath, payload)
+	if err != nil {
+		logger.Error("Error creating request:", err)
+		return NewCLError(ErrExecuteOnHyperFailed, "Error creating request", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	requestID := uuid.New().String()
+	req.Header.Set("RequestID", requestID)
+	logger.Debugf("Requesting RPC remotePath: %s, RequestID: %s", remoteExecPath, requestID)
+
+	client := &http.Client{}
+	resp, err := client.Do(req)
 	if err != nil {
 		logger.Error("Error posting data:", err)
 		return NewCLError(ErrExecuteOnHyperFailed, "Error posting data", err)

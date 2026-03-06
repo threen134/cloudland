@@ -1771,7 +1771,7 @@ func (v *InstanceView) SetUserPassword(c *macaron.Context, store session.Store) 
 	instance := &model.Instance{Model: model.Model{ID: int64(instanceID)}}
 	if err = db.Preload("Image").Take(instance).Error; err != nil {
 		logger.Error("Instance query failed", err)
-		c.Data["ErrorMsg"] = fmt.Sprintf("Instance query failed", err)
+		c.Data["ErrorMsg"] = fmt.Sprintf("Instance query failed: %v", err)
 		c.HTML(http.StatusBadRequest, "error")
 		return
 	}
@@ -1820,7 +1820,7 @@ func (v *InstanceView) Reinstall(c *macaron.Context, store session.Store) {
 	instance, err := instanceAdmin.Get(ctx, int64(instanceID))
 	if err != nil {
 		logger.Error("Instance query failed", err)
-		c.Data["ErrorMsg"] = fmt.Sprintf("Instance query failed", err)
+		c.Data["ErrorMsg"] = fmt.Sprintf("Instance query failed: %v", err)
 		c.HTML(http.StatusBadRequest, "error")
 		return
 	}
@@ -1940,7 +1940,7 @@ func (v *InstanceView) Resize(c *macaron.Context, store session.Store) {
 	instance, err := instanceAdmin.Get(ctx, int64(instanceID))
 	if err != nil {
 		logger.Error("Instance query failed", err)
-		c.Data["ErrorMsg"] = fmt.Sprintf("Instance query failed", err)
+		c.Data["ErrorMsg"] = fmt.Sprintf("Instance query failed: %v", err)
 		c.HTML(http.StatusBadRequest, "error")
 		return
 	}
@@ -2013,7 +2013,7 @@ func (v *InstanceView) Rescue(c *macaron.Context, store session.Store) {
 	instance, err := instanceAdmin.Get(ctx, int64(instanceID))
 	if err != nil {
 		logger.Error("Instance query failed", err)
-		c.Data["ErrorMsg"] = fmt.Sprintf("Instance query failed", err)
+		c.Data["ErrorMsg"] = fmt.Sprintf("Instance query failed: %v", err)
 		c.HTML(http.StatusBadRequest, "error")
 		return
 	}
@@ -2069,7 +2069,7 @@ func (v *InstanceView) EndRescue(c *macaron.Context, store session.Store) {
 	instance, err := instanceAdmin.Get(ctx, int64(instanceID))
 	if err != nil {
 		logger.Error("Instance query failed", err)
-		c.Data["ErrorMsg"] = fmt.Sprintf("Instance query failed", err)
+		c.Data["ErrorMsg"] = fmt.Sprintf("Instance query failed: %v", err)
 		c.HTML(http.StatusBadRequest, "error")
 		return
 	}

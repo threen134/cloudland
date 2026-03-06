@@ -565,6 +565,44 @@ for i in 1 2 3; do
     fi
 done
 
+# ============ 16. 部署监控代理 Promtail (Trace 日志回传) ============
+log "16/16 - 部署 Promtail 日志回传代理"
+
+cat > /opt/cloudland/promtail-client.yaml <<EOF
+server:
+  http_listen_port: 9080
+  grpc_listen_port: 0
+
+positions:
+  filename: /tmp/positions.yaml
+
+clients:
+  - url: http://${CONTROLLER_IP}:3100/loki/api/v1/push
+
+scrape_configs:
+- job_name: cloudland-scripts
+  static_configs:
+  - targets:
+      - localhost
+    labels:
+      job: local-compute-logs
+      host: ${HOSTNAME}
+      __path__: /opt/cloudland/log/*.log
+EOF
+
+if command -v docker &>/dev/null; then
+    docker rm -f promtail-agent 2>/dev/null || true
+    docker run -d --name promtail-agent \
+      --network host \
+      --restart always \
+      -v /opt/cloudland/log:/opt/cloudland/log:ro \
+      -v /opt/cloudland/promtail-client.yaml:/etc/promtail/config.yml:ro \
+      grafana/promtail:2.9.2 -config.file=/etc/promtail/config.yml
+    log "Promtail 日志反向代理容器启动成功"
+else
+    warn "Docker 未安装，跳过 Promtail 日志回传代理部署"
+fi
+
 log "✅ 部署完成！"
 echo ""
 echo "注意事项："

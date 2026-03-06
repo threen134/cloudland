@@ -328,16 +328,19 @@ func CreateInterface(ctx context.Context, subnet *model.Subnet, ID, owner int64,
 		AllowSpoofing:  allowSpoofing,
 	}
 	logger.Debugf("Interface: %v", iface)
-	if ifType == "instance" {
+	switch ifType {
+	case "instance":
 		iface.Instance = ID
-	} else if ifType == "floating" {
+	case "floating":
 		iface.FloatingIp = ID
-	} else if ifType == "dhcp" {
+	case "dhcp":
 		iface.Dhcp = ID
-	} else if strings.Contains(ifType, "gateway") {
-		iface.Device = ID
-	} else if strings.Contains(ifType, "vrrp") {
-		iface.Device = ID
+	default:
+		if strings.Contains(ifType, "gateway") {
+			iface.Device = ID
+		} else if strings.Contains(ifType, "vrrp") {
+			iface.Device = ID
+		}
 	}
 	err = db.Create(iface).Error
 	if err != nil {
@@ -365,13 +368,14 @@ func DeleteInterfaces(ctx context.Context, masterID, subnetID int64, ifType stri
 	if subnetID > 0 {
 		where = fmt.Sprintf("subnet = %d", subnetID)
 	}
-	if ifType == "instance" {
+	switch ifType {
+	case "instance":
 		err = db.Where("instance = ? and type = ?", masterID, "instance").Where(where).Find(&ifaces).Error
-	} else if ifType == "floating" {
+	case "floating":
 		err = db.Where("floating_ip = ? and type = ?", masterID, "floating").Where(where).Find(&ifaces).Error
-	} else if ifType == "dhcp" {
+	case "dhcp":
 		err = db.Where("dhcp = ? and type = ?", masterID, "dhcp").Where(where).Find(&ifaces).Error
-	} else {
+	default:
 		err = db.Where("device = ? and type like ?", masterID, "%gateway%").Where(where).Find(&ifaces).Error
 	}
 	if err != nil {
@@ -384,13 +388,14 @@ func DeleteInterfaces(ctx context.Context, masterID, subnetID int64, ifType stri
 			logger.Error("Failed to deallocate address, %v", err)
 			return
 		}
-		if ifType == "instance" {
+		switch ifType {
+		case "instance":
 			err = db.Where("instance = ? and type = ?", masterID, "instance").Where(where).Delete(&model.Interface{}).Error
-		} else if ifType == "floating" {
+		case "floating":
 			err = db.Where("floating_ip = ? and type = ?", masterID, "floating").Where(where).Delete(&model.Interface{}).Error
-		} else if ifType == "gateway" {
+		case "gateway":
 			err = db.Where("device = ? and type like ?", masterID, "%gateway%").Where(where).Delete(&model.Interface{}).Error
-		} else if ifType == "dhcp" {
+		case "dhcp":
 			err = db.Where("dhcp = ? and type = ?", masterID, "dhcp").Where(where).Delete(&model.Interface{}).Error
 		}
 		if err != nil {
