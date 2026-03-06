@@ -4,7 +4,7 @@ Copyright <holder> All Rights Reserved.
 SPDX-License-Identifier: Apache-2.0
 */
 
-#include "remotexec.grpc.pb.h"
+#include "remotexec/remotexec.grpc.pb.h"
 #include <cstdlib>
 #include <ctime>
 #include <fstream>
@@ -79,6 +79,7 @@ int main(int argc, char **argv) {
     exit(0);
   }
   int extra = atoi(argv[1]);
+  (void)extra;
   char *ctl = argv[2];
   char *src = argv[3];
   char *dest = argv[4];

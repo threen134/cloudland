@@ -39,16 +39,18 @@ void NetLayer::deserialize() { ::pthread_mutex_unlock(&ser); }
 
 int NetLayer::initFE(char *backend, RpcWorker *rpcWorker) {
   int rc;
-  char *envp = getenv("SCHEDULE_SO_FILE");
-  if ((envp == NULL)) {
+  const char *envp = getenv("SCHEDULE_SO_FILE");
+  if (envp == NULL) {
     envp = SCHEDULE_SO_FILE;
     log_info("SCHEDULE_SO_FILE not set, using default: %s", envp);
   } else {
     log_info("SCHEDULE_SO_FILE from env: %s", envp);
   }
-  log_info("NetLayer initFE: backend=%s filter=%s (no hostfile, API registration mode)", backend, envp);
+  log_info("NetLayer initFE: backend=%s filter=%s (no hostfile, API "
+           "registration mode)",
+           backend, envp);
 
-  sci_filter_info_t filter = {SCHEDULE_FILTER, envp};
+  sci_filter_info_t filter = {SCHEDULE_FILTER, const_cast<char *>(envp)};
   sci_filter_list_t flist = {1, &filter};
 
   bePath = backend;

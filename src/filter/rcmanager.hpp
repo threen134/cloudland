@@ -8,7 +8,6 @@ SPDX-License-Identifier: Apache-2.0
 #define _RCMANAGER_HPP
 
 #include <map>
-#include <string>
 
 using namespace std;
 

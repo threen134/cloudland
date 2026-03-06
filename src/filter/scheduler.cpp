@@ -5,7 +5,6 @@ SPDX-License-Identifier: Apache-2.0
 */
 
 #include <pthread.h>
-#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -25,7 +24,7 @@ extern "C" {
 
 extern int report_availibility(int group, ResourceManager *rcMgr, int myID);
 extern int report_topology(int msgID, int target);
-extern long getValue(char *message, char *key, long *second);
+extern long getValue(char *message, const char *key, long *second);
 extern int bcast_message(int msgID, int group, void *buffer, int size);
 
 pthread_t rthread;
@@ -105,8 +104,8 @@ int bcast_message(int msgID, int group, void *buffer, int size) {
   return rc;
 }
 
-int upload_message(int msgID, int myID, int group, char *control,
-                   char *message) {
+int upload_message(int msgID, int myID, int group, const char *control,
+                   const char *message) {
   int rc = -1;
   Packer packer;
   void *bufs[1];
@@ -173,15 +172,15 @@ int upload_topology(int *children, int num, int *recovery, int rnum, int myID,
 
 int report_topology(int msgID, int myID) {
   static bool update = true;
-  int num = 0, rnum = 0, rc;
+  int num = 0, rnum = 0;
   int *children = NULL;
   int *recovery = NULL;
 
-  rc = SCI_Query(NUM_RECOVERY, &rnum);
+  (void)SCI_Query(NUM_RECOVERY, &rnum);
   if (rnum > 0) {
     update = true;
     recovery = new int[rnum];
-    rc = SCI_Query(RECOVERY_LIST, recovery);
+    (void)SCI_Query(RECOVERY_LIST, recovery);
   } else {
     if ((!update) && (msgID == 0)) {
       return 0;
@@ -189,7 +188,7 @@ int report_topology(int msgID, int myID) {
     update = false;
   }
 
-  rc = SCI_Group_query(SCI_GROUP_ALL, GROUP_SUCCESSOR_NUM, &num);
+  (void)SCI_Group_query(SCI_GROUP_ALL, GROUP_SUCCESSOR_NUM, &num);
   if (num > 0) {
     children = new int[num];
     SCI_Group_query(SCI_GROUP_ALL, GROUP_SUCCESSOR, children);
@@ -218,7 +217,7 @@ int report_availibility(int group, ResourceManager *rcMgr, int myID) {
   return rc;
 }
 
-long getValue(char *message, char *key, long *second) {
+long getValue(char *message, const char *key, long *second) {
   char *p;
   long value = 0;
 
@@ -252,7 +251,7 @@ int filter_input(void *user_param, sci_group_t group, void *buffer, int size) {
   int beID = packer.unpackInt();
   char *control = packer.unpackStr();
   char *message = packer.unpackStr();
-  char *trace = packer.unpackStr();
+  (void)packer.unpackStr(); // trace field, not used
   char *inter = strstr(control, "inter=");
   char *grp = strstr(control, "group=");
   char *report = strstr(control, "report");

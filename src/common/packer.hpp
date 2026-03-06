@@ -1,6 +1,8 @@
 #ifndef _PRAGMA_COPYRIGHT_
 #define _PRAGMA_COPYRIGHT_
+#ifdef _MSC_VER
 #pragma comment(copyright, "%Z% %I% %W% %D% %T%\0")
+#endif
 #endif /* _PRAGMA_COPYRIGHT_ */
 /****************************************************************************
 
@@ -13,7 +15,7 @@
  Classes: Packer
 
  Description: Wrapper for various kind of information.
-   
+
  Author: Nicole Nie, Liu Wei
 
  History:
@@ -26,42 +28,38 @@
 #ifndef _PACKER_HPP
 #define _PACKER_HPP
 
-#include <vector>
-#include <map>
 #include <string>
 
 using namespace std;
 
-class Packer 
-{
-    private:
-        char        *msgBuf;
-        char        *msgPtr;
-        int         msgLen;
-        int         bufSize;
-        
-    public:
-        Packer();
-        Packer(char *msg);
-        ~Packer();
+class Packer {
+private:
+  char *msgBuf;
+  char *msgPtr;
+  int msgLen;
+  int bufSize;
 
-        // for message packing usage
-        void packInt(int value);
-        void packStr(const char *value);
-        void packStr(const string &value);
-        void packStr(const string &value, int len);
-        char * getPackedMsg();
-        int getPackedMsgLen();
+public:
+  Packer();
+  Packer(char *msg);
+  ~Packer();
 
-        // for message unpacking usage
-        void setPackedMsg(const void *msg);
-        int unpackInt();
-        char * unpackStr();
-        char * unpackStr(int *length);
+  // for message packing usage
+  void packInt(int value);
+  void packStr(const char *value);
+  void packStr(const string &value);
+  void packStr(const string &value, int len);
+  char *getPackedMsg();
+  int getPackedMsgLen();
 
-    public:
-        void checkBuffer(int size);
+  // for message unpacking usage
+  void setPackedMsg(const void *msg);
+  int unpackInt();
+  char *unpackStr();
+  char *unpackStr(int *length);
+
+public:
+  void checkBuffer(int size);
 };
 
 #endif
-

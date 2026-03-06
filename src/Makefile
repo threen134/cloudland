@@ -1,7 +1,7 @@
 HOST_SYSTEM = $(shell uname | cut -f 1 -d_)
 SYSTEM ?= $(HOST_SYSTEM)
 CPP = g++
-CPPFLAGS = -g -Wall -I. -Icommon -Ifilter -I/opt/sci/include -I../sci/include -std=c++11 -DCPPHTTPLIB_OPENSSL_SUPPORT
+CPPFLAGS = -g -Wall -I. -Icommon -Ifilter -I/opt/sci/include -I../sci/include -std=c++17 -DCPPHTTPLIB_OPENSSL_SUPPORT
 LDFLAGS = -Lcommon -lcmn -ljsoncpp -L/opt/sci/lib64 -L/opt/sci/lib -lsci -pthread -lcrypto -lssl
 
 ifeq ($(SYSTEM),Darwin)
@@ -29,7 +29,7 @@ cloudlet: cloudlet.o
 	$(CPP) $(CPPFLAGS) -o $@ $^ $(LD_BACK_FLAGS)
 
 threadpool: threadpool.o
-	$(CPP) -g -Wall -std=c++11 -o $@ $^
+	$(CPP) -g -Wall -std=c++17 -o $@ $^
 
 rpcworker.o: rpcworker.cpp
 	$(CPP) $(CPPFLAGS) -c -o $@ $< $(LDFLAGS)
@@ -41,7 +41,7 @@ handler.o: handler.cpp
 	$(CPP) $(CPPFLAGS) -c -o $@ $< $(LDFLAGS)
 
 threadpool.o: threadpool.cpp
-	$(CPP) -g -Wall -pthread -std=c++11 -c -o $@ $<
+	$(CPP) -g -Wall -pthread -std=c++17 -c -o $@ $<
 
 clean:
 	rm -f *.o common/*.o common/*.a remotexec/*.o remotexec/*.a remotexec/*.pb.cc remotexec/*.pb.h filter/*.so filter/*.o cloudland cloudlet

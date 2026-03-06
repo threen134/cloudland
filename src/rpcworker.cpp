@@ -6,6 +6,7 @@ SPDX-License-Identifier: Apache-2.0
 
 #include <unistd.h>
 
+#include "exception.hpp"
 #include "log.hpp"
 #include "packer.hpp"
 #include "rpcworker.hpp"

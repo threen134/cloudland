@@ -1,0 +1,11 @@
+# This directory contains protobuf/gRPC auto-generated files.
+# Suppress warnings from generated code - do not edit these files manually.
+If:
+  PathMatch: ".*\\.pb\\.h"
+CompileFlags:
+  Add:
+    - "-Wno-unused-includes"
+Diagnostics:
+  Suppress:
+    - "unused-includes"
+    - "misc-include-cleaner"

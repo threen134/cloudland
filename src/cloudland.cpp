@@ -15,7 +15,7 @@ SPDX-License-Identifier: Apache-2.0
 
 #include <fstream>
 
-#include "handler.hpp"
+#include "exception.hpp"
 #include "log.hpp"
 #include "netlayer.hpp"
 #include "rpcworker.hpp"
@@ -153,7 +153,7 @@ void usage(char *pName) {
 
 int initParams(int argc, char *argv[]) {
   int i;
-  char *optpattern = "hl:p:s:c:";
+  const char *optpattern = "hl:p:s:c:";
   char *prog = argv[0];
   char *p = NULL;
   string logDir = "/opt/cloudland/log";

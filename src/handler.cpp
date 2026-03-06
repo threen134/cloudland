@@ -7,8 +7,6 @@ SPDX-License-Identifier: Apache-2.0
 #include <stdio.h>
 #include <string.h>
 
-#include <string>
-
 #include "handler.hpp"
 #include "log.hpp"
 #include "netlayer.hpp"
