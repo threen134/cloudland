@@ -22,10 +22,13 @@
 services:
 
   # ---------- 数据库 ----------
+  # dev 模式 (COMPOSE_PROFILES=dev) 启动本地 postgres；生产/HA 模式连接外部 DB
   postgres:
     image: postgres:14
     container_name: cloudland-postgres
     restart: unless-stopped
+    profiles:
+      - dev
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-d6Passwd}
@@ -61,14 +64,11 @@ services:
       RPC_SERVER_ENDPOINT: "${INTERNAL_IP:-0.0.0.0}:5006"
       RPC_REMOTE_ENDPOINT: "${INTERNAL_IP:-0.0.0.0}:5005"
       LD_LIBRARY_PATH: /opt/sci/lib64
+      SCI_ENABLE_FAILOVER: ${SCI_ENABLE_FAILOVER:-no}
     volumes:
-      - ./volumes/host.list:/opt/cloudland/etc/host.list
       - ../.ssh:/opt/cloudland/deploy/.ssh:ro
       - cland_log:/opt/cloudland/log
       - cland_cache:/opt/cloudland/cache
-    depends_on:
-      postgres:
-        condition: service_healthy
 
   # ---------- clbase (Web 管理界面) ----------
   clbase:
@@ -82,8 +82,8 @@ services:
     environment:
       # 用于生成发往前端的 VNC Console 代理地址，不控制本容器物理监听 IP
       PUBLIC_IP: ${PUBLIC_IP:-127.0.0.1}
-      DB_HOST: postgres
-      DB_PORT: "5432"
+      DB_HOST: ${DB_HOST:-postgres}
+      DB_PORT: "${DB_PORT:-5432}"
       DB_USER: ${POSTGRES_USER:-postgres}
       DB_PASSWORD: ${POSTGRES_PASSWORD:-d6Passwd}
       DB_NAME: ${POSTGRES_DB:-cloudland}
@@ -101,9 +101,6 @@ services:
     networks:
       cloudland:
         ipv4_address: 172.28.0.20
-    depends_on:
-      postgres:
-        condition: service_healthy
 
   # ---------- clapi (REST API) ----------
   clapi:
@@ -117,8 +114,8 @@ services:
     environment:
       # 用于生成发往前端的 VNC Console 代理地址，不控制本容器物理监听 IP
       PUBLIC_IP: ${PUBLIC_IP:-127.0.0.1}
-      DB_HOST: postgres
-      DB_PORT: "5432"
+      DB_HOST: ${DB_HOST:-postgres}
+      DB_PORT: "${DB_PORT:-5432}"
       DB_USER: ${POSTGRES_USER:-postgres}
       DB_PASSWORD: ${POSTGRES_PASSWORD:-d6Passwd}
       DB_NAME: ${POSTGRES_DB:-cloudland}
@@ -135,9 +132,6 @@ services:
     networks:
       cloudland:
         ipv4_address: 172.28.0.30
-    depends_on:
-      postgres:
-        condition: service_healthy
 
   # ---------- Console Proxy (VNC) ----------
   consoleproxy:

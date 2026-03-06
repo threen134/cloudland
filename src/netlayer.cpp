@@ -37,7 +37,7 @@ void NetLayer::serialize() { ::pthread_mutex_lock(&ser); }
 
 void NetLayer::deserialize() { ::pthread_mutex_unlock(&ser); }
 
-int NetLayer::initFE(char *backend, char *hostfile, RpcWorker *rpcWorker) {
+int NetLayer::initFE(char *backend, RpcWorker *rpcWorker) {
   int rc;
   char *envp = getenv("SCHEDULE_SO_FILE");
   if ((envp == NULL)) {
@@ -46,18 +46,16 @@ int NetLayer::initFE(char *backend, char *hostfile, RpcWorker *rpcWorker) {
   } else {
     log_info("SCHEDULE_SO_FILE from env: %s", envp);
   }
-  log_info("NetLayer initFE: backend=%s hostfile=%s filter=%s", backend,
-           hostfile, envp);
+  log_info("NetLayer initFE: backend=%s filter=%s (no hostfile, API registration mode)", backend, envp);
 
   sci_filter_info_t filter = {SCHEDULE_FILTER, envp};
   sci_filter_list_t flist = {1, &filter};
 
   bePath = backend;
-  hFile = hostfile;
   memset(&sciInfo, 0, sizeof(sciInfo));
   sciInfo.type = SCI_FRONT_END;
   sciInfo.fe_info.mode = SCI_INTERRUPT;
-  sciInfo.fe_info.hostfile = (char *)hFile.c_str();
+  sciInfo.fe_info.hostfile = NULL;
   sciInfo.fe_info.bepath = (char *)bePath.c_str();
   sciInfo.fe_info.hndlr = (SCI_msg_hndlr *)&frontHandler;
   sciInfo.fe_info.filter_list = flist;
@@ -73,6 +71,30 @@ int NetLayer::initFE(char *backend, char *hostfile, RpcWorker *rpcWorker) {
   log_info("SCI_Initialize succeeded");
 
   return 0;
+}
+
+int NetLayer::addBackend(int beID, const char *hostname, int level) {
+  sci_be_t be;
+  be.id = beID;
+  be.hostname = const_cast<char *>(hostname);
+  be.level = level;
+  int rc = SCI_BE_add(&be);
+  if (rc == SCI_SUCCESS) {
+    log_info("Added backend %s with ID %d", hostname, be.id);
+  } else {
+    log_error("Failed to add backend %s with ID %d, rc=%d", hostname, beID, rc);
+  }
+  return (rc == SCI_SUCCESS) ? be.id : rc;
+}
+
+int NetLayer::removeBackend(int beID) {
+  int rc = SCI_BE_remove(beID);
+  if (rc == SCI_SUCCESS) {
+    log_info("Removed backend ID %d", beID);
+  } else {
+    log_error("Failed to remove backend ID %d, rc=%d", beID, rc);
+  }
+  return rc;
 }
 
 string NetLayer::listGroup() {

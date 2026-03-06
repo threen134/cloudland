@@ -35,6 +35,59 @@ type ExecuteReply struct {
 
 var remoteExecPath string
 
+func NodeAdd(hostname string, hostID int32) (assignedID int32, err error) {
+	endpoint := viper.GetString("sci.endpoint") + "/internal/node/add"
+	reqBody := map[string]interface{}{"hostname": hostname, "id": hostID, "level": 1}
+	jsonReq, err := json.Marshal(reqBody)
+	if err != nil {
+		return -1, NewCLError(ErrExecuteOnHyperFailed, "Failed to marshal request", err)
+	}
+	resp, err := http.Post(endpoint, "application/json", bytes.NewBuffer(jsonReq))
+	if err != nil {
+		return -1, NewCLError(ErrExecuteOnHyperFailed, "Failed to add node", err)
+	}
+	defer resp.Body.Close()
+	body, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return -1, NewCLError(ErrExecuteOnHyperFailed, "Failed to read response", err)
+	}
+	var result map[string]interface{}
+	if err = json.Unmarshal(body, &result); err != nil {
+		return -1, NewCLError(ErrExecuteOnHyperFailed, "Failed to parse response", err)
+	}
+	if resp.StatusCode != 200 {
+		return -1, NewCLError(ErrExecuteOnHyperFailed, "Node add failed: "+string(body), nil)
+	}
+	if id, ok := result["id"].(float64); ok {
+		assignedID = int32(id)
+	}
+	logger.Debugf("NodeAdd: hostname=%s, hostID=%d, assignedID=%d", hostname, hostID, assignedID)
+	return
+}
+
+func NodeRemove(hostID int32) error {
+	endpoint := viper.GetString("sci.endpoint") + "/internal/node/remove"
+	reqBody := map[string]interface{}{"id": hostID}
+	jsonReq, err := json.Marshal(reqBody)
+	if err != nil {
+		return NewCLError(ErrExecuteOnHyperFailed, "Failed to marshal request", err)
+	}
+	resp, err := http.Post(endpoint, "application/json", bytes.NewBuffer(jsonReq))
+	if err != nil {
+		return NewCLError(ErrExecuteOnHyperFailed, "Failed to remove node", err)
+	}
+	defer resp.Body.Close()
+	body, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return NewCLError(ErrExecuteOnHyperFailed, "Failed to read response", err)
+	}
+	if resp.StatusCode != 200 {
+		return NewCLError(ErrExecuteOnHyperFailed, "Node remove failed: "+string(body), nil)
+	}
+	logger.Debugf("NodeRemove: hostID=%d", hostID)
+	return nil
+}
+
 func HyperExecute(ctx context.Context, control, command string) (err error) {
 	execReq := &ExecuteRequest{
 		Id:      100,

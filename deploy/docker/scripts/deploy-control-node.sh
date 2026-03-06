@@ -5,6 +5,10 @@
 # ============================================================
 set -euo pipefail
 
+# 日志同时输出到终端和文件
+DEPLOY_LOG="/var/log/cloudland-control-deploy-$(date '+%Y%m%d-%H%M%S').log"
+exec > >(tee -a "$DEPLOY_LOG") 2>&1
+
 CLOUDLAND_DIR="${CLOUDLAND_DIR:-/opt/cloudland}"
 REPO_URL="${REPO_URL:-https://github.com/threen134/cloudland.git}"
 DEPLOY_DIR="$CLOUDLAND_DIR/deploy/docker"
@@ -67,11 +71,6 @@ if [ ! -f ".env" ]; then
     log "未找到 .env 文件，正在从模板初始化..."
     cp .env.example .env
     
-    # 初始化 host.list 为空文件 (如果是第一次部署)
-    log "初始化计算节点列表..."
-    mkdir -p volumes
-    : > volumes/host.list
-    chmod 0666 volumes/host.list
 fi
 
 # 预先创建并执行 Alertmanager 挂载目录权限 (UID 65534 为 nobody)
@@ -80,7 +79,7 @@ mkdir -p volumes/alertmanager
 chown -R 65534:65534 volumes/alertmanager
 
 # 定义需要注入的环境变量
-vars=("PUBLIC_IP" "INTERNAL_IP" "MANAGEMENT_VIP" "NETWORK_DEVICE" "DB_LISTEN_IP" "POSTGRES_USER" "POSTGRES_PASSWORD" "POSTGRES_DB" "ADMIN_PASSWORD")
+vars=("PUBLIC_IP" "INTERNAL_IP" "MANAGEMENT_VIP" "NETWORK_DEVICE" "DB_LISTEN_IP" "POSTGRES_USER" "POSTGRES_PASSWORD" "POSTGRES_DB" "ADMIN_PASSWORD" "COMPOSE_PROFILES" "DB_HOST" "DB_PORT")
 
 # 注入环境变量到 .env (如果当前 Shell 环境中有定义)
 for var in "${vars[@]}"; do

@@ -25,7 +25,7 @@ else
     : "${MONITOR_HOST:=prometheus}"
     : "${MONITOR_PORT:=9090}"
 
-    cat > "$CONF_FILE" <<TOML
+    cat > "$CONF_FILE" <<_EOF_
 [base]
 listen = "0.0.0.0:5443"
 key = "/certs/cland/selfsigned.key"
@@ -62,6 +62,11 @@ port = "${MONITOR_PORT}"
 password = "${ADMIN_PASSWORD}"
 
 [key]
+_EOF_
+
+    if [ "${COMPOSE_PROFILES:-dev}" = "dev" ] && [ ! -s "/certs/cland/jwt_private.pem" ]; then
+        echo "==> 使用内置的开发模式 RSA 密钥"
+        cat >> "$CONF_FILE" <<'_EOF_'
 private = """-----BEGIN RSA PRIVATE KEY-----
 MIIEpQIBAAKCAQEAv2TkunvS/lUZm7oH4cpHvy/QyT72kwoVdEzBwfBNZoXWmC2h
 P/+qoTSXiq6FGwvVLSaiOSIR1WDDuihNXmR4zXDAeObHicVlldmmG8NzgCW5ZjO7
@@ -100,8 +105,24 @@ bukyRyO4hBhxeBhipeaLi2HM2SJSeu867NzBKbQqbsaXbb+D+Ko4T4C5ouJATYe6
 VQIDAQAB
 -----END PUBLIC KEY-----
 """
-TOML
+_EOF_
+    else
+        echo "==> 读取 /certs/cland 下初始化的 RSA 密钥"
+        if [ ! -s "/certs/cland/jwt_private.pem" ] || [ ! -s "/certs/cland/jwt_public.pem" ]; then
+            echo "ERROR: 找不到有效的 jwt_private.pem 或 jwt_public.pem，请先执行 init-certs.sh"
+            exit 1
+        fi
+        
+        echo "private = \"\"\"" >> "$CONF_FILE"
+        cat "/certs/cland/jwt_private.pem" >> "$CONF_FILE"
+        echo "\"\"\"" >> "$CONF_FILE"
+        
+        echo "public = \"\"\"" >> "$CONF_FILE"
+        cat "/certs/cland/jwt_public.pem" >> "$CONF_FILE"
+        echo "\"\"\"" >> "$CONF_FILE"
+    fi
 fi
+
 
 echo "==> 启动: $@"
 exec "$@"

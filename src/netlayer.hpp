@@ -26,7 +26,6 @@ class NetLayer {
     private:
         sci_info_t sciInfo;
         string bePath;
-        string hFile;
         pthread_mutex_t mtx;
         pthread_mutex_t ser;
         GROUP_MAP groupMap;
@@ -34,7 +33,9 @@ class NetLayer {
 
     public:
         NetLayer();
-        int initFE(char *backend, char *hostfile, RpcWorker *rpcWorker);
+        int initFE(char *backend, RpcWorker *rpcWorker);
+        int addBackend(int beID, const char *hostname, int level = 1);
+        int removeBackend(int beID);
         int sendMessage(char *message, int length, char *grpName = NULL, bool useFilter = true);
         int sendMessage(int beID, char *message, int length);
         int createGroup(char *grpDesc);

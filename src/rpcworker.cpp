@@ -18,7 +18,6 @@ SPDX-License-Identifier: Apache-2.0
 #include <thread>
 
 #define CLOUDLET_PATH "/opt/cloudland/bin/cloudlet"
-#define CLOUD_HOST_FILE "/opt/cloudland/etc/host.list"
 #define RPC_SERVER_ENDPOINT "0.0.0.0:5006"
 #define RPC_REMOTE_ENDPOINT "localhost:5005"
 
@@ -342,18 +341,11 @@ RpcWorker::~RpcWorker() {
 
 void RpcWorker::runServer() {
   const char *bePath = getenv("CLOUDLET_PATH");
-  const char *hFile = getenv("CLOUD_HOST_FILE");
   if (bePath == NULL) {
     bePath = CLOUDLET_PATH;
     log_info("CLOUDLET_PATH not set, using default: %s", bePath);
   } else {
     log_info("CLOUDLET_PATH from env: %s", bePath);
-  }
-  if (hFile == NULL) {
-    hFile = CLOUD_HOST_FILE;
-    log_info("CLOUD_HOST_FILE not set, using default: %s", hFile);
-  } else {
-    log_info("CLOUD_HOST_FILE from env: %s", hFile);
   }
 
   string serverAddress = "localhost";
@@ -381,6 +373,58 @@ void RpcWorker::runServer() {
   http.Post("/internal/execute", [service](const Request &req, Response &res) {
     service->Execute(req, res);
   });
+  http.Post("/internal/node/add", [this](const Request &req, Response &res) {
+    Json::Reader reader;
+    Json::Value root;
+    if (!reader.parse(req.body, root)) {
+      res.status = 400;
+      res.set_content(R"({"error":"invalid json"})", "application/json");
+      return;
+    }
+    string hostname = root["hostname"].asString();
+    int id = root.get("id", -1).asInt();
+    int level = root.get("level", 1).asInt();
+    if (hostname.empty() || id < 0) {
+      res.status = 400;
+      res.set_content(R"({"error":"hostname and non-negative id required"})", "application/json");
+      return;
+    }
+    log_info("API: Adding backend node %s with ID %d level %d", hostname.c_str(), id, level);
+    int result = sciNet.addBackend(id, hostname.c_str(), level);
+    Json::Value resp;
+    Json::FastWriter writer;
+    if (result >= 0) {
+      resp["status"] = "ok";
+      resp["id"] = result;
+    } else {
+      res.status = 500;
+      resp["error"] = "failed to add backend";
+      resp["rc"] = result;
+    }
+    res.set_content(writer.write(resp), "application/json");
+  });
+  http.Post("/internal/node/remove", [this](const Request &req, Response &res) {
+    Json::Reader reader;
+    Json::Value root;
+    if (!reader.parse(req.body, root)) {
+      res.status = 400;
+      res.set_content(R"({"error":"invalid json"})", "application/json");
+      return;
+    }
+    int id = root["id"].asInt();
+    log_info("API: Removing backend node ID %d", id);
+    int rc = sciNet.removeBackend(id);
+    Json::Value resp;
+    Json::FastWriter writer;
+    if (rc == 0) {
+      resp["status"] = "ok";
+    } else {
+      res.status = 500;
+      resp["error"] = "failed to remove backend";
+      resp["rc"] = rc;
+    }
+    res.set_content(writer.write(resp), "application/json");
+  });
   http.set_error_handler([](const Request &req, Response &res) {
     log_error("HTTP server error: status=%d path=%s remote=%s:%d", res.status,
               req.path.c_str(), req.remote_addr.c_str(), req.remote_port);
@@ -395,10 +439,9 @@ void RpcWorker::runServer() {
     }
   });
 
-  log_info("Initializing SCI frontend with backend=%s hostfile=%s", bePath,
-           hFile);
+  log_info("Initializing SCI frontend with backend=%s (API registration mode)", bePath);
   try {
-    sciNet.initFE(const_cast<char *>(bePath), const_cast<char *>(hFile), this);
+    sciNet.initFE(const_cast<char *>(bePath), this);
     log_info("SCI frontend initialized successfully");
   } catch (const CommonException &e) {
     log_error("SCI frontend initialization failed (CommonException): %s",

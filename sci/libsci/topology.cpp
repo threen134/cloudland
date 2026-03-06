@@ -152,20 +152,23 @@ int Topology::init()
     }
     if (hostlist != NULL) {
         rc = beMap.input((const char **)hostlist, numItem);
+        if (rc != SCI_SUCCESS) {
+            return rc;
+        }
     } else {
         // check host file & num of be
         char *hostfile = gCtrlBlock->getEndInfo()->fe_info.hostfile;
         if ((envp = ::getenv("SCI_HOST_FILE")) != NULL) {
             hostfile = envp;
         }
-        if (hostfile == NULL) {
-            hostfile = "host.list";
+        if (hostfile != NULL) {
+            rc = beMap.input(hostfile, numItem);
+            if (rc != SCI_SUCCESS) {
+                return rc;
+            }
+        } else {
+            log_info("No host file specified, starting with zero backends (API registration mode)");
         }
-
-        rc = beMap.input(hostfile, numItem);
-    }
-    if (rc != SCI_SUCCESS) {
-        return rc;
     }
 
     // check fanout
@@ -175,7 +178,11 @@ int Topology::init()
     }
     
     level = 0;
-    height = (int) ::ceil(::log((double)beMap.size()) / ::log((double)fanOut));
+    if (beMap.size() > 0) {
+        height = (int) ::ceil(::log((double)beMap.size()) / ::log((double)fanOut));
+    } else {
+        height = 0;
+    }
 
     // check be path
     if ((envp = ::getenv("SCI_BACKEND_PATH")) != NULL) {

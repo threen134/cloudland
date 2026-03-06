@@ -98,18 +98,16 @@ int BEMap::input(const char * filename, int num)
     }
     fs.close();
   
-    size = (*this).size(); 
+    size = (*this).size();
     if (size == 0) {
-        log_error("BEMap error: empty host file.");
-        return SCI_ERR_INVALID_HOSTFILE;
-    } 
-
-    max_id = ((*this).rbegin())->first;
-    if (max_id >= size) {
-        log_error("BEMap error: max_id(%d) needs to be smaller than the totalsize(%d)", 
-                max_id, size);
-        return SCI_ERR_INVALID_HOSTFILE;
+        log_info("BEMap: host file is empty, no backends loaded");
+        return SCI_SUCCESS;
     }
+
+    // Sparse ID mappings are valid when using explicit ID assignment (%[id] syntax).
+    // The beMap is a std::map so sparse keys are structurally supported.
+    max_id = ((*this).rbegin())->first;
+    log_debug("BEMap: loaded %d entries, max_id=%d", size, max_id);
 
     return SCI_SUCCESS;
 }

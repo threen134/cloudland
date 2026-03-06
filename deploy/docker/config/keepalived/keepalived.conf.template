@@ -1,0 +1,21 @@
+vrrp_instance CLOUDLAND_HA {
+    state %%HA_STATE%%
+    interface %%VRRP_INTERFACE%%
+    virtual_router_id %%VRRP_ROUTER_ID%%
+    priority %%VRRP_PRIORITY%%
+    advert_int 1
+    nopreempt
+
+    authentication {
+        auth_type PASS
+        auth_pass %%VRRP_AUTH_PASS%%
+    }
+
+    virtual_ipaddress {
+        %%MANAGEMENT_VIP%%/%%VRRP_VIP_MASK%%
+    }
+
+    notify_master "/opt/cloudland/deploy/docker/scripts/ha-notify.sh MASTER"
+    notify_backup "/opt/cloudland/deploy/docker/scripts/ha-notify.sh BACKUP"
+    notify_fault  "/opt/cloudland/deploy/docker/scripts/ha-notify.sh FAULT"
+}

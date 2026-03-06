@@ -57,6 +57,23 @@ type HyperListResponse struct {
 type HyperPayload struct {
 }
 
+type HyperDeployPayload struct {
+	IP            string `json:"ip" binding:"required"`
+	User          string `json:"user" binding:"required"`
+	Password      string `json:"password" binding:"required"`
+	Hostname      string `json:"hostname" binding:"required"`
+	NetworkDevice string `json:"network_device"`
+	VlanDevice    string `json:"vlan_device"`
+	DNSServer     string `json:"dns_server"`
+	Domain        string `json:"domain"`
+	ZoneName      string `json:"zone_name"`
+	VirtType      string `json:"virt_type"`
+}
+
+type HyperDecommissionPayload struct {
+	TargetHyper int32 `json:"target_hyper"`
+}
+
 type HyperPatchPayload struct {
 	Status       *int32   `json:"status" binding:"omitempty,min=0,max=1"`
 	ZoneID       *int64   `json:"zone_id" binding:"omitempty,min=1"`
@@ -223,6 +240,107 @@ func (v *HyperAPI) Patch(c *gin.Context) {
 
 	hyperResp := convertHyperToResponse(updatedHyper)
 	c.JSON(http.StatusOK, hyperResp)
+}
+
+// @Summary deploy a new hypervisor
+// @Description deploy a new compute node via SSH
+// @tags Administration
+// @Accept  json
+// @Produce json
+// @Param body body HyperDeployPayload true "Deploy payload"
+// @Success 200 {object} HyperResponse
+// @Failure 400 {object} common.APIError "Bad request"
+// @Failure 401 {object} common.APIError "Not authorized"
+// @Failure 500 {object} common.APIError "Internal server error"
+// @Router /hypers [post]
+func (v *HyperAPI) Deploy(c *gin.Context) {
+	var payload HyperDeployPayload
+	if err := c.ShouldBindJSON(&payload); err != nil {
+		ErrorResponse(c, http.StatusBadRequest, "Invalid payload", err)
+		return
+	}
+	if payload.NetworkDevice == "" {
+		payload.NetworkDevice = "eth0"
+	}
+	if payload.VlanDevice == "" {
+		payload.VlanDevice = payload.NetworkDevice
+	}
+	if payload.DNSServer == "" {
+		payload.DNSServer = "8.8.8.8"
+	}
+	if payload.Domain == "" {
+		payload.Domain = "example.com"
+	}
+	if payload.ZoneName == "" {
+		payload.ZoneName = "zone0"
+	}
+	if payload.VirtType == "" {
+		payload.VirtType = "kvm-x86_64"
+	}
+
+	hyper, err := hyperAdmin.Deploy(c.Request.Context(), payload.IP, payload.User, payload.Password,
+		payload.Hostname, payload.NetworkDevice, payload.VlanDevice, payload.DNSServer,
+		payload.Domain, payload.ZoneName, payload.VirtType)
+	if err != nil {
+		ErrorResponse(c, http.StatusInternalServerError, "Failed to deploy hypervisor", err)
+		return
+	}
+	c.JSON(http.StatusOK, convertHyperToResponse(hyper))
+}
+
+// @Summary decommission a hypervisor
+// @Description start decommissioning a hypervisor, migrating all instances
+// @tags Administration
+// @Accept  json
+// @Produce json
+// @Param hostid path string true "Hypervisor host ID"
+// @Param body body HyperDecommissionPayload false "Decommission options"
+// @Success 200 {object} map[string]string
+// @Failure 400 {object} common.APIError "Bad request"
+// @Failure 401 {object} common.APIError "Not authorized"
+// @Failure 500 {object} common.APIError "Internal server error"
+// @Router /hypers/{hostid}/decommission [post]
+func (v *HyperAPI) Decommission(c *gin.Context) {
+	hostidStr := c.Param("hostid")
+	hostid, err := strconv.ParseInt(hostidStr, 10, 32)
+	if err != nil {
+		ErrorResponse(c, http.StatusBadRequest, "Invalid hostid parameter", err)
+		return
+	}
+	var payload HyperDecommissionPayload
+	if err := c.ShouldBindJSON(&payload); err != nil {
+		payload.TargetHyper = -1
+	}
+	if err := hyperAdmin.Decommission(c.Request.Context(), int32(hostid), payload.TargetHyper); err != nil {
+		ErrorResponse(c, http.StatusInternalServerError, "Failed to decommission hypervisor", err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"status": "draining"})
+}
+
+// @Summary complete decommission of a hypervisor
+// @Description finalize decommission after all instances have been migrated
+// @tags Administration
+// @Accept  json
+// @Produce json
+// @Param hostid path string true "Hypervisor host ID"
+// @Success 200 {object} map[string]string
+// @Failure 400 {object} common.APIError "Bad request"
+// @Failure 401 {object} common.APIError "Not authorized"
+// @Failure 500 {object} common.APIError "Internal server error"
+// @Router /hypers/{hostid}/complete-decommission [post]
+func (v *HyperAPI) CompleteDecommission(c *gin.Context) {
+	hostidStr := c.Param("hostid")
+	hostid, err := strconv.ParseInt(hostidStr, 10, 32)
+	if err != nil {
+		ErrorResponse(c, http.StatusBadRequest, "Invalid hostid parameter", err)
+		return
+	}
+	if err := hyperAdmin.CompleteDecommission(c.Request.Context(), int32(hostid)); err != nil {
+		ErrorResponse(c, http.StatusInternalServerError, "Failed to complete decommission", err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"status": "decommissioned"})
 }
 
 // convertHyperToResponse converts a model.Hyper to HyperResponse

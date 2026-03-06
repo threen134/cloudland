@@ -45,6 +45,16 @@ EOF
     echo "    完成: $CERT_DIR/cland/"
 fi
 
+# ----- 1.5 CloudLand JWT 密钥 (clbase / clapi 使用) -----
+if [ -e "$CERT_DIR/cland/jwt_private.pem" ] && [ -e "$CERT_DIR/cland/jwt_public.pem" ]; then
+    echo "==> CloudLand JWT 密钥已存在，跳过"
+else
+    echo "==> 生成 CloudLand JWT RSA256 密钥对..."
+    openssl genpkey -algorithm RSA -out "$CERT_DIR/cland/jwt_private.pem" -pkeyopt rsa_keygen_bits:2048 > /dev/null 2>&1
+    openssl rsa -pubout -in "$CERT_DIR/cland/jwt_private.pem" -out "$CERT_DIR/cland/jwt_public.pem" > /dev/null 2>&1
+    echo "    完成: $CERT_DIR/cland/jwt_*.pem"
+fi
+
 # ----- 2. Nginx 证书 -----
 if [ -e "$CERT_DIR/nginx/selfsigned.key" ] && [ -e "$CERT_DIR/nginx/selfsigned.crt" ] && [ -e "$CERT_DIR/nginx/dhparam.pem" ]; then
     echo "==> Nginx 证书已存在，跳过"

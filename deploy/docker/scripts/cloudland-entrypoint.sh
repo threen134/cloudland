@@ -9,17 +9,7 @@ echo "    MANAGEMENT_VIP=$MANAGEMENT_VIP"
 echo "    SCI_DEVICE_NAME=$SCI_DEVICE_NAME"
 echo "    SCI_LISTENER_PORT=$SCI_LISTENER_PORT"
 
-# 生成 host.list（处理挂载的文件）
-if [ ! -f /opt/cloudland/etc/host.list ]; then
-    echo "警告: /opt/cloudland/etc/host.list 不存在，使用空白文件"
-    touch /opt/cloudland/etc/host.list
-else
-    echo "==> 规范化 host.list (使用 cat 覆写，防止 inode 锁定)"
-    sed '/^#/d; /^$/d' /opt/cloudland/etc/host.list > /tmp/host.list.tmp
-    cat /tmp/host.list.tmp > /opt/cloudland/etc/host.list
-    rm -f /tmp/host.list.tmp
-fi
-echo "==> 配置 host.list"
+echo "==> API 注册模式：不使用 host.list，节点通过 API 动态注册"
 
 # 配置 SSH 密钥，供 SCI 外部启动器使用
 if [ -f /opt/cloudland/deploy/.ssh/cland.key ]; then

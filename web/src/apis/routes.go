@@ -69,8 +69,11 @@ func Register() (r *gin.Engine) {
 		authGroup.PATCH("/api/v1/zones/:name", zoneAPI.Patch)
 
 		authGroup.GET("/api/v1/hypers", hyperAPI.List)
+		authGroup.POST("/api/v1/hypers", hyperAPI.Deploy)
 		authGroup.GET("/api/v1/hypers/:hostid", hyperAPI.Get)
 		authGroup.PATCH("/api/v1/hypers/:hostid", hyperAPI.Patch)
+		authGroup.POST("/api/v1/hypers/:hostid/decommission", hyperAPI.Decommission)
+		authGroup.POST("/api/v1/hypers/:hostid/complete-decommission", hyperAPI.CompleteDecommission)
 
 		authGroup.GET("/api/v1/migrations", migrationAPI.List)
 		authGroup.POST("/api/v1/migrations", migrationAPI.Create)

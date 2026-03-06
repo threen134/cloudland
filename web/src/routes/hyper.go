@@ -11,6 +11,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"strconv"
 
 	. "web/src/common"
 	"web/src/dbs"
@@ -285,6 +286,280 @@ func (v *HyperView) SetHyperStatus(c *macaron.Context, store session.Store) {
 	err := hyperAdmin.SetStatus(c.Req.Context(), int32(id), int32(status))
 	if err != nil {
 		c.Data["ErrorMsg"] = fmt.Sprintf("Failed to set hypervisor status: %v", err)
+		c.HTML(500, "error")
+		return
+	}
+	c.Redirect("/hypers")
+}
+
+func (a *HyperAdmin) AllocateHostID(ctx context.Context) (hostID int32, err error) {
+	_, db := GetContextDB(ctx)
+	var maxID struct{ MaxID *int32 }
+	if err = db.Model(&model.Hyper{}).Select("MAX(hostid) as max_id").Scan(&maxID).Error; err != nil {
+		return -1, NewCLError(ErrSQLSyntaxError, "Failed to query max hostid", err)
+	}
+	if maxID.MaxID == nil {
+		return 0, nil
+	}
+	return *maxID.MaxID + 1, nil
+}
+
+func (a *HyperAdmin) Deploy(ctx context.Context, ip, user, password, hostname, networkDevice, vlanDevice, dnsServer, domain, zoneName, virtType string) (hyper *model.Hyper, err error) {
+	memberShip := GetMemberShip(ctx)
+	permit := memberShip.CheckPermission(model.Admin)
+	if !permit {
+		return nil, NewCLError(ErrPermissionDenied, "Not authorized for this operation", nil)
+	}
+	ctx, db := GetContextDB(ctx)
+
+	// Check if hostname already exists
+	existing := &model.Hyper{}
+	if err = db.Where("hostname = ?", hostname).Take(existing).Error; err == nil {
+		return nil, NewCLError(ErrHypervisorInvalidState, "Hypervisor with this hostname already exists", nil)
+	}
+
+	// Allocate unique host ID
+	hostID, err := a.AllocateHostID(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	// Create hyper record in deploying state
+	zone, err := zoneAdmin.GetZoneByName(ctx, zoneName)
+	if err != nil {
+		logger.Warningf("Zone %s not found, using default zone", zoneName)
+		zone = &model.Zone{}
+	}
+	hyper = &model.Hyper{
+		Hostid:   hostID,
+		Hostname: hostname,
+		HostIP:   ip,
+		Status:   4, // HYPER_DEPLOYING
+		VirtType: virtType,
+		ZoneID:   zone.ID,
+		Zone:     zone,
+	}
+	if err = db.Create(hyper).Error; err != nil {
+		return nil, NewCLError(ErrSQLSyntaxError, "Failed to create hypervisor record", err)
+	}
+
+	// Run deployment in background
+	go func() {
+		deployCmd := fmt.Sprintf(
+			"curl -sf http://%s/deploy-compute-node.sh | bash -s -- "+
+				"--controller-ip %s --hostname %s --network-device %s --vlan-device %s "+
+				"--dns-server %s --sci-client-id %d --domain %s --zone-name %s --virt-type %s",
+			ip, ip, hostname, networkDevice, vlanDevice,
+			dnsServer, hostID, domain, zoneName, virtType,
+		)
+		_ = deployCmd
+
+		// SSH to target and run deploy script
+		command := fmt.Sprintf(
+			"CONTROLLER_IP=%s HOSTNAME=%s NETWORK_DEVICE=%s VLAN_DEVICE=%s DNS_SERVER=%s SCI_CLIENT_ID=%d DOMAIN=%s ZONE_NAME=%s VIRT_TYPE=%s "+
+				"bash /opt/cloudland/scripts/deploy-compute-node.sh",
+			ip, hostname, networkDevice, vlanDevice, dnsServer, hostID, domain, zoneName, virtType,
+		)
+		output, sshErr := SSHExec(ip, user, password, command)
+		if sshErr != nil {
+			logger.Errorf("Deploy failed for %s: %v, output: %s", hostname, sshErr, output)
+			db.Model(&model.Hyper{}).Where("hostid = ?", hostID).Update("status", 5) // HYPER_DEPLOY_FAILED
+			return
+		}
+
+		// Register node with SCI
+		_, addErr := NodeAdd(hostname, hostID)
+		if addErr != nil {
+			logger.Errorf("Failed to register node %s with SCI: %v", hostname, addErr)
+			db.Model(&model.Hyper{}).Where("hostid = ?", hostID).Update("status", 5)
+			return
+		}
+
+		// Mark as active
+		db.Model(&model.Hyper{}).Where("hostid = ?", hostID).Update("status", 1) // HYPER_ACTIVE
+		logger.Infof("Successfully deployed and registered node %s (ID %d)", hostname, hostID)
+	}()
+
+	return hyper, nil
+}
+
+func (a *HyperAdmin) Decommission(ctx context.Context, hostID int32, targetHyper int32) (err error) {
+	memberShip := GetMemberShip(ctx)
+	permit := memberShip.CheckPermission(model.Admin)
+	if !permit {
+		return NewCLError(ErrPermissionDenied, "Not authorized for this operation", nil)
+	}
+	ctx, db := GetContextDB(ctx)
+
+	hyper := &model.Hyper{}
+	if err = db.Where("hostid = ?", hostID).Take(hyper).Error; err != nil {
+		return NewCLError(ErrHypervisorNotFound, "Specified hypervisor not found", err)
+	}
+	if hyper.Status != 1 && hyper.Status != 0 {
+		return NewCLError(ErrHypervisorInvalidState, "Hypervisor must be active or disabled to decommission", nil)
+	}
+
+	// Set status to draining
+	if err = db.Model(hyper).Update("status", 2).Error; err != nil {
+		return NewCLError(ErrSQLSyntaxError, "Failed to update hypervisor status", err)
+	}
+
+	// Find instances on this hyper
+	instances := []*model.Instance{}
+	if err = db.Where("hyper = ?", hostID).Find(&instances).Error; err != nil {
+		return NewCLError(ErrSQLSyntaxError, "Failed to query instances", err)
+	}
+
+	if len(instances) > 0 {
+		// Migrate all instances
+		_, err = migrationAdmin.Create(ctx, fmt.Sprintf("decommission-hyper-%d", hostID), instances, false, targetHyper)
+		if err != nil {
+			logger.Errorf("Failed to create migrations for decommission: %v", err)
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (a *HyperAdmin) CompleteDecommission(ctx context.Context, hostID int32) (err error) {
+	memberShip := GetMemberShip(ctx)
+	permit := memberShip.CheckPermission(model.Admin)
+	if !permit {
+		return NewCLError(ErrPermissionDenied, "Not authorized for this operation", nil)
+	}
+	ctx, db := GetContextDB(ctx)
+
+	hyper := &model.Hyper{}
+	if err = db.Where("hostid = ?", hostID).Take(hyper).Error; err != nil {
+		return NewCLError(ErrHypervisorNotFound, "Specified hypervisor not found", err)
+	}
+	if hyper.Status != 2 {
+		return NewCLError(ErrHypervisorInvalidState, "Hypervisor must be in draining state to complete decommission", nil)
+	}
+
+	// Check no remaining instances
+	var count int64
+	if err = db.Model(&model.Instance{}).Where("hyper = ?", hostID).Count(&count).Error; err != nil {
+		return NewCLError(ErrSQLSyntaxError, "Failed to count instances", err)
+	}
+	if count > 0 {
+		return NewCLError(ErrHypervisorInvalidState, fmt.Sprintf("Hypervisor still has %d instances, cannot complete decommission", count), nil)
+	}
+
+	// Remove from SCI topology
+	if err = NodeRemove(hostID); err != nil {
+		logger.Errorf("Failed to remove node %d from SCI: %v", hostID, err)
+		return err
+	}
+
+	// Mark as decommissioned
+	if err = db.Model(hyper).Update("status", 3).Error; err != nil {
+		return NewCLError(ErrSQLSyntaxError, "Failed to update hypervisor status", err)
+	}
+
+	// Clean up resource record
+	db.Where("hostid = ?", hostID).Delete(&model.Resource{})
+
+	logger.Infof("Hypervisor %d decommissioned successfully", hostID)
+	return nil
+}
+
+func (v *HyperView) Deploy(c *macaron.Context, store session.Store) {
+	memberShip := GetMemberShip(c.Req.Context())
+	permit := memberShip.CheckPermission(model.Admin)
+	if !permit {
+		logger.Error("Not authorized for this operation")
+		c.Data["ErrorMsg"] = "Not authorized for this operation"
+		c.HTML(http.StatusBadRequest, "error")
+		return
+	}
+	ip := c.QueryTrim("ip")
+	user := c.QueryTrim("user")
+	password := c.QueryTrim("password")
+	hostname := c.QueryTrim("hostname")
+	networkDevice := c.QueryTrim("network_device")
+	vlanDevice := c.QueryTrim("vlan_device")
+	dnsServer := c.QueryTrim("dns_server")
+	domain := c.QueryTrim("domain")
+	zoneName := c.QueryTrim("zone_name")
+	virtType := c.QueryTrim("virt_type")
+
+	if ip == "" || user == "" || password == "" || hostname == "" {
+		c.Data["ErrorMsg"] = "ip, user, password, and hostname are required"
+		c.HTML(400, "error")
+		return
+	}
+	if networkDevice == "" {
+		networkDevice = "eth0"
+	}
+	if vlanDevice == "" {
+		vlanDevice = networkDevice
+	}
+	if dnsServer == "" {
+		dnsServer = "8.8.8.8"
+	}
+	if domain == "" {
+		domain = "example.com"
+	}
+	if zoneName == "" {
+		zoneName = "zone0"
+	}
+	if virtType == "" {
+		virtType = "kvm-x86_64"
+	}
+
+	hyper, err := hyperAdmin.Deploy(c.Req.Context(), ip, user, password, hostname, networkDevice, vlanDevice, dnsServer, domain, zoneName, virtType)
+	if err != nil {
+		c.Data["ErrorMsg"] = err.Error()
+		c.HTML(500, "error")
+		return
+	}
+	c.Data["Hyper"] = hyper
+	c.Redirect("/hypers")
+}
+
+func (v *HyperView) Decommission(c *macaron.Context, store session.Store) {
+	memberShip := GetMemberShip(c.Req.Context())
+	permit := memberShip.CheckPermission(model.Admin)
+	if !permit {
+		logger.Error("Not authorized for this operation")
+		c.Data["ErrorMsg"] = "Not authorized for this operation"
+		c.HTML(http.StatusBadRequest, "error")
+		return
+	}
+	hostID, err := strconv.Atoi(c.Params(":id"))
+	if err != nil || hostID < 0 {
+		c.Data["ErrorMsg"] = "Invalid host ID"
+		c.HTML(400, "error")
+		return
+	}
+	targetHyper := int32(c.QueryInt("target_hyper"))
+	if err := hyperAdmin.Decommission(c.Req.Context(), int32(hostID), targetHyper); err != nil {
+		c.Data["ErrorMsg"] = err.Error()
+		c.HTML(500, "error")
+		return
+	}
+	c.Redirect("/hypers")
+}
+
+func (v *HyperView) CompleteDecommission(c *macaron.Context, store session.Store) {
+	memberShip := GetMemberShip(c.Req.Context())
+	permit := memberShip.CheckPermission(model.Admin)
+	if !permit {
+		logger.Error("Not authorized for this operation")
+		c.Data["ErrorMsg"] = "Not authorized for this operation"
+		c.HTML(http.StatusBadRequest, "error")
+		return
+	}
+	hostID, err := strconv.Atoi(c.Params(":id"))
+	if err != nil || hostID < 0 {
+		c.Data["ErrorMsg"] = "Invalid host ID"
+		c.HTML(400, "error")
+		return
+	}
+	if err := hyperAdmin.CompleteDecommission(c.Req.Context(), int32(hostID)); err != nil {
+		c.Data["ErrorMsg"] = err.Error()
 		c.HTML(500, "error")
 		return
 	}

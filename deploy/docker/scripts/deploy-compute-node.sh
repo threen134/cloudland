@@ -5,6 +5,10 @@
 # ============================================================
 set -euo pipefail
 
+# 日志同时输出到终端和文件
+DEPLOY_LOG="/var/log/cloudland-compute-deploy-$(date '+%Y%m%d-%H%M%S').log"
+exec > >(tee -a "$DEPLOY_LOG") 2>&1
+
 if [[ $EUID -ne 0 ]]; then
    echo "错误: 本脚本必须以 root 权限运行"
    exit 1
@@ -55,6 +59,7 @@ ZONE_NAME="${ZONE_NAME:-zone0}"                       # 可用区名称
 VIRT_TYPE="${VIRT_TYPE:-kvm-x86_64}"                  # 虚拟化类型
 CLOUDLAND_DIR="${CLOUDLAND_DIR:-/opt/cloudland}"      # CloudLand 安装目录
 DEPLOY_DIR="$CLOUDLAND_DIR/deploy/docker"
+SCI_ENABLE_FAILOVER="${SCI_ENABLE_FAILOVER:-no}"      # HA 模式设为 yes
 
 # ============ 可选配置 ============
 WDS_ADDRESS="${WDS_ADDRESS:-}"                      # WDS 存储地址（留空则不使用）
@@ -173,7 +178,7 @@ apt-get install -y jq wget mkisofs network-manager net-tools python3-pip
 
 apt-get install -y qemu-system-x86 qemu-utils bridge-utils ipcalc ipset \
     keepalived iputils-arping libvirt-daemon libvirt-daemon-system \
-    libvirt-daemon-system-systemd libvirt-clients dnsmasq dnsmasq-utils \
+    libvirt-daemon-system-systemd libvirt-clients dnsmasq-base dnsmasq-utils \
     conntrack cloud-utils
 
 pip3 install pyparsing
@@ -302,6 +307,7 @@ SCI_LOG_ENABLE=yes
 SCI_LOG_DIRECTORY=$CLOUDLAND_DIR/log
 SCI_ENABLE_LISTENER=yes
 SCI_USE_EXTLAUNCHER=yes
+SCI_ENABLE_FAILOVER=$SCI_ENABLE_FAILOVER
 SCI_SEGMENT_SIZE=1048576
 LD_LIBRARY_PATH=\$LD_LIBRARY_PATH:/opt/sci/lib64
 SCI_CLIENT_ID=$SCI_CLIENT_ID
@@ -544,24 +550,20 @@ else
     warn "generate_north_south_metrics.sh 不存在，跳过 north-south-metrics"
 fi
 
-# ============ 15. 更新控制节点 host.list ============
-# 仅当检测到控制面容器运行在本机时执行
-if command -v docker &>/dev/null && docker ps --format '{{.Names}}' | grep -q 'cloudland-nginx'; then
-    log "15/15 - 检测到控制面在本机，更新 host.list 并重启容器"
-    HOST_LIST="$DEPLOY_DIR/volumes/host.list"
-    mkdir -p "$(dirname "$HOST_LIST")"
-    touch "$HOST_LIST"
-    echo "$HOSTNAME" >> "$HOST_LIST"
-    # 使用 awk 清洗：移除以 # 开头的行、空白行，并保持条目唯一但不打乱原有顺序
-    # 使用 cat 覆写而非 mv，保持 inode 不变，避免破坏 Docker bind mount
-    awk '!/^#/ && NF {if (!seen[$0]++) print}' "$HOST_LIST" > "${HOST_LIST}.tmp" && cat "${HOST_LIST}.tmp" > "$HOST_LIST" && rm -f "${HOST_LIST}.tmp"
-    
-    cd "$DEPLOY_DIR"
-    docker compose restart cloudland
-else
-    log "15/15 - 未检测到控制面容器，跳过 host.list 更新"
-    echo "提示：若此节点为新加入的计算节点，请手动将其 hostname ($HOSTNAME) 添加到控制节点的 $DEPLOY_DIR/volumes/host.list 文件中。"
-fi
+# ============ 15. 通过 API 向控制面注册计算节点 ============
+log "15/15 - 通过 API 向控制面注册计算节点"
+RPC_SERVER_PORT="${RPC_SERVER_PORT:-5006}"
+for i in 1 2 3; do
+    if curl -sf -X POST "http://${CONTROLLER_IP}:${RPC_SERVER_PORT}/internal/node/add" \
+        -H "Content-Type: application/json" \
+        -d "{\"hostname\": \"${HOSTNAME}\", \"id\": ${SCI_CLIENT_ID}, \"level\": 1}"; then
+        log "节点注册成功"
+        break
+    else
+        warn "节点注册失败 (尝试 $i/3)，5 秒后重试..."
+        sleep 5
+    fi
+done
 
 log "✅ 部署完成！"
 echo ""
