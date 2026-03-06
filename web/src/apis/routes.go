@@ -53,6 +53,12 @@ func Run() (err error) {
 // @BasePath /api/v1
 func Register() (r *gin.Engine) {
 	r = gin.Default()
+
+	// 从网关、代理获取真实的 ClientIP
+	r.ForwardedByClientIP = true
+	r.SetTrustedProxies(nil)
+
+	r.Use(RequestID())
 	r.Use(Logger())
 
 	r.POST("/api/v1/login", userAPI.LoginPost)

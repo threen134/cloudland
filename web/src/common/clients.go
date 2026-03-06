@@ -23,6 +23,8 @@ import (
 	"github.com/spf13/viper"
 )
 
+const RequestIDKey = "X-Request-ID"
+
 type ExecuteRequest struct {
 	Id      int32
 	Extra   int32
@@ -109,7 +111,15 @@ func HyperExecute(ctx context.Context, control, command string) (err error) {
 		return NewCLError(ErrExecuteOnHyperFailed, "Error creating request", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
-	requestID := uuid.New().String()
+
+	// 从 context 中获取 RequestID，如果没有则生成新的
+	var requestID string
+	if val := ctx.Value(RequestIDKey); val != nil {
+		requestID = val.(string)
+	} else {
+		requestID = uuid.New().String()
+	}
+
 	req.Header.Set("RequestID", requestID)
 	logger.Debugf("Requesting RPC remotePath: %s, RequestID: %s", remoteExecPath, requestID)
 

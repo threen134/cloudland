@@ -71,7 +71,23 @@ func Run() (err error) {
 }
 
 func New() (m *macaron.Macaron) {
-	m = macaron.Classic()
+	m = macaron.New()
+
+	// 从网关、代理获取真实的 ClientIP 并替换 RemoteAddr，使得后续的日志能打印真实的 IP
+	m.Use(func(c *macaron.Context) {
+		if realIP := c.Req.Header.Get("X-Real-IP"); realIP != "" {
+			c.Req.RemoteAddr = realIP
+		} else if fwd := c.Req.Header.Get("X-Forwarded-For"); fwd != "" {
+			ips := strings.Split(fwd, ",")
+			if len(ips) > 0 {
+				c.Req.RemoteAddr = strings.TrimSpace(ips[0])
+			}
+		}
+	})
+
+	m.Use(macaron.Logger())
+	m.Use(macaron.Recovery())
+	m.Use(macaron.Static("public"))
 
 	m.Use(i18n.I18n(i18n.Options{
 		Langs:       []string{"en-US", "zh-CN"},
