@@ -189,7 +189,7 @@ void Loger::print(int level, const char *srcFile, int srcLine,
   struct timespec ts;
   clock_gettime(CLOCK_REALTIME, &ts);
   struct tm tm_info;
-  localtime_r(&ts.tv_sec, &tm_info);
+  gmtime_r(&ts.tv_sec, &tm_info);
 
   pthread_mutex_lock(&lock);
 
@@ -226,7 +226,9 @@ void Loger::print(int level, const char *srcFile, int srcLine,
                  (unsigned long)pthread_self(), requestID, escapedMsg);
 
     if (useStdout) {
-      write(STDOUT_FILENO, jsonBuf, len);
+      // 用 strlen 而非 snprintf 返回值：snprintf 截断时返回"理想长度"，
+      // 直接传给 write 会导致越界读。
+      write(STDOUT_FILENO, jsonBuf, strlen(jsonBuf));
     } else {
       FILE *fp = fopen(logPath, "a");
       if (fp) {

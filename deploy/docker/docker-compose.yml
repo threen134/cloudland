@@ -65,6 +65,7 @@ services:
       RPC_REMOTE_ENDPOINT: "${INTERNAL_IP:-0.0.0.0}:5005"
       LD_LIBRARY_PATH: /opt/sci/lib64
       SCI_ENABLE_FAILOVER: ${SCI_ENABLE_FAILOVER:-no}
+      SCI_LOG_DIRECTORY: ""  # 空字符串触发 stdout JSON 模式
     volumes:
       - ../.ssh:/opt/cloudland/deploy/.ssh:ro
       - cland_log:/opt/cloudland/log
