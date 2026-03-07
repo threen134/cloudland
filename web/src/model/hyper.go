@@ -56,32 +56,29 @@ func init() {
 }
 
 const (
-	HYPER_INIT           = ""
-	HYPER_DISABLED       = "disabled"
-	HYPER_ACTIVE         = "active"
-	HYPER_DRAINING       = "draining"
-	HYPER_DECOMMISSIONED = "decommissioned"
-	HYPER_DEPLOYING      = "deploying"
-	HYPER_DEPLOY_FAILED  = "deploy_failed"
+	HYPER_INIT          = ""
+	HYPER_DISABLED      = "disabled"
+	HYPER_ACTIVE        = "active"
+	HYPER_MAINTAINING   = "maintaining"
+	HYPER_DEPLOYING     = "deploying"
+	HYPER_DEPLOY_FAILED = "deploy_failed"
 )
 
 var (
 	HyperStatusValues = map[int32]string{
 		0: HYPER_DISABLED,
 		1: HYPER_ACTIVE,
-		2: HYPER_DRAINING,
-		3: HYPER_DECOMMISSIONED,
+		2: HYPER_MAINTAINING,
 		4: HYPER_DEPLOYING,
 		5: HYPER_DEPLOY_FAILED,
 	}
 	HyperStatusNames = map[string]int32{
-		HYPER_INIT:           0,
-		HYPER_DISABLED:       0,
-		HYPER_ACTIVE:         1,
-		HYPER_DRAINING:       2,
-		HYPER_DECOMMISSIONED: 3,
-		HYPER_DEPLOYING:      4,
-		HYPER_DEPLOY_FAILED:  5,
+		HYPER_INIT:          0,
+		HYPER_DISABLED:      0,
+		HYPER_ACTIVE:        1,
+		HYPER_MAINTAINING:   2,
+		HYPER_DEPLOYING:     4,
+		HYPER_DEPLOY_FAILED: 5,
 	}
 )
 

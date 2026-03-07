@@ -60,8 +60,6 @@ type HyperPayload struct {
 
 type HyperDeployPayload struct {
 	IP            string `json:"ip" binding:"required"`
-	User          string `json:"user"`
-	Password      string `json:"password"`
 	Hostname      string `json:"hostname" binding:"required"`
 	NetworkDevice string `json:"network_device"`
 	VlanDevice    string `json:"vlan_device"`
@@ -71,8 +69,9 @@ type HyperDeployPayload struct {
 	VirtType      string `json:"virt_type"`
 }
 
-type HyperDecommissionPayload struct {
+type HyperMaintainPayload struct {
 	TargetHyper int32 `json:"target_hyper"`
+	Migrate     bool  `json:"migrate"`
 }
 
 type HyperPatchPayload struct {
@@ -279,7 +278,7 @@ func (v *HyperAPI) Deploy(c *gin.Context) {
 		payload.VirtType = "kvm-x86_64"
 	}
 
-	hyper, deployCmd, err := hyperAdmin.Deploy(c.Request.Context(), payload.IP, payload.User, payload.Password,
+	hyper, deployCmd, err := hyperAdmin.Deploy(c.Request.Context(), payload.IP,
 		payload.Hostname, payload.NetworkDevice, payload.VlanDevice, payload.DNSServer,
 		payload.Domain, payload.ZoneName, payload.VirtType)
 	if err != nil {
@@ -291,59 +290,61 @@ func (v *HyperAPI) Deploy(c *gin.Context) {
 	c.JSON(http.StatusOK, resp)
 }
 
-// @Summary decommission a hypervisor
-// @Description start decommissioning a hypervisor, migrating all instances
+// @Summary maintain a hypervisor
+// @Description start maintenance for a hypervisor, optionally migrating all instances
 // @tags Administration
 // @Accept  json
 // @Produce json
 // @Param hostid path string true "Hypervisor host ID"
-// @Param body body HyperDecommissionPayload false "Decommission options"
+// @Param body body HyperMaintainPayload false "Maintenance options"
 // @Success 200 {object} map[string]string
 // @Failure 400 {object} common.APIError "Bad request"
 // @Failure 401 {object} common.APIError "Not authorized"
 // @Failure 500 {object} common.APIError "Internal server error"
-// @Router /hypers/{hostid}/decommission [post]
-func (v *HyperAPI) Decommission(c *gin.Context) {
+// @Router /hypers/{hostid}/maintain [post]
+func (v *HyperAPI) Maintain(c *gin.Context) {
 	hostidStr := c.Param("hostid")
 	hostid, err := strconv.ParseInt(hostidStr, 10, 32)
 	if err != nil {
 		ErrorResponse(c, http.StatusBadRequest, "Invalid hostid parameter", err)
 		return
 	}
-	var payload HyperDecommissionPayload
+	var payload HyperMaintainPayload
 	if err := c.ShouldBindJSON(&payload); err != nil {
 		payload.TargetHyper = -1
+		payload.Migrate = true
 	}
-	if err := hyperAdmin.Decommission(c.Request.Context(), int32(hostid), payload.TargetHyper); err != nil {
-		ErrorResponse(c, http.StatusInternalServerError, "Failed to decommission hypervisor", err)
+	if err := hyperAdmin.Maintain(c.Request.Context(), int32(hostid), payload.Migrate, payload.TargetHyper); err != nil {
+		ErrorResponse(c, http.StatusInternalServerError, "Failed to maintain hypervisor", err)
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"status": "draining"})
+	c.JSON(http.StatusOK, gin.H{"status": "maintaining"})
 }
 
-// @Summary complete decommission of a hypervisor
-// @Description finalize decommission after all instances have been migrated
+// @Summary delete a hypervisor
+// @Description remove a hypervisor record from database
 // @tags Administration
 // @Accept  json
 // @Produce json
 // @Param hostid path string true "Hypervisor host ID"
-// @Success 200 {object} map[string]string
+// @Success 204 "No content"
 // @Failure 400 {object} common.APIError "Bad request"
 // @Failure 401 {object} common.APIError "Not authorized"
+// @Failure 404 {object} common.APIError "Not found"
 // @Failure 500 {object} common.APIError "Internal server error"
-// @Router /hypers/{hostid}/complete-decommission [post]
-func (v *HyperAPI) CompleteDecommission(c *gin.Context) {
+// @Router /hypers/{hostid} [delete]
+func (v *HyperAPI) Delete(c *gin.Context) {
 	hostidStr := c.Param("hostid")
 	hostid, err := strconv.ParseInt(hostidStr, 10, 32)
 	if err != nil {
 		ErrorResponse(c, http.StatusBadRequest, "Invalid hostid parameter", err)
 		return
 	}
-	if err := hyperAdmin.CompleteDecommission(c.Request.Context(), int32(hostid)); err != nil {
-		ErrorResponse(c, http.StatusInternalServerError, "Failed to complete decommission", err)
+	if err := hyperAdmin.Delete(c.Request.Context(), int32(hostid)); err != nil {
+		ErrorResponse(c, http.StatusInternalServerError, "Failed to delete hypervisor", err)
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"status": "decommissioned"})
+	c.Status(http.StatusNoContent)
 }
 
 // convertHyperToResponse converts a model.Hyper to HyperResponse
