@@ -29,9 +29,12 @@ import (
 )
 
 const (
-	pkgLogID      = "utils/log"
-	defaultFormat = "%{color}%{time:2006-01-02 15:04:05.000 MST} [%{module}] %{shortfile} %{shortfunc} -> %{level:.4s} %{id:03x}%{color:reset} %{message}"
-	defaultLevel  = logging.INFO
+	pkgLogID = "utils/log"
+	// 带颜色，适合终端直接查看（裸机文件日志）
+	defaultFormat = "%{color}%{time:2006-01-02 15:04:05.000 MST} [%{module}] %{shortfile} -> %{level:.4s} %{id:03x}%{color:reset} %{message}"
+	// 无颜色，适合 Docker stdout / 日志采集（Loki/Promtail）
+	plainFormat  = "%{time:2006-01-02T15:04:05.000Z07:00} [%{level:.4s}] [%{module}] %{shortfile} %{message}"
+	defaultLevel = logging.INFO
 )
 
 var (
@@ -79,7 +82,7 @@ func InitLogger(log_file string) {
 	// 配置了 log_dir 时才写入文件（裸机/非容器部署）
 	if log_dir == "" {
 		logger.Debugf("logging.log_dir not set, writing logs to stdout")
-		initBackend(SetFormat(format), os.Stdout)
+		initBackend(SetFormat(plainFormat), os.Stdout)
 	} else {
 		log_file = fmt.Sprintf("%s/%s", log_dir, log_file)
 		max_size := viper.GetInt("logging.max_size")

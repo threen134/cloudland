@@ -51,14 +51,12 @@ func Logger() gin.HandlerFunc {
 		c.Next()
 
 		// Stop timer
-		end := time.Now()
-		latency := end.Sub(start)
-
-		clientIP := c.ClientIP()
-		method := c.Request.Method
+		latency := time.Since(start)
 		statusCode := c.Writer.Status()
 		errorMessage := c.Errors.ByType(gin.ErrorTypePrivate).String()
 
+		clientIP := c.ClientIP()
+		method := c.Request.Method
 		if raw != "" {
 			path = path + "?" + raw
 		}
@@ -70,7 +68,10 @@ func Logger() gin.HandlerFunc {
 				requestID = str
 			}
 		}
-		logger.Infof("API REQUEST: %s %s | Status: %d | Latency: %v | IP: %s | RequestID: %s | Errors: %s",
-			method, path, statusCode, latency, clientIP, requestID, errorMessage)
+
+		// 使用简单的 Key-Value 或 JSON 格式，这里选择 JSON 字符串
+		logger.Infof("API REQUEST JSON: %s %s IP: %s RequestID: %s | %d %v | DATA: {\"method\":\"%s\",\"path\":\"%s\",\"status\":%d,\"latency_ms\":%.3f,\"ip\":\"%s\",\"request_id\":\"%s\",\"errors\":\"%s\"}",
+			method, path, clientIP, requestID, statusCode, latency,
+			method, path, statusCode, float64(latency.Nanoseconds())/1e6, clientIP, requestID, errorMessage)
 	}
 }
