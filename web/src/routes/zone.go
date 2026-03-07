@@ -79,6 +79,18 @@ func (a *ZoneAdmin) GetZoneByName(ctx context.Context, name string) (zone *model
 	return
 }
 
+func (a *ZoneAdmin) GetDefaultZone(ctx context.Context) (zone *model.Zone, err error) {
+	ctx, db := GetContextDB(ctx)
+	zone = &model.Zone{}
+	err = db.Where("\"default\" = ?", true).Take(zone).Error
+	if err != nil {
+		logger.Error("Failed to query default zone, %v", err)
+		err = NewCLError(ErrZoneNotFound, "Default zone not found in database. Please set a default zone or specify one.", err)
+		return
+	}
+	return
+}
+
 func (a *ZoneAdmin) Create(ctx context.Context, name string, isDefault bool, remark string) (zone *model.Zone, err error) {
 	logger.Debugf("Creating zone %s, default: %t", name, isDefault)
 	ctx, db, newTransaction := StartTransaction(ctx)

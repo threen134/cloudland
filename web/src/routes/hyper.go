@@ -364,10 +364,17 @@ func (a *HyperAdmin) Deploy(ctx context.Context, ip, hostname, networkDevice, vl
 		}
 
 		// Create hyper record in deploying state
-		zone, err := zoneAdmin.GetZoneByName(ctx, zoneName)
-		if err != nil {
-			logger.Warningf("Zone %s not found, using default zone", zoneName)
-			zone = &model.Zone{}
+		var zone *model.Zone
+		if zoneName != "" {
+			zone, err = zoneAdmin.GetZoneByName(ctx, zoneName)
+			if err != nil {
+				return nil, "", NewCLError(ErrZoneNotFound, fmt.Sprintf("Zone '%s' not found, please check your zone information", zoneName), err)
+			}
+		} else {
+			zone, err = zoneAdmin.GetDefaultZone(ctx)
+			if err != nil {
+				return nil, "", NewCLError(ErrZoneNotFound, "No zone specified and no default zone found in system", err)
+			}
 		}
 		hyper = &model.Hyper{
 			Hostid:   hostID,
@@ -528,7 +535,7 @@ func (v *HyperView) Deploy(c *macaron.Context, store session.Store) {
 		domain = "example.com"
 	}
 	if zoneName == "" {
-		zoneName = "zone0"
+		// zoneName = "zone0"
 	}
 	if virtType == "" {
 		virtType = "kvm-x86_64"

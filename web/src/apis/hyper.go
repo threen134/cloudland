@@ -256,7 +256,7 @@ func (v *HyperAPI) Deploy(c *gin.Context) {
 		payload.Domain = "example.com"
 	}
 	if payload.ZoneName == "" {
-		payload.ZoneName = "zone0"
+		// payload.ZoneName = "zone0"
 	}
 	if payload.VirtType == "" {
 		payload.VirtType = "kvm-x86_64"
