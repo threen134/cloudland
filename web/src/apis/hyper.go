@@ -24,27 +24,28 @@ var hyperAdmin = &routes.HyperAdmin{}
 type HyperAPI struct{}
 
 type HyperResponse struct {
-	Hostid       int32   `json:"hostid"`
-	Hostname     string  `json:"hostname"`
-	Status       int32   `json:"status"`
-	StatusName   string  `json:"status_name"`
-	Parentid     int32   `json:"parentid"`
-	Children     int32   `json:"children"`
-	HostIP       string  `json:"host_ip"`
-	RouteIP      string  `json:"route_ip"`
-	VirtType     string  `json:"virt_type"`
-	CpuOverRate  float32 `json:"cpu_over_rate"`
-	MemOverRate  float32 `json:"mem_over_rate"`
-	DiskOverRate float32 `json:"disk_over_rate"`
-	ZoneID       int64   `json:"zone_id"`
-	ZoneName     string  `json:"zone_name"`
-	Remark       string  `json:"remark"`
-	Cpu          int64   `json:"cpu"`
-	CpuTotal     int64   `json:"cpu_total"`
-	Memory       int64   `json:"memory"`
-	MemoryTotal  int64   `json:"memory_total"`
-	Disk         int64   `json:"disk"`
-	DiskTotal    int64   `json:"disk_total"`
+	Hostid        int32   `json:"hostid"`
+	Hostname      string  `json:"hostname"`
+	Status        int32   `json:"status"`
+	StatusName    string  `json:"status_name"`
+	Parentid      int32   `json:"parentid"`
+	Children      int32   `json:"children"`
+	HostIP        string  `json:"host_ip"`
+	RouteIP       string  `json:"route_ip"`
+	VirtType      string  `json:"virt_type"`
+	CpuOverRate   float32 `json:"cpu_over_rate"`
+	MemOverRate   float32 `json:"mem_over_rate"`
+	DiskOverRate  float32 `json:"disk_over_rate"`
+	ZoneID        int64   `json:"zone_id"`
+	ZoneName      string  `json:"zone_name"`
+	Remark        string  `json:"remark"`
+	Cpu           int64   `json:"cpu"`
+	CpuTotal      int64   `json:"cpu_total"`
+	Memory        int64   `json:"memory"`
+	MemoryTotal   int64   `json:"memory_total"`
+	Disk          int64   `json:"disk"`
+	DiskTotal     int64   `json:"disk_total"`
+	DeployCommand string  `json:"deploy_command,omitempty"`
 }
 
 type HyperListResponse struct {
@@ -59,8 +60,8 @@ type HyperPayload struct {
 
 type HyperDeployPayload struct {
 	IP            string `json:"ip" binding:"required"`
-	User          string `json:"user" binding:"required"`
-	Password      string `json:"password" binding:"required"`
+	User          string `json:"user"`
+	Password      string `json:"password"`
 	Hostname      string `json:"hostname" binding:"required"`
 	NetworkDevice string `json:"network_device"`
 	VlanDevice    string `json:"vlan_device"`
@@ -278,14 +279,16 @@ func (v *HyperAPI) Deploy(c *gin.Context) {
 		payload.VirtType = "kvm-x86_64"
 	}
 
-	hyper, err := hyperAdmin.Deploy(c.Request.Context(), payload.IP, payload.User, payload.Password,
+	hyper, deployCmd, err := hyperAdmin.Deploy(c.Request.Context(), payload.IP, payload.User, payload.Password,
 		payload.Hostname, payload.NetworkDevice, payload.VlanDevice, payload.DNSServer,
 		payload.Domain, payload.ZoneName, payload.VirtType)
 	if err != nil {
 		ErrorResponse(c, http.StatusInternalServerError, "Failed to deploy hypervisor", err)
 		return
 	}
-	c.JSON(http.StatusOK, convertHyperToResponse(hyper))
+	resp := convertHyperToResponse(hyper)
+	resp.DeployCommand = deployCmd
+	c.JSON(http.StatusOK, resp)
 }
 
 // @Summary decommission a hypervisor

@@ -22,6 +22,7 @@ import (
 	"net/http"
 	"os"
 	"regexp"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -45,6 +46,30 @@ const (
 
 	RequestIDKey = "X-Request-ID"
 )
+
+type JSONFormatter struct{}
+
+func (f *JSONFormatter) Format(calldepth int, rec *logging.Record, w io.Writer) error {
+	_, file, line, ok := runtime.Caller(calldepth)
+	fileStr := "unknown"
+	if ok {
+		// Get short file name
+		if idx := strings.LastIndex(file, "/"); idx >= 0 {
+			fileStr = fmt.Sprintf("%s:%d", file[idx+1:], line)
+		} else {
+			fileStr = fmt.Sprintf("%s:%d", file, line)
+		}
+	}
+	logData := map[string]interface{}{
+		"time":   rec.Time.Format("2006-01-02T15:04:05.000Z07:00"),
+		"level":  rec.Level.String(),
+		"module": rec.Module,
+		"file":   fileStr,
+		"msg":    rec.Message(),
+	}
+	encoder := json.NewEncoder(w)
+	return encoder.Encode(logData)
+}
 
 var (
 	logger *logging.Logger
@@ -90,8 +115,8 @@ func InitLogger(log_file string) {
 	// 当 log_dir 为空时，输出到 stdout（Docker 容器标准做法）
 	// 配置了 log_dir 时才写入文件（裸机/非容器部署）
 	if log_dir == "" {
-		logger.Debugf("logging.log_dir not set, writing logs to stdout")
-		initBackend(SetFormat(plainFormat), os.Stdout)
+		logger.Debugf("logging.log_dir not set, writing logs to stdout in JSON format")
+		initBackend(&JSONFormatter{}, os.Stdout)
 	} else {
 		log_file = fmt.Sprintf("%s/%s", log_dir, log_file)
 		max_size := viper.GetInt("logging.max_size")

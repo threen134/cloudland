@@ -11,7 +11,10 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"os"
 	"strconv"
+
+	"web/src/utils/log"
 
 	. "web/src/common"
 	"web/src/dbs"
@@ -304,65 +307,91 @@ func (a *HyperAdmin) AllocateHostID(ctx context.Context) (hostID int32, err erro
 	return *maxID.MaxID + 1, nil
 }
 
-func (a *HyperAdmin) Deploy(ctx context.Context, ip, user, password, hostname, networkDevice, vlanDevice, dnsServer, domain, zoneName, virtType string) (hyper *model.Hyper, err error) {
+func (a *HyperAdmin) Deploy(ctx context.Context, ip, user, password, hostname, networkDevice, vlanDevice, dnsServer, domain, zoneName, virtType string) (hyper *model.Hyper, deployCmd string, err error) {
 	memberShip := GetMemberShip(ctx)
 	permit := memberShip.CheckPermission(model.Admin)
 	if !permit {
-		return nil, NewCLError(ErrPermissionDenied, "Not authorized for this operation", nil)
+		return nil, "", NewCLError(ErrPermissionDenied, "Not authorized for this operation", nil)
 	}
 	ctx, db := GetContextDB(ctx)
 
 	// Check if hostname already exists
+	var hostID int32
 	existing := &model.Hyper{}
 	if err = db.Where("hostname = ?", hostname).Take(existing).Error; err == nil {
-		return nil, NewCLError(ErrHypervisorInvalidState, "Hypervisor with this hostname already exists", nil)
+		// If exists, only allow retry if status is deploying or failed
+		if existing.Status == 4 || existing.Status == 5 { // HYPER_DEPLOYING or HYPER_DEPLOY_FAILED
+			logger.Infof("Retrying deployment for existing hypervisor: %s (ID: %d)", hostname, existing.Hostid)
+			hostID = existing.Hostid
+			hyper = existing
+			hyper.HostIP = ip
+			hyper.VirtType = virtType
+			hyper.Status = 4 // Reset to deploying
+			if err = db.Save(hyper).Error; err != nil {
+				return nil, "", NewCLError(ErrSQLSyntaxError, "Failed to update existing hypervisor record", err)
+			}
+		} else {
+			return nil, "", NewCLError(ErrHypervisorInvalidState, "Hypervisor with this hostname already exists and is not in a retryable state", nil)
+		}
+	} else {
+		// Allocate unique host ID for new hypervisor
+		hostID, err = a.AllocateHostID(ctx)
+		if err != nil {
+			return nil, "", err
+		}
+
+		// Create hyper record in deploying state
+		zone, err := zoneAdmin.GetZoneByName(ctx, zoneName)
+		if err != nil {
+			logger.Warningf("Zone %s not found, using default zone", zoneName)
+			zone = &model.Zone{}
+		}
+		hyper = &model.Hyper{
+			Hostid:   hostID,
+			Hostname: hostname,
+			HostIP:   ip,
+			Status:   4, // HYPER_DEPLOYING
+			VirtType: virtType,
+			ZoneID:   zone.ID,
+			Zone:     zone,
+		}
+		if err = db.Create(hyper).Error; err != nil {
+			return nil, "", NewCLError(ErrSQLSyntaxError, "Failed to create hypervisor record", err)
+		}
 	}
 
-	// Allocate unique host ID
-	hostID, err := a.AllocateHostID(ctx)
-	if err != nil {
-		return nil, err
+	// Construct deploy command
+	controllerIP := os.Getenv("MANAGEMENT_VIP")
+	if controllerIP == "" {
+		controllerIP = os.Getenv("PUBLIC_IP")
+	}
+	if controllerIP == "" {
+		controllerIP = "127.0.0.1"
+	}
+	deployScriptURL := os.Getenv("DEPLOY_SCRIPT_URL")
+	if deployScriptURL == "" {
+		deployScriptURL = "https://raw.githubusercontent.com/threen134/cloudland/staging/deploy/docker/scripts/deploy-compute-node.sh"
 	}
 
-	// Create hyper record in deploying state
-	zone, err := zoneAdmin.GetZoneByName(ctx, zoneName)
-	if err != nil {
-		logger.Warningf("Zone %s not found, using default zone", zoneName)
-		zone = &model.Zone{}
-	}
-	hyper = &model.Hyper{
-		Hostid:   hostID,
-		Hostname: hostname,
-		HostIP:   ip,
-		Status:   4, // HYPER_DEPLOYING
-		VirtType: virtType,
-		ZoneID:   zone.ID,
-		Zone:     zone,
-	}
-	if err = db.Create(hyper).Error; err != nil {
-		return nil, NewCLError(ErrSQLSyntaxError, "Failed to create hypervisor record", err)
-	}
+	deployCmd = fmt.Sprintf(
+		"export CONTROLLER_IP=%s HOSTNAME=%s NETWORK_DEVICE=%s VLAN_DEVICE=%s DNS_SERVER=%s SCI_CLIENT_ID=%d DOMAIN=%s ZONE_NAME=%s VIRT_TYPE=%s; "+
+			"curl -sSL %s | sudo -E bash",
+		controllerIP, hostname, networkDevice, vlanDevice, dnsServer, hostID, domain, zoneName, virtType,
+		deployScriptURL,
+	)
 
 	// Run deployment in background
+	requestID, _ := ctx.Value(log.RequestIDKey).(string)
 	go func() {
-		deployCmd := fmt.Sprintf(
-			"curl -sf http://%s/deploy-compute-node.sh | bash -s -- "+
-				"--controller-ip %s --hostname %s --network-device %s --vlan-device %s "+
-				"--dns-server %s --sci-client-id %d --domain %s --zone-name %s --virt-type %s",
-			ip, ip, hostname, networkDevice, vlanDevice,
-			dnsServer, hostID, domain, zoneName, virtType,
-		)
-		_ = deployCmd
+		if user == "" || password == "" {
+			logger.Infof("No SSH credentials provided for %s (RequestID: %s). Waiting for manual deployment with command: %s", hostname, requestID, deployCmd)
+			return
+		}
 
-		// SSH to target and run deploy script
-		command := fmt.Sprintf(
-			"CONTROLLER_IP=%s HOSTNAME=%s NETWORK_DEVICE=%s VLAN_DEVICE=%s DNS_SERVER=%s SCI_CLIENT_ID=%d DOMAIN=%s ZONE_NAME=%s VIRT_TYPE=%s "+
-				"bash /opt/cloudland/scripts/deploy-compute-node.sh",
-			ip, hostname, networkDevice, vlanDevice, dnsServer, hostID, domain, zoneName, virtType,
-		)
-		output, sshErr := SSHExec(ip, user, password, command)
+		// SSH to target and run deploy script via curl
+		output, sshErr := SSHExec(ip, user, password, deployCmd)
 		if sshErr != nil {
-			logger.Errorf("Deploy failed for %s: %v, output: %s", hostname, sshErr, output)
+			logger.Errorf("Deploy failed for %s (RequestID: %s): %v, output: %s", hostname, requestID, sshErr, output)
 			db.Model(&model.Hyper{}).Where("hostid = ?", hostID).Update("status", 5) // HYPER_DEPLOY_FAILED
 			return
 		}
@@ -370,17 +399,17 @@ func (a *HyperAdmin) Deploy(ctx context.Context, ip, user, password, hostname, n
 		// Register node with SCI
 		_, addErr := NodeAdd(hostname, hostID)
 		if addErr != nil {
-			logger.Errorf("Failed to register node %s with SCI: %v", hostname, addErr)
+			logger.Errorf("Failed to register node %s with SCI (RequestID: %s): %v", hostname, requestID, addErr)
 			db.Model(&model.Hyper{}).Where("hostid = ?", hostID).Update("status", 5)
 			return
 		}
 
 		// Mark as active
 		db.Model(&model.Hyper{}).Where("hostid = ?", hostID).Update("status", 1) // HYPER_ACTIVE
-		logger.Infof("Successfully deployed and registered node %s (ID %d)", hostname, hostID)
+		logger.Infof("Successfully deployed and registered node %s (ID %d, RequestID: %s)", hostname, hostID, requestID)
 	}()
 
-	return hyper, nil
+	return hyper, deployCmd, nil
 }
 
 func (a *HyperAdmin) Decommission(ctx context.Context, hostID int32, targetHyper int32) (err error) {
@@ -509,7 +538,7 @@ func (v *HyperView) Deploy(c *macaron.Context, store session.Store) {
 		virtType = "kvm-x86_64"
 	}
 
-	hyper, err := hyperAdmin.Deploy(c.Req.Context(), ip, user, password, hostname, networkDevice, vlanDevice, dnsServer, domain, zoneName, virtType)
+	hyper, _, err := hyperAdmin.Deploy(c.Req.Context(), ip, user, password, hostname, networkDevice, vlanDevice, dnsServer, domain, zoneName, virtType)
 	if err != nil {
 		c.Data["ErrorMsg"] = err.Error()
 		c.HTML(500, "error")
