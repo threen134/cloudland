@@ -39,8 +39,8 @@
                                 {{ range .Hypers }}
                                 {{ $HyperID := .ID }}
 		                        <tr>
-			                        <td><a href="{{$Link}}/edit?host_id={{.Hostid}}">{{.Hostid}}</a></td>
-			                        <td><a href="{{$Link}}/edit?host_id={{.Hostid}}">{{.Hostname}}</a></td>
+			                        <td><a href="{{$Link}}/{{.UUID}}/edit">{{.Hostid}}</a></td>
+			                        <td><a href="{{$Link}}/{{.UUID}}/edit">{{.Hostname}}</a></td>
 			                        <td>{{.Parentid}}</td>
 			                        <td>{{.CpuModel}}</td>
 			                        <td>{{.HostIP}}</td>
@@ -53,9 +53,9 @@
 			                        <td>{{.Remark}}</td>
 			                        <td>
 										{{ if eq .Status 1 }}
-			                        <div class="ui green basic button disable-hyper-button" data-url="{{$Link}}/set_status?host_id={{.Hostid}}&status=0" data-hostname="{{.Hostname}}"><a href="{{$Link}}/set_status?host_id={{.Hostid}}&status=0">{{$.i18n.Tr "Disable"}}</a></div>
+			                        <div class="ui green basic button disable-hyper-button" data-url="{{$Link}}/{{.UUID}}/set_status?status=0" data-hostname="{{.Hostname}}"><a href="{{$Link}}/{{.UUID}}/set_status?status=0">{{$.i18n.Tr "Disable"}}</a></div>
 										{{ else }}
-			                        <div class="ui red basic button enable-hyper-button" data-url="{{$Link}}/set_status?host_id={{.Hostid}}&status=1" data-hostname="{{.Hostname}}"><a href="{{$Link}}/set_status?host_id={{.Hostid}}&status=1">{{$.i18n.Tr "Enable"}}</a></div>
+			                        <div class="ui red basic button enable-hyper-button" data-url="{{$Link}}/{{.UUID}}/set_status?status=1" data-hostname="{{.Hostname}}"><a href="{{$Link}}/{{.UUID}}/set_status?status=1">{{$.i18n.Tr "Enable"}}</a></div>
 										{{ end }}
 			                        </td>
 		                        </tr>

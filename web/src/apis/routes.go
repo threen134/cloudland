@@ -77,10 +77,10 @@ func Register() (r *gin.Engine) {
 
 		authGroup.GET("/api/v1/hypers", hyperAPI.List)
 		authGroup.POST("/api/v1/hypers", hyperAPI.Deploy)
-		authGroup.GET("/api/v1/hypers/:hostid", hyperAPI.Get)
-		authGroup.DELETE("/api/v1/hypers/:hostid", hyperAPI.Delete)
-		authGroup.PATCH("/api/v1/hypers/:hostid", hyperAPI.Patch)
-		authGroup.POST("/api/v1/hypers/:hostid/maintain", hyperAPI.Maintain)
+		authGroup.GET("/api/v1/hypers/:uuid", hyperAPI.Get)
+		authGroup.DELETE("/api/v1/hypers/:uuid", hyperAPI.Delete)
+		authGroup.PATCH("/api/v1/hypers/:uuid", hyperAPI.Patch)
+		authGroup.POST("/api/v1/hypers/:uuid/maintain", hyperAPI.Maintain)
 
 		authGroup.GET("/api/v1/migrations", migrationAPI.List)
 		authGroup.POST("/api/v1/migrations", migrationAPI.Create)

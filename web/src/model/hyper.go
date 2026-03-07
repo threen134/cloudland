@@ -18,6 +18,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
+
 	"web/src/dbs"
 )
 
@@ -25,6 +27,7 @@ type Hyper struct {
 	ID           int64 `gorm:"primary_key"`
 	CreatedAt    time.Time
 	UpdatedAt    time.Time
+	UUID         string `gorm:"type:varchar(64);index"`
 	Hostid       int32  `gorm:"unique_index"`
 	Hostname     string `gorm:"type:varchar(64)"`
 	Status       int32
@@ -42,6 +45,14 @@ type Hyper struct {
 	Zone         *Zone     `gorm:"foreignkey:ZoneID"`
 	Resource     *Resource `gorm:"foreignkey:Hostid;AssociationForeignKey:Hostid"`
 	Remark       string    `gorm:"type:varchar(512);default:''"`
+}
+
+func (hyper *Hyper) BeforeCreate() (err error) {
+	if hyper.UUID == "" {
+		hyper.UUID = uuid.New().String()
+		logger.Debugf("Create a new hypervisor with uuid: %s", hyper.UUID)
+	}
+	return
 }
 
 func (hyper *Hyper) GetStatus() string {

@@ -24,6 +24,8 @@ var hyperAdmin = &routes.HyperAdmin{}
 type HyperAPI struct{}
 
 type HyperResponse struct {
+	ID            int64   `json:"id"`
+	UUID          string  `json:"uuid"`
 	Hostid        int32   `json:"hostid"`
 	Hostname      string  `json:"hostname"`
 	Status        int32   `json:"status"`
@@ -88,25 +90,14 @@ type HyperPatchPayload struct {
 // @tags Administration
 // @Accept  json
 // @Produce json
-// @Param hostid path string true "Hypervisor host ID"
-// @Success 200 {object} HyperResponse
-// @Failure 400 {object} common.APIError "Bad request"
-// @Failure 401 {object} common.APIError "Not authorized"
-// @Failure 404 {object} common.APIError "Not found"
-// @Router /hypers/{hostid} [get]
+// @Router /hypers/{uuid} [get]
 func (v *HyperAPI) Get(c *gin.Context) {
-	hostidStr := c.Param("hostid")
-	hostid, err := strconv.ParseInt(hostidStr, 10, 32)
-	if err != nil {
-		logger.Errorf("Invalid hostid parameter for Get: %s, %+v", hostidStr, err)
-		ErrorResponse(c, http.StatusBadRequest, "Invalid hostid parameter", err)
-		return
-	}
-	logger.Infof("API: Get hypervisor with hostid=%d", hostid)
+	uuid := c.Param("uuid")
+	logger.Infof("API: Get hypervisor with uuid=%s", uuid)
 
-	hyper, err := hyperAdmin.GetHyperByHostid(c.Request.Context(), int32(hostid))
+	hyper, err := hyperAdmin.GetHyperByUUID(c.Request.Context(), uuid)
 	if err != nil {
-		ErrorResponse(c, http.StatusBadRequest, "IHypervisor not found", err)
+		ErrorResponse(c, http.StatusNotFound, "Hypervisor not found", err)
 		return
 	}
 
@@ -177,23 +168,9 @@ func (v *HyperAPI) List(c *gin.Context) {
 // @tags Administration
 // @Accept  json
 // @Produce json
-// @Param hostid path string true "Hypervisor host ID"
-// @Param body body HyperPatchPayload true "Hypervisor update payload"
-// @Success 200 {object} HyperResponse
-// @Failure 400 {object} common.APIError "Bad request"
-// @Failure 401 {object} common.APIError "Not authorized"
-// @Failure 404 {object} common.APIError "Not found"
-// @Failure 500 {object} common.APIError "Internal server error"
-// @Router /hypers/{hostid} [patch]
+// @Router /hypers/{uuid} [patch]
 func (v *HyperAPI) Patch(c *gin.Context) {
-	hostidStr := c.Param("hostid")
-	hostid64, err := strconv.ParseInt(hostidStr, 10, 32)
-	if err != nil {
-		ErrorResponse(c, http.StatusBadRequest, "Invalid hostid parameter", err)
-		return
-	}
-
-	hostid := int32(hostid64)
+	uuid := c.Param("uuid")
 
 	var payload HyperPatchPayload
 	if err := c.ShouldBindJSON(&payload); err != nil {
@@ -201,12 +178,12 @@ func (v *HyperAPI) Patch(c *gin.Context) {
 		ErrorResponse(c, http.StatusBadRequest, "Invalid payload", err)
 		return
 	}
-	logger.Infof("Patching hypervisor %d with payload: %+v", hostid, payload)
+	logger.Infof("Patching hypervisor %s with payload: %+v", uuid, payload)
 
 	// Get existing hypervisor
-	hyper, err := hyperAdmin.GetHyperByHostid(c.Request.Context(), hostid)
+	hyper, err := hyperAdmin.GetHyperByUUID(c.Request.Context(), uuid)
 	if err != nil {
-		ErrorResponse(c, http.StatusBadRequest, "IHypervisor not found", err)
+		ErrorResponse(c, http.StatusNotFound, "Hypervisor not found", err)
 		return
 	}
 
@@ -237,7 +214,7 @@ func (v *HyperAPI) Patch(c *gin.Context) {
 	}
 
 	// Get updated hypervisor with Zone preloaded
-	updatedHyper, err := hyperAdmin.GetHyperByHostid(c.Request.Context(), hostid)
+	updatedHyper, err := hyperAdmin.GetHyperByUUID(c.Request.Context(), uuid)
 	if err != nil {
 		ErrorResponse(c, http.StatusInternalServerError, "Internal error", err)
 		return
@@ -300,58 +277,57 @@ func (v *HyperAPI) Deploy(c *gin.Context) {
 // @Summary maintain a hypervisor
 // @Description start maintenance for a hypervisor, optionally migrating all instances
 // @tags Administration
-// @Accept  json
+// @Accept json
 // @Produce json
-// @Param hostid path string true "Hypervisor host ID"
+// @Param uuid path string true "Hypervisor UUID"
 // @Param body body HyperMaintainPayload false "Maintenance options"
 // @Success 200 {object} map[string]string
 // @Failure 400 {object} common.APIError "Bad request"
 // @Failure 401 {object} common.APIError "Not authorized"
 // @Failure 500 {object} common.APIError "Internal server error"
-// @Router /hypers/{hostid}/maintain [post]
+// @Router /hypers/{uuid}/maintain [post]
 func (v *HyperAPI) Maintain(c *gin.Context) {
-	hostidStr := c.Param("hostid")
-	hostid, err := strconv.ParseInt(hostidStr, 10, 32)
-	if err != nil {
-		ErrorResponse(c, http.StatusBadRequest, "Invalid hostid parameter", err)
-		return
-	}
+	uuid := c.Param("uuid")
 	var payload HyperMaintainPayload
 	if err := c.ShouldBindJSON(&payload); err != nil {
 		logger.Warningf("Failed to bind JSON for Hyper Maintain, using default (migrate=true): %+v", err)
 		payload.TargetHyper = -1
 		payload.Migrate = true
 	}
-	logger.Infof("Maintenance requested via API for hypervisor %d: migrate=%v, target=%d", hostid, payload.Migrate, payload.TargetHyper)
-	if err := hyperAdmin.Maintain(c.Request.Context(), int32(hostid), payload.Migrate, payload.TargetHyper); err != nil {
+	logger.Infof("Maintenance requested via API for hypervisor %s: migrate=%v, target=%d", uuid, payload.Migrate, payload.TargetHyper)
+	hyper, err := hyperAdmin.GetHyperByUUID(c.Request.Context(), uuid)
+	if err != nil {
+		ErrorResponse(c, http.StatusNotFound, "Hypervisor not found", err)
+		return
+	}
+	if err := hyperAdmin.Maintain(c.Request.Context(), hyper.Hostid, payload.Migrate, payload.TargetHyper); err != nil {
 		ErrorResponse(c, http.StatusInternalServerError, "Failed to maintain hypervisor", err)
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"status": "maintaining"})
+	c.JSON(http.StatusOK, map[string]string{"result": "success"})
 }
 
 // @Summary delete a hypervisor
 // @Description remove a hypervisor record from database
 // @tags Administration
-// @Accept  json
+// @Accept json
 // @Produce json
-// @Param hostid path string true "Hypervisor host ID"
+// @Param uuid path string true "Hypervisor UUID"
 // @Success 204 "No content"
 // @Failure 400 {object} common.APIError "Bad request"
 // @Failure 401 {object} common.APIError "Not authorized"
 // @Failure 404 {object} common.APIError "Not found"
 // @Failure 500 {object} common.APIError "Internal server error"
-// @Router /hypers/{hostid} [delete]
+// @Router /hypers/{uuid} [delete]
 func (v *HyperAPI) Delete(c *gin.Context) {
-	hostidStr := c.Param("hostid")
-	hostid, err := strconv.ParseInt(hostidStr, 10, 32)
+	uuid := c.Param("uuid")
+	logger.Infof("Deletion requested via API for hypervisor: uuid=%s", uuid)
+	hyper, err := hyperAdmin.GetHyperByUUID(c.Request.Context(), uuid)
 	if err != nil {
-		logger.Errorf("Invalid hostid parameter for Delete: %s, %+v", hostidStr, err)
-		ErrorResponse(c, http.StatusBadRequest, "Invalid hostid parameter", err)
+		ErrorResponse(c, http.StatusNotFound, "Hypervisor not found", err)
 		return
 	}
-	logger.Infof("Deletion requested via API for hypervisor: hostid=%d", hostid)
-	if err := hyperAdmin.Delete(c.Request.Context(), int32(hostid)); err != nil {
+	if err := hyperAdmin.Delete(c.Request.Context(), hyper.Hostid); err != nil {
 		ErrorResponse(c, http.StatusInternalServerError, "Failed to delete hypervisor", err)
 		return
 	}
@@ -361,6 +337,8 @@ func (v *HyperAPI) Delete(c *gin.Context) {
 // convertHyperToResponse converts a model.Hyper to HyperResponse
 func convertHyperToResponse(hyper *model.Hyper) *HyperResponse {
 	resp := &HyperResponse{
+		ID:           hyper.ID,
+		UUID:         hyper.UUID,
 		Hostid:       hyper.Hostid,
 		Hostname:     hyper.Hostname,
 		Status:       hyper.Status,

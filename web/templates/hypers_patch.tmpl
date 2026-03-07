@@ -2,7 +2,7 @@
 <div class="user signup">
 	<div class="ui middle very relaxed page grid">
         <div class="column" >
-            <form class="ui form" action="{{.Link}}" method="post" onsubmit="javascript:return submitForm(this);">
+            <form class="ui form" action="/hypers/{{.Hyper.UUID}}/edit" method="post" onsubmit="javascript:return submitForm(this);">
                 <h3 class="ui top attached header">
                     {{.i18n.Tr "Update Hypervisor"}}
                 </h3>
@@ -50,7 +50,7 @@
                         <label for="remark">{{.i18n.Tr "Remark"}}</label>
                         <textarea id="remark" name="remark" rows="3" placeholder="{{.i18n.Tr "Optional hypervisor description or notes"}}">{{ .Hyper.Remark }}</textarea>
                     </div>
-                    <input type="hidden" name="host_id" value="{{ .Hyper.Hostid }}">
+                    <input type="hidden" name="uuid" value="{{ .Hyper.UUID }}">
                     <div class="inline field">
                         <label></label>
                         <button class="ui green button" type="submit" id="update-hypervisor-btn">{{.i18n.Tr "Update Hypervisor"}}</button>

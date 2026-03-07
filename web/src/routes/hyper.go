@@ -12,7 +12,6 @@ import (
 	"fmt"
 	"net/http"
 	"os"
-	"strconv"
 
 	. "web/src/common"
 	"web/src/dbs"
@@ -55,9 +54,25 @@ func (a *HyperAdmin) List(ctx context.Context, offset, limit int64, order, query
 	db = db.Offset(0).Limit(-1)
 	for _, hyper := range hypers {
 		hyper.Resource = &model.Resource{}
-		db.Where("hostid = ?", hyper.Hostid).Take(hyper.Resource)
+		if err = db.Where("hostid = ?", hyper.Hostid).Take(hyper.Resource).Error; err != nil {
+			logger.Warningf("Hypervisor %s (hostid: %d) has no associated resource record: %+v", hyper.Hostname, hyper.Hostid, err)
+		}
 	}
 
+	return
+}
+
+func (a *HyperAdmin) GetHyperByUUID(ctx context.Context, uuid string) (hyper *model.Hyper, err error) {
+	_, db := GetContextDB(ctx)
+	hyper = &model.Hyper{}
+	if err = db.Preload("Zone").Where("uuid = ?", uuid).Take(hyper).Error; err != nil {
+		logger.Error("Failed to query hypervisor by UUID", err)
+		return nil, NewCLError(ErrHypervisorNotFound, "Specified hypervisor not found", err)
+	}
+	hyper.Resource = &model.Resource{}
+	if err = db.Where("hostid = ?", hyper.Hostid).Take(hyper.Resource).Error; err != nil {
+		logger.Warningf("Hypervisor %s (hostid: %d, uuid: %s) has no associated resource record: %+v", hyper.Hostname, hyper.Hostid, hyper.UUID, err)
+	}
 	return
 }
 
@@ -87,7 +102,8 @@ func (a *HyperAdmin) Update(ctx context.Context, hyper *model.Hyper) (err error)
 		return
 	}
 	ctx, db := GetContextDB(ctx)
-	hyperInDB := &model.Hyper{ID: hyper.ID}
+	hyperInDB := &model.Hyper{}
+	hyperInDB.ID = hyper.ID
 	if err = db.Preload("Zone").Take(hyperInDB).Error; err != nil {
 		logger.Error("Specified hypervisor not found", err)
 		return NewCLError(ErrHypervisorNotFound, "Specified hypervisor not found", err)
@@ -167,9 +183,9 @@ func (a *HyperAdmin) GetHyperByHostid(ctx context.Context, hostid int32) (hyper 
 
 	// Load resource information
 	hyper.Resource = &model.Resource{}
-	err = db.Where("hostid = ?", hyper.Hostid).Take(hyper.Resource).Error
-	if err != nil {
-		logger.Warning("Failed to query hypervisor resource, setting defaults", err)
+	if err = db.Where("hostid = ?", hyper.Hostid).Take(hyper.Resource).Error; err != nil {
+		logger.Warningf("Hypervisor %s (hostid: %d) has no associated resource record: %+v", hyper.Hostname, hyper.Hostid, err)
+		// If no resource record, initialize with defaults
 		hyper.Resource = &model.Resource{
 			Hostid: hyper.Hostid,
 		}
@@ -243,15 +259,10 @@ func (v *HyperView) Edit(c *macaron.Context, store session.Store) {
 		c.HTML(http.StatusBadRequest, "error")
 		return
 	}
-	id := c.QueryInt64("host_id")
-	if id < 0 {
-		c.Data["ErrorMsg"] = fmt.Sprintf("Invalid host ID %d", id)
-		c.HTML(400, "error")
-		return
-	}
-	hyper, err := hyperAdmin.GetHyperByHostid(c.Req.Context(), int32(id))
+	uuid := c.Params(":uuid")
+	hyper, err := hyperAdmin.GetHyperByUUID(c.Req.Context(), uuid)
 	if err != nil {
-		c.Data["ErrorMsg"] = fmt.Sprintf("Specified hypervisor (%d) not found, %+v", id, err)
+		c.Data["ErrorMsg"] = fmt.Sprintf("Specified hypervisor (%s) not found, %+v", uuid, err)
 		c.HTML(500, "error")
 		return
 	}
@@ -279,15 +290,20 @@ func (v *HyperView) SetHyperStatus(c *macaron.Context, store session.Store) {
 		c.HTML(http.StatusBadRequest, "error")
 		return
 	}
-	id := c.QueryInt64("host_id")
+	uuid := c.Params(":uuid")
 	status := c.QueryInt("status")
-	if id < 0 || (status != 0 && status != 1) {
-		c.Data["ErrorMsg"] = "Invalid host ID or status"
+	if uuid == "" || (status != 0 && status != 1) {
+		c.Data["ErrorMsg"] = "Invalid UUID or status"
 		c.HTML(400, "error")
 		return
 	}
-	err := hyperAdmin.SetStatus(c.Req.Context(), int32(id), int32(status))
+	hyper, err := hyperAdmin.GetHyperByUUID(c.Req.Context(), uuid)
 	if err != nil {
+		c.Data["ErrorMsg"] = fmt.Sprintf("Specified hypervisor (%s) not found, %+v", uuid, err)
+		c.HTML(500, "error")
+		return
+	}
+	if err := hyperAdmin.SetStatus(c.Req.Context(), hyper.Hostid, int32(status)); err != nil {
 		c.Data["ErrorMsg"] = fmt.Sprintf("Failed to set hypervisor status: %v", err)
 		c.HTML(500, "error")
 		return
@@ -297,14 +313,21 @@ func (v *HyperView) SetHyperStatus(c *macaron.Context, store session.Store) {
 
 func (a *HyperAdmin) AllocateHostID(ctx context.Context) (hostID int32, err error) {
 	_, db := GetContextDB(ctx)
-	var maxID struct{ MaxID *int32 }
-	if err = db.Model(&model.Hyper{}).Select("MAX(hostid) as max_id").Scan(&maxID).Error; err != nil {
-		return -1, NewCLError(ErrSQLSyntaxError, "Failed to query max hostid", err)
+	var maxID int32
+	if err = db.Model(&model.Hyper{}).Select("max(hostid)").Row().Scan(&maxID); err != nil {
+		// If no records exist, Row().Scan might return an error or maxID will be 0.
+		// We ensure it starts from 1 if it's currently unset/0.
+		logger.Info("No existing hypervisors found, starting hostID from 1")
+		return 1, nil // Start from 1 if no records or error
 	}
-	if maxID.MaxID == nil {
-		return 0, nil
+	// If maxID is 0 (e.g., table is empty and max() returns 0), start from 1.
+	// Otherwise, increment the maxID found.
+	if maxID < 1 {
+		hostID = 1
+	} else {
+		hostID = maxID + 1
 	}
-	return *maxID.MaxID + 1, nil
+	return hostID, nil
 }
 
 func (a *HyperAdmin) Deploy(ctx context.Context, ip, hostname, networkDevice, vlanDevice, dnsServer, domain, zoneName, virtType string) (hyper *model.Hyper, deployCmd string, err error) {
@@ -531,15 +554,21 @@ func (v *HyperView) Maintain(c *macaron.Context, store session.Store) {
 		c.HTML(http.StatusBadRequest, "error")
 		return
 	}
-	hostID, err := strconv.Atoi(c.Params(":id"))
-	if err != nil || hostID < 0 {
-		c.Data["ErrorMsg"] = "Invalid host ID"
+	uuid := c.Params(":uuid")
+	if uuid == "" {
+		c.Data["ErrorMsg"] = "Invalid UUID"
 		c.HTML(400, "error")
 		return
 	}
 	migrate := c.QueryBool("migrate")
 	targetHyper := int32(c.QueryInt("target_hyper"))
-	if err := hyperAdmin.Maintain(c.Req.Context(), int32(hostID), migrate, targetHyper); err != nil {
+	hyper, err := hyperAdmin.GetHyperByUUID(c.Req.Context(), uuid)
+	if err != nil {
+		c.Data["ErrorMsg"] = fmt.Sprintf("Specified hypervisor (%s) not found, %+v", uuid, err)
+		c.HTML(500, "error")
+		return
+	}
+	if err := hyperAdmin.Maintain(c.Req.Context(), hyper.Hostid, migrate, targetHyper); err != nil {
 		c.Data["ErrorMsg"] = err.Error()
 		c.HTML(500, "error")
 		return
@@ -572,10 +601,15 @@ func (v *HyperView) Patch(c *macaron.Context, store session.Store) {
 		c.HTML(400, "error")
 		return
 	}
-	id := c.QueryInt64("host_id")
-	hyper, err := hyperAdmin.GetHyperByHostid(c.Req.Context(), int32(id))
+	uuid := c.Params(":uuid")
+	hyper, err := hyperAdmin.GetHyperByUUID(c.Req.Context(), uuid)
 	if err != nil {
-		c.Data["ErrorMsg"] = fmt.Sprintf("Specified hypervisor (%d) not found, %+v", id, err)
+		c.Data["ErrorMsg"] = fmt.Sprintf("Specified hypervisor (%s) not found, %+v", uuid, err)
+		c.HTML(500, "error")
+		return
+	}
+	if err := hyperAdmin.SetStatus(c.Req.Context(), hyper.Hostid, int32(status)); err != nil {
+		c.Data["ErrorMsg"] = err.Error()
 		c.HTML(500, "error")
 		return
 	}
