@@ -54,8 +54,8 @@ func (a *HyperAdmin) List(ctx context.Context, offset, limit int64, order, query
 	db = db.Offset(0).Limit(-1)
 	for _, hyper := range hypers {
 		hyper.Resource = &model.Resource{}
-		if err = db.Where("hostid = ?", hyper.Hostid).Take(hyper.Resource).Error; err != nil {
-			logger.Warningf("Hypervisor %s (hostid: %d) has no associated resource record: %+v", hyper.Hostname, hyper.Hostid, err)
+		if lerr := db.Where("hostid = ?", hyper.Hostid).Take(hyper.Resource).Error; lerr != nil {
+			logger.Warningf("Hypervisor %s (hostid: %d) has no associated resource record: %+v", hyper.Hostname, hyper.Hostid, lerr)
 		}
 	}
 
@@ -70,8 +70,8 @@ func (a *HyperAdmin) GetHyperByUUID(ctx context.Context, uuid string) (hyper *mo
 		return nil, NewCLError(ErrHypervisorNotFound, "Specified hypervisor not found", err)
 	}
 	hyper.Resource = &model.Resource{}
-	if err = db.Where("hostid = ?", hyper.Hostid).Take(hyper.Resource).Error; err != nil {
-		logger.Warningf("Hypervisor %s (hostid: %d, uuid: %s) has no associated resource record: %+v", hyper.Hostname, hyper.Hostid, hyper.UUID, err)
+	if lerr := db.Where("hostid = ?", hyper.Hostid).Take(hyper.Resource).Error; lerr != nil {
+		logger.Warningf("Hypervisor %s (hostid: %d, uuid: %s) has no associated resource record: %+v", hyper.Hostname, hyper.Hostid, hyper.UUID, lerr)
 	}
 	return
 }
@@ -183,8 +183,8 @@ func (a *HyperAdmin) GetHyperByHostid(ctx context.Context, hostid int32) (hyper 
 
 	// Load resource information
 	hyper.Resource = &model.Resource{}
-	if err = db.Where("hostid = ?", hyper.Hostid).Take(hyper.Resource).Error; err != nil {
-		logger.Warningf("Hypervisor %s (hostid: %d) has no associated resource record: %+v", hyper.Hostname, hyper.Hostid, err)
+	if lerr := db.Where("hostid = ?", hyper.Hostid).Take(hyper.Resource).Error; lerr != nil {
+		logger.Warningf("Hypervisor %s (hostid: %d) has no associated resource record: %+v", hyper.Hostname, hyper.Hostid, lerr)
 		// If no resource record, initialize with defaults
 		hyper.Resource = &model.Resource{
 			Hostid: hyper.Hostid,
