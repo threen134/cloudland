@@ -54,7 +54,7 @@ func (a *HyperAdmin) List(ctx context.Context, offset, limit int64, order, query
 	db = db.Offset(0).Limit(-1)
 	for _, hyper := range hypers {
 		hyper.Resource = &model.Resource{}
-		err = db.Where("hostid = ?", hyper.Hostid).Take(hyper.Resource).Error
+		db.Where("hostid = ?", hyper.Hostid).Take(hyper.Resource)
 	}
 
 	return
