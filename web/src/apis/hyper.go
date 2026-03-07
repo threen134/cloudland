@@ -98,9 +98,11 @@ func (v *HyperAPI) Get(c *gin.Context) {
 	hostidStr := c.Param("hostid")
 	hostid, err := strconv.ParseInt(hostidStr, 10, 32)
 	if err != nil {
+		logger.Errorf("Invalid hostid parameter for Get: %s, %+v", hostidStr, err)
 		ErrorResponse(c, http.StatusBadRequest, "Invalid hostid parameter", err)
 		return
 	}
+	logger.Infof("API: Get hypervisor with hostid=%d", hostid)
 
 	hyper, err := hyperAdmin.GetHyperByHostid(c.Request.Context(), int32(hostid))
 	if err != nil {
@@ -129,6 +131,7 @@ func (v *HyperAPI) List(c *gin.Context) {
 	limit := c.Query("limit")
 	order := c.Query("order")
 	query := c.Query("q")
+	logger.Infof("Listing hypervisors via API: offset=%s, limit=%s, order=%s, q=%s", offset, limit, order, query)
 
 	var offsetInt, limitInt int64
 	var err error
@@ -194,9 +197,11 @@ func (v *HyperAPI) Patch(c *gin.Context) {
 
 	var payload HyperPatchPayload
 	if err := c.ShouldBindJSON(&payload); err != nil {
+		logger.Errorf("Failed to bind JSON for Hyper PATCH: %+v", err)
 		ErrorResponse(c, http.StatusBadRequest, "Invalid payload", err)
 		return
 	}
+	logger.Infof("Patching hypervisor %d with payload: %+v", hostid, payload)
 
 	// Get existing hypervisor
 	hyper, err := hyperAdmin.GetHyperByHostid(c.Request.Context(), hostid)
@@ -256,9 +261,11 @@ func (v *HyperAPI) Patch(c *gin.Context) {
 func (v *HyperAPI) Deploy(c *gin.Context) {
 	var payload HyperDeployPayload
 	if err := c.ShouldBindJSON(&payload); err != nil {
+		logger.Errorf("Failed to bind JSON for Hyper Deploy: %+v", err)
 		ErrorResponse(c, http.StatusBadRequest, "Invalid payload", err)
 		return
 	}
+	logger.Infof("API: Deploy hypervisor with payload: %+v", payload)
 	if payload.NetworkDevice == "" {
 		payload.NetworkDevice = "eth0"
 	}
@@ -311,9 +318,11 @@ func (v *HyperAPI) Maintain(c *gin.Context) {
 	}
 	var payload HyperMaintainPayload
 	if err := c.ShouldBindJSON(&payload); err != nil {
+		logger.Warningf("Failed to bind JSON for Hyper Maintain, using default (migrate=true): %+v", err)
 		payload.TargetHyper = -1
 		payload.Migrate = true
 	}
+	logger.Infof("Maintenance requested via API for hypervisor %d: migrate=%v, target=%d", hostid, payload.Migrate, payload.TargetHyper)
 	if err := hyperAdmin.Maintain(c.Request.Context(), int32(hostid), payload.Migrate, payload.TargetHyper); err != nil {
 		ErrorResponse(c, http.StatusInternalServerError, "Failed to maintain hypervisor", err)
 		return
@@ -337,9 +346,11 @@ func (v *HyperAPI) Delete(c *gin.Context) {
 	hostidStr := c.Param("hostid")
 	hostid, err := strconv.ParseInt(hostidStr, 10, 32)
 	if err != nil {
+		logger.Errorf("Invalid hostid parameter for Delete: %s, %+v", hostidStr, err)
 		ErrorResponse(c, http.StatusBadRequest, "Invalid hostid parameter", err)
 		return
 	}
+	logger.Infof("Deletion requested via API for hypervisor: hostid=%d", hostid)
 	if err := hyperAdmin.Delete(c.Request.Context(), int32(hostid)); err != nil {
 		ErrorResponse(c, http.StatusInternalServerError, "Failed to delete hypervisor", err)
 		return

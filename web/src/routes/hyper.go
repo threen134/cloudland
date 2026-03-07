@@ -42,6 +42,7 @@ func (a *HyperAdmin) List(ctx context.Context, offset, limit int64, order, query
 	if query != "" {
 		query = fmt.Sprintf("hostname like '%%%s%%'", query)
 	}
+	logger.Infof("Listing hypervisors: offset=%d, limit=%d, order=%s, query=%s", offset, limit, order, query)
 
 	hypers = []*model.Hyper{}
 	if err = db.Model(&model.Hyper{}).Where("hostid >= 0").Where(query).Count(&total).Error; err != nil {
@@ -144,6 +145,7 @@ func (a *HyperAdmin) Update(ctx context.Context, hyper *model.Hyper) (err error)
 			logger.Errorf("Failed to call script update hyper %+v", err)
 			return
 		}
+		logger.Infof("Successfully updated hypervisor %d via script", hyperInDB.Hostid)
 	}
 	return
 }
@@ -319,7 +321,7 @@ func (a *HyperAdmin) Deploy(ctx context.Context, ip, hostname, networkDevice, vl
 	if err = db.Where("hostname = ?", hostname).Take(existing).Error; err == nil {
 		// If exists, only allow retry if status is deploying or failed
 		if existing.Status == 4 || existing.Status == 5 { // HYPER_DEPLOYING or HYPER_DEPLOY_FAILED
-			logger.Infof("Retrying deployment for existing hypervisor: %s (ID: %d)", hostname, existing.Hostid)
+			logger.Infof("Retrying deployment for existing hypervisor: %s (HostID: %d, NewIP: %s)", hostname, existing.Hostid, ip)
 			hostID = existing.Hostid
 			hyper = existing
 			hyper.HostIP = ip
@@ -356,6 +358,7 @@ func (a *HyperAdmin) Deploy(ctx context.Context, ip, hostname, networkDevice, vl
 		if err = db.Create(hyper).Error; err != nil {
 			return nil, "", NewCLError(ErrSQLSyntaxError, "Failed to create hypervisor record", err)
 		}
+		logger.Infof("Created new hypervisor record for %s (HostID: %d, IP: %s, Zone: %s)", hostname, hostID, ip, zoneName)
 	}
 
 	// Construct deploy command
@@ -419,7 +422,7 @@ func (a *HyperAdmin) Maintain(ctx context.Context, hostID int32, migrate bool, t
 		}
 	}
 
-	logger.Infof("Hypervisor %d entered maintenance mode (migrate=%v)", hostID, migrate)
+	logger.Infof("Hypervisor %d entered maintenance mode (status=%d, migrate=%v, target=%d)", hostID, hyper.Status, migrate, targetHyper)
 	return nil
 }
 
@@ -460,7 +463,7 @@ func (a *HyperAdmin) Delete(ctx context.Context, hostID int32) (err error) {
 		return NewCLError(ErrSQLSyntaxError, "Failed to delete hypervisor record", err)
 	}
 
-	logger.Infof("Hypervisor %d deleted successfully", hostID)
+	logger.Infof("Hypervisor %d deleted successfully from database (Hostname: %s)", hostID, hyper.Hostname)
 	return nil
 }
 
