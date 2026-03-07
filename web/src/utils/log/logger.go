@@ -62,39 +62,42 @@ func init() {
 // logging.max_backups: maximum number of old log files to retain
 // logging.max_age: maximum number of days to retain old log files
 func InitLogger(log_file string) {
-	logger.Debugf("Initializing logger with log file: %s", log_file)
 	if log_file == "" {
 		log_file = "cl.log"
 	}
 	log_dir := viper.GetString("logging.log_dir")
-	if log_dir == "" {
-		log_dir = "/opt/cloudland/log"
-	}
-	log_file = fmt.Sprintf("%s/%s", viper.GetString("logging.log_dir"), log_file)
 	log_level := viper.GetString("logging.log_level")
 	if log_level == "" {
-		log_level = "debug"
-	}
-	max_size := viper.GetInt("logging.max_size")
-	if max_size == 0 {
-		max_size = 100
-	}
-	max_backups := viper.GetInt("logging.max_backups")
-	if max_backups == 0 {
-		max_backups = 10
-	}
-	max_age := viper.GetInt("logging.max_age")
-	if max_age == 0 {
-		max_age = 30
+		log_level = "info"
 	}
 	format := viper.GetString("logging.format")
 	if format == "" {
 		format = defaultFormat
 	}
-	logger.Debugf("initializing logger with log file: %s, log level: %s, max size: %d, max backups: %d, max age: %d, format: '%s'",
-		log_file, log_level, max_size, max_backups, max_age, format)
 
-	initRollingBackend(log_file, max_size, max_backups, max_age, format)
+	// 当 log_dir 为空时，输出到 stdout（Docker 容器标准做法）
+	// 配置了 log_dir 时才写入文件（裸机/非容器部署）
+	if log_dir == "" {
+		logger.Debugf("logging.log_dir not set, writing logs to stdout")
+		initBackend(SetFormat(format), os.Stdout)
+	} else {
+		log_file = fmt.Sprintf("%s/%s", log_dir, log_file)
+		max_size := viper.GetInt("logging.max_size")
+		if max_size == 0 {
+			max_size = 100
+		}
+		max_backups := viper.GetInt("logging.max_backups")
+		if max_backups == 0 {
+			max_backups = 10
+		}
+		max_age := viper.GetInt("logging.max_age")
+		if max_age == 0 {
+			max_age = 30
+		}
+		logger.Debugf("writing logs to file: %s (level=%s, maxSize=%d, maxBackups=%d, maxAge=%d)",
+			log_file, log_level, max_size, max_backups, max_age)
+		initRollingBackend(log_file, max_size, max_backups, max_age, format)
+	}
 	InitLogLevelFromSpec(log_level)
 }
 

@@ -124,20 +124,5 @@ _EOF_
 fi
 
 
-LOG_DIR=/opt/cloudland/log
-mkdir -p "$LOG_DIR"
-
 echo "==> 启动: $@"
-exec "$@" &
-CHILD_PID=$!
-
-# 根据服务名自动推断日志文件名 (clapi → clapi.log, clbase → clbase.log)
-BIN_NAME=$(basename "$1")
-LOG_FILE="$LOG_DIR/${BIN_NAME}.log"
-for i in $(seq 1 20); do
-    [ -f "$LOG_FILE" ] && break
-    sleep 0.5
-done
-[ -f "$LOG_FILE" ] && tail -f "$LOG_FILE" &
-
-wait $CHILD_PID
+exec "$@"

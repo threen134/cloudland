@@ -9,19 +9,17 @@ clients:
   - url: http://loki:3100/loki/api/v1/push
 
 scrape_configs:
-  - job_name: cloudland-logs
-    static_configs:
-      - targets:
-          - localhost
-        labels:
-          job: local-logs
-          __path__: /opt/cloudland/log/*.log
-
+  # 采集所有 Docker 容器的 stdout/stderr
   - job_name: cloudland-containers
     docker_sd_configs:
       - host: unix:///var/run/docker.sock
         refresh_interval: 5s
     relabel_configs:
+      # 以容器名作为标签 (去掉前导 /)
       - source_labels: ["__meta_docker_container_name"]
         regex: "/(.*)"
         target_label: "container"
+      # 过滤只采集 cloudland 相关容器
+      - source_labels: ["__meta_docker_container_name"]
+        regex: "/cloudland-.+"
+        action: keep

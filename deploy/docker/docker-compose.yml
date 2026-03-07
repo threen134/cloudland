@@ -127,7 +127,6 @@ services:
       - ./volumes/certs:/certs:ro
       - ./volumes/certs/cland/selfsigned.crt:/etc/ssl/certs/alarm_rules_manager.crt:ro
       - ../.ssh:/opt/cloudland/deploy/.ssh:ro
-      - cland_log:/opt/cloudland/log
     ports:
       - "${INTERNAL_IP:-0.0.0.0}:8255:8255"
     networks:
