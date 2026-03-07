@@ -22,15 +22,28 @@ scrape_configs:
         action: keep
     # 增加 pipeline_stages 来自动解析 JSON 日志
     pipeline_stages:
-      - docker: {} # 解析 Docker 的原生日志包装 (log, stream, time)
+      # 尝试将日志行解析为 JSON，提取所有字段到内部 map
       - json:
           expressions:
             tag: tag
+            level: level
+            module: module
             status: status
             latency_ms: latency_ms
             method: method
+            path: path
+            ip: ip
             request_id: request_id
+            log_time: time
+      # 将关键字段提升为 Loki label（仅低基数字段）
       - labels:
           tag:
-          status:
+          level:
+          module:
           method:
+      # 用日志内的 time 字段覆盖 Loki 时间戳，保持时间精度
+      - timestamp:
+          source: log_time
+          format: "2006-01-02T15:04:05.000Z07:00"
+          fallback_formats:
+            - "2006-01-02T15:04:05Z07:00"
