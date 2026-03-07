@@ -15,15 +15,22 @@
 package log
 
 import (
+	"context"
+	"encoding/json"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"regexp"
 	"strings"
 	"sync"
+	"time"
 
+	"gopkg.in/macaron.v1"
 	lumberjack "gopkg.in/natefinch/lumberjack.v2"
 
+	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 	logging "github.com/op/go-logging"
 	"github.com/spf13/viper"
 )
@@ -35,6 +42,8 @@ const (
 	// 无颜色，适合 Docker stdout / 日志采集（Loki/Promtail）
 	plainFormat  = "%{time:2006-01-02T15:04:05.000Z07:00} [%{level:.4s}] [%{module}] %{shortfile} %{message}"
 	defaultLevel = logging.INFO
+
+	RequestIDKey = "X-Request-ID"
 )
 
 var (
@@ -261,4 +270,130 @@ func InitLogLevelFromSpec(spec string) string {
 	MustGetLogger(pkgLogID)
 
 	return levelAll.String()
+}
+
+// RequestID is a Gin middleware that injects a request ID into every request.
+func RequestID() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		requestID := c.GetHeader(RequestIDKey)
+		if requestID == "" {
+			requestID = uuid.New().String()
+		}
+		c.Set(RequestIDKey, requestID)
+		ctx := context.WithValue(c.Request.Context(), RequestIDKey, requestID)
+		c.Request = c.Request.WithContext(ctx)
+		c.Header(RequestIDKey, requestID)
+		c.Next()
+	}
+}
+
+// Logger is a Gin middleware that logs each request.
+func Logger() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		start := time.Now()
+		path := c.Request.URL.Path
+		raw := c.Request.URL.RawQuery
+		c.Next()
+		latency := time.Since(start)
+		statusCode := c.Writer.Status()
+		errorMessage := c.Errors.ByType(gin.ErrorTypePrivate).String()
+		clientIP := c.ClientIP()
+		method := c.Request.Method
+		if raw != "" {
+			path = path + "?" + raw
+		}
+		requestIDValue, exists := c.Get(RequestIDKey)
+		requestID := "-"
+		if exists {
+			if str, ok := requestIDValue.(string); ok {
+				requestID = str
+			}
+		}
+
+		if viper.GetString("logging.log_dir") == "" {
+			logData := map[string]interface{}{
+				"time":       time.Now().Format("2006-01-02T15:04:05.000Z07:00"),
+				"level":      "INFO",
+				"module":     "apis",
+				"tag":        "API_REQUEST",
+				"method":     method,
+				"path":       path,
+				"status":     statusCode,
+				"latency_ms": float64(latency.Nanoseconds()/1000) / 1000.0,
+				"ip":         clientIP,
+				"request_id": requestID,
+			}
+			if errorMessage != "" {
+				logData["errors"] = errorMessage
+			}
+			jsonData, _ := json.Marshal(logData)
+			fmt.Fprintln(os.Stdout, string(jsonData))
+			return
+		}
+
+		logger.Infof("API REQUEST JSON: %s %s IP: %s RequestID: %s | %d %v | DATA: {\"method\":\"%s\",\"path\":\"%s\",\"status\":%d,\"latency_ms\":%.3f,\"ip\":\"%s\",\"request_id\":\"%s\",\"errors\":\"%s\"}",
+			method, path, clientIP, requestID, statusCode, latency,
+			method, path, statusCode, float64(latency.Nanoseconds())/1e6, clientIP, requestID, errorMessage)
+	}
+}
+
+// MacaronLogger is a Macaron middleware that logs each request.
+func MacaronLogger() macaron.Handler {
+	return func(res http.ResponseWriter, req *http.Request, c *macaron.Context) {
+		start := time.Now()
+		c.Next()
+		latency := time.Since(start)
+		statusCode := c.Resp.Status()
+		path := req.URL.Path
+		raw := req.URL.RawQuery
+		method := req.Method
+		clientIP := c.RemoteAddr()
+		if raw != "" {
+			path = path + "?" + raw
+		}
+
+		// Macaron doesn't have a standard RequestID middleware in this project's context,
+		// but we can try to get it from the header or generate a temporary one if needed.
+		requestID := req.Header.Get(RequestIDKey)
+		if requestID == "" {
+			requestID = "-"
+		}
+
+		if viper.GetString("logging.log_dir") == "" {
+			logData := map[string]interface{}{
+				"time":       time.Now().Format("2006-01-02T15:04:05.000Z07:00"),
+				"level":      "INFO",
+				"module":     "routes",
+				"tag":        "WEB_REQUEST",
+				"method":     method,
+				"path":       path,
+				"status":     statusCode,
+				"latency_ms": float64(latency.Nanoseconds()/1000) / 1000.0,
+				"ip":         clientIP,
+				"request_id": requestID,
+			}
+			jsonData, _ := json.Marshal(logData)
+			fmt.Fprintln(os.Stdout, string(jsonData))
+			return
+		}
+
+		logger.Infof("WEB REQUEST JSON: %s %s IP: %s | %d %v | DATA: {\"method\":\"%s\",\"path\":\"%s\",\"status\":%d,\"latency_ms\":%.3f,\"ip\":\"%s\",\"request_id\":\"%s\"}",
+			method, path, clientIP, statusCode, latency,
+			method, path, statusCode, float64(latency.Nanoseconds())/1e6, clientIP, requestID)
+	}
+}
+
+// MacaronRequestID is a Macaron middleware that injects a request ID into every request.
+func MacaronRequestID() macaron.Handler {
+	return func(res http.ResponseWriter, req *http.Request, c *macaron.Context) {
+		requestID := req.Header.Get(RequestIDKey)
+		if requestID == "" {
+			requestID = uuid.New().String()
+		}
+		// Macaron doesn't have a built-in context like Gin, but we can set it in the header
+		// so that the logger and subsequent handlers can find it.
+		req.Header.Set(RequestIDKey, requestID)
+		res.Header().Set(RequestIDKey, requestID)
+		c.Next()
+	}
 }
