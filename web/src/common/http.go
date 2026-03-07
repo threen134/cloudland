@@ -41,10 +41,15 @@ type APIError struct {
 
 func ErrorResponse(c *gin.Context, code int, errorMsg string, err error) {
 	logger.Errorf("%s, %v\n", errorMsg, err)
+	status := code
 	if err != nil {
 		var clErr *CLError
 		if errors.As(err, &clErr) {
-			c.JSON(code, &APIError{
+			// If business code has a specific mapping, override the default code
+			if businessStatus := clErr.Code.ToHTTPStatus(); businessStatus != 500 {
+				status = businessStatus
+			}
+			c.JSON(status, &APIError{
 				ErrorCode:    int(clErr.Code),
 				ErrorCodeStr: clErr.Code.String(),
 				ErrorMessage: clErr.Error(),
@@ -53,8 +58,8 @@ func ErrorResponse(c *gin.Context, code int, errorMsg string, err error) {
 		}
 		errorMsg = errorMsg + ": " + err.Error()
 	}
-	c.JSON(code, &APIError{
-		ErrorCode:    code,
+	c.JSON(status, &APIError{
+		ErrorCode:    status,
 		ErrorMessage: errorMsg,
 	})
 }

@@ -282,6 +282,21 @@ const (
 	ErrDictionaryDeleteFailed    ErrCode = 199804
 )
 
+func (c ErrCode) ToHTTPStatus() int {
+	switch {
+	case c == ErrPermissionDenied:
+		return 403
+	case c >= 100002 && c <= 100003 || c == ErrInvalidCIDR || c == ErrCIDRTooBig:
+		return 400
+	case c == ErrResourceNotFound || (c >= 100200 && c <= 100207 && c%2 == 0) || c == ErrZoneNotFound || c == ErrHypervisorNotFound:
+		return 404
+	case c == ErrInsufficientResource || c == ErrInsufficientAddress:
+		return 409
+	default:
+		return 500
+	}
+}
+
 type CLError struct {
 	Err     error
 	Code    ErrCode
