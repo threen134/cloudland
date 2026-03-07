@@ -10,7 +10,7 @@ SPDX-License-Identifier: Apache-2.0
 #include <pthread.h>
 #include <string>
 
-#define MAX_LOG_LEN 1024
+#define MAX_LOG_LEN 4096
 #define MAX_PATH_LEN 512
 
 using namespace std;
@@ -31,12 +31,18 @@ public:
 
 private:
   Loger();
+  Loger(const Loger &) = delete;
+  Loger &operator=(const Loger &) = delete;
 
   int mode;
   int permitLevel;
   string logDir;
   string logFile;
   char logPath[2 * MAX_PATH_LEN];
+
+  bool useStdout;
+  bool useJson;
+  pthread_mutex_t lock;
 
   static Loger *logger;
 

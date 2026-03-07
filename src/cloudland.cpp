@@ -200,6 +200,11 @@ int initParams(int argc, char *argv[]) {
       writePidFile(pidFile);
   */
 
+  const char *envLogDir = getenv("SCI_LOG_DIRECTORY");
+  if (envLogDir != NULL && strlen(envLogDir) == 0) {
+    logDir = "";
+  }
+
   logFile = string(p) + ".log";
   Loger::getInstance()->init(logDir.c_str(), logFile.c_str(), logLevel,
                              Loger::ENABLE);
