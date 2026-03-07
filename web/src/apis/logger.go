@@ -9,6 +9,7 @@ package apis
 
 import (
 	"context"
+	"encoding/json"
 	"time"
 
 	"web/src/common"
@@ -69,9 +70,21 @@ func Logger() gin.HandlerFunc {
 			}
 		}
 
-		// 使用简单的 Key-Value 或 JSON 格式，这里选择 JSON 字符串
-		logger.Infof("API REQUEST JSON: %s %s IP: %s RequestID: %s | %d %v | DATA: {\"method\":\"%s\",\"path\":\"%s\",\"status\":%d,\"latency_ms\":%.3f,\"ip\":\"%s\",\"request_id\":\"%s\",\"errors\":\"%s\"}",
-			method, path, clientIP, requestID, statusCode, latency,
-			method, path, statusCode, float64(latency.Nanoseconds())/1e6, clientIP, requestID, errorMessage)
+		// Output structured JSON for easier parsing in Loki/Grafana
+		logData := map[string]interface{}{
+			"tag":        "API_REQUEST",
+			"method":     method,
+			"path":       path,
+			"status":     statusCode,
+			"latency_ms": float64(latency.Nanoseconds()) / 1e6,
+			"ip":         clientIP,
+			"request_id": requestID,
+		}
+		if errorMessage != "" {
+			logData["errors"] = errorMessage
+		}
+
+		jsonData, _ := json.Marshal(logData)
+		logger.Info(string(jsonData))
 	}
 }
