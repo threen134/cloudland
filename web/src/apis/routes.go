@@ -52,12 +52,13 @@ func Run() (err error) {
 // @license.url http://www.apache.org/licenses/LICENSE-2.0.html
 // @BasePath /api/v1
 func Register() (r *gin.Engine) {
-	r = gin.Default()
+	r = gin.New()
 
 	// 从网关、代理获取真实的 ClientIP
 	r.ForwardedByClientIP = true
 	r.SetTrustedProxies(nil)
 
+	r.Use(gin.Recovery())
 	r.Use(RequestID())
 	r.Use(Logger())
 

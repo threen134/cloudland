@@ -63,7 +63,13 @@ func Logger() gin.HandlerFunc {
 			path = path + "?" + raw
 		}
 
-		requestID, _ := c.Get(common.RequestIDKey)
+		requestIDValue, exists := c.Get(common.RequestIDKey)
+		requestID := "-"
+		if exists {
+			if str, ok := requestIDValue.(string); ok {
+				requestID = str
+			}
+		}
 		logger.Infof("API REQUEST: %s %s | Status: %d | Latency: %v | IP: %s | RequestID: %s | Errors: %s",
 			method, path, statusCode, latency, clientIP, requestID, errorMessage)
 	}
