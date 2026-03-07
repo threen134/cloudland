@@ -85,7 +85,8 @@ func New() (m *macaron.Macaron) {
 		}
 	})
 
-	m.Use(macaron.Logger())
+	m.Use(rlog.MacaronRequestID())
+	m.Use(rlog.MacaronLogger())
 	m.Use(macaron.Recovery())
 	m.Use(macaron.Static("public"))
 

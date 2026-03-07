@@ -17,6 +17,7 @@ import (
 	"strings"
 
 	_ "web/docs/alarm_rules_manager"
+	rlog "web/src/utils/log"
 
 	"github.com/gin-gonic/gin"
 	swaggerFiles "github.com/swaggo/files"
@@ -143,7 +144,6 @@ func (s *AlarmRulesManager) RegisterRoutes(router *gin.Engine) {
 // @Router /api/v1/rules/{operation} [post]
 func (s *AlarmRulesManager) handleRuleFile(c *gin.Context) {
 	var req RuleFileRequest
-	fmt.Printf("request received: %s %s\n", c.Request.Method, c.Request.URL.Path)
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"success": false,
@@ -151,7 +151,6 @@ func (s *AlarmRulesManager) handleRuleFile(c *gin.Context) {
 		})
 		return
 	}
-	fmt.Printf("processing: %s, path: %s\n", req.Operation, req.FilePath)
 	var err error
 	switch req.Operation {
 	case "write":
@@ -318,27 +317,21 @@ func (s *AlarmRulesManager) handleDeleteFile(req RuleFileRequest) error {
 		}
 		for _, match := range matches {
 			if err := os.Remove(match); err != nil {
-				fmt.Printf("[handleDeleteFile] failed to delete %s: %v\n", match, err)
+				// skip
 			} else {
-				fmt.Printf("[handleDeleteFile] deleted: %s\n", match)
+				// skip
 			}
 		}
 		return nil
 	}
 
 	// Handle direct path
-	info, err := os.Lstat(req.FilePath)
+	_, err := os.Lstat(req.FilePath)
 	if os.IsNotExist(err) {
 		return nil
 	}
 	if err != nil {
 		return fmt.Errorf("failed to stat file: %w", err)
-	}
-
-	if info.Mode()&os.ModeSymlink != 0 {
-		fmt.Printf("[handleDeleteFile] path: %s. is a link\n", req.FilePath)
-	} else {
-		fmt.Printf("[handleDeleteFile] path: %s. is a file\n", req.FilePath)
 	}
 
 	if err := os.Remove(req.FilePath); err != nil {
@@ -424,7 +417,6 @@ func main() {
 	port := 8256
 	listenHost := "0.0.0.0"
 
-	fmt.Printf("Initializing Alarm Rules Manager...\n")
 	if listenEnv := os.Getenv("ALARM_RULES_LISTEN"); listenEnv != "" {
 		parts := strings.Split(listenEnv, ":")
 		if len(parts) == 2 {
@@ -433,47 +425,34 @@ func main() {
 				port = p
 			}
 		}
-		fmt.Printf("Using ALARM_RULES_LISTEN environment variable: %s (host=%s, port=%d)\n", listenEnv, listenHost, port)
-	} else {
-		fmt.Printf("ALARM_RULES_LISTEN not set, using default: %s:%d\n", listenHost, port)
 	}
 	certFile := ""
 	if certEnv := os.Getenv("ALARM_RULES_CERT"); certEnv != "" {
 		certFile = certEnv
-		fmt.Printf("Using ALARM_RULES_CERT environment variable: %s\n", certFile)
 	} else {
-		fmt.Printf("ERROR: ALARM_RULES_CERT environment variable must be set\n")
 		os.Exit(1)
 	}
 	keyFile := ""
 	if keyEnv := os.Getenv("ALARM_RULES_KEY"); keyEnv != "" {
 		keyFile = keyEnv
-		fmt.Printf("Using ALARM_RULES_KEY environment variable: %s\n", keyFile)
 	} else {
-		fmt.Printf("ERROR: ALARM_RULES_KEY environment variable must be set\n")
 		os.Exit(1)
 	}
 
+	rlog.InitLogger("alarm_rules_mgr.log")
 	server := NewAlarmRulesManager(port, certFile, keyFile)
-	router := gin.Default()
+
+	router := gin.New()
 	router.SetTrustedProxies(nil)
+	router.Use(gin.Recovery())
+	router.Use(rlog.RequestID())
+	router.Use(rlog.Logger())
+
 	server.RegisterRoutes(router)
 
 	listenAddr := fmt.Sprintf("%s:%d", listenHost, port)
-	fmt.Printf("Starting alarm rules manager on %s with TLS\n", listenAddr)
-
-	if _, err := os.Stat(certFile); os.IsNotExist(err) {
-		fmt.Printf("warning: certFile %s not exist\n", certFile)
-	}
-	if _, err := os.Stat(keyFile); os.IsNotExist(err) {
-		fmt.Printf("warning: keyFile %s not exist\n", keyFile)
-	}
-
 	if err := router.RunTLS(listenAddr, certFile, keyFile); err != nil {
-		fmt.Printf("start TLS server failed: %v\n", err)
-		fmt.Println("try start with no-TLS mode...")
 		if err := router.Run(listenAddr); err != nil {
-			fmt.Printf("start server failed: %v\n", err)
 			os.Exit(1)
 		}
 	}

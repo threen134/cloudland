@@ -59,8 +59,8 @@ func Register() (r *gin.Engine) {
 	r.SetTrustedProxies(nil)
 
 	r.Use(gin.Recovery())
-	r.Use(RequestID())
-	r.Use(Logger())
+	r.Use(log.RequestID())
+	r.Use(log.Logger())
 
 	r.POST("/api/v1/login", userAPI.LoginPost)
 	r.GET("/api/v1/version", versionAPI.Get)
