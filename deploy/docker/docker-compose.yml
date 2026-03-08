@@ -83,6 +83,7 @@ services:
     environment:
       # 用于生成发往前端的 VNC Console 代理地址，不控制本容器物理监听 IP
       PUBLIC_IP: ${PUBLIC_IP:-127.0.0.1}
+      MANAGEMENT_VIP: ${MANAGEMENT_VIP:-127.0.0.1}
       DB_HOST: ${DB_HOST:-postgres}
       DB_PORT: "${DB_PORT:-5432}"
       DB_USER: ${POSTGRES_USER:-postgres}
@@ -115,6 +116,7 @@ services:
     environment:
       # 用于生成发往前端的 VNC Console 代理地址，不控制本容器物理监听 IP
       PUBLIC_IP: ${PUBLIC_IP:-127.0.0.1}
+      MANAGEMENT_VIP: ${MANAGEMENT_VIP:-127.0.0.1}
       DB_HOST: ${DB_HOST:-postgres}
       DB_PORT: "${DB_PORT:-5432}"
       DB_USER: ${POSTGRES_USER:-postgres}

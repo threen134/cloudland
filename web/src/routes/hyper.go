@@ -341,12 +341,25 @@ func (a *HyperAdmin) Deploy(ctx context.Context, ip, hostname, networkDevice, vl
 	// Check if hostname already exists
 	var hostID int32
 	existing := &model.Hyper{}
-	if err = db.Where("hostname = ?", hostname).Take(existing).Error; err == nil {
+	if err = db.Preload("Zone").Where("hostname = ?", hostname).Take(existing).Error; err == nil {
 		// If exists, only allow retry if status is deploying or failed
 		if existing.Status == 4 || existing.Status == 5 { // HYPER_DEPLOYING or HYPER_DEPLOY_FAILED
 			logger.Infof("Retrying deployment for existing hypervisor: %s (HostID: %d, NewIP: %s)", hostname, existing.Hostid, ip)
 			hostID = existing.Hostid
 			hyper = existing
+
+			if zoneName != "" {
+				var zone *model.Zone
+				zone, err = zoneAdmin.GetZoneByName(ctx, zoneName)
+				if err != nil {
+					return nil, "", NewCLError(ErrZoneNotFound, fmt.Sprintf("Zone '%s' not found, please check your zone information", zoneName), err)
+				}
+				hyper.ZoneID = zone.ID
+				hyper.Zone = zone
+			} else if hyper.Zone != nil {
+				zoneName = hyper.Zone.Name
+			}
+
 			hyper.HostIP = ip
 			hyper.VirtType = virtType
 			hyper.Status = 4 // Reset to deploying
@@ -480,6 +493,19 @@ func (a *HyperAdmin) Delete(ctx context.Context, hostID int32) (err error) {
 
 	// Clean up related records
 	db.Where("hostid = ?", hostID).Delete(&model.Resource{})
+
+	// Release RouteIP (system interface)
+	ifaces := []*model.Interface{}
+	if err = db.Where("hyper = ? AND type = 'system'", hostID).Find(&ifaces).Error; err != nil {
+		logger.Errorf("Failed to query system interfaces for hypervisor %d: %v", hostID, err)
+	} else if len(ifaces) > 0 {
+		if err = DeallocateAddress(ctx, ifaces); err != nil {
+			logger.Errorf("Failed to deallocate system address for hypervisor %d: %v", hostID, err)
+		}
+		if err = db.Where("hyper = ? AND type = 'system'", hostID).Delete(&model.Interface{}).Error; err != nil {
+			logger.Errorf("Failed to delete system interfaces for hypervisor %d: %v", hostID, err)
+		}
+	}
 
 	// Remove from SCI if it was registered (Status != 4 is pre-active)
 	if hyper.Status != 4 {
