@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 
 	. "api/src/common"
 	"api/src/model"
@@ -65,10 +66,23 @@ func InstanceStatus(ctx context.Context, args []string) (status string, err erro
 			}
 			continue
 		}
-		if instance.Status == model.InstanceStatusMigrating || instance.Status == "rescuing" {
+		if instance.Status == "rescuing" {
 			continue
 		}
-		if instance.Status.String() != status || instance.DeletedAt != nil {
+		if instance.Status == model.InstanceStatusMigrating {
+			if time.Since(instance.UpdatedAt) < 6*time.Minute {
+				continue
+			}
+		}
+		if instance.Status.String() != status {
+			err = db.Model(instance).Update(map[string]interface{}{
+				"status": status,
+			}).Error
+			if err != nil {
+				logger.Error("Failed to update status", err)
+			}
+		}
+		if instance.DeletedAt != nil {
 			err = db.Unscoped().Model(instance).Update(map[string]interface{}{
 				"status": status,
 				"deleted_at": nil,
