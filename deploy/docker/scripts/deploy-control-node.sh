@@ -79,7 +79,7 @@ mkdir -p volumes/alertmanager
 chown -R 65534:65534 volumes/alertmanager
 
 # 定义需要注入的环境变量
-vars=("PUBLIC_IP" "INTERNAL_IP" "MANAGEMENT_VIP" "NETWORK_DEVICE" "DB_LISTEN_IP" "POSTGRES_USER" "POSTGRES_PASSWORD" "POSTGRES_DB" "ADMIN_PASSWORD" "COMPOSE_PROFILES" "DB_HOST" "DB_PORT")
+vars=("PUBLIC_IP" "INTERNAL_IP" "MANAGEMENT_VIP" "NETWORK_DEVICE" "DB_LISTEN_IP" "POSTGRES_USER" "POSTGRES_PASSWORD" "POSTGRES_DB" "ADMIN_PASSWORD" "ADMIN_EMAIL" "COMPOSE_PROFILES" "DB_HOST" "DB_PORT")
 
 # 注入环境变量到 .env (如果当前 Shell 环境中有定义)
 for var in "${vars[@]}"; do
@@ -101,7 +101,7 @@ for var in "${vars[@]}"; do
 done
 
 # 再次检查关键变量是否已配置
-required_vars=("PUBLIC_IP" "INTERNAL_IP" "NETWORK_DEVICE" "MANAGEMENT_VIP" "ADMIN_PASSWORD")
+required_vars=("PUBLIC_IP" "INTERNAL_IP" "NETWORK_DEVICE" "MANAGEMENT_VIP" "ADMIN_EMAIL" "ADMIN_PASSWORD")
 missing_vars=()
 for var in "${required_vars[@]}"; do
     # 同时检查当前环境和 .env 文件
@@ -170,8 +170,9 @@ docker compose up -d --build
 log "✅ 控制面部署已完成！"
 PUBLIC_IP=$(grep '^PUBLIC_IP=' .env | cut -d'=' -f2-)
 echo "Web 访问地址: https://${PUBLIC_IP}"
+ADMIN_EMAIL=$(grep '^ADMIN_EMAIL=' .env | cut -d'=' -f2-)
+echo "默认用户名: ${ADMIN_EMAIL:-admin@cloudland.local}"
 ADMIN_PASSWORD=$(grep '^ADMIN_PASSWORD=' .env | cut -d'=' -f2-)
-echo "默认用户名: admin"
 echo "默认密码: ${ADMIN_PASSWORD:-passw0rd}"
 echo "API 文档: https://${PUBLIC_IP}:443/api/v1/"
 echo "监控服务: http://${PUBLIC_IP}:9090/-/healthy"
