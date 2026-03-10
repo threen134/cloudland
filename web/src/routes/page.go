@@ -6,6 +6,10 @@ type Page struct {
 }
 
 func GetPages(total, limit int64) (pages []*Page) {
+	logger.Infof("ENTER GetPages: total=%d, limit=%d", total, limit)
+	defer func() {
+		logger.Infof("EXIT GetPages: pagesCount=%d", len(pages))
+	}()
 	if total <= limit {
 		return
 	}

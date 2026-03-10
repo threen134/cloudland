@@ -40,7 +40,6 @@ type SubnetView struct{}
 
 func init() {
 	rand.Seed(time.Now().UnixNano())
-	return
 }
 
 func ipToInt(ip net.IP) (*big.Int, int) {
@@ -56,6 +55,14 @@ func ipToInt(ip net.IP) (*big.Int, int) {
 }
 
 func getValidVni(ctx context.Context) (vni int, err error) {
+	logger.Infof("ENTER getValidVni")
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT getValidVni: error=%v", err)
+		} else {
+			logger.Infof("EXIT getValidVni: vni=%d", vni)
+		}
+	}()
 	ctx, db := GetContextDB(ctx)
 	count := 1
 	for count > 0 {
@@ -69,6 +76,14 @@ func getValidVni(ctx context.Context) (vni int, err error) {
 }
 
 func checkIfExistVni(ctx context.Context, vni int64) (result bool, err error) {
+	logger.Infof("ENTER checkIfExistVni: vni=%d", vni)
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT checkIfExistVni: error=%v", err)
+		} else {
+			logger.Infof("EXIT checkIfExistVni: result=%t", result)
+		}
+	}()
 	ctx, db := GetContextDB(ctx)
 	count := 0
 	if err = db.Model(&model.Subnet{}).Where("vlan = ?", vni).Count(&count).Error; err != nil {
@@ -83,6 +98,14 @@ func checkIfExistVni(ctx context.Context, vni int64) (result bool, err error) {
 }
 
 func generateIPAddresses(ctx context.Context, subnet *model.Subnet, start net.IP, end net.IP, preSize int) (err error) {
+	logger.Infof("ENTER generateIPAddresses: subnetID=%d, start=%s, end=%s, preSize=%d", subnet.ID, start.String(), end.String(), preSize)
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT generateIPAddresses: error=%v", err)
+		} else {
+			logger.Info("EXIT generateIPAddresses: success")
+		}
+	}()
 	ctx, db := GetContextDB(ctx)
 	ip := start
 	for {
@@ -118,9 +141,16 @@ func generateIPAddresses(ctx context.Context, subnet *model.Subnet, start net.IP
 }
 
 func (a *SubnetAdmin) Get(ctx context.Context, id int64) (subnet *model.Subnet, err error) {
+	logger.Infof("ENTER SubnetAdmin.Get: id=%d", id)
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT SubnetAdmin.Get: error=%v", err)
+		} else {
+			logger.Info("EXIT SubnetAdmin.Get: success")
+		}
+	}()
 	if id <= 0 {
 		err = fmt.Errorf("Invalid subnet ID: %d", id)
-		logger.Error(err)
 		return
 	}
 	memberShip := GetMemberShip(ctx)
@@ -142,7 +172,7 @@ func (a *SubnetAdmin) Get(ctx context.Context, id int64) (subnet *model.Subnet, 
 		}
 	}
 	if subnet.Type == "internal" {
-		permit := memberShip.ValidateOwner(model.Reader, subnet.Owner)
+		permit := memberShip.CheckResourceOrg(model.OrgReader, subnet.Owner)
 		if !permit {
 			logger.Error("Not authorized to read the subnet")
 			err = NewCLError(ErrPermissionDenied, "Not authorized to read the subnet", nil)
@@ -153,12 +183,19 @@ func (a *SubnetAdmin) Get(ctx context.Context, id int64) (subnet *model.Subnet, 
 }
 
 func (a *SubnetAdmin) GetSubnetByUUID(ctx context.Context, uuID string) (subnet *model.Subnet, err error) {
+	logger.Infof("ENTER SubnetAdmin.GetSubnetByUUID: uuID=%s", uuID)
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT SubnetAdmin.GetSubnetByUUID: error=%v", err)
+		} else {
+			logger.Info("EXIT SubnetAdmin.GetSubnetByUUID: success")
+		}
+	}()
 	ctx, db := GetContextDB(ctx)
 	memberShip := GetMemberShip(ctx)
 	subnet = &model.Subnet{}
 	err = db.Preload("Router").Preload("Group").Where("uuid = ?", uuID).Take(subnet).Error
 	if err != nil {
-		logger.Error("Failed to query subnet, %v", err)
 		err = NewCLError(ErrSubnetNotFound, "Subnet not found", err)
 		return
 	}
@@ -172,7 +209,7 @@ func (a *SubnetAdmin) GetSubnetByUUID(ctx context.Context, uuID string) (subnet 
 		}
 	}
 	if subnet.Type == "internal" {
-		permit := memberShip.ValidateOwner(model.Reader, subnet.Owner)
+		permit := memberShip.CheckResourceOrg(model.OrgReader, subnet.Owner)
 		if !permit {
 			logger.Error("Not authorized to read the subnet")
 			err = NewCLError(ErrPermissionDenied, "Not authorized to read the subnet", nil)
@@ -183,12 +220,19 @@ func (a *SubnetAdmin) GetSubnetByUUID(ctx context.Context, uuID string) (subnet 
 }
 
 func (a *SubnetAdmin) GetSubnetByName(ctx context.Context, name string) (subnet *model.Subnet, err error) {
+	logger.Infof("ENTER SubnetAdmin.GetSubnetByName: name=%s", name)
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT SubnetAdmin.GetSubnetByName: error=%v", err)
+		} else {
+			logger.Info("EXIT SubnetAdmin.GetSubnetByName: success")
+		}
+	}()
 	ctx, db := GetContextDB(ctx)
 	memberShip := GetMemberShip(ctx)
 	subnet = &model.Subnet{}
 	err = db.Preload("Router").Preload("Group").Where("name = ?", name).Take(subnet).Error
 	if err != nil {
-		logger.Error("Failed to query subnet ", err)
 		err = NewCLError(ErrSubnetNotFound, "Subnet not found", err)
 		return
 	}
@@ -202,7 +246,7 @@ func (a *SubnetAdmin) GetSubnetByName(ctx context.Context, name string) (subnet 
 		}
 	}
 	if subnet.Type == "internal" {
-		permit := memberShip.ValidateOwner(model.Reader, subnet.Owner)
+		permit := memberShip.CheckResourceOrg(model.OrgReader, subnet.Owner)
 		if !permit {
 			logger.Error("Not authorized to read the subnet")
 			err = NewCLError(ErrPermissionDenied, "Not authorized to read the subnet", nil)
@@ -213,6 +257,14 @@ func (a *SubnetAdmin) GetSubnetByName(ctx context.Context, name string) (subnet 
 }
 
 func (a *SubnetAdmin) GetSubnet(ctx context.Context, reference *BaseReference) (subnet *model.Subnet, err error) {
+	logger.Infof("ENTER SubnetAdmin.GetSubnet: reference=%+v", reference)
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT SubnetAdmin.GetSubnet: error=%v", err)
+		} else {
+			logger.Info("EXIT SubnetAdmin.GetSubnet: success")
+		}
+	}()
 	if reference == nil || (reference.ID == "" && reference.Name == "") {
 		err = fmt.Errorf("Subnet base reference must be provided with either uuid or name")
 		return
@@ -229,13 +281,19 @@ func (a *SubnetAdmin) GetSubnet(ctx context.Context, reference *BaseReference) (
 }
 
 func (a *SubnetAdmin) Update(ctx context.Context, id int64, name, subnetType string, ipGroup *model.IpGroup, priority int32) (err error) {
-	logger.Debugf("Updating subnet with ID: %d, name: %s, subnetType: %s, ipGroup: %+v", id, name, subnetType, ipGroup)
+	logger.Infof("ENTER SubnetAdmin.Update: id=%d, name=%s, subnetType=%s, ipGroup=%+v, priority=%d", id, name, subnetType, ipGroup, priority)
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT SubnetAdmin.Update: error=%v", err)
+		} else {
+			logger.Info("EXIT SubnetAdmin.Update: success")
+		}
+	}()
 	ctx, db, newTransaction := StartTransaction(ctx)
 	defer func() {
 		if newTransaction {
 			EndTransaction(ctx, err)
 		}
-		logger.Debugf("Transaction ended, err=%v", err)
 	}()
 
 	updates := map[string]interface{}{
@@ -260,6 +318,14 @@ func (a *SubnetAdmin) Update(ctx context.Context, id int64, name, subnetType str
 }
 
 func clearRouting(ctx context.Context, routerID int64, subnet *model.Subnet) (err error) {
+	logger.Infof("ENTER clearRouting: routerID=%d, subnetID=%d", routerID, subnet.ID)
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT clearRouting: error=%v", err)
+		} else {
+			logger.Info("EXIT clearRouting: success")
+		}
+	}()
 	ctx, db := GetContextDB(ctx)
 	router := &model.Router{Model: model.Model{ID: routerID}}
 	err = db.Take(router).Error
@@ -286,7 +352,15 @@ func clearRouting(ctx context.Context, routerID int64, subnet *model.Subnet) (er
 	return
 }
 
-func setRouting(ctx context.Context, subnet *model.Subnet, routeOnly bool) (err error) {
+func setRouting(ctx context.Context, subnet *model.Subnet, _ bool) (err error) {
+	logger.Infof("ENTER setRouting: subnetID=%d", subnet.ID)
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT setRouting: error=%v", err)
+		} else {
+			logger.Info("EXIT setRouting: success")
+		}
+	}()
 	ctx, db := GetContextDB(ctx)
 	router := &model.Router{Model: model.Model{ID: subnet.RouterID}}
 	err = db.Take(router).Error
@@ -321,7 +395,14 @@ func setRouting(ctx context.Context, subnet *model.Subnet, routeOnly bool) (err 
 }
 
 func (a *SubnetAdmin) Create(ctx context.Context, vlan int, name, network, gateway, start, end, rtype, dns, domain string, dhcp bool, router *model.Router, ipGroup *model.IpGroup, priority int32) (subnet *model.Subnet, err error) {
-	logger.Debugf("Creating subnet with vlan: %d, name: %s, network: %s, gateway: %s, start: %s, end: %s, rtype: %s, dns: %s, domain: %s, dhcp: %t, router: %+v, ipGroup: %+v", vlan, name, network, gateway, start, end, rtype, dns, domain, dhcp, router, ipGroup)
+	logger.Infof("ENTER SubnetAdmin.Create: vlan=%d, name=%s, network=%s, gateway=%s, rtype=%s, dhcp=%t, priority=%d", vlan, name, network, gateway, rtype, dhcp, priority)
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT SubnetAdmin.Create: error=%v", err)
+		} else {
+			logger.Info("EXIT SubnetAdmin.Create: success")
+		}
+	}()
 	memberShip := GetMemberShip(ctx)
 	ctx, db, newTransaction := StartTransaction(ctx)
 	defer func() {
@@ -329,14 +410,14 @@ func (a *SubnetAdmin) Create(ctx context.Context, vlan int, name, network, gatew
 			EndTransaction(ctx, err)
 		}
 	}()
-	permit := memberShip.CheckPermission(model.Writer)
+	permit := memberShip.CheckOrgPermission(model.OrgWriter)
 	if !permit {
 		logger.Error("Not authorized for this operation")
 		err = NewCLError(ErrPermissionDenied, "Not authorized for this operation", nil)
 		return
 	}
 	if rtype == "public" {
-		permit = memberShip.CheckPermission(model.Admin)
+		permit = memberShip.IsSystemAdmin()
 		if !permit {
 			logger.Error("Not authorized for this operation")
 			err = NewCLError(ErrPermissionDenied, "Not authorized for this operation", nil)
@@ -470,6 +551,14 @@ func (a *SubnetAdmin) Create(ctx context.Context, vlan int, name, network, gatew
 }
 
 func (a *SubnetAdmin) Delete(ctx context.Context, subnet *model.Subnet) (err error) {
+	logger.Infof("ENTER SubnetAdmin.Delete: subnetID=%d, uuid=%s", subnet.ID, subnet.UUID)
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT SubnetAdmin.Delete: error=%v", err)
+		} else {
+			logger.Info("EXIT SubnetAdmin.Delete: success")
+		}
+	}()
 	ctx, db, newTransaction := StartTransaction(ctx)
 	defer func() {
 		if newTransaction {
@@ -477,7 +566,7 @@ func (a *SubnetAdmin) Delete(ctx context.Context, subnet *model.Subnet) (err err
 		}
 	}()
 	memberShip := GetMemberShip(ctx)
-	permit := memberShip.ValidateOwner(model.Writer, subnet.Owner)
+	permit := memberShip.CheckResourceOrg(model.OrgWriter, subnet.Owner)
 	if !permit {
 		logger.Error("Not authorized to delete the subnet")
 		err = NewCLError(ErrPermissionDenied, "Not authorized to delete the subnet", nil)
@@ -564,11 +653,18 @@ func (a *SubnetAdmin) Delete(ctx context.Context, subnet *model.Subnet) (err err
 	return
 }
 
-func (a *SubnetAdmin) CountIdleAddressesForSubnet(ctx context.Context, subnet *model.Subnet) (int64, error) {
+func (a *SubnetAdmin) CountIdleAddressesForSubnet(ctx context.Context, subnet *model.Subnet) (idleCount int64, err error) {
+	logger.Infof("ENTER SubnetAdmin.CountIdleAddressesForSubnet: subnetID=%d", subnet.ID)
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT SubnetAdmin.CountIdleAddressesForSubnet: error=%v", err)
+		} else {
+			logger.Infof("EXIT SubnetAdmin.CountIdleAddressesForSubnet: idleCount=%d", idleCount)
+		}
+	}()
 	ctx, db := GetContextDB(ctx)
-	var idleCount int64
 
-	err := db.Model(&model.Address{}).
+	err = db.Model(&model.Address{}).
 		Where("subnet_id = ?", subnet.ID).
 		Where("allocated = ?", "f").
 		Where("reserved = ?", "f").
@@ -582,10 +678,18 @@ func (a *SubnetAdmin) CountIdleAddressesForSubnet(ctx context.Context, subnet *m
 		}
 	}
 
-	return idleCount, nil
+	return
 }
 
 func (a *SubnetAdmin) CountAddressStatistics(ctx context.Context, subnet *model.Subnet) (total, allocated, reserved, available int64, err error) {
+	logger.Infof("ENTER SubnetAdmin.CountAddressStatistics: subnetID=%d", subnet.ID)
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT SubnetAdmin.CountAddressStatistics: error=%v", err)
+		} else {
+			logger.Infof("EXIT SubnetAdmin.CountAddressStatistics: total=%d, available=%d", total, available)
+		}
+	}()
 	ctx, db := GetContextDB(ctx)
 
 	// 统计总数
@@ -631,6 +735,21 @@ func (a *SubnetAdmin) CountAddressStatistics(ctx context.Context, subnet *model.
 }
 
 func (a *SubnetAdmin) List(ctx context.Context, offset, limit int64, order, query, intQuery string) (total int64, subnets []*model.Subnet, err error) {
+	logger.Infof("ENTER SubnetAdmin.List: offset=%d, limit=%d, order=%s, query=%s, intQuery=%s", offset, limit, order, query, intQuery)
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT SubnetAdmin.List: error=%v", err)
+		} else {
+			logger.Info("EXIT SubnetAdmin.List: success")
+		}
+	}()
+	memberShip := GetMemberShip(ctx)
+	permit := memberShip.CheckOrgPermission(model.OrgReader)
+	if !permit {
+		logger.Error("Not authorized for this operation")
+		err = NewCLError(ErrPermissionDenied, "Not authorized for this operation", nil)
+		return
+	}
 	ctx, db := GetContextDB(ctx)
 	if limit == 0 {
 		limit = 16
@@ -640,22 +759,18 @@ func (a *SubnetAdmin) List(ctx context.Context, offset, limit int64, order, quer
 		order = "created_at"
 	}
 
-	memberShip := GetMemberShip(ctx)
-	where := memberShip.GetWhere()
-	if where != "" {
-		where = fmt.Sprintf("type = 'public' or type = 'site' or %s", where)
-	}
+	queryBuilder, args := memberShip.GetOrgFilter()
 	subnets = []*model.Subnet{}
-	if err = db.Model(&model.Subnet{}).Where(where).Where(query).Where(intQuery).Count(&total).Error; err != nil {
-		err = NewCLError(ErrSQLSyntaxError, "Database failed to count subnets", err)
+	if err = db.Model(&model.Subnet{}).Where(queryBuilder, args...).Where(query).Where(intQuery).Count(&total).Error; err != nil {
+		err = NewCLError(ErrSQLSyntaxError, "Failed to count subnets", err)
 		return
 	}
 	db = dbs.Sortby(db.Offset(offset).Limit(limit), order)
-	if err = db.Preload("Group").Preload("Router").Where(where).Where(query).Where(intQuery).Find(&subnets).Error; err != nil {
+	if err = db.Preload("Group").Preload("Router").Where(queryBuilder, args...).Where(query).Where(intQuery).Find(&subnets).Error; err != nil {
 		err = NewCLError(ErrSQLSyntaxError, "Database failed to query subnets", err)
 		return
 	}
-	permit := memberShip.CheckPermission(model.Writer)
+	permit = memberShip.CheckOrgPermission(model.OrgWriter)
 	if permit {
 		db = db.Offset(0).Limit(-1)
 		for _, subnet := range subnets {
@@ -672,8 +787,10 @@ func (a *SubnetAdmin) List(ctx context.Context, offset, limit int64, order, quer
 }
 
 func (v *SubnetView) List(c *macaron.Context, store session.Store) {
+	logger.Infof("ENTER SubnetView.List: query=%s", c.Req.URL.RawQuery)
+	defer logger.Info("EXIT SubnetView.List")
 	memberShip := GetMemberShip(c.Req.Context())
-	permit := memberShip.CheckPermission(model.Reader)
+	permit := memberShip.CheckOrgPermission(model.OrgReader)
 	if !permit {
 		logger.Error("Not authorized for this operation")
 		c.Data["ErrorMsg"] = "Not authorized for this operation"
@@ -720,6 +837,14 @@ func (v *SubnetView) List(c *macaron.Context, store session.Store) {
 }
 
 func (v *SubnetView) Delete(c *macaron.Context, store session.Store) (err error) {
+	logger.Infof("ENTER SubnetView.Delete: id=%s", c.Params("id"))
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT SubnetView.Delete: error=%v", err)
+		} else {
+			logger.Info("EXIT SubnetView.Delete: success")
+		}
+	}()
 	ctx := c.Req.Context()
 	id := c.Params("id")
 	if id == "" {
@@ -753,9 +878,11 @@ func (v *SubnetView) Delete(c *macaron.Context, store session.Store) (err error)
 }
 
 func (v *SubnetView) New(c *macaron.Context, store session.Store) {
+	logger.Infof("ENTER SubnetView.New: query=%s", c.Req.URL.RawQuery)
+	defer logger.Info("EXIT SubnetView.New")
 	ctx := c.Req.Context()
 	memberShip := GetMemberShip(ctx)
-	permit := memberShip.CheckPermission(model.Writer)
+	permit := memberShip.CheckOrgPermission(model.OrgWriter)
 	if !permit {
 		logger.Error("Not authorized for this operation")
 		c.Data["ErrorMsg"] = "Not authorized for this operation"
@@ -779,8 +906,10 @@ func (v *SubnetView) New(c *macaron.Context, store session.Store) {
 }
 
 func (v *SubnetView) Edit(c *macaron.Context, store session.Store) {
+	logger.Infof("ENTER SubnetView.Edit: id=%s, query=%s", c.Params("id"), c.Req.URL.RawQuery)
+	defer logger.Info("EXIT SubnetView.Edit")
 	memberShip := GetMemberShip(c.Req.Context())
-	permit := memberShip.CheckPermission(model.Writer)
+	permit := memberShip.CheckOrgPermission(model.OrgWriter)
 	if !permit {
 		logger.Error("Not authorized for this operation")
 		c.Data["ErrorMsg"] = "Not authorized for this operation"
@@ -793,7 +922,12 @@ func (v *SubnetView) Edit(c *macaron.Context, store session.Store) {
 		c.HTML(http.StatusBadRequest, "error")
 		return
 	}
-	permit, err := memberShip.CheckOwner(model.Reader, "subnets", id)
+	permit, err := memberShip.CheckResourceOrgByID(model.OrgReader, "subnets", int64(id))
+	if err != nil {
+		c.Data["ErrorMsg"] = err.Error()
+		c.HTML(http.StatusBadRequest, "error")
+		return
+	}
 	if !permit {
 		logger.Error("Not authorized for this operation")
 		c.Data["ErrorMsg"] = "Not authorized for this operation"
@@ -833,6 +967,14 @@ func (v *SubnetView) Edit(c *macaron.Context, store session.Store) {
 }
 
 func (v *SubnetView) checkRoutes(network, netmask, gateway, start, end, dns, routes string, id int64) (routeJson string, err error) {
+	logger.Infof("ENTER SubnetView.checkRoutes: network=%s, gateway=%s, id=%d", network, gateway, id)
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT SubnetView.checkRoutes: error=%v", err)
+		} else {
+			logger.Info("EXIT SubnetView.checkRoutes: success")
+		}
+	}()
 	if id > 0 {
 		db := DB()
 		subnet := &model.Subnet{Model: model.Model{ID: id}}
@@ -911,9 +1053,11 @@ func (v *SubnetView) checkRoutes(network, netmask, gateway, start, end, dns, rou
 }
 
 func (v *SubnetView) Patch(c *macaron.Context, store session.Store) {
+	logger.Infof("ENTER SubnetView.Patch: id=%s, query=%s", c.Params("id"), c.Req.URL.RawQuery)
+	defer logger.Info("EXIT SubnetView.Patch")
 	ctx := c.Req.Context()
 	memberShip := GetMemberShip(c.Req.Context())
-	permit := memberShip.CheckPermission(model.Writer)
+	permit := memberShip.CheckOrgPermission(model.OrgWriter)
 	if !permit {
 		logger.Error("Not authorized for this operation")
 		c.Data["ErrorMsg"] = "Not authorized for this operation"
@@ -927,7 +1071,12 @@ func (v *SubnetView) Patch(c *macaron.Context, store session.Store) {
 		c.HTML(http.StatusBadRequest, "error")
 		return
 	}
-	permit, err := memberShip.CheckOwner(model.Writer, "subnets", id)
+	permit, err := memberShip.CheckResourceOrgByID(model.OrgWriter, "subnets", id)
+	if err != nil {
+		c.Data["ErrorMsg"] = err.Error()
+		c.HTML(http.StatusBadRequest, "error")
+		return
+	}
 	if !permit {
 		logger.Error("Not authorized for this operation")
 		c.Data["ErrorMsg"] = "Not authorized for this operation"
@@ -991,7 +1140,17 @@ func (v *SubnetView) Patch(c *macaron.Context, store session.Store) {
 }
 
 func (v *SubnetView) Create(c *macaron.Context, store session.Store) {
+	logger.Infof("ENTER SubnetView.Create: query=%s", c.Req.URL.RawQuery)
+	defer logger.Info("EXIT SubnetView.Create")
 	ctx := c.Req.Context()
+	memberShip := GetMemberShip(ctx)
+	permit := memberShip.CheckOrgPermission(model.OrgWriter)
+	if !permit {
+		logger.Error("Not authorized for this operation")
+		c.Data["ErrorMsg"] = "Not authorized for this operation"
+		c.HTML(http.StatusBadRequest, "error")
+		return
+	}
 	redirectTo := "../subnets"
 	name := c.QueryTrim("name")
 	vlan := c.QueryInt("vlan")

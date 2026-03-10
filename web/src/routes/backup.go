@@ -32,7 +32,14 @@ type BackupView struct{}
 // backup volume to another pool, this is an async operation and will return the task ID
 // if the poolID is empty, the backup will be done to the same pool with snapshot
 func (a *BackupAdmin) CreateBackupByID(ctx context.Context, volumeID int64, poolID string, name string) (backup *model.VolumeBackup, err error) {
-	logger.Debugf("Backup volume by ID %d to pool %s", volumeID, poolID)
+	logger.Infof("ENTER BackupAdmin.CreateBackupByID: volumeID=%d, poolID=%s, name=%s", volumeID, poolID, name)
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT BackupAdmin.CreateBackupByID: error=%v", err)
+		} else {
+			logger.Infof("EXIT BackupAdmin.CreateBackupByID: success, backupID=%d", backup.ID)
+		}
+	}()
 	volume, err := volumeAdmin.Get(ctx, volumeID)
 	if err != nil {
 		logger.Error("Failed to get volume", err)
@@ -43,7 +50,14 @@ func (a *BackupAdmin) CreateBackupByID(ctx context.Context, volumeID int64, pool
 }
 
 func (a *BackupAdmin) CreateBackupByUUID(ctx context.Context, uuid string, poolID string, name string) (backup *model.VolumeBackup, err error) {
-	logger.Debugf("Backup volume by UUID %d to pool %s", uuid, poolID)
+	logger.Infof("ENTER BackupAdmin.CreateBackupByUUID: uuid=%s, poolID=%s, name=%s", uuid, poolID, name)
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT BackupAdmin.CreateBackupByUUID: error=%v", err)
+		} else {
+			logger.Infof("EXIT BackupAdmin.CreateBackupByUUID: success, backupID=%d", backup.ID)
+		}
+	}()
 	volume, err := volumeAdmin.GetVolumeByUUID(ctx, uuid)
 	if err != nil {
 		logger.Error("Failed to get volume", err)
@@ -54,8 +68,16 @@ func (a *BackupAdmin) CreateBackupByUUID(ctx context.Context, uuid string, poolI
 }
 
 func (a *BackupAdmin) createBackup(ctx context.Context, volume *model.Volume, poolID string, name string) (backup *model.VolumeBackup, err error) {
+	logger.Infof("ENTER BackupAdmin.createBackup: volumeID=%d, poolID=%s, name=%s", volume.ID, poolID, name)
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT BackupAdmin.createBackup: error=%v", err)
+		} else {
+			logger.Infof("EXIT BackupAdmin.createBackup: success, backupID=%d", backup.ID)
+		}
+	}()
 	memberShip := GetMemberShip(ctx)
-	permit := memberShip.ValidateOwner(model.Writer, volume.Owner)
+	permit := memberShip.CheckResourceOrg(model.OrgWriter, volume.Owner)
 	if !permit {
 		logger.Errorf("Not authorized to backup volume(%s)", volume.UUID)
 		err = NewCLError(ErrPermissionDenied, "Not authorized to backup the volume", nil)
@@ -98,7 +120,7 @@ func (a *BackupAdmin) createBackup(ctx context.Context, volume *model.Volume, po
 		err = NewCLError(ErrDatabaseError, "Failed to update volume status", err)
 		return
 	}
-	control := fmt.Sprintf("inter=")
+	control := "inter="
 	if volume.InstanceID > 0 {
 		instance := volume.Instance
 		if instance == nil {
@@ -143,7 +165,14 @@ func (a *BackupAdmin) createBackup(ctx context.Context, volume *model.Volume, po
 
 // snapshot volume, this is an async operation and will return the task ID
 func (a *BackupAdmin) CreateSnapshotByID(ctx context.Context, volumeID int64, name string) (backup *model.VolumeBackup, err error) {
-	logger.Debugf("Snapshot volume by ID %d", volumeID)
+	logger.Infof("ENTER BackupAdmin.CreateSnapshotByID: volumeID=%d, name=%s", volumeID, name)
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT BackupAdmin.CreateSnapshotByID: error=%v", err)
+		} else {
+			logger.Infof("EXIT BackupAdmin.CreateSnapshotByID: success, snapshotID=%d", backup.ID)
+		}
+	}()
 	volume, err := volumeAdmin.Get(ctx, volumeID)
 	if err != nil {
 		logger.Error("Failed to get volume", err)
@@ -153,7 +182,14 @@ func (a *BackupAdmin) CreateSnapshotByID(ctx context.Context, volumeID int64, na
 }
 
 func (a *BackupAdmin) CreateSnapshotByUUID(ctx context.Context, uuid, name string) (backup *model.VolumeBackup, err error) {
-	logger.Debugf("Snapshot volume by UUID %d", uuid)
+	logger.Infof("ENTER BackupAdmin.CreateSnapshotByUUID: uuid=%s, name=%s", uuid, name)
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT BackupAdmin.CreateSnapshotByUUID: error=%v", err)
+		} else {
+			logger.Infof("EXIT BackupAdmin.CreateSnapshotByUUID: success, snapshotID=%d", backup.ID)
+		}
+	}()
 	volume, err := volumeAdmin.GetVolumeByUUID(ctx, uuid)
 	if err != nil {
 		logger.Error("Failed to get volume", err)
@@ -163,8 +199,16 @@ func (a *BackupAdmin) CreateSnapshotByUUID(ctx context.Context, uuid, name strin
 }
 
 func (a *BackupAdmin) createSnapshot(ctx context.Context, name string, volume *model.Volume) (snapshot *model.VolumeBackup, err error) {
+	logger.Infof("ENTER BackupAdmin.createSnapshot: name=%s, volumeID=%d", name, volume.ID)
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT BackupAdmin.createSnapshot: error=%v", err)
+		} else {
+			logger.Infof("EXIT BackupAdmin.createSnapshot: success, snapshotID=%d", snapshot.ID)
+		}
+	}()
 	memberShip := GetMemberShip(ctx)
-	permit := memberShip.ValidateOwner(model.Writer, volume.Owner)
+	permit := memberShip.CheckResourceOrg(model.OrgWriter, volume.Owner)
 	if !permit {
 		logger.Error("Not authorized to snapshot volume")
 		err = NewCLError(ErrPermissionDenied, "Not authorized to snapshot the volume", nil)
@@ -187,7 +231,7 @@ func (a *BackupAdmin) createSnapshot(ctx context.Context, name string, volume *m
 		err = NewCLError(ErrDatabaseError, "Failed to create snapshot record", err)
 		return
 	}
-	control := fmt.Sprintf("inter=")
+	control := "inter="
 	vol_driver := GetVolumeDriver()
 	uuid := volume.UUID
 	logger.Debugf("creating snapshot (%s) for volume %s", snapshot.UUID, uuid)
@@ -210,7 +254,14 @@ func (a *BackupAdmin) createSnapshot(ctx context.Context, name string, volume *m
 }
 
 func (a *BackupAdmin) createBackupModel(ctx context.Context, name, backupType string, volume *model.Volume, poolID string) (backup *model.VolumeBackup, task *model.Task, err error) {
-	logger.Debugf("Creating backup model for volume %s", volume.UUID)
+	logger.Infof("ENTER BackupAdmin.createBackupModel: name=%s, backupType=%s, volumeID=%d, poolID=%s", name, backupType, volume.ID, poolID)
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT BackupAdmin.createBackupModel: error=%v", err)
+		} else {
+			logger.Infof("EXIT BackupAdmin.createBackupModel: success, backupID=%d, taskID=%d", backup.ID, task.ID)
+		}
+	}()
 	ctx, db, newTransaction := StartTransaction(ctx)
 	defer func() {
 		if newTransaction {
@@ -256,7 +307,14 @@ func (a *BackupAdmin) createBackupModel(ctx context.Context, name, backupType st
 }
 
 func (a *BackupAdmin) GetBackupByID(ctx context.Context, backupID int64) (backup *model.VolumeBackup, err error) {
-	logger.Debugf("Get backup by ID %d", backupID)
+	logger.Infof("ENTER BackupAdmin.GetBackupByID: backupID=%d", backupID)
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT BackupAdmin.GetBackupByID: error=%v", err)
+		} else {
+			logger.Infof("EXIT BackupAdmin.GetBackupByID: success, backupUUID=%s", backup.UUID)
+		}
+	}()
 	if backupID <= 0 {
 		err_msg := fmt.Sprintf("Invalid backup ID: %d", backupID)
 		logger.Error(err_msg)
@@ -271,7 +329,7 @@ func (a *BackupAdmin) GetBackupByID(ctx context.Context, backupID int64) (backup
 		err = NewCLError(ErrBackupNotFound, "Backup/Snapshot not found", err)
 		return
 	}
-	permit := memberShip.ValidateOwner(model.Reader, backup.Owner)
+	permit := memberShip.CheckResourceOrg(model.OrgReader, backup.Owner)
 	if !permit {
 		logger.Error("Not authorized to read the backup")
 		err = NewCLError(ErrPermissionDenied, "Not authorized to read the backup", nil)
@@ -281,18 +339,25 @@ func (a *BackupAdmin) GetBackupByID(ctx context.Context, backupID int64) (backup
 }
 
 func (a *BackupAdmin) GetBackupByUUID(ctx context.Context, uuID string) (backup *model.VolumeBackup, err error) {
-	logger.Debugf("Get backup by UUID %d", uuID)
+	logger.Infof("ENTER BackupAdmin.GetBackupByUUID: uuID=%s", uuID)
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT BackupAdmin.GetBackupByUUID: error=%v", err)
+		} else {
+			logger.Infof("EXIT BackupAdmin.GetBackupByUUID: success, backupID=%d", backup.ID)
+		}
+	}()
 	db := DB()
 	memberShip := GetMemberShip(ctx)
 	backup = &model.VolumeBackup{}
-	where := memberShip.GetWhere()
-	err = db.Preload("Volume").Where(where).Where("uuid = ?", uuID).Take(backup).Error
+	query, args := memberShip.GetOrgFilter()
+	err = db.Preload("Volume").Where(query, args...).Where("uuid = ?", uuID).Take(backup).Error
 	if err != nil {
 		logger.Error("DB: query backup failed", err)
 		err = NewCLError(ErrVolumeNotFound, "Volume not found", err)
 		return
 	}
-	permit := memberShip.ValidateOwner(model.Reader, backup.Owner)
+	permit := memberShip.CheckResourceOrg(model.OrgReader, backup.Owner)
 	if !permit {
 		logger.Error("Not authorized to read the backup")
 		err = NewCLError(ErrPermissionDenied, "Not authorized to read the backup", nil)
@@ -302,7 +367,14 @@ func (a *BackupAdmin) GetBackupByUUID(ctx context.Context, uuID string) (backup 
 }
 
 func (a *BackupAdmin) Delete(ctx context.Context, backup *model.VolumeBackup) (err error) {
-	logger.Debugf("Delete backup %s", backup.UUID)
+	logger.Infof("ENTER BackupAdmin.Delete: backupID=%d, backupUUID=%s", backup.ID, backup.UUID)
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT BackupAdmin.Delete: error=%v", err)
+		} else {
+			logger.Info("EXIT BackupAdmin.Delete: success")
+		}
+	}()
 	if !backup.CanDelete() {
 		msg := fmt.Sprintf("Backup %s is in %s state, cannot be deleted now", backup.UUID, backup.Status)
 		logger.Errorf(msg)
@@ -317,7 +389,7 @@ func (a *BackupAdmin) Delete(ctx context.Context, backup *model.VolumeBackup) (e
 		}
 	}()
 	memberShip := GetMemberShip(ctx)
-	permit := memberShip.ValidateOwner(model.Writer, backup.Owner)
+	permit := memberShip.CheckResourceOrg(model.OrgWriter, backup.Owner)
 	if !permit {
 		logger.Error("Not authorized to delete the backup")
 		err = NewCLError(ErrPermissionDenied, "Not authorized to delete the backup", nil)
@@ -330,7 +402,7 @@ func (a *BackupAdmin) Delete(ctx context.Context, backup *model.VolumeBackup) (e
 		return
 	}
 	vol_driver := GetVolumeDriver()
-	control := fmt.Sprintf("inter=")
+	control := "inter="
 	wdsUUID := backup.GetOriginBackupID()
 	if wdsUUID != "" {
 		command := fmt.Sprintf("/opt/cloudland/scripts/backend/delete_snapshot_%s.sh '%s'", vol_driver, wdsUUID)
@@ -344,7 +416,14 @@ func (a *BackupAdmin) Delete(ctx context.Context, backup *model.VolumeBackup) (e
 }
 
 func (a *BackupAdmin) DeleteByID(ctx context.Context, backupID int64) (err error) {
-	logger.Debugf("Delete backup by ID %d", backupID)
+	logger.Infof("ENTER BackupAdmin.DeleteByID: backupID=%d", backupID)
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT BackupAdmin.DeleteByID: error=%v", err)
+		} else {
+			logger.Info("EXIT BackupAdmin.DeleteByID: success")
+		}
+	}()
 	backup, err := a.GetBackupByID(ctx, backupID)
 	if err != nil {
 		logger.Error("Failed to get backup", err)
@@ -355,7 +434,14 @@ func (a *BackupAdmin) DeleteByID(ctx context.Context, backupID int64) (err error
 }
 
 func (a *BackupAdmin) DeleteByUUID(ctx context.Context, uuID string) (err error) {
-	logger.Debugf("Delete backup by UUID %d", uuID)
+	logger.Infof("ENTER BackupAdmin.DeleteByUUID: uuID=%s", uuID)
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT BackupAdmin.DeleteByUUID: error=%v", err)
+		} else {
+			logger.Info("EXIT BackupAdmin.DeleteByUUID: success")
+		}
+	}()
 	backup, err := a.GetBackupByUUID(ctx, uuID)
 	if err != nil {
 		logger.Error("Failed to get backup", err)
@@ -366,7 +452,14 @@ func (a *BackupAdmin) DeleteByUUID(ctx context.Context, uuID string) (err error)
 }
 
 func (a *BackupAdmin) Restore(ctx context.Context, backupID int64) (backup *model.VolumeBackup, err error) {
-	logger.Debugf("Restore volume from backup %d", backupID)
+	logger.Infof("ENTER BackupAdmin.Restore: backupID=%d", backupID)
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT BackupAdmin.Restore: error=%v", err)
+		} else {
+			logger.Infof("EXIT BackupAdmin.Restore: success, taskID=%d", backup.TaskID)
+		}
+	}()
 	backup, err = a.GetBackupByID(ctx, backupID)
 	if err != nil {
 		logger.Error("Failed to get backup", err)
@@ -384,7 +477,7 @@ func (a *BackupAdmin) Restore(ctx context.Context, backupID int64) (backup *mode
 		return
 	}
 	memberShip := GetMemberShip(ctx)
-	permit := memberShip.ValidateOwner(model.Writer, volume.Owner)
+	permit := memberShip.CheckResourceOrg(model.OrgWriter, volume.Owner)
 	if !permit {
 		logger.Errorf("Not authorized to restore volume(%s)", volume.UUID)
 		err = NewCLError(ErrPermissionDenied, "Not authorized to restore the volume", nil)
@@ -461,7 +554,14 @@ func (a *BackupAdmin) Restore(ctx context.Context, backupID int64) (backup *mode
 }
 
 func (a *BackupAdmin) List(ctx context.Context, offset, limit int64, order, query string, volumeID int64, backupType string) (total int64, backups []*model.VolumeBackup, err error) {
-	logger.Debugf("List backup, offset %d, limit %d, order %s, query %s, volumeID %d, backupType %s", offset, limit, order, query, volumeID, backupType)
+	logger.Infof("ENTER BackupAdmin.List: offset=%d, limit=%d, order=%s, query=%s, volumeID=%d, backupType=%s", offset, limit, order, query, volumeID, backupType)
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT BackupAdmin.List: error=%v", err)
+		} else {
+			logger.Infof("EXIT BackupAdmin.List: total=%d, count=%d", total, len(backups))
+		}
+	}()
 	memberShip := GetMemberShip(ctx)
 	db := DB()
 	if limit == 0 {
@@ -474,7 +574,7 @@ func (a *BackupAdmin) List(ctx context.Context, offset, limit int64, order, quer
 	if query != "" {
 		query = fmt.Sprintf("name like '%%%s%%'", query)
 	}
-	memberShipSQL := memberShip.GetWhere()
+	query, args := memberShip.GetOrgFilter()
 	whereSQL := ""
 	if volumeID > 0 {
 		whereSQL = fmt.Sprintf("volume_id = %d", volumeID)
@@ -494,41 +594,40 @@ func (a *BackupAdmin) List(ctx context.Context, offset, limit int64, order, quer
 		}
 	}
 	if whereSQL != "" {
-		if err = db.Model(&model.VolumeBackup{}).Where(memberShipSQL).Where(whereSQL).Count(&total).Error; err != nil {
+		if err = db.Model(&model.VolumeBackup{}).Where(query, args...).Where(whereSQL).Count(&total).Error; err != nil {
 			logger.Error("DB: query backup count failed", err)
 			err = NewCLError(ErrSQLSyntaxError, "Failed to query backup count", err)
 			return
 		}
 	} else {
-		if err = db.Model(&model.VolumeBackup{}).Where(memberShipSQL).Count(&total).Error; err != nil {
+		if err = db.Model(&model.VolumeBackup{}).Where(query, args...).Count(&total).Error; err != nil {
 			logger.Error("DB: query backup count failed", err)
 			err = NewCLError(ErrSQLSyntaxError, "Failed to query backup count", err)
 			return
 		}
 	}
 	db = dbs.Sortby(db.Offset(offset).Limit(limit), order)
-	if err = db.Preload("Volume").Preload("Task").Where(memberShipSQL).Where(whereSQL).Find(&backups).Error; err != nil {
+	if err = db.Preload("Volume").Preload("Task").Where(query, args...).Where(whereSQL).Find(&backups).Error; err != nil {
 		logger.Error("DB: query backup failed", err)
 		err = NewCLError(ErrSQLSyntaxError, "Failed to query backup", err)
 		return
 	}
-	permit := memberShip.CheckPermission(model.Admin)
+	permit := memberShip.CheckSystemPermission()
 	if permit {
-		db = db.Offset(0).Limit(-1)
-		for _, backup := range backups {
-			backup.OwnerInfo = &model.Organization{Model: model.Model{ID: backup.Owner}}
-			if err = db.Take(backup.OwnerInfo).Error; err != nil {
-				logger.Error("Failed to query owner info", err)
-				err = NewCLError(ErrOwnerNotFound, "Failed to query owner info", err)
-				return
-			}
-		}
+		_ = permit // SystemAdmin can see all backups
 	}
 	return
 }
 
 func (a *BackupAdmin) Update(ctx context.Context, id int64, name, path string, status model.BackupStatus) (backup *model.VolumeBackup, err error) {
-	logger.Debugf("Update backup %d, name: %s, path: %s, status: %s", id, name, path, status)
+	logger.Infof("ENTER BackupAdmin.Update: id=%d, name=%s, path=%s, status=%s", id, name, path, status)
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT BackupAdmin.Update: error=%v", err)
+		} else {
+			logger.Info("EXIT BackupAdmin.Update: success")
+		}
+	}()
 	ctx, db, newTransaction := StartTransaction(ctx)
 	defer func() {
 		if newTransaction {
@@ -541,7 +640,7 @@ func (a *BackupAdmin) Update(ctx context.Context, id int64, name, path string, s
 		return
 	}
 	memberShip := GetMemberShip(ctx)
-	permit := memberShip.ValidateOwner(model.Writer, backup.Owner)
+	permit := memberShip.CheckResourceOrg(model.OrgWriter, backup.Owner)
 	if !permit {
 		logger.Error("Not authorized to update the backup")
 		err = NewCLError(ErrPermissionDenied, "Not authorized to update the backup", nil)
@@ -565,8 +664,10 @@ func (a *BackupAdmin) Update(ctx context.Context, id int64, name, path string, s
 }
 
 func (v *BackupView) List(c *macaron.Context, store session.Store) {
+	logger.Infof("ENTER BackupView.List: query=%s", c.Req.URL.RawQuery)
+	defer logger.Info("EXIT BackupView.List")
 	memberShip := GetMemberShip(c.Req.Context())
-	permit := memberShip.CheckPermission(model.Reader)
+	permit := memberShip.CheckOrgPermission(model.OrgReader)
 	if !permit {
 		logger.Error("Not authorized for this operation")
 		c.Data["ErrorMsg"] = "Not authorized for this operation"
@@ -600,8 +701,10 @@ func (v *BackupView) List(c *macaron.Context, store session.Store) {
 }
 
 func (v *BackupView) New(c *macaron.Context, store session.Store) {
+	logger.Infof("ENTER BackupView.New: query=%s", c.Req.URL.RawQuery)
+	defer logger.Info("EXIT BackupView.New")
 	memberShip := GetMemberShip(c.Req.Context())
-	permit := memberShip.CheckPermission(model.Writer)
+	permit := memberShip.CheckOrgPermission(model.OrgWriter)
 	if !permit {
 		logger.Error("Not authorized for this operation")
 		c.Data["ErrorMsg"] = "Not authorized for this operation"
@@ -609,9 +712,9 @@ func (v *BackupView) New(c *macaron.Context, store session.Store) {
 		return
 	}
 	db := DB()
-	where := memberShip.GetWhere()
+	query, args := memberShip.GetOrgFilter()
 	volumes := []*model.Volume{}
-	err := db.Where(where).Find(&volumes).Error
+	err := db.Where(query, args...).Find(&volumes).Error
 	if err != nil {
 		logger.Error("Failed to query volumes %v", err)
 		return
@@ -633,8 +736,10 @@ func (v *BackupView) New(c *macaron.Context, store session.Store) {
 }
 
 func (v *BackupView) Create(c *macaron.Context, store session.Store) {
+	logger.Infof("ENTER BackupView.Create: query=%s", c.Req.URL.RawQuery)
+	defer logger.Info("EXIT BackupView.Create")
 	memberShip := GetMemberShip(c.Req.Context())
-	permit := memberShip.CheckPermission(model.Writer)
+	permit := memberShip.CheckOrgPermission(model.OrgWriter)
 	if !permit {
 		logger.Error("Not authorized for this operation")
 		c.Data["ErrorMsg"] = "Not authorized for this operation"
@@ -653,12 +758,12 @@ func (v *BackupView) Create(c *macaron.Context, store session.Store) {
 		return
 	}
 	var err error
-	logger.Debugf("Creating %s %s for volume %d", backupType, name, volumeID)
-	if backupType == "snapshot" {
+	switch backupType {
+	case "snapshot":
 		_, err = backupAdmin.CreateSnapshotByID(c.Req.Context(), volumeID, name)
-	} else if backupType == "backup" {
+	case "backup":
 		_, err = backupAdmin.CreateBackupByID(c.Req.Context(), volumeID, poolID, name)
-	} else {
+	default:
 		err = fmt.Errorf("Unknown backup type %s", backupType)
 	}
 	if err != nil {
@@ -671,6 +776,8 @@ func (v *BackupView) Create(c *macaron.Context, store session.Store) {
 }
 
 func (v *BackupView) Delete(c *macaron.Context, store session.Store) (err error) {
+	logger.Infof("ENTER BackupView.Delete: params=%v", c.Params)
+	defer logger.Info("EXIT BackupView.Delete")
 	ctx := c.Req.Context()
 	id := c.Params("id")
 	if id == "" {
@@ -703,8 +810,10 @@ func (v *BackupView) Delete(c *macaron.Context, store session.Store) (err error)
 }
 
 func (v *BackupView) Restore(c *macaron.Context, store session.Store) {
+	logger.Infof("ENTER BackupView.Restore: query=%s", c.Req.URL.RawQuery)
+	defer logger.Info("EXIT BackupView.Restore")
 	memberShip := GetMemberShip(c.Req.Context())
-	permit := memberShip.CheckPermission(model.Writer)
+	permit := memberShip.CheckOrgPermission(model.OrgWriter)
 	if !permit {
 		logger.Error("Not authorized for this operation")
 		c.Data["ErrorMsg"] = "Not authorized for this operation"

@@ -86,8 +86,14 @@ type InstancesData struct {
 func (a *InstanceAdmin) Create(ctx context.Context, count int, prefix, userdata string, userdataType string, vendorData string, vendorDataType string, image *model.Image,
 	zone *model.Zone, routerID int64, primaryIface *InterfaceInfo, secondaryIfaces []*InterfaceInfo,
 	keys []*model.Key, rootPasswd string, loginPort, hyperID int, cpu int32, memory int32, disk int32, diskIopsLimit int32, diskBpsLimit int32, nestedEnable bool, poolID string) (instances []*model.Instance, err error) {
-	logger.Debugf("Create %d instances with image %s, zone %s, router %d, primary interface %v, secondary interfaces %v, keys %v, root password %s, hyper %d, cpu %d, memory %d, disk %d, disk_iops_limit %d, disk_bps_limit %d, nestedEnable %t, poolID %s",
-		count, image.Name, zone.Name, routerID, primaryIface, secondaryIfaces, keys, "********", hyperID, cpu, memory, disk, diskIopsLimit, diskBpsLimit, nestedEnable, poolID)
+	logger.Infof("ENTER InstanceAdmin.Create: count=%d, prefix=%s, image=%s, zone=%s, routerID=%d", count, prefix, image.Name, zone.Name, routerID)
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT InstanceAdmin.Create: error=%v", err)
+		} else {
+			logger.Infof("EXIT InstanceAdmin.Create: createdCount=%d", len(instances))
+		}
+	}()
 	if count > 1 && len(primaryIface.PublicIps) > 0 {
 		err = NewCLError(ErrInvalidParameter, "Public addresses are not allowed to set when count > 1", nil)
 		return
@@ -124,9 +130,10 @@ func (a *InstanceAdmin) Create(ctx context.Context, count int, prefix, userdata 
 		}
 	}
 	if loginPort <= 0 {
-		if image.OSCode == "linux" {
+		switch image.OSCode {
+		case "linux":
 			loginPort = 22
-		} else if image.OSCode == "windows" {
+		case "windows":
 			loginPort = 3389
 		}
 	}
@@ -237,7 +244,7 @@ func (a *InstanceAdmin) Create(ctx context.Context, count int, prefix, userdata 
 			return nil, NewCLError(ErrInterfaceInvalidSubnet, "Invalid or duplicate subnets for interfaces", err)
 		}
 
-		ifaces, metadata, err = a.buildMetadata(ctx, primaryIface, secondaryIfaces, instancePasswd, loginPort, keys, instance, diskIopsLimit, diskBpsLimit, routerID, zoneID, "")
+		ifaces, metadata, err = a.buildMetadata(ctx, primaryIface, secondaryIfaces, instancePasswd, loginPort, keys, instance, diskIopsLimit, diskBpsLimit, "")
 		if err != nil {
 			logger.Error("Build instance metadata failed", err)
 			return nil, NewCLError(ErrInvalidMetadata, "Failed to build instance metadata", err)
@@ -261,7 +268,14 @@ func (a *InstanceAdmin) Create(ctx context.Context, count int, prefix, userdata 
 }
 
 func (a *InstanceAdmin) Rescue(ctx context.Context, instance *model.Instance, rescueImage *model.Image, rootPasswd string) (err error) {
-	logger.Debugf("Rescue instance %d", instance.ID)
+	logger.Infof("ENTER InstanceAdmin.Rescue: instanceID=%d, rescueImageID=%v", instance.ID, rescueImage)
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT InstanceAdmin.Rescue: error=%v", err)
+		} else {
+			logger.Info("EXIT InstanceAdmin.Rescue: success")
+		}
+	}()
 	ctx, db, newTransaction := StartTransaction(ctx)
 	defer func() {
 		if newTransaction {
@@ -317,7 +331,14 @@ func (a *InstanceAdmin) Rescue(ctx context.Context, instance *model.Instance, re
 }
 
 func (a *InstanceAdmin) EndRescue(ctx context.Context, instance *model.Instance) (err error) {
-	logger.Debugf("End rescuing instance %d", instance.ID)
+	logger.Infof("ENTER InstanceAdmin.EndRescue: instanceID=%d", instance.ID)
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT InstanceAdmin.EndRescue: error=%v", err)
+		} else {
+			logger.Info("EXIT InstanceAdmin.EndRescue: success")
+		}
+	}()
 	ctx, db, newTransaction := StartTransaction(ctx)
 	defer func() {
 		if newTransaction {
@@ -344,6 +365,14 @@ func (a *InstanceAdmin) EndRescue(ctx context.Context, instance *model.Instance)
 }
 
 func (a *InstanceAdmin) CheckVolumeIsRestoring(ctx context.Context, instanceID int64) (err error) {
+	logger.Infof("ENTER InstanceAdmin.CheckVolumeIsRestoring: instanceID=%d", instanceID)
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT InstanceAdmin.CheckVolumeIsRestoring: error=%v", err)
+		} else {
+			logger.Info("EXIT InstanceAdmin.CheckVolumeIsRestoring: none restoring")
+		}
+	}()
 	vols, err := volumeAdmin.GetVolumesByInstanceID(ctx, instanceID)
 	if err != nil {
 		return
@@ -357,6 +386,8 @@ func (a *InstanceAdmin) CheckVolumeIsRestoring(ctx context.Context, instanceID i
 }
 
 func (a *InstanceAdmin) executeCommandList(ctx context.Context, cmdList []*ExecutionCommand) {
+	logger.Infof("ENTER InstanceAdmin.executeCommandList: cmdCount=%d", len(cmdList))
+	defer logger.Info("EXIT InstanceAdmin.executeCommandList")
 	var err error
 	for _, cmd := range cmdList {
 		err = HyperExecute(ctx, cmd.Control, cmd.Command)
@@ -364,10 +395,17 @@ func (a *InstanceAdmin) executeCommandList(ctx context.Context, cmdList []*Execu
 			logger.Error("Command execution failed", err)
 		}
 	}
-	return
 }
 
 func (a *InstanceAdmin) ChangeInstanceStatus(ctx context.Context, instance *model.Instance, action string) (err error) {
+	logger.Infof("ENTER InstanceAdmin.ChangeInstanceStatus: instanceID=%d, action=%s", instance.ID, action)
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT InstanceAdmin.ChangeInstanceStatus: error=%v", err)
+		} else {
+			logger.Info("EXIT InstanceAdmin.ChangeInstanceStatus: success")
+		}
+	}()
 	control := fmt.Sprintf("inter=%d", instance.Hyper)
 	command := fmt.Sprintf("/opt/cloudland/scripts/backend/action_vm.sh '%d' '%s'", instance.ID, action)
 	err = HyperExecute(ctx, control, command)
@@ -379,16 +417,20 @@ func (a *InstanceAdmin) ChangeInstanceStatus(ctx context.Context, instance *mode
 }
 
 func (a *InstanceAdmin) Update(ctx context.Context, instance *model.Instance, hostname string, action PowerAction, hyperID int) (err error) {
+	logger.Infof("ENTER InstanceAdmin.Update: instanceID=%d, hostname=%s, action=%s, hyperID=%d", instance.ID, hostname, action, hyperID)
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT InstanceAdmin.Update: error=%v", err)
+		} else {
+			logger.Info("EXIT InstanceAdmin.Update: success")
+		}
+	}()
 	if instance.Status == model.InstanceStatusMigrating {
 		err = fmt.Errorf("Instance is not in a valid state")
 		return
 	}
 	memberShip := GetMemberShip(ctx)
-	permit, err := memberShip.CheckOwner(model.Writer, "instances", instance.ID)
-	if err != nil {
-		logger.Error("Failed to check owner")
-		return
-	}
+	permit := memberShip.CheckResourceOrg(model.OrgWriter, instance.Owner)
 	if !permit {
 		logger.Error("Not authorized to update the instance")
 		err = NewCLError(ErrPermissionDenied, "Not authorized to update the instance", nil)
@@ -402,7 +444,7 @@ func (a *InstanceAdmin) Update(ctx context.Context, instance *model.Instance, ho
 		}
 	}()
 	if hyperID != int(instance.Hyper) {
-		permit, err = memberShip.CheckAdmin(model.Admin, "instances", instance.ID)
+		permit = memberShip.IsSystemAdmin()
 		if !permit {
 			logger.Error("Not authorized to migrate VM")
 			err = NewCLError(ErrPermissionDenied, "Not authorized to migrate VM", nil)
@@ -428,7 +470,14 @@ func (a *InstanceAdmin) Update(ctx context.Context, instance *model.Instance, ho
 }
 
 func (a *InstanceAdmin) Resize(ctx context.Context, instance *model.Instance, cpu int32, memory int32) (err error) {
-	logger.Debugf("Resize instance %d with cpu %d, memory %d", instance.ID, cpu, memory)
+	logger.Infof("ENTER InstanceAdmin.Resize: instanceID=%d, cpu=%d, memory=%d", instance.ID, cpu, memory)
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT InstanceAdmin.Resize: error=%v", err)
+		} else {
+			logger.Info("EXIT InstanceAdmin.Resize: success")
+		}
+	}()
 	ctx, db, newTransaction := StartTransaction(ctx)
 	defer func() {
 		if newTransaction {
@@ -436,11 +485,7 @@ func (a *InstanceAdmin) Resize(ctx context.Context, instance *model.Instance, cp
 		}
 	}()
 	memberShip := GetMemberShip(ctx)
-	permit, err := memberShip.CheckOwner(model.Writer, "instances", instance.ID)
-	if err != nil {
-		logger.Error("Failed to check owner")
-		return
-	}
+	permit := memberShip.CheckResourceOrg(model.OrgWriter, instance.Owner)
 	if !permit {
 		logger.Error("Not authorized to reinstall the instance")
 		err = fmt.Errorf("Not authorized")
@@ -498,7 +543,14 @@ func (a *InstanceAdmin) Resize(ctx context.Context, instance *model.Instance, cp
 }
 
 func (a *InstanceAdmin) Reinstall(ctx context.Context, instance *model.Instance, image *model.Image, rootPasswd string, keys []*model.Key, cpu int32, memory int32, disk int32, loginPort int) (err error) {
-	logger.Debugf("Reinstall instance %d with image %d, cpu %d, memory %d, disk %d", instance.ID, image.ID, cpu, memory, disk)
+	logger.Infof("ENTER InstanceAdmin.Reinstall: instanceID=%d, imageID=%d, cpu=%d, memory=%d, disk=%d", instance.ID, image.ID, cpu, memory, disk)
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT InstanceAdmin.Reinstall: error=%v", err)
+		} else {
+			logger.Info("EXIT InstanceAdmin.Reinstall: success")
+		}
+	}()
 	if instance.Status == "rescuing" {
 		err = NewCLError(ErrInstanceInvalidState, "Instance is not in the right state", nil)
 		logger.Error("Instance is not in the right state")
@@ -511,11 +563,7 @@ func (a *InstanceAdmin) Reinstall(ctx context.Context, instance *model.Instance,
 		}
 	}()
 	memberShip := GetMemberShip(ctx)
-	permit, err := memberShip.CheckOwner(model.Writer, "instances", instance.ID)
-	if err != nil {
-		logger.Error("Failed to check owner")
-		return
-	}
+	permit := memberShip.CheckResourceOrg(model.OrgWriter, instance.Owner)
 	if !permit {
 		logger.Error("Not authorized to reinstall the instance")
 		err = NewCLError(ErrPermissionDenied, "Not authorized to reinstall the instance", nil)
@@ -667,7 +715,14 @@ func (a *InstanceAdmin) Reinstall(ctx context.Context, instance *model.Instance,
 }
 
 func (a *InstanceAdmin) SetUserPassword(ctx context.Context, id int64, user, password string) (err error) {
-	logger.Debugf("Set password for user %s of instance %d", user, id)
+	logger.Infof("ENTER InstanceAdmin.SetUserPassword: id=%d, user=%s", id, user)
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT InstanceAdmin.SetUserPassword: error=%v", err)
+		} else {
+			logger.Info("EXIT InstanceAdmin.SetUserPassword: success")
+		}
+	}()
 	ctx, db := GetContextDB(ctx)
 	instance := &model.Instance{Model: model.Model{ID: id}}
 	if err = db.Preload("Image").Take(instance).Error; err != nil {
@@ -675,11 +730,7 @@ func (a *InstanceAdmin) SetUserPassword(ctx context.Context, id int64, user, pas
 		return NewCLError(ErrInstanceNotFound, "Failed to get instance", err)
 	}
 	memberShip := GetMemberShip(ctx)
-	permit, err := memberShip.CheckOwner(model.Writer, "instances", instance.ID)
-	if err != nil {
-		logger.Error("Failed to check owner")
-		return
-	}
+	permit := memberShip.CheckResourceOrg(model.OrgWriter, instance.Owner)
 	if !permit {
 		logger.Error("Not authorized to set password for the instance")
 		err = NewCLError(ErrPermissionDenied, "Not authorized to set password for the instance", nil)
@@ -706,6 +757,14 @@ func (a *InstanceAdmin) SetUserPassword(ctx context.Context, id int64, user, pas
 }
 
 func (a *InstanceAdmin) deleteInterfaces(ctx context.Context, instance *model.Instance) (err error) {
+	logger.Infof("ENTER InstanceAdmin.deleteInterfaces: instanceID=%d", instance.ID)
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT InstanceAdmin.deleteInterfaces: error=%v", err)
+		} else {
+			logger.Info("EXIT InstanceAdmin.deleteInterfaces: success")
+		}
+	}()
 	ctx, db := GetContextDB(ctx)
 	for _, iface := range instance.Interfaces {
 		err = a.deleteInterface(ctx, iface)
@@ -725,6 +784,14 @@ func (a *InstanceAdmin) deleteInterfaces(ctx context.Context, instance *model.In
 }
 
 func (a *InstanceAdmin) deleteInterface(ctx context.Context, iface *model.Interface) (err error) {
+	logger.Infof("ENTER InstanceAdmin.deleteInterface: ifaceID=%d", iface.ID)
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT InstanceAdmin.deleteInterface: error=%v", err)
+		} else {
+			logger.Info("EXIT InstanceAdmin.deleteInterface: success")
+		}
+	}()
 	err = DeleteInterface(ctx, iface)
 	if err != nil {
 		logger.Error("Failed to create interface")
@@ -742,6 +809,14 @@ func (a *InstanceAdmin) deleteInterface(ctx context.Context, iface *model.Interf
 }
 
 func (a *InstanceAdmin) createInterface(ctx context.Context, ifaceInfo *InterfaceInfo, instance *model.Instance, ifname string) (iface *model.Interface, ifaceSubnet *model.Subnet, err error) {
+	logger.Infof("ENTER InstanceAdmin.createInterface: instanceID=%d, ifname=%s", instance.ID, ifname)
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT InstanceAdmin.createInterface: error=%v", err)
+		} else {
+			logger.Infof("EXIT InstanceAdmin.createInterface: ifaceID=%d", iface.ID)
+		}
+	}()
 	ctx, db := GetContextDB(ctx)
 	memberShip := GetMemberShip(ctx)
 
@@ -826,15 +901,16 @@ func (a *InstanceAdmin) createInterface(ctx context.Context, ifaceInfo *Interfac
 }
 
 func (a *InstanceAdmin) buildMetadata(ctx context.Context, primaryIface *InterfaceInfo, secondaryIfaces []*InterfaceInfo,
-	rootPasswd string, loginPort int, keys []*model.Key, instance *model.Instance, diskIopsLimit int32, diskBpsLimit int32, routerID, zoneID int64,
+	rootPasswd string, loginPort int, keys []*model.Key, instance *model.Instance, diskIopsLimit int32, diskBpsLimit int32,
 	service string) (interfaces []*model.Interface, metadata string, err error) {
-	if rootPasswd == "" {
-		logger.Debugf("Build instance metadata with primaryIface: %v, secondaryIfaces: %+v, login_port: %d, keys: %+v, instance: %+v, diskIopsLimit: %d, diskBpsLimit: %d, routerID: %d, zoneID: %d, service: %s",
-			primaryIface, secondaryIfaces, loginPort, keys, instance, diskIopsLimit, diskBpsLimit, routerID, zoneID, service)
-	} else {
-		logger.Debugf("Build instance metadata with primaryIface: %v, secondaryIfaces: %+v, login_port: %d, keys: %+v, instance: %+v, diskIopsLimit: %d, diskBpsLimit: %d, routerID: %d, zoneID: %d, service: %s, root password: %s",
-			primaryIface, secondaryIfaces, loginPort, keys, instance, diskIopsLimit, diskBpsLimit, routerID, zoneID, service, "******")
-	}
+	logger.Infof("ENTER InstanceAdmin.buildMetadata: instanceID=%d, loginPort=%d, service=%s", instance.ID, loginPort, service)
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT InstanceAdmin.buildMetadata: error=%v", err)
+		} else {
+			logger.Infof("EXIT InstanceAdmin.buildMetadata: ifaceCount=%d", len(interfaces))
+		}
+	}()
 	vlans := []*VlanInfo{}
 	instNetworks := []*InstanceNetwork{}
 	instLinks := []*NetworkLink{}
@@ -946,6 +1022,14 @@ func (a *InstanceAdmin) buildMetadata(ctx context.Context, primaryIface *Interfa
 }
 
 func (a *InstanceAdmin) GetMetadata(ctx context.Context, instance *model.Instance, rootPasswd string) (metadata string, err error) {
+	logger.Infof("ENTER InstanceAdmin.GetMetadata: instanceID=%d", instance.ID)
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT InstanceAdmin.GetMetadata: error=%v", err)
+		} else {
+			logger.Info("EXIT InstanceAdmin.GetMetadata: success")
+		}
+	}()
 	vlans := []*VlanInfo{}
 	instLinks := []*NetworkLink{}
 	volumes := []*VolumeInfo{}
@@ -1021,7 +1105,15 @@ func (a *InstanceAdmin) GetMetadata(ctx context.Context, instance *model.Instanc
 
 // CleanupInstanceRuleLinks cleans up all rule links for an instance
 // This ensures data consistency when deleting an instance
-func (a *InstanceAdmin) CleanupInstanceRuleLinks(ctx context.Context, instanceUUID string) error {
+func (a *InstanceAdmin) CleanupInstanceRuleLinks(ctx context.Context, instanceUUID string) (err error) {
+	logger.Infof("ENTER InstanceAdmin.CleanupInstanceRuleLinks: instanceUUID=%s", instanceUUID)
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT InstanceAdmin.CleanupInstanceRuleLinks: error=%v", err)
+		} else {
+			logger.Info("EXIT InstanceAdmin.CleanupInstanceRuleLinks: success")
+		}
+	}()
 	alarmOp := &AlarmOperator{}
 	linksMap, err := alarmOp.GetInstanceRuleLinks(ctx, []string{instanceUUID})
 	if err != nil {
@@ -1030,7 +1122,7 @@ func (a *InstanceAdmin) CleanupInstanceRuleLinks(ctx context.Context, instanceUU
 
 	links := linksMap[instanceUUID]
 	if len(links) == 0 {
-		logger.Debugf("No rule links for instance %s", instanceUUID)
+		logger.Infof("No rule links for instance %s", instanceUUID)
 		return nil
 	}
 
@@ -1081,6 +1173,14 @@ func (a *InstanceAdmin) CleanupInstanceRuleLinks(ctx context.Context, instanceUU
 }
 
 func (a *InstanceAdmin) Delete(ctx context.Context, instance *model.Instance) (err error) {
+	logger.Infof("ENTER InstanceAdmin.Delete: instanceID=%d", instance.ID)
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT InstanceAdmin.Delete: error=%v", err)
+		} else {
+			logger.Info("EXIT InstanceAdmin.Delete: success")
+		}
+	}()
 	if instance.Status == model.InstanceStatusMigrating {
 		err = NewCLError(ErrInstanceInvalidState, "Instance is not in a valid state", nil)
 		return
@@ -1092,7 +1192,7 @@ func (a *InstanceAdmin) Delete(ctx context.Context, instance *model.Instance) (e
 		}
 	}()
 	memberShip := GetMemberShip(ctx)
-	permit := memberShip.ValidateOwner(model.Writer, instance.Owner)
+	permit := memberShip.CheckResourceOrg(model.OrgWriter, instance.Owner)
 	if !permit {
 		logger.Error("Not authorized to delete the instance")
 		err = NewCLError(ErrPermissionDenied, "Not authorized to delete the instance", nil)
@@ -1204,6 +1304,14 @@ func (a *InstanceAdmin) Delete(ctx context.Context, instance *model.Instance) (e
 }
 
 func (a *InstanceAdmin) Get(ctx context.Context, id int64) (instance *model.Instance, err error) {
+	logger.Infof("ENTER InstanceAdmin.Get: id=%d", id)
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT InstanceAdmin.Get: error=%v", err)
+		} else {
+			logger.Infof("EXIT InstanceAdmin.Get: success, instanceUUID=%s", instance.UUID)
+		}
+	}()
 	if id <= 0 {
 		err = fmt.Errorf("Invalid instance ID: %d", id)
 		logger.Error(err)
@@ -1211,9 +1319,9 @@ func (a *InstanceAdmin) Get(ctx context.Context, id int64) (instance *model.Inst
 	}
 	ctx, db := GetContextDB(ctx)
 	memberShip := GetMemberShip(ctx)
-	where := memberShip.GetWhere()
+	where, args := memberShip.GetOrgFilter()
 	instance = &model.Instance{Model: model.Model{ID: id}}
-	if err = db.Preload("Volumes").Preload("Image").Preload("Zone").Preload("Flavor").Preload("Keys").Where(where).Take(instance).Error; err != nil {
+	if err = db.Preload("Volumes").Preload("Image").Preload("Zone").Preload("Flavor").Preload("Keys").Where(where, args...).Take(instance).Error; err != nil {
 		logger.Errorf("Failed to query instance, %v", err)
 		return nil, NewCLError(ErrInstanceNotFound, "Instance not found", err)
 	}
@@ -1236,13 +1344,13 @@ func (a *InstanceAdmin) Get(ctx context.Context, id int64) (instance *model.Inst
 			return
 		}
 	}
-	permit := memberShip.ValidateOwner(model.Reader, instance.Owner)
+	permit := memberShip.CheckResourceOrg(model.OrgReader, instance.Owner)
 	if !permit {
 		logger.Error("Not authorized to read the instance")
 		err = NewCLError(ErrPermissionDenied, "Not authorized to read the instance", nil)
 		return
 	}
-	permit = memberShip.CheckPermission(model.Admin)
+	permit = memberShip.IsSystemAdmin()
 	if permit {
 		instance.OwnerInfo = &model.Organization{Model: model.Model{ID: instance.Owner}}
 		if err = db.Take(instance.OwnerInfo).Error; err != nil {
@@ -1255,6 +1363,14 @@ func (a *InstanceAdmin) Get(ctx context.Context, id int64) (instance *model.Inst
 }
 
 func (a *InstanceAdmin) GetInstanceByUUID(ctx context.Context, uuID string) (instance *model.Instance, err error) {
+	logger.Infof("ENTER InstanceAdmin.GetInstanceByUUID: uuID=%s", uuID)
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT InstanceAdmin.GetInstanceByUUID: error=%v", err)
+		} else {
+			logger.Infof("EXIT InstanceAdmin.GetInstanceByUUID: success, instanceID=%d", instance.ID)
+		}
+	}()
 	ctx, db := GetContextDB(ctx)
 
 	instance = &model.Instance{}
@@ -1265,11 +1381,19 @@ func (a *InstanceAdmin) GetInstanceByUUID(ctx context.Context, uuID string) (ins
 	return a.Get(ctx, instance.ID)
 }
 
-func GetDBIndexByInstanceUUID(c *gin.Context, uuid string) (int, error) {
+func GetDBIndexByInstanceUUID(c *gin.Context, uuid string) (id int, err error) {
+	logger.Infof("ENTER GetDBIndexByInstanceUUID: uuid=%s", uuid)
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT GetDBIndexByInstanceUUID: error=%v", err)
+		} else {
+			logger.Infof("EXIT GetDBIndexByInstanceUUID: id=%d", id)
+		}
+	}()
 	db := DB()
 
 	var instance model.Instance
-	if err := db.Model(&model.Instance{}).
+	if err = db.Model(&model.Instance{}).
 		Select("id").
 		Where("uuid = ?", uuid).
 		First(&instance).Error; err != nil {
@@ -1286,11 +1410,19 @@ func GetDBIndexByInstanceUUID(c *gin.Context, uuid string) (int, error) {
 	return int(instance.ID), nil
 }
 
-func GetInstanceUUIDByDomain(ctx context.Context, domain string) (string, error) {
+func GetInstanceUUIDByDomain(ctx context.Context, domain string) (uuid string, err error) {
+	logger.Infof("ENTER GetInstanceUUIDByDomain: domain=%s", domain)
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT GetInstanceUUIDByDomain: error=%v", err)
+		} else {
+			logger.Infof("EXIT GetInstanceUUIDByDomain: uuid=%s", uuid)
+		}
+	}()
 	// Parse domain format, example: inst-12345 -> ID=12345
 	if !strings.HasPrefix(domain, "inst-") {
 		logger.Error("Invalid domain format, must start with 'inst-'")
-		err := NewCLError(ErrInvalidDomainFormat, "Invalid domain format, must start with 'inst-'", nil)
+		err = NewCLError(ErrInvalidDomainFormat, "Invalid domain format, must start with 'inst-'", nil)
 		return "", err
 	}
 
@@ -1303,7 +1435,7 @@ func GetInstanceUUIDByDomain(ctx context.Context, domain string) (string, error)
 
 	var instance model.Instance
 	db := DB()
-	if err := db.Where("id = ?", instanceID).First(&instance).Error; err != nil {
+	if err = db.Where("id = ?", instanceID).First(&instance).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			logger.Error("Instance not found domain=%s id=%d", domain, instanceID)
 			return "", NewCLError(ErrInstanceNotFound, "Instance not found", err)
@@ -1315,10 +1447,18 @@ func GetInstanceUUIDByDomain(ctx context.Context, domain string) (string, error)
 	return instance.UUID, nil
 }
 
-func GetDomainByInstanceUUID(ctx context.Context, uuid string) (string, error) {
+func GetDomainByInstanceUUID(ctx context.Context, uuid string) (domain string, err error) {
+	logger.Infof("ENTER GetDomainByInstanceUUID: uuid=%s", uuid)
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT GetDomainByInstanceUUID: error=%v", err)
+		} else {
+			logger.Infof("EXIT GetDomainByInstanceUUID: domain=%s", domain)
+		}
+	}()
 	var instance model.Instance
 	db := DB()
-	if err := db.Where("uuid = ?", uuid).First(&instance).Error; err != nil {
+	if err = db.Where("uuid = ?", uuid).First(&instance).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			logger.Error("Instance not found uuid=%s", uuid)
 			return "", fmt.Errorf("instance not found")
@@ -1328,13 +1468,21 @@ func GetDomainByInstanceUUID(ctx context.Context, uuid string) (string, error) {
 	}
 
 	// Convert instance ID to domain format: inst-{ID}
-	domain := fmt.Sprintf("inst-%d", instance.ID)
+	domain = fmt.Sprintf("inst-%d", instance.ID)
 	return domain, nil
 }
 
 func (a *InstanceAdmin) List(ctx context.Context, offset, limit int64, order, query string) (total int64, instances []*model.Instance, err error) {
+	logger.Infof("ENTER InstanceAdmin.List: offset=%d, limit=%d, order=%s, query=%s", offset, limit, order, query)
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT InstanceAdmin.List: error=%v", err)
+		} else {
+			logger.Infof("EXIT InstanceAdmin.List: total=%d, count=%d", total, len(instances))
+		}
+	}()
 	memberShip := GetMemberShip(ctx)
-	permit := memberShip.CheckPermission(model.Reader)
+	permit := memberShip.CheckOrgPermission(model.OrgReader)
 	if !permit {
 		logger.Error("Not authorized for this operation")
 		err = NewCLError(ErrPermissionDenied, "Not authorized for this operation", nil)
@@ -1348,19 +1496,21 @@ func (a *InstanceAdmin) List(ctx context.Context, offset, limit int64, order, qu
 	if order == "" {
 		order = "created_at"
 	}
-	logger.Debugf("The query in admin console is %s", query)
 
-	where := memberShip.GetWhere()
+	if query != "" {
+		query = fmt.Sprintf("hostname like '%%%s%%'", query)
+	}
+	where, args := memberShip.GetOrgFilter()
 	instances = []*model.Instance{}
-	if err = db.Model(&model.Instance{}).Where(where).Where(query).Count(&total).Error; err != nil {
-		err = NewCLError(ErrSQLSyntaxError, "Failed to count instance(s)", err)
-		return
+	if err = db.Model(&model.Instance{}).Where(where, args...).Where(query).Count(&total).Error; err != nil {
+		logger.Errorf("Failed to query total instances, %v", err)
+		return 0, nil, NewCLError(ErrSQLSyntaxError, "Failed to query total instances", err)
 	}
 	db = dbs.Sortby(db.Offset(offset).Limit(limit), order)
-	if err = db.Preload("Volumes").Preload("Image").Preload("Zone").Preload("Flavor").Preload("Keys").Where(where).Where(query).Find(&instances).Error; err != nil {
-		logger.Errorf("Failed to query instance(s), %v", err)
-		err = NewCLError(ErrSQLSyntaxError, "Failed to query instance(s)", err)
-		return
+	db = db.Preload("Volumes").Preload("Image").Preload("Zone").Preload("Flavor").Preload("Keys").Preload("Interfaces").Preload("Interfaces.Address").Preload("Interfaces.Address.Subnet")
+	if err = db.Where(where, args...).Where(query).Find(&instances).Error; err != nil {
+		logger.Errorf("Failed to query instances, %v", err)
+		return 0, nil, NewCLError(ErrSQLSyntaxError, "Failed to query instances", err)
 	}
 	db = db.Offset(0).Limit(-1)
 	for _, instance := range instances {
@@ -1386,7 +1536,7 @@ func (a *InstanceAdmin) List(ctx context.Context, offset, limit int64, order, qu
 				return
 			}
 		}
-		permit := memberShip.CheckPermission(model.Admin)
+		permit := memberShip.IsSystemAdmin()
 		if permit {
 			instance.OwnerInfo = &model.Organization{Model: model.Model{ID: instance.Owner}}
 			if err = db.Take(instance.OwnerInfo).Error; err != nil {
@@ -1401,6 +1551,8 @@ func (a *InstanceAdmin) List(ctx context.Context, offset, limit int64, order, qu
 }
 
 func (v *InstanceView) List(c *macaron.Context, store session.Store) {
+	logger.Infof("ENTER InstanceView.List: query=%s", c.Req.URL.RawQuery)
+	defer logger.Info("EXIT InstanceView.List")
 	offset := c.QueryInt64("offset")
 	limit := c.QueryInt64("limit")
 	hostname := c.QueryTrim("hostname")
@@ -1441,8 +1593,10 @@ func (v *InstanceView) List(c *macaron.Context, store session.Store) {
 }
 
 func (v *InstanceView) UpdateTable(c *macaron.Context, store session.Store) {
+	logger.Infof("ENTER InstanceView.UpdateTable: query=%s", c.Req.URL.RawQuery)
+	defer logger.Info("EXIT InstanceView.UpdateTable")
 	memberShip := GetMemberShip(c.Req.Context())
-	permit := memberShip.CheckPermission(model.Reader)
+	permit := memberShip.CheckOrgPermission(model.OrgReader)
 	if !permit {
 		logger.Error("Not authorized for this operation")
 		c.Data["ErrorMsg"] = "Not authorized for this operation"
@@ -1468,16 +1622,17 @@ func (v *InstanceView) UpdateTable(c *macaron.Context, store session.Store) {
 	var jsonData *InstancesData
 	jsonData = &InstancesData{
 		Instances: instances,
-		IsAdmin:   memberShip.CheckPermission(model.Admin),
+		IsAdmin:   memberShip.IsSystemAdmin(),
 	}
 
 	c.JSON(200, jsonData)
-	return
 }
 
 func (v *InstanceView) Status(c *macaron.Context, store session.Store) {
+	logger.Infof("ENTER InstanceView.Status: id=%s", c.Params("id"))
+	defer logger.Info("EXIT InstanceView.Status")
 	memberShip := GetMemberShip(c.Req.Context())
-	permit := memberShip.CheckPermission(model.Reader)
+	permit := memberShip.CheckOrgPermission(model.OrgReader)
 	if !permit {
 		logger.Error("Not authorized for this operation")
 		c.Data["ErrorMsg"] = "Not authorized for this operation"
@@ -1510,6 +1665,14 @@ func (v *InstanceView) Status(c *macaron.Context, store session.Store) {
 }
 
 func (v *InstanceView) Delete(c *macaron.Context, store session.Store) (err error) {
+	logger.Infof("ENTER InstanceView.Delete: id=%s", c.Params("id"))
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT InstanceView.Delete: error=%v", err)
+		} else {
+			logger.Info("EXIT InstanceView.Delete: success")
+		}
+	}()
 	ctx := c.Req.Context()
 	id := c.Params("id")
 	if id == "" {
@@ -1542,9 +1705,11 @@ func (v *InstanceView) Delete(c *macaron.Context, store session.Store) (err erro
 }
 
 func (v *InstanceView) New(c *macaron.Context, store session.Store) {
+	logger.Infof("ENTER InstanceView.New: query=%s", c.Req.URL.RawQuery)
+	defer logger.Info("EXIT InstanceView.New")
 	ctx := c.Req.Context()
 	memberShip := GetMemberShip(c.Req.Context())
-	permit := memberShip.CheckPermission(model.Writer)
+	permit := memberShip.CheckOrgPermission(model.OrgWriter)
 	if !permit {
 		logger.Error("Not authorized for this operation")
 		c.Data["ErrorMsg"] = "Not authorized for this operation"
@@ -1624,6 +1789,8 @@ func (v *InstanceView) New(c *macaron.Context, store session.Store) {
 }
 
 func (v *InstanceView) Edit(c *macaron.Context, store session.Store) {
+	logger.Infof("ENTER InstanceView.Edit: id=%s, query=%s", c.Params("id"), c.Req.URL.RawQuery)
+	defer logger.Info("EXIT InstanceView.Edit")
 	ctx := c.Req.Context()
 	memberShip := GetMemberShip(ctx)
 	db := DB()
@@ -1640,7 +1807,12 @@ func (v *InstanceView) Edit(c *macaron.Context, store session.Store) {
 		c.HTML(http.StatusBadRequest, "error")
 		return
 	}
-	permit, err := memberShip.CheckOwner(model.Writer, "instances", int64(instanceID))
+	permit, err := memberShip.CheckResourceOrgByID(model.OrgWriter, "instances", int64(instanceID))
+	if err != nil {
+		c.Data["ErrorMsg"] = err.Error()
+		c.HTML(http.StatusBadRequest, "error")
+		return
+	}
 	if !permit {
 		logger.Error("Not authorized for this operation")
 		c.Data["ErrorMsg"] = "Not authorized for this operation"
@@ -1684,10 +1856,10 @@ func (v *InstanceView) Edit(c *macaron.Context, store session.Store) {
 	c.Data["Flavors"] = flavors
 
 	flag := c.QueryTrim("flag")
-	logger.Debugf("Edit instance %s with flag %s", id, flag)
-	if flag == "ChangeHostname" {
+	switch flag {
+	case "ChangeHostname":
 		c.HTML(200, "instances_hostname")
-	} else if flag == "ChangeStatus" {
+	case "ChangeStatus":
 		if c.QueryTrim("action") != "" {
 			ctx := c.Req.Context()
 			instanceID64, vmError := strconv.ParseInt(id, 10, 64)
@@ -1710,16 +1882,18 @@ func (v *InstanceView) Edit(c *macaron.Context, store session.Store) {
 		} else {
 			c.HTML(200, "instances_status")
 		}
-	} else if flag == "MigrateInstance" {
+	case "MigrateInstance":
 		c.HTML(200, "instances_migrate")
-	} else if flag == "ResizeInstance" {
+	case "ResizeInstance":
 		c.HTML(200, "instances_resize")
-	} else {
+	default:
 		c.HTML(200, "instances_patch")
 	}
 }
 
 func (v *InstanceView) Patch(c *macaron.Context, store session.Store) {
+	logger.Infof("ENTER InstanceView.Patch: id=%d, query=%s", c.ParamsInt64("id"), c.Req.URL.RawQuery)
+	defer logger.Info("EXIT InstanceView.Patch")
 	ctx := c.Req.Context()
 	redirectTo := "../instances"
 	instanceID := c.ParamsInt64("id")
@@ -1744,6 +1918,8 @@ func (v *InstanceView) Patch(c *macaron.Context, store session.Store) {
 }
 
 func (v *InstanceView) SetUserPassword(c *macaron.Context, store session.Store) {
+	logger.Infof("ENTER InstanceView.SetUserPassword: id=%s, method=%s, query=%s", c.Params("id"), c.Req.Method, c.Req.URL.RawQuery)
+	defer logger.Info("EXIT InstanceView.SetUserPassword")
 	ctx := c.Req.Context()
 	redirectTo := "/instances"
 	memberShip := GetMemberShip(c.Req.Context())
@@ -1761,7 +1937,12 @@ func (v *InstanceView) SetUserPassword(c *macaron.Context, store session.Store) 
 		c.HTML(http.StatusBadRequest, "error")
 		return
 	}
-	permit, err := memberShip.CheckOwner(model.Writer, "instances", int64(instanceID))
+	permit, err := memberShip.CheckResourceOrgByID(model.OrgWriter, "instances", int64(instanceID))
+	if err != nil {
+		c.Data["ErrorMsg"] = err.Error()
+		c.HTML(http.StatusBadRequest, "error")
+		return
+	}
 	if !permit {
 		logger.Error("Not authorized for this operation")
 		c.Data["ErrorMsg"] = "Not authorized for this operation"
@@ -1775,7 +1956,8 @@ func (v *InstanceView) SetUserPassword(c *macaron.Context, store session.Store) 
 		c.HTML(http.StatusBadRequest, "error")
 		return
 	}
-	if c.Req.Method == "GET" {
+	switch c.Req.Method {
+	case "GET":
 		if instance.Image.QAEnabled {
 			c.Data["Instance"] = instance
 			c.Data["Link"] = fmt.Sprintf("/instances/%d/set_user_password", instanceID)
@@ -1784,8 +1966,7 @@ func (v *InstanceView) SetUserPassword(c *macaron.Context, store session.Store) 
 			c.Data["ErrorMsg"] = "Guest Agent is not enabled for the image of instance"
 			c.HTML(http.StatusBadRequest, "error")
 		}
-		return
-	} else if c.Req.Method == "POST" {
+	case "POST":
 		user := c.QueryTrim("username")
 		password := c.QueryTrim("password")
 		err := instanceAdmin.SetUserPassword(ctx, int64(instanceID), user, password)
@@ -1801,6 +1982,8 @@ func (v *InstanceView) SetUserPassword(c *macaron.Context, store session.Store) 
 }
 
 func (v *InstanceView) Reinstall(c *macaron.Context, store session.Store) {
+	logger.Infof("ENTER InstanceView.Reinstall: id=%s, method=%s, query=%s", c.Params("id"), c.Req.Method, c.Req.URL.RawQuery)
+	defer logger.Info("EXIT InstanceView.Reinstall")
 	ctx := c.Req.Context()
 	redirectTo := "/instances"
 	db := DB()
@@ -1922,6 +2105,8 @@ func (v *InstanceView) Reinstall(c *macaron.Context, store session.Store) {
 }
 
 func (v *InstanceView) Resize(c *macaron.Context, store session.Store) {
+	logger.Infof("ENTER InstanceView.Resize: id=%s, method=%s, query=%s", c.Params("id"), c.Req.Method, c.Req.URL.RawQuery)
+	defer logger.Info("EXIT InstanceView.Resize")
 	ctx := c.Req.Context()
 	redirectTo := "/instances"
 	id := c.Params("id")
@@ -1944,11 +2129,11 @@ func (v *InstanceView) Resize(c *macaron.Context, store session.Store) {
 		c.HTML(http.StatusBadRequest, "error")
 		return
 	}
-	if c.Req.Method == "GET" {
+	switch c.Req.Method {
+	case "GET":
 		c.Data["Link"] = fmt.Sprintf("/instances/%d/resize", instanceID)
 		c.HTML(200, "instances_resize")
-		return
-	} else if c.Req.Method == "POST" {
+	case "POST":
 		cpu, memory := instance.Cpu, instance.Memory
 		if instance.Cpu == 0 {
 			var flavor *model.Flavor
@@ -1994,6 +2179,8 @@ func (v *InstanceView) Resize(c *macaron.Context, store session.Store) {
 }
 
 func (v *InstanceView) Rescue(c *macaron.Context, store session.Store) {
+	logger.Infof("ENTER InstanceView.Rescue: id=%s, method=%s, query=%s", c.Params("id"), c.Req.Method, c.Req.URL.RawQuery)
+	defer logger.Info("EXIT InstanceView.Rescue")
 	ctx := c.Req.Context()
 	redirectTo := "/instances"
 	db := DB()
@@ -2017,7 +2204,8 @@ func (v *InstanceView) Rescue(c *macaron.Context, store session.Store) {
 		c.HTML(http.StatusBadRequest, "error")
 		return
 	}
-	if c.Req.Method == "GET" {
+	switch c.Req.Method {
+	case "GET":
 		rescueImages := []*model.Image{}
 		if err := db.Where("is_rescue = true").Find(&rescueImages).Error; err != nil {
 			c.Data["ErrorMsg"] = err.Error()
@@ -2027,8 +2215,7 @@ func (v *InstanceView) Rescue(c *macaron.Context, store session.Store) {
 		c.Data["RescueImages"] = rescueImages
 		c.Data["Link"] = fmt.Sprintf("/instances/%d/rescue", instanceID)
 		c.HTML(200, "instances_rescue")
-		return
-	} else if c.Req.Method == "POST" {
+	case "POST":
 		rescueImageID := c.QueryInt64("rescue_image")
 		var rescueImage *model.Image
 		if rescueImageID > 0 {
@@ -2052,6 +2239,8 @@ func (v *InstanceView) Rescue(c *macaron.Context, store session.Store) {
 }
 
 func (v *InstanceView) EndRescue(c *macaron.Context, store session.Store) {
+	logger.Infof("ENTER InstanceView.EndRescue: id=%s, method=%s, query=%s", c.Params("id"), c.Req.Method, c.Req.URL.RawQuery)
+	defer logger.Info("EXIT InstanceView.EndRescue")
 	ctx := c.Req.Context()
 	id := c.Params("id")
 	if id == "" {
@@ -2073,11 +2262,12 @@ func (v *InstanceView) EndRescue(c *macaron.Context, store session.Store) {
 		c.HTML(http.StatusBadRequest, "error")
 		return
 	}
-	if c.Req.Method == "GET" {
+	switch c.Req.Method {
+	case http.MethodGet:
 		c.Data["Instance"] = instance
 		c.Data["Link"] = fmt.Sprintf("/instances/%d/end_rescue", instanceID)
 		c.HTML(200, "instances_end_rescue")
-	} else if c.Req.Method == "POST" {
+	case http.MethodPost:
 		redirectTo := "/instances"
 		err = instanceAdmin.EndRescue(ctx, instance)
 		if err != nil {
@@ -2091,6 +2281,14 @@ func (v *InstanceView) EndRescue(c *macaron.Context, store session.Store) {
 }
 
 func (v *InstanceView) checkNetparam(subnets []*model.Subnet, IP, mac string) (macAddr string, err error) {
+	logger.Infof("ENTER InstanceView.checkNetparam: subnetsCount=%d, IP=%s, mac=%s", len(subnets), IP, mac)
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT InstanceView.checkNetparam: error=%v", err)
+		} else {
+			logger.Infof("EXIT InstanceView.checkNetparam: macAddr=%s", macAddr)
+		}
+	}()
 	if mac != "" {
 		macl := strings.Split(mac, ":")
 		if len(macl) != 6 {
@@ -2141,6 +2339,14 @@ func (v *InstanceView) checkNetparam(subnets []*model.Subnet, IP, mac string) (m
 }
 
 func (v *InstanceView) getSecurityGroups(ctx context.Context, routerID int64, sgs []string) (securityGroups []*model.SecurityGroup, err error) {
+	logger.Infof("ENTER InstanceView.getSecurityGroups: routerID=%d, sgs=%v", routerID, sgs)
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT InstanceView.getSecurityGroups: error=%v", err)
+		} else {
+			logger.Infof("EXIT InstanceView.getSecurityGroups: sgCount=%d", len(securityGroups))
+		}
+	}()
 	if len(sgs) > 0 {
 		for _, sg := range sgs {
 			var sgID int
@@ -2197,9 +2403,11 @@ func (v *InstanceView) getSecurityGroups(ctx context.Context, routerID int64, sg
 }
 
 func (v *InstanceView) Create(c *macaron.Context, store session.Store) {
+	logger.Infof("ENTER InstanceView.Create: query=%s", c.Req.URL.RawQuery)
+	defer logger.Info("EXIT InstanceView.Create")
 	ctx := c.Req.Context()
 	memberShip := GetMemberShip(c.Req.Context())
-	permit := memberShip.CheckPermission(model.Writer)
+	permit := memberShip.CheckOrgPermission(model.OrgWriter)
 	if !permit {
 		logger.Error("Need Write permissions")
 		c.Data["ErrorMsg"] = "Need Write permissions"
@@ -2219,7 +2427,7 @@ func (v *InstanceView) Create(c *macaron.Context, store session.Store) {
 	}
 	hyperID := c.QueryInt("hyper")
 	if hyperID >= 0 {
-		permit := memberShip.CheckPermission(model.Admin)
+		permit := memberShip.IsSystemAdmin()
 		if !permit {
 			logger.Error("Need Admin permissions")
 			c.Data["ErrorMsg"] = "Need Admin permissions"

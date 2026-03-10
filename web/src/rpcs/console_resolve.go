@@ -62,8 +62,8 @@ func ResolveToken(tokenString string) (int, *MemberShip, error) {
 		return 0, nil, errors.New("Secret can not pass validation")
 	}
 	memberShip := &MemberShip{
-		OrgID: claims.OrgID,
-		Role:  claims.Role,
+		OrgID:   claims.OrgID,
+		OrgRole: claims.OrgRole,
 	}
 	return instanceID, memberShip, nil
 }
@@ -78,7 +78,7 @@ func (a *ConsoleAdmin) ConsoleResolve(c *macaron.Context) {
 		c.Error(code, http.StatusText(code))
 		return
 	}
-	permit := memberShip.CheckPermission(model.Writer)
+	permit := memberShip.CheckOrgPermission(model.OrgWriter)
 	if !permit {
 		logger.Error("Not authorized for this operation")
 		err = fmt.Errorf("Not authorized")

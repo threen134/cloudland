@@ -30,6 +30,14 @@ type SecruleAdmin struct{}
 type SecruleView struct{}
 
 func (a *SecruleAdmin) ApplySecgroup(ctx context.Context, secgroup *model.SecurityGroup) (err error) {
+	logger.Infof("ENTER SecruleAdmin.ApplySecgroup: secgroupID=%d", secgroup.ID)
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT SecruleAdmin.ApplySecgroup: error=%v", err)
+		} else {
+			logger.Info("EXIT SecruleAdmin.ApplySecgroup: success")
+		}
+	}()
 	ctx, db := GetContextDB(ctx)
 	err = secgroupAdmin.GetSecgroupInterfaces(ctx, secgroup)
 	if err != nil {
@@ -60,6 +68,14 @@ func (a *SecruleAdmin) ApplySecgroup(ctx context.Context, secgroup *model.Securi
 }
 
 func (a *SecruleAdmin) Update(ctx context.Context, id int64, name, remoteIp, direction, protocol string, portMin, portMax int) (secrule *model.SecurityRule, err error) {
+	logger.Infof("ENTER SecruleAdmin.Update: id=%d, name=%s, remoteIp=%s, direction=%s, protocol=%s, portMin=%d, portMax=%d", id, name, remoteIp, direction, protocol, portMin, portMax)
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT SecruleAdmin.Update: error=%v", err)
+		} else {
+			logger.Info("EXIT SecruleAdmin.Update: success")
+		}
+	}()
 	ctx, db := GetContextDB(ctx)
 	secrule = &model.SecurityRule{Model: model.Model{ID: id}}
 	err = db.Take(secrule).Error
@@ -127,8 +143,16 @@ func (a *SecruleAdmin) Update(ctx context.Context, id int64, name, remoteIp, dir
 }
 
 func (a *SecruleAdmin) Create(ctx context.Context, name, remoteIp, direction, protocol string, portMin, portMax int32, secgroup *model.SecurityGroup) (secrule *model.SecurityRule, err error) {
+	logger.Infof("ENTER SecruleAdmin.Create: name=%s, remoteIp=%s, direction=%s, protocol=%s, portMin=%d, portMax=%d, secgroupID=%d", name, remoteIp, direction, protocol, portMin, portMax, secgroup.ID)
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT SecruleAdmin.Create: error=%v", err)
+		} else {
+			logger.Info("EXIT SecruleAdmin.Create: success")
+		}
+	}()
 	memberShip := GetMemberShip(ctx)
-	permit := memberShip.ValidateOwner(model.Writer, secgroup.Owner)
+	permit := memberShip.CheckResourceOrg(model.OrgWriter, secgroup.Owner)
 	if !permit {
 		logger.Error("Not authorized for this operation")
 		err = NewCLError(ErrPermissionDenied, "Not authorized for this operation", nil)
@@ -176,8 +200,16 @@ func (a *SecruleAdmin) Create(ctx context.Context, name, remoteIp, direction, pr
 }
 
 func (a *SecruleAdmin) GetRule(ctx context.Context, remoteIp, direction, protocol string, portMin, portMax int32, secgroup *model.SecurityGroup) (secrule *model.SecurityRule, err error) {
+	logger.Infof("ENTER SecruleAdmin.GetRule: remoteIp=%s, direction=%s, protocol=%s, portMin=%d, portMax=%d, secgroupID=%d", remoteIp, direction, protocol, portMin, portMax, secgroup.ID)
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT SecruleAdmin.GetRule: error=%v", err)
+		} else {
+			logger.Info("EXIT SecruleAdmin.GetRule: success")
+		}
+	}()
 	memberShip := GetMemberShip(ctx)
-	permit := memberShip.ValidateOwner(model.Reader, secgroup.Owner)
+	permit := memberShip.CheckResourceOrg(model.OrgReader, secgroup.Owner)
 	if !permit {
 		logger.Error("Not authorized for this operation")
 		err = NewCLError(ErrPermissionDenied, "Not authorized for this operation", nil)
@@ -208,6 +240,14 @@ func (a *SecruleAdmin) GetRule(ctx context.Context, remoteIp, direction, protoco
 }
 
 func (a *SecruleAdmin) Delete(ctx context.Context, secrule *model.SecurityRule, secgroup *model.SecurityGroup) (err error) {
+	logger.Infof("ENTER SecruleAdmin.Delete: secruleID=%d, secgroupID=%d", secrule.ID, secgroup.ID)
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT SecruleAdmin.Delete: error=%v", err)
+		} else {
+			logger.Info("EXIT SecruleAdmin.Delete: success")
+		}
+	}()
 	ctx, db, newTransaction := StartTransaction(ctx)
 	defer func() {
 		if newTransaction {
@@ -215,7 +255,7 @@ func (a *SecruleAdmin) Delete(ctx context.Context, secrule *model.SecurityRule, 
 		}
 	}()
 	memberShip := GetMemberShip(ctx)
-	permit := memberShip.ValidateOwner(model.Writer, secrule.Owner)
+	permit := memberShip.CheckResourceOrg(model.OrgWriter, secrule.Owner)
 	if !permit {
 		logger.Error("Not authorized to delete the router")
 		err = NewCLError(ErrPermissionDenied, "Not authorized for this operation", nil)
@@ -235,8 +275,16 @@ func (a *SecruleAdmin) Delete(ctx context.Context, secrule *model.SecurityRule, 
 }
 
 func (a *SecruleAdmin) List(ctx context.Context, offset, limit int64, order string, secgroup *model.SecurityGroup) (total int64, secrules []*model.SecurityRule, err error) {
+	logger.Infof("ENTER SecruleAdmin.List: offset=%d, limit=%d, order=%s, secgroupID=%d", offset, limit, order, secgroup.ID)
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT SecruleAdmin.List: error=%v", err)
+		} else {
+			logger.Info("EXIT SecruleAdmin.List: success")
+		}
+	}()
 	memberShip := GetMemberShip(ctx)
-	permit := memberShip.ValidateOwner(model.Reader, secgroup.Owner)
+	permit := memberShip.CheckResourceOrg(model.OrgReader, secgroup.Owner)
 	if !permit {
 		logger.Error("Not authorized for this operation")
 		err = NewCLError(ErrPermissionDenied, "Not authorized for this operation", nil)
@@ -251,19 +299,15 @@ func (a *SecruleAdmin) List(ctx context.Context, offset, limit int64, order stri
 		order = "created_at"
 	}
 
-	where := fmt.Sprintf("secgroup = %d", secgroup.ID)
-	wm := memberShip.GetWhere()
-	if wm != "" {
-		where = fmt.Sprintf("%s and %s", where, wm)
-	}
+	query, args := memberShip.GetOrgFilter()
 	secrules = []*model.SecurityRule{}
-	if err = db.Model(&model.SecurityRule{}).Where(where).Count(&total).Error; err != nil {
+	if err = db.Model(&model.SecurityRule{}).Where("secgroup = ?", secgroup.ID).Where(query, args...).Count(&total).Error; err != nil {
 		logger.Error("DB failed to count security rule(s), %v", err)
 		err = NewCLError(ErrSQLSyntaxError, "Failed to count security rule(s)", err)
 		return
 	}
 	db = dbs.Sortby(db.Offset(offset).Limit(limit), order)
-	if err = db.Where(where).Find(&secrules).Error; err != nil {
+	if err = db.Where("secgroup = ?", secgroup.ID).Where(query, args...).Find(&secrules).Error; err != nil {
 		logger.Error("DB failed to query security rule(s), %v", err)
 		err = NewCLError(ErrSQLSyntaxError, "Failed to query security rule(s)", err)
 		return
@@ -273,6 +317,8 @@ func (a *SecruleAdmin) List(ctx context.Context, offset, limit int64, order stri
 }
 
 func (v *SecruleView) List(c *macaron.Context, store session.Store) {
+	logger.Infof("ENTER SecruleView.List: query=%s", c.Req.URL.RawQuery)
+	defer logger.Info("EXIT SecruleView.List")
 	ctx := c.Req.Context()
 	offset := c.QueryInt64("offset")
 	limit := c.QueryInt64("limit")
@@ -319,6 +365,14 @@ func (v *SecruleView) List(c *macaron.Context, store session.Store) {
 }
 
 func (v *SecruleView) Delete(c *macaron.Context, store session.Store) (err error) {
+	logger.Infof("ENTER SecruleView.Delete: id=%s", c.Params("id"))
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT SecruleView.Delete: error=%v", err)
+		} else {
+			logger.Info("EXIT SecruleView.Delete: success")
+		}
+	}()
 	ctx := c.Req.Context()
 	sgid := c.Params("sgid")
 	if sgid == "" {
@@ -376,8 +430,10 @@ func (v *SecruleView) Delete(c *macaron.Context, store session.Store) (err error
 }
 
 func (v *SecruleView) New(c *macaron.Context, store session.Store) {
+	logger.Infof("ENTER SecruleView.New: query=%s", c.Req.URL.RawQuery)
+	defer logger.Info("EXIT SecruleView.New")
 	memberShip := GetMemberShip(c.Req.Context())
-	permit := memberShip.CheckPermission(model.Writer)
+	permit := memberShip.CheckOrgPermission(model.OrgWriter)
 	if !permit {
 		logger.Error("Not authorized for this operation")
 		c.Data["ErrorMsg"] = "Not authorized for this operation"
@@ -388,6 +444,8 @@ func (v *SecruleView) New(c *macaron.Context, store session.Store) {
 }
 
 func (v *SecruleView) Create(c *macaron.Context, store session.Store) {
+	logger.Infof("ENTER SecruleView.Create: query=%s", c.Req.URL.RawQuery)
+	defer logger.Info("EXIT SecruleView.Create")
 	ctx := c.Req.Context()
 	redirectTo := "../secrules"
 	remoteIp := c.QueryTrim("remoteip")
@@ -430,21 +488,29 @@ func (v *SecruleView) Create(c *macaron.Context, store session.Store) {
 }
 
 func (a *SecruleAdmin) Get(ctx context.Context, id int64, secgroup *model.SecurityGroup) (secrule *model.SecurityRule, err error) {
+	logger.Infof("ENTER SecruleAdmin.Get: id=%d, secgroupID=%d", id, secgroup.ID)
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT SecruleAdmin.Get: error=%v", err)
+		} else {
+			logger.Info("EXIT SecruleAdmin.Get: success")
+		}
+	}()
 	if id <= 0 {
 		err = fmt.Errorf("Invalid security rule ID: %d", id)
 		logger.Error(err)
 		return
 	}
 	memberShip := GetMemberShip(ctx)
-	where := memberShip.GetWhere()
+	query, args := memberShip.GetOrgFilter()
 	db := DB()
 	secrule = &model.SecurityRule{Model: model.Model{ID: id}}
-	err = db.Where(where).Take(secrule).Error
+	err = db.Where(query, args...).Take(secrule).Error
 	if err != nil {
 		logger.Error("Failed to query secrule", err)
 		return
 	}
-	permit := memberShip.ValidateOwner(model.Reader, secrule.Owner)
+	permit := memberShip.CheckResourceOrg(model.OrgReader, secrule.Owner)
 	if !permit {
 		logger.Error("Not authorized to get security group")
 		err = fmt.Errorf("Not authorized")
@@ -454,16 +520,24 @@ func (a *SecruleAdmin) Get(ctx context.Context, id int64, secgroup *model.Securi
 }
 
 func (a *SecruleAdmin) GetSecruleByUUID(ctx context.Context, uuID string, secgroup *model.SecurityGroup) (secrule *model.SecurityRule, err error) {
+	logger.Infof("ENTER SecruleAdmin.GetSecruleByUUID: uuID=%s, secgroupID=%d", uuID, secgroup.ID)
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT SecruleAdmin.GetSecruleByUUID: error=%v", err)
+		} else {
+			logger.Info("EXIT SecruleAdmin.GetSecruleByUUID: success")
+		}
+	}()
 	memberShip := GetMemberShip(ctx)
-	where := memberShip.GetWhere()
+	query, args := memberShip.GetOrgFilter()
 	db := DB()
 	secrule = &model.SecurityRule{}
-	err = db.Where(where).Where("uuid = ? and secgroup = ?", uuID, secgroup.ID).Take(secrule).Error
+	err = db.Where(query, args...).Where("uuid = ? and secgroup = ?", uuID, secgroup.ID).Take(secrule).Error
 	if err != nil {
 		logger.Error("Failed to query secrule", err)
 		return
 	}
-	permit := memberShip.ValidateOwner(model.Reader, secrule.Owner)
+	permit := memberShip.CheckResourceOrg(model.OrgReader, secrule.Owner)
 	if !permit {
 		logger.Error("Not authorized to get security group")
 		err = fmt.Errorf("Not authorized")
@@ -473,6 +547,8 @@ func (a *SecruleAdmin) GetSecruleByUUID(ctx context.Context, uuID string, secgro
 }
 
 func (v *SecruleView) Edit(c *macaron.Context, store session.Store) {
+	logger.Infof("ENTER SecruleView.Edit: id=%s", c.Params("id"))
+	defer logger.Info("EXIT SecruleView.Edit")
 	db := DB()
 	id := c.Params("id")
 	secruleID, err := strconv.Atoi(id)
@@ -494,6 +570,8 @@ func (v *SecruleView) Edit(c *macaron.Context, store session.Store) {
 }
 
 func (v *SecruleView) Patch(c *macaron.Context, store session.Store) {
+	logger.Infof("ENTER SecruleView.Patch: id=%s, query=%s", c.Params("id"), c.Req.URL.RawQuery)
+	defer logger.Info("EXIT SecruleView.Patch")
 	redirectTo := "../secrules"
 	id := c.Params("id")
 	secruleID, err := strconv.Atoi(id)
@@ -519,5 +597,4 @@ func (v *SecruleView) Patch(c *macaron.Context, store session.Store) {
 		return
 	}
 	c.Redirect(redirectTo)
-
 }

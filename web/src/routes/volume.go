@@ -39,6 +39,14 @@ func GetVolumeDriver() (driver string) {
 }
 
 func (a *VolumeAdmin) Get(ctx context.Context, id int64) (volume *model.Volume, err error) {
+	logger.Infof("ENTER VolumeAdmin.Get: id=%d", id)
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT VolumeAdmin.Get: error=%v", err)
+		} else {
+			logger.Info("EXIT VolumeAdmin.Get: success")
+		}
+	}()
 	if id <= 0 {
 		err = NewCLError(ErrInvalidParameter, fmt.Sprintf("Invalid volume ID: %d", id), nil)
 		logger.Error(err)
@@ -46,14 +54,14 @@ func (a *VolumeAdmin) Get(ctx context.Context, id int64) (volume *model.Volume, 
 	}
 	ctx, db := GetContextDB(ctx)
 	memberShip := GetMemberShip(ctx)
-	where := memberShip.GetWhere()
+	query, args := memberShip.GetOrgFilter()
 	volume = &model.Volume{Model: model.Model{ID: id}}
-	if err = db.Preload("Instance").Where(where).Take(volume).Error; err != nil {
+	if err = db.Preload("Instance").Where(query, args...).Take(volume).Error; err != nil {
 		logger.Error("Failed to query volume, %v", err)
 		err = NewCLError(ErrVolumeNotFound, "Failed to query volume", err)
 		return
 	}
-	permit := memberShip.ValidateOwner(model.Reader, volume.Owner)
+	permit := memberShip.CheckResourceOrg(model.OrgReader, volume.Owner)
 	if !permit {
 		logger.Error("Not authorized to read the volume")
 		err = NewCLError(ErrPermissionDenied, "Not authorized to read the volume", nil)
@@ -63,17 +71,25 @@ func (a *VolumeAdmin) Get(ctx context.Context, id int64) (volume *model.Volume, 
 }
 
 func (a *VolumeAdmin) GetVolumeByUUID(ctx context.Context, uuID string) (volume *model.Volume, err error) {
+	logger.Infof("ENTER VolumeAdmin.GetVolumeByUUID: uuID=%s", uuID)
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT VolumeAdmin.GetVolumeByUUID: error=%v", err)
+		} else {
+			logger.Info("EXIT VolumeAdmin.GetVolumeByUUID: success")
+		}
+	}()
 	ctx, db := GetContextDB(ctx)
 	memberShip := GetMemberShip(ctx)
 	volume = &model.Volume{}
-	where := memberShip.GetWhere()
-	err = db.Preload("Instance").Where(where).Where("uuid = ?", uuID).Take(volume).Error
+	query, args := memberShip.GetOrgFilter()
+	err = db.Preload("Instance").Where(query, args...).Where("uuid = ?", uuID).Take(volume).Error
 	if err != nil {
 		logger.Error("DB: query volume failed", err)
 		err = NewCLError(ErrVolumeNotFound, "Volume not found", err)
 		return
 	}
-	permit := memberShip.ValidateOwner(model.Reader, volume.Owner)
+	permit := memberShip.CheckResourceOrg(model.OrgReader, volume.Owner)
 	if !permit {
 		logger.Error("Not authorized to read the volume")
 		err = NewCLError(ErrPermissionDenied, "Not authorized to read the volume", nil)
@@ -84,6 +100,14 @@ func (a *VolumeAdmin) GetVolumeByUUID(ctx context.Context, uuID string) (volume 
 
 func (a *VolumeAdmin) CreateVolume(ctx context.Context, name string, size int32, instanceID int64, booting bool,
 	iopsLimit int32, iopsBurst int32, bpsLimit int32, bpsBurst int32, poolID string) (volume *model.Volume, err error) {
+	logger.Infof("ENTER VolumeAdmin.CreateVolume: name=%s, size=%d, instanceID=%d, booting=%v, iopsLimit=%d, bpsLimit=%d, poolID=%s", name, size, instanceID, booting, iopsLimit, bpsLimit, poolID)
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT VolumeAdmin.CreateVolume: error=%v", err)
+		} else {
+			logger.Info("EXIT VolumeAdmin.CreateVolume: success")
+		}
+	}()
 	ctx, db, newTransaction := StartTransaction(ctx)
 	defer func() {
 		if newTransaction {
@@ -149,9 +173,17 @@ func (a *VolumeAdmin) CreateVolume(ctx context.Context, name string, size int32,
 
 func (a *VolumeAdmin) Create(ctx context.Context, name string, size int32,
 	iopsLimit int32, iopsBurst int32, bpsLimit int32, bpsBurst int32, poolID string) (volume *model.Volume, err error) {
+	logger.Infof("ENTER VolumeAdmin.Create: name=%s, size=%d, iopsLimit=%d, bpsLimit=%d, poolID=%s", name, size, iopsLimit, bpsLimit, poolID)
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT VolumeAdmin.Create: error=%v", err)
+		} else {
+			logger.Info("EXIT VolumeAdmin.Create: success")
+		}
+	}()
 	memberShip := GetMemberShip(ctx)
 	// check the permission
-	permit := memberShip.CheckPermission(model.Writer)
+	permit := memberShip.CheckOrgPermission(model.OrgWriter)
 	if !permit {
 		logger.Error("Not authorized to create volume")
 		err = NewCLError(ErrPermissionDenied, "Not authorized to create volume", nil)
@@ -164,7 +196,7 @@ func (a *VolumeAdmin) Create(ctx context.Context, name string, size int32,
 		return
 	}
 
-	control := fmt.Sprintf("inter=")
+	control := "inter="
 	// RN-156: append the volume UUID to the command
 	command := fmt.Sprintf("/opt/cloudland/scripts/backend/create_volume_%s.sh '%d' '%d' '%s' '%d' '%d' '%d' '%d' '%s'",
 		GetVolumeDriver(), volume.ID, volume.Size, volume.UUID, iopsLimit, iopsBurst, bpsLimit, bpsBurst, poolID)
@@ -177,6 +209,14 @@ func (a *VolumeAdmin) Create(ctx context.Context, name string, size int32,
 }
 
 func (a *VolumeAdmin) UpdateByUUID(ctx context.Context, uuid string, name string, instID int64) (volume *model.Volume, err error) {
+	logger.Infof("ENTER VolumeAdmin.UpdateByUUID: uuid=%s, name=%s, instID=%d", uuid, name, instID)
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT VolumeAdmin.UpdateByUUID: error=%v", err)
+		} else {
+			logger.Info("EXIT VolumeAdmin.UpdateByUUID: success")
+		}
+	}()
 	logger.Debugf("Update volume by UUID %s, name: %s, instID: %d", uuid, name, instID)
 	ctx, db := GetContextDB(ctx)
 	volume = &model.Volume{}
@@ -189,6 +229,14 @@ func (a *VolumeAdmin) UpdateByUUID(ctx context.Context, uuid string, name string
 }
 
 func (a *VolumeAdmin) UpdateQosByUUID(ctx context.Context, uuid string, iopsLimit int32, bpsLimit int32) (volume *model.Volume, err error) {
+	logger.Infof("ENTER VolumeAdmin.UpdateQosByUUID: uuid=%s, iopsLimit=%d, bpsLimit=%d", uuid, iopsLimit, bpsLimit)
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT VolumeAdmin.UpdateQosByUUID: error=%v", err)
+		} else {
+			logger.Info("EXIT VolumeAdmin.UpdateQosByUUID: success")
+		}
+	}()
 	logger.Debugf("Update volume qos by UUID %s, iopsLimit: %d, bpsLimit: %d", uuid, iopsLimit, bpsLimit)
 	ctx, db := GetContextDB(ctx)
 	volume = &model.Volume{}
@@ -201,6 +249,14 @@ func (a *VolumeAdmin) UpdateQosByUUID(ctx context.Context, uuid string, iopsLimi
 }
 
 func (a *VolumeAdmin) UpdateQos(ctx context.Context, id int64, iopsLimit int32, bpsLimit int32) (volume *model.Volume, err error) {
+	logger.Infof("ENTER VolumeAdmin.UpdateQos: id=%d, iopsLimit=%d, bpsLimit=%d", id, iopsLimit, bpsLimit)
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT VolumeAdmin.UpdateQos: error=%v", err)
+		} else {
+			logger.Info("EXIT VolumeAdmin.UpdateQos: success")
+		}
+	}()
 	logger.Debugf("Update volume qos by ID %d, iopsLimit: %d, bpsLimit: %d", id, iopsLimit, bpsLimit)
 	if bpsLimit > 0 && (bpsLimit < model.VolumeBpsLimitMin || bpsLimit > model.VolumeBpsLimitMax) {
 		logger.Error("Invalid bps limit: %d", bpsLimit)
@@ -228,7 +284,7 @@ func (a *VolumeAdmin) UpdateQos(ctx context.Context, id int64, iopsLimit int32, 
 	}
 	// check the permission
 	memberShip := GetMemberShip(ctx)
-	permit := memberShip.ValidateOwner(model.Writer, volume.Owner)
+	permit := memberShip.CheckResourceOrg(model.OrgWriter, volume.Owner)
 	if !permit {
 		logger.Error("Not authorized to update the volume")
 		err = NewCLError(ErrPermissionDenied, "Not authorized to update the volume", nil)
@@ -250,7 +306,7 @@ func (a *VolumeAdmin) UpdateQos(ctx context.Context, id int64, iopsLimit int32, 
 		logger.Debugf("Update volume %d, iopsLimit: %d, bpsLimit: %d", volume.ID, iopsLimit, bpsLimit)
 		volume.IopsLimit = iopsLimit
 		volume.BpsLimit = bpsLimit
-		control := fmt.Sprintf("inter=")
+		control := "inter="
 		command := fmt.Sprintf("/opt/cloudland/scripts/backend/update_volume_%s.sh '%d' '%s' '%d' '%d'", vol_driver, volume.ID, volume.GetOriginVolumeID(), iopsLimit, bpsLimit)
 		err = HyperExecute(ctx, control, command)
 		if err != nil {
@@ -267,6 +323,14 @@ func (a *VolumeAdmin) UpdateQos(ctx context.Context, id int64, iopsLimit int32, 
 }
 
 func (a *VolumeAdmin) Update(ctx context.Context, id int64, name string, instID int64) (volume *model.Volume, err error) {
+	logger.Infof("ENTER VolumeAdmin.Update: id=%d, name=%s, instID=%d", id, name, instID)
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT VolumeAdmin.Update: error=%v", err)
+		} else {
+			logger.Info("EXIT VolumeAdmin.Update: success")
+		}
+	}()
 	logger.Debugf("Update volume %d, name: %s, instID: %d", id, name, instID)
 	ctx, db, newTransaction := StartTransaction(ctx)
 	defer func() {
@@ -282,7 +346,7 @@ func (a *VolumeAdmin) Update(ctx context.Context, id int64, name string, instID 
 	}
 	// check the permission
 	memberShip := GetMemberShip(ctx)
-	permit := memberShip.ValidateOwner(model.Writer, volume.Owner)
+	permit := memberShip.CheckResourceOrg(model.OrgWriter, volume.Owner)
 	if !permit {
 		logger.Error("Not authorized to update the volume")
 		err = NewCLError(ErrPermissionDenied, "Not authorized to update the volume", nil)
@@ -361,6 +425,14 @@ func (a *VolumeAdmin) Update(ctx context.Context, id int64, name string, instID 
 }
 
 func (a *VolumeAdmin) Delete(ctx context.Context, volume *model.Volume) (err error) {
+	logger.Infof("ENTER VolumeAdmin.Delete: volumeID=%d, uuid=%s", volume.ID, volume.UUID)
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT VolumeAdmin.Delete: error=%v", err)
+		} else {
+			logger.Info("EXIT VolumeAdmin.Delete: success")
+		}
+	}()
 	ctx, db, newTransaction := StartTransaction(ctx)
 	defer func() {
 		if newTransaction {
@@ -369,7 +441,7 @@ func (a *VolumeAdmin) Delete(ctx context.Context, volume *model.Volume) (err err
 	}()
 	// check the permission
 	memberShip := GetMemberShip(ctx)
-	permit := memberShip.ValidateOwner(model.Writer, volume.Owner)
+	permit := memberShip.CheckResourceOrg(model.OrgWriter, volume.Owner)
 	if !permit {
 		logger.Error("Not authorized to delete the volume")
 		err = NewCLError(ErrPermissionDenied, "Not authorized to delete the volume", nil)
@@ -400,7 +472,7 @@ func (a *VolumeAdmin) Delete(ctx context.Context, volume *model.Volume) (err err
 		err = NewCLError(ErrVolumeDeleteFailed, "Failed to delete volume", err)
 		return
 	}
-	control := fmt.Sprintf("inter=")
+	control := "inter="
 	vol_driver := GetVolumeDriver()
 	uuid := volume.UUID
 	if vol_driver != "local" {
@@ -424,6 +496,14 @@ func (a *VolumeAdmin) Delete(ctx context.Context, volume *model.Volume) (err err
 }
 
 func (a *VolumeAdmin) DeleteVolumeByUUID(ctx context.Context, uuID string) (err error) {
+	logger.Infof("ENTER VolumeAdmin.DeleteVolumeByUUID: uuID=%s", uuID)
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT VolumeAdmin.DeleteVolumeByUUID: error=%v", err)
+		} else {
+			logger.Info("EXIT VolumeAdmin.DeleteVolumeByUUID: success")
+		}
+	}()
 	ctx, db := GetContextDB(ctx)
 	volume := &model.Volume{}
 	if err = db.Where("uuid = ?", uuID).Take(volume).Error; err != nil {
@@ -435,6 +515,14 @@ func (a *VolumeAdmin) DeleteVolumeByUUID(ctx context.Context, uuID string) (err 
 }
 
 func (a *VolumeAdmin) Resize(ctx context.Context, volume *model.Volume, size int32) (err error) {
+	logger.Infof("ENTER VolumeAdmin.Resize: volumeID=%d, size=%d", volume.ID, size)
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT VolumeAdmin.Resize: error=%v", err)
+		} else {
+			logger.Info("EXIT VolumeAdmin.Resize: success")
+		}
+	}()
 	logger.Debugf("Resize volume %d with size %d", volume.ID, size)
 	ctx, db, newTransaction := StartTransaction(ctx)
 	defer func() {
@@ -443,14 +531,10 @@ func (a *VolumeAdmin) Resize(ctx context.Context, volume *model.Volume, size int
 		}
 	}()
 	memberShip := GetMemberShip(ctx)
-	permit, err := memberShip.CheckOwner(model.Writer, "volumes", volume.ID)
+	permit := memberShip.CheckResourceOrg(model.OrgWriter, volume.Owner)
 	if !permit {
-		logger.Error("Failed to check owner")
-		return
-	}
-	if !permit {
-		logger.Error("Not authorized to delete the instance")
-		err = NewCLError(ErrPermissionDenied, "Not authorized to delete the instance", nil)
+		logger.Error("Not authorized to resize the volume")
+		err = NewCLError(ErrPermissionDenied, "Not authorized to resize the volume", nil)
 		return
 	}
 	if volume.IsError() {
@@ -505,7 +589,7 @@ func (a *VolumeAdmin) Resize(ctx context.Context, volume *model.Volume, size int
 			return
 		}
 	}
-	control := fmt.Sprintf("inter=")
+	control := "inter="
 	volDriver := GetVolumeDriver()
 	uuid := volume.UUID
 	if volDriver != "local" {
@@ -524,11 +608,19 @@ func (a *VolumeAdmin) Resize(ctx context.Context, volume *model.Volume, size int
 }
 
 func (a *VolumeAdmin) GetVolumesByInstanceID(ctx context.Context, instanceID int64) (volumes []*model.Volume, err error) {
+	logger.Infof("ENTER VolumeAdmin.GetVolumesByInstanceID: instanceID=%d", instanceID)
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT VolumeAdmin.GetVolumesByInstanceID: error=%v", err)
+		} else {
+			logger.Info("EXIT VolumeAdmin.GetVolumesByInstanceID: success")
+		}
+	}()
 	ctx, db := GetContextDB(ctx)
 	memberShip := GetMemberShip(ctx)
-	where := memberShip.GetWhere()
+	query, args := memberShip.GetOrgFilter()
 	volumes = []*model.Volume{}
-	if err = db.Preload("Instance").Where(where).Where("instance_id = ?", instanceID).Find(&volumes).Error; err != nil {
+	if err = db.Preload("Instance").Where(query, args...).Where("instance_id = ?", instanceID).Find(&volumes).Error; err != nil {
 		logger.Error("Failed to query volumes, %v", err)
 		err = NewCLError(ErrSQLSyntaxError, "Failed to query volumes", err)
 		return
@@ -538,10 +630,26 @@ func (a *VolumeAdmin) GetVolumesByInstanceID(ctx context.Context, instanceID int
 
 // list data volumes
 func (a *VolumeAdmin) List(ctx context.Context, offset, limit int64, order, query string) (total int64, volumes []*model.Volume, err error) {
+	logger.Infof("ENTER VolumeAdmin.List: offset=%d, limit=%d, order=%s, query=%s", offset, limit, order, query)
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT VolumeAdmin.List: error=%v", err)
+		} else {
+			logger.Info("EXIT VolumeAdmin.List: success")
+		}
+	}()
 	return a.ListVolume(ctx, offset, limit, order, query, "all")
 }
 
 func (a *VolumeAdmin) ListVolume(ctx context.Context, offset, limit int64, order, query string, volume_type string) (total int64, volumes []*model.Volume, err error) {
+	logger.Infof("ENTER VolumeAdmin.ListVolume: offset=%d, limit=%d, order=%s, query=%s, volume_type=%s", offset, limit, order, query, volume_type)
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT VolumeAdmin.ListVolume: error=%v", err)
+		} else {
+			logger.Info("EXIT VolumeAdmin.ListVolume: success")
+		}
+	}()
 	memberShip := GetMemberShip(ctx)
 	ctx, db := GetContextDB(ctx)
 	if limit == 0 {
@@ -555,38 +663,37 @@ func (a *VolumeAdmin) ListVolume(ctx context.Context, offset, limit int64, order
 	if query != "" {
 		query = fmt.Sprintf("name like '%%%s%%'", query)
 	}
-	where := memberShip.GetWhere()
+	queryBuilder, args := memberShip.GetOrgFilter()
 	booting_where := ""
-	if volume_type == "data" {
+	switch volume_type {
+	case "data":
 		booting_where = fmt.Sprintf("booting=%t", false)
-	} else if volume_type == "boot" {
+	case "boot":
 		booting_where = fmt.Sprintf("booting=%t", true)
-	} else if volume_type == "all" {
+	case "all":
 		booting_where = ""
-	} else {
+	default:
 		err = NewCLError(ErrInvalidParameter, fmt.Sprintf("Invalid volume type %s", volume_type), nil)
 		return
 	}
-
 	volumes = []*model.Volume{}
 	if booting_where != "" {
-		if err = db.Model(&model.Volume{}).Where(where).Where(query).Where(booting_where).Count(&total).Error; err != nil {
+		if err = db.Model(&model.Volume{}).Where(queryBuilder, args...).Where(query).Where(booting_where).Count(&total).Error; err != nil {
 			err = NewCLError(ErrSQLSyntaxError, "Failed to count volumes", err)
 			return
 		}
 	} else {
-		if err = db.Model(&model.Volume{}).Where(where).Where(query).Count(&total).Error; err != nil {
+		if err = db.Model(&model.Volume{}).Where(queryBuilder, args...).Where(query).Count(&total).Error; err != nil {
 			err = NewCLError(ErrSQLSyntaxError, "Failed to count volumes", err)
 			return
 		}
 	}
 	db = dbs.Sortby(db.Offset(offset).Limit(limit), order)
-	if err = db.Preload("Instance").Where(where).Where(query).Find(&volumes).Error; err != nil {
+	if err = db.Preload("Instance").Where(queryBuilder, args...).Where(query).Find(&volumes).Error; err != nil {
 		err = NewCLError(ErrSQLSyntaxError, "Failed to query volumes", err)
 		return
 	}
-	permit := memberShip.CheckPermission(model.Admin)
-	if permit {
+	if memberShip.IsSystemAdmin() {
 		db = db.Offset(0).Limit(-1)
 		for _, vol := range volumes {
 			vol.OwnerInfo = &model.Organization{Model: model.Model{ID: vol.Owner}}
@@ -602,8 +709,10 @@ func (a *VolumeAdmin) ListVolume(ctx context.Context, offset, limit int64, order
 }
 
 func (v *VolumeView) List(c *macaron.Context, store session.Store) {
+	logger.Infof("ENTER VolumeView.List: query=%s", c.Req.URL.RawQuery)
+	defer logger.Info("EXIT VolumeView.List")
 	memberShip := GetMemberShip(c.Req.Context())
-	permit := memberShip.CheckPermission(model.Reader)
+	permit := memberShip.CheckOrgPermission(model.OrgReader)
 	if !permit {
 		logger.Error("Not authorized for this operation")
 		c.Data["ErrorMsg"] = "Not authorized for this operation"
@@ -635,6 +744,14 @@ func (v *VolumeView) List(c *macaron.Context, store session.Store) {
 }
 
 func (v *VolumeView) Delete(c *macaron.Context, store session.Store) (err error) {
+	logger.Infof("ENTER VolumeView.Delete: id=%s", c.Params("id"))
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT VolumeView.Delete: error=%v", err)
+		} else {
+			logger.Info("EXIT VolumeView.Delete: success")
+		}
+	}()
 	ctx := c.Req.Context()
 	id := c.Params("id")
 	if id == "" {
@@ -667,8 +784,10 @@ func (v *VolumeView) Delete(c *macaron.Context, store session.Store) (err error)
 }
 
 func (v *VolumeView) New(c *macaron.Context, store session.Store) {
+	logger.Infof("ENTER VolumeView.New: query=%s", c.Req.URL.RawQuery)
+	defer logger.Info("EXIT VolumeView.New")
 	memberShip := GetMemberShip(c.Req.Context())
-	permit := memberShip.CheckPermission(model.Writer)
+	permit := memberShip.CheckOrgPermission(model.OrgWriter)
 	if !permit {
 		logger.Error("Not authorized for this operation")
 		c.Data["ErrorMsg"] = "Not authorized for this operation"
@@ -688,8 +807,8 @@ func (v *VolumeView) New(c *macaron.Context, store session.Store) {
 }
 
 func (v *VolumeView) Edit(c *macaron.Context, store session.Store) {
-	memberShip := GetMemberShip(c.Req.Context())
-	db := DB()
+	logger.Infof("ENTER VolumeView.Edit: id=%s, query=%s", c.Params(":id"), c.Req.URL.RawQuery)
+	defer logger.Info("EXIT VolumeView.Edit")
 	id := c.Params(":id")
 	volID, err := strconv.Atoi(id)
 	if err != nil {
@@ -697,9 +816,9 @@ func (v *VolumeView) Edit(c *macaron.Context, store session.Store) {
 		c.HTML(http.StatusBadRequest, "error")
 		return
 	}
-	permit, err := memberShip.CheckOwner(model.Writer, "volumes", int64(volID))
+	memberShip := GetMemberShip(c.Req.Context())
+	permit, err := memberShip.CheckResourceOrgByID(model.OrgWriter, "volumes", int64(volID))
 	if err != nil {
-		logger.Error("Failed to check permission", err)
 		c.Data["ErrorMsg"] = err.Error()
 		c.HTML(http.StatusBadRequest, "error")
 		return
@@ -710,10 +829,10 @@ func (v *VolumeView) Edit(c *macaron.Context, store session.Store) {
 		c.HTML(http.StatusBadRequest, "error")
 		return
 	}
-	volume := &model.Volume{Model: model.Model{ID: int64(volID)}}
-	if err := db.Preload("Instance").Take(volume).Error; err != nil {
+	volume, err := volumeAdmin.Get(c.Req.Context(), int64(volID))
+	if err != nil {
 		c.Data["ErrorMsg"] = err.Error()
-		c.HTML(500, err.Error())
+		c.HTML(http.StatusBadRequest, "error")
 		return
 	}
 	_, instances, err := instanceAdmin.List(c.Req.Context(), 0, -1, "", "")
@@ -728,7 +847,8 @@ func (v *VolumeView) Edit(c *macaron.Context, store session.Store) {
 }
 
 func (v *VolumeView) Patch(c *macaron.Context, store session.Store) {
-	memberShip := GetMemberShip(c.Req.Context())
+	logger.Infof("ENTER VolumeView.Patch: id=%s, query=%s", c.Params(":id"), c.Req.URL.RawQuery)
+	defer logger.Info("EXIT VolumeView.Patch")
 	redirectTo := "../volumes"
 	id := c.Params(":id")
 	name := c.QueryTrim("name")
@@ -739,17 +859,9 @@ func (v *VolumeView) Patch(c *macaron.Context, store session.Store) {
 		c.HTML(http.StatusBadRequest, "error")
 		return
 	}
-	permit, err := memberShip.CheckOwner(model.Writer, "volumes", int64(volID))
+	_, err = volumeAdmin.Get(c.Req.Context(), int64(volID))
 	if err != nil {
-		logger.Error("Failed to check permission", err)
 		c.Data["ErrorMsg"] = err.Error()
-		c.HTML(http.StatusBadRequest, "error")
-		return
-	}
-
-	if !permit {
-		logger.Error("Not authorized for this operation")
-		c.Data["ErrorMsg"] = "Not authorized for this operation"
 		c.HTML(http.StatusBadRequest, "error")
 		return
 	}
@@ -762,20 +874,14 @@ func (v *VolumeView) Patch(c *macaron.Context, store session.Store) {
 	}
 	if instID > 0 {
 		// have to check the instance permission
-		permit, err = memberShip.CheckOwner(model.Writer, "instances", int64(instID))
+		instance, err := instanceAdmin.Get(c.Req.Context(), int64(instID))
 		if err != nil {
-			logger.Error("Failed to check permission", err)
+			logger.Error("Failed to get instance", err)
 			c.Data["ErrorMsg"] = err.Error()
 			c.HTML(http.StatusBadRequest, "error")
 			return
 		}
-
-		if !permit {
-			logger.Error("Not authorized for this operation")
-			c.Data["ErrorMsg"] = "Not authorized for this operation"
-			c.HTML(http.StatusBadRequest, "error")
-			return
-		}
+		_ = instance
 	}
 	_, err = volumeAdmin.Update(c.Req.Context(), int64(volID), name, int64(instID))
 	if err != nil {
@@ -788,8 +894,8 @@ func (v *VolumeView) Patch(c *macaron.Context, store session.Store) {
 }
 
 func (v *VolumeView) EditQos(c *macaron.Context, store session.Store) {
-	memberShip := GetMemberShip(c.Req.Context())
-	db := DB()
+	logger.Infof("ENTER VolumeView.EditQos: id=%s, query=%s", c.Params(":id"), c.Req.URL.RawQuery)
+	defer logger.Info("EXIT VolumeView.EditQos")
 	id := c.Params(":id")
 	volID, err := strconv.Atoi(id)
 	if err != nil {
@@ -797,9 +903,9 @@ func (v *VolumeView) EditQos(c *macaron.Context, store session.Store) {
 		c.HTML(http.StatusBadRequest, "error")
 		return
 	}
-	permit, err := memberShip.CheckOwner(model.Writer, "volumes", int64(volID))
+	memberShip := GetMemberShip(c.Req.Context())
+	permit, err := memberShip.CheckResourceOrgByID(model.OrgWriter, "volumes", int64(volID))
 	if err != nil {
-		logger.Error("Failed to check permission", err)
 		c.Data["ErrorMsg"] = err.Error()
 		c.HTML(http.StatusBadRequest, "error")
 		return
@@ -810,19 +916,19 @@ func (v *VolumeView) EditQos(c *macaron.Context, store session.Store) {
 		c.HTML(http.StatusBadRequest, "error")
 		return
 	}
-	volume := &model.Volume{Model: model.Model{ID: int64(volID)}}
-	if err := db.Preload("Instance").Take(volume).Error; err != nil {
+	volume, err := volumeAdmin.Get(c.Req.Context(), int64(volID))
+	if err != nil {
 		c.Data["ErrorMsg"] = err.Error()
-		c.HTML(500, err.Error())
+		c.HTML(http.StatusBadRequest, "error")
 		return
 	}
-
 	c.Data["Volume"] = volume
 	c.HTML(200, "volumes_qos")
 }
 
 func (v *VolumeView) UpdateQos(c *macaron.Context, store session.Store) {
-	memberShip := GetMemberShip(c.Req.Context())
+	logger.Infof("ENTER VolumeView.UpdateQos: id=%s, query=%s", c.Params(":id"), c.Req.URL.RawQuery)
+	defer logger.Info("EXIT VolumeView.UpdateQos")
 	redirectTo := "/volumes"
 	id := c.Params(":id")
 	iopsLimitStr := c.QueryTrim("iops_limit")
@@ -834,16 +940,9 @@ func (v *VolumeView) UpdateQos(c *macaron.Context, store session.Store) {
 		c.HTML(http.StatusBadRequest, "error")
 		return
 	}
-	permit, err := memberShip.CheckOwner(model.Writer, "volumes", int64(volID))
+	_, err = volumeAdmin.Get(c.Req.Context(), int64(volID))
 	if err != nil {
-		logger.Error("Failed to check permission", err)
 		c.Data["ErrorMsg"] = err.Error()
-		c.HTML(http.StatusBadRequest, "error")
-		return
-	}
-	if !permit {
-		logger.Error("Not authorized for this operation")
-		c.Data["ErrorMsg"] = "Not authorized for this operation"
 		c.HTML(http.StatusBadRequest, "error")
 		return
 	}
@@ -871,8 +970,10 @@ func (v *VolumeView) UpdateQos(c *macaron.Context, store session.Store) {
 }
 
 func (v *VolumeView) Create(c *macaron.Context, store session.Store) {
+	logger.Infof("ENTER VolumeView.Create: query=%s", c.Req.URL.RawQuery)
+	defer logger.Info("EXIT VolumeView.Create")
 	memberShip := GetMemberShip(c.Req.Context())
-	permit := memberShip.CheckPermission(model.Writer)
+	permit := memberShip.CheckOrgPermission(model.OrgWriter)
 	if !permit {
 		logger.Error("Not authorized for this operation")
 		c.Data["ErrorMsg"] = "Not authorized for this operation"
@@ -900,6 +1001,8 @@ func (v *VolumeView) Create(c *macaron.Context, store session.Store) {
 }
 
 func (v *VolumeView) Resize(c *macaron.Context, store session.Store) {
+	logger.Infof("ENTER VolumeView.Resize: id=%s, method=%s, query=%s", c.Params("id"), c.Req.Method, c.Req.URL.RawQuery)
+	defer logger.Info("EXIT VolumeView.Resize")
 	ctx := c.Req.Context()
 	redirectTo := "/volumes"
 	id := c.Params("id")
@@ -915,6 +1018,19 @@ func (v *VolumeView) Resize(c *macaron.Context, store session.Store) {
 		c.HTML(http.StatusBadRequest, "error")
 		return
 	}
+	memberShip := GetMemberShip(ctx)
+	permit, err := memberShip.CheckResourceOrgByID(model.OrgWriter, "volumes", int64(volumeID))
+	if err != nil {
+		c.Data["ErrorMsg"] = err.Error()
+		c.HTML(http.StatusBadRequest, "error")
+		return
+	}
+	if !permit {
+		logger.Error("Not authorized for this operation")
+		c.Data["ErrorMsg"] = "Not authorized for this operation"
+		c.HTML(http.StatusBadRequest, "error")
+		return
+	}
 	volume, err := volumeAdmin.Get(ctx, int64(volumeID))
 	if err != nil {
 		logger.Error("Volume query failed", err)
@@ -922,11 +1038,11 @@ func (v *VolumeView) Resize(c *macaron.Context, store session.Store) {
 		c.HTML(http.StatusBadRequest, "error")
 		return
 	}
-	if c.Req.Method == "GET" {
+	switch c.Req.Method {
+	case http.MethodGet:
 		c.Data["Link"] = fmt.Sprintf("/volumes/%d/resize", volumeID)
 		c.HTML(200, "volumes_resize")
-		return
-	} else if c.Req.Method == "POST" {
+	case http.MethodPost:
 		size := c.QueryInt64("size")
 		if size <= int64(volume.Size) {
 			logger.Error("The size must be greater than the original size")

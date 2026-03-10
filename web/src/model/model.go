@@ -23,13 +23,12 @@ import (
 var logger = log.MustGetLogger("model")
 
 type Model struct {
-	ID        int64 `gorm:"primary_key"`
+	ID        int64      `gorm:"primary_key"`
 	CreatedAt time.Time
 	UpdatedAt time.Time
-	DeletedAt *time.Time    `gorm:"index"`
-	UUID      string        `gorm:"type:varchar(64);index"`
-	Creater   int64         `gorm:"default:1"` /* The user ID of the resource */
-	OwnerInfo *Organization `gorm:"PRELOAD:false;foreignkey:Owner"`
+	DeletedAt *time.Time `gorm:"index"`
+	UUID      string     `gorm:"type:varchar(64);index"`
+	Creater   int64      `gorm:"default:0"` /* The user ID who created the resource (audit only) */
 }
 
 func (m *Model) BeforeCreate() (err error) {

@@ -42,16 +42,19 @@ type ResourceData struct {
 type Dashboard struct{}
 
 func (a *Dashboard) Show(c *macaron.Context, store session.Store) {
+	logger.Info("ENTER Dashboard.Show")
+	defer logger.Info("EXIT Dashboard.Show")
 	c.HTML(200, "dashboard")
-	return
 }
 
 func (a *Dashboard) GetData(c *macaron.Context, store session.Store) {
+	logger.Info("ENTER Dashboard.GetData")
+	defer logger.Info("EXIT Dashboard.GetData")
 	ctx := c.Req.Context()
 	memberShip := GetMemberShip(ctx)
 	var rcData *ResourceData
 	ctx, db := GetContextDB(ctx)
-	if memberShip.OrgName == "admin" {
+	if memberShip.IsSystemAdmin() {
 		resource := &model.Resource{}
 		err := db.Where("hostid = ?", -1).Take(resource).Error
 		if err != nil {
@@ -108,10 +111,17 @@ func (a *Dashboard) GetData(c *macaron.Context, store session.Store) {
 		}
 	}
 	c.JSON(200, rcData)
-	return
 }
 
 func (a *Dashboard) getSystemIpUsage(ctx context.Context, ntype string) (ipTotal, ipUsed int, err error) {
+	logger.Infof("ENTER getSystemIpUsage: ntype=%s", ntype)
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT getSystemIpUsage: error=%v", err)
+		} else {
+			logger.Infof("EXIT getSystemIpUsage: ipTotal=%d, ipUsed=%d", ipTotal, ipUsed)
+		}
+	}()
 	ctx, db := GetContextDB(ctx)
 	subnets := []*model.Subnet{}
 	err = db.Where("type = ?", ntype).Find(&subnets).Error
@@ -142,6 +152,14 @@ func (a *Dashboard) getSystemIpUsage(ctx context.Context, ntype string) (ipTotal
 }
 
 func (a *Dashboard) getOrgIpUsage(ctx context.Context, ntype string) (ipUsed int, err error) {
+	logger.Infof("ENTER getOrgIpUsage: ntype=%s", ntype)
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT getOrgIpUsage: error=%v", err)
+		} else {
+			logger.Infof("EXIT getOrgIpUsage: ipUsed=%d", ipUsed)
+		}
+	}()
 	memberShip := GetMemberShip(ctx)
 	ctx, db := GetContextDB(ctx)
 	subnets := []*model.Subnet{}
@@ -168,6 +186,14 @@ func (a *Dashboard) getOrgIpUsage(ctx context.Context, ntype string) (ipUsed int
 }
 
 func (a *Dashboard) getOrgUsage(ctx context.Context, quota *model.Quota) (rcData *ResourceData, err error) {
+	logger.Infof("ENTER getOrgUsage: quotaOrg=%d", quota.Owner)
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT getOrgUsage: error=%v", err)
+		} else {
+			logger.Infof("EXIT getOrgUsage: rcDataSummary=%s", rcData.Title)
+		}
+	}()
 	var cpu, memory, disk int32
 	_, instances, err := instanceAdmin.List(ctx, 0, -1, "", "")
 	for _, inst := range instances {

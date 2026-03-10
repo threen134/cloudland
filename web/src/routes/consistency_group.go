@@ -36,7 +36,14 @@ type ConsistencyGroupView struct{}
 // Get retrieves a consistency group by ID
 // 通过 ID 获取一致性组
 func (a *ConsistencyGroupAdmin) Get(ctx context.Context, id int64) (cg *model.ConsistencyGroup, err error) {
-	logger.Debugf("Get consistency group by ID: %d", id)
+	logger.Infof("ENTER ConsistencyGroupAdmin.Get: id=%d", id)
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT ConsistencyGroupAdmin.Get: error=%v", err)
+		} else {
+			logger.Infof("EXIT ConsistencyGroupAdmin.Get: cgUUID=%s", cg.UUID)
+		}
+	}()
 	ctx, db := GetContextDB(ctx)
 	cg = &model.ConsistencyGroup{Model: model.Model{ID: id}}
 	if err = db.Take(cg).Error; err != nil {
@@ -50,7 +57,14 @@ func (a *ConsistencyGroupAdmin) Get(ctx context.Context, id int64) (cg *model.Co
 // GetByUUID retrieves a consistency group by UUID
 // 通过 UUID 获取一致性组
 func (a *ConsistencyGroupAdmin) GetByUUID(ctx context.Context, uuid string) (cg *model.ConsistencyGroup, err error) {
-	logger.Debugf("Get consistency group by UUID: %s", uuid)
+	logger.Infof("ENTER ConsistencyGroupAdmin.GetByUUID: uuid=%s", uuid)
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT ConsistencyGroupAdmin.GetByUUID: error=%v", err)
+		} else {
+			logger.Infof("EXIT ConsistencyGroupAdmin.GetByUUID: cgID=%d", cg.ID)
+		}
+	}()
 	ctx, db := GetContextDB(ctx)
 	cg = &model.ConsistencyGroup{}
 	if err = db.Where("uuid = ?", uuid).Take(cg).Error; err != nil {
@@ -63,10 +77,30 @@ func (a *ConsistencyGroupAdmin) GetByUUID(ctx context.Context, uuid string) (cg 
 
 // IsVolumeInCG checks if a volume is in any consistency group
 // 检查卷是否在任何一致性组中
-func (a *ConsistencyGroupAdmin) IsVolumeInCG(ctx context.Context, volumeID int64) (bool, error) {
+func (a *ConsistencyGroupAdmin) IsVolumeInCG(ctx context.Context, volumeID int64) (isInCG bool, err error) {
+	logger.Infof("ENTER ConsistencyGroupAdmin.IsVolumeInCG: volumeID=%d", volumeID)
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT ConsistencyGroupAdmin.IsVolumeInCG: error=%v", err)
+		} else {
+			logger.Infof("EXIT ConsistencyGroupAdmin.IsVolumeInCG: isInCG=%v", isInCG)
+		}
+	}()
 	ctx, db := GetContextDB(ctx)
+
+	// Get membership for permission filtering
+	memberShip := GetMemberShip(ctx)
+
+	// Build query for consistency groups owned by the user's organization
+	cgQueryBuilder, cgArgs := memberShip.GetOrgFilter()
+
+	// Check if the volume is associated with any consistency group that the user has access to
 	var count int64
-	if err := db.Model(&model.ConsistencyGroupVolume{}).Where("volume_id = ?", volumeID).Count(&count).Error; err != nil {
+	if err = db.Model(&model.ConsistencyGroupVolume{}).
+		Joins("JOIN consistency_groups ON consistency_group_volumes.cg_id = consistency_groups.id").
+		Where("consistency_group_volumes.volume_id = ?", volumeID).
+		Where(cgQueryBuilder, cgArgs...).
+		Count(&count).Error; err != nil {
 		logger.Errorf("Failed to check if volume %d is in consistency group: %+v", volumeID, err)
 		return false, NewCLError(ErrDatabaseError, "Failed to check if volume is in consistency group", err)
 	}
@@ -76,7 +110,14 @@ func (a *ConsistencyGroupAdmin) IsVolumeInCG(ctx context.Context, volumeID int64
 // List retrieves a list of consistency groups with pagination
 // 获取一致性组列表（分页）
 func (a *ConsistencyGroupAdmin) List(ctx context.Context, offset, limit int64, order, name string) (total int64, cgs []*model.ConsistencyGroup, err error) {
-	logger.Debugf("List consistency groups: offset=%d, limit=%d, order=%s, name=%s", offset, limit, order, name)
+	logger.Infof("ENTER ConsistencyGroupAdmin.List: offset=%d, limit=%d, order=%s, name=%s", offset, limit, order, name)
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT ConsistencyGroupAdmin.List: error=%v", err)
+		} else {
+			logger.Infof("EXIT ConsistencyGroupAdmin.List: total=%d, count=%d", total, len(cgs))
+		}
+	}()
 	ctx, db := GetContextDB(ctx)
 
 	// Get membership for permission filtering
@@ -85,10 +126,9 @@ func (a *ConsistencyGroupAdmin) List(ctx context.Context, offset, limit int64, o
 	// Build query
 	query := db.Model(&model.ConsistencyGroup{})
 
-	// Filter by owner if not admin
-	if memberShip.OrgID > 0 {
-		query = query.Where("owner = ?", memberShip.OrgID)
-	}
+	// Get output from OrgFilter
+	queryBuilder, args := memberShip.GetOrgFilter()
+	query = query.Where(queryBuilder, args...)
 
 	// Filter by name if provided
 	if name != "" {
@@ -118,11 +158,18 @@ func (a *ConsistencyGroupAdmin) List(ctx context.Context, offset, limit int64, o
 // Create creates a new consistency group with volumes
 // 创建新的一致性组
 func (a *ConsistencyGroupAdmin) Create(ctx context.Context, name, description string, volumeUUIDs []string) (cg *model.ConsistencyGroup, err error) {
-	logger.Debugf("Creating consistency group: name=%s, volumes=%v", name, volumeUUIDs)
+	logger.Infof("ENTER ConsistencyGroupAdmin.Create: name=%s, description=%s, volumeCount=%d", name, description, len(volumeUUIDs))
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT ConsistencyGroupAdmin.Create: error=%v", err)
+		} else {
+			logger.Infof("EXIT ConsistencyGroupAdmin.Create: success, cgID=%d", cg.ID)
+		}
+	}()
 
 	// Get membership for permission check
 	memberShip := GetMemberShip(ctx)
-	permit := memberShip.CheckPermission(model.Writer)
+	permit := memberShip.CheckOrgPermission(model.OrgWriter)
 	if !permit {
 		logger.Errorf("Not authorized to create consistency group")
 		err = NewCLError(ErrPermissionDenied, "Not authorized to create consistency group", nil)
@@ -233,7 +280,7 @@ func (a *ConsistencyGroupAdmin) Create(ctx context.Context, name, description st
 	// Execute WDS script to create consistency group
 	// 执行 WDS 脚本创建一致性组
 	cgName := fmt.Sprintf("cg_%s", cg.UUID)
-	control := fmt.Sprintf("inter=")
+	control := "inter="
 	command := fmt.Sprintf("/opt/cloudland/scripts/backend/create_cg_wds.sh '%d' '%d' '%s' '%s'",
 		task.ID, cg.ID, cgName, volumeWDSIDJSON)
 	err = HyperExecute(ctx, control, command)
@@ -251,7 +298,14 @@ func (a *ConsistencyGroupAdmin) Create(ctx context.Context, name, description st
 // Update updates a consistency group's name and description
 // 更新一致性组的名称和描述
 func (a *ConsistencyGroupAdmin) Update(ctx context.Context, id int64, name, description string) (cg *model.ConsistencyGroup, err error) {
-	logger.Debugf("Update consistency group: ID=%d, name=%s", id, name)
+	logger.Infof("ENTER ConsistencyGroupAdmin.Update: id=%d, name=%s, description=%s", id, name, description)
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT ConsistencyGroupAdmin.Update: error=%v", err)
+		} else {
+			logger.Info("EXIT ConsistencyGroupAdmin.Update: success")
+		}
+	}()
 
 	// Get membership for permission check
 	// 获取成员信息进行权限检查
@@ -270,7 +324,7 @@ func (a *ConsistencyGroupAdmin) Update(ctx context.Context, id int64, name, desc
 
 	// Permission check
 	// 权限检查
-	permit := memberShip.ValidateOwner(model.Writer, cg.Owner)
+	permit := memberShip.CheckResourceOrg(model.OrgWriter, cg.Owner)
 	if !permit {
 		logger.Errorf("Not authorized to update consistency group ID %d", id)
 		err = NewCLError(ErrPermissionDenied, "Not authorized to update consistency group", nil)
@@ -333,7 +387,14 @@ func (a *ConsistencyGroupAdmin) Update(ctx context.Context, id int64, name, desc
 // Delete deletes a consistency group
 // 删除一致性组
 func (a *ConsistencyGroupAdmin) Delete(ctx context.Context, id int64) (err error) {
-	logger.Debugf("Delete consistency group: ID=%d", id)
+	logger.Infof("ENTER ConsistencyGroupAdmin.Delete: id=%d", id)
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT ConsistencyGroupAdmin.Delete: error=%v", err)
+		} else {
+			logger.Info("EXIT ConsistencyGroupAdmin.Delete: success")
+		}
+	}()
 
 	// Get membership for permission check
 	// 获取成员信息进行权限检查
@@ -352,7 +413,7 @@ func (a *ConsistencyGroupAdmin) Delete(ctx context.Context, id int64) (err error
 
 	// Permission check
 	// 权限检查
-	permit := memberShip.ValidateOwner(model.Writer, cg.Owner)
+	permit := memberShip.CheckResourceOrg(model.OrgWriter, cg.Owner)
 	if !permit {
 		logger.Errorf("Not authorized to delete consistency group ID %d", id)
 		err = NewCLError(ErrPermissionDenied, "Not authorized to delete consistency group", nil)
@@ -400,7 +461,7 @@ func (a *ConsistencyGroupAdmin) Delete(ctx context.Context, id int64) (err error
 
 	// Execute WDS script to delete consistency group
 	// 执行 WDS 脚本删除一致性组
-	control := fmt.Sprintf("inter=")
+	control := "inter="
 	command := fmt.Sprintf("/opt/cloudland/scripts/backend/delete_cg_wds.sh '%d' '%s'",
 		cg.ID, cg.WdsCgID)
 	err = HyperExecute(ctx, control, command)
@@ -417,7 +478,14 @@ func (a *ConsistencyGroupAdmin) Delete(ctx context.Context, id int64) (err error
 // AddVolumes adds volumes to a consistency group
 // 向一致性组添加卷
 func (a *ConsistencyGroupAdmin) AddVolumes(ctx context.Context, id int64, volumeUUIDs []string) (cg *model.ConsistencyGroup, err error) {
-	logger.Debugf("Adding volumes to consistency group ID: %d, volumes=%v", id, volumeUUIDs)
+	logger.Infof("ENTER ConsistencyGroupAdmin.AddVolumes: id=%d, volumeCount=%d", id, len(volumeUUIDs))
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT ConsistencyGroupAdmin.AddVolumes: error=%v", err)
+		} else {
+			logger.Info("EXIT ConsistencyGroupAdmin.AddVolumes: success")
+		}
+	}()
 
 	// Get membership for permission check
 	// 获取成员信息进行权限检查
@@ -436,7 +504,7 @@ func (a *ConsistencyGroupAdmin) AddVolumes(ctx context.Context, id int64, volume
 
 	// Permission check
 	// 权限检查
-	permit := memberShip.ValidateOwner(model.Writer, cg.Owner)
+	permit := memberShip.CheckResourceOrg(model.OrgWriter, cg.Owner)
 	if !permit {
 		logger.Errorf("Not authorized to add volumes to consistency group ID %d", id)
 		err = NewCLError(ErrPermissionDenied, "Not authorized to add volumes to consistency group", nil)
@@ -578,7 +646,7 @@ func (a *ConsistencyGroupAdmin) AddVolumes(ctx context.Context, id int64, volume
 
 	// Execute WDS script to add volumes to consistency group
 	// 执行 WDS 脚本向一致性组添加卷
-	control := fmt.Sprintf("inter=")
+	control := "inter="
 	command := fmt.Sprintf("/opt/cloudland/scripts/backend/add_volumes_to_cg_wds.sh '%d' '%s' '%s'",
 		cg.ID, cg.WdsCgID, volumeWDSIDJSON)
 	err = HyperExecute(ctx, control, command)
@@ -595,7 +663,14 @@ func (a *ConsistencyGroupAdmin) AddVolumes(ctx context.Context, id int64, volume
 // RemoveVolume removes a volume from a consistency group
 // 从一致性组删除卷
 func (a *ConsistencyGroupAdmin) RemoveVolume(ctx context.Context, id int64, volumeUUID string) (cg *model.ConsistencyGroup, err error) {
-	logger.Debugf("Removing volume %s from consistency group ID: %d", volumeUUID, id)
+	logger.Infof("ENTER ConsistencyGroupAdmin.RemoveVolume: id=%d, volumeUUID=%s", id, volumeUUID)
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT ConsistencyGroupAdmin.RemoveVolume: error=%v", err)
+		} else {
+			logger.Info("EXIT ConsistencyGroupAdmin.RemoveVolume: success")
+		}
+	}()
 
 	// Get membership for permission check
 	// 获取成员信息进行权限检查
@@ -614,7 +689,7 @@ func (a *ConsistencyGroupAdmin) RemoveVolume(ctx context.Context, id int64, volu
 
 	// Permission check
 	// 权限检查
-	permit := memberShip.ValidateOwner(model.Writer, cg.Owner)
+	permit := memberShip.CheckResourceOrg(model.OrgWriter, cg.Owner)
 	if !permit {
 		logger.Errorf("Not authorized to remove volume from consistency group ID %d", id)
 		err = NewCLError(ErrPermissionDenied, "Not authorized to remove volume from consistency group", nil)
@@ -693,7 +768,7 @@ func (a *ConsistencyGroupAdmin) RemoveVolume(ctx context.Context, id int64, volu
 	// 执行 WDS 脚本从一致性组删除卷
 	volumeWDSIDJSONBytes, _ := json.Marshal([]string{volume.GetOriginVolumeID()})
 	volumeWDSIDJSON := string(volumeWDSIDJSONBytes)
-	control := fmt.Sprintf("inter=")
+	control := "inter="
 	command := fmt.Sprintf("/opt/cloudland/scripts/backend/remove_volumes_from_cg_wds.sh '%d' '%s' '%s'",
 		cg.ID, cg.WdsCgID, volumeWDSIDJSON)
 	err = HyperExecute(ctx, control, command)
@@ -710,7 +785,14 @@ func (a *ConsistencyGroupAdmin) RemoveVolume(ctx context.Context, id int64, volu
 // GetSnapshot retrieves a consistency group snapshot by ID
 // 通过 ID 获取一致性组快照
 func (a *ConsistencyGroupAdmin) GetSnapshot(ctx context.Context, id int64) (snapshot *model.ConsistencyGroupSnapshot, err error) {
-	logger.Debugf("Get consistency group snapshot by ID: %d", id)
+	logger.Infof("ENTER ConsistencyGroupAdmin.GetSnapshot: id=%d", id)
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT ConsistencyGroupAdmin.GetSnapshot: error=%v", err)
+		} else {
+			logger.Infof("EXIT ConsistencyGroupAdmin.GetSnapshot: snapshotUUID=%s", snapshot.UUID)
+		}
+	}()
 	ctx, db := GetContextDB(ctx)
 	snapshot = &model.ConsistencyGroupSnapshot{Model: model.Model{ID: id}}
 	if err = db.Take(snapshot).Error; err != nil {
@@ -724,7 +806,14 @@ func (a *ConsistencyGroupAdmin) GetSnapshot(ctx context.Context, id int64) (snap
 // GetSnapshotByUUID retrieves a consistency group snapshot by UUID
 // 通过 UUID 获取一致性组快照
 func (a *ConsistencyGroupAdmin) GetSnapshotByUUID(ctx context.Context, uuid string) (snapshot *model.ConsistencyGroupSnapshot, err error) {
-	logger.Debugf("Get consistency group snapshot by UUID: %s", uuid)
+	logger.Infof("ENTER ConsistencyGroupAdmin.GetSnapshotByUUID: uuid=%s", uuid)
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT ConsistencyGroupAdmin.GetSnapshotByUUID: error=%v", err)
+		} else {
+			logger.Infof("EXIT ConsistencyGroupAdmin.GetSnapshotByUUID: snapshotID=%d", snapshot.ID)
+		}
+	}()
 	ctx, db := GetContextDB(ctx)
 	snapshot = &model.ConsistencyGroupSnapshot{}
 	if err = db.Where("uuid = ?", uuid).Take(snapshot).Error; err != nil {
@@ -738,7 +827,14 @@ func (a *ConsistencyGroupAdmin) GetSnapshotByUUID(ctx context.Context, uuid stri
 // ListSnapshots retrieves a list of consistency group snapshots with pagination
 // 获取一致性组快照列表（分页）
 func (a *ConsistencyGroupAdmin) ListSnapshots(ctx context.Context, cgID int64, offset, limit int64, order string) (total int64, snapshots []*model.ConsistencyGroupSnapshot, err error) {
-	logger.Debugf("List snapshots for CG ID: %d, offset=%d, limit=%d, order=%s", cgID, offset, limit, order)
+	logger.Infof("ENTER ConsistencyGroupAdmin.ListSnapshots: cgID=%d, offset=%d, limit=%d, order=%s", cgID, offset, limit, order)
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT ConsistencyGroupAdmin.ListSnapshots: error=%v", err)
+		} else {
+			logger.Infof("EXIT ConsistencyGroupAdmin.ListSnapshots: total=%d, count=%d", total, len(snapshots))
+		}
+	}()
 	ctx, db := GetContextDB(ctx)
 
 	// Build query
@@ -773,7 +869,14 @@ func (a *ConsistencyGroupAdmin) ListSnapshots(ctx context.Context, cgID int64, o
 // CreateSnapshot creates a consistency group snapshot
 // 创建一致性组快照
 func (a *ConsistencyGroupAdmin) CreateSnapshot(ctx context.Context, cgUUID string, name, description string) (snapshot *model.ConsistencyGroupSnapshot, err error) {
-	logger.Debugf("CreateSnapshot for CG %s, name: %s", cgUUID, name)
+	logger.Infof("ENTER ConsistencyGroupAdmin.CreateSnapshot: cgUUID=%s, name=%s, description=%s", cgUUID, name, description)
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT ConsistencyGroupAdmin.CreateSnapshot: error=%v", err)
+		} else {
+			logger.Infof("EXIT ConsistencyGroupAdmin.CreateSnapshot: success, snapshotID=%d", snapshot.ID)
+		}
+	}()
 
 	// 1. 获取一致性组
 	cg, err := a.GetByUUID(ctx, cgUUID)
@@ -783,7 +886,7 @@ func (a *ConsistencyGroupAdmin) CreateSnapshot(ctx context.Context, cgUUID strin
 
 	// 2. 权限检查
 	memberShip := GetMemberShip(ctx)
-	permit := memberShip.ValidateOwner(model.Writer, cg.Owner)
+	permit := memberShip.CheckResourceOrg(model.OrgWriter, cg.Owner)
 	if !permit {
 		logger.Errorf("Not authorized to create snapshot for CG %s", cg.UUID)
 		return nil, NewCLError(ErrPermissionDenied, "Not authorized to create snapshot for this consistency group", nil)
@@ -865,7 +968,7 @@ func (a *ConsistencyGroupAdmin) CreateSnapshot(ctx context.Context, cgUUID strin
 
 	// 10. 调用 shell 脚本创建 WDS 快照
 	// Parameters: cg_ID, cg_snapshot_ID, cg_snapshot_Name, wds_cg_id
-	control := fmt.Sprintf("inter=")
+	control := "inter="
 	command := fmt.Sprintf("/opt/cloudland/scripts/backend/create_cg_snapshot_wds.sh '%d' '%d' '%s' '%s'",
 		cg.ID, snapshot.ID, snapshot.Name, cg.WdsCgID)
 	err = HyperExecute(ctx, control, command)
@@ -884,7 +987,14 @@ func (a *ConsistencyGroupAdmin) CreateSnapshot(ctx context.Context, cgUUID strin
 // DeleteSnapshot deletes a consistency group snapshot
 // 删除一致性组快照
 func (a *ConsistencyGroupAdmin) DeleteSnapshot(ctx context.Context, cgUUID, snapUUID string) (err error) {
-	logger.Debugf("DeleteSnapshot for CG %s, snapshot: %s", cgUUID, snapUUID)
+	logger.Infof("ENTER ConsistencyGroupAdmin.DeleteSnapshot: cgUUID=%s, snapUUID=%s", cgUUID, snapUUID)
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT ConsistencyGroupAdmin.DeleteSnapshot: error=%v", err)
+		} else {
+			logger.Info("EXIT ConsistencyGroupAdmin.DeleteSnapshot: success")
+		}
+	}()
 
 	// 1. 获取一致性组
 	cg, err := a.GetByUUID(ctx, cgUUID)
@@ -894,7 +1004,7 @@ func (a *ConsistencyGroupAdmin) DeleteSnapshot(ctx context.Context, cgUUID, snap
 
 	// 2. 权限检查
 	memberShip := GetMemberShip(ctx)
-	permit := memberShip.ValidateOwner(model.Writer, cg.Owner)
+	permit := memberShip.CheckResourceOrg(model.OrgWriter, cg.Owner)
 	if !permit {
 		logger.Errorf("Not authorized to delete snapshot for CG %s", cg.UUID)
 		return NewCLError(ErrPermissionDenied, "Not authorized to delete snapshot for this consistency group", nil)
@@ -948,7 +1058,7 @@ func (a *ConsistencyGroupAdmin) DeleteSnapshot(ctx context.Context, cgUUID, snap
 
 	// 8. 调用 shell 脚本删除 WDS 快照
 	// Parameters: cg_snapshot_ID, wds_snap_id
-	control := fmt.Sprintf("inter=")
+	control := "inter="
 	command := fmt.Sprintf("/opt/cloudland/scripts/backend/delete_cg_snapshot_wds.sh '%d' '%s'",
 		snapshot.ID, snapshot.WdsSnapID)
 	err = HyperExecute(ctx, control, command)
@@ -967,7 +1077,14 @@ func (a *ConsistencyGroupAdmin) DeleteSnapshot(ctx context.Context, cgUUID, snap
 // RestoreSnapshot restores a consistency group from a snapshot
 // 从快照恢复一致性组
 func (a *ConsistencyGroupAdmin) RestoreSnapshot(ctx context.Context, cgUUID, snapshotUUID string) (task *model.Task, err error) {
-	logger.Debugf("RestoreSnapshot for CG %s from snapshot %s", cgUUID, snapshotUUID)
+	logger.Infof("ENTER ConsistencyGroupAdmin.RestoreSnapshot: cgUUID=%s, snapshotUUID=%s", cgUUID, snapshotUUID)
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT ConsistencyGroupAdmin.RestoreSnapshot: error=%v", err)
+		} else {
+			logger.Infof("EXIT ConsistencyGroupAdmin.RestoreSnapshot: success, taskID=%d", task.ID)
+		}
+	}()
 
 	// 1. 获取一致性组
 	cg, err := a.GetByUUID(ctx, cgUUID)
@@ -977,7 +1094,7 @@ func (a *ConsistencyGroupAdmin) RestoreSnapshot(ctx context.Context, cgUUID, sna
 
 	// 2. 权限检查
 	memberShip := GetMemberShip(ctx)
-	permit := memberShip.ValidateOwner(model.Writer, cg.Owner)
+	permit := memberShip.CheckResourceOrg(model.OrgWriter, cg.Owner)
 	if !permit {
 		logger.Errorf("Not authorized to restore snapshot for CG %s", cg.UUID)
 		return nil, NewCLError(ErrPermissionDenied, "Not authorized to restore snapshot for this consistency group", nil)
@@ -1124,7 +1241,7 @@ func (a *ConsistencyGroupAdmin) RestoreSnapshot(ctx context.Context, cgUUID, sna
 
 	// 14. 调用 shell 脚本恢复快照
 	// Parameters: cg_snapshot_ID, cg_ID, wds_cg_id, wds_snap_id, volumes_json
-	control := fmt.Sprintf("inter=")
+	control := "inter="
 	command := fmt.Sprintf("/opt/cloudland/scripts/backend/restore_cg_snapshot_wds.sh '%d' '%d' '%s' '%s' '%s'",
 		snapshot.ID, cg.ID, cg.WdsCgID, snapshot.WdsSnapID, string(volumesJSON))
 	err = HyperExecute(ctx, control, command)
@@ -1145,8 +1262,10 @@ func (a *ConsistencyGroupAdmin) RestoreSnapshot(ctx context.Context, cgUUID, sna
 // List displays the consistency group list page
 // 显示一致性组列表页面
 func (v *ConsistencyGroupView) List(c *macaron.Context, store session.Store) {
+	logger.Infof("ENTER ConsistencyGroupView.List: query=%s", c.Req.URL.RawQuery)
+	defer logger.Info("EXIT ConsistencyGroupView.List")
 	memberShip := GetMemberShip(c.Req.Context())
-	permit := memberShip.CheckPermission(model.Reader)
+	permit := memberShip.CheckOrgPermission(model.OrgReader)
 	if !permit {
 		logger.Error("Not authorized for this operation")
 		c.Data["ErrorMsg"] = "Not authorized for this operation"
@@ -1198,7 +1317,7 @@ func (v *ConsistencyGroupView) List(c *macaron.Context, store session.Store) {
 
 		// Get owner info for admin
 		// 为管理员获取所有者信息
-		if memberShip.CheckPermission(model.Admin) {
+		if memberShip.IsSystemAdmin() {
 			cgwc.OwnerInfo = &model.Organization{Model: model.Model{ID: cg.Owner}}
 			db.Take(cgwc.OwnerInfo)
 		}
@@ -1217,8 +1336,10 @@ func (v *ConsistencyGroupView) List(c *macaron.Context, store session.Store) {
 // New displays the create consistency group page
 // 显示创建一致性组页面
 func (v *ConsistencyGroupView) New(c *macaron.Context, store session.Store) {
+	logger.Infof("ENTER ConsistencyGroupView.New: query=%s", c.Req.URL.RawQuery)
+	defer logger.Info("EXIT ConsistencyGroupView.New")
 	memberShip := GetMemberShip(c.Req.Context())
-	permit := memberShip.CheckPermission(model.Writer)
+	permit := memberShip.CheckOrgPermission(model.OrgWriter)
 	if !permit {
 		logger.Error("Not authorized for this operation")
 		c.Data["ErrorMsg"] = "Not authorized for this operation"
@@ -1232,10 +1353,10 @@ func (v *ConsistencyGroupView) New(c *macaron.Context, store session.Store) {
 	// Get available volumes (not in any CG)
 	// 获取可用的卷（未加入任何一致性组）
 	var volumes []*model.Volume
-	where := memberShip.GetWhere()
+	query, args := memberShip.GetOrgFilter()
 	// Get volumes that are not in any CG
 	// 获取未加入任何一致性组的卷
-	if err := db.Model(&model.Volume{}).Where(where).Where("id NOT IN (SELECT volume_id FROM consistency_group_volumes WHERE deleted_at IS NULL)").Where("status IN (?)", []string{"available", "attached"}).Find(&volumes).Error; err != nil {
+	if err := db.Model(&model.Volume{}).Where(query, args...).Where("id NOT IN (SELECT volume_id FROM consistency_group_volumes WHERE deleted_at IS NULL)").Where("status IN (?)", []string{"available", "attached"}).Find(&volumes).Error; err != nil {
 		logger.Error("Failed to query volumes", err)
 		c.Data["ErrorMsg"] = "Failed to query volumes"
 		c.HTML(http.StatusInternalServerError, "error")
@@ -1249,8 +1370,10 @@ func (v *ConsistencyGroupView) New(c *macaron.Context, store session.Store) {
 // Create handles creating a new consistency group
 // 处理创建新一致性组
 func (v *ConsistencyGroupView) Create(c *macaron.Context, store session.Store) {
+	logger.Infof("ENTER ConsistencyGroupView.Create: query=%s", c.Req.URL.RawQuery)
+	defer logger.Info("EXIT ConsistencyGroupView.Create")
 	memberShip := GetMemberShip(c.Req.Context())
-	permit := memberShip.CheckPermission(model.Writer)
+	permit := memberShip.CheckOrgPermission(model.OrgWriter)
 	if !permit {
 		logger.Error("Not authorized for this operation")
 		c.Data["ErrorMsg"] = "Not authorized for this operation"
@@ -1291,8 +1414,10 @@ func (v *ConsistencyGroupView) Create(c *macaron.Context, store session.Store) {
 // Get displays the consistency group detail page
 // 显示一致性组详情页面
 func (v *ConsistencyGroupView) Get(c *macaron.Context, store session.Store) {
+	logger.Infof("ENTER ConsistencyGroupView.Get: params=%v", c.Params)
+	defer logger.Info("EXIT ConsistencyGroupView.Get")
 	memberShip := GetMemberShip(c.Req.Context())
-	permit := memberShip.CheckPermission(model.Reader)
+	permit := memberShip.CheckOrgPermission(model.OrgReader)
 	if !permit {
 		logger.Error("Not authorized for this operation")
 		c.Data["ErrorMsg"] = "Not authorized for this operation"
@@ -1324,7 +1449,7 @@ func (v *ConsistencyGroupView) Get(c *macaron.Context, store session.Store) {
 
 	// Permission check
 	// 权限检查
-	permit = memberShip.ValidateOwner(model.Reader, cg.Owner)
+	permit = memberShip.CheckResourceOrg(model.OrgReader, cg.Owner)
 	if !permit {
 		logger.Error("Not authorized to view this consistency group")
 		c.Data["ErrorMsg"] = "Not authorized to view this consistency group"
@@ -1364,8 +1489,10 @@ func (v *ConsistencyGroupView) Get(c *macaron.Context, store session.Store) {
 // Edit displays the edit consistency group page
 // 显示编辑一致性组页面
 func (v *ConsistencyGroupView) Edit(c *macaron.Context, store session.Store) {
+	logger.Infof("ENTER ConsistencyGroupView.Edit: params=%v", c.Params)
+	defer logger.Info("EXIT ConsistencyGroupView.Edit")
 	memberShip := GetMemberShip(c.Req.Context())
-	permit := memberShip.CheckPermission(model.Writer)
+	permit := memberShip.CheckOrgPermission(model.OrgWriter)
 	if !permit {
 		logger.Error("Not authorized for this operation")
 		c.Data["ErrorMsg"] = "Not authorized for this operation"
@@ -1391,7 +1518,7 @@ func (v *ConsistencyGroupView) Edit(c *macaron.Context, store session.Store) {
 
 	// Permission check
 	// 权限检查
-	permit = memberShip.ValidateOwner(model.Writer, cg.Owner)
+	permit = memberShip.CheckResourceOrg(model.OrgWriter, cg.Owner)
 	if !permit {
 		logger.Error("Not authorized to edit this consistency group")
 		c.Data["ErrorMsg"] = "Not authorized to edit this consistency group"
@@ -1406,8 +1533,10 @@ func (v *ConsistencyGroupView) Edit(c *macaron.Context, store session.Store) {
 // Patch handles updating a consistency group
 // 处理更新一致性组
 func (v *ConsistencyGroupView) Patch(c *macaron.Context, store session.Store) {
+	logger.Infof("ENTER ConsistencyGroupView.Patch: params=%v, query=%s", c.Params, c.Req.URL.RawQuery)
+	defer logger.Info("EXIT ConsistencyGroupView.Patch")
 	memberShip := GetMemberShip(c.Req.Context())
-	permit := memberShip.CheckPermission(model.Writer)
+	permit := memberShip.CheckOrgPermission(model.OrgWriter)
 	if !permit {
 		logger.Error("Not authorized for this operation")
 		c.Data["ErrorMsg"] = "Not authorized for this operation"
@@ -1440,6 +1569,8 @@ func (v *ConsistencyGroupView) Patch(c *macaron.Context, store session.Store) {
 // Delete handles deleting a consistency group
 // 处理删除一致性组
 func (v *ConsistencyGroupView) Delete(c *macaron.Context, store session.Store) error {
+	logger.Infof("ENTER ConsistencyGroupView.Delete: params=%v", c.Params)
+	defer logger.Info("EXIT ConsistencyGroupView.Delete")
 	id := c.Params("id")
 	if id == "" {
 		c.Data["ErrorMsg"] = "ID is empty"
@@ -1470,8 +1601,10 @@ func (v *ConsistencyGroupView) Delete(c *macaron.Context, store session.Store) e
 // Volumes displays the volume management page for a consistency group
 // 显示一致性组的卷管理页面
 func (v *ConsistencyGroupView) Volumes(c *macaron.Context, store session.Store) {
+	logger.Infof("ENTER ConsistencyGroupView.Volumes: params=%v", c.Params)
+	defer logger.Info("EXIT ConsistencyGroupView.Volumes")
 	memberShip := GetMemberShip(c.Req.Context())
-	permit := memberShip.CheckPermission(model.Reader)
+	permit := memberShip.CheckOrgPermission(model.OrgReader)
 	if !permit {
 		logger.Error("Not authorized for this operation")
 		c.Data["ErrorMsg"] = "Not authorized for this operation"
@@ -1497,7 +1630,7 @@ func (v *ConsistencyGroupView) Volumes(c *macaron.Context, store session.Store) 
 
 	// Permission check
 	// 权限检查
-	permit = memberShip.ValidateOwner(model.Reader, cg.Owner)
+	permit = memberShip.CheckResourceOrg(model.OrgReader, cg.Owner)
 	if !permit {
 		logger.Error("Not authorized to view this consistency group")
 		c.Data["ErrorMsg"] = "Not authorized to view this consistency group"
@@ -1525,8 +1658,8 @@ func (v *ConsistencyGroupView) Volumes(c *macaron.Context, store session.Store) 
 	// Get available volumes that can be added (not in any CG)
 	// 获取可添加的卷（未加入任何一致性组）
 	var availableVolumes []*model.Volume
-	where := memberShip.GetWhere()
-	db.Model(&model.Volume{}).Where(where).Where("id NOT IN (SELECT volume_id FROM consistency_group_volumes WHERE deleted_at IS NULL)").
+	where, args := memberShip.GetOrgFilter()
+	db.Model(&model.Volume{}).Where(where, args...).Where("id NOT IN (SELECT volume_id FROM consistency_group_volumes WHERE deleted_at IS NULL)").
 		Where("status IN (?)", []string{"available", "attached"}).
 		Find(&availableVolumes)
 
@@ -1541,8 +1674,10 @@ func (v *ConsistencyGroupView) Volumes(c *macaron.Context, store session.Store) 
 // AddVolumes handles adding volumes to a consistency group
 // 处理向一致性组添加卷
 func (v *ConsistencyGroupView) AddVolumes(c *macaron.Context, store session.Store) {
+	logger.Infof("ENTER ConsistencyGroupView.AddVolumes: params=%v, query=%s", c.Params, c.Req.URL.RawQuery)
+	defer logger.Info("EXIT ConsistencyGroupView.AddVolumes")
 	memberShip := GetMemberShip(c.Req.Context())
-	permit := memberShip.CheckPermission(model.Writer)
+	permit := memberShip.CheckOrgPermission(model.OrgWriter)
 	if !permit {
 		logger.Error("Not authorized for this operation")
 		c.Data["ErrorMsg"] = "Not authorized for this operation"
@@ -1579,6 +1714,8 @@ func (v *ConsistencyGroupView) AddVolumes(c *macaron.Context, store session.Stor
 // RemoveVolume handles removing a volume from a consistency group
 // 处理从一致性组删除卷
 func (v *ConsistencyGroupView) RemoveVolume(c *macaron.Context, store session.Store) error {
+	logger.Infof("ENTER ConsistencyGroupView.RemoveVolume: params=%v", c.Params)
+	defer logger.Info("EXIT ConsistencyGroupView.RemoveVolume")
 	id := c.Params("id")
 	volumeID := c.Params("volumeid")
 	logger.Debugf("RemoveVolume handler called with id=%s, volume_id=%s", id, volumeID)
@@ -1629,8 +1766,10 @@ func (v *ConsistencyGroupView) RemoveVolume(c *macaron.Context, store session.St
 // ListSnapshots displays the snapshot list page for a consistency group
 // 显示一致性组的快照列表页面
 func (v *ConsistencyGroupView) ListSnapshots(c *macaron.Context, store session.Store) {
+	logger.Infof("ENTER ConsistencyGroupView.ListSnapshots: params=%v, query=%s", c.Params, c.Req.URL.RawQuery)
+	defer logger.Info("EXIT ConsistencyGroupView.ListSnapshots")
 	memberShip := GetMemberShip(c.Req.Context())
-	permit := memberShip.CheckPermission(model.Reader)
+	permit := memberShip.CheckOrgPermission(model.OrgReader)
 	if !permit {
 		logger.Error("Not authorized for this operation")
 		c.Data["ErrorMsg"] = "Not authorized for this operation"
@@ -1656,7 +1795,7 @@ func (v *ConsistencyGroupView) ListSnapshots(c *macaron.Context, store session.S
 
 	// Permission check
 	// 权限检查
-	permit = memberShip.ValidateOwner(model.Reader, cg.Owner)
+	permit = memberShip.CheckResourceOrg(model.OrgReader, cg.Owner)
 	if !permit {
 		logger.Error("Not authorized to view this consistency group")
 		c.Data["ErrorMsg"] = "Not authorized to view this consistency group"
@@ -1705,8 +1844,10 @@ func (v *ConsistencyGroupView) ListSnapshots(c *macaron.Context, store session.S
 // NewSnapshot displays the create snapshot page
 // 显示创建快照页面
 func (v *ConsistencyGroupView) NewSnapshot(c *macaron.Context, store session.Store) {
+	logger.Infof("ENTER ConsistencyGroupView.NewSnapshot: params=%v", c.Params)
+	defer logger.Info("EXIT ConsistencyGroupView.NewSnapshot")
 	memberShip := GetMemberShip(c.Req.Context())
-	permit := memberShip.CheckPermission(model.Writer)
+	permit := memberShip.CheckOrgPermission(model.OrgWriter)
 	if !permit {
 		logger.Error("Not authorized for this operation")
 		c.Data["ErrorMsg"] = "Not authorized for this operation"
@@ -1732,7 +1873,7 @@ func (v *ConsistencyGroupView) NewSnapshot(c *macaron.Context, store session.Sto
 
 	// Permission check
 	// 权限检查
-	permit = memberShip.ValidateOwner(model.Writer, cg.Owner)
+	permit = memberShip.CheckResourceOrg(model.OrgWriter, cg.Owner)
 	if !permit {
 		logger.Error("Not authorized to create snapshot for this consistency group")
 		c.Data["ErrorMsg"] = "Not authorized to create snapshot for this consistency group"
@@ -1754,8 +1895,10 @@ func (v *ConsistencyGroupView) NewSnapshot(c *macaron.Context, store session.Sto
 // CreateSnapshot handles creating a snapshot for a consistency group
 // 处理为一致性组创建快照
 func (v *ConsistencyGroupView) CreateSnapshot(c *macaron.Context, store session.Store) {
+	logger.Infof("ENTER ConsistencyGroupView.CreateSnapshot: params=%v, query=%s", c.Params, c.Req.URL.RawQuery)
+	defer logger.Info("EXIT ConsistencyGroupView.CreateSnapshot")
 	memberShip := GetMemberShip(c.Req.Context())
-	permit := memberShip.CheckPermission(model.Writer)
+	permit := memberShip.CheckOrgPermission(model.OrgWriter)
 	if !permit {
 		logger.Error("Not authorized for this operation")
 		c.Data["ErrorMsg"] = "Not authorized for this operation"
@@ -1802,6 +1945,8 @@ func (v *ConsistencyGroupView) CreateSnapshot(c *macaron.Context, store session.
 // DeleteSnapshot handles deleting a snapshot
 // 处理删除快照
 func (v *ConsistencyGroupView) DeleteSnapshot(c *macaron.Context, store session.Store) error {
+	logger.Infof("ENTER ConsistencyGroupView.DeleteSnapshot: params=%v", c.Params)
+	defer logger.Info("EXIT ConsistencyGroupView.DeleteSnapshot")
 	id := c.Params("id")
 	snapID := c.Params("snapid")
 	logger.Info("Delete CG snapshot", id, snapID)
@@ -1859,8 +2004,10 @@ func (v *ConsistencyGroupView) DeleteSnapshot(c *macaron.Context, store session.
 // Restore handles restoring a consistency group from a snapshot
 // 处理从快照恢复一致性组
 func (v *ConsistencyGroupView) Restore(c *macaron.Context, store session.Store) {
+	logger.Infof("ENTER ConsistencyGroupView.Restore: params=%v", c.Params)
+	defer logger.Info("EXIT ConsistencyGroupView.Restore")
 	memberShip := GetMemberShip(c.Req.Context())
-	permit := memberShip.CheckPermission(model.Writer)
+	permit := memberShip.CheckOrgPermission(model.OrgWriter)
 	if !permit {
 		logger.Error("Not authorized for this operation")
 		c.Data["ErrorMsg"] = "Not authorized for this operation"

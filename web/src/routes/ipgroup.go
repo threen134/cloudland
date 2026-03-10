@@ -37,9 +37,16 @@ type IpGroupAdmin struct{}
 type IpGroupView struct{}
 
 func (a *IpGroupAdmin) Create(ctx context.Context, name string, typeName string, ipGroupType int) (ipGroup *model.IpGroup, err error) {
-	logger.Debugf("Enter IpGroupAdmin.Create, name=%s,typeName=%s, ipGroupType=%d", name, typeName, ipGroupType)
+	logger.Infof("ENTER IpGroupAdmin.Create: name=%s, typeName=%s, ipGroupType=%d", name, typeName, ipGroupType)
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT IpGroupAdmin.Create: error=%v", err)
+		} else {
+			logger.Infof("EXIT IpGroupAdmin.Create: success, ipGroupID=%d", ipGroup.ID)
+		}
+	}()
 	memberShip := GetMemberShip(ctx)
-	permit := memberShip.CheckPermission(model.Writer)
+	permit := memberShip.CheckOrgPermission(model.OrgWriter)
 	if !permit {
 		logger.Error("Not authorized for this operation")
 		err = NewCLError(ErrPermissionDenied, "Not authorized for this operation", nil)
@@ -50,7 +57,6 @@ func (a *IpGroupAdmin) Create(ctx context.Context, name string, typeName string,
 		if newTransaction {
 			EndTransaction(ctx, err)
 		}
-		logger.Debugf("Exit IpGroupAdmin.Create, ipGroup=%+v, err=%v", ipGroup, err)
 	}()
 	ipGroup = &model.IpGroup{
 		Model:  model.Model{Creater: memberShip.UserID},
@@ -71,12 +77,19 @@ func (a *IpGroupAdmin) Create(ctx context.Context, name string, typeName string,
 		err = NewCLError(ErrIpGroupCreateFailed, "Error loading IpGroup details after creation", err)
 		return nil, err
 	}
-	logger.Debugf("IpGroupAdmin.Create: success, ipGroup=%+v", ipGroup)
+	logger.Infof("IpGroupAdmin.Create: success, ipGroup=%+v", ipGroup)
 	return ipGroup, nil
 }
 
 func (a *IpGroupAdmin) Get(ctx context.Context, id int64) (ipGroup *model.IpGroup, err error) {
-	logger.Debugf("Enter IpGroupAdmin.Get, id=%d", id)
+	logger.Infof("ENTER IpGroupAdmin.Get: id=%d", id)
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT IpGroupAdmin.Get: error=%v", err)
+		} else {
+			logger.Info("EXIT IpGroupAdmin.Get: success")
+		}
+	}()
 	if id <= 0 {
 		err = NewCLError(ErrInvalidParameter, fmt.Sprintf("Invalid ipGroup ID: %d", id), nil)
 		logger.Errorf("%v", err)
@@ -84,29 +97,35 @@ func (a *IpGroupAdmin) Get(ctx context.Context, id int64) (ipGroup *model.IpGrou
 	}
 	ctx, db := GetContextDB(ctx)
 	memberShip := GetMemberShip(ctx)
-	where := memberShip.GetWhere()
+	query, args := memberShip.GetOrgFilter()
 	ipGroup = &model.IpGroup{Model: model.Model{ID: id}}
-	err = db.Where(where).Preload("Subnets").Preload("DictionaryType").Take(ipGroup).Error
+	err = db.Where(query, args...).Preload("Subnets").Preload("DictionaryType").Take(ipGroup).Error
 	if err != nil {
 		logger.Errorf("Failed to query ipGroup, %v", err)
 		err = NewCLError(ErrIpGroupNotFound, "IpGroup not found", err)
 		return
 	}
-	logger.Debugf("IpGroupAdmin.Get: success, ipGroup=%+v", ipGroup)
+	logger.Infof("IpGroupAdmin.Get: success, ipGroup=%+v", ipGroup)
 	return
 }
 
 func (a *IpGroupAdmin) Delete(ctx context.Context, ipGroup *model.IpGroup) (err error) {
-	logger.Debugf("Enter IpGroupAdmin.Delete, id=%d", ipGroup.ID)
+	logger.Infof("ENTER IpGroupAdmin.Delete: id=%d", ipGroup.ID)
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT IpGroupAdmin.Delete: error=%v", err)
+		} else {
+			logger.Info("EXIT IpGroupAdmin.Delete: success")
+		}
+	}()
 	ctx, db, newTransaction := StartTransaction(ctx)
 	defer func() {
 		if newTransaction {
 			EndTransaction(ctx, err)
 		}
-		logger.Debugf("Exit IpGroupAdmin.Delete, id=%d, err=%v", ipGroup.ID, err)
 	}()
 	memberShip := GetMemberShip(ctx)
-	permit := memberShip.ValidateOwner(model.Writer, ipGroup.Owner)
+	permit := memberShip.CheckResourceOrg(model.OrgWriter, ipGroup.Owner)
 	if !permit {
 		logger.Error("Not authorized to delete the ip group")
 		err = NewCLError(ErrPermissionDenied, "Not authorized to delete the ip group", nil)
@@ -131,12 +150,19 @@ func (a *IpGroupAdmin) Delete(ctx context.Context, ipGroup *model.IpGroup) (err 
 }
 
 func (a *IpGroupAdmin) GetIpGroupByUUID(ctx context.Context, uuID string) (ipGroup *model.IpGroup, err error) {
-	logger.Debugf("Enter IpGroupAdmin.GetIpGroupByUUID, uuID=%s", uuID)
+	logger.Infof("ENTER IpGroupAdmin.GetIpGroupByUUID: uuID=%s", uuID)
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT IpGroupAdmin.GetIpGroupByUUID: error=%v", err)
+		} else {
+			logger.Infof("EXIT IpGroupAdmin.GetIpGroupByUUID: success, id=%d", ipGroup.ID)
+		}
+	}()
 	ctx, db := GetContextDB(ctx)
 	memberShip := GetMemberShip(ctx)
-	where := memberShip.GetWhere()
+	query, args := memberShip.GetOrgFilter()
 	ipGroup = &model.IpGroup{}
-	err = db.Where(where).Where("uuid = ?", uuID).Preload("Subnets").Preload("FloatingIPs", func(db *gorm.DB) *gorm.DB {
+	err = db.Where(query, args...).Where("uuid = ?", uuID).Preload("Subnets").Preload("FloatingIPs", func(db *gorm.DB) *gorm.DB {
 		return db.Order("floating_ips.updated_at")
 	}).Preload("FloatingIPs.Subnet").Preload("FloatingIPs.Subnet.Group").Preload("FloatingIPs.Subnet.Group.DictionaryType").Preload("FloatingIPs.Group").Preload("FloatingIPs.Group.DictionaryType").Preload("DictionaryType").Take(ipGroup).Error
 	if err != nil {
@@ -144,53 +170,68 @@ func (a *IpGroupAdmin) GetIpGroupByUUID(ctx context.Context, uuID string) (ipGro
 		err = NewCLError(ErrIpGroupNotFound, "IpGroup not found", err)
 		return
 	}
-	logger.Debugf("IpGroupAdmin.GetIpGroupByUUID: success, uuid=%s, ipGroup=%+v", ipGroup.UUID, ipGroup)
 	return
 }
 
 func (a *IpGroupAdmin) GetIpGroupByName(ctx context.Context, name string) (ipGroup *model.IpGroup, err error) {
-	logger.Debugf("Enter IpGroupAdmin.GetIpGroupByName, name=%s", name)
+	logger.Infof("ENTER IpGroupAdmin.GetIpGroupByName: name=%s", name)
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT IpGroupAdmin.GetIpGroupByName: error=%v", err)
+		} else {
+			logger.Infof("EXIT IpGroupAdmin.GetIpGroupByName: success, id=%d", ipGroup.ID)
+		}
+	}()
 	ctx, db := GetContextDB(ctx)
 	memberShip := GetMemberShip(ctx)
-	where := memberShip.GetWhere()
+	query, args := memberShip.GetOrgFilter()
 	ipGroup = &model.IpGroup{}
-	err = db.Where(where).Where("name = ?", name).Preload("Subnets").Preload("DictionaryType").Take(ipGroup).Error
+	err = db.Where(query, args...).Where("name = ?", name).Preload("Subnets").Preload("DictionaryType").Take(ipGroup).Error
 	if err != nil {
 		logger.Errorf("Failed to query ipGroup, %v", err)
 		err = NewCLError(ErrIpGroupNotFound, "IpGroup not found", err)
 		return
 	}
-	logger.Debugf("IpGroupAdmin.GetIpGroupByName: success, name=%s, ipGroup=%+v", name, ipGroup)
 	return
 }
 
 func (a *IpGroupAdmin) GetIpGroup(ctx context.Context, reference *BaseReference) (ipGroup *model.IpGroup, err error) {
-	logger.Debugf("Enter IpGroupAdmin.GetIpGroup, reference=%+v", reference)
+	logger.Infof("ENTER IpGroupAdmin.GetIpGroup: reference=%+v", reference)
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT IpGroupAdmin.GetIpGroup: error=%v", err)
+		} else {
+			logger.Info("EXIT IpGroupAdmin.GetIpGroup: success")
+		}
+	}()
 	if reference == nil || (reference.ID == "" && reference.Name == "") {
 		err = NewCLError(ErrInvalidParameter, "IpGroup base reference must be provided with either uuid or name", nil)
-		logger.Errorf("Exit IpGroupAdmin.GetIpGroup with error")
 		return
 	}
 	if reference.ID != "" {
 		ipGroup, err = a.GetIpGroupByUUID(ctx, reference.ID)
-		logger.Debugf("Exit IpGroupAdmin.GetIpGroup by UUID, uuid=%s, ipGroup=%+v, err=%v", reference.ID, ipGroup, err)
 		return
 	}
-	logger.Debugf("Exit IpGroupAdmin.GetIpGroup with nil result")
 	return
 }
 
 func (a *IpGroupAdmin) Update(ctx context.Context, ipGroup *model.IpGroup, name string, typeName string, ipGroupType int) (ipGroupTemp *model.IpGroup, err error) {
-	logger.Debugf("Enter IpGroupAdmin.Update, id=%d, name=%s, ipGroupType=%d", ipGroup.ID, name, ipGroupType)
+	logger.Infof("ENTER IpGroupAdmin.Update: id=%d, name=%s, typeName=%s, ipGroupType=%d", ipGroup.ID, name, typeName, ipGroupType)
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT IpGroupAdmin.Update: error=%v", err)
+		} else {
+			logger.Info("EXIT IpGroupAdmin.Update: success")
+		}
+	}()
 	ctx, db, newTransaction := StartTransaction(ctx)
 	defer func() {
 		if newTransaction {
 			EndTransaction(ctx, err)
 		}
-		logger.Debugf("Exit IpGroupAdmin.Update, id=%d, err=%v", ipGroup.ID, err)
 	}()
 	memberShip := GetMemberShip(ctx)
-	permit := memberShip.ValidateOwner(model.Writer, ipGroup.Owner)
+	permit := memberShip.CheckResourceOrg(model.OrgWriter, ipGroup.Owner)
 	if !permit {
 		logger.Error("Not authorized to update the ip group")
 		err = NewCLError(ErrPermissionDenied, "Not authorized to update the ip group", nil)
@@ -213,10 +254,17 @@ func (a *IpGroupAdmin) Update(ctx context.Context, ipGroup *model.IpGroup, name 
 }
 
 func (a *IpGroupAdmin) List(ctx context.Context, offset, limit int64, order, query string) (total int64, ipGroups []*model.IpGroup, err error) {
-	logger.Debugf("Enter IpGroupAdmin.List, offset=%d, limit=%d, order=%s, query=%s", offset, limit, order, query)
+	logger.Infof("ENTER IpGroupAdmin.List: offset=%d, limit=%d, order=%s, query=%s", offset, limit, order, query)
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT IpGroupAdmin.List: error=%v", err)
+		} else {
+			logger.Infof("EXIT IpGroupAdmin.List: total=%d, count=%d", total, len(ipGroups))
+		}
+	}()
 	ctx, db := GetContextDB(ctx)
 	memberShip := GetMemberShip(ctx)
-	where := memberShip.GetWhere()
+	query, args := memberShip.GetOrgFilter()
 	if limit == 0 {
 		limit = 16
 	}
@@ -224,7 +272,7 @@ func (a *IpGroupAdmin) List(ctx context.Context, offset, limit int64, order, que
 		order = "created_at"
 	}
 	ipGroups = []*model.IpGroup{}
-	if err = db.Model(&model.IpGroup{}).Where(where).Where(query).Count(&total).Error; err != nil {
+	if err = db.Model(&model.IpGroup{}).Where(query, args...).Where(query).Count(&total).Error; err != nil {
 		logger.Errorf("IpGroupAdmin.List: count error, err=%v", err)
 		err = NewCLError(ErrSQLSyntaxError, "Failed to count ip groups", err)
 		return
@@ -232,7 +280,7 @@ func (a *IpGroupAdmin) List(ctx context.Context, offset, limit int64, order, que
 	db = dbs.Sortby(db.Offset(offset).Limit(limit), order)
 	if err = db.Preload("Subnets").Preload("DictionaryType").Preload("FloatingIPs", func(db *gorm.DB) *gorm.DB {
 		return db.Order("floating_ips.updated_at")
-	}).Preload("FloatingIPs.Subnet").Preload("FloatingIPs.Subnet.Group").Preload("FloatingIPs.Subnet.Group.DictionaryType").Preload("FloatingIPs.Group").Preload("FloatingIPs.Group.DictionaryType").Where(where).Where(query).Find(&ipGroups).Error; err != nil {
+	}).Preload("FloatingIPs.Subnet").Preload("FloatingIPs.Subnet.Group").Preload("FloatingIPs.Subnet.Group.DictionaryType").Preload("FloatingIPs.Group").Preload("FloatingIPs.Group.DictionaryType").Where(query, args...).Where(query).Find(&ipGroups).Error; err != nil {
 		logger.Errorf("IpGroupAdmin.List: find error, err=%v", err)
 		err = NewCLError(ErrSQLSyntaxError, "Failed to find ip groups", err)
 		return
@@ -249,13 +297,15 @@ func (a *IpGroupAdmin) List(ctx context.Context, offset, limit int64, order, que
 		}
 		ipGroup.FloatingIPNames = strings.Join(floatingIpNames, ",")
 	}
-	logger.Debugf("IpGroupAdmin.List: success, total=%d, count=%d", total, len(ipGroups))
+	logger.Infof("IpGroupAdmin.List: success, total=%d, count=%d", total, len(ipGroups))
 	return
 }
 
 func (v *IpGroupView) List(c *macaron.Context, store session.Store) {
+	logger.Infof("ENTER IpGroupView.List: query=%s", c.Req.URL.RawQuery)
+	defer logger.Info("EXIT IpGroupView.List")
 	memberShip := GetMemberShip(c.Req.Context())
-	permit := memberShip.CheckPermission(model.Reader)
+	permit := memberShip.CheckOrgPermission(model.OrgReader)
 	if !permit {
 		logger.Error("Not authorized for this operation")
 		c.Data["ErrorMsg"] = "Not authorized for this operation"
@@ -291,6 +341,8 @@ func (v *IpGroupView) List(c *macaron.Context, store session.Store) {
 }
 
 func (v *IpGroupView) Edit(c *macaron.Context, store session.Store) {
+	logger.Infof("ENTER IpGroupView.Edit: id=%s", c.Params("id"))
+	defer logger.Info("EXIT IpGroupView.Edit")
 	id := c.Params("id")
 	if id == "" {
 		c.Data["ErrorMsg"] = "Id is Empty"
@@ -325,6 +377,8 @@ func (v *IpGroupView) Edit(c *macaron.Context, store session.Store) {
 }
 
 func (v *IpGroupView) Change(c *macaron.Context, store session.Store) {
+	logger.Infof("ENTER IpGroupView.Change: id=%s, query=%s", c.Params("id"), c.Req.URL.RawQuery)
+	defer logger.Info("EXIT IpGroupView.Change")
 	ctx := c.Req.Context()
 	id := c.Params("id")
 	if id == "" {
@@ -359,10 +413,11 @@ func (v *IpGroupView) Change(c *macaron.Context, store session.Store) {
 		return
 	}
 	c.Redirect(redirectTo)
-	return
 }
 
 func (v *IpGroupView) Patch(c *macaron.Context, store session.Store) {
+	logger.Infof("ENTER IpGroupView.Patch: id=%s, query=%s", c.Params("id"), c.Req.URL.RawQuery)
+	defer logger.Info("EXIT IpGroupView.Patch")
 	ctx := c.Req.Context()
 	id := c.Params("id")
 	if id == "" {
@@ -391,7 +446,7 @@ func (v *IpGroupView) Patch(c *macaron.Context, store session.Store) {
 			return
 		}
 	}
-	logger.Debugf("ipGroupTypeInt: %d", ipGroupTypeInt)
+	logger.Infof("ipGroupTypeInt: %d", ipGroupTypeInt)
 	if err != nil {
 		c.HTML(500, err.Error())
 		return
@@ -407,10 +462,17 @@ func (v *IpGroupView) Patch(c *macaron.Context, store session.Store) {
 		return
 	}
 	c.Redirect(redirectTo)
-	return
 }
 
 func (v *IpGroupView) Delete(c *macaron.Context, store session.Store) (err error) {
+	logger.Infof("ENTER IpGroupView.Delete: id=%s", c.Params("id"))
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT IpGroupView.Delete: error=%v", err)
+		} else {
+			logger.Info("EXIT IpGroupView.Delete: success")
+		}
+	}()
 	ctx := c.Req.Context()
 	id := c.Params("id")
 	if id == "" {
@@ -446,8 +508,10 @@ func (v *IpGroupView) Delete(c *macaron.Context, store session.Store) (err error
 }
 
 func (v *IpGroupView) New(c *macaron.Context, store session.Store) {
+	logger.Infof("ENTER IpGroupView.New")
+	defer logger.Info("EXIT IpGroupView.New")
 	memberShip := GetMemberShip(c.Req.Context())
-	permit := memberShip.CheckPermission(model.Admin)
+	permit := memberShip.CheckSystemPermission()
 	if !permit {
 		logger.Error("Not authorized for this operation")
 		c.Data["ErrorMsg"] = "Not authorized for this operation"
@@ -466,12 +530,14 @@ func (v *IpGroupView) New(c *macaron.Context, store session.Store) {
 }
 
 func (v *IpGroupView) Create(c *macaron.Context, store session.Store) {
+	logger.Infof("ENTER IpGroupView.Create: query=%s", c.Req.URL.RawQuery)
+	defer logger.Info("EXIT IpGroupView.Create")
 	ctx := c.Req.Context()
 	redirectTo := "/ipgroups"
 	name := c.QueryTrim("name")
 	typeName := c.QueryTrim("type")
 	ipGroupType := c.QueryTrim("category")
-	logger.Debugf("ipGroupType: %s", ipGroupType)
+	logger.Infof("ipGroupType: %s", ipGroupType)
 	var ipGroupTypeInt int
 	var err error
 	if ipGroupType == "" {

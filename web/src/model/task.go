@@ -55,7 +55,8 @@ type Task struct {
 	Message   string     `gorm:"type:text"`
 	Cron      string     `gorm:"type:varchar(64)"`
 	Action    TaskAction `gorm:"type:varchar(32)"`
-	Resources string     `gorm:"type:text"` // JSON string array
+	Resources string        `gorm:"type:text"` // JSON string array
+	OwnerInfo *Organization `gorm:"-"`         /* Transient: populated for SystemAdmin list view */
 }
 
 func init() {

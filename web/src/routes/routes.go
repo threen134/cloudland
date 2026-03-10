@@ -35,6 +35,10 @@ var logger = rlog.MustGetLogger("routes")
 var dictionaryView = &DictionaryView{}
 
 func runArgs(cfg string) (args []interface{}) {
+	logger.Infof("ENTER runArgs: cfg=%s", cfg)
+	defer func() {
+		logger.Infof("EXIT runArgs: args=%v", args)
+	}()
 	host := "127.0.0.1"
 	port := 443
 	listen := viper.GetString(cfg)
@@ -54,6 +58,14 @@ func runArgs(cfg string) (args []interface{}) {
 }
 
 func Run() (err error) {
+	logger.Info("ENTER Run")
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT Run: error=%v", err)
+		} else {
+			logger.Info("EXIT Run: success")
+		}
+	}()
 	logger.Info("Start to run cloudland base service")
 	m := New()
 	cert := viper.GetString("base.cert")
@@ -71,6 +83,8 @@ func Run() (err error) {
 }
 
 func New() (m *macaron.Macaron) {
+	logger.Info("ENTER New: initializing macaron")
+	defer logger.Info("EXIT New")
 	m = macaron.New()
 
 	// 从网关、代理获取真实的 ClientIP 并替换 RemoteAddr，使得后续的日志能打印真实的 IP
@@ -104,7 +118,7 @@ func New() (m *macaron.Macaron) {
 	m.Use(macaron.Renderer(
 		macaron.RenderOptions{
 			Funcs: []template.FuncMap{
-				template.FuncMap{
+				{
 					"GetString": viper.GetString,
 					"Title":     func(v interface{}) string { return strings.Title(fmt.Sprint(v)) },
 				},
@@ -299,14 +313,22 @@ func New() (m *macaron.Macaron) {
 	m.Get("/tasks/:id", taskView.Get)
 
 	m.Get("/error", func(c *macaron.Context) {
+		logger.Infof("ENTER /error: query=%s", c.Req.URL.RawQuery)
+		defer logger.Info("EXIT /error")
 		c.Data["ErrorMsg"] = c.QueryTrim("ErrorMsg")
 		c.HTML(500, "error")
 	})
-	m.NotFound(func(c *macaron.Context) { c.HTML(404, "404") })
+	m.NotFound(func(c *macaron.Context) {
+		logger.Infof("ENTER NotFound: path=%s", c.Req.URL.Path)
+		defer logger.Info("EXIT NotFound")
+		c.HTML(404, "404")
+	})
 	return
 }
 
 func LinkHandler(c *macaron.Context, store session.Store) {
+	logger.Infof("ENTER LinkHandler: path=%s", c.Req.URL.Path)
+	defer logger.Info("EXIT LinkHandler")
 	UrlBefore = "/"
 	link := strings.NewReplacer("%", "%25",
 		"#", "%23",
@@ -316,21 +338,22 @@ func LinkHandler(c *macaron.Context, store session.Store) {
 	logger.Debugf("LinkHandler: %s\n", link)
 	c.Data["Link"] = link
 	if login, ok := store.Get("login").(string); ok {
-		// logger.Debug("$$$$$$$$$$$$$$$$$$", c.Locale.Language())
 		memberShip := &MemberShip{
-			OrgID:    store.Get("oid").(int64),
-			UserID:   store.Get("uid").(int64),
-			UserName: store.Get("login").(string),
-			OrgName:  store.Get("org").(string),
-			Role:     store.Get("role").(model.Role),
+			OrgID:     store.Get("oid").(int64),
+			UserID:    store.Get("uid").(int64),
+			UserEmail: login,
+		}
+		if sr, ok := store.Get("sr").(model.SystemRole); ok {
+			memberShip.SystemRole = sr
+		}
+		if or, ok := store.Get("or").(model.OrgRole); ok {
+			memberShip.OrgRole = or
 		}
 		c.Req.Request = c.Req.WithContext(memberShip.SetContext(c.Req.Context()))
 		c.Data["IsSignedIn"] = true
-		if memberShip.Role == model.Admin || login == "admin" {
+		if memberShip.IsSystemAdmin() {
 			c.Data["IsAdmin"] = true
-			memberShip.Role = model.Admin
 		}
-		c.Data["Organization"] = store.Get("org").(string)
 		c.Data["Members"] = store.Get("members").([]*model.Member)
 	} else if link != "" && link != "/" && !strings.HasPrefix(link, "/login") {
 		UrlBefore = link
@@ -339,5 +362,7 @@ func LinkHandler(c *macaron.Context, store session.Store) {
 }
 
 func SysVersion(c *macaron.Context, store session.Store) {
+	logger.Info("ENTER SysVersion")
+	defer logger.Info("EXIT SysVersion")
 	c.Data["Version"] = sysInfoAdmin.GetVersion()
 }

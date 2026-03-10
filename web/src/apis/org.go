@@ -10,6 +10,7 @@ package apis
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"strconv"
 
@@ -88,9 +89,9 @@ func (v *OrgAPI) getOrgResponse(ctx context.Context, org *model.Organization) (o
 		orgResp.Members = append(orgResp.Members, &MemberInfo{
 			ResourceReference: &ResourceReference{
 				ID:   member.UUID,
-				Name: member.UserName,
+				Name: strconv.FormatInt(member.UserID, 10),
 			},
-			Role: member.Role.String(),
+			Role: member.OrgRole.String(),
 		})
 	}
 	return
@@ -101,16 +102,37 @@ func (v *OrgAPI) getOrgResponse(ctx context.Context, org *model.Organization) (o
 // @tags Authorization
 // @Accept  json
 // @Produce json
-// @Param   message	body   OrgPatchPayload  true   "Org patch payload"
+// @Param   message	body   map[string]string  true   "Org patch payload"
 // @Success 200 {object} OrgResponse
 // @Failure 400 {object} common.APIError "Bad request"
 // @Failure 401 {object} common.APIError "Not authorized"
 // @Router /orgs/{id} [patch]
 func (v *OrgAPI) Patch(c *gin.Context) {
-	orgResp := &OrgResponse{}
+	ctx := c.Request.Context()
+	uuID := c.Param("id")
+	payload := struct {
+		Name string `json:"name" binding:"required"`
+	}{}
+	if err := c.ShouldBindJSON(&payload); err != nil {
+		ErrorResponse(c, http.StatusBadRequest, "Invalid input JSON", err)
+		return
+	}
+	org, err := orgAdmin.GetOrgByUUID(ctx, uuID)
+	if err != nil {
+		ErrorResponse(c, http.StatusBadRequest, "Invalid org id", err)
+		return
+	}
+	err = orgAdmin.RenameOrg(ctx, org.ID, payload.Name)
+	if err != nil {
+		ErrorResponse(c, http.StatusBadRequest, "Failed to rename org", err)
+		return
+	}
+	orgResp, _ := v.getOrgResponse(ctx, org)
+	orgResp.Name = payload.Name
 	c.JSON(http.StatusOK, orgResp)
 }
 
+// @Summary delete a org
 // @Summary delete a org
 // @Description delete a org
 // @tags Authorization
@@ -139,19 +161,181 @@ func (v *OrgAPI) Delete(c *gin.Context) {
 	c.JSON(http.StatusNoContent, nil)
 }
 
+// @Summary add a member to org
+// @Description add a member to org
+// @tags Authorization
+// @Accept  json
+// @Produce json
+// @Param   id       path      string  true   "Org UUID"
+// @Param   message	body      map[string]interface{}  true   "Member add payload"
+// @Success 200 {object} MemberInfo
+// @Failure 400 {object} common.APIError "Bad request"
+// @Router /orgs/{id}/members [post]
+func (v *OrgAPI) AddMember(c *gin.Context) {
+	ctx := c.Request.Context()
+	uuID := c.Param("id")
+	payload := struct {
+		UserID  int64         `json:"user_id" binding:"required"`
+		OrgRole model.OrgRole `json:"role" binding:"required"`
+	}{}
+	if err := c.ShouldBindJSON(&payload); err != nil {
+		ErrorResponse(c, http.StatusBadRequest, "Invalid input JSON", err)
+		return
+	}
+	// Validate org_role is in range 1-3 (OrgReader to OrgAdmin)
+	if payload.OrgRole < model.OrgReader || payload.OrgRole > model.OrgAdmin {
+		ErrorResponse(c, http.StatusBadRequest, fmt.Sprintf("Invalid org role: %d. Must be between %d (Reader) and %d (Admin)", payload.OrgRole, model.OrgReader, model.OrgAdmin), nil)
+		return
+	}
+	org, err := orgAdmin.GetOrgByUUID(ctx, uuID)
+	if err != nil {
+		ErrorResponse(c, http.StatusBadRequest, "Invalid org id", err)
+		return
+	}
+	member, err := orgAdmin.AddMember(ctx, org.ID, payload.UserID, payload.OrgRole)
+	if err != nil {
+		ErrorResponse(c, http.StatusBadRequest, "Failed to add member", err)
+		return
+	}
+	c.JSON(http.StatusOK, &MemberInfo{
+		ResourceReference: &ResourceReference{ID: member.UUID, Name: strconv.FormatInt(member.UserID, 10)},
+		Role:              member.OrgRole.String(),
+	})
+}
+
+// @Summary remove a member from org
+// @Description remove a member from org
+// @tags Authorization
+// @Accept  json
+// @Produce json
+// @Param   id       path      string  true   "Org UUID"
+// @Param   user_id  path      int64   true   "User ID"
+// @Success 204
+// @Failure 400 {object} common.APIError "Bad request"
+// @Router /orgs/{id}/members/{user_id} [delete]
+func (v *OrgAPI) RemoveMember(c *gin.Context) {
+	ctx := c.Request.Context()
+	uuID := c.Param("id")
+	userIDStr := c.Param("user_id")
+	userID, err := strconv.ParseInt(userIDStr, 10, 64)
+	if err != nil {
+		ErrorResponse(c, http.StatusBadRequest, "Invalid user id", err)
+		return
+	}
+	org, err := orgAdmin.GetOrgByUUID(ctx, uuID)
+	if err != nil {
+		ErrorResponse(c, http.StatusBadRequest, "Invalid org id", err)
+		return
+	}
+	err = orgAdmin.RemoveMember(ctx, org.ID, userID)
+	if err != nil {
+		ErrorResponse(c, http.StatusBadRequest, "Failed to remove member", err)
+		return
+	}
+	c.JSON(http.StatusNoContent, nil)
+}
+
+// @Summary update member role
+// @Description update member role
+// @tags Authorization
+// @Accept  json
+// @Produce json
+// @Param   id       path      string  true   "Org UUID"
+// @Param   user_id  path      int64   true   "User ID"
+// @Param   message	body      map[string]interface{}  true   "Role update payload"
+// @Success 200 {object} map[string]string
+// @Failure 400 {object} common.APIError "Bad request"
+// @Router /orgs/{id}/members/{user_id} [patch]
+func (v *OrgAPI) UpdateMemberRole(c *gin.Context) {
+	ctx := c.Request.Context()
+	uuID := c.Param("id")
+	userIDStr := c.Param("user_id")
+	userID, err := strconv.ParseInt(userIDStr, 10, 64)
+	if err != nil {
+		ErrorResponse(c, http.StatusBadRequest, "Invalid user id", err)
+		return
+	}
+	payload := struct {
+		OrgRole model.OrgRole `json:"role" binding:"required"`
+	}{}
+	if err := c.ShouldBindJSON(&payload); err != nil {
+		ErrorResponse(c, http.StatusBadRequest, "Invalid input JSON", err)
+		return
+	}
+	org, err := orgAdmin.GetOrgByUUID(ctx, uuID)
+	if err != nil {
+		ErrorResponse(c, http.StatusBadRequest, "Invalid org id", err)
+		return
+	}
+	err = orgAdmin.UpdateMemberRole(ctx, org.ID, userID, payload.OrgRole)
+	if err != nil {
+		ErrorResponse(c, http.StatusBadRequest, "Failed to update member role", err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"status": "ok"})
+}
+
 // @Summary create a org
 // @Description create a org
 // @tags Authorization
 // @Accept  json
 // @Produce json
-// @Param   message	body   OrgPayload  true   "Org create payload"
+// @Param   message	body   map[string]interface{}  true   "Org create payload"
 // @Success 200 {object} OrgResponse
 // @Failure 400 {object} common.APIError "Bad request"
 // @Failure 401 {object} common.APIError "Not authorized"
 // @Router /orgs [post]
 func (v *OrgAPI) Create(c *gin.Context) {
-	orgResp := &OrgResponse{}
+	ctx := c.Request.Context()
+	payload := struct {
+		Name        string `json:"name" binding:"required"`
+		OwnerUserID int64  `json:"owner_user_id" binding:"required"`
+		Slug        string `json:"slug"`
+	}{}
+	if err := c.ShouldBindJSON(&payload); err != nil {
+		ErrorResponse(c, http.StatusBadRequest, "Invalid input JSON", err)
+		return
+	}
+	org, err := orgAdmin.Create(ctx, payload.Name, payload.OwnerUserID, payload.Slug)
+	if err != nil {
+		ErrorResponse(c, http.StatusBadRequest, "Failed to create organization", err)
+		return
+	}
+	orgResp, _ := v.getOrgResponse(ctx, org)
 	c.JSON(http.StatusOK, orgResp)
+}
+
+// @Summary transfer org ownership
+// @Description transfer org ownership to another member. Only SystemAdmin can call this.
+// @tags Authorization
+// @Accept  json
+// @Produce json
+// @Param   id      path   string  true  "Org UUID"
+// @Param   message body   map[string]interface{}  true  "Transfer payload"
+// @Success 200 {object} map[string]string
+// @Failure 400 {object} common.APIError "Bad request"
+// @Failure 403 {object} common.APIError "Forbidden"
+// @Router /orgs/{id}/transfer-owner [post]
+func (v *OrgAPI) TransferOwner(c *gin.Context) {
+	ctx := c.Request.Context()
+	uuID := c.Param("id")
+	payload := struct {
+		NewOwnerUserID int64 `json:"new_owner_user_id" binding:"required"`
+	}{}
+	if err := c.ShouldBindJSON(&payload); err != nil {
+		ErrorResponse(c, http.StatusBadRequest, "Invalid input JSON", err)
+		return
+	}
+	org, err := orgAdmin.GetOrgByUUID(ctx, uuID)
+	if err != nil {
+		ErrorResponse(c, http.StatusBadRequest, "Invalid org id", err)
+		return
+	}
+	if err = orgAdmin.TransferOwner(ctx, org.ID, payload.NewOwnerUserID); err != nil {
+		ErrorResponse(c, http.StatusForbidden, "Failed to transfer ownership", err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"status": "ok"})
 }
 
 // @Summary list orgs

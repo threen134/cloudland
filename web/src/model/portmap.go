@@ -20,8 +20,9 @@ type Portmap struct {
 	RemotePort    int32
 	RemoteAddress string `gorm:"type:varchar(64)"`
 	RouterID      int64
-	Router        *Router `gorm:"foreignkey:RouterID"`
+	Router        *Router       `gorm:"foreignkey:RouterID"`
 	InstanceID    int64
+	OwnerInfo     *Organization `gorm:"-"` /* Transient: populated for SystemAdmin list view */
 }
 
 func init() {

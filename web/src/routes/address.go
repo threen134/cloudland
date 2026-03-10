@@ -17,6 +17,14 @@ import (
 type AddressAdmin struct{}
 
 func (a *AddressAdmin) GetAddressByUUID(ctx context.Context, uuID string) (addr *model.Address, err error) {
+	logger.Infof("ENTER AddressAdmin.GetAddressByUUID: uuID=%s", uuID)
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT AddressAdmin.GetAddressByUUID: error=%v", err)
+		} else {
+			logger.Infof("EXIT AddressAdmin.GetAddressByUUID: success, addrID=%d", addr.ID)
+		}
+	}()
 	ctx, db := GetContextDB(ctx)
 	addr = &model.Address{}
 	err = db.Preload("Subnet").Where("uuid = ?", uuID).Take(addr).Error
@@ -28,6 +36,14 @@ func (a *AddressAdmin) GetAddressByUUID(ctx context.Context, uuID string) (addr 
 }
 
 func (a *AddressAdmin) Update(ctx context.Context, addr *model.Address) (err error) {
+	logger.Infof("ENTER AddressAdmin.Update: addrID=%d", addr.ID)
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT AddressAdmin.Update: error=%v", err)
+		} else {
+			logger.Info("EXIT AddressAdmin.Update: success")
+		}
+	}()
 	ctx, db, newTransaction := StartTransaction(ctx)
 	defer func() {
 		if newTransaction {
@@ -36,7 +52,7 @@ func (a *AddressAdmin) Update(ctx context.Context, addr *model.Address) (err err
 	}()
 
 	memberShip := GetMemberShip(ctx)
-	permit := memberShip.CheckPermission(model.Admin)
+	permit := memberShip.CheckSystemPermission()
 	if !permit {
 		err = fmt.Errorf("Not authorized for this operation")
 		logger.Error("Not authorized for this operation", err)
@@ -55,6 +71,14 @@ func (a *AddressAdmin) Update(ctx context.Context, addr *model.Address) (err err
 }
 
 func (a *AddressAdmin) ListBySubnetID(ctx context.Context, subnetID int64) (addresses []*model.Address, err error) {
+	logger.Infof("ENTER AddressAdmin.ListBySubnetID: subnetID=%d", subnetID)
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT AddressAdmin.ListBySubnetID: error=%v", err)
+		} else {
+			logger.Infof("EXIT AddressAdmin.ListBySubnetID: count=%d", len(addresses))
+		}
+	}()
 	ctx, db := GetContextDB(ctx)
 	addresses = []*model.Address{}
 	err = db.Preload("Subnet").Where("subnet_id = ?", subnetID).Order("id").Find(&addresses).Error

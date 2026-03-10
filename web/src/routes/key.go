@@ -34,8 +34,16 @@ type KeyAdmin struct{}
 type KeyView struct{}
 
 func (a *KeyAdmin) CreateKeyPair(ctx context.Context) (publicKey, fingerPrint, privateKey string, err error) {
+	logger.Infof("ENTER KeyAdmin.CreateKeyPair")
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT KeyAdmin.CreateKeyPair: error=%v", err)
+		} else {
+			logger.Info("EXIT KeyAdmin.CreateKeyPair: success")
+		}
+	}()
 	memberShip := GetMemberShip(ctx)
-	permit := memberShip.CheckPermission(model.Writer)
+	permit := memberShip.CheckOrgPermission(model.OrgWriter)
 	if !permit {
 		logger.Error("Not authorized to create keys")
 		err = NewCLError(ErrPermissionDenied, "Not authorized to create keys", nil)
@@ -63,8 +71,16 @@ func (a *KeyAdmin) CreateKeyPair(ctx context.Context) (publicKey, fingerPrint, p
 }
 
 func (a *KeyAdmin) Create(ctx context.Context, name, publicKey, uuid string) (key *model.Key, err error) {
+	logger.Infof("ENTER KeyAdmin.Create: name=%s, uuid=%s", name, uuid)
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT KeyAdmin.Create: error=%v", err)
+		} else {
+			logger.Info("EXIT KeyAdmin.Create: success")
+		}
+	}()
 	memberShip := GetMemberShip(ctx)
-	permit := memberShip.CheckPermission(model.Writer)
+	permit := memberShip.CheckOrgPermission(model.OrgWriter)
 	if !permit {
 		logger.Error("Not authorized to create keys")
 		err = NewCLError(ErrPermissionDenied, "Not authorized to create keys", nil)
@@ -98,6 +114,14 @@ func (a *KeyAdmin) Create(ctx context.Context, name, publicKey, uuid string) (ke
 }
 
 func (a *KeyAdmin) Delete(ctx context.Context, key *model.Key) (err error) {
+	logger.Infof("ENTER KeyAdmin.Delete: keyID=%d, uuid=%s", key.ID, key.UUID)
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT KeyAdmin.Delete: error=%v", err)
+		} else {
+			logger.Info("EXIT KeyAdmin.Delete: success")
+		}
+	}()
 	ctx, db, newTransaction := StartTransaction(ctx)
 	defer func() {
 		if newTransaction {
@@ -105,7 +129,7 @@ func (a *KeyAdmin) Delete(ctx context.Context, key *model.Key) (err error) {
 		}
 	}()
 	memberShip := GetMemberShip(ctx)
-	permit := memberShip.ValidateOwner(model.Writer, key.Owner)
+	permit := memberShip.CheckResourceOrg(model.OrgWriter, key.Owner)
 	if !permit {
 		logger.Error("Not authorized to delete the key")
 		err = NewCLError(ErrPermissionDenied, "Not authorized to delete the key", nil)
@@ -138,6 +162,14 @@ func (a *KeyAdmin) Delete(ctx context.Context, key *model.Key) (err error) {
 }
 
 func (a *KeyAdmin) Get(ctx context.Context, id int64) (key *model.Key, err error) {
+	logger.Infof("ENTER KeyAdmin.Get: id=%d", id)
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT KeyAdmin.Get: error=%v", err)
+		} else {
+			logger.Info("EXIT KeyAdmin.Get: success")
+		}
+	}()
 	if id <= 0 {
 		err = NewCLError(ErrInvalidParameter, fmt.Sprintf("Invalid key ID: %d", id), nil)
 		logger.Error(err)
@@ -145,10 +177,9 @@ func (a *KeyAdmin) Get(ctx context.Context, id int64) (key *model.Key, err error
 	}
 	ctx, db := GetContextDB(ctx)
 	memberShip := GetMemberShip(ctx)
-	where := memberShip.GetWhere()
+	where, args := memberShip.GetOrgFilter()
 	key = &model.Key{Model: model.Model{ID: id}}
-	err = db.Where(where).Take(key).Error
-	if err != nil {
+	if err = db.Where(where, args...).Take(key).Error; err != nil {
 		logger.Error("Failed to query key, %v", err)
 		err = NewCLError(ErrSSHKeyNotFound, "Failed to query key", err)
 		return
@@ -157,11 +188,19 @@ func (a *KeyAdmin) Get(ctx context.Context, id int64) (key *model.Key, err error
 }
 
 func (a *KeyAdmin) GetKeyByUUID(ctx context.Context, uuID string) (key *model.Key, err error) {
+	logger.Infof("ENTER KeyAdmin.GetKeyByUUID: uuID=%s", uuID)
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT KeyAdmin.GetKeyByUUID: error=%v", err)
+		} else {
+			logger.Info("EXIT KeyAdmin.GetKeyByUUID: success")
+		}
+	}()
 	ctx, db := GetContextDB(ctx)
 	memberShip := GetMemberShip(ctx)
-	where := memberShip.GetWhere()
+	where, args := memberShip.GetOrgFilter()
 	key = &model.Key{}
-	err = db.Where(where).Where("uuid = ?", uuID).Take(key).Error
+	err = db.Where(where, args...).Where("uuid = ?", uuID).Take(key).Error
 	if err != nil {
 		logger.Error("Failed to query key, %v", err)
 		return
@@ -170,11 +209,19 @@ func (a *KeyAdmin) GetKeyByUUID(ctx context.Context, uuID string) (key *model.Ke
 }
 
 func (a *KeyAdmin) GetKeyByName(ctx context.Context, name string) (key *model.Key, err error) {
+	logger.Infof("ENTER KeyAdmin.GetKeyByName: name=%s", name)
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT KeyAdmin.GetKeyByName: error=%v", err)
+		} else {
+			logger.Info("EXIT KeyAdmin.GetKeyByName: success")
+		}
+	}()
 	ctx, db := GetContextDB(ctx)
 	memberShip := GetMemberShip(ctx)
-	where := memberShip.GetWhere()
+	where, args := memberShip.GetOrgFilter()
 	key = &model.Key{}
-	err = db.Where(where).Where("name = ?", name).Take(key).Error
+	err = db.Where(where, args...).Where("name = ?", name).Take(key).Error
 	if err != nil {
 		logger.Error("Failed to query key, %v", err)
 		return
@@ -183,6 +230,14 @@ func (a *KeyAdmin) GetKeyByName(ctx context.Context, name string) (key *model.Ke
 }
 
 func (a *KeyAdmin) GetKey(ctx context.Context, reference *BaseReference) (key *model.Key, err error) {
+	logger.Infof("ENTER KeyAdmin.GetKey: reference=%+v", reference)
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT KeyAdmin.GetKey: error=%v", err)
+		} else {
+			logger.Info("EXIT KeyAdmin.GetKey: success")
+		}
+	}()
 	if reference == nil || (reference.ID == "" && reference.Name == "") {
 		err = NewCLError(ErrInvalidParameter, "Key base reference must be provided with either uuid or name", nil)
 		return
@@ -199,7 +254,21 @@ func (a *KeyAdmin) GetKey(ctx context.Context, reference *BaseReference) (key *m
 }
 
 func (a *KeyAdmin) List(ctx context.Context, offset, limit int64, order, query string) (total int64, keys []*model.Key, err error) {
+	logger.Infof("ENTER KeyAdmin.List: offset=%d, limit=%d, order=%s, query=%s", offset, limit, order, query)
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT KeyAdmin.List: error=%v", err)
+		} else {
+			logger.Info("EXIT KeyAdmin.List: success")
+		}
+	}()
 	memberShip := GetMemberShip(ctx)
+	permit := memberShip.CheckOrgPermission(model.OrgReader)
+	if !permit {
+		logger.Error("Not authorized for this operation")
+		err = NewCLError(ErrPermissionDenied, "Not authorized for this operation", nil)
+		return
+	}
 	ctx, db := GetContextDB(ctx)
 	if limit == 0 {
 		limit = 16
@@ -212,20 +281,20 @@ func (a *KeyAdmin) List(ctx context.Context, offset, limit int64, order, query s
 	if query != "" {
 		query = fmt.Sprintf("name like '%%%s%%'", query)
 	}
-	where := memberShip.GetWhere()
+	queryBuilder, args := memberShip.GetOrgFilter()
 	keys = []*model.Key{}
-	if err = db.Model(&model.Key{}).Where(where).Where(query).Count(&total).Error; err != nil {
+	if err = db.Model(&model.Key{}).Where(queryBuilder, args...).Where(query).Count(&total).Error; err != nil {
 		logger.Error("DB failed to count keys, %v", err)
 		err = NewCLError(ErrSQLSyntaxError, "Failed to count keys", err)
 		return
 	}
 	db = dbs.Sortby(db.Offset(offset).Limit(limit), order)
-	if err = db.Where(where).Where(query).Find(&keys).Error; err != nil {
+	if err = db.Where(queryBuilder, args...).Where(query).Find(&keys).Error; err != nil {
 		logger.Error("DB failed to query keys, %v", err)
 		err = NewCLError(ErrSQLSyntaxError, "Failed to query keys", err)
 		return
 	}
-	permit := memberShip.CheckPermission(model.Admin)
+	permit = memberShip.IsSystemAdmin()
 	if permit {
 		db = db.Offset(0).Limit(-1)
 		for _, key := range keys {
@@ -241,8 +310,11 @@ func (a *KeyAdmin) List(ctx context.Context, offset, limit int64, order, query s
 }
 
 func (v *KeyView) List(c *macaron.Context, store session.Store) {
-	memberShip := GetMemberShip(c.Req.Context())
-	permit := memberShip.CheckPermission(model.Reader)
+	logger.Infof("ENTER KeyView.List: query=%s", c.Req.URL.RawQuery)
+	defer logger.Info("EXIT KeyView.List")
+	ctx := c.Req.Context()
+	memberShip := GetMemberShip(ctx)
+	permit := memberShip.CheckOrgPermission(model.OrgReader)
 	if !permit {
 		logger.Error("Not authorized for this operation")
 		c.Data["ErrorMsg"] = "Not authorized for this operation"
@@ -274,6 +346,14 @@ func (v *KeyView) List(c *macaron.Context, store session.Store) {
 }
 
 func (v *KeyView) Delete(c *macaron.Context, store session.Store) (err error) {
+	logger.Infof("ENTER KeyView.Delete: id=%s", c.Params("id"))
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT KeyView.Delete: error=%v", err)
+		} else {
+			logger.Info("EXIT KeyView.Delete: success")
+		}
+	}()
 	ctx := c.Req.Context()
 	id := c.Params("id")
 	if id == "" {
@@ -309,8 +389,10 @@ func (v *KeyView) Delete(c *macaron.Context, store session.Store) (err error) {
 }
 
 func (v *KeyView) New(c *macaron.Context, store session.Store) {
+	logger.Infof("ENTER KeyView.New: query=%s", c.Req.URL.RawQuery)
+	defer logger.Info("EXIT KeyView.New")
 	memberShip := GetMemberShip(c.Req.Context())
-	permit := memberShip.CheckPermission(model.Writer)
+	permit := memberShip.CheckOrgPermission(model.OrgWriter)
 	if !permit {
 		logger.Error("Not authorized for this operation")
 		c.Data["ErrorMsg"] = "Not authorized for this operation"
@@ -321,6 +403,8 @@ func (v *KeyView) New(c *macaron.Context, store session.Store) {
 }
 
 func (v *KeyView) Confirm(c *macaron.Context, store session.Store) {
+	logger.Infof("ENTER KeyView.Confirm: query=%s", c.Req.URL.RawQuery)
+	defer logger.Info("EXIT KeyView.Confirm")
 	ctx := c.Req.Context()
 	name := c.QueryTrim("name")
 	publicKey := c.QueryTrim("pubkey")
@@ -360,7 +444,6 @@ func (v *KeyView) SolvePrintedPublicKeyError(c *macaron.Context, store session.S
 			return
 		}
 	}
-	return
 }
 
 /*
@@ -410,10 +493,19 @@ func (v *KeyView) SolveListKeyError(c *macaron.Context, store session.Store) {
 		redirectTo := "../keys"
 		c.Redirect(redirectTo)
 	}
-	return
 }
 
 func (v *KeyView) Create(c *macaron.Context, store session.Store) {
+	logger.Infof("ENTER KeyView.Create: query=%s", c.Req.URL.RawQuery)
+	defer logger.Info("EXIT KeyView.Create")
+	memberShip := GetMemberShip(c.Req.Context())
+	permit := memberShip.CheckOrgPermission(model.OrgWriter)
+	if !permit {
+		logger.Error("Not authorized for this operation")
+		c.Data["ErrorMsg"] = "Not authorized for this operation"
+		c.HTML(http.StatusBadRequest, "error")
+		return
+	}
 	ctx := c.Req.Context()
 	name := c.QueryTrim("name")
 	if c.QueryTrim("pubkey") != "" {

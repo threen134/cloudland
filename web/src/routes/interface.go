@@ -47,6 +47,14 @@ type InterfaceAdmin struct{}
 type InterfaceView struct{}
 
 func (a *InterfaceAdmin) Get(ctx context.Context, id int64) (iface *model.Interface, err error) {
+	logger.Infof("ENTER InterfaceAdmin.Get: id=%d", id)
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT InterfaceAdmin.Get: error=%v", err)
+		} else {
+			logger.Info("EXIT InterfaceAdmin.Get: success")
+		}
+	}()
 	if id <= 0 {
 		err = NewCLError(ErrInvalidParameter, "Invalid interface ID", nil)
 		logger.Error(err)
@@ -63,7 +71,7 @@ func (a *InterfaceAdmin) Get(ctx context.Context, id int64) (iface *model.Interf
 		err = NewCLError(ErrInterfaceNotFound, "Interface not found", err)
 		return
 	}
-	permit := memberShip.ValidateOwner(model.Reader, iface.Owner)
+	permit := memberShip.CheckResourceOrg(model.OrgReader, iface.Owner)
 	if !permit {
 		logger.Debug("Not authorized to read the interface")
 		err = NewCLError(ErrPermissionDenied, "Not authorized to read the interface", nil)
@@ -73,19 +81,27 @@ func (a *InterfaceAdmin) Get(ctx context.Context, id int64) (iface *model.Interf
 }
 
 func (a *InterfaceAdmin) GetInterfaceByUUID(ctx context.Context, uuID string) (iface *model.Interface, err error) {
+	logger.Infof("ENTER InterfaceAdmin.GetInterfaceByUUID: uuID=%s", uuID)
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT InterfaceAdmin.GetInterfaceByUUID: error=%v", err)
+		} else {
+			logger.Infof("EXIT InterfaceAdmin.GetInterfaceByUUID: success, id=%d", iface.ID)
+		}
+	}()
 	memberShip := GetMemberShip(ctx)
-	where := memberShip.GetWhere()
+	query, args := memberShip.GetOrgFilter()
 	ctx, db := GetContextDB(ctx)
 	iface = &model.Interface{}
 	err = db.Preload("SiteSubnets").Preload("SecurityGroups").Preload("Address").Preload("Address.Subnet").Preload("SecondAddresses", func(db *gorm.DB) *gorm.DB {
 		return db.Order("addresses.updated_at")
-	}).Preload("SecondAddresses.Subnet").Where(where).Where("uuid = ?", uuID).Take(iface).Error
+	}).Preload("SecondAddresses.Subnet").Where(query, args...).Where("uuid = ?", uuID).Take(iface).Error
 	if err != nil {
 		logger.Debug("DB failed to query interface, %v", err)
 		err = NewCLError(ErrInterfaceNotFound, "Interface not found", err)
 		return
 	}
-	permit := memberShip.ValidateOwner(model.Reader, iface.Owner)
+	permit := memberShip.CheckResourceOrg(model.OrgReader, iface.Owner)
 	if !permit {
 		logger.Debug("Not authorized to read the subnet")
 		err = NewCLError(ErrPermissionDenied, "Not authorized to read the interface", nil)
@@ -95,12 +111,20 @@ func (a *InterfaceAdmin) GetInterfaceByUUID(ctx context.Context, uuID string) (i
 }
 
 func (a *InterfaceAdmin) Delete(ctx context.Context, instance *model.Instance, iface *model.Interface) (err error) {
+	logger.Infof("ENTER InterfaceAdmin.Delete: instanceID=%d, ifaceID=%d", instance.ID, iface.ID)
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT InterfaceAdmin.Delete: error=%v", err)
+		} else {
+			logger.Info("EXIT InterfaceAdmin.Delete: success")
+		}
+	}()
 	if iface.PrimaryIf {
 		err = NewCLError(ErrCannotDeletePrimaryInterface, "Primary interface can not be deleted", nil)
 		return
 	}
 	memberShip := GetMemberShip(ctx)
-	permit := memberShip.ValidateOwner(model.Writer, iface.Owner)
+	permit := memberShip.CheckResourceOrg(model.OrgWriter, iface.Owner)
 	if !permit {
 		logger.Error("Not authorized to delete the interface")
 		err = NewCLError(ErrPermissionDenied, "Not authorized to delete the interface", nil)
@@ -117,8 +141,16 @@ func (a *InterfaceAdmin) Delete(ctx context.Context, instance *model.Instance, i
 }
 
 func (a *InterfaceAdmin) List(ctx context.Context, offset, limit int64, order string, instance *model.Instance) (total int64, interfaces []*model.Interface, err error) {
+	logger.Infof("ENTER InterfaceAdmin.List: instanceID=%d, offset=%d, limit=%d, order=%s", instance.ID, offset, limit, order)
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT InterfaceAdmin.List: error=%v", err)
+		} else {
+			logger.Infof("EXIT InterfaceAdmin.List: total=%d, count=%d", total, len(interfaces))
+		}
+	}()
 	memberShip := GetMemberShip(ctx)
-	permit := memberShip.ValidateOwner(model.Reader, instance.Owner)
+	permit := memberShip.CheckResourceOrg(model.OrgReader, instance.Owner)
 	if !permit {
 		logger.Debug("Not authorized for this operation")
 		err = NewCLError(ErrPermissionDenied, "Not authorized for this operation", nil)
@@ -134,12 +166,9 @@ func (a *InterfaceAdmin) List(ctx context.Context, offset, limit int64, order st
 	}
 
 	where := fmt.Sprintf("instance = %d", instance.ID)
-	wm := memberShip.GetWhere()
-	if wm != "" {
-		where = fmt.Sprintf("%s and %s", where, wm)
-	}
+	query, args := memberShip.GetOrgFilter()
 	interfaces = []*model.Interface{}
-	if err = db.Model(&model.Interface{}).Where(where).Count(&total).Error; err != nil {
+	if err = db.Model(&model.Interface{}).Where(where).Where(query, args...).Count(&total).Error; err != nil {
 		logger.Debug("DB failed to count security rule(s), %v", err)
 		err = NewCLError(ErrSQLSyntaxError, "Failed to count interfaces", err)
 		return
@@ -147,7 +176,7 @@ func (a *InterfaceAdmin) List(ctx context.Context, offset, limit int64, order st
 	db = dbs.Sortby(db.Offset(offset).Limit(limit), order)
 	if err = db.Preload("SiteSubnets").Preload("SecurityGroups").Preload("Address").Preload("Address.Subnet").Preload("SecondAddresses", func(db *gorm.DB) *gorm.DB {
 		return db.Order("addresses.updated_at")
-	}).Preload("SecondAddresses.Subnet").Where(where).Find(&interfaces).Error; err != nil {
+	}).Preload("SecondAddresses.Subnet").Where(where).Where(query, args...).Find(&interfaces).Error; err != nil {
 		logger.Debug("DB failed to query interface(s), %v", err)
 		err = NewCLError(ErrSQLSyntaxError, "Failed to query interfaces", err)
 		return
@@ -157,6 +186,10 @@ func (a *InterfaceAdmin) List(ctx context.Context, offset, limit int64, order st
 }
 
 func (a *InterfaceAdmin) checkAddresses(ctx context.Context, iface *model.Interface, ifaceSubnets, siteSubnets []*model.Subnet, secondAddrsCount int, publicIps []*model.FloatingIp) (valid, changed bool) {
+	logger.Infof("ENTER InterfaceAdmin.checkAddresses: ifaceID=%d", iface.ID)
+	defer func() {
+		logger.Infof("EXIT InterfaceAdmin.checkAddresses: valid=%v, changed=%v", valid, changed)
+	}()
 	vlan := iface.Address.Subnet.Vlan
 	publicIpsLength := len(publicIps)
 	secondIpsLength := len(iface.SecondAddresses)
@@ -223,6 +256,14 @@ func (a *InterfaceAdmin) checkAddresses(ctx context.Context, iface *model.Interf
 }
 
 func (a *InterfaceAdmin) allocateSecondAddresses(ctx context.Context, instance *model.Instance, iface *model.Interface, ifaceSubnets []*model.Subnet, secondAddrsCount int) (err error) {
+	logger.Infof("ENTER InterfaceAdmin.allocateSecondAddresses: instanceID=%d, ifaceID=%d, count=%d", instance.ID, iface.ID, secondAddrsCount)
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT InterfaceAdmin.allocateSecondAddresses: error=%v", err)
+		} else {
+			logger.Info("EXIT InterfaceAdmin.allocateSecondAddresses: success")
+		}
+	}()
 	cnt := 0
 	for _, subnet := range ifaceSubnets {
 		for i := 0; i < secondAddrsCount; i++ {
@@ -254,6 +295,14 @@ func (a *InterfaceAdmin) allocateSecondAddresses(ctx context.Context, instance *
 }
 
 func (a *InterfaceAdmin) changeAddresses(ctx context.Context, instance *model.Instance, iface *model.Interface, ifaceSubnets, siteSubnets []*model.Subnet, secondAddrsCount int, publicIps []*model.FloatingIp, secgroups []*model.SecurityGroup) (iface2 *model.Interface, err error) {
+	logger.Infof("ENTER InterfaceAdmin.changeAddresses: instanceID=%d, ifaceID=%d", instance.ID, iface.ID)
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT InterfaceAdmin.changeAddresses: error=%v", err)
+		} else {
+			logger.Info("EXIT InterfaceAdmin.changeAddresses: success")
+		}
+	}()
 	ctx, db := GetContextDB(ctx)
 	for _, site := range iface.SiteSubnets {
 		err = db.Model(site).Updates(map[string]interface{}{"interface": 0}).Error
@@ -348,7 +397,7 @@ func (a *InterfaceAdmin) changeAddresses(ctx context.Context, instance *model.In
 	return
 }
 
-func (a *InterfaceAdmin) checkSubnets(ctx context.Context, subnets []*model.Subnet, vlan int64) (err error) {
+func (a *InterfaceAdmin) checkSubnets(_ context.Context, subnets []*model.Subnet, vlan int64) (err error) {
 	if len(subnets) == 0 {
 		err = fmt.Errorf("At least one subnet must be specified")
 		return
@@ -365,6 +414,14 @@ func (a *InterfaceAdmin) checkSubnets(ctx context.Context, subnets []*model.Subn
 }
 
 func (a *InterfaceAdmin) CheckIfaceSubnets(ctx context.Context, primaryIface *InterfaceInfo, secondaryIfaces []*InterfaceInfo) (err error) {
+	logger.Infof("ENTER InterfaceAdmin.CheckIfaceSubnets")
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT InterfaceAdmin.CheckIfaceSubnets: error=%v", err)
+		} else {
+			logger.Info("EXIT InterfaceAdmin.CheckIfaceSubnets: success")
+		}
+	}()
 	checkVlan := int64(0)
 	if len(primaryIface.Subnets) > 0 {
 		err = a.checkSubnets(ctx, primaryIface.Subnets, 0)
@@ -405,6 +462,14 @@ func (a *InterfaceAdmin) CheckIfaceSubnets(ctx context.Context, primaryIface *In
 }
 
 func (a *InterfaceAdmin) Create(ctx context.Context, instance *model.Instance, address, mac string, inbound, outbound int32, allowSpoofing bool, secgroups []*model.SecurityGroup, subnets []*model.Subnet, secondAddrsCount int) (iface *model.Interface, err error) {
+	logger.Infof("ENTER InterfaceAdmin.Create: instanceID=%d, address=%s, mac=%s", instance.ID, address, mac)
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT InterfaceAdmin.Create: error=%v", err)
+		} else {
+			logger.Infof("EXIT InterfaceAdmin.Create: success, ifaceID=%d", iface.ID)
+		}
+	}()
 	ctx, db, newTransaction := StartTransaction(ctx)
 	defer func() {
 		if newTransaction {
@@ -482,6 +547,14 @@ func (a *InterfaceAdmin) Create(ctx context.Context, instance *model.Instance, a
 }
 
 func (a *InterfaceAdmin) Update(ctx context.Context, instance *model.Instance, iface *model.Interface, name string, inbound, outbound int32, allowSpoofing bool, secgroups []*model.SecurityGroup, ifaceSubnets []*model.Subnet, siteSubnets []*model.Subnet, secondAddrsCount int, publicIps []*model.FloatingIp) (iface2 *model.Interface, err error) {
+	logger.Infof("ENTER InterfaceAdmin.Update: instanceID=%d, ifaceID=%d, name=%s", instance.ID, iface.ID, name)
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT InterfaceAdmin.Update: error=%v", err)
+		} else {
+			logger.Info("EXIT InterfaceAdmin.Update: success")
+		}
+	}()
 	ctx, db, newTransaction := StartTransaction(ctx)
 	defer func() {
 		if newTransaction {
@@ -588,6 +661,8 @@ func (a *InterfaceAdmin) Update(ctx context.Context, instance *model.Instance, i
 }
 
 func (v *InterfaceView) Edit(c *macaron.Context, store session.Store) {
+	logger.Infof("ENTER InterfaceView.Edit: params=%v, query=%s", c.Params, c.Req.URL.RawQuery)
+	defer logger.Info("EXIT InterfaceView.Edit")
 	ctx := c.Req.Context()
 	instID := c.Params("instid")
 	if instID == "" {
@@ -676,6 +751,8 @@ func (v *InterfaceView) Edit(c *macaron.Context, store session.Store) {
 }
 
 func (v *InterfaceView) New(c *macaron.Context, store session.Store) {
+	logger.Infof("ENTER InterfaceView.New: params=%v, query=%s", c.Params, c.Req.URL.RawQuery)
+	defer logger.Info("EXIT InterfaceView.New")
 	ctx := c.Req.Context()
 	id := c.Params("id")
 	if id == "" {
@@ -719,6 +796,8 @@ func (v *InterfaceView) New(c *macaron.Context, store session.Store) {
 }
 
 func (v *InterfaceView) Create(c *macaron.Context, store session.Store) {
+	logger.Infof("ENTER InterfaceView.Create: params=%v, query=%s", c.Params, c.Req.URL.RawQuery)
+	defer logger.Info("EXIT InterfaceView.Create")
 	ctx := c.Req.Context()
 	id := c.Params("id")
 	if id == "" {
@@ -809,6 +888,8 @@ func (v *InterfaceView) Create(c *macaron.Context, store session.Store) {
 }
 
 func (v *InterfaceView) List(c *macaron.Context, store session.Store) {
+	logger.Infof("ENTER InterfaceView.List: params=%v, query=%s", c.Params, c.Req.URL.RawQuery)
+	defer logger.Info("EXIT InterfaceView.List")
 	ctx := c.Req.Context()
 	offset := c.QueryInt64("offset")
 	limit := c.QueryInt64("limit")
@@ -856,6 +937,8 @@ func (v *InterfaceView) List(c *macaron.Context, store session.Store) {
 }
 
 func (v *InterfaceView) Delete(c *macaron.Context, store session.Store) {
+	logger.Infof("ENTER InterfaceView.Delete: params=%v", c.Params)
+	defer logger.Info("EXIT InterfaceView.Delete")
 	ctx := c.Req.Context()
 	instID := c.ParamsInt64("instid")
 	instance, err := instanceAdmin.Get(ctx, instID)
@@ -883,6 +966,8 @@ func (v *InterfaceView) Delete(c *macaron.Context, store session.Store) {
 }
 
 func (v *InterfaceView) Patch(c *macaron.Context, store session.Store) {
+	logger.Infof("ENTER InterfaceView.Patch: params=%v, query=%s", c.Params, c.Req.URL.RawQuery)
+	defer logger.Info("EXIT InterfaceView.Patch")
 	ctx := c.Req.Context()
 	redirectTo := "../interfaces"
 	id := c.Params("id")

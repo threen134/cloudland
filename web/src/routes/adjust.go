@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
 	"strings"
 	"time"
 
@@ -20,16 +19,24 @@ import (
 // findInterfaceByTargetDevice finds the corresponding interface by target_device
 // target_device format: tapXXXXXX (tap + last 6 digits of MAC without colons)
 // Example: tapdb4c44 corresponds to MAC 52:54:21:db:4c:44
-func findInterfaceByTargetDevice(instance *model.Instance, targetDevice string) *model.Interface {
+func findInterfaceByTargetDevice(instance *model.Instance, targetDevice string) (iface *model.Interface) {
+	logger.Infof("ENTER findInterfaceByTargetDevice: instanceID=%d, targetDevice=%s", instance.ID, targetDevice)
+	defer func() {
+		if iface != nil {
+			logger.Infof("EXIT findInterfaceByTargetDevice: found interface MAC=%s", iface.MacAddr)
+		} else {
+			logger.Info("EXIT findInterfaceByTargetDevice: no interface found")
+		}
+	}()
 	if !strings.HasPrefix(targetDevice, "tap") || len(targetDevice) != 9 {
-		log.Printf("Invalid target_device format: %s, expected tapXXXXXX", targetDevice)
+		logger.Errorf("Invalid target_device format: %s, expected tapXXXXXX", targetDevice)
 		return nil
 	}
 
 	// Extract last 6 digits of MAC address
 	macSuffix := targetDevice[3:]
 
-	for _, iface := range instance.Interfaces {
+	for _, iface = range instance.Interfaces {
 		if iface.MacAddr == "" {
 			continue
 		}
@@ -40,25 +47,27 @@ func findInterfaceByTargetDevice(instance *model.Instance, targetDevice string) 
 			// Take last 3 parts, remove colons
 			lastThreeParts := strings.Join(macParts[len(macParts)-3:], "")
 			if strings.EqualFold(lastThreeParts, macSuffix) {
-				log.Printf("Found matching interface: MAC=%s, targetDevice=%s", iface.MacAddr, targetDevice)
 				return iface
 			}
 		}
 	}
 
-	log.Printf("No matching interface found for target_device: %s", targetDevice)
 	return nil
 }
 
 // getAdminPassword reads admin password from config file
-func getAdminPassword() string {
+func getAdminPassword() (password string) {
+	logger.Info("ENTER getAdminPassword")
+	defer func() {
+		logger.Info("EXIT getAdminPassword")
+	}()
 	viper.SetConfigFile("conf/config.toml")
 	if err := viper.ReadInConfig(); err != nil {
-		log.Printf("Failed to read config file, using default password: %v", err)
+		logger.Errorf("Failed to read config file, using default password: %v", err)
 		return "passw0rd"
 	}
 
-	password := viper.GetString("admin.password")
+	password = viper.GetString("admin.password")
 	if password == "" {
 		password = "passw0rd"
 	}
@@ -67,43 +76,56 @@ func getAdminPassword() string {
 
 // CreateAdminContext creates admin context for webhook requests
 // This function solves the problem of webhook requests not passing through auth middleware
-func CreateAdminContext(ctx context.Context) (context.Context, error) {
+func CreateAdminContext(ctx context.Context) (adminCtx context.Context, err error) {
+	logger.Info("ENTER CreateAdminContext")
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT CreateAdminContext: error=%v", err)
+		} else {
+			logger.Info("EXIT CreateAdminContext: success")
+		}
+	}()
 	// Get admin password from config file
 	adminPassword := getAdminPassword()
 
 	// Validate admin user and password
-	user, err := userAdmin.Validate(ctx, "admin", adminPassword)
+	user, err := userAdmin.Validate(ctx, adminEmail(), adminPassword)
 	if err != nil {
-		log.Printf("Failed to validate admin user: %v", err)
+		logger.Errorf("Failed to validate admin user: %v", err)
 		return ctx, fmt.Errorf("failed to validate admin user: %v", err)
 	}
 
 	// Get admin organization
 	org, err := orgAdmin.GetOrgByName(ctx, "admin")
 	if err != nil {
-		log.Printf("Failed to get admin org: %v", err)
+		logger.Errorf("Failed to get admin org: %v", err)
 		return ctx, fmt.Errorf("failed to get admin org: %v", err)
 	}
 
-	// Get membership
+	// Get membership (SystemRole is read from DB, no need to set manually)
 	memberShip, err := common.GetDBMemberShip(user.ID, org.ID)
 	if err != nil {
-		log.Printf("Failed to get admin membership: %v", err)
+		logger.Errorf("Failed to get admin membership: %v", err)
 		return ctx, fmt.Errorf("failed to get admin membership: %v", err)
 	}
 
-	// Ensure admin role
-	memberShip.Role = model.Admin
-
 	// Set context
-	adminCtx := memberShip.SetContext(ctx)
+	adminCtx = memberShip.SetContext(ctx)
 
 	return adminCtx, nil
 }
 
 // GetInstanceByUUIDWithAuth helper function to get instance with admin auth
 // This function is specifically for webhook calls
-func GetInstanceByUUIDWithAuth(ctx context.Context, instanceID string) (*model.Instance, error) {
+func GetInstanceByUUIDWithAuth(ctx context.Context, instanceID string) (instance *model.Instance, err error) {
+	logger.Infof("ENTER GetInstanceByUUIDWithAuth: instanceID=%s", instanceID)
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT GetInstanceByUUIDWithAuth: error=%v", err)
+		} else {
+			logger.Infof("EXIT GetInstanceByUUIDWithAuth: success, instanceID=%d", instance.ID)
+		}
+	}()
 	// Create admin context
 	adminCtx, err := CreateAdminContext(ctx)
 	if err != nil {
@@ -111,9 +133,9 @@ func GetInstanceByUUIDWithAuth(ctx context.Context, instanceID string) (*model.I
 	}
 
 	// Get instance with admin context
-	instance, err := instanceAdmin.GetInstanceByUUID(adminCtx, instanceID)
+	instance, err = instanceAdmin.GetInstanceByUUID(adminCtx, instanceID)
 	if err != nil {
-		log.Printf("Failed to get instance: %v", err)
+		logger.Errorf("Failed to get instance: %v", err)
 		return nil, fmt.Errorf("failed to get instance: %v", err)
 	}
 
@@ -169,7 +191,15 @@ type ListAdjustRuleGroupsParams struct {
 }
 
 // CreateAdjustRuleGroup creates resource adjustment rule group
-func (o *AdjustOperator) CreateAdjustRuleGroup(ctx context.Context, group *model.AdjustRuleGroup) error {
+func (o *AdjustOperator) CreateAdjustRuleGroup(ctx context.Context, group *model.AdjustRuleGroup) (err error) {
+	logger.Infof("ENTER AdjustOperator.CreateAdjustRuleGroup: name=%s", group.Name)
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT AdjustOperator.CreateAdjustRuleGroup: error=%v", err)
+		} else {
+			logger.Infof("EXIT AdjustOperator.CreateAdjustRuleGroup: success, uuid=%s", group.UUID)
+		}
+	}()
 	if group.UUID == "" {
 		group.UUID = uuid.New().String()
 	}
@@ -178,40 +208,62 @@ func (o *AdjustOperator) CreateAdjustRuleGroup(ctx context.Context, group *model
 }
 
 // GetAdjustRulesByGroupUUID gets resource adjustment rule group by UUID
-func (o *AdjustOperator) GetAdjustRulesByGroupUUID(ctx context.Context, uuid string) (*model.AdjustRuleGroup, error) {
-	var group model.AdjustRuleGroup
-	if err := dbs.DB().Where("uuid = ?", uuid).First(&group).Error; err != nil {
+func (o *AdjustOperator) GetAdjustRulesByGroupUUID(ctx context.Context, uuid string) (group *model.AdjustRuleGroup, err error) {
+	logger.Infof("ENTER AdjustOperator.GetAdjustRulesByGroupUUID: uuid=%s", uuid)
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT AdjustOperator.GetAdjustRulesByGroupUUID: error=%v", err)
+		} else {
+			logger.Infof("EXIT AdjustOperator.GetAdjustRulesByGroupUUID: success, name=%s", group.Name)
+		}
+	}()
+	group = &model.AdjustRuleGroup{}
+	if err = dbs.DB().Where("uuid = ?", uuid).First(group).Error; err != nil {
 		return nil, err
 	}
-	return &group, nil
+	return group, nil
 }
 
 // GetAdjustRulesByIdentifier gets resource adjustment rule group by identifier (supports rule_id and group_uuid)
-func (o *AdjustOperator) GetAdjustRulesByIdentifier(ctx context.Context, identifier string) (*model.AdjustRuleGroup, error) {
-	var group model.AdjustRuleGroup
+func (o *AdjustOperator) GetAdjustRulesByIdentifier(ctx context.Context, identifier string) (group *model.AdjustRuleGroup, err error) {
+	logger.Infof("ENTER AdjustOperator.GetAdjustRulesByIdentifier: identifier=%s", identifier)
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT AdjustOperator.GetAdjustRulesByIdentifier: error=%v", err)
+		} else {
+			logger.Infof("EXIT AdjustOperator.GetAdjustRulesByIdentifier: success, uuid=%s", group.UUID)
+		}
+	}()
+	group = &model.AdjustRuleGroup{}
 
 	// Try querying by rule_id first
-	err := dbs.DB().Where("rule_id = ?", identifier).First(&group).Error
+	err = dbs.DB().Where("rule_id = ?", identifier).First(group).Error
 	if err == nil {
-		return &group, nil
+		return group, nil
 	}
 
 	// If rule_id query fails, query by uuid (backward compatible)
 	if errors.Is(err, gorm.ErrRecordNotFound) {
-		err = dbs.DB().Where("uuid = ?", identifier).First(&group).Error
+		err = dbs.DB().Where("uuid = ?", identifier).First(group).Error
 		if err != nil {
 			return nil, err
 		}
-		return &group, nil
+		return group, nil
 	}
 
 	return nil, err
 }
 
 // ListAdjustRuleGroups lists resource adjustment rule groups
-func (o *AdjustOperator) ListAdjustRuleGroups(ctx context.Context, params ListAdjustRuleGroupsParams) ([]model.AdjustRuleGroup, int64, error) {
-	var groups []model.AdjustRuleGroup
-	var total int64
+func (o *AdjustOperator) ListAdjustRuleGroups(ctx context.Context, params ListAdjustRuleGroupsParams) (groups []model.AdjustRuleGroup, total int64, err error) {
+	logger.Infof("ENTER AdjustOperator.ListAdjustRuleGroups: params=%+v", params)
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT AdjustOperator.ListAdjustRuleGroups: error=%v", err)
+		} else {
+			logger.Infof("EXIT AdjustOperator.ListAdjustRuleGroups: total=%d, count=%d", total, len(groups))
+		}
+	}()
 
 	query := dbs.DB().Model(&model.AdjustRuleGroup{})
 
@@ -238,7 +290,7 @@ func (o *AdjustOperator) ListAdjustRuleGroups(ctx context.Context, params ListAd
 	}
 
 	// Get total count
-	err := query.Count(&total).Error
+	err = query.Count(&total).Error
 	if err != nil {
 		return nil, 0, err
 	}
@@ -251,7 +303,7 @@ func (o *AdjustOperator) ListAdjustRuleGroups(ctx context.Context, params ListAd
 	query = query.Order("created_at desc")
 
 	// Execute query
-	if err := query.Find(&groups).Error; err != nil {
+	if err = query.Find(&groups).Error; err != nil {
 		return nil, 0, err
 	}
 
@@ -259,21 +311,44 @@ func (o *AdjustOperator) ListAdjustRuleGroups(ctx context.Context, params ListAd
 }
 
 // CreateCPUAdjustRuleDetail creates CPU adjustment rule detail
-func (o *AdjustOperator) CreateCPUAdjustRuleDetail(ctx context.Context, detail *model.CPUAdjustRuleDetail) error {
+func (o *AdjustOperator) CreateCPUAdjustRuleDetail(ctx context.Context, detail *model.CPUAdjustRuleDetail) (err error) {
+	logger.Infof("ENTER AdjustOperator.CreateCPUAdjustRuleDetail: groupUUID=%s", detail.GroupUUID)
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT AdjustOperator.CreateCPUAdjustRuleDetail: error=%v", err)
+		} else {
+			logger.Info("EXIT AdjustOperator.CreateCPUAdjustRuleDetail: success")
+		}
+	}()
 	return dbs.DB().Create(detail).Error
 }
 
 // GetCPUAdjustRuleDetails gets CPU adjustment rule details
-func (o *AdjustOperator) GetCPUAdjustRuleDetails(ctx context.Context, groupUUID string) ([]model.CPUAdjustRuleDetail, error) {
-	var details []model.CPUAdjustRuleDetail
-	if err := dbs.DB().Where("group_uuid = ?", groupUUID).Find(&details).Error; err != nil {
+func (o *AdjustOperator) GetCPUAdjustRuleDetails(ctx context.Context, groupUUID string) (details []model.CPUAdjustRuleDetail, err error) {
+	logger.Infof("ENTER AdjustOperator.GetCPUAdjustRuleDetails: groupUUID=%s", groupUUID)
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT AdjustOperator.GetCPUAdjustRuleDetails: error=%v", err)
+		} else {
+			logger.Infof("EXIT AdjustOperator.GetCPUAdjustRuleDetails: count=%d", len(details))
+		}
+	}()
+	if err = dbs.DB().Where("group_uuid = ?", groupUUID).Find(&details).Error; err != nil {
 		return nil, err
 	}
 	return details, nil
 }
 
 // CreateBWAdjustRuleDetail creates bandwidth adjustment rule detail
-func (o *AdjustOperator) CreateBWAdjustRuleDetail(ctx context.Context, detail *model.BWAdjustRuleDetail) error {
+func (o *AdjustOperator) CreateBWAdjustRuleDetail(ctx context.Context, detail *model.BWAdjustRuleDetail) (err error) {
+	logger.Infof("ENTER AdjustOperator.CreateBWAdjustRuleDetail: groupUUID=%s", detail.GroupUUID)
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT AdjustOperator.CreateBWAdjustRuleDetail: error=%v", err)
+		} else {
+			logger.Infof("EXIT AdjustOperator.CreateBWAdjustRuleDetail: success, uuid=%s", detail.UUID)
+		}
+	}()
 	if detail.UUID == "" {
 		detail.UUID = uuid.New().String()
 	}
@@ -281,9 +356,16 @@ func (o *AdjustOperator) CreateBWAdjustRuleDetail(ctx context.Context, detail *m
 }
 
 // GetBWAdjustRuleDetails gets bandwidth adjustment rule details
-func (o *AdjustOperator) GetBWAdjustRuleDetails(ctx context.Context, groupUUID string) ([]model.BWAdjustRuleDetail, error) {
-	var details []model.BWAdjustRuleDetail
-	if err := dbs.DB().Where("group_uuid = ?", groupUUID).Find(&details).Error; err != nil {
+func (o *AdjustOperator) GetBWAdjustRuleDetails(ctx context.Context, groupUUID string) (details []model.BWAdjustRuleDetail, err error) {
+	logger.Infof("ENTER AdjustOperator.GetBWAdjustRuleDetails: groupUUID=%s", groupUUID)
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT AdjustOperator.GetBWAdjustRuleDetails: error=%v", err)
+		} else {
+			logger.Infof("EXIT AdjustOperator.GetBWAdjustRuleDetails: count=%d", len(details))
+		}
+	}()
+	if err = dbs.DB().Where("group_uuid = ?", groupUUID).Find(&details).Error; err != nil {
 		return nil, err
 	}
 	return details, nil
@@ -296,20 +378,28 @@ type CPUAdjustRuleGroupResult struct {
 }
 
 // GetCPUAdjustRulesByGroupUUID retrieves complete CPU adjust rule (group + details) by group UUID
-func (o *AdjustOperator) GetCPUAdjustRulesByGroupUUID(ctx context.Context, groupUUID string, ruleType string) (*CPUAdjustRuleGroupResult, error) {
+func (o *AdjustOperator) GetCPUAdjustRulesByGroupUUID(ctx context.Context, groupUUID string, ruleType string) (result *CPUAdjustRuleGroupResult, err error) {
+	logger.Infof("ENTER AdjustOperator.GetCPUAdjustRulesByGroupUUID: groupUUID=%s, ruleType=%s", groupUUID, ruleType)
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT AdjustOperator.GetCPUAdjustRulesByGroupUUID: error=%v", err)
+		} else {
+			logger.Info("EXIT AdjustOperator.GetCPUAdjustRulesByGroupUUID: success")
+		}
+	}()
 	groups, _, err := o.ListAdjustRuleGroups(ctx, ListAdjustRuleGroupsParams{
 		RuleType:  ruleType,
 		GroupUUID: groupUUID,
 		PageSize:  1,
 	})
 	if err != nil || len(groups) == 0 {
-		log.Printf("adjust rules query failed: groupID=%s, error=%v", groupUUID, err)
+		logger.Errorf("adjust rules query failed: groupID=%s, error=%v", groupUUID, err)
 		return nil, fmt.Errorf("adjust rules query failed: %w", err)
 	}
 
 	details, err := o.GetCPUAdjustRuleDetails(ctx, groupUUID)
 	if err != nil {
-		log.Printf("CPU adjust detail rules query failed: groupID=%s, error=%v", groupUUID, err)
+		logger.Errorf("CPU adjust detail rules query failed: groupID=%s, error=%v", groupUUID, err)
 		return nil, fmt.Errorf("CPU adjust detail rules query failed: %w", err)
 	}
 
@@ -326,20 +416,28 @@ type BWAdjustRuleGroupResult struct {
 }
 
 // GetBWAdjustRulesByGroupUUID retrieves complete bandwidth adjust rule (group + details) by group UUID
-func (o *AdjustOperator) GetBWAdjustRulesByGroupUUID(ctx context.Context, groupUUID string, ruleType string) (*BWAdjustRuleGroupResult, error) {
+func (o *AdjustOperator) GetBWAdjustRulesByGroupUUID(ctx context.Context, groupUUID string, ruleType string) (result *BWAdjustRuleGroupResult, err error) {
+	logger.Infof("ENTER AdjustOperator.GetBWAdjustRulesByGroupUUID: groupUUID=%s, ruleType=%s", groupUUID, ruleType)
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT AdjustOperator.GetBWAdjustRulesByGroupUUID: error=%v", err)
+		} else {
+			logger.Info("EXIT AdjustOperator.GetBWAdjustRulesByGroupUUID: success")
+		}
+	}()
 	groups, _, err := o.ListAdjustRuleGroups(ctx, ListAdjustRuleGroupsParams{
 		RuleType:  ruleType,
 		GroupUUID: groupUUID,
 		PageSize:  1,
 	})
 	if err != nil || len(groups) == 0 {
-		log.Printf("adjust rules query failed: groupID=%s, error=%v", groupUUID, err)
+		logger.Errorf("adjust rules query failed: groupID=%s, error=%v", groupUUID, err)
 		return nil, fmt.Errorf("adjust rules query failed: %w", err)
 	}
 
 	details, err := o.GetBWAdjustRuleDetails(ctx, groupUUID)
 	if err != nil {
-		log.Printf("bandwidth adjust detail rules query failed: groupID=%s, error=%v", groupUUID, err)
+		logger.Errorf("bandwidth adjust detail rules query failed: groupID=%s, error=%v", groupUUID, err)
 		return nil, fmt.Errorf("bandwidth adjust detail rules query failed: %w", err)
 	}
 
@@ -350,13 +448,21 @@ func (o *AdjustOperator) GetBWAdjustRulesByGroupUUID(ctx context.Context, groupU
 }
 
 // UpdateAdjustRuleGroupStatus updates adjust rule group enabled status
-func (o *AdjustOperator) UpdateAdjustRuleGroupStatus(ctx context.Context, groupUUID string, enabled bool) error {
+func (o *AdjustOperator) UpdateAdjustRuleGroupStatus(ctx context.Context, groupUUID string, enabled bool) (err error) {
+	logger.Infof("ENTER AdjustOperator.UpdateAdjustRuleGroupStatus: groupUUID=%s, enabled=%v", groupUUID, enabled)
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT AdjustOperator.UpdateAdjustRuleGroupStatus: error=%v", err)
+		} else {
+			logger.Info("EXIT AdjustOperator.UpdateAdjustRuleGroupStatus: success")
+		}
+	}()
 	result := dbs.DB().Model(&model.AdjustRuleGroup{}).
 		Where("uuid = ?", groupUUID).
 		Update("enabled", enabled)
 
 	if result.Error != nil {
-		log.Printf("update adjust rule group status failed groupUUID %s error %v", groupUUID, result.Error)
+		logger.Errorf("update adjust rule group status failed groupUUID %s error %v", groupUUID, result.Error)
 		return fmt.Errorf("update adjust rule group status failed: %w", result.Error)
 	}
 
@@ -368,7 +474,15 @@ func (o *AdjustOperator) UpdateAdjustRuleGroupStatus(ctx context.Context, groupU
 }
 
 // DeleteAdjustRuleGroupWithDependencies deletes resource adjustment rule group and its dependencies
-func (o *AdjustOperator) DeleteAdjustRuleGroupWithDependencies(ctx context.Context, groupUUID string) error {
+func (o *AdjustOperator) DeleteAdjustRuleGroupWithDependencies(ctx context.Context, groupUUID string) (err error) {
+	logger.Infof("ENTER AdjustOperator.DeleteAdjustRuleGroupWithDependencies: groupUUID=%s", groupUUID)
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT AdjustOperator.DeleteAdjustRuleGroupWithDependencies: error=%v", err)
+		} else {
+			logger.Info("EXIT AdjustOperator.DeleteAdjustRuleGroupWithDependencies: success")
+		}
+	}()
 	tx := dbs.DB().Begin()
 	defer func() {
 		if r := recover(); r != nil {
@@ -377,31 +491,31 @@ func (o *AdjustOperator) DeleteAdjustRuleGroupWithDependencies(ctx context.Conte
 	}()
 
 	// Delete CPU adjustment rule details
-	if err := tx.Where("group_uuid = ?", groupUUID).Delete(&model.CPUAdjustRuleDetail{}).Error; err != nil {
+	if err = tx.Where("group_uuid = ?", groupUUID).Delete(&model.CPUAdjustRuleDetail{}).Error; err != nil {
 		tx.Rollback()
 		return err
 	}
 
 	// Delete bandwidth adjustment rule details
-	if err := tx.Where("group_uuid = ?", groupUUID).Delete(&model.BWAdjustRuleDetail{}).Error; err != nil {
+	if err = tx.Where("group_uuid = ?", groupUUID).Delete(&model.BWAdjustRuleDetail{}).Error; err != nil {
 		tx.Rollback()
 		return err
 	}
 
 	// Delete VM links
-	if err := tx.Where("group_uuid = ?", groupUUID).Delete(&model.VMRuleLink{}).Error; err != nil {
+	if err = tx.Where("group_uuid = ?", groupUUID).Delete(&model.VMRuleLink{}).Error; err != nil {
 		tx.Rollback()
 		return err
 	}
 
 	// Delete adjustment history
-	if err := tx.Where("group_uuid = ?", groupUUID).Delete(&model.AdjustmentHistory{}).Error; err != nil {
+	if err = tx.Where("group_uuid = ?", groupUUID).Delete(&model.AdjustmentHistory{}).Error; err != nil {
 		tx.Rollback()
 		return err
 	}
 
 	// Delete rule group
-	if err := tx.Where("uuid = ?", groupUUID).Delete(&model.AdjustRuleGroup{}).Error; err != nil {
+	if err = tx.Where("uuid = ?", groupUUID).Delete(&model.AdjustRuleGroup{}).Error; err != nil {
 		tx.Rollback()
 		return err
 	}
@@ -410,15 +524,31 @@ func (o *AdjustOperator) DeleteAdjustRuleGroupWithDependencies(ctx context.Conte
 }
 
 // RecordAdjustmentHistory records adjustment history
-func (o *AdjustOperator) RecordAdjustmentHistory(ctx context.Context, history *model.AdjustmentHistory) error {
+func (o *AdjustOperator) RecordAdjustmentHistory(ctx context.Context, history *model.AdjustmentHistory) (err error) {
+	logger.Infof("ENTER AdjustOperator.RecordAdjustmentHistory: groupUUID=%s, domain=%s", history.GroupUUID, history.DomainName)
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT AdjustOperator.RecordAdjustmentHistory: error=%v", err)
+		} else {
+			logger.Info("EXIT AdjustOperator.RecordAdjustmentHistory: success")
+		}
+	}()
 	history.AdjustTime = time.Now()
 	return dbs.DB().Create(history).Error
 }
 
 // IsInCooldown checks if in cooldown period
-func (o *AdjustOperator) IsInCooldown(ctx context.Context, domain, ruleID, actionType string, cooldownSeconds int) (bool, error) {
+func (o *AdjustOperator) IsInCooldown(ctx context.Context, domain, ruleID, actionType string, cooldownSeconds int) (inCooldown bool, err error) {
+	logger.Infof("ENTER AdjustOperator.IsInCooldown: domain=%s, ruleID=%s, action=%s, cooldown=%d", domain, ruleID, actionType, cooldownSeconds)
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT AdjustOperator.IsInCooldown: error=%v", err)
+		} else {
+			logger.Infof("EXIT AdjustOperator.IsInCooldown: inCooldown=%v", inCooldown)
+		}
+	}()
 	var history model.AdjustmentHistory
-	err := dbs.DB().Where("domain_name = ? AND rule_id = ? AND action_type = ?", domain, ruleID, actionType).
+	err = dbs.DB().Where("domain_name = ? AND rule_id = ? AND action_type = ?", domain, ruleID, actionType).
 		Order("adjust_time desc").
 		First(&history).Error
 
@@ -432,49 +562,73 @@ func (o *AdjustOperator) IsInCooldown(ctx context.Context, domain, ruleID, actio
 
 	// Check if in cooldown period
 	cooldownDuration := time.Duration(cooldownSeconds) * time.Second
-	return time.Since(history.AdjustTime) < cooldownDuration, nil
+	inCooldown = time.Since(history.AdjustTime) < cooldownDuration
+	return inCooldown, nil
 }
 
 // GetAdjustmentHistory gets adjustment history
-func (o *AdjustOperator) GetAdjustmentHistory(ctx context.Context, groupUUID string, limit int) ([]model.AdjustmentHistory, error) {
-	var history []model.AdjustmentHistory
+func (o *AdjustOperator) GetAdjustmentHistory(ctx context.Context, groupUUID string, limit int) (history []model.AdjustmentHistory, err error) {
+	logger.Infof("ENTER AdjustOperator.GetAdjustmentHistory: groupUUID=%s, limit=%d", groupUUID, limit)
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT AdjustOperator.GetAdjustmentHistory: error=%v", err)
+		} else {
+			logger.Infof("EXIT AdjustOperator.GetAdjustmentHistory: count=%d", len(history))
+		}
+	}()
+	history = []model.AdjustmentHistory{}
 	query := dbs.DB().Where("group_uuid = ?", groupUUID).Order("adjust_time desc")
 
 	if limit > 0 {
 		query = query.Limit(limit)
 	}
 
-	err := query.Find(&history).Error
+	err = query.Find(&history).Error
 	return history, err
 }
 
 // SaveAdjustmentHistory saves adjustment history
-func (o *AdjustOperator) SaveAdjustmentHistory(ctx context.Context, history *model.AdjustmentHistory) error {
+func (o *AdjustOperator) SaveAdjustmentHistory(ctx context.Context, history *model.AdjustmentHistory) (err error) {
+	logger.Infof("ENTER AdjustOperator.SaveAdjustmentHistory: groupUUID=%s, domain=%s", history.GroupUUID, history.DomainName)
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT AdjustOperator.SaveAdjustmentHistory: error=%v", err)
+		} else {
+			logger.Info("EXIT AdjustOperator.SaveAdjustmentHistory: success")
+		}
+	}()
 	return dbs.DB().Create(history).Error
 }
 
 // AdjustCPUResource adjusts CPU resources
-func (o *AdjustOperator) AdjustCPUResource(ctx context.Context, record *AdjustmentRecord, domain string, limit bool, instanceID string) error {
+func (o *AdjustOperator) AdjustCPUResource(ctx context.Context, record *AdjustmentRecord, domain string, limit bool, instanceID string) (err error) {
+	logger.Infof("ENTER AdjustOperator.AdjustCPUResource: domain=%s, limit=%v, instanceID=%s", domain, limit, instanceID)
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT AdjustOperator.AdjustCPUResource: error=%v", err)
+		} else {
+			logger.Info("EXIT AdjustOperator.AdjustCPUResource: success")
+		}
+	}()
 	var instance *model.Instance
-	var err error
 
 	// Get instance by ID if provided, otherwise query by domain
 	if instanceID != "" {
 		instance, err = GetInstanceByUUIDWithAuth(ctx, instanceID)
 		if err != nil {
-			log.Printf("Failed to get instance: %v", err)
+			logger.Errorf("Failed to get instance: %v", err)
 			return fmt.Errorf("failed to get instance: %v", err)
 		}
 	} else {
 		uuid, err := GetInstanceUUIDByDomain(ctx, domain)
 		if err != nil {
-			log.Printf("Failed to get instance UUID: %v", err)
+			logger.Errorf("Failed to get instance UUID: %v", err)
 			return fmt.Errorf("failed to get instance UUID: %v", err)
 		}
 
 		instance, err = GetInstanceByUUIDWithAuth(ctx, uuid)
 		if err != nil {
-			log.Printf("Failed to get instance: %v", err)
+			logger.Errorf("Failed to get instance: %v", err)
 			return fmt.Errorf("failed to get instance: %v", err)
 		}
 	}
@@ -487,7 +641,7 @@ func (o *AdjustOperator) AdjustCPUResource(ctx context.Context, record *Adjustme
 		// Get limit value from rule group
 		details, err := o.GetCPUAdjustRuleDetails(ctx, record.RuleGroupUUID)
 		if err != nil || len(details) == 0 {
-			log.Printf("Failed to get CPU adjustment rule details: %v", err)
+			logger.Errorf("Failed to get CPU adjustment rule details: %v", err)
 			return fmt.Errorf("failed to get CPU adjustment rule details: %v", err)
 		}
 
@@ -505,7 +659,7 @@ func (o *AdjustOperator) AdjustCPUResource(ctx context.Context, record *Adjustme
 	// Execute command
 	err = common.HyperExecute(ctx, control, command)
 	if err != nil {
-		log.Printf("Failed to adjust CPU: %v", err)
+		logger.Errorf("Failed to adjust CPU: %v", err)
 		return fmt.Errorf("failed to adjust CPU resources: %v", err)
 	}
 
@@ -519,37 +673,42 @@ func (o *AdjustOperator) AdjustCPUResource(ctx context.Context, record *Adjustme
 
 	err = common.HyperExecute(ctx, control, updateCommand)
 	if err != nil {
-		log.Printf("Warning: Failed to update CPU adjustment metric for domain %s: %v", domain, err)
+		logger.Errorf("Warning: Failed to update CPU adjustment metric for domain %s: %v", domain, err)
 	}
-
-	log.Printf("Successfully adjusted CPU resources: domain=%s, limit=%v", domain, limit)
 	return nil
 }
 
 // RestoreCPUResource restores CPU resources
-func (o *AdjustOperator) RestoreCPUResource(ctx context.Context, record *AdjustmentRecord, domain string, instanceID string) error {
-
+func (o *AdjustOperator) RestoreCPUResource(ctx context.Context, record *AdjustmentRecord, domain string, instanceID string) (err error) {
+	logger.Infof("ENTER AdjustOperator.RestoreCPUResource: domain=%s, instanceID=%s", domain, instanceID)
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT AdjustOperator.RestoreCPUResource: error=%v", err)
+		} else {
+			logger.Info("EXIT AdjustOperator.RestoreCPUResource: success")
+		}
+	}()
 	var instance *model.Instance
-	var err error
 
 	// Get instance by ID if provided
 	if instanceID != "" {
 		instance, err = GetInstanceByUUIDWithAuth(ctx, instanceID)
 		if err != nil {
-			log.Printf("Failed to get instance: %v", err)
+			logger.Errorf("Failed to get instance: %v", err)
 			return fmt.Errorf("failed to get instance: %v", err)
 		}
 	} else {
 		// Otherwise query by domain
-		uuid, err := GetInstanceUUIDByDomain(ctx, domain)
+		var uuid string
+		uuid, err = GetInstanceUUIDByDomain(ctx, domain)
 		if err != nil {
-			log.Printf("Failed to get instance UUID: %v", err)
+			logger.Errorf("Failed to get instance UUID: %v", err)
 			return fmt.Errorf("failed to get instance UUID: %v", err)
 		}
 
 		instance, err = GetInstanceByUUIDWithAuth(ctx, uuid)
 		if err != nil {
-			log.Printf("Failed to get instance: %v", err)
+			logger.Errorf("Failed to get instance: %v", err)
 			return fmt.Errorf("failed to get instance: %v", err)
 		}
 	}
@@ -564,7 +723,7 @@ func (o *AdjustOperator) RestoreCPUResource(ctx context.Context, record *Adjustm
 	// Execute command
 	err = common.HyperExecute(ctx, control, command)
 	if err != nil {
-		log.Printf("Failed to restore CPU: %v", err)
+		logger.Errorf("Failed to restore CPU: %v", err)
 		return fmt.Errorf("failed to restore CPU resources: %v", err)
 	}
 
@@ -575,37 +734,43 @@ func (o *AdjustOperator) RestoreCPUResource(ctx context.Context, record *Adjustm
 
 	err = common.HyperExecute(ctx, control, updateCommand)
 	if err != nil {
-		log.Printf("Warning: Failed to update CPU adjustment metric for domain %s: %v", domain, err)
+		logger.Errorf("Warning: Failed to update CPU adjustment metric for domain %s: %v", domain, err)
 	}
 
-	log.Printf("Successfully restored CPU resources: domain=%s", domain)
 	return nil
 }
 
 // AdjustBandwidthResource adjusts bandwidth resources
 // totalInBw and totalOutBw are the total bandwidth configuration in Mbps (from Prometheus alert value)
-func (o *AdjustOperator) AdjustBandwidthResource(ctx context.Context, record *AdjustmentRecord, domain string, device string, limit bool, instanceID string, totalInBw int, totalOutBw int) error {
+func (o *AdjustOperator) AdjustBandwidthResource(ctx context.Context, record *AdjustmentRecord, domain string, device string, limit bool, instanceID string, totalInBw int, totalOutBw int) (err error) {
+	logger.Infof("ENTER AdjustOperator.AdjustBandwidthResource: domain=%s, device=%s, limit=%v, instanceID=%s, totalInBw=%d, totalOutBw=%d", domain, device, limit, instanceID, totalInBw, totalOutBw)
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT AdjustOperator.AdjustBandwidthResource: error=%v", err)
+		} else {
+			logger.Info("EXIT AdjustOperator.AdjustBandwidthResource: success")
+		}
+	}()
 	var instance *model.Instance
-	var err error
 
 	// Get instance by ID if provided
 	if instanceID != "" {
 		instance, err = GetInstanceByUUIDWithAuth(ctx, instanceID)
 		if err != nil {
-			log.Printf("Failed to get instance: %v", err)
+			logger.Errorf("Failed to get instance: %v", err)
 			return fmt.Errorf("failed to get instance: %v", err)
 		}
 	} else {
 		// Otherwise query by domain
 		uuid, err := GetInstanceUUIDByDomain(ctx, domain)
 		if err != nil {
-			log.Printf("Failed to get instance UUID: %v", err)
+			logger.Errorf("Failed to get instance UUID: %v", err)
 			return fmt.Errorf("failed to get instance UUID: %v", err)
 		}
 
 		instance, err = GetInstanceByUUIDWithAuth(ctx, uuid)
 		if err != nil {
-			log.Printf("Failed to get instance: %v", err)
+			logger.Errorf("Failed to get instance: %v", err)
 			return fmt.Errorf("failed to get instance: %v", err)
 		}
 	}
@@ -621,7 +786,7 @@ func (o *AdjustOperator) AdjustBandwidthResource(ctx context.Context, record *Ad
 	}
 
 	if targetDevice == "" {
-		log.Printf("Target device not specified for instance %s", instanceID)
+		logger.Errorf("Target device not specified for instance %s", instanceID)
 		return fmt.Errorf("target device not specified")
 	}
 
@@ -630,7 +795,7 @@ func (o *AdjustOperator) AdjustBandwidthResource(ctx context.Context, record *Ad
 	originalInBw := totalInBw
 	originalOutBw := totalOutBw
 
-	log.Printf("[BW-ADJUST] Total bandwidth from alert: domain=%s, device=%s, inBw=%d Mbps, outBw=%d Mbps",
+	logger.Infof("[BW-ADJUST] Total bandwidth from alert: domain=%s, device=%s, inBw=%d Mbps, outBw=%d Mbps",
 		domain, targetDevice, originalInBw, originalOutBw)
 
 	// Set bandwidth limit values
@@ -645,7 +810,7 @@ func (o *AdjustOperator) AdjustBandwidthResource(ctx context.Context, record *Ad
 		// Get bandwidth adjustment rule details to calculate limit values
 		details, err := o.GetBWAdjustRuleDetails(ctx, record.RuleGroupUUID)
 		if err != nil || len(details) == 0 {
-			log.Printf("Failed to get bandwidth adjustment rule details: %v", err)
+			logger.Errorf("Failed to get bandwidth adjustment rule details: %v", err)
 			return fmt.Errorf("failed to get bandwidth adjustment rule details: %v", err)
 		}
 
@@ -663,10 +828,10 @@ func (o *AdjustOperator) AdjustBandwidthResource(ctx context.Context, record *Ad
 						// Use unidirectional setting, don't affect outbound bandwidth
 						outBw = 0 // Placeholder, not actually used
 
-						log.Printf("[BW-ADJUST] Calculated inbound limit: %d%% of %d Mbps = %d Mbps",
+						logger.Infof("[BW-ADJUST] Calculated inbound limit: %d%% of %d Mbps = %d Mbps",
 							detail.LimitValuePct, originalInBw, inBw)
 					} else {
-						log.Printf("[BW-ADJUST] Skip inbound limit: interface has unlimited bandwidth (0)")
+						logger.Infof("[BW-ADJUST] Skip inbound limit: interface has unlimited bandwidth (0)")
 					}
 					break
 				}
@@ -684,10 +849,10 @@ func (o *AdjustOperator) AdjustBandwidthResource(ctx context.Context, record *Ad
 						// Use unidirectional setting, don't affect inbound bandwidth
 						inBw = 0 // Placeholder, not actually used
 
-						log.Printf("[BW-ADJUST] Calculated outbound limit: %d%% of %d Mbps = %d Mbps",
+						logger.Infof("[BW-ADJUST] Calculated outbound limit: %d%% of %d Mbps = %d Mbps",
 							detail.LimitValuePct, originalOutBw, outBw)
 					} else {
-						log.Printf("[BW-ADJUST] Skip outbound limit: interface has unlimited bandwidth (0)")
+						logger.Infof("[BW-ADJUST] Skip outbound limit: interface has unlimited bandwidth (0)")
 					}
 					break
 				}
@@ -712,11 +877,12 @@ func (o *AdjustOperator) AdjustBandwidthResource(ctx context.Context, record *Ad
 		}
 
 		var command string
-		if bwType == "in" {
+		switch bwType {
+		case "in":
 			// Limit inbound bandwidth only, use unidirectional mode
 			command = fmt.Sprintf("/opt/cloudland/scripts/kvm/set_nic_speed.sh '%s' '%s' '%d' '0' --inbound-only",
 				vmID, nicName, inBw)
-		} else if bwType == "out" {
+		case "out":
 			// Limit outbound bandwidth only, use unidirectional mode
 			command = fmt.Sprintf("/opt/cloudland/scripts/kvm/set_nic_speed.sh '%s' '%s' '0' '%d' --outbound-only",
 				vmID, nicName, outBw)
@@ -725,7 +891,7 @@ func (o *AdjustOperator) AdjustBandwidthResource(ctx context.Context, record *Ad
 		// Execute command
 		err = common.HyperExecute(ctx, control, command)
 		if err != nil {
-			log.Printf("Failed to adjust bandwidth: %v", err)
+			logger.Errorf("Failed to adjust bandwidth: %v", err)
 			return fmt.Errorf("failed to adjust bandwidth resources: %v", err)
 		}
 	}
@@ -739,46 +905,52 @@ func (o *AdjustOperator) AdjustBandwidthResource(ctx context.Context, record *Ad
 	if bwType != "" {
 		// Generate proper rule_id format: adjust-bw-$DOMAIN-$UUID
 		ruleID := fmt.Sprintf("adjust-bw-%s-%s", domain, record.RuleGroupUUID)
-		log.Printf("[BW-STATUS-UPDATE] Calling update script: domain=%s, rule_id=%s, type=%s, status=%d, target_device=%s", domain, ruleID, bwType, status, nicName)
+		logger.Infof("[BW-STATUS-UPDATE] Calling update script: domain=%s, rule_id=%s, type=%s, status=%d, target_device=%s", domain, ruleID, bwType, status, nicName)
 		updateCommand := fmt.Sprintf("/opt/cloudland/scripts/kvm/update_vm_bandwidth_adjustment_status.sh --domain '%s' --rule-id '%s' --type '%s' --status %d --target-device '%s'",
 			domain, ruleID, bwType, status, nicName)
 
-		log.Printf("[BW-STATUS-UPDATE] Full command: %s", updateCommand)
+		logger.Infof("[BW-STATUS-UPDATE] Full command: %s", updateCommand)
 
 		err = common.HyperExecute(ctx, control, updateCommand)
 		if err != nil {
-			log.Printf("Warning: Failed to update bandwidth adjustment metric for domain %s: %v", domain, err)
+			logger.Errorf("Warning: Failed to update bandwidth adjustment metric for domain %s: %v", domain, err)
 		}
 	}
 
-	log.Printf("Successfully adjusted bandwidth resources: domain=%s, device=%s, nicName=%s, limit=%v, inBw=%d, outBw=%d",
-		domain, device, nicName, limit, inBw, outBw)
 	return nil
 }
 
 // RestoreBandwidthResource restores bandwidth resources
-func (o *AdjustOperator) RestoreBandwidthResource(ctx context.Context, record *AdjustmentRecord, domain string, device string, instanceID string) error {
+func (o *AdjustOperator) RestoreBandwidthResource(ctx context.Context, record *AdjustmentRecord, domain string, device string, instanceID string) (err error) {
+	logger.Infof("ENTER AdjustOperator.RestoreBandwidthResource: domain=%s, device=%s, instanceID=%s", domain, device, instanceID)
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT AdjustOperator.RestoreBandwidthResource: error=%v", err)
+		} else {
+			logger.Info("EXIT AdjustOperator.RestoreBandwidthResource: success")
+		}
+	}()
 	var instance *model.Instance
-	var err error
 
 	// Get instance by ID if provided
 	if instanceID != "" {
 		instance, err = GetInstanceByUUIDWithAuth(ctx, instanceID)
 		if err != nil {
-			log.Printf("Failed to get instance: %v", err)
+			logger.Errorf("Failed to get instance: %v", err)
 			return fmt.Errorf("failed to get instance: %v", err)
 		}
 	} else {
 		// Otherwise query by domain
-		uuid, err := GetInstanceUUIDByDomain(ctx, domain)
+		var uuid string
+		uuid, err = GetInstanceUUIDByDomain(ctx, domain)
 		if err != nil {
-			log.Printf("Failed to get instance UUID: %v", err)
+			logger.Errorf("Failed to get instance UUID: %v", err)
 			return fmt.Errorf("failed to get instance UUID: %v", err)
 		}
 
 		instance, err = GetInstanceByUUIDWithAuth(ctx, uuid)
 		if err != nil {
-			log.Printf("Failed to get instance: %v", err)
+			logger.Errorf("Failed to get instance: %v", err)
 			return fmt.Errorf("failed to get instance: %v", err)
 		}
 	}
@@ -796,7 +968,7 @@ func (o *AdjustOperator) RestoreBandwidthResource(ctx context.Context, record *A
 	}
 
 	if targetInterface == nil {
-		log.Printf("Interface not found: device=%s, instanceID=%s", device, instanceID)
+		logger.Errorf("Interface not found: device=%s, instanceID=%s", device, instanceID)
 		return fmt.Errorf("interface not found: device=%s", device)
 	}
 
@@ -804,7 +976,7 @@ func (o *AdjustOperator) RestoreBandwidthResource(ctx context.Context, record *A
 	originalInBw := int(targetInterface.Inbound)   // Original inbound bandwidth (Mbps)
 	originalOutBw := int(targetInterface.Outbound) // Original outbound bandwidth (Mbps)
 
-	log.Printf("Restoring interface bandwidth: name=%s, inBw=%d, outBw=%d",
+	logger.Infof("Restoring interface bandwidth: name=%s, inBw=%d, outBw=%d",
 		targetInterface.Name, originalInBw, originalOutBw)
 
 	// Check if actual bandwidth restoration is needed
@@ -812,9 +984,10 @@ func (o *AdjustOperator) RestoreBandwidthResource(ctx context.Context, record *A
 	var bwType string
 
 	// Determine previously limited bandwidth direction based on adjustment type for metric cleanup
-	if record.AdjustType == model.RuleTypeAdjustInBW || record.AdjustType == "restore_in_bw" {
+	switch record.AdjustType {
+	case model.RuleTypeAdjustInBW, "restore_in_bw":
 		bwType = "in"
-	} else if record.AdjustType == model.RuleTypeAdjustOutBW || record.AdjustType == "restore_out_bw" {
+	case model.RuleTypeAdjustOutBW, "restore_out_bw":
 		bwType = "out"
 	}
 
@@ -846,7 +1019,7 @@ func (o *AdjustOperator) RestoreBandwidthResource(ctx context.Context, record *A
 		// Execute command
 		err = common.HyperExecute(ctx, control, command)
 		if err != nil {
-			log.Printf("Failed to restore bandwidth: %v", err)
+			logger.Errorf("Failed to restore bandwidth: %v", err)
 			return fmt.Errorf("failed to restore bandwidth resources: %v", err)
 		}
 	}
@@ -861,23 +1034,25 @@ func (o *AdjustOperator) RestoreBandwidthResource(ctx context.Context, record *A
 		updateCommand := fmt.Sprintf("/opt/cloudland/scripts/kvm/update_vm_bandwidth_adjustment_status.sh --domain '%s' --rule-id '%s' --type '%s' --status %d --target-device '%s'",
 			domain, ruleID, bwType, status, nicName)
 
-		log.Printf("[BW-STATUS-RESTORE] Calling update script: domain=%s, rule_id=%s, type=%s, status=%d, target_device=%s",
+		logger.Infof("[BW-STATUS-RESTORE] Calling update script: domain=%s, rule_id=%s, type=%s, status=%d, target_device=%s",
 			domain, ruleID, bwType, status, nicName)
-		log.Printf("[BW-STATUS-RESTORE] Full command: %s", updateCommand)
+		logger.Infof("[BW-STATUS-RESTORE] Full command: %s", updateCommand)
 
 		err = common.HyperExecute(ctx, control, updateCommand)
 		if err != nil {
-			log.Printf("Warning: Failed to update bandwidth adjustment metric for domain %s: %v", domain, err)
+			logger.Errorf("Warning: Failed to update bandwidth adjustment metric for domain %s: %v", domain, err)
 		}
 	}
 
-	log.Printf("Successfully restored bandwidth resources: domain=%s, device=%s, nicName=%s, originalInBw=%d, originalOutBw=%d",
-		domain, device, nicName, originalInBw, originalOutBw)
 	return nil
 }
 
 // GetAdjustmentCooldownConfig retrieves adjustment cooldown configuration from database
-func (o *AdjustOperator) GetAdjustmentCooldownConfig(ctx context.Context, adjustType string, groupUUID string) int {
+func (o *AdjustOperator) GetAdjustmentCooldownConfig(ctx context.Context, adjustType string, groupUUID string) (cooldown int) {
+	logger.Infof("ENTER AdjustOperator.GetAdjustmentCooldownConfig: adjustType=%s, groupUUID=%s", adjustType, groupUUID)
+	defer func() {
+		logger.Infof("EXIT AdjustOperator.GetAdjustmentCooldownConfig: cooldown=%d", cooldown)
+	}()
 	// Default cooldown time is 5 minutes (300 seconds)
 	defaultCooldown := 300
 
@@ -887,7 +1062,7 @@ func (o *AdjustOperator) GetAdjustmentCooldownConfig(ctx context.Context, adjust
 		// Query CPU adjustment rule details
 		details, err := o.GetCPUAdjustRuleDetails(ctx, groupUUID)
 		if err != nil || len(details) == 0 {
-			log.Printf("Failed to get CPU adjustment rule details: %v", err)
+			logger.Errorf("Failed to get CPU adjustment rule details: %v", err)
 			return defaultCooldown
 		}
 		// Use limit duration as cooldown period
@@ -896,36 +1071,50 @@ func (o *AdjustOperator) GetAdjustmentCooldownConfig(ctx context.Context, adjust
 		// Query bandwidth adjustment rule details
 		details, err := o.GetBWAdjustRuleDetails(ctx, groupUUID)
 		if err != nil || len(details) == 0 {
-			log.Printf("Failed to get bandwidth adjustment rule details: %v", err)
+			logger.Errorf("Failed to get bandwidth adjustment rule details: %v", err)
 			return defaultCooldown
 		}
 		// Use first rule's limit duration as cooldown period
 		return details[0].LimitDuration
 	default:
-		log.Printf("Unknown adjustment type: %s, using default cooldown", adjustType)
+		logger.Infof("Unknown adjustment type: %s, using default cooldown", adjustType)
 		return defaultCooldown
 	}
 }
 
 // UpdateVMBandwidthMetric updates bandwidth configuration metric for a single VM interface
-func (o *AdjustOperator) UpdateVMBandwidthMetric(ctx context.Context, hyperID int, domain string, targetDevice string, inBw int, outBw int) error {
+func (o *AdjustOperator) UpdateVMBandwidthMetric(ctx context.Context, hyperID int, domain string, targetDevice string, inBw int, outBw int) (err error) {
+	logger.Infof("ENTER AdjustOperator.UpdateVMBandwidthMetric: hyperID=%d, domain=%s, device=%s, in=%d, out=%d", hyperID, domain, targetDevice, inBw, outBw)
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT AdjustOperator.UpdateVMBandwidthMetric: error=%v", err)
+		} else {
+			logger.Info("EXIT AdjustOperator.UpdateVMBandwidthMetric: success")
+		}
+	}()
 	control := fmt.Sprintf("inter=%d", hyperID)
 	command := fmt.Sprintf("/opt/cloudland/scripts/kvm/update_vm_interface_bandwidth.sh 'add' '%s' '%s' %d %d",
 		domain, targetDevice, inBw, outBw)
 
-	err := common.HyperExecute(ctx, control, command)
+	err = common.HyperExecute(ctx, control, command)
 	if err != nil {
 		return fmt.Errorf("failed to update bandwidth metric: %v", err)
 	}
 
-	log.Printf("[BW-METRIC] Updated bandwidth metric: hyper=%d, domain=%s, device=%s, in=%d, out=%d",
-		hyperID, domain, targetDevice, inBw, outBw)
 	return nil
 }
 
 // SyncVMLinks synchronizes VM links for rule group (CPU rules, simple VM list only)
 // Returns: (added, removed, toAddVMs, toRemoveVMs, error)
-func (o *AdjustOperator) SyncVMLinks(ctx context.Context, groupUUID string, newVMUUIDs []string) (int, int, []string, []string, error) {
+func (o *AdjustOperator) SyncVMLinks(ctx context.Context, groupUUID string, newVMUUIDs []string) (added int, removed int, toAdd []string, toRemove []string, err error) {
+	logger.Infof("ENTER AdjustOperator.SyncVMLinks: groupUUID=%s, newVMCount=%d", groupUUID, len(newVMUUIDs))
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT AdjustOperator.SyncVMLinks: error=%v", err)
+		} else {
+			logger.Infof("EXIT AdjustOperator.SyncVMLinks: added=%d, removed=%d", added, removed)
+		}
+	}()
 	alarmOperator := &AlarmOperator{}
 
 	// 1. Get existing VM links
@@ -947,9 +1136,6 @@ func (o *AdjustOperator) SyncVMLinks(ctx context.Context, groupUUID string, newV
 	}
 
 	// 4. Calculate difference
-	var toAdd []string
-	var toRemove []string
-
 	// VMs to add: in new but not in existing
 	for vmUUID := range newVMs {
 		if !existingVMs[vmUUID] {
@@ -965,13 +1151,10 @@ func (o *AdjustOperator) SyncVMLinks(ctx context.Context, groupUUID string, newV
 	}
 
 	// 5. Execute database operations
-	added := 0
-	removed := 0
-
 	// Add new VMs
 	for _, vmUUID := range toAdd {
 		if err := alarmOperator.CreateVMLink(ctx, groupUUID, vmUUID, ""); err != nil {
-			log.Printf("[SYNC-WARNING] Failed to add VM link: groupUUID=%s, vmUUID=%s, error=%v", groupUUID, vmUUID, err)
+			logger.Errorf("[SYNC-WARNING] Failed to add VM link: groupUUID=%s, vmUUID=%s, error=%v", groupUUID, vmUUID, err)
 		} else {
 			added++
 		}
@@ -980,13 +1163,12 @@ func (o *AdjustOperator) SyncVMLinks(ctx context.Context, groupUUID string, newV
 	// Remove old VMs
 	for _, vmUUID := range toRemove {
 		if deletedCount, err := alarmOperator.DeleteVMLink(ctx, groupUUID, vmUUID, ""); err != nil {
-			log.Printf("[SYNC-WARNING] Failed to remove VM link: groupUUID=%s, vmUUID=%s, error=%v", groupUUID, vmUUID, err)
+			logger.Errorf("[SYNC-WARNING] Failed to remove VM link: groupUUID=%s, vmUUID=%s, error=%v", groupUUID, vmUUID, err)
 		} else {
 			removed += int(deletedCount)
 		}
 	}
 
-	log.Printf("[SYNC-INFO] VM links synchronized: groupUUID=%s, added=%d, removed=%d", groupUUID, added, removed)
 	return added, removed, toAdd, toRemove, nil
 }
 
@@ -996,7 +1178,15 @@ func (o *AdjustOperator) SyncVMLinks(ctx context.Context, groupUUID string, newV
 func (o *AdjustOperator) SyncVMLinksWithDevice(ctx context.Context, groupUUID string, newVMLinks []struct {
 	InstanceID   string
 	TargetDevice string
-}) (int, int, map[string][]string, map[string][]string, error) {
+}) (added int, removed int, toAddByDevice map[string][]string, toRemoveByDevice map[string][]string, err error) {
+	logger.Infof("ENTER AdjustOperator.SyncVMLinksWithDevice: groupUUID=%s, newLinkCount=%d", groupUUID, len(newVMLinks))
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT AdjustOperator.SyncVMLinksWithDevice: error=%v", err)
+		} else {
+			logger.Infof("EXIT AdjustOperator.SyncVMLinksWithDevice: added=%d, removed=%d", added, removed)
+		}
+	}()
 	alarmOperator := &AlarmOperator{}
 
 	// 1. Get existing VM links
@@ -1022,8 +1212,8 @@ func (o *AdjustOperator) SyncVMLinksWithDevice(ctx context.Context, groupUUID st
 	}
 
 	// 4. Calculate difference
-	toAddByDevice := make(map[string][]string)
-	toRemoveByDevice := make(map[string][]string)
+	toAddByDevice = make(map[string][]string)
+	toRemoveByDevice = make(map[string][]string)
 
 	// Pairs to add: in new but not in existing
 	for pair := range newPairs {
@@ -1040,14 +1230,11 @@ func (o *AdjustOperator) SyncVMLinksWithDevice(ctx context.Context, groupUUID st
 	}
 
 	// 5. Execute database operations
-	added := 0
-	removed := 0
-
 	// Add new VM-device pairs
 	for device, vmUUIDs := range toAddByDevice {
 		for _, vmUUID := range vmUUIDs {
 			if err := alarmOperator.CreateVMLink(ctx, groupUUID, vmUUID, device); err != nil {
-				log.Printf("[SYNC-WARNING] Failed to add VM link: groupUUID=%s, vmUUID=%s, device=%s, error=%v",
+				logger.Errorf("[SYNC-WARNING] Failed to add VM link: groupUUID=%s, vmUUID=%s, device=%s, error=%v",
 					groupUUID, vmUUID, device, err)
 			} else {
 				added++
@@ -1059,7 +1246,7 @@ func (o *AdjustOperator) SyncVMLinksWithDevice(ctx context.Context, groupUUID st
 	for device, vmUUIDs := range toRemoveByDevice {
 		for _, vmUUID := range vmUUIDs {
 			if deletedCount, err := alarmOperator.DeleteVMLink(ctx, groupUUID, vmUUID, device); err != nil {
-				log.Printf("[SYNC-WARNING] Failed to remove VM link: groupUUID=%s, vmUUID=%s, device=%s, error=%v",
+				logger.Errorf("[SYNC-WARNING] Failed to remove VM link: groupUUID=%s, vmUUID=%s, device=%s, error=%v",
 					groupUUID, vmUUID, device, err)
 			} else {
 				removed += int(deletedCount)
@@ -1067,13 +1254,20 @@ func (o *AdjustOperator) SyncVMLinksWithDevice(ctx context.Context, groupUUID st
 		}
 	}
 
-	log.Printf("[SYNC-INFO] BW VM links synchronized: groupUUID=%s, added=%d, removed=%d", groupUUID, added, removed)
 	return added, removed, toAddByDevice, toRemoveByDevice, nil
 }
 
 // UpdateCPUAdjustRuleDetails updates CPU adjustment rule details (supports rule_id and group_uuid)
 // Uses UPDATE strategy to preserve UUID and ID, only updates business fields
-func (o *AdjustOperator) UpdateCPUAdjustRuleDetails(ctx context.Context, identifier string, newDetails []model.CPUAdjustRuleDetail) error {
+func (o *AdjustOperator) UpdateCPUAdjustRuleDetails(ctx context.Context, identifier string, newDetails []model.CPUAdjustRuleDetail) (err error) {
+	logger.Infof("ENTER AdjustOperator.UpdateCPUAdjustRuleDetails: identifier=%s", identifier)
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT AdjustOperator.UpdateCPUAdjustRuleDetails: error=%v", err)
+		} else {
+			logger.Info("EXIT AdjustOperator.UpdateCPUAdjustRuleDetails: success")
+		}
+	}()
 	// 1. Get group UUID from identifier (supports rule_id and group_uuid)
 	group, err := o.GetAdjustRulesByIdentifier(ctx, identifier)
 	if err != nil {
@@ -1122,17 +1316,24 @@ func (o *AdjustOperator) UpdateCPUAdjustRuleDetails(ctx context.Context, identif
 				"limit_percent":    updateDetail.LimitPercent,
 				"updated_at":       updateDetail.UpdatedAt,
 			}).Error; err != nil {
-			log.Printf("[UPDATE-ERROR] Failed to update CPU detail: rule_id=%s, group_uuid=%s, error=%v", group.RuleID, groupUUID, err)
+			logger.Errorf("[UPDATE-ERROR] Failed to update CPU detail: rule_id=%s, group_uuid=%s, error=%v", group.RuleID, groupUUID, err)
 			return fmt.Errorf("failed to update CPU detail: %w", err)
 		}
 
-		log.Printf("[UPDATE-INFO] CPU adjustment rule details updated: rule_id=%s, group_uuid=%s", group.RuleID, groupUUID)
 		return nil
 	})
 }
 
 // UpdateBWAdjustRuleDetails updates BW adjustment rule details (preserves metadata)
-func (o *AdjustOperator) UpdateBWAdjustRuleDetails(ctx context.Context, groupUUID string, newDetails []model.BWAdjustRuleDetail) error {
+func (o *AdjustOperator) UpdateBWAdjustRuleDetails(ctx context.Context, groupUUID string, newDetails []model.BWAdjustRuleDetail) (err error) {
+	logger.Infof("ENTER AdjustOperator.UpdateBWAdjustRuleDetails: groupUUID=%s", groupUUID)
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT AdjustOperator.UpdateBWAdjustRuleDetails: error=%v", err)
+		} else {
+			logger.Info("EXIT AdjustOperator.UpdateBWAdjustRuleDetails: success")
+		}
+	}()
 	// 1. Validate: must have exactly one detail
 	if len(newDetails) != 1 {
 		return fmt.Errorf("invalid detail count: expected 1, got %d (group_uuid=%s)", len(newDetails), groupUUID)
@@ -1172,17 +1373,24 @@ func (o *AdjustOperator) UpdateBWAdjustRuleDetails(ctx context.Context, groupUUI
 				"limit_value_pct":    updateDetail.LimitValuePct,
 				"updated_at":         updateDetail.UpdatedAt,
 			}).Error; err != nil {
-			log.Printf("[UPDATE-ERROR] Failed to update BW detail: group_uuid=%s, error=%v", groupUUID, err)
+			logger.Errorf("[UPDATE-ERROR] Failed to update BW detail: group_uuid=%s, error=%v", groupUUID, err)
 			return fmt.Errorf("failed to update BW detail: %w", err)
 		}
 
-		log.Printf("[UPDATE-INFO] BW adjustment rule details updated: groupUUID=%s", groupUUID)
 		return nil
 	})
 }
 
 // UpdateAdjustRuleGroupBasicInfo updates basic information of an adjustment rule group
-func (o *AdjustOperator) UpdateAdjustRuleGroupBasicInfo(ctx context.Context, groupUUID string, updates map[string]interface{}) error {
+func (o *AdjustOperator) UpdateAdjustRuleGroupBasicInfo(ctx context.Context, groupUUID string, updates map[string]interface{}) (err error) {
+	logger.Infof("ENTER AdjustOperator.UpdateAdjustRuleGroupBasicInfo: groupUUID=%s, fields=%v", groupUUID, updates)
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT AdjustOperator.UpdateAdjustRuleGroupBasicInfo: error=%v", err)
+		} else {
+			logger.Info("EXIT AdjustOperator.UpdateAdjustRuleGroupBasicInfo: success")
+		}
+	}()
 	_, db := common.GetContextDB(ctx)
 
 	if len(updates) == 0 {
@@ -1194,15 +1402,13 @@ func (o *AdjustOperator) UpdateAdjustRuleGroupBasicInfo(ctx context.Context, gro
 		Updates(updates)
 
 	if result.Error != nil {
-		log.Printf("[UPDATE-ERROR] Failed to update rule group basic info: groupUUID=%s, error=%v", groupUUID, result.Error)
+		logger.Errorf("[UPDATE-ERROR] Failed to update rule group basic info: groupUUID=%s, error=%v", groupUUID, result.Error)
 		return fmt.Errorf("failed to update rule group: %w", result.Error)
 	}
 
 	if result.RowsAffected == 0 {
-		log.Printf("[UPDATE-WARNING] No rule group found with uuid: %s", groupUUID)
 		return fmt.Errorf("no rule group found with uuid: %s", groupUUID)
 	}
 
-	log.Printf("[UPDATE-INFO] Rule group basic info updated: groupUUID=%s, fields=%v", groupUUID, updates)
 	return nil
 }

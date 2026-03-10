@@ -53,13 +53,14 @@ func createRouterIface(ctx context.Context, rtype string, router *model.Router, 
 	name := ""
 	ifType := ""
 	for _, subnet = range subnets {
-		if rtype == "public" {
+		switch rtype {
+		case "public":
 			name = fmt.Sprintf("pub%d", subnet.ID)
 			ifType = "gateway_public"
-		} else if rtype == "private" {
+		case "private":
 			name = fmt.Sprintf("pub%d", subnet.ID)
 			ifType = "gateway_private"
-		} else {
+		default:
 			continue
 		}
 		iface, err = CreateInterface(ctx, subnet, router.ID, owner, router.Hyper, 0, 0, "", "", name, ifType, nil, false)
@@ -72,8 +73,16 @@ func createRouterIface(ctx context.Context, rtype string, router *model.Router, 
 }
 
 func (a *RouterAdmin) Create(ctx context.Context, name string) (router *model.Router, err error) {
+	logger.Infof("ENTER RouterAdmin.Create: name=%s", name)
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT RouterAdmin.Create: error=%v", err)
+		} else {
+			logger.Info("EXIT RouterAdmin.Create: success")
+		}
+	}()
 	memberShip := GetMemberShip(ctx)
-	permit := memberShip.CheckPermission(model.Writer)
+	permit := memberShip.CheckOrgPermission(model.OrgWriter)
 	if !permit {
 		logger.Error("Not authorized to create routers")
 		err = NewCLError(ErrPermissionDenied, "Not authorized to create routers", nil)
@@ -108,20 +117,27 @@ func (a *RouterAdmin) Create(ctx context.Context, name string) (router *model.Ro
 }
 
 func (a *RouterAdmin) Get(ctx context.Context, id int64) (router *model.Router, err error) {
+	logger.Infof("ENTER RouterAdmin.Get: id=%d", id)
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT RouterAdmin.Get: error=%v", err)
+		} else {
+			logger.Info("EXIT RouterAdmin.Get: success")
+		}
+	}()
 	if id <= 0 {
 		logger.Error("returning nil router")
 		return
 	}
 	ctx, db := GetContextDB(ctx)
 	memberShip := GetMemberShip(ctx)
-	where := memberShip.GetWhere()
+	where, args := memberShip.GetOrgFilter()
 	router = &model.Router{Model: model.Model{ID: id}}
-	if err = db.Preload("Subnets").Where(where).Take(router).Error; err != nil {
-		logger.Error("Failed to query router", err)
-		err = NewCLError(ErrRouterNotFound, "Failed to find router", err)
-		return
+	if err = db.Preload("Subnets").Where(where, args...).Take(router).Error; err != nil {
+		logger.Error("DB failed to query router", err)
+		return nil, NewCLError(ErrRouterNotFound, "Failed to find router", err)
 	}
-	permit := memberShip.ValidateOwner(model.Reader, router.Owner)
+	permit := memberShip.CheckResourceOrg(model.OrgReader, router.Owner)
 	if !permit {
 		logger.Error("Not authorized to read the router")
 		err = NewCLError(ErrPermissionDenied, "Not authorized to read the router", nil)
@@ -131,17 +147,23 @@ func (a *RouterAdmin) Get(ctx context.Context, id int64) (router *model.Router, 
 }
 
 func (a *RouterAdmin) GetRouterByUUID(ctx context.Context, uuID string) (router *model.Router, err error) {
+	logger.Infof("ENTER RouterAdmin.GetRouterByUUID: uuID=%s", uuID)
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT RouterAdmin.GetRouterByUUID: error=%v", err)
+		} else {
+			logger.Info("EXIT RouterAdmin.GetRouterByUUID: success")
+		}
+	}()
 	ctx, db := GetContextDB(ctx)
 	memberShip := GetMemberShip(ctx)
-	where := memberShip.GetWhere()
+	where, args := memberShip.GetOrgFilter()
 	router = &model.Router{}
-	err = db.Preload("Subnets").Where(where).Where("uuid = ?", uuID).Take(router).Error
-	if err != nil {
-		logger.Error("Failed to query router, %v", err)
+	if err = db.Preload("Subnets").Where(where, args...).Where("uuid = ?", uuID).Take(router).Error; err != nil {
 		err = NewCLError(ErrRouterNotFound, "Failed to find router", err)
 		return
 	}
-	permit := memberShip.ValidateOwner(model.Reader, router.Owner)
+	permit := memberShip.CheckResourceOrg(model.OrgReader, router.Owner)
 	if !permit {
 		logger.Error("Not authorized to read the router")
 		err = NewCLError(ErrPermissionDenied, "Not authorized to read the router", nil)
@@ -151,17 +173,23 @@ func (a *RouterAdmin) GetRouterByUUID(ctx context.Context, uuID string) (router 
 }
 
 func (a *RouterAdmin) GetRouterByName(ctx context.Context, name string) (router *model.Router, err error) {
+	logger.Infof("ENTER RouterAdmin.GetRouterByName: name=%s", name)
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT RouterAdmin.GetRouterByName: error=%v", err)
+		} else {
+			logger.Info("EXIT RouterAdmin.GetRouterByName: success")
+		}
+	}()
 	ctx, db := GetContextDB(ctx)
 	memberShip := GetMemberShip(ctx)
-	where := memberShip.GetWhere()
+	where, args := memberShip.GetOrgFilter()
 	router = &model.Router{}
-	err = db.Preload("Subnets").Where(where).Where("name = ?", name).Take(router).Error
-	if err != nil {
-		logger.Error("Failed to query router, %v", err)
+	if err = db.Preload("Subnets").Where(where, args...).Where("name = ?", name).Take(router).Error; err != nil {
 		err = NewCLError(ErrRouterNotFound, "Failed to find router", err)
 		return
 	}
-	permit := memberShip.ValidateOwner(model.Reader, router.Owner)
+	permit := memberShip.CheckResourceOrg(model.OrgReader, router.Owner)
 	if !permit {
 		logger.Error("Not authorized to read the router")
 		err = NewCLError(ErrPermissionDenied, "Not authorized to read the router", nil)
@@ -171,6 +199,14 @@ func (a *RouterAdmin) GetRouterByName(ctx context.Context, name string) (router 
 }
 
 func (a *RouterAdmin) GetRouter(ctx context.Context, reference *BaseReference) (router *model.Router, err error) {
+	logger.Infof("ENTER RouterAdmin.GetRouter: reference=%+v", reference)
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT RouterAdmin.GetRouter: error=%v", err)
+		} else {
+			logger.Info("EXIT RouterAdmin.GetRouter: success")
+		}
+	}()
 	if reference == nil || (reference.ID == "" && reference.Name == "") {
 		err = NewCLError(ErrInvalidParameter, "Router base reference must be provided with either uuid or name", nil)
 		return
@@ -187,6 +223,14 @@ func (a *RouterAdmin) GetRouter(ctx context.Context, reference *BaseReference) (
 }
 
 func (a *RouterAdmin) Update(ctx context.Context, id int64, name string, pubID int64) (router *model.Router, err error) {
+	logger.Infof("ENTER RouterAdmin.Update: id=%d, name=%s, pubID=%d", id, name, pubID)
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT RouterAdmin.Update: error=%v", err)
+		} else {
+			logger.Info("EXIT RouterAdmin.Update: success")
+		}
+	}()
 	ctx, db := GetContextDB(ctx)
 	router = &model.Router{Model: model.Model{ID: id}}
 	if err = db.Find(router).Error; err != nil {
@@ -206,6 +250,14 @@ func (a *RouterAdmin) Update(ctx context.Context, id int64, name string, pubID i
 }
 
 func (a *RouterAdmin) Delete(ctx context.Context, router *model.Router) (err error) {
+	logger.Infof("ENTER RouterAdmin.Delete: routerID=%d, uuid=%s", router.ID, router.UUID)
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT RouterAdmin.Delete: error=%v", err)
+		} else {
+			logger.Info("EXIT RouterAdmin.Delete: success")
+		}
+	}()
 	ctx, db, newTransaction := StartTransaction(ctx)
 	defer func() {
 		if newTransaction {
@@ -213,7 +265,7 @@ func (a *RouterAdmin) Delete(ctx context.Context, router *model.Router) (err err
 		}
 	}()
 	memberShip := GetMemberShip(ctx)
-	permit := memberShip.ValidateOwner(model.Writer, router.Owner)
+	permit := memberShip.CheckResourceOrg(model.OrgReader, router.Owner)
 	if !permit {
 		logger.Error("Not authorized to delete the router")
 		err = NewCLError(ErrPermissionDenied, "Not authorized to delete the router", nil)
@@ -316,7 +368,21 @@ func (a *RouterAdmin) Delete(ctx context.Context, router *model.Router) (err err
 }
 
 func (a *RouterAdmin) List(ctx context.Context, offset, limit int64, order, query string) (total int64, routers []*model.Router, err error) {
+	logger.Infof("ENTER RouterAdmin.List: offset=%d, limit=%d, order=%s, query=%s", offset, limit, order, query)
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT RouterAdmin.List: error=%v", err)
+		} else {
+			logger.Info("EXIT RouterAdmin.List: success")
+		}
+	}()
 	memberShip := GetMemberShip(ctx)
+	permit := memberShip.CheckOrgPermission(model.OrgReader)
+	if !permit {
+		logger.Error("Not authorized for this operation")
+		err = NewCLError(ErrPermissionDenied, "Not authorized for this operation", nil)
+		return
+	}
 	ctx, db := GetContextDB(ctx)
 	if limit == 0 {
 		limit = 16
@@ -329,20 +395,20 @@ func (a *RouterAdmin) List(ctx context.Context, offset, limit int64, order, quer
 	if query != "" {
 		query = fmt.Sprintf("name like '%%%s%%'", query)
 	}
-	where := memberShip.GetWhere()
+	queryBuilder, args := memberShip.GetOrgFilter()
 	routers = []*model.Router{}
-	if err = db.Model(&model.Router{}).Where(where).Where(query).Count(&total).Error; err != nil {
-		logger.Error("DB failed to count router, %v", err)
-		err = NewCLError(ErrSQLSyntaxError, "Failed to count router", err)
+	if err = db.Model(&model.Router{}).Where(queryBuilder, args...).Where(query).Count(&total).Error; err != nil {
+		logger.Error("DB failed to count router(s), %v", err)
+		err = NewCLError(ErrSQLSyntaxError, "Failed to count router(s)", err)
 		return
 	}
 	db = dbs.Sortby(db.Offset(offset).Limit(limit), order)
-	if err = db.Preload("Subnets").Where(where).Where(query).Find(&routers).Error; err != nil {
+	if err = db.Where(queryBuilder, args...).Where(query).Find(&routers).Error; err != nil {
 		logger.Error("DB failed to query routers, %v", err)
 		err = NewCLError(ErrSQLSyntaxError, "Failed to query routers", err)
 		return
 	}
-	permit := memberShip.CheckPermission(model.Admin)
+	permit = memberShip.IsSystemAdmin()
 	if permit {
 		db = db.Offset(0).Limit(-1)
 		for _, router := range routers {
@@ -358,6 +424,16 @@ func (a *RouterAdmin) List(ctx context.Context, offset, limit int64, order, quer
 }
 
 func (v *RouterView) List(c *macaron.Context, store session.Store) {
+	logger.Infof("ENTER RouterView.List: query=%s", c.Req.URL.RawQuery)
+	defer logger.Info("EXIT RouterView.List")
+	memberShip := GetMemberShip(c.Req.Context())
+	permit := memberShip.CheckOrgPermission(model.OrgReader)
+	if !permit {
+		logger.Error("Not authorized for this operation")
+		c.Data["ErrorMsg"] = "Not authorized for this operation"
+		c.HTML(http.StatusBadRequest, "error")
+		return
+	}
 	offset := c.QueryInt64("offset")
 	limit := c.QueryInt64("limit")
 	if limit == 0 {
@@ -393,6 +469,14 @@ func (v *RouterView) List(c *macaron.Context, store session.Store) {
 }
 
 func (v *RouterView) Delete(c *macaron.Context, store session.Store) (err error) {
+	logger.Infof("ENTER RouterView.Delete: id=%s", c.Params("id"))
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT RouterView.Delete: error=%v", err)
+		} else {
+			logger.Info("EXIT RouterView.Delete: success")
+		}
+	}()
 	ctx := c.Req.Context()
 	id := c.Params("id")
 	if id == "" {
@@ -429,8 +513,10 @@ func (v *RouterView) Delete(c *macaron.Context, store session.Store) (err error)
 }
 
 func (v *RouterView) New(c *macaron.Context, store session.Store) {
+	logger.Infof("ENTER RouterView.New: query=%s", c.Req.URL.RawQuery)
+	defer logger.Info("EXIT RouterView.New")
 	memberShip := GetMemberShip(c.Req.Context())
-	permit := memberShip.CheckPermission(model.Writer)
+	permit := memberShip.CheckOrgPermission(model.OrgWriter)
 	if !permit {
 		logger.Error("Not authorized for this operation")
 		c.Data["ErrorMsg"] = "Not authorized for this operation"
@@ -441,6 +527,8 @@ func (v *RouterView) New(c *macaron.Context, store session.Store) {
 }
 
 func (v *RouterView) Edit(c *macaron.Context, store session.Store) {
+	logger.Infof("ENTER RouterView.Edit: id=%s, query=%s", c.Params("id"), c.Req.URL.RawQuery)
+	defer logger.Info("EXIT RouterView.Edit")
 	memberShip := GetMemberShip(c.Req.Context())
 	db := DB()
 	id := c.Params("id")
@@ -451,7 +539,12 @@ func (v *RouterView) Edit(c *macaron.Context, store session.Store) {
 		c.HTML(http.StatusBadRequest, "error")
 		return
 	}
-	permit, err := memberShip.CheckOwner(model.Writer, "routers", int64(routerID))
+	permit, err := memberShip.CheckResourceOrgByID(model.OrgWriter, "routers", int64(routerID))
+	if err != nil {
+		c.Data["ErrorMsg"] = err.Error()
+		c.HTML(http.StatusBadRequest, "error")
+		return
+	}
 	if !permit {
 		logger.Error("Not authorized for this operation")
 		c.Data["ErrorMsg"] = "Not authorized for this operation"
@@ -468,6 +561,8 @@ func (v *RouterView) Edit(c *macaron.Context, store session.Store) {
 }
 
 func (v *RouterView) Patch(c *macaron.Context, store session.Store) {
+	logger.Infof("ENTER RouterView.Patch: id=%s, query=%s", c.Params("id"), c.Req.URL.RawQuery)
+	defer logger.Info("EXIT RouterView.Patch")
 	memberShip := GetMemberShip(c.Req.Context())
 	redirectTo := "../routers"
 	id := c.Params("id")
@@ -478,7 +573,12 @@ func (v *RouterView) Patch(c *macaron.Context, store session.Store) {
 		c.HTML(http.StatusBadRequest, "error")
 		return
 	}
-	permit, err := memberShip.CheckOwner(model.Writer, "routers", int64(routerID))
+	permit, err := memberShip.CheckResourceOrgByID(model.OrgWriter, "routers", int64(routerID))
+	if err != nil {
+		c.Data["ErrorMsg"] = err.Error()
+		c.HTML(http.StatusBadRequest, "error")
+		return
+	}
 	if !permit {
 		logger.Error("Not authorized for this operation")
 		c.Data["ErrorMsg"] = "Not authorized for this operation"
@@ -503,6 +603,16 @@ func (v *RouterView) Patch(c *macaron.Context, store session.Store) {
 }
 
 func (v *RouterView) Create(c *macaron.Context, store session.Store) {
+	logger.Infof("ENTER RouterView.Create: query=%s", c.Req.URL.RawQuery)
+	defer logger.Info("EXIT RouterView.Create")
+	memberShip := GetMemberShip(c.Req.Context())
+	permit := memberShip.CheckOrgPermission(model.OrgWriter)
+	if !permit {
+		logger.Error("Not authorized for this operation")
+		c.Data["ErrorMsg"] = "Not authorized for this operation"
+		c.HTML(http.StatusBadRequest, "error")
+		return
+	}
 	redirectTo := "../routers"
 	name := c.QueryTrim("name")
 	_, err := routerAdmin.Create(c.Req.Context(), name)

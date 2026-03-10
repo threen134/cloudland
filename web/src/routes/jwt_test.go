@@ -24,7 +24,7 @@ import (
 func TestSigningMethodRS256(t *testing.T) {
 	idrsa := testdata["key.private"].(*rsa.PrivateKey)
 	idrsaPub := testdata["key.public"].(*rsa.PublicKey)
-	claim, _, _ := NewClaims("admin", "admin", "1", "1", model.Reader)
+	claim, _, _ := NewClaims("admin@cloudland.local", "admin", "1", "1", model.SystemAdmin, model.OrgAdmin, model.UserActive)
 	token := jwt.NewWithClaims(jwt.SigningMethodRS256, claim)
 	s, err := token.SignedString(idrsa)
 	if err != nil {

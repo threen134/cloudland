@@ -8,116 +8,116 @@ package common
 
 import (
 	"context"
-	"fmt"
 
 	"web/src/model"
 )
 
 type MemberShip struct {
-	UserID   int64
-	UserName string
-	OrgID    int64
-	OrgName  string
-	Role     model.Role
+	UserID     int64
+	UserEmail  string
+	SystemRole model.SystemRole
+	OrgID      int64
+	OrgName    string
+	OrgRole    model.OrgRole
+	IsOrgOwner bool
 }
 
-func (m *MemberShip) GetWhere() (where string) {
-	if m.OrgName == "admin" && m.Role == model.Admin {
-		where = ""
-	} else {
-		where = fmt.Sprintf("owner = %d", m.OrgID)
-	}
-	return
+// IsSystemAdmin checks if the user is a system administrator.
+func (m *MemberShip) IsSystemAdmin() bool {
+	return m.SystemRole == model.SystemAdmin
 }
 
-func (m *MemberShip) CheckPermission(reqRole model.Role) (permit bool) {
-	permit = false
-	if m.Role >= reqRole || (m.OrgName == "admin" && m.Role == model.Admin) ||
-		(m.OrgName == "admin" && m.UserName == "admin") {
-		permit = true
+// EffectiveOrgRole returns the effective OrgRole, considering Org Owner status.
+// If user is Org Owner, effective role is at least OrgAdmin.
+func (m *MemberShip) EffectiveOrgRole() model.OrgRole {
+	if m.IsOrgOwner && m.OrgRole < model.OrgAdmin {
+		return model.OrgAdmin
 	}
-	return
+	return m.OrgRole
 }
 
-func (m *MemberShip) CheckCreater(table string, id int64) (isCreater bool, err error) {
-	isCreater = false
-	db := DB()
-	type Result struct {
-		Creater int64
+// GetOrgFilter returns parameterized SQL filter for resource queries.
+// SystemAdmin: ("", nil) — global view (all orgs)
+// Normal user: ("owner = ?", []interface{}{m.OrgID})
+func (m *MemberShip) GetOrgFilter() (query string, args []interface{}) {
+	if m.IsSystemAdmin() {
+		return "", nil
 	}
-	var result Result
-	err = db.Table(table).Select("creater").Where("id = ?", id).Scan(&result).Error
-	if err != nil {
-		logger.Error("Failed to query resource creater", err)
-		return
-	}
-	if m.UserID == result.Creater || (m.OrgName == "admin" && m.Role == model.Admin) {
-		isCreater = true
-	}
-	return
+	return "owner = ?", []interface{}{m.OrgID}
 }
 
-func (m *MemberShip) CheckUser(id int64) (permit bool, err error) {
-	permit = false
-	db := DB()
-	user := &model.User{Model: model.Model{ID: id}}
-	err = db.Take(&user).Error
-	if err != nil {
-		logger.Error("Failed to query user", err)
-		return
+// CheckOrgPermission checks if the user has the required OrgRole in the current Org.
+// Uses EffectiveOrgRole to account for Org Owner status.
+func (m *MemberShip) CheckOrgPermission(reqRole model.OrgRole) bool {
+	if m.IsSystemAdmin() {
+		return true
 	}
-	if user.ID == m.UserID || (m.OrgName == "admin" && m.Role == model.Admin) {
-		permit = true
-	}
-	return
+	return m.EffectiveOrgRole() >= reqRole
 }
 
-func (m *MemberShip) CheckOwner(reqRole model.Role, table string, id int64) (isOwner bool, err error) {
-	isOwner = false
+// CheckSystemPermission checks if the user is a SystemAdmin.
+func (m *MemberShip) CheckSystemPermission() bool {
+	return m.IsSystemAdmin()
+}
+
+// CheckResourceOrg checks if the user has the required role AND the resource belongs
+// to the user's current Org. ownerOrgID is the resource's Owner field value.
+func (m *MemberShip) CheckResourceOrg(reqRole model.OrgRole, ownerOrgID int64) bool {
+	if ownerOrgID == 0 {
+		return false
+	}
+	if m.IsSystemAdmin() {
+		return true
+	}
+	if m.EffectiveOrgRole() < reqRole {
+		return false
+	}
+	return m.OrgID == ownerOrgID
+}
+
+// CheckResourceOrgByID queries the DB to get the resource's owner Org, then validates.
+func (m *MemberShip) CheckResourceOrgByID(reqRole model.OrgRole, table string, id int64) (bool, error) {
 	if id == 0 {
-		return
+		return false, nil
 	}
-	if m.Role < reqRole {
-		return
+	if m.IsSystemAdmin() {
+		return true, nil
+	}
+	if m.EffectiveOrgRole() < reqRole {
+		return false, nil
 	}
 	type Result struct {
 		Owner int64
 	}
 	var result Result
 	db := DB()
-	err = db.Table(table).Select("owner").Where("id = ?", id).Scan(&result).Error
+	err := db.Table(table).Select("owner").Where("id = ?", id).Scan(&result).Error
 	if err != nil {
 		logger.Error("Failed to query resource owner", err)
 		return false, NewCLError(ErrOwnerNotFound, "Failed to query resource owner", err)
 	}
-	if m.OrgID == result.Owner || m.Role == model.Admin {
-		isOwner = true
-	}
-	return
+	return m.OrgID == result.Owner, nil
 }
 
-func (m *MemberShip) ValidateOwner(reqRole model.Role, owner int64) (isOwner bool) {
-	isOwner = false
-	if owner == 0 {
-		return
-	}
-	if m.Role < reqRole {
-		return
-	}
-	if m.OrgID == owner || m.Role == model.Admin {
-		isOwner = true
-	}
-	return
+// CanManageOrgMembers checks if the user can manage members of the current Org.
+func (m *MemberShip) CanManageOrgMembers() bool {
+	return m.IsSystemAdmin() || m.EffectiveOrgRole() >= model.OrgAdmin
 }
 
-func (m *MemberShip) CheckAdmin(reqRole model.Role, table string, id int64) (admin bool, err error) {
-	admin = false
-	if m.Role == model.Admin {
-		admin = true
-		return
+// CanManageTargetOrg checks if the user can manage members of a specific Org.
+func (m *MemberShip) CanManageTargetOrg(orgID int64) bool {
+	if m.IsSystemAdmin() {
+		return true
 	}
-	admin, err = m.CheckOwner(reqRole, table, id)
-	return
+	return m.CanManageOrgMembers() && m.OrgID == orgID
+}
+
+// CheckUser checks if the target user is the current user or if current user is SystemAdmin.
+func (m *MemberShip) CheckUser(id int64) (bool, error) {
+	if m.UserID == id || m.IsSystemAdmin() {
+		return true, nil
+	}
+	return false, nil
 }
 
 func (m *MemberShip) SetContext(ctx context.Context) context.Context {
@@ -132,20 +132,54 @@ func GetMemberShip(ctx context.Context) *MemberShip {
 	return &MemberShip{}
 }
 
+// GetDBMemberShip retrieves a MemberShip from DB by joining users, members, and organizations.
 func GetDBMemberShip(userID, orgID int64) (m *MemberShip, err error) {
 	db := DB()
 	m = &MemberShip{
 		UserID: userID,
 		OrgID:  orgID,
 	}
+
+	// Get user info
+	user := &model.User{Model: model.Model{ID: userID}}
+	err = db.Take(user).Error
+	if err != nil {
+		logger.Error("Failed to query user", err)
+		return nil, NewCLError(ErrUserNotFound, "User not found", err)
+	}
+	m.UserEmail = user.Email
+	m.SystemRole = user.SystemRole
+
+	// Guard: skip org lookup for Dormant users with no org context
+	if orgID == 0 {
+		m.OrgName = ""
+		m.IsOrgOwner = false
+		m.OrgRole = model.OrgNone
+		return m, nil
+	}
+
+	// Get org info
+	org := &model.Organization{Model: model.Model{ID: orgID}}
+	err = db.Take(org).Error
+	if err != nil {
+		logger.Error("Failed to query organization", err)
+		return nil, NewCLError(ErrOrgNotFound, "Organization not found", err)
+	}
+	m.OrgName = org.Name
+	m.IsOrgOwner = (org.OwnerUserID == userID)
+
+	// Get member record (SystemAdmin may not have a member record for every org)
 	member := &model.Member{}
 	err = db.Where("user_id = ? and org_id = ?", userID, orgID).Take(member).Error
-	if err != nil || member.ID == 0 {
+	if err != nil {
+		if m.SystemRole == model.SystemAdmin {
+			// SystemAdmin doesn't need a member record
+			m.OrgRole = model.OrgNone
+			return m, nil
+		}
 		logger.Error("Failed to query member", err)
 		return nil, NewCLError(ErrMemberNotFound, "Member not found", err)
 	}
-	m.UserName = member.UserName
-	m.OrgName = member.OrgName
-	m.Role = member.Role
+	m.OrgRole = member.OrgRole
 	return
 }

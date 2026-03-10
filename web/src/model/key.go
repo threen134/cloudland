@@ -16,8 +16,9 @@ type Key struct {
 	Name        string `gorm:"unique_index:idx_account_key;type:varchar(100)"`
 	PublicKey   string `gorm:"type:varchar(8192)"`
 	Length      int32
-	FingerPrint string      `gorm:"type:varchar(100)"`
-	Instances   []*Instance `gorm:"many2many:instance_keys;"`
+	FingerPrint string        `gorm:"type:varchar(100)"`
+	Instances   []*Instance   `gorm:"many2many:instance_keys;"`
+	OwnerInfo   *Organization `gorm:"-"` /* Transient: populated for SystemAdmin list view */
 }
 
 func init() {

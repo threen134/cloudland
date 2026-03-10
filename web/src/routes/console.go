@@ -34,7 +34,11 @@ const (
 )
 
 // Randomly generate a string of length 10
-func RandomStr() string {
+func RandomStr() (res string) {
+	logger.Info("ENTER RandomStr: generate random string")
+	defer func() {
+		logger.Infof("EXIT RandomStr: resultLength=%d", len(res))
+	}()
 	str := "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
 	bytes := []byte(str)
 	result := []byte{}
@@ -46,8 +50,16 @@ func RandomStr() string {
 }
 
 func MakeToken(ctx context.Context, instance *model.Instance) (token string, err error) {
+	logger.Infof("ENTER MakeToken: instanceID=%d", instance.ID)
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT MakeToken: error=%v", err)
+		} else {
+			logger.Infof("EXIT MakeToken: tokenGenerated")
+		}
+	}()
 	memberShip := GetMemberShip(ctx)
-	permit := memberShip.CheckPermission(model.Writer)
+	permit := memberShip.CheckOrgPermission(model.OrgWriter)
 	if !permit {
 		logger.Error("Not authorized to create interface in public subnet")
 		return "", NewCLError(ErrPermissionDenied, "Not authorized to create interface in public subnet", nil)
@@ -55,7 +67,7 @@ func MakeToken(ctx context.Context, instance *model.Instance) (token string, err
 	secret := RandomStr()
 	tkClaim := TokenClaim{
 		OrgID:      memberShip.OrgID,
-		Role:       memberShip.Role,
+		OrgRole:    memberShip.OrgRole,
 		InstanceID: int(instance.ID),
 		Secret:     secret,
 	}
@@ -81,7 +93,15 @@ func MakeToken(ctx context.Context, instance *model.Instance) (token string, err
 	return
 }
 
-func ResolveToken(ctx context.Context, tokenString string) (int, *MemberShip, error) {
+func ResolveToken(ctx context.Context, tokenString string) (instanceID int, memberShip *MemberShip, err error) {
+	logger.Infof("ENTER ResolveToken: tokenLength=%d", len(tokenString))
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT ResolveToken: error=%v", err)
+		} else {
+			logger.Infof("EXIT ResolveToken: instanceID=%d", instanceID)
+		}
+	}()
 	token, err := jwt.ParseWithClaims(tokenString, &TokenClaim{}, func(token *jwt.Token) (interface{}, error) {
 		return SignedSeret, nil
 	})
@@ -93,7 +113,7 @@ func ResolveToken(ctx context.Context, tokenString string) (int, *MemberShip, er
 		return 0, nil, NewCLError(ErrInvalidConsoleToken, "Token is invalid", nil)
 	}
 	ctx, db := GetContextDB(ctx)
-	instanceID := claims.InstanceID
+	instanceID = claims.InstanceID
 	console := &model.Console{Instance: int64(instanceID)}
 	err = db.Where(console).Take(console).Error
 	if err != nil {
@@ -107,14 +127,16 @@ func ResolveToken(ctx context.Context, tokenString string) (int, *MemberShip, er
 	if hashSecret != console.HashSecret {
 		return 0, nil, NewCLError(ErrInvalidConsoleToken, "Secret can not pass validation", nil)
 	}
-	memberShip := &MemberShip{
-		OrgID: claims.OrgID,
-		Role:  claims.Role,
+	memberShip = &MemberShip{
+		OrgID:   claims.OrgID,
+		OrgRole: claims.OrgRole,
 	}
 	return instanceID, memberShip, nil
 }
 
 func (a *ConsoleView) ConsoleURL(c *macaron.Context, store session.Store) {
+	logger.Infof("ENTER ConsoleURL: query=%s", c.Req.URL.RawQuery)
+	defer logger.Info("EXIT ConsoleURL")
 	ctx := c.Req.Context()
 	id := c.Params("id")
 	if id == "" {
@@ -146,5 +168,4 @@ func (a *ConsoleView) ConsoleURL(c *macaron.Context, store session.Store) {
 	consoleURL := fmt.Sprintf("https://novnc.com/noVNC/vnc.html?host=%s&port=%d&autoconnect=true&encrypt=true&path=websockify?token=%s", accessAddr, accessPort, tokenString)
 	c.Resp.Header().Set("Location", consoleURL)
 	c.JSON(301, nil)
-	return
 }

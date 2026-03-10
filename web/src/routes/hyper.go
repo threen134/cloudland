@@ -30,6 +30,14 @@ type HyperAdmin struct{}
 type HyperView struct{}
 
 func (a *HyperAdmin) List(ctx context.Context, offset, limit int64, order, query string) (total int64, hypers []*model.Hyper, err error) {
+	logger.Infof("ENTER HyperAdmin.List: offset=%d, limit=%d, order=%s, query=%s", offset, limit, order, query)
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT HyperAdmin.List: error=%v", err)
+		} else {
+			logger.Infof("EXIT HyperAdmin.List: total=%d, count=%d", total, len(hypers))
+		}
+	}()
 	ctx, db := GetContextDB(ctx)
 	if limit == 0 {
 		limit = 16
@@ -41,7 +49,6 @@ func (a *HyperAdmin) List(ctx context.Context, offset, limit int64, order, query
 	if query != "" {
 		query = fmt.Sprintf("hostname like '%%%s%%'", query)
 	}
-	logger.Infof("Listing hypervisors: offset=%d, limit=%d, order=%s, query=%s", offset, limit, order, query)
 
 	hypers = []*model.Hyper{}
 	if err = db.Model(&model.Hyper{}).Where("hostid >= 0").Where(query).Count(&total).Error; err != nil {
@@ -63,6 +70,14 @@ func (a *HyperAdmin) List(ctx context.Context, offset, limit int64, order, query
 }
 
 func (a *HyperAdmin) GetHyperByUUID(ctx context.Context, uuid string) (hyper *model.Hyper, err error) {
+	logger.Infof("ENTER HyperAdmin.GetHyperByUUID: uuid=%s", uuid)
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT HyperAdmin.GetHyperByUUID: error=%v", err)
+		} else {
+			logger.Infof("EXIT HyperAdmin.GetHyperByUUID: success, hostID=%d", hyper.Hostid)
+		}
+	}()
 	_, db := GetContextDB(ctx)
 	hyper = &model.Hyper{}
 	if err = db.Preload("Zone").Where("uuid = ?", uuid).Take(hyper).Error; err != nil {
@@ -77,6 +92,14 @@ func (a *HyperAdmin) GetHyperByUUID(ctx context.Context, uuid string) (hyper *mo
 }
 
 func (a *HyperAdmin) SetStatus(ctx context.Context, hostID int32, status int32) (err error) {
+	logger.Infof("ENTER HyperAdmin.SetStatus: hostID=%d, status=%d", hostID, status)
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT HyperAdmin.SetStatus: error=%v", err)
+		} else {
+			logger.Info("EXIT HyperAdmin.SetStatus: success")
+		}
+	}()
 	hyper, err := a.GetHyperByHostid(ctx, hostID)
 	if err != nil {
 		return
@@ -94,8 +117,16 @@ func (a *HyperAdmin) SetStatus(ctx context.Context, hostID int32, status int32) 
 // 3. modify the zone of the hypervisor
 // 4. modify the over commit rates of hypervisor
 func (a *HyperAdmin) Update(ctx context.Context, hyper *model.Hyper) (err error) {
+	logger.Infof("ENTER HyperAdmin.Update: hostID=%d, status=%d, zoneID=%d", hyper.Hostid, hyper.Status, hyper.ZoneID)
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT HyperAdmin.Update: error=%v", err)
+		} else {
+			logger.Info("EXIT HyperAdmin.Update: success")
+		}
+	}()
 	memberShip := GetMemberShip(ctx)
-	permit := memberShip.CheckPermission(model.Admin)
+	permit := memberShip.CheckSystemPermission()
 	if !permit {
 		err = NewCLError(ErrPermissionDenied, "Not authorized for this operation", nil)
 		logger.Error("Not authorized for this operation", err)
@@ -167,8 +198,16 @@ func (a *HyperAdmin) Update(ctx context.Context, hyper *model.Hyper) (err error)
 }
 
 func (a *HyperAdmin) GetHyperByHostid(ctx context.Context, hostid int32) (hyper *model.Hyper, err error) {
+	logger.Infof("ENTER HyperAdmin.GetHyperByHostid: hostid=%d", hostid)
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT HyperAdmin.GetHyperByHostid: error=%v", err)
+		} else {
+			logger.Infof("EXIT HyperAdmin.GetHyperByHostid: success, hostname=%s", hyper.Hostname)
+		}
+	}()
 	memberShip := GetMemberShip(ctx)
-	permit := memberShip.CheckPermission(model.Admin)
+	permit := memberShip.CheckSystemPermission()
 	if !permit {
 		err = NewCLError(ErrPermissionDenied, "Not authorized for this operation", nil)
 		logger.Error("Not authorized for this operation", err)
@@ -194,8 +233,16 @@ func (a *HyperAdmin) GetHyperByHostid(ctx context.Context, hostid int32) (hyper 
 }
 
 func (a *HyperAdmin) GetHyperByHostname(ctx context.Context, hostname string) (hyper *model.Hyper, err error) {
+	logger.Infof("ENTER HyperAdmin.GetHyperByHostname: hostname=%s", hostname)
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT HyperAdmin.GetHyperByHostname: error=%v", err)
+		} else {
+			logger.Infof("EXIT HyperAdmin.GetHyperByHostname: success, hostID=%d", hyper.Hostid)
+		}
+	}()
 	memberShip := GetMemberShip(ctx)
-	permit := memberShip.CheckPermission(model.Admin)
+	permit := memberShip.CheckSystemPermission()
 	if !permit {
 		err = NewCLError(ErrPermissionDenied, "Not authorized for this operation", nil)
 		logger.Error("Not authorized for this operation", err)
@@ -211,8 +258,10 @@ func (a *HyperAdmin) GetHyperByHostname(ctx context.Context, hostname string) (h
 }
 
 func (v *HyperView) List(c *macaron.Context, store session.Store) {
+	logger.Infof("ENTER HyperView.List: query=%s", c.Req.URL.RawQuery)
+	defer logger.Info("EXIT HyperView.List")
 	memberShip := GetMemberShip(c.Req.Context())
-	permit := memberShip.CheckPermission(model.Admin)
+	permit := memberShip.CheckSystemPermission()
 	if !permit {
 		logger.Error("Not authorized for this operation")
 		c.Data["ErrorMsg"] = "Not authorized for this operation"
@@ -251,8 +300,10 @@ func (v *HyperView) List(c *macaron.Context, store session.Store) {
 }
 
 func (v *HyperView) Edit(c *macaron.Context, store session.Store) {
+	logger.Infof("ENTER HyperView.Edit: uuid=%s", c.Params(":uuid"))
+	defer logger.Info("EXIT HyperView.Edit")
 	memberShip := GetMemberShip(c.Req.Context())
-	permit := memberShip.CheckPermission(model.Admin)
+	permit := memberShip.CheckSystemPermission()
 	if !permit {
 		logger.Error("Not authorized for this operation")
 		c.Data["ErrorMsg"] = "Not authorized for this operation"
@@ -282,8 +333,10 @@ func (v *HyperView) Edit(c *macaron.Context, store session.Store) {
 }
 
 func (v *HyperView) SetHyperStatus(c *macaron.Context, store session.Store) {
+	logger.Infof("ENTER HyperView.SetHyperStatus: uuid=%s, status=%s", c.Params(":uuid"), c.Query("status"))
+	defer logger.Info("EXIT HyperView.SetHyperStatus")
 	memberShip := GetMemberShip(c.Req.Context())
-	permit := memberShip.CheckPermission(model.Admin)
+	permit := memberShip.CheckSystemPermission()
 	if !permit {
 		logger.Error("Not authorized for this operation")
 		c.Data["ErrorMsg"] = "Not authorized for this operation"
@@ -312,6 +365,14 @@ func (v *HyperView) SetHyperStatus(c *macaron.Context, store session.Store) {
 }
 
 func (a *HyperAdmin) AllocateHostID(ctx context.Context) (hostID int32, err error) {
+	logger.Infof("ENTER HyperAdmin.AllocateHostID")
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT HyperAdmin.AllocateHostID: error=%v", err)
+		} else {
+			logger.Infof("EXIT HyperAdmin.AllocateHostID: hostID=%d", hostID)
+		}
+	}()
 	_, db := GetContextDB(ctx)
 	var maxID int32
 	if err = db.Model(&model.Hyper{}).Select("max(hostid)").Row().Scan(&maxID); err != nil {
@@ -331,8 +392,16 @@ func (a *HyperAdmin) AllocateHostID(ctx context.Context) (hostID int32, err erro
 }
 
 func (a *HyperAdmin) Deploy(ctx context.Context, ip, hostname, networkDevice, vlanDevice, dnsServer, domain, zoneName, virtType string) (hyper *model.Hyper, deployCmd string, err error) {
+	logger.Infof("ENTER HyperAdmin.Deploy: ip=%s, hostname=%s, zone=%s", ip, hostname, zoneName)
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT HyperAdmin.Deploy: error=%v", err)
+		} else {
+			logger.Infof("EXIT HyperAdmin.Deploy: success, hostID=%d", hyper.Hostid)
+		}
+	}()
 	memberShip := GetMemberShip(ctx)
-	permit := memberShip.CheckPermission(model.Admin)
+	permit := memberShip.CheckSystemPermission()
 	if !permit {
 		return nil, "", NewCLError(ErrPermissionDenied, "Not authorized for this operation", nil)
 	}
@@ -428,8 +497,16 @@ func (a *HyperAdmin) Deploy(ctx context.Context, ip, hostname, networkDevice, vl
 }
 
 func (a *HyperAdmin) Maintain(ctx context.Context, hostID int32, migrate bool, targetHyper int32) (err error) {
+	logger.Infof("ENTER HyperAdmin.Maintain: hostID=%d, migrate=%v, targetHyper=%d", hostID, migrate, targetHyper)
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT HyperAdmin.Maintain: error=%v", err)
+		} else {
+			logger.Info("EXIT HyperAdmin.Maintain: success")
+		}
+	}()
 	memberShip := GetMemberShip(ctx)
-	permit := memberShip.CheckPermission(model.Admin)
+	permit := memberShip.CheckSystemPermission()
 	if !permit {
 		return NewCLError(ErrPermissionDenied, "Not authorized for this operation", nil)
 	}
@@ -470,8 +547,16 @@ func (a *HyperAdmin) Maintain(ctx context.Context, hostID int32, migrate bool, t
 }
 
 func (a *HyperAdmin) Delete(ctx context.Context, hostID int32) (err error) {
+	logger.Infof("ENTER HyperAdmin.Delete: hostID=%d", hostID)
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT HyperAdmin.Delete: error=%v", err)
+		} else {
+			logger.Info("EXIT HyperAdmin.Delete: success")
+		}
+	}()
 	memberShip := GetMemberShip(ctx)
-	permit := memberShip.CheckPermission(model.Admin)
+	permit := memberShip.CheckSystemPermission()
 	if !permit {
 		return NewCLError(ErrPermissionDenied, "Not authorized for this operation", nil)
 	}
@@ -524,8 +609,10 @@ func (a *HyperAdmin) Delete(ctx context.Context, hostID int32) (err error) {
 }
 
 func (v *HyperView) Deploy(c *macaron.Context, store session.Store) {
+	logger.Infof("ENTER HyperView.Deploy: query=%s", c.Req.URL.RawQuery)
+	defer logger.Info("EXIT HyperView.Deploy")
 	memberShip := GetMemberShip(c.Req.Context())
-	permit := memberShip.CheckPermission(model.Admin)
+	permit := memberShip.CheckSystemPermission()
 	if !permit {
 		logger.Error("Not authorized for this operation")
 		c.Data["ErrorMsg"] = "Not authorized for this operation"
@@ -579,8 +666,10 @@ func (v *HyperView) Deploy(c *macaron.Context, store session.Store) {
 }
 
 func (v *HyperView) Maintain(c *macaron.Context, store session.Store) {
+	logger.Infof("ENTER HyperView.Maintain: uuid=%s, query=%s", c.Params(":uuid"), c.Req.URL.RawQuery)
+	defer logger.Info("EXIT HyperView.Maintain")
 	memberShip := GetMemberShip(c.Req.Context())
-	permit := memberShip.CheckPermission(model.Admin)
+	permit := memberShip.CheckSystemPermission()
 	if !permit {
 		logger.Error("Not authorized for this operation")
 		c.Data["ErrorMsg"] = "Not authorized for this operation"
@@ -610,8 +699,10 @@ func (v *HyperView) Maintain(c *macaron.Context, store session.Store) {
 }
 
 func (v *HyperView) Patch(c *macaron.Context, store session.Store) {
+	logger.Infof("ENTER HyperView.Patch: uuid=%s, query=%s", c.Params(":uuid"), c.Req.URL.RawQuery)
+	defer logger.Info("EXIT HyperView.Patch")
 	memberShip := GetMemberShip(c.Req.Context())
-	permit := memberShip.CheckPermission(model.Admin)
+	permit := memberShip.CheckSystemPermission()
 	if !permit {
 		logger.Error("Not authorized for this operation")
 		c.Data["ErrorMsg"] = "Not authorized for this operation"

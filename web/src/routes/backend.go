@@ -31,6 +31,14 @@ type BackendAdmin struct{}
 type BackendView struct{}
 
 func (a *BackendAdmin) CreateHaproxyConf(ctx context.Context, updatedlistener *model.Listener, loadBalancer *model.LoadBalancer) (err error) {
+	logger.Infof("ENTER BackendAdmin.CreateHaproxyConf: loadBalancerID=%d", loadBalancer.ID)
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT BackendAdmin.CreateHaproxyConf: error=%v", err)
+		} else {
+			logger.Info("EXIT BackendAdmin.CreateHaproxyConf: success")
+		}
+	}()
 	listeners := loadBalancer.Listeners
 	listenerCfgs := []*ListenerConfig{}
 	for _, listener := range listeners {
@@ -80,8 +88,16 @@ func (a *BackendAdmin) CreateHaproxyConf(ctx context.Context, updatedlistener *m
 }
 
 func (a *BackendAdmin) Create(ctx context.Context, name, backendAddr string, listener *model.Listener, loadBalancer *model.LoadBalancer) (backend *model.Backend, err error) {
+	logger.Infof("ENTER BackendAdmin.Create: name=%s, backendAddr=%s, listenerID=%d, loadBalancerID=%d", name, backendAddr, listener.ID, loadBalancer.ID)
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT BackendAdmin.Create: error=%v", err)
+		} else {
+			logger.Infof("EXIT BackendAdmin.Create: success, backendID=%d", backend.ID)
+		}
+	}()
 	memberShip := GetMemberShip(ctx)
-	permit := memberShip.CheckPermission(model.Writer)
+	permit := memberShip.CheckOrgPermission(model.OrgWriter)
 	if !permit {
 		logger.Error("Not authorized to create backend")
 		err = NewCLError(ErrPermissionDenied, "Not authorized to create backend", nil)
@@ -112,20 +128,28 @@ func (a *BackendAdmin) Create(ctx context.Context, name, backendAddr string, lis
 }
 
 func (a *BackendAdmin) Get(ctx context.Context, id int64, listener *model.Listener) (backend *model.Backend, err error) {
+	logger.Infof("ENTER BackendAdmin.Get: id=%d, listenerID=%d", id, listener.ID)
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT BackendAdmin.Get: error=%v", err)
+		} else {
+			logger.Infof("EXIT BackendAdmin.Get: success, backendUUID=%s", backend.UUID)
+		}
+	}()
 	if id <= 0 {
 		logger.Error("returning nil backend")
 		return
 	}
 	ctx, db := GetContextDB(ctx)
 	memberShip := GetMemberShip(ctx)
-	where := memberShip.GetWhere()
+	query, args := memberShip.GetOrgFilter()
 	backend = &model.Backend{Model: model.Model{ID: id}}
-	if err = db.Where(where).Take(backend).Error; err != nil {
+	if err = db.Where(query, args...).Take(backend).Error; err != nil {
 		logger.Error("Failed to query backend", err)
 		err = NewCLError(ErrBackendNotFound, "Failed to find backend", err)
 		return
 	}
-	permit := memberShip.ValidateOwner(model.Reader, backend.Owner)
+	permit := memberShip.CheckResourceOrg(model.OrgReader, backend.Owner)
 	if !permit {
 		logger.Error("Not authorized to read the backend")
 		err = NewCLError(ErrPermissionDenied, "Not authorized to read the backend", nil)
@@ -135,17 +159,25 @@ func (a *BackendAdmin) Get(ctx context.Context, id int64, listener *model.Listen
 }
 
 func (a *BackendAdmin) GetBackendByUUID(ctx context.Context, uuID string) (backend *model.Backend, err error) {
+	logger.Infof("ENTER BackendAdmin.GetBackendByUUID: uuID=%s", uuID)
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT BackendAdmin.GetBackendByUUID: error=%v", err)
+		} else {
+			logger.Infof("EXIT BackendAdmin.GetBackendByUUID: success, id=%d", backend.ID)
+		}
+	}()
 	ctx, db := GetContextDB(ctx)
 	memberShip := GetMemberShip(ctx)
-	where := memberShip.GetWhere()
+	query, args := memberShip.GetOrgFilter()
 	backend = &model.Backend{}
-	err = db.Where(where).Where("uuid = ?", uuID).Take(backend).Error
+	err = db.Where(query, args...).Where("uuid = ?", uuID).Take(backend).Error
 	if err != nil {
 		logger.Error("Failed to query backend, %v", err)
 		err = NewCLError(ErrRouterNotFound, "Failed to find backend", err)
 		return
 	}
-	permit := memberShip.ValidateOwner(model.Reader, backend.Owner)
+	permit := memberShip.CheckResourceOrg(model.OrgReader, backend.Owner)
 	if !permit {
 		logger.Error("Not authorized to read the backend")
 		err = NewCLError(ErrPermissionDenied, "Not authorized to read the backend", nil)
@@ -155,17 +187,25 @@ func (a *BackendAdmin) GetBackendByUUID(ctx context.Context, uuID string) (backe
 }
 
 func (a *BackendAdmin) GetBackendByName(ctx context.Context, name string) (backend *model.Backend, err error) {
+	logger.Infof("ENTER BackendAdmin.GetBackendByName: name=%s", name)
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT BackendAdmin.GetBackendByName: error=%v", err)
+		} else {
+			logger.Infof("EXIT BackendAdmin.GetBackendByName: success, id=%d", backend.ID)
+		}
+	}()
 	ctx, db := GetContextDB(ctx)
 	memberShip := GetMemberShip(ctx)
-	where := memberShip.GetWhere()
+	query, args := memberShip.GetOrgFilter()
 	backend = &model.Backend{}
-	err = db.Where(where).Where("name = ?", name).Take(backend).Error
+	err = db.Where(query, args...).Where("name = ?", name).Take(backend).Error
 	if err != nil {
 		logger.Error("Failed to query backend, %v", err)
 		err = NewCLError(ErrRouterNotFound, "Failed to find backend", err)
 		return
 	}
-	permit := memberShip.ValidateOwner(model.Reader, backend.Owner)
+	permit := memberShip.CheckResourceOrg(model.OrgReader, backend.Owner)
 	if !permit {
 		logger.Error("Not authorized to read the backend")
 		err = NewCLError(ErrPermissionDenied, "Not authorized to read the backend", nil)
@@ -175,6 +215,14 @@ func (a *BackendAdmin) GetBackendByName(ctx context.Context, name string) (backe
 }
 
 func (a *BackendAdmin) GetBackend(ctx context.Context, reference *BaseReference) (backend *model.Backend, err error) {
+	logger.Infof("ENTER BackendAdmin.GetBackend: reference=%v", reference)
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT BackendAdmin.GetBackend: error=%v", err)
+		} else {
+			logger.Info("EXIT BackendAdmin.GetBackend: success")
+		}
+	}()
 	if reference == nil || (reference.ID == "" && reference.Name == "") {
 		err = NewCLError(ErrInvalidParameter, "Router base reference must be provided with either uuid or name", nil)
 		return
@@ -191,6 +239,14 @@ func (a *BackendAdmin) GetBackend(ctx context.Context, reference *BaseReference)
 }
 
 func (a *BackendAdmin) Update(ctx context.Context, backend *model.Backend, backendAddr string) (lb *model.Backend, err error) {
+	logger.Infof("ENTER BackendAdmin.Update: backendID=%d, backendAddr=%s", backend.ID, backendAddr)
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT BackendAdmin.Update: error=%v", err)
+		} else {
+			logger.Info("EXIT BackendAdmin.Update: success")
+		}
+	}()
 	ctx, db := GetContextDB(ctx)
 	if backend.BackendAddr != backendAddr {
 		backend.BackendAddr = backendAddr
@@ -205,6 +261,14 @@ func (a *BackendAdmin) Update(ctx context.Context, backend *model.Backend, backe
 }
 
 func (a *BackendAdmin) Delete(ctx context.Context, backend *model.Backend, listener *model.Listener, loadBalancer *model.LoadBalancer) (err error) {
+	logger.Infof("ENTER BackendAdmin.Delete: backendID=%d, listenerID=%d, loadBalancerID=%d", backend.ID, listener.ID, loadBalancer.ID)
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT BackendAdmin.Delete: error=%v", err)
+		} else {
+			logger.Info("EXIT BackendAdmin.Delete: success")
+		}
+	}()
 	ctx, db, newTransaction := StartTransaction(ctx)
 	defer func() {
 		if newTransaction {
@@ -212,7 +276,7 @@ func (a *BackendAdmin) Delete(ctx context.Context, backend *model.Backend, liste
 		}
 	}()
 	memberShip := GetMemberShip(ctx)
-	permit := memberShip.ValidateOwner(model.Writer, backend.Owner)
+	permit := memberShip.CheckResourceOrg(model.OrgWriter, backend.Owner)
 	if !permit {
 		logger.Error("Not authorized to delete the backend")
 		err = NewCLError(ErrPermissionDenied, "Not authorized to delete the router", nil)
@@ -247,6 +311,14 @@ func (a *BackendAdmin) Delete(ctx context.Context, backend *model.Backend, liste
 }
 
 func (a *BackendAdmin) List(ctx context.Context, offset, limit int64, order string, listener *model.Listener) (total int64, backends []*model.Backend, err error) {
+	logger.Infof("ENTER BackendAdmin.List: offset=%d, limit=%d, order=%s, listenerID=%d", offset, limit, order, listener.ID)
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT BackendAdmin.List: error=%v", err)
+		} else {
+			logger.Infof("EXIT BackendAdmin.List: total=%d, count=%d", total, len(backends))
+		}
+	}()
 	memberShip := GetMemberShip(ctx)
 	ctx, db := GetContextDB(ctx)
 	if limit == 0 {
@@ -257,38 +329,29 @@ func (a *BackendAdmin) List(ctx context.Context, offset, limit int64, order stri
 		order = "created_at"
 	}
 	where := fmt.Sprintf("listener_id = %d", listener.ID)
-	wm := memberShip.GetWhere()
-	if wm != "" {
-		where = fmt.Sprintf("%s and %s", where, wm)
-	}
+	query, args := memberShip.GetOrgFilter()
 	backends = []*model.Backend{}
-	if err = db.Model(&model.Backend{}).Where(where).Count(&total).Error; err != nil {
+	if err = db.Model(&model.Backend{}).Where(where).Where(query, args...).Count(&total).Error; err != nil {
 		logger.Error("DB failed to count backends, %v", err)
 		err = NewCLError(ErrSQLSyntaxError, "Failed to count backends", err)
 		return
 	}
 	db = dbs.Sortby(db.Offset(offset).Limit(limit), order)
-	if err = db.Where(where).Find(&backends).Error; err != nil {
+	if err = db.Where(where).Where(query, args...).Find(&backends).Error; err != nil {
 		logger.Error("DB failed to query backends, %v", err)
 		err = NewCLError(ErrSQLSyntaxError, "Failed to query backends", err)
 		return
 	}
-	permit := memberShip.CheckPermission(model.Admin)
+	permit := memberShip.CheckSystemPermission()
 	if permit {
-		db = db.Offset(0).Limit(-1)
-		for _, backend := range backends {
-			backend.OwnerInfo = &model.Organization{Model: model.Model{ID: backend.Owner}}
-			if err = db.Take(backend.OwnerInfo).Error; err != nil {
-				logger.Error("Failed to query owner info", err)
-				err = NewCLError(ErrOwnerNotFound, "Failed to query owner info", err)
-				return
-			}
-		}
+		_ = permit // SystemAdmin can see all backends
 	}
 	return
 }
 
 func (v *BackendView) List(c *macaron.Context, store session.Store) {
+	logger.Infof("ENTER BackendView.List: params=%v, query=%s", c.Params, c.Req.URL.RawQuery)
+	defer logger.Info("EXIT BackendView.List")
 	ctx := c.Req.Context()
 	offset := c.QueryInt64("offset")
 	limit := c.QueryInt64("limit")
@@ -357,6 +420,8 @@ func (v *BackendView) List(c *macaron.Context, store session.Store) {
 }
 
 func (v *BackendView) Delete(c *macaron.Context, store session.Store) (err error) {
+	logger.Infof("ENTER BackendView.Delete: params=%v", c.Params)
+	defer logger.Info("EXIT BackendView.Delete")
 	ctx := c.Req.Context()
 	id := c.Params("id")
 	if id == "" {
@@ -435,9 +500,11 @@ func (v *BackendView) Delete(c *macaron.Context, store session.Store) (err error
 }
 
 func (v *BackendView) New(c *macaron.Context, store session.Store) {
+	logger.Infof("ENTER BackendView.New: params=%v", c.Params)
+	defer logger.Info("EXIT BackendView.New")
 	ctx := c.Req.Context()
 	memberShip := GetMemberShip(ctx)
-	permit := memberShip.CheckPermission(model.Writer)
+	permit := memberShip.CheckOrgPermission(model.OrgWriter)
 	if !permit {
 		logger.Error("Not authorized for this operation")
 		c.Data["ErrorMsg"] = "Not authorized for this operation"
@@ -448,6 +515,8 @@ func (v *BackendView) New(c *macaron.Context, store session.Store) {
 }
 
 func (v *BackendView) Edit(c *macaron.Context, store session.Store) {
+	logger.Infof("ENTER BackendView.Edit: params=%v", c.Params)
+	defer logger.Info("EXIT BackendView.Edit")
 	ctx := c.Req.Context()
 	lbid := c.Params("lbid")
 	if lbid == "" {
@@ -511,6 +580,8 @@ func (v *BackendView) Edit(c *macaron.Context, store session.Store) {
 }
 
 func (v *BackendView) Patch(c *macaron.Context, store session.Store) {
+	logger.Infof("ENTER BackendView.Patch: params=%v, query=%s", c.Params, c.Req.URL.RawQuery)
+	defer logger.Info("EXIT BackendView.Patch")
 	ctx := c.Req.Context()
 	redirectTo := "../backends"
 	lbid := c.Params("lbid")
@@ -582,6 +653,8 @@ func (v *BackendView) Patch(c *macaron.Context, store session.Store) {
 }
 
 func (v *BackendView) Create(c *macaron.Context, store session.Store) {
+	logger.Infof("ENTER BackendView.Create: params=%v, query=%s", c.Params, c.Req.URL.RawQuery)
+	defer logger.Info("EXIT BackendView.Create")
 	ctx := c.Req.Context()
 	redirectTo := "../backends"
 	lbid := c.Params("lbid")

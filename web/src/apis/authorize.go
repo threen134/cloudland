@@ -9,6 +9,7 @@ package apis
 
 import (
 	"net/http"
+	"strconv"
 
 	. "web/src/common"
 	"web/src/model"
@@ -44,47 +45,63 @@ func Authorize() gin.HandlerFunc {
 			return
 		}
 
-		reqUser := ""
-		if len(claims.Audience) > 0 {
-			reqUser = claims.Audience[0]
+		// Parse user ID and org ID from JWT claims
+		uid, err := strconv.ParseInt(claims.UID, 10, 64)
+		if err != nil {
+			ErrorResponse(c, http.StatusUnauthorized, "Invalid user ID in token", err)
+			c.Abort()
+			return
 		}
-		reqOrg := claims.Subject
-		realUser := c.Request.Header.Get("X-Resource-User")
-		realOrg := c.Request.Header.Get("X-Resource-Org")
-		if realUser != "" || realOrg != "" {
-			if reqUser != "admin" {
-				ErrorResponse(c, http.StatusUnauthorized, "Not authorized to change resource owner", nil)
+		var oid int64
+		if claims.OID == "" {
+			oid = 0
+		} else {
+			oid, err = strconv.ParseInt(claims.OID, 10, 64)
+			if err != nil {
+				ErrorResponse(c, http.StatusUnauthorized, "Invalid org ID in token", err)
 				c.Abort()
 				return
 			}
 		}
-		if realUser == "" {
-			realUser = reqUser
-			realOrg = reqOrg
+
+		// X-Resource-Org: only SystemAdmin can switch org context
+		realOrgStr := c.Request.Header.Get("X-Resource-Org")
+		if realOrgStr != "" {
+			if claims.SR != model.SystemAdmin {
+				ErrorResponse(c, http.StatusForbidden, "Not authorized to switch org context", nil)
+				c.Abort()
+				return
+			}
+			realOrgID, parseErr := strconv.ParseInt(realOrgStr, 10, 64)
+			if parseErr != nil {
+				ErrorResponse(c, http.StatusBadRequest, "Invalid X-Resource-Org value", parseErr)
+				c.Abort()
+				return
+			}
+			oid = realOrgID
 		}
-		user, err := userAdmin.GetUserByName(realUser)
+
+		// Build MemberShip from DB
+		memberShip, err := GetDBMemberShip(uid, oid)
 		if err != nil {
-			ErrorResponse(c, http.StatusBadRequest, "Invalid resource user", err)
-			c.Abort()
-			return
-		}
-		if realOrg == "" {
-			realOrg = realUser
-		}
-		org, err := orgAdmin.GetOrgByName(c.Request.Context(), realOrg)
-		if err != nil {
-			ErrorResponse(c, http.StatusBadRequest, "Invalid resource org", err)
-			c.Abort()
-			return
-		}
-		memberShip, err := GetDBMemberShip(user.ID, org.ID)
-		if err != nil {
-			ErrorResponse(c, http.StatusBadRequest, "Invalid resource user with org membership", err)
-			c.Abort()
-			return
-		}
-		if realUser == "admin" {
-			memberShip.Role = model.Admin
+			// If user has no Org (Dormant), still allow through with empty membership
+			if oid == 0 && claims.ST == model.UserDormant {
+				userEmail := ""
+				if len(claims.Audience) > 0 {
+					userEmail = claims.Audience[0]
+				}
+				memberShip = &MemberShip{
+					UserID:     uid,
+					UserEmail:  userEmail,
+					SystemRole: claims.SR,
+					OrgID:      0,
+					OrgRole:    model.OrgNone,
+				}
+			} else {
+				ErrorResponse(c, http.StatusBadRequest, "Invalid resource user with org membership", err)
+				c.Abort()
+				return
+			}
 		}
 		logger.Infof("MemberShip: %v\n", memberShip)
 		ctx := memberShip.SetContext(c.Request.Context())

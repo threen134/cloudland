@@ -72,7 +72,7 @@ func (v *UserAPI) Get(c *gin.Context) {
 	userResp := &UserResponse{
 		UserInfo: &ResourceReference{
 			ID:   user.UUID,
-			Name: user.Username,
+			Name: user.Email,
 		},
 	}
 	logger.Debugf("Got user : %+v", userResp)
@@ -106,15 +106,28 @@ func (v *UserAPI) Patch(c *gin.Context) {
 		return
 	}
 	logger.Debugf("Patch user %s with %+v", uuID, payload)
-	user, err = userAdmin.Update(ctx, user.ID, payload.Password, nil)
-	if err != nil {
-		ErrorResponse(c, http.StatusBadRequest, "Invalid query", err)
+	// Use ChangePassword with empty old password (admin override)
+	memberShip := GetMemberShip(ctx)
+	if memberShip.IsSystemAdmin() {
+		// SystemAdmin can reset password without old password
+		hash, hashErr := userAdmin.GenerateFromPassword(payload.Password)
+		if hashErr != nil {
+			ErrorResponse(c, http.StatusInternalServerError, "Failed to hash password", hashErr)
+			return
+		}
+		db := DB()
+		if err = db.Model(user).Update("password", hash).Error; err != nil {
+			ErrorResponse(c, http.StatusInternalServerError, "Failed to update password", err)
+			return
+		}
+	} else {
+		ErrorResponse(c, http.StatusForbidden, "Only SystemAdmin can reset password via API", nil)
 		return
 	}
 	userResp := &UserResponse{
 		UserInfo: &ResourceReference{
 			ID:        user.UUID,
-			Name:      user.Username,
+			Name:      user.Email,
 			CreatedAt: user.CreatedAt.Format(TimeStringForMat),
 			UpdatedAt: user.UpdatedAt.Format(TimeStringForMat),
 		},
@@ -171,51 +184,64 @@ func (v *UserAPI) Create(c *gin.Context) {
 		return
 	}
 	logger.Debugf("Creating user with %+v", payload)
-	username := payload.Username
+	email := payload.Username // "username" field is email
 	password := payload.Password
-	// PET-349 in case want to have same uuid for user and org for all regions
-	userUUID := payload.ID // optional, if not provided, will generate a new one
+	userUUID := payload.ID
 	if userUUID != "" && !utils.IsUUID(userUUID) {
 		logger.Errorf("Invalid user uuid: %s", userUUID)
 		ErrorResponse(c, http.StatusBadRequest, "Invalid user uuid", nil)
 		return
 	}
 
-	user, err := userAdmin.Create(ctx, username, password, userUUID)
-	if err != nil {
-		logger.Errorf("Failed to create user: %+v", err)
-		ErrorResponse(c, http.StatusInternalServerError, "Failed to create user", err)
-		return
+	// Scenario 2B: if no org specified, create a Dormant user without Org
+	// Scenario 1: if org specified, create user + org atomically
+	orgName := ""
+	if payload.Org != nil && payload.Org.Name != "" {
+		orgName = payload.Org.Name
 	}
-	orgUUID := ""
-	if payload.Org != nil && payload.Org.ID != "" {
-		orgUUID = payload.Org.ID // optional, if not provided, will generate a new one
-	}
-	if orgUUID != "" && !utils.IsUUID(orgUUID) {
-		logger.Errorf("Invalid org uuid: %s", orgUUID)
-		ErrorResponse(c, http.StatusBadRequest, "Invalid org uuid", nil)
-		return
-	}
-	org, err := orgAdmin.Create(ctx, username, username, orgUUID)
-	if err != nil {
-		logger.Errorf("Failed to create org: %+v", err)
-		ErrorResponse(c, http.StatusInternalServerError, "Failed to create org", err)
-		return
-	}
-	userResp := &UserResponse{
-		UserInfo: &ResourceReference{
+
+	userResp := &UserResponse{}
+	if orgName == "" {
+		// Scenario 2B: Dormant user (no org)
+		user, err := userAdmin.Create(ctx, email, password, userUUID)
+		if err != nil {
+			logger.Errorf("Failed to create dormant user: %+v", err)
+			ErrorResponse(c, http.StatusInternalServerError, "Failed to create user", err)
+			return
+		}
+		userResp.UserInfo = &ResourceReference{
 			ID:        user.UUID,
-			Name:      username,
+			Name:      email,
 			CreatedAt: user.CreatedAt.Format(TimeStringForMat),
 			UpdatedAt: user.UpdatedAt.Format(TimeStringForMat),
-		},
-		OrgInfo: &ResourceReference{
+		}
+	} else {
+		// Scenario 1: user + org
+		user, org, err := userAdmin.CreateWithOrg(ctx, email, password, orgName, "")
+		if err != nil {
+			logger.Errorf("Failed to create user with org: %+v", err)
+			ErrorResponse(c, http.StatusInternalServerError, "Failed to create user", err)
+			return
+		}
+		// If UUID was specified, update it
+		if userUUID != "" {
+			db := DB()
+			db.Model(user).Update("uuid", userUUID)
+			user.UUID = userUUID
+		}
+		userResp.UserInfo = &ResourceReference{
+			ID:        user.UUID,
+			Name:      email,
+			CreatedAt: user.CreatedAt.Format(TimeStringForMat),
+			UpdatedAt: user.UpdatedAt.Format(TimeStringForMat),
+		}
+		userResp.OrgInfo = &ResourceReference{
 			ID:        org.UUID,
-			Name:      username,
+			Name:      orgName,
 			CreatedAt: org.CreatedAt.Format(TimeStringForMat),
 			UpdatedAt: org.UpdatedAt.Format(TimeStringForMat),
-		},
-		Role: model.Owner.String(),
+		}
+		userResp.Role = model.OrgAdmin.String()
 	}
 	logger.Debugf("Created user successfully, %+v", userResp)
 	c.JSON(http.StatusOK, userResp)
@@ -243,7 +269,7 @@ func (v *UserAPI) List(c *gin.Context) {
 	}
 	limit, err := strconv.Atoi(limitStr)
 	if err != nil {
-		logger.Errorf("Invalid query limit: %s, %+v", err)
+		logger.Errorf("Invalid query limit: %s, %+v", limitStr, err)
 		ErrorResponse(c, http.StatusBadRequest, "Invalid query limit: "+limitStr, err)
 		return
 	}
@@ -269,7 +295,7 @@ func (v *UserAPI) List(c *gin.Context) {
 		userListResp.Users[i] = &UserResponse{
 			UserInfo: &ResourceReference{
 				ID:        user.UUID,
-				Name:      user.Username,
+				Name:      user.Email,
 				CreatedAt: user.CreatedAt.Format(TimeStringForMat),
 				UpdatedAt: user.UpdatedAt.Format(TimeStringForMat),
 			},
@@ -279,6 +305,61 @@ func (v *UserAPI) List(c *gin.Context) {
 	c.JSON(http.StatusOK, userListResp)
 }
 
+// @Summary check if email exists
+// @Description check if email exists (for middleware registration)
+// @tags Authorization
+// @Accept  json
+// @Produce json
+// @Param   email    query     string  true   "Email to check"
+// @Success 200 {object} map[string]interface{}
+// @Failure 400 {object} common.APIError "Bad request"
+// @Router /validate [get]
+func (v *UserAPI) ValidateEmail(c *gin.Context) {
+	email := c.Query("email")
+	if email == "" {
+		ErrorResponse(c, http.StatusBadRequest, "Email query parameter is required", nil)
+		return
+	}
+	exists, userID, err := userAdmin.ValidateEmail(c.Request.Context(), email)
+	if err != nil {
+		ErrorResponse(c, http.StatusInternalServerError, "Failed to validate email", err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"exists":  exists,
+		"user_id": userID,
+	})
+}
+
+// @Summary change own password
+// @Description change own password
+// @tags Authorization
+// @Accept  json
+// @Produce json
+// @Param   message	body   map[string]string  true   "Password change payload"
+// @Success 200 {object} map[string]string
+// @Failure 400 {object} common.APIError "Bad request"
+// @Failure 401 {object} common.APIError "Not authorized"
+// @Router /self/password [patch]
+func (v *UserAPI) ChangePassword(c *gin.Context) {
+	ctx := c.Request.Context()
+	memberShip := GetMemberShip(ctx)
+	payload := struct {
+		OldPassword string `json:"old_password" binding:"required"`
+		NewPassword string `json:"new_password" binding:"required,min=8,max=32"`
+	}{}
+	if err := c.ShouldBindJSON(&payload); err != nil {
+		ErrorResponse(c, http.StatusBadRequest, "Invalid input JSON", err)
+		return
+	}
+	err := userAdmin.ChangePassword(ctx, memberShip.UserID, payload.OldPassword, payload.NewPassword)
+	if err != nil {
+		ErrorResponse(c, http.StatusBadRequest, "Failed to change password", err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"status": "ok"})
+}
+
 // @Summary login to get the access token
 // @Description get token by user name
 // @tags Authorization
@@ -286,7 +367,7 @@ func (v *UserAPI) List(c *gin.Context) {
 // @Produce json
 // @Param   message	body   UserPayload  true   "User Credential"
 // @Success 200 {object} UserResponse
-// @Failure 401 {object} common.APIError "Invalied user name or password"
+// @Failure 401 {object} common.APIError "Invalid user name or password"
 // @Router /login [post]
 func (v *UserAPI) LoginPost(c *gin.Context) {
 	payload := &UserPayload{}
@@ -295,45 +376,212 @@ func (v *UserAPI) LoginPost(c *gin.Context) {
 		ErrorResponse(c, http.StatusBadRequest, "Input JSON format error", err)
 		return
 	}
-	username := payload.Username
+	email := payload.Username // "username" field is email
 	password := payload.Password
-	logger.Debugf("Login with username: %s", username)
-	user, err := userAdmin.Validate(c.Request.Context(), username, password)
+	logger.Debugf("Login with email: %s", email)
+	user, err := userAdmin.Validate(c.Request.Context(), email, password)
 	if err != nil {
 		logger.Errorf("Failed to validate user: %+v", err)
 		ErrorResponse(c, http.StatusBadRequest, "Invalid username or password", err)
 		return
 	}
-	orgName := username
-	if payload.Org != nil {
-		orgName = payload.Org.Name
-	}
 	ctx := c.Request.Context()
-	org, err := orgAdmin.GetOrgByName(ctx, orgName)
-	if err != nil {
-		logger.Errorf("Failed to get org: %+v", err)
-		ErrorResponse(c, http.StatusBadRequest, "Invalid organization", err)
-		return
+
+	// Get org context
+	var orgID int64
+	if payload.Org != nil && payload.Org.Name != "" {
+		org, orgErr := orgAdmin.GetOrgByName(ctx, payload.Org.Name)
+		if orgErr != nil {
+			logger.Errorf("Failed to get org: %+v", orgErr)
+			ErrorResponse(c, http.StatusBadRequest, "Invalid organization", orgErr)
+			return
+		}
+		orgID = org.ID
 	}
-	_, role, token, _, _, err := userAdmin.AccessToken(ctx, user.ID, username, orgName)
+
+	oid, _, orgRole, _, token, _, _, err := userAdmin.AccessToken(ctx, user.ID, orgID)
 	if err != nil {
 		logger.Errorf("Failed to get access token: %+v", err)
-		ErrorResponse(c, http.StatusBadRequest, "Invalid organization with username", err)
+		clErr, ok := err.(*CLError)
+		if ok && clErr.Code == ErrUserDisabled {
+			ErrorResponse(c, http.StatusForbidden, "User account is disabled", err)
+		} else {
+			ErrorResponse(c, http.StatusBadRequest, "Invalid organization with username", err)
+		}
 		return
 	}
+
+	// Get org info for response
+	orgResp := &ResourceReference{}
+	if oid > 0 {
+		org, orgErr := orgAdmin.Get(ctx, oid)
+		if orgErr == nil {
+			orgResp.ID = org.UUID
+			orgResp.Name = org.Name
+		}
+	}
+
 	userResp := &UserResponse{
 		UserInfo: &ResourceReference{
-			Name: username,
+			Name: email,
 			ID:   user.UUID,
 		},
-		OrgInfo: &ResourceReference{
-			Name: orgName,
-			ID:   org.UUID,
-		},
+		OrgInfo:     orgResp,
 		AccessToken: token,
-		Role:        role.String(),
+		Role:        orgRole.String(),
 	}
 	logger.Debugf("Login successfully, %+v", userResp)
 	c.JSON(http.StatusOK, userResp)
-	return
+}
+
+// @Summary update own profile
+// @Description update own profile (name, region, language). SystemAdmin can also update any user's remark.
+// @tags Authorization
+// @Accept  json
+// @Produce json
+// @Param   id   path   string  true  "User UUID ('self' for own profile)"
+// @Param   message body map[string]string true "Profile update payload"
+// @Success 200 {object} map[string]string
+// @Failure 400 {object} common.APIError "Bad request"
+// @Failure 401 {object} common.APIError "Not authorized"
+// @Router /users/{id}/profile [patch]
+func (v *UserAPI) UpdateProfile(c *gin.Context) {
+	ctx := c.Request.Context()
+	memberShip := GetMemberShip(ctx)
+
+	uuID := c.Param("id")
+	var targetUserID int64
+	if uuID == "self" || uuID == "" {
+		targetUserID = memberShip.UserID
+	} else {
+		user, err := userAdmin.GetUserByUUID(ctx, uuID)
+		if err != nil {
+			ErrorResponse(c, http.StatusBadRequest, "Invalid user id", err)
+			return
+		}
+		targetUserID = user.ID
+	}
+
+	payload := struct {
+		FirstName string `json:"first_name"`
+		LastName  string `json:"last_name"`
+		Region    string `json:"region"`
+		Language  string `json:"language"`
+		Remark    string `json:"remark"`
+	}{}
+	if err := c.ShouldBindJSON(&payload); err != nil {
+		ErrorResponse(c, http.StatusBadRequest, "Invalid input JSON", err)
+		return
+	}
+
+	err := userAdmin.UpdateProfile(ctx, targetUserID, payload.FirstName, payload.LastName, payload.Region, payload.Language, payload.Remark)
+	if err != nil {
+		ErrorResponse(c, http.StatusForbidden, "Failed to update profile", err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"status": "ok"})
+}
+
+// @Summary demote a SystemAdmin to SystemUser
+// @Description demote a SystemAdmin to SystemUser. Only SystemAdmin can call this. Cannot demote self or the last SystemAdmin.
+// @tags Authorization
+// @Accept  json
+// @Produce json
+// @Param   id   path   string  true  "User UUID"
+// @Success 200 {object} map[string]string
+// @Failure 400 {object} common.APIError "Bad request"
+// @Failure 403 {object} common.APIError "Forbidden"
+// @Router /users/{id}/demote [post]
+func (v *UserAPI) DemoteSystemAdmin(c *gin.Context) {
+	ctx := c.Request.Context()
+	uuID := c.Param("id")
+	user, err := userAdmin.GetUserByUUID(ctx, uuID)
+	if err != nil {
+		ErrorResponse(c, http.StatusBadRequest, "Invalid user id", err)
+		return
+	}
+	if err = userAdmin.DemoteSystemAdmin(ctx, user.ID); err != nil {
+		ErrorResponse(c, http.StatusForbidden, "Failed to demote user", err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"status": "ok"})
+}
+
+// @Summary switch current organization
+// @Description switch the user's current organization context and get a new token
+// @tags Authorization
+// @Accept  json
+// @Produce json
+// @Param   message	body   map[string]interface{}  true   "Org switch payload"
+// @Success 200 {object} UserResponse
+// @Failure 400 {object} common.APIError "Bad request"
+// @Failure 401 {object} common.APIError "Not authorized"
+// @Router /switch-org [post]
+func (v *UserAPI) SwitchOrg(c *gin.Context) {
+	ctx := c.Request.Context()
+	memberShip := GetMemberShip(ctx)
+
+	payload := struct {
+		OrgID int64 `json:"org_id" binding:"required"`
+	}{}
+	err := c.ShouldBindJSON(&payload)
+	if err != nil {
+		logger.Errorf("Failed to bind json: %+v", err)
+		ErrorResponse(c, http.StatusBadRequest, "Invalid input JSON", err)
+		return
+	}
+
+	logger.Debugf("User %d switching to org %d", memberShip.UserID, payload.OrgID)
+	token, issueAt, expiresAt, err := userAdmin.SwitchOrg(ctx, memberShip.UserID, payload.OrgID)
+	if err != nil {
+		logger.Errorf("Failed to switch org: %+v", err)
+		ErrorResponse(c, http.StatusForbidden, "Failed to switch organization", err)
+		return
+	}
+
+	// Get org info for response
+	org, err := orgAdmin.Get(ctx, payload.OrgID)
+	if err != nil {
+		logger.Errorf("Failed to get org info: %+v", err)
+		ErrorResponse(c, http.StatusBadRequest, "Invalid organization", err)
+		return
+	}
+
+	user, err := userAdmin.Get(ctx, memberShip.UserID)
+	if err != nil {
+		logger.Errorf("Failed to get user info: %+v", err)
+		ErrorResponse(c, http.StatusBadRequest, "Invalid user", err)
+		return
+	}
+
+	// We need to find the org role for the user in the target org
+	// SwitchOrg internally already did this, but we need it for the response body
+	member := &model.Member{}
+	db := DB()
+	var orgRole model.OrgRole
+	if err := db.Where("user_id = ? AND org_id = ?", memberShip.UserID, payload.OrgID).Take(member).Error; err == nil {
+		orgRole = member.OrgRole
+	} else if memberShip.IsSystemAdmin() {
+		orgRole = model.OrgNone
+	} else {
+		ErrorResponse(c, http.StatusForbidden, "Not a member of target organization", err)
+		return
+	}
+
+	userResp := &UserResponse{
+		UserInfo: &ResourceReference{
+			Name: user.Email,
+			ID:   user.UUID,
+		},
+		OrgInfo: &ResourceReference{
+			ID:   org.UUID,
+			Name: org.Name,
+		},
+		AccessToken: token,
+		Role:        orgRole.String(),
+	}
+
+	logger.Infof("User %d successfully switched to org %d. New token issued (exp: %d)", memberShip.UserID, payload.OrgID, expiresAt)
+	_ = issueAt
+	c.JSON(http.StatusOK, userResp)
 }

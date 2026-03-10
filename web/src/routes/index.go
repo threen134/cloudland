@@ -18,6 +18,8 @@ import (
 )
 
 func Index(c *macaron.Context, store session.Store) {
+	logger.Infof("ENTER Index: query=%s", c.Req.URL.RawQuery)
+	defer logger.Info("EXIT Index")
 	logout := c.Query("logout")
 	if logout != "" {
 		redirectTo := ""
@@ -29,5 +31,7 @@ func Index(c *macaron.Context, store session.Store) {
 }
 
 func Admin(c *macaron.Context) {
+	logger.Info("ENTER Admin")
+	defer logger.Info("EXIT Admin")
 	c.HTML(200, "dashboard")
 }

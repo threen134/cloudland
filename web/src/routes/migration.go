@@ -34,7 +34,7 @@ type MigrationView struct{}
 func (a *MigrationAdmin) Create(ctx context.Context, name string, instances []*model.Instance, force bool, tgtHyper int32) (migrations []*model.Migration, err error) {
 	logger.Debugf("Start migrating instances to %d", tgtHyper)
 	memberShip := GetMemberShip(ctx)
-	permit := memberShip.CheckPermission(model.Admin)
+	permit := memberShip.CheckSystemPermission()
 	if !permit {
 		logger.Error("Not authorized for this operation")
 		err = NewCLError(ErrPermissionDenied, "Not authorized for this operation", nil)
@@ -183,7 +183,7 @@ func (a *MigrationAdmin) GetMigrationByUUID(ctx context.Context, uuID string) (m
 		return
 	}
 	memberShip := GetMemberShip(ctx)
-	permit := memberShip.CheckPermission(model.Admin)
+	permit := memberShip.CheckSystemPermission()
 	if !permit {
 		logger.Error("Not authorized to get migration")
 		err = NewCLError(ErrPermissionDenied, "Not authorized to get migration", nil)
@@ -202,7 +202,7 @@ func (a *MigrationAdmin) GetMigrationByName(ctx context.Context, name string) (m
 		return
 	}
 	memberShip := GetMemberShip(ctx)
-	permit := memberShip.CheckPermission(model.Admin)
+	permit := memberShip.CheckSystemPermission()
 	if !permit {
 		logger.Error("Not authorized to get migration")
 		err = NewCLError(ErrPermissionDenied, "Not authorized to get migration", nil)
@@ -226,7 +226,7 @@ func (a *MigrationAdmin) Get(ctx context.Context, id int64) (migration *model.Mi
 		return
 	}
 	memberShip := GetMemberShip(ctx)
-	permit := memberShip.CheckPermission(model.Admin)
+	permit := memberShip.CheckSystemPermission()
 	if !permit {
 		logger.Error("Not authorized to get migration")
 		err = NewCLError(ErrPermissionDenied, "Not authorized to get migration", nil)
@@ -280,7 +280,7 @@ func (a *MigrationAdmin) List(ctx context.Context, offset, limit int64, order, q
 
 func (v *MigrationView) List(c *macaron.Context, store session.Store) {
 	memberShip := GetMemberShip(c.Req.Context())
-	permit := memberShip.CheckPermission(model.Admin)
+	permit := memberShip.CheckSystemPermission()
 	if !permit {
 		logger.Error("Not authorized for this operation")
 		c.Data["ErrorMsg"] = "Not authorized for this operation"
@@ -313,7 +313,7 @@ func (v *MigrationView) List(c *macaron.Context, store session.Store) {
 
 func (v *MigrationView) New(c *macaron.Context, store session.Store) {
 	memberShip := GetMemberShip(c.Req.Context())
-	permit := memberShip.CheckPermission(model.Writer)
+	permit := memberShip.CheckOrgPermission(model.OrgWriter)
 	if !permit {
 		logger.Error("Not authorized for this operation")
 		c.Data["ErrorMsg"] = "Not authorized for this operation"

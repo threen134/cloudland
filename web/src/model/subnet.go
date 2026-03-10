@@ -31,14 +31,15 @@ type Subnet struct {
 	Routes       string   `gorm:"type:varchar(256)"`
 	Priority     int32    `gorm:"default:0"` /* Priority for subnet selection, lower value means higher priority */
 	GroupID      int64    `gorm:"index"`
-	Group        *IpGroup `gorm:"foreignkey:GroupID" json:"-" gorm:"-"`
-	IdleCount    int64    `gorm:"-"`
+	Group        *IpGroup `gorm:"foreignkey:GroupID;-" json:"-"`
+	IdleCount    int64         `gorm:"-"`
+	OwnerInfo    *Organization `gorm:"-"` /* Transient: populated for SystemAdmin list view */
 }
 
 type Address struct {
 	Model
 	Owner           int64   `gorm:"default:1"` /* The organization ID of the resource */
-	Address         string  `gorm:"type:varchar(64)"`
+	Address         string  `gorm:"column:address;primary_key" json:"address"`
 	Netmask         string  `gorm:"type:varchar(64)"`
 	Type            string  `gorm:"type:varchar(20);default:'native'"`
 	Allocated       bool    `gorm:"default:false"`

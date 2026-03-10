@@ -121,8 +121,16 @@ func (a *FloatingIpAdmin) createDummyFloatingIp(ctx context.Context, instance *m
 }
 
 func (a *FloatingIpAdmin) Create(ctx context.Context, instance *model.Instance, pubSubnets []*model.Subnet, publicIp string, name string, inbound, outbound, activationCount int32, siteSubnets []*model.Subnet, group *model.IpGroup, loadBalancer *model.LoadBalancer) (floatingIps []*model.FloatingIp, err error) {
+	logger.Infof("ENTER FloatingIpAdmin.Create: name=%s, publicIp=%s, instanceID=%v", name, publicIp, instance)
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT FloatingIpAdmin.Create: error=%v", err)
+		} else {
+			logger.Info("EXIT FloatingIpAdmin.Create: success")
+		}
+	}()
 	memberShip := GetMemberShip(ctx)
-	permit := memberShip.CheckPermission(model.Writer)
+	permit := memberShip.CheckOrgPermission(model.OrgWriter)
 	if !permit {
 		logger.Error("Not authorized for this operation")
 		err = NewCLError(ErrPermissionDenied, "Not authorized for this operation", nil)
@@ -247,13 +255,21 @@ func (a *FloatingIpAdmin) Create(ctx context.Context, instance *model.Instance, 
 }
 
 func (a *FloatingIpAdmin) Attach(ctx context.Context, floatingIp *model.FloatingIp, instance *model.Instance) (err error) {
+	logger.Infof("ENTER FloatingIpAdmin.Attach: floatingIpID=%d, instanceID=%d", floatingIp.ID, instance.ID)
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT FloatingIpAdmin.Attach: error=%v", err)
+		} else {
+			logger.Info("EXIT FloatingIpAdmin.Attach: success")
+		}
+	}()
 	if floatingIp.Type != string(PublicFloating) && floatingIp.Type != string(PublicSite) {
 		logger.Infof("Cannot attach floating IP of type %s, only PublicFloating and PublicSite types are supported for attachment", floatingIp.Type)
 		err = NewCLError(ErrInvalidParameter, fmt.Sprintf("Cannot attach floating IP of type %s, only PublicFloating and PublicSite types are supported for attachment", floatingIp.Type), nil)
 		return
 	}
 	memberShip := GetMemberShip(ctx)
-	permit := memberShip.CheckPermission(model.Writer)
+	permit := memberShip.CheckOrgPermission(model.OrgWriter)
 	if !permit {
 		logger.Error("Not authorized for this operation")
 		err = NewCLError(ErrPermissionDenied, "Not authorized for this operation", nil)
@@ -316,6 +332,14 @@ func (a *FloatingIpAdmin) Attach(ctx context.Context, floatingIp *model.Floating
 }
 
 func (a *FloatingIpAdmin) Get(ctx context.Context, id int64) (floatingIp *model.FloatingIp, err error) {
+	logger.Infof("ENTER FloatingIpAdmin.Get: id=%d", id)
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT FloatingIpAdmin.Get: error=%v", err)
+		} else {
+			logger.Info("EXIT FloatingIpAdmin.Get: success")
+		}
+	}()
 	if id <= 0 {
 		err = NewCLError(ErrInvalidParameter, fmt.Sprintf("Invalid floatingIp ID: %d", id), nil)
 		logger.Error(err)
@@ -323,9 +347,9 @@ func (a *FloatingIpAdmin) Get(ctx context.Context, id int64) (floatingIp *model.
 	}
 	memberShip := GetMemberShip(ctx)
 	ctx, db := GetContextDB(ctx)
-	where := memberShip.GetWhere()
+	where, args := memberShip.GetOrgFilter()
 	floatingIp = &model.FloatingIp{Model: model.Model{ID: id}}
-	err = db.Preload("Interface").Preload("Interface.SecurityGroups").Preload("Interface.Address").Preload("Interface.Address.Subnet").Preload("Subnet").Preload("Group").Where(where).Take(floatingIp).Error
+	err = db.Preload("Interface").Preload("Interface.SecurityGroups").Preload("Interface.Address").Preload("Interface.Address.Subnet").Preload("Subnet").Preload("Group").Where(where, args...).Take(floatingIp).Error
 	if err != nil {
 		logger.Error("DB failed to query floatingIp ", err)
 		return nil, NewCLError(ErrSQLSyntaxError, "Failed to query floatingIp", err)
@@ -371,11 +395,19 @@ func (a *FloatingIpAdmin) Get(ctx context.Context, id int64) (floatingIp *model.
 }
 
 func (a *FloatingIpAdmin) GetFloatingIpByUUID(ctx context.Context, uuID string) (floatingIp *model.FloatingIp, err error) {
+	logger.Infof("ENTER FloatingIpAdmin.GetFloatingIpByUUID: uuID=%s", uuID)
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT FloatingIpAdmin.GetFloatingIpByUUID: error=%v", err)
+		} else {
+			logger.Info("EXIT FloatingIpAdmin.GetFloatingIpByUUID: success")
+		}
+	}()
 	ctx, db := GetContextDB(ctx)
 	memberShip := GetMemberShip(ctx)
-	where := memberShip.GetWhere()
+	where, args := memberShip.GetOrgFilter()
 	floatingIp = &model.FloatingIp{}
-	err = db.Preload("Interface").Preload("Interface.SecurityGroups").Preload("Interface.Address").Preload("Interface.Address.Subnet").Preload("Subnet").Preload("Group").Where(where).Where("uuid = ?", uuID).Take(floatingIp).Error
+	err = db.Preload("Interface").Preload("Interface.Address").Preload("Interface.Address.Subnet").Preload("Subnet").Preload("Group").Where(where, args...).Where("uuid = ?", uuID).Take(floatingIp).Error
 	if err != nil {
 		logger.Error("Failed to query floatingIp, %v", err)
 		return nil, NewCLError(ErrDatabaseError, "Failed to query floatingIp", err)
@@ -422,6 +454,14 @@ func (a *FloatingIpAdmin) GetFloatingIpByUUID(ctx context.Context, uuID string) 
 }
 
 func (a *FloatingIpAdmin) Detach(ctx context.Context, floatingIp *model.FloatingIp) (err error) {
+	logger.Infof("ENTER FloatingIpAdmin.Detach: floatingIpID=%d", floatingIp.ID)
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT FloatingIpAdmin.Detach: error=%v", err)
+		} else {
+			logger.Info("EXIT FloatingIpAdmin.Detach: success")
+		}
+	}()
 	ctx, db, newTransaction := StartTransaction(ctx)
 	defer func() {
 		if newTransaction {
@@ -529,6 +569,14 @@ func (a *FloatingIpAdmin) Detach(ctx context.Context, floatingIp *model.Floating
 }
 
 func (a *FloatingIpAdmin) Update(ctx context.Context, floatingIp *model.FloatingIp, instance *model.Instance, group *model.IpGroup, loadBalancer *model.LoadBalancer) (floatingIpTemp *model.FloatingIp, err error) {
+	logger.Infof("ENTER FloatingIpAdmin.Update: floatingIpID=%d, name=%s", floatingIp.ID, floatingIp.Name)
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT FloatingIpAdmin.Update: error=%v", err)
+		} else {
+			logger.Info("EXIT FloatingIpAdmin.Update: success")
+		}
+	}()
 	ctx, db, newTransaction := StartTransaction(ctx)
 	defer func() {
 		if newTransaction {
@@ -569,9 +617,6 @@ func (a *FloatingIpAdmin) Update(ctx context.Context, floatingIp *model.Floating
 
 	if group != nil {
 		groupID := int64(0)
-		if group != nil {
-			groupID = group.ID
-		}
 
 		err = db.Model(&model.FloatingIp{Model: model.Model{ID: floatingIp.ID}}).Update("group_id", groupID).Error
 		if err != nil {
@@ -590,6 +635,14 @@ func (a *FloatingIpAdmin) Update(ctx context.Context, floatingIp *model.Floating
 }
 
 func (a *FloatingIpAdmin) Delete(ctx context.Context, floatingIp *model.FloatingIp) (err error) {
+	logger.Infof("ENTER FloatingIpAdmin.Delete: floatingIpID=%d, uuid=%s", floatingIp.ID, floatingIp.UUID)
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT FloatingIpAdmin.Delete: error=%v", err)
+		} else {
+			logger.Info("EXIT FloatingIpAdmin.Delete: success")
+		}
+	}()
 	if floatingIp.Type != string(PublicFloating) && floatingIp.Type != string(PublicLoadBalancer) {
 		errorStr := fmt.Sprintf("Cannot delete floating IP of type %s, only PublicFloating or PublicLoadBalancer type is supported for deletion", floatingIp.Type)
 		logger.Info(errorStr)
@@ -618,7 +671,16 @@ func (a *FloatingIpAdmin) Delete(ctx context.Context, floatingIp *model.Floating
 }
 
 func (a *FloatingIpAdmin) List(ctx context.Context, offset, limit int64, order, query string, intQuery string) (total int64, floatingIps []*model.FloatingIp, err error) {
+	logger.Infof("ENTER FloatingIpAdmin.List: offset=%d, limit=%d, order=%s, query=%s", offset, limit, order, query)
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT FloatingIpAdmin.List: error=%v", err)
+		} else {
+			logger.Info("EXIT FloatingIpAdmin.List: success")
+		}
+	}()
 	memberShip := GetMemberShip(ctx)
+	permit := memberShip.CheckOrgPermission(model.OrgReader)
 	if limit == 0 {
 		limit = 16
 	}
@@ -631,14 +693,14 @@ func (a *FloatingIpAdmin) List(ctx context.Context, offset, limit int64, order, 
 	}
 
 	_, db := GetContextDB(ctx)
-	where := memberShip.GetWhere()
+	where, args := memberShip.GetOrgFilter()
 	floatingIps = []*model.FloatingIp{}
-	if err = db.Model(&model.FloatingIp{}).Where(where).Where(query).Where(intQuery).Count(&total).Error; err != nil {
-		logger.Error("DB failed to count floating ip(s), %v", err)
-		return 0, nil, NewCLError(ErrSQLSyntaxError, "Failed to count floating IPs", err)
+	if err = db.Model(&model.FloatingIp{}).Where(where, args...).Where(query).Where(intQuery).Count(&total).Error; err != nil {
+		err = NewCLError(ErrSQLSyntaxError, "Failed to count floatingIps", err)
+		return
 	}
 	db = dbs.Sortby(db.Offset(offset).Limit(limit), order)
-	if err = db.Preload("Group").Preload("Interface").Preload("Interface.Address").Preload("Interface.Address.Subnet").Preload("Subnet").Where(where).Where(query).Where(intQuery).Find(&floatingIps).Error; err != nil {
+	if err = db.Preload("Group").Preload("Interface").Preload("Interface.Address").Preload("Interface.Address.Subnet").Preload("Subnet").Where(where, args...).Where(query).Where(intQuery).Find(&floatingIps).Error; err != nil {
 		logger.Error("DB failed to query floating ip(s), %v", err)
 		return 0, nil, NewCLError(ErrSQLSyntaxError, "Failed to query floating IPs", err)
 	}
@@ -684,7 +746,7 @@ func (a *FloatingIpAdmin) List(ctx context.Context, offset, limit int64, order, 
 			}
 		}
 	}
-	permit := memberShip.CheckPermission(model.Admin)
+	permit = memberShip.IsSystemAdmin()
 	if permit {
 		for _, fip := range floatingIps {
 			fip.OwnerInfo = &model.Organization{Model: model.Model{ID: fip.Owner}}
@@ -699,8 +761,10 @@ func (a *FloatingIpAdmin) List(ctx context.Context, offset, limit int64, order, 
 }
 
 func (v *FloatingIpView) List(c *macaron.Context, store session.Store) {
+	logger.Infof("ENTER FloatingIpView.List: query=%s", c.Req.URL.RawQuery)
+	defer logger.Info("EXIT FloatingIpView.List")
 	memberShip := GetMemberShip(c.Req.Context())
-	permit := memberShip.CheckPermission(model.Reader)
+	permit := memberShip.CheckOrgPermission(model.OrgReader)
 	if !permit {
 		logger.Error("Not authorized for this operation")
 		c.Data["ErrorMsg"] = "Not authorized for this operation"
@@ -745,6 +809,14 @@ func (v *FloatingIpView) List(c *macaron.Context, store session.Store) {
 }
 
 func (v *FloatingIpView) Delete(c *macaron.Context, store session.Store) (err error) {
+	logger.Infof("ENTER FloatingIpView.Delete: id=%s", c.Params("id"))
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT FloatingIpView.Delete: error=%v", err)
+		} else {
+			logger.Info("EXIT FloatingIpView.Delete: success")
+		}
+	}()
 	ctx := c.Req.Context()
 	id := c.Params("id")
 	if id == "" {
@@ -780,8 +852,10 @@ func (v *FloatingIpView) Delete(c *macaron.Context, store session.Store) (err er
 }
 
 func (v *FloatingIpView) LBNew(c *macaron.Context, store session.Store) {
+	logger.Infof("ENTER FloatingIpView.LBNew: query=%s", c.Req.URL.RawQuery)
+	defer logger.Info("EXIT FloatingIpView.LBNew")
 	memberShip := GetMemberShip(c.Req.Context())
-	permit := memberShip.CheckPermission(model.Writer)
+	permit := memberShip.CheckOrgPermission(model.OrgWriter)
 	if !permit {
 		logger.Error("Not authorized for this operation")
 		c.Data["ErrorMsg"] = "Not authorized for this operation"
@@ -809,8 +883,10 @@ func (v *FloatingIpView) LBNew(c *macaron.Context, store session.Store) {
 }
 
 func (v *FloatingIpView) New(c *macaron.Context, store session.Store) {
+	logger.Infof("ENTER FloatingIpView.New: query=%s", c.Req.URL.RawQuery)
+	defer logger.Info("EXIT FloatingIpView.New")
 	memberShip := GetMemberShip(c.Req.Context())
-	permit := memberShip.CheckPermission(model.Writer)
+	permit := memberShip.CheckOrgPermission(model.OrgWriter)
 	if !permit {
 		logger.Error("Not authorized for this operation")
 		c.Data["ErrorMsg"] = "Not authorized for this operation"
@@ -818,9 +894,9 @@ func (v *FloatingIpView) New(c *macaron.Context, store session.Store) {
 		return
 	}
 	db := DB()
-	where := memberShip.GetWhere()
+	where, args := memberShip.GetOrgFilter()
 	instances := []*model.Instance{}
-	err := db.Where(where).Find(&instances).Error
+	err := db.Where(where, args...).Find(&instances).Error
 	if err != nil {
 		logger.Error("Failed to query instances %v", err)
 		return
@@ -882,6 +958,8 @@ func (v *FloatingIpView) New(c *macaron.Context, store session.Store) {
 }
 
 func (v *FloatingIpView) Edit(c *macaron.Context, store session.Store) {
+	logger.Infof("ENTER FloatingIpView.Edit: id=%s, query=%s", c.Params("id"), c.Req.URL.RawQuery)
+	defer logger.Info("EXIT FloatingIpView.Edit")
 	id := c.Params("id")
 	if id == "" {
 		c.Data["ErrorMsg"] = "Id is Empty"
@@ -905,7 +983,7 @@ func (v *FloatingIpView) Edit(c *macaron.Context, store session.Store) {
 	}
 
 	memberShip := GetMemberShip(c.Req.Context())
-	permit := memberShip.CheckPermission(model.Writer)
+	permit := memberShip.CheckOrgPermission(model.OrgWriter)
 	if !permit {
 		logger.Error("Not authorized for this operation")
 		c.Data["ErrorMsg"] = "Not authorized for this operation"
@@ -913,9 +991,9 @@ func (v *FloatingIpView) Edit(c *macaron.Context, store session.Store) {
 		return
 	}
 
-	where := memberShip.GetWhere()
+	where, args := memberShip.GetOrgFilter()
 	instances := []*model.Instance{}
-	err = db.Where(where).Find(&instances).Error
+	err = db.Where(where, args...).Find(&instances).Error
 	if err != nil {
 		logger.Error("Failed to query instances %v", err)
 		return
@@ -949,6 +1027,8 @@ func (v *FloatingIpView) Edit(c *macaron.Context, store session.Store) {
 }
 
 func (v *FloatingIpView) Patch(c *macaron.Context, store session.Store) {
+	logger.Infof("ENTER FloatingIpView.Patch: id=%s, query=%s", c.Params("id"), c.Req.URL.RawQuery)
+	defer logger.Info("EXIT FloatingIpView.Patch")
 	ctx := c.Req.Context()
 	id := c.Params("id")
 	if id == "" {
@@ -973,7 +1053,7 @@ func (v *FloatingIpView) Patch(c *macaron.Context, store session.Store) {
 	}
 
 	memberShip := GetMemberShip(ctx)
-	permit := memberShip.CheckPermission(model.Writer)
+	permit := memberShip.CheckOrgPermission(model.OrgWriter)
 	if !permit {
 		logger.Error("Not authorized for this operation")
 		c.Data["ErrorMsg"] = "Not authorized for this operation"
@@ -1050,11 +1130,20 @@ func (v *FloatingIpView) Patch(c *macaron.Context, store session.Store) {
 
 	redirectTo := "../floatingips"
 	c.Redirect(redirectTo)
-	return
 }
 
 func (v *FloatingIpView) Create(c *macaron.Context, store session.Store) {
+	logger.Infof("ENTER FloatingIpView.Create: query=%s", c.Req.URL.RawQuery)
+	defer logger.Info("EXIT FloatingIpView.Create")
 	ctx := c.Req.Context()
+	memberShip := GetMemberShip(ctx)
+	permit := memberShip.CheckOrgPermission(model.OrgWriter)
+	if !permit {
+		logger.Error("Not authorized for this operation")
+		c.Data["ErrorMsg"] = "Not authorized for this operation"
+		c.HTML(http.StatusBadRequest, "error")
+		return
+	}
 	redirectTo := "../floatingips"
 	instID := c.QueryInt64("instance")
 	loadBalancerID := c.QueryInt64("load_balancer")
@@ -1264,6 +1353,14 @@ func AllocateFloatingIp(ctx context.Context, floatingIpID, owner int64, pubSubne
 }
 
 func (a *FloatingIpAdmin) DeallocateFloatingIp(ctx context.Context, floatingIpID int64) (err error) {
+	logger.Infof("ENTER FloatingIpAdmin.DeallocateFloatingIp: floatingIpID=%d", floatingIpID)
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT FloatingIpAdmin.DeallocateFloatingIp: error=%v", err)
+		} else {
+			logger.Info("EXIT FloatingIpAdmin.DeallocateFloatingIp: success")
+		}
+	}()
 	ctx, db := GetContextDB(ctx)
 	DeleteInterfaces(ctx, floatingIpID, 0, "floating")
 	floatingIp := &model.FloatingIp{Model: model.Model{ID: floatingIpID}}

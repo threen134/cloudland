@@ -65,6 +65,14 @@ type LoadBalancerFloatingIpConfig struct {
 }
 
 func GetVrrpInterfaces(ctx context.Context, vrrpInstance *model.VrrpInstance) (vrrpIface1, vrrpIface2 *model.Interface, err error) {
+	logger.Infof("ENTER GetVrrpInterfaces: vrrpInstanceID=%d", vrrpInstance.ID)
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT GetVrrpInterfaces: error=%v", err)
+		} else {
+			logger.Info("EXIT GetVrrpInterfaces: success")
+		}
+	}()
 	ctx, db := GetContextDB(ctx)
 	vrrpID := vrrpInstance.ID
 	vrrpIface1 = &model.Interface{}
@@ -83,6 +91,14 @@ func GetVrrpInterfaces(ctx context.Context, vrrpInstance *model.VrrpInstance) (v
 }
 
 func GetVrrpHyperGroup(ctx context.Context, vrrpInstance *model.VrrpInstance) (hyperGroup string, vrrpIface1, vrrpIface2 *model.Interface, err error) {
+	logger.Infof("ENTER GetVrrpHyperGroup: vrrpInstanceID=%d", vrrpInstance.ID)
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT GetVrrpHyperGroup: error=%v", err)
+		} else {
+			logger.Infof("EXIT GetVrrpHyperGroup: hyperGroup=%s", hyperGroup)
+		}
+	}()
 	hyperList := ""
 	vrrpIface1, vrrpIface2, err = GetVrrpInterfaces(ctx, vrrpInstance)
 	if err != nil {
@@ -103,6 +119,14 @@ func GetVrrpHyperGroup(ctx context.Context, vrrpInstance *model.VrrpInstance) (h
 }
 
 func GetLBFloatingIpJson(ctx context.Context, loadBalancer *model.LoadBalancer) (jsonData []byte, err error) {
+	logger.Infof("ENTER GetLBFloatingIpJson: lbID=%d", loadBalancer.ID)
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT GetLBFloatingIpJson: error=%v", err)
+		} else {
+			logger.Info("EXIT GetLBFloatingIpJson: success")
+		}
+	}()
 	intQuery := fmt.Sprintf("load_balancer_id = %d", loadBalancer.ID)
 	_, floatingIps, err := floatingIpAdmin.List(ctx, 0, -1, "", "", intQuery)
 	if err != nil {
@@ -133,6 +157,14 @@ func GetLBFloatingIpJson(ctx context.Context, loadBalancer *model.LoadBalancer) 
 }
 
 func CreateVrrpConf(ctx context.Context, loadBalancer *model.LoadBalancer) (err error) {
+	logger.Infof("ENTER CreateVrrpConf: lbID=%d", loadBalancer.ID)
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT CreateVrrpConf: error=%v", err)
+		} else {
+			logger.Info("EXIT CreateVrrpConf: success")
+		}
+	}()
 	if loadBalancer == nil || (loadBalancer.Status != "available") {
 		logger.Error("Load balancer is not available")
 		return
@@ -172,6 +204,14 @@ func CreateVrrpConf(ctx context.Context, loadBalancer *model.LoadBalancer) (err 
 }
 
 func CreateVrrpInstance(ctx context.Context, name string, router *model.Router, zone *model.Zone) (vrrpInstance *model.VrrpInstance, err error) {
+	logger.Infof("ENTER CreateVrrpInstance: name=%s, routerID=%d", name, router.ID)
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT CreateVrrpInstance: error=%v", err)
+		} else {
+			logger.Infof("EXIT CreateVrrpInstance: success, vrrpInstanceID=%d", vrrpInstance.ID)
+		}
+	}()
 	ctx, db := GetContextDB(ctx)
 	name = fmt.Sprintf("%s-%d", name, time.Now().UnixNano())
 	var vrrpSubnet *model.Subnet
@@ -235,8 +275,16 @@ func CreateVrrpInstance(ctx context.Context, name string, router *model.Router, 
 }
 
 func (a *LoadBalancerAdmin) Create(ctx context.Context, name string, router *model.Router, zone *model.Zone) (loadBalancer *model.LoadBalancer, err error) {
+	logger.Infof("ENTER LoadBalancerAdmin.Create: name=%s, routerID=%d", name, router.ID)
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT LoadBalancerAdmin.Create: error=%v", err)
+		} else {
+			logger.Infof("EXIT LoadBalancerAdmin.Create: success, lbID=%d", loadBalancer.ID)
+		}
+	}()
 	memberShip := GetMemberShip(ctx)
-	permit := memberShip.CheckPermission(model.Writer)
+	permit := memberShip.CheckOrgPermission(model.OrgWriter)
 	if !permit {
 		logger.Error("Not authorized to create routers")
 		err = NewCLError(ErrPermissionDenied, "Not authorized to create routers", nil)
@@ -266,20 +314,29 @@ func (a *LoadBalancerAdmin) Create(ctx context.Context, name string, router *mod
 }
 
 func (a *LoadBalancerAdmin) Get(ctx context.Context, id int64) (loadBalancer *model.LoadBalancer, err error) {
+	logger.Infof("ENTER LoadBalancerAdmin.Get: id=%d", id)
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT LoadBalancerAdmin.Get: error=%v", err)
+		} else {
+			logger.Info("EXIT LoadBalancerAdmin.Get: success")
+		}
+	}()
 	if id <= 0 {
 		logger.Error("returning nil router")
 		return
 	}
 	ctx, db := GetContextDB(ctx)
 	memberShip := GetMemberShip(ctx)
-	where := memberShip.GetWhere()
+	where, args := memberShip.GetOrgFilter()
 	loadBalancer = &model.LoadBalancer{Model: model.Model{ID: id}}
-	if err = db.Preload("FloatingIps").Preload("Router").Preload("VrrpInstance").Preload("VrrpInstance.VrrpSubnet").Preload("Listeners").Preload("Listeners.Backends").Where(where).Take(loadBalancer).Error; err != nil {
+	err = db.Preload("FloatingIps").Preload("Router").Preload("VrrpInstance").Preload("VrrpInstance.VrrpSubnet").Preload("Listeners").Preload("Listeners.Backends").Where(where, args...).Take(loadBalancer).Error
+	if err != nil {
 		logger.Error("Failed to query load balancer", err)
 		err = NewCLError(ErrLoadBalancerNotFound, "Failed to find load balancer", err)
 		return
 	}
-	permit := memberShip.ValidateOwner(model.Reader, loadBalancer.Owner)
+	permit := memberShip.CheckResourceOrg(model.OrgReader, loadBalancer.Owner)
 	if !permit {
 		logger.Error("Not authorized to read the load balancer")
 		err = NewCLError(ErrPermissionDenied, "Not authorized to read the load balancer", nil)
@@ -289,17 +346,25 @@ func (a *LoadBalancerAdmin) Get(ctx context.Context, id int64) (loadBalancer *mo
 }
 
 func (a *LoadBalancerAdmin) GetLoadBalancerByUUID(ctx context.Context, uuID string) (loadBalancer *model.LoadBalancer, err error) {
+	logger.Infof("ENTER LoadBalancerAdmin.GetLoadBalancerByUUID: uuID=%s", uuID)
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT LoadBalancerAdmin.GetLoadBalancerByUUID: error=%v", err)
+		} else {
+			logger.Infof("EXIT LoadBalancerAdmin.GetLoadBalancerByUUID: success, lbID=%d", loadBalancer.ID)
+		}
+	}()
 	ctx, db := GetContextDB(ctx)
 	memberShip := GetMemberShip(ctx)
-	where := memberShip.GetWhere()
+	where, args := memberShip.GetOrgFilter()
 	loadBalancer = &model.LoadBalancer{}
-	err = db.Preload("FloatingIps").Preload("Router").Preload("VrrpInstance").Preload("VrrpInstance.VrrpSubnet").Preload("Listeners").Preload("Listeners.Backends").Where(where).Where("uuid = ?", uuID).Take(loadBalancer).Error
+	err = db.Preload("FloatingIps").Preload("Router").Preload("VrrpInstance").Preload("VrrpInstance.VrrpSubnet").Preload("Listeners").Preload("Listeners.Backends").Where(where, args...).Where("uuid = ?", uuID).Take(loadBalancer).Error
 	if err != nil {
 		logger.Error("Failed to query load balancer, %v", err)
 		err = NewCLError(ErrRouterNotFound, "Failed to find load balancer", err)
 		return
 	}
-	permit := memberShip.ValidateOwner(model.Reader, loadBalancer.Owner)
+	permit := memberShip.CheckResourceOrg(model.OrgReader, loadBalancer.Owner)
 	if !permit {
 		logger.Error("Not authorized to read the load balancer")
 		err = NewCLError(ErrPermissionDenied, "Not authorized to read the load balancer", nil)
@@ -309,17 +374,25 @@ func (a *LoadBalancerAdmin) GetLoadBalancerByUUID(ctx context.Context, uuID stri
 }
 
 func (a *LoadBalancerAdmin) GetLoadBalancerByName(ctx context.Context, name string) (loadBalancer *model.LoadBalancer, err error) {
+	logger.Infof("ENTER LoadBalancerAdmin.GetLoadBalancerByName: name=%s", name)
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT LoadBalancerAdmin.GetLoadBalancerByName: error=%v", err)
+		} else {
+			logger.Infof("EXIT LoadBalancerAdmin.GetLoadBalancerByName: success, lbID=%d", loadBalancer.ID)
+		}
+	}()
 	ctx, db := GetContextDB(ctx)
 	memberShip := GetMemberShip(ctx)
-	where := memberShip.GetWhere()
+	where, args := memberShip.GetOrgFilter()
 	loadBalancer = &model.LoadBalancer{}
-	err = db.Preload("Router").Where(where).Where("name = ?", name).Take(loadBalancer).Error
+	err = db.Preload("Router").Where(where, args...).Where("name = ?", name).Take(loadBalancer).Error
 	if err != nil {
 		logger.Error("Failed to query load balancer, %v", err)
 		err = NewCLError(ErrRouterNotFound, "Failed to find load balancer", err)
 		return
 	}
-	permit := memberShip.ValidateOwner(model.Reader, loadBalancer.Owner)
+	permit := memberShip.CheckResourceOrg(model.OrgReader, loadBalancer.Owner)
 	if !permit {
 		logger.Error("Not authorized to read the load balancer")
 		err = NewCLError(ErrPermissionDenied, "Not authorized to read the load balancer", nil)
@@ -329,6 +402,14 @@ func (a *LoadBalancerAdmin) GetLoadBalancerByName(ctx context.Context, name stri
 }
 
 func (a *LoadBalancerAdmin) GetLoadBalancer(ctx context.Context, reference *BaseReference) (loadBalancer *model.LoadBalancer, err error) {
+	logger.Infof("ENTER LoadBalancerAdmin.GetLoadBalancer: reference=%+v", reference)
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT LoadBalancerAdmin.GetLoadBalancer: error=%v", err)
+		} else {
+			logger.Info("EXIT LoadBalancerAdmin.GetLoadBalancer: success")
+		}
+	}()
 	if reference == nil || (reference.ID == "" && reference.Name == "") {
 		err = NewCLError(ErrInvalidParameter, "Router base reference must be provided with either uuid or name", nil)
 		return
@@ -345,6 +426,14 @@ func (a *LoadBalancerAdmin) GetLoadBalancer(ctx context.Context, reference *Base
 }
 
 func (a *LoadBalancerAdmin) Update(ctx context.Context, loadBalancer *model.LoadBalancer, name string) (lb *model.LoadBalancer, err error) {
+	logger.Infof("ENTER LoadBalancerAdmin.Update: lbID=%d, name=%s", loadBalancer.ID, name)
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT LoadBalancerAdmin.Update: error=%v", err)
+		} else {
+			logger.Info("EXIT LoadBalancerAdmin.Update: success")
+		}
+	}()
 	ctx, db := GetContextDB(ctx)
 	if loadBalancer.Name != name {
 		loadBalancer.Name = name
@@ -359,6 +448,14 @@ func (a *LoadBalancerAdmin) Update(ctx context.Context, loadBalancer *model.Load
 }
 
 func (a *LoadBalancerAdmin) Delete(ctx context.Context, loadBalancer *model.LoadBalancer) (err error) {
+	logger.Infof("ENTER LoadBalancerAdmin.Delete: lbID=%d, name=%s", loadBalancer.ID, loadBalancer.Name)
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT LoadBalancerAdmin.Delete: error=%v", err)
+		} else {
+			logger.Info("EXIT LoadBalancerAdmin.Delete: success")
+		}
+	}()
 	ctx, db, newTransaction := StartTransaction(ctx)
 	defer func() {
 		if newTransaction {
@@ -366,7 +463,7 @@ func (a *LoadBalancerAdmin) Delete(ctx context.Context, loadBalancer *model.Load
 		}
 	}()
 	memberShip := GetMemberShip(ctx)
-	permit := memberShip.ValidateOwner(model.Writer, loadBalancer.Owner)
+	permit := memberShip.CheckResourceOrg(model.OrgWriter, loadBalancer.Owner)
 	if !permit {
 		logger.Error("Not authorized to delete the load balancer")
 		err = NewCLError(ErrPermissionDenied, "Not authorized to delete the router", nil)
@@ -478,7 +575,21 @@ func (a *LoadBalancerAdmin) Delete(ctx context.Context, loadBalancer *model.Load
 }
 
 func (a *LoadBalancerAdmin) List(ctx context.Context, offset, limit int64, order, query string) (total int64, loadBalancers []*model.LoadBalancer, err error) {
+	logger.Infof("ENTER LoadBalancerAdmin.List: offset=%d, limit=%d, order=%s, query=%s", offset, limit, order, query)
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT LoadBalancerAdmin.List: error=%v", err)
+		} else {
+			logger.Infof("EXIT LoadBalancerAdmin.List: total=%d, count=%d", total, len(loadBalancers))
+		}
+	}()
 	memberShip := GetMemberShip(ctx)
+	permit := memberShip.CheckOrgPermission(model.OrgReader)
+	if !permit {
+		logger.Error("Not authorized for this operation")
+		err = NewCLError(ErrPermissionDenied, "Not authorized for this operation", nil)
+		return
+	}
 	ctx, db := GetContextDB(ctx)
 	if limit == 0 {
 		limit = 16
@@ -491,20 +602,20 @@ func (a *LoadBalancerAdmin) List(ctx context.Context, offset, limit int64, order
 	if query != "" {
 		query = fmt.Sprintf("name like '%%%s%%'", query)
 	}
-	where := memberShip.GetWhere()
+	queryBuilder, args := memberShip.GetOrgFilter()
 	loadBalancers = []*model.LoadBalancer{}
-	if err = db.Model(&model.LoadBalancer{}).Where(where).Where(query).Count(&total).Error; err != nil {
-		logger.Error("DB failed to count load balancers, %v", err)
-		err = NewCLError(ErrSQLSyntaxError, "Failed to count load balancers", err)
+	if err = db.Model(&model.LoadBalancer{}).Where(queryBuilder, args...).Where(query).Count(&total).Error; err != nil {
+		logger.Error("DB failed to count load balancer, %v", err)
+		err = NewCLError(ErrSQLSyntaxError, "Failed to count load balancer", err)
 		return
 	}
 	db = dbs.Sortby(db.Offset(offset).Limit(limit), order)
-	if err = db.Preload("FloatingIps").Preload("VrrpInstance").Preload("VrrpInstance.VrrpSubnet").Preload("Listeners").Preload("Listeners.Backends").Preload("Router").Where(where).Where(query).Find(&loadBalancers).Error; err != nil {
+	if err = db.Preload("FloatingIps").Preload("VrrpInstance").Preload("VrrpInstance.VrrpSubnet").Preload("Listeners").Preload("Listeners.Backends").Preload("Router").Where(queryBuilder, args...).Where(query).Find(&loadBalancers).Error; err != nil {
 		logger.Error("DB failed to query load balancers, %v", err)
 		err = NewCLError(ErrSQLSyntaxError, "Failed to query load balancers", err)
 		return
 	}
-	permit := memberShip.CheckPermission(model.Admin)
+	permit = memberShip.IsSystemAdmin()
 	if permit {
 		db = db.Offset(0).Limit(-1)
 		for _, loadBalancer := range loadBalancers {
@@ -520,6 +631,17 @@ func (a *LoadBalancerAdmin) List(ctx context.Context, offset, limit int64, order
 }
 
 func (v *LoadBalancerView) List(c *macaron.Context, store session.Store) {
+	logger.Infof("ENTER LoadBalancerView.List: query=%s", c.Req.URL.RawQuery)
+	defer logger.Info("EXIT LoadBalancerView.List")
+	ctx := c.Req.Context()
+	memberShip := GetMemberShip(ctx)
+	permit := memberShip.CheckOrgPermission(model.OrgReader)
+	if !permit {
+		logger.Error("Not authorized for this operation")
+		c.Data["ErrorMsg"] = "Not authorized for this operation"
+		c.HTML(http.StatusBadRequest, "error")
+		return
+	}
 	offset := c.QueryInt64("offset")
 	limit := c.QueryInt64("limit")
 	if limit == 0 {
@@ -555,6 +677,14 @@ func (v *LoadBalancerView) List(c *macaron.Context, store session.Store) {
 }
 
 func (v *LoadBalancerView) Delete(c *macaron.Context, store session.Store) (err error) {
+	logger.Infof("ENTER LoadBalancerView.Delete: id=%s", c.Params("id"))
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT LoadBalancerView.Delete: error=%v", err)
+		} else {
+			logger.Info("EXIT LoadBalancerView.Delete: success")
+		}
+	}()
 	ctx := c.Req.Context()
 	id := c.Params("id")
 	if id == "" {
@@ -591,9 +721,11 @@ func (v *LoadBalancerView) Delete(c *macaron.Context, store session.Store) (err 
 }
 
 func (v *LoadBalancerView) New(c *macaron.Context, store session.Store) {
+	logger.Infof("ENTER LoadBalancerView.New: query=%s", c.Req.URL.RawQuery)
+	defer logger.Info("EXIT LoadBalancerView.New")
 	ctx := c.Req.Context()
 	memberShip := GetMemberShip(ctx)
-	permit := memberShip.CheckPermission(model.Writer)
+	permit := memberShip.CheckOrgPermission(model.OrgReader)
 	if !permit {
 		logger.Error("Not authorized for this operation")
 		c.Data["ErrorMsg"] = "Not authorized for this operation"
@@ -610,7 +742,17 @@ func (v *LoadBalancerView) New(c *macaron.Context, store session.Store) {
 }
 
 func (v *LoadBalancerView) Edit(c *macaron.Context, store session.Store) {
+	logger.Infof("ENTER LoadBalancerView.Edit: id=%s, query=%s", c.Params("id"), c.Req.URL.RawQuery)
+	defer logger.Info("EXIT LoadBalancerView.Edit")
 	ctx := c.Req.Context()
+	memberShip := GetMemberShip(ctx)
+	permit := memberShip.CheckOrgPermission(model.OrgReader)
+	if !permit {
+		logger.Error("Not authorized for this operation")
+		c.Data["ErrorMsg"] = "Not authorized for this operation"
+		c.HTML(http.StatusBadRequest, "error")
+		return
+	}
 	id := c.Params("id")
 	loadBalancerID, err := strconv.Atoi(id)
 	if err != nil {
@@ -631,7 +773,17 @@ func (v *LoadBalancerView) Edit(c *macaron.Context, store session.Store) {
 }
 
 func (v *LoadBalancerView) Patch(c *macaron.Context, store session.Store) {
+	logger.Infof("ENTER LoadBalancerView.Patch: id=%s, query=%s", c.Params("id"), c.Req.URL.RawQuery)
+	defer logger.Info("EXIT LoadBalancerView.Patch")
 	ctx := c.Req.Context()
+	memberShip := GetMemberShip(ctx)
+	permit := memberShip.CheckOrgPermission(model.OrgWriter)
+	if !permit {
+		logger.Error("Not authorized for this operation")
+		c.Data["ErrorMsg"] = "Not authorized for this operation"
+		c.HTML(http.StatusBadRequest, "error")
+		return
+	}
 	redirectTo := "../loadbalancers"
 	id := c.Params("id")
 	loadBalancerID, err := strconv.Atoi(id)
@@ -660,7 +812,17 @@ func (v *LoadBalancerView) Patch(c *macaron.Context, store session.Store) {
 }
 
 func (v *LoadBalancerView) Create(c *macaron.Context, store session.Store) {
+	logger.Infof("ENTER LoadBalancerView.Create: query=%s", c.Req.URL.RawQuery)
+	defer logger.Info("EXIT LoadBalancerView.Create")
 	ctx := c.Req.Context()
+	memberShip := GetMemberShip(ctx)
+	permit := memberShip.CheckOrgPermission(model.OrgWriter)
+	if !permit {
+		logger.Error("Not authorized for this operation")
+		c.Data["ErrorMsg"] = "Not authorized for this operation"
+		c.HTML(http.StatusBadRequest, "error")
+		return
+	}
 	redirectTo := "../loadbalancers"
 	name := c.QueryTrim("name")
 	routerID := c.QueryInt64("router")

@@ -129,7 +129,7 @@ func (a *ImageStorageAdmin) InitStorages(ctx context.Context, image *model.Image
 func (v *ImageStorageView) List(c *macaron.Context, store session.Store) {
 	ctx := c.Req.Context()
 	memberShip := GetMemberShip(c.Req.Context())
-	permit := memberShip.CheckPermission(model.Reader)
+	permit := memberShip.CheckOrgPermission(model.OrgReader)
 	if !permit {
 		logger.Error("Not authorized for this operation")
 		c.Data["ErrorMsg"] = "Not authorized for this operation"

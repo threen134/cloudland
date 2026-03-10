@@ -30,8 +30,16 @@ type FlavorAdmin struct{}
 type FlavorView struct{}
 
 func (a *FlavorAdmin) Create(ctx context.Context, name string, cpu, memory, disk int32) (flavor *model.Flavor, err error) {
+	logger.Infof("ENTER FlavorAdmin.Create: name=%s, cpu=%d, memory=%d, disk=%d", name, cpu, memory, disk)
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT FlavorAdmin.Create: error=%v", err)
+		} else {
+			logger.Info("EXIT FlavorAdmin.Create: success")
+		}
+	}()
 	memberShip := GetMemberShip(ctx)
-	permit := memberShip.CheckPermission(model.Admin)
+	permit := memberShip.CheckSystemPermission()
 	if !permit {
 		logger.Error("Not authorized for this operation")
 		err = NewCLError(ErrPermissionDenied, "Not authorized for this operation", nil)
@@ -58,6 +66,14 @@ func (a *FlavorAdmin) Create(ctx context.Context, name string, cpu, memory, disk
 }
 
 func (a *FlavorAdmin) GetFlavorByName(ctx context.Context, name string) (flavor *model.Flavor, err error) {
+	logger.Infof("ENTER FlavorAdmin.GetFlavorByName: name=%s", name)
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT FlavorAdmin.GetFlavorByName: error=%v", err)
+		} else {
+			logger.Info("EXIT FlavorAdmin.GetFlavorByName: success")
+		}
+	}()
 	_, db := GetContextDB(ctx)
 	flavor = &model.Flavor{}
 	err = db.Where("name = ?", name).Take(flavor).Error
@@ -69,6 +85,14 @@ func (a *FlavorAdmin) GetFlavorByName(ctx context.Context, name string) (flavor 
 }
 
 func (a *FlavorAdmin) Get(ctx context.Context, id int64) (flavor *model.Flavor, err error) {
+	logger.Infof("ENTER FlavorAdmin.Get: id=%d", id)
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT FlavorAdmin.Get: error=%v", err)
+		} else {
+			logger.Info("EXIT FlavorAdmin.Get: success")
+		}
+	}()
 	if id <= 0 {
 		err = NewCLError(ErrInvalidParameter, fmt.Sprintf("Invalid flavor ID: %d", id), nil)
 		logger.Error(err)
@@ -85,8 +109,16 @@ func (a *FlavorAdmin) Get(ctx context.Context, id int64) (flavor *model.Flavor, 
 }
 
 func (a *FlavorAdmin) Delete(ctx context.Context, flavor *model.Flavor) (err error) {
+	logger.Infof("ENTER FlavorAdmin.Delete: id=%d, name=%s", flavor.ID, flavor.Name)
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT FlavorAdmin.Delete: error=%v", err)
+		} else {
+			logger.Info("EXIT FlavorAdmin.Delete: success")
+		}
+	}()
 	memberShip := GetMemberShip(ctx)
-	permit := memberShip.CheckPermission(model.Admin)
+	permit := memberShip.CheckSystemPermission()
 	if !permit {
 		logger.Error("Not authorized for this operation")
 		err = NewCLError(ErrPermissionDenied, "Not authorized for this operation", nil)
@@ -117,6 +149,14 @@ func (a *FlavorAdmin) Delete(ctx context.Context, flavor *model.Flavor) (err err
 }
 
 func (a *FlavorAdmin) List(ctx context.Context, offset, limit int64, order, query string) (total int64, flavors []*model.Flavor, err error) {
+	logger.Infof("ENTER FlavorAdmin.List: offset=%d, limit=%d, order=%s, query=%s", offset, limit, order, query)
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT FlavorAdmin.List: error=%v", err)
+		} else {
+			logger.Info("EXIT FlavorAdmin.List: success")
+		}
+	}()
 	ctx, db := GetContextDB(ctx)
 	if limit == 0 {
 		limit = 16
@@ -142,6 +182,8 @@ func (a *FlavorAdmin) List(ctx context.Context, offset, limit int64, order, quer
 }
 
 func (v *FlavorView) List(c *macaron.Context, store session.Store) {
+	logger.Infof("ENTER FlavorView.List: query=%s", c.Req.URL.RawQuery)
+	defer logger.Info("EXIT FlavorView.List")
 	offset := c.QueryInt64("offset")
 	limit := c.QueryInt64("limit")
 	if limit == 0 {
@@ -167,6 +209,14 @@ func (v *FlavorView) List(c *macaron.Context, store session.Store) {
 }
 
 func (v *FlavorView) Delete(c *macaron.Context, store session.Store) (err error) {
+	logger.Infof("ENTER FlavorView.Delete: id=%s", c.Params("id"))
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT FlavorView.Delete: error=%v", err)
+		} else {
+			logger.Info("EXIT FlavorView.Delete: success")
+		}
+	}()
 	ctx := c.Req.Context()
 	id := c.ParamsInt64("id")
 	if id <= 0 {
@@ -193,8 +243,10 @@ func (v *FlavorView) Delete(c *macaron.Context, store session.Store) (err error)
 }
 
 func (v *FlavorView) New(c *macaron.Context, store session.Store) {
+	logger.Infof("ENTER FlavorView.New: query=%s", c.Req.URL.RawQuery)
+	defer logger.Info("EXIT FlavorView.New")
 	memberShip := GetMemberShip(c.Req.Context())
-	permit := memberShip.CheckPermission(model.Admin)
+	permit := memberShip.CheckSystemPermission()
 	if !permit {
 		logger.Error("Not authorized for this operation")
 		c.Data["ErrorMsg"] = "Not authorized for this operation"
@@ -205,6 +257,8 @@ func (v *FlavorView) New(c *macaron.Context, store session.Store) {
 }
 
 func (v *FlavorView) Create(c *macaron.Context, store session.Store) {
+	logger.Infof("ENTER FlavorView.Create: query=%s", c.Req.URL.RawQuery)
+	defer logger.Info("EXIT FlavorView.Create")
 	redirectTo := "../flavors"
 	name := c.Query("name")
 	cores := c.Query("cpu")

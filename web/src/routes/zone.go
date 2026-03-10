@@ -30,6 +30,14 @@ type ZoneAdmin struct{}
 type ZoneView struct{}
 
 func (a *ZoneAdmin) List(ctx context.Context, offset, limit int64, order, query string) (total int64, zones []*model.Zone, err error) {
+	logger.Infof("ENTER ZoneAdmin.List: offset=%d, limit=%d, order=%s, query=%s", offset, limit, order, query)
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT ZoneAdmin.List: error=%v", err)
+		} else {
+			logger.Info("EXIT ZoneAdmin.List: success")
+		}
+	}()
 	ctx, db := GetContextDB(ctx)
 	if limit == 0 {
 		limit = 16
@@ -57,6 +65,14 @@ func (a *ZoneAdmin) List(ctx context.Context, offset, limit int64, order, query 
 }
 
 func (a *ZoneAdmin) Get(ctx context.Context, id int64) (zone *model.Zone, err error) {
+	logger.Infof("ENTER ZoneAdmin.Get: id=%d", id)
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT ZoneAdmin.Get: error=%v", err)
+		} else {
+			logger.Infof("EXIT ZoneAdmin.Get: success, zoneID=%d", zone.ID)
+		}
+	}()
 	ctx, db := GetContextDB(ctx)
 	zone = &model.Zone{ID: id}
 	if err = db.Take(zone).Error; err != nil {
@@ -68,6 +84,14 @@ func (a *ZoneAdmin) Get(ctx context.Context, id int64) (zone *model.Zone, err er
 }
 
 func (a *ZoneAdmin) GetZoneByName(ctx context.Context, name string) (zone *model.Zone, err error) {
+	logger.Infof("ENTER ZoneAdmin.GetZoneByName: name=%s", name)
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT ZoneAdmin.GetZoneByName: error=%v", err)
+		} else {
+			logger.Infof("EXIT ZoneAdmin.GetZoneByName: success, zoneID=%d", zone.ID)
+		}
+	}()
 	ctx, db := GetContextDB(ctx)
 	zone = &model.Zone{}
 	err = db.Where("name = ?", name).Take(zone).Error
@@ -80,6 +104,14 @@ func (a *ZoneAdmin) GetZoneByName(ctx context.Context, name string) (zone *model
 }
 
 func (a *ZoneAdmin) GetDefaultZone(ctx context.Context) (zone *model.Zone, err error) {
+	logger.Infof("ENTER ZoneAdmin.GetDefaultZone")
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT ZoneAdmin.GetDefaultZone: error=%v", err)
+		} else {
+			logger.Infof("EXIT ZoneAdmin.GetDefaultZone: success, zoneID=%d", zone.ID)
+		}
+	}()
 	ctx, db := GetContextDB(ctx)
 	zone = &model.Zone{}
 	err = db.Where("\"default\" = ?", true).Take(zone).Error
@@ -92,7 +124,14 @@ func (a *ZoneAdmin) GetDefaultZone(ctx context.Context) (zone *model.Zone, err e
 }
 
 func (a *ZoneAdmin) Create(ctx context.Context, name string, isDefault bool, remark string) (zone *model.Zone, err error) {
-	logger.Debugf("Creating zone %s, default: %t", name, isDefault)
+	logger.Infof("ENTER ZoneAdmin.Create: name=%s, isDefault=%t, remark=%s", name, isDefault, remark)
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT ZoneAdmin.Create: error=%v", err)
+		} else {
+			logger.Infof("EXIT ZoneAdmin.Create: success, zoneID=%d", zone.ID)
+		}
+	}()
 	ctx, db, newTransaction := StartTransaction(ctx)
 	defer func() {
 		if newTransaction {
@@ -100,7 +139,7 @@ func (a *ZoneAdmin) Create(ctx context.Context, name string, isDefault bool, rem
 		}
 	}()
 	memberShip := GetMemberShip(ctx)
-	permit := memberShip.CheckPermission(model.Admin)
+	permit := memberShip.CheckSystemPermission()
 	if !permit {
 		logger.Error("Not authorized to create zone")
 		err = NewCLError(ErrPermissionDenied, "Not authorized to create zone", nil)
@@ -134,6 +173,14 @@ func (a *ZoneAdmin) Create(ctx context.Context, name string, isDefault bool, rem
 }
 
 func (a *ZoneAdmin) Update(ctx context.Context, zone *model.Zone, isDefault bool, remark string) (err error) {
+	logger.Infof("ENTER ZoneAdmin.Update: zoneID=%d, isDefault=%t, remark=%s", zone.ID, isDefault, remark)
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT ZoneAdmin.Update: error=%v", err)
+		} else {
+			logger.Info("EXIT ZoneAdmin.Update: success")
+		}
+	}()
 	ctx, db, newTransaction := StartTransaction(ctx)
 	defer func() {
 		if newTransaction {
@@ -141,7 +188,7 @@ func (a *ZoneAdmin) Update(ctx context.Context, zone *model.Zone, isDefault bool
 		}
 	}()
 	memberShip := GetMemberShip(ctx)
-	permit := memberShip.CheckPermission(model.Admin)
+	permit := memberShip.CheckSystemPermission()
 	if !permit {
 		logger.Error("Not authorized to update zone")
 		err = NewCLError(ErrPermissionDenied, "Not authorized to update zone", nil)
@@ -174,6 +221,14 @@ func (a *ZoneAdmin) Update(ctx context.Context, zone *model.Zone, isDefault bool
 }
 
 func (a *ZoneAdmin) Delete(ctx context.Context, zone *model.Zone) (err error) {
+	logger.Infof("ENTER ZoneAdmin.Delete: zoneID=%d, name=%s", zone.ID, zone.Name)
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT ZoneAdmin.Delete: error=%v", err)
+		} else {
+			logger.Info("EXIT ZoneAdmin.Delete: success")
+		}
+	}()
 	ctx, db, newTransaction := StartTransaction(ctx)
 	defer func() {
 		if newTransaction {
@@ -181,7 +236,7 @@ func (a *ZoneAdmin) Delete(ctx context.Context, zone *model.Zone) (err error) {
 		}
 	}()
 	memberShip := GetMemberShip(ctx)
-	permit := memberShip.CheckPermission(model.Admin)
+	permit := memberShip.CheckSystemPermission()
 	if !permit {
 		logger.Error("Not authorized to delete zone")
 		err = NewCLError(ErrPermissionDenied, "Not authorized to delete zone", nil)
@@ -212,8 +267,10 @@ func (a *ZoneAdmin) Delete(ctx context.Context, zone *model.Zone) (err error) {
 }
 
 func (v *ZoneView) List(c *macaron.Context, store session.Store) {
+	logger.Infof("ENTER ZoneView.List: query=%s", c.Req.URL.RawQuery)
+	defer logger.Info("EXIT ZoneView.List")
 	memberShip := GetMemberShip(c.Req.Context())
-	permit := memberShip.CheckPermission(model.Admin)
+	permit := memberShip.CheckSystemPermission()
 	if !permit {
 		logger.Error("Not authorized for this operation")
 		c.Data["ErrorMsg"] = "Not authorized for this operation"
@@ -245,8 +302,10 @@ func (v *ZoneView) List(c *macaron.Context, store session.Store) {
 }
 
 func (v *ZoneView) New(c *macaron.Context, store session.Store) {
+	logger.Infof("ENTER ZoneView.New: query=%s", c.Req.URL.RawQuery)
+	defer logger.Info("EXIT ZoneView.New")
 	memberShip := GetMemberShip(c.Req.Context())
-	permit := memberShip.CheckPermission(model.Admin)
+	permit := memberShip.CheckSystemPermission()
 	if !permit {
 		logger.Error("Not authorized for this operation")
 		c.Data["ErrorMsg"] = "Not authorized for this operation"
@@ -257,8 +316,10 @@ func (v *ZoneView) New(c *macaron.Context, store session.Store) {
 }
 
 func (v *ZoneView) Create(c *macaron.Context, store session.Store) {
+	logger.Infof("ENTER ZoneView.Create: query=%s", c.Req.URL.RawQuery)
+	defer logger.Info("EXIT ZoneView.Create")
 	memberShip := GetMemberShip(c.Req.Context())
-	permit := memberShip.CheckPermission(model.Admin)
+	permit := memberShip.CheckSystemPermission()
 	if !permit {
 		logger.Error("Not authorized for this operation")
 		c.Data["ErrorMsg"] = "Not authorized for this operation"
@@ -280,8 +341,10 @@ func (v *ZoneView) Create(c *macaron.Context, store session.Store) {
 }
 
 func (v *ZoneView) Edit(c *macaron.Context, store session.Store) {
+	logger.Infof("ENTER ZoneView.Edit: id=%s, query=%s", c.Params("id"), c.Req.URL.RawQuery)
+	defer logger.Info("EXIT ZoneView.Edit")
 	memberShip := GetMemberShip(c.Req.Context())
-	permit := memberShip.CheckPermission(model.Admin)
+	permit := memberShip.CheckSystemPermission()
 	if !permit {
 		logger.Error("Not authorized for this operation")
 		c.Data["ErrorMsg"] = "Not authorized for this operation"
@@ -306,8 +369,10 @@ func (v *ZoneView) Edit(c *macaron.Context, store session.Store) {
 }
 
 func (v *ZoneView) Patch(c *macaron.Context, store session.Store) {
+	logger.Infof("ENTER ZoneView.Patch: id=%s, query=%s", c.Params("id"), c.Req.URL.RawQuery)
+	defer logger.Info("EXIT ZoneView.Patch")
 	memberShip := GetMemberShip(c.Req.Context())
-	permit := memberShip.CheckPermission(model.Admin)
+	permit := memberShip.CheckSystemPermission()
 	if !permit {
 		logger.Error("Not authorized for this operation")
 		c.Data["ErrorMsg"] = "Not authorized for this operation"
@@ -341,6 +406,14 @@ func (v *ZoneView) Patch(c *macaron.Context, store session.Store) {
 }
 
 func (v *ZoneView) Delete(c *macaron.Context, store session.Store) (err error) {
+	logger.Infof("ENTER ZoneView.Delete: id=%s", c.Params("id"))
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT ZoneView.Delete: error=%v", err)
+		} else {
+			logger.Info("EXIT ZoneView.Delete: success")
+		}
+	}()
 	ctx := c.Req.Context()
 	id := c.Params("id")
 	if id == "" {

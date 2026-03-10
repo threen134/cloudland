@@ -14,7 +14,7 @@ import (
 
 type TokenClaim struct {
 	OrgID      int64
-	Role       model.Role
+	OrgRole    model.OrgRole
 	InstanceID int    `json:"instanceID"`
 	Secret     string `json:"secret"`
 	jwt.RegisteredClaims

@@ -50,8 +50,8 @@ type Instance struct {
 	Domain         string         `gorm:"type:varchar(128)"`
 	Status         InstanceStatus `gorm:"type:varchar(32)"`
 	Reason         string         `gorm:"type:text"`
-	FloatingIps    []*FloatingIp  `gorm:"foreignkey:InstanceID",gorm:"PRELOAD:false`
-	Volumes        []*Volume      `gorm:"foreignkey:InstanceID",gorm:"PRELOAD:false"`
+	FloatingIps    []*FloatingIp  `gorm:"foreignkey:InstanceID;PRELOAD:false"`
+	Volumes        []*Volume      `gorm:"foreignkey:InstanceID;PRELOAD:false"`
 	Interfaces     []*Interface   `gorm:"foreignkey:Instance"`
 	Portmaps       []*Portmap     `gorm:"foreignkey:instanceID"`
 	Cpu            int32          `gorm:"default:0"`
@@ -72,8 +72,9 @@ type Instance struct {
 	Hyper          int32 `gorm:"default:-1"`
 	ZoneID         int64
 	Zone           *Zone `gorm:"foreignkey:ZoneID"`
-	RouterID       int64 `gorm:"unique_index:idx_router_instance"`
+	RouterID       int64         `gorm:"unique_index:idx_router_instance"`
 	Router         *Router
+	OwnerInfo      *Organization `gorm:"-"` /* Transient: populated for SystemAdmin list view */
 }
 
 func init() {

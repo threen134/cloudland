@@ -18,7 +18,11 @@ const (
 	VersionFile = "/opt/cloudland/version"
 )
 
-func (v *SysInfoAdmin) GetVersion() string {
+func (v *SysInfoAdmin) GetVersion() (ver string) {
+	logger.Info("ENTER GetVersion: get system version")
+	defer func() {
+		logger.Infof("EXIT GetVersion: version=%s", ver)
+	}()
 	if Version == "unknown" {
 		// read version from file
 		// check if file exists

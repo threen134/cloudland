@@ -50,6 +50,21 @@ const (
 	ErrPasswordHashFailed ErrCode = 100209
 	ErrPasswordMismatch   ErrCode = 100210
 
+	// Permission redesign error codes (1002xx continued)
+	ErrNoOrgMembership   ErrCode = 100211 // Dormant 用户操作受限资源时返回，HTTP 403
+	ErrUserDisabled      ErrCode = 100212 // 用户已被禁用，HTTP 403
+	ErrCannotRemoveOwner ErrCode = 100213 // 不能移除 Org Owner，必须先转让，HTTP 400
+	ErrEmailConflict     ErrCode = 100214 // 邮箱已被注册，HTTP 409
+	ErrLastSystemAdmin   ErrCode = 100215 // 不能降级/删除最后一个 SystemAdmin，HTTP 400
+	ErrCannotSelfDemote  ErrCode = 100216 // 不能对自己执行降级操作，HTTP 400
+	ErrMissingOrgContext ErrCode = 100217 // SystemAdmin 创建资源时未指定 Org 上下文，HTTP 400
+	ErrOrgHasResources   ErrCode = 100218 // Org 下仍有云资源，无法解散，HTTP 409
+	ErrOrgHasMembers     ErrCode = 100219 // 无法删除用户：该用户仍是某 Org 的 Owner 且 Org 有其他成员，HTTP 409
+	ErrSlugConflict      ErrCode = 100220 // Org Slug 已被其他 Org 占用，HTTP 409
+	ErrSlugImmutable     ErrCode = 100221 // Org Slug 创建后不可修改，HTTP 400
+	ErrSlugInvalid       ErrCode = 100222 // Org Slug 格式非法，HTTP 400
+	ErrSlugReserved      ErrCode = 100223 // Org Slug 为系统保留值，HTTP 409
+
 	// Member related errors (1003xx)
 	ErrMemberNotFound       ErrCode = 100300
 	ErrMemberCreationFailed ErrCode = 100301
@@ -284,13 +299,15 @@ const (
 
 func (c ErrCode) ToHTTPStatus() int {
 	switch {
-	case c == ErrPermissionDenied:
+	case c == ErrPermissionDenied || c == ErrNoOrgMembership || c == ErrUserDisabled:
 		return 403
 	case c >= 100002 && c <= 100003 || c == ErrInvalidCIDR || c == ErrCIDRTooBig:
 		return 400
+	case c == ErrCannotRemoveOwner || c == ErrLastSystemAdmin || c == ErrCannotSelfDemote || c == ErrMissingOrgContext || c == ErrSlugImmutable || c == ErrSlugInvalid:
+		return 400
 	case c == ErrResourceNotFound || (c >= 100200 && c <= 100207 && c%2 == 0) || c == ErrZoneNotFound || c == ErrHypervisorNotFound:
 		return 404
-	case c == ErrInsufficientResource || c == ErrInsufficientAddress:
+	case c == ErrInsufficientResource || c == ErrInsufficientAddress || c == ErrEmailConflict || c == ErrOrgHasResources || c == ErrOrgHasMembers || c == ErrSlugConflict || c == ErrSlugReserved:
 		return 409
 	default:
 		return 500
