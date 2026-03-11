@@ -26,10 +26,16 @@ var userAdmin = &routes.UserAdmin{}
 type UserAPI struct{}
 
 type UserPayload struct {
-	Username string         `json:"username" binding:"required,min=2"`
-	Password string         `json:"password" binding:"required,min=8,max=32"`
-	ID       string         `json:"id,omitempty" binding:"omitempty"`
-	Org      *BaseReference `json:"org,omitempty" binding:"omitempty"`
+	Username string `json:"username" binding:"required,min=2"`
+	Password string `json:"password" binding:"required,min=8,max=32"`
+	ID       string `json:"id,omitempty" binding:"omitempty"`
+	Org      string `json:"org,omitempty"` // Org name; if set, creates user+org atomically
+	// Optional profile fields (can be set at creation time)
+	FirstName  string `json:"first_name,omitempty"`
+	LastName   string `json:"last_name,omitempty"`
+	Region     string `json:"region,omitempty"`
+	Language   string `json:"language,omitempty"`
+	SystemRole *int   `json:"system_role,omitempty"` // 0=User, 1=Admin (SystemAdmin only)
 }
 
 type UserPatchPayload struct {
@@ -195,10 +201,7 @@ func (v *UserAPI) Create(c *gin.Context) {
 
 	// Scenario 2B: if no org specified, create a Dormant user without Org
 	// Scenario 1: if org specified, create user + org atomically
-	orgName := ""
-	if payload.Org != nil && payload.Org.Name != "" {
-		orgName = payload.Org.Name
-	}
+	orgName := payload.Org
 
 	userResp := &UserResponse{}
 	if orgName == "" {
@@ -244,6 +247,14 @@ func (v *UserAPI) Create(c *gin.Context) {
 		userResp.Role = model.OrgAdmin.String()
 	}
 	logger.Debugf("Created user successfully, %+v", userResp)
+
+	// Apply optional profile fields if provided
+	if payload.FirstName != "" || payload.LastName != "" || payload.Region != "" || payload.Language != "" {
+		if u, e := userAdmin.GetUserByUUID(ctx, userResp.UserInfo.ID); e == nil {
+			_ = userAdmin.UpdateProfile(ctx, u.ID, payload.FirstName, payload.LastName, payload.Region, payload.Language, "")
+		}
+	}
+
 	c.JSON(http.StatusOK, userResp)
 }
 
@@ -389,8 +400,8 @@ func (v *UserAPI) LoginPost(c *gin.Context) {
 
 	// Get org context
 	var orgID int64
-	if payload.Org != nil && payload.Org.Name != "" {
-		org, orgErr := orgAdmin.GetOrgByName(ctx, payload.Org.Name)
+	if payload.Org != "" {
+		org, orgErr := orgAdmin.GetOrgByName(ctx, payload.Org)
 		if orgErr != nil {
 			logger.Errorf("Failed to get org: %+v", orgErr)
 			ErrorResponse(c, http.StatusBadRequest, "Invalid organization", orgErr)

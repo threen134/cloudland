@@ -389,7 +389,7 @@ func (a *OrgAdmin) GetOrgByUUID(ctx context.Context, uuID string) (org *model.Or
 	}()
 	ctx, db := GetContextDB(ctx)
 	org = &model.Organization{}
-	err = db.Preload("Members").Where("uuid = ?", uuID).Take(org).Error
+	err = db.Preload("Members.User").Where("uuid = ?", uuID).Take(org).Error
 	if err != nil {
 		logger.Error("Failed to query org, %v", err)
 		err = NewCLError(ErrOrgNotFound, "Failed to find organization", err)
@@ -596,7 +596,7 @@ func (a *OrgAdmin) List(ctx context.Context, offset, limit int64, order, query s
 		return
 	}
 	db = dbs.Sortby(db.Offset(offset).Limit(limit), order)
-	err = db.Preload("Members").Where(whereQuery, whereArgs...).Find(&orgs).Error
+	err = db.Preload("Members.User").Where(whereQuery, whereArgs...).Find(&orgs).Error
 	if err != nil {
 		logger.Error("DB failed to query organizations, %v", err)
 		err = NewCLError(ErrSQLSyntaxError, "Failed to query organizations", err)

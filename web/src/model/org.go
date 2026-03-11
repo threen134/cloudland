@@ -94,4 +94,5 @@ type Member struct {
 	UserID  int64   `gorm:"not null;uniqueIndex:idx_user_org"`
 	OrgID   int64   `gorm:"not null;uniqueIndex:idx_user_org"`
 	OrgRole OrgRole `gorm:"default:1"`
+	User    *User   `gorm:"foreignkey:UserID"`
 }

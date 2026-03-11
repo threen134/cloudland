@@ -86,10 +86,14 @@ func (v *OrgAPI) getOrgResponse(ctx context.Context, org *model.Organization) (o
 		},
 	}
 	for _, member := range org.Members {
+		memberName := strconv.FormatInt(member.UserID, 10)
+		if member.User != nil && member.User.Email != "" {
+			memberName = member.User.Email
+		}
 		orgResp.Members = append(orgResp.Members, &MemberInfo{
 			ResourceReference: &ResourceReference{
 				ID:   member.UUID,
-				Name: strconv.FormatInt(member.UserID, 10),
+				Name: memberName,
 			},
 			Role: member.OrgRole.String(),
 		})
@@ -175,8 +179,8 @@ func (v *OrgAPI) AddMember(c *gin.Context) {
 	ctx := c.Request.Context()
 	uuID := c.Param("id")
 	payload := struct {
-		UserID  int64         `json:"user_id" binding:"required"`
-		OrgRole model.OrgRole `json:"role" binding:"required"`
+		UserUUID string        `json:"user_id" binding:"required"`
+		OrgRole  model.OrgRole `json:"role" binding:"required"`
 	}{}
 	if err := c.ShouldBindJSON(&payload); err != nil {
 		ErrorResponse(c, http.StatusBadRequest, "Invalid input JSON", err)
@@ -192,13 +196,19 @@ func (v *OrgAPI) AddMember(c *gin.Context) {
 		ErrorResponse(c, http.StatusBadRequest, "Invalid org id", err)
 		return
 	}
-	member, err := orgAdmin.AddMember(ctx, org.ID, payload.UserID, payload.OrgRole)
+	// Resolve user UUID → numeric ID
+	targetUser, err := userAdmin.GetUserByUUID(ctx, payload.UserUUID)
+	if err != nil {
+		ErrorResponse(c, http.StatusBadRequest, "Invalid user_id: user not found", err)
+		return
+	}
+	member, err := orgAdmin.AddMember(ctx, org.ID, targetUser.ID, payload.OrgRole)
 	if err != nil {
 		ErrorResponse(c, http.StatusBadRequest, "Failed to add member", err)
 		return
 	}
 	c.JSON(http.StatusOK, &MemberInfo{
-		ResourceReference: &ResourceReference{ID: member.UUID, Name: strconv.FormatInt(member.UserID, 10)},
+		ResourceReference: &ResourceReference{ID: member.UUID, Name: targetUser.Email},
 		Role:              member.OrgRole.String(),
 	})
 }
