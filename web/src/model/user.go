@@ -13,6 +13,7 @@ History:
 package model
 
 import (
+	"encoding/gob"
 	"web/src/dbs"
 
 	"github.com/jinzhu/gorm"
@@ -53,6 +54,10 @@ func (User) TableName() string {
 }
 
 func init() {
+	var sr SystemRole
+	var st UserStatus
+	gob.Register(sr)
+	gob.Register(st)
 	dbs.AutoMigrate(&User{})
 	// Create a partial unique index on email that only covers non-deleted rows with a non-empty email.
 	// This allows: (1) soft-deleted users' emails to be reused, (2) rows with empty email to coexist.

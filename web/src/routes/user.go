@@ -863,7 +863,7 @@ func (v *UserView) LoginPost(c *macaron.Context, store session.Store) {
 		return
 	}
 	uid := user.ID
-	_, sysRole, orgRole, status, token, _, _, err := userAdmin.AccessToken(c.Req.Context(), uid)
+	oid, sysRole, orgRole, status, token, _, _, err := userAdmin.AccessToken(c.Req.Context(), uid)
 	if err != nil {
 		logger.Error("Failed to get token", err)
 		c.Data["ErrorMsg"] = err.Error()
@@ -877,6 +877,7 @@ func (v *UserView) LoginPost(c *macaron.Context, store session.Store) {
 		c.Data["ErrorMsg"] = err.Error()
 		c.HTML(403, "403")
 	}
+	store.Set("oid", oid)
 	store.Set("login", email)
 	store.Set("uid", uid)
 	store.Set("sr", sysRole)
