@@ -331,14 +331,14 @@ func (v *UserAPI) ValidateEmail(c *gin.Context) {
 		ErrorResponse(c, http.StatusBadRequest, "Email query parameter is required", nil)
 		return
 	}
-	exists, userID, err := userAdmin.ValidateEmail(c.Request.Context(), email)
+	exists, userUUID, err := userAdmin.ValidateEmail(c.Request.Context(), email)
 	if err != nil {
 		ErrorResponse(c, http.StatusInternalServerError, "Failed to validate email", err)
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{
-		"exists":  exists,
-		"user_id": userID,
+		"exists":    exists,
+		"user_uuid": userUUID,
 	})
 }
 

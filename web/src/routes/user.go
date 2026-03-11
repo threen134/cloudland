@@ -211,19 +211,19 @@ func (a *UserAdmin) Validate(ctx context.Context, email, password string) (user 
 }
 
 // ValidateEmail checks if an email is already registered (public endpoint for middleware).
-func (a *UserAdmin) ValidateEmail(ctx context.Context, email string) (exists bool, userID int64, err error) {
+func (a *UserAdmin) ValidateEmail(ctx context.Context, email string) (exists bool, userUUID string, err error) {
 	logger.Infof("ENTER UserAdmin.ValidateEmail: email=%s", email)
 	defer func() {
-		logger.Infof("EXIT UserAdmin.ValidateEmail: exists=%v, userID=%d", exists, userID)
+		logger.Infof("EXIT UserAdmin.ValidateEmail: exists=%v, userUUID=%s", exists, userUUID)
 	}()
 	db := DB()
 	user := &model.User{}
 	err = db.Where("email = ?", email).Take(user).Error
 	if err != nil {
 		// Not found is not an error here
-		return false, 0, nil
+		return false, "", nil
 	}
-	return true, user.ID, nil
+	return true, user.UUID, nil
 }
 
 // GetUserByEmail looks up a user by email.
