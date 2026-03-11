@@ -20,6 +20,7 @@ else
     : "${DB_USER:=postgres}"
     : "${DB_PASSWORD:=d6Passwd}"
     : "${DB_NAME:=cloudland}"
+    : "${ADMIN_EMAIL:=admin@cloudland.local}"
     : "${ADMIN_PASSWORD:=passw0rd}"
     : "${CLOUDLAND_HOST:=cloudland}"
     : "${MONITOR_HOST:=prometheus}"
@@ -59,6 +60,7 @@ host = "${MONITOR_HOST}"
 port = "${MONITOR_PORT}"
 
 [admin]
+email = "${ADMIN_EMAIL}"
 password = "${ADMIN_PASSWORD}"
 
 [key]
