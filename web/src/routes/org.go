@@ -142,8 +142,8 @@ func (a *OrgAdmin) AddMember(ctx context.Context, orgID, userID int64, role mode
 		}
 	}()
 	memberShip := GetMemberShip(ctx)
-	if !memberShip.CanManageTargetOrg(orgID) {
-		err = NewCLError(ErrPermissionDenied, "Not authorized to manage members of this org", nil)
+	if !memberShip.IsSystemAdmin() {
+		err = NewCLError(ErrPermissionDenied, "Only SystemAdmin can add new members to organizations", nil)
 		return
 	}
 

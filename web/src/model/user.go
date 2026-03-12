@@ -34,6 +34,19 @@ const (
 	UserDisabled UserStatus = 3 // 禁用：被 SystemAdmin 主动禁用，无法登录
 )
 
+func (s UserStatus) String() string {
+	switch s {
+	case UserActive:
+		return "Active"
+	case UserDormant:
+		return "Dormant"
+	case UserDisabled:
+		return "Disabled"
+	default:
+		return "Unknown"
+	}
+}
+
 type User struct {
 	Model
 	// Email is the unique login identifier. Partial unique index is created by AutoUpgrade.

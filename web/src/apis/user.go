@@ -47,6 +47,7 @@ type UserResponse struct {
 	OrgInfo     *ResourceReference `json:"org,omitempty"`
 	AccessToken string             `json:"token,omitempty"`
 	Role        string             `json:"role,omitempty"`
+	Status      string             `json:"status,omitempty"`
 }
 
 type UserListResponse struct {
@@ -80,6 +81,7 @@ func (v *UserAPI) Get(c *gin.Context) {
 			ID:   user.UUID,
 			Name: user.Email,
 		},
+		Status: user.Status.String(),
 	}
 	logger.Debugf("Got user : %+v", userResp)
 	c.JSON(http.StatusOK, userResp)
@@ -137,6 +139,7 @@ func (v *UserAPI) Patch(c *gin.Context) {
 			CreatedAt: user.CreatedAt.Format(TimeStringForMat),
 			UpdatedAt: user.UpdatedAt.Format(TimeStringForMat),
 		},
+		Status: user.Status.String(),
 	}
 	logger.Debugf("Patched user %s successfully, %+v", uuID, userResp)
 	c.JSON(http.StatusOK, userResp)
@@ -218,6 +221,7 @@ func (v *UserAPI) Create(c *gin.Context) {
 			CreatedAt: user.CreatedAt.Format(TimeStringForMat),
 			UpdatedAt: user.UpdatedAt.Format(TimeStringForMat),
 		}
+		userResp.Status = user.Status.String()
 	} else {
 		// Scenario 1: user + org
 		user, org, err := userAdmin.CreateWithOrg(ctx, email, password, orgName, "")
@@ -245,6 +249,7 @@ func (v *UserAPI) Create(c *gin.Context) {
 			UpdatedAt: org.UpdatedAt.Format(TimeStringForMat),
 		}
 		userResp.Role = model.OrgAdmin.String()
+		userResp.Status = user.Status.String()
 	}
 	logger.Debugf("Created user successfully, %+v", userResp)
 
@@ -310,6 +315,7 @@ func (v *UserAPI) List(c *gin.Context) {
 				CreatedAt: user.CreatedAt.Format(TimeStringForMat),
 				UpdatedAt: user.UpdatedAt.Format(TimeStringForMat),
 			},
+			Status: user.Status.String(),
 		}
 	}
 	logger.Debugf("List users successfully, %+v", userListResp)
@@ -440,6 +446,7 @@ func (v *UserAPI) LoginPost(c *gin.Context) {
 		OrgInfo:     orgResp,
 		AccessToken: token,
 		Role:        orgRole.String(),
+		Status:      user.Status.String(),
 	}
 	logger.Debugf("Login successfully, %+v", userResp)
 	c.JSON(http.StatusOK, userResp)
@@ -590,6 +597,7 @@ func (v *UserAPI) SwitchOrg(c *gin.Context) {
 		},
 		AccessToken: token,
 		Role:        orgRole.String(),
+		Status:      user.Status.String(),
 	}
 
 	logger.Infof("User %d successfully switched to org %d. New token issued (exp: %d)", memberShip.UserID, payload.OrgID, expiresAt)
