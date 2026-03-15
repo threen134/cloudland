@@ -1,0 +1,49 @@
+version: "3.8"
+
+services:
+  # 中间平台服务(生产环境)
+  cpgateway:
+    build: 
+      context: ..
+      dockerfile: docker/Dockerfile
+    container_name: cloudland-cpgateway-prod
+    ports:
+      - "8000:8000"
+    environment:
+      # 使用 PostgreSQL 数据库(生产环境)
+      - DATABASE_URL=postgresql+asyncpg://postgres:password@postgres:5432/cloudland
+      - CLOUD_PLATFORM_API_URL=https://api.cloudplatform.com/v1
+      - CLOUD_PLATFORM_API_KEY=${CLOUD_PLATFORM_API_KEY}
+    env_file:
+      - ../.env
+    depends_on:
+      - postgres
+    restart: always
+    networks:
+      - cloudland-network
+
+  # PostgreSQL 数据库
+  postgres:
+    image: postgres:15-alpine
+    container_name: cloudland-postgres
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=password
+      - POSTGRES_DB=cloudland
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    restart: always
+    networks:
+      - cloudland-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+networks:
+  cloudland-network:
+    driver: bridge
+
+volumes:
+  postgres-data:

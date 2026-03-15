@@ -1,0 +1,207 @@
+import aiosmtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
+from app.core.config import settings
+import logging
+
+logger = logging.getLogger(__name__)
+
+async def send_activation_email(email: str, username: str, token: str, language: str = "en") -> bool:
+    """
+    Send activation email to user
+    
+    Args:
+        email: User's email address
+        username: User's username
+        token: Activation token
+        language: User's preferred language ('en' or 'zh')
+        
+    Returns:
+        True if email sent successfully, False otherwise
+    """
+    # Skip email sending if SMTP host is not configured
+    if not settings.SMTP_HOST:
+        logger.warning(f"SMTP_HOST not configured, skipping email to {email}")
+        logger.info(f"Activation link for frontend would be: {settings.FRONTEND_URL}/activate?token={token}")
+        return True
+    
+    activation_link = f"{settings.FRONTEND_URL}/activate?token={token}"
+    
+    # Localized Content
+    if language == "zh":
+        subject = "欢迎来到 Cloudland - 请激活您的账户"
+        welcome_title = "🎉 欢迎来到 Cloudland!"
+        hello_text = f"您好 <strong>{username}</strong>,"
+        main_text = "欢迎加入 Cloudland！我们很高兴您的加入。请点击下方按钮验证您的邮箱并激活账户："
+        button_text = "激活账户"
+        link_text = "或者将以下链接复制到浏览器中访问："
+        token_text = f"验证令牌: <code>{token}</code>"
+        note_text = "<strong>注意:</strong> 此链接在 24 小时内有效。"
+        footer_ignore = "如果您没有注册过此账户，请忽略此邮件。"
+        footer_rights = "© 2026 Cloudland Platform. 保留所有权利。"
+        
+        text_fallback = f"""
+        欢迎来到 Cloudland!
+        
+        您好 {username},
+        
+        欢迎加入 Cloudland！请访问以下链接激活您的账户：
+        
+        {activation_link}
+        
+        验证令牌: {token}
+        
+        注意: 此链接在 24 小时内有效。
+        
+        如果您没有注册过此账户，请忽略此邮件。
+        
+        © 2026 Cloudland Platform. 保留所有权利。
+        """
+    else:
+        subject = "Welcome to Cloudland - Please Activate Your Account"
+        welcome_title = "🎉 Welcome to Cloudland!"
+        hello_text = f"Hello <strong>{username}</strong>,"
+        main_text = "Welcome to Cloudland! We're excited to have you on board. Please click the button below to verify your email and activate your account:"
+        button_text = "Activate Account"
+        link_text = "Or copy and paste this link into your browser:"
+        token_text = f"Verification Token: <code>{token}</code>"
+        note_text = "<strong>Note:</strong> This link will expire in 24 hours."
+        footer_ignore = "If you did not sign up for this account, please ignore this email."
+        footer_rights = "© 2026 Cloudland Platform. All rights reserved."
+        
+        text_fallback = f"""
+        Welcome to Cloudland!
+        
+        Hello {username},
+        
+        Welcome to Cloudland! Please visit the link below to activate your account:
+        
+        {activation_link}
+        
+        Verification Token: {token}
+        
+        Note: This link will expire in 24 hours.
+        
+        If you did not sign up for this account, please ignore this email.
+        
+        © 2026 Cloudland Platform. All rights reserved.
+        """
+
+    # Create message
+    message = MIMEMultipart("alternative")
+    message["Subject"] = subject
+    message["From"] = f"{settings.SMTP_FROM_NAME} <{settings.SMTP_FROM}>"
+    message["To"] = email
+    
+    # HTML email content
+    html_content = f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <meta charset="UTF-8">
+        <style>
+            body {{
+                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+                line-height: 1.6;
+                color: #333;
+                max-width: 600px;
+                margin: 0 auto;
+                padding: 20px;
+            }}
+            .container {{
+                background: #ffffff;
+                border-radius: 8px;
+                padding: 40px;
+                box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            }}
+            .header {{
+                text-align: center;
+                margin-bottom: 30px;
+            }}
+            .header h1 {{
+                color: #2563eb;
+                margin: 0;
+                font-size: 28px;
+            }}
+            .content {{
+                margin: 30px 0;
+            }}
+            .button {{
+                display: inline-block;
+                padding: 14px 32px;
+                background: #2563eb;
+                color: #ffffff !important;
+                text-decoration: none;
+                border-radius: 6px;
+                font-weight: 600;
+                margin: 20px 0;
+            }}
+            .button:hover {{
+                background: #1d4ed8;
+            }}
+            .footer {{
+                margin-top: 40px;
+                padding-top: 20px;
+                border-top: 1px solid #e5e7eb;
+                font-size: 14px;
+                color: #6b7280;
+                text-align: center;
+            }}
+            .link {{
+                color: #2563eb;
+                word-break: break-all;
+            }}
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <div class="header">
+                <h1>{welcome_title}</h1>
+            </div>
+            <div class="content">
+                <p>{hello_text}</p>
+                <p>{main_text}</p>
+                <div style="text-align: center;">
+                    <a href="{activation_link}" class="button">{button_text}</a>
+                </div>
+                <p>{link_text}</p>
+                <p><a href="{activation_link}" class="link">{activation_link}</a></p>
+                <p>{token_text}</p>
+                <p>{note_text}</p>
+            </div>
+            <div class="footer">
+                <p>{footer_ignore}</p>
+                <p>{footer_rights}</p>
+            </div>
+        </div>
+    </body>
+    </html>
+    """
+    
+    # Text content remains using text_fallback
+    text_content = text_fallback
+    
+    # Attach both versions
+    part1 = MIMEText(text_content, "plain", "utf-8")
+    part2 = MIMEText(html_content, "html", "utf-8")
+    message.attach(part1)
+    message.attach(part2)
+    
+    try:
+        # Send email
+        smtp_kwargs = {
+            "hostname": settings.SMTP_HOST,
+            "port": settings.SMTP_PORT,
+            "start_tls": settings.SMTP_TLS,
+        }
+        
+        if settings.SMTP_USER:
+            smtp_kwargs["username"] = settings.SMTP_USER
+            smtp_kwargs["password"] = settings.SMTP_PASSWORD
+
+        await aiosmtplib.send(message, **smtp_kwargs)
+        logger.info(f"Activation email sent successfully to {email}")
+        return True
+    except Exception as e:
+        logger.error(f"Failed to send activation email to {email}: {str(e)}")
+        return False

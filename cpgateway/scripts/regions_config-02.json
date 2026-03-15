@@ -1,0 +1,138 @@
+[
+    {
+        "name": "shanghai",
+        "endpoint_url": "https://163.74.70.150",
+        "description": "Shanghai(CN)",
+        "admin_username": "admin",
+        "admin_password": "AgFFTFV8AzK4FG0",
+        "admin_email": "admin-tokyo@cloudland.com"
+    },
+    {
+        "name": "tok",
+        "endpoint_url": "https://163.74.70.150",
+        "description": "Tokyo(AP)",
+        "admin_username": "admin",
+        "admin_password": "AgFFTFV8AzK4FG0",
+        "admin_email": "admin-tokyo@cloudland.com"
+    },
+    {
+        "name": "osa",
+        "endpoint_url": "https://163.74.70.150",
+        "description": "Osaka(AP)",
+        "admin_username": "admin",
+        "admin_password": "AgFFTFV8AzK4FG0",
+        "admin_email": "admin-osaka@cloudland.com"
+    },
+    {
+        "name": "sng",
+        "endpoint_url": "https://163.74.70.150",
+        "description": "Singapore(AP)",
+        "admin_username": "admin",
+        "admin_password": "AgFFTFV8AzK4FG0",
+        "admin_email": "admin-singapore@cloudland.com"
+    },
+    {
+        "name": "syd",
+        "endpoint_url": "https://163.74.70.150",
+        "description": "Sydney(AP)",
+        "admin_username": "admin",
+        "admin_password": "AgFFTFV8AzK4FG0",
+        "admin_email": "admin-sydney@cloudland.com"
+    },
+    {
+        "name": "che",
+        "endpoint_url": "https://163.74.70.150",
+        "description": "Chennai(AP)",
+        "admin_username": "admin",
+        "admin_password": "AgFFTFV8AzK4FG0",
+        "admin_email": "admin-chennai@cloudland.com"
+    },
+    {
+        "name": "lon",
+        "endpoint_url": "https://163.74.70.150",
+        "description": "London(EU)",
+        "admin_username": "admin",
+        "admin_password": "AgFFTFV8AzK4FG0",
+        "admin_email": "admin-london@cloudland.com"
+    },
+    {
+        "name": "fra",
+        "endpoint_url": "https://163.74.70.150",
+        "description": "Frankfurt(EU)",
+        "admin_username": "admin",
+        "admin_password": "AgFFTFV8AzK4FG0",
+        "admin_email": "admin-frankfurt@cloudland.com"
+    },
+    {
+        "name": "ams",
+        "endpoint_url": "https://163.74.70.150",
+        "description": "Amsterdam(EU)",
+        "admin_username": "admin",
+        "admin_password": "AgFFTFV8AzK4FG0",
+        "admin_email": "admin-amsterdam@cloudland.com"
+    },
+    {
+        "name": "par",
+        "endpoint_url": "https://163.74.70.150",
+        "description": "Paris(EU)",
+        "admin_username": "admin",
+        "admin_password": "AgFFTFV8AzK4FG0",
+        "admin_email": "admin-paris@cloudland.com"
+    },
+    {
+        "name": "mad",
+        "endpoint_url": "https://163.74.70.150",
+        "description": "Madrid(EU)",
+        "admin_username": "admin",
+        "admin_password": "AgFFTFV8AzK4FG0",
+        "admin_email": "admin-madrid@cloudland.com"
+    },
+    {
+        "name": "wdc",
+        "endpoint_url": "https://163.74.70.150",
+        "description": "Washington(NAE)",
+        "admin_username": "admin",
+        "admin_password": "AgFFTFV8AzK4FG0",
+        "admin_email": "admin-washington@cloudland.com"
+    },
+    {
+        "name": "tor",
+        "endpoint_url": "https://163.74.70.150",
+        "description": "Toronto(NAE)",
+        "admin_username": "admin",
+        "admin_password": "AgFFTFV8AzK4FG0",
+        "admin_email": "admin-toronto@cloudland.com"
+    },
+    {
+        "name": "mon",
+        "endpoint_url": "https://163.74.70.150",
+        "description": "Montreal(NAE)",
+        "admin_username": "admin",
+        "admin_password": "AgFFTFV8AzK4FG0",
+        "admin_email": "admin-montreal@cloudland.com"
+    },
+    {
+        "name": "dal",
+        "endpoint_url": "https://163.74.70.150",
+        "description": "Dallas(NAS)",
+        "admin_username": "admin",
+        "admin_password": "AgFFTFV8AzK4FG0",
+        "admin_email": "admin-dallas@cloudland.com"
+    },
+    {
+        "name": "sjc",
+        "endpoint_url": "https://163.74.70.150",
+        "description": "San Jose(NAW)",
+        "admin_username": "admin",
+        "admin_password": "AgFFTFV8AzK4FG0",
+        "admin_email": "admin-sanjose@cloudland.com"
+    },
+    {
+        "name": "sao",
+        "endpoint_url": "https://163.74.70.150",
+        "description": "Sao Paulo(SA)",
+        "admin_username": "admin",
+        "admin_password": "AgFFTFV8AzK4FG0",
+        "admin_email": "admin-saopaulo@cloudland.com"
+    }
+]

@@ -1,0 +1,58 @@
+services:
+  # 中间平台服务
+  cpgateway:
+    build: 
+      context: ..
+      dockerfile: docker/Dockerfile
+    container_name: cloudland-cpgateway
+    ports:
+      - "8000:8000"
+    environment:
+      # 使用 SQLite 数据库(开发环境)
+      - DATABASE_URL=sqlite+aiosqlite:///./data/cloudland.db
+      - SMTP_HOST=mailhog
+      - SMTP_TLS=False
+    env_file:
+      - ../.env
+    volumes:
+      # 挂载数据目录,持久化数据库
+      - ../data:/app/data
+      # 开发模式:挂载代码目录(可选,生产环境删除)
+      - ../app:/app/app
+    restart: unless-stopped
+    networks:
+      - cloudland-network
+
+  # MailHog: 开发环境邮件测试工具
+  mailhog:
+    image: mailhog/mailhog:latest
+    container_name: cloudland-mailhog
+    ports:
+      - "1025:1025" # SMTP server
+      - "8025:8025" # Web UI
+    restart: unless-stopped
+    networks:
+      - cloudland-network
+
+  # PostgreSQL 数据库(可选,生产环境使用)
+  # postgres:
+  #   image: postgres:15-alpine
+  #   container_name: cloudland-postgres
+  #   environment:
+  #     - POSTGRES_USER=postgres
+  #     - POSTGRES_PASSWORD=password
+  #     - POSTGRES_DB=cloudland
+  #   ports:
+  #     - "5432:5432"
+  #   volumes:
+  #     - postgres-data:/var/lib/postgresql/data
+  #   restart: unless-stopped
+  #   networks:
+  #     - cloudland-network
+
+networks:
+  cloudland-network:
+    driver: bridge
+
+volumes:
+  postgres-data:

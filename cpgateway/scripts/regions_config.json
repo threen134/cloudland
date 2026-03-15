@@ -1,0 +1,18 @@
+[
+    {
+        "name": "tor-04",
+        "endpoint_url": "https://163.74.70.150",
+        "description": "Toronto Region 04",
+        "admin_username": "admin",
+        "admin_password": "AgFFTFV8AzK4FG0",
+        "admin_email": "admin-tor04@cloudland.com"
+    },
+    {
+        "name": "dallas-09",
+        "endpoint_url": "https://163.74.70.150",
+        "description": "Dallas Region 09",
+        "admin_username": "admin",
+        "admin_password": "AgFFTFV8AzK4FG0",
+        "admin_email": "admin-dallas09@cloudland.com"
+    }
+]

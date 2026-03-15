@@ -1,0 +1,60 @@
+@endpoint = https://163.74.70.150
+@username = admin
+@password = AgFFTFV8AzK4FG0
+
+### Get Auth Token
+# @name login
+POST {{endpoint}}/api/v1/login
+Content-Type: application/json
+
+{
+    "username": "{{username}}",
+    "password": "{{password}}"
+}
+
+###
+
+@token = {{login.response.body.token}}
+
+### List Images (Example using token)
+GET {{endpoint}}/api/v1/images
+Authorization: Bearer {{token}}
+
+### Create Organization
+# NOTE: The current implementation of this API is a placeholder in the code.
+POST {{endpoint}}/api/v1/orgs
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+    "name": "new-org",
+    "owner": "spark"
+}
+
+### List Organizations
+GET {{endpoint}}/api/v1/orgs
+Authorization: Bearer {{token}}
+
+### Create User
+POST {{endpoint}}/api/v1/users
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+    "username": "new-user-3",
+    "password": "Password123!",
+    "org": {
+        "id": "df560a55-6a7f-4417-bd2d-f97f25344dac",
+        "name": "new-org"
+    }
+}
+
+### Update Organization Name
+# NOTE: The current implementation of this API is a placeholder in the code.
+PATCH {{endpoint}}/api/v1/orgs/68b9b61f-fbc0-44bf-aae4-414c5e95928d
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+    "name": "spark-company"
+}

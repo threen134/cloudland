@@ -1,0 +1,353 @@
+### Cloudland Control Plane Gateway API Manifest
+# 此文件列出了中间件所有的 API 路径及其使用示例
+
+@baseUrl = http://localhost:8000/api/v1
+@region = tor-04
+@regionEndpoint = https://163.74.70.150
+@adminUser = admin
+@adminPassword = AgFFTFV8AzK4FG0
+@regionUUID = c457d379-4b03-4965-92ab-77bdb4813db9
+@volumeUUID = 000d67b7-4393-45a2-b541-6638c6ad3cfc
+@instranceID = 52f951e6-88bc-4bcb-8828-f86b34bcd99f
+@imageID = 07fe06ca-5258-4bfe-8b54-67d5a9611c1d
+@activationToken = eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI4IiwidHlwZSI6ImFjdGl2YXRpb24iLCJleHAiOjE3NzEzNzYyMjh9.GaWxGoesz8yhitbsrelxjYULlS2ugVHJQYLll8brN-0
+#eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI3IiwidHlwZSI6ImFjdGl2YXRpb24iLCJleHAiOjE3NzEzNzU5ODV9.y-BVQyG-z2PE4N2uhKXGv9Vfg312Yf9OtYJTKHNs7SI
+#eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI2IiwidHlwZSI6ImFjdGl2YXRpb24iLCJleHAiOjE3NzEzNzU4NTN9.FB3aeaFv6s98rzv_hKfoINns8mH559NKkx2Na2qJc-A
+#eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI2IiwidHlwZSI6ImFjdGl2YXRpb24iLCJleHAiOjE3NzEzNzU4NTN9.FB3aeaFv6s98rzv_hKfoINns8mH559NKkx2Na2qJc-A
+#eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI1IiwidHlwZSI6ImFjdGl2YXRpb24iLCJleHAiOjE3NzEzNzU2MDl9.k58bEg0op4PMEWCiJ0TKgi-re_0elVl7kFk300scyJw
+#eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIyIiwidHlwZSI6ImFjdGl2YXRpb24iLCJleHAiOjE3NzEzNDIzNjl9.jyT13cI-GgaEJY0Oeuunrb7I1M17EUW1ZwOp7VJNlBk
+#eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxIiwidHlwZSI6ImFjdGl2YXRpb24iLCJleHAiOjE3NzEzNDE0MjF9.PNcisho26aimA6Xfkj2mi005GZ93mpN-QXsN8wwE3m4
+
+#########################################
+# 1. 认证与账户生命周期 (Auth & Account)
+#########################################
+
+### 用户注册 (Register)
+# @name registerUser
+POST {{baseUrl}}/auth/register
+Content-Type: application/json
+
+{
+    "email": "tester6@example.com",
+    "username": "tester6",
+    "password": "SecurePassword123",
+    "language": "zh"
+}
+
+### 账户激活 (Activate) 
+GET {{baseUrl}}/auth/activate?token={{activationToken}}
+
+### 用户登录 (Login)
+# @name testerLogin
+POST {{baseUrl}}/auth/token
+Content-Type: application/x-www-form-urlencoded
+
+username=tester6&password=SecurePassword123
+
+### Root 超级管理员登录 (Root Login)
+# 使用 .env 中配置的 FIRST_SUPERUSER_USERNAME 和 FIRST_SUPERUSER_PASSWORD
+# @name rootLogin
+POST {{baseUrl}}/auth/token
+Content-Type: application/x-www-form-urlencoded
+
+username=root&password=root_password_change_me
+
+### 获取当前用户信息 (普通用户)
+GET {{baseUrl}}/auth/me
+Authorization: Bearer {{testerLogin.response.body.access_token}}
+
+### 获取当前用户信息 (root)
+GET {{baseUrl}}/auth/me
+Authorization: Bearer {{rootLogin.response.body.access_token}}
+
+#########################################
+# 2. 用户管理 (User Management)
+#########################################
+
+### 列出所有已注册用户 (全部)
+GET {{baseUrl}}/users
+Authorization: Bearer {{rootLogin.response.body.access_token}}
+
+### 列出已激活用户
+GET {{baseUrl}}/users?is_active=true
+Authorization: Bearer {{rootLogin.response.body.access_token}}
+
+### 列出未激活用户
+GET {{baseUrl}}/users?is_active=false
+Authorization: Bearer {{rootLogin.response.body.access_token}}
+
+### 获取特定用户信息
+GET {{baseUrl}}/users/{{registerUser.response.body.user.uuid}}
+Authorization: Bearer {{rootLogin.response.body.access_token}}
+
+#########################################
+# 3. 区域与管理配置 (Regions & Admin)
+#########################################
+
+### 列出所有区域
+GET {{baseUrl}}/regions
+Authorization: Bearer {{rootLogin.response.body.access_token}}
+
+### 创建/注册新区域
+# @name createRegion
+POST {{baseUrl}}/regions
+Content-Type: application/json
+Authorization: Bearer {{rootLogin.response.body.access_token}}
+
+{
+    "name": "{{region}}",
+    "endpoint_url": "{{regionEndpoint}}",
+    "description": "Toronto Region 04"
+}
+
+### 获取特定区域详情
+GET {{baseUrl}}/regions/{{createRegion.response.body.uuid}}
+Authorization: Bearer {{rootLogin.response.body.access_token}}
+
+### 更新区域配置
+PUT {{baseUrl}}/regions/{{createRegion.response.body.uuid}}
+Content-Type: application/json
+Authorization: Bearer {{rootLogin.response.body.access_token}}
+
+{
+    "endpoint_url": "https://api.tor04.cloudland.com",
+    "description": "Updated Toronto Region Description"
+}
+
+### 向特定区域添加后端用户
+POST {{baseUrl}}/regions/{{createRegion.response.body.uuid}}/users
+Content-Type: application/json
+Authorization: Bearer {{rootLogin.response.body.access_token}}
+
+{
+    "username": "region_user_06",
+    "password": "CloudPassword1235",
+    "email": "user06@example.com",
+    "external_id": "ext_region_user_06",
+    "user_uuid": "{{registerUser.response.body.user.uuid}}"
+}
+
+### 列出特定区域下的所有后端账号
+GET {{baseUrl}}/regions/{{createRegion.response.body.uuid}}/users
+Authorization: Bearer {{rootLogin.response.body.access_token}}
+
+### 初始化区域管理账户 (Admin Seeding)
+# 每个区域必须有一个 admin 账户才能进行后续的按需开户
+POST {{baseUrl}}/admin-accounts/
+Content-Type: application/json
+Authorization: Bearer {{rootLogin.response.body.access_token}}
+
+{
+    "region": "{{createRegion.response.body.name}}",
+    "admin_account": "{{adminUser}}",
+    "password": "{{adminPassword}}",
+    "email": "admin@tor04.local"
+}
+
+### 查询区域管理账户信息
+GET {{baseUrl}}/admin-accounts/{{createRegion.response.body.name}}
+Authorization: Bearer {{rootLogin.response.body.access_token}}
+
+
+#########################################
+# 4. 资源配额与监控 (Resources & Quotas)
+#########################################
+
+### 查看用户资源配额
+GET {{baseUrl}}/resources/quota/{{registerUser.response.body.user.uuid}}
+Authorization: Bearer {{testerLogin.response.body.access_token}}
+
+### 更新用户资源配额
+PUT {{baseUrl}}/resources/quota/{{registerUser.response.body.user.uuid}}
+Content-Type: application/json
+Authorization: Bearer {{testerLogin.response.body.access_token}}
+
+{
+    "max_cpu_cores": 10,
+    "max_ram_gb": 50
+}
+
+### 查看用户当前资源消耗
+GET {{baseUrl}}/resources/consumption/{{registerUser.response.body.user.uuid}}
+Authorization: Bearer {{testerLogin.response.body.access_token}}
+
+### 一键查看用户的配额与当前消耗 (Info)
+GET {{baseUrl}}/resources/info/{{registerUser.response.body.user.uuid}}
+Authorization: Bearer {{testerLogin.response.body.access_token}}
+
+
+#########################################
+# 5. 转发代理 API (Proxied Cloud APIs)
+# 所有此类请求必须带上 ?region= 参数
+#########################################
+
+### [Compute] 列出云主机实例
+GET {{baseUrl}}/instances?region={{createRegion.response.body.uuid}}
+Authorization: Bearer {{testerLogin.response.body.access_token}}
+
+### [Compute] 列出镜像 (List Images)
+GET {{baseUrl}}/images?region={{createRegion.response.body.uuid}}
+Authorization: Bearer {{testerLogin.response.body.access_token}}
+
+### [Compute] 创建镜像 (Create Image)
+# @name createImage
+POST {{baseUrl}}/images?region={{regionUUID}}     
+Authorization: Bearer {{rootLogin.response.body.access_token}}
+Content-Type: application/json
+
+{
+    "name": "ubuntu-22.04-manual",
+    "os_code": "linux",
+    "os_version": "22.04",
+    "architecture": "x86_64",
+    "boot_loader": "uefi",
+    "os_family": "Ubuntu",
+    "download_url": "http://cloud-images.ubuntu.com/releases/jammy/release/ubuntu-22.04-server-cloudimg-amd64.img",
+    "user": "admin"
+}
+
+
+
+### [Compute] 列出硬盘卷
+GET {{baseUrl}}/volumes?region={{createRegion.response.body.uuid}}
+Authorization: Bearer {{testerLogin.response.body.access_token}}
+http://localhost:5173/api/v1/volumes?region=b3c8bdff-c732-4280-94d3-d002b23f7d43
+
+### [Network] 列出 VPC 网络
+GET {{baseUrl}}/vpcs?region={{createRegion.response.body.uuid}}
+Authorization: Bearer {{testerLogin.response.body.access_token}}
+
+### [Network] 列出子网
+GET {{baseUrl}}/subnets?region={{createRegion.response.body.uuid}}
+Authorization: Bearer {{testerLogin.response.body.access_token}}
+
+### [Network] 列出浮动 IP (Floating IPs)
+GET {{baseUrl}}/floating_ips?region={{createRegion.response.body.uuid}}
+Authorization: Bearer {{testerLogin.response.body.access_token}}
+
+### [Network] 列出安全组 (Security Groups)
+GET {{baseUrl}}/security_groups?region={{createRegion.response.body.uuid}}
+Authorization: Bearer {{testerLogin.response.body.access_token}}
+
+### [Zone] 列出可用区
+GET {{baseUrl}}/zones?region={{createRegion.response.body.uuid}}
+Authorization: Bearer {{testerLogin.response.body.access_token}}
+
+### [Alarm] 列出告警策略
+GET {{baseUrl}}/alarm_policies?region={{createRegion.response.body.uuid}}
+Authorization: Bearer {{testerLogin.response.body.access_token}}
+
+### [Administration] 列出操作日志 (Action Logs)
+GET {{baseUrl}}/action_logs?region={{createRegion.response.body.uuid}}
+Authorization: Bearer {{testerLogin.response.body.access_token}}
+
+
+
+
+#########################################
+# 6. 转发代理 API (Proxied Cloud APIs)--root用户
+# 所有此类请求必须带上 ?region= 参数
+#########################################
+
+### [Compute] 列出云主机实例
+GET {{baseUrl}}/instances?region={{regionUUID}}
+Authorization: Bearer {{rootLogin.response.body.access_token}}
+
+### [Compute] 列出具体云主机实例
+GET {{baseUrl}}/instances/{{instranceID}}?region={{regionUUID}}
+Authorization: Bearer {{rootLogin.response.body.access_token}}
+
+### [Compute] 启动云主机实例
+PATCH {{baseUrl}}/instances/{{instranceID}}?region={{regionUUID}}
+Authorization: Bearer {{rootLogin.response.body.access_token}}
+Content-Type: application/json
+
+{
+    "hostname": "vm-publci-private",
+    "power_action": "start"
+}
+
+### [Compute] 停止云主机实例
+PATCH {{baseUrl}}/instances/{{instranceID}}?region={{regionUUID}}
+Authorization: Bearer {{rootLogin.response.body.access_token}}
+Content-Type: application/json
+
+{
+    "hostname": "vm-publci-private",
+    "power_action": "stop"
+}
+
+### [Compute] 重启云主机实例
+PATCH {{baseUrl}}/instances/{{instranceID}}?region={{regionUUID}}
+Authorization: Bearer {{rootLogin.response.body.access_token}}
+Content-Type: application/json
+
+{
+    "hostname": "vm-publci-private",
+    "power_action": "restart"
+}
+
+### [Compute] 列出硬盘卷
+GET {{baseUrl}}/volumes?region={{regionUUID}}
+Authorization: Bearer {{rootLogin.response.body.access_token}}
+
+### [Compute] 拿到硬盘卷的详细信息
+GET {{baseUrl}}/volumes/8446137c-e573-4950-8f86-6c82f39b9929?region={{regionUUID}}
+Authorization: Bearer {{rootLogin.response.body.access_token}}
+
+### [Compute] 列出images
+GET {{baseUrl}}/images?region={{regionUUID}}
+Authorization: Bearer {{rootLogin.response.body.access_token}}
+
+### [Compute] 拿到images的详细信息
+GET {{baseUrl}}/images/{{imageID}}?region={{regionUUID}}
+Authorization: Bearer {{rootLogin.response.body.access_token}}
+
+### [Compute] 列出flavors
+GET {{baseUrl}}/flavors?region={{regionUUID}}
+Authorization: Bearer {{rootLogin.response.body.access_token}}
+
+### [Compute] 列出keys
+GET {{baseUrl}}/keys?region={{regionUUID}}
+Authorization: Bearer {{rootLogin.response.body.access_token}}
+
+### [Compute] 拿到key的详情
+GET {{baseUrl}}/keys/6cd57302-e7e1-4d65-9201-baf8b8b4544c?region={{regionUUID}}
+Authorization: Bearer {{rootLogin.response.body.access_token}}
+
+### [Network] 列出 VPC 网络
+GET {{baseUrl}}/vpcs?region={{createRegion.response.body.uuid}}
+Authorization: Bearer {{rootLogin.response.body.access_token}}
+
+### [Network] 列出子网
+GET {{baseUrl}}/subnets?region={{regionUUID}}
+Authorization: Bearer {{rootLogin.response.body.access_token}}
+
+### [Network] 列出浮动 IP (Floating IPs)
+GET {{baseUrl}}/floating_ips?region={{regionUUID}}
+Authorization: Bearer {{rootLogin.response.body.access_token}}
+
+### [Network] 列出浮动 IP (Floating IPs)
+GET {{baseUrl}}/floating_ips/b5620835-a1e3-431b-b9b9-a9b23ab074ca?region={{regionUUID}}
+Authorization: Bearer {{rootLogin.response.body.access_token}}
+
+### VNC
+POST {{baseUrl}}/instances/52f951e6-88bc-4bcb-8828-f86b34bcd99f/console?region={{regionUUID}}
+Authorization: Bearer {{rootLogin.response.body.access_token}}
+
+### [Network] 列出安全组 (Security Groups)
+GET {{baseUrl}}/security_groups?region={{regionUUID}}
+Authorization: Bearer {{rootLogin.response.body.access_token}}
+
+### [Zone] 列出可用区
+GET {{baseUrl}}/zones?region={{regionUUID}}
+Authorization: Bearer {{rootLogin.response.body.access_token}}
+
+### [Alarm] 列出告警策略
+GET {{baseUrl}}/alarm_policies?region={{regionUUID}}
+Authorization: Bearer {{rootLogin.response.body.access_token}}
+
+### [Administration] 列出操作日志 (Action Logs)
+GET {{baseUrl}}/action_logs?region={{createRegion.response.body.uuid}}
+Authorization: Bearer {{rootLogin.response.body.access_token}}
+
