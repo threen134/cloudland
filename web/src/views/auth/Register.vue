@@ -5,7 +5,7 @@ import { useI18n } from 'vue-i18n'
 import { Cloud, User, Mail, Lock, ArrowRight, ShieldCheck, Check, Building2 } from 'lucide-vue-next'
 import { authApi } from '../../api/auth'
 
-const { t } = useI18n()
+const { t, locale } = useI18n()
 const router = useRouter()
 const isLoading = ref(false)
 
@@ -46,16 +46,20 @@ const handleSubmit = async () => {
             email: form.email,
             username: form.username,
             password: form.password,
-            language: useI18n().locale.value === 'zh' ? 'zh' : 'en',
+            language: locale.value === 'zh' ? 'zh' : 'en',
             org_name: form.orgName,
             org_slug: form.orgSlug
         })
         
         // Redirect to success page
         router.push('/register/success')
-    } catch (error) {
+    } catch (error: any) {
         console.error('Registration failed:', error)
-        alert(t('messages.error'))
+        const detail = error.response?.data?.detail
+        const msg = Array.isArray(detail)
+            ? detail.map((d: any) => d.msg).join('; ')
+            : (detail || error.message || t('messages.error'))
+        alert(msg)
     } finally {
         isLoading.value = false
     }

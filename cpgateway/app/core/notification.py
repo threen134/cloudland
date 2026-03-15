@@ -38,25 +38,27 @@ async def _send_feishu(email: str, username: str, token: str, language: str = "e
     if language == "zh":
         title = "CloudLand - 新用户注册激活"
         content_lines = [
-            [{"tag": "text", "text": f"用户 "}, {"tag": "text", "text": username, "style": ["bold"]}, {"tag": "text", "text": f" ({email}) 已注册，请激活账户："}],
+            [{"tag": "text", "text": f"用户 {username} ({email}) 已注册，请激活账户："}],
             [{"tag": "a", "text": "点击激活账户", "href": activation_link}],
             [{"tag": "text", "text": f"激活令牌: {token}"}],
             [{"tag": "text", "text": "此链接 24 小时内有效。"}],
         ]
+        lang_key = "zh_cn"
     else:
         title = "CloudLand - New User Activation"
         content_lines = [
-            [{"tag": "text", "text": f"User "}, {"tag": "text", "text": username, "style": ["bold"]}, {"tag": "text", "text": f" ({email}) has registered. Please activate:"}],
+            [{"tag": "text", "text": f"User {username} ({email}) has registered. Please activate:"}],
             [{"tag": "a", "text": "Click to Activate Account", "href": activation_link}],
             [{"tag": "text", "text": f"Activation Token: {token}"}],
             [{"tag": "text", "text": "This link expires in 24 hours."}],
         ]
+        lang_key = "en_us"
 
     payload = {
         "msg_type": "post",
         "content": {
             "post": {
-                language: {
+                lang_key: {
                     "title": title,
                     "content": content_lines,
                 }
