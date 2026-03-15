@@ -23,6 +23,26 @@ export interface CreateUserPayload {
     role?: string
 }
 
+export interface ResourceQuota {
+    id: number
+    user_id: number
+    max_cpu_cores: number
+    max_ram_gb: number
+    max_traffic_gb: number
+    max_public_ips: number
+    max_disk_gb: number
+    created_at: string
+    updated_at: string
+}
+
+export interface ResourceQuotaUpdate {
+    max_cpu_cores?: number
+    max_ram_gb?: number
+    max_traffic_gb?: number
+    max_public_ips?: number
+    max_disk_gb?: number
+}
+
 export const usersApi = {
     // List users
     fetchUsers() {
@@ -47,5 +67,20 @@ export const usersApi = {
     // Delete user
     deleteUser(id: string) {
         return client.delete(`/users/${id}`)
+    },
+
+    // Get user quota
+    getUserQuota(userUuid: string) {
+        return client.get<ResourceQuota>(`/resources/quota/${userUuid}`)
+    },
+
+    // Update user quota (admin only)
+    updateUserQuota(userUuid: string, payload: ResourceQuotaUpdate) {
+        return client.put<ResourceQuota>(`/resources/quota/${userUuid}`, payload)
+    },
+
+    // Get user resource info (quota + consumption)
+    getUserResourceInfo(userUuid: string) {
+        return client.get(`/resources/info/${userUuid}`)
     }
 }

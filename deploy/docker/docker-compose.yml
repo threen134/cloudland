@@ -141,6 +141,7 @@ services:
       FIRST_SUPERUSER_USERNAME: ${CPGATEWAY_ADMIN_USER:-admin}
       FIRST_SUPERUSER_PASSWORD: ${ADMIN_PASSWORD:-passw0rd}
       FRONTEND_URL: "https://${PUBLIC_IP:-127.0.0.1}"
+      NOTIFICATION_METHOD: ${NOTIFICATION_METHOD:-email}
       SMTP_HOST: ${SMTP_HOST:-localhost}
       SMTP_PORT: ${SMTP_PORT:-587}
       SMTP_TLS: ${SMTP_TLS:-True}
@@ -148,6 +149,8 @@ services:
       SMTP_PASSWORD: ${SMTP_PASS:-}
       SMTP_FROM: ${ALERT_SENDER:-noreply@cloudland.local}
       SMTP_FROM_NAME: "CloudLand"
+      FEISHU_WEBHOOK_URL: ${FEISHU_WEBHOOK_URL:-}
+      FEISHU_SECRET: ${FEISHU_SECRET:-}
       LISTEN_ADDR: "0.0.0.0"
       LISTEN_PORT: "8000"
     volumes:

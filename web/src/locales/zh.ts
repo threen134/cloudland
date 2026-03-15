@@ -615,6 +615,21 @@ export default {
         verifySuccess: '认证成功',
         captchaPlaceholder: '请输入验证码',
         incorrectCaptcha: '验证码错误，请重新输入',
+        orgName: '组织名称',
+        orgSlug: '组织标识',
+        orgNamePlaceholder: '我的公司',
+        orgSlugPlaceholder: 'my-company',
+        orgSlugHint: '仅支持小写字母、数字和连字符',
+    },
+
+    // 配额管理
+    quota: {
+        manage: '配额管理',
+        cpuCores: 'CPU 核数',
+        ramGb: '内存 (GB)',
+        diskGb: '磁盘 (GB)',
+        publicIps: '公网 IP',
+        trafficGb: '流量 (GB)',
     },
 
     // 消息提示

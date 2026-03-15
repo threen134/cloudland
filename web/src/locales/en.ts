@@ -615,6 +615,21 @@ export default {
         verifySuccess: 'Verification successful',
         captchaPlaceholder: 'Enter code',
         incorrectCaptcha: 'Incorrect code, please try again',
+        orgName: 'Organization Name',
+        orgSlug: 'Organization ID',
+        orgNamePlaceholder: 'My Company',
+        orgSlugPlaceholder: 'my-company',
+        orgSlugHint: 'Lowercase letters, numbers, and hyphens only',
+    },
+
+    // Quota
+    quota: {
+        manage: 'Manage Quota',
+        cpuCores: 'CPU Cores',
+        ramGb: 'Memory (GB)',
+        diskGb: 'Disk (GB)',
+        publicIps: 'Public IPs',
+        trafficGb: 'Traffic (GB)',
     },
 
     // Messages

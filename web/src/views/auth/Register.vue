@@ -2,7 +2,7 @@
 import { ref, reactive, computed } from 'vue'
 import { useRouter, RouterLink } from 'vue-router'
 import { useI18n } from 'vue-i18n'
-import { Cloud, User, Mail, Lock, ArrowRight, ShieldCheck, Check } from 'lucide-vue-next'
+import { Cloud, User, Mail, Lock, ArrowRight, ShieldCheck, Check, Building2 } from 'lucide-vue-next'
 import { authApi } from '../../api/auth'
 
 const { t } = useI18n()
@@ -15,8 +15,19 @@ const form = reactive({
   username: '',
   email: '',
   password: '',
-  confirmPassword: ''
+  confirmPassword: '',
+  orgName: '',
+  orgSlug: ''
 })
+
+const autoGenerateSlug = () => {
+  if (form.orgName && !form.orgSlug) {
+    form.orgSlug = form.orgName
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-|-$/g, '')
+  }
+}
 
 const isPasswordMismatch = computed(() => {
   return !!(form.password && form.confirmPassword && form.password !== form.confirmPassword)
@@ -35,7 +46,9 @@ const handleSubmit = async () => {
             email: form.email,
             username: form.username,
             password: form.password,
-            language: useI18n().locale.value === 'zh' ? 'zh' : 'en'
+            language: useI18n().locale.value === 'zh' ? 'zh' : 'en',
+            org_name: form.orgName,
+            org_slug: form.orgSlug
         })
         
         // Redirect to success page
@@ -118,6 +131,37 @@ const handleSubmit = async () => {
                 placeholder="john@example.com" 
               />
             </div>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">{{ t('auth.orgName') }}</label>
+            <div class="input-wrapper">
+              <Building2 class="input-icon" :size="18" />
+              <input
+                v-model="form.orgName"
+                type="text"
+                class="form-control"
+                required
+                :placeholder="t('auth.orgNamePlaceholder')"
+                @blur="autoGenerateSlug"
+              />
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">{{ t('auth.orgSlug') }}</label>
+            <div class="input-wrapper">
+              <Building2 class="input-icon" :size="18" />
+              <input
+                v-model="form.orgSlug"
+                type="text"
+                class="form-control"
+                required
+                :placeholder="t('auth.orgSlugPlaceholder')"
+                pattern="^[a-z0-9][a-z0-9-]*[a-z0-9]$"
+              />
+            </div>
+            <span class="hint-text">{{ t('auth.orgSlugHint') }}</span>
           </div>
 
           <div class="form-group">
@@ -359,6 +403,13 @@ p {
   align-items: center;
   gap: 4px;
   font-weight: 500;
+}
+
+.hint-text {
+  color: var(--text-light);
+  font-size: var(--font-size-xs);
+  margin-top: var(--spacing-1);
+  display: block;
 }
 
 .btn-block {

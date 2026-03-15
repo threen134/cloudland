@@ -2,8 +2,8 @@
 import { ref, onMounted, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
-import { usersApi, type User } from '../../api/users'
-import { User as UserIcon, Plus, Trash2, Edit, Search, X } from 'lucide-vue-next'
+import { usersApi, type User, type ResourceQuota, type ResourceQuotaUpdate } from '../../api/users'
+import { User as UserIcon, Plus, Trash2, Edit, Search, X, Gauge } from 'lucide-vue-next'
 
 const { t } = useI18n()
 
@@ -157,6 +157,63 @@ const confirmDelete = async () => {
     }
 }
 
+// --- Quota Management Modal ---
+const quotaModalVisible = ref(false)
+const quotaLoading = ref(false)
+const quotaSaving = ref(false)
+const quotaError = ref('')
+const quotaTargetUser = ref<User | null>(null)
+const quotaForm = ref<ResourceQuotaUpdate>({
+    max_cpu_cores: 0,
+    max_ram_gb: 0,
+    max_traffic_gb: 0,
+    max_public_ips: 0,
+    max_disk_gb: 0
+})
+
+const openQuotaModal = async (user: User) => {
+    quotaTargetUser.value = user
+    quotaModalVisible.value = true
+    quotaLoading.value = true
+    quotaError.value = ''
+    try {
+        const response = await usersApi.getUserQuota(user.uuid || user.id)
+        const quota = response.data as any
+        quotaForm.value = {
+            max_cpu_cores: quota.max_cpu_cores ?? 0,
+            max_ram_gb: quota.max_ram_gb ?? 0,
+            max_traffic_gb: quota.max_traffic_gb ?? 0,
+            max_public_ips: quota.max_public_ips ?? 0,
+            max_disk_gb: quota.max_disk_gb ?? 0
+        }
+    } catch (err: any) {
+        quotaForm.value = { max_cpu_cores: 0, max_ram_gb: 0, max_traffic_gb: 0, max_public_ips: 0, max_disk_gb: 0 }
+    } finally {
+        quotaLoading.value = false
+    }
+}
+
+const closeQuotaModal = () => {
+    quotaModalVisible.value = false
+    quotaTargetUser.value = null
+    quotaError.value = ''
+}
+
+const handleSaveQuota = async () => {
+    if (!quotaTargetUser.value) return
+    quotaSaving.value = true
+    quotaError.value = ''
+    try {
+        await usersApi.updateUserQuota(quotaTargetUser.value.uuid || quotaTargetUser.value.id, quotaForm.value)
+        closeQuotaModal()
+    } catch (err: any) {
+        console.error('Failed to update quota:', err)
+        quotaError.value = err.response?.data?.detail || err.message || t('messages.error')
+    } finally {
+        quotaSaving.value = false
+    }
+}
+
 onMounted(fetchUsers)
 </script>
 
@@ -230,6 +287,9 @@ onMounted(fetchUsers)
             <td>{{ user.created_at ? new Date(user.created_at).toLocaleDateString() : new Date().toLocaleDateString() }}</td>
             <td>
               <div class="actions">
+                <button class="btn btn-ghost btn-sm" :title="$t('quota.manage')" @click="openQuotaModal(user)">
+                  <Gauge :size="14" />
+                </button>
                 <button class="btn btn-ghost btn-sm" :title="$t('actions.edit')" @click="openEditModal(user)">
                   <Edit :size="14" />
                 </button>
@@ -373,6 +433,53 @@ onMounted(fetchUsers)
             <span v-if="deletingResource" class="loading-spinner" style="width:16px;height:16px;border-width:2px"></span>
             <Trash2 v-else :size="14" />
             {{ deletingResource ? $t('dashboard.deleteConfirm.deleting') : $t('actions.delete') }}
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Quota Management Modal -->
+    <div v-if="quotaModalVisible" class="modal-overlay" @click.self="closeQuotaModal">
+      <div class="modal-content card" style="max-width: 520px;">
+        <div class="modal-header">
+          <h3>{{ $t('quota.manage') }} - {{ quotaTargetUser?.username }}</h3>
+          <button class="btn btn-ghost btn-sm icon-btn" @click="closeQuotaModal"><X :size="20" /></button>
+        </div>
+        <div class="modal-body" style="padding: var(--spacing-6);">
+          <div v-if="quotaLoading" style="text-align: center; padding: var(--spacing-8);">
+            <div class="loading-spinner" style="margin: 0 auto;"></div>
+          </div>
+          <template v-else>
+            <div class="form-group">
+              <label class="form-label">{{ $t('quota.cpuCores') }}</label>
+              <input v-model.number="quotaForm.max_cpu_cores" type="number" min="0" step="1" class="form-input" />
+            </div>
+            <div class="form-group">
+              <label class="form-label">{{ $t('quota.ramGb') }}</label>
+              <input v-model.number="quotaForm.max_ram_gb" type="number" min="0" step="1" class="form-input" />
+            </div>
+            <div class="form-group">
+              <label class="form-label">{{ $t('quota.diskGb') }}</label>
+              <input v-model.number="quotaForm.max_disk_gb" type="number" min="0" step="1" class="form-input" />
+            </div>
+            <div class="form-group">
+              <label class="form-label">{{ $t('quota.publicIps') }}</label>
+              <input v-model.number="quotaForm.max_public_ips" type="number" min="0" step="1" class="form-input" />
+            </div>
+            <div class="form-group">
+              <label class="form-label">{{ $t('quota.trafficGb') }}</label>
+              <input v-model.number="quotaForm.max_traffic_gb" type="number" min="0" step="1" class="form-input" />
+            </div>
+          </template>
+        </div>
+        <div v-if="quotaError" class="text-error" style="margin: 0 var(--spacing-6) var(--spacing-4); font-size:var(--font-size-sm);background:var(--error-light);padding:var(--spacing-2);border-radius:var(--radius-sm)">
+          {{ quotaError }}
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-secondary" @click="closeQuotaModal" :disabled="quotaSaving">{{ $t('actions.cancel') }}</button>
+          <button class="btn btn-primary" @click="handleSaveQuota" :disabled="quotaSaving || quotaLoading">
+            <span v-if="quotaSaving" class="loading-spinner" style="width: 16px; height: 16px; border-width: 2px;"></span>
+            {{ quotaSaving ? $t('messages.loading') : $t('actions.confirm') }}
           </button>
         </div>
       </div>
