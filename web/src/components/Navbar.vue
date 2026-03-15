@@ -172,7 +172,7 @@ const solutionLinks = [
 
 /* Top bar */
 .top-bar {
-    background: var(--bg-dark);
+    background: linear-gradient(90deg, #0f172a, #1e3a5f);
     color: var(--text-inverse);
     font-size: var(--font-size-sm);
     padding: var(--spacing-2) 0;

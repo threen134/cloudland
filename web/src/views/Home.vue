@@ -119,7 +119,7 @@ const goToMarketplace = () => {
         
         <h1 class="hero-title">
           {{ t('hero.title') }}<br />
-          <span class="text-gradient-red">{{ t('hero.titleHighlight') }}</span>
+          <span class="text-gradient-blue">{{ t('hero.titleHighlight') }}</span>
         </h1>
         
         <p class="hero-subtitle text-inverse-secondary">
@@ -299,59 +299,60 @@ const goToMarketplace = () => {
 .home-page {
     background: var(--bg-primary);
 
-    /* Scoped CloudLand Theme specifically for Home page */
-    --primary-50: #fff1f1;
-    --primary-100: #ffe3e3;
-    --primary-200: #ffc6c6;
-    --primary-300: #ff9d9d;
-    --primary-400: #ff6464;
-    --primary-500: #fa4d56;
-    --primary-600: #da1e28;
-    --primary-700: #a2191f;
-    --primary-800: #750e13;
-    --primary-900: #520408;
+    /* Scoped CloudLand Theme - Fresh Light Blue */
+    --primary-50: #eff6ff;
+    --primary-100: #dbeafe;
+    --primary-200: #bfdbfe;
+    --primary-300: #93c5fd;
+    --primary-400: #60a5fa;
+    --primary-500: #3b82f6;
+    --primary-600: #2563eb;
+    --primary-700: #1d4ed8;
+    --primary-800: #1e40af;
+    --primary-900: #1e3a5f;
 
-    --primary-color: #da1e28;
-    --primary-hover: #fa4d56;
-    --primary-active: #a2191f;
-    --primary-light: #ffe3e3;
-    --primary-gradient: linear-gradient(135deg, #da1e28 0%, #fa4d56 100%);
-    
-    /* Make the B2B borders sharper for index only */
-    --radius-sm: 0.125rem;
-    --radius-md: 0.25rem;
-    --radius-lg: 0.375rem;
-    --radius-xl: 0.5rem;
-    --radius-2xl: 0.75rem;
+    --primary-color: #3b82f6;
+    --primary-hover: #60a5fa;
+    --primary-active: #2563eb;
+    --primary-light: #dbeafe;
+    --primary-gradient: linear-gradient(135deg, #3b82f6 0%, #06b6d4 100%);
+
+    --radius-sm: 0.375rem;
+    --radius-md: 0.5rem;
+    --radius-lg: 0.75rem;
+    --radius-xl: 1rem;
+    --radius-2xl: 1.25rem;
 }
 
-.text-gradient-red {
-    background: linear-gradient(to right, #da1e28, #fa4d56);
+.text-gradient-blue {
+    background: linear-gradient(135deg, #3b82f6, #06b6d4);
     -webkit-background-clip: text;
     background-clip: text;
     -webkit-text-fill-color: transparent;
 }
 
 .text-inverse-secondary {
-    color: rgba(255, 255, 255, 0.8) !important;
+    color: rgba(255, 255, 255, 0.85) !important;
 }
 
 .btn-secondary-white {
-    background: transparent;
-    border: 2px solid rgba(255, 255, 255, 0.3);
+    background: rgba(255, 255, 255, 0.15);
+    backdrop-filter: blur(12px);
+    border: 1px solid rgba(255, 255, 255, 0.3);
     color: var(--text-inverse);
+    border-radius: var(--radius-lg);
 }
 
 .btn-secondary-white:hover {
-    background: rgba(255, 255, 255, 0.1);
-    border-color: var(--text-inverse);
+    background: rgba(255, 255, 255, 0.25);
+    border-color: rgba(255, 255, 255, 0.5);
 }
 
 
 .hero {
     padding: var(--spacing-20) 0 var(--spacing-24);
     text-align: center;
-    background: linear-gradient(135deg, var(--primary-900) 0%, var(--primary-600) 100%);
+    background: linear-gradient(160deg, #0f172a 0%, #1e3a5f 30%, #2563eb 70%, #06b6d4 100%);
     color: var(--text-inverse);
     position: relative;
     overflow: hidden;
@@ -360,19 +361,23 @@ const goToMarketplace = () => {
 .hero::before {
     content: '';
     position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background: radial-gradient(circle at 50% 0%, rgba(255, 255, 255, 0.1) 0%, transparent 60%);
+    top: -50%;
+    left: -50%;
+    right: -50%;
+    bottom: -50%;
+    background:
+        radial-gradient(ellipse 600px 400px at 30% 20%, rgba(59, 130, 246, 0.3) 0%, transparent 70%),
+        radial-gradient(ellipse 500px 350px at 70% 60%, rgba(6, 182, 212, 0.2) 0%, transparent 70%),
+        radial-gradient(circle at 50% 0%, rgba(255, 255, 255, 0.08) 0%, transparent 50%);
     pointer-events: none;
 }
 
 .hero-badge {
     display: inline-block;
     padding: var(--spacing-2) var(--spacing-5);
-    background: rgba(255, 255, 255, 0.15);
-    backdrop-filter: blur(4px);
+    background: rgba(255, 255, 255, 0.12);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
     color: var(--text-inverse);
     border: 1px solid rgba(255, 255, 255, 0.2);
     font-size: var(--font-size-sm);
@@ -410,9 +415,56 @@ const goToMarketplace = () => {
     margin: 0 auto;
 }
 
+.stat-card.glass-panel {
+    background: rgba(255, 255, 255, 0.1);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    border-radius: var(--radius-xl);
+    padding: var(--spacing-5) var(--spacing-4);
+    transition: all 0.3s ease;
+}
+
+.stat-card.glass-panel:hover {
+    background: rgba(255, 255, 255, 0.18);
+    border-color: rgba(255, 255, 255, 0.3);
+    transform: translateY(-2px);
+}
+
+.stat-value {
+    font-size: var(--font-size-2xl);
+    font-weight: var(--font-weight-bold);
+    color: #ffffff;
+}
+
+.stat-label {
+    font-size: var(--font-size-sm);
+    color: rgba(255, 255, 255, 0.7);
+    margin-top: var(--spacing-1);
+}
+
+.btn-white {
+    background: rgba(255, 255, 255, 0.95);
+    color: #2563eb;
+    border: none;
+    border-radius: var(--radius-lg);
+    font-weight: var(--font-weight-semibold);
+}
+
+.btn-white:hover {
+    background: #ffffff;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+}
+
+.badge-popular {
+    background: linear-gradient(135deg, #3b82f6, #06b6d4);
+    color: white;
+    border-radius: var(--radius-full);
+}
+
 /* Pricing */
 .pricing-section {
-    background: var(--bg-primary);
+    background: linear-gradient(180deg, #f0f9ff 0%, #ffffff 100%);
 }
 
 .pricing-grid {
@@ -421,11 +473,36 @@ const goToMarketplace = () => {
     gap: var(--spacing-6);
 }
 
+.price-card {
+    background: rgba(255, 255, 255, 0.7);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border: 1px solid rgba(59, 130, 246, 0.1);
+    border-radius: var(--radius-xl);
+    transition: all 0.3s ease;
+}
+
+.price-card:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 20px 40px rgba(59, 130, 246, 0.12);
+    border-color: rgba(59, 130, 246, 0.25);
+}
+
+.price-card.popular {
+    background: linear-gradient(135deg, rgba(59, 130, 246, 0.05), rgba(6, 182, 212, 0.05));
+    border-color: rgba(59, 130, 246, 0.3);
+}
+
 .price-card .btn {
     margin-top: var(--spacing-6);
+    border-radius: var(--radius-lg);
 }
 
 /* Features */
+.section-bg {
+    background: linear-gradient(180deg, #ffffff 0%, #f0f9ff 50%, #ffffff 100%) !important;
+}
+
 .features-grid {
     display: grid;
     grid-template-columns: repeat(4, 1fr);
@@ -434,6 +511,25 @@ const goToMarketplace = () => {
 
 .feature-card {
     text-align: left;
+    background: rgba(255, 255, 255, 0.6);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid rgba(59, 130, 246, 0.08);
+    border-radius: var(--radius-xl);
+    padding: var(--spacing-6);
+    transition: all 0.3s ease;
+}
+
+.feature-card:hover {
+    background: rgba(255, 255, 255, 0.85);
+    box-shadow: 0 8px 32px rgba(59, 130, 246, 0.1);
+    border-color: rgba(59, 130, 246, 0.2);
+}
+
+.feature-card .icon-box {
+    background: linear-gradient(135deg, rgba(59, 130, 246, 0.1), rgba(6, 182, 212, 0.1));
+    color: #3b82f6;
+    border-radius: var(--radius-lg);
 }
 
 .feature-card h4 {
@@ -447,10 +543,33 @@ const goToMarketplace = () => {
     gap: var(--spacing-6);
 }
 
+/* Scenario cards */
+.scenario-card {
+    border-radius: var(--radius-xl);
+    overflow: hidden;
+    border: 1px solid rgba(59, 130, 246, 0.08);
+    transition: all 0.3s ease;
+}
+
+.scenario-card:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 12px 32px rgba(59, 130, 246, 0.1);
+}
+
 /* CTA */
 .cta-section {
-    background: linear-gradient(135deg, var(--primary-600) 0%, var(--primary-700) 100%);
+    background: linear-gradient(160deg, #1e3a5f 0%, #2563eb 50%, #06b6d4 100%);
     padding: var(--spacing-16) 0;
+    position: relative;
+    overflow: hidden;
+}
+
+.cta-section::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: radial-gradient(ellipse 600px 300px at 50% 50%, rgba(255, 255, 255, 0.08) 0%, transparent 70%);
+    pointer-events: none;
 }
 
 .cta-content {
@@ -476,7 +595,7 @@ const goToMarketplace = () => {
 
 /* Footer */
 .footer {
-    background: var(--bg-dark);
+    background: linear-gradient(180deg, #0f172a 0%, #1e293b 100%);
     color: var(--text-inverse);
     padding: var(--spacing-16) 0 var(--spacing-8);
 }
