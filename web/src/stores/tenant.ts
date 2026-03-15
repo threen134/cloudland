@@ -5,6 +5,7 @@ import { setAuthToken } from '../api/client'
 
 export interface Organization {
     id: string
+    org_id?: number
     name: string
     slug?: string
     org_role?: number
@@ -40,11 +41,12 @@ export const useTenantStore = defineStore('tenant', () => {
 
         try {
             const response = await authApi.getMyOrgs()
-            if (Array.isArray(response.data)) {
-                organizations.value = response.data
-            } else if (response.data?.orgs) {
-                organizations.value = response.data.orgs
-            }
+            const raw = Array.isArray(response.data) ? response.data : (response.data?.orgs || [])
+            // Backend returns org_id, frontend expects id
+            organizations.value = raw.map((o: any) => ({
+                ...o,
+                id: String(o.org_id ?? o.id),
+            }))
 
             // Auto-select first org if none selected
             if (!currentOrgId.value && organizations.value.length > 0) {
