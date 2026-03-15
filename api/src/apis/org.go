@@ -88,35 +88,35 @@ func (v *OrgAPI) getOrgResponse(ctx context.Context, org *model.Organization) (o
 	return
 }
 
-// --- Write operations below are DEPRECATED. Org management is handled by Middle. ---
+// --- Write operations below are DEPRECATED. Org management is handled by CPGateway. ---
 
 func deprecated501(c *gin.Context, endpoint string) {
-	logger.Errorf("OrgAPI.%s called — this endpoint is deprecated. Org management is handled by Middle.", endpoint)
+	logger.Errorf("OrgAPI.%s called — this endpoint is deprecated. Org management is handled by CPGateway.", endpoint)
 	c.JSON(http.StatusNotImplemented, gin.H{
 		"error":   "This endpoint is deprecated",
-		"message": "Org management is now handled by Middle. Use /api/v1/orgs on the Middle API gateway.",
+		"message": "Org management is now handled by CPGateway. Use /api/v1/orgs on the CPGateway API gateway.",
 	})
 }
 
-// Patch is deprecated. Org management is now handled by Middle.
+// Patch is deprecated. Org management is now handled by CPGateway.
 func (v *OrgAPI) Patch(c *gin.Context) { deprecated501(c, "Patch") }
 
-// Delete is deprecated. Org management is now handled by Middle.
+// Delete is deprecated. Org management is now handled by CPGateway.
 func (v *OrgAPI) Delete(c *gin.Context) { deprecated501(c, "Delete") }
 
-// AddMember is deprecated. Org management is now handled by Middle.
+// AddMember is deprecated. Org management is now handled by CPGateway.
 func (v *OrgAPI) AddMember(c *gin.Context) { deprecated501(c, "AddMember") }
 
-// RemoveMember is deprecated. Org management is now handled by Middle.
+// RemoveMember is deprecated. Org management is now handled by CPGateway.
 func (v *OrgAPI) RemoveMember(c *gin.Context) { deprecated501(c, "RemoveMember") }
 
-// UpdateMemberRole is deprecated. Org management is now handled by Middle.
+// UpdateMemberRole is deprecated. Org management is now handled by CPGateway.
 func (v *OrgAPI) UpdateMemberRole(c *gin.Context) { deprecated501(c, "UpdateMemberRole") }
 
-// Create is deprecated. Org management is now handled by Middle.
+// Create is deprecated. Org management is now handled by CPGateway.
 func (v *OrgAPI) Create(c *gin.Context) { deprecated501(c, "Create") }
 
-// TransferOwner is deprecated. Org management is now handled by Middle.
+// TransferOwner is deprecated. Org management is now handled by CPGateway.
 func (v *OrgAPI) TransferOwner(c *gin.Context) { deprecated501(c, "TransferOwner") }
 
 // List retrieves org list (read-only, kept for migration).

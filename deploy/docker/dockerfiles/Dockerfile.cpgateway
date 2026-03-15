@@ -1,0 +1,38 @@
+# =============================================================================
+# CloudLand Control Plane Gateway 控制平面网关 (FastAPI)
+# 构建: docker build -f dockerfiles/Dockerfile.cpgateway -t cloudland-cpgateway ../../
+# =============================================================================
+
+FROM python:3.12-slim
+
+WORKDIR /app
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1
+
+# 安装系统依赖
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    gcc \
+    && rm -rf /var/lib/apt/lists/*
+
+# 安装 Python 依赖
+COPY cpgateway/requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# 复制应用代码
+COPY cpgateway/app ./app
+COPY cpgateway/cland_bankend_swager.json ./
+
+# 创建必要的目录
+RUN mkdir -p /app/data /app/keys
+
+EXPOSE 8000
+
+HEALTHCHECK --interval=15s --timeout=5s --retries=5 --start-period=90s \
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/').read()" || exit 1
+
+COPY deploy/docker/scripts/cpgateway-entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
+ENTRYPOINT ["/entrypoint.sh"]
+CMD ["python", "-m", "app.main"]

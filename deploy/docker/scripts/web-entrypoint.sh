@@ -1,5 +1,5 @@
 #!/bin/bash
-# Web 服务 (clbase/clapi) 容器启动脚本
+# clapi 容器启动脚本
 # 负责从环境变量生成 config.toml
 
 set -e
@@ -63,6 +63,9 @@ port = "${MONITOR_PORT}"
 email = "${ADMIN_EMAIL}"
 password = "${ADMIN_PASSWORD}"
 
+[cpgateway]
+secret = "${CPGATEWAY_SECRET_KEY:-change-me-in-production}"
+
 [key]
 _EOF_
 
@@ -125,6 +128,24 @@ _EOF_
     fi
 fi
 
+
+# 等待数据库就绪（使用 TCP 连接检查）
+echo "==> 等待数据库连接..."
+MAX_RETRIES=30
+RETRY_COUNT=0
+
+until timeout 1 bash -c "cat < /dev/null > /dev/tcp/${DB_HOST}/${DB_PORT}" 2>/dev/null; do
+  RETRY_COUNT=$((RETRY_COUNT + 1))
+  if [ $RETRY_COUNT -ge $MAX_RETRIES ]; then
+    echo "ERROR: 数据库连接失败，已重试 $MAX_RETRIES 次"
+    echo "DB_HOST=${DB_HOST}, DB_PORT=${DB_PORT}"
+    exit 1
+  fi
+  echo "数据库未就绪 - 等待中 (尝试 $RETRY_COUNT/$MAX_RETRIES)"
+  sleep 2
+done
+
+echo "==> 数据库连接成功"
 
 echo "==> 启动: $@"
 exec "$@"

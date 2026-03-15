@@ -133,7 +133,7 @@ func GetMemberShip(ctx context.Context) *MemberShip {
 }
 
 // GetDBMemberShip is deprecated. MemberShip is now constructed from X-* headers
-// set by Middle Proxy in authorize.go. Kept as a no-op stub for compile compatibility
+// set by CPGateway Proxy in authorize.go. Kept as a no-op stub for compile compatibility
 // during migration. Will be removed after migration is complete.
 func GetDBMemberShip(userID, orgID int64) (m *MemberShip, err error) {
 	logger.Error("GetDBMemberShip called — this function is deprecated. MemberShip should come from X-* headers.")

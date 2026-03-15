@@ -34,7 +34,7 @@ type UserAdmin struct{}
 
 
 // Create creates a new user. Two modes:
-// 1. Middleware call (scenario 2B): no system_role, creates Dormant user without Org
+// 1. CPGateway call (scenario 2B): no system_role, creates Dormant user without Org
 // 2. SystemAdmin creating another SystemAdmin: creates Active user, adds to admin org
 func (a *UserAdmin) Create(ctx context.Context, email, password, uuid string, sysRole ...model.SystemRole) (user *model.User, err error) {
 	logger.Infof("ENTER UserAdmin.Create: email=%s, uuid=%s, sysRoleCount=%d", email, uuid, len(sysRole))
@@ -473,7 +473,7 @@ func (a *UserAdmin) List(ctx context.Context, offset, limit int64, order, query 
 }
 
 // AccessToken generates a JWT token for login.
-// Deprecated: Token issuance is now handled by Middle. This function is kept
+// Deprecated: Token issuance is now handled by CPGateway. This function is kept
 // for web UI login compatibility during migration. Will be removed.
 func (a *UserAdmin) AccessToken(ctx context.Context, uid int64, orgID ...int64) (oid int64, sysRole model.SystemRole, orgRole model.OrgRole, status model.UserStatus, token string, issueAt, expiresAt int64, err error) {
 	logger.Infof("ENTER UserAdmin.AccessToken: uid=%d, orgIDCount=%d", uid, len(orgID))
@@ -557,7 +557,7 @@ func (a *UserAdmin) AccessToken(ctx context.Context, uid int64, orgID ...int64) 
 }
 
 // SwitchOrg switches the user's current org context and returns a new token.
-// Deprecated: Org switching is now handled by Middle. This function is kept
+// Deprecated: Org switching is now handled by CPGateway. This function is kept
 // for web UI compatibility during migration. Will be removed.
 func (a *UserAdmin) SwitchOrg(ctx context.Context, uid, targetOrgID int64) (token string, issueAt, expiresAt int64, err error) {
 	logger.Infof("ENTER UserAdmin.SwitchOrg: uid=%d, targetOrgID=%d", uid, targetOrgID)

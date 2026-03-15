@@ -7,15 +7,17 @@
 #   3. docker compose up -d --build
 #
 # 服务清单:
-#   postgres        - PostgreSQL 数据库
+#   postgres        - PostgreSQL 数据库 (profile: dev)
 #   cloudland       - 主控服务 (SCI 通信)
-#   clbase          - Web 管理界面
-#   clapi           - REST API
+#   clapi           - REST API (统一 API 服务)
 #   consoleproxy    - VNC 控制台代理
-#   nginx           - 反向代理 / SSL 终端
+#   cpgateway       - 控制平面网关 (认证/代理/Region管理) (profile: dev, full)
+#   nginx           - 反向代理 / SSL 终端 / Vue.js UI (profile: full)
 #   prometheus      - 监控指标采集
 #   alertmanager    - 告警管理
 #   grafana         - 监控仪表盘
+#   loki            - 日志聚合
+#   promtail        - 日志采集
 #   alarm-rules-mgr - 告警规则管理
 # =============================================================================
 
@@ -70,39 +72,6 @@ services:
       - cland_log:/opt/cloudland/log
       - cland_cache:/opt/cloudland/cache
 
-  # ---------- clbase (Web 管理界面) ----------
-  clbase:
-    build:
-      context: ../../
-      dockerfile: deploy/docker/dockerfiles/Dockerfile.web
-      target: clbase
-    image: cloudland-clbase:latest
-    container_name: cloudland-clbase
-    restart: unless-stopped
-    environment:
-      # 用于生成发往前端的 VNC Console 代理地址，不控制本容器物理监听 IP
-      PUBLIC_IP: ${PUBLIC_IP:-127.0.0.1}
-      MANAGEMENT_VIP: ${MANAGEMENT_VIP:-127.0.0.1}
-      DB_HOST: ${DB_HOST:-postgres}
-      DB_PORT: "${DB_PORT:-5432}"
-      DB_USER: ${POSTGRES_USER:-postgres}
-      DB_PASSWORD: ${POSTGRES_PASSWORD:-d6Passwd}
-      DB_NAME: ${POSTGRES_DB:-cloudland}
-      ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@cloudland.local}
-      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-passw0rd}
-      CLOUDLAND_HOST: ${MANAGEMENT_VIP:-127.0.0.1}
-      MONITOR_HOST: prometheus
-      MONITOR_PORT: "9090"
-    volumes:
-      - ./volumes/certs:/certs:ro
-      - ./volumes/certs/cland/selfsigned.crt:/etc/ssl/certs/alarm_rules_manager.crt:ro
-      - ../.ssh:/opt/cloudland/deploy/.ssh:ro
-    ports:
-      - "${INTERNAL_IP:-127.0.0.1}:5443:5443"
-      - "${INTERNAL_IP:-0.0.0.0}:5005:5005"
-    networks:
-      cloudland:
-        ipv4_address: 172.28.0.20
 
   # ---------- clapi (REST API) ----------
   clapi:
@@ -127,12 +96,13 @@ services:
       CLOUDLAND_HOST: ${MANAGEMENT_VIP:-127.0.0.1}
       MONITOR_HOST: prometheus
       MONITOR_PORT: "9090"
+      CPGATEWAY_SECRET_KEY: ${CPGATEWAY_SECRET_KEY:-change-me-in-production}
     volumes:
       - ./volumes/certs:/certs:ro
       - ./volumes/certs/cland/selfsigned.crt:/etc/ssl/certs/alarm_rules_manager.crt:ro
       - ../.ssh:/opt/cloudland/deploy/.ssh:ro
     ports:
-      - "${INTERNAL_IP:-0.0.0.0}:8255:8255"
+      - "${INTERNAL_IP:-127.0.0.1}:8255:8255"
     networks:
       cloudland:
         ipv4_address: 172.28.0.30
@@ -152,14 +122,55 @@ services:
     networks:
       cloudland:
         ipv4_address: 172.28.0.40
-    depends_on:
-      - clbase
 
-  # ---------- Nginx 反向代理 ----------
+  # ---------- Control Plane Gateway 控制平面网关 (profile: dev, full) ----------
+  cpgateway:
+    build:
+      context: ../../
+      dockerfile: deploy/docker/dockerfiles/Dockerfile.cpgateway
+    image: cloudland-cpgateway:latest
+    container_name: cloudland-cpgateway
+    restart: unless-stopped
+    profiles:
+      - dev
+      - full
+    environment:
+      DATABASE_URL: "postgresql+asyncpg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-d6Passwd}@${DB_HOST:-postgres}:${DB_PORT:-5432}/${CPGATEWAY_DB:-cloudland_cpgateway}"
+      SECRET_KEY: ${CPGATEWAY_SECRET_KEY:-change-me-in-production}
+      FIRST_SUPERUSER_EMAIL: ${ADMIN_EMAIL:-admin@cloudland.local}
+      FIRST_SUPERUSER_USERNAME: ${CPGATEWAY_ADMIN_USER:-admin}
+      FIRST_SUPERUSER_PASSWORD: ${ADMIN_PASSWORD:-passw0rd}
+      FRONTEND_URL: "https://${PUBLIC_IP:-127.0.0.1}"
+      SMTP_HOST: ${SMTP_HOST:-localhost}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_TLS: ${SMTP_TLS:-True}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASS:-}
+      SMTP_FROM: ${ALERT_SENDER:-noreply@cloudland.local}
+      SMTP_FROM_NAME: "CloudLand"
+      LISTEN_ADDR: "0.0.0.0"
+      LISTEN_PORT: "8000"
+    volumes:
+      - cpgateway_data:/app/data
+      - cpgateway_keys:/app/keys
+    ports:
+      - "${INTERNAL_IP:-127.0.0.1}:8000:8000"
+    networks:
+      cloudland:
+        ipv4_address: 172.28.0.96
+    depends_on:
+      - clapi
+
+  # ---------- Nginx 反向代理 (profile: full) ----------
   nginx:
-    image: nginx:1.25-alpine
+    build:
+      context: ../../
+      dockerfile: deploy/docker/dockerfiles/Dockerfile.nginx-ui
+    image: cloudland-nginx-ui:latest
     container_name: cloudland-nginx
     restart: unless-stopped
+    profiles:
+      - full
     volumes:
       - ./config/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
       - ./config/nginx/ssl.conf:/etc/nginx/conf.d/ssl.conf:ro
@@ -174,8 +185,7 @@ services:
       cloudland:
         ipv4_address: 172.28.0.50
     depends_on:
-      - clbase
-      - clapi
+      - cpgateway
       - consoleproxy
 
   # ---------- Prometheus ----------
@@ -342,5 +352,7 @@ volumes:
     name: cloudland-cland-cache
   image_cache:
     name: cloudland-image-cache
-  loki_data:
-    name: cloudland-loki-data
+  cpgateway_data:
+    name: cloudland-cpgateway-data
+  cpgateway_keys:
+    name: cloudland-cpgateway-keys

@@ -7,3 +7,7 @@
 
 -- 确保扩展可用
 CREATE EXTENSION IF NOT EXISTS pg_stat_statements;
+
+-- 为 Control Plane Gateway 创建独立数据库
+CREATE DATABASE cloudland_cpgateway;
+GRANT ALL PRIVILEGES ON DATABASE cloudland_cpgateway TO postgres;

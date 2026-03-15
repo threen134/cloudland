@@ -5,8 +5,8 @@ SPDX-License-Identifier: Apache-2.0
 
 */
 
-// jwt.go is deprecated. Token issuance and verification are now handled by Middle.
-// Cloudland receives identity via X-* headers set by Middle's proxy layer.
+// jwt.go is deprecated. Token issuance and verification are now handled by CPGateway.
+// Cloudland receives identity via X-* headers set by CPGateway's proxy layer.
 // This file is kept only for type definitions used by legacy code during migration.
 
 package services
@@ -26,10 +26,10 @@ type CustomClaims struct {
 	ST  model.UserStatus `json:"st"`
 }
 
-// NewToken is deprecated. Token issuance is handled by Middle.
+// NewToken is deprecated. Token issuance is handled by CPGateway.
 // Returns an error — callers should not rely on Cloudland-signed tokens.
 func NewToken(u, o, uid, oid string, sysRole model.SystemRole, orgRole model.OrgRole, status model.UserStatus) (signed string, issueAt, expiresAt int64, err error) {
-	err = fmt.Errorf("NewToken is deprecated: token issuance is handled by Middle")
-	logger.Error("NewToken called — this function is deprecated. Token issuance should be handled by Middle.")
+	err = fmt.Errorf("NewToken is deprecated: token issuance is handled by CPGateway")
+	logger.Error("NewToken called — this function is deprecated. Token issuance should be handled by CPGateway.")
 	return
 }

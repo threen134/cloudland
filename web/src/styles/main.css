@@ -1,0 +1,273 @@
+:root {
+    /* Carbon Design System - IBM Cloud inspired */
+
+    /* Brand Colors */
+    --primary-color: #0f62fe;
+    /* Blue 60 */
+    --primary-hover: #0353e9;
+    /* Blue 70 */
+    --secondary-color: #393939;
+    /* Gray 70 */
+
+    /* UI Colors */
+    --ui-background: #f4f4f4;
+    /* Gray 10 */
+    --ui-01: #ffffff;
+    --ui-02: #f4f4f4;
+    --ui-03: #e0e0e0;
+    /* Gray 20 - Borders */
+    --ui-04: #8d8d8d;
+    --ui-05: #161616;
+    /* Gray 100 - Key UI elements */
+
+    /* Text Colors */
+    --text-main: #161616;
+    /* Gray 100 */
+    --text-secondary: #525252;
+    /* Gray 60 */
+    --text-light: #a8a8a8;
+    --text-on-dark: #ffffff;
+    --text-error: #da1e28;
+    /* Red 60 */
+
+    /* Layout */
+    --header-height: 48px;
+    --sidebar-width: 256px;
+    --max-width: 1584px;
+    /* IBM Cloud max width */
+
+    /* Spacing */
+    --spacing-xs: 2px;
+    --spacing-sm: 8px;
+    --spacing-md: 16px;
+    --spacing-lg: 24px;
+    --spacing-xl: 32px;
+    --spacing-2xl: 48px;
+
+    /* Typography */
+    --font-family: 'IBM Plex Sans', 'Helvetica Neue', Arial, sans-serif;
+    --font-size-base: 14px;
+    --font-size-sm: 12px;
+    --font-size-lg: 16px;
+    --font-size-xl: 20px;
+}
+
+body {
+    margin: 0;
+    font-family: var(--font-family);
+    background-color: var(--ui-background);
+    color: var(--text-main);
+    font-size: var(--font-size-base);
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+}
+
+* {
+    box-sizing: border-box;
+}
+
+a {
+    color: var(--primary-color);
+    text-decoration: none;
+    cursor: pointer;
+}
+
+a:hover {
+    text-decoration: underline;
+}
+
+/* Utilities & Carbon-like Elements */
+
+.card {
+    background: var(--ui-01);
+    transform: translateY(-4px);
+}
+
+.glass-panel {
+    background: rgba(255, 255, 255, 0.7);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid rgba(255, 255, 255, 0.5);
+}
+
+.glass-header {
+    background: rgba(255, 255, 255, 0.9);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+}
+
+/* Carbon Buttons - Square, no radius */
+.btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--spacing-2);
+    padding: var(--spacing-3) var(--spacing-6);
+    font-size: var(--font-size-base);
+    font-weight: var(--font-weight-medium);
+    line-height: 1;
+    border-radius: var(--radius-lg);
+    border: 2px solid transparent;
+    cursor: pointer;
+    transition: all var(--transition-base);
+    white-space: nowrap;
+    min-height: auto;
+    /* Reset Carbon legacy */
+}
+
+/* Primary Button - Gradient Blue */
+.btn-primary {
+    background: var(--primary-color);
+    background: var(--primary-gradient);
+    color: var(--text-inverse);
+    border: none;
+    box-shadow: 0 2px 4px rgba(59, 130, 246, 0.25);
+}
+
+.btn-primary:hover {
+    background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(59, 130, 246, 0.35);
+}
+
+/* Secondary Button - Outlined with transition */
+.btn-secondary {
+    background-color: transparent;
+    color: var(--primary-600);
+    border: 2px solid var(--primary-100);
+    background: var(--bg-primary);
+}
+
+.btn-secondary:hover {
+    border-color: var(--primary-color);
+    color: var(--primary-700);
+    background: var(--primary-50);
+    box-shadow: var(--shadow-sm);
+}
+
+/* Pricing Card */
+.price-card {
+    position: relative;
+    background: var(--bg-primary);
+    border-radius: var(--radius-xl);
+    padding: var(--spacing-8);
+    border: 1px solid var(--border-light);
+    text-align: center;
+    transition: all var(--transition-base);
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+}
+
+.price-card:hover {
+    border-color: var(--primary-300);
+    box-shadow: var(--shadow-lg);
+    transform: translateY(-4px);
+}
+
+.price-card.popular {
+    border: 2px solid var(--primary-color);
+    box-shadow: 0 4px 12px rgba(59, 130, 246, 0.1);
+    transform: scale(1.02);
+    z-index: 1;
+}
+
+.price-card.popular:hover {
+    transform: scale(1.02) translateY(-4px);
+    box-shadow: 0 12px 24px rgba(59, 130, 246, 0.15);
+}
+
+.price-card .badge-popular {
+    position: absolute;
+    top: -12px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: var(--primary-color);
+    color: var(--text-inverse);
+    padding: var(--spacing-1) var(--spacing-4);
+    border-radius: var(--radius-full);
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-semibold);
+    text-transform: uppercase;
+    z-index: 2;
+    white-space: nowrap;
+}
+
+.price-card .plan-name {
+    font-size: var(--font-size-xl);
+    font-weight: var(--font-weight-bold);
+    margin-bottom: var(--spacing-2);
+    min-height: 2rem;
+}
+
+.price-card .plan-desc {
+    font-size: var(--font-size-sm);
+    color: var(--text-tertiary);
+    margin-bottom: var(--spacing-6);
+    min-height: 2.5rem;
+}
+
+.price-card .price {
+    font-size: var(--font-size-4xl);
+    font-weight: var(--font-weight-extrabold);
+    color: var(--text-primary);
+    margin-top: auto;
+    padding-top: var(--spacing-4);
+}
+
+.price-card .price span {
+    font-size: var(--font-size-base);
+    font-weight: var(--font-weight-normal);
+    color: var(--text-tertiary);
+}
+
+.price-card .btn {
+    margin-top: var(--spacing-6);
+    width: 100%;
+}
+
+/* Typography Helpers */
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+    font-weight: 400;
+    /* Carbon uses lighter weights often */
+    margin: 0 0 var(--spacing-md) 0;
+}
+
+h1 {
+    font-size: 32px;
+    line-height: 40px;
+}
+
+h2 {
+    font-size: 28px;
+    line-height: 36px;
+}
+
+h3 {
+    font-size: 20px;
+    line-height: 28px;
+}
+
+/* Custom Scrollbar for webkit */
+::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+
+::-webkit-scrollbar-track {
+    background: var(--ui-02);
+}
+
+::-webkit-scrollbar-thumb {
+    background: var(--ui-04);
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: var(--text-secondary);
+}

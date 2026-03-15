@@ -95,30 +95,30 @@ func (v *UserAPI) Get(c *gin.Context) {
 // @Failure 400 {object} common.APIError "Bad request"
 // @Failure 401 {object} common.APIError "Not authorized"
 // @Router /users/{id} [patch]
-// Patch is deprecated. User management is now handled by Middle.
+// Patch is deprecated. User management is now handled by CPGateway.
 func (v *UserAPI) Patch(c *gin.Context) {
-	logger.Error("UserAPI.Patch called — this endpoint is deprecated. User management is handled by Middle.")
+	logger.Error("UserAPI.Patch called — this endpoint is deprecated. User management is handled by CPGateway.")
 	c.JSON(http.StatusNotImplemented, gin.H{
 		"error":   "This endpoint is deprecated",
-		"message": "User management is now handled by Middle. Use PUT /api/v1/users/{uuid}/password on the Middle API gateway.",
+		"message": "User management is now handled by CPGateway. Use PUT /api/v1/users/{uuid}/password on the CPGateway API gateway.",
 	})
 }
 
-// Delete is deprecated. User management is now handled by Middle.
+// Delete is deprecated. User management is now handled by CPGateway.
 func (v *UserAPI) Delete(c *gin.Context) {
-	logger.Error("UserAPI.Delete called — this endpoint is deprecated. User management is handled by Middle.")
+	logger.Error("UserAPI.Delete called — this endpoint is deprecated. User management is handled by CPGateway.")
 	c.JSON(http.StatusNotImplemented, gin.H{
 		"error":   "This endpoint is deprecated",
-		"message": "User management is now handled by Middle. Use DELETE /api/v1/users/{uuid} on the Middle API gateway.",
+		"message": "User management is now handled by CPGateway. Use DELETE /api/v1/users/{uuid} on the CPGateway API gateway.",
 	})
 }
 
-// Create is deprecated. User management is now handled by Middle.
+// Create is deprecated. User management is now handled by CPGateway.
 func (v *UserAPI) Create(c *gin.Context) {
-	logger.Error("UserAPI.Create called — this endpoint is deprecated. User management is handled by Middle.")
+	logger.Error("UserAPI.Create called — this endpoint is deprecated. User management is handled by CPGateway.")
 	c.JSON(http.StatusNotImplemented, gin.H{
 		"error":   "This endpoint is deprecated",
-		"message": "User creation is now handled by Middle. Use POST /api/v1/auth/register on the Middle API gateway.",
+		"message": "User creation is now handled by CPGateway. Use POST /api/v1/auth/register on the CPGateway API gateway.",
 	})
 }
 
@@ -182,7 +182,7 @@ func (v *UserAPI) List(c *gin.Context) {
 }
 
 // @Summary check if email exists
-// @Description check if email exists (for middleware registration)
+// @Description check if email exists (for CPGateway registration)
 // @tags Authorization
 // @Accept  json
 // @Produce json
@@ -207,53 +207,53 @@ func (v *UserAPI) ValidateEmail(c *gin.Context) {
 	})
 }
 
-// ChangePassword is deprecated. User management is now handled by Middle.
+// ChangePassword is deprecated. User management is now handled by CPGateway.
 func (v *UserAPI) ChangePassword(c *gin.Context) {
-	logger.Error("ChangePassword called — this endpoint is deprecated. User management is handled by Middle.")
+	logger.Error("ChangePassword called — this endpoint is deprecated. User management is handled by CPGateway.")
 	c.JSON(http.StatusNotImplemented, gin.H{
 		"error":   "This endpoint is deprecated",
-		"message": "Password changes are now handled by Middle. Use PUT /api/v1/users/{uuid}/password on the Middle API gateway.",
+		"message": "Password changes are now handled by CPGateway. Use PUT /api/v1/users/{uuid}/password on the CPGateway API gateway.",
 	})
 }
 
 // @Summary login to get the access token (DEPRECATED)
-// @Description DEPRECATED: Token issuance is now handled by Middle. Use Middle's POST /api/v1/auth/token instead.
+// @Description DEPRECATED: Token issuance is now handled by CPGateway. Use CPGateway's POST /api/v1/auth/token instead.
 // @tags Authorization
 // @Router /login [post]
 func (v *UserAPI) LoginPost(c *gin.Context) {
-	logger.Error("LoginPost called — this endpoint is deprecated. Token issuance is handled by Middle.")
+	logger.Error("LoginPost called — this endpoint is deprecated. Token issuance is handled by CPGateway.")
 	c.JSON(http.StatusNotImplemented, gin.H{
 		"error":   "This endpoint is deprecated",
-		"message": "Token issuance is now handled by Middle. Use POST /api/v1/auth/token on the Middle API gateway.",
+		"message": "Token issuance is now handled by CPGateway. Use POST /api/v1/auth/token on the CPGateway API gateway.",
 	})
 }
 
-// UpdateProfile is deprecated. User management is now handled by Middle.
+// UpdateProfile is deprecated. User management is now handled by CPGateway.
 func (v *UserAPI) UpdateProfile(c *gin.Context) {
-	logger.Error("UpdateProfile called — this endpoint is deprecated. User management is handled by Middle.")
+	logger.Error("UpdateProfile called — this endpoint is deprecated. User management is handled by CPGateway.")
 	c.JSON(http.StatusNotImplemented, gin.H{
 		"error":   "This endpoint is deprecated",
-		"message": "Profile updates are now handled by Middle. Use PATCH /api/v1/users/{uuid}/profile on the Middle API gateway.",
+		"message": "Profile updates are now handled by CPGateway. Use PATCH /api/v1/users/{uuid}/profile on the CPGateway API gateway.",
 	})
 }
 
-// DemoteSystemAdmin is deprecated. User management is now handled by Middle.
+// DemoteSystemAdmin is deprecated. User management is now handled by CPGateway.
 func (v *UserAPI) DemoteSystemAdmin(c *gin.Context) {
-	logger.Error("DemoteSystemAdmin called — this endpoint is deprecated. User management is handled by Middle.")
+	logger.Error("DemoteSystemAdmin called — this endpoint is deprecated. User management is handled by CPGateway.")
 	c.JSON(http.StatusNotImplemented, gin.H{
 		"error":   "This endpoint is deprecated",
-		"message": "User role management is now handled by Middle. Use PUT /api/v1/users/{uuid}/demote on the Middle API gateway.",
+		"message": "User role management is now handled by CPGateway. Use PUT /api/v1/users/{uuid}/demote on the CPGateway API gateway.",
 	})
 }
 
 // @Summary switch current organization (DEPRECATED)
-// @Description DEPRECATED: Org switching is now handled by Middle. Use Middle's POST /api/v1/auth/switch-org instead.
+// @Description DEPRECATED: Org switching is now handled by CPGateway. Use CPGateway's POST /api/v1/auth/switch-org instead.
 // @tags Authorization
 // @Router /switch-org [post]
 func (v *UserAPI) SwitchOrg(c *gin.Context) {
-	logger.Error("SwitchOrg called — this endpoint is deprecated. Org switching is handled by Middle.")
+	logger.Error("SwitchOrg called — this endpoint is deprecated. Org switching is handled by CPGateway.")
 	c.JSON(http.StatusNotImplemented, gin.H{
 		"error":   "This endpoint is deprecated",
-		"message": "Org switching is now handled by Middle. Use POST /api/v1/auth/switch-org on the Middle API gateway.",
+		"message": "Org switching is now handled by CPGateway. Use POST /api/v1/auth/switch-org on the CPGateway API gateway.",
 	})
 }

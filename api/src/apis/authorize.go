@@ -18,17 +18,17 @@ import (
 	"github.com/spf13/viper"
 )
 
-// Authorize validates requests forwarded from Middle.
-// Middle has already verified the JWT and set X-* headers.
+// Authorize validates requests forwarded from CPGateway.
+// CPGateway has already verified the JWT and set X-* headers.
 // Cloudland only needs to:
-// 1. Verify X-Forwarded-Secret (shared secret with Middle)
+// 1. Verify X-Forwarded-Secret (shared secret with CPGateway)
 // 2. Build MemberShip from X-* headers
 func Authorize() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		// 1. Verify shared secret from Middle (mandatory)
-		expectedSecret := viper.GetString("middle.secret")
+		// 1. Verify shared secret from Control Plane Gateway (mandatory)
+		expectedSecret := viper.GetString("cpgateway.secret")
 		if expectedSecret == "" {
-			ErrorResponse(c, http.StatusInternalServerError, "middle.secret not configured", nil)
+			ErrorResponse(c, http.StatusInternalServerError, "cpgateway.secret not configured", nil)
 			c.Abort()
 			return
 		}
@@ -39,7 +39,7 @@ func Authorize() gin.HandlerFunc {
 			return
 		}
 
-		// 2. Read identity from X-* headers (set by Middle Proxy)
+		// 2. Read identity from X-* headers (set by CPGateway Proxy)
 		userIDStr := c.Request.Header.Get("X-User-ID")
 		if userIDStr == "" {
 			ErrorResponse(c, http.StatusUnauthorized, "Missing X-User-ID header", nil)
