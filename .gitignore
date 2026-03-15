@@ -95,3 +95,13 @@ deploy/docker/.run.compute.sh
 src/.cache/*
 compile_commands.json
 deploy/docker/.run*
+
+# Sensitive files
+plan/permission-test.http
+plan/permission-test-plan.md
+api/apitest/listener_post.sh
+api/apitest/tokenrc
+api/apitest/reinstall.sh
+api/apitest/user_post.sh
+api/bin/
+api/alarm_rules_manager

@@ -1,0 +1,809 @@
+/*
+Copyright <holder> All Rights Reserved.
+
+SPDX-License-Identifier: Apache-2.0
+
+*/
+
+package apis
+
+import (
+	"context"
+	"fmt"
+	"net/http"
+	"strconv"
+	"strings"
+	. "api/src/common"
+	"api/src/model"
+	"api/src/services"
+
+	"github.com/gin-gonic/gin"
+)
+
+var instanceAPI = &InstanceAPI{}
+var instanceAdmin = &services.InstanceAdmin{}
+
+type InstanceAPI struct{}
+
+type InstancePatchPayload struct {
+	Hostname    string      `json:"hostname" binding:"omitempty,hostname|fqdn"`
+	PowerAction PowerAction `json:"power_action" binding:"omitempty,oneof=stop hard_stop start restart hard_restart pause resume"`
+}
+
+type InstanceSetUserPasswordPayload struct {
+	Password string `json:"password" binding:"required,min=8,max=64"`
+	UserName string `json:"user_name" binding:"required,min=2,max=32"`
+}
+
+type InstanceReinstallPayload struct {
+	Image     *BaseReference   `json:"image" binding:"omitempty"`
+	Flavor    string           `json:"flavor" binding:"omitempty"`
+	Keys      []*BaseReference `json:"keys" binding:"omitempty,gte=0,lte=16"`
+	Password  string           `json:"password" binging:"omitempty,min=8,max=64"`
+	LoginPort int              `json:"login_port" binding:"omitempty,min=1,max=65535"`
+}
+
+type InstanceResizePayload struct {
+	Cpu    int32 `json:"cpu" binding:"omitempty,gte=1"`
+	Memory int32 `json:"memory" binding:"omitempty,gte=1"`
+}
+
+type InstanceRescuePayload struct {
+	RescueImage *BaseReference `json:"rescue_image" binding:"omitempty"`
+	Password    string         `json:"password" binging:"required,min=8,max=64"`
+}
+
+type InstancePayload struct {
+	Count               int                 `json:"count" binding:"omitempty,gte=1,lte=16"`
+	Hypervisor          *int                `json:"hypervisor" binding:"omitempty,gte=0,lte=65535"`
+	Hostname            string              `json:"hostname" binding:"required,hostname|fqdn"`
+	Keys                []*BaseReference    `json:"keys" binding:"omitempty,gte=0,lte=16"`
+	RootPasswd          string              `json:"root_passwd" binding:"omitempty,min=8,max=32"`
+	LoginPort           int                 `json:"login_port" binding:"omitempty,min=0,max=65535"`
+	Cpu                 int32               `json:"cpu" binding:"omitempty,gte=1"`
+	Memory              int32               `json:"memory" binding:"omitempty,gte=1"`
+	Disk                int32               `json:"disk" binding:"omitempty,gte=1"`
+	DiskIopsLimit       int32               `json:"disk_iops_limit" binding:"omitempty,gte=0,lte=10000000"`
+	DiskBpsLimit        int32               `json:"disk_bps_limit" binding:"omitempty,gte=0,lte=102400"` // in MB/s
+	Flavor              string              `json:"flavor" binding:"omitempty,min=1,max=32"`
+	Image               *BaseReference      `json:"image" binding:"required"`
+	PrimaryInterface    *InterfacePayload   `json:"primary_interface" binding:"required"`
+	SecondaryInterfaces []*InterfacePayload `json:"secondary_interfaces" binding:"omitempty,gte=0,lte=7"`
+	Zone                string              `json:"zone" binding:"required,min=1,max=32"`
+	VPC                 *BaseReference      `json:"vpc" binding:"omitempty"`
+	Userdata            string              `json:"userdata,omitempty"`
+	UserdataType        string              `json:"userdata_type,omitempty"`
+	NestedEnable        bool                `json:"nested_enable,omitempty"`
+	PoolID              string              `json:"pool_id" binding:"omitempty"`
+	Vendordata          string              `json:"vendordata,omitempty"`
+	Vendordatatype      string              `json:"vendordatatype,omitempty"`
+}
+
+type InstanceResponse struct {
+	*ResourceReference
+	Hostname    string                `json:"hostname"`
+	Status      string                `json:"status"`
+	LoginPort   int                   `json:"login_port"`
+	Interfaces  []*InterfaceResponse  `json:"interfaces"`
+	Volumes     []*VolumeInfoResponse `json:"volumes"`
+	Cpu         int32                 `json:"cpu"`
+	Memory      int32                 `json:"memory"`
+	Disk        int32                 `json:"disk"`
+	Flavor      string                `json:"flavor"`
+	Image       *ResourceReference    `json:"image"`
+	Keys        []*ResourceReference  `json:"keys"`
+	PasswdLogin bool                  `json:"passwd_login"`
+	Zone        string                `json:"zone"`
+	VPC         *ResourceReference    `json:"vpc,omitempty"`
+	Hypervisor  string                `json:"hypervisor,omitempty"`
+	Reason      string                `json:"reason"`
+}
+
+type InstanceListResponse struct {
+	Offset    int                 `json:"offset"`
+	Total     int                 `json:"total"`
+	Limit     int                 `json:"limit"`
+	Instances []*InstanceResponse `json:"instances"`
+}
+
+// @Summary get a instance
+// @Description get a instance
+// @tags Compute
+// @Accept  json
+// @Produce json
+// @Param   id  path  string  true  "Instance UUID"
+// @Success 200 {object} InstanceResponse
+// @Failure 400 {object} common.APIError "Bad request"
+// @Failure 401 {object} common.APIError "Not authorized"
+// @Router /instances/{id} [get]
+func (v *InstanceAPI) Get(c *gin.Context) {
+	ctx := c.Request.Context()
+	uuID := c.Param("id")
+	logger.Debugf("Get instance %s", uuID)
+	instance, err := instanceAdmin.GetInstanceByUUID(ctx, uuID)
+	if err != nil {
+		ErrorResponse(c, http.StatusBadRequest, "Invalid instance query", err)
+		return
+	}
+	instanceResp, err := v.getInstanceResponse(ctx, instance)
+	if err != nil {
+		ErrorResponse(c, http.StatusInternalServerError, "Internal error", err)
+		return
+	}
+
+	c.JSON(http.StatusOK, instanceResp)
+}
+
+// @Summary patch a instance
+// @Description patch a instance
+// @tags Compute
+// @Accept  json
+// @Produce json
+// @Param   message	body   InstancePatchPayload  true   "Instance patch payload"
+// @Success 200 {object} InstanceResponse
+// @Failure 400 {object} common.APIError "Bad request"
+// @Failure 401 {object} common.APIError "Not authorized"
+// @Router /instances/{id} [patch]
+func (v *InstanceAPI) Patch(c *gin.Context) {
+	ctx := c.Request.Context()
+	uuID := c.Param("id")
+	logger.Debugf("Patch instance %s", uuID)
+	instance, err := instanceAdmin.GetInstanceByUUID(ctx, uuID)
+	if err != nil {
+		logger.Errorf("Failed to get instance %s, %+v", uuID, err)
+		ErrorResponse(c, http.StatusBadRequest, "Invalid instance query", err)
+		return
+	}
+	payload := &InstancePatchPayload{}
+	err = c.ShouldBindJSON(payload)
+	if err != nil {
+		logger.Errorf("Failed to bind JSON, %+v", err)
+		ErrorResponse(c, http.StatusBadRequest, "Invalid input JSON", err)
+		return
+	}
+	hostname := instance.Hostname
+	if payload.Hostname != "" {
+		hostname = payload.Hostname
+		logger.Debugf("Update hostname to %s", hostname)
+	}
+	err = instanceAdmin.Update(ctx, instance, hostname, payload.PowerAction, int(instance.Hyper))
+	if err != nil {
+		logger.Errorf("Patch instance failed, %+v", err)
+		ErrorResponse(c, http.StatusBadRequest, "Patch instance failed", err)
+		return
+	}
+	instanceResp, err := v.getInstanceResponse(ctx, instance)
+	if err != nil {
+		logger.Errorf("Failed to create instance response, %+v", err)
+		ErrorResponse(c, http.StatusInternalServerError, "Internal error", err)
+		return
+	}
+	logger.Debugf("Patch instance %s success, response: %+v", uuID, instanceResp)
+	c.JSON(http.StatusOK, instanceResp)
+}
+
+// @Summary set user password for a instance
+// @Description set user password for a instance
+// @tags Compute
+// @Accept  json
+// @Produce json
+// @Param   id  path  string  true  "Instance UUID"
+// @Param   message	body   InstanceSetUserPasswordPayload  true   "Instance set user password payload"
+// @Success 200
+// @Failure 400 {object} common.APIError "Bad request"
+// @Failure 401 {object} common.APIError "Not authorized"
+// @Router /instances/{id}/set_user_password [post]
+func (v *InstanceAPI) SetUserPassword(c *gin.Context) {
+	ctx := c.Request.Context()
+	uuID := c.Param("id")
+	logger.Debugf("Set user password for instance %s", uuID)
+	instance, err := instanceAdmin.GetInstanceByUUID(ctx, uuID)
+	if err != nil {
+		logger.Errorf("Failed to get instance %s, %+v", uuID, err)
+		ErrorResponse(c, http.StatusBadRequest, "Invalid instance query", err)
+		return
+	}
+	payload := &InstanceSetUserPasswordPayload{}
+	err = c.ShouldBindJSON(payload)
+	if err != nil {
+		logger.Errorf("Failed to bind JSON, %+v", err)
+		ErrorResponse(c, http.StatusBadRequest, "Invalid input JSON", err)
+		return
+	}
+	err = instanceAdmin.SetUserPassword(ctx, instance.ID, payload.UserName, payload.Password)
+	if err != nil {
+		logger.Errorf("Set user password failed, %+v", err)
+		ErrorResponse(c, http.StatusBadRequest, "Set user password failed", err)
+		return
+	}
+	c.JSON(http.StatusOK, nil)
+}
+
+// @Summary reinstall a instance
+// @Description reinstall a instance
+// @tags Compute
+// @Accept  json
+// @Produce json
+// @Param   id  path  string  true  "Instance UUID"
+// @Param   message	body   InstanceReinstallPayload  true   "Instance reinstall payload"
+// @Success 200
+// @Failure 400 {object} common.APIError "Bad request"
+// @Failure 401 {object} common.APIError "Not authorized"
+// @Router /instances/{id}/reinstall [post]
+func (v *InstanceAPI) Reinstall(c *gin.Context) {
+	ctx := c.Request.Context()
+	uuID := c.Param("id")
+	logger.Debugf("Reinstall instance %s", uuID)
+	instance, err := instanceAdmin.GetInstanceByUUID(ctx, uuID)
+	if err != nil {
+		logger.Errorf("Failed to get instance %s, %+v", uuID, err)
+		ErrorResponse(c, http.StatusBadRequest, "Invalid instance query", err)
+		return
+	}
+
+	// bind JSON
+	payload := &InstanceReinstallPayload{}
+	err = c.ShouldBindJSON(payload)
+	if err != nil {
+		logger.Errorf("Failed to bind JSON, %+v", err)
+		ErrorResponse(c, http.StatusBadRequest, "Invalid input JSON", err)
+		return
+	}
+	logger.Debugf("Reinstall instance with %+v", payload)
+
+	// check image
+	image := instance.Image
+	if payload.Image != nil {
+		image, err = imageAdmin.GetImage(ctx, payload.Image)
+		if err != nil {
+			logger.Errorf("Failed to get image %+v, %+v", payload.Image, err)
+			ErrorResponse(c, http.StatusBadRequest, "Invalid image", err)
+			return
+		}
+	}
+
+	// old data compatibility
+	if payload.Flavor == "" && instance.Cpu == 0 {
+		payload.Flavor = instance.Flavor.Name
+	}
+	cpu, memory, disk := instance.Cpu, instance.Memory, instance.Disk
+	if payload.Flavor != "" {
+		var flavor *model.Flavor
+		flavor, err = flavorAdmin.GetFlavorByName(ctx, payload.Flavor)
+		if err != nil {
+			logger.Errorf("Failed to get flavor %+v, %+v", payload.Flavor, err)
+			ErrorResponse(c, http.StatusBadRequest, "Invalid flavor", err)
+			return
+		}
+		cpu, memory, disk = flavor.Cpu, flavor.Memory, flavor.Disk
+	}
+
+	// running command
+	password := payload.Password
+	var keys []*model.Key
+	for _, ky := range payload.Keys {
+		var key *model.Key
+		key, err = keyAdmin.GetKey(ctx, ky)
+		if err != nil {
+			logger.Errorf("Failed to get key %+v, %+v", ky, err)
+			ErrorResponse(c, http.StatusBadRequest, "Invalid key", err)
+			return
+		}
+		keys = append(keys, key)
+	}
+	if password == "" && len(keys) == 0 {
+		logger.Errorf("Password or key must be provided")
+		ErrorResponse(c, http.StatusBadRequest, "Password or key must be provided", err)
+		return
+	}
+	err = instanceAdmin.Reinstall(ctx, instance, image, password, keys, cpu, memory, disk, payload.LoginPort)
+	if err != nil {
+		logger.Error("Reinstall failed", err)
+		ErrorResponse(c, http.StatusBadRequest, "Reinstall failed", err)
+		return
+	}
+
+	c.JSON(http.StatusNoContent, nil)
+}
+
+// @Summary rescue a instance
+// @Description rescue a instance
+// @tags Compute
+// @Accept  json
+// @Produce json
+// @Param   id  path  string  true  "Instance UUID"
+// @Param   message	body   InstanceRescuePayload  true   "Instance rescue payload"
+// @Success 200
+// @Failure 400 {object} common.APIError "Bad request"
+// @Failure 401 {object} common.APIError "Not authorized"
+// @Router /instances/{id}/rescue [post]
+func (v *InstanceAPI) Rescue(c *gin.Context) {
+	ctx := c.Request.Context()
+	uuID := c.Param("id")
+	logger.Debugf("Rescue instance %s", uuID)
+	instance, err := instanceAdmin.GetInstanceByUUID(ctx, uuID)
+	if err != nil {
+		logger.Errorf("Failed to get instance %s, %+v", uuID, err)
+		ErrorResponse(c, http.StatusBadRequest, "Invalid instance query", err)
+		return
+	}
+
+	// bind JSON
+	payload := &InstanceRescuePayload{}
+	err = c.ShouldBindJSON(payload)
+	if err != nil {
+		logger.Errorf("Failed to bind JSON, %+v", err)
+		ErrorResponse(c, http.StatusBadRequest, "Invalid input JSON", err)
+		return
+	}
+	logger.Debugf("Rescue instance with %+v", payload)
+
+	// check rescue image
+	var rescueImage *model.Image
+	if payload.RescueImage != nil {
+		rescueImage, err = imageAdmin.GetImage(ctx, payload.RescueImage)
+		if err != nil {
+			logger.Errorf("Failed to get rescue image %+v, %+v", payload.RescueImage, err)
+			ErrorResponse(c, http.StatusBadRequest, "Invalid rescue image", err)
+			return
+		}
+	}
+
+	err = instanceAdmin.Rescue(ctx, instance, rescueImage, payload.Password)
+	if err != nil {
+		logger.Error("Rescue failed", err)
+		ErrorResponse(c, http.StatusBadRequest, "Rescue failed", err)
+		return
+	}
+
+	c.JSON(http.StatusNoContent, nil)
+}
+
+// @Summary end rescue a instance
+// @Description end rescue a instance
+// @tags Compute
+// @Accept  json
+// @Produce json
+// @Param   id  path  string  true  "Instance UUID"
+// @Success 200
+// @Failure 400 {object} common.APIError "Bad request"
+// @Failure 401 {object} common.APIError "Not authorized"
+// @Router /instances/{id}/end_rescue [post]
+func (v *InstanceAPI) EndRescue(c *gin.Context) {
+	ctx := c.Request.Context()
+	uuID := c.Param("id")
+	logger.Debugf("Rescue instance %s", uuID)
+	instance, err := instanceAdmin.GetInstanceByUUID(ctx, uuID)
+	if err != nil {
+		logger.Errorf("Failed to get instance %s, %+v", uuID, err)
+		ErrorResponse(c, http.StatusBadRequest, "Invalid instance query", err)
+		return
+	}
+
+	err = instanceAdmin.EndRescue(ctx, instance)
+	if err != nil {
+		logger.Error("End rescue failed", err)
+		ErrorResponse(c, http.StatusBadRequest, "End rescue failed", err)
+		return
+	}
+
+	c.JSON(http.StatusNoContent, nil)
+}
+
+// @Summary resize a instance
+// @Description resize a instance
+// @tags Compute
+// @Accept  json
+// @Produce json
+// @Param   id  path  string  true  "Instance UUID"
+// @Param   message	body   InstanceResizePayload  true   "Instance resize payload"
+// @Success 200
+// @Failure 400 {object} common.APIError "Bad request"
+// @Failure 401 {object} common.APIError "Not authorized"
+// @Router /instances/{id}/resize [post]
+func (v *InstanceAPI) Resize(c *gin.Context) {
+	ctx := c.Request.Context()
+	uuID := c.Param("id")
+	logger.Debugf("Resize instance %s", uuID)
+	instance, err := instanceAdmin.GetInstanceByUUID(ctx, uuID)
+	if err != nil {
+		logger.Errorf("Failed to get instance %s, %+v", uuID, err)
+		ErrorResponse(c, http.StatusBadRequest, "Invalid instance query", err)
+		return
+	}
+
+	// bind json
+	payload := &InstanceResizePayload{}
+	err = c.ShouldBindJSON(payload)
+	if err != nil {
+		logger.Errorf("Failed to bind JSON, %+v", err)
+		ErrorResponse(c, http.StatusBadRequest, "Invalid input JSON", err)
+		return
+	}
+	logger.Debugf("Resize instance %s with payload %+v", uuID, payload)
+
+	// old data compatibility
+	cpu, memory := instance.Cpu, instance.Memory
+	if instance.Cpu == 0 {
+		var flavor *model.Flavor
+		flavor, err = flavorAdmin.Get(ctx, instance.FlavorID)
+		if err != nil {
+			logger.Errorf("Failed to get flavor %+v, %+v", instance.FlavorID, err)
+			ErrorResponse(c, http.StatusBadRequest, "Invalid flavor", err)
+			return
+		}
+		cpu, memory = flavor.Cpu, flavor.Memory
+	}
+	if payload.Cpu > 0 {
+		cpu = payload.Cpu
+	}
+	if payload.Memory > 0 {
+		memory = payload.Memory
+	}
+
+	logger.Debugf("Resize instance %s to cpu %d, memory %d", uuID, cpu, memory)
+	err = instanceAdmin.Resize(ctx, instance, cpu, memory)
+	if err != nil {
+		logger.Errorf("Failed to resize instance %s, %+v", uuID, err)
+		ErrorResponse(c, http.StatusBadRequest, "Failed to resize instance", err)
+		return
+	}
+	c.JSON(http.StatusOK, nil)
+
+}
+
+// @Summary delete a instance
+// @Description delete a instance
+// @tags Compute
+// @Accept  json
+// @Produce json
+// @Param   id  path  int  true  "Instance ID"
+// @Success 200
+// @Failure 400 {object} common.APIError "Bad request"
+// @Failure 401 {object} common.APIError "Not authorized"
+// @Router /instances/{id} [delete]
+func (v *InstanceAPI) Delete(c *gin.Context) {
+	ctx := c.Request.Context()
+	uuID := c.Param("id")
+	logger.Debugf("Delete instance %s", uuID)
+	instance, err := instanceAdmin.GetInstanceByUUID(ctx, uuID)
+	if err != nil {
+		logger.Errorf("Failed to get instance %s, %+v", uuID, err)
+		ErrorResponse(c, http.StatusBadRequest, "Invalid query", err)
+		return
+	}
+	err = instanceAdmin.Delete(ctx, instance)
+	if err != nil {
+		logger.Errorf("Failed to delete instance %s, %+v", uuID, err)
+		ErrorResponse(c, http.StatusBadRequest, "Not able to delete", err)
+		return
+	}
+	c.JSON(http.StatusNoContent, nil)
+}
+
+// @Summary create a instance
+// @Description create a instance
+// @tags Compute
+// @Accept  json
+// @Produce json
+// @Param   message	body   InstancePayload  true   "Instance create payload"
+// @Success 200 {array} InstanceResponse
+// @Failure 400 {object} common.APIError "Bad request"
+// @Failure 401 {object} common.APIError "Not authorized"
+// @Router /instances [post]
+func (v *InstanceAPI) Create(c *gin.Context) {
+	logger.Debug("Create instance")
+	ctx := c.Request.Context()
+	payload := &InstancePayload{}
+	err := c.ShouldBindJSON(payload)
+	if err != nil {
+		logger.Errorf("Failed to bind instance payload JSON, %+v", err)
+		ErrorResponse(c, http.StatusBadRequest, "Invalid input JSON", err)
+		return
+	}
+	logger.Debugf("Creating instance with payload: %+v", payload)
+	hostname := payload.Hostname
+	rootPasswd := payload.RootPasswd
+	userdata := payload.Userdata
+	image, err := imageAdmin.GetImage(ctx, payload.Image)
+	if err != nil {
+		logger.Errorf("Failed to get image %+v, %+v", payload.Image, err)
+		ErrorResponse(c, http.StatusBadRequest, "Invalid image", err)
+		return
+	}
+
+	var flavor *model.Flavor
+	if payload.Flavor != "" {
+		flavor, err = flavorAdmin.GetFlavorByName(ctx, payload.Flavor)
+		if err != nil {
+			logger.Errorf("Failed to get flavor %+v, %+v", payload.Flavor, err)
+			ErrorResponse(c, http.StatusBadRequest, "Invalid flavor", err)
+			return
+		}
+	}
+	zone, err := zoneAdmin.GetZoneByName(ctx, payload.Zone)
+	if err != nil {
+		logger.Errorf("Failed to get zone %+v, %+v", payload.Zone, err)
+		ErrorResponse(c, http.StatusBadRequest, "Invalid zone", err)
+		return
+	}
+	var router *model.Router
+	if payload.VPC != nil {
+		router, err = routerAdmin.GetRouter(ctx, payload.VPC)
+		if err != nil {
+			logger.Errorf("Failed to get VPC %+v, %+v", payload.VPC, err)
+			ErrorResponse(c, http.StatusBadRequest, "Invalid VPC", nil)
+			return
+		}
+	}
+	router, primaryIface, err := interfaceAPI.getInterfaceInfo(ctx, router, payload.PrimaryInterface)
+	if err != nil {
+		logger.Errorf("Failed to get primary interface %+v, %+v", payload.PrimaryInterface, err)
+		ErrorResponse(c, http.StatusBadRequest, "Invalid primary interface", err)
+		return
+	}
+	var secondaryIfaces []*services.InterfaceInfo
+	for _, ifacePayload := range payload.SecondaryInterfaces {
+		var ifaceInfo *services.InterfaceInfo
+		router, ifaceInfo, err = interfaceAPI.getInterfaceInfo(ctx, router, ifacePayload)
+		if err != nil {
+			logger.Errorf("Failed to get secondary interface %+v, %+v", ifacePayload, err)
+			ErrorResponse(c, http.StatusBadRequest, "Invalid secondary interfaces", err)
+			return
+		}
+		secondaryIfaces = append(secondaryIfaces, ifaceInfo)
+	}
+	count := 1
+	if payload.Count > count {
+		count = payload.Count
+	}
+	var keys []*model.Key
+	for _, ky := range payload.Keys {
+		var key *model.Key
+		key, err = keyAdmin.GetKey(ctx, ky)
+		keys = append(keys, key)
+	}
+	var routerID int64
+	if router != nil {
+		routerID = router.ID
+	}
+	hypervisor := -1
+	if payload.Hypervisor != nil {
+		hypervisor = *payload.Hypervisor
+	}
+	if flavor == nil && (payload.Cpu <= 0 || payload.Memory <= 0 || payload.Disk <= 0) {
+		logger.Errorf("no valid configuration")
+		ErrorResponse(c, http.StatusBadRequest, "no valid configuration", nil)
+		return
+	}
+	if payload.Cpu <= 0 {
+		payload.Cpu = flavor.Cpu
+	}
+	if payload.Memory <= 0 {
+		payload.Memory = flavor.Memory
+	}
+	if payload.Disk <= 0 {
+		payload.Disk = flavor.Disk
+	}
+	userdataType := payload.UserdataType
+	if userdataType == "" {
+		userdataType = model.UserDataTypePlain
+	} else if !model.IsValidUserDataType(userdataType) {
+		logger.Errorf("Invalid userdata_type: %s", userdataType)
+		ErrorResponse(c, http.StatusBadRequest, "Invalid userdata_type", nil)
+		return
+	}
+	vendorData := payload.Vendordata
+	vendorDataType := payload.Vendordatatype
+	if vendorDataType == "" {
+		vendorDataType = model.UserDataTypePlain
+	} else if !model.IsValidUserDataType(vendorDataType) {
+		logger.Errorf("Invalid vendor_data_type: %s", vendorDataType)
+		ErrorResponse(c, http.StatusBadRequest, "Invalid vendor_data_type", nil)
+		return
+	}
+
+	logger.Debugf("Creating %d instances with hostname %s, userdata %s, userdata_type %s, vendordata %s, vendordatatype %s, image %s, zone %s, router %d, primaryIface %v, secondaryIfaces %v, keys %v, login_port %d, hypervisor %d, cpu %d, memory %d, disk %d, disk_iops_limit %d, disk_bps_limit %d, nestedEnable %v, poolID: %s",
+		count, hostname, userdata, userdataType, vendorData, vendorDataType, image.Name, zone.Name, routerID, primaryIface, secondaryIfaces, keys, payload.LoginPort, hypervisor, payload.Cpu, payload.Memory, payload.Disk, payload.DiskIopsLimit, payload.DiskBpsLimit, payload.NestedEnable, payload.PoolID)
+	instances, err := instanceAdmin.Create(ctx, count, hostname, userdata, userdataType, vendorData, vendorDataType, image, zone, routerID, primaryIface, secondaryIfaces, keys, rootPasswd, payload.LoginPort, hypervisor, payload.Cpu, payload.Memory, payload.Disk, payload.DiskIopsLimit, payload.DiskBpsLimit, payload.NestedEnable, payload.PoolID)
+	if err != nil {
+		logger.Errorf("Failed to create instances, %+v", err)
+		ErrorResponse(c, http.StatusBadRequest, "Failed to create instances", err)
+		return
+	}
+	logger.Debugf("Created %d instances, %+v", len(instances), instances)
+	instancesResp := make([]*InstanceResponse, len(instances))
+	for i, instance := range instances {
+		instancesResp[i], err = v.getInstanceResponse(ctx, instance)
+		if err != nil {
+			logger.Errorf("Failed to create instance response, %+v", err)
+			ErrorResponse(c, http.StatusInternalServerError, "Failed to create instances", err)
+			return
+		}
+	}
+	logger.Debugf("Create instance success, %+v", instancesResp)
+	c.JSON(http.StatusOK, instancesResp)
+}
+
+func (v *InstanceAPI) getInstanceResponse(ctx context.Context, instance *model.Instance) (instanceResp *InstanceResponse, err error) {
+	logger.Debugf("Create instance response for instance %+v", instance)
+	owner := orgAdmin.GetOrgName(ctx, instance.Owner)
+	instanceResp = &InstanceResponse{
+		ResourceReference: &ResourceReference{
+			ID:        instance.UUID,
+			Owner:     owner,
+			CreatedAt: instance.CreatedAt.Format(TimeStringForMat),
+			UpdatedAt: instance.UpdatedAt.Format(TimeStringForMat),
+		},
+		Hostname:  instance.Hostname,
+		LoginPort: int(instance.LoginPort),
+		Status:    instance.Status.String(),
+		Reason:    instance.Reason,
+		Cpu:       instance.Cpu,
+		Memory:    instance.Memory,
+		Disk:      instance.Disk,
+	}
+	if instance.Image != nil {
+		instanceResp.Image = &ResourceReference{
+			ID:   instance.Image.UUID,
+			Name: instance.Image.Name,
+		}
+	}
+	if instance.Flavor != nil {
+		instanceResp.Flavor = instance.Flavor.Name
+	}
+	if instance.Zone != nil {
+		instanceResp.Zone = instance.Zone.Name
+	}
+	keys := make([]*ResourceReference, len(instance.Keys))
+	for i, key := range instance.Keys {
+		keys[i] = &ResourceReference{
+			ID:   key.UUID,
+			Name: key.Name,
+		}
+	}
+	instanceResp.Keys = keys
+	volumes := make([]*VolumeInfoResponse, len(instance.Volumes))
+	for i, volume := range instance.Volumes {
+		volumes[i] = &VolumeInfoResponse{
+			ResourceReference: &ResourceReference{
+				ID:   volume.UUID,
+				Name: volume.Name,
+			},
+			Target:  volume.Target,
+			Booting: volume.Booting,
+		}
+	}
+	instanceResp.Volumes = volumes
+	hyper, hyperErr := hyperAdmin.GetHyperByHostid(ctx, instance.Hyper)
+	if hyperErr == nil {
+		instanceResp.Hypervisor = hyper.Hostname
+	}
+	interfaces := make([]*InterfaceResponse, len(instance.Interfaces))
+	for i, iface := range instance.Interfaces {
+		interfaces[i], err = interfaceAPI.getInterfaceResponse(ctx, instance, iface)
+		if err != nil {
+			logger.Errorf("Failed to get interface response, %+v", err)
+			return
+		}
+	}
+	instanceResp.Interfaces = interfaces
+	if instance.RouterID > 0 && instance.Router != nil {
+		router := instance.Router
+		instanceResp.VPC = &ResourceReference{
+			ID:   router.UUID,
+			Name: router.Name,
+		}
+	}
+	logger.Debugf("Create instance response success, %+v", instanceResp)
+	return
+}
+
+// @Summary list instances
+// @Description list instances
+// @tags Compute
+// @Accept  json
+// @Produce json
+// @Success 200 {object} InstanceListResponse
+// @Failure 401 {object} common.APIError "Not authorized"
+// @Router /instances [get]
+func (v *InstanceAPI) List(c *gin.Context) {
+	ctx := c.Request.Context()
+	offsetStr := c.DefaultQuery("offset", "0")
+	limitStr := c.DefaultQuery("limit", "50")
+	queryStr := c.DefaultQuery("query", "")
+	vpcID := strings.TrimSpace(c.DefaultQuery("vpc_id", "")) // Retrieve vpc_id from query params
+	logger.Debugf("List instances with offset %s, limit %s, query %s, vpc_id %s", offsetStr, limitStr, queryStr, vpcID)
+
+	if vpcID != "" {
+		logger.Debugf("Filtering instances by VPC ID: %s", vpcID)
+		var router *model.Router
+		router, err := routerAdmin.GetRouterByUUID(ctx, vpcID)
+		if err != nil {
+			logger.Errorf("Invalid query vpc_id: %s, %+v", vpcID, err)
+			ErrorResponse(c, http.StatusBadRequest, "Invalid query router by vpc_id UUID: "+vpcID, err)
+			return
+		}
+
+		logger.Debugf("The router with vpc_id: %+v\n", router)
+		logger.Debugf("The router_id in vpc is: %d", router.ID)
+		queryStr = fmt.Sprintf("router_id = %d", router.ID)
+	}
+	offset, err := strconv.Atoi(offsetStr)
+	if err != nil {
+		logger.Errorf("Invalid query offset: %s, %+v", offsetStr, err)
+		ErrorResponse(c, http.StatusBadRequest, "Invalid query offset: "+offsetStr, err)
+		return
+	}
+	limit, err := strconv.Atoi(limitStr)
+	if err != nil {
+		logger.Errorf("Invalid query limit: %s, %+v", limitStr, err)
+		ErrorResponse(c, http.StatusBadRequest, "Invalid query limit: "+limitStr, err)
+		return
+	}
+	if offset < 0 || limit < 0 {
+		logger.Errorf("Invalid query offset or limit, %+v", err)
+		ErrorResponse(c, http.StatusBadRequest, "Invalid query offset or limit", err)
+		return
+	}
+	total, instances, err := instanceAdmin.List(ctx, int64(offset), int64(limit), "-created_at", queryStr)
+	if err != nil {
+		logger.Errorf("Failed to list instances, %+v", err)
+		ErrorResponse(c, http.StatusBadRequest, "Failed to list instances", err)
+		return
+	}
+	instanceListResp := &InstanceListResponse{
+		Total:  int(total),
+		Offset: offset,
+		Limit:  len(instances),
+	}
+	instanceList := make([]*InstanceResponse, instanceListResp.Limit)
+	for i, instance := range instances {
+		instanceList[i], err = v.getInstanceResponse(ctx, instance)
+		if err != nil {
+			logger.Errorf("Failed to create instance response, %+v", err)
+			ErrorResponse(c, http.StatusInternalServerError, "Internal error", err)
+			return
+		}
+	}
+	instanceListResp.Instances = instanceList
+	logger.Debugf("List instances success, %+v", instanceListResp)
+	c.JSON(http.StatusOK, instanceListResp)
+}
+
+// GetInstanceRuleLinks returns all rule links for given instance UUIDs
+// @Summary Get instance rule links
+// @Description Get all rule groups linked to specific instances
+// @tags Compute
+// @Accept json
+// @Produce json
+// @Param instance_ids query string true "Comma-separated instance UUIDs"
+// @Success 200 {object} map[string]interface{}
+// @Failure 400 {object} common.APIError "Bad request"
+// @Router /instances/rule-links [get]
+func (v *InstanceAPI) GetInstanceRuleLinks(c *gin.Context) {
+	instanceIDsStr := c.Query("instance_ids")
+	if instanceIDsStr == "" {
+		ErrorResponse(c, http.StatusBadRequest, "instance_ids parameter is required", nil)
+		return
+	}
+
+	instanceIDs := strings.Split(instanceIDsStr, ",")
+	for i := range instanceIDs {
+		instanceIDs[i] = strings.TrimSpace(instanceIDs[i])
+	}
+
+	// Call routes layer function (no DB operations in API layer)
+	alarmOp := &services.AlarmOperator{}
+	result, err := alarmOp.GetInstanceRuleDetails(c.Request.Context(), instanceIDs)
+	if err != nil {
+		logger.Errorf("Failed to get rule details: %v", err)
+		ErrorResponse(c, http.StatusInternalServerError, "Failed to query rule details", err)
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"status": "success",
+		"data":   result,
+	})
+}
