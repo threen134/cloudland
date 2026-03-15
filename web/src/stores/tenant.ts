@@ -1,25 +1,28 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
-import client from '../api/client'
+import { authApi } from '../api/auth'
+import { setAuthToken } from '../api/client'
 
 export interface Organization {
     id: string
     name: string
-    owner: string
-    role?: string
-    created_at?: string
-    updated_at?: string
+    slug?: string
+    org_role?: number
+    is_owner?: boolean
+    is_current?: boolean
+    [key: string]: any
 }
 
 export const useTenantStore = defineStore('tenant', () => {
     const organizations = ref<Organization[]>([])
     const currentOrgId = ref<string | null>(null)
     const isLoading = ref(false)
+    const isSwitching = ref(false)
     const error = ref<string | null>(null)
 
     // Current organization computed property
     const currentOrg = computed(() => {
-        return organizations.value.find(org => org.id === currentOrgId.value) || null
+        return organizations.value.find(org => String(org.id) === String(currentOrgId.value)) || null
     })
 
     // Initialize from localStorage
@@ -30,40 +33,55 @@ export const useTenantStore = defineStore('tenant', () => {
         }
     }
 
-    // Fetch organizations from API
+    // Fetch organizations the current user belongs to
     const fetchOrganizations = async () => {
         isLoading.value = true
         error.value = null
 
         try {
-            const response = await client.get('/orgs')
-            if (response.data?.orgs) {
-                organizations.value = response.data.orgs
-            } else if (Array.isArray(response.data)) {
+            const response = await authApi.getMyOrgs()
+            if (Array.isArray(response.data)) {
                 organizations.value = response.data
+            } else if (response.data?.orgs) {
+                organizations.value = response.data.orgs
             }
 
             // Auto-select first org if none selected
             if (!currentOrgId.value && organizations.value.length > 0) {
-                setCurrentOrg(organizations.value[0].id)
+                currentOrgId.value = String(organizations.value[0].id)
+                localStorage.setItem('cloudland_org_id', currentOrgId.value)
             }
         } catch (err: any) {
-            console.warn('Failed to fetch organizations, using mock data:', err)
-            // Mock data for development
-            organizations.value = [
-                { id: 'org-1', name: 'Default Organization', owner: 'admin', role: 'owner' },
-                { id: 'org-2', name: 'Development Team', owner: 'admin', role: 'member' },
-            ]
-            if (!currentOrgId.value) {
-                setCurrentOrg(organizations.value[0].id)
-            }
+            console.warn('Failed to fetch organizations:', err)
             error.value = err.message
         } finally {
             isLoading.value = false
         }
     }
 
-    // Set current organization
+    // Switch organization - calls backend to get new token scoped to org
+    const switchOrg = async (orgId: string) => {
+        isSwitching.value = true
+        error.value = null
+
+        try {
+            const response = await authApi.switchOrg(Number(orgId))
+            const newToken = response.data?.access_token
+            if (newToken) {
+                setAuthToken(newToken)
+            }
+            currentOrgId.value = orgId
+            localStorage.setItem('cloudland_org_id', orgId)
+        } catch (err: any) {
+            console.error('Failed to switch org:', err)
+            error.value = err.message
+            throw err
+        } finally {
+            isSwitching.value = false
+        }
+    }
+
+    // Set current organization (local only, no API call)
     const setCurrentOrg = (orgId: string) => {
         currentOrgId.value = orgId
         localStorage.setItem('cloudland_org_id', orgId)
@@ -84,8 +102,10 @@ export const useTenantStore = defineStore('tenant', () => {
         currentOrgId,
         currentOrg,
         isLoading,
+        isSwitching,
         error,
         fetchOrganizations,
+        switchOrg,
         setCurrentOrg,
         clear
     }

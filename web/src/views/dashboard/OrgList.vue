@@ -1,8 +1,11 @@
 <script setup lang="ts">
 import { ref, onMounted, computed } from 'vue'
+import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { orgsApi, type Organization } from '../../api/orgs'
-import { Plus, Building2, Trash2, Edit2, User, Search, X } from 'lucide-vue-next'
+import { Plus, Building2, Trash2, Edit2, User, Search, X, Eye } from 'lucide-vue-next'
+
+const router = useRouter()
 
 const { t } = useI18n()
 
@@ -201,7 +204,7 @@ onMounted(fetchOrgs)
                   <Building2 :size="16" />
                 </div>
                 <div>
-                   <div class="org-name">{{ org.name }}</div>
+                   <div class="org-name clickable" @click="router.push(`/dashboard/orgs/${org.id}`)">{{ org.name }}</div>
                    <div class="org-id">{{ org.id }}</div>
                 </div>
               </div>
@@ -217,6 +220,9 @@ onMounted(fetchOrgs)
             <td>{{ org.created_at || '-' }}</td>
             <td>
               <div class="actions">
+                <button class="btn btn-ghost btn-sm" title="View" @click="router.push(`/dashboard/orgs/${org.id}`)">
+                  <Eye :size="14" />
+                </button>
                 <button class="btn btn-ghost btn-sm" title="Edit" @click="openEditModal(org)">
                   <Edit2 :size="14" />
                 </button>
@@ -419,6 +425,15 @@ onMounted(fetchOrgs)
 .org-name {
   font-weight: var(--font-weight-medium);
   color: var(--text-main);
+}
+
+.org-name.clickable {
+  color: var(--primary-600);
+  cursor: pointer;
+}
+
+.org-name.clickable:hover {
+  text-decoration: underline;
 }
 
 .org-id {

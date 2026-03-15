@@ -78,6 +78,11 @@ const router = createRouter({
                     component: () => import('../views/dashboard/OrgList.vue')
                 },
                 {
+                    path: 'orgs/:id',
+                    name: 'org-detail',
+                    component: () => import('../views/dashboard/OrgDetail.vue')
+                },
+                {
                     path: 'keys',
                     name: 'keys', // SSH Keys real path
                     component: () => import('../views/dashboard/SSHKeys.vue')

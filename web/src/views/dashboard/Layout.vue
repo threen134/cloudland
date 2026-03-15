@@ -40,7 +40,8 @@ import {
     MapPin,
     ServerCog,
     ArrowRightLeft,
-    AlertTriangle
+    AlertTriangle,
+    Building2
 } from 'lucide-vue-next'
 
 const auth = useAuthStore()
@@ -95,6 +96,16 @@ const handleSwitchRegion = (regionId: string) => {
     activeDropdown.value = null
 }
 
+const handleSwitchOrg = async (orgId: string) => {
+    try {
+        await tenant.switchOrg(orgId)
+        activeDropdown.value = null
+        router.go(0)
+    } catch (err) {
+        console.error('Failed to switch org:', err)
+    }
+}
+
 // Page title based on route
 const pageTitle = computed(() => {
     const titles: Record<string, string> = {
@@ -120,6 +131,8 @@ const pageTitle = computed(() => {
         'settings': t('dashboard.settings'),
         'users': t('dashboard.users'),
         'user-detail': t('dashboard.users'),
+        'orgs': t('dashboard.organizations'),
+        'org-detail': t('dashboard.organizations'),
         'keys': t('dashboard.sshKeys'),
         'dashboard-marketplace': t('nav.marketplace'),
         'zones': t('dashboard.zones'),
@@ -190,8 +203,10 @@ onMounted(() => {
               <Users :size="18" />
               <span>{{ $t('dashboard.users') }}</span>
             </RouterLink>
-
-
+            <RouterLink to="/dashboard/orgs" class="nav-item" active-class="active">
+              <Building2 :size="18" />
+              <span>{{ $t('dashboard.organizations') }}</span>
+            </RouterLink>
           </div>
         </div>
 
@@ -302,6 +317,25 @@ onMounted(() => {
         <!-- <div class="header-center">
         </div> -->
         <div class="header-right">
+          <!-- Org Switcher -->
+          <div class="header-dropdown" @mouseenter="activeDropdown = 'org'" @mouseleave="activeDropdown = null">
+            <button class="lang-toggle-btn">
+              <Building2 :size="16" />
+              <span>{{ tenant.currentOrg?.name || $t('dashboard.org.selectOrg') }}</span>
+              <ChevronDown :size="14" />
+            </button>
+            <div class="dropdown-menu-portal" v-show="activeDropdown === 'org'">
+              <div v-if="tenant.organizations.length === 0" class="dropdown-item-portal" style="color: var(--text-tertiary); cursor: default;">
+                {{ $t('dashboard.org.noOrgs') }}
+              </div>
+              <div v-else v-for="org in tenant.organizations" :key="org.id"
+                class="dropdown-item-portal"
+                :class="{ active: String(tenant.currentOrgId) === String(org.id) }"
+                @click="handleSwitchOrg(String(org.id))">
+                {{ org.name }}
+              </div>
+            </div>
+          </div>
           <!-- Region Switcher -->
           <div class="header-dropdown" @mouseenter="activeDropdown = 'region'" @mouseleave="activeDropdown = null">
             <button class="lang-toggle-btn">

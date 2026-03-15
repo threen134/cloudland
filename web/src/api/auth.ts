@@ -40,6 +40,16 @@ export const authApi = {
         return client.get(`/auth/activate?token=${token}`)
     },
 
+    // Switch organization (returns new token)
+    switchOrg(orgId: number, region?: string) {
+        return client.post<LoginResponse>('/auth/switch-org', { org_id: orgId, region })
+    },
+
+    // Get current user's organizations
+    getMyOrgs() {
+        return client.get('/auth/me/orgs')
+    },
+
     // Logout
     logout() {
         // In JWT stateless auth, mostly client-side, but sometimes we notify server
