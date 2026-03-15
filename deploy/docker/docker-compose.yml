@@ -356,3 +356,5 @@ volumes:
     name: cloudland-cpgateway-data
   cpgateway_keys:
     name: cloudland-cpgateway-keys
+  loki_data:
+    name: cloudland-loki-data

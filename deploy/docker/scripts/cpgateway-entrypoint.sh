@@ -14,7 +14,7 @@ echo "Waiting for database to be ready..."
 MAX_RETRIES=30
 RETRY_COUNT=0
 
-until python -c "import asyncpg; import asyncio; asyncio.run(asyncpg.connect('${DATABASE_URL}', timeout=5))" 2>&1; do
+until python -c "import asyncpg, asyncio, os; dsn=os.environ['DATABASE_URL'].replace('postgresql+asyncpg://','postgresql://'); asyncio.run(asyncpg.connect(dsn, timeout=5))" 2>&1; do
   RETRY_COUNT=$((RETRY_COUNT + 1))
   if [ $RETRY_COUNT -ge $MAX_RETRIES ]; then
     echo "❌ ERROR: Database connection failed after $MAX_RETRIES attempts"

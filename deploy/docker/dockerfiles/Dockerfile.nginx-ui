@@ -14,6 +14,8 @@ RUN npm ci
 
 # 复制源码并构建
 COPY web/ ./
+# Fix @novnc/novnc top-level await incompatibility with Rollup
+RUN sed -i 's/= await _checkWebCodecsH264DecodeSupport();/= false;/' node_modules/@novnc/novnc/lib/util/browser.js
 RUN npm run build
 
 # ---- Stage 2: Nginx + 静态文件 ----

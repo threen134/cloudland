@@ -106,3 +106,4 @@ api/apitest/user_post.sh
 api/bin/
 api/alarm_rules_manager
 cpgateway
+cpgateway
