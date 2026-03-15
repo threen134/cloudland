@@ -12,9 +12,9 @@ from app.core.database import get_db
 from app.core.security import verify_access_token
 from app.services.auth_service import auth_service
 from app.core.logging_config import logger
-from app.models.user import User
+from app.models.user import User, SystemRole
 from app.models.org import Organization
-from app.models.member import Member
+from app.models.member import Member, OrgRole
 
 router = APIRouter()
 
@@ -176,32 +176,71 @@ async def get_me(request: Request, db: AsyncSession = Depends(get_db)):
 
 @router.get("/me/orgs", response_model=List[UserOrgItem])
 async def get_my_orgs(request: Request, db: AsyncSession = Depends(get_db)):
-    """查询当前用户所属的所有 Org（供前端切换 Org 下拉框使用）"""
+    """查询当前用户所属的所有 Org（供前端切换 Org 下拉框使用）
+    admin/superuser 可以看到所有 Org。
+    """
     claims = _extract_claims(request)
     user_id = int(claims["sub"])
     current_org_id = claims.get("org_id", "0")
 
-    result = await db.execute(
-        select(Member, Organization)
-        .join(Organization, Organization.id == Member.org_id)
-        .where(
-            Member.user_id == user_id,
-            Member.deleted_at.is_(None),
-            Organization.deleted_at.is_(None),
+    # 查询用户信息，判断是否为 admin
+    user_result = await db.execute(select(User).where(User.id == user_id))
+    user = user_result.scalars().first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    is_admin = user.system_role == SystemRole.ADMIN or user.is_superuser
+
+    if is_admin:
+        # admin 看到所有 org，同时查出 member 记录（可能为空）
+        org_result = await db.execute(
+            select(Organization).where(Organization.deleted_at.is_(None))
         )
-    )
-    rows = result.all()
-    return [
-        UserOrgItem(
-            org_id=org.id,
-            name=org.name,
-            slug=org.slug,
-            org_role=member.org_role,
-            is_owner=(org.owner_user_id == user_id),
-            is_current=(str(org.id) == str(current_org_id)),
+        orgs = org_result.scalars().all()
+
+        # 批量查出 admin 自己的 member 记录
+        member_result = await db.execute(
+            select(Member).where(
+                Member.user_id == user_id,
+                Member.deleted_at.is_(None),
+            )
         )
-        for member, org in rows
-    ]
+        member_map = {m.org_id: m for m in member_result.scalars().all()}
+
+        return [
+            UserOrgItem(
+                org_id=org.id,
+                name=org.name,
+                slug=org.slug,
+                org_role=member_map[org.id].org_role if org.id in member_map else int(OrgRole.ADMIN),
+                is_owner=(org.owner_user_id == user_id),
+                is_current=(str(org.id) == str(current_org_id)),
+            )
+            for org in orgs
+        ]
+    else:
+        # 普通用户只看到自己加入的 org
+        result = await db.execute(
+            select(Member, Organization)
+            .join(Organization, Organization.id == Member.org_id)
+            .where(
+                Member.user_id == user_id,
+                Member.deleted_at.is_(None),
+                Organization.deleted_at.is_(None),
+            )
+        )
+        rows = result.all()
+        return [
+            UserOrgItem(
+                org_id=org.id,
+                name=org.name,
+                slug=org.slug,
+                org_role=member.org_role,
+                is_owner=(org.owner_user_id == user_id),
+                is_current=(str(org.id) == str(current_org_id)),
+            )
+            for member, org in rows
+        ]
 
 
 # --- Public Key ---
