@@ -24,7 +24,7 @@ export const useTenantStore = defineStore('tenant', () => {
 
     // Initialize from localStorage
     const init = () => {
-        const storedOrgId = localStorage.getItem('ibm_cloud_china_org_id')
+        const storedOrgId = localStorage.getItem('cloudland_org_id')
         if (storedOrgId) {
             currentOrgId.value = storedOrgId
         }
@@ -66,14 +66,14 @@ export const useTenantStore = defineStore('tenant', () => {
     // Set current organization
     const setCurrentOrg = (orgId: string) => {
         currentOrgId.value = orgId
-        localStorage.setItem('ibm_cloud_china_org_id', orgId)
+        localStorage.setItem('cloudland_org_id', orgId)
     }
 
     // Clear tenant state (on logout)
     const clear = () => {
         organizations.value = []
         currentOrgId.value = null
-        localStorage.removeItem('ibm_cloud_china_org_id')
+        localStorage.removeItem('cloudland_org_id')
     }
 
     // Initialize on store creation

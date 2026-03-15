@@ -1,5 +1,5 @@
 :root {
-    /* Carbon Design System - IBM Cloud inspired */
+    /* Carbon Design System - CloudLand inspired */
 
     /* Brand Colors */
     --primary-color: #0f62fe;
@@ -34,7 +34,7 @@
     --header-height: 48px;
     --sidebar-width: 256px;
     --max-width: 1584px;
-    /* IBM Cloud max width */
+    /* CloudLand max width */
 
     /* Spacing */
     --spacing-xs: 2px;

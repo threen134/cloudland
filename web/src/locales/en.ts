@@ -109,7 +109,7 @@ export default {
 
     // Features section
     features: {
-        title: 'Why Choose IBM Cloud China?',
+        title: 'Why Choose CloudLand?',
         subtitle: 'Built on cutting-edge infrastructure with enterprise-grade reliability',
         // Feature items
         highPerformance: 'High-Performance Infrastructure',
@@ -172,12 +172,12 @@ export default {
         blog: 'Blog',
         careers: 'Careers',
         contact: 'Contact',
-        copyright: '© 2026 IBM Cloud China. All rights reserved.',
+        copyright: '© 2026 CloudLand. All rights reserved.',
     },
 
     // Marketplace
     marketplace: {
-        title: 'IBM Cloud China Catalog',
+        title: 'CloudLand Catalog',
         subtitle: 'Deploy pre-configured applications to your cloud instances in one click',
         searchPlaceholder: 'Search the catalog...',
         viewingProducts: 'Viewing {count} products',
@@ -581,7 +581,7 @@ export default {
         username: 'Username',
         confirmPassword: 'Confirm Password',
         passwordMismatch: 'Passwords do not match',
-        welcome: 'Welcome to IBM Cloud China',
+        welcome: 'Welcome to CloudLand',
         checkEmail: 'Please check your email to complete your account activation',
         redirecting: 'Automatically redirecting you to login in {n} seconds...',
         activationTitle: 'Account Activation',

@@ -56,7 +56,7 @@ const solutionLinks = [
       <div class="container">
         <div class="top-bar-content">
           <div class="contact-info">
-            <a href="mailto:support@ibm.com"><Mail :size="14" /> support@ibm.com</a>
+            <a href="mailto:support@cloudland.com"><Mail :size="14" /> support@cloudland.com</a>
             <a href="tel:+1-800-000-0000"><Phone :size="14" /> +1-800-CLOUD</a>
           </div>
           <div class="top-links">
@@ -74,7 +74,7 @@ const solutionLinks = [
           <!-- Logo -->
           <RouterLink to="/" class="logo">
             <Cloud :size="28" class="logo-icon" />
-            <span class="logo-text">IBM Cloud China</span>
+            <span class="logo-text">CloudLand</span>
           </RouterLink>
 
           <!-- Mobile toggle -->

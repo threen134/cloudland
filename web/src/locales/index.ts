@@ -4,7 +4,7 @@ import zh from './zh'
 
 // Get saved language from localStorage or browser preference
 const getSavedLanguage = (): string => {
-    const saved = localStorage.getItem('ibm_cloud_china_language')
+    const saved = localStorage.getItem('cloudland_language')
     if (saved && ['en', 'zh'].includes(saved)) {
         return saved
     }
@@ -30,7 +30,7 @@ const i18n = createI18n({
 
 // Helper to save language preference
 export const setLanguage = (lang: string) => {
-    localStorage.setItem('ibm_cloud_china_language', lang)
+    localStorage.setItem('cloudland_language', lang)
     i18n.global.locale.value = lang as 'en' | 'zh'
 }
 

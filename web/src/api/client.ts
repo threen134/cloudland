@@ -14,19 +14,19 @@ const client = axios.create({
 client.interceptors.request.use(
     (config: InternalAxiosRequestConfig) => {
         // Add JWT token if available
-        const token = localStorage.getItem('ibm_cloud_china_token')
+        const token = localStorage.getItem('cloudland_token')
         if (token && config.headers) {
             config.headers.Authorization = `Bearer ${token}`
         }
 
         // Add tenant/organization header
-        const orgId = localStorage.getItem('ibm_cloud_china_org_id')
+        const orgId = localStorage.getItem('cloudland_org_id')
         if (orgId && config.headers) {
             config.headers['X-Organization-ID'] = orgId
         }
 
         // Add region UUID as query parameter (skip for /regions endpoint itself)
-        const regionUuid = localStorage.getItem('ibm_cloud_china_region_uuid')
+        const regionUuid = localStorage.getItem('cloudland_region_uuid')
         if (regionUuid && config.url && !config.url.endsWith('/regions')) {
             config.params = config.params || {}
             config.params.region = regionUuid
@@ -52,7 +52,7 @@ client.interceptors.response.use(
             switch (status) {
                 case 401:
                     // Check if we are using a mock token
-                    const token = localStorage.getItem('ibm_cloud_china_token')
+                    const token = localStorage.getItem('cloudland_token')
                     if (token && token.startsWith('mock-token-')) {
                         console.warn('API 401 ignored due to mock token')
                         break
@@ -66,8 +66,8 @@ client.interceptors.response.use(
                     }
 
                     // Unauthorized - clear auth and redirect to login
-                    localStorage.removeItem('ibm_cloud_china_token')
-                    localStorage.removeItem('ibm_cloud_china_user')
+                    localStorage.removeItem('cloudland_token')
+                    localStorage.removeItem('cloudland_user')
                     // Only redirect if not already on login page
                     if (!window.location.pathname.includes('/login')) {
                         window.location.href = '/login'
@@ -78,8 +78,8 @@ client.interceptors.response.use(
                     const detail403 = (error.response?.data as any)?.detail || ''
                     if (typeof detail403 === 'string' && detail403.toLowerCase().includes('credentials')) {
                         // Token expired or invalid - clear auth and redirect to login
-                        localStorage.removeItem('ibm_cloud_china_token')
-                        localStorage.removeItem('ibm_cloud_china_user')
+                        localStorage.removeItem('cloudland_token')
+                        localStorage.removeItem('cloudland_user')
                         if (!window.location.pathname.includes('/login')) {
                             window.location.href = '/login'
                         }
@@ -105,12 +105,12 @@ client.interceptors.response.use(
 
 // Helper function to set auth token
 export const setAuthToken = (token: string) => {
-    localStorage.setItem('ibm_cloud_china_token', token)
+    localStorage.setItem('cloudland_token', token)
 }
 
 // Helper function to clear auth token
 export const clearAuthToken = () => {
-    localStorage.removeItem('ibm_cloud_china_token')
+    localStorage.removeItem('cloudland_token')
 }
 
 export default client

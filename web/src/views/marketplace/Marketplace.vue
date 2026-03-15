@@ -66,7 +66,7 @@ const apps: AppItem[] = [
     { id: 'terraform', nameKey: 'marketplace.apps.terraform', descKey: 'marketplace.apps.terraformDesc', icon: '🏗️', provider: 'HashiCorp', categories: ['devops'], version: '1.7', free: true },
 
     // Security & Network
-    { id: 'ipsec', nameKey: 'marketplace.apps.ipsec', descKey: 'marketplace.apps.ipsecDesc', icon: '🔐', provider: 'IBM Cloud China', categories: ['security'], version: 'Latest', free: true },
+    { id: 'ipsec', nameKey: 'marketplace.apps.ipsec', descKey: 'marketplace.apps.ipsecDesc', icon: '🔐', provider: 'CloudLand', categories: ['security'], version: 'Latest', free: true },
     { id: 'openvpn', nameKey: 'marketplace.apps.openvpn', descKey: 'marketplace.apps.openvpnDesc', icon: '🛡️', provider: 'OpenVPN Inc.', categories: ['security'], version: '2.6', free: true },
     { id: 'wireguard', nameKey: 'marketplace.apps.wireguard', descKey: 'marketplace.apps.wireguardDesc', icon: '🔑', provider: 'WireGuard', categories: ['security'], version: '1.0', isNew: true, free: true },
     { id: 'certbot', nameKey: 'marketplace.apps.certbot', descKey: 'marketplace.apps.certbotDesc', icon: '📜', provider: "Let's Encrypt", categories: ['security', 'web'], version: '2.8', free: true },
@@ -225,7 +225,7 @@ const handleDeploy = (app: AppItem) => {
 
 <style scoped>
 /* ============================================
-   IBM CLOUD CATALOG INSPIRED LAYOUT
+   CLOUDLAND CATALOG INSPIRED LAYOUT
    ============================================ */
 
 .catalog-page {

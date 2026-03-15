@@ -159,7 +159,7 @@ onMounted(() => {
       <div class="sidebar-header">
         <RouterLink to="/" class="logo-link">
           <Cloud :size="28" class="logo-icon" />
-          <span class="logo-text">IBM Cloud China</span>
+          <span class="logo-text">CloudLand</span>
         </RouterLink>
         <button class="collapse-btn" @click="toggleSidebar">
            <component :is="isSidebarCollapsed ? PanelLeftOpen : PanelLeftClose" :size="18" />

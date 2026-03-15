@@ -34,7 +34,7 @@ export const useRegionStore = defineStore('region', () => {
 
     // Initialize from localStorage
     const init = () => {
-        const storedRegionId = localStorage.getItem('ibm_cloud_china_region_id')
+        const storedRegionId = localStorage.getItem('cloudland_region_id')
         if (storedRegionId) {
             currentRegionId.value = storedRegionId
         }
@@ -68,7 +68,7 @@ export const useRegionStore = defineStore('region', () => {
                 // Ensure UUID is persisted even if region selection didn't change
                 const current = regions.value.find(r => r.id === currentRegionId.value)
                 if (current?.uuid) {
-                    localStorage.setItem('ibm_cloud_china_region_uuid', current.uuid)
+                    localStorage.setItem('cloudland_region_uuid', current.uuid)
                 }
             }
         } catch (err: any) {
@@ -82,11 +82,11 @@ export const useRegionStore = defineStore('region', () => {
     // Set current region
     const setCurrentRegion = (regionId: string) => {
         currentRegionId.value = regionId
-        localStorage.setItem('ibm_cloud_china_region_id', regionId)
+        localStorage.setItem('cloudland_region_id', regionId)
         // Persist the UUID for API query parameter usage
         const region = regions.value.find(r => r.id === regionId)
         if (region?.uuid) {
-            localStorage.setItem('ibm_cloud_china_region_uuid', region.uuid)
+            localStorage.setItem('cloudland_region_uuid', region.uuid)
         }
     }
 
@@ -94,8 +94,8 @@ export const useRegionStore = defineStore('region', () => {
     const clear = () => {
         regions.value = []
         currentRegionId.value = null
-        localStorage.removeItem('ibm_cloud_china_region_id')
-        localStorage.removeItem('ibm_cloud_china_region_uuid')
+        localStorage.removeItem('cloudland_region_id')
+        localStorage.removeItem('cloudland_region_uuid')
     }
 
     // Initialize on store creation

@@ -18,7 +18,7 @@ export const authApi = {
         formData.append('username', payload.username || '')
         formData.append('password', payload.password || '')
 
-        return client.post<LoginResponse>('/auth/token', formData, {
+        return client.post<LoginResponse>('/auth/token/form', formData, {
             headers: {
                 'Content-Type': 'application/x-www-form-urlencoded'
             }

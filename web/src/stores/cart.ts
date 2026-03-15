@@ -42,7 +42,7 @@ export const useCartStore = defineStore('cart', () => {
 
     // Initialize from localStorage
     const init = () => {
-        const storedCart = localStorage.getItem('ibm_cloud_china_cart')
+        const storedCart = localStorage.getItem('cloudland_cart')
         if (storedCart) {
             try {
                 items.value = JSON.parse(storedCart)
@@ -54,7 +54,7 @@ export const useCartStore = defineStore('cart', () => {
 
     // Save cart to localStorage
     const saveCart = () => {
-        localStorage.setItem('ibm_cloud_china_cart', JSON.stringify(items.value))
+        localStorage.setItem('cloudland_cart', JSON.stringify(items.value))
     }
 
     // Add item to cart
@@ -101,7 +101,7 @@ export const useCartStore = defineStore('cart', () => {
     // Clear cart
     const clearCart = () => {
         items.value = []
-        localStorage.removeItem('ibm_cloud_china_cart')
+        localStorage.removeItem('cloudland_cart')
     }
 
     // Toggle cart drawer

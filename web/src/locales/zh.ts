@@ -109,7 +109,7 @@ export default {
 
     // 产品优势区域
     features: {
-        title: '为什么选择IBM Cloud China？',
+        title: '为什么选择CloudLand？',
         subtitle: '基于尖端基础设施，提供企业级可靠性',
         // 优势项目
         highPerformance: '高性能基础设施',
@@ -172,12 +172,12 @@ export default {
         blog: '博客',
         careers: '加入我们',
         contact: '联系我们',
-        copyright: '© 2026 IBM Cloud China. 保留所有权利。',
+        copyright: '© 2026 CloudLand. 保留所有权利。',
     },
 
     // 云市场
     marketplace: {
-        title: 'IBM Cloud China 应用目录',
+        title: 'CloudLand 应用目录',
         subtitle: '一键部署预配置应用到您的云服务器',
         searchPlaceholder: '搜索应用目录...',
         viewingProducts: '共 {count} 个产品',
@@ -581,7 +581,7 @@ export default {
         username: '用户名',
         confirmPassword: '确认密码',
         passwordMismatch: '两次输入的密码不一致',
-        welcome: '欢迎加入 IBM Cloud China',
+        welcome: '欢迎加入 CloudLand',
         checkEmail: '请检查您的电子邮箱以完成账户激活',
         redirecting: '{n} 秒后将自动跳转至登录页面...',
         activationTitle: '账户激活',

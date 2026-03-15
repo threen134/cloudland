@@ -22,11 +22,11 @@ export const useAuthStore = defineStore('auth', () => {
 
     // Initialize from local storage
     const init = () => {
-        const storedUser = localStorage.getItem('ibm_cloud_china_user')
+        const storedUser = localStorage.getItem('cloudland_user')
         if (storedUser) {
             user.value = JSON.parse(storedUser)
             // Restore token if needed, or check validity
-            const token = localStorage.getItem('ibm_cloud_china_token')
+            const token = localStorage.getItem('cloudland_token')
             if (token) {
                 setAuthToken(token)
                 // Fetch fresh user info to ensure we have the latest (e.g. username)
@@ -34,14 +34,14 @@ export const useAuthStore = defineStore('auth', () => {
                     // API returns { message, user: {...} } — extract the nested user object
                     const userData = res.data?.user || res.data
                     user.value = userData
-                    localStorage.setItem('ibm_cloud_china_user', JSON.stringify(user.value))
+                    localStorage.setItem('cloudland_user', JSON.stringify(user.value))
                 }).catch(err => {
                     console.error('Failed to refresh user info:', err)
                 })
             }
         }
 
-        const storedAttempts = localStorage.getItem('ibm_cloud_china_login_attempts')
+        const storedAttempts = localStorage.getItem('cloudland_login_attempts')
         if (storedAttempts) {
             failedAttempts.value = parseInt(storedAttempts, 10)
         }
@@ -62,14 +62,14 @@ export const useAuthStore = defineStore('auth', () => {
             // API returns { message, user: {...} } — extract the nested user object
             const userData = userInfoRes.data?.user || userInfoRes.data
             user.value = userData
-            localStorage.setItem('ibm_cloud_china_user', JSON.stringify(user.value))
+            localStorage.setItem('cloudland_user', JSON.stringify(user.value))
             failedAttempts.value = 0
-            localStorage.removeItem('ibm_cloud_china_login_attempts')
+            localStorage.removeItem('cloudland_login_attempts')
 
         } catch (error) {
             console.error('Login failed:', error)
             failedAttempts.value++
-            localStorage.setItem('ibm_cloud_china_login_attempts', failedAttempts.value.toString())
+            localStorage.setItem('cloudland_login_attempts', failedAttempts.value.toString())
             throw error
         } finally {
             isLoading.value = false
@@ -78,7 +78,7 @@ export const useAuthStore = defineStore('auth', () => {
 
     const logout = () => {
         user.value = null
-        localStorage.removeItem('ibm_cloud_china_user')
+        localStorage.removeItem('cloudland_user')
         clearAuthToken()
     }
 

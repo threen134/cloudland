@@ -261,7 +261,7 @@ const goToMarketplace = () => {
           <div class="footer-brand">
             <div class="logo">
               <Cloud :size="24" />
-              <span>IBM Cloud China</span>
+              <span>CloudLand</span>
             </div>
             <p>{{ t('footer.tagline') }}</p>
           </div>
@@ -299,7 +299,7 @@ const goToMarketplace = () => {
 .home-page {
     background: var(--bg-primary);
 
-    /* Scoped IBM Red Theme specifically for Home page */
+    /* Scoped CloudLand Theme specifically for Home page */
     --primary-50: #fff1f1;
     --primary-100: #ffe3e3;
     --primary-200: #ffc6c6;
