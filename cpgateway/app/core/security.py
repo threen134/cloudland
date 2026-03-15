@@ -47,9 +47,9 @@ def _get_public_key():
 # --- Token Claims ---
 
 class TokenClaims(BaseModel):
-    sub: str           # global_user_id
+    sub: str           # user uuid
     email: str
-    org_id: str        # 当前操作的 Org ID
+    org_id: str        # org uuid (kept as 'org_id' claim name for JWT compat)
     org_name: str      # Org 名称
     region: str        # 目标 Region name
     sr: int            # SystemRole (0=User, 1=Admin)
@@ -83,9 +83,9 @@ def create_access_token(claims: TokenClaims) -> str:
 
 
 def build_token_claims(
-    user_id: int,
+    user_uuid: str,
     email: str,
-    org_id: int,
+    org_uuid: str,
     org_name: str,
     region: str,
     system_role: int,
@@ -103,9 +103,9 @@ def build_token_claims(
         expire = datetime.now(timezone.utc) + timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
 
     return TokenClaims(
-        sub=str(user_id),
+        sub=user_uuid,
         email=email,
-        org_id=str(org_id),
+        org_id=org_uuid,
         org_name=org_name,
         region=region,
         sr=system_role,
@@ -139,23 +139,24 @@ def verify_access_token(token: str) -> Optional[dict]:
 
 # --- Activation Token (保留 HS256 用于邮箱激活，独立于主 Token 体系) ---
 
-def create_activation_token(user_id: int) -> str:
+def create_activation_token(user_uuid: str) -> str:
     expire = datetime.now(timezone.utc) + timedelta(hours=settings.ACTIVATION_TOKEN_EXPIRE_HOURS)
     to_encode = {
-        "sub": str(user_id),
+        "sub": user_uuid,
         "type": "activation",
         "exp": expire
     }
     return jwt.encode(to_encode, settings.SECRET_KEY, algorithm="HS256")
 
 
-def verify_activation_token(token: str) -> int | None:
+def verify_activation_token(token: str) -> str | None:
+    """Returns user uuid or None."""
     try:
         payload = jwt.decode(token, settings.SECRET_KEY, algorithms=["HS256"])
-        user_id: str = payload.get("sub")
+        user_uuid: str = payload.get("sub")
         token_type: str = payload.get("type")
-        if user_id is None or token_type != "activation":
+        if user_uuid is None or token_type != "activation":
             return None
-        return int(user_id)
+        return user_uuid
     except JWTError:
         return None

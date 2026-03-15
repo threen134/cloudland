@@ -13,12 +13,11 @@ class OrgUpdate(BaseModel):
 
 
 class OrgResponse(BaseModel):
-    id: int
     uuid: str
     name: str
     slug: str
     org_type: int
-    owner_user_id: int
+    owner_uuid: str
     created_at: datetime
 
     class Config:
@@ -31,7 +30,7 @@ class OrgDetail(OrgResponse):
 
 
 class MemberAdd(BaseModel):
-    user_id: int
+    user_uuid: str
     org_role: int = 1   # default Reader
 
 
@@ -40,10 +39,9 @@ class MemberUpdate(BaseModel):
 
 
 class MemberResponse(BaseModel):
-    id: int
     uuid: str
-    user_id: int
-    org_id: int
+    user_uuid: str
+    org_uuid: str
     org_role: int
     user_email: Optional[str] = None
     created_at: datetime
@@ -53,12 +51,12 @@ class MemberResponse(BaseModel):
 
 
 class TransferOwner(BaseModel):
-    new_owner_user_id: int
+    new_owner_uuid: str
 
 
 class UserOrgItem(BaseModel):
     """用户所属 Org 列表项（供前端切换 Org 下拉框使用）"""
-    org_id: int
+    uuid: str
     name: str
     slug: str
     org_role: int

@@ -5,6 +5,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
 from app.models.region import Region
+from app.models.user import User
+from app.models.org import Organization
 from app.models.token_revocation import TokenRevocation
 from app.core.security import verify_access_token
 from app.core.config import settings
@@ -68,11 +70,33 @@ class ProxyService:
         if not region_obj.is_available:
             raise HTTPException(status_code=503, detail=f"Region '{region_name}' is currently unavailable")
 
-        # 4. Build forwarded headers
+        # 4. Resolve UUIDs to internal integer IDs for Cloudland backend
+        user_uuid = claims.get("sub", "")
+        org_uuid = claims.get("org_id", "")
+
+        user_internal_id = ""
+        if user_uuid:
+            user_result = await db.execute(
+                select(User.id).where(User.uuid == user_uuid)
+            )
+            row = user_result.scalar()
+            if row:
+                user_internal_id = str(row)
+
+        org_internal_id = ""
+        if org_uuid:
+            org_result = await db.execute(
+                select(Organization.id).where(Organization.uuid == org_uuid)
+            )
+            row = org_result.scalar()
+            if row:
+                org_internal_id = str(row)
+
+        # Build forwarded headers (Cloudland backend expects integer IDs)
         forwarded_headers = {
-            "X-User-ID": claims.get("sub", ""),
+            "X-User-ID": user_internal_id,
             "X-User-Email": claims.get("email", ""),
-            "X-Org-ID": claims.get("org_id", ""),
+            "X-Org-ID": org_internal_id,
             "X-Org-Name": claims.get("org_name", ""),
             "X-Org-Role": str(claims.get("or", 0)),
             "X-Is-Owner": str(claims.get("is_owner", False)).lower(),

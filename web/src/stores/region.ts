@@ -8,7 +8,6 @@ export interface Region {
     label?: string
     status?: 'available' | 'maintenance' | 'offline'
     endpoint?: string
-    uuid?: string
 }
 
 export const useRegionStore = defineStore('region', () => {
@@ -25,11 +24,6 @@ export const useRegionStore = defineStore('region', () => {
     // Available regions (filtering by status)
     const availableRegions = computed(() => {
         return regions.value.filter(r => r.status !== 'offline')
-    })
-
-    // Current region UUID for API requests
-    const currentRegionUuid = computed(() => {
-        return currentRegion.value?.uuid || null
     })
 
     // Initialize from localStorage
@@ -50,26 +44,19 @@ export const useRegionStore = defineStore('region', () => {
             const data = Array.isArray(response.data) ? response.data : (response.data?.regions || [])
 
             // Map API response to Region interface
-            // API returns: { id, name, description, endpoint_url, uuid, ... }
+            // API now returns uuid instead of id
             regions.value = data.map((r: any) => ({
-                id: String(r.id),
+                id: r.uuid,
                 name: r.name,
                 label: r.description || r.name,
                 status: 'available' as const,
                 endpoint: r.endpoint_url,
-                uuid: r.uuid,
             }))
 
             // Auto-select first available region if none selected or current selection no longer valid
             const currentExists = regions.value.some(r => r.id === currentRegionId.value)
             if ((!currentRegionId.value || !currentExists) && regions.value.length > 0) {
                 setCurrentRegion(regions.value[0].id)
-            } else {
-                // Ensure UUID is persisted even if region selection didn't change
-                const current = regions.value.find(r => r.id === currentRegionId.value)
-                if (current?.uuid) {
-                    localStorage.setItem('cloudland_region_uuid', current.uuid)
-                }
             }
         } catch (err: any) {
             console.warn('Failed to fetch regions:', err)
@@ -83,11 +70,8 @@ export const useRegionStore = defineStore('region', () => {
     const setCurrentRegion = (regionId: string) => {
         currentRegionId.value = regionId
         localStorage.setItem('cloudland_region_id', regionId)
-        // Persist the UUID for API query parameter usage
-        const region = regions.value.find(r => r.id === regionId)
-        if (region?.uuid) {
-            localStorage.setItem('cloudland_region_uuid', region.uuid)
-        }
+        // Also persist as region_uuid for API query parameter usage
+        localStorage.setItem('cloudland_region_uuid', regionId)
     }
 
     // Clear region state (on logout)
@@ -105,7 +89,6 @@ export const useRegionStore = defineStore('region', () => {
         regions,
         currentRegionId,
         currentRegion,
-        currentRegionUuid,
         availableRegions,
         isLoading,
         error,

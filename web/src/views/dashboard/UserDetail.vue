@@ -78,7 +78,7 @@ onMounted(fetchUser)
                 <div class="title-info">
                     <h1>{{ user.username || user.name || 'Unknown User' }}</h1>
                     <div class="subtitle">
-                        <span class="id-text">{{ user.id }}</span>
+                        <span class="id-text">{{ user.uuid }}</span>
                         <span :class="['status-badge', getStatusClass(user.status || 'active')]">
                             {{ user.status || 'active' }}
                         </span>
@@ -121,8 +121,8 @@ onMounted(fetchUser)
                     <h3>Organization</h3>
                      <div class="key-value-list">
                         <div class="kv-item">
-                            <span class="label">Organization ID</span>
-                            <span class="value mono">{{ user.org?.id || '-' }}</span>
+                            <span class="label">Organization UUID</span>
+                            <span class="value mono">{{ user.org?.uuid || '-' }}</span>
                         </div>
                          <div class="kv-item">
                             <span class="label">Organization Name</span>

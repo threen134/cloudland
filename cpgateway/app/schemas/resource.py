@@ -28,8 +28,7 @@ class ResourceConsumptionUpdate(BaseModel):
 
 class ResourceConsumption(ResourceConsumptionBase):
     """Schema for resource consumption response"""
-    id: int
-    user_id: int
+    user_uuid: str
     created_at: datetime
     updated_at: datetime
 
@@ -64,8 +63,7 @@ class ResourceQuotaUpdate(BaseModel):
 
 class ResourceQuota(ResourceQuotaBase):
     """Schema for resource quota response"""
-    id: int
-    user_id: int
+    user_uuid: str
     created_at: datetime
     updated_at: datetime
 
@@ -79,6 +77,6 @@ class UserResourceInfo(BaseModel):
     """Combined schema showing both consumption and quota"""
     consumption: ResourceConsumption
     quota: ResourceQuota
-    
+
     class Config:
         from_attributes = True

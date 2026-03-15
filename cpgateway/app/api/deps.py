@@ -24,12 +24,12 @@ async def get_current_user(
             detail="Could not validate credentials",
         )
 
-    user_id = claims.get("sub")
-    if user_id is None:
+    user_uuid = claims.get("sub")
+    if user_uuid is None:
         raise HTTPException(status_code=403, detail="Invalid token: missing subject")
 
     result = await db.execute(
-        select(User).where(User.id == int(user_id))
+        select(User).where(User.uuid == user_uuid)
     )
     user = result.scalars().first()
 

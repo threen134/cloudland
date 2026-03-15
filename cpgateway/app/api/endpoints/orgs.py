@@ -17,6 +17,55 @@ from app.schemas.org import (
 router = APIRouter()
 
 
+# --- Helper to resolve org by uuid ---
+
+async def _get_org_or_404(db: AsyncSession, org_uuid: str) -> Organization:
+    result = await db.execute(
+        select(Organization).where(
+            Organization.uuid == org_uuid,
+            Organization.deleted_at.is_(None),
+        )
+    )
+    org = result.scalars().first()
+    if not org:
+        raise HTTPException(status_code=404, detail="Organization not found")
+    return org
+
+
+async def _get_user_by_uuid_or_404(db: AsyncSession, user_uuid: str) -> User:
+    result = await db.execute(select(User).where(User.uuid == user_uuid))
+    user = result.scalars().first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    return user
+
+
+def _build_org_response(org: Organization, owner: User) -> OrgResponse:
+    return OrgResponse(
+        uuid=org.uuid,
+        name=org.name,
+        slug=org.slug,
+        org_type=org.org_type,
+        owner_uuid=owner.uuid if owner else "",
+        created_at=org.created_at,
+    )
+
+
+async def _build_member_response(db: AsyncSession, m: Member) -> MemberResponse:
+    user_result = await db.execute(select(User).where(User.id == m.user_id))
+    user = user_result.scalars().first()
+    org_result = await db.execute(select(Organization).where(Organization.id == m.org_id))
+    org = org_result.scalars().first()
+    return MemberResponse(
+        uuid=m.uuid,
+        user_uuid=user.uuid if user else "",
+        org_uuid=org.uuid if org else "",
+        org_role=m.org_role,
+        user_email=user.email if user else None,
+        created_at=m.created_at,
+    )
+
+
 # --- Org CRUD ---
 
 @router.post("", response_model=OrgResponse, status_code=status.HTTP_201_CREATED)
@@ -55,7 +104,7 @@ async def create_org(
     db.add(member)
     await db.commit()
 
-    return org
+    return _build_org_response(org, current_user)
 
 
 @router.get("", response_model=List[OrgResponse])
@@ -83,32 +132,32 @@ async def list_orgs(
             )
             .offset(skip).limit(limit)
         )
-    return result.scalars().all()
+    orgs = result.scalars().all()
+
+    # Build responses with owner uuid
+    responses = []
+    for org in orgs:
+        owner_result = await db.execute(select(User).where(User.id == org.owner_user_id))
+        owner = owner_result.scalars().first()
+        responses.append(_build_org_response(org, owner))
+    return responses
 
 
-@router.get("/{org_id}", response_model=OrgDetail)
+@router.get("/{org_uuid}", response_model=OrgDetail)
 async def get_org(
-    org_id: int,
+    org_uuid: str,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
     """Org 详情"""
-    result = await db.execute(
-        select(Organization).where(
-            Organization.id == org_id,
-            Organization.deleted_at.is_(None),
-        )
-    )
-    org = result.scalars().first()
-    if not org:
-        raise HTTPException(status_code=404, detail="Organization not found")
+    org = await _get_org_or_404(db, org_uuid)
 
     # Check access
     if not (current_user.system_role == SystemRole.ADMIN or current_user.is_superuser):
         member_result = await db.execute(
             select(Member).where(
                 Member.user_id == current_user.id,
-                Member.org_id == org_id,
+                Member.org_id == org.id,
                 Member.deleted_at.is_(None),
             )
         )
@@ -118,46 +167,37 @@ async def get_org(
     # Count members
     count_result = await db.execute(
         select(sa_func.count(Member.id)).where(
-            Member.org_id == org_id,
+            Member.org_id == org.id,
             Member.deleted_at.is_(None),
         )
     )
     member_count = count_result.scalar() or 0
 
-    # Get owner email
+    # Get owner
     owner_result = await db.execute(select(User).where(User.id == org.owner_user_id))
     owner = owner_result.scalars().first()
 
     return OrgDetail(
-        id=org.id,
         uuid=org.uuid,
         name=org.name,
         slug=org.slug,
         org_type=org.org_type,
-        owner_user_id=org.owner_user_id,
+        owner_uuid=owner.uuid if owner else "",
         created_at=org.created_at,
         member_count=member_count,
         owner_email=owner.email if owner else None,
     )
 
 
-@router.patch("/{org_id}", response_model=OrgResponse)
+@router.patch("/{org_uuid}", response_model=OrgResponse)
 async def update_org(
-    org_id: int,
+    org_uuid: str,
     org_in: OrgUpdate,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
     """改名（OrgOwner / OrgAdmin / SystemAdmin）"""
-    result = await db.execute(
-        select(Organization).where(
-            Organization.id == org_id,
-            Organization.deleted_at.is_(None),
-        )
-    )
-    org = result.scalars().first()
-    if not org:
-        raise HTTPException(status_code=404, detail="Organization not found")
+    org = await _get_org_or_404(db, org_uuid)
 
     # Permission: SystemAdmin, OrgOwner, or OrgAdmin
     if not (current_user.system_role == SystemRole.ADMIN or current_user.is_superuser):
@@ -165,7 +205,7 @@ async def update_org(
             member_result = await db.execute(
                 select(Member).where(
                     Member.user_id == current_user.id,
-                    Member.org_id == org_id,
+                    Member.org_id == org.id,
                     Member.org_role >= OrgRole.ADMIN,
                     Member.deleted_at.is_(None),
                 )
@@ -178,25 +218,20 @@ async def update_org(
 
     await db.commit()
     await db.refresh(org)
-    return org
+
+    owner_result = await db.execute(select(User).where(User.id == org.owner_user_id))
+    owner = owner_result.scalars().first()
+    return _build_org_response(org, owner)
 
 
-@router.delete("/{org_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/{org_uuid}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_org(
-    org_id: int,
+    org_uuid: str,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_superuser),
 ):
     """解散 Org（仅 SystemAdmin，软删除）"""
-    result = await db.execute(
-        select(Organization).where(
-            Organization.id == org_id,
-            Organization.deleted_at.is_(None),
-        )
-    )
-    org = result.scalars().first()
-    if not org:
-        raise HTTPException(status_code=404, detail="Organization not found")
+    org = await _get_org_or_404(db, org_uuid)
 
     if org.org_type == OrgType.SYSTEM:
         raise HTTPException(status_code=400, detail="Cannot delete system organization")
@@ -208,55 +243,49 @@ async def delete_org(
 
 # --- Member Management ---
 
-@router.get("/{org_id}/members", response_model=List[MemberResponse])
+@router.get("/{org_uuid}/members", response_model=List[MemberResponse])
 async def list_members(
-    org_id: int,
+    org_uuid: str,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
     """列出 Org 成员"""
-    # Verify org exists
-    org_result = await db.execute(
-        select(Organization).where(
-            Organization.id == org_id,
-            Organization.deleted_at.is_(None),
-        )
-    )
-    if not org_result.scalars().first():
-        raise HTTPException(status_code=404, detail="Organization not found")
+    org = await _get_org_or_404(db, org_uuid)
 
     result = await db.execute(
-        select(Member, User.email)
+        select(Member, User.email, User.uuid)
         .join(User, User.id == Member.user_id)
         .where(
-            Member.org_id == org_id,
+            Member.org_id == org.id,
             Member.deleted_at.is_(None),
         )
     )
     rows = result.all()
     return [
         MemberResponse(
-            id=m.id, uuid=m.uuid, user_id=m.user_id, org_id=m.org_id,
+            uuid=m.uuid, user_uuid=user_uuid, org_uuid=org.uuid,
             org_role=m.org_role, user_email=email, created_at=m.created_at,
         )
-        for m, email in rows
+        for m, email, user_uuid in rows
     ]
 
 
-@router.post("/{org_id}/members", response_model=MemberResponse, status_code=status.HTTP_201_CREATED)
+@router.post("/{org_uuid}/members", response_model=MemberResponse, status_code=status.HTTP_201_CREATED)
 async def add_member(
-    org_id: int,
+    org_uuid: str,
     member_in: MemberAdd,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
     """添加成员"""
+    org = await _get_org_or_404(db, org_uuid)
+
     # Permission: SystemAdmin or OrgAdmin+
     if not (current_user.system_role == SystemRole.ADMIN or current_user.is_superuser):
         member_result = await db.execute(
             select(Member).where(
                 Member.user_id == current_user.id,
-                Member.org_id == org_id,
+                Member.org_id == org.id,
                 Member.org_role >= OrgRole.ADMIN,
                 Member.deleted_at.is_(None),
             )
@@ -265,16 +294,13 @@ async def add_member(
             raise HTTPException(status_code=403, detail="Not enough permissions to add members")
 
     # Check target user exists
-    user_result = await db.execute(select(User).where(User.id == member_in.user_id))
-    target_user = user_result.scalars().first()
-    if not target_user:
-        raise HTTPException(status_code=404, detail="User not found")
+    target_user = await _get_user_by_uuid_or_404(db, member_in.user_uuid)
 
     # Check not already a member
     existing = await db.execute(
         select(Member).where(
-            Member.user_id == member_in.user_id,
-            Member.org_id == org_id,
+            Member.user_id == target_user.id,
+            Member.org_id == org.id,
             Member.deleted_at.is_(None),
         )
     )
@@ -282,8 +308,8 @@ async def add_member(
         raise HTTPException(status_code=400, detail="User is already a member of this organization")
 
     member = Member(
-        user_id=member_in.user_id,
-        org_id=org_id,
+        user_id=target_user.id,
+        org_id=org.id,
         org_role=member_in.org_role,
     )
     db.add(member)
@@ -291,26 +317,29 @@ async def add_member(
     await db.refresh(member)
 
     return MemberResponse(
-        id=member.id, uuid=member.uuid, user_id=member.user_id, org_id=member.org_id,
+        uuid=member.uuid, user_uuid=target_user.uuid, org_uuid=org.uuid,
         org_role=member.org_role, user_email=target_user.email, created_at=member.created_at,
     )
 
 
-@router.patch("/{org_id}/members/{user_id}", response_model=MemberResponse)
+@router.patch("/{org_uuid}/members/{user_uuid}", response_model=MemberResponse)
 async def update_member_role(
-    org_id: int,
-    user_id: int,
+    org_uuid: str,
+    user_uuid: str,
     member_in: MemberUpdate,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
     """修改成员角色"""
+    org = await _get_org_or_404(db, org_uuid)
+    target_user = await _get_user_by_uuid_or_404(db, user_uuid)
+
     # Permission check
     if not (current_user.system_role == SystemRole.ADMIN or current_user.is_superuser):
         my_member = await db.execute(
             select(Member).where(
                 Member.user_id == current_user.id,
-                Member.org_id == org_id,
+                Member.org_id == org.id,
                 Member.org_role >= OrgRole.ADMIN,
                 Member.deleted_at.is_(None),
             )
@@ -320,8 +349,8 @@ async def update_member_role(
 
     result = await db.execute(
         select(Member).where(
-            Member.user_id == user_id,
-            Member.org_id == org_id,
+            Member.user_id == target_user.id,
+            Member.org_id == org.id,
             Member.deleted_at.is_(None),
         )
     )
@@ -333,30 +362,30 @@ async def update_member_role(
     await db.commit()
     await db.refresh(member)
 
-    user_result = await db.execute(select(User).where(User.id == user_id))
-    target_user = user_result.scalars().first()
-
     return MemberResponse(
-        id=member.id, uuid=member.uuid, user_id=member.user_id, org_id=member.org_id,
-        org_role=member.org_role, user_email=target_user.email if target_user else None,
+        uuid=member.uuid, user_uuid=target_user.uuid, org_uuid=org.uuid,
+        org_role=member.org_role, user_email=target_user.email,
         created_at=member.created_at,
     )
 
 
-@router.delete("/{org_id}/members/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/{org_uuid}/members/{user_uuid}", status_code=status.HTTP_204_NO_CONTENT)
 async def remove_member(
-    org_id: int,
-    user_id: int,
+    org_uuid: str,
+    user_uuid: str,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
     """移除成员"""
+    org = await _get_org_or_404(db, org_uuid)
+    target_user = await _get_user_by_uuid_or_404(db, user_uuid)
+
     # Permission check
     if not (current_user.system_role == SystemRole.ADMIN or current_user.is_superuser):
         my_member = await db.execute(
             select(Member).where(
                 Member.user_id == current_user.id,
-                Member.org_id == org_id,
+                Member.org_id == org.id,
                 Member.org_role >= OrgRole.ADMIN,
                 Member.deleted_at.is_(None),
             )
@@ -365,17 +394,13 @@ async def remove_member(
             raise HTTPException(status_code=403, detail="Not enough permissions")
 
     # Cannot remove the Org Owner
-    org_result = await db.execute(
-        select(Organization).where(Organization.id == org_id)
-    )
-    org = org_result.scalars().first()
-    if org and org.owner_user_id == user_id:
+    if org.owner_user_id == target_user.id:
         raise HTTPException(status_code=400, detail="Cannot remove the organization owner. Transfer ownership first.")
 
     result = await db.execute(
         select(Member).where(
-            Member.user_id == user_id,
-            Member.org_id == org_id,
+            Member.user_id == target_user.id,
+            Member.org_id == org.id,
             Member.deleted_at.is_(None),
         )
     )
@@ -388,36 +413,29 @@ async def remove_member(
     await db.commit()
 
 
-@router.post("/{org_id}/transfer-owner", response_model=OrgResponse)
+@router.post("/{org_uuid}/transfer-owner", response_model=OrgResponse)
 async def transfer_owner(
-    org_id: int,
+    org_uuid: str,
     transfer_in: TransferOwner,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_superuser),
 ):
     """转让 Owner（仅 SystemAdmin）"""
-    result = await db.execute(
-        select(Organization).where(
-            Organization.id == org_id,
-            Organization.deleted_at.is_(None),
-        )
-    )
-    org = result.scalars().first()
-    if not org:
-        raise HTTPException(status_code=404, detail="Organization not found")
+    org = await _get_org_or_404(db, org_uuid)
+    new_owner = await _get_user_by_uuid_or_404(db, transfer_in.new_owner_uuid)
 
     # Verify new owner is a member
     member_result = await db.execute(
         select(Member).where(
-            Member.user_id == transfer_in.new_owner_user_id,
-            Member.org_id == org_id,
+            Member.user_id == new_owner.id,
+            Member.org_id == org.id,
             Member.deleted_at.is_(None),
         )
     )
     if not member_result.scalars().first():
         raise HTTPException(status_code=400, detail="New owner must be a member of the organization")
 
-    org.owner_user_id = transfer_in.new_owner_user_id
+    org.owner_user_id = new_owner.id
     await db.commit()
     await db.refresh(org)
-    return org
+    return _build_org_response(org, new_owner)

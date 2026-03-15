@@ -24,7 +24,6 @@ class UserUpdate(UserBase):
 
 class UserInDBBase(UserBase):
     """数据库实体对应的 Pydantic 模型基类"""
-    id: int
     uuid: str
     is_active: bool
     is_superuser: bool = False

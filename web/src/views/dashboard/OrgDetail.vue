@@ -19,13 +19,13 @@ const error = ref('')
 
 // Add member modal
 const addMemberVisible = ref(false)
-const addMemberForm = ref({ user_id: '', org_role: 1 })
+const addMemberForm = ref({ user_uuid: '', org_role: 1 })
 const addMemberError = ref('')
 const addingMember = ref(false)
 
 // Change role modal
 const changeRoleVisible = ref(false)
-const changeRoleForm = ref({ user_id: 0, username: '', org_role: 1 })
+const changeRoleForm = ref({ user_uuid: '', username: '', org_role: 1 })
 const changeRoleError = ref('')
 const changingRole = ref(false)
 
@@ -37,7 +37,7 @@ const removeMemberError = ref('')
 
 // Transfer ownership
 const transferVisible = ref(false)
-const transferTargetId = ref<number | null>(null)
+const transferTargetId = ref<string | null>(null)
 const transferring = ref(false)
 const transferError = ref('')
 
@@ -68,21 +68,21 @@ const fetchMembers = async () => {
 
 // --- Add Member ---
 const openAddMember = () => {
-    addMemberForm.value = { user_id: '', org_role: 1 }
+    addMemberForm.value = { user_uuid: '', org_role: 1 }
     addMemberError.value = ''
     addMemberVisible.value = true
 }
 
 const handleAddMember = async () => {
     addMemberError.value = ''
-    const uid = Number(addMemberForm.value.user_id)
+    const uid = addMemberForm.value.user_uuid.trim()
     if (!uid) {
         addMemberError.value = t('dashboard.org.enterUserId')
         return
     }
     addingMember.value = true
     try {
-        await orgsApi.addMember(orgId, { user_id: uid, org_role: addMemberForm.value.org_role })
+        await orgsApi.addMember(orgId, { user_uuid: uid, org_role: addMemberForm.value.org_role })
         await fetchMembers()
         addMemberVisible.value = false
     } catch (err: any) {
@@ -94,7 +94,7 @@ const handleAddMember = async () => {
 
 // --- Change Role ---
 const openChangeRole = (member: OrgMember) => {
-    changeRoleForm.value = { user_id: member.user_id, username: member.username, org_role: member.org_role }
+    changeRoleForm.value = { user_uuid: member.user_uuid, username: member.username, org_role: member.org_role }
     changeRoleError.value = ''
     changeRoleVisible.value = true
 }
@@ -103,7 +103,7 @@ const handleChangeRole = async () => {
     changeRoleError.value = ''
     changingRole.value = true
     try {
-        await orgsApi.updateMemberRole(orgId, changeRoleForm.value.user_id, { org_role: changeRoleForm.value.org_role })
+        await orgsApi.updateMemberRole(orgId, changeRoleForm.value.user_uuid, { org_role: changeRoleForm.value.org_role })
         await fetchMembers()
         changeRoleVisible.value = false
     } catch (err: any) {
@@ -125,7 +125,7 @@ const handleRemoveMember = async () => {
     removingMember.value = true
     removeMemberError.value = ''
     try {
-        await orgsApi.removeMember(orgId, memberToRemove.value.user_id)
+        await orgsApi.removeMember(orgId, memberToRemove.value.user_uuid)
         await fetchMembers()
         removeMemberVisible.value = false
     } catch (err: any) {
@@ -197,7 +197,7 @@ onMounted(() => {
             <div>
               <h3>{{ org.name }}</h3>
               <div class="detail-meta">
-                <span class="meta-item">ID: {{ org.id }}</span>
+                <span class="meta-item">UUID: {{ org.uuid }}</span>
                 <span class="meta-item" v-if="org.slug">Slug: {{ org.slug }}</span>
               </div>
             </div>
@@ -211,7 +211,7 @@ onMounted(() => {
           </div>
           <div class="detail-item">
             <span class="detail-label">Owner</span>
-            <span class="detail-value">{{ org.owner_email || org.owner_id || '-' }}</span>
+            <span class="detail-value">{{ org.owner_email || org.owner_uuid || '-' }}</span>
           </div>
           <div class="detail-item">
             <span class="detail-label">{{ $t('dashboard.org.memberCount') }}</span>
@@ -259,10 +259,10 @@ onMounted(() => {
                 {{ $t('dashboard.org.noMembers') }}
               </td>
             </tr>
-            <tr v-else v-for="member in members" :key="member.user_id">
+            <tr v-else v-for="member in members" :key="member.user_uuid">
               <td>
                 <div style="font-weight: 500;">{{ member.username }}</div>
-                <div style="font-size: var(--font-size-xs); color: var(--text-tertiary);">ID: {{ member.user_id }}</div>
+                <div style="font-size: var(--font-size-xs); color: var(--text-tertiary);">{{ member.user_uuid }}</div>
               </td>
               <td>{{ member.email || '-' }}</td>
               <td>
@@ -305,7 +305,7 @@ onMounted(() => {
         <div class="modal-body" style="padding: var(--spacing-6);">
           <div class="form-group">
             <label class="form-label">{{ $t('dashboard.org.userId') }}</label>
-            <input v-model="addMemberForm.user_id" type="number" class="form-input" placeholder="User ID" />
+            <input v-model="addMemberForm.user_uuid" type="text" class="form-input" placeholder="User UUID" />
           </div>
           <div class="form-group">
             <label class="form-label">{{ $t('dashboard.org.role') }}</label>
@@ -406,7 +406,7 @@ onMounted(() => {
             <label class="form-label">{{ $t('dashboard.org.selectNewOwner') }}</label>
             <select v-model="transferTargetId" class="form-input">
               <option :value="null" disabled>-- {{ $t('dashboard.org.selectMember') }} --</option>
-              <option v-for="m in members.filter(m => !m.is_owner)" :key="m.user_id" :value="m.user_id">
+              <option v-for="m in members.filter(m => !m.is_owner)" :key="m.user_uuid" :value="m.user_uuid">
                 {{ m.username }} ({{ m.email }})
               </option>
             </select>

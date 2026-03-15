@@ -2,13 +2,13 @@ import client from './client'
 
 export interface User {
     user: {
-        id: string
+        uuid: string
         name: string
         updated_at?: string
     }
     role: string
     org?: {
-        id: string
+        uuid: string
         name: string
     }
     token?: string
@@ -24,8 +24,7 @@ export interface CreateUserPayload {
 }
 
 export interface ResourceQuota {
-    id: number
-    user_id: number
+    user_uuid: string
     max_cpu_cores: number
     max_ram_gb: number
     max_traffic_gb: number
@@ -50,8 +49,8 @@ export const usersApi = {
     },
 
     // Get single user
-    getUser(id: string) {
-        return client.get(`/users/${id}`)
+    getUser(uuid: string) {
+        return client.get(`/users/${uuid}`)
     },
 
     // Create user
@@ -60,13 +59,13 @@ export const usersApi = {
     },
 
     // Update user
-    updateUser(id: string, payload: Partial<CreateUserPayload>) {
-        return client.put(`/users/${id}`, payload)
+    updateUser(uuid: string, payload: Partial<CreateUserPayload>) {
+        return client.put(`/users/${uuid}`, payload)
     },
 
     // Delete user
-    deleteUser(id: string) {
-        return client.delete(`/users/${id}`)
+    deleteUser(uuid: string) {
+        return client.delete(`/users/${uuid}`)
     },
 
     // Get user quota

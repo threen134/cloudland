@@ -20,7 +20,7 @@ const newUserForm = ref({
 const createModalVisible = ref(false)
 const createError = ref('')
 const editUserForm = ref({
-    id: '',
+    uuid: '',
     username: '',
     email: '',
     role: 'user'
@@ -49,12 +49,12 @@ const filteredUsers = computed(() => {
     return users.value.filter(user => 
         (user.username?.toLowerCase().includes(query) || '') || 
         (user.email?.toLowerCase().includes(query) || '') ||
-        user.id.toLowerCase().includes(query)
+        (user.uuid?.toLowerCase().includes(query) || '')
     )
 })
 
 const navigateToDetail = (user: User) => {
-    router.push({ name: 'user-detail', params: { id: user.id } })
+    router.push({ name: 'user-detail', params: { id: user.uuid } })
 }
 
 const openCreateModal = () => {
@@ -89,7 +89,7 @@ const handleCreateUser = async () => {
 
 const openEditModal = (user: User) => {
     editUserForm.value = {
-        id: user.id,
+        uuid: user.uuid,
         username: user.username,
         email: user.email || '',
         role: user.role || 'user'
@@ -111,7 +111,7 @@ const handleEditUser = async () => {
 
     creatingResource.value = true
     try {
-        await usersApi.updateUser(editUserForm.value.id, {
+        await usersApi.updateUser(editUserForm.value.uuid, {
             username: editUserForm.value.username,
             email: editUserForm.value.email,
             role: editUserForm.value.role
@@ -146,7 +146,7 @@ const confirmDelete = async () => {
     deletingResource.value = true
     deleteError.value = ''
     try {
-        await usersApi.deleteUser(resourceToDelete.value.id)
+        await usersApi.deleteUser(resourceToDelete.value.uuid)
         await fetchUsers()
         closeDeleteModal()
     } catch (error: any) {
@@ -177,7 +177,7 @@ const openQuotaModal = async (user: User) => {
     quotaLoading.value = true
     quotaError.value = ''
     try {
-        const response = await usersApi.getUserQuota(user.uuid || user.id)
+        const response = await usersApi.getUserQuota(user.uuid)
         const quota = response.data as any
         quotaForm.value = {
             max_cpu_cores: quota.max_cpu_cores ?? 0,
@@ -204,7 +204,7 @@ const handleSaveQuota = async () => {
     quotaSaving.value = true
     quotaError.value = ''
     try {
-        await usersApi.updateUserQuota(quotaTargetUser.value.uuid || quotaTargetUser.value.id, quotaForm.value)
+        await usersApi.updateUserQuota(quotaTargetUser.value.uuid, quotaForm.value)
         closeQuotaModal()
     } catch (err: any) {
         console.error('Failed to update quota:', err)
@@ -265,7 +265,7 @@ onMounted(fetchUsers)
                </div>
             </td>
           </tr>
-          <tr v-else v-for="user in filteredUsers" :key="user.id">
+          <tr v-else v-for="user in filteredUsers" :key="user.uuid">
             <td>
               <div class="user-cell">
                 <div class="avatar">
@@ -273,7 +273,7 @@ onMounted(fetchUsers)
                 </div>
                 <div>
                    <div class="user-name resource-link" @click="navigateToDetail(user)">{{ user.username }}</div>
-                   <div class="user-id">{{ user.id }}</div>
+                   <div class="user-id">{{ user.uuid }}</div>
                 </div>
               </div>
             </td>
@@ -420,7 +420,7 @@ onMounted(fetchUsers)
             <div style="background:var(--bg-secondary);border:1px solid var(--border-light);border-radius:var(--radius-md);padding:var(--spacing-3) var(--spacing-4);text-align:left">
               <span style="font-size:var(--font-size-xs);color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.05em;display:block;margin-bottom:var(--spacing-1)">{{ $t('dashboard.deleteConfirm.resource') }}</span>
               <span style="font-weight:var(--font-weight-semibold);display:block">{{ resourceToDelete?.username }}</span>
-              <span style="font-size:var(--font-size-xs);color:var(--text-light);font-family:var(--font-family-mono);display:block;margin-top:2px">{{ resourceToDelete?.id }}</span>
+              <span style="font-size:var(--font-size-xs);color:var(--text-light);font-family:var(--font-family-mono);display:block;margin-top:2px">{{ resourceToDelete?.uuid }}</span>
             </div>
             <div v-if="deleteError" class="text-error" style="margin-top:var(--spacing-4);font-size:var(--font-size-sm);background:var(--error-light);padding:var(--spacing-2);border-radius:var(--radius-sm)">
               {{ deleteError }}

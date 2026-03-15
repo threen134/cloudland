@@ -71,11 +71,11 @@ async def activate_account(token: str, db: AsyncSession = Depends(get_db)):
 
 @router.post("/token", response_model=TokenWithContext)
 async def login(login_in: LoginRequest, db: AsyncSession = Depends(get_db)):
-    """登录并签发 RS256 JWT（含 org_id / region / roles）"""
+    """登录并签发 RS256 JWT（含 org uuid / region / roles）"""
     try:
         result = await auth_service.login_user(
             db, login_in.username, login_in.password,
-            org_id=login_in.org_id, region=login_in.region,
+            org_uuid=login_in.org_uuid, region=login_in.region,
         )
         return result
     except ValueError as e:
@@ -114,7 +114,7 @@ async def switch_org(
     claims = _extract_claims(request)
     try:
         result = await auth_service.switch_org(
-            db, claims, switch_in.org_id, region=switch_in.region,
+            db, claims, switch_in.org_uuid, region=switch_in.region,
         )
         return result
     except ValueError as e:
@@ -156,20 +156,20 @@ async def revoke_token(
 async def get_me(request: Request, db: AsyncSession = Depends(get_db)):
     """获取当前用户信息"""
     claims = _extract_claims(request)
-    user_id = int(claims["sub"])
-    result = await db.execute(select(User).where(User.id == user_id))
+    user_uuid = claims["sub"]
+    result = await db.execute(select(User).where(User.uuid == user_uuid))
     user = result.scalars().first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
     return {
-        "id": user.id,
+        "uuid": user.uuid,
         "email": user.email,
         "username": user.username,
         "first_name": user.first_name,
         "last_name": user.last_name,
         "system_role": user.system_role,
         "status": user.status,
-        "current_org_id": claims.get("org_id"),
+        "current_org_uuid": claims.get("org_id"),
         "current_region": claims.get("region"),
     }
 
@@ -180,11 +180,11 @@ async def get_my_orgs(request: Request, db: AsyncSession = Depends(get_db)):
     admin/superuser 可以看到所有 Org。
     """
     claims = _extract_claims(request)
-    user_id = int(claims["sub"])
-    current_org_id = claims.get("org_id", "0")
+    user_uuid = claims["sub"]
+    current_org_uuid = claims.get("org_id", "")
 
     # 查询用户信息，判断是否为 admin
-    user_result = await db.execute(select(User).where(User.id == user_id))
+    user_result = await db.execute(select(User).where(User.uuid == user_uuid))
     user = user_result.scalars().first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
@@ -201,7 +201,7 @@ async def get_my_orgs(request: Request, db: AsyncSession = Depends(get_db)):
         # 批量查出 admin 自己的 member 记录
         member_result = await db.execute(
             select(Member).where(
-                Member.user_id == user_id,
+                Member.user_id == user.id,
                 Member.deleted_at.is_(None),
             )
         )
@@ -209,12 +209,12 @@ async def get_my_orgs(request: Request, db: AsyncSession = Depends(get_db)):
 
         return [
             UserOrgItem(
-                org_id=org.id,
+                uuid=org.uuid,
                 name=org.name,
                 slug=org.slug,
                 org_role=member_map[org.id].org_role if org.id in member_map else int(OrgRole.ADMIN),
-                is_owner=(org.owner_user_id == user_id),
-                is_current=(str(org.id) == str(current_org_id)),
+                is_owner=(org.owner_user_id == user.id),
+                is_current=(org.uuid == current_org_uuid),
             )
             for org in orgs
         ]
@@ -224,7 +224,7 @@ async def get_my_orgs(request: Request, db: AsyncSession = Depends(get_db)):
             select(Member, Organization)
             .join(Organization, Organization.id == Member.org_id)
             .where(
-                Member.user_id == user_id,
+                Member.user_id == user.id,
                 Member.deleted_at.is_(None),
                 Organization.deleted_at.is_(None),
             )
@@ -232,12 +232,12 @@ async def get_my_orgs(request: Request, db: AsyncSession = Depends(get_db)):
         rows = result.all()
         return [
             UserOrgItem(
-                org_id=org.id,
+                uuid=org.uuid,
                 name=org.name,
                 slug=org.slug,
                 org_role=member.org_role,
-                is_owner=(org.owner_user_id == user_id),
-                is_current=(str(org.id) == str(current_org_id)),
+                is_owner=(org.owner_user_id == user.id),
+                is_current=(org.uuid == current_org_uuid),
             )
             for member, org in rows
         ]

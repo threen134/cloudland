@@ -23,10 +23,8 @@ class AdminAccountUpdate(BaseModel):
 
 class AdminAccount(AdminAccountBase):
     """Schema for admin account response (password excluded)"""
-    id: int
     uuid: str
-    region_id: Optional[int] = Field(None, description="Internal ID of the associated region")
-    region_uuid: Optional[str] = Field(None, description="External UUID of the associated region")
+    region_uuid: Optional[str] = Field(None, description="UUID of the associated region")
     created_at: datetime
     updated_at: datetime
 

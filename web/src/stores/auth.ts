@@ -4,7 +4,6 @@ import { authApi } from '../api/auth'
 import { setAuthToken, clearAuthToken } from '../api/client'
 
 interface User {
-    id?: number
     uuid?: string
     username?: string
     email?: string

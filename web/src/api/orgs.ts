@@ -1,12 +1,12 @@
 import client from './client'
 
 export interface Organization {
-    id: string
+    uuid: string
     name: string
     slug?: string
     description?: string
     created_at?: string
-    owner_id?: string
+    owner_uuid?: string
     owner_email?: string
     member_count?: number
     [key: string]: any
@@ -19,7 +19,8 @@ export interface CreateOrgPayload {
 }
 
 export interface OrgMember {
-    user_id: number
+    uuid: string
+    user_uuid: string
     username: string
     email: string
     org_role: number
@@ -29,7 +30,7 @@ export interface OrgMember {
 }
 
 export interface AddMemberPayload {
-    user_id: number
+    user_uuid: string
     org_role?: number
 }
 
@@ -51,8 +52,8 @@ export const orgsApi = {
     },
 
     // Get single organization
-    getOrg(id: string) {
-        return client.get(`/orgs/${id}`)
+    getOrg(uuid: string) {
+        return client.get(`/orgs/${uuid}`)
     },
 
     // Create organization
@@ -61,39 +62,39 @@ export const orgsApi = {
     },
 
     // Update organization
-    updateOrg(id: string, payload: Partial<CreateOrgPayload>) {
-        return client.patch(`/orgs/${id}`, payload)
+    updateOrg(uuid: string, payload: Partial<CreateOrgPayload>) {
+        return client.patch(`/orgs/${uuid}`, payload)
     },
 
     // Delete organization
-    deleteOrg(id: string) {
-        return client.delete(`/orgs/${id}`)
+    deleteOrg(uuid: string) {
+        return client.delete(`/orgs/${uuid}`)
     },
 
     // --- Member Management ---
 
     // List members of an org
-    fetchMembers(orgId: string) {
-        return client.get(`/orgs/${orgId}/members`)
+    fetchMembers(orgUuid: string) {
+        return client.get(`/orgs/${orgUuid}/members`)
     },
 
     // Add member to an org
-    addMember(orgId: string, payload: AddMemberPayload) {
-        return client.post(`/orgs/${orgId}/members`, payload)
+    addMember(orgUuid: string, payload: AddMemberPayload) {
+        return client.post(`/orgs/${orgUuid}/members`, payload)
     },
 
     // Update member role
-    updateMemberRole(orgId: string, userId: number, payload: UpdateMemberRolePayload) {
-        return client.patch(`/orgs/${orgId}/members/${userId}`, payload)
+    updateMemberRole(orgUuid: string, userUuid: string, payload: UpdateMemberRolePayload) {
+        return client.patch(`/orgs/${orgUuid}/members/${userUuid}`, payload)
     },
 
     // Remove member from org
-    removeMember(orgId: string, userId: number) {
-        return client.delete(`/orgs/${orgId}/members/${userId}`)
+    removeMember(orgUuid: string, userUuid: string) {
+        return client.delete(`/orgs/${orgUuid}/members/${userUuid}`)
     },
 
     // Transfer ownership
-    transferOwnership(orgId: string, newOwnerId: number) {
-        return client.post(`/orgs/${orgId}/transfer-owner`, { new_owner_id: newOwnerId })
+    transferOwnership(orgUuid: string, newOwnerUuid: string) {
+        return client.post(`/orgs/${orgUuid}/transfer-owner`, { new_owner_uuid: newOwnerUuid })
     },
 }

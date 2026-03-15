@@ -23,7 +23,7 @@ const newOrgForm = ref({
     description: ''
 })
 const editOrgForm = ref({
-    id: '',
+    uuid: '',
     name: '',
     description: ''
 })
@@ -45,7 +45,7 @@ const filteredOrgs = computed(() => {
     const query = searchQuery.value.toLowerCase()
     return orgs.value.filter(org => 
         org.name.toLowerCase().includes(query) || 
-        org.id.toLowerCase().includes(query)
+        org.uuid.toLowerCase().includes(query)
     )
 })
 
@@ -81,7 +81,7 @@ const handleCreateOrg = async () => {
 
 const openEditModal = (org: Organization) => {
     editOrgForm.value = {
-        id: org.id,
+        uuid: org.uuid,
         name: org.name,
         description: org.description || ''
     }
@@ -102,7 +102,7 @@ const handleEditOrg = async () => {
 
     editing.value = true
     try {
-        await orgsApi.updateOrg(editOrgForm.value.id, {
+        await orgsApi.updateOrg(editOrgForm.value.uuid, {
             name: editOrgForm.value.name,
             description: editOrgForm.value.description
         })
@@ -136,7 +136,7 @@ const confirmDelete = async () => {
     deletingResource.value = true
     deleteError.value = ''
     try {
-        await orgsApi.deleteOrg(resourceToDelete.value.id)
+        await orgsApi.deleteOrg(resourceToDelete.value.uuid)
         await fetchOrgs()
         closeDeleteModal()
     } catch (error: any) {
@@ -197,30 +197,30 @@ onMounted(fetchOrgs)
                </div>
             </td>
           </tr>
-          <tr v-else v-for="org in filteredOrgs" :key="org.id">
+          <tr v-else v-for="org in filteredOrgs" :key="org.uuid">
             <td>
               <div class="org-cell">
                 <div class="icon-box">
                   <Building2 :size="16" />
                 </div>
                 <div>
-                   <div class="org-name clickable" @click="router.push(`/dashboard/orgs/${org.id}`)">{{ org.name }}</div>
-                   <div class="org-id">{{ org.id }}</div>
+                   <div class="org-name clickable" @click="router.push(`/dashboard/orgs/${org.uuid}`)">{{ org.name }}</div>
+                   <div class="org-id">{{ org.uuid }}</div>
                 </div>
               </div>
             </td>
             <td>{{ org.description || '-' }}</td>
             <td>
-              <div class="owner-cell" v-if="org.owner_id">
+              <div class="owner-cell" v-if="org.owner_uuid">
                 <User :size="12" />
-                <span>{{ org.owner_id }}</span>
+                <span>{{ org.owner_uuid }}</span>
               </div>
               <span v-else>-</span>
             </td>
             <td>{{ org.created_at || '-' }}</td>
             <td>
               <div class="actions">
-                <button class="btn btn-ghost btn-sm" title="View" @click="router.push(`/dashboard/orgs/${org.id}`)">
+                <button class="btn btn-ghost btn-sm" title="View" @click="router.push(`/dashboard/orgs/${org.uuid}`)">
                   <Eye :size="14" />
                 </button>
                 <button class="btn btn-ghost btn-sm" title="Edit" @click="openEditModal(org)">
@@ -332,7 +332,7 @@ onMounted(fetchOrgs)
             <div style="background:var(--bg-secondary);border:1px solid var(--border-light);border-radius:var(--radius-md);padding:var(--spacing-3) var(--spacing-4);text-align:left">
               <span style="font-size:var(--font-size-xs);color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.05em;display:block;margin-bottom:var(--spacing-1)">{{ $t('dashboard.deleteConfirm.resource') }}</span>
               <span style="font-weight:var(--font-weight-semibold);display:block">{{ resourceToDelete?.name }}</span>
-              <span style="font-size:var(--font-size-xs);color:var(--text-light);font-family:var(--font-family-mono);display:block;margin-top:2px">{{ resourceToDelete?.id }}</span>
+              <span style="font-size:var(--font-size-xs);color:var(--text-light);font-family:var(--font-family-mono);display:block;margin-top:2px">{{ resourceToDelete?.uuid }}</span>
             </div>
             <div v-if="deleteError" class="text-error" style="margin-top:var(--spacing-4);font-size:var(--font-size-sm);background:var(--error-light);padding:var(--spacing-2);border-radius:var(--radius-sm)">
               {{ deleteError }}

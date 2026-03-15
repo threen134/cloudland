@@ -11,7 +11,7 @@ class TokenWithContext(BaseModel):
     access_token: str
     token_type: str = "bearer"
     expires_in: int
-    org_id: Optional[int] = None
+    org_uuid: Optional[str] = None
     org_name: Optional[str] = None
     region: Optional[str] = None
 
@@ -23,12 +23,12 @@ class TokenData(BaseModel):
 class LoginRequest(BaseModel):
     username: str
     password: str
-    org_id: Optional[int] = None
+    org_uuid: Optional[str] = None
     region: Optional[str] = None
 
 
 class SwitchOrgRequest(BaseModel):
-    org_id: int
+    org_uuid: str
     region: Optional[str] = None
 
 

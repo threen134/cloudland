@@ -93,7 +93,7 @@ class AuthService:
         db.add(member)
         await db.commit()
 
-        activation_token = create_activation_token(target_user.id)
+        activation_token = create_activation_token(target_user.uuid)
         await send_activation_notification(
             target_user.email, target_user.username, activation_token, language=target_user.language
         )
@@ -101,11 +101,11 @@ class AuthService:
 
     @staticmethod
     async def activate_user(db: AsyncSession, token: str) -> Dict[str, str]:
-        user_id = verify_activation_token(token.strip('"'))
-        if user_id is None:
+        user_uuid = verify_activation_token(token.strip('"'))
+        if user_uuid is None:
             raise ValueError("Invalid or expired activation token")
 
-        result = await db.execute(select(User).where(User.id == user_id))
+        result = await db.execute(select(User).where(User.uuid == user_uuid))
         user = result.scalars().first()
         if not user:
             raise ValueError("User not found")
@@ -153,11 +153,11 @@ class AuthService:
     @staticmethod
     async def login_user(
         db: AsyncSession, username: str, password: str,
-        org_id: Optional[int] = None, region: Optional[str] = None,
+        org_uuid: Optional[str] = None, region: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         认证 + 签发 RS256 JWT。
-        - org_id 未传：取用户最早加入的 Org
+        - org_uuid 未传：取用户最早加入的 Org
         - region 未传：取第一个可用的 Region
         """
         from sqlalchemy import or_
@@ -181,10 +181,10 @@ class AuthService:
         is_owner = False
         effective_org_role = OrgRole.NONE
 
-        if org_id:
+        if org_uuid:
             org_result = await db.execute(
                 select(Organization).where(
-                    Organization.id == org_id,
+                    Organization.uuid == org_uuid,
                     Organization.deleted_at.is_(None),
                 )
             )
@@ -249,9 +249,9 @@ class AuthService:
 
         # Build and sign token
         claims = build_token_claims(
-            user_id=user.id,
+            user_uuid=user.uuid,
             email=user.email,
-            org_id=org.id if org else 0,
+            org_uuid=org.uuid if org else "",
             org_name=org.name if org else "",
             region=target_region,
             system_role=user.system_role,
@@ -267,7 +267,7 @@ class AuthService:
             "access_token": access_token,
             "token_type": "bearer",
             "expires_in": settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
-            "org_id": org.id if org else None,
+            "org_uuid": org.uuid if org else None,
             "org_name": org.name if org else None,
             "region": target_region,
         }
@@ -275,14 +275,14 @@ class AuthService:
     @staticmethod
     async def switch_org(
         db: AsyncSession, current_claims: dict,
-        new_org_id: int, region: Optional[str] = None,
+        new_org_uuid: str, region: Optional[str] = None,
     ) -> Dict[str, Any]:
         """切换 Org（可选同时切换 Region），签发新 Token，吊销旧 Token。"""
-        user_id = int(current_claims["sub"])
+        user_uuid = current_claims["sub"]
         old_jti = current_claims.get("jti")
 
         # Verify user
-        user_result = await db.execute(select(User).where(User.id == user_id))
+        user_result = await db.execute(select(User).where(User.uuid == user_uuid))
         user = user_result.scalars().first()
         if not user:
             raise ValueError("User not found")
@@ -290,7 +290,7 @@ class AuthService:
         # Verify new org
         org_result = await db.execute(
             select(Organization).where(
-                Organization.id == new_org_id,
+                Organization.uuid == new_org_uuid,
                 Organization.deleted_at.is_(None),
             )
         )
@@ -303,8 +303,8 @@ class AuthService:
         if user.system_role != SystemRole.ADMIN and not user.is_superuser:
             member_result = await db.execute(
                 select(Member).where(
-                    Member.user_id == user_id,
-                    Member.org_id == new_org_id,
+                    Member.user_id == user.id,
+                    Member.org_id == org.id,
                     Member.deleted_at.is_(None),
                 )
             )
@@ -315,7 +315,7 @@ class AuthService:
         else:
             effective_org_role = OrgRole.ADMIN
 
-        is_owner = (org.owner_user_id == user_id)
+        is_owner = (org.owner_user_id == user.id)
 
         # Resolve region
         target_region = region or current_claims.get("region", "")
@@ -328,8 +328,8 @@ class AuthService:
 
         # Build new token
         claims = build_token_claims(
-            user_id=user.id, email=user.email,
-            org_id=org.id, org_name=org.name, region=target_region,
+            user_uuid=user.uuid, email=user.email,
+            org_uuid=org.uuid, org_name=org.name, region=target_region,
             system_role=user.system_role, org_role=int(effective_org_role),
             user_status=user.status, is_owner=is_owner,
         )
@@ -349,7 +349,7 @@ class AuthService:
             "access_token": access_token,
             "token_type": "bearer",
             "expires_in": settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
-            "org_id": org.id,
+            "org_uuid": org.uuid,
             "org_name": org.name,
             "region": target_region,
         }
@@ -366,12 +366,12 @@ class AuthService:
         if not region_result.scalars().first():
             raise ValueError(f"Region '{new_region}' not found or unavailable")
 
-        user_id = int(current_claims["sub"])
-        org_id = int(current_claims.get("org_id", 0))
+        user_uuid = current_claims["sub"]
+        org_uuid = current_claims.get("org_id", "")
         old_jti = current_claims.get("jti")
 
         # Re-query DB for latest user status and org role (not from stale claims)
-        user_result = await db.execute(select(User).where(User.id == user_id))
+        user_result = await db.execute(select(User).where(User.uuid == user_uuid))
         user = user_result.scalars().first()
         if not user:
             raise ValueError("User not found")
@@ -382,37 +382,38 @@ class AuthService:
         is_owner = False
         org_name = current_claims.get("org_name", "")
 
-        if org_id > 0:
+        if org_uuid:
             org_result = await db.execute(
                 select(Organization).where(
-                    Organization.id == org_id,
+                    Organization.uuid == org_uuid,
                     Organization.deleted_at.is_(None),
                 )
             )
             org = org_result.scalars().first()
             if org:
                 org_name = org.name
-                is_owner = (org.owner_user_id == user_id)
+                is_owner = (org.owner_user_id == user.id)
 
             if user.system_role != SystemRole.ADMIN and not user.is_superuser:
-                member_result = await db.execute(
-                    select(Member).where(
-                        Member.user_id == user_id,
-                        Member.org_id == org_id,
-                        Member.deleted_at.is_(None),
+                if org:
+                    member_result = await db.execute(
+                        select(Member).where(
+                            Member.user_id == user.id,
+                            Member.org_id == org.id,
+                            Member.deleted_at.is_(None),
+                        )
                     )
-                )
-                member = member_result.scalars().first()
-                if not member:
-                    raise PermissionError("User is no longer a member of this organization")
-                effective_org_role = OrgRole(member.org_role)
+                    member = member_result.scalars().first()
+                    if not member:
+                        raise PermissionError("User is no longer a member of this organization")
+                    effective_org_role = OrgRole(member.org_role)
             else:
                 effective_org_role = OrgRole.ADMIN
 
         # Build new token with fresh data
         claims = build_token_claims(
-            user_id=user.id, email=user.email,
-            org_id=org_id, org_name=org_name,
+            user_uuid=user.uuid, email=user.email,
+            org_uuid=org_uuid, org_name=org_name,
             region=new_region,
             system_role=user.system_role,
             org_role=int(effective_org_role),
@@ -435,7 +436,7 @@ class AuthService:
             "access_token": access_token,
             "token_type": "bearer",
             "expires_in": settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
-            "org_id": org_id,
+            "org_uuid": org_uuid,
             "org_name": org_name,
             "region": new_region,
         }

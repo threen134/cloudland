@@ -5,7 +5,6 @@ import { setAuthToken } from '../api/client'
 
 export interface Organization {
     id: string
-    org_id?: number
     name: string
     slug?: string
     org_role?: number
@@ -23,7 +22,7 @@ export const useTenantStore = defineStore('tenant', () => {
 
     // Current organization computed property
     const currentOrg = computed(() => {
-        return organizations.value.find(org => String(org.id) === String(currentOrgId.value)) || null
+        return organizations.value.find(org => org.id === currentOrgId.value) || null
     })
 
     // Initialize from localStorage
@@ -42,15 +41,15 @@ export const useTenantStore = defineStore('tenant', () => {
         try {
             const response = await authApi.getMyOrgs()
             const raw = Array.isArray(response.data) ? response.data : (response.data?.orgs || [])
-            // Backend returns org_id, frontend expects id
+            // Backend returns uuid as the identifier
             organizations.value = raw.map((o: any) => ({
                 ...o,
-                id: String(o.org_id ?? o.id),
+                id: o.uuid || o.id,
             }))
 
             // Auto-select first org if none selected
             if (!currentOrgId.value && organizations.value.length > 0) {
-                currentOrgId.value = String(organizations.value[0].id)
+                currentOrgId.value = organizations.value[0].id
                 localStorage.setItem('cloudland_org_id', currentOrgId.value)
             }
         } catch (err: any) {
@@ -67,7 +66,7 @@ export const useTenantStore = defineStore('tenant', () => {
         error.value = null
 
         try {
-            const response = await authApi.switchOrg(Number(orgId))
+            const response = await authApi.switchOrg(orgId)
             const newToken = response.data?.access_token
             if (newToken) {
                 setAuthToken(newToken)

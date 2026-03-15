@@ -24,6 +24,14 @@ def _generate_secret(length: int = 64) -> str:
     return secrets.token_urlsafe(length)
 
 
+async def _get_region_or_404(db: AsyncSession, region_uuid: str) -> Region:
+    result = await db.execute(select(Region).where(Region.uuid == region_uuid))
+    region = result.scalars().first()
+    if not region:
+        raise HTTPException(status_code=404, detail="Region not found")
+    return region
+
+
 # --- Region CRUD ---
 
 @router.post("", response_model=RegionCreated, status_code=status.HTTP_201_CREATED)
@@ -71,32 +79,25 @@ async def list_regions(
     return result.scalars().all()
 
 
-@router.get("/{region_id}", response_model=RegionAdmin)
+@router.get("/{region_uuid}", response_model=RegionAdmin)
 async def get_region(
-    region_id: int,
+    region_uuid: str,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_superuser),
 ):
     """Region 详情（仅 SystemAdmin，含内网地址，不含密钥）"""
-    result = await db.execute(select(Region).where(Region.id == region_id))
-    region = result.scalars().first()
-    if not region:
-        raise HTTPException(status_code=404, detail="Region not found")
-    return region
+    return await _get_region_or_404(db, region_uuid)
 
 
-@router.patch("/{region_id}", response_model=RegionAdmin)
+@router.patch("/{region_uuid}", response_model=RegionAdmin)
 async def update_region(
-    region_id: int,
+    region_uuid: str,
     region_in: RegionUpdate,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_superuser),
 ):
     """更新 Region（仅 SystemAdmin）"""
-    result = await db.execute(select(Region).where(Region.id == region_id))
-    region = result.scalars().first()
-    if not region:
-        raise HTTPException(status_code=404, detail="Region not found")
+    region = await _get_region_or_404(db, region_uuid)
 
     update_data = region_in.model_dump(exclude_unset=True)
     for field, value in update_data.items():
@@ -111,34 +112,28 @@ async def update_region(
     return region
 
 
-@router.delete("/{region_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/{region_uuid}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_region(
-    region_id: int,
+    region_uuid: str,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_superuser),
 ):
     """删除 Region（仅 SystemAdmin）"""
-    result = await db.execute(select(Region).where(Region.id == region_id))
-    region = result.scalars().first()
-    if not region:
-        raise HTTPException(status_code=404, detail="Region not found")
+    region = await _get_region_or_404(db, region_uuid)
 
     await db.delete(region)
     await db.commit()
     logger.info(f"Region '{region.name}' deleted by {current_user.username}")
 
 
-@router.post("/{region_id}/rotate-secret", response_model=RegionSecretRotated)
+@router.post("/{region_uuid}/rotate-secret", response_model=RegionSecretRotated)
 async def rotate_secret(
-    region_id: int,
+    region_uuid: str,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_superuser),
 ):
     """轮换 Region 密钥（仅 SystemAdmin）。返回新密钥，需同步更新 Cloudland 配置。"""
-    result = await db.execute(select(Region).where(Region.id == region_id))
-    region = result.scalars().first()
-    if not region:
-        raise HTTPException(status_code=404, detail="Region not found")
+    region = await _get_region_or_404(db, region_uuid)
 
     new_secret = _generate_secret()
     region.internal_secret = new_secret
@@ -146,7 +141,7 @@ async def rotate_secret(
 
     logger.info(f"Region '{region.name}' secret rotated by {current_user.username}")
     return RegionSecretRotated(
-        region_id=region.id,
+        region_uuid=region.uuid,
         name=region.name,
         new_secret=new_secret,
     )

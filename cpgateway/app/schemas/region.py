@@ -24,7 +24,6 @@ class RegionUpdate(BaseModel):
 
 class RegionPublic(BaseModel):
     """公开的 Region 信息（不含内网地址和密钥）"""
-    id: int
     uuid: str
     name: str
     display_name: Optional[str] = None
@@ -55,6 +54,6 @@ class RegionCreated(RegionAdmin):
 
 class RegionSecretRotated(BaseModel):
     """密钥轮换响应"""
-    region_id: int
+    region_uuid: str
     name: str
     new_secret: str
