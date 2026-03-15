@@ -197,6 +197,7 @@ export MANAGEMENT_VIP=192.168.1.100      # 管理 VIP（单机填 INTERNAL_IP）
 export DB_LISTEN_IP=127.0.0.1            # 数据库监听 IP
 export POSTGRES_PASSWORD=your_db_password
 export ADMIN_PASSWORD=your_admin_password
+export ADMIN_EMAIL=admin@cloudland.local               # 管理员邮箱
 export CPGATEWAY_SECRET_KEY=your_secret_key_change_me  # 重要：生产环境必须修改
 export COMPOSE_PROFILES=full,dev         # 完整模式 + 本地数据库
 
