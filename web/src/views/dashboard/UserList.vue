@@ -14,11 +14,9 @@ const users = ref<User[]>([])
 const loading = ref(false)
 const searchQuery = ref('')
 const router = useRouter()
-const newUserForm = ref({
-    username: '',
+const inviteForm = ref({
     email: '',
-    password: '',
-    role: 'user'
+    org_role: 1
 })
 const createModalVisible = ref(false)
 const createError = ref('')
@@ -76,12 +74,23 @@ const filteredUsers = computed(() => {
     )
 })
 
+const userStatusMap: Record<number | string, string> = {
+    0: 'invited',
+    1: 'active',
+    2: 'inactive',
+    3: 'inactive',
+}
+const getUserStatus = (status: number | string | undefined): string => {
+    if (status === undefined || status === null) return 'active'
+    return userStatusMap[status] || String(status)
+}
+
 const navigateToDetail = (user: User) => {
     router.push({ name: 'user-detail', params: { id: user.uuid } })
 }
 
 const openCreateModal = () => {
-    newUserForm.value = { username: '', email: '', password: '', role: 'user' }
+    inviteForm.value = { email: '', org_role: 1 }
     createModalVisible.value = true
 }
 
@@ -90,21 +99,23 @@ const closeCreateModal = () => {
     createError.value = ''
 }
 
-const handleCreateUser = async () => {
+const handleInviteUser = async () => {
     createError.value = ''
-    if (!newUserForm.value.username || !newUserForm.value.password) {
-        createError.value = 'Username and password are required.'
+    if (!inviteForm.value.email) {
+        createError.value = t('dashboard.table.email') + ' is required.'
         return
     }
 
     creatingResource.value = true
     try {
-        await usersApi.createUser(newUserForm.value)
+        const orgId = tenantStore.currentOrgId
+        if (!orgId) throw new Error('No organization selected')
+        await orgsApi.inviteMember(orgId, inviteForm.value)
         await fetchUsers()
         closeCreateModal()
     } catch (err: any) {
-        console.error('Failed to create user:', err)
-        createError.value = err.response?.data?.error_message || err.message || t('messages.error')
+        console.error('Failed to invite user:', err)
+        createError.value = err.response?.data?.error_message || err.response?.data?.detail || err.message || t('messages.error')
     } finally {
         creatingResource.value = false
     }
@@ -305,7 +316,7 @@ onMounted(fetchUsers)
                <span class="role-badge">{{ $t('roles.' + (user.role?.toLowerCase() || 'member')) }}</span>
             </td>
             <td>
-               <span :class="'status-' + (user.status || 'active')">{{ $t('userStatus.' + (user.status || 'active')) }}</span>
+               <span :class="'status-' + getUserStatus(user.status)">{{ $t('userStatus.' + getUserStatus(user.status)) }}</span>
             </td>
             <td>{{ user.created_at ? new Date(user.created_at).toLocaleDateString() : new Date().toLocaleDateString() }}</td>
             <td>
@@ -335,37 +346,20 @@ onMounted(fetchUsers)
         </div>
         <div class="modal-body" style="padding: var(--spacing-6);">
           <div class="form-group">
-            <label class="form-label">{{ $t('dashboard.table.userName') }}</label>
-            <input 
-              v-model="newUserForm.username" 
-              type="text" 
-              class="form-input" 
-              :placeholder="$t('dashboard.table.userName')" 
-            />
-          </div>
-          <div class="form-group">
             <label class="form-label">{{ $t('dashboard.table.email') }}</label>
-            <input 
-              v-model="newUserForm.email" 
-              type="email" 
-              class="form-input" 
-              :placeholder="$t('dashboard.table.email')" 
-            />
-          </div>
-          <div class="form-group">
-            <label class="form-label">{{ $t('dashboard.table.password') }}</label>
-            <input 
-              v-model="newUserForm.password" 
-              type="password" 
-              class="form-input" 
-              placeholder="••••••••" 
+            <input
+              v-model="inviteForm.email"
+              type="email"
+              class="form-input"
+              :placeholder="$t('dashboard.table.email')"
             />
           </div>
           <div class="form-group">
             <label class="form-label">{{ $t('dashboard.table.role') }}</label>
-            <select v-model="newUserForm.role" class="form-input">
-              <option value="user">User</option>
-              <option value="admin">Admin</option>
+            <select v-model="inviteForm.org_role" class="form-input">
+              <option :value="1">Reader</option>
+              <option :value="2">Writer</option>
+              <option :value="3">Admin</option>
             </select>
           </div>
         </div>
@@ -374,7 +368,7 @@ onMounted(fetchUsers)
         </div>
         <div class="modal-footer">
           <button class="btn btn-secondary" @click="closeCreateModal" :disabled="creatingResource">{{ $t('actions.cancel') }}</button>
-          <button class="btn btn-primary" @click="handleCreateUser" :disabled="creatingResource">
+          <button class="btn btn-primary" @click="handleInviteUser" :disabled="creatingResource">
             <span v-if="creatingResource" class="loading-spinner" style="width: 16px; height: 16px; border-width: 2px;"></span>
             {{ creatingResource ? $t('messages.loading') : $t('actions.confirm') }}
           </button>
@@ -601,6 +595,16 @@ onMounted(fetchUsers)
 
 .status-active {
   color: var(--success-color);
+  font-weight: var(--font-weight-medium);
+}
+
+.status-invited {
+  color: var(--warning-color, #e6a23c);
+  font-weight: var(--font-weight-medium);
+}
+
+.status-inactive {
+  color: var(--text-light);
   font-weight: var(--font-weight-medium);
 }
 

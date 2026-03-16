@@ -8,8 +8,7 @@ from app.core.database import get_db
 from app.api.deps import get_current_active_user, get_current_superuser
 from app.models.user import User, SystemRole
 from app.models.org import Organization, OrgType
-from app.models.member import Member, OrgRole
-from app.models.invitation import Invitation, InvitationStatus
+from app.models.member import Member, OrgRole, InvitationStatus
 from app.schemas.org import (
     OrgCreate, OrgUpdate, OrgResponse, OrgDetail,
     MemberAdd, MemberUpdate, MemberResponse, TransferOwner,
@@ -255,7 +254,7 @@ async def list_members(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
-    """列出 Org 成员"""
+    """列出 Org 成员（不含待处理邀请）"""
     org = await _get_org_or_404(db, org_uuid)
 
     result = await db.execute(
@@ -264,6 +263,7 @@ async def list_members(
         .where(
             Member.org_id == org.id,
             Member.deleted_at.is_(None),
+            (Member.invitation_status.is_(None)) | (Member.invitation_status == InvitationStatus.ACCEPTED),
         )
     )
     rows = result.all()
@@ -345,22 +345,22 @@ async def invite_member(
             raise HTTPException(status_code=403, detail="Not enough permissions to invite members")
 
     try:
-        inv = await invitation_service.create_invitation(
+        member = await invitation_service.create_invitation(
             db, email=invite_in.email, org=org, org_role=invite_in.org_role, inviter=current_user,
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
     return InvitationResponse(
-        uuid=inv.uuid,
-        email=inv.email,
+        uuid=member.uuid,
+        email=invite_in.email,
         org_uuid=org.uuid,
         org_name=org.name,
-        org_role=inv.org_role,
-        status=inv.status,
+        org_role=member.org_role,
+        status=member.invitation_status,
         inviter_email=current_user.email,
-        created_at=inv.created_at,
-        expires_at=inv.expires_at,
+        created_at=member.created_at,
+        expires_at=member.invitation_expires_at,
     )
 
 
@@ -374,29 +374,37 @@ async def list_invitations(
     org = await _get_org_or_404(db, org_uuid)
 
     result = await db.execute(
-        select(Invitation, User.email)
-        .join(User, User.id == Invitation.inviter_id)
+        select(Member, User.email.label("invited_email"))
+        .join(User, User.id == Member.user_id)
         .where(
-            Invitation.org_id == org.id,
-            Invitation.status == InvitationStatus.PENDING,
+            Member.org_id == org.id,
+            Member.invitation_status == InvitationStatus.PENDING,
+            Member.deleted_at.is_(None),
         )
-        .order_by(Invitation.created_at.desc())
+        .order_by(Member.created_at.desc())
     )
     rows = result.all()
-    return [
-        InvitationResponse(
-            uuid=inv.uuid,
-            email=inv.email,
+
+    # Get inviter emails
+    responses = []
+    for member, invited_email in rows:
+        inviter_email = ""
+        if member.invited_by:
+            inviter_result = await db.execute(select(User).where(User.id == member.invited_by))
+            inviter = inviter_result.scalars().first()
+            inviter_email = inviter.email if inviter else ""
+        responses.append(InvitationResponse(
+            uuid=member.uuid,
+            email=invited_email,
             org_uuid=org.uuid,
             org_name=org.name,
-            org_role=inv.org_role,
-            status=inv.status,
+            org_role=member.org_role,
+            status=member.invitation_status,
             inviter_email=inviter_email,
-            created_at=inv.created_at,
-            expires_at=inv.expires_at,
-        )
-        for inv, inviter_email in rows
-    ]
+            created_at=member.created_at,
+            expires_at=member.invitation_expires_at,
+        ))
+    return responses
 
 
 @router.delete("/{org_uuid}/invitations/{invitation_uuid}", status_code=status.HTTP_204_NO_CONTENT)
@@ -423,18 +431,37 @@ async def cancel_invitation(
             raise HTTPException(status_code=403, detail="Not enough permissions")
 
     result = await db.execute(
-        select(Invitation).where(
-            Invitation.uuid == invitation_uuid,
-            Invitation.org_id == org.id,
-            Invitation.status == InvitationStatus.PENDING,
+        select(Member).where(
+            Member.uuid == invitation_uuid,
+            Member.org_id == org.id,
+            Member.invitation_status == InvitationStatus.PENDING,
+            Member.deleted_at.is_(None),
         )
     )
-    inv = result.scalars().first()
-    if not inv:
+    member = result.scalars().first()
+    if not member:
         raise HTTPException(status_code=404, detail="Invitation not found")
 
-    inv.status = InvitationStatus.CANCELLED
+    from datetime import datetime, timezone as tz
+    user_id = member.user_id
+    member.invitation_status = InvitationStatus.CANCELLED
+    member.deleted_at = datetime.now(tz.utc)
     await db.commit()
+
+    # Clean up placeholder user if INVITED and no other active memberships
+    from app.models.user import UserStatus
+    user_result = await db.execute(select(User).where(User.id == user_id))
+    user = user_result.scalars().first()
+    if user and user.status == UserStatus.INVITED:
+        other_members = await db.execute(
+            select(Member).where(
+                Member.user_id == user_id,
+                Member.deleted_at.is_(None),
+            )
+        )
+        if not other_members.scalars().first():
+            await db.delete(user)
+            await db.commit()
 
 
 @router.patch("/{org_uuid}/members/{user_uuid}", response_model=MemberResponse)

@@ -491,7 +491,7 @@ export default {
             createIp: '申请弹性公网IP',
             createKey: '创建密钥',
             createImage: '创建镜像',
-            createUser: '创建用户',
+            createUser: '邀请用户',
             createOrg: '创建组织',
             createLoadBalancer: '创建负载均衡',
             addRule: '添加规则',
@@ -671,6 +671,7 @@ export default {
     userStatus: {
         active: '活跃',
         inactive: '禁用',
-        pending: '待定'
+        pending: '待定',
+        invited: '已邀请'
     }
 }

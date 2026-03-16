@@ -12,6 +12,7 @@ class SystemRole(IntEnum):
 
 
 class UserStatus(IntEnum):
+    INVITED = 0
     ACTIVE = 1
     DORMANT = 2
     DISABLED = 3
