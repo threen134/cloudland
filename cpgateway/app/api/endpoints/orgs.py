@@ -240,7 +240,10 @@ async def delete_org(
         raise HTTPException(status_code=400, detail="Cannot delete system organization")
 
     from datetime import datetime, timezone
-    org.deleted_at = datetime.now(timezone.utc)
+    now = datetime.now(timezone.utc)
+    ts = int(now.timestamp())
+    org.deleted_at = now
+    org.slug = f"{org.slug}_del{ts}"
     await db.commit()
 
 
