@@ -49,4 +49,4 @@ class User(Base):
     # Relationships
     resource_consumption = relationship("ResourceConsumption", back_populates="user", uselist=False, cascade="all, delete-orphan")
     resource_quota = relationship("ResourceQuota", back_populates="user", uselist=False, cascade="all, delete-orphan")
-    members = relationship("Member", back_populates="user", cascade="all, delete-orphan")
+    members = relationship("Member", back_populates="user", foreign_keys="[Member.user_id]", cascade="all, delete-orphan")
