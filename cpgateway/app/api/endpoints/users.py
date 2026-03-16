@@ -157,10 +157,12 @@ async def delete_user(
     for member in member_result.scalars().all():
         member.deleted_at = now
 
-    # Soft-delete user
+    # Soft-delete user — mangle email/username to free up uniqueness constraints
+    ts = int(now.timestamp())
     user.is_active = False
     user.status = UserStatus.DISABLED
-    user.email = f"{user.email}-deleted-{int(now.timestamp())}"
+    user.email = f"del{ts}+{user.email}"
+    user.username = f"{user.username}_del{ts}"
     await db.commit()
     return {"status": "ok"}
 

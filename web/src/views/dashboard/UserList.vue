@@ -3,9 +3,12 @@ import { ref, onMounted, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import { usersApi, type User, type ResourceQuota, type ResourceQuotaUpdate } from '../../api/users'
+import { orgsApi } from '../../api/orgs'
+import { useTenantStore } from '../../stores/tenant'
 import { User as UserIcon, Plus, Trash2, Edit, Search, X, Gauge } from 'lucide-vue-next'
 
 const { t } = useI18n()
+const tenantStore = useTenantStore()
 
 const users = ref<User[]>([])
 const loading = ref(false)
@@ -33,8 +36,28 @@ const editError = ref('')
 const fetchUsers = async () => {
     loading.value = true
     try {
-        const response = await usersApi.fetchUsers()
-        users.value = (response.data as any).users || []
+        const orgId = tenantStore.currentOrgId
+        if (orgId) {
+            // Fetch org members
+            const response = await orgsApi.fetchMembers(orgId)
+            const members = Array.isArray(response.data) ? response.data : []
+            users.value = members.map((m: any) => ({
+                user: {
+                    uuid: m.user_uuid,
+                    name: m.user_email || m.user_uuid,
+                },
+                uuid: m.user_uuid,
+                username: m.user_email?.split('@')[0] || m.user_uuid,
+                email: m.user_email || '',
+                role: m.org_role === 3 ? 'admin' : m.org_role === 2 ? 'writer' : m.org_role === 1 ? 'reader' : 'member',
+                status: 'active',
+                created_at: m.created_at,
+            }))
+        } else {
+            // Fallback: global user list (system admin context)
+            const response = await usersApi.fetchUsers()
+            users.value = (response.data as any).users || []
+        }
     } catch (error) {
         console.error('Failed to fetch users:', error)
         users.value = []
