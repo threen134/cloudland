@@ -663,10 +663,12 @@ export default {
 
     roles: {
         owner: '所有者',
+        admin: '管理员',
+        writer: '编辑者',
+        reader: '观察者',
         editor: '编辑者',
         viewer: '观察者',
-        member: '成员',
-        admin: '管理员'
+        member: '成员'
     },
     userStatus: {
         active: '活跃',

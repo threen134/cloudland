@@ -270,6 +270,7 @@ async def list_members(
         MemberResponse(
             uuid=m.uuid, user_uuid=user_uuid, org_uuid=org.uuid,
             org_role=m.org_role, user_email=email,
+            is_owner=(m.user_id == org.owner_user_id),
             invitation_status=m.invitation_status,
             created_at=m.created_at,
         )

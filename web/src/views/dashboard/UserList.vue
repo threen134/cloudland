@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, computed } from 'vue'
+import { ref, onMounted, computed, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import { usersApi, type User, type ResourceQuota, type ResourceQuotaUpdate } from '../../api/users'
@@ -34,6 +34,14 @@ const editError = ref('')
 const fetchUsers = async () => {
     loading.value = true
     try {
+        // Wait for tenant store to finish loading if needed
+        if (tenantStore.isLoading) {
+            await new Promise<void>(resolve => {
+                const unwatch = watch(() => tenantStore.isLoading, (val) => {
+                    if (!val) { unwatch(); resolve() }
+                })
+            })
+        }
         const orgId = tenantStore.currentOrgId
         if (orgId) {
             // Fetch org members
@@ -48,7 +56,7 @@ const fetchUsers = async () => {
                 member_uuid: m.uuid,
                 username: m.user_email?.split('@')[0] || m.user_uuid,
                 email: m.user_email || '',
-                role: m.org_role === 3 ? 'admin' : m.org_role === 2 ? 'writer' : m.org_role === 1 ? 'reader' : 'member',
+                role: m.is_owner ? 'owner' : m.org_role === 3 ? 'admin' : m.org_role === 2 ? 'writer' : m.org_role === 1 ? 'reader' : 'member',
                 status: m.invitation_status === 0 ? 'invited' : 'active',
                 created_at: m.created_at,
             }))
