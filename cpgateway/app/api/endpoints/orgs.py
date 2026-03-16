@@ -254,7 +254,7 @@ async def list_members(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
-    """列出 Org 成员（不含待处理邀请）"""
+    """列出 Org 成员（含待处理邀请）"""
     org = await _get_org_or_404(db, org_uuid)
 
     result = await db.execute(
@@ -263,14 +263,15 @@ async def list_members(
         .where(
             Member.org_id == org.id,
             Member.deleted_at.is_(None),
-            (Member.invitation_status.is_(None)) | (Member.invitation_status == InvitationStatus.ACCEPTED),
         )
     )
     rows = result.all()
     return [
         MemberResponse(
             uuid=m.uuid, user_uuid=user_uuid, org_uuid=org.uuid,
-            org_role=m.org_role, user_email=email, created_at=m.created_at,
+            org_role=m.org_role, user_email=email,
+            invitation_status=m.invitation_status,
+            created_at=m.created_at,
         )
         for m, email, user_uuid in rows
     ]

@@ -48,7 +48,7 @@ const fetchUsers = async () => {
                 username: m.user_email?.split('@')[0] || m.user_uuid,
                 email: m.user_email || '',
                 role: m.org_role === 3 ? 'admin' : m.org_role === 2 ? 'writer' : m.org_role === 1 ? 'reader' : 'member',
-                status: 'active',
+                status: m.invitation_status === 0 ? 'invited' : 'active',
                 created_at: m.created_at,
             }))
         } else {
