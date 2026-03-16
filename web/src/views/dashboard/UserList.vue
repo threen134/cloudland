@@ -63,6 +63,7 @@ const fetchUsers = async () => {
                 username: m.user_email?.split('@')[0] || m.user_uuid,
                 email: m.user_email || '',
                 role: m.is_owner ? 'owner' : m.org_role === 3 ? 'admin' : m.org_role === 2 ? 'writer' : m.org_role === 1 ? 'reader' : 'member',
+                is_superuser: !!m.is_superuser,
                 status: m.invitation_status === 0 ? 'invited' : 'active',
                 created_at: m.created_at,
             }))
@@ -340,6 +341,7 @@ onMounted(fetchUsers)
             <td>{{ user.email }}</td>
             <td>
                <span class="role-badge">{{ $t('roles.' + (user.role?.toLowerCase() || 'member')) }}</span>
+               <span v-if="isSystemOrg && user.is_superuser" class="superuser-tag">{{ $t('roles.superuser') }}</span>
             </td>
             <td>
                <span :class="'status-' + getUserStatus(user.status)">{{ $t('userStatus.' + getUserStatus(user.status)) }}</span>
@@ -382,7 +384,7 @@ onMounted(fetchUsers)
           </div>
           <div class="form-group">
             <label class="form-label">{{ $t('dashboard.table.role') }}</label>
-            <select v-model="inviteForm.org_role" class="form-input">
+            <select v-model="inviteForm.org_role" class="form-input" :disabled="inviteForm.is_superuser">
               <option :value="1">{{ $t('roles.reader') }}</option>
               <option :value="2">{{ $t('roles.writer') }}</option>
               <option :value="3">{{ $t('roles.admin') }}</option>
@@ -390,7 +392,8 @@ onMounted(fetchUsers)
           </div>
           <div v-if="isSystemOrg" class="form-group">
             <label class="form-check-label">
-              <input type="checkbox" v-model="inviteForm.is_superuser" class="form-check-input" />
+              <input type="checkbox" v-model="inviteForm.is_superuser" class="form-check-input"
+                @change="inviteForm.org_role = inviteForm.is_superuser ? 3 : inviteForm.org_role" />
               {{ $t('roles.superuser') }}
             </label>
           </div>
@@ -623,6 +626,17 @@ onMounted(fetchUsers)
   border-radius: var(--radius-full);
   font-size: var(--font-size-xs);
   color: var(--text-secondary);
+}
+
+.superuser-tag {
+  display: inline-block;
+  padding: 2px 6px;
+  margin-left: 4px;
+  background: var(--primary-light, #e0e7ff);
+  color: var(--primary-600, #4f46e5);
+  border-radius: var(--radius-full);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-medium);
 }
 
 .status-active {

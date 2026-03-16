@@ -45,6 +45,7 @@ class MemberResponse(BaseModel):
     org_role: int
     user_email: Optional[str] = None
     is_owner: bool = False
+    is_superuser: bool = False
     invitation_status: Optional[int] = None
     created_at: datetime
 

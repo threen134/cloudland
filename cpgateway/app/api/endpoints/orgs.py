@@ -258,7 +258,7 @@ async def list_members(
     org = await _get_org_or_404(db, org_uuid)
 
     result = await db.execute(
-        select(Member, User.email, User.uuid)
+        select(Member, User.email, User.uuid, User.is_superuser)
         .join(User, User.id == Member.user_id)
         .where(
             Member.org_id == org.id,
@@ -271,10 +271,11 @@ async def list_members(
             uuid=m.uuid, user_uuid=user_uuid, org_uuid=org.uuid,
             org_role=m.org_role, user_email=email,
             is_owner=(m.user_id == org.owner_user_id),
+            is_superuser=is_su,
             invitation_status=m.invitation_status,
             created_at=m.created_at,
         )
-        for m, email, user_uuid in rows
+        for m, email, user_uuid, is_su in rows
     ]
 
 
@@ -350,9 +351,12 @@ async def invite_member(
     if invite_in.is_superuser and org.org_type != OrgType.SYSTEM:
         raise HTTPException(status_code=400, detail="Only the system organization can invite superusers")
 
+    # Superuser must have Admin role
+    org_role = OrgRole.ADMIN if invite_in.is_superuser else invite_in.org_role
+
     try:
         member = await invitation_service.create_invitation(
-            db, email=invite_in.email, org=org, org_role=invite_in.org_role,
+            db, email=invite_in.email, org=org, org_role=org_role,
             inviter=current_user, is_superuser=invite_in.is_superuser,
         )
     except ValueError as e:
