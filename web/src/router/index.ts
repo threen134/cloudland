@@ -80,12 +80,14 @@ const router = createRouter({
                 {
                     path: 'orgs',
                     name: 'orgs',
-                    component: () => import('../views/dashboard/OrgList.vue')
+                    component: () => import('../views/dashboard/OrgList.vue'),
+                    meta: { requiresSuperAdmin: true }
                 },
                 {
                     path: 'orgs/:id',
                     name: 'org-detail',
-                    component: () => import('../views/dashboard/OrgDetail.vue')
+                    component: () => import('../views/dashboard/OrgDetail.vue'),
+                    meta: { requiresSuperAdmin: true }
                 },
                 {
                     path: 'keys',
@@ -262,7 +264,12 @@ router.beforeEach((to, _from, next) => {
 
     // Check root requirement
     if (to.meta.requiresRoot && auth.user?.username !== 'root') {
-        return next({ name: 'dashboard' }) // Redirect to general dashboard overview or perhaps a 403 page
+        return next({ name: 'dashboard' })
+    }
+
+    // Check superadmin requirement
+    if (to.meta.requiresSuperAdmin && !auth.user?.is_superuser) {
+        return next({ name: 'dashboard' })
     }
 
     next()

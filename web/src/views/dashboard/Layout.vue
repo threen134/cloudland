@@ -203,7 +203,7 @@ onMounted(() => {
               <Users :size="18" />
               <span>{{ $t('dashboard.users') }}</span>
             </RouterLink>
-            <RouterLink to="/dashboard/orgs" class="nav-item" active-class="active">
+            <RouterLink v-if="auth.user?.is_superuser" to="/dashboard/orgs" class="nav-item" active-class="active">
               <Building2 :size="18" />
               <span>{{ $t('dashboard.organizations') }}</span>
             </RouterLink>

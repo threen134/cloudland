@@ -18,7 +18,7 @@ const fetchUser = async () => {
     error.value = ''
     try {
         const response = await usersApi.getUser(userId)
-        user.value = (response.data as any).user // Assuming the backend returns { user: ... }
+        user.value = response.data as any
     } catch (err) {
         console.error('Failed to fetch user:', err)
         error.value = 'Failed to load user details.'

@@ -32,7 +32,8 @@ const fetchOrgs = async () => {
     loading.value = true
     try {
         const response = await orgsApi.fetchOrgs()
-        orgs.value = (response.data as any).orgs || []
+        const data = response.data as any
+        orgs.value = Array.isArray(data) ? data : (data.orgs || [])
     } catch (error) {
         console.error('Failed to fetch orgs:', error)
     } finally {

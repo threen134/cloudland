@@ -170,6 +170,7 @@ async def get_me(request: Request, db: AsyncSession = Depends(get_db)):
         "first_name": user.first_name,
         "last_name": user.last_name,
         "system_role": user.system_role,
+        "is_superuser": user.is_superuser,
         "status": user.status,
         "current_org_uuid": claims.get("org_id"),
         "current_region": claims.get("region"),
