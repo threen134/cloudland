@@ -61,6 +61,7 @@ class UserOrgItem(BaseModel):
     uuid: str
     name: str
     slug: str
+    org_type: int = 1
     org_role: int
     is_owner: bool
     is_current: bool = False

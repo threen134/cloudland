@@ -668,7 +668,8 @@ export default {
         reader: '观察者',
         editor: '编辑者',
         viewer: '观察者',
-        member: '成员'
+        member: '成员',
+        superuser: '超级管理员'
     },
     userStatus: {
         active: '活跃',

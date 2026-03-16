@@ -7,6 +7,7 @@ class InvitationCreate(BaseModel):
     """创建邀请请求"""
     email: EmailStr
     org_role: int = 1  # default Reader
+    is_superuser: bool = False  # only for SYSTEM org
 
 
 class InvitationResponse(BaseModel):

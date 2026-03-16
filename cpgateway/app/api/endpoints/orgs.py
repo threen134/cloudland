@@ -346,9 +346,14 @@ async def invite_member(
         if not member_result.scalars().first():
             raise HTTPException(status_code=403, detail="Not enough permissions to invite members")
 
+    # Only SYSTEM org can invite superusers
+    if invite_in.is_superuser and org.org_type != OrgType.SYSTEM:
+        raise HTTPException(status_code=400, detail="Only the system organization can invite superusers")
+
     try:
         member = await invitation_service.create_invitation(
-            db, email=invite_in.email, org=org, org_role=invite_in.org_role, inviter=current_user,
+            db, email=invite_in.email, org=org, org_role=invite_in.org_role,
+            inviter=current_user, is_superuser=invite_in.is_superuser,
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))

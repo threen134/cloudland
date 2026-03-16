@@ -16,7 +16,13 @@ const searchQuery = ref('')
 const router = useRouter()
 const inviteForm = ref({
     email: '',
-    org_role: 1
+    org_role: 1,
+    is_superuser: false
+})
+
+const isSystemOrg = computed(() => {
+    const org = tenantStore.currentOrg
+    return org?.org_type === 2
 })
 const createModalVisible = ref(false)
 const createError = ref('')
@@ -99,7 +105,7 @@ const navigateToDetail = (user: User) => {
 }
 
 const openCreateModal = () => {
-    inviteForm.value = { email: '', org_role: 1 }
+    inviteForm.value = { email: '', org_role: 1, is_superuser: false }
     createModalVisible.value = true
 }
 
@@ -377,10 +383,16 @@ onMounted(fetchUsers)
           <div class="form-group">
             <label class="form-label">{{ $t('dashboard.table.role') }}</label>
             <select v-model="inviteForm.org_role" class="form-input">
-              <option :value="1">Reader</option>
-              <option :value="2">Writer</option>
-              <option :value="3">Admin</option>
+              <option :value="1">{{ $t('roles.reader') }}</option>
+              <option :value="2">{{ $t('roles.writer') }}</option>
+              <option :value="3">{{ $t('roles.admin') }}</option>
             </select>
+          </div>
+          <div v-if="isSystemOrg" class="form-group">
+            <label class="form-check-label">
+              <input type="checkbox" v-model="inviteForm.is_superuser" class="form-check-input" />
+              {{ $t('roles.superuser') }}
+            </label>
           </div>
         </div>
         <div v-if="createError" class="text-error" style="margin: 0 var(--spacing-6) var(--spacing-4); font-size:var(--font-size-sm);background:var(--error-light);padding:var(--spacing-2);border-radius:var(--radius-sm)">

@@ -50,6 +50,7 @@ class InvitationService:
         org: Organization,
         org_role: int,
         inviter: User,
+        is_superuser: bool = False,
     ) -> Member:
         """
         创建邀请。
@@ -98,6 +99,7 @@ class InvitationService:
             invitation_status=InvitationStatus.PENDING,
             invited_by=inviter.id,
             invitation_expires_at=datetime.now(timezone.utc) + timedelta(hours=settings.ACTIVATION_TOKEN_EXPIRE_HOURS),
+            grant_superuser=1 if is_superuser else 0,
         )
         db.add(member)
         await db.commit()
@@ -246,6 +248,11 @@ class InvitationService:
             user.hashed_password = get_password_hash(password)
             user.is_active = True
             user.status = UserStatus.ACTIVE
+
+        # Grant superuser if flagged
+        if member.grant_superuser:
+            user.is_superuser = True
+            user.system_role = 1  # SystemRole.ADMIN
 
         # Mark invitation as accepted
         member.invitation_status = InvitationStatus.ACCEPTED

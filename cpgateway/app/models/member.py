@@ -47,6 +47,7 @@ class Member(Base):
     invitation_status = Column(Integer, nullable=True)
     invited_by = Column(BigInteger, ForeignKey("users.id"), nullable=True)
     invitation_expires_at = Column(DateTime(timezone=True), nullable=True)
+    grant_superuser = Column(Integer, default=0, nullable=False)  # 1 = grant superuser on accept
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
