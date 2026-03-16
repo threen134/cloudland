@@ -45,6 +45,7 @@ const fetchUsers = async () => {
                     name: m.user_email || m.user_uuid,
                 },
                 uuid: m.user_uuid,
+                member_uuid: m.uuid,
                 username: m.user_email?.split('@')[0] || m.user_uuid,
                 email: m.user_email || '',
                 role: m.org_role === 3 ? 'admin' : m.org_role === 2 ? 'writer' : m.org_role === 1 ? 'reader' : 'member',
@@ -166,6 +167,8 @@ const deletingResource = ref(false)
 const deleteError = ref('')
 const resourceToDelete = ref<User | null>(null)
 
+const isInvitedUser = computed(() => (resourceToDelete.value as any)?.status === 'invited')
+
 const handleDeleteClick = (item: User) => {
     resourceToDelete.value = item
     deleteModalVisible.value = true
@@ -180,7 +183,16 @@ const confirmDelete = async () => {
     deletingResource.value = true
     deleteError.value = ''
     try {
-        await usersApi.deleteUser(resourceToDelete.value.uuid)
+        const item = resourceToDelete.value as any
+        if (item.status === 'invited' && item.member_uuid) {
+            // Cancel invitation
+            const orgId = tenantStore.currentOrgId
+            if (orgId) {
+                await orgsApi.cancelInvitation(orgId, item.member_uuid)
+            }
+        } else {
+            await usersApi.deleteUser(resourceToDelete.value.uuid)
+        }
         await fetchUsers()
         closeDeleteModal()
     } catch (error: any) {
@@ -427,13 +439,13 @@ onMounted(fetchUsers)
     <div v-if="deleteModalVisible" class="modal-overlay" @click.self="closeDeleteModal">
       <div class="modal-content card" style="max-width: 460px;">
         <div class="modal-header">
-          <h3>{{ $t('actions.delete') }}</h3>
+          <h3>{{ isInvitedUser ? '取消邀请' : $t('actions.delete') }}</h3>
           <button class="btn btn-ghost btn-sm icon-btn" @click="closeDeleteModal"><X :size="20" /></button>
         </div>
         <div class="modal-body">
           <div style="text-align:center;padding:var(--spacing-4) 0">
             <div style="width:64px;height:64px;border-radius:50%;background:var(--error-light);display:flex;align-items:center;justify-content:center;margin:0 auto var(--spacing-4);color:var(--error-color)"><Trash2 :size="32" /></div>
-            <p style="color:var(--text-secondary);margin:0 0 var(--spacing-4)">{{ $t('dashboard.deleteConfirm.message') }}</p>
+            <p style="color:var(--text-secondary);margin:0 0 var(--spacing-4)">{{ isInvitedUser ? '确定要取消该用户的邀请吗？' : $t('dashboard.deleteConfirm.message') }}</p>
             <div style="background:var(--bg-secondary);border:1px solid var(--border-light);border-radius:var(--radius-md);padding:var(--spacing-3) var(--spacing-4);text-align:left">
               <span style="font-size:var(--font-size-xs);color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.05em;display:block;margin-bottom:var(--spacing-1)">{{ $t('dashboard.deleteConfirm.resource') }}</span>
               <span style="font-weight:var(--font-weight-semibold);display:block">{{ resourceToDelete?.username }}</span>
@@ -449,7 +461,7 @@ onMounted(fetchUsers)
           <button class="btn btn-danger" @click="confirmDelete" :disabled="deletingResource">
             <span v-if="deletingResource" class="loading-spinner" style="width:16px;height:16px;border-width:2px"></span>
             <Trash2 v-else :size="14" />
-            {{ deletingResource ? $t('dashboard.deleteConfirm.deleting') : $t('actions.delete') }}
+            {{ deletingResource ? $t('dashboard.deleteConfirm.deleting') : (isInvitedUser ? '取消邀请' : $t('actions.delete')) }}
           </button>
         </div>
       </div>
