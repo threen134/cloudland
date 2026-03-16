@@ -34,6 +34,23 @@ export interface AddMemberPayload {
     org_role?: number
 }
 
+export interface InvitePayload {
+    email: string
+    org_role?: number
+}
+
+export interface OrgInvitation {
+    uuid: string
+    email: string
+    org_uuid: string
+    org_name: string
+    org_role: number
+    status: number
+    inviter_email: string
+    created_at: string
+    expires_at: string
+}
+
 export interface UpdateMemberRolePayload {
     org_role: number
 }
@@ -96,5 +113,22 @@ export const orgsApi = {
     // Transfer ownership
     transferOwnership(orgUuid: string, newOwnerUuid: string) {
         return client.post(`/orgs/${orgUuid}/transfer-owner`, { new_owner_uuid: newOwnerUuid })
+    },
+
+    // --- Invitations ---
+
+    // Send invitation
+    inviteMember(orgUuid: string, payload: InvitePayload) {
+        return client.post(`/orgs/${orgUuid}/invitations`, payload)
+    },
+
+    // List pending invitations
+    fetchInvitations(orgUuid: string) {
+        return client.get(`/orgs/${orgUuid}/invitations`)
+    },
+
+    // Cancel invitation
+    cancelInvitation(orgUuid: string, invitationUuid: string) {
+        return client.delete(`/orgs/${orgUuid}/invitations/${invitationUuid}`)
     },
 }

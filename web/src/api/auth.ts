@@ -53,5 +53,17 @@ export const authApi = {
     // Logout
     logout() {
         return Promise.resolve()
-    }
+    },
+
+    // --- Invitation (public) ---
+
+    // Get invitation info by token
+    getInvitationInfo(token: string) {
+        return client.get(`/auth/invitation/info?token=${encodeURIComponent(token)}`)
+    },
+
+    // Accept invitation
+    acceptInvitation(payload: { token: string; username?: string; password?: string }) {
+        return client.post('/auth/invitation/accept', payload)
+    },
 }

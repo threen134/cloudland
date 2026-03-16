@@ -38,6 +38,7 @@ async def startup():
     from app.models.org import Organization
     from app.models.member import Member
     from app.models.token_revocation import TokenRevocation
+    from app.models.invitation import Invitation  # noqa: F401
     from app.core.security import get_password_hash
     from sqlalchemy.future import select
 

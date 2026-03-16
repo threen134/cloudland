@@ -6,6 +6,25 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+
+async def _send_smtp(message: MIMEMultipart) -> bool:
+    """Send an email message via SMTP."""
+    try:
+        smtp_kwargs = {
+            "hostname": settings.SMTP_HOST,
+            "port": settings.SMTP_PORT,
+            "start_tls": settings.SMTP_TLS,
+        }
+        if settings.SMTP_USER:
+            smtp_kwargs["username"] = settings.SMTP_USER
+            smtp_kwargs["password"] = settings.SMTP_PASSWORD
+        await aiosmtplib.send(message, **smtp_kwargs)
+        return True
+    except Exception as e:
+        logger.error(f"Failed to send email: {e}")
+        return False
+
+
 async def send_activation_email(email: str, username: str, token: str, language: str = "en") -> bool:
     """
     Send activation email to user
@@ -187,21 +206,155 @@ async def send_activation_email(email: str, username: str, token: str, language:
     message.attach(part1)
     message.attach(part2)
     
-    try:
-        # Send email
-        smtp_kwargs = {
-            "hostname": settings.SMTP_HOST,
-            "port": settings.SMTP_PORT,
-            "start_tls": settings.SMTP_TLS,
-        }
-        
-        if settings.SMTP_USER:
-            smtp_kwargs["username"] = settings.SMTP_USER
-            smtp_kwargs["password"] = settings.SMTP_PASSWORD
-
-        await aiosmtplib.send(message, **smtp_kwargs)
+    ok = await _send_smtp(message)
+    if ok:
         logger.info(f"Activation email sent successfully to {email}")
+    return ok
+
+
+async def send_invitation_email(
+    email: str, org_name: str, inviter_name: str, token: str,
+    is_existing_user: bool = False, language: str = "en",
+) -> bool:
+    """
+    Send organization invitation email.
+
+    Args:
+        email: Invitee's email address
+        org_name: Organization name
+        inviter_name: Inviter's display name
+        token: Invitation token
+        is_existing_user: Whether the invitee already has an account
+        language: Language preference ('en' or 'zh')
+    """
+    if not settings.SMTP_HOST:
+        logger.warning(f"SMTP_HOST not configured, skipping invitation email to {email}")
+        accept_link = f"{settings.FRONTEND_URL}/invite/accept?token={token}"
+        logger.info(f"Invitation link: {accept_link}")
         return True
-    except Exception as e:
-        logger.error(f"Failed to send activation email to {email}: {str(e)}")
-        return False
+
+    accept_link = f"{settings.FRONTEND_URL}/invite/accept?token={token}"
+
+    if language == "zh":
+        subject = f"CloudLand - 您被邀请加入组织 {org_name}"
+        welcome_title = "您被邀请加入一个组织"
+        hello_text = f"您好，"
+        if is_existing_user:
+            main_text = f"<strong>{inviter_name}</strong> 邀请您加入组织 <strong>{org_name}</strong>。点击下方按钮接受邀请："
+        else:
+            main_text = f"<strong>{inviter_name}</strong> 邀请您加入组织 <strong>{org_name}</strong>。点击下方按钮创建账户并加入："
+        button_text = "接受邀请"
+        link_text = "或者将以下链接复制到浏览器中访问："
+        note_text = "<strong>注意:</strong> 此邀请链接在 24 小时内有效。"
+        footer_ignore = "如果您不认识邀请人，请忽略此邮件。"
+        footer_rights = "© 2026 Cloudland Platform. 保留所有权利。"
+        text_fallback = f"您被邀请加入组织 {org_name}。请访问: {accept_link}"
+    else:
+        subject = f"CloudLand - You're invited to join {org_name}"
+        welcome_title = "You're Invited!"
+        hello_text = "Hello,"
+        if is_existing_user:
+            main_text = f"<strong>{inviter_name}</strong> has invited you to join the organization <strong>{org_name}</strong>. Click the button below to accept:"
+        else:
+            main_text = f"<strong>{inviter_name}</strong> has invited you to join the organization <strong>{org_name}</strong>. Click the button below to create your account and join:"
+        button_text = "Accept Invitation"
+        link_text = "Or copy and paste this link into your browser:"
+        note_text = "<strong>Note:</strong> This invitation expires in 24 hours."
+        footer_ignore = "If you don't recognize the sender, please ignore this email."
+        footer_rights = "© 2026 Cloudland Platform. All rights reserved."
+        text_fallback = f"You've been invited to join {org_name}. Visit: {accept_link}"
+
+    message = MIMEMultipart("alternative")
+    message["Subject"] = subject
+    message["From"] = f"{settings.SMTP_FROM_NAME} <{settings.SMTP_FROM}>"
+    message["To"] = email
+
+    html_content = f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <meta charset="UTF-8">
+        <style>
+            body {{
+                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+                line-height: 1.6;
+                color: #333;
+                max-width: 600px;
+                margin: 0 auto;
+                padding: 20px;
+            }}
+            .container {{
+                background: #ffffff;
+                border-radius: 8px;
+                padding: 40px;
+                box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            }}
+            .header {{
+                text-align: center;
+                margin-bottom: 30px;
+            }}
+            .header h1 {{
+                color: #2563eb;
+                margin: 0;
+                font-size: 28px;
+            }}
+            .content {{
+                margin: 30px 0;
+            }}
+            .button {{
+                display: inline-block;
+                padding: 14px 32px;
+                background: #2563eb;
+                color: #ffffff !important;
+                text-decoration: none;
+                border-radius: 6px;
+                font-weight: 600;
+                margin: 20px 0;
+            }}
+            .footer {{
+                margin-top: 40px;
+                padding-top: 20px;
+                border-top: 1px solid #e5e7eb;
+                font-size: 14px;
+                color: #6b7280;
+                text-align: center;
+            }}
+            .link {{
+                color: #2563eb;
+                word-break: break-all;
+            }}
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <div class="header">
+                <h1>{welcome_title}</h1>
+            </div>
+            <div class="content">
+                <p>{hello_text}</p>
+                <p>{main_text}</p>
+                <div style="text-align: center;">
+                    <a href="{accept_link}" class="button">{button_text}</a>
+                </div>
+                <p>{link_text}</p>
+                <p><a href="{accept_link}" class="link">{accept_link}</a></p>
+                <p>{note_text}</p>
+            </div>
+            <div class="footer">
+                <p>{footer_ignore}</p>
+                <p>{footer_rights}</p>
+            </div>
+        </div>
+    </body>
+    </html>
+    """
+
+    part1 = MIMEText(text_fallback, "plain", "utf-8")
+    part2 = MIMEText(html_content, "html", "utf-8")
+    message.attach(part1)
+    message.attach(part2)
+
+    ok = await _send_smtp(message)
+    if ok:
+        logger.info(f"Invitation email sent to {email} for org {org_name}")
+    return ok

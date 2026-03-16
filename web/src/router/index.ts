@@ -36,6 +36,11 @@ const router = createRouter({
             component: () => import('../views/auth/ActivateAccount.vue')
         },
         {
+            path: '/invite/accept',
+            name: 'accept-invitation',
+            component: () => import('../views/auth/AcceptInvitation.vue')
+        },
+        {
             path: '/marketplace',
             name: 'marketplace',
             component: () => import('../views/marketplace/Marketplace.vue')

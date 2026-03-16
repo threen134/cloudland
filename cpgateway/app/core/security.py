@@ -160,3 +160,33 @@ def verify_activation_token(token: str) -> str | None:
         return user_uuid
     except JWTError:
         return None
+
+
+# --- Invitation Token ---
+
+def create_invitation_token(email: str, org_uuid: str) -> str:
+    """创建邀请令牌，包含被邀请人邮箱和组织 UUID。"""
+    expire = datetime.now(timezone.utc) + timedelta(hours=settings.ACTIVATION_TOKEN_EXPIRE_HOURS)
+    to_encode = {
+        "sub": email,
+        "org": org_uuid,
+        "type": "invitation",
+        "jti": str(uuid.uuid4()),
+        "exp": expire,
+    }
+    return jwt.encode(to_encode, settings.SECRET_KEY, algorithm="HS256")
+
+
+def verify_invitation_token(token: str) -> dict | None:
+    """验证邀请令牌，返回 {"email": ..., "org": ...} 或 None。"""
+    try:
+        payload = jwt.decode(token, settings.SECRET_KEY, algorithms=["HS256"])
+        if payload.get("type") != "invitation":
+            return None
+        email = payload.get("sub")
+        org_uuid = payload.get("org")
+        if not email or not org_uuid:
+            return None
+        return {"email": email, "org": org_uuid}
+    except JWTError:
+        return None

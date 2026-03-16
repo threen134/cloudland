@@ -9,10 +9,13 @@ from app.api.deps import get_current_active_user, get_current_superuser
 from app.models.user import User, SystemRole
 from app.models.org import Organization, OrgType
 from app.models.member import Member, OrgRole
+from app.models.invitation import Invitation, InvitationStatus
 from app.schemas.org import (
     OrgCreate, OrgUpdate, OrgResponse, OrgDetail,
     MemberAdd, MemberUpdate, MemberResponse, TransferOwner,
 )
+from app.schemas.invitation import InvitationCreate, InvitationResponse
+from app.services.invitation_service import invitation_service
 
 router = APIRouter()
 
@@ -277,21 +280,12 @@ async def add_member(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
-    """添加成员"""
+    """添加成员（直接添加，仅 SystemAdmin 可用）"""
     org = await _get_org_or_404(db, org_uuid)
 
-    # Permission: SystemAdmin or OrgAdmin+
+    # Permission: SystemAdmin only for direct add
     if not (current_user.system_role == SystemRole.ADMIN or current_user.is_superuser):
-        member_result = await db.execute(
-            select(Member).where(
-                Member.user_id == current_user.id,
-                Member.org_id == org.id,
-                Member.org_role >= OrgRole.ADMIN,
-                Member.deleted_at.is_(None),
-            )
-        )
-        if not member_result.scalars().first():
-            raise HTTPException(status_code=403, detail="Not enough permissions to add members")
+        raise HTTPException(status_code=403, detail="Direct member addition is restricted to system admins. Use invitations instead.")
 
     # Check target user exists
     target_user = await _get_user_by_uuid_or_404(db, member_in.user_uuid)
@@ -320,6 +314,124 @@ async def add_member(
         uuid=member.uuid, user_uuid=target_user.uuid, org_uuid=org.uuid,
         org_role=member.org_role, user_email=target_user.email, created_at=member.created_at,
     )
+
+
+# --- Invitations ---
+
+@router.post("/{org_uuid}/invitations", response_model=InvitationResponse, status_code=status.HTTP_201_CREATED)
+async def invite_member(
+    org_uuid: str,
+    invite_in: InvitationCreate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """通过邮箱邀请用户加入组织"""
+    org = await _get_org_or_404(db, org_uuid)
+
+    # Permission: SystemAdmin or OrgAdmin+
+    if not (current_user.system_role == SystemRole.ADMIN or current_user.is_superuser):
+        member_result = await db.execute(
+            select(Member).where(
+                Member.user_id == current_user.id,
+                Member.org_id == org.id,
+                Member.org_role >= OrgRole.ADMIN,
+                Member.deleted_at.is_(None),
+            )
+        )
+        if not member_result.scalars().first():
+            raise HTTPException(status_code=403, detail="Not enough permissions to invite members")
+
+    try:
+        inv = await invitation_service.create_invitation(
+            db, email=invite_in.email, org=org, org_role=invite_in.org_role, inviter=current_user,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    return InvitationResponse(
+        uuid=inv.uuid,
+        email=inv.email,
+        org_uuid=org.uuid,
+        org_name=org.name,
+        org_role=inv.org_role,
+        status=inv.status,
+        inviter_email=current_user.email,
+        created_at=inv.created_at,
+        expires_at=inv.expires_at,
+    )
+
+
+@router.get("/{org_uuid}/invitations", response_model=List[InvitationResponse])
+async def list_invitations(
+    org_uuid: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """列出组织的待处理邀请"""
+    org = await _get_org_or_404(db, org_uuid)
+
+    result = await db.execute(
+        select(Invitation, User.email)
+        .join(User, User.id == Invitation.inviter_id)
+        .where(
+            Invitation.org_id == org.id,
+            Invitation.status == InvitationStatus.PENDING,
+        )
+        .order_by(Invitation.created_at.desc())
+    )
+    rows = result.all()
+    return [
+        InvitationResponse(
+            uuid=inv.uuid,
+            email=inv.email,
+            org_uuid=org.uuid,
+            org_name=org.name,
+            org_role=inv.org_role,
+            status=inv.status,
+            inviter_email=inviter_email,
+            created_at=inv.created_at,
+            expires_at=inv.expires_at,
+        )
+        for inv, inviter_email in rows
+    ]
+
+
+@router.delete("/{org_uuid}/invitations/{invitation_uuid}", status_code=status.HTTP_204_NO_CONTENT)
+async def cancel_invitation(
+    org_uuid: str,
+    invitation_uuid: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """取消邀请"""
+    org = await _get_org_or_404(db, org_uuid)
+
+    # Permission: SystemAdmin or OrgAdmin+
+    if not (current_user.system_role == SystemRole.ADMIN or current_user.is_superuser):
+        member_result = await db.execute(
+            select(Member).where(
+                Member.user_id == current_user.id,
+                Member.org_id == org.id,
+                Member.org_role >= OrgRole.ADMIN,
+                Member.deleted_at.is_(None),
+            )
+        )
+        if not member_result.scalars().first():
+            raise HTTPException(status_code=403, detail="Not enough permissions")
+
+    result = await db.execute(
+        select(Invitation).where(
+            Invitation.uuid == invitation_uuid,
+            Invitation.org_id == org.id,
+            Invitation.status == InvitationStatus.PENDING,
+        )
+    )
+    inv = result.scalars().first()
+    if not inv:
+        raise HTTPException(status_code=404, detail="Invitation not found")
+
+    inv.status = InvitationStatus.CANCELLED
+    await db.commit()
 
 
 @router.patch("/{org_uuid}/members/{user_uuid}", response_model=MemberResponse)

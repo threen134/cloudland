@@ -8,9 +8,11 @@ from typing import List
 from app.schemas.user import UserCreate, UserRegisterResponse, Msg
 from app.schemas.token import TokenWithContext, LoginRequest, SwitchOrgRequest, SwitchRegionRequest
 from app.schemas.org import UserOrgItem
+from app.schemas.invitation import InvitationAccept, InvitationInfo
 from app.core.database import get_db
 from app.core.security import verify_access_token
 from app.services.auth_service import auth_service
+from app.services.invitation_service import invitation_service
 from app.core.logging_config import logger
 from app.models.user import User, SystemRole
 from app.models.org import Organization
@@ -244,6 +246,36 @@ async def get_my_orgs(request: Request, db: AsyncSession = Depends(get_db)):
 
 
 # --- Public Key ---
+
+# --- Invitation (Public endpoints, no auth required) ---
+
+@router.get("/invitation/info", response_model=InvitationInfo)
+async def get_invitation_info(token: str, db: AsyncSession = Depends(get_db)):
+    """获取邀请信息（公开接口，前端展示邀请详情用）"""
+    try:
+        info = await invitation_service.get_invitation_info(db, token)
+        return info
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.post("/invitation/accept")
+async def accept_invitation(
+    accept_in: InvitationAccept,
+    db: AsyncSession = Depends(get_db),
+):
+    """接受邀请（公开接口）"""
+    try:
+        result = await invitation_service.accept_invitation(
+            db,
+            token=accept_in.token,
+            username=accept_in.username,
+            password=accept_in.password,
+        )
+        return result
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
 
 @router.get("/public-key")
 async def get_public_key():

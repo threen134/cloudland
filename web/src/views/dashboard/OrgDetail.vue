@@ -3,8 +3,8 @@
 import { ref, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
-import { orgsApi, ORG_ROLES, type Organization, type OrgMember } from '../../api/orgs'
-import { ArrowLeft, Building2, Users, UserPlus, Trash2, Edit2, Shield, Crown, X } from 'lucide-vue-next'
+import { orgsApi, ORG_ROLES, type Organization, type OrgMember, type OrgInvitation } from '../../api/orgs'
+import { ArrowLeft, Building2, Users, Trash2, Shield, Crown, X, Mail, Clock, XCircle } from 'lucide-vue-next'
 
 const { t } = useI18n()
 const route = useRoute()
@@ -17,9 +17,13 @@ const loading = ref(true)
 const membersLoading = ref(false)
 const error = ref('')
 
-// Add member modal
+// Invitations
+const invitations = ref<OrgInvitation[]>([])
+const invitationsLoading = ref(false)
+
+// Invite member modal
 const addMemberVisible = ref(false)
-const addMemberForm = ref({ user_uuid: '', org_role: 1 })
+const addMemberForm = ref({ email: '', org_role: 1 })
 const addMemberError = ref('')
 const addingMember = ref(false)
 
@@ -66,29 +70,56 @@ const fetchMembers = async () => {
     }
 }
 
-// --- Add Member ---
+// --- Fetch Invitations ---
+const fetchInvitations = async () => {
+    invitationsLoading.value = true
+    try {
+        const response = await orgsApi.fetchInvitations(orgId)
+        invitations.value = response.data || []
+    } catch (err: any) {
+        console.error('Failed to fetch invitations:', err)
+    } finally {
+        invitationsLoading.value = false
+    }
+}
+
+// --- Invite Member ---
 const openAddMember = () => {
-    addMemberForm.value = { user_uuid: '', org_role: 1 }
+    addMemberForm.value = { email: '', org_role: 1 }
     addMemberError.value = ''
     addMemberVisible.value = true
 }
 
 const handleAddMember = async () => {
     addMemberError.value = ''
-    const uid = addMemberForm.value.user_uuid.trim()
-    if (!uid) {
-        addMemberError.value = t('dashboard.org.enterUserId')
+    const email = addMemberForm.value.email.trim()
+    if (!email) {
+        addMemberError.value = 'Please enter an email address'
         return
     }
     addingMember.value = true
     try {
-        await orgsApi.addMember(orgId, { user_uuid: uid, org_role: addMemberForm.value.org_role })
-        await fetchMembers()
+        await orgsApi.inviteMember(orgId, { email, org_role: addMemberForm.value.org_role })
+        await fetchInvitations()
         addMemberVisible.value = false
     } catch (err: any) {
         addMemberError.value = err.response?.data?.detail || err.message
     } finally {
         addingMember.value = false
+    }
+}
+
+// --- Cancel Invitation ---
+const cancellingInvitation = ref<string | null>(null)
+const handleCancelInvitation = async (inv: OrgInvitation) => {
+    cancellingInvitation.value = inv.uuid
+    try {
+        await orgsApi.cancelInvitation(orgId, inv.uuid)
+        await fetchInvitations()
+    } catch (err: any) {
+        console.error('Failed to cancel invitation:', err)
+    } finally {
+        cancellingInvitation.value = null
     }
 }
 
@@ -163,6 +194,7 @@ const getRoleName = (role: number) => ORG_ROLES[role] || 'Unknown'
 onMounted(() => {
     fetchOrg()
     fetchMembers()
+    fetchInvitations()
 })
 </script>
 
@@ -233,8 +265,33 @@ onMounted(() => {
               <Crown :size="14" /> {{ $t('dashboard.org.transferOwnership') }}
             </button>
             <button class="btn btn-primary btn-sm" @click="openAddMember">
-              <UserPlus :size="14" /> {{ $t('dashboard.org.addMember') }}
+              <Mail :size="14" /> {{ t('dashboard.org.inviteMember') || 'Invite Member' }}
             </button>
+          </div>
+        </div>
+
+        <!-- Pending Invitations -->
+        <div v-if="invitations.length > 0" class="invitations-section">
+          <h5 class="section-subtitle"><Clock :size="14" /> Pending Invitations</h5>
+          <div class="invitation-list">
+            <div v-for="inv in invitations" :key="inv.uuid" class="invitation-item">
+              <div class="invitation-info">
+                <span class="invitation-email">{{ inv.email }}</span>
+                <span class="role-badge" :class="'role-' + inv.org_role">{{ getRoleName(inv.org_role) }}</span>
+              </div>
+              <div class="invitation-meta">
+                <span>Invited by {{ inv.inviter_email }}</span>
+                <span>Expires {{ new Date(inv.expires_at).toLocaleDateString() }}</span>
+              </div>
+              <button
+                class="btn btn-ghost btn-sm text-error"
+                title="Cancel invitation"
+                @click="handleCancelInvitation(inv)"
+                :disabled="cancellingInvitation === inv.uuid"
+              >
+                <XCircle :size="14" />
+              </button>
+            </div>
           </div>
         </div>
 
@@ -264,7 +321,7 @@ onMounted(() => {
                 <div style="font-weight: 500;">{{ member.username }}</div>
                 <div style="font-size: var(--font-size-xs); color: var(--text-tertiary);">{{ member.user_uuid }}</div>
               </td>
-              <td>{{ member.email || '-' }}</td>
+              <td>{{ member.email || member.user_email || '-' }}</td>
               <td>
                 <span class="role-badge" :class="'role-' + member.org_role">
                   {{ getRoleName(member.org_role) }}
@@ -295,17 +352,20 @@ onMounted(() => {
       </div>
     </template>
 
-    <!-- Add Member Modal -->
+    <!-- Invite Member Modal -->
     <div v-if="addMemberVisible" class="modal-overlay" @click.self="addMemberVisible = false">
       <div class="modal-content card" style="max-width: 460px;">
         <div class="modal-header">
-          <h3>{{ $t('dashboard.org.addMember') }}</h3>
+          <h3><Mail :size="18" /> Invite Member</h3>
           <button class="btn btn-ghost btn-sm icon-btn" @click="addMemberVisible = false"><X :size="20" /></button>
         </div>
         <div class="modal-body" style="padding: var(--spacing-6);">
+          <p style="margin-bottom: var(--spacing-4); color: var(--text-secondary); font-size: var(--font-size-sm);">
+            An invitation email will be sent. If the user doesn't have an account, they'll be asked to create one.
+          </p>
           <div class="form-group">
-            <label class="form-label">{{ $t('dashboard.org.userId') }}</label>
-            <input v-model="addMemberForm.user_uuid" type="text" class="form-input" placeholder="User UUID" />
+            <label class="form-label">Email Address</label>
+            <input v-model="addMemberForm.email" type="email" class="form-input" placeholder="user@example.com" />
           </div>
           <div class="form-group">
             <label class="form-label">{{ $t('dashboard.org.role') }}</label>
@@ -323,7 +383,8 @@ onMounted(() => {
           <button class="btn btn-secondary" @click="addMemberVisible = false" :disabled="addingMember">{{ $t('actions.cancel') }}</button>
           <button class="btn btn-primary" @click="handleAddMember" :disabled="addingMember">
             <span v-if="addingMember" class="loading-spinner" style="width: 16px; height: 16px; border-width: 2px;"></span>
-            {{ addingMember ? $t('messages.loading') : $t('actions.confirm') }}
+            <Mail v-if="!addingMember" :size="14" />
+            {{ addingMember ? $t('messages.loading') : 'Send Invitation' }}
           </button>
         </div>
       </div>
@@ -539,6 +600,58 @@ onMounted(() => {
 
 .text-error {
   color: var(--error-color);
+}
+
+/* Invitations */
+.invitations-section {
+  margin-bottom: var(--spacing-5);
+  padding-bottom: var(--spacing-4);
+  border-bottom: 1px solid var(--border-light);
+}
+
+.section-subtitle {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-2);
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+  margin: 0 0 var(--spacing-3);
+  font-weight: var(--font-weight-semibold);
+}
+
+.invitation-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-2);
+}
+
+.invitation-item {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-4);
+  padding: var(--spacing-3) var(--spacing-4);
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-md);
+}
+
+.invitation-info {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-3);
+  flex: 1;
+}
+
+.invitation-email {
+  font-weight: var(--font-weight-medium);
+  font-size: var(--font-size-sm);
+}
+
+.invitation-meta {
+  display: flex;
+  gap: var(--spacing-4);
+  font-size: var(--font-size-xs);
+  color: var(--text-tertiary);
 }
 
 /* Modal styles */
