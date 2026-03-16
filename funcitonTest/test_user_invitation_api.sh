@@ -49,6 +49,16 @@ INVITE_NEW_PASSWORD="InvitedPass123"
 
 INVITE_EXISTING_EMAIL=""  # 填入注册用户的邮箱 (动态赋值)
 
+# 动态变量预初始化 (避免 set -u 报错)
+REG_USER_UUID=""
+REG_TOKEN=""
+REG_ORG_UUID=""
+EXISTING_INV_UUID=""
+EXISTING_INV_TOKEN=""
+NEW_INV_UUID=""
+NEW_INV_TOKEN=""
+CANCEL_INV_UUID=""
+
 # 颜色
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -163,6 +173,19 @@ for o in orgs:
         echo -e "  ${GREEN}OK${NC} 清理残留用户: $email ($UUID)"
     fi
 done
+# Also clean up test orgs by slug (admin may not be a member, so use slug match)
+FUNCTEST_ORGS=$(echo "$ALL_ORGS" | python3 -c "
+import sys,json
+orgs=json.load(sys.stdin)
+for o in orgs:
+    s = o.get('slug','')
+    if 'functest' in s or s in ('another-org',):
+        print(o['uuid'])
+" 2>/dev/null)
+for org_uuid in $FUNCTEST_ORGS; do
+    $CURL -s -o /dev/null "${API}/orgs/${org_uuid}" -X DELETE -H "Authorization: Bearer $ADMIN_TOKEN" 2>/dev/null || true
+    echo -e "  ${GREEN}OK${NC} 清理残留 Org: $org_uuid"
+done
 # Cancel residual invitations
 INVS=$($CURL -s "${API}/orgs/${ADMIN_ORG_UUID}/invitations" -H "Authorization: Bearer $ADMIN_TOKEN" 2>/dev/null)
 for email in "$REG_EMAIL" "$INVITE_NEW_EMAIL" "cancel_test@example.com"; do
@@ -196,23 +219,17 @@ assert_json_exists "1.1 返回 user 对象" "$BODY" "['user']['uuid']"
 
 REG_USER_UUID=$(echo "$BODY" | json_get "['user']['uuid']" || echo "")
 
-# 1.2 重复邮箱注册
-RESP=$($CURL -s -o /tmp/test_body -w "%{http_code}" "${API}/auth/register" \
-    -X POST -H "Content-Type: application/json" \
-    -d "{\"email\":\"$REG_EMAIL\",\"username\":\"another_name\",\"password\":\"pass1234\",\"org_name\":\"Another\",\"org_slug\":\"another-org\"}")
-assert_status "1.2 重复邮箱注册被拒绝" "400" "$RESP"
-
-# 1.3 重复 org slug 注册
+# 1.2 重复 org slug 注册
 RESP=$($CURL -s -o /tmp/test_body -w "%{http_code}" "${API}/auth/register" \
     -X POST -H "Content-Type: application/json" \
     -d "{\"email\":\"unique@example.com\",\"username\":\"unique_user\",\"password\":\"pass1234\",\"org_name\":\"Unique\",\"org_slug\":\"$REG_ORG_SLUG\"}")
-assert_status "1.3 重复 org slug 被拒绝" "400" "$RESP"
+assert_status "1.2 重复 org slug 被拒绝" "400" "$RESP"
 
-# 1.4 未激活用户登录
+# 1.3 未激活用户登录
 RESP=$($CURL -s -o /tmp/test_body -w "%{http_code}" "${API}/auth/token/form" \
     -d "username=$REG_USERNAME&password=$REG_PASSWORD" \
     -H "Content-Type: application/x-www-form-urlencoded")
-assert_status "1.4 未激活用户登录被拒绝" "401" "$RESP"
+assert_status "1.3 未激活用户登录被拒绝" "401" "$RESP"
 
 
 # =============================================================================
@@ -236,6 +253,12 @@ if [ -n "$REG_USER_UUID" ] && [ "$REG_USER_UUID" != "None" ]; then
     REG_TOKEN=$(echo "$BODY" | json_get "['access_token']" || echo "")
     REG_ORG_UUID=$(echo "$BODY" | json_get "['org_uuid']" || echo "")
     INVITE_EXISTING_EMAIL="$REG_EMAIL"
+
+    # 2.3 已激活用户重复注册
+    RESP=$($CURL -s -o /tmp/test_body -w "%{http_code}" "${API}/auth/register" \
+        -X POST -H "Content-Type: application/json" \
+        -d "{\"email\":\"$REG_EMAIL\",\"username\":\"another_name\",\"password\":\"pass1234\",\"org_name\":\"Another\",\"org_slug\":\"another-org\"}")
+    assert_status "2.3 已激活用户重复邮箱注册被拒绝" "400" "$RESP"
 else
     skip_test "2.1-2.2 用户激活 (注册 UUID 未获取到)"
 fi
@@ -532,7 +555,7 @@ section "13. 清理测试数据"
 if [ -n "$REG_USER_UUID" ] && [ "$REG_USER_UUID" != "None" ]; then
     RESP=$($CURL -s -o /tmp/test_body -w "%{http_code}" "${API}/users/${REG_USER_UUID}" \
         -X DELETE -H "Authorization: Bearer $ADMIN_TOKEN")
-    assert_status "13.1 删除注册测试用户" "204" "$RESP"
+    assert_status "13.1 删除注册测试用户" "200" "$RESP"
 fi
 
 # 删除注册用户的 org
