@@ -60,7 +60,7 @@ const solutionLinks = [
             <a href="tel:+1-800-000-0000"><Phone :size="14" /> +1-800-CLOUD</a>
           </div>
           <div class="top-links">
-            <RouterLink to="/docs">{{ t('nav.documentation') }}</RouterLink>
+            <a href="/api/v1/docs" target="_blank" rel="noopener">{{ t('nav.documentation') }}</a>
             <RouterLink to="/support">{{ t('nav.support') }}</RouterLink>
           </div>
         </div>

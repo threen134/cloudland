@@ -13,6 +13,8 @@ app = FastAPI(
     description="统一用户与 Org 管理平台，支持 RS256 JWT、Org/Region 切换及 API Gateway 转发。",
     version="2.0.0",
     openapi_url=f"{settings.API_V1_STR}/openapi.json",
+    docs_url=f"{settings.API_V1_STR}/docs",
+    redoc_url=f"{settings.API_V1_STR}/redoc",
 )
 
 

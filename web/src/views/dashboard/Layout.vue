@@ -379,12 +379,12 @@ onMounted(() => {
                   <span>{{ $t('nav.billing') }}</span>
                 </div>
               </div>
-              <div class="dropdown-item-portal">
+              <a class="dropdown-item-portal" href="/api/v1/docs" target="_blank" rel="noopener" style="text-decoration: none; color: inherit;">
                 <div style="display: flex; align-items: center; gap: 8px;">
                   <BookOpen :size="14" />
                   <span>{{ $t('nav.docsAndApi') }}</span>
                 </div>
-              </div>
+              </a>
               <div class="dropdown-item-portal">
                 <div style="display: flex; align-items: center; gap: 8px;">
                   <LifeBuoy :size="14" />
