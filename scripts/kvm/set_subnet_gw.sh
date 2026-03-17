@@ -23,7 +23,7 @@ fi
 # 将 ln-$vlan 接口添加到对应 VLAN 网桥（br$vlan）
 brctl addif br$vlan ln-$vlan
 # 通过 ipcalc 解析网关 IP，提取网段、广播地址、最小/最大主机 IP
-read -d'\n' -r network bcast hostmin hostmax < <(ipcalc -nb $gateway | awk '/Network/ {print $2} /Broadcast/ {print $2} /HostMin/ {print $2} /HostMax/ {print $2}')
+read -r network bcast hostmin hostmax < <(ipcalc $gateway | awk '/^Network:/ {n=$2} /^Broadcast:/ {b=$2} /^HostMin:/ {min=$2} /^HostMax:/ {max=$2} END {print n,b,min,max}')
 # 将网段加入 nonat 集合（避免 NAT 转换）
 ip netns exec $router ipset add nonat $network
  # 为路由器内 ns-$vlan 接口配置网关 IP + 广播地址
