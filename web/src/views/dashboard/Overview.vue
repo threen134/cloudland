@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
-import { statsApi, type SystemStats } from '../../api/stats'
 import { useAuthStore } from '../../stores/auth'
 import { useI18n } from 'vue-i18n'
 import { Server, HardDrive, Cpu, Layers, Disc, GitFork, Activity, Globe } from 'lucide-vue-next'
@@ -9,10 +8,29 @@ import { instancesApi, type Instance } from '../../api/instances'
 import { volumesApi } from '../../api/volumes'
 import { imagesApi, type Image } from '../../api/images'
 import { vpcsApi, floatingIpsApi } from '../../api/networks'
+import { quotaApi } from '../../api/quota'
 
 const auth = useAuthStore()
 const { t } = useI18n()
 const displayName = computed(() => auth.user?.username || auth.user?.name || 'User')
+
+interface ResourceUsage {
+    used: number
+    total: number
+    unit?: string
+    percentage: number
+}
+
+interface SystemStats {
+    cpu: ResourceUsage
+    memory: ResourceUsage
+    disk: ResourceUsage
+    instances: ResourceUsage
+    volume: ResourceUsage
+    images: ResourceUsage
+    public_ip: ResourceUsage
+    private_ip: ResourceUsage
+}
 
 const loading = ref(true)
 const stats = ref<SystemStats | null>(null)
@@ -31,12 +49,19 @@ const mockStats: SystemStats = {
 
 onMounted(async () => {
     try {
-        const [instRes, volRes, imgRes, vpcRes, fipRes] = await Promise.all([
+        // Fetch resource data and quota in parallel
+        const orgUuid = localStorage.getItem('cloudland_org_id') || ''
+        const regionName = localStorage.getItem('cloudland_region') || ''
+
+        const [instRes, volRes, imgRes, vpcRes, fipRes, quotaRes] = await Promise.all([
             instancesApi.fetchInstances(),
             volumesApi.list({ limit: 100 }),
             imagesApi.fetchImages(),
             vpcsApi.list({ limit: 100 }),
-            floatingIpsApi.list({ limit: 100 })
+            floatingIpsApi.list({ limit: 100 }),
+            (orgUuid && regionName)
+                ? quotaApi.getOrgRegionResourceInfo(orgUuid, regionName).catch(() => null)
+                : Promise.resolve(null),
         ])
 
         const instances = instRes.data?.instances || instRes.data || []
@@ -45,22 +70,36 @@ onMounted(async () => {
         const vpcs = vpcRes.vpcs || []
         const fips = fipRes.floating_ips || []
 
-        // Compute actual counts/usage
-        const usedCpu = Array.isArray(instances) ? instances.reduce((acc: number, inst: Instance) => acc + (inst.flavor?.cpu || 0), 0) : 0
-        const usedMemMB = Array.isArray(instances) ? instances.reduce((acc: number, inst: Instance) => acc + (inst.flavor?.memory || 0), 0) : 0
-        const usedVolSize = Array.isArray(volumes) ? volumes.reduce((acc: number, vol: any) => acc + (vol.size || 0), 0) : 0
+        // Get quota and consumption from API (fallback to client-side calculation)
+        const quota = quotaRes?.data?.quota
+        const consumption = quotaRes?.data?.consumption
 
-        // For now we use some arbitrary totals if not provided by a quota API
-        // In a real scenario, these would come from an administrative quota endpoint
+        // Use server-side consumption when available, otherwise compute from list data
+        const usedCpu = consumption?.cpu_cores ?? (Array.isArray(instances) ? instances.reduce((acc: number, inst: Instance) => acc + (inst.flavor?.cpu || 0), 0) : 0)
+        const usedMemGB = consumption?.ram_gb ?? (Array.isArray(instances) ? instances.reduce((acc: number, inst: Instance) => acc + (inst.flavor?.memory || 0), 0) / 1024 : 0)
+        const usedDiskGB = consumption?.disk_gb ?? (Array.isArray(volumes) ? volumes.reduce((acc: number, vol: any) => acc + (vol.size || 0), 0) : 0)
+        const usedPublicIps = consumption?.public_ips ?? (Array.isArray(fips) ? fips.length : 0)
+
+        const totalCpu = quota?.max_cpu_cores ?? 64
+        const totalMemGB = quota?.max_ram_gb ?? 128
+        const totalDiskGB = quota?.max_disk_gb ?? 2000
+        const totalPublicIps = quota?.max_public_ips ?? 20
+
+        const instanceCount = Array.isArray(instances) ? instances.length : 0
+        const imageCount = Array.isArray(images) ? images.length : 0
+        const vpcCount = Array.isArray(vpcs) ? vpcs.length : 0
+
+        const safePercent = (used: number, total: number) => total > 0 ? Math.min(Math.round((used / total) * 100), 100) : 0
+
         stats.value = {
-            cpu: { used: usedCpu, total: 64, percentage: Math.min(Math.round((usedCpu / 64) * 100), 100) },
-            memory: { used: Math.round(usedMemMB / 1024), total: 128, unit: 'GB', percentage: Math.min(Math.round(((usedMemMB / 1024) / 128) * 100), 100) },
-            disk: { used: usedVolSize, total: 2000, unit: 'GB', percentage: Math.min(Math.round((usedVolSize / 2000) * 100), 100) },
-            instances: { used: Array.isArray(instances) ? instances.length : 0, total: 100, percentage: Math.min(Math.round(((Array.isArray(instances) ? instances.length : 0) / 100) * 100), 100) },
-            volume: { used: usedVolSize, total: 2000, unit: 'GB', percentage: Math.min(Math.round((usedVolSize / 2000) * 100), 100) },
-            images: { used: Array.isArray(images) ? images.length : 0, total: 50, percentage: Math.min(Math.round(((Array.isArray(images) ? images.length : 0) / 50) * 100), 100) },
-            public_ip: { used: Array.isArray(fips) ? fips.length : 0, total: 20, percentage: Math.min(Math.round(((Array.isArray(fips) ? fips.length : 0) / 20) * 100), 100) },
-            private_ip: { used: Array.isArray(vpcs) ? vpcs.length : 0, total: 20, percentage: Math.min(Math.round(((Array.isArray(vpcs) ? vpcs.length : 0) / 20) * 100), 100) }
+            cpu: { used: usedCpu, total: totalCpu, percentage: safePercent(usedCpu, totalCpu) },
+            memory: { used: Math.round(usedMemGB), total: totalMemGB, unit: 'GB', percentage: safePercent(usedMemGB, totalMemGB) },
+            disk: { used: usedDiskGB, total: totalDiskGB, unit: 'GB', percentage: safePercent(usedDiskGB, totalDiskGB) },
+            instances: { used: instanceCount, total: 0, percentage: 0 },
+            volume: { used: usedDiskGB, total: totalDiskGB, unit: 'GB', percentage: safePercent(usedDiskGB, totalDiskGB) },
+            images: { used: imageCount, total: 0, percentage: 0 },
+            public_ip: { used: usedPublicIps, total: totalPublicIps, percentage: safePercent(usedPublicIps, totalPublicIps) },
+            private_ip: { used: vpcCount, total: 0, percentage: 0 }
         }
     } catch (error) {
         console.error('Failed to fetch actual stats:', error)
@@ -103,7 +142,7 @@ const getPercentColor = (percent: number) => {
           <span class="stat-label">{{ $t('dashboard.instances') }}</span>
           <div class="stat-value-group">
             <span class="stat-value">{{ stats.instances.used }}</span>
-            <span class="stat-total">/ {{ stats.instances.total }}</span>
+            <span class="stat-total">{{ $t('dashboard.overview.activeCount') }}</span>
           </div>
         </div>
       </div>

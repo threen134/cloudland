@@ -1,12 +1,15 @@
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { orgsApi, ORG_ROLES, type Organization, type OrgMember, type OrgInvitation } from '../../api/orgs'
-import { ArrowLeft, Building2, Users, Trash2, Shield, Crown, X, Mail, Clock, XCircle } from 'lucide-vue-next'
+import { quotaApi, type OrgResourceSummary, type OrgResourceInfo, type OrgResourceQuotaUpdate } from '../../api/quota'
+import { ArrowLeft, Building2, Users, Trash2, Shield, Crown, X, Mail, Clock, XCircle, Gauge } from 'lucide-vue-next'
+import { useAuthStore } from '../../stores/auth'
 
 const { t } = useI18n()
+const authStore = useAuthStore()
 const route = useRoute()
 const router = useRouter()
 const orgId = route.params.id as string
@@ -17,9 +20,73 @@ const loading = ref(true)
 const membersLoading = ref(false)
 const error = ref('')
 
+// Tabs
+const activeTab = ref<'members' | 'quota'>('members')
+
 // Invitations
 const invitations = ref<OrgInvitation[]>([])
 const invitationsLoading = ref(false)
+
+// Quota
+const quotaSummary = ref<OrgResourceSummary | null>(null)
+const quotaLoading = ref(false)
+const quotaError = ref('')
+const editingQuota = ref<Record<string, OrgResourceQuotaUpdate>>({})
+const savingQuota = ref<string | null>(null)
+const isSuperuser = computed(() => authStore.user?.is_superuser === true)
+
+const fetchQuota = async () => {
+    quotaLoading.value = true
+    quotaError.value = ''
+    try {
+        const response = await quotaApi.getOrgResourceSummary(orgId)
+        quotaSummary.value = response.data
+        // Initialize editing state
+        editingQuota.value = {}
+        for (const region of (response.data.regions || [])) {
+            editingQuota.value[region.region_name] = {
+                max_cpu_cores: region.quota.max_cpu_cores,
+                max_ram_gb: region.quota.max_ram_gb,
+                max_public_ips: region.quota.max_public_ips,
+                max_disk_gb: region.quota.max_disk_gb,
+            }
+        }
+    } catch (err: any) {
+        quotaError.value = err.response?.data?.detail || 'Failed to load quota'
+    } finally {
+        quotaLoading.value = false
+    }
+}
+
+const handleSaveQuota = async (regionName: string) => {
+    savingQuota.value = regionName
+    try {
+        await quotaApi.updateOrgQuota(orgId, regionName, editingQuota.value[regionName])
+        await fetchQuota()
+    } catch (err: any) {
+        quotaError.value = err.response?.data?.detail || 'Failed to update quota'
+    } finally {
+        savingQuota.value = null
+    }
+}
+
+const getUsagePercent = (used: number, limit: number) => {
+    if (limit <= 0) return 0
+    return Math.min(100, Math.round((used / limit) * 100))
+}
+
+const getUsageColor = (percent: number) => {
+    if (percent > 90) return 'var(--error-color, #ef4444)'
+    if (percent > 75) return '#f59e0b'
+    return '#22c55e'
+}
+
+const switchTab = (tab: 'members' | 'quota') => {
+    activeTab.value = tab
+    if (tab === 'quota' && !quotaSummary.value) {
+        fetchQuota()
+    }
+}
 
 // Invite member modal
 const addMemberVisible = ref(false)
@@ -256,8 +323,91 @@ onMounted(() => {
         </div>
       </div>
 
+      <!-- Tabs -->
+      <div class="tab-bar">
+        <button class="tab-btn" :class="{ active: activeTab === 'members' }" @click="switchTab('members')">
+          <Users :size="16" /> {{ $t('dashboard.org.members') }}
+        </button>
+        <button class="tab-btn" :class="{ active: activeTab === 'quota' }" @click="switchTab('quota')">
+          <Gauge :size="16" /> {{ $t('quota.manage') }}
+        </button>
+      </div>
+
+      <!-- Quota Tab -->
+      <div v-if="activeTab === 'quota'" class="card">
+        <div v-if="quotaLoading" class="text-center" style="padding: 48px;">
+          <div class="loading-spinner" style="margin: 0 auto;"></div>
+        </div>
+        <div v-else-if="quotaError" class="text-center" style="padding: 48px;">
+          <p class="text-error">{{ quotaError }}</p>
+          <button class="btn btn-secondary btn-sm" @click="fetchQuota">{{ $t('actions.retry') }}</button>
+        </div>
+        <div v-else-if="quotaSummary && quotaSummary.regions.length > 0">
+          <div v-for="region in quotaSummary.regions" :key="region.region_name" class="quota-region-card">
+            <h5 class="quota-region-title">{{ region.region_name }}</h5>
+            <table class="data-table quota-table">
+              <thead>
+                <tr>
+                  <th>{{ $t('dashboard.table.name') }}</th>
+                  <th>{{ $t('quota.limit') || 'Quota' }}</th>
+                  <th>{{ $t('quota.used') || 'Used' }}</th>
+                  <th style="width: 200px;">{{ $t('dashboard.table.status') || 'Usage' }}</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="res in [
+                  { key: 'cpu_cores', qkey: 'max_cpu_cores', label: $t('quota.cpuCores') },
+                  { key: 'ram_gb', qkey: 'max_ram_gb', label: $t('quota.ramGb') },
+                  { key: 'disk_gb', qkey: 'max_disk_gb', label: $t('quota.diskGb') },
+                  { key: 'public_ips', qkey: 'max_public_ips', label: $t('quota.publicIps') },
+                ]" :key="res.key">
+                  <td>{{ res.label }}</td>
+                  <td>
+                    <input
+                      v-if="isSuperuser"
+                      type="number"
+                      class="form-input quota-input"
+                      :value="editingQuota[region.region_name]?.[res.qkey as keyof OrgResourceQuotaUpdate]"
+                      @input="(e: any) => { if (editingQuota[region.region_name]) (editingQuota[region.region_name] as any)[res.qkey] = Number(e.target.value) }"
+                      min="0"
+                      step="1"
+                    />
+                    <span v-else>{{ (region.quota as any)[res.qkey] }}</span>
+                  </td>
+                  <td>{{ (region.consumption as any)[res.key] }}</td>
+                  <td>
+                    <div class="usage-bar-container">
+                      <div
+                        class="usage-bar"
+                        :style="{
+                          width: getUsagePercent((region.consumption as any)[res.key], (region.quota as any)[res.qkey]) + '%',
+                          background: getUsageColor(getUsagePercent((region.consumption as any)[res.key], (region.quota as any)[res.qkey]))
+                        }"
+                      ></div>
+                    </div>
+                    <span class="usage-text">{{ getUsagePercent((region.consumption as any)[res.key], (region.quota as any)[res.qkey]) }}%</span>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+            <div v-if="isSuperuser" class="quota-save-row">
+              <button
+                class="btn btn-primary btn-sm"
+                @click="handleSaveQuota(region.region_name)"
+                :disabled="savingQuota === region.region_name"
+              >
+                {{ savingQuota === region.region_name ? $t('messages.loading') : $t('actions.save') }}
+              </button>
+            </div>
+          </div>
+        </div>
+        <div v-else class="text-center text-secondary" style="padding: 48px;">
+          {{ $t('quota.noQuota') || 'No quota assigned' }}
+        </div>
+      </div>
+
       <!-- Members Card -->
-      <div class="card">
+      <div v-show="activeTab === 'members'" class="card">
         <div class="card-header-row">
           <h4><Users :size="18" /> {{ $t('dashboard.org.members') }}</h4>
           <div class="card-header-actions">
@@ -361,18 +511,18 @@ onMounted(() => {
         </div>
         <div class="modal-body" style="padding: var(--spacing-6);">
           <p style="margin-bottom: var(--spacing-4); color: var(--text-secondary); font-size: var(--font-size-sm);">
-            An invitation email will be sent. If the user doesn't have an account, they'll be asked to create one.
+            {{ $t('dashboard.org.inviteHint') }}
           </p>
           <div class="form-group">
-            <label class="form-label">Email Address</label>
+            <label class="form-label">{{ $t('dashboard.table.email') }}</label>
             <input v-model="addMemberForm.email" type="email" class="form-input" placeholder="user@example.com" />
           </div>
           <div class="form-group">
             <label class="form-label">{{ $t('dashboard.org.role') }}</label>
             <select v-model="addMemberForm.org_role" class="form-input">
-              <option :value="1">Reader</option>
-              <option :value="2">Writer</option>
-              <option :value="3">Admin</option>
+              <option :value="1">{{ $t('roles.reader') }}</option>
+              <option :value="2">{{ $t('roles.writer') }}</option>
+              <option :value="3">{{ $t('roles.admin') }}</option>
             </select>
           </div>
         </div>
@@ -723,5 +873,94 @@ onMounted(() => {
 @keyframes slideUp {
   from { transform: translateY(20px); opacity: 0; }
   to { transform: translateY(0); opacity: 1; }
+}
+
+/* Tabs */
+.tab-bar {
+  display: flex;
+  gap: var(--spacing-1);
+  margin-bottom: var(--spacing-4);
+  border-bottom: 1px solid var(--border-light);
+  padding-bottom: 0;
+}
+
+.tab-btn {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-2);
+  padding: var(--spacing-3) var(--spacing-4);
+  border: none;
+  background: none;
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  transition: all var(--transition-base);
+}
+
+.tab-btn:hover {
+  color: var(--text-primary);
+}
+
+.tab-btn.active {
+  color: var(--primary-600);
+  border-bottom-color: var(--primary-600);
+}
+
+/* Quota */
+.quota-region-card {
+  padding: var(--spacing-4) 0;
+  border-bottom: 1px solid var(--border-light);
+}
+
+.quota-region-card:last-child {
+  border-bottom: none;
+}
+
+.quota-region-title {
+  margin: 0 0 var(--spacing-3);
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-semibold);
+  color: var(--text-primary);
+}
+
+.quota-table {
+  margin-bottom: var(--spacing-3);
+}
+
+.quota-input {
+  width: 100px;
+  padding: 4px 8px;
+  font-size: var(--font-size-sm);
+}
+
+.quota-save-row {
+  display: flex;
+  justify-content: flex-end;
+  padding-top: var(--spacing-2);
+}
+
+.usage-bar-container {
+  display: inline-block;
+  width: 120px;
+  height: 8px;
+  background: var(--bg-tertiary, #e5e7eb);
+  border-radius: 4px;
+  overflow: hidden;
+  vertical-align: middle;
+  margin-right: var(--spacing-2);
+}
+
+.usage-bar {
+  height: 100%;
+  border-radius: 4px;
+  transition: width 0.3s ease;
+}
+
+.usage-text {
+  font-size: var(--font-size-xs);
+  color: var(--text-secondary);
 }
 </style>

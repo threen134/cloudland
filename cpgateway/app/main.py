@@ -34,6 +34,7 @@ async def startup():
     1. 建表（含新增的 organizations / members / token_revocations 表）
     2. 创建 Root 超级管理员用户
     """
+    from app.models import OrgResourceQuota, OrgResourceConsumption  # noqa: F401 — register all models
     from app.models.user import User, SystemRole, UserStatus
     from app.models.org import Organization
     from app.models.member import Member

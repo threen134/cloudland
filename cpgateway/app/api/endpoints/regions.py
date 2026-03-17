@@ -13,6 +13,10 @@ from app.schemas.region import (
     RegionCreate, RegionUpdate,
     RegionPublic, RegionAdmin, RegionCreated, RegionSecretRotated,
 )
+from app.models.org import Organization
+from app.models.org_resource_quota import OrgResourceQuota
+from app.models.org_resource_consumption import OrgResourceConsumption
+from app.core.config import settings as app_settings
 from app.core.logging_config import logger
 
 router = APIRouter()
@@ -61,6 +65,27 @@ async def create_region(
         description=region_in.description,
     )
     db.add(region)
+    await db.flush()  # Get region.id without committing
+
+    # Initialize quota/consumption for all existing orgs in this new region
+    orgs_result = await db.execute(
+        select(Organization).where(Organization.deleted_at.is_(None))
+    )
+    for org in orgs_result.scalars().all():
+        db.add(OrgResourceQuota(
+            org_id=org.id,
+            region_id=region.id,
+            max_cpu_cores=app_settings.DEFAULT_CPU_CORES,
+            max_ram_gb=app_settings.DEFAULT_RAM_GB,
+            max_public_ips=app_settings.DEFAULT_PUBLIC_IPS,
+            max_disk_gb=app_settings.DEFAULT_DISK_GB,
+        ))
+        db.add(OrgResourceConsumption(
+            org_id=org.id,
+            region_id=region.id,
+        ))
+
+    # Single atomic commit: region + all org quota/consumption records
     await db.commit()
     await db.refresh(region)
 

@@ -629,7 +629,14 @@ export default {
         ramGb: 'Memory (GB)',
         diskGb: 'Disk (GB)',
         publicIps: 'Public IPs',
-        trafficGb: 'Traffic (GB)',
+        region: 'Region',
+        used: 'Used',
+        available: 'Available',
+        limit: 'Quota',
+        exceeded: 'Quota Exceeded',
+        exceededMessage: 'Quota exceeded for {resource} in {region}: requested {requested}, available {available} (limit: {limit})',
+        noQuota: 'No quota assigned',
+        allRegions: 'All Regions',
     },
 
     // Messages

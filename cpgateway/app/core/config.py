@@ -67,7 +67,6 @@ class Settings(BaseSettings):
     # --- 默认资源配额 (Resource Quotas) ---
     DEFAULT_CPU_CORES: float = 4.0
     DEFAULT_RAM_GB: float = 8.0
-    DEFAULT_TRAFFIC_GB: float = 100.0
     DEFAULT_PUBLIC_IPS: int = 2
     DEFAULT_DISK_GB: float = 50.0
 

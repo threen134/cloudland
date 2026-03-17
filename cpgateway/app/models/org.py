@@ -39,3 +39,5 @@ class Organization(Base):
     # Relationships
     owner = relationship("User", foreign_keys=[owner_user_id])
     members = relationship("Member", back_populates="organization", cascade="all, delete-orphan")
+    resource_quotas = relationship("OrgResourceQuota", back_populates="org", cascade="all, delete-orphan")
+    resource_consumptions = relationship("OrgResourceConsumption", back_populates="org", cascade="all, delete-orphan")

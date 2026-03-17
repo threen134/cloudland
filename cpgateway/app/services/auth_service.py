@@ -8,8 +8,8 @@ from app.models.org import Organization, OrgType
 from app.models.member import Member, OrgRole
 from app.models.region import Region
 from app.models.token_revocation import TokenRevocation
-from app.models.resource_quota import ResourceQuota
-from app.models.resource_consumption import ResourceConsumption
+from app.models.org_resource_quota import OrgResourceQuota
+from app.models.org_resource_consumption import OrgResourceConsumption
 from app.core.security import (
     get_password_hash,
     verify_password,
@@ -70,8 +70,7 @@ class AuthService:
             )
             db.add(target_user)
 
-        await db.commit()
-        await db.refresh(target_user)
+        await db.flush()  # Get target_user.id without committing
 
         # Create Org with user as owner (org is ready, but user is inactive until activation)
         org = Organization(
@@ -81,8 +80,23 @@ class AuthService:
             owner_user_id=target_user.id,
         )
         db.add(org)
-        await db.commit()
-        await db.refresh(org)
+        await db.flush()  # Get org.id without committing
+
+        # Initialize org-region quota/consumption for all available regions
+        regions_result = await db.execute(select(Region))
+        for region in regions_result.scalars().all():
+            db.add(OrgResourceQuota(
+                org_id=org.id,
+                region_id=region.id,
+                max_cpu_cores=settings.DEFAULT_CPU_CORES,
+                max_ram_gb=settings.DEFAULT_RAM_GB,
+                max_public_ips=settings.DEFAULT_PUBLIC_IPS,
+                max_disk_gb=settings.DEFAULT_DISK_GB,
+            ))
+            db.add(OrgResourceConsumption(
+                org_id=org.id,
+                region_id=region.id,
+            ))
 
         # Add user as Admin member of the org
         member = Member(
@@ -91,7 +105,10 @@ class AuthService:
             org_role=OrgRole.ADMIN,
         )
         db.add(member)
+
+        # Single atomic commit: user + org + quota/consumption + member
         await db.commit()
+        await db.refresh(target_user)
 
         activation_token = create_activation_token(target_user.uuid)
         await send_activation_notification(
@@ -115,36 +132,6 @@ class AuthService:
 
         user.is_active = True
         user.status = UserStatus.ACTIVE  # User has Org from registration
-
-        # Create resource quota with all 0s (admin must grant quota before user can create resources)
-        existing_quota = await db.execute(
-            select(ResourceQuota).where(ResourceQuota.user_id == user.id)
-        )
-        if not existing_quota.scalars().first():
-            quota = ResourceQuota(
-                user_id=user.id,
-                max_cpu_cores=0,
-                max_ram_gb=0,
-                max_traffic_gb=0,
-                max_public_ips=0,
-                max_disk_gb=0,
-            )
-            db.add(quota)
-
-        # Create resource consumption record (all 0s)
-        existing_consumption = await db.execute(
-            select(ResourceConsumption).where(ResourceConsumption.user_id == user.id)
-        )
-        if not existing_consumption.scalars().first():
-            consumption = ResourceConsumption(
-                user_id=user.id,
-                cpu_cores=0,
-                ram_gb=0,
-                traffic_gb=0,
-                public_ips=0,
-                disk_gb=0,
-            )
-            db.add(consumption)
 
         await db.commit()
 

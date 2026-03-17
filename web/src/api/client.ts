@@ -50,6 +50,18 @@ client.interceptors.response.use(
             const status = error.response.status
 
             switch (status) {
+                case 429: {
+                    // Quota exceeded
+                    const data = error.response?.data as any
+                    if (data?.error === 'quota_exceeded') {
+                        const { resource, region, requested, available, limit } = data
+                        console.error(
+                            `Quota exceeded: ${resource} in ${region} — requested ${requested}, available ${available} (limit: ${limit})`
+                        )
+                        // Let the caller handle the structured error
+                    }
+                    break
+                }
                 case 401:
                     // Check if we are using a mock token
                     const token = localStorage.getItem('cloudland_token')
