@@ -10,7 +10,6 @@ router = APIRouter(tags=['Administration'])
 @router.get("/hypers", summary="list hypervisors")
 async def get_hypers(
     request: Request,
-    region: str,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_superuser)
 ):
@@ -19,16 +18,13 @@ async def get_hypers(
     """
     return await proxy_service.forward_to_region(
         request=request,
-        region_name=region,
         db=db,
-        current_user=current_user,
         proxy_path="/hypers"
     )
 
 @router.get("/hypers/{hostid}", summary="get a hypervisor")
 async def get_hypers_hostid(
     request: Request,
-    region: str,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_superuser)
 ):
@@ -37,16 +33,13 @@ async def get_hypers_hostid(
     """
     return await proxy_service.forward_to_region(
         request=request,
-        region_name=region,
         db=db,
-        current_user=current_user,
         proxy_path="/hypers/{hostid}"
     )
 
 @router.patch("/hypers/{hostid}", summary="update a hypervisor")
 async def patch_hypers_hostid(
     request: Request,
-    region: str,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_superuser)
 ):
@@ -55,16 +48,13 @@ async def patch_hypers_hostid(
     """
     return await proxy_service.forward_to_region(
         request=request,
-        region_name=region,
         db=db,
-        current_user=current_user,
         proxy_path="/hypers/{hostid}"
     )
 
 @router.post("/hypers", summary="deploy a new hypervisor")
 async def deploy_hyper(
     request: Request,
-    region: str,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_superuser)
 ):
@@ -73,16 +63,13 @@ async def deploy_hyper(
     """
     return await proxy_service.forward_to_region(
         request=request,
-        region_name=region,
         db=db,
-        current_user=current_user,
         proxy_path="/hypers"
     )
 
 @router.post("/hypers/{hostid}/maintain", summary="maintain a hypervisor")
 async def maintain_hyper(
     request: Request,
-    region: str,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_superuser)
 ):
@@ -91,16 +78,13 @@ async def maintain_hyper(
     """
     return await proxy_service.forward_to_region(
         request=request,
-        region_name=region,
         db=db,
-        current_user=current_user,
         proxy_path="/hypers/{hostid}/maintain"
     )
 
 @router.delete("/hypers/{hostid}", summary="delete a hypervisor")
 async def delete_hyper(
     request: Request,
-    region: str,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_superuser)
 ):
@@ -109,16 +93,13 @@ async def delete_hyper(
     """
     return await proxy_service.forward_to_region(
         request=request,
-        region_name=region,
         db=db,
-        current_user=current_user,
         proxy_path="/hypers/{hostid}"
     )
 
 @router.get("/node-alarm-rules", summary="list node alarm rules")
 async def list_node_alarm_rules(
     request: Request,
-    region: str,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_superuser)
 ):
@@ -127,16 +108,13 @@ async def list_node_alarm_rules(
     """
     return await proxy_service.forward_to_region(
         request=request,
-        region_name=region,
         db=db,
-        current_user=current_user,
         proxy_path="/node-alarm-rules"
     )
 
 @router.post("/node-alarm-rules", summary="create a node alarm rule")
 async def create_node_alarm_rule(
     request: Request,
-    region: str,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_superuser)
 ):
@@ -145,16 +123,13 @@ async def create_node_alarm_rule(
     """
     return await proxy_service.forward_to_region(
         request=request,
-        region_name=region,
         db=db,
-        current_user=current_user,
         proxy_path="/node-alarm-rules"
     )
 
 @router.delete("/node-alarm-rules/{uuid}", summary="delete a node alarm rule")
 async def delete_node_alarm_rule(
     request: Request,
-    region: str,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_superuser)
 ):
@@ -163,8 +138,6 @@ async def delete_node_alarm_rule(
     """
     return await proxy_service.forward_to_region(
         request=request,
-        region_name=region,
         db=db,
-        current_user=current_user,
         proxy_path="/node-alarm-rules/{uuid}"
     )

@@ -10,7 +10,6 @@ router = APIRouter(tags=['Zone'])
 @router.get("/zones", summary="list zones")
 async def get_zones(
     request: Request,
-    region: str,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user)
 ):
@@ -19,16 +18,13 @@ async def get_zones(
     """
     return await proxy_service.forward_to_region(
         request=request,
-        region_name=region,
         db=db,
-        current_user=current_user,
         proxy_path="/zones"
     )
 
 @router.post("/zones", summary="create a zone")
 async def post_zones(
     request: Request,
-    region: str,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user)
 ):
@@ -37,16 +33,13 @@ async def post_zones(
     """
     return await proxy_service.forward_to_region(
         request=request,
-        region_name=region,
         db=db,
-        current_user=current_user,
         proxy_path="/zones"
     )
 
 @router.get("/zones/{name}", summary="get a zone")
 async def get_zones_name(
     request: Request,
-    region: str,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user)
 ):
@@ -55,16 +48,13 @@ async def get_zones_name(
     """
     return await proxy_service.forward_to_region(
         request=request,
-        region_name=region,
         db=db,
-        current_user=current_user,
         proxy_path="/zones/{name}"
     )
 
 @router.delete("/zones/{name}", summary="delete a zone")
 async def delete_zones_name(
     request: Request,
-    region: str,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user)
 ):
@@ -73,16 +63,13 @@ async def delete_zones_name(
     """
     return await proxy_service.forward_to_region(
         request=request,
-        region_name=region,
         db=db,
-        current_user=current_user,
         proxy_path="/zones/{name}"
     )
 
 @router.patch("/zones/{name}", summary="patch a zone")
 async def patch_zones_name(
     request: Request,
-    region: str,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user)
 ):
@@ -91,8 +78,6 @@ async def patch_zones_name(
     """
     return await proxy_service.forward_to_region(
         request=request,
-        region_name=region,
         db=db,
-        current_user=current_user,
         proxy_path="/zones/{name}"
     )

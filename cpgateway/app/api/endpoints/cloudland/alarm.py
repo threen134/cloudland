@@ -10,7 +10,6 @@ router = APIRouter(tags=['alarm'])
 @router.post("/api/v1/metrics/alarm/sync-mappings", summary="Synchronize all VM rule mappings")
 async def post_api_v1_metrics_alarm_sync_mappings(
     request: Request,
-    region: str,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user)
 ):
@@ -19,8 +18,6 @@ async def post_api_v1_metrics_alarm_sync_mappings(
     """
     return await proxy_service.forward_to_region(
         request=request,
-        region_name=region,
         db=db,
-        current_user=current_user,
         proxy_path="/api/v1/metrics/alarm/sync-mappings"
     )
