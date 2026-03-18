@@ -186,7 +186,7 @@ onMounted(fetchFloatingIPs)
                </div>
                <div v-else>
                   <Globe2 :size="48" style="opacity: 0.3; margin-bottom: 16px;" />
-                  <p>{{ $t('messages.noData') }}</p>
+                  <p>{{ $t('messages.noFloatingIPs') }}</p>
                </div>
             </td>
           </tr>

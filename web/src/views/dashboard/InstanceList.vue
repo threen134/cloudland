@@ -579,7 +579,7 @@ onMounted(() => fetchInstances())
                   <p>{{ $t('messages.noResults') }}</p>
                </div>
                <div v-else>
-                  <p>{{ $t('messages.noData') }}</p>
+                  <p>{{ $t('messages.noInstances') }}</p>
                </div>
             </td>
           </tr>

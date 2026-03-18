@@ -188,7 +188,7 @@ onMounted(fetchLoadBalancers)
                </div>
                <div v-else>
                   <GitFork :size="48" style="opacity: 0.3; margin-bottom: 16px;" />
-                  <p class="text-secondary">{{ $t('messages.noData') }}</p>
+                  <p class="text-secondary">{{ $t('messages.noLoadBalancers') }}</p>
                </div>
             </td>
           </tr>

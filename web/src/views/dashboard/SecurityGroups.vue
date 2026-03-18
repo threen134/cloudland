@@ -181,7 +181,7 @@ onMounted(fetchSecurityGroups)
        </div>
        <div v-else>
           <Shield :size="48" style="opacity: 0.3; margin-bottom: 16px;" />
-          <p class="text-secondary">{{ $t('messages.noData') }}</p>
+          <p class="text-secondary">{{ $t('messages.noSecurityGroups') }}</p>
        </div>
     </div>
 

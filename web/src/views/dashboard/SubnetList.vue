@@ -205,7 +205,7 @@ onMounted(fetchSubnets)
                </div>
                <div v-else>
                   <Network :size="48" style="opacity: 0.3; margin-bottom: 16px;" />
-                  <p>{{ $t('messages.noData') }}</p>
+                  <p>{{ $t('messages.noSubnets') }}</p>
                </div>
             </td>
           </tr>

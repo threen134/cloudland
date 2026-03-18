@@ -47,10 +47,12 @@ export const useTenantStore = defineStore('tenant', () => {
                 id: o.uuid || o.id,
             }))
 
-            // Auto-select first org if none selected
-            if (!currentOrgId.value && organizations.value.length > 0) {
-                currentOrgId.value = organizations.value[0].id
-                localStorage.setItem('cloudland_org_id', currentOrgId.value)
+            // Ensure we have an org selected and a scoped token
+            if (organizations.value.length > 0) {
+                const targetOrgId = currentOrgId.value && organizations.value.some(o => o.id === currentOrgId.value)
+                    ? currentOrgId.value
+                    : organizations.value[0].id
+                await switchOrg(targetOrgId)
             }
         } catch (err: any) {
             console.warn('Failed to fetch organizations:', err)
