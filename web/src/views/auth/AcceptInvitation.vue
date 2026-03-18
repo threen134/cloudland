@@ -1,12 +1,14 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { useI18n } from 'vue-i18n'
 import { CheckCircle, XCircle, Loader2, ArrowRight, Cloud, Mail } from 'lucide-vue-next'
 import { authApi } from '../../api/auth'
 import { ORG_ROLES } from '../../api/orgs'
 
 const route = useRoute()
 const router = useRouter()
+const { t } = useI18n()
 
 const status = ref<'loading' | 'info' | 'accepting' | 'success' | 'error'>('loading')
 const errorMsg = ref('')
@@ -102,7 +104,7 @@ onMounted(() => {
           <div class="loading-wrapper">
             <Loader2 class="icon-spin" :size="48" />
           </div>
-          <h2>Loading Invitation...</h2>
+          <h2>{{ $t('acceptInvitation.loading') }}</h2>
         </div>
 
         <!-- Invitation Info -->
@@ -110,7 +112,7 @@ onMounted(() => {
           <div class="status-icon-wrapper">
             <Mail :size="48" style="color: var(--primary-500);" />
           </div>
-          <h2>You're Invited!</h2>
+          <h2>{{ $t('acceptInvitation.invited') }}</h2>
 
           <div class="invite-details">
             <div class="invite-detail-row">
@@ -133,35 +135,35 @@ onMounted(() => {
 
           <!-- New user: need to set username & password -->
           <div v-if="!invitationInfo?.is_existing_user" class="new-user-form">
-            <p class="form-hint">Create your account to join:</p>
+            <p class="form-hint">{{ $t('acceptInvitation.createAccountToJoin') }}</p>
             <div class="form-group">
-              <label class="form-label">Email</label>
+              <label class="form-label">{{ $t('acceptInvitation.email') }}</label>
               <input type="email" class="form-input" :value="invitationInfo?.email" disabled />
             </div>
             <div class="form-group">
-              <label class="form-label">Username</label>
-              <input v-model="username" type="text" class="form-input" placeholder="Choose a username" />
+              <label class="form-label">{{ $t('acceptInvitation.username') }}</label>
+              <input v-model="username" type="text" class="form-input" :placeholder="$t('acceptInvitation.usernamePlaceholder')" />
             </div>
             <div class="form-group">
-              <label class="form-label">Password</label>
-              <input v-model="password" type="password" class="form-input" placeholder="At least 8 characters" />
+              <label class="form-label">{{ $t('acceptInvitation.password') }}</label>
+              <input v-model="password" type="password" class="form-input" :placeholder="$t('acceptInvitation.passwordPlaceholder')" />
             </div>
             <div class="form-group">
-              <label class="form-label">Confirm Password</label>
-              <input v-model="confirmPassword" type="password" class="form-input" placeholder="Confirm password" />
+              <label class="form-label">{{ $t('acceptInvitation.confirmPassword') }}</label>
+              <input v-model="confirmPassword" type="password" class="form-input" :placeholder="$t('acceptInvitation.confirmPasswordPlaceholder')" />
             </div>
           </div>
 
           <!-- Existing user info -->
           <div v-else class="existing-user-info">
-            <p>You already have an account (<strong>{{ invitationInfo?.email }}</strong>). Click below to join this organization.</p>
+            <p v-html="$t('acceptInvitation.existingUser', { email: `<strong>${invitationInfo?.email}</strong>` })"></p>
           </div>
 
           <div v-if="errorMsg" class="error-banner">{{ errorMsg }}</div>
 
           <button class="btn btn-primary btn-block btn-lg" @click="handleAccept" :disabled="status === 'accepting'">
             <Loader2 v-if="status === 'accepting'" class="icon-spin" :size="18" />
-            <span v-else>Accept Invitation</span>
+            <span v-else>{{ $t('acceptInvitation.accept') }}</span>
           </button>
         </div>
 
@@ -170,12 +172,11 @@ onMounted(() => {
           <div class="status-icon-wrapper">
             <CheckCircle class="status-icon" :size="64" />
           </div>
-          <h2>Welcome!</h2>
-          <p class="status-desc">
-            You've successfully joined <strong>{{ invitationInfo?.org_name }}</strong>.
+          <h2>{{ $t('acceptInvitation.welcome') }}</h2>
+          <p class="status-desc" v-html="$t('acceptInvitation.successJoined', { orgName: `<strong>${invitationInfo?.org_name}</strong>` })">
           </p>
           <button class="btn btn-primary btn-block btn-lg" @click="router.push('/login')">
-            <span>Go to Login</span>
+            <span>{{ $t('acceptInvitation.goToLogin') }}</span>
             <ArrowRight :size="18" />
           </button>
         </div>
@@ -185,10 +186,10 @@ onMounted(() => {
           <div class="status-icon-wrapper">
             <XCircle class="status-icon" :size="64" />
           </div>
-          <h2>Invalid Invitation</h2>
+          <h2>{{ $t('acceptInvitation.invalidInvitation') }}</h2>
           <p class="error-desc">{{ errorMsg }}</p>
           <button class="btn btn-secondary btn-block" @click="router.push('/login')">
-            Go to Login
+            {{ $t('acceptInvitation.goToLogin') }}
           </button>
         </div>
       </div>

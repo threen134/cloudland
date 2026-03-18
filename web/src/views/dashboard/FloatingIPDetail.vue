@@ -83,7 +83,7 @@ onMounted(fetchFip)
 
         <div v-else-if="error" class="error-container card">
             <p class="text-error">{{ error }}</p>
-            <button class="btn btn-primary" @click="fetchFip">Retry</button>
+            <button class="btn btn-primary" @click="fetchFip">{{ $t('actions.retry') }}</button>
         </div>
 
         <div v-else-if="fip" class="detail-content">
@@ -106,10 +106,10 @@ onMounted(fetchFip)
             <div class="info-grid">
                 <!-- General Info -->
                 <div class="card info-card">
-                    <h3>General Information</h3>
+                    <h3>{{ $t('dashboard.table.generalInformation') }}</h3>
                     <div class="key-value-list">
                         <div class="kv-item">
-                            <span class="label">Name</span>
+                            <span class="label">{{ $t('dashboard.table.name') }}</span>
                             <span class="value">{{ fip.name || '-' }}</span>
                         </div>
                         <div class="kv-item">
@@ -121,7 +121,7 @@ onMounted(fetchFip)
                             <span class="value mono">{{ fip.ip_address }}</span>
                         </div>
                         <div class="kv-item">
-                            <span class="label">Created At</span>
+                            <span class="label">{{ $t('dashboard.table.createdAt') }}</span>
                             <span class="value">{{ fip.created_at || '-' }}</span>
                         </div>
                         <div class="kv-item">
@@ -142,7 +142,7 @@ onMounted(fetchFip)
                                     {{ fip.target_interface.from_instance.hostname }}
                                 </router-link>
                             </span>
-                            <span class="value text-secondary" v-else>Not Associated</span>
+                            <span class="value text-secondary" v-else>{{ $t('messages.notAttached') }}</span>
                         </div>
                          <div class="kv-item">
                             <span class="label"><Network :size="14" /> Interface ID</span>

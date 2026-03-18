@@ -4,7 +4,7 @@ import { useI18n } from 'vue-i18n'
 import { flavorsApi, type Flavor, type FlavorPayload } from '../../api/flavors'
 import { isValidName } from '../../utils/validation'
 
-import { Plus, Server, Search, Trash2, Edit, Cpu, HardDrive, X } from 'lucide-vue-next'
+import { Plus, Server, Search, Trash2, Edit, Cpu, HardDrive, X, RefreshCw } from 'lucide-vue-next'
 
 const flavors = ref<Flavor[]>([])
 const loading = ref(false)
@@ -147,9 +147,14 @@ onMounted(fetchFlavors)
           />
         </div>
       </div>
-      <button class="btn btn-primary btn-sm" @click="openCreateModal">
-        <Plus :size="14" /> {{ $t('dashboard.buttons.createFlavor') }}
-      </button>
+      <div class="header-actions">
+        <button class="btn btn-secondary btn-sm btn-icon" @click="fetchFlavors" :title="$t('actions.refresh')">
+          <RefreshCw :size="14" :class="{ spinning: loading }" />
+        </button>
+        <button class="btn btn-primary btn-sm" @click="openCreateModal">
+          <Plus :size="14" /> {{ $t('dashboard.buttons.createFlavor') }}
+        </button>
+      </div>
     </div>
 
     <div class="card table-card">
@@ -232,7 +237,7 @@ onMounted(fetchFlavors)
         <div class="modal-body">
           <div class="form-grid">
             <div class="form-group">
-              <label class="form-label">Name</label>
+              <label class="form-label">{{ $t('dashboard.table.name') }}</label>
               <input 
                 v-model="newFlavorForm.name" 
                 type="text" 
@@ -247,7 +252,7 @@ onMounted(fetchFlavors)
             
             <div class="form-row">
               <div class="form-group flex-1">
-                <label class="form-label">VCPUs</label>
+                <label class="form-label">{{ $t('dashboard.table.vcpus') }}</label>
                 <div class="input-with-unit">
                   <input 
                     v-model.number="newFlavorForm.cpu" 
@@ -255,11 +260,11 @@ onMounted(fetchFlavors)
                     class="form-input" 
                     min="1"
                   />
-                  <span class="unit">Cores</span>
+                  <span class="unit">{{ $t('specs.cores').replace('{n}', '') }}</span>
                 </div>
               </div>
               <div class="form-group flex-1">
-                <label class="form-label">RAM</label>
+                <label class="form-label">{{ $t('specs.ram') }}</label>
                 <div class="input-with-unit">
                   <input 
                     v-model.number="newFlavorForm.memory" 
@@ -273,7 +278,7 @@ onMounted(fetchFlavors)
             </div>
 
             <div class="form-group">
-              <label class="form-label">System Disk</label>
+              <label class="form-label">{{ $t('dashboard.overview.disk') }}</label>
               <div class="input-with-unit">
                 <input 
                   v-model.number="newFlavorForm.disk" 
@@ -558,4 +563,8 @@ onMounted(fetchFlavors)
 }
 .btn-danger:hover { background: var(--error-dark); }
 .btn-danger:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.header-actions { display: flex; gap: 8px; align-items: center; }
+.spinning { animation: spin 1s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
 </style>

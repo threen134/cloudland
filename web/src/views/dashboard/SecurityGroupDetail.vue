@@ -108,7 +108,7 @@ onMounted(fetchGroup)
 
         <div v-else-if="error" class="error-container card">
             <p class="text-error">{{ error }}</p>
-            <button class="btn btn-primary" @click="fetchGroup">Retry</button>
+            <button class="btn btn-primary" @click="fetchGroup">{{ $t('actions.retry') }}</button>
         </div>
 
         <div v-else-if="group" class="detail-content">
@@ -121,7 +121,7 @@ onMounted(fetchGroup)
                     <h1>{{ group.name }}</h1>
                     <div class="subtitle">
                         <span class="id-text">{{ group.id }}</span>
-                        <span v-if="group.is_default" class="badge badge-primary">Default</span>
+                        <span v-if="group.is_default" class="badge badge-primary">{{ $t('dashboard.securityGroups.default') }}</span>
                     </div>
                 </div>
                 <div class="title-actions">

@@ -5,7 +5,7 @@ import { volumesApi, type Volume } from '../../api/volumes'
 import { useRegionStore } from '../../stores/region'
 import { isValidName } from '../../utils/validation'
 
-import { HardDrive, Plus, MoreVertical, Paperclip, Trash2, Maximize, Search, X } from 'lucide-vue-next'
+import { HardDrive, Plus, MoreVertical, Paperclip, Trash2, Maximize, Search, X, RefreshCw } from 'lucide-vue-next'
 
 const region = useRegionStore()
 
@@ -92,7 +92,7 @@ const closeCreateModal = () => {
 const handleCreateVolume = async () => {
     createError.value = ''
     if (!newVolumeForm.value.name) {
-        createError.value = 'Please enter a volume name.'
+        createError.value = t('messages.nameRequired')
         return
     }
     if (!isNameValid.value) {
@@ -168,9 +168,14 @@ onMounted(() => {
           />
         </div>
       </div>
-      <button class="btn btn-primary btn-sm" @click="openCreateModal">
-        <Plus :size="14" /> {{ $t('dashboard.buttons.createVolume') }}
-      </button>
+      <div class="header-actions">
+        <button class="btn btn-secondary btn-sm btn-icon" @click="fetchVolumes" :title="$t('actions.refresh')">
+          <RefreshCw :size="14" :class="{ spinning: loading }" />
+        </button>
+        <button class="btn btn-primary btn-sm" @click="openCreateModal">
+          <Plus :size="14" /> {{ $t('dashboard.buttons.createVolume') }}
+        </button>
+      </div>
     </div>
 
     <div class="card table-card">
@@ -219,7 +224,7 @@ onMounted(() => {
             <td>{{ formatSize(volume.size) }}</td>
             <td>
               <span :class="['badge', volume.booting ? 'status-running' : 'status-pending']">
-                {{ volume.booting ? 'Yes' : 'No' }}
+                {{ volume.booting ? $t('messages.yes') : $t('messages.no') }}
               </span>
             </td>
             <td>{{ volume.format || '-' }}</td>
@@ -231,13 +236,13 @@ onMounted(() => {
             </td>
             <td>
               <div class="actions">
-                <button class="btn btn-ghost btn-sm" title="Attach">
+                <button class="btn btn-ghost btn-sm" :title="$t('actions.attach')">
                   <Paperclip :size="14" />
                 </button>
-                <button class="btn btn-ghost btn-sm" title="Resize">
+                <button class="btn btn-ghost btn-sm" :title="$t('actions.resize')">
                   <Maximize :size="14" />
                 </button>
-                <button class="btn btn-ghost btn-sm text-error" title="Delete" @click="handleDeleteClick(volume)">
+                <button class="btn btn-ghost btn-sm text-error" :title="$t('actions.delete')" @click="handleDeleteClick(volume)">
                   <Trash2 :size="14" />
                 </button>
               </div>
@@ -525,4 +530,8 @@ onMounted(() => {
 }
 .btn-danger:hover { background: var(--error-dark); }
 .btn-danger:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.header-actions { display: flex; gap: 8px; align-items: center; }
+.spinning { animation: spin 1s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
 </style>

@@ -246,11 +246,11 @@ onMounted(() => {
         <div class="action-group">
           <button class="btn btn-secondary">
             <Paperclip :size="16" />
-            Attach / Detach
+            {{ $t('actions.attach') }} / {{ $t('actions.detach') }}
           </button>
           <button class="btn btn-secondary">
             <Maximize :size="16" />
-            Resize
+            {{ $t('actions.resize') }}
           </button>
         </div>
         <div class="action-group">

@@ -191,54 +191,60 @@ const router = createRouter({
                     name: 'load-balancer-detail',
                     component: () => import('../views/dashboard/LoadBalancerDetail.vue')
                 },
-                // Administration (Root only)
+                // Administration (Superadmin only)
+                {
+                    path: 'regions',
+                    name: 'regions',
+                    component: () => import('../views/dashboard/RegionList.vue'),
+                    meta: { requiresSuperAdmin: true }
+                },
                 {
                     path: 'zones',
                     name: 'zones',
                     component: () => import('../views/dashboard/ZoneList.vue'),
-                    meta: { requiresRoot: true }
+                    meta: { requiresSuperAdmin: true }
                 },
                 {
                     path: 'zones/:name',
                     name: 'zone-detail',
                     component: () => import('../views/dashboard/ZoneDetail.vue'),
-                    meta: { requiresRoot: true }
+                    meta: { requiresSuperAdmin: true }
                 },
                 {
                     path: 'hypervisors',
                     name: 'hypervisors',
                     component: () => import('../views/dashboard/HypervisorList.vue'),
-                    meta: { requiresRoot: true }
+                    meta: { requiresSuperAdmin: true }
                 },
                 {
                     path: 'hypervisors/:id',
                     name: 'hypervisor-detail',
                     component: () => import('../views/dashboard/HypervisorDetail.vue'),
-                    meta: { requiresRoot: true }
+                    meta: { requiresSuperAdmin: true }
                 },
                 {
                     path: 'migrations',
                     name: 'migrations',
                     component: () => import('../views/dashboard/MigrationList.vue'),
-                    meta: { requiresRoot: true }
+                    meta: { requiresSuperAdmin: true }
                 },
                 {
                     path: 'migrations/:id',
                     name: 'migration-detail',
                     component: () => import('../views/dashboard/MigrationDetail.vue'),
-                    meta: { requiresRoot: true }
+                    meta: { requiresSuperAdmin: true }
                 },
                 {
                     path: 'alarms',
                     name: 'alarms',
                     component: () => import('../views/dashboard/AlarmList.vue'),
-                    meta: { requiresRoot: true }
+                    meta: { requiresSuperAdmin: true }
                 },
                 {
                     path: 'alarms/:id',
                     name: 'alarm-detail',
                     component: () => import('../views/dashboard/AlarmDetail.vue'),
-                    meta: { requiresRoot: true }
+                    meta: { requiresSuperAdmin: true }
                 },
                 // Settings
                 {
@@ -260,11 +266,6 @@ router.beforeEach((to, _from, next) => {
 
     if (to.meta.requiresAuth && !auth.user && !auth.isLoading) {
         return next({ name: 'login' })
-    }
-
-    // Check root requirement
-    if (to.meta.requiresRoot && auth.user?.username !== 'root') {
-        return next({ name: 'dashboard' })
     }
 
     // Check superadmin requirement

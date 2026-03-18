@@ -63,12 +63,7 @@ client.interceptors.response.use(
                     break
                 }
                 case 401:
-                    // Check if we are using a mock token
-                    const token = localStorage.getItem('cloudland_token')
-                    if (token && token.startsWith('mock-token-')) {
-                        console.warn('API 401 ignored due to mock token')
-                        break
-                    }
+
 
                     // Check if 401 is caused by region backend failure (not a real auth issue)
                     const errorDetail = (error.response?.data as any)?.detail || ''

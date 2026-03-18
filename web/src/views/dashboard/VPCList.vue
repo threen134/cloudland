@@ -5,7 +5,7 @@ import { vpcsApi, type VPC } from '../../api/networks'
 import { useRegionStore } from '../../stores/region'
 import { isValidName } from '../../utils/validation'
 
-import { Layers, Plus, Trash2, Network, Search as SearchIcon, X } from 'lucide-vue-next'
+import { Layers, Plus, Trash2, Network, Search as SearchIcon, X, RefreshCw } from 'lucide-vue-next'
 import DeleteModal from '../../components/modals/DeleteModal.vue'
 
 const region = useRegionStore()
@@ -146,9 +146,14 @@ onMounted(() => {
           />
         </div>
       </div>
-      <button class="btn btn-primary btn-sm" @click="openCreateModal">
-        <Plus :size="14" /> {{ $t('dashboard.buttons.createVpc') }}
-      </button>
+      <div class="header-actions">
+        <button class="btn btn-secondary btn-sm btn-icon" @click="fetchVPCs" :title="$t('actions.refresh')">
+          <RefreshCw :size="14" :class="{ spinning: loading }" />
+        </button>
+        <button class="btn btn-primary btn-sm" @click="openCreateModal">
+          <Plus :size="14" /> {{ $t('dashboard.buttons.createVpc') }}
+        </button>
+      </div>
     </div>
     
     <div class="card table-card">
@@ -430,4 +435,8 @@ onMounted(() => {
 
 .btn-danger:hover { background: var(--error-dark); }
 .btn-danger:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.header-actions { display: flex; gap: 8px; align-items: center; }
+.spinning { animation: spin 1s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
 </style>

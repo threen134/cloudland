@@ -534,7 +534,7 @@ onMounted(() => {
           <button class="btn btn-primary" @click="handleAddMember" :disabled="addingMember">
             <span v-if="addingMember" class="loading-spinner" style="width: 16px; height: 16px; border-width: 2px;"></span>
             <Mail v-if="!addingMember" :size="14" />
-            {{ addingMember ? $t('messages.loading') : 'Send Invitation' }}
+            {{ addingMember ? $t('messages.loading') : $t('dashboard.org.inviteMember') || 'Send Invitation' }}
           </button>
         </div>
       </div>
@@ -554,9 +554,9 @@ onMounted(() => {
           <div class="form-group">
             <label class="form-label">{{ $t('dashboard.org.role') }}</label>
             <select v-model="changeRoleForm.org_role" class="form-input">
-              <option :value="1">Reader</option>
-              <option :value="2">Writer</option>
-              <option :value="3">Admin</option>
+              <option :value="1">{{ $t('roles.reader') }}</option>
+              <option :value="2">{{ $t('roles.writer') }}</option>
+              <option :value="3">{{ $t('roles.admin') }}</option>
             </select>
           </div>
         </div>

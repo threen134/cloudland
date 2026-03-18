@@ -194,9 +194,9 @@ onMounted(fetchSecurityGroups)
             <div>
               <h3 class="sg-name">
                 <span class="resource-link" @click.stop="navigateToDetail(group)">{{ group.name }}</span>
-                <span v-if="group.is_default" class="badge badge-primary">Default</span>
+                <span v-if="group.is_default" class="badge badge-primary">{{ $t('dashboard.table.default') || 'Default' }}</span>
               </h3>
-              <span class="sg-id">{{ group.id }} • {{ group.vpc?.name || 'No VPC' }}</span>
+              <span class="sg-id">{{ group.id }} • {{ group.vpc?.name || $t('dashboard.org.noVpcs') || 'No VPC' }}</span>
             </div>
           </div>
           <div class="sg-stats">
@@ -220,7 +220,7 @@ onMounted(fetchSecurityGroups)
             </thead>
             <tbody>
               <tr v-if="!group.security_rules?.length">
-                <td colspan="5" class="text-center text-secondary">No rules defined</td>
+                <td colspan="5" class="text-center text-secondary">{{ $t('messages.noData') }}</td>
               </tr>
               <tr v-else v-for="rule in group.security_rules" :key="rule.id">
                 <td>

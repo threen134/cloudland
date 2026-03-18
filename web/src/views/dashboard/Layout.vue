@@ -142,7 +142,8 @@ const pageTitle = computed(() => {
         'migrations': t('dashboard.migrations'),
         'migration-detail': t('dashboard.migrations'),
         'alarms': t('dashboard.alarms'),
-        'alarm-detail': t('dashboard.alarms')
+        'alarm-detail': t('dashboard.alarms'),
+        'regions': t('dashboard.regions')
     }
     return titles[route.name as string] || t('nav.dashboard')
 })
@@ -270,13 +271,17 @@ onMounted(() => {
           </div>
         </div>
 
-        <!-- Administration Section (Root Only) -->
-        <div class="nav-section" v-if="auth.user?.username === 'root'">
+        <!-- Administration Section (Superadmin Only) -->
+        <div class="nav-section" v-if="auth.user?.is_superuser">
           <button class="section-header" @click="toggleSection('admin')">
             <span class="section-title">{{ $t('dashboard.administration') }}</span>
             <component :is="isExpanded('admin') ? ChevronDown : ChevronRight" :size="14" class="section-chevron" />
           </button>
           <div v-show="isExpanded('admin') || isSidebarCollapsed" class="section-items">
+            <RouterLink to="/dashboard/regions" class="nav-item" active-class="active">
+              <Globe2 :size="18" />
+              <span>{{ $t('dashboard.regions') }}</span>
+            </RouterLink>
             <RouterLink to="/dashboard/zones" class="nav-item" active-class="active">
               <MapPin :size="18" />
               <span>{{ $t('dashboard.zones') }}</span>

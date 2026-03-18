@@ -20,7 +20,7 @@ onMounted(() => {
 
 const handleConfirmPayment = async () => {
     status.value = 'processing'
-    // Mock payment processing
+    // TODO: Integrate actual payment gateway API (Stripe, etc.)
     await new Promise(resolve => setTimeout(resolve, 2000))
     status.value = 'success'
     // Redirect to dashboard after success

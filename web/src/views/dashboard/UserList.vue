@@ -5,7 +5,7 @@ import { useRouter } from 'vue-router'
 import { usersApi, type User } from '../../api/users'
 import { orgsApi } from '../../api/orgs'
 import { useTenantStore } from '../../stores/tenant'
-import { User as UserIcon, Plus, Trash2, Edit, Search, X } from 'lucide-vue-next'
+import { User as UserIcon, Plus, Trash2, Edit, Search, X, RefreshCw } from 'lucide-vue-next'
 
 const { t } = useI18n()
 const tenantStore = useTenantStore()
@@ -235,9 +235,14 @@ onMounted(fetchUsers)
           />
         </div>
       </div>
-      <button class="btn btn-primary btn-sm" @click="openCreateModal">
-        <Plus :size="14" /> {{ $t('dashboard.buttons.createUser') }}
-      </button>
+      <div class="header-actions">
+        <button class="btn btn-secondary btn-sm btn-icon" @click="fetchUsers" :title="$t('actions.refresh')">
+          <RefreshCw :size="14" :class="{ spinning: loading }" />
+        </button>
+        <button class="btn btn-primary btn-sm" @click="openCreateModal">
+          <Plus :size="14" /> {{ $t('dashboard.buttons.createUser') }}
+        </button>
+      </div>
     </div>
 
     <div class="card table-card">
@@ -650,4 +655,8 @@ onMounted(fetchUsers)
 .resource-link:hover {
   text-decoration: underline;
 }
+
+.header-actions { display: flex; gap: 8px; align-items: center; }
+.spinning { animation: spin 1s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
 </style>

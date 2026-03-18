@@ -71,7 +71,7 @@ onMounted(fetchKey)
 
         <div v-else-if="error" class="error-container card">
             <p class="text-error">{{ error }}</p>
-            <button class="btn btn-primary" @click="fetchKey">Retry</button>
+            <button class="btn btn-primary" @click="fetchKey">{{ $t('actions.retry') }}</button>
         </div>
 
         <div v-else-if="sshKey" class="detail-content">
@@ -98,18 +98,18 @@ onMounted(fetchKey)
             <div class="info-grid">
                 <!-- General Info -->
                 <div class="card info-card">
-                    <h3>General Information</h3>
+                    <h3>{{ $t('dashboard.table.generalInformation') }}</h3>
                     <div class="key-value-list">
                         <div class="kv-item">
-                            <span class="label">Name</span>
+                            <span class="label">{{ $t('dashboard.table.name') }}</span>
                             <span class="value">{{ sshKey.name }}</span>
                         </div>
                         <div class="kv-item">
-                            <span class="label">Fingerprint</span>
+                            <span class="label">{{ $t('dashboard.table.fingerprint') }}</span>
                             <span class="value mono text-sm">{{ sshKey.finger_print || '-' }}</span>
                         </div>
                         <div class="kv-item">
-                            <span class="label">Created At</span>
+                            <span class="label">{{ $t('dashboard.table.createdAt') }}</span>
                             <span class="value">{{ sshKey.created_at || '-' }}</span>
                         </div>
                     </div>
@@ -119,9 +119,9 @@ onMounted(fetchKey)
             <!-- Public Key -->
             <div class="card key-card">
                 <div class="card-header">
-                    <h3>Public Key</h3>
+                    <h3>{{ $t('dashboard.table.publicKey') }}</h3>
                     <button class="btn btn-ghost btn-sm" @click="copyPublicKey">
-                        <component :is="copied ? Check : Copy" :size="14" /> {{ copied ? 'Copied' : 'Copy' }}
+                        <component :is="copied ? Check : Copy" :size="14" /> {{ copied ? $t('messages.copied') : $t('actions.copy') }}
                     </button>
                 </div>
                 <div class="key-content">

@@ -35,8 +35,8 @@ interface SystemStats {
 const loading = ref(true)
 const stats = ref<SystemStats | null>(null)
 
-// Mock data pattern (as fallback)
-const mockStats: SystemStats = {
+// Default empty data pattern (as fallback)
+const emptyStats: SystemStats = {
     cpu: { used: 0, total: 0, percentage: 0 },
     memory: { used: 0, total: 0, unit: 'GB', percentage: 0 },
     disk: { used: 0, total: 0, unit: 'GB', percentage: 0 },
@@ -103,7 +103,7 @@ onMounted(async () => {
         }
     } catch (error) {
         console.error('Failed to fetch actual stats:', error)
-        stats.value = mockStats
+        stats.value = emptyStats
     } finally {
         loading.value = false
     }
@@ -289,7 +289,6 @@ const getPercentColor = (percent: number) => {
           </ul>
         </div>
       </div>
-
     </div>
   </div>
   <div v-else class="loading-container">

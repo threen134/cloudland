@@ -3,7 +3,7 @@ import { ref, onMounted, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import { floatingIpsApi, subnetsApi, type FloatingIP, type Subnet } from '../../api/networks'
-import { Globe2, Plus, Link, Unlink, Trash2, Search, X } from 'lucide-vue-next'
+import { Globe2, Plus, Link, Unlink, Trash2, Search, X, RefreshCw } from 'lucide-vue-next'
 import DeleteModal from '../../components/modals/DeleteModal.vue'
 
 const { t } = useI18n()
@@ -152,9 +152,14 @@ onMounted(fetchFloatingIPs)
           />
         </div>
       </div>
-      <button class="btn btn-primary btn-sm" @click="openCreateModal">
-        <Plus :size="14" /> {{ $t('dashboard.buttons.createIp') }}
-      </button>
+      <div class="header-actions">
+        <button class="btn btn-secondary btn-sm btn-icon" @click="fetchFloatingIPs" :title="$t('actions.refresh')">
+          <RefreshCw :size="14" :class="{ spinning: loading }" />
+        </button>
+        <button class="btn btn-primary btn-sm" @click="openCreateModal">
+          <Plus :size="14" /> {{ $t('dashboard.buttons.createIp') }}
+        </button>
+      </div>
     </div>
 
     <div class="card table-card">
@@ -374,4 +379,8 @@ onMounted(fetchFloatingIPs)
 
 .btn-danger:hover { background: var(--error-dark); }
 .btn-danger:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.header-actions { display: flex; gap: 8px; align-items: center; }
+.spinning { animation: spin 1s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
 </style>

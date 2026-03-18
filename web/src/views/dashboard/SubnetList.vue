@@ -5,7 +5,7 @@ import { useRouter } from 'vue-router'
 import { subnetsApi, vpcsApi, type Subnet, type SubnetPayload, type VPC } from '../../api/networks'
 import { isValidName } from '../../utils/validation'
 
-import { Network, Plus, Trash2, Edit, Search, X, Globe, Cpu, Zap } from 'lucide-vue-next'
+import { Network, Plus, Trash2, Edit, Search, X, Globe, Cpu, Zap, RefreshCw } from 'lucide-vue-next'
 import DeleteModal from '../../components/modals/DeleteModal.vue'
 
 const subnets = ref<Subnet[]>([])
@@ -168,9 +168,14 @@ onMounted(fetchSubnets)
           />
         </div>
       </div>
-      <button class="btn btn-primary btn-sm" @click="openCreateModal">
-        <Plus :size="14" /> {{ $t('dashboard.buttons.createSubnet') }}
-      </button>
+      <div class="header-actions">
+        <button class="btn btn-secondary btn-sm btn-icon" @click="fetchSubnets" :title="$t('actions.refresh')">
+          <RefreshCw :size="14" :class="{ spinning: loading }" />
+        </button>
+        <button class="btn btn-primary btn-sm" @click="openCreateModal">
+          <Plus :size="14" /> {{ $t('dashboard.buttons.createSubnet') }}
+        </button>
+      </div>
     </div>
 
     <div class="card table-card">
@@ -179,7 +184,7 @@ onMounted(fetchSubnets)
           <tr>
             <th>{{ $t('dashboard.table.nameId') }}</th>
             <th>{{ $t('dashboard.table.cidr') }}</th>
-            <th>Network Range / VLAN</th>
+            <th>{{ $t('dashboard.table.networkRange') }} / VLAN</th>
             <th>Usage (Alloc/Avail/Total)</th>
             <th>{{ $t('dashboard.table.vpc') }}</th>
             <th>{{ $t('dashboard.table.type') }}</th>
@@ -200,7 +205,7 @@ onMounted(fetchSubnets)
                </div>
                <div v-else>
                   <Network :size="48" style="opacity: 0.3; margin-bottom: 16px;" />
-                  <p>No subnets found. Create a subnet within a VPC to segment your network.</p>
+                  <p>{{ $t('messages.noData') }}</p>
                </div>
             </td>
           </tr>
@@ -245,7 +250,7 @@ onMounted(fetchSubnets)
                   {{ subnet.vpc.name }}
                 </router-link>
               </div>
-              <span v-else class="text-light italic text-xs">Standalone</span>
+              <span v-else class="text-light italic text-xs">{{ $t('dashboard.table.standalone') || 'Standalone' }}</span>
             </td>
             <td>
               <span :class="['badge', getTypeClass(subnet.type || '')]">
@@ -280,7 +285,7 @@ onMounted(fetchSubnets)
         <div class="modal-body">
           <div class="form-grid">
             <div class="form-group">
-              <label class="form-label">Name</label>
+              <label class="form-label">{{ $t('dashboard.table.name') }}</label>
               <input 
                 v-model="newSubnetForm.name" 
                 type="text" 
@@ -334,13 +339,13 @@ onMounted(fetchSubnets)
                 </select>
               </div>
               <div class="form-group flex-1">
-                <label class="form-label">DHCP</label>
+                <label class="form-label">{{ $t('dashboard.table.dhcp') }}</label>
                 <div class="toggle-group">
                   <label class="toggle-switch">
                     <input type="checkbox" v-model="newSubnetForm.dhcp">
                     <span class="toggle-slider"></span>
                   </label>
-                  <span class="toggle-label">{{ newSubnetForm.dhcp ? 'Enabled' : 'Disabled' }}</span>
+                  <span class="toggle-label">{{ newSubnetForm.dhcp ? $t('dashboard.alarmActions.enabled') : $t('dashboard.alarmActions.disabled') }}</span>
                 </div>
               </div>
             </div>
@@ -503,4 +508,8 @@ onMounted(fetchSubnets)
 
 .btn-danger:hover { background: var(--error-dark); }
 .btn-danger:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.header-actions { display: flex; gap: 8px; align-items: center; }
+.spinning { animation: spin 1s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
 </style>

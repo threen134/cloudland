@@ -219,7 +219,7 @@ onMounted(() => {
                 <th>{{ $t('dashboard.table.cidr') }}</th>
                 <th>{{ $t('dashboard.table.gateway') }}</th>
                 <th>{{ $t('dashboard.table.type') }}</th>
-                <th>Network</th>
+                <th>{{ $t('dashboard.table.network') }}</th>
                 <th>{{ $t('dashboard.table.dhcp') }}</th>
               </tr>
             </thead>
@@ -246,7 +246,7 @@ onMounted(() => {
         </div>
         <div v-else class="empty-subnets">
           <Network :size="36" style="opacity: 0.2; margin-bottom: 12px;" />
-          <p class="text-secondary">No subnets in this VPC</p>
+          <p class="text-secondary">{{ $t('messages.noData') }}</p>
         </div>
       </div>
 

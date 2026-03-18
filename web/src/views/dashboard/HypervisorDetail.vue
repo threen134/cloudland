@@ -2,8 +2,13 @@
 import { ref, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { hypervisorsApi, type Hypervisor } from '../../api/hypervisors'
-import { ArrowLeft, ServerCog, Copy, Check, Edit, Save, X } from 'lucide-vue-next'
+import { zonesApi } from '../../api/zones'
+import { ArrowLeft, ServerCog, Copy, Check, Edit, Save, X, Wrench, Loader2 } from 'lucide-vue-next'
+import { useI18n } from 'vue-i18n'
+import { useToast } from '../../composables/useToast'
 
+const { t } = useI18n()
+const toast = useToast()
 const route = useRoute()
 const router = useRouter()
 const hypervisor = ref<Hypervisor | null>(null)
@@ -12,40 +17,58 @@ const error = ref<string | null>(null)
 const copiedField = ref<string | null>(null)
 const saving = ref(false)
 const editMode = ref(false)
+const zoneList = ref<any[]>([])
+
+const STATUS_MAP: Record<number, { label: string; class: string }> = {
+    0: { label: 'Disabled', class: 'status-disabled' },
+    1: { label: 'Active', class: 'status-active' },
+    2: { label: 'Maintaining', class: 'status-warning' },
+    4: { label: 'Deploying', class: 'status-info' },
+    5: { label: 'Deploy Failed', class: 'status-error' }
+}
 
 const form = ref({
-    status: '',
-    zone: '',
-    cpu_over_commit: 1,
-    mem_over_commit: 1,
-    disk_over_commit: 1,
+    status: 0 as number | undefined,
+    zone_id: 0 as number | undefined,
+    cpu_over_rate: 1,
+    mem_over_rate: 1,
+    disk_over_rate: 1,
     remark: ''
+})
+
+// Maintain modal
+const showMaintainModal = ref(false)
+const maintaining = ref(false)
+const maintainForm = ref({
+    migrate: true,
+    target_hyper: -1
 })
 
 const fetchHypervisorDetail = async () => {
     loading.value = true
     error.value = null
     try {
-        const id = route.params.id as string
-        const response = await hypervisorsApi.getHypervisor(id)
-        const data = response.data as any
-        hypervisor.value = data.hypervisor || data
-        
-        if (hypervisor.value) {
-            form.value = {
-                status: hypervisor.value.status,
-                zone: hypervisor.value.zone,
-                cpu_over_commit: hypervisor.value.cpu_over_commit || 1,
-                mem_over_commit: hypervisor.value.mem_over_commit || 1,
-                disk_over_commit: hypervisor.value.disk_over_commit || 1,
-                remark: hypervisor.value.remark || ''
-            }
-        }
+        const uuid = route.params.id as string
+        const response = await hypervisorsApi.getHypervisor(uuid)
+        hypervisor.value = response.data as any
+        syncForm()
     } catch (err: any) {
         console.error('Failed to fetch hypervisor detail:', err)
         error.value = err.message || 'Failed to load Hypervisor details'
     } finally {
         loading.value = false
+    }
+}
+
+const syncForm = () => {
+    if (!hypervisor.value) return
+    form.value = {
+        status: hypervisor.value.status,
+        zone_id: hypervisor.value.zone_id,
+        cpu_over_rate: hypervisor.value.cpu_over_rate || 1,
+        mem_over_rate: hypervisor.value.mem_over_rate || 1,
+        disk_over_rate: hypervisor.value.disk_over_rate || 1,
+        remark: hypervisor.value.remark || ''
     }
 }
 
@@ -57,54 +80,76 @@ const copyToClipboard = (text: string, field: string) => {
 }
 
 const formatMemory = (mb: number) => {
-    if (mb >= 1024) {
-        return `${(mb / 1024).toFixed(1)} GB`
-    }
+    if (mb >= 1024) return `${(mb / 1024).toFixed(1)} GB`
     return `${mb} MB`
 }
 
-const goBack = () => {
-    router.push({ name: 'hypervisors' })
+const formatDisk = (gb: number) => {
+    if (gb >= 1024) return `${(gb / 1024).toFixed(1)} TB`
+    return `${gb} GB`
 }
 
-const toggleEdit = () => {
+const getStatusInfo = (status: number) => {
+    return STATUS_MAP[status] || { label: `Unknown(${status})`, class: '' }
+}
+
+const goBack = () => { router.push({ name: 'hypervisors' }) }
+
+const toggleEdit = async () => {
     editMode.value = true
+    try {
+        const resp = await zonesApi.fetchZones()
+        const data = resp.data as any
+        zoneList.value = Array.isArray(data) ? data : (data.zones || [])
+    } catch { zoneList.value = [] }
 }
 
 const cancelEdit = () => {
     editMode.value = false
-    if (hypervisor.value) {
-        form.value = {
-            status: hypervisor.value.status,
-            zone: hypervisor.value.zone,
-            cpu_over_commit: hypervisor.value.cpu_over_commit || 1,
-            mem_over_commit: hypervisor.value.mem_over_commit || 1,
-            disk_over_commit: hypervisor.value.disk_over_commit || 1,
-            remark: hypervisor.value.remark || ''
-        }
-    }
+    syncForm()
 }
 
 const handleSave = async () => {
     if (!hypervisor.value) return
     saving.value = true
     try {
-        const payload = {
-            status: form.value.status,
-            zone: form.value.zone,
-            cpu_over_commit: Number(form.value.cpu_over_commit),
-            mem_over_commit: Number(form.value.mem_over_commit),
-            disk_over_commit: Number(form.value.disk_over_commit),
-            remark: form.value.remark
-        }
-        await hypervisorsApi.updateHypervisor(hypervisor.value.id.toString(), payload)
+        const payload: any = {}
+        if (form.value.status !== hypervisor.value.status) payload.status = form.value.status
+        if (form.value.zone_id !== hypervisor.value.zone_id) payload.zone_id = form.value.zone_id
+        if (form.value.cpu_over_rate !== hypervisor.value.cpu_over_rate) payload.cpu_over_rate = Number(form.value.cpu_over_rate)
+        if (form.value.mem_over_rate !== hypervisor.value.mem_over_rate) payload.mem_over_rate = Number(form.value.mem_over_rate)
+        if (form.value.disk_over_rate !== hypervisor.value.disk_over_rate) payload.disk_over_rate = Number(form.value.disk_over_rate)
+        if (form.value.remark !== (hypervisor.value.remark || '')) payload.remark = form.value.remark
+
+        await hypervisorsApi.updateHypervisor(hypervisor.value.uuid, payload)
         await fetchHypervisorDetail()
         editMode.value = false
-    } catch (err) {
-        console.error('Failed to update hypervisor:', err)
-        alert('Failed to update hypervisor details.')
+        toast.success(t('messages.success'))
+    } catch (err: any) {
+        toast.error(err.response?.data?.error || 'Failed to update hypervisor')
     } finally {
         saving.value = false
+    }
+}
+
+// Maintain
+const openMaintainModal = () => {
+    maintainForm.value = { migrate: true, target_hyper: -1 }
+    showMaintainModal.value = true
+}
+
+const handleMaintain = async () => {
+    if (!hypervisor.value) return
+    maintaining.value = true
+    try {
+        await hypervisorsApi.maintainHypervisor(hypervisor.value.uuid, maintainForm.value)
+        showMaintainModal.value = false
+        toast.success(t('messages.success'))
+        await fetchHypervisorDetail()
+    } catch (err: any) {
+        toast.error(err.response?.data?.error || 'Failed to start maintenance')
+    } finally {
+        maintaining.value = false
     }
 }
 
@@ -117,14 +162,14 @@ onMounted(fetchHypervisorDetail)
     <div class="detail-header">
       <button class="btn btn-ghost back-btn" @click="goBack">
         <ArrowLeft :size="18" />
-        <span>{{ $t('dashboard.hypervisors') }}</span>
+        <span>{{ t('dashboard.hypervisors') }}</span>
       </button>
     </div>
 
     <!-- Loading State -->
     <div v-if="loading" class="loading-container">
       <div class="loading-spinner"></div>
-      <p class="loading-text">{{ $t('messages.loading') }}</p>
+      <p class="loading-text">{{ t('messages.loading') }}</p>
     </div>
 
     <!-- Error State -->
@@ -132,7 +177,7 @@ onMounted(fetchHypervisorDetail)
       <ServerCog :size="48" style="opacity: 0.3; margin-bottom: 16px;" />
       <p class="text-secondary">{{ error }}</p>
       <button class="btn btn-primary btn-sm" @click="fetchHypervisorDetail" style="margin-top: 12px;">
-        {{ $t('actions.refresh') }}
+        {{ t('actions.refresh') }}
       </button>
     </div>
 
@@ -147,17 +192,21 @@ onMounted(fetchHypervisorDetail)
           <div>
             <h2 class="resource-title">{{ hypervisor.hostname }}</h2>
             <div class="resource-id-row">
-              <span class="resource-id-text">{{ hypervisor.id }}</span>
-              <button class="copy-btn" @click="copyToClipboard(hypervisor.id.toString(), 'id')" :title="$t('messages.copied')">
-                <Check v-if="copiedField === 'id'" :size="12" class="copied-icon" />
+              <span class="resource-id-text">{{ hypervisor.uuid }}</span>
+              <button class="copy-btn" @click="copyToClipboard(hypervisor.uuid, 'uuid')" :title="t('messages.copied')">
+                <Check v-if="copiedField === 'uuid'" :size="12" class="copied-icon" />
                 <Copy v-else :size="12" />
               </button>
             </div>
           </div>
         </div>
         <div class="title-actions">
-          <span :class="['badge', 'badge-lg', hypervisor.state === 'up' ? 'status-active' : 'status-error' ]">
-            {{ hypervisor.state }}
+          <button v-if="hypervisor.status === 1" class="btn btn-secondary btn-sm" @click="openMaintainModal">
+            <Wrench :size="14" />
+            {{ t('dashboard.hypervisorActions.maintain') }}
+          </button>
+          <span :class="['badge', 'badge-lg', getStatusInfo(hypervisor.status).class]">
+            {{ hypervisor.status_name || getStatusInfo(hypervisor.status).label }}
           </span>
         </div>
       </div>
@@ -166,38 +215,46 @@ onMounted(fetchHypervisorDetail)
       <div class="info-grid">
         <!-- Basic Info Card -->
         <div class="info-card card">
-          <h3 class="card-section-title">{{ $t('dashboard.table.overview') }}</h3>
+          <h3 class="card-section-title">{{ t('dashboard.table.overview') }}</h3>
           <div class="info-rows">
             <div class="info-row">
-              <span class="info-label">{{ $t('dashboard.table.hostname') }}</span>
+              <span class="info-label">{{ t('dashboard.table.hostname') }}</span>
               <span class="info-value">{{ hypervisor.hostname }}</span>
             </div>
             <div class="info-row">
-              <span class="info-label">{{ $t('dashboard.table.hostIp') }}</span>
+              <span class="info-label">{{ t('dashboard.table.hostIp') }}</span>
               <span class="info-value mono">{{ hypervisor.host_ip }}</span>
             </div>
             <div class="info-row">
-              <span class="info-label">{{ $t('dashboard.table.hypervisorType') }}</span>
-              <span class="info-value">{{ hypervisor.hypervisor_type }} (v{{ hypervisor.version }})</span>
+              <span class="info-label">Route IP</span>
+              <span class="info-value mono">{{ hypervisor.route_ip || '-' }}</span>
+            </div>
+            <div class="info-row">
+              <span class="info-label">{{ t('dashboard.hypervisorDeploy.virtType') }}</span>
+              <span class="info-value">{{ hypervisor.virt_type }}</span>
+            </div>
+            <div class="info-row">
+              <span class="info-label">Host ID</span>
+              <span class="info-value mono">{{ hypervisor.hostid }}</span>
             </div>
           </div>
         </div>
 
         <!-- Resources Card -->
         <div class="info-card card">
-          <h3 class="card-section-title">{{ $t('dashboard.table.resourcesCapacity') }}</h3>
+          <h3 class="card-section-title">{{ t('dashboard.table.resourcesCapacity') }}</h3>
           <div class="info-rows">
             <div class="info-row">
-              <span class="info-label">{{ $t('dashboard.table.vcpus') }}</span>
-              <span class="info-value">{{ hypervisor.vcpus_used }} used / {{ hypervisor.vcpus }}</span>
+              <span class="info-label">{{ t('dashboard.table.vcpus') }}</span>
+              <span class="info-value">{{ hypervisor.cpu }} / {{ hypervisor.cpu_total }} cores</span>
             </div>
             <div class="info-row">
-              <span class="info-label">{{ $t('dashboard.table.memory') }}</span>
-              <span class="info-value">{{ formatMemory(hypervisor.memory_mb_used) }} used / {{ formatMemory(hypervisor.memory_mb) }}</span>
+              <span class="info-label">{{ t('dashboard.table.memory') }}</span>
+              <span class="info-value">{{ formatMemory(hypervisor.memory) }} / {{ formatMemory(hypervisor.memory_total) }}</span>
             </div>
             <div class="info-row">
-              <span class="info-label">{{ $t('dashboard.table.diskAvailableLeast') }}</span>
-              <span class="info-value">{{ hypervisor.disk_available_least }} GB</span>
+              <span class="info-label">{{ t('dashboard.table.disk') }}</span>
+              <span class="info-value">{{ formatDisk(hypervisor.disk) }} / {{ formatDisk(hypervisor.disk_total) }}</span>
             </div>
           </div>
         </div>
@@ -206,94 +263,125 @@ onMounted(fetchHypervisorDetail)
       <!-- Configuration Card -->
       <div class="info-card card" style="margin-bottom: var(--spacing-5);">
         <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border-light); margin-bottom: var(--spacing-4); padding-bottom: var(--spacing-3);">
-           <h3 class="card-section-title" style="margin: 0; padding: 0; border: none;">{{ $t('dashboard.table.configuration') }}</h3>
+           <h3 class="card-section-title" style="margin: 0; padding: 0; border: none;">{{ t('dashboard.table.configuration') }}</h3>
           <button v-if="!editMode" class="btn btn-secondary btn-sm" @click="toggleEdit">
-            <Edit :size="14" /> {{ $t('actions.edit') }}
+            <Edit :size="14" /> {{ t('actions.edit') }}
           </button>
           <div v-else style="display: flex; gap: 8px;">
             <button class="btn btn-ghost btn-sm" @click="cancelEdit" :disabled="saving">
-               <X :size="14" /> {{ $t('actions.cancel') }}
+               <X :size="14" /> {{ t('actions.cancel') }}
             </button>
             <button class="btn btn-primary btn-sm" @click="handleSave" :disabled="saving">
               <Save :size="14" v-if="!saving" />
-               {{ saving ? $t('dashboard.migrationForm.starting') : $t('actions.save') }}
+               {{ saving ? t('messages.loading') : t('actions.save') }}
             </button>
           </div>
         </div>
-        
+
         <div class="info-rows" v-if="!editMode">
           <div class="info-row">
-             <span class="info-label">{{ $t('dashboard.table.status') }}</span>
+             <span class="info-label">{{ t('dashboard.table.status') }}</span>
             <span class="info-value">
-              <span :class="['badge', hypervisor.status === 'enabled' ? 'status-active' : '']" :style="hypervisor.status !== 'enabled' ? 'background: var(--gray-100); color: var(--gray-700);' : ''">{{ hypervisor.status }}</span>
+              <span :class="['badge', getStatusInfo(hypervisor.status).class]">{{ hypervisor.status_name || getStatusInfo(hypervisor.status).label }}</span>
             </span>
           </div>
           <div class="info-row">
-             <span class="info-label">{{ $t('dashboard.table.zone') }}</span>
-            <span class="info-value">{{ hypervisor.zone || '-' }}</span>
+             <span class="info-label">{{ t('dashboard.table.zone') }}</span>
+            <span class="info-value">{{ hypervisor.zone_name || '-' }}</span>
           </div>
           <div class="info-row">
-             <span class="info-label">{{ $t('dashboard.table.cpuOverCommit') }}</span>
-            <span class="info-value">{{ hypervisor.cpu_over_commit }}x</span>
+             <span class="info-label">{{ t('dashboard.table.cpuOverCommit') }}</span>
+            <span class="info-value">{{ hypervisor.cpu_over_rate }}x</span>
           </div>
           <div class="info-row">
-             <span class="info-label">{{ $t('dashboard.table.memOverCommit') }}</span>
-            <span class="info-value">{{ hypervisor.mem_over_commit }}x</span>
+             <span class="info-label">{{ t('dashboard.table.memOverCommit') }}</span>
+            <span class="info-value">{{ hypervisor.mem_over_rate }}x</span>
           </div>
           <div class="info-row">
-             <span class="info-label">{{ $t('dashboard.table.diskOverCommit') }}</span>
-            <span class="info-value">{{ hypervisor.disk_over_commit }}x</span>
+             <span class="info-label">{{ t('dashboard.table.diskOverCommit') }}</span>
+            <span class="info-value">{{ hypervisor.disk_over_rate }}x</span>
           </div>
           <div class="info-row" v-if="hypervisor.remark">
-             <span class="info-label">{{ $t('dashboard.table.remark') }}</span>
+             <span class="info-label">{{ t('dashboard.table.remark') }}</span>
             <span class="info-value">{{ hypervisor.remark }}</span>
           </div>
         </div>
 
         <div class="form-grid" v-else>
           <div class="form-group">
-             <label class="form-label">{{ $t('dashboard.table.status') }}</label>
-            <select v-model="form.status" class="form-select" style="width: 100%; border: 1px solid var(--border-light); border-radius: var(--radius-md); padding: 8px;">
-                <option value="enabled">Enabled</option>
-                <option value="disabled">Disabled</option>
+             <label class="form-label">{{ t('dashboard.table.status') }}</label>
+            <select v-model="form.status" class="form-select">
+                <option :value="0">Disabled</option>
+                <option :value="1">Active</option>
             </select>
           </div>
           <div class="form-group">
-             <label class="form-label">{{ $t('dashboard.table.zone') }}</label>
-            <input type="text" v-model="form.zone" class="form-input" style="width: 100%; border: 1px solid var(--border-light); border-radius: var(--radius-md); padding: 8px;" />
+             <label class="form-label">{{ t('dashboard.table.zone') }}</label>
+            <select v-model="form.zone_id" class="form-select">
+                <option :value="0">-</option>
+                <option v-for="z in zoneList" :key="z.id" :value="z.id">{{ z.name }}</option>
+            </select>
           </div>
           <div class="form-group">
-             <label class="form-label">{{ $t('dashboard.table.cpuOverCommit') }}</label>
-            <input type="number" step="0.1" v-model="form.cpu_over_commit" class="form-input" style="width: 100%; border: 1px solid var(--border-light); border-radius: var(--radius-md); padding: 8px;" />
+             <label class="form-label">{{ t('dashboard.table.cpuOverCommit') }}</label>
+            <input type="number" step="0.1" min="1" v-model="form.cpu_over_rate" class="form-select" />
           </div>
           <div class="form-group">
-             <label class="form-label">{{ $t('dashboard.table.memOverCommit') }}</label>
-            <input type="number" step="0.1" v-model="form.mem_over_commit" class="form-input" style="width: 100%; border: 1px solid var(--border-light); border-radius: var(--radius-md); padding: 8px;" />
+             <label class="form-label">{{ t('dashboard.table.memOverCommit') }}</label>
+            <input type="number" step="0.1" min="1" v-model="form.mem_over_rate" class="form-select" />
           </div>
           <div class="form-group">
-             <label class="form-label">{{ $t('dashboard.table.diskOverCommit') }}</label>
-            <input type="number" step="0.1" v-model="form.disk_over_commit" class="form-input" style="width: 100%; border: 1px solid var(--border-light); border-radius: var(--radius-md); padding: 8px;" />
+             <label class="form-label">{{ t('dashboard.table.diskOverCommit') }}</label>
+            <input type="number" step="0.1" min="1" v-model="form.disk_over_rate" class="form-select" />
           </div>
-          <div class="form-group" style="grid-column: 1 / -1;">
-             <label class="form-label">{{ $t('dashboard.table.remark') }}</label>
-            <input type="text" v-model="form.remark" class="form-input" style="width: 100%; border: 1px solid var(--border-light); border-radius: var(--radius-md); padding: 8px;" />
+          <div class="form-group">
+             <label class="form-label">{{ t('dashboard.table.remark') }}</label>
+            <input type="text" v-model="form.remark" class="form-select" />
           </div>
         </div>
-
       </div>
-
     </div>
+
+    <!-- Maintain Modal -->
+    <Teleport to="body">
+      <div v-if="showMaintainModal" class="modal-overlay" @click.self="showMaintainModal = false">
+        <div class="modal-content" style="max-width: 460px;">
+          <div class="modal-header">
+            <h3>{{ t('dashboard.hypervisorActions.maintainTitle') }}</h3>
+            <button class="btn btn-ghost btn-icon" @click="showMaintainModal = false"><X :size="18" /></button>
+          </div>
+          <div class="modal-body">
+            <p style="margin-bottom: 16px; color: var(--text-secondary); font-size: 0.875rem;">
+              {{ t('dashboard.hypervisorActions.maintainDesc', { hostname: hypervisor?.hostname }) }}
+            </p>
+            <div class="form-group" style="margin-bottom: 16px;">
+              <label class="form-label" style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                <input type="checkbox" v-model="maintainForm.migrate" />
+                {{ t('dashboard.hypervisorActions.migrateInstances') }}
+              </label>
+            </div>
+            <div v-if="maintainForm.migrate" class="form-group">
+              <label class="form-label">{{ t('dashboard.hypervisorActions.targetHyper') }}</label>
+              <input type="number" v-model="maintainForm.target_hyper" class="form-select" />
+              <span style="font-size: 0.75rem; color: var(--text-light); margin-top: 4px;">{{ t('dashboard.hypervisorActions.targetHyperHint') }}</span>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button class="btn btn-secondary" @click="showMaintainModal = false">{{ t('actions.cancel') }}</button>
+            <button class="btn btn-warning" @click="handleMaintain" :disabled="maintaining">
+              <Loader2 v-if="maintaining" :size="14" class="spinning" />
+              {{ maintaining ? t('messages.loading') : t('dashboard.hypervisorActions.maintain') }}
+            </button>
+          </div>
+        </div>
+      </div>
+    </Teleport>
   </div>
 </template>
 
 <style scoped>
-.vpc-detail {
-  max-width: 1100px;
-}
-
-.detail-header {
-  margin-bottom: var(--spacing-4);
-}
+.vpc-detail { max-width: 1100px; }
+.detail-header { margin-bottom: var(--spacing-4); }
 
 .back-btn {
   display: inline-flex;
@@ -306,12 +394,8 @@ onMounted(fetchHypervisorDetail)
   transition: all 0.2s;
 }
 
-.back-btn:hover {
-  color: var(--primary-color);
-  background: var(--primary-50);
-}
+.back-btn:hover { color: var(--primary-color); background: var(--primary-50); }
 
-/* Loading */
 .loading-container {
   display: flex;
   flex-direction: column;
@@ -320,13 +404,8 @@ onMounted(fetchHypervisorDetail)
   padding: 80px 0;
 }
 
-.loading-text {
-  margin-top: var(--spacing-3);
-  color: var(--text-secondary);
-  font-size: var(--font-size-sm);
-}
+.loading-text { margin-top: var(--spacing-3); color: var(--text-secondary); font-size: var(--font-size-sm); }
 
-/* Error */
 .error-container {
   display: flex;
   flex-direction: column;
@@ -336,7 +415,6 @@ onMounted(fetchHypervisorDetail)
   text-align: center;
 }
 
-/* Title Bar */
 .title-bar {
   display: flex;
   justify-content: space-between;
@@ -344,11 +422,7 @@ onMounted(fetchHypervisorDetail)
   margin-bottom: var(--spacing-5);
 }
 
-.title-info {
-  display: flex;
-  align-items: center;
-  gap: var(--spacing-4);
-}
+.title-info { display: flex; align-items: center; gap: var(--spacing-4); }
 
 .title-icon {
   width: 52px;
@@ -369,11 +443,7 @@ onMounted(fetchHypervisorDetail)
   color: var(--text-primary);
 }
 
-.resource-id-row {
-  display: flex;
-  align-items: center;
-  gap: var(--spacing-2);
-}
+.resource-id-row { display: flex; align-items: center; gap: var(--spacing-2); }
 
 .resource-id-text {
   font-size: var(--font-size-xs);
@@ -393,36 +463,17 @@ onMounted(fetchHypervisorDetail)
   transition: all 0.15s;
 }
 
-.copy-btn:hover {
-  color: var(--primary-color);
-  border-color: var(--primary-200);
-  background: var(--primary-50);
-}
+.copy-btn:hover { color: var(--primary-color); border-color: var(--primary-200); background: var(--primary-50); }
+.copied-icon { color: var(--success-color); }
+.title-actions { display: flex; align-items: center; gap: var(--spacing-3); }
+.badge-lg { font-size: var(--font-size-sm); padding: 6px 14px; }
 
-.copied-icon {
-  color: var(--success-color);
-}
+.badge.status-active, .status-active { background: rgba(16, 185, 129, 0.1); color: #10b981; }
+.status-error { background: rgba(239, 68, 68, 0.1); color: #ef4444; }
+.status-warning { background: rgba(245, 158, 11, 0.1); color: #f59e0b; }
+.status-info { background: rgba(59, 130, 246, 0.1); color: #3b82f6; }
+.status-disabled { background: var(--gray-100); color: var(--gray-500); }
 
-.title-actions {
-  display: flex;
-  align-items: center;
-  gap: var(--spacing-3);
-}
-
-.badge-lg {
-  font-size: var(--font-size-sm);
-  padding: 6px 14px;
-}
-.badge.status-active, .status-active {
-  background: rgba(16, 185, 129, 0.1);
-  color: #10b981;
-}
-.status-error {
-  background: rgba(239, 68, 68, 0.1);
-  color: #ef4444;
-}
-
-/* Info Grid */
 .info-grid {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
@@ -430,9 +481,7 @@ onMounted(fetchHypervisorDetail)
   margin-bottom: var(--spacing-5);
 }
 
-.info-card {
-  padding: var(--spacing-5);
-}
+.info-card { padding: var(--spacing-5); }
 
 .card-section-title {
   margin: 0 0 var(--spacing-4) 0;
@@ -445,11 +494,7 @@ onMounted(fetchHypervisorDetail)
   border-bottom: 1px solid var(--border-light);
 }
 
-.info-rows {
-  display: flex;
-  flex-direction: column;
-  gap: var(--spacing-3);
-}
+.info-rows { display: flex; flex-direction: column; gap: var(--spacing-3); }
 
 .info-row {
   display: flex;
@@ -459,11 +504,7 @@ onMounted(fetchHypervisorDetail)
   min-height: 24px;
 }
 
-.info-label {
-  font-size: var(--font-size-sm);
-  color: var(--text-secondary);
-  flex-shrink: 0;
-}
+.info-label { font-size: var(--font-size-sm); color: var(--text-secondary); flex-shrink: 0; }
 
 .info-value {
   font-size: var(--font-size-sm);
@@ -473,38 +514,73 @@ onMounted(fetchHypervisorDetail)
   word-break: break-all;
 }
 
-.info-value.mono {
-  font-family: var(--font-family-mono);
-  font-size: var(--font-size-xs);
-}
+.info-value.mono { font-family: var(--font-family-mono); font-size: var(--font-size-xs); }
 
-/* Form Styles */
 .form-grid {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
   gap: 16px;
 }
 
-.form-group {
-    display: flex;
-    flex-direction: column;
+.form-group { display: flex; flex-direction: column; }
+.form-label { font-size: 0.8125rem; color: var(--text-secondary); margin-bottom: 4px; }
+
+.form-select {
+  width: 100%;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-md);
+  padding: 8px;
+  font-size: 0.875rem;
+  background: var(--bg-primary);
+  color: var(--text-primary);
 }
 
-.form-label {
-    font-size: 0.8125rem;
-    color: var(--text-secondary);
-    margin-bottom: 4px;
+.form-select:focus { outline: none; border-color: var(--primary-300); box-shadow: 0 0 0 2px var(--primary-100); }
+
+/* Modal */
+.modal-overlay {
+  position: fixed; inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex; align-items: center; justify-content: center;
+  z-index: 1000;
 }
+
+.modal-content {
+  background: var(--bg-primary);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-xl);
+  width: 90%;
+}
+
+.modal-header {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 20px 24px;
+  border-bottom: 1px solid var(--border-light);
+}
+
+.modal-header h3 { margin: 0; font-size: 1.125rem; }
+.modal-body { padding: 24px; }
+
+.modal-footer {
+  display: flex; justify-content: flex-end; gap: 8px;
+  padding: 16px 24px;
+  border-top: 1px solid var(--border-light);
+}
+
+.btn-warning {
+  background: #f59e0b; color: white; border: none;
+  padding: 8px 16px; border-radius: var(--radius-md);
+  cursor: pointer; font-weight: 500;
+}
+
+.btn-warning:hover { background: #d97706; }
+.btn-warning:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.spinning { animation: spin 1s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
 
 @media (max-width: 768px) {
-  .info-grid, .form-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .title-bar {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: var(--spacing-3);
-  }
+  .info-grid, .form-grid { grid-template-columns: 1fr; }
+  .title-bar { flex-direction: column; align-items: flex-start; gap: var(--spacing-3); }
 }
 </style>

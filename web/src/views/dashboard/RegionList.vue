@@ -1,0 +1,751 @@
+<script setup lang="ts">
+import { ref, onMounted, computed } from 'vue'
+import { useI18n } from 'vue-i18n'
+import {
+    Globe2, Plus, Search, RefreshCw, Settings2, Trash2, X,
+    CheckCircle2, AlertCircle, KeyRound, Copy, Check, Loader2, ExternalLink
+} from 'lucide-vue-next'
+import { regionsApi, type RegionPublic, type RegionAdmin, type RegionCreated, type CreateRegionPayload, type UpdateRegionPayload } from '../../api/regions'
+import { useToast } from '../../composables/useToast'
+
+const { t } = useI18n()
+const toast = useToast()
+
+const regions = ref<RegionPublic[]>([])
+const isLoading = ref(false)
+const searchQuery = ref('')
+
+// Create modal
+const showCreateModal = ref(false)
+const creating = ref(false)
+const createForm = ref<CreateRegionPayload>({
+    name: '',
+    display_name: '',
+    internal_endpoint: '',
+    internal_secret: 'auto-generate',
+    description: ''
+})
+const createdSecret = ref<string | null>(null)
+
+// Edit modal
+const showEditModal = ref(false)
+const editing = ref(false)
+const editingRegion = ref<RegionAdmin | null>(null)
+const editForm = ref<UpdateRegionPayload>({})
+
+// Delete modal
+const showDeleteModal = ref(false)
+const deleting = ref(false)
+const deletingRegion = ref<RegionPublic | null>(null)
+
+// Rotate secret modal
+const showRotateModal = ref(false)
+const rotating = ref(false)
+const rotatingRegion = ref<RegionPublic | null>(null)
+const rotatedSecret = ref<string | null>(null)
+
+// Copy
+const copiedField = ref<string | null>(null)
+
+const filteredRegions = computed(() => {
+    if (!searchQuery.value) return regions.value
+    const q = searchQuery.value.toLowerCase()
+    return regions.value.filter(r =>
+        r.name.toLowerCase().includes(q) ||
+        (r.display_name && r.display_name.toLowerCase().includes(q)) ||
+        r.uuid.toLowerCase().includes(q)
+    )
+})
+
+const fetchRegions = async () => {
+    isLoading.value = true
+    try {
+        const response = await regionsApi.fetchRegions()
+        const data = response.data
+        regions.value = Array.isArray(data) ? data : []
+    } catch (err) {
+        console.error('Failed to fetch regions:', err)
+        regions.value = []
+    } finally {
+        isLoading.value = false
+    }
+}
+
+// Create
+const openCreateModal = () => {
+    createForm.value = { name: '', display_name: '', internal_endpoint: '', internal_secret: 'auto-generate', description: '' }
+    createdSecret.value = null
+    showCreateModal.value = true
+}
+
+const handleCreate = async () => {
+    if (!createForm.value.name || !createForm.value.internal_endpoint) return
+    creating.value = true
+    try {
+        const response = await regionsApi.createRegion(createForm.value)
+        const created = response.data as RegionCreated
+        createdSecret.value = created.internal_secret
+        toast.success(t('dashboard.regionActions.createdSuccess'))
+        await fetchRegions()
+    } catch (err: any) {
+        const msg = err.response?.data?.detail || err.response?.data?.message || 'Create failed'
+        toast.error(msg)
+    } finally {
+        creating.value = false
+    }
+}
+
+// Edit
+const openEditModal = async (region: RegionPublic) => {
+    try {
+        const response = await regionsApi.getRegion(region.uuid)
+        const detail = response.data as RegionAdmin
+        editingRegion.value = detail
+        editForm.value = {
+            display_name: detail.display_name || '',
+            internal_endpoint: detail.internal_endpoint,
+            is_available: detail.is_available,
+            description: detail.description || ''
+        }
+        showEditModal.value = true
+    } catch (err: any) {
+        toast.error(err.response?.data?.detail || 'Failed to load region details')
+    }
+}
+
+const handleEdit = async () => {
+    if (!editingRegion.value) return
+    editing.value = true
+    try {
+        await regionsApi.updateRegion(editingRegion.value.uuid, editForm.value)
+        showEditModal.value = false
+        toast.success(t('messages.success'))
+        await fetchRegions()
+    } catch (err: any) {
+        toast.error(err.response?.data?.detail || 'Update failed')
+    } finally {
+        editing.value = false
+    }
+}
+
+// Delete
+const confirmDelete = (region: RegionPublic) => {
+    deletingRegion.value = region
+    showDeleteModal.value = true
+}
+
+const handleDelete = async () => {
+    if (!deletingRegion.value) return
+    deleting.value = true
+    try {
+        await regionsApi.deleteRegion(deletingRegion.value.uuid)
+        showDeleteModal.value = false
+        deletingRegion.value = null
+        toast.success(t('messages.success'))
+        await fetchRegions()
+    } catch (err: any) {
+        toast.error(err.response?.data?.detail || 'Delete failed')
+    } finally {
+        deleting.value = false
+    }
+}
+
+// Rotate secret
+const confirmRotate = (region: RegionPublic) => {
+    rotatingRegion.value = region
+    rotatedSecret.value = null
+    showRotateModal.value = true
+}
+
+const handleRotate = async () => {
+    if (!rotatingRegion.value) return
+    rotating.value = true
+    try {
+        const response = await regionsApi.rotateSecret(rotatingRegion.value.uuid)
+        rotatedSecret.value = (response.data as any).new_secret
+        toast.success(t('messages.success'))
+    } catch (err: any) {
+        toast.error(err.response?.data?.detail || 'Rotate failed')
+    } finally {
+        rotating.value = false
+    }
+}
+
+const copyToClipboard = (text: string, field: string) => {
+    navigator.clipboard.writeText(text).then(() => {
+        copiedField.value = field
+        toast.success(t('dashboard.regionActions.secretCopied'))
+        setTimeout(() => { copiedField.value = null }, 2000)
+    })
+}
+
+onMounted(fetchRegions)
+</script>
+
+<template>
+    <div class="region-list-page">
+        <!-- Page Header -->
+        <div class="page-header-actions">
+            <div class="search-box">
+                <Search :size="18" class="search-icon" />
+                <input type="text" v-model="searchQuery" :placeholder="t('actions.search') + '...'" />
+            </div>
+            <div class="action-buttons">
+                <button class="btn btn-secondary btn-sm btn-icon" @click="fetchRegions" :title="t('actions.refresh')">
+                    <RefreshCw :size="14" :class="{ 'spinning': isLoading }" />
+                </button>
+                <button class="btn btn-primary btn-sm" @click="openCreateModal">
+                    <Plus :size="14" />
+                    <span>{{ t('actions.create') }}</span>
+                </button>
+            </div>
+        </div>
+
+        <!-- Regions Table -->
+        <div class="card table-card">
+            <div v-if="isLoading && regions.length === 0" class="loading-state">
+                <div class="spinner"></div>
+                <span>{{ t('messages.loading') }}</span>
+            </div>
+
+            <div v-else-if="regions.length === 0" class="empty-state">
+                <div class="empty-icon-wrapper">
+                    <Globe2 :size="48" />
+                </div>
+                <h3>{{ t('messages.noData') }}</h3>
+                <p>{{ t('dashboard.regionActions.noRegions') }}</p>
+                <button class="btn btn-primary" @click="openCreateModal">
+                    <Plus :size="18" />
+                    <span>{{ t('dashboard.regionActions.registerFirstRegion') }}</span>
+                </button>
+            </div>
+
+            <div v-else class="table-responsive">
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>{{ t('dashboard.table.name') }}</th>
+                            <th>{{ t('dashboard.table.id') }}</th>
+                            <th>{{ t('dashboard.table.status') }}</th>
+                            <th>{{ t('dashboard.table.description') }}</th>
+                            <th>{{ t('dashboard.table.actions') }}</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr v-for="region in filteredRegions" :key="region.uuid">
+                            <td>
+                                <div class="name-cell">
+                                    <div class="region-icon">
+                                        <Globe2 :size="18" />
+                                    </div>
+                                    <div class="name-info">
+                                        <span class="main-name">{{ region.display_name || region.name }}</span>
+                                        <span class="sub-name">{{ region.name }}</span>
+                                    </div>
+                                </div>
+                            </td>
+                            <td>
+                                <code class="id-badge">{{ region.uuid }}</code>
+                            </td>
+                            <td>
+                                <span class="status-pill" :class="region.is_available ? 'status-available' : 'status-offline'">
+                                    <CheckCircle2 v-if="region.is_available" :size="12" />
+                                    <AlertCircle v-else :size="12" />
+                                    {{ region.is_available ? t('dashboard.regionActions.available') : t('dashboard.regionActions.offline') }}
+                                </span>
+                            </td>
+                            <td class="desc-cell">{{ region.description || '-' }}</td>
+                            <td>
+                                <div class="table-actions">
+                                    <button class="icon-btn-table" @click="openEditModal(region)" :title="t('actions.edit')">
+                                        <Settings2 :size="16" />
+                                    </button>
+                                    <button class="icon-btn-table" @click="confirmRotate(region)" :title="t('dashboard.regionActions.rotateSecret')">
+                                        <KeyRound :size="16" />
+                                    </button>
+                                    <button class="icon-btn-table text-error" @click="confirmDelete(region)" :title="t('actions.delete')">
+                                        <Trash2 :size="16" />
+                                    </button>
+                                </div>
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Create Modal -->
+        <Teleport to="body">
+            <div v-if="showCreateModal" class="modal-overlay" @click.self="!createdSecret && (showCreateModal = false)">
+                <div class="modal-content" style="max-width: 560px;">
+                    <div class="modal-header">
+                        <h3>{{ t('dashboard.regionActions.createTitle') }}</h3>
+                        <button class="btn btn-ghost btn-icon" @click="showCreateModal = false"><X :size="18" /></button>
+                    </div>
+
+                    <!-- Show secret after creation -->
+                    <div v-if="createdSecret" class="modal-body">
+                        <div class="secret-display">
+                            <div class="secret-warning">
+                                <AlertCircle :size="18" />
+                                <span>{{ t('dashboard.regionActions.secretWarning') }}</span>
+                            </div>
+                            <div class="secret-box">
+                                <code>{{ createdSecret }}</code>
+                                <button class="copy-btn" @click="copyToClipboard(createdSecret!, 'created-secret')">
+                                    <Check v-if="copiedField === 'created-secret'" :size="14" class="copied-icon" />
+                                    <Copy v-else :size="14" />
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Create form -->
+                    <div v-else class="modal-body">
+                        <div class="form-stack">
+                            <div class="form-group">
+                                <label class="form-label">{{ t('dashboard.regionActions.name') }} *</label>
+                                <input type="text" v-model="createForm.name" class="form-input" placeholder="e.g. us-east-1" />
+                                <span class="form-hint">{{ t('dashboard.regionActions.nameHint') }}</span>
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">{{ t('dashboard.regionActions.displayName') }}</label>
+                                <input type="text" v-model="createForm.display_name" class="form-input" placeholder="e.g. US East (Virginia)" />
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">{{ t('dashboard.regionActions.internalEndpoint') }} *</label>
+                                <input type="text" v-model="createForm.internal_endpoint" class="form-input" placeholder="http://cloudland-api:8080" />
+                                <span class="form-hint">{{ t('dashboard.regionActions.internalEndpointHint') }}</span>
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">{{ t('dashboard.regionActions.internalSecret') }}</label>
+                                <input type="text" v-model="createForm.internal_secret" class="form-input" />
+                                <span class="form-hint">{{ t('dashboard.regionActions.internalSecretHint') }}</span>
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">{{ t('dashboard.table.description') }}</label>
+                                <input type="text" v-model="createForm.description" class="form-input" />
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="modal-footer">
+                        <button v-if="createdSecret" class="btn btn-primary" @click="showCreateModal = false">{{ t('actions.close') }}</button>
+                        <template v-else>
+                            <button class="btn btn-secondary" @click="showCreateModal = false">{{ t('actions.cancel') }}</button>
+                            <button class="btn btn-primary" @click="handleCreate" :disabled="creating || !createForm.name || !createForm.internal_endpoint">
+                                <Loader2 v-if="creating" :size="14" class="spinning" />
+                                {{ creating ? t('messages.creating') : t('actions.create') }}
+                            </button>
+                        </template>
+                    </div>
+                </div>
+            </div>
+        </Teleport>
+
+        <!-- Edit Modal -->
+        <Teleport to="body">
+            <div v-if="showEditModal" class="modal-overlay" @click.self="showEditModal = false">
+                <div class="modal-content" style="max-width: 560px;">
+                    <div class="modal-header">
+                        <h3>{{ t('dashboard.regionActions.editTitle') }}</h3>
+                        <button class="btn btn-ghost btn-icon" @click="showEditModal = false"><X :size="18" /></button>
+                    </div>
+                    <div class="modal-body">
+                        <div class="form-stack">
+                            <div class="form-group">
+                                <label class="form-label">{{ t('dashboard.regionActions.displayName') }}</label>
+                                <input type="text" v-model="editForm.display_name" class="form-input" />
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">{{ t('dashboard.regionActions.internalEndpoint') }}</label>
+                                <input type="text" v-model="editForm.internal_endpoint" class="form-input" />
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">{{ t('dashboard.table.description') }}</label>
+                                <input type="text" v-model="editForm.description" class="form-input" />
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label" style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                                    <input type="checkbox" v-model="editForm.is_available" />
+                                    {{ t('dashboard.regionActions.available') }}
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button class="btn btn-secondary" @click="showEditModal = false">{{ t('actions.cancel') }}</button>
+                        <button class="btn btn-primary" @click="handleEdit" :disabled="editing">
+                            <Loader2 v-if="editing" :size="14" class="spinning" />
+                            {{ editing ? t('messages.saving') : t('actions.save') }}
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </Teleport>
+
+        <!-- Delete Confirm Modal -->
+        <Teleport to="body">
+            <div v-if="showDeleteModal" class="modal-overlay" @click.self="showDeleteModal = false">
+                <div class="modal-content" style="max-width: 440px;">
+                    <div class="modal-header">
+                        <h3>{{ t('dashboard.regionActions.deleteTitle') }}</h3>
+                        <button class="btn btn-ghost btn-icon" @click="showDeleteModal = false"><X :size="18" /></button>
+                    </div>
+                    <div class="modal-body">
+                        <p>{{ t('dashboard.regionActions.deleteConfirm', { name: deletingRegion?.display_name || deletingRegion?.name }) }}</p>
+                    </div>
+                    <div class="modal-footer">
+                        <button class="btn btn-secondary" @click="showDeleteModal = false">{{ t('actions.cancel') }}</button>
+                        <button class="btn btn-danger" @click="handleDelete" :disabled="deleting">
+                            <Loader2 v-if="deleting" :size="14" class="spinning" />
+                            {{ deleting ? t('messages.deleting') : t('actions.delete') }}
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </Teleport>
+
+        <!-- Rotate Secret Modal -->
+        <Teleport to="body">
+            <div v-if="showRotateModal" class="modal-overlay" @click.self="!rotatedSecret && (showRotateModal = false)">
+                <div class="modal-content" style="max-width: 500px;">
+                    <div class="modal-header">
+                        <h3>{{ t('dashboard.regionActions.rotateSecretTitle') }}</h3>
+                        <button class="btn btn-ghost btn-icon" @click="showRotateModal = false"><X :size="18" /></button>
+                    </div>
+                    <div class="modal-body">
+                        <div v-if="rotatedSecret" class="secret-display">
+                            <div class="secret-warning">
+                                <AlertCircle :size="18" />
+                                <span>{{ t('dashboard.regionActions.secretWarning') }}</span>
+                            </div>
+                            <label class="form-label">{{ t('dashboard.regionActions.newSecret') }}</label>
+                            <div class="secret-box">
+                                <code>{{ rotatedSecret }}</code>
+                                <button class="copy-btn" @click="copyToClipboard(rotatedSecret!, 'rotated-secret')">
+                                    <Check v-if="copiedField === 'rotated-secret'" :size="14" class="copied-icon" />
+                                    <Copy v-else :size="14" />
+                                </button>
+                            </div>
+                        </div>
+                        <p v-else>{{ t('dashboard.regionActions.rotateSecretConfirm', { name: rotatingRegion?.display_name || rotatingRegion?.name }) }}</p>
+                    </div>
+                    <div class="modal-footer">
+                        <button v-if="rotatedSecret" class="btn btn-primary" @click="showRotateModal = false">{{ t('actions.close') }}</button>
+                        <template v-else>
+                            <button class="btn btn-secondary" @click="showRotateModal = false">{{ t('actions.cancel') }}</button>
+                            <button class="btn btn-warning" @click="handleRotate" :disabled="rotating">
+                                <Loader2 v-if="rotating" :size="14" class="spinning" />
+                                {{ rotating ? '...' : t('dashboard.regionActions.rotateSecret') }}
+                            </button>
+                        </template>
+                    </div>
+                </div>
+            </div>
+        </Teleport>
+    </div>
+</template>
+
+<style scoped>
+.region-list-page {
+    animation: fadeIn 0.4s ease-out;
+}
+
+.page-header-actions {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 24px;
+    gap: 16px;
+}
+
+.search-box {
+    position: relative;
+    flex: 1;
+    max-width: 400px;
+}
+
+.search-icon {
+    position: absolute;
+    left: 12px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: var(--text-tertiary);
+}
+
+.search-box input {
+    width: 100%;
+    padding: 10px 12px 10px 40px;
+    background-color: var(--bg-primary);
+    border: 1px solid var(--border-light);
+    border-radius: var(--radius-md);
+    font-size: 0.875rem;
+    transition: all 0.2s;
+}
+
+.search-box input:focus {
+    border-color: var(--primary-500);
+    box-shadow: 0 0 0 3px var(--primary-50);
+    outline: none;
+}
+
+.action-buttons {
+    display: flex;
+    gap: 12px;
+}
+
+.table-card {
+    background: var(--bg-primary);
+    border-radius: var(--radius-lg);
+    border: 1px solid var(--border-light);
+    box-shadow: var(--shadow-sm);
+    overflow: hidden;
+    min-height: 300px;
+}
+
+.loading-state, .empty-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 64px 24px;
+    text-align: center;
+}
+
+.spinner {
+    width: 32px;
+    height: 32px;
+    border: 3px solid var(--border-light);
+    border-top-color: var(--primary-500);
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+    margin-bottom: 16px;
+}
+
+.empty-icon-wrapper {
+    width: 80px;
+    height: 80px;
+    background-color: var(--bg-tertiary);
+    border-radius: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: 24px;
+    color: var(--text-tertiary);
+}
+
+.empty-state h3 {
+    font-size: 1.25rem;
+    font-weight: 600;
+    margin-bottom: 8px;
+}
+
+.empty-state p {
+    color: var(--text-secondary);
+    margin-bottom: 24px;
+    max-width: 320px;
+}
+
+.table-responsive { overflow-x: auto; }
+
+.data-table {
+    width: 100%;
+    border-collapse: collapse;
+    text-align: left;
+}
+
+.data-table th {
+    padding: 16px 24px;
+    background-color: #f8fafc;
+    border-bottom: 1px solid var(--border-light);
+    color: var(--text-secondary);
+    font-size: 0.75rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.data-table td {
+    padding: 16px 24px;
+    border-bottom: 1px solid var(--border-light);
+    vertical-align: middle;
+}
+
+.data-table tr:hover td { background-color: #fcfdfe; }
+
+.name-cell {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.region-icon {
+    width: 36px;
+    height: 36px;
+    background: linear-gradient(135deg, var(--primary-50) 0%, #e0e7ff 100%);
+    color: var(--primary-600);
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+
+.name-info {
+    display: flex;
+    flex-direction: column;
+}
+
+.main-name {
+    font-weight: 600;
+    color: var(--text-primary);
+    font-size: 0.9375rem;
+}
+
+.sub-name {
+    font-size: 0.75rem;
+    color: var(--text-tertiary);
+}
+
+.id-badge {
+    background-color: var(--bg-tertiary);
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+}
+
+.desc-cell {
+    max-width: 200px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 0.875rem;
+    color: var(--text-secondary);
+}
+
+.status-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 10px;
+    border-radius: 20px;
+    font-size: 0.75rem;
+    font-weight: 600;
+}
+
+.status-available { background: rgba(16, 185, 129, 0.1); color: #10b981; }
+.status-offline { background: rgba(239, 68, 68, 0.1); color: #ef4444; }
+
+.table-actions {
+    display: flex;
+    gap: 8px;
+}
+
+.icon-btn-table {
+    width: 32px;
+    height: 32px;
+    border-radius: 8px;
+    border: none;
+    background: transparent;
+    color: var(--text-tertiary);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.icon-btn-table:hover { background-color: var(--bg-tertiary); color: var(--primary-500); }
+.icon-btn-table.text-error:hover { background-color: #fef2f2; color: var(--error-600); }
+
+/* Modals */
+.modal-overlay {
+    position: fixed; inset: 0; background: rgba(0,0,0,0.5);
+    display: flex; align-items: center; justify-content: center; z-index: 1000;
+}
+
+.modal-content {
+    background: var(--bg-primary); border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-xl); width: 90%; max-height: 85vh; overflow-y: auto;
+}
+
+.modal-header {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 20px 24px; border-bottom: 1px solid var(--border-light);
+}
+
+.modal-header h3 { margin: 0; font-size: 1.125rem; }
+.modal-body { padding: 24px; }
+
+.modal-footer {
+    display: flex; justify-content: flex-end; gap: 8px;
+    padding: 16px 24px; border-top: 1px solid var(--border-light);
+}
+
+.form-stack { display: flex; flex-direction: column; gap: 16px; }
+.form-group { display: flex; flex-direction: column; }
+.form-label { font-size: 0.8125rem; color: var(--text-secondary); margin-bottom: 4px; font-weight: 500; }
+
+.form-input {
+    width: 100%; padding: 8px 12px;
+    border: 1px solid var(--border-light); border-radius: var(--radius-md);
+    font-size: 0.875rem; background: var(--bg-primary); color: var(--text-primary);
+}
+
+.form-input:focus { outline: none; border-color: var(--primary-300); box-shadow: 0 0 0 2px var(--primary-100); }
+.form-hint { color: var(--text-light); font-size: 0.75rem; margin-top: 4px; }
+
+.btn-danger {
+    background: #ef4444; color: white; border: none;
+    padding: 8px 16px; border-radius: var(--radius-md); cursor: pointer; font-weight: 500;
+}
+.btn-danger:hover { background: #dc2626; }
+.btn-danger:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.btn-warning {
+    background: #f59e0b; color: white; border: none;
+    padding: 8px 16px; border-radius: var(--radius-md); cursor: pointer; font-weight: 500;
+}
+.btn-warning:hover { background: #d97706; }
+.btn-warning:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* Secret display */
+.secret-display { display: flex; flex-direction: column; gap: 12px; }
+
+.secret-warning {
+    display: flex; align-items: center; gap: 8px;
+    padding: 12px 16px; background: #fef3c7; border: 1px solid #fde68a;
+    border-radius: var(--radius-md); color: #92400e; font-size: 0.875rem; font-weight: 500;
+}
+
+.secret-box {
+    display: flex; align-items: center; gap: 8px;
+    padding: 12px; background: var(--bg-tertiary); border-radius: var(--radius-md);
+    border: 1px solid var(--border-light);
+}
+
+.secret-box code {
+    flex: 1; font-size: 0.8125rem; word-break: break-all;
+    font-family: var(--font-mono); color: var(--text-primary);
+}
+
+.copy-btn {
+    background: none; border: 1px solid var(--border-light);
+    border-radius: var(--radius-sm); padding: 4px 8px; cursor: pointer;
+    color: var(--text-light); display: inline-flex; align-items: center;
+    transition: all 0.15s;
+}
+.copy-btn:hover { color: var(--primary-color); border-color: var(--primary-200); background: var(--primary-50); }
+.copied-icon { color: var(--success-color); }
+
+@keyframes spin { to { transform: rotate(360deg); } }
+.spinning { animation: spin 1s linear infinite; }
+
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+</style>

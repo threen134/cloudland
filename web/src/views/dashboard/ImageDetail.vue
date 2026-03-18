@@ -79,7 +79,7 @@ onMounted(fetchImage)
 
         <div v-else-if="error" class="error-container card">
             <p class="text-error">{{ error }}</p>
-            <button class="btn btn-primary" @click="fetchImage">Retry</button>
+            <button class="btn btn-primary" @click="fetchImage">{{ $t('actions.retry') }}</button>
         </div>
 
         <div v-else-if="image" class="detail-content">

@@ -3,7 +3,7 @@ import { ref, onMounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { orgsApi, type Organization } from '../../api/orgs'
-import { Plus, Building2, Trash2, Edit2, User, Search, X, Eye } from 'lucide-vue-next'
+import { Plus, Building2, Trash2, Edit2, User, Search, X, Eye, RefreshCw } from 'lucide-vue-next'
 
 const router = useRouter()
 
@@ -165,9 +165,14 @@ onMounted(fetchOrgs)
           />
         </div>
       </div>
-      <button class="btn btn-primary btn-sm" @click="openCreateModal">
-        <Plus :size="14" /> {{ $t('dashboard.buttons.createOrg') }}
-      </button>
+      <div class="header-actions">
+        <button class="btn btn-secondary btn-sm btn-icon" @click="fetchOrgs" :title="$t('actions.refresh')">
+          <RefreshCw :size="14" :class="{ spinning: loading }" />
+        </button>
+        <button class="btn btn-primary btn-sm" @click="openCreateModal">
+          <Plus :size="14" /> {{ $t('dashboard.buttons.createOrg') }}
+        </button>
+      </div>
     </div>
 
     <div class="card table-card">
@@ -543,4 +548,8 @@ onMounted(fetchOrgs)
 }
 .btn-danger:hover { background: var(--error-dark); }
 .btn-danger:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.header-actions { display: flex; gap: 8px; align-items: center; }
+.spinning { animation: spin 1s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
 </style>

@@ -4,7 +4,7 @@ import { useRouter } from 'vue-router'
 import { migrationsApi, type Migration } from '../../api/migrations'
 import { instancesApi, type Instance } from '../../api/instances'
 import { hypervisorsApi, type Hypervisor } from '../../api/hypervisors'
-import { Search as SearchIcon, ArrowRightLeft, Plus, X } from 'lucide-vue-next'
+import { Search as SearchIcon, ArrowRightLeft, Plus, X, RefreshCw } from 'lucide-vue-next'
 
 const migrationList = ref<Migration[]>([])
 const loading = ref(false)
@@ -138,9 +138,14 @@ onMounted(fetchMigrations)
           />
         </div>
       </div>
-      <button class="btn btn-primary btn-sm" @click="openCreateModal">
-        <Plus :size="14" /> {{ $t('dashboard.buttons.startMigration') }}
-      </button>
+      <div class="header-actions">
+        <button class="btn btn-secondary btn-sm btn-icon" @click="fetchMigrations" :title="$t('actions.refresh')">
+          <RefreshCw :size="14" :class="{ spinning: loading }" />
+        </button>
+        <button class="btn btn-primary btn-sm" @click="openCreateModal">
+          <Plus :size="14" /> {{ $t('dashboard.buttons.startMigration') }}
+        </button>
+      </div>
     </div>
 
     <div class="card table-card">
@@ -481,4 +486,8 @@ onMounted(fetchMigrations)
   from { transform: translateY(20px); opacity: 0; }
   to { transform: translateY(0); opacity: 1; }
 }
+
+.header-actions { display: flex; gap: 8px; align-items: center; }
+.spinning { animation: spin 1s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
 </style>
