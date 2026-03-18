@@ -103,6 +103,7 @@ services:
       - ../.ssh:/opt/cloudland/deploy/.ssh:ro
     ports:
       - "${INTERNAL_IP:-127.0.0.1}:8255:8255"
+      - "${INTERNAL_IP:-127.0.0.1}:5005:5005"
     networks:
       cloudland:
         ipv4_address: 172.28.0.30
