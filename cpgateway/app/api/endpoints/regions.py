@@ -130,6 +130,13 @@ async def update_region(
             value = value.strip()
         setattr(region, field, value)
 
+    # 进入维护模式时同步下线，避免请求继续转发到该 Region
+    if update_data.get("maintenance_mode") is True:
+        region.is_available = False
+    # 手动上线时自动退出维护模式，防止心跳永久跳过该 Region
+    elif update_data.get("is_available") is True:
+        region.maintenance_mode = False
+
     await db.commit()
     await db.refresh(region)
 

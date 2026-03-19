@@ -24,6 +24,7 @@ class Region(Base):
     internal_endpoint = Column(String(512), nullable=False)
     internal_secret = Column(String(256), nullable=False)
     is_available = Column(Boolean, default=True, nullable=False)
+    maintenance_mode = Column(Boolean, default=False, nullable=False)
     description = Column(String, nullable=True)
 
     # 状态监控字段 (Status monitoring)

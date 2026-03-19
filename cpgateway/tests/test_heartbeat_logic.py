@@ -61,6 +61,18 @@ async def test_heartbeat_logic():
         assert region.fail_count == 0
         assert region.status_message == "Healthy"
 
+    # 6. Test Maintenance Mode (heartbeat must not touch any field)
+    region.maintenance_mode = True
+    region.is_available = False   # Manually disabled
+    region.fail_count = 99        # Sentinel: must remain unchanged
+    region.status_message = "prior_state"  # Sentinel: must remain unchanged
+    with patch("app.services.heartbeat_service.httpx.AsyncClient", return_value=_make_http_mock(200)):
+        await HeartbeatService.check_region_health(region, db)
+
+        assert region.is_available is False   # not restored
+        assert region.fail_count == 99        # not touched
+        assert region.status_message == "prior_state"  # not touched
+
     print("Heartbeat logic verification PASSED!")
 
 if __name__ == "__main__":

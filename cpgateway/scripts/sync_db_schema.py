@@ -3,6 +3,12 @@ from sqlalchemy import text
 from app.core.database import engine
 
 async def sync_db():
+    """
+    仅适用于 SQLite 开发环境（使用 PRAGMA / ALTER TABLE ADD COLUMN）。
+    生产环境（PostgreSQL）请使用 Alembic 迁移：
+        alembic revision --autogenerate -m "add maintenance_mode"
+        alembic upgrade head
+    """
     print("Syncing database schema...")
     async with engine.begin() as conn:
         # Check current columns in regions
@@ -18,7 +24,8 @@ async def sync_db():
             "is_available": "BOOLEAN DEFAULT 1",
             "last_check_at": "DATETIME",
             "status_message": "VARCHAR(255)",
-            "fail_count": "INTEGER DEFAULT 0"
+            "fail_count": "INTEGER DEFAULT 0",
+            "maintenance_mode": "BOOLEAN DEFAULT 0"
         }
 
         for col, col_type in needed_columns.items():

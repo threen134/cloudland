@@ -19,6 +19,7 @@ class RegionUpdate(BaseModel):
     display_name: Optional[str] = None
     internal_endpoint: Optional[str] = None
     is_available: Optional[bool] = None
+    maintenance_mode: Optional[bool] = None
     description: Optional[str] = None
 
 
@@ -28,6 +29,7 @@ class RegionPublic(BaseModel):
     name: str
     display_name: Optional[str] = None
     is_available: bool
+    maintenance_mode: bool
     description: Optional[str] = None
     last_check_at: Optional[datetime] = None
     status_message: Optional[str] = None

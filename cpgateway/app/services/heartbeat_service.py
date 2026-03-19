@@ -21,6 +21,10 @@ class HeartbeatService:
         探测单个 Region 的健康状况。
         请求 {endpoint}/api/v1/version (无需认证)。
         """
+        if region.maintenance_mode:
+            logger.debug(f"Region '{region.name}' is in maintenance mode, skipping heartbeat.")
+            return
+
         # 兼容处理 endpoint 结尾的斜行
         base_url = region.internal_endpoint.rstrip("/")
         health_url = f"{base_url}/api/v1/version"
@@ -71,9 +75,11 @@ class HeartbeatService:
 
     @classmethod
     async def check_all_regions(cls):
-        """遍历所有 Region 并执行拨测"""
+        """遍历所有非维护模式的 Region 并执行拨测"""
         async with AsyncSessionLocal() as db:
-            result = await db.execute(select(Region))
+            result = await db.execute(
+                select(Region).where(Region.maintenance_mode.is_(False))
+            )
             regions = result.scalars().all()
             
             if not regions:
