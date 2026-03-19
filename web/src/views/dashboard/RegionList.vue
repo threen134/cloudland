@@ -3,7 +3,7 @@ import { ref, onMounted, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import {
     Globe2, Plus, Search, RefreshCw, Settings2, Trash2, X,
-    CheckCircle2, AlertCircle, KeyRound, Copy, Check, Loader2, ExternalLink
+    CheckCircle2, AlertCircle, KeyRound, Copy, Check, Loader2, ExternalLink, Wrench
 } from 'lucide-vue-next'
 import { regionsApi, type RegionPublic, type RegionAdmin, type RegionCreated, type CreateRegionPayload, type UpdateRegionPayload } from '../../api/regions'
 import { useToast } from '../../composables/useToast'
@@ -104,7 +104,7 @@ const openEditModal = async (region: RegionPublic) => {
         editForm.value = {
             display_name: detail.display_name || '',
             internal_endpoint: detail.internal_endpoint,
-            is_available: detail.is_available,
+            maintenance_mode: detail.maintenance_mode,
             description: detail.description || ''
         }
         showEditModal.value = true
@@ -248,10 +248,12 @@ onMounted(fetchRegions)
                                 <code class="id-badge">{{ region.uuid }}</code>
                             </td>
                             <td>
-                                <span class="status-pill" :class="region.is_available ? 'status-available' : 'status-offline'">
-                                    <CheckCircle2 v-if="region.is_available" :size="12" />
+                                <span class="status-pill"
+                                    :class="region.maintenance_mode ? 'status-maintenance' : region.is_available ? 'status-available' : 'status-offline'">
+                                    <Wrench v-if="region.maintenance_mode" :size="12" />
+                                    <CheckCircle2 v-else-if="region.is_available" :size="12" />
                                     <AlertCircle v-else :size="12" />
-                                    {{ region.is_available ? t('dashboard.regionActions.available') : t('dashboard.regionActions.offline') }}
+                                    {{ region.maintenance_mode ? t('dashboard.regionActions.maintenance') : region.is_available ? t('dashboard.regionActions.available') : t('dashboard.regionActions.offline') }}
                                 </span>
                             </td>
                             <td class="desc-cell">{{ region.description || '-' }}</td>
@@ -367,9 +369,10 @@ onMounted(fetchRegions)
                             </div>
                             <div class="form-group">
                                 <label class="form-label" style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
-                                    <input type="checkbox" v-model="editForm.is_available" />
-                                    {{ t('dashboard.regionActions.available') }}
+                                    <input type="checkbox" v-model="editForm.maintenance_mode" />
+                                    {{ t('dashboard.regionActions.maintenanceMode') }}
                                 </label>
+                                <span class="form-hint">{{ t('dashboard.regionActions.maintenanceModeHint') }}</span>
                             </div>
                         </div>
                     </div>
@@ -638,6 +641,7 @@ onMounted(fetchRegions)
 
 .status-available { background: rgba(16, 185, 129, 0.1); color: #10b981; }
 .status-offline { background: rgba(239, 68, 68, 0.1); color: #ef4444; }
+.status-maintenance { background: rgba(245, 158, 11, 0.1); color: #d97706; }
 
 .table-actions {
     display: flex;

@@ -5,6 +5,7 @@ export interface RegionPublic {
     name: string
     display_name: string | null
     is_available: boolean
+    maintenance_mode: boolean
     description: string | null
 }
 
@@ -29,7 +30,7 @@ export interface CreateRegionPayload {
 export interface UpdateRegionPayload {
     display_name?: string
     internal_endpoint?: string
-    is_available?: boolean
+    maintenance_mode?: boolean
     description?: string
 }
 
