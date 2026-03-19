@@ -5,6 +5,8 @@ from app.api.endpoints import auth, users, resources, regions, orgs
 from app.api.endpoints.cloudland import compute, network, authorization, zone, administration, alarm
 from app.core.database import engine, Base, AsyncSessionLocal
 import time
+import asyncio
+from app.services.heartbeat_service import heartbeat_loop
 
 setup_logging()
 
@@ -120,6 +122,10 @@ async def startup():
             db.add(admin_member)
             await db.commit()
             logger.info("Admin user added to 'Admin' organization as ADMIN")
+
+    # Start Region Heartbeat Background Task
+    # 保存引用防止任务被 GC 静默终止
+    app.state.heartbeat_task = asyncio.create_task(heartbeat_loop())
 
     logger.info("Application startup complete. All tables created/verified. Routes registered.")
 

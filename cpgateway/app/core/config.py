@@ -42,6 +42,11 @@ class Settings(BaseSettings):
     TOKEN_REFRESH_BUFFER_MINUTES: int = 5
     AUTO_GENERATED_PW_LENGTH: int = 12
 
+    # --- 区域心跳探测 (Region Heartbeat) ---
+    REGION_HEARTBEAT_INTERVAL: int = 60
+    REGION_HEARTBEAT_TIMEOUT: int = 5
+    REGION_HEARTBEAT_OFFLINE_THRESHOLD: int = 3
+
     # --- 通知方式 (Notification) ---
     # "email" = SMTP 邮件, "feishu" = 飞书机器人 Webhook, "both" = 同时发送
     NOTIFICATION_METHOD: str = "email"
@@ -67,6 +72,7 @@ class Settings(BaseSettings):
     # --- 默认资源配额 (Resource Quotas) ---
     DEFAULT_CPU_CORES: float = 4.0
     DEFAULT_RAM_GB: float = 8.0
+    DEFAULT_TRAFFIC_GB: float = 100.0
     DEFAULT_PUBLIC_IPS: int = 2
     DEFAULT_DISK_GB: float = 50.0
 
@@ -88,5 +94,6 @@ class Settings(BaseSettings):
     class Config:
         case_sensitive = True
         env_file = ".env"
+        extra = "ignore"
 
 settings = Settings()

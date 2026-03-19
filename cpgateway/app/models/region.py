@@ -26,5 +26,10 @@ class Region(Base):
     is_available = Column(Boolean, default=True, nullable=False)
     description = Column(String, nullable=True)
 
+    # 状态监控字段 (Status monitoring)
+    last_check_at = Column(DateTime(timezone=True), nullable=True)
+    status_message = Column(String(255), nullable=True)
+    fail_count = Column(Integer, default=0, nullable=False)
+
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())

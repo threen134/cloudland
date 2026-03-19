@@ -29,6 +29,8 @@ class RegionPublic(BaseModel):
     display_name: Optional[str] = None
     is_available: bool
     description: Optional[str] = None
+    last_check_at: Optional[datetime] = None
+    status_message: Optional[str] = None
 
     class Config:
         from_attributes = True
@@ -37,6 +39,7 @@ class RegionPublic(BaseModel):
 class RegionAdmin(RegionPublic):
     """管理员可见的 Region 信息（含内网地址，不含密钥）"""
     internal_endpoint: str
+    fail_count: int
     created_at: datetime
     updated_at: datetime
 
