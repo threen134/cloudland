@@ -1,11 +1,12 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, watch } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { RouterView, RouterLink, useRouter, useRoute } from 'vue-router'
 import { useAuthStore } from '../../stores/auth'
 import { useTenantStore } from '../../stores/tenant'
 import { useRegionStore } from '../../stores/region'
 import { useI18n } from 'vue-i18n'
 import { setLanguage, getCurrentLanguage } from '../../locales'
+import { alarmEventsApi } from '../../api/alarmEvents'
 import { 
     LayoutDashboard, 
     Server, 
@@ -41,7 +42,10 @@ import {
     ServerCog,
     ArrowRightLeft,
     AlertTriangle,
-    Building2
+    Building2,
+    BellRing,
+    MessageSquare,
+    ShieldAlert
 } from 'lucide-vue-next'
 
 const auth = useAuthStore()
@@ -72,7 +76,7 @@ const toggleLanguage = () => {
 }
 
 // Collapsible menu sections
-const expandedSections = ref<string[]>(['auth', 'compute', 'network', 'admin'])
+const expandedSections = ref<string[]>(['auth', 'compute', 'network', 'alerting', 'admin'])
 const activeDropdown = ref<string | null>(null)
 
 const toggleSection = (section: string) => {
@@ -143,7 +147,10 @@ const pageTitle = computed(() => {
         'migration-detail': t('dashboard.migrations'),
         'alarms': t('dashboard.alarms'),
         'alarm-detail': t('dashboard.alarms'),
-        'regions': t('dashboard.regions')
+        'regions': t('dashboard.regions'),
+        'notification-channels': t('dashboard.notificationChannels'),
+        'alarm-events': t('dashboard.alarmEvents'),
+        'vm-alarm-rules': t('dashboard.vmAlarmRules.title')
     }
     return titles[route.name as string] || t('nav.dashboard')
 })
@@ -160,9 +167,27 @@ const handleLogout = () => {
     router.push('/')
 }
 
+// Alarm firing count badge
+const firingCount = ref(0)
+const fetchFiringCount = async () => {
+    try {
+        const res = await alarmEventsApi.getSummary()
+        firingCount.value = res.data.total_firing || 0
+    } catch {
+        firingCount.value = 0
+    }
+}
+
+// Refresh firing count every 60s
+let firingTimer: ReturnType<typeof setInterval> | null = null
 onMounted(() => {
     tenant.fetchOrganizations()
     region.fetchRegions()
+    fetchFiringCount()
+    firingTimer = setInterval(fetchFiringCount, 60000)
+})
+onUnmounted(() => {
+    if (firingTimer) clearInterval(firingTimer)
 })
 </script>
 
@@ -267,6 +292,30 @@ onMounted(() => {
             <RouterLink to="/dashboard/load-balancers" class="nav-item" active-class="active">
               <GitFork :size="18" />
               <span>{{ $t('dashboard.loadBalancers') }}</span>
+            </RouterLink>
+          </div>
+        </div>
+
+        <!-- Alerting Section -->
+        <div class="nav-section">
+          <button class="section-header" @click="toggleSection('alerting')">
+            <span class="section-title">{{ $t('dashboard.alerting') }}
+              <span v-if="firingCount > 0" class="firing-badge">{{ firingCount }}</span>
+            </span>
+            <component :is="isExpanded('alerting') ? ChevronDown : ChevronRight" :size="14" class="section-chevron" />
+          </button>
+          <div v-show="isExpanded('alerting') || isSidebarCollapsed" class="section-items">
+            <RouterLink to="/dashboard/alarm-events" class="nav-item" active-class="active">
+              <BellRing :size="18" />
+              <span>{{ $t('dashboard.alarmEvents') }}</span>
+            </RouterLink>
+            <RouterLink to="/dashboard/vm-alarm-rules" class="nav-item" active-class="active">
+              <ShieldAlert :size="18" />
+              <span>{{ $t('dashboard.vmAlarmRules.title') }}</span>
+            </RouterLink>
+            <RouterLink to="/dashboard/notification-channels" class="nav-item" active-class="active">
+              <MessageSquare :size="18" />
+              <span>{{ $t('dashboard.notificationChannels') }}</span>
             </RouterLink>
           </div>
         </div>
@@ -608,6 +657,22 @@ onMounted(() => {
 
 .section-header:hover {
   color: #64748b;
+}
+
+.firing-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  margin-left: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
+  color: white;
+  background: #ef4444;
+  border-radius: 9px;
 }
 
 .section-items {

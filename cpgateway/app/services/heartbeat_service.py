@@ -52,12 +52,32 @@ class HeartbeatService:
         
         if is_success:
             # 自动恢复逻辑：成功一次即上线
-            if not region.is_available:
+            was_unavailable = not region.is_available
+            if was_unavailable:
                 logger.info(f"Region '{region.name}' heartbeats recovered. Marking as available.")
-            
+
             region.is_available = True
             region.fail_count = 0
             region.status_message = "Healthy"
+
+            # cold_start 补偿：Region 刚恢复时异步触发全量通知渠道推送
+            # 使用 create_task 避免阻塞心跳事务的 commit
+            if was_unavailable:
+                async def _cold_start_sync(region_id, region_name):
+                    try:
+                        from app.services.notification_service import notification_sync_service
+                        async with AsyncSessionLocal() as sync_db:
+                            res = await sync_db.execute(
+                                select(Region).where(Region.id == region_id)
+                            )
+                            r = res.scalars().first()
+                            if r:
+                                await notification_sync_service.push_all_channels_to_region(sync_db, r)
+                                logger.info(f"Cold start channel sync triggered for region '{region_name}'")
+                    except Exception as e:
+                        logger.error(f"Cold start channel sync failed for region '{region_name}': {e}")
+
+                asyncio.create_task(_cold_start_sync(region.id, region.name))
         else:
             # 故障逻辑：连续失败达到阈值才下线
             region.fail_count += 1

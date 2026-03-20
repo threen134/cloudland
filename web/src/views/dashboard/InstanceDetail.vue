@@ -3,7 +3,8 @@ import { ref, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { instancesApi, type Instance } from '../../api/instances'
-import { ArrowLeft, Play, Square, RotateCw, Trash2, Terminal, Server, Cpu, HardDrive, Network, Key, ExternalLink, Copy, Check } from 'lucide-vue-next'
+import { vmAlarmRulesApi, VM_RULE_TYPES, type VMAlarmRuleGroup, type VMRuleType } from '../../api/vmAlarmRules'
+import { ArrowLeft, Play, Square, RotateCw, Trash2, Terminal, Server, Cpu, HardDrive, Network, Key, ExternalLink, Copy, Check, ShieldAlert, Link, Unlink } from 'lucide-vue-next'
 import DeleteModal from '../../components/modals/DeleteModal.vue'
 
 const route = useRoute()
@@ -141,6 +142,116 @@ const copyToClipboard = (text: string, field: string) => {
     })
 }
 
+// --- Alarm Rules Integration ---
+interface LinkedRule {
+    type: VMRuleType
+    typeLabel: string
+    rule_id: string
+    name: string
+    level: string
+    enable: boolean
+}
+
+const linkedRules = ref<LinkedRule[]>([])
+const alarmLoading = ref(false)
+const alarmError = ref('')
+const showLinkModal = ref(false)
+const availableRules = ref<LinkedRule[]>([])
+const linkLoading = ref(false)
+const unlinkLoading = ref<string | null>(null)
+
+const fetchLinkedRules = async () => {
+    alarmLoading.value = true
+    const linked: LinkedRule[] = []
+    try {
+        const results = await Promise.all(
+            VM_RULE_TYPES.map(rt =>
+                vmAlarmRulesApi.listRules(rt.value, { page: 1, page_size: 1000 })
+                    .then(res => ({ type: rt.value, label: rt.label, data: res.data.data || [] }))
+                    .catch(() => ({ type: rt.value, label: rt.label, data: [] as VMAlarmRuleGroup[] }))
+            )
+        )
+        for (const { type, label, data } of results) {
+            for (const rule of data) {
+                if (rule.linkedvms?.includes(instanceId)) {
+                    linked.push({
+                        type: type as VMRuleType,
+                        typeLabel: label,
+                        rule_id: rule.rule_id,
+                        name: rule.name,
+                        level: rule.level,
+                        enable: rule.enable,
+                    })
+                }
+            }
+        }
+    } catch (err) {
+        console.error('Failed to fetch alarm rules:', err)
+        alarmError.value = t('messages.error')
+    } finally {
+        linkedRules.value = linked
+        alarmLoading.value = false
+    }
+}
+
+const openLinkModal = async () => {
+    linkLoading.value = true
+    showLinkModal.value = true
+    const available: LinkedRule[] = []
+    try {
+        const results = await Promise.all(
+            VM_RULE_TYPES.map(rt =>
+                vmAlarmRulesApi.listRules(rt.value, { page: 1, page_size: 1000 })
+                    .then(res => ({ type: rt.value, label: rt.label, data: res.data.data || [] }))
+                    .catch(() => ({ type: rt.value, label: rt.label, data: [] as VMAlarmRuleGroup[] }))
+            )
+        )
+        for (const { type, label, data } of results) {
+            for (const rule of data) {
+                if (!rule.linkedvms?.includes(instanceId)) {
+                    available.push({
+                        type: type as VMRuleType,
+                        typeLabel: label,
+                        rule_id: rule.rule_id,
+                        name: rule.name,
+                        level: rule.level,
+                        enable: rule.enable,
+                    })
+                }
+            }
+        }
+    } catch (err) {
+        console.error('Failed to fetch available rules:', err)
+    } finally {
+        availableRules.value = available
+        linkLoading.value = false
+    }
+}
+
+const linkRule = async (rule: LinkedRule) => {
+    try {
+        await vmAlarmRulesApi.linkRule(rule.rule_id, [{ vm_uuid: instanceId }])
+        showLinkModal.value = false
+        await fetchLinkedRules()
+    } catch (err: any) {
+        console.error('Failed to link rule:', err)
+        alarmError.value = err.response?.data?.error || t('messages.error')
+    }
+}
+
+const unlinkRule = async (rule: LinkedRule) => {
+    unlinkLoading.value = rule.rule_id
+    try {
+        await vmAlarmRulesApi.unlinkRule(rule.rule_id, [{ vm_uuid: instanceId }])
+        await fetchLinkedRules()
+    } catch (err: any) {
+        console.error('Failed to unlink rule:', err)
+        alarmError.value = err.response?.data?.error || t('messages.error')
+    } finally {
+        unlinkLoading.value = null
+    }
+}
+
 const getStatusClass = (status: string) => {
     const statusMap: Record<string, string> = {
         'running': 'status-running',
@@ -172,7 +283,10 @@ const navigateToSecurityGroup = (sgId: string) => {
     router.push({ name: 'security-group-detail', params: { id: sgId } })
 }
 
-onMounted(() => fetchInstance())
+onMounted(() => {
+    fetchInstance()
+    fetchLinkedRules()
+})
 </script>
 
 <template>
@@ -359,6 +473,77 @@ onMounted(() => fetchInstance())
                             <span class="label"><Key :size="14" /> Key Pair</span>
                             <span class="value">{{ key.name }}</span>
                         </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Monitoring & Alerts -->
+            <div class="card alarm-card">
+                <div class="alarm-card-header">
+                    <h3><ShieldAlert :size="16" /> {{ t('dashboard.instanceDetail.monitoringAlerts') }}</h3>
+                    <button class="btn btn-ghost btn-sm" @click="openLinkModal">
+                        <Link :size="14" /> {{ t('dashboard.instanceDetail.linkRule') }}
+                    </button>
+                </div>
+                <div v-if="alarmError" class="alarm-error-banner" @click="alarmError = ''">{{ alarmError }}</div>
+                <div v-if="alarmLoading" class="text-secondary" style="font-size: 13px; padding: 8px 0;">Loading...</div>
+                <div v-else-if="linkedRules.length === 0" class="text-secondary" style="font-size: 13px; padding: 8px 0;">
+                    {{ t('dashboard.instanceDetail.noLinkedRules') }}
+                </div>
+                <table v-else class="alarm-table">
+                    <thead>
+                        <tr>
+                            <th>{{ t('dashboard.table.name') }}</th>
+                            <th>{{ t('dashboard.instanceDetail.ruleType') }}</th>
+                            <th>{{ t('dashboard.vmAlarmRules.level') }}</th>
+                            <th>{{ t('dashboard.table.status') }}</th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr v-for="rule in linkedRules" :key="rule.rule_id">
+                            <td>{{ rule.name }}</td>
+                            <td><span class="badge badge-secondary">{{ rule.typeLabel }}</span></td>
+                            <td><span class="badge" :class="'badge-' + rule.level">{{ rule.level }}</span></td>
+                            <td>
+                                <span class="badge" :class="rule.enable ? 'badge-success' : 'badge-muted'">
+                                    {{ rule.enable ? t('dashboard.alarm.enabled') : t('dashboard.alarm.disabled') }}
+                                </span>
+                            </td>
+                            <td>
+                                <button class="btn btn-ghost btn-sm text-danger" @click="unlinkRule(rule)" :disabled="unlinkLoading === rule.rule_id">
+                                    <Unlink :size="14" /> {{ t('dashboard.instanceDetail.unlink') }}
+                                </button>
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- Link Rule Modal -->
+            <div v-if="showLinkModal" class="modal-overlay" @click.self="showLinkModal = false">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h3>{{ t('dashboard.instanceDetail.linkRule') }}</h3>
+                    </div>
+                    <div class="modal-body">
+                        <div v-if="linkLoading" class="text-secondary" style="padding: 12px 0;">Loading...</div>
+                        <div v-else-if="availableRules.length === 0" class="text-secondary" style="padding: 12px 0;">
+                            {{ t('dashboard.instanceDetail.noAvailableRules') }}
+                        </div>
+                        <div v-else class="rule-pick-list">
+                            <div v-for="rule in availableRules" :key="rule.rule_id" class="rule-pick-item" @click="linkRule(rule)">
+                                <div class="rule-pick-info">
+                                    <span class="rule-pick-name">{{ rule.name }}</span>
+                                    <span class="badge badge-secondary">{{ rule.typeLabel }}</span>
+                                    <span class="badge" :class="'badge-' + rule.level">{{ rule.level }}</span>
+                                </div>
+                                <Link :size="14" class="rule-pick-icon" />
+                            </div>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button class="btn btn-secondary btn-sm" @click="showLinkModal = false">{{ t('actions.cancel') }}</button>
                     </div>
                 </div>
             </div>
@@ -631,4 +816,101 @@ onMounted(() => fetchInstance())
     color: var(--primary-700);
     text-decoration: underline;
 }
+
+/* Alarm Card */
+.alarm-card {
+    padding: var(--spacing-5);
+    margin-bottom: var(--spacing-6);
+}
+
+.alarm-card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: var(--spacing-3);
+    border-bottom: 1px solid var(--border-light);
+    padding-bottom: var(--spacing-3);
+}
+
+.alarm-card-header h3 {
+    font-size: var(--font-size-md);
+    font-weight: 600;
+    margin: 0;
+    color: var(--text-primary);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.alarm-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: var(--font-size-sm);
+}
+
+.alarm-table th {
+    text-align: left;
+    padding: 8px 12px;
+    color: var(--text-secondary);
+    font-weight: 500;
+    border-bottom: 1px solid var(--border-light);
+}
+
+.alarm-table td {
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--border-light);
+}
+
+.alarm-table tr:last-child td {
+    border-bottom: none;
+}
+
+.badge-critical { background: #dc2626; color: white; }
+.badge-warning { background: #f59e0b; color: white; }
+.badge-info { background: #3b82f6; color: white; }
+.badge-success { background: #22c55e; color: white; }
+.badge-muted { background: #6b7280; color: white; }
+.badge-secondary { background: #8b5cf6; color: white; }
+.text-danger { color: #ef4444; }
+
+.rule-pick-list {
+    max-height: 320px;
+    overflow-y: auto;
+}
+
+.rule-pick-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 12px;
+    cursor: pointer;
+    border-radius: var(--radius-md);
+    transition: background 0.15s;
+}
+
+.rule-pick-item:hover {
+    background: var(--bg-hover, #f3f4f6);
+}
+
+.rule-pick-info {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.rule-pick-name {
+    font-weight: 500;
+}
+
+.rule-pick-icon {
+    color: var(--primary-color);
+    opacity: 0;
+    transition: opacity 0.15s;
+}
+
+.rule-pick-item:hover .rule-pick-icon {
+    opacity: 1;
+}
+
+.alarm-error-banner { background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; border-radius: 6px; padding: 10px 14px; margin-bottom: 12px; font-size: 13px; cursor: pointer; }
 </style>

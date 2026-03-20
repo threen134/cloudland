@@ -15,4 +15,5 @@ var logger = rlog.MustGetLogger("services")
 // Init initializes the services package, creating system admin user and org
 func Init() {
 	AdminInit()
+	RebuildAlarmRulesOnStartup()
 }

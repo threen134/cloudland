@@ -101,6 +101,7 @@ services:
       - ./volumes/certs:/certs:ro
       - ./volumes/certs/cland/selfsigned.crt:/etc/ssl/certs/alarm_rules_manager.crt:ro
       - ../.ssh:/opt/cloudland/deploy/.ssh:ro
+      - ./volumes/prometheus/node_templates:/etc/prometheus/node_templates:ro
     ports:
       - "${INTERNAL_IP:-127.0.0.1}:8255:8255"
       - "${INTERNAL_IP:-127.0.0.1}:5005:5005"
@@ -200,6 +201,8 @@ services:
     user: "nobody"
     volumes:
       - ./config/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./volumes/prometheus/general_rules:/etc/prometheus/general_rules
+      - ./volumes/prometheus/rules_enabled:/etc/prometheus/rules_enabled
       - prometheus_data:/prometheus
     command:
       - "--config.file=/etc/prometheus/prometheus.yml"
@@ -323,6 +326,8 @@ services:
       ALARM_RULES_KEY: "/certs/cland/selfsigned.key"
     volumes:
       - ./volumes/certs:/certs:ro
+      - ./volumes/prometheus/general_rules:/etc/prometheus/general_rules
+      - ./volumes/prometheus/rules_enabled:/etc/prometheus/rules_enabled
     ports:
       - "8256:8256"
     networks:

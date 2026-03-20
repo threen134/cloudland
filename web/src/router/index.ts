@@ -246,6 +246,22 @@ const router = createRouter({
                     component: () => import('../views/dashboard/AlarmDetail.vue'),
                     meta: { requiresSuperAdmin: true }
                 },
+                // Notification & Alarm Events (all users)
+                {
+                    path: 'vm-alarm-rules',
+                    name: 'vm-alarm-rules',
+                    component: () => import('../views/dashboard/VMAlarmRules.vue')
+                },
+                {
+                    path: 'notification-channels',
+                    name: 'notification-channels',
+                    component: () => import('../views/dashboard/NotificationChannels.vue')
+                },
+                {
+                    path: 'alarm-events',
+                    name: 'alarm-events',
+                    component: () => import('../views/dashboard/AlarmEvents.vue')
+                },
                 // Settings
                 {
                     path: 'settings',

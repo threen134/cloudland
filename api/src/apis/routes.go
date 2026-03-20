@@ -64,7 +64,7 @@ func Register() (r *gin.Engine) {
 
 	r.POST("/api/v1/login", userAPI.LoginPost)
 	r.GET("/api/v1/version", versionAPI.Get)
-	r.POST("/api/v1/alerts/process", alarmAPI.ProcessAlertWebhook)
+	r.POST("/api/v1/alerts/process", notificationAPI.ProcessAlertWebhookV2)
 	r.POST("/api/v1/alerts/resource-adjustment", adjustAPI.ProcessResourceAdjustmentWebhook)
 	r.GET("/api/v1/validate", userAPI.ValidateEmail)
 	authGroup := r.Group("").Use(Authorize())
@@ -325,6 +325,21 @@ func Register() (r *gin.Engine) {
 			metricsGroup.POST("/api/v1/adjust/regenerate-bandwidth-metrics", adjustAPI.RegenerateBandwidthConfigMetrics)
 		}
 
+		// --- 通知渠道 & 告警事件 ---
+
+		// 内部同步接口（CPGateway 推送通知渠道变更）
+		authGroup.POST("/api/v1/internal/notification-channels/sync", notificationAPI.SyncChannel)
+
+		// 内部告警事件查询（CPGateway 全局汇总用）
+		authGroup.GET("/api/v1/internal/alarm/events", notificationAPI.InternalListAlarmEvents)
+
+		// 告警规则渠道绑定
+		authGroup.POST("/api/v1/alarm/rule-channels", notificationAPI.BindRuleChannels)
+		authGroup.GET("/api/v1/alarm/rule-channels/:uuid", notificationAPI.GetRuleChannels)
+
+		// 告警事件查询
+		authGroup.GET("/api/v1/alarm/events", notificationAPI.ListAlarmEvents)
+		authGroup.GET("/api/v1/alarm/events/:event_uuid/delivery-logs", notificationAPI.GetAlarmDeliveryLogs)
 	}
 
 	r.GET("/swagger/api/v1/*any", ginSwagger.WrapHandler(swaggerFiles.NewHandler(), ginSwagger.InstanceName("v1")))
