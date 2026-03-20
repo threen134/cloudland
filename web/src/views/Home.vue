@@ -299,23 +299,23 @@ const goToMarketplace = () => {
 .home-page {
     background: var(--bg-primary);
 
-    /* Scoped CloudLand Theme - Fresh Light Blue */
-    --primary-50: #eff6ff;
-    --primary-100: #dbeafe;
-    --primary-200: #bfdbfe;
-    --primary-300: #93c5fd;
-    --primary-400: #60a5fa;
-    --primary-500: #3b82f6;
-    --primary-600: #2563eb;
-    --primary-700: #1d4ed8;
-    --primary-800: #1e40af;
-    --primary-900: #1e3a5f;
+    /* Scoped CloudLand Theme - Sky Blue (matches Login page) */
+    --primary-50: #f0f9ff;
+    --primary-100: #e0f2fe;
+    --primary-200: #bae6fd;
+    --primary-300: #7dd3fc;
+    --primary-400: #38bdf8;
+    --primary-500: #0ea5e9;
+    --primary-600: #0284c7;
+    --primary-700: #0369a1;
+    --primary-800: #075985;
+    --primary-900: #0c4a6e;
 
-    --primary-color: #3b82f6;
-    --primary-hover: #60a5fa;
-    --primary-active: #2563eb;
-    --primary-light: #dbeafe;
-    --primary-gradient: linear-gradient(135deg, #3b82f6 0%, #06b6d4 100%);
+    --primary-color: #0ea5e9;
+    --primary-hover: #38bdf8;
+    --primary-active: #0284c7;
+    --primary-light: #e0f2fe;
+    --primary-gradient: linear-gradient(135deg, #0ea5e9 0%, #06b6d4 100%);
 
     --radius-sm: 0.375rem;
     --radius-md: 0.5rem;
@@ -325,7 +325,7 @@ const goToMarketplace = () => {
 }
 
 .text-gradient-blue {
-    background: linear-gradient(135deg, #3b82f6, #06b6d4);
+    background: linear-gradient(135deg, #0ea5e9, #06b6d4);
     -webkit-background-clip: text;
     background-clip: text;
     -webkit-text-fill-color: transparent;
@@ -352,7 +352,7 @@ const goToMarketplace = () => {
 .hero {
     padding: var(--spacing-20) 0 var(--spacing-24);
     text-align: center;
-    background: linear-gradient(160deg, #0f172a 0%, #1e3a5f 30%, #2563eb 70%, #06b6d4 100%);
+    background: linear-gradient(160deg, #0f172a 0%, #0c4a6e 30%, #0ea5e9 70%, #06b6d4 100%);
     color: var(--text-inverse);
     position: relative;
     overflow: hidden;
@@ -366,7 +366,7 @@ const goToMarketplace = () => {
     right: -50%;
     bottom: -50%;
     background:
-        radial-gradient(ellipse 600px 400px at 30% 20%, rgba(59, 130, 246, 0.3) 0%, transparent 70%),
+        radial-gradient(ellipse 600px 400px at 30% 20%, rgba(14, 165, 233, 0.3) 0%, transparent 70%),
         radial-gradient(ellipse 500px 350px at 70% 60%, rgba(6, 182, 212, 0.2) 0%, transparent 70%),
         radial-gradient(circle at 50% 0%, rgba(255, 255, 255, 0.08) 0%, transparent 50%);
     pointer-events: none;
@@ -445,7 +445,7 @@ const goToMarketplace = () => {
 
 .btn-white {
     background: rgba(255, 255, 255, 0.95);
-    color: #2563eb;
+    color: #0ea5e9;
     border: none;
     border-radius: var(--radius-lg);
     font-weight: var(--font-weight-semibold);
@@ -457,7 +457,7 @@ const goToMarketplace = () => {
 }
 
 .badge-popular {
-    background: linear-gradient(135deg, #3b82f6, #06b6d4);
+    background: linear-gradient(135deg, #0ea5e9, #06b6d4);
     color: white;
     border-radius: var(--radius-full);
 }
@@ -477,20 +477,20 @@ const goToMarketplace = () => {
     background: rgba(255, 255, 255, 0.7);
     backdrop-filter: blur(16px);
     -webkit-backdrop-filter: blur(16px);
-    border: 1px solid rgba(59, 130, 246, 0.1);
+    border: 1px solid rgba(14, 165, 233, 0.1);
     border-radius: var(--radius-xl);
     transition: all 0.3s ease;
 }
 
 .price-card:hover {
     transform: translateY(-4px);
-    box-shadow: 0 20px 40px rgba(59, 130, 246, 0.12);
-    border-color: rgba(59, 130, 246, 0.25);
+    box-shadow: 0 20px 40px rgba(14, 165, 233, 0.12);
+    border-color: rgba(14, 165, 233, 0.25);
 }
 
 .price-card.popular {
-    background: linear-gradient(135deg, rgba(59, 130, 246, 0.05), rgba(6, 182, 212, 0.05));
-    border-color: rgba(59, 130, 246, 0.3);
+    background: linear-gradient(135deg, rgba(14, 165, 233, 0.05), rgba(6, 182, 212, 0.05));
+    border-color: rgba(14, 165, 233, 0.3);
 }
 
 .price-card .btn {
@@ -514,7 +514,7 @@ const goToMarketplace = () => {
     background: rgba(255, 255, 255, 0.6);
     backdrop-filter: blur(12px);
     -webkit-backdrop-filter: blur(12px);
-    border: 1px solid rgba(59, 130, 246, 0.08);
+    border: 1px solid rgba(14, 165, 233, 0.08);
     border-radius: var(--radius-xl);
     padding: var(--spacing-6);
     transition: all 0.3s ease;
@@ -522,13 +522,13 @@ const goToMarketplace = () => {
 
 .feature-card:hover {
     background: rgba(255, 255, 255, 0.85);
-    box-shadow: 0 8px 32px rgba(59, 130, 246, 0.1);
-    border-color: rgba(59, 130, 246, 0.2);
+    box-shadow: 0 8px 32px rgba(14, 165, 233, 0.1);
+    border-color: rgba(14, 165, 233, 0.2);
 }
 
 .feature-card .icon-box {
-    background: linear-gradient(135deg, rgba(59, 130, 246, 0.1), rgba(6, 182, 212, 0.1));
-    color: #3b82f6;
+    background: linear-gradient(135deg, rgba(14, 165, 233, 0.1), rgba(6, 182, 212, 0.1));
+    color: #0ea5e9;
     border-radius: var(--radius-lg);
 }
 
@@ -547,18 +547,18 @@ const goToMarketplace = () => {
 .scenario-card {
     border-radius: var(--radius-xl);
     overflow: hidden;
-    border: 1px solid rgba(59, 130, 246, 0.08);
+    border: 1px solid rgba(14, 165, 233, 0.08);
     transition: all 0.3s ease;
 }
 
 .scenario-card:hover {
     transform: translateY(-4px);
-    box-shadow: 0 12px 32px rgba(59, 130, 246, 0.1);
+    box-shadow: 0 12px 32px rgba(14, 165, 233, 0.1);
 }
 
 /* CTA */
 .cta-section {
-    background: linear-gradient(160deg, #1e3a5f 0%, #2563eb 50%, #06b6d4 100%);
+    background: linear-gradient(160deg, #0c4a6e 0%, #0ea5e9 50%, #06b6d4 100%);
     padding: var(--spacing-16) 0;
     position: relative;
     overflow: hidden;

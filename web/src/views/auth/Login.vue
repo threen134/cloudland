@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import { ref } from 'vue'
-import { useRouter, RouterLink } from 'vue-router'
+import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { useAuthStore } from '../../stores/auth'
-import { Cloud, User, Lock, ArrowRight, ShieldCheck, XCircle, AlertTriangle } from 'lucide-vue-next'
+import { Cloud, User, Lock, ArrowRight, HelpCircle, XCircle, AlertTriangle } from 'lucide-vue-next'
 import SecurityVerify from '../../components/auth/SecurityVerify.vue'
 
 const { t } = useI18n()
@@ -12,6 +12,7 @@ const auth = useAuthStore()
 
 const email = ref('')
 const password = ref('')
+const rememberMe = ref(false)
 const errorMessage = ref('')
 const isVerified = ref(false)
 
@@ -22,7 +23,7 @@ const handleVerify = () => {
 const handleSubmit = async () => {
   try {
     errorMessage.value = ''
-    await auth.login(email.value, password.value)
+    await auth.login(email.value, password.value, rememberMe.value)
     router.push('/dashboard')
   } catch (error: any) {
     console.error('Login failed:', error)
@@ -37,349 +38,502 @@ const handleSubmit = async () => {
 </script>
 
 <template>
-  <div class="auth-page">
-    <!-- Decorative background elements -->
-    <div class="decor-circle decor-1"></div>
-    <div class="decor-circle decor-2"></div>
-    <div class="decor-circle decor-3"></div>
+  <div class="pl-page">
+    <!-- Top Navbar -->
+    <header class="pl-nav">
+      <router-link to="/" class="pl-nav-brand">
+        <div class="pl-logo-wrapper">
+          <Cloud :size="20" fill="currentColor" />
+        </div>
+        <span>CloudLand</span>
+      </router-link>
+      <div class="pl-nav-icons">
+        <button class="pl-icon-btn"><Lock :size="18" /></button>
+        <button class="pl-icon-btn"><HelpCircle :size="18" /></button>
+      </div>
+    </header>
 
-    <div class="auth-container">
-      <div class="card auth-card">
-        <div class="auth-header">
-          <div class="auth-logo">
-            <div class="logo-inner">
-              <Cloud :size="32" />
-            </div>
+    <!-- Main Content -->
+    <main class="pl-main">
+      <div class="pl-card">
+        <!-- Left: Branded panel -->
+        <div class="pl-card-left">
+          <div class="pl-card-left-content">
+            <h1 class="pl-hero-title">{{ t('privateCloud.hero.title') }}</h1>
+            <p class="pl-hero-subtitle">
+              {{ t('privateCloud.hero.subtitle') }}
+            </p>
           </div>
-          <h2>{{ t('auth.loginTitle') }}</h2>
-          <p>{{ t('auth.loginSubtitle') }}</p>
+          <!-- Subtle decoration -->
+          <div class="pl-decor-wave"></div>
         </div>
 
-        <!-- Error Message -->
-        <div v-if="errorMessage" class="error-alert">
-          <XCircle :size="18" />
-          <span>{{ errorMessage }}</span>
-        </div>
+        <!-- Right: Login panel -->
+        <div class="pl-card-right">
+          <div class="pl-card-right-content">
+            <h2 class="pl-form-title">{{ t('privateCloud.cta.title') }}</h2>
+            <p class="pl-form-subtitle">{{ t('privateCloud.cta.subtitle') }}</p>
 
-        <div v-if="auth.failedAttempts >= 3" class="warning-alert">
-          <AlertTriangle :size="18" />
-          <span>{{ t('auth.tooManyAttempts') }}</span>
-        </div>
+            <!-- Error Message -->
+            <div v-if="errorMessage" class="pl-error-box">
+              <XCircle :size="16" />
+              <span>{{ errorMessage }}</span>
+            </div>
 
-        <form @submit.prevent="handleSubmit" class="auth-form">
-          <div class="form-group">
-            <label class="form-label">{{ t('auth.username') }}</label>
-            <div class="input-wrapper">
-              <User class="input-icon" :size="18" />
-              <input 
-                type="text" 
-                class="form-control" 
-                v-model="email"
-                required 
-                :placeholder="t('auth.username')"
+            <!-- Too Many Attempts Warning -->
+            <div v-if="auth.failedAttempts >= 3" class="pl-warning-box">
+              <AlertTriangle :size="16" />
+              <span>{{ t('auth.tooManyAttempts') }}</span>
+            </div>
+
+            <form @submit.prevent="handleSubmit" class="pl-form">
+              <div class="pl-form-group">
+                <label class="pl-label">{{ t('auth.username') }}</label>
+                <div class="pl-input-wrapper">
+                  <User class="pl-input-icon" :size="18" />
+                  <input 
+                    type="text" 
+                    class="pl-input" 
+                    v-model="email"
+                    required 
+                    :placeholder="t('auth.username')"
+                  />
+                </div>
+              </div>
+              
+              <div class="pl-form-group">
+                <label class="pl-label">{{ t('auth.password') }}</label>
+                <div class="pl-input-wrapper">
+                  <Lock class="pl-input-icon" :size="18" />
+                  <input 
+                    type="password" 
+                    class="pl-input" 
+                    v-model="password"
+                    required 
+                    placeholder="••••••••"
+                  />
+                </div>
+              </div>
+
+              <div class="pl-form-actions">
+                <label class="pl-checkbox">
+                  <input type="checkbox" v-model="rememberMe" />
+                  <span class="pl-checkbox-box"></span>
+                  <span class="pl-checkbox-label">{{ t('auth.rememberMe') }}</span>
+                </label>
+                <router-link to="/forgot-password" class="pl-forgot-link">{{ t('auth.forgotPassword') }}</router-link>
+              </div>
+
+              <!-- Security Verification (Captcha) -->
+              <SecurityVerify 
+                v-if="auth.failedAttempts >= 3" 
+                @verify="handleVerify"
+                class="pl-security-check"
               />
+
+              <button 
+                type="submit" 
+                class="pl-btn-login"
+                :disabled="auth.isLoading || (auth.failedAttempts >= 3 && !isVerified)"
+              >
+                <span>{{ auth.isLoading ? t('auth.signingIn') : t('auth.signIn') }}</span>
+                <ArrowRight v-if="!auth.isLoading" :size="18" />
+                <div v-else class="pl-spinner"></div>
+              </button>
+            </form>
+
+            <div class="pl-divider-container">
+              <div class="pl-divider"></div>
+              <span class="pl-divider-text">{{ t('privateCloud.action.newUser') }}</span>
             </div>
+
+            <button class="pl-btn-request" @click="router.push('/register')">
+              {{ t('nav.signUp') }}
+            </button>
           </div>
-          
-          <div class="form-group">
-            <div class="label-row">
-              <label class="form-label">{{ t('auth.password') }}</label>
-              <RouterLink to="/forgot-password" class="forgot-link">{{ t('auth.forgotPassword') }}</RouterLink>
-            </div>
-            <div class="input-wrapper">
-              <Lock class="input-icon" :size="18" />
-              <input 
-                type="password" 
-                class="form-control" 
-                v-model="password"
-                required 
-                placeholder="••••••••"
-              />
-            </div>
-          </div>
-
-          <div class="form-options">
-            <label class="checkbox-label">
-              <input type="checkbox" />
-              <span>{{ t('auth.rememberMe') }}</span>
-            </label>
-          </div>
-
-          <SecurityVerify 
-            v-if="auth.failedAttempts >= 3" 
-            @verify="handleVerify"
-            class="security-check-container"
-          />
-
-          <button 
-            type="submit" 
-            class="btn btn-primary btn-block btn-lg"
-            :disabled="auth.isLoading || (auth.failedAttempts >= 3 && !isVerified)"
-          >
-            <span>{{ auth.isLoading ? t('auth.signingIn') : t('auth.signIn') }}</span>
-            <ArrowRight v-if="!auth.isLoading" :size="18" />
-            <div v-else class="loading-spinner-sm"></div>
-          </button>
-        </form>
-        
-        <div class="auth-footer">
-          <p>
-            {{ t('auth.noAccount') }} 
-            <RouterLink to="/register" class="link-highlight">{{ t('nav.signUp') }}</RouterLink>
-          </p>
-        </div>
-
-        <div class="trust-badge">
-          <ShieldCheck :size="14" />
-          <span>{{ t('hero.badge').split('·')[0] }}</span>
         </div>
       </div>
-    </div>
+    </main>
+
+    <!-- Footer -->
+    <footer class="pl-footer">
+      <p class="pl-copyright">{{ t('footer.copyright') }}</p>
+      <div class="pl-footer-links">
+        <a href="#">{{ t('privateCloud.footer.security') }}</a>
+        <a href="#">{{ t('privateCloud.footer.terms') }}</a>
+        <a href="#">{{ t('privateCloud.footer.privacy') }}</a>
+        <a href="/api/v1/docs" target="_blank" rel="noopener">{{ t('nav.documentation') }}</a>
+      </div>
+    </footer>
   </div>
 </template>
 
 <style scoped>
-.auth-page {
+/* ── Reset & Container ── */
+.pl-page {
   min-height: 100vh;
   display: flex;
+  flex-direction: column;
+  background-color: #f4f8fb;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  color: #1a2332;
+}
+
+/* ── Navbar ── */
+.pl-nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 48px;
+  height: 80px;
+  background: transparent;
+  flex-shrink: 0;
+}
+
+.pl-nav-brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  text-decoration: none;
+  font-weight: 700;
+  font-size: 1.25rem;
+  color: #1a2332;
+}
+
+.pl-logo-wrapper {
+  background: #0ea5e9;
+  color: white;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  display: flex;
   align-items: center;
   justify-content: center;
-  background: var(--bg-secondary);
-  background: radial-gradient(circle at 0% 0%, var(--primary-50) 0%, transparent 40%),
-              radial-gradient(circle at 100% 100%, var(--primary-100) 0%, transparent 40%),
-              var(--bg-secondary);
+}
+
+.pl-nav-icons {
+  display: flex;
+  gap: 12px;
+}
+
+.pl-icon-btn {
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  border: none;
+  background: transparent;
+  color: #4a5568;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.pl-icon-btn:hover {
+  background: rgba(0, 0, 0, 0.05);
+}
+
+/* ── Main Layout ── */
+.pl-main {
+  flex: 1;
+  display: flex;
+  overflow: hidden;
+}
+
+.pl-card {
+  display: flex;
+  width: 100%;
+  background: #fff;
+}
+
+/* ── Left Panel ── */
+.pl-card-left {
+  flex: 1.4;
+  background: linear-gradient(135deg, #bae6fd 0%, #0ea5e9 100%);
+  color: #fff;
+  padding: 80px 8%;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
   position: relative;
   overflow: hidden;
-  padding: var(--spacing-6);
 }
 
-/* Decorative circles */
-.decor-circle {
-  position: absolute;
-  border-radius: 50%;
-  filter: blur(80px);
-  z-index: 0;
-  opacity: 0.5;
+.pl-card-left-content {
+  margin-bottom: 80px;
 }
 
-.decor-1 {
-  width: 400px;
-  height: 400px;
-  background: var(--primary-200);
-  top: -100px;
-  right: -50px;
-}
-
-.decor-2 {
-  width: 350px;
-  height: 350px;
-  background: #93c5fd;
-  bottom: -50px;
-  left: -50px;
-}
-
-.decor-3 {
-  width: 250px;
-  height: 250px;
-  background: #bae6fd;
-  top: 40%;
-  left: 10%;
-  opacity: 0.3;
-}
-
-.auth-container {
-  width: 100%;
-  max-width: 440px;
-  position: relative;
-  z-index: 1;
-  animation: fadeIn 0.6s ease-out;
-}
-
-@keyframes fadeIn {
-  from { opacity: 0; transform: translateY(20px); }
-  to { opacity: 1; transform: translateY(0); }
-}
-
-.auth-card {
-  background: rgba(255, 255, 255, 0.9);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
-  border: 1px solid rgba(255, 255, 255, 0.5);
-  padding: var(--spacing-10);
-  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.08);
-}
-
-.auth-header {
-  text-align: center;
-  margin-bottom: var(--spacing-8);
-}
-
-.auth-logo {
-  display: flex;
-  justify-content: center;
-  margin-bottom: var(--spacing-6);
-}
-
-.logo-inner {
-  width: 64px;
-  height: 64px;
-  background: var(--primary-gradient);
-  color: white;
-  border-radius: var(--radius-xl);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  box-shadow: 0 8px 16px rgba(59, 130, 246, 0.2);
-}
-
-h2 {
-  font-size: var(--font-size-2xl);
+.pl-hero-title {
+  font-size: 3rem;
   font-weight: 800;
-  color: var(--text-primary);
-  margin-bottom: var(--spacing-2);
-  letter-spacing: -0.02em;
+  line-height: 1.2;
+  margin-bottom: 32px;
+  letter-spacing: -0.01em;
+  color: #fff;
+  text-shadow: 0 2px 40px rgba(14, 165, 233, 0.3);
+  white-space: nowrap;
 }
 
-p {
-  color: var(--text-tertiary);
-  font-size: var(--font-size-base);
+.pl-hero-subtitle {
+  font-size: 1.125rem;
+  line-height: 1.7;
+  color: rgba(255, 255, 255, 0.9);
+  max-width: 500px;
 }
 
-.error-alert {
-  background-color: var(--error-50, #fef2f2);
-  border: 1px solid var(--error-200, #fecaca);
-  color: var(--error-700, #b91c1c);
-  padding: var(--spacing-4);
-  border-radius: var(--radius-lg);
-  margin-bottom: var(--spacing-6);
+.pl-decor-wave {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  width: 100%;
+  height: 200px;
+  background: linear-gradient(to top, rgba(255, 255, 255, 0.12), transparent);
+  clip-path: ellipse(85% 100% at 50% 100%);
+}
+
+/* ── Right Panel (Form) ── */
+.pl-card-right {
+  flex: 0.6;
+  padding: 80px;
   display: flex;
   align-items: center;
-  gap: var(--spacing-3);
-  font-size: var(--font-size-sm);
-  font-weight: 500;
-  animation: shake 0.5s cubic-bezier(.36,.07,.19,.97) both;
+  justify-content: center;
+  background: #fff;
 }
 
-@keyframes shake {
-  10%, 90% { transform: translate3d(-1px, 0, 0); }
-  20%, 80% { transform: translate3d(2px, 0, 0); }
-  30%, 50%, 70% { transform: translate3d(-4px, 0, 0); }
-  40%, 60% { transform: translate3d(4px, 0, 0); }
+.pl-card-right-content {
+  width: 100%;
+  max-width: 400px;
+  margin: 0 auto;
 }
 
-.warning-alert {
+.pl-form-title {
+  font-size: 2rem;
+  font-weight: 800;
+  color: #1a2332;
+  margin-bottom: 12px;
+  letter-spacing: -0.01em;
+}
+
+.pl-form-subtitle {
+  font-size: 0.9375rem;
+  color: #64748b;
+  margin-bottom: 40px;
+}
+
+.pl-error-box {
+  background: #fff1f2;
+  border: 1px solid #fecdd3;
+  color: #e11d48;
+  padding: 12px;
+  border-radius: 12px;
+  margin-bottom: 24px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.875rem;
+}
+
+.pl-warning-box {
   background-color: #fffbeb;
   border: 1px solid #fef3c7;
   color: #92400e;
-  padding: var(--spacing-4);
-  border-radius: var(--radius-lg);
-  margin-bottom: var(--spacing-6);
+  padding: 12px;
+  border-radius: 12px;
+  margin-bottom: 24px;
   display: flex;
   align-items: center;
-  gap: var(--spacing-3);
-  font-size: var(--font-size-sm);
+  gap: 8px;
+  font-size: 0.875rem;
   font-weight: 500;
-  animation: fadeIn 0.4s ease-out;
 }
 
-.security-check-container {
-  margin-bottom: var(--spacing-6);
+.pl-security-check {
+  margin-bottom: 24px;
 }
 
-.auth-form {
-  margin-bottom: var(--spacing-8);
+.pl-form-group {
+  margin-bottom: 24px;
 }
 
-.label-row {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: var(--spacing-2);
-}
-
-.form-label {
+.pl-label {
   display: block;
-  font-size: var(--font-size-sm);
+  font-size: 0.875rem;
   font-weight: 600;
-  color: var(--text-secondary);
-  margin-bottom: var(--spacing-2);
+  color: #475569;
+  margin-bottom: 8px;
 }
 
-.forgot-link {
-  font-size: var(--font-size-xs);
-  color: var(--primary-600);
-  font-weight: 600;
-}
-
-.forgot-link:hover {
-  text-decoration: underline;
-}
-
-.input-wrapper {
+.pl-input-wrapper {
   position: relative;
 }
 
-.input-icon {
+.pl-input-icon {
   position: absolute;
-  left: 14px;
+  left: 16px;
   top: 50%;
   transform: translateY(-50%);
-  color: var(--text-light);
-  transition: color 0.2s;
+  color: #94a3b8;
 }
 
-.form-control {
+.pl-input {
   width: 100%;
-  padding: 12px 14px 12px 42px;
-  border: 1px solid var(--border-light);
-  border-radius: var(--radius-lg);
-  font-size: var(--font-size-base);
-  background: white;
+  padding: 14px 16px 14px 48px;
+  background: #f1f5f9;
+  border: 2px solid transparent;
+  border-radius: 14px;
+  font-size: 0.9375rem;
   transition: all 0.2s;
 }
 
-.form-control:focus {
+.pl-input:focus {
   outline: none;
-  border-color: var(--primary-400);
-  box-shadow: 0 0 0 4px var(--primary-50);
+  background: #fff;
+  border-color: #0ea5e9;
+  box-shadow: 0 0 0 4px rgba(14, 165, 233, 0.1);
 }
 
-.form-control:focus + .input-icon {
-  color: var(--primary-500);
+.pl-form-actions {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 32px;
 }
 
-.form-options {
-  margin: var(--spacing-4) 0 var(--spacing-6);
-}
-
-.checkbox-label {
+.pl-checkbox {
   display: flex;
   align-items: center;
-  gap: var(--spacing-2);
-  font-size: var(--font-size-sm);
-  color: var(--text-tertiary);
+  gap: 10px;
   cursor: pointer;
+  user-select: none;
 }
 
-.checkbox-label input {
-  width: 16px;
-  height: 16px;
-  accent-color: var(--primary-color);
+.pl-checkbox input {
+  display: none;
 }
 
-.btn-block {
+.pl-checkbox-box {
+  width: 20px;
+  height: 20px;
+  background: #e2e8f0;
+  border-radius: 6px;
+  position: relative;
+  transition: all 0.2s;
+}
+
+.pl-checkbox input:checked + .pl-checkbox-box {
+  background: #0ea5e9;
+}
+
+.pl-checkbox-box::after {
+  content: '';
+  position: absolute;
+  left: 7px;
+  top: 3px;
+  width: 5px;
+  height: 10px;
+  border: solid white;
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+
+.pl-checkbox input:checked + .pl-checkbox-box::after {
+  opacity: 1;
+}
+
+.pl-checkbox-label {
+  font-size: 0.875rem;
+  color: #64748b;
+  font-weight: 500;
+}
+
+.pl-forgot-link {
+  font-size: 0.875rem;
+  font-weight: 700;
+  color: #0ea5e9;
+  text-decoration: none;
+}
+
+.pl-btn-login {
   width: 100%;
+  height: 56px;
+  padding: 0 24px;
+  background: #0ea5e9;
+  color: #fff;
+  border: none;
+  border-radius: 14px;
+  font-size: 1rem;
+  font-weight: 700;
   display: flex;
-  justify-content: center;
   align-items: center;
-  gap: var(--spacing-2);
+  justify-content: center;
+  gap: 10px;
+  cursor: pointer;
+  transition: all 0.2s;
+  box-shadow: 0 8px 24px rgba(14, 165, 233, 0.2);
 }
 
-.loading-spinner-sm {
-  width: 18px;
-  height: 18px;
-  border: 2px solid rgba(255, 255, 255, 0.3);
-  border-top-color: white;
+.pl-btn-login:hover {
+  background: #0284c7;
+  transform: translateY(-1px);
+  box-shadow: 0 12px 28px rgba(14, 165, 233, 0.3);
+}
+
+.pl-btn-login:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.pl-divider-container {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 40px 0 24px;
+  position: relative;
+}
+
+.pl-divider {
+  width: 100%;
+  height: 1px;
+  background: #f1f5f9;
+}
+
+.pl-divider-text {
+  position: absolute;
+  background: #fff;
+  padding: 0 16px;
+  font-size: 0.8125rem;
+  color: #94a3b8;
+  font-weight: 500;
+}
+
+.pl-btn-request {
+  width: 100%;
+  height: 52px;
+  background: #fff;
+  color: #1a2332;
+  border: 1px solid #e2e8f0;
+  border-radius: 14px;
+  font-size: 0.9375rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.pl-btn-request:hover {
+  background: #f8fafc;
+  border-color: #cbd5e1;
+}
+
+.pl-spinner {
+  width: 20px;
+  height: 20px;
+  border: 2.5px solid rgba(255, 255, 255, 0.3);
+  border-top-color: #fff;
   border-radius: 50%;
   animation: spin 0.8s linear infinite;
 }
@@ -388,33 +542,88 @@ p {
   to { transform: rotate(360deg); }
 }
 
-.auth-footer {
-  text-align: center;
-  border-top: 1px solid var(--border-light);
-  padding-top: var(--spacing-6);
-}
-
-.link-highlight {
-  color: var(--primary-600);
-  font-weight: 700;
-  margin-left: var(--spacing-1);
-}
-
-.link-highlight:hover {
-  text-decoration: underline;
-}
-
-.trust-badge {
+/* ── Footer ── */
+.pl-footer {
   display: flex;
   align-items: center;
-  justify-content: center;
-  gap: var(--spacing-1);
-  margin-top: var(--spacing-8);
-  font-size: var(--font-size-xs);
-  color: var(--text-light);
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  font-weight: 600;
+  justify-content: space-between;
+  padding: 32px 48px;
+  flex-shrink: 0;
+}
+
+.pl-copyright {
+  font-size: 0.8125rem;
+  color: #94a3b8;
+  margin: 0;
+}
+
+.pl-footer-links {
+  display: flex;
+  gap: 32px;
+}
+
+.pl-footer-links a {
+  font-size: 0.8125rem;
+  color: #64748b;
+  text-decoration: none;
+  font-weight: 500;
+  transition: color 0.2s;
+}
+
+.pl-footer-links a:hover {
+  color: #1a2332;
+}
+
+/* ── Responsive ── */
+@media (max-width: 1024px) {
+  .pl-card {
+    max-width: 900px;
+  }
+}
+
+@media (max-width: 900px) {
+  .pl-card {
+    flex-direction: column;
+    max-width: 480px;
+    border-radius: 24px;
+  }
+  .pl-card-left {
+    padding: 100px 40px 40px;
+    min-height: 240px;
+  }
+  .pl-hero-title {
+    font-size: 2.25rem;
+  }
+  .pl-card-right {
+    padding: 48px 40px;
+  }
+}
+
+@media (max-width: 640px) {
+  .pl-page {
+    background: #fff;
+  }
+  .pl-nav {
+    padding: 0 24px;
+  }
+  .pl-main {
+    padding: 0;
+  }
+  .pl-card {
+    box-shadow: none;
+    border-radius: 0;
+  }
+  .pl-footer {
+    flex-direction: column;
+    gap: 24px;
+    padding: 40px 24px;
+    text-align: center;
+  }
+  .pl-footer-links {
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 16px;
+  }
 }
 </style>
 

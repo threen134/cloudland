@@ -14,7 +14,7 @@ const client = axios.create({
 client.interceptors.request.use(
     (config: InternalAxiosRequestConfig) => {
         // Add JWT token if available
-        const token = localStorage.getItem('cloudland_token')
+        const token = getToken()
         if (token && config.headers) {
             config.headers.Authorization = `Bearer ${token}`
         }
@@ -73,8 +73,9 @@ client.interceptors.response.use(
                     }
 
                     // Unauthorized - clear auth and redirect to login
-                    localStorage.removeItem('cloudland_token')
+                    clearAuthToken()
                     localStorage.removeItem('cloudland_user')
+                    sessionStorage.removeItem('cloudland_user')
                     // Only redirect if not already on login page
                     if (!window.location.pathname.includes('/login')) {
                         window.location.href = '/login'
@@ -85,8 +86,9 @@ client.interceptors.response.use(
                     const detail403 = (error.response?.data as any)?.detail || ''
                     if (typeof detail403 === 'string' && detail403.toLowerCase().includes('credentials')) {
                         // Token expired or invalid - clear auth and redirect to login
-                        localStorage.removeItem('cloudland_token')
+                        clearAuthToken()
                         localStorage.removeItem('cloudland_user')
+                        sessionStorage.removeItem('cloudland_user')
                         if (!window.location.pathname.includes('/login')) {
                             window.location.href = '/login'
                         }
@@ -110,14 +112,35 @@ client.interceptors.response.use(
     }
 )
 
+// Storage helpers — rememberMe controls persistence across browser sessions
+export const getToken = (): string | null => {
+    return sessionStorage.getItem('cloudland_token') || localStorage.getItem('cloudland_token')
+}
+
+const getStorage = (): Storage => {
+    return localStorage.getItem('cloudland_remember') === '1' ? localStorage : sessionStorage
+}
+
 // Helper function to set auth token
-export const setAuthToken = (token: string) => {
-    localStorage.setItem('cloudland_token', token)
+export const setAuthToken = (token: string, remember?: boolean) => {
+    if (remember !== undefined) {
+        if (remember) {
+            localStorage.setItem('cloudland_remember', '1')
+        } else {
+            localStorage.removeItem('cloudland_remember')
+        }
+    }
+    const storage = getStorage()
+    sessionStorage.removeItem('cloudland_token')
+    localStorage.removeItem('cloudland_token')
+    storage.setItem('cloudland_token', token)
 }
 
 // Helper function to clear auth token
 export const clearAuthToken = () => {
+    sessionStorage.removeItem('cloudland_token')
     localStorage.removeItem('cloudland_token')
+    localStorage.removeItem('cloudland_remember')
 }
 
 export default client

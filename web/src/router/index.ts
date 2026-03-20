@@ -40,6 +40,7 @@ const router = createRouter({
             name: 'accept-invitation',
             component: () => import('../views/auth/AcceptInvitation.vue')
         },
+
         {
             path: '/marketplace',
             name: 'marketplace',

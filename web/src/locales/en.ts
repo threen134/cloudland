@@ -175,6 +175,34 @@ export default {
         copyright: '© 2026 CloudLand. All rights reserved.',
     },
 
+    // Private Cloud
+    privateCloud: {
+        hero: {
+            title: 'Cloud for Computing, Power for All',
+            subtitle: 'Your infrastructure, secured by enterprise-grade encryption and intuitive control. Deploy with confidence.',
+            getStarted: 'Request Access',
+            exploreCatalog: 'Go to Console',
+        },
+        stats: {
+            encryption: 'Encryption',
+            uptime: 'Uptime',
+        },
+        action: {
+            newUser: 'New to CloudLand?',
+            backHome: 'Back to Home',
+        },
+        cta: {
+            title: 'Welcome Back',
+            subtitle: 'Access your cloud console to manage infrastructure, deploy workloads, and monitor resources.',
+            startTrial: 'Start Free Trial',
+        },
+        footer: {
+            security: 'Security Policy',
+            terms: 'Terms of Service',
+            privacy: 'Privacy',
+        },
+    },
+
     // Marketplace
     marketplace: {
         title: 'CloudLand Catalog',

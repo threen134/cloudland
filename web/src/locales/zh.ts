@@ -175,6 +175,34 @@ export default {
         copyright: '© 2026 CloudLand. 保留所有权利。',
     },
 
+    // 私有云
+    privateCloud: {
+        hero: {
+            title: '高效云算力，赋能每一次创新',
+            subtitle: '您的基础设施，以企业级加密和直觉化控制保驾护航。安心部署。',
+            getStarted: '申请访问',
+            exploreCatalog: '进入控制台',
+        },
+        stats: {
+            encryption: '加密',
+            uptime: '可用性',
+        },
+        action: {
+            newUser: '还没有 CloudLand 账户？',
+            backHome: '返回首页',
+        },
+        cta: {
+            title: '欢迎回来',
+            subtitle: '访问您的云控制台，管理基础设施、部署工作负载并监控资源。',
+            startTrial: '开始免费试用',
+        },
+        footer: {
+            security: '安全策略',
+            terms: '服务条款',
+            privacy: '隐私政策',
+        },
+    },
+
     // 云市场
     marketplace: {
         title: 'CloudLand 应用目录',
