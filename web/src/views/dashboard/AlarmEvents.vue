@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { AlertTriangle, Search, ChevronDown, ChevronRight, CheckCircle, XCircle } from 'lucide-vue-next'
+import { AlertTriangle, Search, ChevronDown, ChevronRight, CheckCircle, XCircle, RefreshCw } from 'lucide-vue-next'
 import { alarmEventsApi, type AlarmEvent, type AlarmDeliveryLog } from '../../api/alarmEvents'
 
 const { t } = useI18n()
@@ -86,105 +86,119 @@ onMounted(fetchEvents)
 </script>
 
 <template>
-    <div class="page-container">
+    <div class="vpc-list-container">
         <div class="page-header">
-            <h2><AlertTriangle :size="22" /> {{ t('dashboard.alarmEvents') }}</h2>
-            <div class="header-actions">
-                <select v-model="statusFilter" class="form-input filter-select">
+            <div class="search-wrapper">
+                <div class="search-box">
+                    <Search :size="16" class="search-icon" />
+                    <input v-model="searchQuery" :placeholder="t('actions.search') + '...'" class="search-input" />
+                </div>
+                <select v-model="statusFilter" @change="fetchEvents" class="filter-select">
                     <option value="">{{ t('dashboard.alarmFilterAll') }}</option>
                     <option value="firing">Firing</option>
                     <option value="resolved">Resolved</option>
                 </select>
-                <div class="search-box">
-                    <Search :size="16" />
-                    <input v-model="searchQuery" :placeholder="t('actions.search')" class="form-input" />
-                </div>
+            </div>
+            <div class="header-actions">
+                <button class="btn btn-secondary btn-sm btn-icon" @click="fetchEvents" :title="t('actions.refresh')">
+                    <RefreshCw :size="14" :class="{ spinning: loading }" />
+                </button>
             </div>
         </div>
 
         <div v-if="errorMsg" class="error-banner" @click="errorMsg = ''">{{ errorMsg }}</div>
 
-        <div v-if="loading" class="loading-spinner">Loading...</div>
-
-        <table v-else class="data-table">
-            <thead>
-                <tr>
-                    <th style="width: 30px"></th>
-                    <th>{{ t('dashboard.alarmAlertName') }}</th>
-                    <th>VM</th>
-                    <th>{{ t('dashboard.alarmSeverity') }}</th>
-                    <th>{{ t('dashboard.table.status') }}</th>
-                    <th>{{ t('dashboard.alarmFiredAt') }}</th>
-                    <th>{{ t('dashboard.alarmLastFired') }}</th>
-                    <th>{{ t('dashboard.alarmResolvedAt') }}</th>
-                </tr>
-            </thead>
-            <tbody>
-                <template v-for="event in filteredEvents" :key="event.UUID">
-                    <tr class="event-row" @click="toggleExpand(event.UUID)">
-                        <td>
-                            <component :is="expandedEvent === event.UUID ? ChevronDown : ChevronRight" :size="14" />
-                        </td>
-                        <td>{{ event.alert_name }}</td>
-                        <td>{{ event.vm_name || event.vm_uuid }}</td>
-                        <td>
-                            <span class="badge" :class="severityClass(event.severity)">
-                                {{ event.severity }}
-                            </span>
-                        </td>
-                        <td>
-                            <span class="badge" :class="event.status === 'firing' ? 'badge-firing' : 'badge-resolved'">
-                                {{ event.status }}
-                            </span>
-                        </td>
-                        <td>{{ formatTime(event.fired_at) }}</td>
-                        <td>{{ formatTime(event.last_fired_at) }}</td>
-                        <td>{{ formatTime(event.resolved_at) }}</td>
+        <div class="card table-card">
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th style="width: 30px"></th>
+                        <th>{{ t('dashboard.alarmAlertName') }}</th>
+                        <th>VM</th>
+                        <th>{{ t('dashboard.alarmSeverity') }}</th>
+                        <th>{{ t('dashboard.table.status') }}</th>
+                        <th>{{ t('dashboard.alarmFiredAt') }}</th>
+                        <th>{{ t('dashboard.alarmLastFired') }}</th>
+                        <th>{{ t('dashboard.alarmResolvedAt') }}</th>
                     </tr>
-                    <!-- Expanded: Delivery Logs -->
-                    <tr v-if="expandedEvent === event.UUID" class="expanded-row">
-                        <td colspan="8">
-                            <div class="delivery-logs">
-                                <h4>{{ t('dashboard.alarmDeliveryLogs') }}</h4>
-                                <div v-if="loadingLogs === event.UUID" class="loading-spinner">Loading...</div>
-                                <table v-else-if="deliveryLogs[event.UUID]?.length" class="data-table nested-table">
-                                    <thead>
-                                        <tr>
-                                            <th>{{ t('dashboard.alarmChannelName') }}</th>
-                                            <th>{{ t('dashboard.notificationChannelType') }}</th>
-                                            <th>{{ t('dashboard.alarmNotifyType') }}</th>
-                                            <th>{{ t('dashboard.table.status') }}</th>
-                                            <th>{{ t('dashboard.alarmSentAt') }}</th>
-                                            <th>{{ t('dashboard.alarmError') }}</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        <tr v-for="log in deliveryLogs[event.UUID]" :key="log.UUID">
-                                            <td>{{ log.channel_name }}</td>
-                                            <td>{{ log.channel_type }}</td>
-                                            <td>
-                                                <span class="badge badge-secondary">{{ log.notify_type }}</span>
-                                            </td>
-                                            <td>
-                                                <CheckCircle v-if="log.status === 'sent'" :size="16" class="text-success" />
-                                                <XCircle v-else :size="16" class="text-danger" />
-                                                {{ log.status }}
-                                            </td>
-                                            <td>{{ formatTime(log.sent_at) }}</td>
-                                            <td class="error-cell">{{ log.error_message || '-' }}</td>
-                                        </tr>
-                                    </tbody>
-                                </table>
-                                <p v-else class="text-muted">{{ t('dashboard.alarmNoDeliveryLogs') }}</p>
+                </thead>
+                <tbody>
+                    <tr v-if="loading">
+                        <td colspan="8" class="text-center">
+                            <div class="loading-spinner" style="margin: 20px auto;"></div>
+                        </td>
+                    </tr>
+                    <template v-else-if="filteredEvents.length > 0" v-for="event in filteredEvents" :key="event.UUID">
+                        <tr class="event-row" @click="toggleExpand(event.UUID)">
+                            <td>
+                                <component :is="expandedEvent === event.UUID ? ChevronDown : ChevronRight" :size="14" />
+                            </td>
+                            <td>{{ event.alert_name }}</td>
+                            <td>{{ event.vm_name || event.vm_uuid }}</td>
+                            <td>
+                                <span class="badge" :class="severityClass(event.severity)">
+                                    {{ event.severity }}
+                                </span>
+                            </td>
+                            <td>
+                                <span class="badge" :class="event.status === 'firing' ? 'badge-firing' : 'badge-resolved'">
+                                    {{ event.status }}
+                                </span>
+                            </td>
+                            <td>{{ formatTime(event.fired_at) }}</td>
+                            <td>{{ formatTime(event.last_fired_at) }}</td>
+                            <td>{{ formatTime(event.resolved_at) }}</td>
+                        </tr>
+                        <!-- Expanded: Delivery Logs -->
+                        <tr v-if="expandedEvent === event.UUID" class="expanded-row">
+                            <td colspan="8">
+                                <div class="delivery-logs">
+                                    <h4>{{ t('dashboard.alarmDeliveryLogs') }}</h4>
+                                    <div v-if="loadingLogs === event.UUID" class="loading-spinner" style="margin: 12px auto;"></div>
+                                    <table v-else-if="deliveryLogs[event.UUID]?.length" class="data-table nested-table">
+                                        <thead>
+                                            <tr>
+                                                <th>{{ t('dashboard.alarmChannelName') }}</th>
+                                                <th>{{ t('dashboard.notificationChannelType') }}</th>
+                                                <th>{{ t('dashboard.alarmNotifyType') }}</th>
+                                                <th>{{ t('dashboard.table.status') }}</th>
+                                                <th>{{ t('dashboard.alarmSentAt') }}</th>
+                                                <th>{{ t('dashboard.alarmError') }}</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            <tr v-for="log in deliveryLogs[event.UUID]" :key="log.UUID">
+                                                <td>{{ log.channel_name }}</td>
+                                                <td>{{ log.channel_type }}</td>
+                                                <td>
+                                                    <span class="badge badge-secondary">{{ log.notify_type }}</span>
+                                                </td>
+                                                <td>
+                                                    <CheckCircle v-if="log.status === 'sent'" :size="16" class="text-success" />
+                                                    <XCircle v-else :size="16" class="text-danger" />
+                                                    {{ log.status }}
+                                                </td>
+                                                <td>{{ formatTime(log.sent_at) }}</td>
+                                                <td class="error-cell">{{ log.error_message || '-' }}</td>
+                                            </tr>
+                                        </tbody>
+                                    </table>
+                                    <p v-else class="text-muted">{{ t('dashboard.alarmNoDeliveryLogs') }}</p>
+                                </div>
+                            </td>
+                        </tr>
+                    </template>
+                    <tr v-else>
+                        <td colspan="8" class="text-center text-secondary" style="padding: 48px;">
+                            <div class="empty-state">
+                                <AlertTriangle :size="48" style="opacity: 0.2; margin-bottom: 16px;" />
+                                <p>{{ t('messages.noData') }}</p>
                             </div>
                         </td>
                     </tr>
-                </template>
-                <tr v-if="filteredEvents.length === 0 && !loading">
-                    <td colspan="8" class="text-center text-muted">{{ t('messages.noResults') }}</td>
-                </tr>
-            </tbody>
-        </table>
+                </tbody>
+            </table>
+        </div>
 
         <!-- Pagination -->
         <div v-if="totalPages > 1" class="pagination">
@@ -196,15 +210,81 @@ onMounted(fetchEvents)
 </template>
 
 <style scoped>
+.page-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0;
+    padding-right: 20px;
+}
+
+.search-wrapper {
+    display: flex;
+    gap: 8px;
+    flex: 1;
+    max-width: 560px;
+}
+
+.header-actions {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+}
+
+.search-box {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    background: var(--bg-secondary);
+    padding: 0 12px;
+    height: 40px;
+    border-radius: var(--radius-md);
+    border: 1px solid var(--border-light);
+    transition: all 0.2s;
+    flex: 1;
+}
+
+.search-box:focus-within {
+    border-color: var(--primary-300);
+    box-shadow: 0 0 0 2px var(--primary-100);
+}
+
+.search-icon { color: var(--gray-400); }
+
+.search-input {
+    border: none;
+    background: transparent;
+    width: 100%;
+    height: 100%;
+    font-size: 0.875rem;
+    color: var(--text-primary);
+}
+
+.search-input:focus { outline: none; }
+
+.filter-select {
+    height: 40px;
+    padding: 0 12px;
+    border: 1px solid var(--border-light);
+    border-radius: var(--radius-md);
+    font-size: 0.875rem;
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+    min-width: 120px;
+}
+
+.table-card { padding: 0; overflow: hidden; }
+
 .event-row { cursor: pointer; }
 .event-row:hover { background: var(--bg-hover, #f3f4f6); }
 .expanded-row td { padding: 0; }
 .delivery-logs { padding: 12px 16px; background: var(--bg-secondary, #f9fafb); }
 .delivery-logs h4 { margin: 0 0 8px 0; font-size: 13px; }
 .nested-table { margin: 0; font-size: 13px; }
-.filter-select { width: 120px; }
+
 .pagination { display: flex; align-items: center; justify-content: center; gap: 12px; padding: 16px 0; }
 .page-info { font-size: 13px; color: #6b7280; }
+
 .badge-firing { background: #ef4444; color: white; }
 .badge-resolved { background: #22c55e; color: white; }
 .badge-critical { background: #dc2626; color: white; }
@@ -216,5 +296,14 @@ onMounted(fetchEvents)
 .text-center { text-align: center; }
 .text-muted { color: #9ca3af; }
 .error-cell { max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.error-banner { background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; border-radius: 6px; padding: 10px 14px; margin-bottom: 12px; font-size: 13px; cursor: pointer; }
+.error-banner {
+    background: #fef2f2; color: #dc2626; border: 1px solid #fecaca;
+    border-radius: 6px; padding: 10px 14px; margin-bottom: 12px;
+    font-size: 13px; cursor: pointer;
+}
+
+.empty-state { display: flex; flex-direction: column; align-items: center; justify-content: center; }
+
+.spinning { animation: spin 1s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
 </style>

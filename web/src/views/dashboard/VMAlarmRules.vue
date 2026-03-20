@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Plus, Trash2, Search, ShieldAlert, Link, Unlink } from 'lucide-vue-next'
+import { Plus, Trash2, Search, ShieldAlert, Link, RefreshCw } from 'lucide-vue-next'
 import { vmAlarmRulesApi, VM_RULE_TYPES, type VMAlarmRuleGroup, type VMRuleType } from '../../api/vmAlarmRules'
 import { alarmEventsApi } from '../../api/alarmEvents'
 import { notificationsApi, type NotificationChannel } from '../../api/notifications'
@@ -194,65 +194,80 @@ onMounted(fetchRules)
 </script>
 
 <template>
-    <div class="page-container">
+    <div class="vpc-list-container">
         <div class="page-header">
-            <h2><ShieldAlert :size="22" /> {{ t('dashboard.vmAlarmRules.title') }}</h2>
-            <div class="header-actions">
-                <select v-model="selectedType" class="form-input filter-select">
+            <div class="search-wrapper">
+                <div class="search-box">
+                    <Search :size="16" class="search-icon" />
+                    <input v-model="searchQuery" :placeholder="t('actions.search') + '...'" class="search-input" />
+                </div>
+                <select v-model="selectedType" class="filter-select">
                     <option v-for="rt in VM_RULE_TYPES" :key="rt.value" :value="rt.value">{{ rt.label }}</option>
                 </select>
-                <div class="search-box">
-                    <Search :size="16" />
-                    <input v-model="searchQuery" :placeholder="t('actions.search')" class="form-input" />
-                </div>
+            </div>
+            <div class="header-actions">
+                <button class="btn btn-secondary btn-sm btn-icon" @click="fetchRules" :title="t('actions.refresh')">
+                    <RefreshCw :size="14" :class="{ spinning: loading }" />
+                </button>
                 <button class="btn btn-primary btn-sm" @click="openCreate">
-                    <Plus :size="16" /> {{ t('actions.create') }}
+                    <Plus :size="14" />
+                    <span>{{ t('actions.create') }}</span>
                 </button>
             </div>
         </div>
 
         <div v-if="errorMsg" class="error-banner" @click="errorMsg = ''">{{ errorMsg }}</div>
 
-        <div v-if="loading" class="loading-spinner">Loading...</div>
-
-        <table v-else class="data-table">
-            <thead>
-                <tr>
-                    <th>{{ t('dashboard.table.name') }}</th>
-                    <th>Rule ID</th>
-                    <th>{{ t('dashboard.vmAlarmRules.level') }}</th>
-                    <th>{{ t('dashboard.vmAlarmRules.linkedVMs') }}</th>
-                    <th>{{ t('dashboard.table.status') }}</th>
-                    <th>{{ t('dashboard.table.actions') }}</th>
-                </tr>
-            </thead>
-            <tbody>
-                <tr v-for="rule in filteredRules" :key="rule.rule_id">
-                    <td>{{ rule.name }}</td>
-                    <td class="monospace">{{ rule.rule_id }}</td>
-                    <td>
-                        <span class="badge" :class="'badge-' + rule.level">{{ rule.level }}</span>
-                    </td>
-                    <td>{{ rule.linkedvms?.length || 0 }} VMs</td>
-                    <td>
-                        <span class="badge" :class="rule.enable ? 'badge-success' : 'badge-muted'">
-                            {{ rule.enable ? t('dashboard.alarm.enabled') : t('dashboard.alarm.disabled') }}
-                        </span>
-                    </td>
-                    <td class="actions-cell">
-                        <button class="btn btn-ghost btn-sm" @click="openBindChannels(rule)" :title="t('dashboard.vmAlarmRules.bindChannels')">
-                            <Link :size="16" />
-                        </button>
-                        <button class="btn btn-ghost btn-sm text-danger" @click="confirmDelete(rule)">
-                            <Trash2 :size="16" />
-                        </button>
-                    </td>
-                </tr>
-                <tr v-if="filteredRules.length === 0 && !loading">
-                    <td colspan="6" class="text-center text-muted">{{ t('messages.noResults') }}</td>
-                </tr>
-            </tbody>
-        </table>
+        <div class="card table-card">
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>{{ t('dashboard.table.name') }}</th>
+                        <th>Rule ID</th>
+                        <th>{{ t('dashboard.vmAlarmRules.level') }}</th>
+                        <th>{{ t('dashboard.vmAlarmRules.linkedVMs') }}</th>
+                        <th>{{ t('dashboard.table.status') }}</th>
+                        <th>{{ t('dashboard.table.actions') }}</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr v-if="loading">
+                        <td colspan="6" class="text-center">
+                            <div class="loading-spinner" style="margin: 20px auto;"></div>
+                        </td>
+                    </tr>
+                    <tr v-else-if="filteredRules.length === 0">
+                        <td colspan="6" class="text-center text-secondary" style="padding: 48px;">
+                            <div class="empty-state">
+                                <ShieldAlert :size="48" style="opacity: 0.2; margin-bottom: 16px;" />
+                                <p>{{ t('messages.noData') }}</p>
+                            </div>
+                        </td>
+                    </tr>
+                    <tr v-else v-for="rule in filteredRules" :key="rule.rule_id">
+                        <td>{{ rule.name }}</td>
+                        <td class="monospace">{{ rule.rule_id }}</td>
+                        <td>
+                            <span class="badge" :class="'badge-' + rule.level">{{ rule.level }}</span>
+                        </td>
+                        <td>{{ rule.linkedvms?.length || 0 }} VMs</td>
+                        <td>
+                            <span class="badge" :class="rule.enable ? 'badge-success' : 'badge-muted'">
+                                {{ rule.enable ? t('dashboard.alarm.enabled') : t('dashboard.alarm.disabled') }}
+                            </span>
+                        </td>
+                        <td class="actions-cell">
+                            <button class="icon-btn-table" @click="openBindChannels(rule)" :title="t('dashboard.vmAlarmRules.bindChannels')">
+                                <Link :size="16" />
+                            </button>
+                            <button class="icon-btn-table text-error" @click="confirmDelete(rule)">
+                                <Trash2 :size="16" />
+                            </button>
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
 
         <!-- Pagination -->
         <div v-if="totalPages > 1" class="pagination">
@@ -262,106 +277,196 @@ onMounted(fetchRules)
         </div>
 
         <!-- Create Modal -->
-        <div v-if="showCreateModal" class="modal-overlay" @click.self="showCreateModal = false">
-            <div class="modal-content modal-lg">
-                <div class="modal-header">
-                    <h3>{{ t('dashboard.vmAlarmRules.createTitle', { type: selectedType.toUpperCase() }) }}</h3>
-                </div>
-                <div class="modal-body">
-                    <div class="form-group">
-                        <label class="form-label">{{ t('dashboard.table.name') }}</label>
-                        <input v-model="createForm.name" class="form-input" required />
+        <Teleport to="body">
+            <div v-if="showCreateModal" class="modal-overlay" @click.self="showCreateModal = false">
+                <div class="modal-content modal-lg">
+                    <div class="modal-header">
+                        <h3>{{ t('dashboard.vmAlarmRules.createTitle', { type: selectedType.toUpperCase() }) }}</h3>
+                        <button class="btn btn-ghost btn-icon" @click="showCreateModal = false">✕</button>
                     </div>
-                    <div class="form-group">
-                        <label class="form-label">Rule ID</label>
-                        <input v-model="createForm.rule_id" class="form-input" :placeholder="t('dashboard.vmAlarmRules.ruleIdPlaceholder')" />
-                    </div>
-                    <div class="form-group">
-                        <label class="form-label">{{ t('dashboard.vmAlarmRules.level') }}</label>
-                        <select v-model="createForm.level" class="form-input">
-                            <option value="critical">Critical</option>
-                            <option value="warning">Warning</option>
-                            <option value="info">Info</option>
-                        </select>
-                    </div>
-
-                    <div class="rules-section">
-                        <div class="rules-header">
-                            <label class="form-label">{{ t('dashboard.vmAlarmRules.thresholds') }}</label>
-                            <button class="btn btn-ghost btn-sm" @click="addRuleRow">
-                                <Plus :size="14" /> {{ t('actions.add') }}
-                            </button>
+                    <div class="modal-body">
+                        <div class="form-stack">
+                            <div class="form-group">
+                                <label class="form-label">{{ t('dashboard.table.name') }}</label>
+                                <input v-model="createForm.name" class="form-input" required />
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">Rule ID</label>
+                                <input v-model="createForm.rule_id" class="form-input" :placeholder="t('dashboard.vmAlarmRules.ruleIdPlaceholder')" />
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">{{ t('dashboard.vmAlarmRules.level') }}</label>
+                                <select v-model="createForm.level" class="form-input">
+                                    <option value="critical">Critical</option>
+                                    <option value="warning">Warning</option>
+                                    <option value="info">Info</option>
+                                </select>
+                            </div>
+                            <div class="rules-section">
+                                <div class="rules-header">
+                                    <label class="form-label">{{ t('dashboard.vmAlarmRules.thresholds') }}</label>
+                                    <button class="btn btn-ghost btn-sm" @click="addRuleRow">
+                                        <Plus :size="14" /> {{ t('actions.add') }}
+                                    </button>
+                                </div>
+                                <div v-for="(rule, idx) in createForm.rules" :key="idx" class="rule-row">
+                                    <select v-if="selectedType === 'bw'" v-model="rule.direction" class="form-input rule-input-sm">
+                                        <option value="in">Inbound</option>
+                                        <option value="out">Outbound</option>
+                                    </select>
+                                    <input v-model.number="rule.limit" type="number" class="form-input rule-input-sm" placeholder="Limit %" min="1" max="100" />
+                                    <input v-model.number="rule.duration" type="number" class="form-input rule-input-sm" :placeholder="t('dashboard.vmAlarmRules.durationMin')" min="1" />
+                                    <button v-if="createForm.rules.length > 1" class="icon-btn-table text-error" @click="removeRuleRow(idx)">
+                                        <Trash2 :size="14" />
+                                    </button>
+                                </div>
+                            </div>
                         </div>
-                        <div v-for="(rule, idx) in createForm.rules" :key="idx" class="rule-row">
-                            <select v-if="selectedType === 'bw'" v-model="rule.direction" class="form-input rule-input-sm">
-                                <option value="in">Inbound</option>
-                                <option value="out">Outbound</option>
-                            </select>
-                            <input v-model.number="rule.limit" type="number" class="form-input rule-input-sm" placeholder="Limit %" min="1" max="100" />
-                            <input v-model.number="rule.duration" type="number" class="form-input rule-input-sm" :placeholder="t('dashboard.vmAlarmRules.durationMin')" min="1" />
-                            <button v-if="createForm.rules.length > 1" class="btn btn-ghost btn-sm text-danger" @click="removeRuleRow(idx)">
-                                <Trash2 :size="14" />
-                            </button>
-                        </div>
                     </div>
-                </div>
-                <div class="modal-footer">
-                    <button class="btn btn-secondary btn-sm" @click="showCreateModal = false">{{ t('actions.cancel') }}</button>
-                    <button class="btn btn-primary btn-sm" @click="submitCreate" :disabled="!createForm.name">{{ t('actions.save') }}</button>
+                    <div class="modal-footer">
+                        <button class="btn btn-secondary" @click="showCreateModal = false">{{ t('actions.cancel') }}</button>
+                        <button class="btn btn-primary" @click="submitCreate" :disabled="!createForm.name">{{ t('actions.save') }}</button>
+                    </div>
                 </div>
             </div>
-        </div>
+        </Teleport>
 
         <!-- Delete Modal -->
-        <div v-if="showDeleteModal" class="modal-overlay" @click.self="showDeleteModal = false">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h3>{{ t('actions.confirmDelete') }}</h3>
-                </div>
-                <div class="modal-body">
-                    <p>{{ t('dashboard.vmAlarmRules.deleteConfirm', { name: deleteTarget?.name }) }}</p>
-                </div>
-                <div class="modal-footer">
-                    <button class="btn btn-secondary btn-sm" @click="showDeleteModal = false">{{ t('actions.cancel') }}</button>
-                    <button class="btn btn-primary btn-sm text-danger" @click="executeDelete">{{ t('actions.delete') }}</button>
+        <Teleport to="body">
+            <div v-if="showDeleteModal" class="modal-overlay" @click.self="showDeleteModal = false">
+                <div class="modal-content" style="max-width: 440px;">
+                    <div class="modal-header">
+                        <h3>{{ t('actions.confirmDelete') }}</h3>
+                        <button class="btn btn-ghost btn-icon" @click="showDeleteModal = false">✕</button>
+                    </div>
+                    <div class="modal-body">
+                        <p>{{ t('dashboard.vmAlarmRules.deleteConfirm', { name: deleteTarget?.name }) }}</p>
+                    </div>
+                    <div class="modal-footer">
+                        <button class="btn btn-secondary" @click="showDeleteModal = false">{{ t('actions.cancel') }}</button>
+                        <button class="btn btn-danger" @click="executeDelete">{{ t('actions.delete') }}</button>
+                    </div>
                 </div>
             </div>
-        </div>
+        </Teleport>
 
         <!-- Bind Channels Modal -->
-        <div v-if="showBindModal" class="modal-overlay" @click.self="showBindModal = false">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h3>{{ t('dashboard.vmAlarmRules.bindChannels') }} - {{ bindTarget?.name }}</h3>
-                </div>
-                <div class="modal-body">
-                    <div v-if="bindLoading" class="loading-spinner">Loading...</div>
-                    <div v-else-if="allChannels.length === 0" class="text-muted">
-                        {{ t('dashboard.vmAlarmRules.noChannels') }}
+        <Teleport to="body">
+            <div v-if="showBindModal" class="modal-overlay" @click.self="showBindModal = false">
+                <div class="modal-content" style="max-width: 480px;">
+                    <div class="modal-header">
+                        <h3>{{ t('dashboard.vmAlarmRules.bindChannels') }} - {{ bindTarget?.name }}</h3>
+                        <button class="btn btn-ghost btn-icon" @click="showBindModal = false">✕</button>
                     </div>
-                    <div v-else class="channel-list">
-                        <label v-for="ch in allChannels" :key="ch.uuid" class="channel-item" @click="toggleChannel(ch.uuid)">
-                            <input type="checkbox" :checked="selectedChannelUuids.includes(ch.uuid)" />
-                            <span class="channel-name">{{ ch.name }}</span>
-                            <span class="badge" :class="ch.type === 'feishu' ? 'badge-info' : 'badge-secondary'">{{ ch.type }}</span>
-                        </label>
+                    <div class="modal-body">
+                        <div v-if="bindLoading" class="loading-spinner" style="margin: 20px auto;"></div>
+                        <div v-else-if="allChannels.length === 0" class="text-muted">
+                            {{ t('dashboard.vmAlarmRules.noChannels') }}
+                        </div>
+                        <div v-else class="channel-list">
+                            <label v-for="ch in allChannels" :key="ch.uuid" class="channel-item" @click="toggleChannel(ch.uuid)">
+                                <input type="checkbox" :checked="selectedChannelUuids.includes(ch.uuid)" />
+                                <span class="channel-name">{{ ch.name }}</span>
+                                <span class="badge" :class="ch.type === 'feishu' ? 'badge-info' : 'badge-secondary'">{{ ch.type }}</span>
+                            </label>
+                        </div>
                     </div>
-                </div>
-                <div class="modal-footer">
-                    <button class="btn btn-secondary btn-sm" @click="showBindModal = false">{{ t('actions.cancel') }}</button>
-                    <button class="btn btn-primary btn-sm" @click="saveBindings" :disabled="bindLoading">{{ t('actions.save') }}</button>
+                    <div class="modal-footer">
+                        <button class="btn btn-secondary" @click="showBindModal = false">{{ t('actions.cancel') }}</button>
+                        <button class="btn btn-primary" @click="saveBindings" :disabled="bindLoading">{{ t('actions.save') }}</button>
+                    </div>
                 </div>
             </div>
-        </div>
+        </Teleport>
     </div>
 </template>
 
 <style scoped>
-.error-banner { background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; border-radius: 6px; padding: 10px 14px; margin-bottom: 12px; font-size: 13px; cursor: pointer; }
-.filter-select { width: 130px; }
-.monospace { font-family: monospace; font-size: 13px; }
+.page-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0;
+    padding-right: 20px;
+}
+
+.search-wrapper {
+    display: flex;
+    gap: 8px;
+    flex: 1;
+    max-width: 560px;
+}
+
+.header-actions {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+}
+
+.search-box {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    background: var(--bg-secondary);
+    padding: 0 12px;
+    height: 40px;
+    border-radius: var(--radius-md);
+    border: 1px solid var(--border-light);
+    transition: all 0.2s;
+    flex: 1;
+}
+
+.search-box:focus-within {
+    border-color: var(--primary-300);
+    box-shadow: 0 0 0 2px var(--primary-100);
+}
+
+.search-icon { color: var(--gray-400); }
+
+.search-input {
+    border: none;
+    background: transparent;
+    width: 100%;
+    height: 100%;
+    font-size: 0.875rem;
+    color: var(--text-primary);
+}
+
+.search-input:focus { outline: none; }
+
+.filter-select {
+    height: 40px;
+    padding: 0 12px;
+    border: 1px solid var(--border-light);
+    border-radius: var(--radius-md);
+    font-size: 0.875rem;
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+    min-width: 130px;
+}
+
+.table-card { padding: 0; overflow: hidden; }
+
+.empty-state { display: flex; flex-direction: column; align-items: center; justify-content: center; }
+
+.monospace { font-family: var(--font-family-mono, monospace); font-size: 13px; }
+
+.actions-cell { display: flex; gap: 4px; align-items: center; }
+
+.icon-btn-table {
+    width: 32px; height: 32px; border-radius: 8px; border: none;
+    background: transparent; color: var(--text-tertiary);
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer; transition: all 0.2s;
+}
+
+.icon-btn-table:hover { background-color: var(--bg-tertiary); color: var(--primary-500); }
+.icon-btn-table.text-error:hover { background-color: #fef2f2; color: #ef4444; }
+.text-error { color: var(--text-tertiary); }
+
 .pagination { display: flex; align-items: center; justify-content: center; gap: 12px; padding: 16px 0; }
 .page-info { font-size: 13px; color: #6b7280; }
+
 .badge-critical { background: #dc2626; color: white; }
 .badge-warning { background: #f59e0b; color: white; }
 .badge-info { background: #3b82f6; color: white; }
@@ -372,8 +477,51 @@ onMounted(fetchRules)
 .text-center { text-align: center; }
 .text-muted { color: #9ca3af; }
 
+.error-banner {
+    background: #fef2f2; color: #dc2626; border: 1px solid #fecaca;
+    border-radius: 6px; padding: 10px 14px; margin-bottom: 12px;
+    font-size: 13px; cursor: pointer;
+}
+
+/* Modal */
+.modal-overlay {
+    position: fixed; inset: 0; background: rgba(0, 0, 0, 0.5);
+    display: flex; align-items: center; justify-content: center; z-index: 1000;
+}
+
+.modal-content {
+    background: var(--bg-primary); border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-xl); width: 90%; max-height: 85vh; overflow-y: auto;
+}
+
 .modal-lg { max-width: 600px; }
-.rules-section { margin-top: 12px; }
+
+.modal-header {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 20px 24px; border-bottom: 1px solid var(--border-light);
+}
+
+.modal-header h3 { margin: 0; font-size: 1.125rem; }
+.modal-body { padding: 24px; }
+
+.modal-footer {
+    display: flex; justify-content: flex-end; gap: 8px;
+    padding: 16px 24px; border-top: 1px solid var(--border-light);
+}
+
+.form-stack { display: flex; flex-direction: column; gap: 16px; }
+.form-group { display: flex; flex-direction: column; }
+.form-label { font-size: 0.8125rem; color: var(--text-secondary); margin-bottom: 4px; font-weight: 500; }
+
+.form-input {
+    width: 100%; padding: 8px 12px;
+    border: 1px solid var(--border-light); border-radius: var(--radius-md);
+    font-size: 0.875rem; background: var(--bg-primary); color: var(--text-primary);
+}
+
+.form-input:focus { outline: none; border-color: var(--primary-300); box-shadow: 0 0 0 2px var(--primary-100); }
+
+.rules-section { margin-top: 4px; }
 .rules-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
 .rule-row { display: flex; gap: 8px; margin-bottom: 6px; align-items: center; }
 .rule-input-sm { width: 120px; }
@@ -383,4 +531,13 @@ onMounted(fetchRules)
 .channel-item:hover { background: var(--bg-hover, #f3f4f6); }
 .channel-item input[type="checkbox"] { cursor: pointer; }
 .channel-name { flex: 1; }
+
+.btn-danger {
+    background: #ef4444; color: white; border: none;
+    padding: 8px 16px; border-radius: var(--radius-md); cursor: pointer; font-weight: 500;
+}
+.btn-danger:hover { background: #dc2626; }
+
+.spinning { animation: spin 1s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
 </style>

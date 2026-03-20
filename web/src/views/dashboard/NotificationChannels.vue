@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Plus, Trash2, Search, Bell, Pencil, ToggleLeft, ToggleRight } from 'lucide-vue-next'
+import { Plus, Trash2, Search, Bell, Pencil, ToggleLeft, ToggleRight, RefreshCw } from 'lucide-vue-next'
 import { notificationsApi, type NotificationChannel, type CreateChannelPayload } from '../../api/notifications'
 
 const { t } = useI18n()
@@ -119,133 +119,290 @@ onMounted(fetchChannels)
 </script>
 
 <template>
-    <div class="page-container">
+    <div class="vpc-list-container">
         <div class="page-header">
-            <h2><Bell :size="22" /> {{ t('dashboard.notificationChannels') }}</h2>
-            <div class="header-actions">
+            <div class="search-wrapper">
                 <div class="search-box">
-                    <Search :size="16" />
-                    <input v-model="searchQuery" :placeholder="t('actions.search')" class="form-input" />
+                    <Search :size="16" class="search-icon" />
+                    <input v-model="searchQuery" :placeholder="t('actions.search') + '...'" class="search-input" />
                 </div>
+            </div>
+            <div class="header-actions">
+                <button class="btn btn-secondary btn-sm btn-icon" @click="fetchChannels" :title="t('actions.refresh')">
+                    <RefreshCw :size="14" :class="{ spinning: loading }" />
+                </button>
                 <button class="btn btn-primary btn-sm" @click="openCreate">
-                    <Plus :size="16" /> {{ t('actions.create') }}
+                    <Plus :size="14" />
+                    <span>{{ t('actions.create') }}</span>
                 </button>
             </div>
         </div>
 
         <div v-if="errorMsg" class="error-banner" @click="errorMsg = ''">{{ errorMsg }}</div>
 
-        <div v-if="loading" class="loading-spinner">Loading...</div>
-
-        <table v-else class="data-table">
-            <thead>
-                <tr>
-                    <th>{{ t('dashboard.table.name') }}</th>
-                    <th>{{ t('dashboard.notificationChannelType') }}</th>
-                    <th>Webhook URL</th>
-                    <th>{{ t('dashboard.table.status') }}</th>
-                    <th>{{ t('dashboard.table.createdAt') }}</th>
-                    <th>{{ t('dashboard.table.actions') }}</th>
-                </tr>
-            </thead>
-            <tbody>
-                <tr v-for="ch in filteredChannels" :key="ch.uuid">
-                    <td>{{ ch.name }}</td>
-                    <td>
-                        <span class="badge" :class="ch.type === 'feishu' ? 'badge-info' : 'badge-secondary'">
-                            {{ ch.type === 'feishu' ? t('dashboard.notificationFeishu') : 'Webhook' }}
-                        </span>
-                    </td>
-                    <td class="url-cell">{{ ch.config.webhook_url || ch.config.url || '-' }}</td>
-                    <td>
-                        <span class="badge" :class="ch.enabled ? 'badge-success' : 'badge-muted'">
-                            {{ ch.enabled ? t('dashboard.alarm.enabled') : t('dashboard.alarm.disabled') }}
-                        </span>
-                    </td>
-                    <td>{{ new Date(ch.created_at).toLocaleString() }}</td>
-                    <td class="actions-cell">
-                        <button class="btn btn-ghost btn-sm" @click="toggleEnabled(ch)" :title="ch.enabled ? 'Disable' : 'Enable'">
-                            <component :is="ch.enabled ? ToggleRight : ToggleLeft" :size="16" />
-                        </button>
-                        <button class="btn btn-ghost btn-sm" @click="openEdit(ch)">
-                            <Pencil :size="16" />
-                        </button>
-                        <button class="btn btn-ghost btn-sm text-danger" @click="confirmDelete(ch)">
-                            <Trash2 :size="16" />
-                        </button>
-                    </td>
-                </tr>
-                <tr v-if="filteredChannels.length === 0">
-                    <td colspan="6" class="text-center text-muted">{{ t('messages.noResults') }}</td>
-                </tr>
-            </tbody>
-        </table>
+        <div class="card table-card">
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>{{ t('dashboard.table.name') }}</th>
+                        <th>{{ t('dashboard.notificationChannelType') }}</th>
+                        <th>Webhook URL</th>
+                        <th>{{ t('dashboard.table.status') }}</th>
+                        <th>{{ t('dashboard.table.createdAt') }}</th>
+                        <th>{{ t('dashboard.table.actions') }}</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr v-if="loading">
+                        <td colspan="6" class="text-center">
+                            <div class="loading-spinner" style="margin: 20px auto;"></div>
+                        </td>
+                    </tr>
+                    <tr v-else-if="filteredChannels.length === 0">
+                        <td colspan="6" class="text-center text-secondary" style="padding: 48px;">
+                            <div class="empty-state">
+                                <Bell :size="48" style="opacity: 0.2; margin-bottom: 16px;" />
+                                <p>{{ t('messages.noData') }}</p>
+                            </div>
+                        </td>
+                    </tr>
+                    <tr v-else v-for="ch in filteredChannels" :key="ch.uuid">
+                        <td>{{ ch.name }}</td>
+                        <td>
+                            <span class="badge" :class="ch.type === 'feishu' ? 'badge-info' : 'badge-secondary'">
+                                {{ ch.type === 'feishu' ? t('dashboard.notificationFeishu') : 'Webhook' }}
+                            </span>
+                        </td>
+                        <td class="url-cell">{{ ch.config.webhook_url || ch.config.url || '-' }}</td>
+                        <td>
+                            <span class="status-pill" :class="ch.enabled ? 'status-active' : 'status-disabled'">
+                                <span class="status-dot"></span>
+                                {{ ch.enabled ? t('dashboard.alarm.enabled') : t('dashboard.alarm.disabled') }}
+                            </span>
+                        </td>
+                        <td>{{ new Date(ch.created_at).toLocaleString() }}</td>
+                        <td>
+                            <div class="actions-cell">
+                                <button class="icon-btn-table" @click="toggleEnabled(ch)" :title="ch.enabled ? 'Disable' : 'Enable'">
+                                    <component :is="ch.enabled ? ToggleRight : ToggleLeft" :size="16" />
+                                </button>
+                                <button class="icon-btn-table" @click="openEdit(ch)">
+                                    <Pencil :size="16" />
+                                </button>
+                                <button class="icon-btn-table text-error" @click="confirmDelete(ch)">
+                                    <Trash2 :size="16" />
+                                </button>
+                            </div>
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
 
         <!-- Create/Edit Modal -->
-        <div v-if="showCreateModal" class="modal-overlay" @click.self="showCreateModal = false">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h3>{{ editTarget ? t('actions.edit') : t('actions.create') }} {{ t('dashboard.notificationChannel') }}</h3>
-                </div>
-                <div class="modal-body">
-                    <div class="form-group">
-                        <label class="form-label">{{ t('dashboard.table.name') }}</label>
-                        <input v-model="form.name" class="form-input" required />
+        <Teleport to="body">
+            <div v-if="showCreateModal" class="modal-overlay" @click.self="showCreateModal = false">
+                <div class="modal-content" style="max-width: 520px;">
+                    <div class="modal-header">
+                        <h3>{{ editTarget ? t('actions.edit') : t('actions.create') }} {{ t('dashboard.notificationChannel') }}</h3>
+                        <button class="btn btn-ghost btn-icon" @click="showCreateModal = false">✕</button>
                     </div>
-                    <div class="form-group" v-if="!editTarget">
-                        <label class="form-label">{{ t('dashboard.notificationChannelType') }}</label>
-                        <select v-model="form.type" class="form-input" @change="onTypeChange">
-                            <option value="feishu">{{ t('dashboard.notificationFeishu') }} Webhook</option>
-                            <option value="webhook">{{ t('dashboard.notificationCustomWebhook') }}</option>
-                        </select>
+                    <div class="modal-body">
+                        <div class="form-stack">
+                            <div class="form-group">
+                                <label class="form-label">{{ t('dashboard.table.name') }}</label>
+                                <input v-model="form.name" class="form-input" required />
+                            </div>
+                            <div class="form-group" v-if="!editTarget">
+                                <label class="form-label">{{ t('dashboard.notificationChannelType') }}</label>
+                                <select v-model="form.type" class="form-input" @change="onTypeChange">
+                                    <option value="feishu">{{ t('dashboard.notificationFeishu') }} Webhook</option>
+                                    <option value="webhook">{{ t('dashboard.notificationCustomWebhook') }}</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">Webhook URL</label>
+                                <input v-model="form.config[form.type === 'feishu' ? 'webhook_url' : 'url']" class="form-input" placeholder="https://..." required />
+                            </div>
+                            <div class="form-group" v-if="form.type === 'feishu'">
+                                <label class="form-label">{{ t('dashboard.notificationSecret') }}</label>
+                                <input v-model="form.config.secret" class="form-input" :placeholder="t('dashboard.notificationSecretPlaceholder')" />
+                            </div>
+                        </div>
                     </div>
-                    <div class="form-group">
-                        <label class="form-label">Webhook URL</label>
-                        <input v-model="form.config[form.type === 'feishu' ? 'webhook_url' : 'url']" class="form-input" placeholder="https://..." required />
+                    <div class="modal-footer">
+                        <button class="btn btn-secondary" @click="showCreateModal = false">{{ t('actions.cancel') }}</button>
+                        <button class="btn btn-primary" @click="submitForm">{{ t('actions.save') }}</button>
                     </div>
-                    <div class="form-group" v-if="form.type === 'feishu'">
-                        <label class="form-label">{{ t('dashboard.notificationSecret') }}</label>
-                        <input v-model="form.config.secret" class="form-input" :placeholder="t('dashboard.notificationSecretPlaceholder')" />
-                    </div>
-                </div>
-                <div class="modal-footer">
-                    <button class="btn btn-secondary btn-sm" @click="showCreateModal = false">{{ t('actions.cancel') }}</button>
-                    <button class="btn btn-primary btn-sm" @click="submitForm">{{ t('actions.save') }}</button>
                 </div>
             </div>
-        </div>
+        </Teleport>
 
         <!-- Delete Confirm Modal -->
-        <div v-if="showDeleteModal" class="modal-overlay" @click.self="showDeleteModal = false">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h3>{{ t('actions.confirmDelete') }}</h3>
-                </div>
-                <div class="modal-body">
-                    <p>{{ t('messages.confirmDeleteChannel', { name: deleteTarget?.name }) }}</p>
-                </div>
-                <div class="modal-footer">
-                    <button class="btn btn-secondary btn-sm" @click="showDeleteModal = false">{{ t('actions.cancel') }}</button>
-                    <button class="btn btn-primary btn-sm text-danger" @click="executeDelete">{{ t('actions.delete') }}</button>
+        <Teleport to="body">
+            <div v-if="showDeleteModal" class="modal-overlay" @click.self="showDeleteModal = false">
+                <div class="modal-content" style="max-width: 440px;">
+                    <div class="modal-header">
+                        <h3>{{ t('actions.confirmDelete') }}</h3>
+                        <button class="btn btn-ghost btn-icon" @click="showDeleteModal = false">✕</button>
+                    </div>
+                    <div class="modal-body">
+                        <p>{{ t('messages.confirmDeleteChannel', { name: deleteTarget?.name }) }}</p>
+                    </div>
+                    <div class="modal-footer">
+                        <button class="btn btn-secondary" @click="showDeleteModal = false">{{ t('actions.cancel') }}</button>
+                        <button class="btn btn-danger" @click="executeDelete">{{ t('actions.delete') }}</button>
+                    </div>
                 </div>
             </div>
-        </div>
+        </Teleport>
     </div>
 </template>
 
 <style scoped>
-.error-banner { background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; border-radius: 6px; padding: 10px 14px; margin-bottom: 12px; font-size: 13px; cursor: pointer; }
+.page-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0;
+    padding-right: 20px;
+}
+
+.search-wrapper {
+    display: flex;
+    gap: 8px;
+    flex: 1;
+    max-width: 560px;
+}
+
+.header-actions {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+}
+
+.search-box {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    background: var(--bg-secondary);
+    padding: 0 12px;
+    height: 40px;
+    border-radius: var(--radius-md);
+    border: 1px solid var(--border-light);
+    transition: all 0.2s;
+    flex: 1;
+}
+
+.search-box:focus-within {
+    border-color: var(--primary-300);
+    box-shadow: 0 0 0 2px var(--primary-100);
+}
+
+.search-icon { color: var(--gray-400); }
+
+.search-input {
+    border: none;
+    background: transparent;
+    width: 100%;
+    height: 100%;
+    font-size: 0.875rem;
+    color: var(--text-primary);
+}
+
+.search-input:focus { outline: none; }
+
+.table-card { padding: 0; overflow: hidden; }
+
+.empty-state { display: flex; flex-direction: column; align-items: center; justify-content: center; }
+
 .url-cell {
     max-width: 300px;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    font-size: 0.8125rem;
+    color: var(--text-secondary);
 }
+
+.actions-cell { display: flex; gap: 4px; align-items: center; }
+
+.icon-btn-table {
+    width: 32px; height: 32px; border-radius: 8px; border: none;
+    background: transparent; color: var(--text-tertiary);
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer; transition: all 0.2s;
+}
+
+.icon-btn-table:hover { background-color: var(--bg-tertiary); color: var(--primary-500); }
+.icon-btn-table.text-error:hover { background-color: #fef2f2; color: #ef4444; }
+.text-error { color: var(--text-tertiary); }
+
+.status-pill {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 4px 10px; border-radius: var(--radius-full);
+    font-size: var(--font-size-xs); font-weight: var(--font-weight-medium);
+}
+
+.status-active { background: rgba(16, 185, 129, 0.1); color: #10b981; }
+.status-disabled { background: var(--gray-100); color: var(--gray-500); }
+.status-dot { width: 6px; height: 6px; background: currentColor; border-radius: 50%; }
+
 .badge-info { background: #3b82f6; color: white; }
 .badge-success { background: #22c55e; color: white; }
 .badge-muted { background: #6b7280; color: white; }
 .badge-secondary { background: #8b5cf6; color: white; }
 .text-danger { color: #ef4444; }
 .text-center { text-align: center; }
-.text-muted { color: #9ca3af; }
+
+.error-banner {
+    background: #fef2f2; color: #dc2626; border: 1px solid #fecaca;
+    border-radius: 6px; padding: 10px 14px; margin-bottom: 12px;
+    font-size: 13px; cursor: pointer;
+}
+
+/* Modal */
+.modal-overlay {
+    position: fixed; inset: 0; background: rgba(0, 0, 0, 0.5);
+    display: flex; align-items: center; justify-content: center; z-index: 1000;
+}
+
+.modal-content {
+    background: var(--bg-primary); border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-xl); width: 90%; max-height: 85vh; overflow-y: auto;
+}
+
+.modal-header {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 20px 24px; border-bottom: 1px solid var(--border-light);
+}
+
+.modal-header h3 { margin: 0; font-size: 1.125rem; }
+.modal-body { padding: 24px; }
+
+.modal-footer {
+    display: flex; justify-content: flex-end; gap: 8px;
+    padding: 16px 24px; border-top: 1px solid var(--border-light);
+}
+
+.form-stack { display: flex; flex-direction: column; gap: 16px; }
+.form-group { display: flex; flex-direction: column; }
+.form-label { font-size: 0.8125rem; color: var(--text-secondary); margin-bottom: 4px; font-weight: 500; }
+
+.form-input {
+    width: 100%; padding: 8px 12px;
+    border: 1px solid var(--border-light); border-radius: var(--radius-md);
+    font-size: 0.875rem; background: var(--bg-primary); color: var(--text-primary);
+}
+
+.form-input:focus { outline: none; border-color: var(--primary-300); box-shadow: 0 0 0 2px var(--primary-100); }
+
+.btn-danger {
+    background: #ef4444; color: white; border: none;
+    padding: 8px 16px; border-radius: var(--radius-md); cursor: pointer; font-weight: 500;
+}
+.btn-danger:hover { background: #dc2626; }
+
+.spinning { animation: spin 1s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
 </style>
