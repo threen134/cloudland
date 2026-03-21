@@ -60,6 +60,12 @@ const toggleSidebar = () => {
     isSidebarCollapsed.value = !isSidebarCollapsed.value
 }
 
+const swaggerUrl = computed(() => {
+    return tenant.currentOrg?.org_type === 2
+        ? '/swagger/api/v1/admin/index.html'
+        : '/swagger/api/v1/tenant/index.html'
+})
+
 // Ensure sections are expanded when collapsing sidebar to show icons
 watch(isSidebarCollapsed, (collapsed) => {
     if (collapsed) {
@@ -433,7 +439,7 @@ onUnmounted(() => {
                   <span>{{ $t('nav.billing') }}</span>
                 </div>
               </div>
-              <a class="dropdown-item-portal" href="/api/v1/docs" target="_blank" rel="noopener" style="text-decoration: none; color: inherit;">
+              <a class="dropdown-item-portal" :href="swaggerUrl" target="_blank" rel="noopener" style="text-decoration: none; color: inherit;">
                 <div style="display: flex; align-items: center; gap: 8px;">
                   <BookOpen :size="14" />
                   <span>{{ $t('nav.docsAndApi') }}</span>

@@ -46,6 +46,15 @@ const (
 )
 
 // CreateCPUAdjustRule creates CPU adjustment rule
+// @Summary Create CPU auto-adjustment rule
+// @Description Create a CPU auto-scaling rule with threshold and smooth window configuration
+// @Tags Auto Scaling
+// @Accept json
+// @Produce json
+// @Success 200 {object} map[string]interface{} "Rule created successfully"
+// @Failure 400 {object} map[string]interface{} "Bad request"
+// @Failure 500 {object} map[string]interface{} "Internal server error"
+// @Router /metrics/adjust/cpu/rules [post]
 func (a *AdjustAPI) CreateCPUAdjustRule(c *gin.Context) {
 	var req struct {
 		Name      string `json:"name" binding:"required"`
@@ -208,6 +217,16 @@ func (a *AdjustAPI) CreateCPUAdjustRule(c *gin.Context) {
 }
 
 // GetCPUAdjustRules gets CPU adjustment rules
+// @Summary List CPU auto-adjustment rules
+// @Description List CPU auto-scaling rules with pagination
+// @Tags Auto Scaling
+// @Accept json
+// @Produce json
+// @Param page query int false "Page number" default(1)
+// @Param page_size query int false "Page size" default(20)
+// @Success 200 {object} map[string]interface{} "CPU adjustment rules"
+// @Failure 500 {object} map[string]interface{} "Internal server error"
+// @Router /metrics/adjust/cpu/rules [get]
 func (a *AdjustAPI) GetCPUAdjustRules(c *gin.Context) {
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
 	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "20"))
@@ -318,6 +337,17 @@ func (a *AdjustAPI) GetCPUAdjustRules(c *gin.Context) {
 }
 
 // DeleteCPUAdjustRule deletes CPU adjustment rule
+// @Summary Delete CPU auto-adjustment rule
+// @Description Delete a CPU auto-scaling rule by UUID or rule_id
+// @Tags Auto Scaling
+// @Accept json
+// @Produce json
+// @Param uuid path string true "Rule UUID or rule_id"
+// @Success 200 {object} map[string]interface{} "Rule deleted successfully"
+// @Failure 400 {object} map[string]interface{} "Bad request"
+// @Failure 404 {object} map[string]interface{} "Rule not found"
+// @Failure 500 {object} map[string]interface{} "Internal server error"
+// @Router /metrics/adjust/cpu/rule/{uuid} [delete]
 func (a *AdjustAPI) DeleteCPUAdjustRule(c *gin.Context) {
 	identifier := c.Param("uuid")
 	if identifier == "" {
@@ -456,6 +486,15 @@ func (a *AdjustAPI) DeleteCPUAdjustRule(c *gin.Context) {
 }
 
 // ProcessResourceAdjustmentWebhook processes resource auto-adjustment webhook
+// @Summary Process resource adjustment webhook
+// @Description Handle Prometheus AlertManager webhook for resource auto-adjustment (CPU/bandwidth scaling)
+// @Tags Auto Scaling
+// @Accept json
+// @Produce json
+// @Success 200 {object} map[string]interface{} "Processed"
+// @Failure 400 {object} map[string]interface{} "Bad request"
+// @Failure 500 {object} map[string]interface{} "Internal server error"
+// @Router /alerts/resource-adjustment [post]
 func (a *AdjustAPI) ProcessResourceAdjustmentWebhook(c *gin.Context) {
 	// Read request body
 	body, err := io.ReadAll(c.Request.Body)
@@ -832,6 +871,15 @@ func (a *AdjustAPI) processAlertAdjustment(ctx context.Context, alert services.A
 }
 
 // CreateBWAdjustRule creates bandwidth adjustment rule
+// @Summary Create bandwidth auto-adjustment rule
+// @Description Create a bandwidth auto-scaling rule with direction-specific threshold configuration
+// @Tags Auto Scaling
+// @Accept json
+// @Produce json
+// @Success 200 {object} map[string]interface{} "Rule created successfully"
+// @Failure 400 {object} map[string]interface{} "Bad request"
+// @Failure 500 {object} map[string]interface{} "Internal server error"
+// @Router /metrics/adjust/bw/rules [post]
 func (a *AdjustAPI) CreateBWAdjustRule(c *gin.Context) {
 	var req struct {
 		Name      string `json:"name" binding:"required"`
@@ -1043,6 +1091,16 @@ func (a *AdjustAPI) CreateBWAdjustRule(c *gin.Context) {
 }
 
 // GetBWAdjustRules gets bandwidth adjustment rules
+// @Summary List bandwidth auto-adjustment rules
+// @Description List bandwidth auto-scaling rules with pagination
+// @Tags Auto Scaling
+// @Accept json
+// @Produce json
+// @Param page query int false "Page number" default(1)
+// @Param page_size query int false "Page size" default(20)
+// @Success 200 {object} map[string]interface{} "Bandwidth adjustment rules"
+// @Failure 500 {object} map[string]interface{} "Internal server error"
+// @Router /metrics/adjust/bw/rules [get]
 func (a *AdjustAPI) GetBWAdjustRules(c *gin.Context) {
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
 	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "20"))
@@ -1180,6 +1238,17 @@ func (a *AdjustAPI) GetBWAdjustRules(c *gin.Context) {
 }
 
 // DeleteBWAdjustRule deletes bandwidth adjustment rule
+// @Summary Delete bandwidth auto-adjustment rule
+// @Description Delete a bandwidth auto-scaling rule by UUID
+// @Tags Auto Scaling
+// @Accept json
+// @Produce json
+// @Param uuid path string true "Rule UUID"
+// @Success 200 {object} map[string]interface{} "Rule deleted successfully"
+// @Failure 400 {object} map[string]interface{} "Bad request"
+// @Failure 404 {object} map[string]interface{} "Rule not found"
+// @Failure 500 {object} map[string]interface{} "Internal server error"
+// @Router /metrics/adjust/bw/rule/{uuid} [delete]
 func (a *AdjustAPI) DeleteBWAdjustRule(c *gin.Context) {
 	uuid := c.Param("uuid")
 	if uuid == "" {
@@ -1357,6 +1426,16 @@ type LinkedVMInfo struct {
 }
 
 // LinkAdjustRule Link VM to adjustment rule group
+// @Summary Link VM to adjustment rule
+// @Description Link a virtual machine to an auto-adjustment rule group
+// @Tags Auto Scaling
+// @Accept json
+// @Produce json
+// @Success 200 {object} map[string]interface{} "VM linked successfully"
+// @Failure 400 {object} map[string]interface{} "Bad request"
+// @Failure 404 {object} map[string]interface{} "Rule not found"
+// @Failure 500 {object} map[string]interface{} "Internal server error"
+// @Router /metrics/adjust/link [post]
 func (a *AdjustAPI) LinkAdjustRule(c *gin.Context) {
 	var req struct {
 		GroupUUID string `json:"group_uuid,omitempty"`
@@ -1471,6 +1550,16 @@ func (a *AdjustAPI) LinkAdjustRule(c *gin.Context) {
 }
 
 // UnlinkAdjustRule Unlink VM from adjustment rule
+// @Summary Unlink VM from adjustment rule
+// @Description Unlink a virtual machine from an auto-adjustment rule group
+// @Tags Auto Scaling
+// @Accept json
+// @Produce json
+// @Success 200 {object} map[string]interface{} "VM unlinked successfully"
+// @Failure 400 {object} map[string]interface{} "Bad request"
+// @Failure 404 {object} map[string]interface{} "Rule not found"
+// @Failure 500 {object} map[string]interface{} "Internal server error"
+// @Router /metrics/adjust/unlink [delete]
 func (a *AdjustAPI) UnlinkAdjustRule(c *gin.Context) {
 	var req struct {
 		GroupUUID string `json:"group_uuid,omitempty"`
@@ -1821,6 +1910,16 @@ func (a *AdjustAPI) cleanupVMMetrics(ctx context.Context, vmUUID, ruleGroupUUID 
 // GetRuleLinks Get VM link information for alarm or adjustment rules
 // Supports both alarm rules and adjustment rules
 // Parameter: rule_id (can be rule_id or UUID)
+// @Summary Get rule VM links
+// @Description Get VM link information for alarm or adjustment rules by rule_id or UUID
+// @Tags Auto Scaling
+// @Accept json
+// @Produce json
+// @Param rule_id query string true "Rule ID or UUID"
+// @Success 200 {object} map[string]interface{} "Rule links"
+// @Failure 400 {object} map[string]interface{} "Bad request"
+// @Failure 404 {object} map[string]interface{} "Rule not found"
+// @Router /metrics/api/v1/rules/links [get]
 func (a *AdjustAPI) GetRuleLinks(c *gin.Context) {
 	ruleID := c.Query("rule_id")
 	if ruleID == "" {
@@ -1988,6 +2087,15 @@ func (a *AdjustAPI) cleanupRuleMetricsOnNodes(ctx context.Context, ruleGroupUUID
 }
 
 // RegenerateBandwidthConfigMetrics regenerates bandwidth configuration metrics for all VMs or specific hyper node
+// @Summary Regenerate bandwidth config metrics
+// @Description Regenerate bandwidth configuration metrics for all active VMs or a specific hyper node
+// @Tags Auto Scaling
+// @Accept json
+// @Produce json
+// @Param hyper_id query string false "Specific hyper node ID"
+// @Success 200 {object} map[string]interface{} "Regeneration result"
+// @Failure 500 {object} map[string]interface{} "Internal server error"
+// @Router /metrics/api/v1/adjust/regenerate-bandwidth-metrics [post]
 func (a *AdjustAPI) RegenerateBandwidthConfigMetrics(c *gin.Context) {
 	ctx := c.Request.Context()
 
@@ -2100,6 +2208,17 @@ func (a *AdjustAPI) RegenerateBandwidthConfigMetrics(c *gin.Context) {
 }
 
 // PatchCPUAdjustRule updates CPU adjustment rule
+// @Summary Update CPU auto-adjustment rule
+// @Description Update an existing CPU auto-scaling rule configuration and linked VMs
+// @Tags Auto Scaling
+// @Accept json
+// @Produce json
+// @Param uuid path string true "Rule UUID or rule_id"
+// @Success 200 {object} map[string]interface{} "Rule updated successfully"
+// @Failure 400 {object} map[string]interface{} "Bad request"
+// @Failure 404 {object} map[string]interface{} "Rule not found"
+// @Failure 500 {object} map[string]interface{} "Internal server error"
+// @Router /metrics/adjust/cpu/rule/{uuid} [patch]
 func (a *AdjustAPI) PatchCPUAdjustRule(c *gin.Context) {
 	identifier := c.Param("uuid") // Supports rule_id or group_uuid
 	if identifier == "" {
@@ -2321,6 +2440,17 @@ func (a *AdjustAPI) PatchCPUAdjustRule(c *gin.Context) {
 }
 
 // PatchBWAdjustRule updates BW adjustment rule
+// @Summary Update bandwidth auto-adjustment rule
+// @Description Update an existing bandwidth auto-scaling rule configuration and linked VMs
+// @Tags Auto Scaling
+// @Accept json
+// @Produce json
+// @Param uuid path string true "Rule UUID or rule_id"
+// @Success 200 {object} map[string]interface{} "Rule updated successfully"
+// @Failure 400 {object} map[string]interface{} "Bad request"
+// @Failure 404 {object} map[string]interface{} "Rule not found"
+// @Failure 500 {object} map[string]interface{} "Internal server error"
+// @Router /metrics/adjust/bw/rule/{uuid} [patch]
 func (a *AdjustAPI) PatchBWAdjustRule(c *gin.Context) {
 	identifier := c.Param("uuid") // Supports rule_id or group_uuid
 	if identifier == "" {

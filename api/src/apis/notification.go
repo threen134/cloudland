@@ -30,6 +30,15 @@ var notificationAPI = &NotificationAPI{
 // --- 内部通知渠道同步接口（CPGateway 推送，Authorize 中间件校验 X-Forwarded-Secret）---
 
 // SyncChannel 处理 CPGateway 推送的渠道同步请求
+// @Summary Sync notification channels
+// @Description Internal endpoint for CPGateway to push notification channel changes (upsert, delete, bulk_sync)
+// @Tags Notification
+// @Accept json
+// @Produce json
+// @Success 200 {object} map[string]interface{} "Sync successful"
+// @Failure 400 {object} map[string]interface{} "Bad request"
+// @Failure 500 {object} map[string]interface{} "Internal server error"
+// @Router /internal/notification-channels/sync [post]
 func (a *NotificationAPI) SyncChannel(c *gin.Context) {
 	var req struct {
 		Action      string           `json:"action" binding:"required"` // upsert, delete, bulk_sync
@@ -121,6 +130,17 @@ type channelPayload struct {
 // --- 告警规则绑定渠道 ---
 
 // BindRuleChannels 为告警规则绑定通知渠道
+// @Summary Bind notification channels to alarm rule
+// @Description Bind one or more notification channels to an alarm rule group
+// @Tags Notification
+// @Accept json
+// @Produce json
+// @Success 200 {object} map[string]interface{} "Binding successful"
+// @Failure 400 {object} map[string]interface{} "Bad request"
+// @Failure 403 {object} map[string]interface{} "Channel not owned"
+// @Failure 409 {object} map[string]interface{} "Channel not synced"
+// @Failure 500 {object} map[string]interface{} "Internal server error"
+// @Router /alarm/rule-channels [post]
 func (a *NotificationAPI) BindRuleChannels(c *gin.Context) {
 	var req struct {
 		RuleGroupUUID string   `json:"rule_group_uuid" binding:"required"`
@@ -161,6 +181,15 @@ func (a *NotificationAPI) BindRuleChannels(c *gin.Context) {
 }
 
 // GetRuleChannels 获取告警规则绑定的通知渠道
+// @Summary Get notification channels bound to alarm rule
+// @Description Get the list of notification channels bound to a specific alarm rule group
+// @Tags Notification
+// @Accept json
+// @Produce json
+// @Param uuid path string true "Rule group UUID"
+// @Success 200 {object} map[string]interface{} "Rule channel bindings"
+// @Failure 500 {object} map[string]interface{} "Internal server error"
+// @Router /alarm/rule-channels/{uuid} [get]
 func (a *NotificationAPI) GetRuleChannels(c *gin.Context) {
 	ruleGroupUUID := c.Param("uuid")
 	ctx := c.Request.Context()
@@ -177,6 +206,18 @@ func (a *NotificationAPI) GetRuleChannels(c *gin.Context) {
 // --- 告警事件查询 ---
 
 // ListAlarmEvents 查询告警事件列表（按当前用户的组织过滤）
+// @Summary List alarm events
+// @Description List alarm events filtered by the current user's organization, supports pagination and status filter
+// @Tags Notification
+// @Accept json
+// @Produce json
+// @Param status query string false "Filter by status (firing, resolved)"
+// @Param count_only query string false "If 'true', only return firing event count"
+// @Param page query int false "Page number" default(1)
+// @Param page_size query int false "Page size" default(20)
+// @Success 200 {object} map[string]interface{} "Alarm events list"
+// @Failure 500 {object} map[string]interface{} "Internal server error"
+// @Router /alarm/events [get]
 func (a *NotificationAPI) ListAlarmEvents(c *gin.Context) {
 	ctx := c.Request.Context()
 	memberShip := GetMemberShip(ctx)
@@ -220,6 +261,17 @@ func (a *NotificationAPI) ListAlarmEvents(c *gin.Context) {
 }
 
 // GetAlarmDeliveryLogs 查询告警事件的发送流水（校验事件归属权）
+// @Summary Get alarm delivery logs
+// @Description Get notification delivery logs for a specific alarm event (validates event ownership)
+// @Tags Notification
+// @Accept json
+// @Produce json
+// @Param event_uuid path string true "Alarm event UUID"
+// @Success 200 {object} map[string]interface{} "Delivery logs"
+// @Failure 403 {object} map[string]interface{} "Access denied"
+// @Failure 404 {object} map[string]interface{} "Event not found"
+// @Failure 500 {object} map[string]interface{} "Internal server error"
+// @Router /alarm/events/{event_uuid}/delivery-logs [get]
 func (a *NotificationAPI) GetAlarmDeliveryLogs(c *gin.Context) {
 	eventUUID := c.Param("event_uuid")
 	ctx := c.Request.Context()
@@ -248,6 +300,18 @@ func (a *NotificationAPI) GetAlarmDeliveryLogs(c *gin.Context) {
 // --- 内部告警事件查询（CPGateway 全局汇总用）---
 
 // InternalListAlarmEvents CPGateway 内部调用的告警事件接口
+// @Summary Internal list alarm events
+// @Description Internal endpoint for CPGateway to query alarm events without owner filtering
+// @Tags Notification
+// @Accept json
+// @Produce json
+// @Param count_only query string false "If 'true', only return firing event count"
+// @Param status query string false "Filter by status"
+// @Param page query int false "Page number" default(1)
+// @Param page_size query int false "Page size" default(20)
+// @Success 200 {object} map[string]interface{} "Alarm events"
+// @Failure 500 {object} map[string]interface{} "Internal server error"
+// @Router /internal/alarm/events [get]
 func (a *NotificationAPI) InternalListAlarmEvents(c *gin.Context) {
 	ctx := c.Request.Context()
 	countOnly := c.Query("count_only")
@@ -289,6 +353,14 @@ func (a *NotificationAPI) InternalListAlarmEvents(c *gin.Context) {
 // --- 升级后的 AlertManager 回调处理 ---
 
 // ProcessAlertWebhookV2 处理 AlertManager 回调（fingerprint 幂等 + 通知推送）
+// @Summary Process AlertManager webhook
+// @Description Handle AlertManager callback with fingerprint-based idempotent event upsert and notification dispatch
+// @Tags Notification
+// @Accept json
+// @Produce json
+// @Success 200 {object} map[string]interface{} "Processed result"
+// @Failure 400 {object} map[string]interface{} "Invalid alert payload"
+// @Router /alerts/process [post]
 func (a *NotificationAPI) ProcessAlertWebhookV2(c *gin.Context) {
 	var notification struct {
 		Status string `json:"status"`

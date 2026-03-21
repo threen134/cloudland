@@ -1,14 +1,22 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 import { RouterLink, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { Cloud, Menu, X, ChevronDown, Phone, Mail, Globe } from 'lucide-vue-next'
 import { useAuthStore } from '../stores/auth'
+import { useTenantStore } from '../stores/tenant'
 import { setLanguage, getCurrentLanguage } from '../locales'
 
 const { t } = useI18n()
 const router = useRouter()
 const auth = useAuthStore()
+const tenant = useTenantStore()
+
+const swaggerUrl = computed(() => {
+    return tenant.currentOrg?.org_type === 2
+        ? '/swagger/api/v1/admin/index.html'
+        : '/swagger/api/v1/tenant/index.html'
+})
 
 const isMenuOpen = ref(false)
 const activeDropdown = ref<string | null>(null)
@@ -60,7 +68,7 @@ const solutionLinks = [
             <a href="tel:+1-800-000-0000"><Phone :size="14" /> +1-800-CLOUD</a>
           </div>
           <div class="top-links">
-            <a href="/api/v1/docs" target="_blank" rel="noopener">{{ t('nav.documentation') }}</a>
+            <a :href="swaggerUrl" target="_blank" rel="noopener">{{ t('nav.documentation') }}</a>
             <RouterLink to="/support">{{ t('nav.support') }}</RouterLink>
           </div>
         </div>

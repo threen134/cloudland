@@ -570,6 +570,15 @@ func (a *AlarmAPI) UnlinkRuleFromVMWithType(ruleCategory string) gin.HandlerFunc
 	}
 }
 
+// @Summary Create CPU alarm rule
+// @Description Create a new CPU utilization alarm rule with threshold configuration
+// @Tags Alarm
+// @Accept json
+// @Produce json
+// @Success 200 {object} map[string]interface{} "Rule created successfully"
+// @Failure 400 {object} map[string]interface{} "Bad request"
+// @Failure 500 {object} map[string]interface{} "Internal server error"
+// @Router /metrics/alarm/cpu/rules [post]
 func (a *AlarmAPI) CreateCPURule(c *gin.Context) {
 	var req struct {
 		RuleID          string           `json:"rule_id"`
@@ -680,6 +689,15 @@ func (a *AlarmAPI) CreateCPURule(c *gin.Context) {
 	})
 }
 
+// @Summary Create memory alarm rule
+// @Description Create a new memory utilization alarm rule with threshold configuration
+// @Tags Alarm
+// @Accept json
+// @Produce json
+// @Success 200 {object} map[string]interface{} "Rule created successfully"
+// @Failure 400 {object} map[string]interface{} "Bad request"
+// @Failure 500 {object} map[string]interface{} "Internal server error"
+// @Router /metrics/alarm/memory/rules [post]
 func (a *AlarmAPI) CreateMemoryRule(c *gin.Context) {
 	var req struct {
 		RuleID          string              `json:"rule_id"`
@@ -820,6 +838,17 @@ func (a *AlarmAPI) CreateMemoryRule(c *gin.Context) {
 	})
 }
 
+// @Summary List CPU alarm rules
+// @Description List CPU alarm rules with pagination, optionally filter by UUID or rule_id
+// @Tags Alarm
+// @Accept json
+// @Produce json
+// @Param page query int false "Page number" default(1)
+// @Param page_size query int false "Page size" default(20)
+// @Param rule_id query string false "Filter by rule ID"
+// @Success 200 {object} map[string]interface{} "CPU alarm rules"
+// @Failure 500 {object} map[string]interface{} "Internal server error"
+// @Router /metrics/alarm/cpu/rules [get]
 func (a *AlarmAPI) GetCPURules(c *gin.Context) {
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
 	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "20"))
@@ -900,6 +929,17 @@ func (a *AlarmAPI) GetCPURules(c *gin.Context) {
 	})
 }
 
+// @Summary List memory alarm rules
+// @Description List memory alarm rules with pagination, optionally filter by UUID or rule_id
+// @Tags Alarm
+// @Accept json
+// @Produce json
+// @Param page query int false "Page number" default(1)
+// @Param page_size query int false "Page size" default(20)
+// @Param rule_id query string false "Filter by rule ID"
+// @Success 200 {object} map[string]interface{} "Memory alarm rules"
+// @Failure 500 {object} map[string]interface{} "Internal server error"
+// @Router /metrics/alarm/memory/rules [get]
 func (a *AlarmAPI) GetMemoryRules(c *gin.Context) {
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
 	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "20"))
@@ -977,6 +1017,17 @@ func (a *AlarmAPI) GetMemoryRules(c *gin.Context) {
 	})
 }
 
+// @Summary Delete CPU alarm rule
+// @Description Delete a CPU alarm rule by UUID or rule_id, removes associated Prometheus config files
+// @Tags Alarm
+// @Accept json
+// @Produce json
+// @Param uuid path string true "Rule UUID or rule_id"
+// @Success 200 {object} map[string]interface{} "Rule deleted successfully"
+// @Failure 400 {object} map[string]interface{} "Bad request"
+// @Failure 404 {object} map[string]interface{} "Rule not found"
+// @Failure 500 {object} map[string]interface{} "Internal server error"
+// @Router /metrics/alarm/cpu/rule/{uuid} [delete]
 func (a *AlarmAPI) DeleteCPURule(c *gin.Context) {
 	identifier := c.Param("uuid")
 	if identifier == "" {
@@ -1093,6 +1144,17 @@ func (a *AlarmAPI) DeleteCPURule(c *gin.Context) {
 	})
 }
 
+// @Summary Delete memory alarm rule
+// @Description Delete a memory alarm rule by UUID or rule_id, removes associated Prometheus config files
+// @Tags Alarm
+// @Accept json
+// @Produce json
+// @Param uuid path string true "Rule UUID or rule_id"
+// @Success 200 {object} map[string]interface{} "Rule deleted successfully"
+// @Failure 400 {object} map[string]interface{} "Bad request"
+// @Failure 404 {object} map[string]interface{} "Rule not found"
+// @Failure 500 {object} map[string]interface{} "Internal server error"
+// @Router /metrics/alarm/memory/rule/{uuid} [delete]
 func (a *AlarmAPI) DeleteMemoryRule(c *gin.Context) {
 	identifier := c.Param("uuid") // Can be RuleID or UUID
 	if identifier == "" {
@@ -1214,6 +1276,14 @@ func (a *AlarmAPI) DeleteMemoryRule(c *gin.Context) {
 	})
 }
 
+// @Summary Get current active alarms
+// @Description Query currently firing alarms from Prometheus
+// @Tags Alarm
+// @Accept json
+// @Produce json
+// @Success 200 {object} map[string]interface{} "Current alarms"
+// @Failure 500 {object} map[string]interface{} "Internal server error"
+// @Router /metrics/api/v1/current-alarms [get]
 func (a *AlarmAPI) GetCurrentAlarms(c *gin.Context) {
 	client := &http.Client{Timeout: 5 * time.Second}
 	targetURL := fmt.Sprintf("http://%s:%d/api/v1/alerts", services.GetPrometheusIP(), services.GetPrometheusPort())
@@ -1266,6 +1336,18 @@ func (a *AlarmAPI) GetCurrentAlarms(c *gin.Context) {
 	})
 }
 
+// @Summary Get historical alarms
+// @Description Query historical alarm data from Prometheus within a time range
+// @Tags Alarm
+// @Accept json
+// @Produce json
+// @Param start query string true "Start timestamp (unix)"
+// @Param end query string true "End timestamp (unix)"
+// @Param step query string false "Query step interval" default(300s)
+// @Success 200 {object} map[string]interface{} "Historical alarm data"
+// @Failure 400 {object} map[string]interface{} "Bad request"
+// @Failure 500 {object} map[string]interface{} "Internal server error"
+// @Router /metrics/api/v1/history-alarms [get]
 func (a *AlarmAPI) GetHistoryAlarm(c *gin.Context) {
 	startStr := c.Query("start")
 	endStr := c.Query("end")
@@ -1387,6 +1469,14 @@ func filterActiveAlerts(alerts []interface{}) []interface{} {
 	return filtered
 }
 
+// @Summary Process alert webhook (legacy)
+// @Description Legacy AlertManager webhook handler for IP blocking alerts
+// @Tags Alarm
+// @Accept json
+// @Produce json
+// @Success 200 {object} map[string]interface{} "Processed"
+// @Failure 400 {object} map[string]interface{} "Invalid payload"
+// @Router /alerts/process-legacy [post]
 func (a *AlarmAPI) ProcessAlertWebhook(c *gin.Context) {
 	var notification struct {
 		Status string `json:"status"`
@@ -1450,6 +1540,14 @@ func (a *AlarmAPI) ProcessAlertWebhook(c *gin.Context) {
 }
 
 // GetActiveRules retrieves active rules from Prometheus
+// @Summary Get active Prometheus rules
+// @Description Retrieve all active alerting rules from Prometheus rules API
+// @Tags Alarm
+// @Accept json
+// @Produce json
+// @Success 200 {object} map[string]interface{} "Active rules"
+// @Failure 500 {object} map[string]interface{} "Internal server error"
+// @Router /metrics/alarm/active-rules [get]
 func (a *AlarmAPI) GetActiveRules(c *gin.Context) {
 	// Build Prometheus API URL from config
 	apiURL := fmt.Sprintf("http://%s:%d/api/v1/rules", services.GetPrometheusIP(), services.GetPrometheusPort())
@@ -1508,6 +1606,15 @@ func (a *AlarmAPI) GetActiveRules(c *gin.Context) {
 	})
 }
 
+// @Summary Create bandwidth alarm rule
+// @Description Create a new bandwidth utilization alarm rule with direction and threshold configuration
+// @Tags Alarm
+// @Accept json
+// @Produce json
+// @Success 200 {object} map[string]interface{} "Rule created successfully"
+// @Failure 400 {object} map[string]interface{} "Bad request"
+// @Failure 500 {object} map[string]interface{} "Internal server error"
+// @Router /metrics/alarm/bw/rules [post]
 func (a *AlarmAPI) CreateBWRule(c *gin.Context) {
 	var req struct {
 		Name     string `json:"name" binding:"required"`
@@ -1635,6 +1742,17 @@ func (a *AlarmAPI) CreateBWRule(c *gin.Context) {
 	})
 }
 
+// @Summary List bandwidth alarm rules
+// @Description List bandwidth alarm rules with pagination, optionally filter by UUID or rule_id
+// @Tags Alarm
+// @Accept json
+// @Produce json
+// @Param page query int false "Page number" default(1)
+// @Param page_size query int false "Page size" default(20)
+// @Param rule_id query string false "Filter by rule ID"
+// @Success 200 {object} map[string]interface{} "Bandwidth alarm rules"
+// @Failure 500 {object} map[string]interface{} "Internal server error"
+// @Router /metrics/alarm/bw/rules [get]
 func (a *AlarmAPI) GetBWRules(c *gin.Context) {
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
 	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "20"))
@@ -1715,6 +1833,17 @@ func (a *AlarmAPI) GetBWRules(c *gin.Context) {
 	})
 }
 
+// @Summary Delete bandwidth alarm rule
+// @Description Delete a bandwidth alarm rule by UUID or rule_id, removes associated Prometheus config files
+// @Tags Alarm
+// @Accept json
+// @Produce json
+// @Param uuid path string true "Rule UUID or rule_id"
+// @Success 200 {object} map[string]interface{} "Rule deleted successfully"
+// @Failure 400 {object} map[string]interface{} "Bad request"
+// @Failure 404 {object} map[string]interface{} "Rule not found"
+// @Failure 500 {object} map[string]interface{} "Internal server error"
+// @Router /metrics/alarm/bw/rule/{uuid} [delete]
 func (a *AlarmAPI) DeleteBWRules(c *gin.Context) {
 	identifier := c.Param("uuid")
 	if identifier == "" {
@@ -1850,6 +1979,16 @@ func (a *AlarmAPI) DeleteBWRules(c *gin.Context) {
 	})
 }
 
+// @Summary Create node alarm rule
+// @Description Create a new node-level alarm rule (e.g., node CPU, memory, disk alerts)
+// @Tags Alarm
+// @Accept json
+// @Produce json
+// @Success 200 {object} map[string]interface{} "Rule created successfully"
+// @Failure 400 {object} map[string]interface{} "Bad request"
+// @Failure 409 {object} map[string]interface{} "Rule type already exists"
+// @Failure 500 {object} map[string]interface{} "Internal server error"
+// @Router /node-alarm-rules [post]
 func (a *AlarmAPI) CreateNodeAlarmRule(c *gin.Context) {
 	var rule model.NodeAlarmRule
 	if err := c.ShouldBindJSON(&rule); err != nil {
@@ -1893,6 +2032,16 @@ func (a *AlarmAPI) CreateNodeAlarmRule(c *gin.Context) {
 	})
 }
 
+// @Summary List node alarm rules
+// @Description List node-level alarm rules, optionally filtered by UUID or rule type
+// @Tags Alarm
+// @Accept json
+// @Produce json
+// @Param uuid query string false "Filter by rule UUID"
+// @Param rule_type query string false "Filter by rule type"
+// @Success 200 {object} map[string]interface{} "Node alarm rules"
+// @Failure 500 {object} map[string]interface{} "Internal server error"
+// @Router /node-alarm-rules [get]
 func (a *AlarmAPI) GetNodeAlarmRules(c *gin.Context) {
 	uuid := c.Query("uuid")
 	ruleType := c.Query("rule_type")
@@ -1911,6 +2060,17 @@ func (a *AlarmAPI) GetNodeAlarmRules(c *gin.Context) {
 	})
 }
 
+// @Summary Delete node alarm rule
+// @Description Delete a node-level alarm rule by UUID
+// @Tags Alarm
+// @Accept json
+// @Produce json
+// @Param uuid path string true "Rule UUID"
+// @Success 200 {object} map[string]interface{} "Rule deleted successfully"
+// @Failure 400 {object} map[string]interface{} "Bad request"
+// @Failure 404 {object} map[string]interface{} "Rule not found"
+// @Failure 500 {object} map[string]interface{} "Internal server error"
+// @Router /node-alarm-rules/{uuid} [delete]
 func (a *AlarmAPI) DeleteNodeAlarmRule(c *gin.Context) {
 	uuid := c.Param("uuid")
 	if uuid == "" {
@@ -1989,7 +2149,7 @@ func (a *AlarmAPI) processRuleMappings(ctx context.Context, groups interface{}, 
 
 // @Summary Synchronize all VM rule mappings
 // @Description Perform a full synchronization of all VM rule mappings to ensure matched_vms.json is consistent with the database
-// @Tags alarm
+// @Tags Alarm
 // @Accept json
 // @Produce json
 // @Success 200 {object} map[string]interface{} "Synchronization successful"
@@ -2442,6 +2602,15 @@ type BatchGetRulesResponse struct {
 }
 
 // BatchGetRules 批量获取规则信息 (支持告警和调整规则)
+// @Summary Batch get rules
+// @Description Batch retrieve alarm and adjustment rules by identifiers (rule_id or UUID)
+// @Tags Alarm
+// @Accept json
+// @Produce json
+// @Param message body BatchGetRulesRequest true "Batch get rules request"
+// @Success 200 {object} map[string]interface{} "Batch rules result"
+// @Failure 400 {object} map[string]interface{} "Bad request"
+// @Router /metrics/rules/batch [post]
 func (a *AlarmAPI) BatchGetRules(c *gin.Context) {
 	var req BatchGetRulesRequest
 	if err := c.ShouldBindJSON(&req); err != nil {

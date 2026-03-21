@@ -356,6 +356,15 @@ func (api *MonitorAPI) getRangeQuery(metricType string, instanceIDs []string, de
 	return finalQuery
 }
 
+// @Summary Get instance traffic metrics
+// @Description Query traffic historical data for instances from Prometheus
+// @Tags Monitoring
+// @Accept json
+// @Produce json
+// @Param message body MetricsRequest true "Metrics query request"
+// @Success 200 {array} map[string]interface{} "Traffic metrics data"
+// @Failure 400 {object} map[string]interface{} "Bad request"
+// @Router /metrics/instances/traffic/his_data [post]
 func (api *MonitorAPI) GetTraffic(c *gin.Context) {
 	var request MetricsRequest
 	if err := c.BindJSON(&request); err != nil {
@@ -450,6 +459,15 @@ func (api *MonitorAPI) GetTraffic(c *gin.Context) {
 	c.JSON(http.StatusOK, allResults)
 }
 
+// @Summary Get instance CPU metrics
+// @Description Query CPU historical data for instances from Prometheus
+// @Tags Monitoring
+// @Accept json
+// @Produce json
+// @Param message body MetricsRequest true "Metrics query request"
+// @Success 200 {object} map[string]interface{} "CPU metrics data"
+// @Failure 400 {object} map[string]interface{} "Bad request"
+// @Router /metrics/instances/cpu/his_data [post]
 func (api *MonitorAPI) GetCPU(c *gin.Context) {
 	var request MetricsRequest
 	if err := c.BindJSON(&request); err != nil {
@@ -527,6 +545,15 @@ func (api *MonitorAPI) GetCPU(c *gin.Context) {
 	c.JSON(http.StatusOK, formattedResult)
 }
 
+// @Summary Get instance memory metrics
+// @Description Query memory historical data for instances from Prometheus
+// @Tags Monitoring
+// @Accept json
+// @Produce json
+// @Param message body MetricsRequest true "Metrics query request"
+// @Success 200 {object} map[string]interface{} "Memory metrics data"
+// @Failure 400 {object} map[string]interface{} "Bad request"
+// @Router /metrics/instances/memory/his_data [post]
 func (api *MonitorAPI) GetMemory(c *gin.Context) {
 	var request MetricsRequest
 	if err := c.BindJSON(&request); err != nil {
@@ -607,6 +634,15 @@ func (api *MonitorAPI) GetMemory(c *gin.Context) {
 	c.JSON(http.StatusOK, result)
 }
 
+// @Summary Get instance disk metrics
+// @Description Query disk read/write historical data for instances from Prometheus
+// @Tags Monitoring
+// @Accept json
+// @Produce json
+// @Param message body MetricsRequest true "Metrics query request"
+// @Success 200 {object} map[string]interface{} "Disk metrics data"
+// @Failure 400 {object} map[string]interface{} "Bad request"
+// @Router /metrics/instances/disk/his_data [post]
 func (api *MonitorAPI) GetDisk(c *gin.Context) {
 	var request MetricsRequest
 	if err := c.BindJSON(&request); err != nil {
@@ -811,6 +847,16 @@ func GetLastUUIDFromVolumeUUID(ctx context.Context, volumeUUID string) (string, 
 	return volume.GetOriginVolumeID(), nil
 }
 
+// @Summary Get volume metrics
+// @Description Query volume read/write historical data from WDS storage monitoring
+// @Tags Monitoring
+// @Accept json
+// @Produce json
+// @Param message body MetricsRequest true "Metrics query request"
+// @Success 200 {object} map[string]interface{} "Volume metrics data"
+// @Failure 400 {object} map[string]interface{} "Bad request"
+// @Failure 500 {object} map[string]interface{} "Internal server error"
+// @Router /metrics/instances/volume/his_data [post]
 func (api *MonitorAPI) GetVolume(c *gin.Context) {
 	// check volemonitorIP and volemonitorIPort
 	if volemonitorIP == "" || volemonitorIPort == 0 || volemonitorUser == "" || volemonitorPasswd == "" {
@@ -1018,6 +1064,15 @@ func mergeVolumeResults(readRes, writeRes *PrometheusResponse, originalVolNames 
 	return response
 }
 
+// @Summary Get instance network metrics
+// @Description Query network receive/transmit historical data for instances from Prometheus
+// @Tags Monitoring
+// @Accept json
+// @Produce json
+// @Param message body MetricsRequest true "Metrics query request"
+// @Success 200 {object} map[string]interface{} "Network metrics data"
+// @Failure 400 {object} map[string]interface{} "Bad request"
+// @Router /metrics/instances/network/his_data [post]
 func (api *MonitorAPI) GetNetwork(c *gin.Context) {
 	var request MetricsRequest
 	if err := c.BindJSON(&request); err != nil {

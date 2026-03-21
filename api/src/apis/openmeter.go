@@ -380,6 +380,20 @@ func (o *OpenMeterAPI) filterEventsByPrometheusTargets(events []OpenMeterEvent, 
 }
 
 // QueryOpenMeterMetrics queries metrics from OpenMeter with comprehensive processing
+// @Summary Query OpenMeter metrics
+// @Description Query metrics from OpenMeter for a specific instance with comprehensive data processing
+// @Tags OpenMeter
+// @Accept json
+// @Produce json
+// @Param instance_id query string true "Instance ID"
+// @Param subject query string false "Metric subject" default(vm_instance_map)
+// @Param user query string false "OpenMeter user" default(default)
+// @Param password query string false "OpenMeter password" default(default)
+// @Param database query string false "OpenMeter database" default(openmeter)
+// @Success 200 {object} map[string]interface{} "Metrics data"
+// @Failure 400 {object} map[string]interface{} "Bad request"
+// @Failure 500 {object} map[string]interface{} "Internal server error"
+// @Router /openmeter/metrics [get]
 func (o *OpenMeterAPI) QueryOpenMeterMetrics(c *gin.Context) {
 	// Extract and validate required parameters
 	req := OpenMeterQueryRequest{
@@ -1803,6 +1817,17 @@ func (o *OpenMeterAPI) compareValues(a, b interface{}) bool {
 }
 
 // QueryInstanceMetricsBySubject queries metrics for a specific subject using path parameters
+// @Summary Query instance metrics by subject
+// @Description Query OpenMeter metrics for a specific instance and subject using path parameters
+// @Tags OpenMeter
+// @Accept json
+// @Produce json
+// @Param instance_id path string true "Instance ID"
+// @Param subject path string true "Metric subject"
+// @Success 200 {object} map[string]interface{} "Metrics data"
+// @Failure 400 {object} map[string]interface{} "Bad request"
+// @Failure 500 {object} map[string]interface{} "Internal server error"
+// @Router /openmeter/metrics/{instance_id}/{subject} [get]
 func (o *OpenMeterAPI) QueryInstanceMetricsBySubject(c *gin.Context) {
 	instanceID := c.Param("instance_id")
 	subject := c.Param("subject")
@@ -1833,6 +1858,13 @@ func (o *OpenMeterAPI) QueryInstanceMetricsBySubject(c *gin.Context) {
 }
 
 // GetAvailableSubjects returns available metric subjects
+// @Summary Get available metric subjects
+// @Description Get the list of available OpenMeter metric subjects
+// @Tags OpenMeter
+// @Accept json
+// @Produce json
+// @Success 200 {object} map[string]interface{} "Available subjects"
+// @Router /openmeter/subjects [get]
 func (o *OpenMeterAPI) GetAvailableSubjects(c *gin.Context) {
 	subjects := []string{
 		"vm_instance_map",
