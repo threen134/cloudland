@@ -15,15 +15,15 @@ import (
 	"sync"
 
 	"github.com/gin-gonic/gin"
-	swaggerFiles "github.com/swaggo/files"
 	"github.com/swaggo/swag"
 )
 
 var (
-	swaggerOnce   sync.Once
-	tenantDocJSON string
-	adminDocJSON  string
-	swaggerTpl    *template.Template
+	swaggerOnce    sync.Once
+	swaggerInitErr error
+	tenantDocJSON  string
+	adminDocJSON   string
+	swaggerTpl     *template.Template
 )
 
 const swaggerUITemplate = `<!DOCTYPE html>
@@ -31,36 +31,12 @@ const swaggerUITemplate = `<!DOCTYPE html>
 <head>
     <meta charset="UTF-8">
     <title>{{.Title}}</title>
-    <link rel="stylesheet" type="text/css" href="./swagger-ui.css" >
-    <link rel="icon" type="image/png" href="./favicon-32x32.png" sizes="32x32" />
-    <link rel="icon" type="image/png" href="./favicon-16x16.png" sizes="16x16" />
-    <style>
-        html { box-sizing: border-box; overflow: -moz-scrollbars-vertical; overflow-y: scroll; }
-        *, *:before, *:after { box-sizing: inherit; }
-        body { margin:0; background: #fafafa; }
-    </style>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <style>body { margin: 0; padding: 0; }</style>
 </head>
 <body>
-<div id="swagger-ui"></div>
-<script src="./swagger-ui-bundle.js"></script>
-<script src="./swagger-ui-standalone-preset.js"></script>
-<script>
-window.onload = function() {
-    SwaggerUIBundle({
-        url: "./doc.json",
-        dom_id: '#swagger-ui',
-        deepLinking: true,
-        presets: [
-            SwaggerUIBundle.presets.apis,
-            SwaggerUIStandalonePreset
-        ],
-        plugins: [
-            SwaggerUIBundle.plugins.DownloadUrl
-        ],
-        layout: "StandaloneLayout"
-    })
-}
-</script>
+    <redoc spec-url='./doc.json'></redoc>
+    <script src="https://cdn.redoc.ly/redoc/v2.1.5/bundles/redoc.standalone.js"></script>
 </body>
 </html>`
 
@@ -71,18 +47,22 @@ type swaggerPageConfig struct {
 func initSwaggerDocs() {
 	fullDoc, err := swag.ReadDoc("v1")
 	if err != nil {
+		swaggerInitErr = err
 		logger.Errorf("Failed to read swagger doc: %v", err)
 		return
 	}
 
-	var err2 error
-	tenantDocJSON, err2 = filterSwaggerByTags(fullDoc, nil, []string{"Administration"}, "CloudLand Tenant API")
-	if err2 != nil {
-		logger.Errorf("Failed to filter tenant swagger doc: %v", err2)
+	tenantDocJSON, err = filterSwaggerByTags(fullDoc, nil, []string{"Administration"}, "CloudLand Tenant API")
+	if err != nil {
+		swaggerInitErr = err
+		logger.Errorf("Failed to filter tenant swagger doc: %v", err)
+		return
 	}
-	adminDocJSON, err2 = filterSwaggerByTags(fullDoc, []string{"Administration"}, nil, "CloudLand Admin API")
-	if err2 != nil {
-		logger.Errorf("Failed to filter admin swagger doc: %v", err2)
+	adminDocJSON, err = filterSwaggerByTags(fullDoc, []string{"Administration"}, nil, "CloudLand Admin API")
+	if err != nil {
+		swaggerInitErr = err
+		logger.Errorf("Failed to filter admin swagger doc: %v", err)
+		return
 	}
 	swaggerTpl = template.Must(template.New("swagger").Parse(swaggerUITemplate))
 }
@@ -151,6 +131,9 @@ func filterSwaggerByTags(swaggerJSON string, includeTags, excludeTags []string, 
 		doc["tags"] = filtered
 	}
 
+	// Inject x-tagGroups for Redoc nested category display
+	doc["x-tagGroups"] = buildTagGroups(activeTagSet)
+
 	result, err := json.Marshal(doc)
 	if err != nil {
 		return "", err
@@ -192,10 +175,12 @@ func shouldIncludeOperation(tags []interface{}, includeTags, excludeTags []strin
 }
 
 func swaggerHandler() gin.HandlerFunc {
-	fileServer := http.FileServer(swaggerFiles.HTTP)
-
 	return func(c *gin.Context) {
 		swaggerOnce.Do(initSwaggerDocs)
+		if swaggerInitErr != nil {
+			c.String(http.StatusInternalServerError, "swagger docs unavailable: %v", swaggerInitErr)
+			return
+		}
 
 		path := c.Param("any")
 
@@ -206,7 +191,7 @@ func swaggerHandler() gin.HandlerFunc {
 				c.Redirect(http.StatusFound, "./tenant/index.html")
 				return
 			}
-			serveSwaggerAsset(c, subPath, tenantDocJSON, "CloudLand Tenant API", fileServer)
+			serveSwaggerAsset(c, subPath, tenantDocJSON, "CloudLand Tenant API")
 
 		case strings.HasPrefix(path, "/admin"):
 			subPath := strings.TrimPrefix(path, "/admin")
@@ -214,7 +199,7 @@ func swaggerHandler() gin.HandlerFunc {
 				c.Redirect(http.StatusFound, "./admin/index.html")
 				return
 			}
-			serveSwaggerAsset(c, subPath, adminDocJSON, "CloudLand Admin API", fileServer)
+			serveSwaggerAsset(c, subPath, adminDocJSON, "CloudLand Admin API")
 
 		default:
 			// Redirect bare /swagger/api/v1/ to tenant docs
@@ -223,19 +208,72 @@ func swaggerHandler() gin.HandlerFunc {
 	}
 }
 
-func serveSwaggerAsset(c *gin.Context, path, docJSON, title string, fileServer http.Handler) {
+func serveSwaggerAsset(c *gin.Context, path, docJSON, title string) {
 	switch {
 	case path == "/index.html":
 		c.Header("Content-Type", "text/html; charset=utf-8")
-		swaggerTpl.Execute(c.Writer, swaggerPageConfig{Title: title})
+		if err := swaggerTpl.Execute(c.Writer, swaggerPageConfig{Title: title}); err != nil {
+			logger.Errorf("Failed to render swagger template: %v", err)
+		}
 
 	case path == "/doc.json":
 		c.Header("Content-Type", "application/json; charset=utf-8")
 		c.String(http.StatusOK, docJSON)
 
 	default:
-		// Serve static assets (CSS, JS, PNG) from embedded swagger files
-		c.Request.URL.Path = path
-		fileServer.ServeHTTP(c.Writer, c.Request)
+		c.Status(http.StatusNotFound)
 	}
+}
+
+type tagGroup struct {
+	Name string   `json:"name"`
+	Tags []string `json:"tags"`
+}
+
+var allTagGroups = []tagGroup{
+	{
+		Name: "计算",
+		Tags: []string{"Instance", "Image", "Flavor", "Key", "Console", "Backup"},
+	},
+	{
+		Name: "网络",
+		Tags: []string{"VPC", "Subnet", "Floating IP", "IP Group", "Security Group", "Interface", "Load Balancer"},
+	},
+	{
+		Name: "存储",
+		Tags: []string{"Volume", "Consistency Group"},
+	},
+	{
+		Name: "监控告警",
+		Tags: []string{"Alarm", "Monitoring", "Notification"},
+	},
+	{
+		Name: "弹性伸缩",
+		Tags: []string{"Auto Scaling"},
+	},
+	{
+		Name: "计量计费",
+		Tags: []string{"OpenMeter"},
+	},
+	{
+		Name: "系统管理",
+		Tags: []string{"Administration", "Zone", "Dictionary", "Address", "System Info", "Task"},
+	},
+}
+
+// buildTagGroups returns x-tagGroups filtered to only include tags present in activeTagSet.
+func buildTagGroups(activeTagSet map[string]bool) []tagGroup {
+	var groups []tagGroup
+	for _, g := range allTagGroups {
+		var activeTags []string
+		for _, t := range g.Tags {
+			if activeTagSet[t] {
+				activeTags = append(activeTags, t)
+			}
+		}
+		if len(activeTags) > 0 {
+			groups = append(groups, tagGroup{Name: g.Name, Tags: activeTags})
+		}
+	}
+	return groups
 }
