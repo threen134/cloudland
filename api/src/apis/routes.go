@@ -13,8 +13,6 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/spf13/viper"
-	swaggerFiles "github.com/swaggo/files"
-	ginSwagger "github.com/swaggo/gin-swagger"
 )
 
 var logger = log.MustGetLogger("apis")
@@ -317,6 +315,6 @@ func Register() (r *gin.Engine) {
 		authGroup.GET("/api/v1/alarm/events/:event_uuid/delivery-logs", notificationAPI.GetAlarmDeliveryLogs)
 	}
 
-	r.GET("/swagger/api/v1/*any", ginSwagger.WrapHandler(swaggerFiles.NewHandler(), ginSwagger.InstanceName("v1")))
+	r.GET("/swagger/api/v1/*any", swaggerHandler())
 	return
 }
