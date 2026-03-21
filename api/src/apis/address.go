@@ -200,7 +200,7 @@ func (v *AddressAPI) ListIpBySubnetUUID(c *gin.Context) {
 	c.JSON(http.StatusOK, addressListResp)
 }
 
-func (v *AddressAPI) getAddressResponse(ctx context.Context, addr *model.Address) (addrResp *AddressResponse, err error) {
+func (v *AddressAPI) getAddressResponse(_ context.Context, addr *model.Address) (addrResp *AddressResponse, err error) {
 	addrResp = &AddressResponse{
 		ResourceReference: &ResourceReference{
 			ID:        addr.UUID,

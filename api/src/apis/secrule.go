@@ -168,7 +168,7 @@ func (v *SecruleAPI) Create(c *gin.Context) {
 	c.JSON(http.StatusOK, secruleResp)
 }
 
-func (v *SecruleAPI) getSecruleResponse(ctx context.Context, secrule *model.SecurityRule) (secruleResp *SecruleResponse, err error) {
+func (v *SecruleAPI) getSecruleResponse(_ context.Context, secrule *model.SecurityRule) (secruleResp *SecruleResponse, err error) {
 	secruleResp = &SecruleResponse{
 		ResourceReference: &ResourceReference{
 			ID:        secrule.UUID,

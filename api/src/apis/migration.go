@@ -140,7 +140,7 @@ func (v *MigrationAPI) Create(c *gin.Context) {
 	c.JSON(http.StatusOK, migrationsResp)
 }
 
-func (v *MigrationAPI) getMigrationResponse(ctx context.Context, migration *model.Migration) (migrationResp *MigrationResponse, err error) {
+func (v *MigrationAPI) getMigrationResponse(_ context.Context, migration *model.Migration) (migrationResp *MigrationResponse, err error) {
 	migrationResp = &MigrationResponse{
 		ResourceReference: &ResourceReference{
 			ID:        migration.UUID,

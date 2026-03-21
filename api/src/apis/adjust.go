@@ -593,7 +593,7 @@ func (a *AdjustAPI) ProcessResourceAdjustmentWebhook(c *gin.Context) {
 //
 // Returns:
 //   - status: -1 (query failed), 0 (normal/not limited), 1 (limited)
-func (a *AdjustAPI) queryAdjustmentStatus(ctx context.Context, domain, ruleID, adjustType, targetDevice string) int {
+func (a *AdjustAPI) queryAdjustmentStatus(_ context.Context, domain, ruleID, adjustType, targetDevice string) int {
 	var query string
 
 	switch adjustType {
@@ -714,9 +714,10 @@ func (a *AdjustAPI) queryBandwidthConfig(domain, targetDevice string) (bool, int
 		// Parse value (Prometheus returns string)
 		if valueStr, ok := item.Value[1].(string); ok {
 			if value, err := strconv.Atoi(valueStr); err == nil {
-				if item.Metric["direction"] == "in" {
+				switch item.Metric["direction"] {
+				case "in":
 					inBw = value
-				} else if item.Metric["direction"] == "out" {
+				case "out":
 					outBw = value
 				}
 			}
@@ -1606,7 +1607,8 @@ func (a *AdjustAPI) UnlinkAdjustRule(c *gin.Context) {
 
 	// Execute corresponding restore operation based on rule type (only if VM exists)
 	if vmExists {
-		if group.Type == model.RuleTypeAdjustCPU {
+		switch group.Type {
+		case model.RuleTypeAdjustCPU:
 			// CPU type: check and restore CPU resources
 			log.Printf("[ADJUST-INFO] Checking CPU adjustment status for domain: %s", domain)
 
@@ -1626,7 +1628,7 @@ func (a *AdjustAPI) UnlinkAdjustRule(c *gin.Context) {
 			} else {
 				log.Printf("[ADJUST-INFO] VM is not currently CPU limited: domain=%s", domain)
 			}
-		} else if group.Type == model.RuleTypeAdjustInBW || group.Type == model.RuleTypeAdjustOutBW {
+		case model.RuleTypeAdjustInBW, model.RuleTypeAdjustOutBW:
 			// Bandwidth type: check and restore bandwidth resources
 			log.Printf("[ADJUST-INFO] Checking bandwidth adjustment status for domain: %s, interface: %s", domain, req.Interface)
 
@@ -1700,16 +1702,17 @@ func (a *AdjustAPI) UnlinkAdjustRule(c *gin.Context) {
 }
 
 // checkVMAdjustmentStatus Check if VM is currently being limited
-func (a *AdjustAPI) checkVMAdjustmentStatus(ctx context.Context, domain, metricType, ruleGroupUUID string) (bool, error) {
+func (a *AdjustAPI) checkVMAdjustmentStatus(_ context.Context, domain, metricType, ruleGroupUUID string) (bool, error) {
 	// Build query statement
 	query := ""
-	if metricType == "cpu" {
+	switch metricType {
+	case "cpu":
 		// Query CPU adjustment status
 		query = fmt.Sprintf("vm_cpu_adjustment_status{domain=\"%s\", rule_id=~\"adjust-cpu-.*-%s\"}", domain, ruleGroupUUID)
-	} else if metricType == "bandwidth" {
+	case "bandwidth":
 		// Query bandwidth adjustment status
 		query = fmt.Sprintf("vm_bandwidth_adjustment_status{domain=\"%s\", rule_id=~\"adjust-bw-.*-%s\"}", domain, ruleGroupUUID)
-	} else {
+	default:
 		return false, fmt.Errorf("unsupported metric type: %s", metricType)
 	}
 
@@ -1780,7 +1783,8 @@ func (a *AdjustAPI) cleanupVMMetrics(ctx context.Context, vmUUID, ruleGroupUUID 
 	control := fmt.Sprintf("inter=%d", instance.Hyper)
 
 	// Clean up corresponding metrics based on rule type
-	if ruleType == model.RuleTypeAdjustCPU {
+	switch ruleType {
+	case model.RuleTypeAdjustCPU:
 		// Clean up CPU adjustment metrics
 		command := fmt.Sprintf("/opt/cloudland/scripts/kvm/update_vm_cpu_adjustment_status.sh --domain '%s' --rule-id '%s' --status 0",
 			domain, fmt.Sprintf("%s-%s", domain, ruleGroupUUID))
@@ -1789,7 +1793,7 @@ func (a *AdjustAPI) cleanupVMMetrics(ctx context.Context, vmUUID, ruleGroupUUID 
 		if err != nil {
 			return fmt.Errorf("failed to cleanup CPU metrics: %v", err)
 		}
-	} else if ruleType == model.RuleTypeAdjustInBW || ruleType == model.RuleTypeAdjustOutBW {
+	case model.RuleTypeAdjustInBW, model.RuleTypeAdjustOutBW:
 		// Clean up bandwidth adjustment metrics
 		// Need to determine bandwidth type (in/out)
 		bwType := "in"
@@ -2468,9 +2472,10 @@ func (a *AdjustAPI) PatchBWAdjustRule(c *gin.Context) {
 		log.Printf("[PATCH-INFO] Direction changed from %s to %s, cleaning up old file", oldDirection, newDirection)
 
 		var oldFilename string
-		if oldDirection == "in" {
+		switch oldDirection {
+		case "in":
 			oldFilename = fmt.Sprintf("bw-in-adjust-%s-%s.yml", group.Owner, group.UUID)
-		} else if oldDirection == "out" {
+		case "out":
 			oldFilename = fmt.Sprintf("bw-out-adjust-%s-%s.yml", group.Owner, group.UUID)
 		}
 
@@ -2539,19 +2544,20 @@ func (a *AdjustAPI) PatchBWAdjustRule(c *gin.Context) {
 
 	// Determine template and filename based on direction
 	var templateFile, outputFile string
-	if detail.Direction == "in" {
+	switch detail.Direction {
+	case "in":
 		ruleData["rule_id"] = fmt.Sprintf("adjust-bw-in-%s-%s", group.Owner, group.UUID)
 		ruleData["in_high_threshold_pct"] = detail.HighThresholdPct
 		ruleData["in_limit_value_pct"] = detail.LimitValuePct
 		templateFile = InBWAdjustRuleTemplate
 		outputFile = fmt.Sprintf("bw-in-adjust-%s-%s.yml", group.Owner, group.UUID)
-	} else if detail.Direction == "out" {
+	case "out":
 		ruleData["rule_id"] = fmt.Sprintf("adjust-bw-out-%s-%s", group.Owner, group.UUID)
 		ruleData["out_high_threshold_pct"] = detail.HighThresholdPct
 		ruleData["out_limit_value_pct"] = detail.LimitValuePct
 		templateFile = OutBWAdjustRuleTemplate
 		outputFile = fmt.Sprintf("bw-out-adjust-%s-%s.yml", group.Owner, group.UUID)
-	} else {
+	default:
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid direction: must be 'in' or 'out'"})
 		return
 	}

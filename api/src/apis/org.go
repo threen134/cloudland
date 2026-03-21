@@ -68,7 +68,7 @@ func (v *OrgAPI) Get(c *gin.Context) {
 	c.JSON(http.StatusOK, orgResp)
 }
 
-func (v *OrgAPI) getOrgResponse(ctx context.Context, org *model.Organization) (orgResp *OrgResponse, err error) {
+func (v *OrgAPI) getOrgResponse(_ context.Context, org *model.Organization) (orgResp *OrgResponse, err error) {
 	orgResp = &OrgResponse{
 		ResourceReference: &ResourceReference{
 			ID:   org.UUID,

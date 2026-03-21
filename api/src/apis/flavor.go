@@ -126,7 +126,7 @@ func (v *FlavorAPI) Create(c *gin.Context) {
 	c.JSON(http.StatusOK, flavorResp)
 }
 
-func (v *FlavorAPI) getFlavorResponse(ctx context.Context, flavor *model.Flavor) (flavorResp *FlavorResponse, err error) {
+func (v *FlavorAPI) getFlavorResponse(_ context.Context, flavor *model.Flavor) (flavorResp *FlavorResponse, err error) {
 	flavorResp = &FlavorResponse{
 		Name:   flavor.Name,
 		Cpu:    flavor.Cpu,

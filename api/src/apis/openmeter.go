@@ -863,7 +863,7 @@ func (o *OpenMeterAPI) processMetricsBySubject(subject, instanceID string, event
 		result.Summary = summary
 
 	case "domain_north_south_inbound_bytes_total", "domain_north_south_outbound_bytes_total":
-		processedData, summary, err := o.processTrafficMetrics(events, subject, queryStart, queryEnd)
+		processedData, summary, err := o.processTrafficMetrics(events, queryStart, queryEnd)
 		if err != nil {
 			return nil, err
 		}
@@ -1069,7 +1069,7 @@ func (o *OpenMeterAPI) processVMStateMetrics(events []OpenMeterEvent, queryStart
 
 // processTrafficMetrics processes network traffic metrics
 // Traffic metrics now always use aggregated results from buildTrafficAggregationQuery
-func (o *OpenMeterAPI) processTrafficMetrics(events []OpenMeterEvent, subject string, queryStart, queryEnd int64) (*TrafficCalculationResult, map[string]interface{}, error) {
+func (o *OpenMeterAPI) processTrafficMetrics(events []OpenMeterEvent, queryStart, queryEnd int64) (*TrafficCalculationResult, map[string]interface{}, error) {
 	if len(events) == 0 {
 		return &TrafficCalculationResult{}, map[string]interface{}{
 			"total_bytes": 0,

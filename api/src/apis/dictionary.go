@@ -144,7 +144,6 @@ func (v *DictionaryAPI) List(c *gin.Context) {
 	dictionaryListResp.Dictionaries = dictionaryList
 	logger.Debugf("DictionaryAPI.List: success, resp=%+v", dictionaryListResp)
 	c.JSON(http.StatusOK, dictionaryListResp)
-	return
 }
 
 // @Summary create a dictionary

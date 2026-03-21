@@ -240,7 +240,7 @@ func (v *ZoneAPI) Patch(c *gin.Context) {
 	c.JSON(http.StatusOK, zoneResp)
 }
 
-func (v *ZoneAPI) getZoneResponse(ctx context.Context, zone *model.Zone) (zoneResp *ZoneResponse, err error) {
+func (v *ZoneAPI) getZoneResponse(_ context.Context, zone *model.Zone) (zoneResp *ZoneResponse, err error) {
 	zoneResp = &ZoneResponse{
 		ResourceReference: &ResourceReference{
 			ID:        strconv.FormatInt(zone.ID, 10),

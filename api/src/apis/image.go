@@ -247,7 +247,7 @@ func (v *ImageAPI) Create(c *gin.Context) {
 	c.JSON(http.StatusOK, imageResp)
 }
 
-func (v *ImageAPI) getImageResponse(ctx context.Context, image *model.Image) (imageResp *ImageResponse, err error) {
+func (v *ImageAPI) getImageResponse(_ context.Context, image *model.Image) (imageResp *ImageResponse, err error) {
 	imageResp = &ImageResponse{
 		ResourceReference: &ResourceReference{
 			ID:        image.UUID,
@@ -391,7 +391,7 @@ func (v *ImageAPI) ListStorages(c *gin.Context) {
 	c.JSON(http.StatusOK, storageListResp)
 }
 
-func (v *ImageAPI) getImageStorageResponse(ctx context.Context, storage *model.ImageStorage) (storageResp *ImageStorageResponse, err error) {
+func (v *ImageAPI) getImageStorageResponse(_ context.Context, storage *model.ImageStorage) (storageResp *ImageStorageResponse, err error) {
 	storageResp = &ImageStorageResponse{
 		ResourceReference: &ResourceReference{
 			ID:        storage.UUID,

@@ -223,17 +223,10 @@ func (a *AlarmAPI) LinkRuleToVMWithType(ruleCategory string) gin.HandlerFunc {
 		alarmType := ruleCategory + "-" + groupType
 		// Normalize adjust rule types to match creation-time rule_id format used by Prometheus rules
 		if ruleCategory == "adjust" {
-			if groupType == model.RuleTypeAdjustInBW || groupType == model.RuleTypeAdjustOutBW {
+			switch groupType {
+			case model.RuleTypeAdjustInBW, model.RuleTypeAdjustOutBW:
 				alarmType = "adjust-bw"
-			} else if groupType == model.RuleTypeAdjustCPU {
-				alarmType = "adjust-cpu"
-			}
-		}
-		// Normalize adjust rule types to match creation-time rule_id format used by Prometheus rules
-		if ruleCategory == "adjust" {
-			if groupType == model.RuleTypeAdjustInBW || groupType == model.RuleTypeAdjustOutBW {
-				alarmType = "adjust-bw"
-			} else if groupType == model.RuleTypeAdjustCPU {
+			case model.RuleTypeAdjustCPU:
 				alarmType = "adjust-cpu"
 			}
 		}
@@ -490,9 +483,10 @@ func (a *AlarmAPI) UnlinkRuleFromVMWithType(ruleCategory string) gin.HandlerFunc
 		alarmType := ruleCategory + "-" + groupType
 		// Normalize adjust rule types to match creation-time rule_id format used by Prometheus rules
 		if ruleCategory == "adjust" {
-			if groupType == model.RuleTypeAdjustInBW || groupType == model.RuleTypeAdjustOutBW {
+			switch groupType {
+			case model.RuleTypeAdjustInBW, model.RuleTypeAdjustOutBW:
 				alarmType = "adjust-bw"
-			} else if groupType == model.RuleTypeAdjustCPU {
+			case model.RuleTypeAdjustCPU:
 				alarmType = "adjust-cpu"
 			}
 		}
@@ -1605,18 +1599,22 @@ func (a *AlarmAPI) CreateBWRule(c *gin.Context) {
 
 		var templateFile, outputFile string
 
-		if rule.Direction == "in" {
+		switch rule.Direction {
+		case "in":
 			data["rule_id"] = fmt.Sprintf("alarm-bw-in-%s-%s", req.Owner, group.UUID)
 			data["in_threshold"] = rule.Limit
 			data["in_duration"] = rule.Duration
 			templateFile = "VM-in-bw-rule.yml.j2"
 			outputFile = fmt.Sprintf("bw-in-%s-%s.yml", req.Owner, group.UUID)
-		} else if rule.Direction == "out" {
+		case "out":
 			data["rule_id"] = fmt.Sprintf("alarm-bw-out-%s-%s", req.Owner, group.UUID)
 			data["out_threshold"] = rule.Limit
 			data["out_duration"] = rule.Duration
 			templateFile = "VM-out-bw-rule.yml.j2"
 			outputFile = fmt.Sprintf("bw-out-%s-%s.yml", req.Owner, group.UUID)
+		default:
+			c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("Invalid direction: %s, must be 'in' or 'out'", rule.Direction)})
+			return
 		}
 
 		if err := services.ProcessTemplate(templateFile, outputFile, data); err != nil {

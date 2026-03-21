@@ -1133,8 +1133,17 @@ func validateTimeParams(start, end int64, step string) error {
 }
 
 func validateAndParseTimeParams(startStr, endStr, step string) (int64, int64, error) {
-	start, _ := strconv.ParseInt(startStr, 10, 64)
-	end, _ := strconv.ParseInt(endStr, 10, 64)
+	start, err := strconv.ParseInt(startStr, 10, 64)
+	if err != nil {
+		return 0, 0, fmt.Errorf("invalid start time: %s", err)
+	}
+	end, err := strconv.ParseInt(endStr, 10, 64)
+	if err != nil {
+		return 0, 0, fmt.Errorf("invalid end time: %s", err)
+	}
+	if err := validateTimeParams(start, end, step); err != nil {
+		return 0, 0, err
+	}
 	return start, end, nil
 }
 
