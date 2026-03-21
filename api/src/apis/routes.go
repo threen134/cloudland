@@ -62,11 +62,9 @@ func Register() (r *gin.Engine) {
 	r.Use(log.RequestID())
 	r.Use(log.Logger())
 
-	r.POST("/api/v1/login", userAPI.LoginPost)
 	r.GET("/api/v1/version", versionAPI.Get)
 	r.POST("/api/v1/alerts/process", notificationAPI.ProcessAlertWebhookV2)
 	r.POST("/api/v1/alerts/resource-adjustment", adjustAPI.ProcessResourceAdjustmentWebhook)
-	r.GET("/api/v1/validate", userAPI.ValidateEmail)
 	authGroup := r.Group("").Use(Authorize())
 	{
 		//authGroup.GET("/api/v1/version", versionAPI.Get)
@@ -86,29 +84,6 @@ func Register() (r *gin.Engine) {
 		authGroup.GET("/api/v1/migrations", migrationAPI.List)
 		authGroup.POST("/api/v1/migrations", migrationAPI.Create)
 		authGroup.GET("/api/v1/migrations/:id", migrationAPI.Get)
-
-		authGroup.GET("/api/v1/users", userAPI.List)
-		authGroup.POST("/api/v1/users", userAPI.Create)
-		authGroup.GET("/api/v1/users/:id", userAPI.Get)
-		authGroup.DELETE("/api/v1/users/:id", userAPI.Delete)
-		authGroup.PATCH("/api/v1/users/:id", userAPI.Patch)
-		authGroup.PATCH("/api/v1/self/password", userAPI.ChangePassword)
-		authGroup.PATCH("/api/v1/self/profile", userAPI.UpdateProfile)
-		authGroup.PATCH("/api/v1/users/:id/profile", userAPI.UpdateProfile)
-		authGroup.POST("/api/v1/users/:id/demote", userAPI.DemoteSystemAdmin)
-		authGroup.POST("/api/v1/switch-org", userAPI.SwitchOrg)
-
-		authGroup.GET("/api/v1/orgs", orgAPI.List)
-		authGroup.POST("/api/v1/orgs", orgAPI.Create)
-		authGroup.GET("/api/v1/orgs/:id", orgAPI.Get)
-		authGroup.DELETE("/api/v1/orgs/:id", orgAPI.Delete)
-		authGroup.PATCH("/api/v1/orgs/:id", orgAPI.Patch)
-		authGroup.POST("/api/v1/orgs/:id/transfer-owner", orgAPI.TransferOwner)
-
-		// Member management
-		authGroup.POST("/api/v1/orgs/:id/members", orgAPI.AddMember)
-		authGroup.DELETE("/api/v1/orgs/:id/members/:user_id", orgAPI.RemoveMember)
-		authGroup.PATCH("/api/v1/orgs/:id/members/:user_id", orgAPI.UpdateMemberRole)
 
 		authGroup.GET("/api/v1/vpcs", vpcAPI.List)
 		authGroup.POST("/api/v1/vpcs", vpcAPI.Create)
