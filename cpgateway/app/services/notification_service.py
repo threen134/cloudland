@@ -158,6 +158,8 @@ class NotificationSyncService:
                     params={"status": "firing", "count_only": "true"},
                     headers={
                         "X-Forwarded-Secret": region.internal_secret,
+                        "X-User-ID": "0",
+                        "X-System-Role": "1",
                     },
                 )
                 if response.status_code == 200:

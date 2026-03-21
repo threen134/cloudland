@@ -7,7 +7,7 @@ from app.services.proxy_service import proxy_service
 
 router = APIRouter(tags=['alarm'])
 
-@router.post("/api/v1/metrics/alarm/sync-mappings", summary="Synchronize all VM rule mappings")
+@router.post("/metrics/alarm/sync-mappings", summary="Synchronize all VM rule mappings")
 async def post_api_v1_metrics_alarm_sync_mappings(
     request: Request,
     db: AsyncSession = Depends(get_db),
@@ -19,7 +19,7 @@ async def post_api_v1_metrics_alarm_sync_mappings(
     return await proxy_service.forward_to_region(
         request=request,
         db=db,
-        proxy_path="/api/v1/metrics/alarm/sync-mappings"
+        proxy_path="/metrics/alarm/sync-mappings"
     )
 
 
@@ -35,7 +35,7 @@ async def list_alarm_events(
     return await proxy_service.forward_to_region(
         request=request,
         db=db,
-        proxy_path="/api/v1/alarm/events",
+        proxy_path="/alarm/events",
     )
 
 
@@ -50,7 +50,7 @@ async def get_alarm_delivery_logs(
     return await proxy_service.forward_to_region(
         request=request,
         db=db,
-        proxy_path=f"/api/v1/alarm/events/{event_uuid}/delivery-logs",
+        proxy_path=f"/alarm/events/{event_uuid}/delivery-logs",
     )
 
 
@@ -66,7 +66,7 @@ async def bind_rule_channels(
     return await proxy_service.forward_to_region(
         request=request,
         db=db,
-        proxy_path="/api/v1/alarm/rule-channels",
+        proxy_path="/alarm/rule-channels",
     )
 
 
@@ -81,7 +81,7 @@ async def get_rule_channels(
     return await proxy_service.forward_to_region(
         request=request,
         db=db,
-        proxy_path=f"/api/v1/alarm/rule-channels/{rule_group_uuid}",
+        proxy_path=f"/alarm/rule-channels/{rule_group_uuid}",
     )
 
 
@@ -94,7 +94,7 @@ async def create_cpu_rule(
     current_user: User = Depends(get_current_active_user),
 ):
     return await proxy_service.forward_to_region(
-        request=request, db=db, proxy_path="/api/v1/metrics/alarm/cpu/rules",
+        request=request, db=db, proxy_path="/metrics/alarm/cpu/rules",
     )
 
 
@@ -105,7 +105,7 @@ async def get_cpu_rules(
     current_user: User = Depends(get_current_active_user),
 ):
     return await proxy_service.forward_to_region(
-        request=request, db=db, proxy_path="/api/v1/metrics/alarm/cpu/rules",
+        request=request, db=db, proxy_path="/metrics/alarm/cpu/rules",
     )
 
 
@@ -117,7 +117,7 @@ async def delete_cpu_rule(
     current_user: User = Depends(get_current_active_user),
 ):
     return await proxy_service.forward_to_region(
-        request=request, db=db, proxy_path=f"/api/v1/metrics/alarm/cpu/rule/{uuid}",
+        request=request, db=db, proxy_path=f"/metrics/alarm/cpu/rule/{uuid}",
     )
 
 
@@ -128,7 +128,7 @@ async def create_memory_rule(
     current_user: User = Depends(get_current_active_user),
 ):
     return await proxy_service.forward_to_region(
-        request=request, db=db, proxy_path="/api/v1/metrics/alarm/memory/rules",
+        request=request, db=db, proxy_path="/metrics/alarm/memory/rules",
     )
 
 
@@ -139,7 +139,7 @@ async def get_memory_rules(
     current_user: User = Depends(get_current_active_user),
 ):
     return await proxy_service.forward_to_region(
-        request=request, db=db, proxy_path="/api/v1/metrics/alarm/memory/rules",
+        request=request, db=db, proxy_path="/metrics/alarm/memory/rules",
     )
 
 
@@ -151,7 +151,7 @@ async def delete_memory_rule(
     current_user: User = Depends(get_current_active_user),
 ):
     return await proxy_service.forward_to_region(
-        request=request, db=db, proxy_path=f"/api/v1/metrics/alarm/memory/rule/{uuid}",
+        request=request, db=db, proxy_path=f"/metrics/alarm/memory/rule/{uuid}",
     )
 
 
@@ -162,7 +162,7 @@ async def create_bw_rule(
     current_user: User = Depends(get_current_active_user),
 ):
     return await proxy_service.forward_to_region(
-        request=request, db=db, proxy_path="/api/v1/metrics/alarm/bw/rules",
+        request=request, db=db, proxy_path="/metrics/alarm/bw/rules",
     )
 
 
@@ -173,7 +173,7 @@ async def get_bw_rules(
     current_user: User = Depends(get_current_active_user),
 ):
     return await proxy_service.forward_to_region(
-        request=request, db=db, proxy_path="/api/v1/metrics/alarm/bw/rules",
+        request=request, db=db, proxy_path="/metrics/alarm/bw/rules",
     )
 
 
@@ -185,7 +185,7 @@ async def delete_bw_rule(
     current_user: User = Depends(get_current_active_user),
 ):
     return await proxy_service.forward_to_region(
-        request=request, db=db, proxy_path=f"/api/v1/metrics/alarm/bw/rule/{uuid}",
+        request=request, db=db, proxy_path=f"/metrics/alarm/bw/rule/{uuid}",
     )
 
 
@@ -196,7 +196,7 @@ async def get_active_rules(
     current_user: User = Depends(get_current_active_user),
 ):
     return await proxy_service.forward_to_region(
-        request=request, db=db, proxy_path="/api/v1/metrics/alarm/active-rules",
+        request=request, db=db, proxy_path="/metrics/alarm/active-rules",
     )
 
 
@@ -207,7 +207,7 @@ async def link_alarm_rule(
     current_user: User = Depends(get_current_active_user),
 ):
     return await proxy_service.forward_to_region(
-        request=request, db=db, proxy_path="/api/v1/alarm/link",
+        request=request, db=db, proxy_path="/alarm/link",
     )
 
 
@@ -218,5 +218,5 @@ async def unlink_alarm_rule(
     current_user: User = Depends(get_current_active_user),
 ):
     return await proxy_service.forward_to_region(
-        request=request, db=db, proxy_path="/api/v1/alarm/unlink",
+        request=request, db=db, proxy_path="/alarm/unlink",
     )
