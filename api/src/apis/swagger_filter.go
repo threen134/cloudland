@@ -75,8 +75,15 @@ func initSwaggerDocs() {
 		return
 	}
 
-	tenantDocJSON, _ = filterSwaggerByTags(fullDoc, nil, []string{"Administration"}, "CloudLand Tenant API")
-	adminDocJSON, _ = filterSwaggerByTags(fullDoc, []string{"Administration"}, nil, "CloudLand Admin API")
+	var err2 error
+	tenantDocJSON, err2 = filterSwaggerByTags(fullDoc, nil, []string{"Administration"}, "CloudLand Tenant API")
+	if err2 != nil {
+		logger.Errorf("Failed to filter tenant swagger doc: %v", err2)
+	}
+	adminDocJSON, err2 = filterSwaggerByTags(fullDoc, []string{"Administration"}, nil, "CloudLand Admin API")
+	if err2 != nil {
+		logger.Errorf("Failed to filter admin swagger doc: %v", err2)
+	}
 	swaggerTpl = template.Must(template.New("swagger").Parse(swaggerUITemplate))
 }
 
@@ -211,7 +218,7 @@ func swaggerHandler() gin.HandlerFunc {
 
 		default:
 			// Redirect bare /swagger/api/v1/ to tenant docs
-			c.Redirect(http.StatusFound, "./v1/tenant/index.html")
+			c.Redirect(http.StatusFound, "./tenant/index.html")
 		}
 	}
 }
