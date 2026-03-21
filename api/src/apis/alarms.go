@@ -1469,14 +1469,6 @@ func filterActiveAlerts(alerts []interface{}) []interface{} {
 	return filtered
 }
 
-// @Summary Process alert webhook (legacy)
-// @Description Legacy AlertManager webhook handler for IP blocking alerts
-// @Tags Alarm
-// @Accept json
-// @Produce json
-// @Success 200 {object} map[string]interface{} "Processed"
-// @Failure 400 {object} map[string]interface{} "Invalid payload"
-// @Router /alerts/process-legacy [post]
 func (a *AlarmAPI) ProcessAlertWebhook(c *gin.Context) {
 	var notification struct {
 		Status string `json:"status"`

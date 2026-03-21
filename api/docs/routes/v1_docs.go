@@ -388,37 +388,6 @@ const docTemplatev1 = `{
                 }
             }
         },
-        "/alerts/process-legacy": {
-            "post": {
-                "description": "Legacy AlertManager webhook handler for IP blocking alerts",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Alarm"
-                ],
-                "summary": "Process alert webhook (legacy)",
-                "responses": {
-                    "200": {
-                        "description": "Processed",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "400": {
-                        "description": "Invalid payload",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    }
-                }
-            }
-        },
         "/alerts/resource-adjustment": {
             "post": {
                 "description": "Handle Prometheus AlertManager webhook for resource auto-adjustment (CPU/bandwidth scaling)",
@@ -5937,13 +5906,6 @@ const docTemplatev1 = `{
                         "default": "default",
                         "description": "OpenMeter user",
                         "name": "user",
-                        "in": "query"
-                    },
-                    {
-                        "type": "string",
-                        "default": "default",
-                        "description": "OpenMeter password",
-                        "name": "password",
                         "in": "query"
                     },
                     {

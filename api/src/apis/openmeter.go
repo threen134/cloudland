@@ -388,7 +388,6 @@ func (o *OpenMeterAPI) filterEventsByPrometheusTargets(events []OpenMeterEvent, 
 // @Param instance_id query string true "Instance ID"
 // @Param subject query string false "Metric subject" default(vm_instance_map)
 // @Param user query string false "OpenMeter user" default(default)
-// @Param password query string false "OpenMeter password" default(default)
 // @Param database query string false "OpenMeter database" default(openmeter)
 // @Success 200 {object} map[string]interface{} "Metrics data"
 // @Failure 400 {object} map[string]interface{} "Bad request"

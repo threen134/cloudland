@@ -2523,27 +2523,6 @@ paths:
       summary: Process AlertManager webhook
       tags:
       - Notification
-  /alerts/process-legacy:
-    post:
-      consumes:
-      - application/json
-      description: Legacy AlertManager webhook handler for IP blocking alerts
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: Processed
-          schema:
-            additionalProperties: true
-            type: object
-        "400":
-          description: Invalid payload
-          schema:
-            additionalProperties: true
-            type: object
-      summary: Process alert webhook (legacy)
-      tags:
-      - Alarm
   /alerts/resource-adjustment:
     post:
       consumes:
@@ -6244,11 +6223,6 @@ paths:
         description: OpenMeter user
         in: query
         name: user
-        type: string
-      - default: default
-        description: OpenMeter password
-        in: query
-        name: password
         type: string
       - default: openmeter
         description: OpenMeter database
