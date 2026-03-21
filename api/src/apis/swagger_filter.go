@@ -58,7 +58,7 @@ func initSwaggerDocs() {
 		logger.Errorf("Failed to filter tenant swagger doc: %v", err)
 		return
 	}
-	adminDocJSON, err = filterSwaggerByTags(fullDoc, []string{"Administration"}, nil, "CloudLand Admin API")
+	adminDocJSON, err = filterSwaggerByTags(fullDoc, nil, nil, "CloudLand Admin API")
 	if err != nil {
 		swaggerInitErr = err
 		logger.Errorf("Failed to filter admin swagger doc: %v", err)
