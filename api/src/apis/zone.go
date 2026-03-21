@@ -134,7 +134,7 @@ func (v *ZoneAPI) List(c *gin.Context) {
 
 // @Summary create a zone
 // @Description create a zone
-// @tags Zone
+// @tags Administration
 // @Accept  json
 // @Produce json
 // @Param   message	body   ZonePayload  true   "Zone create payload"
@@ -171,7 +171,7 @@ func (v *ZoneAPI) Create(c *gin.Context) {
 
 // @Summary delete a zone
 // @Description delete a zone
-// @tags Zone
+// @tags Administration
 // @Accept  json
 // @Produce json
 // @Success 200
@@ -199,7 +199,7 @@ func (v *ZoneAPI) Delete(c *gin.Context) {
 
 // @Summary patch a zone
 // @Description patch a zone
-// @tags Zone
+// @tags Administration
 // @Accept  json
 // @Produce json
 // @Param   message	body   ZonePatchPayload  true   "Zone patch payload"

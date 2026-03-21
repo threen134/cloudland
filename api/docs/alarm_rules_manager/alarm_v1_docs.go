@@ -15,6 +15,139 @@ const docTemplatealarm_v1 = `{
     "host": "{{.Host}}",
     "basePath": "{{.BasePath}}",
     "paths": {
+        "/addresses/remark": {
+            "patch": {
+                "description": "batch patch addresses with unified remark",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Administration"
+                ],
+                "summary": "batch patch addresses",
+                "parameters": [
+                    {
+                        "description": "Address patch payload",
+                        "name": "message",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/apis.AddressRemarkPayload"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/apis.AddressResponse"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            }
+        },
+        "/addresses/update-lock": {
+            "patch": {
+                "description": "batch lock or unlock addresses",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Administration"
+                ],
+                "summary": "batch update address lock",
+                "parameters": [
+                    {
+                        "description": "batch lock or unlock payload",
+                        "name": "message",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/apis.AddressUpdateLockPayload"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/apis.AddressResponse"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            }
+        },
+        "/addresses/{uuid}": {
+            "get": {
+                "description": "list all IP addresses for a subnet identified by UUID",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Network"
+                ],
+                "summary": "list IP addresses by subnet UUID",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apis.AddressListResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            }
+        },
         "/api/v1/metrics/alarm/sync-mappings": {
             "post": {
                 "description": "Perform a full synchronization of all VM rule mappings to ensure matched_vms.json is consistent with the database",
@@ -324,6 +457,610 @@ const docTemplatealarm_v1 = `{
                 }
             }
         },
+        "/consistency_groups": {
+            "get": {
+                "description": "List consistency groups with pagination",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Storage"
+                ],
+                "summary": "List consistency groups",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Offset",
+                        "name": "offset",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Limit",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Order",
+                        "name": "order",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Name filter",
+                        "name": "name",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apis.ConsistencyGroupListResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "description": "Create a new consistency group with volumes",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Storage"
+                ],
+                "summary": "Create a consistency group",
+                "parameters": [
+                    {
+                        "description": "Consistency Group Payload",
+                        "name": "payload",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/apis.ConsistencyGroupPayload"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apis.ConsistencyGroupResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            }
+        },
+        "/consistency_groups/{id}": {
+            "get": {
+                "description": "Get a consistency group by UUID",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Storage"
+                ],
+                "summary": "Get a consistency group",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Consistency Group UUID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apis.ConsistencyGroupResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "description": "Delete a consistency group",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Storage"
+                ],
+                "summary": "Delete a consistency group",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Consistency Group UUID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            },
+            "patch": {
+                "description": "Update a consistency group's name and description",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Storage"
+                ],
+                "summary": "Update a consistency group",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Consistency Group UUID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Update Payload",
+                        "name": "payload",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/apis.ConsistencyGroupPatchPayload"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apis.ConsistencyGroupResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            }
+        },
+        "/consistency_groups/{id}/snapshots": {
+            "get": {
+                "description": "List snapshots for a consistency group with pagination",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Storage"
+                ],
+                "summary": "List consistency group snapshots",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Consistency Group UUID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Offset",
+                        "name": "offset",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Limit",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Order",
+                        "name": "order",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apis.ConsistencyGroupSnapshotListResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "description": "Create a snapshot for a consistency group",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Storage"
+                ],
+                "summary": "Create a consistency group snapshot",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Consistency Group UUID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Snapshot Payload",
+                        "name": "payload",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/apis.ConsistencyGroupSnapshotPayload"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apis.ConsistencyGroupSnapshotResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            }
+        },
+        "/consistency_groups/{id}/snapshots/{snap_id}": {
+            "get": {
+                "description": "Get a consistency group snapshot by UUID",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Storage"
+                ],
+                "summary": "Get a consistency group snapshot",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Consistency Group UUID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Snapshot UUID",
+                        "name": "snap_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apis.ConsistencyGroupSnapshotResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "description": "Delete a snapshot from a consistency group",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Storage"
+                ],
+                "summary": "Delete a consistency group snapshot",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Consistency Group UUID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Snapshot UUID",
+                        "name": "snap_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            }
+        },
+        "/consistency_groups/{id}/snapshots/{snap_id}/restore": {
+            "post": {
+                "description": "Restore all volumes in a consistency group from a snapshot",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Storage"
+                ],
+                "summary": "Restore a consistency group from snapshot",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Consistency Group UUID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Snapshot UUID",
+                        "name": "snap_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apis.ConsistencyGroupRestoreResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            }
+        },
+        "/consistency_groups/{id}/volumes": {
+            "post": {
+                "description": "Add volumes to an existing consistency group",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Storage"
+                ],
+                "summary": "Add volumes to a consistency group",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Consistency Group UUID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Volumes Payload",
+                        "name": "payload",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/apis.ConsistencyGroupVolumesPayload"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apis.ConsistencyGroupResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            }
+        },
+        "/consistency_groups/{id}/volumes/{volume_id}": {
+            "delete": {
+                "description": "Remove a volume from an existing consistency group",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Storage"
+                ],
+                "summary": "Remove a volume from a consistency group",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Consistency Group UUID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Volume UUID",
+                        "name": "volume_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apis.ConsistencyGroupResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            }
+        },
         "/dictionaries": {
             "get": {
                 "description": "list dictionaries",
@@ -361,7 +1098,7 @@ const docTemplatealarm_v1 = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Compute"
+                    "Administration"
                 ],
                 "summary": "create a dictionary",
                 "parameters": [
@@ -452,7 +1189,7 @@ const docTemplatealarm_v1 = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Compute"
+                    "Administration"
                 ],
                 "summary": "delete a dictionary",
                 "parameters": [
@@ -491,7 +1228,7 @@ const docTemplatealarm_v1 = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Compute"
+                    "Administration"
                 ],
                 "summary": "patch a dictionary",
                 "parameters": [
@@ -564,7 +1301,7 @@ const docTemplatealarm_v1 = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Compute"
+                    "Administration"
                 ],
                 "summary": "create a flavor",
                 "parameters": [
@@ -643,7 +1380,7 @@ const docTemplatealarm_v1 = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Compute"
+                    "Administration"
                 ],
                 "summary": "delete a flavor",
                 "responses": {
@@ -992,11 +1729,9 @@ const docTemplatealarm_v1 = `{
                         }
                     }
                 }
-            }
-        },
-        "/hypers/{hostid}": {
-            "get": {
-                "description": "get a hypervisor",
+            },
+            "post": {
+                "description": "deploy a new compute node via SSH",
                 "consumes": [
                     "application/json"
                 ],
@@ -1006,14 +1741,16 @@ const docTemplatealarm_v1 = `{
                 "tags": [
                     "Administration"
                 ],
-                "summary": "get a hypervisor",
+                "summary": "deploy a new hypervisor",
                 "parameters": [
                     {
-                        "type": "string",
-                        "description": "Hypervisor host ID",
-                        "name": "hostid",
-                        "in": "path",
-                        "required": true
+                        "description": "Deploy payload",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/apis.HyperDeployPayload"
+                        }
                     }
                 ],
                 "responses": {
@@ -1035,8 +1772,75 @@ const docTemplatealarm_v1 = `{
                             "$ref": "#/definitions/common.APIError"
                         }
                     },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            }
+        },
+        "/hypers/{uuid}": {
+            "get": {
+                "description": "get a hypervisor",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Administration"
+                ],
+                "summary": "get a hypervisor",
+                "responses": {}
+            },
+            "delete": {
+                "description": "remove a hypervisor record from database",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Administration"
+                ],
+                "summary": "delete a hypervisor",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Hypervisor UUID",
+                        "name": "uuid",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No content"
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
                     "404": {
                         "description": "Not found",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
                         "schema": {
                             "$ref": "#/definitions/common.APIError"
                         }
@@ -1055,21 +1859,36 @@ const docTemplatealarm_v1 = `{
                     "Administration"
                 ],
                 "summary": "update a hypervisor",
+                "responses": {}
+            }
+        },
+        "/hypers/{uuid}/maintain": {
+            "post": {
+                "description": "start maintenance for a hypervisor, optionally migrating all instances",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Administration"
+                ],
+                "summary": "maintain a hypervisor",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "Hypervisor host ID",
-                        "name": "hostid",
+                        "description": "Hypervisor UUID",
+                        "name": "uuid",
                         "in": "path",
                         "required": true
                     },
                     {
-                        "description": "Hypervisor update payload",
+                        "description": "Maintenance options",
                         "name": "body",
                         "in": "body",
-                        "required": true,
                         "schema": {
-                            "$ref": "#/definitions/apis.HyperPatchPayload"
+                            "$ref": "#/definitions/apis.HyperMaintainPayload"
                         }
                     }
                 ],
@@ -1077,7 +1896,10 @@ const docTemplatealarm_v1 = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/apis.HyperResponse"
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
                         }
                     },
                     "400": {
@@ -1088,12 +1910,6 @@ const docTemplatealarm_v1 = `{
                     },
                     "401": {
                         "description": "Not authorized",
-                        "schema": {
-                            "$ref": "#/definitions/common.APIError"
-                        }
-                    },
-                    "404": {
-                        "description": "Not found",
                         "schema": {
                             "$ref": "#/definitions/common.APIError"
                         }
@@ -3084,46 +3900,6 @@ const docTemplatealarm_v1 = `{
                 }
             }
         },
-        "/login": {
-            "post": {
-                "description": "get token by user name",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Authorization"
-                ],
-                "summary": "login to get the access token",
-                "parameters": [
-                    {
-                        "description": "User Credential",
-                        "name": "message",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/apis.UserPayload"
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/apis.UserResponse"
-                        }
-                    },
-                    "401": {
-                        "description": "Invalied user name or password",
-                        "schema": {
-                            "$ref": "#/definitions/common.APIError"
-                        }
-                    }
-                }
-            }
-        },
         "/migrations": {
             "get": {
                 "description": "list migrations",
@@ -3134,7 +3910,7 @@ const docTemplatealarm_v1 = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Compute"
+                    "Administration"
                 ],
                 "summary": "list migrations",
                 "responses": {
@@ -3161,7 +3937,7 @@ const docTemplatealarm_v1 = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Compute"
+                    "Administration"
                 ],
                 "summary": "create a migration",
                 "parameters": [
@@ -3210,7 +3986,7 @@ const docTemplatealarm_v1 = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Compute"
+                    "Administration"
                 ],
                 "summary": "get a migration",
                 "responses": {
@@ -3218,188 +3994,6 @@ const docTemplatealarm_v1 = `{
                         "description": "OK",
                         "schema": {
                             "$ref": "#/definitions/apis.MigrationResponse"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad request",
-                        "schema": {
-                            "$ref": "#/definitions/common.APIError"
-                        }
-                    },
-                    "401": {
-                        "description": "Not authorized",
-                        "schema": {
-                            "$ref": "#/definitions/common.APIError"
-                        }
-                    }
-                }
-            }
-        },
-        "/orgs": {
-            "get": {
-                "description": "list orgs",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Authorization"
-                ],
-                "summary": "list orgs",
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/apis.OrgListResponse"
-                        }
-                    },
-                    "401": {
-                        "description": "Not authorized",
-                        "schema": {
-                            "$ref": "#/definitions/common.APIError"
-                        }
-                    }
-                }
-            },
-            "post": {
-                "description": "create a org",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Authorization"
-                ],
-                "summary": "create a org",
-                "parameters": [
-                    {
-                        "description": "Org create payload",
-                        "name": "message",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/apis.OrgPayload"
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/apis.OrgResponse"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad request",
-                        "schema": {
-                            "$ref": "#/definitions/common.APIError"
-                        }
-                    },
-                    "401": {
-                        "description": "Not authorized",
-                        "schema": {
-                            "$ref": "#/definitions/common.APIError"
-                        }
-                    }
-                }
-            }
-        },
-        "/orgs/{id}": {
-            "get": {
-                "description": "get a org",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Authorization"
-                ],
-                "summary": "get a org",
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/apis.OrgResponse"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad request",
-                        "schema": {
-                            "$ref": "#/definitions/common.APIError"
-                        }
-                    },
-                    "401": {
-                        "description": "Not authorized",
-                        "schema": {
-                            "$ref": "#/definitions/common.APIError"
-                        }
-                    }
-                }
-            },
-            "delete": {
-                "description": "delete a org",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Authorization"
-                ],
-                "summary": "delete a org",
-                "responses": {
-                    "204": {
-                        "description": "No Content"
-                    },
-                    "400": {
-                        "description": "Bad request",
-                        "schema": {
-                            "$ref": "#/definitions/common.APIError"
-                        }
-                    },
-                    "401": {
-                        "description": "Not authorized",
-                        "schema": {
-                            "$ref": "#/definitions/common.APIError"
-                        }
-                    }
-                }
-            },
-            "patch": {
-                "description": "patch a org",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Authorization"
-                ],
-                "summary": "patch a org",
-                "parameters": [
-                    {
-                        "description": "Org patch payload",
-                        "name": "message",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/apis.OrgPatchPayload"
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/apis.OrgResponse"
                         }
                     },
                     "400": {
@@ -3919,98 +4513,6 @@ const docTemplatealarm_v1 = `{
                 }
             }
         },
-        "/subnets/{id}/addresses/{address_id}": {
-            "patch": {
-                "description": "patch an address",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Network"
-                ],
-                "summary": "patch an address",
-                "parameters": [
-                    {
-                        "description": "Address patch payload",
-                        "name": "message",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/apis.AddressPatchPayload"
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/apis.AddressResponse"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad request",
-                        "schema": {
-                            "$ref": "#/definitions/common.APIError"
-                        }
-                    },
-                    "401": {
-                        "description": "Not authorized",
-                        "schema": {
-                            "$ref": "#/definitions/common.APIError"
-                        }
-                    }
-                }
-            }
-        },
-        "/subnets/{id}/addresses/{address_id}/update-lock": {
-            "patch": {
-                "description": "lock or unlock an address",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Network"
-                ],
-                "summary": "update address lock",
-                "parameters": [
-                    {
-                        "description": "Address lock or unlock payload",
-                        "name": "message",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/apis.AddressUpdateLockPayload"
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/apis.AddressResponse"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad request",
-                        "schema": {
-                            "$ref": "#/definitions/common.APIError"
-                        }
-                    },
-                    "401": {
-                        "description": "Not authorized",
-                        "schema": {
-                            "$ref": "#/definitions/common.APIError"
-                        }
-                    }
-                }
-            }
-        },
         "/tasks": {
             "get": {
                 "description": "list tasks",
@@ -4096,188 +4598,6 @@ const docTemplatealarm_v1 = `{
                         "description": "OK",
                         "schema": {
                             "$ref": "#/definitions/apis.CLTaskResponse"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad request",
-                        "schema": {
-                            "$ref": "#/definitions/common.APIError"
-                        }
-                    },
-                    "401": {
-                        "description": "Not authorized",
-                        "schema": {
-                            "$ref": "#/definitions/common.APIError"
-                        }
-                    }
-                }
-            }
-        },
-        "/users": {
-            "get": {
-                "description": "list users",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Authorization"
-                ],
-                "summary": "list users",
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/apis.UserListResponse"
-                        }
-                    },
-                    "401": {
-                        "description": "Not authorized",
-                        "schema": {
-                            "$ref": "#/definitions/common.APIError"
-                        }
-                    }
-                }
-            },
-            "post": {
-                "description": "create a user",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Authorization"
-                ],
-                "summary": "create a user",
-                "parameters": [
-                    {
-                        "description": "User create payload",
-                        "name": "message",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/apis.UserPayload"
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/apis.UserResponse"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad request",
-                        "schema": {
-                            "$ref": "#/definitions/common.APIError"
-                        }
-                    },
-                    "401": {
-                        "description": "Not authorized",
-                        "schema": {
-                            "$ref": "#/definitions/common.APIError"
-                        }
-                    }
-                }
-            }
-        },
-        "/users/{id}": {
-            "get": {
-                "description": "get a user",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Authorization"
-                ],
-                "summary": "get a user",
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/apis.UserResponse"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad request",
-                        "schema": {
-                            "$ref": "#/definitions/common.APIError"
-                        }
-                    },
-                    "401": {
-                        "description": "Not authorized",
-                        "schema": {
-                            "$ref": "#/definitions/common.APIError"
-                        }
-                    }
-                }
-            },
-            "delete": {
-                "description": "delete a user",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Authorization"
-                ],
-                "summary": "delete a user",
-                "responses": {
-                    "204": {
-                        "description": "No Content"
-                    },
-                    "400": {
-                        "description": "Bad request",
-                        "schema": {
-                            "$ref": "#/definitions/common.APIError"
-                        }
-                    },
-                    "401": {
-                        "description": "Not authorized",
-                        "schema": {
-                            "$ref": "#/definitions/common.APIError"
-                        }
-                    }
-                }
-            },
-            "patch": {
-                "description": "patch a user",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Authorization"
-                ],
-                "summary": "patch a user",
-                "parameters": [
-                    {
-                        "description": "User patch payload",
-                        "name": "message",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/apis.UserPatchPayload"
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/apis.UserResponse"
                         }
                     },
                     "400": {
@@ -4829,7 +5149,7 @@ const docTemplatealarm_v1 = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Zone"
+                    "Administration"
                 ],
                 "summary": "create a zone",
                 "parameters": [
@@ -4908,7 +5228,7 @@ const docTemplatealarm_v1 = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Zone"
+                    "Administration"
                 ],
                 "summary": "delete a zone",
                 "responses": {
@@ -4938,7 +5258,7 @@ const docTemplatealarm_v1 = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Zone"
+                    "Administration"
                 ],
                 "summary": "patch a zone",
                 "parameters": [
@@ -4987,9 +5307,39 @@ const docTemplatealarm_v1 = `{
                 }
             }
         },
-        "apis.AddressPatchPayload": {
+        "apis.AddressListResponse": {
             "type": "object",
             "properties": {
+                "addresses": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/apis.AddressResponse"
+                    }
+                },
+                "limit": {
+                    "type": "integer"
+                },
+                "offset": {
+                    "type": "integer"
+                },
+                "total": {
+                    "type": "integer"
+                }
+            }
+        },
+        "apis.AddressRemarkPayload": {
+            "type": "object",
+            "required": [
+                "addresses"
+            ],
+            "properties": {
+                "addresses": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                        "$ref": "#/definitions/common.BaseID"
+                    }
+                },
                 "remark": {
                     "type": "string",
                     "maxLength": 512
@@ -5039,7 +5389,17 @@ const docTemplatealarm_v1 = `{
         },
         "apis.AddressUpdateLockPayload": {
             "type": "object",
+            "required": [
+                "addresses"
+            ],
             "properties": {
+                "addresses": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                        "$ref": "#/definitions/common.BaseID"
+                    }
+                },
                 "lock": {
                     "type": "boolean"
                 }
@@ -5190,6 +5550,194 @@ const docTemplatealarm_v1 = `{
                 },
                 "updated_at": {
                     "type": "string"
+                }
+            }
+        },
+        "apis.ConsistencyGroupListResponse": {
+            "type": "object",
+            "properties": {
+                "consistency_groups": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/apis.ConsistencyGroupResponse"
+                    }
+                },
+                "limit": {
+                    "type": "integer"
+                },
+                "offset": {
+                    "type": "integer"
+                },
+                "total": {
+                    "type": "integer"
+                }
+            }
+        },
+        "apis.ConsistencyGroupPatchPayload": {
+            "type": "object",
+            "properties": {
+                "description": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                }
+            }
+        },
+        "apis.ConsistencyGroupPayload": {
+            "type": "object",
+            "required": [
+                "name",
+                "volumes"
+            ],
+            "properties": {
+                "description": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "volumes": {
+                    "description": "Volume UUIDs",
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
+        "apis.ConsistencyGroupResponse": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "type": "string"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "owner": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "volumes": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/common.BaseReference"
+                    }
+                },
+                "wds_cg_id": {
+                    "type": "string"
+                }
+            }
+        },
+        "apis.ConsistencyGroupRestoreResponse": {
+            "type": "object",
+            "properties": {
+                "status": {
+                    "type": "string"
+                },
+                "task_id": {
+                    "type": "string"
+                },
+                "task_uuid": {
+                    "type": "string"
+                }
+            }
+        },
+        "apis.ConsistencyGroupSnapshotListResponse": {
+            "type": "object",
+            "properties": {
+                "limit": {
+                    "type": "integer"
+                },
+                "offset": {
+                    "type": "integer"
+                },
+                "snapshots": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/apis.ConsistencyGroupSnapshotResponse"
+                    }
+                },
+                "total": {
+                    "type": "integer"
+                }
+            }
+        },
+        "apis.ConsistencyGroupSnapshotPayload": {
+            "type": "object",
+            "required": [
+                "name"
+            ],
+            "properties": {
+                "description": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                }
+            }
+        },
+        "apis.ConsistencyGroupSnapshotResponse": {
+            "type": "object",
+            "properties": {
+                "cg_id": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "owner": {
+                    "type": "string"
+                },
+                "size": {
+                    "type": "integer"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "wds_snap_id": {
+                    "type": "string"
+                }
+            }
+        },
+        "apis.ConsistencyGroupVolumesPayload": {
+            "type": "object",
+            "required": [
+                "volumes"
+            ],
+            "properties": {
+                "volumes": {
+                    "description": "Volume UUIDs",
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                        "type": "string"
+                    }
                 }
             }
         },
@@ -5620,6 +6168,39 @@ const docTemplatealarm_v1 = `{
                 }
             }
         },
+        "apis.HyperDeployPayload": {
+            "type": "object",
+            "required": [
+                "hostname",
+                "ip"
+            ],
+            "properties": {
+                "dns_server": {
+                    "type": "string"
+                },
+                "domain": {
+                    "type": "string"
+                },
+                "hostname": {
+                    "type": "string"
+                },
+                "ip": {
+                    "type": "string"
+                },
+                "network_device": {
+                    "type": "string"
+                },
+                "virt_type": {
+                    "type": "string"
+                },
+                "vlan_device": {
+                    "type": "string"
+                },
+                "zone_name": {
+                    "type": "string"
+                }
+            }
+        },
         "apis.HyperListResponse": {
             "type": "object",
             "properties": {
@@ -5640,32 +6221,14 @@ const docTemplatealarm_v1 = `{
                 }
             }
         },
-        "apis.HyperPatchPayload": {
+        "apis.HyperMaintainPayload": {
             "type": "object",
             "properties": {
-                "cpu_over_rate": {
-                    "type": "number",
-                    "minimum": 1
+                "migrate": {
+                    "type": "boolean"
                 },
-                "disk_over_rate": {
-                    "type": "number",
-                    "minimum": 1
-                },
-                "mem_over_rate": {
-                    "type": "number",
-                    "minimum": 1
-                },
-                "remark": {
-                    "type": "string"
-                },
-                "status": {
-                    "type": "integer",
-                    "maximum": 1,
-                    "minimum": 0
-                },
-                "zone_id": {
-                    "type": "integer",
-                    "minimum": 1
+                "target_hyper": {
+                    "type": "integer"
                 }
             }
         },
@@ -5684,6 +6247,9 @@ const docTemplatealarm_v1 = `{
                 "cpu_total": {
                     "type": "integer"
                 },
+                "deploy_command": {
+                    "type": "string"
+                },
                 "disk": {
                     "type": "integer"
                 },
@@ -5701,6 +6267,9 @@ const docTemplatealarm_v1 = `{
                 },
                 "hostname": {
                     "type": "string"
+                },
+                "id": {
+                    "type": "integer"
                 },
                 "mem_over_rate": {
                     "type": "number"
@@ -5724,6 +6293,9 @@ const docTemplatealarm_v1 = `{
                     "type": "integer"
                 },
                 "status_name": {
+                    "type": "string"
+                },
+                "uuid": {
                     "type": "string"
                 },
                 "virt_type": {
@@ -6101,6 +6673,12 @@ const docTemplatealarm_v1 = `{
                     "type": "string"
                 },
                 "userdata_type": {
+                    "type": "string"
+                },
+                "vendordata": {
+                    "type": "string"
+                },
+                "vendordatatype": {
                     "type": "string"
                 },
                 "vpc": {
@@ -6831,29 +7409,6 @@ const docTemplatealarm_v1 = `{
                 }
             }
         },
-        "apis.MemberInfo": {
-            "type": "object",
-            "properties": {
-                "created_at": {
-                    "type": "string"
-                },
-                "id": {
-                    "type": "string"
-                },
-                "name": {
-                    "type": "string"
-                },
-                "owner": {
-                    "type": "string"
-                },
-                "role": {
-                    "type": "string"
-                },
-                "updated_at": {
-                    "type": "string"
-                }
-            }
-        },
         "apis.MigrationListResponse": {
             "type": "object",
             "properties": {
@@ -6940,58 +7495,6 @@ const docTemplatealarm_v1 = `{
                     "type": "integer"
                 },
                 "type": {
-                    "type": "string"
-                },
-                "updated_at": {
-                    "type": "string"
-                }
-            }
-        },
-        "apis.OrgListResponse": {
-            "type": "object",
-            "properties": {
-                "limit": {
-                    "type": "integer"
-                },
-                "offset": {
-                    "type": "integer"
-                },
-                "orgs": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/apis.OrgResponse"
-                    }
-                },
-                "total": {
-                    "type": "integer"
-                }
-            }
-        },
-        "apis.OrgPatchPayload": {
-            "type": "object"
-        },
-        "apis.OrgPayload": {
-            "type": "object"
-        },
-        "apis.OrgResponse": {
-            "type": "object",
-            "properties": {
-                "created_at": {
-                    "type": "string"
-                },
-                "id": {
-                    "type": "string"
-                },
-                "members": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/apis.MemberInfo"
-                    }
-                },
-                "name": {
-                    "type": "string"
-                },
-                "owner": {
                     "type": "string"
                 },
                 "updated_at": {
@@ -7296,6 +7799,11 @@ const docTemplatealarm_v1 = `{
                     "maxLength": 64,
                     "minLength": 2
                 },
+                "priority": {
+                    "type": "integer",
+                    "maximum": 100000,
+                    "minimum": 0
+                },
                 "type": {
                     "enum": [
                         "public",
@@ -7343,6 +7851,11 @@ const docTemplatealarm_v1 = `{
                 "network_cidr": {
                     "type": "string"
                 },
+                "priority": {
+                    "type": "integer",
+                    "maximum": 100000,
+                    "minimum": 0
+                },
                 "start_ip": {
                     "type": "string"
                 },
@@ -7362,6 +7875,12 @@ const docTemplatealarm_v1 = `{
         "apis.SubnetResponse": {
             "type": "object",
             "properties": {
+                "allocated_count": {
+                    "type": "integer"
+                },
+                "available_count": {
+                    "type": "integer"
+                },
                 "created_at": {
                     "type": "string"
                 },
@@ -7395,8 +7914,17 @@ const docTemplatealarm_v1 = `{
                 "owner": {
                     "type": "string"
                 },
+                "priority": {
+                    "type": "integer"
+                },
+                "reserved_count": {
+                    "type": "integer"
+                },
                 "start": {
                     "type": "string"
+                },
+                "total_count": {
+                    "type": "integer"
                 },
                 "type": {
                     "$ref": "#/definitions/common.SubnetType"
@@ -7486,79 +8014,6 @@ const docTemplatealarm_v1 = `{
                 },
                 "summary": {
                     "type": "string"
-                }
-            }
-        },
-        "apis.UserListResponse": {
-            "type": "object",
-            "properties": {
-                "limit": {
-                    "type": "integer"
-                },
-                "offset": {
-                    "type": "integer"
-                },
-                "total": {
-                    "type": "integer"
-                },
-                "users": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/apis.UserResponse"
-                    }
-                }
-            }
-        },
-        "apis.UserPatchPayload": {
-            "type": "object",
-            "required": [
-                "password"
-            ],
-            "properties": {
-                "password": {
-                    "type": "string",
-                    "minLength": 6
-                }
-            }
-        },
-        "apis.UserPayload": {
-            "type": "object",
-            "required": [
-                "password",
-                "username"
-            ],
-            "properties": {
-                "id": {
-                    "type": "string"
-                },
-                "org": {
-                    "$ref": "#/definitions/common.BaseReference"
-                },
-                "password": {
-                    "type": "string",
-                    "maxLength": 32,
-                    "minLength": 8
-                },
-                "username": {
-                    "type": "string",
-                    "minLength": 2
-                }
-            }
-        },
-        "apis.UserResponse": {
-            "type": "object",
-            "properties": {
-                "org": {
-                    "$ref": "#/definitions/common.ResourceReference"
-                },
-                "role": {
-                    "type": "string"
-                },
-                "token": {
-                    "type": "string"
-                },
-                "user": {
-                    "$ref": "#/definitions/common.ResourceReference"
                 }
             }
         },

@@ -7,6 +7,19 @@ definitions:
       subnet:
         $ref: '#/definitions/common.ResourceReference'
     type: object
+  apis.AddressListResponse:
+    properties:
+      addresses:
+        items:
+          $ref: '#/definitions/apis.AddressResponse'
+        type: array
+      limit:
+        type: integer
+      offset:
+        type: integer
+      total:
+        type: integer
+    type: object
   apis.AddressRemarkPayload:
     properties:
       addresses:
@@ -576,6 +589,28 @@ definitions:
       vlan:
         type: integer
     type: object
+  apis.HyperDeployPayload:
+    properties:
+      dns_server:
+        type: string
+      domain:
+        type: string
+      hostname:
+        type: string
+      ip:
+        type: string
+      network_device:
+        type: string
+      virt_type:
+        type: string
+      vlan_device:
+        type: string
+      zone_name:
+        type: string
+    required:
+    - hostname
+    - ip
+    type: object
   apis.HyperListResponse:
     properties:
       hypers:
@@ -589,25 +624,11 @@ definitions:
       total:
         type: integer
     type: object
-  apis.HyperPatchPayload:
+  apis.HyperMaintainPayload:
     properties:
-      cpu_over_rate:
-        minimum: 1
-        type: number
-      disk_over_rate:
-        minimum: 1
-        type: number
-      mem_over_rate:
-        minimum: 1
-        type: number
-      remark:
-        type: string
-      status:
-        maximum: 1
-        minimum: 0
-        type: integer
-      zone_id:
-        minimum: 1
+      migrate:
+        type: boolean
+      target_hyper:
         type: integer
     type: object
   apis.HyperResponse:
@@ -620,6 +641,8 @@ definitions:
         type: number
       cpu_total:
         type: integer
+      deploy_command:
+        type: string
       disk:
         type: integer
       disk_over_rate:
@@ -632,6 +655,8 @@ definitions:
         type: integer
       hostname:
         type: string
+      id:
+        type: integer
       mem_over_rate:
         type: number
       memory:
@@ -647,6 +672,8 @@ definitions:
       status:
         type: integer
       status_name:
+        type: string
+      uuid:
         type: string
       virt_type:
         type: string
@@ -1418,21 +1445,6 @@ definitions:
       vpc:
         $ref: '#/definitions/common.ResourceReference'
     type: object
-  apis.MemberInfo:
-    properties:
-      created_at:
-        type: string
-      id:
-        type: string
-      name:
-        type: string
-      owner:
-        type: string
-      role:
-        type: string
-      updated_at:
-        type: string
-    type: object
   apis.MigrationListResponse:
     properties:
       limit:
@@ -1492,40 +1504,6 @@ definitions:
       target_hyper:
         type: integer
       type:
-        type: string
-      updated_at:
-        type: string
-    type: object
-  apis.OrgListResponse:
-    properties:
-      limit:
-        type: integer
-      offset:
-        type: integer
-      orgs:
-        items:
-          $ref: '#/definitions/apis.OrgResponse'
-        type: array
-      total:
-        type: integer
-    type: object
-  apis.OrgPatchPayload:
-    type: object
-  apis.OrgPayload:
-    type: object
-  apis.OrgResponse:
-    properties:
-      created_at:
-        type: string
-      id:
-        type: string
-      members:
-        items:
-          $ref: '#/definitions/apis.MemberInfo'
-        type: array
-      name:
-        type: string
-      owner:
         type: string
       updated_at:
         type: string
@@ -1782,6 +1760,10 @@ definitions:
     type: object
   apis.SubnetResponse:
     properties:
+      allocated_count:
+        type: integer
+      available_count:
+        type: integer
       created_at:
         type: string
       dns:
@@ -1806,8 +1788,12 @@ definitions:
         type: string
       priority:
         type: integer
+      reserved_count:
+        type: integer
       start:
         type: string
+      total_count:
+        type: integer
       type:
         $ref: '#/definitions/common.SubnetType'
       updated_at:
@@ -1867,55 +1853,6 @@ definitions:
         type: string
       summary:
         type: string
-    type: object
-  apis.UserListResponse:
-    properties:
-      limit:
-        type: integer
-      offset:
-        type: integer
-      total:
-        type: integer
-      users:
-        items:
-          $ref: '#/definitions/apis.UserResponse'
-        type: array
-    type: object
-  apis.UserPatchPayload:
-    properties:
-      password:
-        minLength: 6
-        type: string
-    required:
-    - password
-    type: object
-  apis.UserPayload:
-    properties:
-      id:
-        type: string
-      org:
-        $ref: '#/definitions/common.BaseReference'
-      password:
-        maxLength: 32
-        minLength: 8
-        type: string
-      username:
-        minLength: 2
-        type: string
-    required:
-    - password
-    - username
-    type: object
-  apis.UserResponse:
-    properties:
-      org:
-        $ref: '#/definitions/common.ResourceReference'
-      role:
-        type: string
-      token:
-        type: string
-      user:
-        $ref: '#/definitions/common.ResourceReference'
     type: object
   apis.VPCListResponse:
     properties:
@@ -2292,6 +2229,29 @@ info:
   title: CloudLand API
   version: "1.0"
 paths:
+  /addresses/{uuid}:
+    get:
+      consumes:
+      - application/json
+      description: list all IP addresses for a subnet identified by UUID
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.AddressListResponse'
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: list IP addresses by subnet UUID
+      tags:
+      - Network
   /addresses/remark:
     patch:
       consumes:
@@ -2323,7 +2283,7 @@ paths:
             $ref: '#/definitions/common.APIError'
       summary: batch patch addresses
       tags:
-      - Network
+      - Administration
   /addresses/update-lock:
     patch:
       consumes:
@@ -2355,7 +2315,7 @@ paths:
             $ref: '#/definitions/common.APIError'
       summary: batch update address lock
       tags:
-      - Network
+      - Administration
   /api/v1/metrics/alarm/sync-mappings:
     post:
       consumes:
@@ -2969,7 +2929,7 @@ paths:
             $ref: '#/definitions/common.APIError'
       summary: create a dictionary
       tags:
-      - Compute
+      - Administration
   /dictionaries/{id}:
     delete:
       consumes:
@@ -2996,7 +2956,7 @@ paths:
             $ref: '#/definitions/common.APIError'
       summary: delete a dictionary
       tags:
-      - Compute
+      - Administration
     get:
       consumes:
       - application/json
@@ -3053,7 +3013,7 @@ paths:
             $ref: '#/definitions/common.APIError'
       summary: patch a dictionary
       tags:
-      - Compute
+      - Administration
   /flavors:
     get:
       consumes:
@@ -3101,7 +3061,7 @@ paths:
             $ref: '#/definitions/common.APIError'
       summary: create a flavor
       tags:
-      - Compute
+      - Administration
   /flavors/{name}:
     delete:
       consumes:
@@ -3122,7 +3082,7 @@ paths:
             $ref: '#/definitions/common.APIError'
       summary: delete a flavor
       tags:
-      - Compute
+      - Administration
     get:
       consumes:
       - application/json
@@ -3361,17 +3321,17 @@ paths:
       summary: list hypervisors
       tags:
       - Administration
-  /hypers/{hostid}:
-    get:
+    post:
       consumes:
       - application/json
-      description: get a hypervisor
+      description: deploy a new compute node via SSH
       parameters:
-      - description: Hypervisor host ID
-        in: path
-        name: hostid
+      - description: Deploy payload
+        in: body
+        name: body
         required: true
-        type: string
+        schema:
+          $ref: '#/definitions/apis.HyperDeployPayload'
       produces:
       - application/json
       responses:
@@ -3387,36 +3347,29 @@ paths:
           description: Not authorized
           schema:
             $ref: '#/definitions/common.APIError'
-        "404":
-          description: Not found
+        "500":
+          description: Internal server error
           schema:
             $ref: '#/definitions/common.APIError'
-      summary: get a hypervisor
+      summary: deploy a new hypervisor
       tags:
       - Administration
-    patch:
+  /hypers/{uuid}:
+    delete:
       consumes:
       - application/json
-      description: update hypervisor status, zone, over-commit rates, and remark
+      description: remove a hypervisor record from database
       parameters:
-      - description: Hypervisor host ID
+      - description: Hypervisor UUID
         in: path
-        name: hostid
+        name: uuid
         required: true
         type: string
-      - description: Hypervisor update payload
-        in: body
-        name: body
-        required: true
-        schema:
-          $ref: '#/definitions/apis.HyperPatchPayload'
       produces:
       - application/json
       responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/apis.HyperResponse'
+        "204":
+          description: No content
         "400":
           description: Bad request
           schema:
@@ -3433,7 +3386,67 @@ paths:
           description: Internal server error
           schema:
             $ref: '#/definitions/common.APIError'
+      summary: delete a hypervisor
+      tags:
+      - Administration
+    get:
+      consumes:
+      - application/json
+      description: get a hypervisor
+      produces:
+      - application/json
+      responses: {}
+      summary: get a hypervisor
+      tags:
+      - Administration
+    patch:
+      consumes:
+      - application/json
+      description: update hypervisor status, zone, over-commit rates, and remark
+      produces:
+      - application/json
+      responses: {}
       summary: update a hypervisor
+      tags:
+      - Administration
+  /hypers/{uuid}/maintain:
+    post:
+      consumes:
+      - application/json
+      description: start maintenance for a hypervisor, optionally migrating all instances
+      parameters:
+      - description: Hypervisor UUID
+        in: path
+        name: uuid
+        required: true
+        type: string
+      - description: Maintenance options
+        in: body
+        name: body
+        schema:
+          $ref: '#/definitions/apis.HyperMaintainPayload'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "500":
+          description: Internal server error
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: maintain a hypervisor
       tags:
       - Administration
   /images:
@@ -4739,32 +4752,6 @@ paths:
       summary: patch a backend
       tags:
       - Network
-  /login:
-    post:
-      consumes:
-      - application/json
-      description: get token by user name
-      parameters:
-      - description: User Credential
-        in: body
-        name: message
-        required: true
-        schema:
-          $ref: '#/definitions/apis.UserPayload'
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/apis.UserResponse'
-        "401":
-          description: Invalied user name or password
-          schema:
-            $ref: '#/definitions/common.APIError'
-      summary: login to get the access token
-      tags:
-      - Authorization
   /migrations:
     get:
       consumes:
@@ -4783,7 +4770,7 @@ paths:
             $ref: '#/definitions/common.APIError'
       summary: list migrations
       tags:
-      - Compute
+      - Administration
     post:
       consumes:
       - application/json
@@ -4814,7 +4801,7 @@ paths:
             $ref: '#/definitions/common.APIError'
       summary: create a migration
       tags:
-      - Compute
+      - Administration
   /migrations/{id}:
     get:
       consumes:
@@ -4837,127 +4824,7 @@ paths:
             $ref: '#/definitions/common.APIError'
       summary: get a migration
       tags:
-      - Compute
-  /orgs:
-    get:
-      consumes:
-      - application/json
-      description: list orgs
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/apis.OrgListResponse'
-        "401":
-          description: Not authorized
-          schema:
-            $ref: '#/definitions/common.APIError'
-      summary: list orgs
-      tags:
-      - Authorization
-    post:
-      consumes:
-      - application/json
-      description: create a org
-      parameters:
-      - description: Org create payload
-        in: body
-        name: message
-        required: true
-        schema:
-          $ref: '#/definitions/apis.OrgPayload'
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/apis.OrgResponse'
-        "400":
-          description: Bad request
-          schema:
-            $ref: '#/definitions/common.APIError'
-        "401":
-          description: Not authorized
-          schema:
-            $ref: '#/definitions/common.APIError'
-      summary: create a org
-      tags:
-      - Authorization
-  /orgs/{id}:
-    delete:
-      consumes:
-      - application/json
-      description: delete a org
-      produces:
-      - application/json
-      responses:
-        "204":
-          description: No Content
-        "400":
-          description: Bad request
-          schema:
-            $ref: '#/definitions/common.APIError'
-        "401":
-          description: Not authorized
-          schema:
-            $ref: '#/definitions/common.APIError'
-      summary: delete a org
-      tags:
-      - Authorization
-    get:
-      consumes:
-      - application/json
-      description: get a org
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/apis.OrgResponse'
-        "400":
-          description: Bad request
-          schema:
-            $ref: '#/definitions/common.APIError'
-        "401":
-          description: Not authorized
-          schema:
-            $ref: '#/definitions/common.APIError'
-      summary: get a org
-      tags:
-      - Authorization
-    patch:
-      consumes:
-      - application/json
-      description: patch a org
-      parameters:
-      - description: Org patch payload
-        in: body
-        name: message
-        required: true
-        schema:
-          $ref: '#/definitions/apis.OrgPatchPayload'
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/apis.OrgResponse'
-        "400":
-          description: Bad request
-          schema:
-            $ref: '#/definitions/common.APIError'
-        "401":
-          description: Not authorized
-          schema:
-            $ref: '#/definitions/common.APIError'
-      summary: patch a org
-      tags:
-      - Authorization
+      - Administration
   /security_groups:
     get:
       consumes:
@@ -5358,126 +5225,6 @@ paths:
       summary: get a task
       tags:
       - Compute
-  /users:
-    get:
-      consumes:
-      - application/json
-      description: list users
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/apis.UserListResponse'
-        "401":
-          description: Not authorized
-          schema:
-            $ref: '#/definitions/common.APIError'
-      summary: list users
-      tags:
-      - Authorization
-    post:
-      consumes:
-      - application/json
-      description: create a user
-      parameters:
-      - description: User create payload
-        in: body
-        name: message
-        required: true
-        schema:
-          $ref: '#/definitions/apis.UserPayload'
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/apis.UserResponse'
-        "400":
-          description: Bad request
-          schema:
-            $ref: '#/definitions/common.APIError'
-        "401":
-          description: Not authorized
-          schema:
-            $ref: '#/definitions/common.APIError'
-      summary: create a user
-      tags:
-      - Authorization
-  /users/{id}:
-    delete:
-      consumes:
-      - application/json
-      description: delete a user
-      produces:
-      - application/json
-      responses:
-        "204":
-          description: No Content
-        "400":
-          description: Bad request
-          schema:
-            $ref: '#/definitions/common.APIError'
-        "401":
-          description: Not authorized
-          schema:
-            $ref: '#/definitions/common.APIError'
-      summary: delete a user
-      tags:
-      - Authorization
-    get:
-      consumes:
-      - application/json
-      description: get a user
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/apis.UserResponse'
-        "400":
-          description: Bad request
-          schema:
-            $ref: '#/definitions/common.APIError'
-        "401":
-          description: Not authorized
-          schema:
-            $ref: '#/definitions/common.APIError'
-      summary: get a user
-      tags:
-      - Authorization
-    patch:
-      consumes:
-      - application/json
-      description: patch a user
-      parameters:
-      - description: User patch payload
-        in: body
-        name: message
-        required: true
-        schema:
-          $ref: '#/definitions/apis.UserPatchPayload'
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/apis.UserResponse'
-        "400":
-          description: Bad request
-          schema:
-            $ref: '#/definitions/common.APIError'
-        "401":
-          description: Not authorized
-          schema:
-            $ref: '#/definitions/common.APIError'
-      summary: patch a user
-      tags:
-      - Authorization
   /version:
     get:
       consumes:
@@ -5852,7 +5599,7 @@ paths:
             $ref: '#/definitions/common.APIError'
       summary: create a zone
       tags:
-      - Zone
+      - Administration
   /zones/{name}:
     delete:
       consumes:
@@ -5873,7 +5620,7 @@ paths:
             $ref: '#/definitions/common.APIError'
       summary: delete a zone
       tags:
-      - Zone
+      - Administration
     get:
       consumes:
       - application/json
@@ -5924,5 +5671,5 @@ paths:
             $ref: '#/definitions/common.APIError'
       summary: patch a zone
       tags:
-      - Zone
+      - Administration
 swagger: "2.0"

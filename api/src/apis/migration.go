@@ -58,7 +58,7 @@ type MigrationPayload struct {
 
 // @Summary get a migration
 // @Description get a migration
-// @tags Compute
+// @tags Administration
 // @Accept  json
 // @Produce json
 // @Success 200 {object} MigrationResponse
@@ -87,7 +87,7 @@ func (v *MigrationAPI) Get(c *gin.Context) {
 
 // @Summary create a migration
 // @Description create a migration
-// @tags Compute
+// @tags Administration
 // @Accept  json
 // @Produce json
 // @Param   message	body   MigrationPayload  true   "Migration create payload"
@@ -176,7 +176,7 @@ func (v *MigrationAPI) getMigrationResponse(_ context.Context, migration *model.
 
 // @Summary list migrations
 // @Description list migrations
-// @tags Compute
+// @tags Administration
 // @Accept  json
 // @Produce json
 // @Success 200 {object} MigrationListResponse
