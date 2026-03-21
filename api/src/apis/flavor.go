@@ -72,7 +72,7 @@ func (v *FlavorAPI) Get(c *gin.Context) {
 
 // @Summary delete a flavor
 // @Description delete a flavor
-// @tags Administration
+// @tags Administration,Flavor Admin
 // @Accept  json
 // @Produce json
 // @Success 200
@@ -97,7 +97,7 @@ func (v *FlavorAPI) Delete(c *gin.Context) {
 
 // @Summary create a flavor
 // @Description create a flavor
-// @tags Administration
+// @tags Administration,Flavor Admin
 // @Accept  json
 // @Produce json
 // @Param   message	body   FlavorPayload  true   "Flavor create payload"

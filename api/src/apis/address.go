@@ -45,7 +45,7 @@ type AddressUpdateLockPayload struct {
 
 // @Summary batch patch addresses
 // @Description batch patch addresses with unified remark
-// @tags Administration
+// @tags Administration,Address Admin
 // @Accept  json
 // @Produce json
 // @Param   message  body   AddressRemarkPayload  true   "Address patch payload"
@@ -96,7 +96,7 @@ func (v *AddressAPI) Remark(c *gin.Context) {
 
 // @Summary batch update address lock
 // @Description batch lock or unlock addresses
-// @tags Administration
+// @tags Administration,Address Admin
 // @Accept  json
 // @Produce json
 // @Param   message  body   AddressUpdateLockPayload  true   "batch lock or unlock payload"

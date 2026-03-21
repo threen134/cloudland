@@ -87,7 +87,7 @@ type HyperPatchPayload struct {
 
 // @Summary get a hypervisor
 // @Description get a hypervisor
-// @tags Administration
+// @tags Administration,Hypervisor
 // @Accept  json
 // @Produce json
 // @Router /hypers/{uuid} [get]
@@ -107,7 +107,7 @@ func (v *HyperAPI) Get(c *gin.Context) {
 
 // @Summary list hypervisors
 // @Description list hypervisors
-// @tags Administration
+// @tags Administration,Hypervisor
 // @Accept  json
 // @Produce json
 // @Param offset query int false "Offset for pagination"
@@ -165,7 +165,7 @@ func (v *HyperAPI) List(c *gin.Context) {
 
 // @Summary update a hypervisor
 // @Description update hypervisor status, zone, over-commit rates, and remark
-// @tags Administration
+// @tags Administration,Hypervisor
 // @Accept  json
 // @Produce json
 // @Router /hypers/{uuid} [patch]
@@ -226,7 +226,7 @@ func (v *HyperAPI) Patch(c *gin.Context) {
 
 // @Summary deploy a new hypervisor
 // @Description deploy a new compute node via SSH
-// @tags Administration
+// @tags Administration,Hypervisor
 // @Accept  json
 // @Produce json
 // @Param body body HyperDeployPayload true "Deploy payload"
@@ -276,7 +276,7 @@ func (v *HyperAPI) Deploy(c *gin.Context) {
 
 // @Summary maintain a hypervisor
 // @Description start maintenance for a hypervisor, optionally migrating all instances
-// @tags Administration
+// @tags Administration,Hypervisor
 // @Accept json
 // @Produce json
 // @Param uuid path string true "Hypervisor UUID"
@@ -309,7 +309,7 @@ func (v *HyperAPI) Maintain(c *gin.Context) {
 
 // @Summary delete a hypervisor
 // @Description remove a hypervisor record from database
-// @tags Administration
+// @tags Administration,Hypervisor
 // @Accept json
 // @Produce json
 // @Param uuid path string true "Hypervisor UUID"

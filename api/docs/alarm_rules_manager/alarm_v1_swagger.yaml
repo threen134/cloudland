@@ -134,6 +134,19 @@ definitions:
       updated_at:
         type: string
     type: object
+  apis.BatchGetRulesRequest:
+    properties:
+      identifiers:
+        items:
+          type: string
+        type: array
+      include_details:
+        type: boolean
+      include_linked_vms:
+        type: boolean
+    required:
+    - identifiers
+    type: object
   apis.CLTaskListResponse:
     properties:
       limit:
@@ -1445,6 +1458,35 @@ definitions:
       vpc:
         $ref: '#/definitions/common.ResourceReference'
     type: object
+  apis.MetricsRequest:
+    properties:
+      disk:
+        items:
+          type: string
+        type: array
+      end:
+        type: string
+      id:
+        items:
+          type: string
+        type: array
+      network:
+        items:
+          type: string
+        type: array
+      start:
+        type: string
+      step:
+        type: string
+      volName:
+        items:
+          type: string
+        type: array
+    required:
+    - end
+    - start
+    - step
+    type: object
   apis.MigrationListResponse:
     properties:
       limit:
@@ -2314,6 +2356,7 @@ paths:
       summary: batch patch addresses
       tags:
       - Administration
+      - Address Admin
   /addresses/update-lock:
     patch:
       consumes:
@@ -2346,6 +2389,199 @@ paths:
       summary: batch update address lock
       tags:
       - Administration
+      - Address Admin
+  /alarm/events:
+    get:
+      consumes:
+      - application/json
+      description: List alarm events filtered by the current user's organization,
+        supports pagination and status filter
+      parameters:
+      - description: Filter by status (firing, resolved)
+        in: query
+        name: status
+        type: string
+      - description: If 'true', only return firing event count
+        in: query
+        name: count_only
+        type: string
+      - default: 1
+        description: Page number
+        in: query
+        name: page
+        type: integer
+      - default: 20
+        description: Page size
+        in: query
+        name: page_size
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Alarm events list
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal server error
+          schema:
+            additionalProperties: true
+            type: object
+      summary: List alarm events
+      tags:
+      - Notification
+  /alarm/events/{event_uuid}/delivery-logs:
+    get:
+      consumes:
+      - application/json
+      description: Get notification delivery logs for a specific alarm event (validates
+        event ownership)
+      parameters:
+      - description: Alarm event UUID
+        in: path
+        name: event_uuid
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Delivery logs
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: Access denied
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: Event not found
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal server error
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Get alarm delivery logs
+      tags:
+      - Notification
+  /alarm/rule-channels:
+    post:
+      consumes:
+      - application/json
+      description: Bind one or more notification channels to an alarm rule group
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Binding successful
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad request
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: Channel not owned
+          schema:
+            additionalProperties: true
+            type: object
+        "409":
+          description: Channel not synced
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal server error
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Bind notification channels to alarm rule
+      tags:
+      - Notification
+  /alarm/rule-channels/{uuid}:
+    get:
+      consumes:
+      - application/json
+      description: Get the list of notification channels bound to a specific alarm
+        rule group
+      parameters:
+      - description: Rule group UUID
+        in: path
+        name: uuid
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Rule channel bindings
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal server error
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Get notification channels bound to alarm rule
+      tags:
+      - Notification
+  /alerts/process:
+    post:
+      consumes:
+      - application/json
+      description: Handle AlertManager callback with fingerprint-based idempotent
+        event upsert and notification dispatch
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Processed result
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Invalid alert payload
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Process AlertManager webhook
+      tags:
+      - Notification
+  /alerts/resource-adjustment:
+    post:
+      consumes:
+      - application/json
+      description: Handle Prometheus AlertManager webhook for resource auto-adjustment
+        (CPU/bandwidth scaling)
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Processed
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad request
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal server error
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Process resource adjustment webhook
+      tags:
+      - Auto Scaling
   /api/v1/metrics/alarm/sync-mappings:
     post:
       consumes:
@@ -2367,7 +2603,7 @@ paths:
             type: object
       summary: Synchronize all VM rule mappings
       tags:
-      - alarm
+      - Alarm
   /api/v1/rules:
     post:
       consumes:
@@ -3005,6 +3241,7 @@ paths:
       summary: create a dictionary
       tags:
       - Administration
+      - Dictionary Admin
   /dictionaries/{id}:
     delete:
       consumes:
@@ -3032,6 +3269,7 @@ paths:
       summary: delete a dictionary
       tags:
       - Administration
+      - Dictionary Admin
     get:
       consumes:
       - application/json
@@ -3089,6 +3327,7 @@ paths:
       summary: patch a dictionary
       tags:
       - Administration
+      - Dictionary Admin
   /flavors:
     get:
       consumes:
@@ -3137,6 +3376,7 @@ paths:
       summary: create a flavor
       tags:
       - Administration
+      - Flavor Admin
   /flavors/{name}:
     delete:
       consumes:
@@ -3158,6 +3398,7 @@ paths:
       summary: delete a flavor
       tags:
       - Administration
+      - Flavor Admin
     get:
       consumes:
       - application/json
@@ -3396,6 +3637,7 @@ paths:
       summary: list hypervisors
       tags:
       - Administration
+      - Hypervisor
     post:
       consumes:
       - application/json
@@ -3429,6 +3671,7 @@ paths:
       summary: deploy a new hypervisor
       tags:
       - Administration
+      - Hypervisor
   /hypers/{uuid}:
     delete:
       consumes:
@@ -3464,6 +3707,7 @@ paths:
       summary: delete a hypervisor
       tags:
       - Administration
+      - Hypervisor
     get:
       consumes:
       - application/json
@@ -3474,6 +3718,7 @@ paths:
       summary: get a hypervisor
       tags:
       - Administration
+      - Hypervisor
     patch:
       consumes:
       - application/json
@@ -3484,6 +3729,7 @@ paths:
       summary: update a hypervisor
       tags:
       - Administration
+      - Hypervisor
   /hypers/{uuid}/maintain:
     post:
       consumes:
@@ -3524,6 +3770,7 @@ paths:
       summary: maintain a hypervisor
       tags:
       - Administration
+      - Hypervisor
   /images:
     get:
       consumes:
@@ -4134,6 +4381,74 @@ paths:
       summary: Get instance rule links
       tags:
       - Instance
+  /internal/alarm/events:
+    get:
+      consumes:
+      - application/json
+      description: Internal endpoint for CPGateway to query alarm events without owner
+        filtering
+      parameters:
+      - description: If 'true', only return firing event count
+        in: query
+        name: count_only
+        type: string
+      - description: Filter by status
+        in: query
+        name: status
+        type: string
+      - default: 1
+        description: Page number
+        in: query
+        name: page
+        type: integer
+      - default: 20
+        description: Page size
+        in: query
+        name: page_size
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Alarm events
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal server error
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Internal list alarm events
+      tags:
+      - Notification
+  /internal/notification-channels/sync:
+    post:
+      consumes:
+      - application/json
+      description: Internal endpoint for CPGateway to push notification channel changes
+        (upsert, delete, bulk_sync)
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Sync successful
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad request
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal server error
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Sync notification channels
+      tags:
+      - Notification
   /ip_groups:
     get:
       consumes:
@@ -4827,6 +5142,982 @@ paths:
       summary: patch a backend
       tags:
       - Load Balancer
+  /metrics/adjust/bw/rule/{uuid}:
+    delete:
+      consumes:
+      - application/json
+      description: Delete a bandwidth auto-scaling rule by UUID
+      parameters:
+      - description: Rule UUID
+        in: path
+        name: uuid
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Rule deleted successfully
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad request
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: Rule not found
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal server error
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Delete bandwidth auto-adjustment rule
+      tags:
+      - Auto Scaling
+    patch:
+      consumes:
+      - application/json
+      description: Update an existing bandwidth auto-scaling rule configuration and
+        linked VMs
+      parameters:
+      - description: Rule UUID or rule_id
+        in: path
+        name: uuid
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Rule updated successfully
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad request
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: Rule not found
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal server error
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Update bandwidth auto-adjustment rule
+      tags:
+      - Auto Scaling
+  /metrics/adjust/bw/rules:
+    get:
+      consumes:
+      - application/json
+      description: List bandwidth auto-scaling rules with pagination
+      parameters:
+      - default: 1
+        description: Page number
+        in: query
+        name: page
+        type: integer
+      - default: 20
+        description: Page size
+        in: query
+        name: page_size
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Bandwidth adjustment rules
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal server error
+          schema:
+            additionalProperties: true
+            type: object
+      summary: List bandwidth auto-adjustment rules
+      tags:
+      - Auto Scaling
+    post:
+      consumes:
+      - application/json
+      description: Create a bandwidth auto-scaling rule with direction-specific threshold
+        configuration
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Rule created successfully
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad request
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal server error
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Create bandwidth auto-adjustment rule
+      tags:
+      - Auto Scaling
+  /metrics/adjust/cpu/rule/{uuid}:
+    delete:
+      consumes:
+      - application/json
+      description: Delete a CPU auto-scaling rule by UUID or rule_id
+      parameters:
+      - description: Rule UUID or rule_id
+        in: path
+        name: uuid
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Rule deleted successfully
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad request
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: Rule not found
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal server error
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Delete CPU auto-adjustment rule
+      tags:
+      - Auto Scaling
+    patch:
+      consumes:
+      - application/json
+      description: Update an existing CPU auto-scaling rule configuration and linked
+        VMs
+      parameters:
+      - description: Rule UUID or rule_id
+        in: path
+        name: uuid
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Rule updated successfully
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad request
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: Rule not found
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal server error
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Update CPU auto-adjustment rule
+      tags:
+      - Auto Scaling
+  /metrics/adjust/cpu/rules:
+    get:
+      consumes:
+      - application/json
+      description: List CPU auto-scaling rules with pagination
+      parameters:
+      - default: 1
+        description: Page number
+        in: query
+        name: page
+        type: integer
+      - default: 20
+        description: Page size
+        in: query
+        name: page_size
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: CPU adjustment rules
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal server error
+          schema:
+            additionalProperties: true
+            type: object
+      summary: List CPU auto-adjustment rules
+      tags:
+      - Auto Scaling
+    post:
+      consumes:
+      - application/json
+      description: Create a CPU auto-scaling rule with threshold and smooth window
+        configuration
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Rule created successfully
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad request
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal server error
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Create CPU auto-adjustment rule
+      tags:
+      - Auto Scaling
+  /metrics/adjust/link:
+    post:
+      consumes:
+      - application/json
+      description: Link a virtual machine to an auto-adjustment rule group
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: VM linked successfully
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad request
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: Rule not found
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal server error
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Link VM to adjustment rule
+      tags:
+      - Auto Scaling
+  /metrics/adjust/unlink:
+    delete:
+      consumes:
+      - application/json
+      description: Unlink a virtual machine from an auto-adjustment rule group
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: VM unlinked successfully
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad request
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: Rule not found
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal server error
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Unlink VM from adjustment rule
+      tags:
+      - Auto Scaling
+  /metrics/alarm/active-rules:
+    get:
+      consumes:
+      - application/json
+      description: Retrieve all active alerting rules from Prometheus rules API
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Active rules
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal server error
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Get active Prometheus rules
+      tags:
+      - Alarm
+  /metrics/alarm/bw/rule/{uuid}:
+    delete:
+      consumes:
+      - application/json
+      description: Delete a bandwidth alarm rule by UUID or rule_id, removes associated
+        Prometheus config files
+      parameters:
+      - description: Rule UUID or rule_id
+        in: path
+        name: uuid
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Rule deleted successfully
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad request
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: Rule not found
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal server error
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Delete bandwidth alarm rule
+      tags:
+      - Alarm
+  /metrics/alarm/bw/rules:
+    get:
+      consumes:
+      - application/json
+      description: List bandwidth alarm rules with pagination, optionally filter by
+        UUID or rule_id
+      parameters:
+      - default: 1
+        description: Page number
+        in: query
+        name: page
+        type: integer
+      - default: 20
+        description: Page size
+        in: query
+        name: page_size
+        type: integer
+      - description: Filter by rule ID
+        in: query
+        name: rule_id
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Bandwidth alarm rules
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal server error
+          schema:
+            additionalProperties: true
+            type: object
+      summary: List bandwidth alarm rules
+      tags:
+      - Alarm
+    post:
+      consumes:
+      - application/json
+      description: Create a new bandwidth utilization alarm rule with direction and
+        threshold configuration
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Rule created successfully
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad request
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal server error
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Create bandwidth alarm rule
+      tags:
+      - Alarm
+  /metrics/alarm/cpu/rule/{uuid}:
+    delete:
+      consumes:
+      - application/json
+      description: Delete a CPU alarm rule by UUID or rule_id, removes associated
+        Prometheus config files
+      parameters:
+      - description: Rule UUID or rule_id
+        in: path
+        name: uuid
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Rule deleted successfully
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad request
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: Rule not found
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal server error
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Delete CPU alarm rule
+      tags:
+      - Alarm
+  /metrics/alarm/cpu/rules:
+    get:
+      consumes:
+      - application/json
+      description: List CPU alarm rules with pagination, optionally filter by UUID
+        or rule_id
+      parameters:
+      - default: 1
+        description: Page number
+        in: query
+        name: page
+        type: integer
+      - default: 20
+        description: Page size
+        in: query
+        name: page_size
+        type: integer
+      - description: Filter by rule ID
+        in: query
+        name: rule_id
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: CPU alarm rules
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal server error
+          schema:
+            additionalProperties: true
+            type: object
+      summary: List CPU alarm rules
+      tags:
+      - Alarm
+    post:
+      consumes:
+      - application/json
+      description: Create a new CPU utilization alarm rule with threshold configuration
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Rule created successfully
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad request
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal server error
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Create CPU alarm rule
+      tags:
+      - Alarm
+  /metrics/alarm/memory/rule/{uuid}:
+    delete:
+      consumes:
+      - application/json
+      description: Delete a memory alarm rule by UUID or rule_id, removes associated
+        Prometheus config files
+      parameters:
+      - description: Rule UUID or rule_id
+        in: path
+        name: uuid
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Rule deleted successfully
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad request
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: Rule not found
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal server error
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Delete memory alarm rule
+      tags:
+      - Alarm
+  /metrics/alarm/memory/rules:
+    get:
+      consumes:
+      - application/json
+      description: List memory alarm rules with pagination, optionally filter by UUID
+        or rule_id
+      parameters:
+      - default: 1
+        description: Page number
+        in: query
+        name: page
+        type: integer
+      - default: 20
+        description: Page size
+        in: query
+        name: page_size
+        type: integer
+      - description: Filter by rule ID
+        in: query
+        name: rule_id
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Memory alarm rules
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal server error
+          schema:
+            additionalProperties: true
+            type: object
+      summary: List memory alarm rules
+      tags:
+      - Alarm
+    post:
+      consumes:
+      - application/json
+      description: Create a new memory utilization alarm rule with threshold configuration
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Rule created successfully
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad request
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal server error
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Create memory alarm rule
+      tags:
+      - Alarm
+  /metrics/api/v1/adjust/regenerate-bandwidth-metrics:
+    post:
+      consumes:
+      - application/json
+      description: Regenerate bandwidth configuration metrics for all active VMs or
+        a specific hyper node
+      parameters:
+      - description: Specific hyper node ID
+        in: query
+        name: hyper_id
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Regeneration result
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal server error
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Regenerate bandwidth config metrics
+      tags:
+      - Auto Scaling
+  /metrics/api/v1/current-alarms:
+    get:
+      consumes:
+      - application/json
+      description: Query currently firing alarms from Prometheus
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Current alarms
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal server error
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Get current active alarms
+      tags:
+      - Alarm
+  /metrics/api/v1/history-alarms:
+    get:
+      consumes:
+      - application/json
+      description: Query historical alarm data from Prometheus within a time range
+      parameters:
+      - description: Start timestamp (unix)
+        in: query
+        name: start
+        required: true
+        type: string
+      - description: End timestamp (unix)
+        in: query
+        name: end
+        required: true
+        type: string
+      - default: 300s
+        description: Query step interval
+        in: query
+        name: step
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Historical alarm data
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad request
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal server error
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Get historical alarms
+      tags:
+      - Alarm
+  /metrics/api/v1/rules/links:
+    get:
+      consumes:
+      - application/json
+      description: Get VM link information for alarm or adjustment rules by rule_id
+        or UUID
+      parameters:
+      - description: Rule ID or UUID
+        in: query
+        name: rule_id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Rule links
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad request
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: Rule not found
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Get rule VM links
+      tags:
+      - Auto Scaling
+  /metrics/instances/cpu/his_data:
+    post:
+      consumes:
+      - application/json
+      description: Query CPU historical data for instances from Prometheus
+      parameters:
+      - description: Metrics query request
+        in: body
+        name: message
+        required: true
+        schema:
+          $ref: '#/definitions/apis.MetricsRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: CPU metrics data
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad request
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Get instance CPU metrics
+      tags:
+      - Monitoring
+  /metrics/instances/disk/his_data:
+    post:
+      consumes:
+      - application/json
+      description: Query disk read/write historical data for instances from Prometheus
+      parameters:
+      - description: Metrics query request
+        in: body
+        name: message
+        required: true
+        schema:
+          $ref: '#/definitions/apis.MetricsRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Disk metrics data
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad request
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Get instance disk metrics
+      tags:
+      - Monitoring
+  /metrics/instances/memory/his_data:
+    post:
+      consumes:
+      - application/json
+      description: Query memory historical data for instances from Prometheus
+      parameters:
+      - description: Metrics query request
+        in: body
+        name: message
+        required: true
+        schema:
+          $ref: '#/definitions/apis.MetricsRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Memory metrics data
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad request
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Get instance memory metrics
+      tags:
+      - Monitoring
+  /metrics/instances/network/his_data:
+    post:
+      consumes:
+      - application/json
+      description: Query network receive/transmit historical data for instances from
+        Prometheus
+      parameters:
+      - description: Metrics query request
+        in: body
+        name: message
+        required: true
+        schema:
+          $ref: '#/definitions/apis.MetricsRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Network metrics data
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad request
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Get instance network metrics
+      tags:
+      - Monitoring
+  /metrics/instances/traffic/his_data:
+    post:
+      consumes:
+      - application/json
+      description: Query traffic historical data for instances from Prometheus
+      parameters:
+      - description: Metrics query request
+        in: body
+        name: message
+        required: true
+        schema:
+          $ref: '#/definitions/apis.MetricsRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Traffic metrics data
+          schema:
+            items:
+              additionalProperties: true
+              type: object
+            type: array
+        "400":
+          description: Bad request
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Get instance traffic metrics
+      tags:
+      - Monitoring
+  /metrics/instances/volume/his_data:
+    post:
+      consumes:
+      - application/json
+      description: Query volume read/write historical data from WDS storage monitoring
+      parameters:
+      - description: Metrics query request
+        in: body
+        name: message
+        required: true
+        schema:
+          $ref: '#/definitions/apis.MetricsRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Volume metrics data
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad request
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal server error
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Get volume metrics
+      tags:
+      - Monitoring
+  /metrics/rules/batch:
+    post:
+      consumes:
+      - application/json
+      description: Batch retrieve alarm and adjustment rules by identifiers (rule_id
+        or UUID)
+      parameters:
+      - description: Batch get rules request
+        in: body
+        name: message
+        required: true
+        schema:
+          $ref: '#/definitions/apis.BatchGetRulesRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Batch rules result
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad request
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Batch get rules
+      tags:
+      - Alarm
   /migrations:
     get:
       consumes:
@@ -4846,6 +6137,7 @@ paths:
       summary: list migrations
       tags:
       - Administration
+      - Migration
     post:
       consumes:
       - application/json
@@ -4877,6 +6169,7 @@ paths:
       summary: create a migration
       tags:
       - Administration
+      - Migration
   /migrations/{id}:
     get:
       consumes:
@@ -4900,6 +6193,208 @@ paths:
       summary: get a migration
       tags:
       - Administration
+      - Migration
+  /node-alarm-rules:
+    get:
+      consumes:
+      - application/json
+      description: List node-level alarm rules, optionally filtered by UUID or rule
+        type
+      parameters:
+      - description: Filter by rule UUID
+        in: query
+        name: uuid
+        type: string
+      - description: Filter by rule type
+        in: query
+        name: rule_type
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Node alarm rules
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal server error
+          schema:
+            additionalProperties: true
+            type: object
+      summary: List node alarm rules
+      tags:
+      - Alarm
+    post:
+      consumes:
+      - application/json
+      description: Create a new node-level alarm rule (e.g., node CPU, memory, disk
+        alerts)
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Rule created successfully
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad request
+          schema:
+            additionalProperties: true
+            type: object
+        "409":
+          description: Rule type already exists
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal server error
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Create node alarm rule
+      tags:
+      - Alarm
+  /node-alarm-rules/{uuid}:
+    delete:
+      consumes:
+      - application/json
+      description: Delete a node-level alarm rule by UUID
+      parameters:
+      - description: Rule UUID
+        in: path
+        name: uuid
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Rule deleted successfully
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad request
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: Rule not found
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal server error
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Delete node alarm rule
+      tags:
+      - Alarm
+  /openmeter/metrics:
+    get:
+      consumes:
+      - application/json
+      description: Query metrics from OpenMeter for a specific instance with comprehensive
+        data processing
+      parameters:
+      - description: Instance ID
+        in: query
+        name: instance_id
+        required: true
+        type: string
+      - default: vm_instance_map
+        description: Metric subject
+        in: query
+        name: subject
+        type: string
+      - default: default
+        description: OpenMeter user
+        in: query
+        name: user
+        type: string
+      - default: openmeter
+        description: OpenMeter database
+        in: query
+        name: database
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Metrics data
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad request
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal server error
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Query OpenMeter metrics
+      tags:
+      - OpenMeter
+  /openmeter/metrics/{instance_id}/{subject}:
+    get:
+      consumes:
+      - application/json
+      description: Query OpenMeter metrics for a specific instance and subject using
+        path parameters
+      parameters:
+      - description: Instance ID
+        in: path
+        name: instance_id
+        required: true
+        type: string
+      - description: Metric subject
+        in: path
+        name: subject
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Metrics data
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad request
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal server error
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Query instance metrics by subject
+      tags:
+      - OpenMeter
+  /openmeter/subjects:
+    get:
+      consumes:
+      - application/json
+      description: Get the list of available OpenMeter metric subjects
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Available subjects
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Get available metric subjects
+      tags:
+      - OpenMeter
   /security_groups:
     get:
       consumes:
@@ -5675,6 +7170,7 @@ paths:
       summary: create a zone
       tags:
       - Administration
+      - Zone Admin
   /zones/{name}:
     delete:
       consumes:
@@ -5696,6 +7192,7 @@ paths:
       summary: delete a zone
       tags:
       - Administration
+      - Zone Admin
     get:
       consumes:
       - application/json
@@ -5747,4 +7244,5 @@ paths:
       summary: patch a zone
       tags:
       - Administration
+      - Zone Admin
 swagger: "2.0"

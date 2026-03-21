@@ -58,7 +58,7 @@ func initSwaggerDocs() {
 		logger.Errorf("Failed to filter tenant swagger doc: %v", err)
 		return
 	}
-	adminDocJSON, err = filterSwaggerByTags(fullDoc, nil, nil, "CloudLand Admin API")
+	adminDocJSON, err = filterSwaggerByTags(fullDoc, []string{"Administration"}, nil, "CloudLand Admin API")
 	if err != nil {
 		swaggerInitErr = err
 		logger.Errorf("Failed to filter admin swagger doc: %v", err)
@@ -257,7 +257,31 @@ var allTagGroups = []tagGroup{
 	},
 	{
 		Name: "系统管理",
-		Tags: []string{"Administration", "Zone", "Dictionary", "Address", "System Info", "Task"},
+		Tags: []string{"Zone", "Dictionary", "Address", "System Info", "Task"},
+	},
+	{
+		Name: "宿主机管理",
+		Tags: []string{"Hypervisor"},
+	},
+	{
+		Name: "可用区管理",
+		Tags: []string{"Zone Admin"},
+	},
+	{
+		Name: "规格管理",
+		Tags: []string{"Flavor Admin"},
+	},
+	{
+		Name: "字典管理",
+		Tags: []string{"Dictionary Admin"},
+	},
+	{
+		Name: "地址管理",
+		Tags: []string{"Address Admin"},
+	},
+	{
+		Name: "迁移管理",
+		Tags: []string{"Migration"},
 	},
 }
 

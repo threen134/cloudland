@@ -29,7 +29,8 @@ const docTemplatev1 = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Administration"
+                    "Administration",
+                    "Address Admin"
                 ],
                 "summary": "batch patch addresses",
                 "parameters": [
@@ -78,7 +79,8 @@ const docTemplatev1 = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Administration"
+                    "Administration",
+                    "Address Admin"
                 ],
                 "summary": "batch update address lock",
                 "parameters": [
@@ -1311,7 +1313,8 @@ const docTemplatev1 = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Administration"
+                    "Administration",
+                    "Dictionary Admin"
                 ],
                 "summary": "create a dictionary",
                 "parameters": [
@@ -1402,7 +1405,8 @@ const docTemplatev1 = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Administration"
+                    "Administration",
+                    "Dictionary Admin"
                 ],
                 "summary": "delete a dictionary",
                 "parameters": [
@@ -1441,7 +1445,8 @@ const docTemplatev1 = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Administration"
+                    "Administration",
+                    "Dictionary Admin"
                 ],
                 "summary": "patch a dictionary",
                 "parameters": [
@@ -1514,7 +1519,8 @@ const docTemplatev1 = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Administration"
+                    "Administration",
+                    "Flavor Admin"
                 ],
                 "summary": "create a flavor",
                 "parameters": [
@@ -1593,7 +1599,8 @@ const docTemplatev1 = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Administration"
+                    "Administration",
+                    "Flavor Admin"
                 ],
                 "summary": "delete a flavor",
                 "responses": {
@@ -1899,7 +1906,8 @@ const docTemplatev1 = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Administration"
+                    "Administration",
+                    "Hypervisor"
                 ],
                 "summary": "list hypervisors",
                 "parameters": [
@@ -1952,7 +1960,8 @@ const docTemplatev1 = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Administration"
+                    "Administration",
+                    "Hypervisor"
                 ],
                 "summary": "deploy a new hypervisor",
                 "parameters": [
@@ -2004,7 +2013,8 @@ const docTemplatev1 = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Administration"
+                    "Administration",
+                    "Hypervisor"
                 ],
                 "summary": "get a hypervisor",
                 "responses": {}
@@ -2018,7 +2028,8 @@ const docTemplatev1 = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Administration"
+                    "Administration",
+                    "Hypervisor"
                 ],
                 "summary": "delete a hypervisor",
                 "parameters": [
@@ -2069,7 +2080,8 @@ const docTemplatev1 = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Administration"
+                    "Administration",
+                    "Hypervisor"
                 ],
                 "summary": "update a hypervisor",
                 "responses": {}
@@ -2085,7 +2097,8 @@ const docTemplatev1 = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Administration"
+                    "Administration",
+                    "Hypervisor"
                 ],
                 "summary": "maintain a hypervisor",
                 "parameters": [
@@ -5630,7 +5643,8 @@ const docTemplatev1 = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Administration"
+                    "Administration",
+                    "Migration"
                 ],
                 "summary": "list migrations",
                 "responses": {
@@ -5657,7 +5671,8 @@ const docTemplatev1 = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Administration"
+                    "Administration",
+                    "Migration"
                 ],
                 "summary": "create a migration",
                 "parameters": [
@@ -5706,7 +5721,8 @@ const docTemplatev1 = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Administration"
+                    "Administration",
+                    "Migration"
                 ],
                 "summary": "get a migration",
                 "responses": {
@@ -7157,7 +7173,8 @@ const docTemplatev1 = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Administration"
+                    "Administration",
+                    "Zone Admin"
                 ],
                 "summary": "create a zone",
                 "parameters": [
@@ -7236,7 +7253,8 @@ const docTemplatev1 = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Administration"
+                    "Administration",
+                    "Zone Admin"
                 ],
                 "summary": "delete a zone",
                 "responses": {
@@ -7266,7 +7284,8 @@ const docTemplatev1 = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Administration"
+                    "Administration",
+                    "Zone Admin"
                 ],
                 "summary": "patch a zone",
                 "parameters": [

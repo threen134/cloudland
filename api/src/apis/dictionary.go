@@ -148,7 +148,7 @@ func (v *DictionaryAPI) List(c *gin.Context) {
 
 // @Summary create a dictionary
 // @Description create a dictionary
-// @tags Administration
+// @tags Administration,Dictionary Admin
 // @Accept  json
 // @Produce json
 // @Param   message	body   DictionaryPayload  true   "Dictionary create payload"
@@ -235,7 +235,7 @@ func (v *DictionaryAPI) Get(c *gin.Context) {
 
 // @Summary delete a dictionary
 // @Description delete a dictionary
-// @tags Administration
+// @tags Administration,Dictionary Admin
 // @Accept  json
 // @Produce json
 // @Param   id  path  int  true  "Dictionary ID"
@@ -265,7 +265,7 @@ func (v *DictionaryAPI) Delete(c *gin.Context) {
 
 // @Summary patch a dictionary
 // @Description patch a dictionary
-// @tags Administration
+// @tags Administration,Dictionary Admin
 // @Accept  json
 // @Produce json
 // @Param   message	body   DictionaryPayload  true   "Dictionary create payload"
