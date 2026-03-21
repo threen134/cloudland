@@ -101,7 +101,7 @@ type SiteDetachPayload struct {
 
 // @Summary get a floating ip
 // @Description get a floating ip
-// @tags Network
+// @tags Floating IP
 // @Accept  json
 // @Produce json
 // @Success 200 {object} FloatingIpResponse
@@ -128,7 +128,7 @@ func (v *FloatingIpAPI) Get(c *gin.Context) {
 
 // @Summary patch a floating ip
 // @Description patch a floating ip
-// @tags Network
+// @tags Floating IP
 // @Accept  json
 // @Produce json
 // @Param   message	body   FloatingIpPatchPayload  true   "Floating ip patch payload"
@@ -212,7 +212,7 @@ func (v *FloatingIpAPI) Patch(c *gin.Context) {
 
 // @Summary delete a floating ip
 // @Description delete a floating ip
-// @tags Network
+// @tags Floating IP
 // @Accept  json
 // @Produce json
 // @Success 200
@@ -240,7 +240,7 @@ func (v *FloatingIpAPI) Delete(c *gin.Context) {
 
 // @Summary create a floating ip
 // @Description create a floating ip
-// @tags Network
+// @tags Floating IP
 // @Accept  json
 // @Produce json
 // @Param   message	body   FloatingIpPayload  true   "Floating ip create payload"
@@ -418,7 +418,7 @@ func (v *FloatingIpAPI) getFloatingIpResponse(ctx context.Context, floatingIp *m
 
 // @Summary list floating ips
 // @Description list floating ips
-// @tags Network
+// @tags Floating IP
 // @Accept  json
 // @Produce json
 // @Success 200 {object} FloatingIpListResponse
@@ -471,7 +471,7 @@ func (v *FloatingIpAPI) List(c *gin.Context) {
 
 // @Summary batch attach floating ips
 // @Description batch attach existing floating ips from site subnets to an instance
-// @tags Network
+// @tags Floating IP
 // @Accept  json
 // @Produce json
 // @Param   message	body   SiteAttachPayload  true   "Site attach payload"
@@ -629,7 +629,7 @@ func (v *FloatingIpAPI) SiteAttach(c *gin.Context) {
 
 // @Summary batch detach floating ips
 // @Description batch detach floating ips from site subnets from an instance
-// @tags Network
+// @tags Floating IP
 // @Accept  json
 // @Produce json
 // @Param   message	body   SiteDetachPayload  true   "Site detach payload"

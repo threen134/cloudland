@@ -24,7 +24,7 @@ type LBFloatingIpAPI struct{}
 
 // @Summary get a floating ip for load balancer
 // @Description get a floating ip for load balancer
-// @tags Network
+// @tags Load Balancer
 // @Accept  json
 // @Produce json
 // @Success 200 {object} FloatingIpResponse
@@ -64,7 +64,7 @@ func (v *LBFloatingIpAPI) Get(c *gin.Context) {
 
 // @Summary delete a floating ip for load balancer
 // @Description delete a floating ip for load balancer
-// @tags Network
+// @tags Load Balancer
 // @Accept  json
 // @Produce json
 // @Success 200
@@ -105,7 +105,7 @@ func (v *LBFloatingIpAPI) Delete(c *gin.Context) {
 
 // @Summary create a floating ip for load balancer
 // @Description create a floating ip for load balancer
-// @tags Network
+// @tags Load Balancer
 // @Accept  json
 // @Produce json
 // @Param   message	body   FloatingIpPayload  true   "Floating ip create payload"
@@ -190,7 +190,7 @@ func (v *LBFloatingIpAPI) Create(c *gin.Context) {
 
 // @Summary list floating ips for load balancer
 // @Description list floating ips for load balancer
-// @tags Network
+// @tags Load Balancer
 // @Accept  json
 // @Produce json
 // @Success 200 {object} FloatingIpListResponse

@@ -123,7 +123,7 @@ const docTemplatealarm_v1 = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Network"
+                    "Address"
                 ],
                 "summary": "list IP addresses by subnet UUID",
                 "responses": {
@@ -254,7 +254,7 @@ const docTemplatealarm_v1 = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Compute"
+                    "Backup"
                 ],
                 "summary": "list volumes backups/snapshots",
                 "parameters": [
@@ -303,7 +303,7 @@ const docTemplatealarm_v1 = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Compute"
+                    "Backup"
                 ],
                 "summary": "create a volume backup/snapshot",
                 "parameters": [
@@ -349,7 +349,7 @@ const docTemplatealarm_v1 = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Compute"
+                    "Backup"
                 ],
                 "summary": "get a volume backup/snapshot",
                 "parameters": [
@@ -391,7 +391,7 @@ const docTemplatealarm_v1 = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Compute"
+                    "Backup"
                 ],
                 "summary": "delete a volume backup/snapshot",
                 "responses": {
@@ -423,7 +423,7 @@ const docTemplatealarm_v1 = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Compute"
+                    "Backup"
                 ],
                 "summary": "restore volume from a backup/snapshot",
                 "parameters": [
@@ -467,7 +467,7 @@ const docTemplatealarm_v1 = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Storage"
+                    "Consistency Group"
                 ],
                 "summary": "List consistency groups",
                 "parameters": [
@@ -526,7 +526,7 @@ const docTemplatealarm_v1 = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Storage"
+                    "Consistency Group"
                 ],
                 "summary": "Create a consistency group",
                 "parameters": [
@@ -572,7 +572,7 @@ const docTemplatealarm_v1 = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Storage"
+                    "Consistency Group"
                 ],
                 "summary": "Get a consistency group",
                 "parameters": [
@@ -614,7 +614,7 @@ const docTemplatealarm_v1 = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Storage"
+                    "Consistency Group"
                 ],
                 "summary": "Delete a consistency group",
                 "parameters": [
@@ -653,7 +653,7 @@ const docTemplatealarm_v1 = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Storage"
+                    "Consistency Group"
                 ],
                 "summary": "Update a consistency group",
                 "parameters": [
@@ -706,7 +706,7 @@ const docTemplatealarm_v1 = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Storage"
+                    "Consistency Group"
                 ],
                 "summary": "List consistency group snapshots",
                 "parameters": [
@@ -766,7 +766,7 @@ const docTemplatealarm_v1 = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Storage"
+                    "Consistency Group"
                 ],
                 "summary": "Create a consistency group snapshot",
                 "parameters": [
@@ -819,7 +819,7 @@ const docTemplatealarm_v1 = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Storage"
+                    "Consistency Group"
                 ],
                 "summary": "Get a consistency group snapshot",
                 "parameters": [
@@ -868,7 +868,7 @@ const docTemplatealarm_v1 = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Storage"
+                    "Consistency Group"
                 ],
                 "summary": "Delete a consistency group snapshot",
                 "parameters": [
@@ -916,7 +916,7 @@ const docTemplatealarm_v1 = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Storage"
+                    "Consistency Group"
                 ],
                 "summary": "Restore a consistency group from snapshot",
                 "parameters": [
@@ -967,7 +967,7 @@ const docTemplatealarm_v1 = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Storage"
+                    "Consistency Group"
                 ],
                 "summary": "Add volumes to a consistency group",
                 "parameters": [
@@ -1020,7 +1020,7 @@ const docTemplatealarm_v1 = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Storage"
+                    "Consistency Group"
                 ],
                 "summary": "Remove a volume from a consistency group",
                 "parameters": [
@@ -1071,7 +1071,7 @@ const docTemplatealarm_v1 = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Compute"
+                    "Dictionary"
                 ],
                 "summary": "list dictionaries",
                 "responses": {
@@ -1147,7 +1147,7 @@ const docTemplatealarm_v1 = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Compute"
+                    "Dictionary"
                 ],
                 "summary": "get a dictionary",
                 "parameters": [
@@ -1274,7 +1274,7 @@ const docTemplatealarm_v1 = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Compute"
+                    "Flavor"
                 ],
                 "summary": "list flavors",
                 "responses": {
@@ -1347,7 +1347,7 @@ const docTemplatealarm_v1 = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Compute"
+                    "Flavor"
                 ],
                 "summary": "get a flavor",
                 "responses": {
@@ -1412,7 +1412,7 @@ const docTemplatealarm_v1 = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Network"
+                    "Floating IP"
                 ],
                 "summary": "list floating ips",
                 "responses": {
@@ -1439,7 +1439,7 @@ const docTemplatealarm_v1 = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Network"
+                    "Floating IP"
                 ],
                 "summary": "create a floating ip",
                 "parameters": [
@@ -1485,7 +1485,7 @@ const docTemplatealarm_v1 = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Network"
+                    "Floating IP"
                 ],
                 "summary": "batch attach floating ips",
                 "parameters": [
@@ -1534,7 +1534,7 @@ const docTemplatealarm_v1 = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Network"
+                    "Floating IP"
                 ],
                 "summary": "batch detach floating ips",
                 "parameters": [
@@ -1577,7 +1577,7 @@ const docTemplatealarm_v1 = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Network"
+                    "Floating IP"
                 ],
                 "summary": "get a floating ip",
                 "responses": {
@@ -1610,7 +1610,7 @@ const docTemplatealarm_v1 = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Network"
+                    "Floating IP"
                 ],
                 "summary": "delete a floating ip",
                 "responses": {
@@ -1640,7 +1640,7 @@ const docTemplatealarm_v1 = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Network"
+                    "Floating IP"
                 ],
                 "summary": "patch a floating ip",
                 "parameters": [
@@ -1933,7 +1933,7 @@ const docTemplatealarm_v1 = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Compute"
+                    "Image"
                 ],
                 "summary": "list images",
                 "responses": {
@@ -1960,7 +1960,7 @@ const docTemplatealarm_v1 = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Compute"
+                    "Image"
                 ],
                 "summary": "create a image",
                 "parameters": [
@@ -2006,7 +2006,7 @@ const docTemplatealarm_v1 = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Compute"
+                    "Image"
                 ],
                 "summary": "get a image",
                 "responses": {
@@ -2039,7 +2039,7 @@ const docTemplatealarm_v1 = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Compute"
+                    "Image"
                 ],
                 "summary": "delete a image",
                 "responses": {
@@ -2069,7 +2069,7 @@ const docTemplatealarm_v1 = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Compute"
+                    "Image"
                 ],
                 "summary": "patch a image",
                 "parameters": [
@@ -2115,7 +2115,7 @@ const docTemplatealarm_v1 = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Compute"
+                    "Image"
                 ],
                 "summary": "list image storages",
                 "responses": {
@@ -2144,7 +2144,7 @@ const docTemplatealarm_v1 = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Network"
+                    "Interface"
                 ],
                 "summary": "list interfaces",
                 "responses": {
@@ -2174,7 +2174,7 @@ const docTemplatealarm_v1 = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Network"
+                    "Interface"
                 ],
                 "summary": "create a interface",
                 "parameters": [
@@ -2220,7 +2220,7 @@ const docTemplatealarm_v1 = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Network"
+                    "Interface"
                 ],
                 "summary": "delete a interface",
                 "responses": {
@@ -2252,7 +2252,7 @@ const docTemplatealarm_v1 = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Compute"
+                    "Instance"
                 ],
                 "summary": "list instances",
                 "responses": {
@@ -2279,7 +2279,7 @@ const docTemplatealarm_v1 = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Compute"
+                    "Instance"
                 ],
                 "summary": "create a instance",
                 "parameters": [
@@ -2328,7 +2328,7 @@ const docTemplatealarm_v1 = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Authorization"
+                    "Console"
                 ],
                 "summary": "create a console",
                 "parameters": [
@@ -2372,7 +2372,7 @@ const docTemplatealarm_v1 = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Compute"
+                    "Instance"
                 ],
                 "summary": "Get instance rule links",
                 "parameters": [
@@ -2411,7 +2411,7 @@ const docTemplatealarm_v1 = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Compute"
+                    "Instance"
                 ],
                 "summary": "get a instance",
                 "parameters": [
@@ -2453,7 +2453,7 @@ const docTemplatealarm_v1 = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Compute"
+                    "Instance"
                 ],
                 "summary": "delete a instance",
                 "parameters": [
@@ -2492,7 +2492,7 @@ const docTemplatealarm_v1 = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Compute"
+                    "Instance"
                 ],
                 "summary": "patch a instance",
                 "parameters": [
@@ -2538,7 +2538,7 @@ const docTemplatealarm_v1 = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Compute"
+                    "Instance"
                 ],
                 "summary": "end rescue a instance",
                 "parameters": [
@@ -2579,7 +2579,7 @@ const docTemplatealarm_v1 = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Network"
+                    "Interface"
                 ],
                 "summary": "get a interface",
                 "responses": {
@@ -2612,7 +2612,7 @@ const docTemplatealarm_v1 = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Network"
+                    "Interface"
                 ],
                 "summary": "patch a interface",
                 "parameters": [
@@ -2658,7 +2658,7 @@ const docTemplatealarm_v1 = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Compute"
+                    "Instance"
                 ],
                 "summary": "reinstall a instance",
                 "parameters": [
@@ -2708,7 +2708,7 @@ const docTemplatealarm_v1 = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Compute"
+                    "Instance"
                 ],
                 "summary": "rescue a instance",
                 "parameters": [
@@ -2758,7 +2758,7 @@ const docTemplatealarm_v1 = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Compute"
+                    "Instance"
                 ],
                 "summary": "resize a instance",
                 "parameters": [
@@ -2808,7 +2808,7 @@ const docTemplatealarm_v1 = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Compute"
+                    "Instance"
                 ],
                 "summary": "set user password for a instance",
                 "parameters": [
@@ -2858,7 +2858,7 @@ const docTemplatealarm_v1 = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Network"
+                    "IP Group"
                 ],
                 "summary": "list ipGroup",
                 "responses": {
@@ -2885,7 +2885,7 @@ const docTemplatealarm_v1 = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Network"
+                    "IP Group"
                 ],
                 "summary": "create a ipGroup",
                 "parameters": [
@@ -2931,7 +2931,7 @@ const docTemplatealarm_v1 = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Network"
+                    "IP Group"
                 ],
                 "summary": "get a ipGroup",
                 "responses": {
@@ -2964,7 +2964,7 @@ const docTemplatealarm_v1 = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Network"
+                    "IP Group"
                 ],
                 "summary": "delete a ipGroup",
                 "responses": {
@@ -2994,7 +2994,7 @@ const docTemplatealarm_v1 = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Network"
+                    "IP Group"
                 ],
                 "summary": "patch a ipGroup",
                 "parameters": [
@@ -3040,7 +3040,7 @@ const docTemplatealarm_v1 = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Authorization"
+                    "Key"
                 ],
                 "summary": "list keys",
                 "responses": {
@@ -3067,7 +3067,7 @@ const docTemplatealarm_v1 = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Authorization"
+                    "Key"
                 ],
                 "summary": "create a key",
                 "parameters": [
@@ -3113,7 +3113,7 @@ const docTemplatealarm_v1 = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Authorization"
+                    "Key"
                 ],
                 "summary": "get a key",
                 "responses": {
@@ -3146,7 +3146,7 @@ const docTemplatealarm_v1 = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Authorization"
+                    "Key"
                 ],
                 "summary": "delete a key",
                 "responses": {
@@ -3176,7 +3176,7 @@ const docTemplatealarm_v1 = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Authorization"
+                    "Key"
                 ],
                 "summary": "patch a key",
                 "parameters": [
@@ -3222,7 +3222,7 @@ const docTemplatealarm_v1 = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Network"
+                    "Load Balancer"
                 ],
                 "summary": "list loadBalancers",
                 "responses": {
@@ -3249,7 +3249,7 @@ const docTemplatealarm_v1 = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Network"
+                    "Load Balancer"
                 ],
                 "summary": "create a loadBalancer",
                 "parameters": [
@@ -3295,7 +3295,7 @@ const docTemplatealarm_v1 = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Network"
+                    "Load Balancer"
                 ],
                 "summary": "get a loadBalancer",
                 "responses": {
@@ -3328,7 +3328,7 @@ const docTemplatealarm_v1 = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Network"
+                    "Load Balancer"
                 ],
                 "summary": "delete a loadBalancer",
                 "responses": {
@@ -3358,7 +3358,7 @@ const docTemplatealarm_v1 = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Network"
+                    "Load Balancer"
                 ],
                 "summary": "patch a loadBalancer",
                 "parameters": [
@@ -3404,7 +3404,7 @@ const docTemplatealarm_v1 = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Network"
+                    "Load Balancer"
                 ],
                 "summary": "list floating ips for load balancer",
                 "responses": {
@@ -3431,7 +3431,7 @@ const docTemplatealarm_v1 = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Network"
+                    "Load Balancer"
                 ],
                 "summary": "create a floating ip for load balancer",
                 "parameters": [
@@ -3477,7 +3477,7 @@ const docTemplatealarm_v1 = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Network"
+                    "Load Balancer"
                 ],
                 "summary": "get a floating ip for load balancer",
                 "responses": {
@@ -3510,7 +3510,7 @@ const docTemplatealarm_v1 = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Network"
+                    "Load Balancer"
                 ],
                 "summary": "delete a floating ip for load balancer",
                 "responses": {
@@ -3542,7 +3542,7 @@ const docTemplatealarm_v1 = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Network"
+                    "Load Balancer"
                 ],
                 "summary": "list listeners",
                 "responses": {
@@ -3569,7 +3569,7 @@ const docTemplatealarm_v1 = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Network"
+                    "Load Balancer"
                 ],
                 "summary": "create a listener",
                 "parameters": [
@@ -3615,7 +3615,7 @@ const docTemplatealarm_v1 = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Network"
+                    "Load Balancer"
                 ],
                 "summary": "list backends",
                 "responses": {
@@ -3644,7 +3644,7 @@ const docTemplatealarm_v1 = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Network"
+                    "Load Balancer"
                 ],
                 "summary": "delete a backend",
                 "responses": {
@@ -3676,7 +3676,7 @@ const docTemplatealarm_v1 = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Network"
+                    "Load Balancer"
                 ],
                 "summary": "get a listener",
                 "responses": {
@@ -3709,7 +3709,7 @@ const docTemplatealarm_v1 = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Network"
+                    "Load Balancer"
                 ],
                 "summary": "delete a listener",
                 "responses": {
@@ -3739,7 +3739,7 @@ const docTemplatealarm_v1 = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Network"
+                    "Load Balancer"
                 ],
                 "summary": "patch a listener",
                 "parameters": [
@@ -3785,7 +3785,7 @@ const docTemplatealarm_v1 = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Network"
+                    "Load Balancer"
                 ],
                 "summary": "create a backend",
                 "parameters": [
@@ -3831,7 +3831,7 @@ const docTemplatealarm_v1 = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Network"
+                    "Load Balancer"
                 ],
                 "summary": "get a backend",
                 "responses": {
@@ -3864,7 +3864,7 @@ const docTemplatealarm_v1 = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Network"
+                    "Load Balancer"
                 ],
                 "summary": "patch a backend",
                 "parameters": [
@@ -4021,7 +4021,7 @@ const docTemplatealarm_v1 = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Network"
+                    "Security Group"
                 ],
                 "summary": "list secgroups",
                 "responses": {
@@ -4048,7 +4048,7 @@ const docTemplatealarm_v1 = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Network"
+                    "Security Group"
                 ],
                 "summary": "create a secgroup",
                 "parameters": [
@@ -4094,7 +4094,7 @@ const docTemplatealarm_v1 = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Network"
+                    "Security Group"
                 ],
                 "summary": "get a secgroup",
                 "responses": {
@@ -4127,7 +4127,7 @@ const docTemplatealarm_v1 = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Network"
+                    "Security Group"
                 ],
                 "summary": "delete a secgroup",
                 "responses": {
@@ -4157,7 +4157,7 @@ const docTemplatealarm_v1 = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Network"
+                    "Security Group"
                 ],
                 "summary": "patch a secgroup",
                 "parameters": [
@@ -4203,7 +4203,7 @@ const docTemplatealarm_v1 = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Network"
+                    "Security Group"
                 ],
                 "summary": "list secrules",
                 "responses": {
@@ -4230,7 +4230,7 @@ const docTemplatealarm_v1 = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Network"
+                    "Security Group"
                 ],
                 "summary": "create a secrule",
                 "parameters": [
@@ -4276,7 +4276,7 @@ const docTemplatealarm_v1 = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Network"
+                    "Security Group"
                 ],
                 "summary": "get a secrule",
                 "responses": {
@@ -4309,7 +4309,7 @@ const docTemplatealarm_v1 = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Network"
+                    "Security Group"
                 ],
                 "summary": "delete a secrule",
                 "responses": {
@@ -4341,7 +4341,7 @@ const docTemplatealarm_v1 = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Network"
+                    "Subnet"
                 ],
                 "summary": "list subnets",
                 "responses": {
@@ -4368,7 +4368,7 @@ const docTemplatealarm_v1 = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Network"
+                    "Subnet"
                 ],
                 "summary": "create a subnet",
                 "parameters": [
@@ -4414,7 +4414,7 @@ const docTemplatealarm_v1 = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Network"
+                    "Subnet"
                 ],
                 "summary": "get a subnet",
                 "responses": {
@@ -4447,7 +4447,7 @@ const docTemplatealarm_v1 = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Network"
+                    "Subnet"
                 ],
                 "summary": "delete a subnet",
                 "responses": {
@@ -4477,7 +4477,7 @@ const docTemplatealarm_v1 = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Network"
+                    "Subnet"
                 ],
                 "summary": "patch a subnet",
                 "parameters": [
@@ -4523,7 +4523,7 @@ const docTemplatealarm_v1 = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Compute"
+                    "Task"
                 ],
                 "summary": "list tasks",
                 "parameters": [
@@ -4581,7 +4581,7 @@ const docTemplatealarm_v1 = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Compute"
+                    "Task"
                 ],
                 "summary": "get a task",
                 "parameters": [
@@ -4625,7 +4625,7 @@ const docTemplatealarm_v1 = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Compute"
+                    "System Info"
                 ],
                 "summary": "get version",
                 "responses": {
@@ -4660,7 +4660,7 @@ const docTemplatealarm_v1 = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Compute"
+                    "Volume"
                 ],
                 "summary": "list volumes",
                 "responses": {
@@ -4687,7 +4687,7 @@ const docTemplatealarm_v1 = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Compute"
+                    "Volume"
                 ],
                 "summary": "create a volume",
                 "parameters": [
@@ -4733,7 +4733,7 @@ const docTemplatealarm_v1 = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Compute"
+                    "Volume"
                 ],
                 "summary": "get a volume",
                 "parameters": [
@@ -4775,7 +4775,7 @@ const docTemplatealarm_v1 = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Compute"
+                    "Volume"
                 ],
                 "summary": "delete a volume",
                 "responses": {
@@ -4805,7 +4805,7 @@ const docTemplatealarm_v1 = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Compute"
+                    "Volume"
                 ],
                 "summary": "patch a volume",
                 "parameters": [
@@ -4851,7 +4851,7 @@ const docTemplatealarm_v1 = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Compute"
+                    "Volume"
                 ],
                 "summary": "update qos of a volume",
                 "parameters": [
@@ -4897,7 +4897,7 @@ const docTemplatealarm_v1 = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Compute"
+                    "Volume"
                 ],
                 "summary": "resize a volume",
                 "parameters": [
@@ -4940,7 +4940,7 @@ const docTemplatealarm_v1 = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Network"
+                    "VPC"
                 ],
                 "summary": "list vpcs",
                 "responses": {
@@ -4967,7 +4967,7 @@ const docTemplatealarm_v1 = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Network"
+                    "VPC"
                 ],
                 "summary": "create a vpc",
                 "parameters": [
@@ -5013,7 +5013,7 @@ const docTemplatealarm_v1 = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Network"
+                    "VPC"
                 ],
                 "summary": "get a vpc",
                 "responses": {
@@ -5046,7 +5046,7 @@ const docTemplatealarm_v1 = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Network"
+                    "VPC"
                 ],
                 "summary": "delete a vpc",
                 "responses": {
@@ -5076,7 +5076,7 @@ const docTemplatealarm_v1 = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Network"
+                    "VPC"
                 ],
                 "summary": "patch a vpc",
                 "parameters": [

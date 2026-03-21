@@ -89,7 +89,7 @@ type SubnetPatchPayload struct {
 
 // @Summary get a subnet
 // @Description get a subnet
-// @tags Network
+// @tags Subnet
 // @Accept  json
 // @Produce json
 // @Success 200 {object} SubnetResponse
@@ -114,7 +114,7 @@ func (v *SubnetAPI) Get(c *gin.Context) {
 
 // @Summary patch a subnet
 // @Description patch a subnet
-// @tags Network
+// @tags Subnet
 // @Accept  json
 // @Produce json
 // @Param   message	body   SubnetPatchPayload  true   "Subnet patch payload"
@@ -176,7 +176,7 @@ func (v *SubnetAPI) Patch(c *gin.Context) {
 
 // @Summary delete a subnet
 // @Description delete a subnet
-// @tags Network
+// @tags Subnet
 // @Accept  json
 // @Produce json
 // @Success 204
@@ -201,7 +201,7 @@ func (v *SubnetAPI) Delete(c *gin.Context) {
 
 // @Summary create a subnet
 // @Description create a subnet
-// @tags Network
+// @tags Subnet
 // @Accept  json
 // @Produce json
 // @Param   message	body   SubnetPayload  true   "Subnet create payload"
@@ -327,7 +327,7 @@ func (v *SubnetAPI) getSubnetResponse(ctx context.Context, subnet *model.Subnet)
 
 // @Summary list subnets
 // @Description list subnets
-// @tags Network
+// @tags Subnet
 // @Accept  json
 // @Produce json
 // @Success 200 {object} SubnetListResponse

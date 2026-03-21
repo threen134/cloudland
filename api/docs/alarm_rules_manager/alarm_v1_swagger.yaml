@@ -2281,7 +2281,7 @@ paths:
             $ref: '#/definitions/common.APIError'
       summary: list IP addresses by subnet UUID
       tags:
-      - Network
+      - Address
   /addresses/remark:
     patch:
       consumes:
@@ -2446,7 +2446,7 @@ paths:
             $ref: '#/definitions/common.APIError'
       summary: list volumes backups/snapshots
       tags:
-      - Compute
+      - Backup
     post:
       consumes:
       - application/json
@@ -2475,7 +2475,7 @@ paths:
             $ref: '#/definitions/common.APIError'
       summary: create a volume backup/snapshot
       tags:
-      - Compute
+      - Backup
   /backups/{id}:
     delete:
       consumes:
@@ -2496,7 +2496,7 @@ paths:
             $ref: '#/definitions/common.APIError'
       summary: delete a volume backup/snapshot
       tags:
-      - Compute
+      - Backup
     get:
       consumes:
       - application/json
@@ -2524,7 +2524,7 @@ paths:
             $ref: '#/definitions/common.APIError'
       summary: get a volume backup/snapshot
       tags:
-      - Compute
+      - Backup
   /backups/{id}/restore:
     post:
       consumes:
@@ -2553,7 +2553,7 @@ paths:
             $ref: '#/definitions/common.APIError'
       summary: restore volume from a backup/snapshot
       tags:
-      - Compute
+      - Backup
   /consistency_groups:
     get:
       consumes:
@@ -2593,7 +2593,7 @@ paths:
             $ref: '#/definitions/common.APIError'
       summary: List consistency groups
       tags:
-      - Storage
+      - Consistency Group
     post:
       consumes:
       - application/json
@@ -2622,7 +2622,7 @@ paths:
             $ref: '#/definitions/common.APIError'
       summary: Create a consistency group
       tags:
-      - Storage
+      - Consistency Group
   /consistency_groups/{id}:
     delete:
       consumes:
@@ -2649,7 +2649,7 @@ paths:
             $ref: '#/definitions/common.APIError'
       summary: Delete a consistency group
       tags:
-      - Storage
+      - Consistency Group
     get:
       consumes:
       - application/json
@@ -2677,7 +2677,7 @@ paths:
             $ref: '#/definitions/common.APIError'
       summary: Get a consistency group
       tags:
-      - Storage
+      - Consistency Group
     patch:
       consumes:
       - application/json
@@ -2711,7 +2711,7 @@ paths:
             $ref: '#/definitions/common.APIError'
       summary: Update a consistency group
       tags:
-      - Storage
+      - Consistency Group
   /consistency_groups/{id}/snapshots:
     get:
       consumes:
@@ -2752,7 +2752,7 @@ paths:
             $ref: '#/definitions/common.APIError'
       summary: List consistency group snapshots
       tags:
-      - Storage
+      - Consistency Group
     post:
       consumes:
       - application/json
@@ -2786,7 +2786,7 @@ paths:
             $ref: '#/definitions/common.APIError'
       summary: Create a consistency group snapshot
       tags:
-      - Storage
+      - Consistency Group
   /consistency_groups/{id}/snapshots/{snap_id}:
     delete:
       consumes:
@@ -2818,7 +2818,7 @@ paths:
             $ref: '#/definitions/common.APIError'
       summary: Delete a consistency group snapshot
       tags:
-      - Storage
+      - Consistency Group
     get:
       consumes:
       - application/json
@@ -2851,7 +2851,7 @@ paths:
             $ref: '#/definitions/common.APIError'
       summary: Get a consistency group snapshot
       tags:
-      - Storage
+      - Consistency Group
   /consistency_groups/{id}/snapshots/{snap_id}/restore:
     post:
       consumes:
@@ -2885,7 +2885,7 @@ paths:
             $ref: '#/definitions/common.APIError'
       summary: Restore a consistency group from snapshot
       tags:
-      - Storage
+      - Consistency Group
   /consistency_groups/{id}/volumes:
     post:
       consumes:
@@ -2920,7 +2920,7 @@ paths:
             $ref: '#/definitions/common.APIError'
       summary: Add volumes to a consistency group
       tags:
-      - Storage
+      - Consistency Group
   /consistency_groups/{id}/volumes/{volume_id}:
     delete:
       consumes:
@@ -2954,7 +2954,7 @@ paths:
             $ref: '#/definitions/common.APIError'
       summary: Remove a volume from a consistency group
       tags:
-      - Storage
+      - Consistency Group
   /dictionaries:
     get:
       consumes:
@@ -2973,7 +2973,7 @@ paths:
             $ref: '#/definitions/common.APIError'
       summary: list dictionaries
       tags:
-      - Compute
+      - Dictionary
     post:
       consumes:
       - application/json
@@ -3059,7 +3059,7 @@ paths:
             $ref: '#/definitions/common.APIError'
       summary: get a dictionary
       tags:
-      - Compute
+      - Dictionary
     patch:
       consumes:
       - application/json
@@ -3107,7 +3107,7 @@ paths:
             $ref: '#/definitions/common.APIError'
       summary: list flavors
       tags:
-      - Compute
+      - Flavor
     post:
       consumes:
       - application/json
@@ -3179,7 +3179,7 @@ paths:
             $ref: '#/definitions/common.APIError'
       summary: get a flavor
       tags:
-      - Compute
+      - Flavor
   /floating_ips:
     get:
       consumes:
@@ -3198,7 +3198,7 @@ paths:
             $ref: '#/definitions/common.APIError'
       summary: list floating ips
       tags:
-      - Network
+      - Floating IP
     post:
       consumes:
       - application/json
@@ -3227,7 +3227,7 @@ paths:
             $ref: '#/definitions/common.APIError'
       summary: create a floating ip
       tags:
-      - Network
+      - Floating IP
   /floating_ips/{id}:
     delete:
       consumes:
@@ -3248,7 +3248,7 @@ paths:
             $ref: '#/definitions/common.APIError'
       summary: delete a floating ip
       tags:
-      - Network
+      - Floating IP
     get:
       consumes:
       - application/json
@@ -3270,7 +3270,7 @@ paths:
             $ref: '#/definitions/common.APIError'
       summary: get a floating ip
       tags:
-      - Network
+      - Floating IP
     patch:
       consumes:
       - application/json
@@ -3299,7 +3299,7 @@ paths:
             $ref: '#/definitions/common.APIError'
       summary: patch a floating ip
       tags:
-      - Network
+      - Floating IP
   /floating_ips/batch_attach:
     post:
       consumes:
@@ -3331,7 +3331,7 @@ paths:
             $ref: '#/definitions/common.APIError'
       summary: batch attach floating ips
       tags:
-      - Network
+      - Floating IP
   /floating_ips/batch_detach:
     post:
       consumes:
@@ -3359,7 +3359,7 @@ paths:
             $ref: '#/definitions/common.APIError'
       summary: batch detach floating ips
       tags:
-      - Network
+      - Floating IP
   /hypers:
     get:
       consumes:
@@ -3542,7 +3542,7 @@ paths:
             $ref: '#/definitions/common.APIError'
       summary: list images
       tags:
-      - Compute
+      - Image
     post:
       consumes:
       - application/json
@@ -3571,7 +3571,7 @@ paths:
             $ref: '#/definitions/common.APIError'
       summary: create a image
       tags:
-      - Compute
+      - Image
   /images/{id}:
     delete:
       consumes:
@@ -3592,7 +3592,7 @@ paths:
             $ref: '#/definitions/common.APIError'
       summary: delete a image
       tags:
-      - Compute
+      - Image
     get:
       consumes:
       - application/json
@@ -3614,7 +3614,7 @@ paths:
             $ref: '#/definitions/common.APIError'
       summary: get a image
       tags:
-      - Compute
+      - Image
     patch:
       consumes:
       - application/json
@@ -3643,7 +3643,7 @@ paths:
             $ref: '#/definitions/common.APIError'
       summary: patch a image
       tags:
-      - Compute
+      - Image
   /images/{id}/storages:
     get:
       consumes:
@@ -3662,7 +3662,7 @@ paths:
             $ref: '#/definitions/common.APIError'
       summary: list image storages
       tags:
-      - Compute
+      - Image
   /instance/{id}/interfaces:
     get:
       consumes:
@@ -3683,7 +3683,7 @@ paths:
             $ref: '#/definitions/common.APIError'
       summary: list interfaces
       tags:
-      - Network
+      - Interface
     post:
       consumes:
       - application/json
@@ -3712,7 +3712,7 @@ paths:
             $ref: '#/definitions/common.APIError'
       summary: create a interface
       tags:
-      - Network
+      - Interface
   /instance/{id}/interfaces/{interface_id}:
     delete:
       consumes:
@@ -3733,7 +3733,7 @@ paths:
             $ref: '#/definitions/common.APIError'
       summary: delete a interface
       tags:
-      - Network
+      - Interface
   /instances:
     get:
       consumes:
@@ -3752,7 +3752,7 @@ paths:
             $ref: '#/definitions/common.APIError'
       summary: list instances
       tags:
-      - Compute
+      - Instance
     post:
       consumes:
       - application/json
@@ -3783,7 +3783,7 @@ paths:
             $ref: '#/definitions/common.APIError'
       summary: create a instance
       tags:
-      - Compute
+      - Instance
   /instances/:id/console:
     post:
       consumes:
@@ -3812,7 +3812,7 @@ paths:
             $ref: '#/definitions/common.APIError'
       summary: create a console
       tags:
-      - Authorization
+      - Console
   /instances/{id}:
     delete:
       consumes:
@@ -3839,7 +3839,7 @@ paths:
             $ref: '#/definitions/common.APIError'
       summary: delete a instance
       tags:
-      - Compute
+      - Instance
     get:
       consumes:
       - application/json
@@ -3867,7 +3867,7 @@ paths:
             $ref: '#/definitions/common.APIError'
       summary: get a instance
       tags:
-      - Compute
+      - Instance
     patch:
       consumes:
       - application/json
@@ -3896,7 +3896,7 @@ paths:
             $ref: '#/definitions/common.APIError'
       summary: patch a instance
       tags:
-      - Compute
+      - Instance
   /instances/{id}/end_rescue:
     post:
       consumes:
@@ -3923,7 +3923,7 @@ paths:
             $ref: '#/definitions/common.APIError'
       summary: end rescue a instance
       tags:
-      - Compute
+      - Instance
   /instances/{id}/interfaces/{interface_id}:
     get:
       consumes:
@@ -3946,7 +3946,7 @@ paths:
             $ref: '#/definitions/common.APIError'
       summary: get a interface
       tags:
-      - Network
+      - Interface
     patch:
       consumes:
       - application/json
@@ -3975,7 +3975,7 @@ paths:
             $ref: '#/definitions/common.APIError'
       summary: patch a interface
       tags:
-      - Network
+      - Interface
   /instances/{id}/reinstall:
     post:
       consumes:
@@ -4008,7 +4008,7 @@ paths:
             $ref: '#/definitions/common.APIError'
       summary: reinstall a instance
       tags:
-      - Compute
+      - Instance
   /instances/{id}/rescue:
     post:
       consumes:
@@ -4041,7 +4041,7 @@ paths:
             $ref: '#/definitions/common.APIError'
       summary: rescue a instance
       tags:
-      - Compute
+      - Instance
   /instances/{id}/resize:
     post:
       consumes:
@@ -4074,7 +4074,7 @@ paths:
             $ref: '#/definitions/common.APIError'
       summary: resize a instance
       tags:
-      - Compute
+      - Instance
   /instances/{id}/set_user_password:
     post:
       consumes:
@@ -4107,7 +4107,7 @@ paths:
             $ref: '#/definitions/common.APIError'
       summary: set user password for a instance
       tags:
-      - Compute
+      - Instance
   /instances/rule-links:
     get:
       consumes:
@@ -4133,7 +4133,7 @@ paths:
             $ref: '#/definitions/common.APIError'
       summary: Get instance rule links
       tags:
-      - Compute
+      - Instance
   /ip_groups:
     get:
       consumes:
@@ -4152,7 +4152,7 @@ paths:
             $ref: '#/definitions/common.APIError'
       summary: list ipGroup
       tags:
-      - Network
+      - IP Group
     post:
       consumes:
       - application/json
@@ -4181,7 +4181,7 @@ paths:
             $ref: '#/definitions/common.APIError'
       summary: create a ipGroup
       tags:
-      - Network
+      - IP Group
   /ip_groups/{id}:
     delete:
       consumes:
@@ -4202,7 +4202,7 @@ paths:
             $ref: '#/definitions/common.APIError'
       summary: delete a ipGroup
       tags:
-      - Network
+      - IP Group
     get:
       consumes:
       - application/json
@@ -4224,7 +4224,7 @@ paths:
             $ref: '#/definitions/common.APIError'
       summary: get a ipGroup
       tags:
-      - Network
+      - IP Group
     patch:
       consumes:
       - application/json
@@ -4253,7 +4253,7 @@ paths:
             $ref: '#/definitions/common.APIError'
       summary: patch a ipGroup
       tags:
-      - Network
+      - IP Group
   /keys:
     get:
       consumes:
@@ -4272,7 +4272,7 @@ paths:
             $ref: '#/definitions/common.APIError'
       summary: list keys
       tags:
-      - Authorization
+      - Key
     post:
       consumes:
       - application/json
@@ -4301,7 +4301,7 @@ paths:
             $ref: '#/definitions/common.APIError'
       summary: create a key
       tags:
-      - Authorization
+      - Key
   /keys/{id}:
     delete:
       consumes:
@@ -4322,7 +4322,7 @@ paths:
             $ref: '#/definitions/common.APIError'
       summary: delete a key
       tags:
-      - Authorization
+      - Key
     get:
       consumes:
       - application/json
@@ -4344,7 +4344,7 @@ paths:
             $ref: '#/definitions/common.APIError'
       summary: get a key
       tags:
-      - Authorization
+      - Key
     patch:
       consumes:
       - application/json
@@ -4373,7 +4373,7 @@ paths:
             $ref: '#/definitions/common.APIError'
       summary: patch a key
       tags:
-      - Authorization
+      - Key
   /load_balancers:
     get:
       consumes:
@@ -4392,7 +4392,7 @@ paths:
             $ref: '#/definitions/common.APIError'
       summary: list loadBalancers
       tags:
-      - Network
+      - Load Balancer
     post:
       consumes:
       - application/json
@@ -4421,7 +4421,7 @@ paths:
             $ref: '#/definitions/common.APIError'
       summary: create a loadBalancer
       tags:
-      - Network
+      - Load Balancer
   /load_balancers/{id}:
     delete:
       consumes:
@@ -4442,7 +4442,7 @@ paths:
             $ref: '#/definitions/common.APIError'
       summary: delete a loadBalancer
       tags:
-      - Network
+      - Load Balancer
     get:
       consumes:
       - application/json
@@ -4464,7 +4464,7 @@ paths:
             $ref: '#/definitions/common.APIError'
       summary: get a loadBalancer
       tags:
-      - Network
+      - Load Balancer
     patch:
       consumes:
       - application/json
@@ -4493,7 +4493,7 @@ paths:
             $ref: '#/definitions/common.APIError'
       summary: patch a loadBalancer
       tags:
-      - Network
+      - Load Balancer
   /load_balancers/{id}/floating_ips:
     get:
       consumes:
@@ -4512,7 +4512,7 @@ paths:
             $ref: '#/definitions/common.APIError'
       summary: list floating ips for load balancer
       tags:
-      - Network
+      - Load Balancer
     post:
       consumes:
       - application/json
@@ -4541,7 +4541,7 @@ paths:
             $ref: '#/definitions/common.APIError'
       summary: create a floating ip for load balancer
       tags:
-      - Network
+      - Load Balancer
   /load_balancers/{id}/floating_ips/{floating_ip_id}:
     delete:
       consumes:
@@ -4562,7 +4562,7 @@ paths:
             $ref: '#/definitions/common.APIError'
       summary: delete a floating ip for load balancer
       tags:
-      - Network
+      - Load Balancer
     get:
       consumes:
       - application/json
@@ -4584,7 +4584,7 @@ paths:
             $ref: '#/definitions/common.APIError'
       summary: get a floating ip for load balancer
       tags:
-      - Network
+      - Load Balancer
   /load_balancers/{id}/listeners:
     get:
       consumes:
@@ -4603,7 +4603,7 @@ paths:
             $ref: '#/definitions/common.APIError'
       summary: list listeners
       tags:
-      - Network
+      - Load Balancer
     post:
       consumes:
       - application/json
@@ -4632,7 +4632,7 @@ paths:
             $ref: '#/definitions/common.APIError'
       summary: create a listener
       tags:
-      - Network
+      - Load Balancer
   /load_balancers/{id}/listeners/:listener_id/backends:
     get:
       consumes:
@@ -4651,7 +4651,7 @@ paths:
             $ref: '#/definitions/common.APIError'
       summary: list backends
       tags:
-      - Network
+      - Load Balancer
   /load_balancers/{id}/listeners/:listener_id/backends/{backend_id}:
     delete:
       consumes:
@@ -4672,7 +4672,7 @@ paths:
             $ref: '#/definitions/common.APIError'
       summary: delete a backend
       tags:
-      - Network
+      - Load Balancer
   /load_balancers/{id}/listeners/{listener_id}:
     delete:
       consumes:
@@ -4693,7 +4693,7 @@ paths:
             $ref: '#/definitions/common.APIError'
       summary: delete a listener
       tags:
-      - Network
+      - Load Balancer
     get:
       consumes:
       - application/json
@@ -4715,7 +4715,7 @@ paths:
             $ref: '#/definitions/common.APIError'
       summary: get a listener
       tags:
-      - Network
+      - Load Balancer
     patch:
       consumes:
       - application/json
@@ -4744,7 +4744,7 @@ paths:
             $ref: '#/definitions/common.APIError'
       summary: patch a listener
       tags:
-      - Network
+      - Load Balancer
   /load_balancers/{id}/listeners/{listener_id}/backends:
     post:
       consumes:
@@ -4774,7 +4774,7 @@ paths:
             $ref: '#/definitions/common.APIError'
       summary: create a backend
       tags:
-      - Network
+      - Load Balancer
   /load_balancers/{id}/listeners/{listener_id}/backends/{backend_id}:
     get:
       consumes:
@@ -4797,7 +4797,7 @@ paths:
             $ref: '#/definitions/common.APIError'
       summary: get a backend
       tags:
-      - Network
+      - Load Balancer
     patch:
       consumes:
       - application/json
@@ -4826,7 +4826,7 @@ paths:
             $ref: '#/definitions/common.APIError'
       summary: patch a backend
       tags:
-      - Network
+      - Load Balancer
   /migrations:
     get:
       consumes:
@@ -4918,7 +4918,7 @@ paths:
             $ref: '#/definitions/common.APIError'
       summary: list secgroups
       tags:
-      - Network
+      - Security Group
     post:
       consumes:
       - application/json
@@ -4947,7 +4947,7 @@ paths:
             $ref: '#/definitions/common.APIError'
       summary: create a secgroup
       tags:
-      - Network
+      - Security Group
   /security_groups/{id}:
     delete:
       consumes:
@@ -4968,7 +4968,7 @@ paths:
             $ref: '#/definitions/common.APIError'
       summary: delete a secgroup
       tags:
-      - Network
+      - Security Group
     get:
       consumes:
       - application/json
@@ -4990,7 +4990,7 @@ paths:
             $ref: '#/definitions/common.APIError'
       summary: get a secgroup
       tags:
-      - Network
+      - Security Group
     patch:
       consumes:
       - application/json
@@ -5019,7 +5019,7 @@ paths:
             $ref: '#/definitions/common.APIError'
       summary: patch a secgroup
       tags:
-      - Network
+      - Security Group
   /security_groups/{id}/rules:
     get:
       consumes:
@@ -5038,7 +5038,7 @@ paths:
             $ref: '#/definitions/common.APIError'
       summary: list secrules
       tags:
-      - Network
+      - Security Group
     post:
       consumes:
       - application/json
@@ -5067,7 +5067,7 @@ paths:
             $ref: '#/definitions/common.APIError'
       summary: create a secrule
       tags:
-      - Network
+      - Security Group
   /security_groups/{id}/rules/{rule_id}:
     delete:
       consumes:
@@ -5088,7 +5088,7 @@ paths:
             $ref: '#/definitions/common.APIError'
       summary: delete a secrule
       tags:
-      - Network
+      - Security Group
     get:
       consumes:
       - application/json
@@ -5110,7 +5110,7 @@ paths:
             $ref: '#/definitions/common.APIError'
       summary: get a secrule
       tags:
-      - Network
+      - Security Group
   /subnets:
     get:
       consumes:
@@ -5129,7 +5129,7 @@ paths:
             $ref: '#/definitions/common.APIError'
       summary: list subnets
       tags:
-      - Network
+      - Subnet
     post:
       consumes:
       - application/json
@@ -5158,7 +5158,7 @@ paths:
             $ref: '#/definitions/common.APIError'
       summary: create a subnet
       tags:
-      - Network
+      - Subnet
   /subnets/{id}:
     delete:
       consumes:
@@ -5179,7 +5179,7 @@ paths:
             $ref: '#/definitions/common.APIError'
       summary: delete a subnet
       tags:
-      - Network
+      - Subnet
     get:
       consumes:
       - application/json
@@ -5201,7 +5201,7 @@ paths:
             $ref: '#/definitions/common.APIError'
       summary: get a subnet
       tags:
-      - Network
+      - Subnet
     patch:
       consumes:
       - application/json
@@ -5230,7 +5230,7 @@ paths:
             $ref: '#/definitions/common.APIError'
       summary: patch a subnet
       tags:
-      - Network
+      - Subnet
   /tasks:
     get:
       consumes:
@@ -5270,7 +5270,7 @@ paths:
             $ref: '#/definitions/common.APIError'
       summary: list tasks
       tags:
-      - Compute
+      - Task
   /tasks/{id}:
     get:
       consumes:
@@ -5299,7 +5299,7 @@ paths:
             $ref: '#/definitions/common.APIError'
       summary: get a task
       tags:
-      - Compute
+      - Task
   /version:
     get:
       consumes:
@@ -5322,7 +5322,7 @@ paths:
             $ref: '#/definitions/common.APIError'
       summary: get version
       tags:
-      - Compute
+      - System Info
   /volumes:
     get:
       consumes:
@@ -5341,7 +5341,7 @@ paths:
             $ref: '#/definitions/common.APIError'
       summary: list volumes
       tags:
-      - Compute
+      - Volume
     post:
       consumes:
       - application/json
@@ -5370,7 +5370,7 @@ paths:
             $ref: '#/definitions/common.APIError'
       summary: create a volume
       tags:
-      - Compute
+      - Volume
   /volumes/{id}:
     delete:
       consumes:
@@ -5391,7 +5391,7 @@ paths:
             $ref: '#/definitions/common.APIError'
       summary: delete a volume
       tags:
-      - Compute
+      - Volume
     get:
       consumes:
       - application/json
@@ -5419,7 +5419,7 @@ paths:
             $ref: '#/definitions/common.APIError'
       summary: get a volume
       tags:
-      - Compute
+      - Volume
     patch:
       consumes:
       - application/json
@@ -5448,7 +5448,7 @@ paths:
             $ref: '#/definitions/common.APIError'
       summary: patch a volume
       tags:
-      - Compute
+      - Volume
   /volumes/{id}/qos:
     put:
       consumes:
@@ -5478,7 +5478,7 @@ paths:
             $ref: '#/definitions/common.APIError'
       summary: update qos of a volume
       tags:
-      - Compute
+      - Volume
   /volumes/{id}/resize:
     post:
       consumes:
@@ -5506,7 +5506,7 @@ paths:
             $ref: '#/definitions/common.APIError'
       summary: resize a volume
       tags:
-      - Compute
+      - Volume
   /vpcs:
     get:
       consumes:
@@ -5525,7 +5525,7 @@ paths:
             $ref: '#/definitions/common.APIError'
       summary: list vpcs
       tags:
-      - Network
+      - VPC
     post:
       consumes:
       - application/json
@@ -5554,7 +5554,7 @@ paths:
             $ref: '#/definitions/common.APIError'
       summary: create a vpc
       tags:
-      - Network
+      - VPC
   /vpcs/{id}:
     delete:
       consumes:
@@ -5575,7 +5575,7 @@ paths:
             $ref: '#/definitions/common.APIError'
       summary: delete a vpc
       tags:
-      - Network
+      - VPC
     get:
       consumes:
       - application/json
@@ -5597,7 +5597,7 @@ paths:
             $ref: '#/definitions/common.APIError'
       summary: get a vpc
       tags:
-      - Network
+      - VPC
     patch:
       consumes:
       - application/json
@@ -5626,7 +5626,7 @@ paths:
             $ref: '#/definitions/common.APIError'
       summary: patch a vpc
       tags:
-      - Network
+      - VPC
   /zones:
     get:
       consumes:

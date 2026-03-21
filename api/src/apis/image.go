@@ -87,7 +87,7 @@ type ImageStorageListResponse struct {
 
 // @Summary get a image
 // @Description get a image
-// @tags Compute
+// @tags Image
 // @Accept  json
 // @Produce json
 // @Success 200 {object} ImageResponse
@@ -116,7 +116,7 @@ func (v *ImageAPI) Get(c *gin.Context) {
 
 // @Summary patch a image
 // @Description patch a image
-// @tags Compute
+// @tags Image
 // @Accept  json
 // @Produce json
 // @Param   message	body   ImagePatchPayload  true   "Image patch payload"
@@ -159,7 +159,7 @@ func (v *ImageAPI) Patch(c *gin.Context) {
 
 // @Summary delete a image
 // @Description delete a image
-// @tags Compute
+// @tags Image
 // @Accept  json
 // @Produce json
 // @Success 200
@@ -187,7 +187,7 @@ func (v *ImageAPI) Delete(c *gin.Context) {
 
 // @Summary create a image
 // @Description create a image
-// @tags Compute
+// @tags Image
 // @Accept  json
 // @Produce json
 // @Param   message	body   ImagePayload  true   "Image create payload"
@@ -271,7 +271,7 @@ func (v *ImageAPI) getImageResponse(_ context.Context, image *model.Image) (imag
 
 // @Summary list images
 // @Description list images
-// @tags Compute
+// @tags Image
 // @Accept  json
 // @Produce json
 // @Success 200 {object} ImageListResponse
@@ -326,7 +326,7 @@ func (v *ImageAPI) List(c *gin.Context) {
 
 // @Summary list image storages
 // @Description list image storages
-// @tags Compute
+// @tags Image
 // @Accept  json
 // @Produce json
 // @Success 200 {object} ImageStorageResponse

@@ -85,7 +85,7 @@ type FloatingIpWithInfo struct {
 
 // @Summary get a ipGroup
 // @Description get a ipGroup
-// @tags Network
+// @tags IP Group
 // @Accept  json
 // @Produce json
 // @Success 200 {object} IpGroupResponse
@@ -114,7 +114,7 @@ func (v *IpGroupAPI) Get(c *gin.Context) {
 
 // @Summary patch a ipGroup
 // @Description patch a ipGroup
-// @tags Network
+// @tags IP Group
 // @Accept  json
 // @Produce json
 // @Param   message	body   IpGroupPatchPayload  true   "IpGroup patch payload"
@@ -186,7 +186,7 @@ func (v *IpGroupAPI) Patch(c *gin.Context) {
 
 // @Summary delete a ipGroup
 // @Description delete a ipGroup
-// @tags Network
+// @tags IP Group
 // @Accept  json
 // @Produce json
 // @Success 204
@@ -215,7 +215,7 @@ func (v *IpGroupAPI) Delete(c *gin.Context) {
 
 // @Summary create a ipGroup
 // @Description create a ipGroup
-// @tags Network
+// @tags IP Group
 // @Accept  json
 // @Produce json
 // @Param   message	body   IpGroupPayload  true   "IpGroup create payload"
@@ -389,7 +389,7 @@ func (v *IpGroupAPI) getIpGroupResponse(ctx context.Context, ipGroup *model.IpGr
 
 // @Summary list ipGroup
 // @Description list ipGroup
-// @tags Network
+// @tags IP Group
 // @Accept  json
 // @Produce json
 // @Success 200 {object} IpGroupListResponse

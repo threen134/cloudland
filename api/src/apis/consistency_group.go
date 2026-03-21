@@ -61,7 +61,7 @@ type ConsistencyGroupListResponse struct {
 
 // @Summary Get a consistency group
 // @Description Get a consistency group by UUID
-// @tags Storage
+// @tags Consistency Group
 // @Accept  json
 // @Produce json
 // @Param   id     path    string     true  "Consistency Group UUID"
@@ -124,7 +124,7 @@ func (a *ConsistencyGroupAPI) Get(c *gin.Context) {
 
 // @Summary List consistency groups
 // @Description List consistency groups with pagination
-// @tags Storage
+// @tags Consistency Group
 // @Accept  json
 // @Produce json
 // @Param   offset  query   int     false  "Offset"
@@ -195,7 +195,7 @@ func (a *ConsistencyGroupAPI) List(c *gin.Context) {
 
 // @Summary Create a consistency group
 // @Description Create a new consistency group with volumes
-// @tags Storage
+// @tags Consistency Group
 // @Accept  json
 // @Produce json
 // @Param   payload  body    ConsistencyGroupPayload  true  "Consistency Group Payload"
@@ -247,7 +247,7 @@ func (a *ConsistencyGroupAPI) Create(c *gin.Context) {
 
 // @Summary Update a consistency group
 // @Description Update a consistency group's name and description
-// @tags Storage
+// @tags Consistency Group
 // @Accept  json
 // @Produce json
 // @Param   id       path    string                        true   "Consistency Group UUID"
@@ -308,7 +308,7 @@ func (a *ConsistencyGroupAPI) Patch(c *gin.Context) {
 
 // @Summary Delete a consistency group
 // @Description Delete a consistency group
-// @tags Storage
+// @tags Consistency Group
 // @Accept  json
 // @Produce json
 // @Param   id     path    string     true  "Consistency Group UUID"
@@ -345,7 +345,7 @@ func (a *ConsistencyGroupAPI) Delete(c *gin.Context) {
 
 // @Summary Add volumes to a consistency group
 // @Description Add volumes to an existing consistency group
-// @tags Storage
+// @tags Consistency Group
 // @Accept  json
 // @Produce json
 // @Param   id       path    string                          true   "Consistency Group UUID"
@@ -406,7 +406,7 @@ func (a *ConsistencyGroupAPI) AddVolumes(c *gin.Context) {
 
 // @Summary Remove a volume from a consistency group
 // @Description Remove a volume from an existing consistency group
-// @tags Storage
+// @tags Consistency Group
 // @Accept  json
 // @Produce json
 // @Param   id         path    string     true  "Consistency Group UUID"
@@ -490,7 +490,7 @@ type ConsistencyGroupRestoreResponse struct {
 
 // @Summary List consistency group snapshots
 // @Description List snapshots for a consistency group with pagination
-// @tags Storage
+// @tags Consistency Group
 // @Accept  json
 // @Produce json
 // @Param   id      path    string  true   "Consistency Group UUID"
@@ -572,7 +572,7 @@ func (a *ConsistencyGroupAPI) ListSnapshots(c *gin.Context) {
 
 // @Summary Get a consistency group snapshot
 // @Description Get a consistency group snapshot by UUID
-// @tags Storage
+// @tags Consistency Group
 // @Accept  json
 // @Produce json
 // @Param   id       path    string  true  "Consistency Group UUID"
@@ -635,7 +635,7 @@ func (a *ConsistencyGroupAPI) GetSnapshot(c *gin.Context) {
 
 // @Summary Create a consistency group snapshot
 // @Description Create a snapshot for a consistency group
-// @tags Storage
+// @tags Consistency Group
 // @Accept  json
 // @Produce json
 // @Param   id       path    string                            true  "Consistency Group UUID"
@@ -689,7 +689,7 @@ func (a *ConsistencyGroupAPI) CreateSnapshot(c *gin.Context) {
 
 // @Summary Delete a consistency group snapshot
 // @Description Delete a snapshot from a consistency group
-// @tags Storage
+// @tags Consistency Group
 // @Accept  json
 // @Produce json
 // @Param   id       path    string  true  "Consistency Group UUID"
@@ -719,7 +719,7 @@ func (a *ConsistencyGroupAPI) DeleteSnapshot(c *gin.Context) {
 
 // @Summary Restore a consistency group from snapshot
 // @Description Restore all volumes in a consistency group from a snapshot
-// @tags Storage
+// @tags Consistency Group
 // @Accept  json
 // @Produce json
 // @Param   id       path    string  true  "Consistency Group UUID"

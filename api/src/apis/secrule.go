@@ -58,7 +58,7 @@ type SecrulePatchPayload struct {
 
 // @Summary get a secrule
 // @Description get a secrule
-// @tags Network
+// @tags Security Group
 // @Accept  json
 // @Produce json
 // @Success 200 {object} SecruleResponse
@@ -93,7 +93,7 @@ func (v *SecruleAPI) Get(c *gin.Context) {
 
 // @Summary delete a secrule
 // @Description delete a secrule
-// @tags Network
+// @tags Security Group
 // @Accept  json
 // @Produce json
 // @Success 204
@@ -127,7 +127,7 @@ func (v *SecruleAPI) Delete(c *gin.Context) {
 
 // @Summary create a secrule
 // @Description create a secrule
-// @tags Network
+// @tags Security Group
 // @Accept  json
 // @Produce json
 // @Param   message	body   SecurityRulePayload  true   "Secrule create payload"
@@ -195,7 +195,7 @@ func (v *SecruleAPI) getSecruleResponse(_ context.Context, secrule *model.Securi
 
 // @Summary list secrules
 // @Description list secrules
-// @tags Network
+// @tags Security Group
 // @Accept  json
 // @Produce json
 // @Success 200 {object} SecruleListResponse

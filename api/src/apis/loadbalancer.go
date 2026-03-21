@@ -55,7 +55,7 @@ type LoadBalancerPatchPayload struct {
 
 // @Summary get a loadBalancer
 // @Description get a loadBalancer
-// @tags Network
+// @tags Load Balancer
 // @Accept  json
 // @Produce json
 // @Success 200 {object} LoadBalancerResponse
@@ -83,7 +83,7 @@ func (v *LoadBalancerAPI) Get(c *gin.Context) {
 
 // @Summary patch a loadBalancer
 // @Description patch a loadBalancer
-// @tags Network
+// @tags Load Balancer
 // @Accept  json
 // @Produce json
 // @Param   message	body   LoadBalancerPatchPayload  true   "LoadBalancer patch payload"
@@ -128,7 +128,7 @@ func (v *LoadBalancerAPI) Patch(c *gin.Context) {
 
 // @Summary delete a loadBalancer
 // @Description delete a loadBalancer
-// @tags Network
+// @tags Load Balancer
 // @Accept  json
 // @Produce json
 // @Success 204
@@ -156,7 +156,7 @@ func (v *LoadBalancerAPI) Delete(c *gin.Context) {
 
 // @Summary create a loadBalancer
 // @Description create a loadBalancer
-// @tags Network
+// @tags Load Balancer
 // @Accept  json
 // @Produce json
 // @Param   message	body   LoadBalancerPayload  true   "LoadBalancer create payload"
@@ -251,7 +251,7 @@ func (v *LoadBalancerAPI) getLoadBalancerResponse(ctx context.Context, loadBalan
 
 // @Summary list loadBalancers
 // @Description list loadBalancers
-// @tags Network
+// @tags Load Balancer
 // @Accept  json
 // @Produce json
 // @Success 200 {object} LoadBalancerListResponse

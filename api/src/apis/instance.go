@@ -108,7 +108,7 @@ type InstanceListResponse struct {
 
 // @Summary get a instance
 // @Description get a instance
-// @tags Compute
+// @tags Instance
 // @Accept  json
 // @Produce json
 // @Param   id  path  string  true  "Instance UUID"
@@ -136,7 +136,7 @@ func (v *InstanceAPI) Get(c *gin.Context) {
 
 // @Summary patch a instance
 // @Description patch a instance
-// @tags Compute
+// @tags Instance
 // @Accept  json
 // @Produce json
 // @Param   message	body   InstancePatchPayload  true   "Instance patch payload"
@@ -184,7 +184,7 @@ func (v *InstanceAPI) Patch(c *gin.Context) {
 
 // @Summary set user password for a instance
 // @Description set user password for a instance
-// @tags Compute
+// @tags Instance
 // @Accept  json
 // @Produce json
 // @Param   id  path  string  true  "Instance UUID"
@@ -221,7 +221,7 @@ func (v *InstanceAPI) SetUserPassword(c *gin.Context) {
 
 // @Summary reinstall a instance
 // @Description reinstall a instance
-// @tags Compute
+// @tags Instance
 // @Accept  json
 // @Produce json
 // @Param   id  path  string  true  "Instance UUID"
@@ -308,7 +308,7 @@ func (v *InstanceAPI) Reinstall(c *gin.Context) {
 
 // @Summary rescue a instance
 // @Description rescue a instance
-// @tags Compute
+// @tags Instance
 // @Accept  json
 // @Produce json
 // @Param   id  path  string  true  "Instance UUID"
@@ -361,7 +361,7 @@ func (v *InstanceAPI) Rescue(c *gin.Context) {
 
 // @Summary end rescue a instance
 // @Description end rescue a instance
-// @tags Compute
+// @tags Instance
 // @Accept  json
 // @Produce json
 // @Param   id  path  string  true  "Instance UUID"
@@ -392,7 +392,7 @@ func (v *InstanceAPI) EndRescue(c *gin.Context) {
 
 // @Summary resize a instance
 // @Description resize a instance
-// @tags Compute
+// @tags Instance
 // @Accept  json
 // @Produce json
 // @Param   id  path  string  true  "Instance UUID"
@@ -454,7 +454,7 @@ func (v *InstanceAPI) Resize(c *gin.Context) {
 
 // @Summary delete a instance
 // @Description delete a instance
-// @tags Compute
+// @tags Instance
 // @Accept  json
 // @Produce json
 // @Param   id  path  int  true  "Instance ID"
@@ -483,7 +483,7 @@ func (v *InstanceAPI) Delete(c *gin.Context) {
 
 // @Summary create a instance
 // @Description create a instance
-// @tags Compute
+// @tags Instance
 // @Accept  json
 // @Produce json
 // @Param   message	body   InstancePayload  true   "Instance create payload"
@@ -701,7 +701,7 @@ func (v *InstanceAPI) getInstanceResponse(ctx context.Context, instance *model.I
 
 // @Summary list instances
 // @Description list instances
-// @tags Compute
+// @tags Instance
 // @Accept  json
 // @Produce json
 // @Success 200 {object} InstanceListResponse
@@ -774,7 +774,7 @@ func (v *InstanceAPI) List(c *gin.Context) {
 // GetInstanceRuleLinks returns all rule links for given instance UUIDs
 // @Summary Get instance rule links
 // @Description Get all rule groups linked to specific instances
-// @tags Compute
+// @tags Instance
 // @Accept json
 // @Produce json
 // @Param instance_ids query string true "Comma-separated instance UUIDs"

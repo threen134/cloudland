@@ -154,7 +154,7 @@ type AddressListResponse struct {
 
 // @Summary list IP addresses by subnet UUID
 // @Description list all IP addresses for a subnet identified by UUID
-// @tags Network
+// @tags Address
 // @Accept  json
 // @Produce json
 // @Success 200 {object} AddressListResponse

@@ -82,7 +82,7 @@ type VolumeResizePayload struct {
 
 // @Summary get a volume
 // @Description get a volume
-// @tags Compute
+// @tags Volume
 // @Accept  json
 // @Produce json
 // @Param   id     path    string     true  "Volume UUID"
@@ -111,7 +111,7 @@ func (v *VolumeAPI) Get(c *gin.Context) {
 
 // @Summary update qos of a volume
 // @Description update iops and bps limit of a volume
-// @tags Compute
+// @tags Volume
 // @Accept  json
 // @Produce json
 // @Param   message	body   VolumeQosPayload  true   "Volume qos payload"
@@ -147,7 +147,7 @@ func (v *VolumeAPI) UpdateQos(c *gin.Context) {
 
 // @Summary patch a volume
 // @Description patch a volume
-// @tags Compute
+// @tags Volume
 // @Accept  json
 // @Produce json
 // @Param   message	body   VolumePatchPayload  true   "Volume patch payload"
@@ -195,7 +195,7 @@ func (v *VolumeAPI) Patch(c *gin.Context) {
 
 // @Summary delete a volume
 // @Description delete a volume
-// @tags Compute
+// @tags Volume
 // @Accept  json
 // @Produce json
 // @Success 204
@@ -218,7 +218,7 @@ func (v *VolumeAPI) Delete(c *gin.Context) {
 
 // @Summary create a volume
 // @Description create a volume
-// @tags Compute
+// @tags Volume
 // @Accept  json
 // @Produce json
 // @Param   message	body   VolumePayload  true   "Volume create payload"
@@ -254,7 +254,7 @@ func (v *VolumeAPI) Create(c *gin.Context) {
 
 // @Summary list volumes
 // @Description list volumes
-// @tags Compute
+// @tags Volume
 // @Accept  json
 // @Produce json
 // @Success 200 {object} VolumeListResponse
@@ -316,7 +316,7 @@ func (v *VolumeAPI) List(c *gin.Context) {
 
 // @Summary resize a volume
 // @Description resize a volume
-// @tags Compute
+// @tags Volume
 // @Accept  json
 // @Produce json
 // @Param   message	body   VolumeResizePayload  true   "Volume resize payload"

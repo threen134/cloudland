@@ -46,7 +46,7 @@ type DictionaryAPI struct{}
 
 // @Summary list dictionaries
 // @Description list dictionaries
-// @tags Compute
+// @tags Dictionary
 // @Accept  json
 // @Produce json
 // @Success 200 {object} DictionaryListResponse
@@ -205,7 +205,7 @@ func (v *DictionaryAPI) getDictionaryResponse(ctx context.Context, dictionary *m
 
 // @Summary get a dictionary
 // @Description get a dictionary
-// @tags Compute
+// @tags Dictionary
 // @Accept  json
 // @Produce json
 // @Param   id  path  string  true  "Dictionary UUID"

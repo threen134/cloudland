@@ -43,7 +43,7 @@ type VolBackupListResponse struct {
 
 // @Summary create a volume backup/snapshot
 // @Description create a volume backup/snapshot
-// @tags Compute
+// @tags Backup
 // @Accept  json
 // @Produce json
 // @Param   message	body   VolBackupPayload  true   "Volume backup/snapshot create payload"
@@ -86,7 +86,7 @@ func (v *VolBackupAPI) Create(c *gin.Context) {
 // @Description list volume backups/snapshots by volume UUID and backup type
 // @Param   id          query    string     true  "Volume UUID"
 // @Param   backup_type query    string     true  "Backup type: empty or snapshot or backup"
-// @tags Compute
+// @tags Backup
 // @Accept  json
 // @Produce json
 // @Success 200 {object} VolBackupListResponse
@@ -150,7 +150,7 @@ func (v *VolBackupAPI) List(c *gin.Context) {
 
 // @Summary get a volume backup/snapshot
 // @Description get a volume backup/snapshot by UUID
-// @tags Compute
+// @tags Backup
 // @Accept  json
 // @Produce json
 // @Param   id     path    string     true  "Volume backup/snapshot UUID"
@@ -176,7 +176,7 @@ func (v *VolBackupAPI) Get(c *gin.Context) {
 
 // @Summary delete a volume backup/snapshot
 // @Description delete a volume backup/snapshot by UUID
-// @tags Compute
+// @tags Backup
 // @Accept  json
 // @Produce json
 // @Success 204
@@ -201,7 +201,7 @@ func (v *VolBackupAPI) Delete(c *gin.Context) {
 
 // @Summary restore volume from a backup/snapshot
 // @Description restore volume from a backup/snapshot
-// @tags Compute
+// @tags Backup
 // @Accept  json
 // @Produce json
 // @Param   id     path    string     true  "Volume backup/snapshot UUID"

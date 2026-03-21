@@ -51,7 +51,7 @@ type BackendPatchPayload struct {
 
 // @Summary get a backend
 // @Description get a backend
-// @tags Network
+// @tags Load Balancer
 // @Accept  json
 // @Produce json
 // @Success 200 {object} BackendResponse
@@ -105,7 +105,7 @@ func (v *BackendAPI) Get(c *gin.Context) {
 
 // @Summary patch a backend
 // @Description patch a backend
-// @tags Network
+// @tags Load Balancer
 // @Accept  json
 // @Produce json
 // @Param   message	body   BackendPatchPayload  true   "Backend patch payload"
@@ -176,7 +176,7 @@ func (v *BackendAPI) Patch(c *gin.Context) {
 
 // @Summary delete a backend
 // @Description delete a backend
-// @tags Network
+// @tags Load Balancer
 // @Accept  json
 // @Produce json
 // @Success 204
@@ -230,7 +230,7 @@ func (v *BackendAPI) Delete(c *gin.Context) {
 
 // @Summary create a backend
 // @Description create a backend
-// @tags Network
+// @tags Load Balancer
 // @Accept  json
 // @Produce json
 // @Param   message	body   BackendPayload  true   "Backend create payload"
@@ -303,7 +303,7 @@ func (v *BackendAPI) getBackendResponse(ctx context.Context, backend *model.Back
 
 // @Summary list backends
 // @Description list backends
-// @tags Network
+// @tags Load Balancer
 // @Accept  json
 // @Produce json
 // @Success 200 {object} BackendListResponse

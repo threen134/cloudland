@@ -54,7 +54,7 @@ type SecurityGroupPatchPayload struct {
 
 // @Summary get a secgroup
 // @Description get a secgroup
-// @tags Network
+// @tags Security Group
 // @Accept  json
 // @Produce json
 // @Success 200 {object} SecurityGroupResponse
@@ -82,7 +82,7 @@ func (v *SecgroupAPI) Get(c *gin.Context) {
 
 // @Summary patch a secgroup
 // @Description patch a secgroup
-// @tags Network
+// @tags Security Group
 // @Accept  json
 // @Produce json
 // @Param   message	body   SecurityGroupPatchPayload  true   "Secgroup patch payload"
@@ -130,7 +130,7 @@ func (v *SecgroupAPI) Patch(c *gin.Context) {
 
 // @Summary delete a secgroup
 // @Description delete a secgroup
-// @tags Network
+// @tags Security Group
 // @Accept  json
 // @Produce json
 // @Success 204
@@ -158,7 +158,7 @@ func (v *SecgroupAPI) Delete(c *gin.Context) {
 
 // @Summary create a secgroup
 // @Description create a secgroup
-// @tags Network
+// @tags Security Group
 // @Accept  json
 // @Produce json
 // @Param   message	body   SecurityGroupPayload  true   "Secgroup create payload"
@@ -255,7 +255,7 @@ func (v *SecgroupAPI) getSecgroupResponse(ctx context.Context, secgroup *model.S
 
 // @Summary list secgroups
 // @Description list secgroups
-// @tags Network
+// @tags Security Group
 // @Accept  json
 // @Produce json
 // @Success 200 {object} SecurityGroupListResponse

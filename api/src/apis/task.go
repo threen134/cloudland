@@ -44,7 +44,7 @@ type CLTaskListResponse struct {
 
 // @Summary get a task
 // @Description get a task
-// @tags Compute
+// @tags Task
 // @Accept  json
 // @Produce json
 // @Param   id     path    string     true  "Task UUID"
@@ -74,7 +74,7 @@ func (a *TaskAPI) Get(c *gin.Context) {
 // @Param source query    string     true  "Source: empty or manual or scheduler or migration or not_migration or all"
 // @Param offset query    int        true  "Offset"
 // @Param limit query    int        true  "Limit"
-// @tags Compute
+// @tags Task
 // @Accept  json
 // @Produce json
 // @Success 200 {object} CLTaskListResponse

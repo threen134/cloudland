@@ -47,7 +47,7 @@ type FlavorPayload struct {
 
 // @Summary get a flavor
 // @Description get a flavor
-// @tags Compute
+// @tags Flavor
 // @Accept  json
 // @Produce json
 // @Success 200 {object} FlavorResponse
@@ -138,7 +138,7 @@ func (v *FlavorAPI) getFlavorResponse(_ context.Context, flavor *model.Flavor) (
 
 // @Summary list flavors
 // @Description list flavors
-// @tags Compute
+// @tags Flavor
 // @Accept  json
 // @Produce json
 // @Success 200 {object} FlavorListResponse

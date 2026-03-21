@@ -50,7 +50,7 @@ type KeyPatchPayload struct {
 
 // @Summary get a key
 // @Description get a key
-// @tags Authorization
+// @tags Key
 // @Accept  json
 // @Produce json
 // @Success 200 {object} KeyResponse
@@ -75,7 +75,7 @@ func (v *KeyAPI) Get(c *gin.Context) {
 
 // @Summary patch a key
 // @Description patch a key
-// @tags Authorization
+// @tags Key
 // @Accept  json
 // @Produce json
 // @Param   message	body   KeyPatchPayload  true   "Key patch payload"
@@ -90,7 +90,7 @@ func (v *KeyAPI) Patch(c *gin.Context) {
 
 // @Summary delete a key
 // @Description delete a key
-// @tags Authorization
+// @tags Key
 // @Accept  json
 // @Produce json
 // @Success 204
@@ -115,7 +115,7 @@ func (v *KeyAPI) Delete(c *gin.Context) {
 
 // @Summary create a key
 // @Description create a key
-// @tags Authorization
+// @tags Key
 // @Accept  json
 // @Produce json
 // @Param   message	body   KeyPayload  true   "Key create payload"
@@ -167,7 +167,7 @@ func (v *KeyAPI) getKeyResponse(ctx context.Context, key *model.Key) (keyResp *K
 
 // @Summary list keys
 // @Description list keys
-// @tags Authorization
+// @tags Key
 // @Accept  json
 // @Produce json
 // @Success 200 {object} KeyListResponse

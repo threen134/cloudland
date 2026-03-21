@@ -174,7 +174,8 @@ ADMIN_EMAIL=$(grep '^ADMIN_EMAIL=' .env | cut -d'=' -f2-)
 echo "默认用户名: ${ADMIN_EMAIL:-admin@cloudland.local}"
 ADMIN_PASSWORD=$(grep '^ADMIN_PASSWORD=' .env | cut -d'=' -f2-)
 echo "默认密码: ${ADMIN_PASSWORD:-passw0rd}"
-echo "API 文档: https://${PUBLIC_IP}:443/api/v1/"
+echo "API 文档 (租户): https://${PUBLIC_IP}/swagger/api/v1/tenant/index.html"
+echo "API 文档 (管理): https://${PUBLIC_IP}/swagger/api/v1/admin/index.html"
 echo "监控服务: http://${PUBLIC_IP}:9090/-/healthy"
 
 echo "常用维护命令："

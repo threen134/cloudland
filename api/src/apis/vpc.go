@@ -47,7 +47,7 @@ type VPCPatchPayload struct {
 
 // @Summary get a vpc
 // @Description get a vpc
-// @tags Network
+// @tags VPC
 // @Accept  json
 // @Produce json
 // @Success 200 {object} VPCResponse
@@ -75,7 +75,7 @@ func (v *VPCAPI) Get(c *gin.Context) {
 
 // @Summary patch a vpc
 // @Description patch a vpc
-// @tags Network
+// @tags VPC
 // @Accept  json
 // @Produce json
 // @Param   message	body   VPCPatchPayload  true   "VPC patch payload"
@@ -117,7 +117,7 @@ func (v *VPCAPI) Patch(c *gin.Context) {
 
 // @Summary delete a vpc
 // @Description delete a vpc
-// @tags Network
+// @tags VPC
 // @Accept  json
 // @Produce json
 // @Success 204
@@ -146,7 +146,7 @@ func (v *VPCAPI) Delete(c *gin.Context) {
 
 // @Summary create a vpc
 // @Description create a vpc
-// @tags Network
+// @tags VPC
 // @Accept  json
 // @Produce json
 // @Param   message	body   VPCPayload  true   "VPC create payload"
@@ -202,7 +202,7 @@ func (v *VPCAPI) getVPCResponse(ctx context.Context, router *model.Router) (vpcR
 
 // @Summary list vpcs
 // @Description list vpcs
-// @tags Network
+// @tags VPC
 // @Accept  json
 // @Produce json
 // @Success 200 {object} VPCListResponse

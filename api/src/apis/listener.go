@@ -56,7 +56,7 @@ type ListenerPatchPayload struct {
 
 // @Summary get a listener
 // @Description get a listener
-// @tags Network
+// @tags Load Balancer
 // @Accept  json
 // @Produce json
 // @Success 200 {object} ListenerResponse
@@ -97,7 +97,7 @@ func (v *ListenerAPI) Get(c *gin.Context) {
 
 // @Summary patch a listener
 // @Description patch a listener
-// @tags Network
+// @tags Load Balancer
 // @Accept  json
 // @Produce json
 // @Param   message	body   ListenerPatchPayload  true   "Listener patch payload"
@@ -155,7 +155,7 @@ func (v *ListenerAPI) Patch(c *gin.Context) {
 
 // @Summary delete a listener
 // @Description delete a listener
-// @tags Network
+// @tags Load Balancer
 // @Accept  json
 // @Produce json
 // @Success 204
@@ -196,7 +196,7 @@ func (v *ListenerAPI) Delete(c *gin.Context) {
 
 // @Summary create a listener
 // @Description create a listener
-// @tags Network
+// @tags Load Balancer
 // @Accept  json
 // @Produce json
 // @Param   message	body   ListenerPayload  true   "Listener create payload"
@@ -266,7 +266,7 @@ func (v *ListenerAPI) getListenerResponse(ctx context.Context, listener *model.L
 
 // @Summary list listeners
 // @Description list listeners
-// @tags Network
+// @tags Load Balancer
 // @Accept  json
 // @Produce json
 // @Success 200 {object} ListenerListResponse

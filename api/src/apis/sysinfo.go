@@ -27,7 +27,7 @@ type VersionResponse struct {
 
 // @Summary get version
 // @Description get version
-// @tags Compute
+// @tags System Info
 // @Accept  json
 // @Produce json
 // @Success 200 {object} VersionResponse

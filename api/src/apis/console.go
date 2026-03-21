@@ -33,7 +33,7 @@ type ConsoleResponse struct {
 
 // @Summary create a console
 // @Description create a console
-// @tags Authorization
+// @tags Console
 // @Accept  json
 // @Produce json
 // @Param   id  path  int  true  "Instance ID"

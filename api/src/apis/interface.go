@@ -81,7 +81,7 @@ type InterfacePatchPayload struct {
 
 // @Summary get a interface
 // @Description get a interface
-// @tags Network
+// @tags Interface
 // @Accept  json
 // @Produce json
 // @Success 200 {object} InterfaceResponse
@@ -211,7 +211,7 @@ func (v *InterfaceAPI) getInterfaceResponse(ctx context.Context, instance *model
 
 // @Summary patch a interface
 // @Description patch a interface
-// @tags Network
+// @tags Interface
 // @Accept  json
 // @Produce json
 // @Param   message	body   InterfacePatchPayload  true   "Interface patch payload"
@@ -398,7 +398,7 @@ func (v *InterfaceAPI) Patch(c *gin.Context) {
 
 // @Summary delete a interface
 // @Description delete a interface
-// @tags Network
+// @tags Interface
 // @Accept  json
 // @Produce json
 // @Success 204
@@ -575,7 +575,7 @@ func (v *InterfaceAPI) getInterfaceInfo(ctx context.Context, vpc *model.Router, 
 
 // @Summary create a interface
 // @Description create a interface
-// @tags Network
+// @tags Interface
 // @Accept  json
 // @Produce json
 // @Param   message	body   InterfacePayload  true   "Interface create payload"
@@ -621,7 +621,7 @@ func (v *InterfaceAPI) Create(c *gin.Context) {
 
 // @Summary list interfaces
 // @Description list interfaces
-// @tags Network
+// @tags Interface
 // @Accept  json
 // @Produce json
 // @Success 200 {array} InterfaceResponse
