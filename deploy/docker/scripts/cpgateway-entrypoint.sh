@@ -26,7 +26,79 @@ until python -c "import asyncpg, asyncio, os; dsn=os.environ['DATABASE_URL'].rep
 done
 
 echo "✓ Database is ready!"
-echo "Note: Database tables will be created automatically on application startup"
+
+# 运行数据库迁移
+echo "Running database migrations..."
+cd /app
+if [ -f alembic.ini ]; then
+  # Check if alembic_version table exists (i.e., migrations have been initialized)
+  HAS_VERSION=$(python -c "
+import asyncio, asyncpg, os
+async def check():
+    dsn = os.environ['DATABASE_URL'].replace('postgresql+asyncpg://','postgresql://')
+    conn = await asyncpg.connect(dsn, timeout=5)
+    try:
+        await conn.fetchval('SELECT 1 FROM alembic_version LIMIT 1')
+        return True
+    except asyncpg.exceptions.UndefinedTableError:
+        return False
+    finally:
+        await conn.close()
+print(asyncio.run(check()))
+" 2>/dev/null || echo "False")
+
+  if [ "$HAS_VERSION" = "False" ]; then
+    # No alembic_version table — check if this is a fresh DB or an existing one
+    HAS_TABLES=$(python -c "
+import asyncio, asyncpg, os
+async def check():
+    dsn = os.environ['DATABASE_URL'].replace('postgresql+asyncpg://','postgresql://')
+    conn = await asyncpg.connect(dsn, timeout=5)
+    try:
+        count = await conn.fetchval(\"SELECT count(*) FROM information_schema.tables WHERE table_schema='public' AND table_type='BASE TABLE'\")
+        return count > 0
+    finally:
+        await conn.close()
+print(asyncio.run(check()))
+" 2>/dev/null || echo "False")
+
+    if [ "$HAS_TABLES" = "False" ]; then
+      # Fresh database: create all tables from models, stamp at head
+      echo "Fresh database: creating all tables..."
+      python -c "
+import asyncio
+from app.core.database import engine, Base
+from app.models import *  # noqa: F401,F403
+async def init():
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+asyncio.run(init())
+"
+      python -m alembic stamp head
+      echo "✓ Database initialized with all tables and stamped at head"
+    else
+      # Existing database without alembic: stamp baseline, then upgrade
+      echo "Existing database detected, initializing alembic from baseline..."
+      python -m alembic stamp 001
+      if ! python -m alembic upgrade head; then
+        echo "⚠️  WARNING: Migration failed, application will start but database may be out of sync"
+        echo "⚠️  Please run migrations manually: docker exec <container> python -m alembic upgrade head"
+      else
+        echo "✓ Database migrated from baseline to head"
+      fi
+    fi
+  else
+    # alembic_version exists: run pending migrations
+    if ! python -m alembic upgrade head; then
+      echo "⚠️  WARNING: Migration failed, application will start but database may be out of sync"
+      echo "⚠️  Please run migrations manually: docker exec <container> python -m alembic upgrade head"
+    else
+      echo "✓ Database migrations complete"
+    fi
+  fi
+else
+  echo "Note: No alembic.ini found, tables will be created on application startup"
+fi
 
 # 生成 RSA 密钥对（如果不存在）
 RSA_PRIVATE_KEY="/app/keys/private.pem"

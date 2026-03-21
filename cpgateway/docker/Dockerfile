@@ -25,6 +25,10 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY ./app ./app
 COPY ./cland_bankend_swager.json ./cland_bankend_swager.json
 
+# 复制 Alembic 迁移配置
+COPY ./alembic.ini ./
+COPY ./alembic ./alembic
+
 # 创建数据目录(用于 SQLite 数据库)
 RUN mkdir -p /app/data
 

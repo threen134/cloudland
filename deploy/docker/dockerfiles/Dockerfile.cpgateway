@@ -23,6 +23,10 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY cpgateway/app ./app
 COPY cpgateway/cland_bankend_swager.json ./
 
+# 复制 Alembic 迁移配置
+COPY cpgateway/alembic.ini ./
+COPY cpgateway/alembic ./alembic
+
 # 创建必要的目录
 RUN mkdir -p /app/data /app/keys
 
