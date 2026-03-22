@@ -84,6 +84,13 @@ func (a *ImageAdminService) Create(ctx context.Context, osCode, name, osVersion,
 			image.UUID = uuid
 		}
 	}
+	// Set visibility based on creator identity: SystemAdmin → public, others → private
+	// Must be set after both branches (upload and capture) to override Clone() inheritance
+	if memberShip.IsSystemAdmin() {
+		image.Visibility = model.ImageVisibilityPublic
+	} else {
+		image.Visibility = model.ImageVisibilityPrivate
+	}
 	image.QAEnabled = true
 	image.IsRescue = isRescue
 	if rescueImage != nil {
@@ -156,15 +163,21 @@ func (a *ImageAdminService) GetImageByUUID(ctx context.Context, uuID string) (im
 		return nil, NewCLError(ErrImageNotFound, "Image not found", err)
 	}
 	memberShip := GetMemberShip(ctx)
-	permit := memberShip.CheckOrgPermission(model.OrgReader)
-	if !permit {
-		logger.Error("Not authorized to get image")
-		err = NewCLError(ErrPermissionDenied, "Not authorized to get image", nil)
-		return
+	// Public images are accessible to all authenticated users; private images require org ownership
+	if image.Visibility != model.ImageVisibilityPublic {
+		permit := memberShip.CheckResourceOrg(model.OrgReader, image.Owner)
+		if !permit {
+			logger.Error("Not authorized to get image")
+			err = NewCLError(ErrPermissionDenied, "Not authorized to get image", nil)
+			return
+		}
 	}
 	return
 }
 
+// GetImageByName returns an image by name.
+// Note: name is not globally unique. If multiple orgs have public images with the same name,
+// the result is non-deterministic. Internal RPC callbacks may use this; external callers should prefer UUID.
 func (a *ImageAdminService) GetImageByName(ctx context.Context, name string) (image *model.Image, err error) {
 	logger.Infof("ENTER ImageAdmin.GetImageByName: name=%s", name)
 	defer func() {
@@ -182,11 +195,13 @@ func (a *ImageAdminService) GetImageByName(ctx context.Context, name string) (im
 		return nil, NewCLError(ErrImageNotFound, "Image not found", err)
 	}
 	memberShip := GetMemberShip(ctx)
-	permit := memberShip.CheckOrgPermission(model.OrgReader)
-	if !permit {
-		logger.Error("Not authorized to get image")
-		err = NewCLError(ErrPermissionDenied, "Not authorized to get image", nil)
-		return
+	if image.Visibility != model.ImageVisibilityPublic {
+		permit := memberShip.CheckResourceOrg(model.OrgReader, image.Owner)
+		if !permit {
+			logger.Error("Not authorized to get image")
+			err = NewCLError(ErrPermissionDenied, "Not authorized to get image", nil)
+			return
+		}
 	}
 	return
 }
@@ -213,11 +228,13 @@ func (a *ImageAdminService) Get(ctx context.Context, id int64) (image *model.Ima
 		return nil, NewCLError(ErrImageNotFound, "Image not found", err)
 	}
 	memberShip := GetMemberShip(ctx)
-	permit := memberShip.CheckOrgPermission(model.OrgReader)
-	if !permit {
-		logger.Error("Not authorized to get image")
-		err = NewCLError(ErrPermissionDenied, "Not authorized to get image", nil)
-		return
+	if image.Visibility != model.ImageVisibilityPublic {
+		permit := memberShip.CheckResourceOrg(model.OrgReader, image.Owner)
+		if !permit {
+			logger.Error("Not authorized to get image")
+			err = NewCLError(ErrPermissionDenied, "Not authorized to get image", nil)
+			return
+		}
 	}
 	return
 }
@@ -313,8 +330,8 @@ func (a *ImageAdminService) Delete(ctx context.Context, image *model.Image) (err
 	return
 }
 
-func (a *ImageAdminService) List(ctx context.Context, offset, limit int64, order, query string) (total int64, images []*model.Image, err error) {
-	logger.Infof("ENTER ImageAdmin.List: offset=%d, limit=%d, order=%s, query=%s", offset, limit, order, query)
+func (a *ImageAdminService) List(ctx context.Context, offset, limit int64, order, query, visibility string) (total int64, images []*model.Image, err error) {
+	logger.Infof("ENTER ImageAdmin.List: offset=%d, limit=%d, order=%s, query=%s, visibility=%s", offset, limit, order, query, visibility)
 	defer func() {
 		if err != nil {
 			logger.Errorf("EXIT ImageAdmin.List: error=%v", err)
@@ -323,6 +340,7 @@ func (a *ImageAdminService) List(ctx context.Context, offset, limit int64, order
 		}
 	}()
 	ctx, db := GetContextDB(ctx)
+	memberShip := GetMemberShip(ctx)
 	if limit == 0 {
 		limit = 16
 	}
@@ -331,22 +349,47 @@ func (a *ImageAdminService) List(ctx context.Context, offset, limit int64, order
 		order = "created_at"
 	}
 
+	// Build base query with parameterized name search (fix SQL injection)
+	baseQuery := db.Model(&model.Image{})
 	if query != "" {
-		query = fmt.Sprintf("name like '%%%s%%'", query)
+		baseQuery = baseQuery.Where("name LIKE ?", "%"+query+"%")
 	}
+
+	// Apply owner/visibility filtering
+	if !memberShip.IsSystemAdmin() {
+		// Normal user: see own org images + public images, with optional visibility filter
+		switch visibility {
+		case model.ImageVisibilityPublic:
+			baseQuery = baseQuery.Where("visibility = ?", model.ImageVisibilityPublic)
+		case model.ImageVisibilityPrivate:
+			baseQuery = baseQuery.Where("owner = ? AND visibility = ?", memberShip.OrgID, model.ImageVisibilityPrivate)
+		default:
+			// "all" or empty: own + public
+			baseQuery = baseQuery.Where("owner = ? OR visibility = ?", memberShip.OrgID, model.ImageVisibilityPublic)
+		}
+	} else {
+		// SystemAdmin: optional visibility filter, no owner restriction
+		switch visibility {
+		case model.ImageVisibilityPublic:
+			baseQuery = baseQuery.Where("visibility = ?", model.ImageVisibilityPublic)
+		case model.ImageVisibilityPrivate:
+			baseQuery = baseQuery.Where("visibility = ?", model.ImageVisibilityPrivate)
+		}
+	}
+
 	images = []*model.Image{}
-	if err = db.Model(&model.Image{}).Where(query).Count(&total).Error; err != nil {
+	if err = baseQuery.Count(&total).Error; err != nil {
 		return 0, nil, NewCLError(ErrSQLSyntaxError, "Failed to count images", err)
 	}
-	db = dbs.Sortby(db.Offset(offset).Limit(limit), order)
-	if err = db.Where(query).Find(&images).Error; err != nil {
+	sortedQuery := dbs.Sortby(baseQuery.Offset(offset).Limit(limit), order)
+	if err = sortedQuery.Find(&images).Error; err != nil {
 		return 0, nil, NewCLError(ErrSQLSyntaxError, "Failed to find images", err)
 	}
 
 	return
 }
 
-func (a *ImageAdminService) Update(ctx context.Context, image *model.Image, osCode, name, osVersion, userName string, pools []string, osFamily, uuid string) (err error) {
+func (a *ImageAdminService) Update(ctx context.Context, image *model.Image, osCode, name, osVersion, userName string, pools []string, osFamily, uuid string, public *bool) (err error) {
 	logger.Infof("ENTER ImageAdmin.Update: id=%d, name=%s, osCode=%s", image.ID, name, osCode)
 	defer func() {
 		if err != nil {
@@ -392,6 +435,14 @@ func (a *ImageAdminService) Update(ctx context.Context, image *model.Image, osCo
 
 	if osFamily != "" {
 		image.OsFamily = osFamily
+	}
+
+	if public != nil {
+		if *public {
+			image.Visibility = model.ImageVisibilityPublic
+		} else {
+			image.Visibility = model.ImageVisibilityPrivate
+		}
 	}
 
 	if image.Status != "available" {

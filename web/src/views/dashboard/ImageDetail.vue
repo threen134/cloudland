@@ -1,18 +1,31 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { imagesApi, type Image } from '../../api/images'
-import { ArrowLeft, HardDrive, Trash2, Server, Monitor, Disc, Copy, Check, Tag, CalendarDays } from 'lucide-vue-next'
+import { useAuthStore } from '../../stores/auth'
+import { useTenantStore } from '../../stores/tenant'
+import { ArrowLeft, HardDrive, Trash2, Server, Monitor, Disc, Copy, Check, Tag, CalendarDays, Eye, EyeOff } from 'lucide-vue-next'
 
 const route = useRoute()
 const router = useRouter()
 const imageId = route.params.id as string
+const auth = useAuthStore()
+const tenant = useTenantStore()
+const isSuperuser = computed(() => auth.user?.is_superuser === true)
+const currentOrgName = computed(() => tenant.currentOrg?.name || '')
 
 const image = ref<Image | null>(null)
 const loading = ref(true)
 const error = ref('')
 const deleting = ref(false)
+const togglingVisibility = ref(false)
 const copiedField = ref<string | null>(null)
+
+const canDelete = computed(() => {
+    if (!image.value) return false
+    if (isSuperuser.value) return true
+    return image.value.owner === currentOrgName.value
+})
 
 const copyToClipboard = (text: string, field: string) => {
     navigator.clipboard.writeText(text).then(() => {
@@ -47,6 +60,19 @@ const handleDelete = async () => {
         console.error('Failed to delete image:', err)
         alert('Failed to delete image.')
         deleting.value = false
+    }
+}
+
+const toggleVisibility = async () => {
+    if (!image.value) return
+    togglingVisibility.value = true
+    try {
+        await imagesApi.patchImage(imageId, { public: !image.value.public })
+        await fetchImage()
+    } catch (err) {
+        console.error('Failed to toggle visibility:', err)
+    } finally {
+        togglingVisibility.value = false
     }
 }
 
@@ -170,10 +196,14 @@ onMounted(fetchImage)
             <!-- Action Bar -->
              <div class="action-bar card">
                 <div class="action-group">
-                    <!-- Placeholder for future actions like 'Launch Instance' -->
+                    <button v-if="isSuperuser" class="btn btn-secondary" @click="toggleVisibility" :disabled="togglingVisibility">
+                        <EyeOff v-if="image.public" :size="16" />
+                        <Eye v-else :size="16" />
+                        {{ image.public ? $t('dashboard.table.setPrivate') : $t('dashboard.table.setPublic') }}
+                    </button>
                 </div>
                 <div class="action-group">
-                    <button class="btn btn-danger" @click="handleDelete" :disabled="deleting">
+                    <button v-if="canDelete" class="btn btn-danger" @click="handleDelete" :disabled="deleting">
                         <Trash2 :size="16" /> {{ $t('actions.delete') }}
                     </button>
                 </div>

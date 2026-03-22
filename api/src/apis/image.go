@@ -9,6 +9,7 @@ package apis
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"strconv"
 
@@ -37,7 +38,7 @@ type ImageResponse struct {
 	Status       string `json:"status"`
 	BootLoader   string `json:"boot_loader"`
 	OsFamily     string `json:"os_family"`
-	// QAEnabled    bool   `json:"qa_enabled"`
+	Public       bool   `json:"public"`
 }
 
 type ImageListResponse struct {
@@ -62,13 +63,14 @@ type ImagePayload struct {
 }
 
 type ImagePatchPayload struct {
-	Name      string   `json:"name" binding:"required,min=2,max=32"`
-	OSCode    string   `json:"os_code" binding:"required,oneof=linux windows other"`
-	OSVersion string   `json:"os_version" binding:"required,min=2,max=32"`
-	User      string   `json:"user" binding:"required,min=2,max=32"`
+	Name      string   `json:"name" binding:"omitempty,min=2,max=32"`
+	OSCode    string   `json:"os_code" binding:"omitempty,oneof=linux windows other"`
+	OSVersion string   `json:"os_version" binding:"omitempty,min=2,max=32"`
+	User      string   `json:"user" binding:"omitempty,min=2,max=32"`
 	Pools     []string `json:"pools" binding:"omitempty"`
-	OsFamily  string   `json:"os_family" binding:"required"`
+	OsFamily  string   `json:"os_family" binding:"omitempty"`
 	UUID      string   `json:"uuid,omitempty" binding:"omitempty"`
+	Public    *bool    `json:"public" binding:"omitempty"`
 }
 
 type ImageStorageResponse struct {
@@ -141,7 +143,7 @@ func (v *ImageAPI) Patch(c *gin.Context) {
 		ErrorResponse(c, http.StatusBadRequest, "Invalid input JSON", err)
 		return
 	}
-	err = imageAdmin.Update(ctx, image, payload.OSCode, payload.Name, payload.OSVersion, payload.User, payload.Pools, payload.OsFamily, payload.UUID)
+	err = imageAdmin.Update(ctx, image, payload.OSCode, payload.Name, payload.OSVersion, payload.User, payload.Pools, payload.OsFamily, payload.UUID, payload.Public)
 	if err != nil {
 		logger.Errorf("Patch image failed, %+v", err)
 		ErrorResponse(c, http.StatusBadRequest, "Patch image failed", err)
@@ -231,7 +233,7 @@ func (v *ImageAPI) Create(c *gin.Context) {
 		}
 	}
 	logger.Debugf("Creating image with payload %+v", payload)
-	image, err := imageAdmin.Create(ctx, payload.OSCode, payload.Name, payload.OSVersion, "kvm-x86_64", payload.User, payload.DownloadURL, "x86_64", payload.BootLoader, true, instanceID, payload.UUID, rescueImage, payload.OsFamily)
+	image, err := imageAdmin.Create(ctx, payload.OSCode, payload.Name, payload.OSVersion, "kvm-x86_64", payload.User, payload.DownloadURL, "x86_64", payload.BootLoader, payload.IsRescue, instanceID, payload.UUID, rescueImage, payload.OsFamily)
 	if err != nil {
 		logger.Errorf("Not able to create image %+v", err)
 		ErrorResponse(c, http.StatusBadRequest, "Not able to create", err)
@@ -247,11 +249,20 @@ func (v *ImageAPI) Create(c *gin.Context) {
 	c.JSON(http.StatusOK, imageResp)
 }
 
-func (v *ImageAPI) getImageResponse(_ context.Context, image *model.Image) (imageResp *ImageResponse, err error) {
+func (v *ImageAPI) getImageResponse(ctx context.Context, image *model.Image) (imageResp *ImageResponse, err error) {
+	// Resolve owner org name
+	ownerName := ""
+	memberShip := GetMemberShip(ctx)
+	if memberShip.OrgID == image.Owner {
+		ownerName = memberShip.OrgName
+	} else {
+		ownerName = fmt.Sprintf("org-%d", image.Owner)
+	}
 	imageResp = &ImageResponse{
 		ResourceReference: &ResourceReference{
 			ID:        image.UUID,
 			Name:      image.Name,
+			Owner:     ownerName,
 			CreatedAt: image.CreatedAt.Format(TimeStringForMat),
 			UpdatedAt: image.UpdatedAt.Format(TimeStringForMat),
 		},
@@ -264,7 +275,7 @@ func (v *ImageAPI) getImageResponse(_ context.Context, image *model.Image) (imag
 		Status:       image.Status,
 		BootLoader:   image.BootLoader,
 		OsFamily:     image.OsFamily,
-		// QAEnabled:    image.QAEnabled,
+		Public:       image.Visibility == model.ImageVisibilityPublic,
 	}
 	return
 }
@@ -300,7 +311,8 @@ func (v *ImageAPI) List(c *gin.Context) {
 		ErrorResponse(c, http.StatusBadRequest, "Invalid query offset or limit", err)
 		return
 	}
-	total, images, err := imageAdmin.List(ctx, int64(offset), int64(limit), "-created_at", queryStr)
+	visibilityStr := c.DefaultQuery("visibility", "")
+	total, images, err := imageAdmin.List(ctx, int64(offset), int64(limit), "-created_at", queryStr, visibilityStr)
 	if err != nil {
 		logger.Errorf("Failed to list images %+v", err)
 		ErrorResponse(c, http.StatusBadRequest, "Failed to list images", err)

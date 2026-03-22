@@ -4,14 +4,21 @@ import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import { imagesApi, type Image, type ImagePayload } from '../../api/images'
 import { isValidName } from '../../utils/validation'
+import { useAuthStore } from '../../stores/auth'
+import { useTenantStore } from '../../stores/tenant'
 
-import { Disc, Search, Monitor, Server, Trash2, Plus, X, Globe, Cpu, User } from 'lucide-vue-next'
+import { Disc, Search, Monitor, Server, Trash2, Plus, X, Globe, Cpu, User, Eye, EyeOff } from 'lucide-vue-next'
 
 const images = ref<Image[]>([])
 const loading = ref(false)
 const searchQuery = ref('')
 const selectedType = ref<string>('all')
+const selectedVisibility = ref<string>('all')
 const router = useRouter()
+const auth = useAuthStore()
+const tenant = useTenantStore()
+const isSuperuser = computed(() => auth.user?.is_superuser === true)
+const currentOrgName = computed(() => tenant.currentOrg?.name || '')
 
 const createModalVisible = ref(false)
 const creating = ref(false)
@@ -95,7 +102,7 @@ const filteredImages = ref<Image[]>([])
 const filterImages = () => {
     filteredImages.value = images.value.filter(img => {
         const matchesSearch = img.name.toLowerCase().includes(searchQuery.value.toLowerCase())
-        
+
         let matchesType = true
         if (selectedType.value === 'all') {
             matchesType = true
@@ -109,18 +116,41 @@ const filterImages = () => {
             // Specific distro check
             matchesType = img.name.toLowerCase().includes(selectedType.value)
         }
-        
-        return matchesSearch && matchesType
+
+        let matchesVisibility = true
+        if (selectedVisibility.value === 'public') {
+            matchesVisibility = img.public === true
+        } else if (selectedVisibility.value === 'private') {
+            matchesVisibility = !img.public
+        }
+
+        return matchesSearch && matchesType && matchesVisibility
     })
+}
+
+const canDelete = (image: Image) => {
+    if (isSuperuser.value) return true
+    return image.owner === currentOrgName.value
+}
+
+const toggleVisibility = async (image: Image) => {
+    try {
+        await imagesApi.patchImage(image.id, { public: !image.public })
+        await fetchImages()
+        filterImages()
+    } catch (err: any) {
+        console.error('Failed to toggle visibility:', err)
+    }
 }
 
 const navigateToDetail = (image: Image) => {
     router.push({ name: 'image-detail', params: { id: image.id } })
 }
 
-// Watch for changes in selectedType to trigger filtering automatically
+// Watch for changes to trigger filtering automatically
 watch(selectedType, filterImages)
 watch(searchQuery, filterImages)
+watch(selectedVisibility, filterImages)
 
 const formatSize = (bytes: number) => {
     if (!bytes) return '0 B'
@@ -199,15 +229,20 @@ onMounted(async () => {
       <div class="search-wrapper">
         <div class="search-box">
           <Search :size="16" class="search-icon" />
-          <input 
-            type="text" 
+          <input
+            type="text"
             v-model="searchQuery"
-            :placeholder="$t('actions.search') + '...'" 
+            :placeholder="$t('actions.search') + '...'"
             class="search-input"
           />
         </div>
+        <select v-model="selectedVisibility" class="visibility-filter">
+          <option value="all">{{ $t('dashboard.table.allVisibility') }}</option>
+          <option value="public">{{ $t('dashboard.table.public') }}</option>
+          <option value="private">{{ $t('dashboard.table.private') }}</option>
+        </select>
       </div>
-      
+
       <button class="btn btn-primary btn-sm" @click="openCreateModal">
         <Plus :size="14" /> {{ $t('dashboard.buttons.createImage') }}
       </button>
@@ -219,6 +254,7 @@ onMounted(async () => {
         <thead>
           <tr>
             <th>{{ $t('dashboard.table.nameId') }}</th>
+            <th>{{ $t('dashboard.table.visibility') }}</th>
             <th>{{ $t('dashboard.table.os') }}</th>
             <th>{{ $t('dashboard.table.architecture') }}</th>
             <th>{{ $t('dashboard.table.format') }}</th>
@@ -229,12 +265,12 @@ onMounted(async () => {
         </thead>
         <tbody>
           <tr v-if="loading">
-            <td colspan="7" class="text-center">
+            <td colspan="8" class="text-center">
               <div class="loading-spinner" style="margin: 20px auto;"></div>
             </td>
           </tr>
           <tr v-else-if="filteredImages.length === 0">
-            <td colspan="7" class="text-center text-secondary" style="padding: 48px;">
+            <td colspan="8" class="text-center text-secondary" style="padding: 48px;">
                <div v-if="searchQuery">
                   <Search :size="48" style="opacity: 0.3; margin-bottom: 16px;" />
                   <p>{{ $t('messages.noResults') }}</p>
@@ -259,6 +295,11 @@ onMounted(async () => {
               </div>
             </td>
             <td>
+              <span :class="['badge', image.public ? 'status-running' : 'status-stopped']">
+                {{ image.public ? $t('dashboard.table.public') : $t('dashboard.table.private') }}
+              </span>
+            </td>
+            <td>
               <span class="os-text">{{ getOsName(image) }}</span>
             </td>
             <td>
@@ -277,7 +318,11 @@ onMounted(async () => {
             </td>
             <td>
               <div class="actions">
-                <button class="btn btn-ghost btn-sm text-error" :title="$t('actions.delete')" @click="handleDeleteClick(image)">
+                <button v-if="isSuperuser" class="btn btn-ghost btn-sm" :title="image.public ? $t('dashboard.table.setPrivate') : $t('dashboard.table.setPublic')" @click="toggleVisibility(image)">
+                  <EyeOff v-if="image.public" :size="14" />
+                  <Eye v-else :size="14" />
+                </button>
+                <button v-if="canDelete(image)" class="btn btn-ghost btn-sm text-error" :title="$t('actions.delete')" @click="handleDeleteClick(image)">
                   <Trash2 :size="14" />
                 </button>
               </div>
@@ -440,7 +485,21 @@ onMounted(async () => {
 
 .search-wrapper {
   flex: 1;
-  max-width: 400px;
+  max-width: 500px;
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.visibility-filter {
+  height: 40px;
+  padding: 0 10px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-light);
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  font-size: 0.875rem;
+  cursor: pointer;
 }
 
 .search-box {

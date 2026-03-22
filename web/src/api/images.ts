@@ -11,6 +11,8 @@ export interface Image {
     size?: number
     status?: string
     created_at?: string
+    public?: boolean
+    owner?: string
     [key: string]: any
 }
 
@@ -41,6 +43,11 @@ export const imagesApi = {
     // Create image
     createImage(payload: ImagePayload) {
         return client.post('/images', payload)
+    },
+
+    // Patch image
+    patchImage(id: string, payload: Record<string, any>) {
+        return client.patch(`/images/${id}`, payload)
     },
 
     // Delete image

@@ -8,12 +8,19 @@ package model
 
 import (
 	"api/src/dbs"
+
+	"github.com/jinzhu/gorm"
 )
 
 const (
 	OS_LINUX   = "linux"
 	OS_WINDOWS = "windows"
 	OS_OTHER   = "other"
+)
+
+const (
+	ImageVisibilityPrivate = "private"
+	ImageVisibilityPublic  = "public"
 )
 
 // OSCodes is a list of supported operating systems
@@ -71,6 +78,22 @@ type ImageStorage struct {
 
 func init() {
 	dbs.AutoMigrate(&Image{}, &ImageStorage{})
+	dbs.AutoUpgrade("image_visibility_default", func(db *gorm.DB) error {
+		// Set visibility to 'public' for system org images that have no visibility set yet
+		if err := db.Exec(
+			"UPDATE images SET visibility = ? WHERE (visibility = '' OR visibility IS NULL) AND owner IN (SELECT id FROM organizations WHERE type = ?)",
+			ImageVisibilityPublic, OrgTypeSystem,
+		).Error; err != nil {
+			return err
+		}
+		// Set remaining images with no visibility to 'private'
+		if err := db.Model(&Image{}).
+			Where("visibility = '' OR visibility IS NULL").
+			Update("visibility", ImageVisibilityPrivate).Error; err != nil {
+			return err
+		}
+		return nil
+	})
 }
 
 func (i *Image) Clone() *Image {
