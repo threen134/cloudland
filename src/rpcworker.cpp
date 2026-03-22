@@ -16,6 +16,8 @@ SPDX-License-Identifier: Apache-2.0
 #else
 #include <jsoncpp/json/json.h>
 #endif
+#include <fstream>
+#include <iterator>
 #include <thread>
 
 #define CLOUDLET_PATH "/opt/cloudland/bin/cloudlet"
@@ -401,6 +403,28 @@ void RpcWorker::runServer() {
     if (result >= 0) {
       resp["status"] = "ok";
       resp["id"] = result;
+
+      // Distribute SSH keys: read from configurable directory, fallback to default
+      const char *keyDirEnv = getenv("CLOUDLAND_SSH_KEY_DIR");
+      string keyDir = keyDirEnv ? keyDirEnv : "/opt/cloudland/deploy/.ssh";
+      ifstream pubFile(keyDir + "/cland.key.pub");
+      ifstream privFile(keyDir + "/cland.key");
+      if (pubFile.is_open() && privFile.is_open()) {
+        string pubKey((istreambuf_iterator<char>(pubFile)),
+                       istreambuf_iterator<char>());
+        string privKey((istreambuf_iterator<char>(privFile)),
+                        istreambuf_iterator<char>());
+        if (!pubKey.empty() && !privKey.empty()) {
+          resp["public_key"] = pubKey;
+          resp["private_key"] = privKey;
+        } else {
+          log_warn("SSH key files in %s are empty, skipping key distribution",
+                   keyDir.c_str());
+        }
+      } else {
+        log_warn("SSH key files not found in %s, skipping key distribution",
+                 keyDir.c_str());
+      }
     } else {
       res.status = 500;
       resp["error"] = "failed to add backend";

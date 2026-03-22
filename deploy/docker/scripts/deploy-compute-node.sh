@@ -186,33 +186,41 @@ pip3 install pyparsing
 # ============ 4. SSH 配置 ============
 log "4/15 - 配置 SSH 免密"
 
-mkdir -p /home/cland/.ssh /root/.ssh
+mkdir -p /home/cland/.ssh /root/.ssh "$CLOUDLAND_DIR/deploy/.ssh"
 
-# 探测密钥路径 (优先级: 脚本同级 .ssh, CloudLand 默认部署路径)
+SSH_KEYS_INSTALLED=""
+
+# 尝试从本地文件获取（兼容手动部署）
 SEARCH_PATHS=("$SCRIPT_DIR/.ssh" "$CLOUDLAND_DIR/deploy/.ssh")
-FIND_PUB=""
-FIND_PRIV=""
-
 for p in "${SEARCH_PATHS[@]}"; do
     if [ -f "$p/cland.key.pub" ] && [ -f "$p/cland.key" ]; then
-        FIND_PUB="$p/cland.key.pub"
-        FIND_PRIV="$p/cland.key"
-        log "找到 SSH 密钥: $p"
+        # 检查文件是否可读，避免权限错误导致静默 fallback
+        if [ ! -r "$p/cland.key.pub" ] || [ ! -r "$p/cland.key" ]; then
+            warn "SSH 密钥文件存在于 $p 但不可读，请检查文件权限"
+            continue
+        fi
+        # 公钥追加而非覆盖，避免清除管理员手动添加的公钥
+        LOCAL_PUB=$(cat "$p/cland.key.pub")
+        grep -qF "$LOCAL_PUB" /home/cland/.ssh/authorized_keys 2>/dev/null \
+            || printf '%s\n' "$LOCAL_PUB" >> /home/cland/.ssh/authorized_keys
+        grep -qF "$LOCAL_PUB" /root/.ssh/authorized_keys 2>/dev/null \
+            || printf '%s\n' "$LOCAL_PUB" >> /root/.ssh/authorized_keys
+        # 私钥写入所有需要的位置
+        cp "$p/cland.key" "$CLOUDLAND_DIR/deploy/.ssh/cland.key"
+        cp "$p/cland.key.pub" "$CLOUDLAND_DIR/deploy/.ssh/cland.key.pub"
+        cp "$p/cland.key" /root/.ssh/id_rsa
+        chmod 600 /root/.ssh/id_rsa "$CLOUDLAND_DIR/deploy/.ssh/cland.key"
+        log "从本地文件获取 SSH 密钥: $p"
+        SSH_KEYS_INSTALLED="local"
         break
     fi
 done
 
-if [ -n "$FIND_PUB" ]; then
-    cp "$FIND_PUB" /home/cland/.ssh/authorized_keys
-    cat "$FIND_PUB" >> /root/.ssh/authorized_keys
-    cp "$FIND_PRIV" /root/.ssh/id_rsa
-    chmod 600 /root/.ssh/id_rsa
-else
-    warn "未能在以下路径找到 cland.key 及其公钥: ${SEARCH_PATHS[*]}"
-    warn "请确保密钥已上传至脚本同级目录或指定部署目录。"
+if [ -z "$SSH_KEYS_INSTALLED" ]; then
+    log "本地未找到 SSH 密钥，将在节点注册时从控制节点获取"
 fi
 
-chown -R cland:cland /home/cland/.ssh
+chown -R cland:cland /home/cland/.ssh "$CLOUDLAND_DIR/deploy/.ssh"
 chmod 700 /home/cland/.ssh /root/.ssh
 chmod 600 /home/cland/.ssh/authorized_keys 2>/dev/null || true
 chmod 600 /root/.ssh/authorized_keys 2>/dev/null || true
@@ -554,16 +562,56 @@ fi
 log "15/15 - 通过 API 向控制面注册计算节点"
 RPC_SERVER_PORT="${RPC_SERVER_PORT:-5006}"
 for i in 1 2 3; do
-    if curl -sf -X POST "http://${CONTROLLER_IP}:${RPC_SERVER_PORT}/internal/node/add" \
+    REGISTER_RESP=$(curl -sf -X POST "http://${CONTROLLER_IP}:${RPC_SERVER_PORT}/internal/node/add" \
         -H "Content-Type: application/json" \
-        -d "{\"hostname\": \"${HOSTNAME}\", \"id\": ${SCI_CLIENT_ID}, \"level\": 1}"; then
+        -d "{\"hostname\": \"${HOSTNAME}\", \"id\": ${SCI_CLIENT_ID}, \"level\": 1}" 2>/dev/null || true)
+    if [ -n "$REGISTER_RESP" ] && echo "$REGISTER_RESP" | jq -e '.status == "ok"' &>/dev/null; then
         log "节点注册成功"
+
+        # 从注册响应中提取 SSH key（如果本地未安装）
+        if [ -z "$SSH_KEYS_INSTALLED" ]; then
+            PUB_KEY=$(echo "$REGISTER_RESP" | jq -r '.public_key // empty')
+            PRIV_KEY=$(echo "$REGISTER_RESP" | jq -r '.private_key // empty')
+            if [ -n "$PUB_KEY" ] && [ -n "$PRIV_KEY" ]; then
+                # 公钥 → authorized_keys（追加模式，避免覆盖已有公钥）
+                grep -qF "$PUB_KEY" /home/cland/.ssh/authorized_keys 2>/dev/null \
+                    || printf '%s\n' "$PUB_KEY" >> /home/cland/.ssh/authorized_keys
+                grep -qF "$PUB_KEY" /root/.ssh/authorized_keys 2>/dev/null \
+                    || printf '%s\n' "$PUB_KEY" >> /root/.ssh/authorized_keys
+
+                # 私钥 → 三个位置（使用 printf 确保多行内容原样写入）：
+                # 1. $deploy_dir/.ssh/cland.key — 运行时脚本读取路径（cloudrc:24）
+                # 2. /root/.ssh/id_rsa — root 用户 SSH 默认路径
+                # 3. /home/cland/.ssh/cland.key — cland 用户备份
+                mkdir -p "$CLOUDLAND_DIR/deploy/.ssh"
+                printf '%s\n' "$PRIV_KEY" > "$CLOUDLAND_DIR/deploy/.ssh/cland.key"
+                printf '%s\n' "$PUB_KEY"  > "$CLOUDLAND_DIR/deploy/.ssh/cland.key.pub"
+                cp "$CLOUDLAND_DIR/deploy/.ssh/cland.key" /root/.ssh/id_rsa
+                cp "$CLOUDLAND_DIR/deploy/.ssh/cland.key" /home/cland/.ssh/cland.key
+
+                # 权限设置
+                chown -R cland:cland /home/cland/.ssh "$CLOUDLAND_DIR/deploy/.ssh"
+                chmod 700 /home/cland/.ssh
+                chmod 600 /home/cland/.ssh/authorized_keys /home/cland/.ssh/cland.key
+                chmod 600 /root/.ssh/id_rsa /root/.ssh/authorized_keys
+                chmod 600 "$CLOUDLAND_DIR/deploy/.ssh/cland.key"
+
+                log "从控制节点注册响应中获取 SSH 密钥成功"
+                SSH_KEYS_INSTALLED="api"
+            else
+                warn "控制节点未返回 SSH 密钥"
+            fi
+        fi
         break
     else
         warn "节点注册失败 (尝试 $i/3)，5 秒后重试..."
         sleep 5
     fi
 done
+
+if [ -z "$SSH_KEYS_INSTALLED" ]; then
+    warn "未能获取 SSH 密钥，请手动配置"
+fi
 
 # ============ 16. 部署监控代理 Promtail (Trace 日志回传) ============
 log "16/16 - 部署 Promtail 日志回传代理"
