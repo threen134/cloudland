@@ -22,7 +22,7 @@ var (
 	swaggerOnce    sync.Once
 	swaggerInitErr error
 	tenantDocJSON  string
-	adminDocJSON   string
+	fullDocJSON    string
 	swaggerTpl     *template.Template
 )
 
@@ -35,13 +35,14 @@ const swaggerUITemplate = `<!DOCTYPE html>
     <style>body { margin: 0; padding: 0; }</style>
 </head>
 <body>
-    <redoc spec-url='./doc.json'></redoc>
+    <redoc spec-url='{{.SpecURL}}'></redoc>
     <script src="https://cdn.redoc.ly/redoc/v2.1.5/bundles/redoc.standalone.js"></script>
 </body>
 </html>`
 
 type swaggerPageConfig struct {
-	Title string
+	Title   string
+	SpecURL string
 }
 
 func initSwaggerDocs() {
@@ -58,10 +59,10 @@ func initSwaggerDocs() {
 		logger.Errorf("Failed to filter tenant swagger doc: %v", err)
 		return
 	}
-	adminDocJSON, err = filterSwaggerByTags(fullDoc, []string{"Administration"}, nil, "CloudLand Admin API")
+	fullDocJSON, err = filterSwaggerByTags(fullDoc, nil, nil, "CloudLand API")
 	if err != nil {
 		swaggerInitErr = err
-		logger.Errorf("Failed to filter admin swagger doc: %v", err)
+		logger.Errorf("Failed to filter full swagger doc: %v", err)
 		return
 	}
 	swaggerTpl = template.Must(template.New("swagger").Parse(swaggerUITemplate))
@@ -183,36 +184,47 @@ func swaggerHandler() gin.HandlerFunc {
 		}
 
 		path := c.Param("any")
+		view := c.Query("view")
+		if view != "" && view != "full" {
+			view = ""
+		}
+
+		// Determine which doc to serve based on view param
+		docJSON := tenantDocJSON
+		title := "CloudLand Tenant API"
+		if view == "full" {
+			docJSON = fullDocJSON
+			title = "CloudLand API"
+		}
 
 		switch {
+		// Legacy paths: redirect to unified URL with absolute path
 		case strings.HasPrefix(path, "/tenant"):
-			subPath := strings.TrimPrefix(path, "/tenant")
-			if subPath == "" || subPath == "/" {
-				c.Redirect(http.StatusFound, "./tenant/index.html")
-				return
-			}
-			serveSwaggerAsset(c, subPath, tenantDocJSON, "CloudLand Tenant API")
-
+			c.Redirect(http.StatusFound, "/swagger/api/v1/index.html")
+			return
 		case strings.HasPrefix(path, "/admin"):
-			subPath := strings.TrimPrefix(path, "/admin")
-			if subPath == "" || subPath == "/" {
-				c.Redirect(http.StatusFound, "./admin/index.html")
-				return
-			}
-			serveSwaggerAsset(c, subPath, adminDocJSON, "CloudLand Admin API")
+			c.Redirect(http.StatusFound, "/swagger/api/v1/index.html?view=full")
+			return
 
 		default:
-			// Redirect bare /swagger/api/v1/ to tenant docs
-			c.Redirect(http.StatusFound, "./tenant/index.html")
+			if path == "" || path == "/" {
+				c.Redirect(http.StatusFound, "./index.html")
+				return
+			}
+			serveSwaggerAsset(c, path, docJSON, title, view)
 		}
 	}
 }
 
-func serveSwaggerAsset(c *gin.Context, path, docJSON, title string) {
+func serveSwaggerAsset(c *gin.Context, path, docJSON, title, view string) {
 	switch {
 	case path == "/index.html":
+		specURL := "./doc.json"
+		if view != "" {
+			specURL = "./doc.json?view=" + view
+		}
 		c.Header("Content-Type", "text/html; charset=utf-8")
-		if err := swaggerTpl.Execute(c.Writer, swaggerPageConfig{Title: title}); err != nil {
+		if err := swaggerTpl.Execute(c.Writer, swaggerPageConfig{Title: title, SpecURL: specURL}); err != nil {
 			logger.Errorf("Failed to render swagger template: %v", err)
 		}
 

@@ -14,8 +14,8 @@ const tenant = useTenantStore()
 
 const swaggerUrl = computed(() => {
     return tenant.currentOrg?.org_type === 2
-        ? '/swagger/api/v1/admin/index.html'
-        : '/swagger/api/v1/tenant/index.html'
+        ? '/swagger/api/v1/index.html?view=full'
+        : '/swagger/api/v1/index.html'
 })
 
 const isMenuOpen = ref(false)
