@@ -278,7 +278,7 @@ func (a *HyperAdmin) AllocateHostID(ctx context.Context) (hostID int32, err erro
 	return hostID, nil
 }
 
-func (a *HyperAdmin) Deploy(ctx context.Context, ip, hostname, networkDevice, vlanDevice, dnsServer, domain, zoneName, virtType string) (hyper *model.Hyper, deployCmd string, err error) {
+func (a *HyperAdmin) Deploy(ctx context.Context, ip, hostname, networkDevice, vlanDevice, privateVlanDevice, dnsServer, domain, zoneName, virtType string) (hyper *model.Hyper, deployCmd string, err error) {
 	logger.Infof("ENTER HyperAdmin.Deploy: ip=%s, hostname=%s, zone=%s", ip, hostname, zoneName)
 	defer func() {
 		if err != nil {
@@ -374,9 +374,9 @@ func (a *HyperAdmin) Deploy(ctx context.Context, ip, hostname, networkDevice, vl
 	}
 
 	deployCmd = fmt.Sprintf(
-		"export CONTROLLER_IP=%s HOSTNAME=%s NETWORK_DEVICE=%s VLAN_DEVICE=%s DNS_SERVER=%s SCI_CLIENT_ID=%d DOMAIN=%s ZONE_NAME=%s VIRT_TYPE=%s; "+
+		"export CONTROLLER_IP=%s HOSTNAME=%s NETWORK_DEVICE=%s VLAN_DEVICE=%s PRIVATE_VLAN_DEVICE=%s DNS_SERVER=%s SCI_CLIENT_ID=%d DOMAIN=%s ZONE_NAME=%s VIRT_TYPE=%s; "+
 			"curl -sSL %s | sudo -E bash",
-		controllerIP, hostname, networkDevice, vlanDevice, dnsServer, hostID, domain, zoneName, virtType,
+		controllerIP, hostname, networkDevice, vlanDevice, privateVlanDevice, dnsServer, hostID, domain, zoneName, virtType,
 		deployScriptURL,
 	)
 

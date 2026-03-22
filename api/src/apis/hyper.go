@@ -61,14 +61,15 @@ type HyperPayload struct {
 }
 
 type HyperDeployPayload struct {
-	IP            string `json:"ip" binding:"required"`
-	Hostname      string `json:"hostname" binding:"required"`
-	NetworkDevice string `json:"network_device"`
-	VlanDevice    string `json:"vlan_device"`
-	DNSServer     string `json:"dns_server"`
-	Domain        string `json:"domain"`
-	ZoneName      string `json:"zone_name"`
-	VirtType      string `json:"virt_type"`
+	IP               string `json:"ip" binding:"required"`
+	Hostname         string `json:"hostname" binding:"required"`
+	NetworkDevice    string `json:"network_device"`
+	VlanDevice       string `json:"vlan_device"`
+	PrivateVlanDevice string `json:"private_vlan_device"`
+	DNSServer        string `json:"dns_server"`
+	Domain           string `json:"domain"`
+	ZoneName         string `json:"zone_name"`
+	VirtType         string `json:"virt_type"`
 }
 
 type HyperMaintainPayload struct {
@@ -249,6 +250,9 @@ func (v *HyperAPI) Deploy(c *gin.Context) {
 	if payload.VlanDevice == "" {
 		payload.VlanDevice = payload.NetworkDevice
 	}
+	if payload.PrivateVlanDevice == "" {
+		payload.PrivateVlanDevice = payload.VlanDevice
+	}
 	if payload.DNSServer == "" {
 		payload.DNSServer = "8.8.8.8"
 	}
@@ -263,8 +267,8 @@ func (v *HyperAPI) Deploy(c *gin.Context) {
 	}
 
 	hyper, deployCmd, err := hyperAdmin.Deploy(c.Request.Context(), payload.IP,
-		payload.Hostname, payload.NetworkDevice, payload.VlanDevice, payload.DNSServer,
-		payload.Domain, payload.ZoneName, payload.VirtType)
+		payload.Hostname, payload.NetworkDevice, payload.VlanDevice, payload.PrivateVlanDevice,
+		payload.DNSServer, payload.Domain, payload.ZoneName, payload.VirtType)
 	if err != nil {
 		ErrorResponse(c, http.StatusInternalServerError, "Failed to deploy hypervisor", err)
 		return

@@ -4,6 +4,7 @@ image_repo=http://192.168.10.2/image
 dns_server=10.0.80.11
 vxlan_interface=bond0
 vlan_interface=bond0
+private_vlan_interface=bond0
 vnc_interface=bond0
 cpu_over_ratio=1
 mem_over_ratio=1

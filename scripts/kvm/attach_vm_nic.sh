@@ -36,12 +36,16 @@ vlan_info=$(cat)
 # router：路由器标识；
 # inbound/outbound：网卡入站 / 出站速率限制；
 # allow_spoofing：是否允许 ARP 欺骗。
-read -d'\n' -r vlan ip mac gateway router inbound outbound allow_spoofing < <(jq -r ".vlan, .ip_address, .mac_address, .gateway, .router, .inbound, .outbound, .allow_spoofing" <<<$vlan_info)
+read -d'\n' -r vlan ip mac gateway router inbound outbound allow_spoofing is_private < <(jq -r ".vlan, .ip_address, .mac_address, .gateway, .router, .inbound, .outbound, .allow_spoofing, .is_private" <<<$vlan_info)
 # 从MAC生成网卡名（截取后3段，去冒号，前缀tap）
 nic_name=tap$(echo $mac | cut -d: -f4- | tr -d :)
 vm_br=br$vlan
-#调用create_link.sh创建 VLAN 链路（如 VLAN 子接口、网桥初始化等）；
-./create_link.sh $vlan
+# 判断是否为 RFC 1918 私有网段，选择对应物理接口
+nic_dev=""
+if [ "$is_private" = "true" ] && [ -n "$private_vlan_interface" ]; then
+    nic_dev=$private_vlan_interface
+fi
+./create_link.sh $vlan $nic_dev
 # 设置网桥老化时间为120秒（减少ARP表冗余）
 brctl setageing $vm_br 120
 # 检查虚拟机是否已挂载该MAC的网卡

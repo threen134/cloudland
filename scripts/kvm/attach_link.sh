@@ -15,7 +15,11 @@ gateways=$@
 tap_dev=rtap-$vlan
 ns_dev=rns-$vlan
 ip link add $ns_dev type veth peer name $tap_dev
-./create_link.sh $vlan
+nic_dev=""
+if [ "$IS_PRIVATE" = "true" ] && [ -n "$private_vlan_interface" ]; then
+    nic_dev=$private_vlan_interface
+fi
+./create_link.sh $vlan $nic_dev
 ip link set dev $tap_dev master br$vlan
 ip link set $tap_dev up
 ip link set $ns_dev netns $router
