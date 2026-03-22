@@ -7,7 +7,7 @@ import { isValidName } from '../../utils/validation'
 import { useAuthStore } from '../../stores/auth'
 import { useTenantStore } from '../../stores/tenant'
 
-import { Disc, Search, Monitor, Server, Trash2, Plus, X, Globe, Cpu, User, Eye, EyeOff } from 'lucide-vue-next'
+import { Disc, Search, Monitor, Server, Trash2, Plus, X, Globe, Cpu, User, Eye, EyeOff, RefreshCw } from 'lucide-vue-next'
 
 const images = ref<Image[]>([])
 const loading = ref(false)
@@ -243,9 +243,14 @@ onMounted(async () => {
         </select>
       </div>
 
-      <button class="btn btn-primary btn-sm" @click="openCreateModal">
-        <Plus :size="14" /> {{ $t('dashboard.buttons.createImage') }}
-      </button>
+      <div class="header-actions">
+        <button class="btn btn-secondary btn-sm btn-icon" @click="fetchImages().then(filterImages)" :title="$t('actions.refresh')">
+          <RefreshCw :size="14" :class="{ spinning: loading }" />
+        </button>
+        <button class="btn btn-primary btn-sm" @click="openCreateModal">
+          <Plus :size="14" /> {{ $t('dashboard.buttons.createImage') }}
+        </button>
+      </div>
     </div>
 
     <!-- Table View -->
@@ -605,6 +610,21 @@ onMounted(async () => {
 .format-text {
   font-weight: 500;
   color: var(--text-secondary);
+}
+
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-2);
+}
+
+.spinning {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
 }
 
 .actions {

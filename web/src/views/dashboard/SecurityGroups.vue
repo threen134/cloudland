@@ -5,7 +5,7 @@ import { useRouter } from 'vue-router'
 import { securityGroupsApi, vpcsApi, type SecurityGroup, type SecurityRule, type VPC } from '../../api/networks'
 import { isValidName } from '../../utils/validation'
 
-import { Shield, Plus, Trash2, ChevronDown, ChevronRight, Search, X } from 'lucide-vue-next'
+import { Shield, Plus, Trash2, ChevronDown, ChevronRight, Search, X, RefreshCw } from 'lucide-vue-next'
 
 const securityGroups = ref<SecurityGroup[]>([])
 const loading = ref(false)
@@ -165,9 +165,14 @@ onMounted(fetchSecurityGroups)
           />
         </div>
       </div>
-      <button class="btn btn-primary btn-sm" @click="openCreateModal">
-        <Plus :size="14" /> {{ $t('dashboard.buttons.createSecurityGroup') }}
-      </button>
+      <div class="header-actions">
+        <button class="btn btn-secondary btn-sm btn-icon" @click="fetchSecurityGroups" :title="$t('actions.refresh')">
+          <RefreshCw :size="14" :class="{ spinning: loading }" />
+        </button>
+        <button class="btn btn-primary btn-sm" @click="openCreateModal">
+          <Plus :size="14" /> {{ $t('dashboard.buttons.createSecurityGroup') }}
+        </button>
+      </div>
     </div>
 
     <div v-if="loading" class="text-center" style="padding: 48px;">
@@ -329,6 +334,21 @@ onMounted(fetchSecurityGroups)
 </template>
 
 <style scoped>
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-2);
+}
+
+.spinning {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
 .page-header {
   display: flex;
   justify-content: space-between;

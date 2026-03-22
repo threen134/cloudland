@@ -5,7 +5,7 @@ import { useRouter } from 'vue-router'
 import { loadBalancersApi, vpcsApi, type LoadBalancer, type VPC } from '../../api/networks'
 import { isValidName } from '../../utils/validation'
 
-import { GitFork, Plus, Trash2, Search, Edit, X } from 'lucide-vue-next'
+import { GitFork, Plus, Trash2, Search, Edit, X, RefreshCw } from 'lucide-vue-next'
 
 const loadBalancers = ref<LoadBalancer[]>([])
 const loading = ref(false)
@@ -157,9 +157,14 @@ onMounted(fetchLoadBalancers)
           />
         </div>
       </div>
-      <button class="btn btn-primary btn-sm" @click="openCreateModal">
-        <Plus :size="14" /> {{ $t('dashboard.buttons.createLoadBalancer') }}
-      </button>
+      <div class="header-actions">
+        <button class="btn btn-secondary btn-sm btn-icon" @click="fetchLoadBalancers" :title="$t('actions.refresh')">
+          <RefreshCw :size="14" :class="{ spinning: loading }" />
+        </button>
+        <button class="btn btn-primary btn-sm" @click="openCreateModal">
+          <Plus :size="14" /> {{ $t('dashboard.buttons.createLoadBalancer') }}
+        </button>
+      </div>
     </div>
 
     <div class="card table-card">
@@ -306,6 +311,21 @@ onMounted(fetchLoadBalancers)
 </template>
 
 <style scoped>
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-2);
+}
+
+.spinning {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
 .page-header {
   display: flex;
   justify-content: space-between;

@@ -5,7 +5,7 @@ import { useI18n } from 'vue-i18n'
 import { keysApi, type SSHKey } from '../../api/keys'
 import { isValidName } from '../../utils/validation'
 
-import { Key, Plus, Trash2, Copy, Check, Search, X } from 'lucide-vue-next'
+import { Key, Plus, Trash2, Copy, Check, Search, X, RefreshCw } from 'lucide-vue-next'
 
 const keys = ref<SSHKey[]>([])
 const loading = ref(false)
@@ -157,9 +157,14 @@ onMounted(fetchKeys)
           />
         </div>
       </div>
-      <button class="btn btn-primary btn-sm" @click="openCreateModal">
-        <Plus :size="14" /> {{ $t('dashboard.buttons.createKey') }}
-      </button>
+      <div class="header-actions">
+        <button class="btn btn-secondary btn-sm btn-icon" @click="fetchKeys" :title="$t('actions.refresh')">
+          <RefreshCw :size="14" :class="{ spinning: loading }" />
+        </button>
+        <button class="btn btn-primary btn-sm" @click="openCreateModal">
+          <Plus :size="14" /> {{ $t('dashboard.buttons.createKey') }}
+        </button>
+      </div>
     </div>
 
     <div class="card table-card">
@@ -312,6 +317,21 @@ onMounted(fetchKeys)
 </template>
 
 <style scoped>
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-2);
+}
+
+.spinning {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
 .page-header {
   display: flex;
   justify-content: space-between;
