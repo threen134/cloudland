@@ -23,6 +23,7 @@ SPDX-License-Identifier: Apache-2.0
 #define CLOUDLET_PATH "/opt/cloudland/bin/cloudlet"
 #define RPC_SERVER_ENDPOINT "0.0.0.0:5006"
 #define RPC_REMOTE_ENDPOINT "localhost:5005"
+#define NODE_PERSIST_FILE "/opt/cloudland/cache/registered_nodes.json"
 
 #include "httplib.h"
 
@@ -305,6 +306,66 @@ string FrontBack::Execute(int msg_id, int extra, char *ctl, char *cmd,
   return status;
 }
 
+// --- Node persistence helpers ---
+
+static string getNodePersistPath() {
+  const char *env = getenv("NODE_PERSIST_FILE");
+  return env ? env : NODE_PERSIST_FILE;
+}
+
+static Json::Value loadPersistedNodes() {
+  Json::Value nodes(Json::arrayValue);
+  string path = getNodePersistPath();
+  ifstream ifs(path);
+  if (!ifs.is_open()) return nodes;
+  Json::Reader reader;
+  if (!reader.parse(ifs, nodes) || !nodes.isArray()) {
+    nodes = Json::Value(Json::arrayValue);
+  }
+  return nodes;
+}
+
+static void savePersistedNodes(const Json::Value &nodes) {
+  string path = getNodePersistPath();
+  ofstream ofs(path);
+  if (!ofs.is_open()) {
+    log_error("Failed to write node persist file: %s", path.c_str());
+    return;
+  }
+  Json::FastWriter writer;
+  ofs << writer.write(nodes);
+}
+
+static void persistNodeAdd(const string &hostname, int id, int level) {
+  Json::Value nodes = loadPersistedNodes();
+  // Deduplicate by id
+  for (Json::ArrayIndex i = 0; i < nodes.size(); i++) {
+    if (nodes[i]["id"].asInt() == id) {
+      nodes[i]["hostname"] = hostname;
+      nodes[i]["level"] = level;
+      savePersistedNodes(nodes);
+      return;
+    }
+  }
+  Json::Value entry;
+  entry["hostname"] = hostname;
+  entry["id"] = id;
+  entry["level"] = level;
+  nodes.append(entry);
+  savePersistedNodes(nodes);
+}
+
+static void persistNodeRemove(int id) {
+  Json::Value nodes = loadPersistedNodes();
+  Json::Value updated(Json::arrayValue);
+  for (Json::ArrayIndex i = 0; i < nodes.size(); i++) {
+    if (nodes[i]["id"].asInt() != id) {
+      updated.append(nodes[i]);
+    }
+  }
+  savePersistedNodes(updated);
+}
+
 RemoteExecServiceImpl::RemoteExecServiceImpl(NetLayer &sci)
     : sciNet(sci), running(true) {}
 
@@ -403,6 +464,7 @@ void RpcWorker::runServer() {
     if (result >= 0) {
       resp["status"] = "ok";
       resp["id"] = result;
+      persistNodeAdd(hostname, id, level);
 
       // Distribute SSH keys: read from configurable directory, fallback to default
       const char *keyDirEnv = getenv("CLOUDLAND_SSH_KEY_DIR");
@@ -447,6 +509,7 @@ void RpcWorker::runServer() {
     Json::FastWriter writer;
     if (rc == 0) {
       resp["status"] = "ok";
+      persistNodeRemove(id);
     } else {
       res.status = 500;
       resp["error"] = "failed to remove backend";
@@ -473,6 +536,23 @@ void RpcWorker::runServer() {
   try {
     sciNet.initFE(const_cast<char *>(bePath), this);
     log_info("SCI frontend initialized successfully");
+
+    // Restore persisted nodes
+    Json::Value savedNodes = loadPersistedNodes();
+    if (savedNodes.size() > 0) {
+      log_info("Restoring %d persisted node(s)", savedNodes.size());
+      for (Json::ArrayIndex i = 0; i < savedNodes.size(); i++) {
+        string h = savedNodes[i]["hostname"].asString();
+        int nid = savedNodes[i]["id"].asInt();
+        int lvl = savedNodes[i].get("level", 1).asInt();
+        int rc = sciNet.addBackend(nid, h.c_str(), lvl);
+        if (rc >= 0) {
+          log_info("Restored node %s (id=%d)", h.c_str(), nid);
+        } else {
+          log_error("Failed to restore node %s (id=%d), rc=%d", h.c_str(), nid, rc);
+        }
+      }
+    }
   } catch (const CommonException &e) {
     log_error("SCI frontend initialization failed (CommonException): %s",
               e.getErrMsg());
