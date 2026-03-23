@@ -201,7 +201,7 @@ onMounted(fetchSecurityGroups)
                 <span class="resource-link" @click.stop="navigateToDetail(group)">{{ group.name }}</span>
                 <span v-if="group.is_default" class="badge badge-primary">{{ $t('dashboard.table.default') || 'Default' }}</span>
               </h3>
-              <span class="sg-id">{{ group.id }} • {{ group.vpc?.name || $t('dashboard.org.noVpcs') || 'No VPC' }}</span>
+              <span class="sg-id">{{ group.id }} • {{ group.vpc?.name || $t('messages.noVpc') }}</span>
             </div>
           </div>
           <div class="sg-stats">

@@ -390,7 +390,7 @@ onMounted(() => {
                         </div>
                         
                         <div v-if="!instance.interfaces?.length" class="text-secondary" style="font-size: 13px; margin-top: 8px;">
-                            No network interfaces
+                            {{ $t('messages.noNics') }}
                         </div>
                         <template v-else>
                             <div v-for="(iface, index) in instance.interfaces" :key="iface.id" class="interface-block" :style="{ marginTop: index > 0 ? '16px' : '8px', paddingTop: index > 0 ? '16px' : '0', borderTop: index > 0 ? '1px dashed var(--border-light)' : 'none' }">
@@ -441,7 +441,7 @@ onMounted(() => {
                      <h3>Storage</h3>
                      <div class="key-value-list">
                           <div v-if="!instance.volumes?.length" class="text-secondary" style="font-size: 13px;">
-                              No volumes attached
+                              {{ $t('messages.noVolumesAttached') }}
                           </div>
                           <div v-else v-for="volume in instance.volumes" :key="volume.id" class="kv-item">
                              <span class="label">

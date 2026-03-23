@@ -118,6 +118,10 @@ export const subnetsApi = {
     },
     delete: async (id: string): Promise<void> => {
         await client.delete(`/subnets/${id}`)
+    },
+    listAddresses: async (subnetId: string): Promise<{ total: number; addresses: any[] }> => {
+        const response = await client.get(`/addresses/${subnetId}`)
+        return response.data
     }
 }
 

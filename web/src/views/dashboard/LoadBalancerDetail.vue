@@ -153,7 +153,7 @@ onMounted(fetchLB)
                         </thead>
                         <tbody>
                             <tr v-if="!lb.listeners?.length">
-                                <td colspan="4" class="text-center text-secondary">No listeners defined</td>
+                                <td colspan="4" class="text-center text-secondary">{{ $t('messages.noListeners') }}</td>
                             </tr>
                              <tr v-else v-for="listener in lb.listeners" :key="listener.id">
                                 <td>{{ listener.name }}</td>

@@ -536,6 +536,8 @@ export default {
             fileDetails: '文件详情',
             bootLoader: '启动加载项',
             osFamily: '系统族',
+            osVersion: '系统版本',
+            defaultUser: '默认用户',
             portRange: '端口范围',
             remoteCidr: '远程 CIDR',
             ingress: '入站',
@@ -576,6 +578,7 @@ export default {
             createLoadBalancer: '创建负载均衡',
             addRule: '添加规则',
             startMigration: '开始迁移',
+            addSecondaryInterface: '添加扩展网络接口',
         },
         deleteConfirm: {
             message: '确定要删除此资源吗？此操作无法撤销。',
@@ -614,7 +617,10 @@ export default {
                 selectSubnet: '请选择子网',
                 selectSSHKey: '请选择 SSH 密钥',
                 none: '无',
-                nameExample: '例如：web-server-01'
+                nameExample: '例如：web-server-01',
+                selectIsolatedSubnet: '请选择隔离子网',
+                selectPublicSubnet: '请选择公网子网',
+                autoAllocate: '自动分配',
             },
             sections: {
                 general: '常规设置',
@@ -622,6 +628,8 @@ export default {
                 secondaryNetwork: '扩展网络接口',
                 advanced: '高级设置',
                 networkConfig: '网络配置',
+                secondaryInterface: '扩展网络接口',
+                advancedOptions: '高级选项',
             },
             dhcpTooltip: 'DHCP 开关决定是否为没有 cloud-init 的虚拟机提供自动 IP 分配服务；有 cloud-init 的镜像不受影响。',
             startIp: '起始 IP',
@@ -634,6 +642,23 @@ export default {
             networkType: '网络类型',
             useSSHKeys: '使用 SSH 密钥',
             setRootPassword: '设置 Root 密码',
+            publicKey: '公钥',
+            publicKeyHelp: '请在此粘贴您的公钥（以 ssh-rsa, ssh-ed25519 等开头）',
+            count: '创建数量',
+            isolatedSubnet: '隔离子网',
+            publicSubnet: '公网子网',
+            securityGroupsOptional: '安全组 (可选)',
+            ipAddress: 'IP 地址',
+            systemPort: '系统登录端口',
+            systemPortPlaceholder: '登录端口 (默认 22)',
+            enableNested: '开启嵌套虚拟化',
+            userdataType: '用户自定义数据类型',
+            userdataTypePlain: '纯文本',
+            userdataTypeBase64: 'Base64 编码',
+            networkTypeVpc: 'VPC 网络',
+            networkTypeIsolated: '隔离网络',
+            networkTypePublic: '公共网络',
+            availableIps: '{count} 个可用 IP',
         },
         migrationForm: {
             title: '开始迁移任务',
@@ -750,6 +775,7 @@ export default {
         detach: '卸载',
         resize: '扩容',
         confirmDelete: '确认删除',
+        cancelInvitation: '取消邀请',
     },
 
     // 认证
@@ -867,7 +893,19 @@ export default {
         subnetRequired: '请选择子网。',
         cidrRequired: '请输入有效的 CIDR 地址。',
         loginRequired: '用户名和密码不能为空。',
+        credentialsRequired: '请提供 SSH 密钥或 Root 密码以登录实例。',
         confirmDeleteChannel: '确定要删除通知渠道 "{name}" 吗？此操作不可撤销。',
+        confirmCancelInvitation: '确定要取消该用户的邀请吗？',
+        noVpc: '无 VPC',
+        noSSHKeys: '未发现 SSH 密钥。请添加密钥以安全访问您的实例。',
+        fillNameAndKey: '请填写名称和公钥。',
+        noListeners: '未定义监听器',
+        noNics: '无网络接口',
+        noVolumesAttached: '未挂载云硬盘',
+        noOrgsFound: '未发现组织。',
+        passwordConfirmed: '密码已确认。',
+        itemsSelected: '已选择 {count} 个{items}',
+        keysSelected: '已选择 {count} 个密钥'
     },
 
 
@@ -886,5 +924,10 @@ export default {
         inactive: '禁用',
         pending: '待定',
         invited: '已邀请'
+    },
+    languages: {
+        en: 'English',
+        zh: '中文',
+        zh_hans: '简体中文'
     }
 }

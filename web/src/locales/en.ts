@@ -381,6 +381,8 @@ export default {
             selectNewOwner: 'Select New Owner',
             selectMember: 'Select a member',
             enterUserId: 'Please enter a valid User ID.',
+            inviteMember: 'Invite Member',
+            inviteHint: 'An invitation email will be sent. If the user does not have an account, they will be asked to create one.',
         },
         keys: 'Keys',
         region: 'Region',
@@ -535,6 +537,8 @@ export default {
             fileDetails: 'File Details',
             bootLoader: 'Boot Loader',
             osFamily: 'OS Family',
+            osVersion: 'OS Version',
+            defaultUser: 'Default User',
             portRange: 'Port Range',
             remoteCidr: 'Remote CIDR',
             ingress: 'Ingress',
@@ -574,7 +578,8 @@ export default {
             createOrg: 'Create Organization',
             createLoadBalancer: 'Create Load Balancer',
             addRule: 'Add Rule',
-            startMigration: 'Start Migration'
+            startMigration: 'Start Migration',
+            addSecondaryInterface: 'Add Secondary Interface',
         },
         deleteConfirm: {
             message: 'Are you sure you want to delete this resource? This action cannot be undone.',
@@ -613,7 +618,10 @@ export default {
                 selectSubnet: 'Select Subnet',
                 selectSSHKey: 'Select SSH Keys',
                 none: 'None',
-                nameExample: 'e.g. web-server-01'
+                nameExample: 'e.g. web-server-01',
+                selectIsolatedSubnet: 'Select Isolated Subnet',
+                selectPublicSubnet: 'Select Public Subnet',
+                autoAllocate: 'Auto-allocate',
             },
             sections: {
                 general: 'General Settings',
@@ -621,6 +629,8 @@ export default {
                 secondaryNetwork: 'Secondary Interface',
                 advanced: 'Advanced Settings',
                 networkConfig: 'Network Configuration',
+                secondaryInterface: 'Secondary Interface',
+                advancedOptions: 'Advanced Options',
             },
             dhcpTooltip: 'DHCP controls automatic IP assignment for VMs without cloud-init. Images with cloud-init are not affected.',
             startIp: 'Start IP',
@@ -633,6 +643,23 @@ export default {
             networkType: 'Network Type',
             useSSHKeys: 'Use SSH Keys',
             setRootPassword: 'Set Root Password',
+            publicKey: 'Public Key',
+            publicKeyHelp: 'Paste your public key here (starts with ssh-rsa, ssh-ed25519, etc.)',
+            count: 'Count',
+            isolatedSubnet: 'Isolated Subnet',
+            publicSubnet: 'Public Subnet',
+            securityGroupsOptional: 'Security Groups (Optional)',
+            ipAddress: 'IP Address',
+            systemPort: 'System Port',
+            systemPortPlaceholder: 'Login Port (default 22)',
+            enableNested: 'Enable Nested Virtualization',
+            userdataType: 'User Data Type',
+            userdataTypePlain: 'Plain Text',
+            userdataTypeBase64: 'Base64',
+            networkTypeVpc: 'VPC',
+            networkTypeIsolated: 'Isolated',
+            networkTypePublic: 'Public',
+            availableIps: '{count} Available IPs',
         },
         migrationForm: {
             title: 'Start Migration Task',
@@ -749,6 +776,7 @@ export default {
         detach: 'Detach',
         resize: 'Resize',
         confirmDelete: 'Confirm Delete',
+        cancelInvitation: 'Cancel Invitation',
     },
 
     // Auth
@@ -866,18 +894,39 @@ export default {
         subnetRequired: 'Please select a subnet.',
         cidrRequired: 'Please enter a valid CIDR.',
         loginRequired: 'Username and password are required.',
+        credentialsRequired: 'Please provide either an SSH Key or a Root Password for instance login.',
         confirmDeleteChannel: 'Are you sure you want to delete notification channel "{name}"? This cannot be undone.',
+        confirmCancelInvitation: 'Are you sure you want to cancel this invitation?',
+        noVpc: 'No VPC',
+        noSSHKeys: 'No SSH keys found. Add a key to securely access your instances.',
+        fillNameAndKey: 'Please fill in Name and Public Key.',
+        noListeners: 'No listeners defined',
+        noNics: 'No network interfaces',
+        noVolumesAttached: 'No volumes attached',
+        noOrgsFound: 'No organizations found.',
+        passwordConfirmed: 'Password confirmed.',
+        itemsSelected: '{count} {items} selected',
+        keysSelected: '{count} key(s) selected',
     },
     roles: {
         owner: 'Owner',
         editor: 'Editor',
         viewer: 'Viewer',
         member: 'Member',
-        admin: 'Administrator'
+        admin: 'Administrator',
+        writer: 'Writer',
+        reader: 'Reader',
+        superuser: 'Superuser'
     },
     userStatus: {
         active: 'Active',
         inactive: 'Inactive',
-        pending: 'Pending'
+        pending: 'Pending',
+        invited: 'Invited'
     },
+    languages: {
+        en: 'English',
+        zh: 'Chinese',
+        zh_hans: 'Simplified Chinese'
+    }
 }

@@ -83,7 +83,7 @@ const closeCreateModal = () => {
 const handleCreateKey = async () => {
     createError.value = ''
     if (!newKeyForm.value.name || !newKeyForm.value.public_key) {
-        createError.value = 'Please fill in Name and Public Key.'
+        createError.value = t('messages.fillNameAndKey')
         return
     }
     if (!isNameValid.value) {
@@ -191,7 +191,7 @@ onMounted(fetchKeys)
                </div>
                <div v-else>
                   <Key :size="48" style="opacity: 0.3; margin-bottom: 16px;" />
-                  <p>No SSH keys found. Add a key to securely access your instances.</p>
+                  <p>{{ $t('messages.noSSHKeys') }}</p>
                </div>
             </td>
           </tr>
@@ -256,7 +256,7 @@ onMounted(fetchKeys)
           </div>
           
           <div class="form-group">
-            <label class="form-label">Public Key</label>
+            <label class="form-label">{{ $t('dashboard.forms.publicKey') }}</label>
             <textarea 
               v-model="newKeyForm.public_key" 
               class="form-input" 
@@ -264,7 +264,7 @@ onMounted(fetchKeys)
               placeholder="ssh-rsa AAAAB3NzaC1yc2E..."
               style="font-family: monospace; font-size: 0.8em;"
             ></textarea>
-            <p class="helper-text">Paste your public key here (starts with ssh-rsa, ssh-ed25519, etc.)</p>
+            <p class="helper-text">{{ $t('dashboard.forms.publicKeyHelp') }}</p>
           </div>
         </div>
         <div v-if="createError" class="text-error" style="margin: 0 var(--spacing-6) var(--spacing-4); font-size:var(--font-size-sm);background:var(--error-light);padding:var(--spacing-2);border-radius:var(--radius-sm)">

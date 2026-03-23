@@ -221,6 +221,7 @@ interface InterfaceForm {
     vpc_id: string
     subnet_id: string
     public_ip_id: string
+    ip_address: string
     security_group_ids: string[]
 }
 
@@ -241,6 +242,7 @@ const newInstanceForm = ref({
         vpc_id: '',
         subnet_id: '',
         public_ip_id: '',
+        ip_address: '',
         security_group_ids: [] as string[]
     } as InterfaceForm,
     secondary_interfaces: [] as InterfaceForm[],
@@ -255,6 +257,7 @@ const addSecondaryInterface = () => {
         vpc_id: '',
         subnet_id: '',
         public_ip_id: '',
+        ip_address: '',
         security_group_ids: []
     }
     newInstanceForm.value.secondary_interfaces.push(newIface)
@@ -283,6 +286,7 @@ const openCreateModal = () => {
             vpc_id: '',
             subnet_id: '',
             public_ip_id: '',
+            ip_address: '',
             security_group_ids: []
         },
         secondary_interfaces: [],
@@ -329,6 +333,7 @@ watch([tempPassword, confirmPassword], ([newPass, newConfirm]) => {
 const fetchResources = async () => {
 
     resourcesLoading.value = true
+    subnetAddresses.value = {}
     try {
         const [imgsRes, vpcsRes, sgsRes, keysRes, subnetsRes, fipsRes, flavorsRes, zonesRes] = await Promise.all([
 
@@ -355,7 +360,7 @@ const fetchResources = async () => {
 
         // Set default zone if available
         if (availableZones.value.length > 0) {
-            newInstanceForm.value.zone = availableZones.value[0].name || availableZones.value[0].id
+            newInstanceForm.value.zone = String(availableZones.value[0].name || availableZones.value[0].id)
         }
 
 
@@ -404,8 +409,33 @@ const handleNetworkTypeChange = (iface: InterfaceForm) => {
     iface.vpc_id = ''
     iface.subnet_id = ''
     iface.public_ip_id = ''
+    iface.ip_address = ''
     iface.security_group_ids = []
     autoSelectDefaultSGs(iface)
+}
+
+const subnetAddresses = ref<Record<string, any[]>>({})
+const addressesLoading = ref<Record<string, boolean>>({})
+
+const fetchSubnetAddresses = async (subnetId: string) => {
+    if (!subnetId || subnetAddresses.value[subnetId]) return
+    addressesLoading.value[subnetId] = true
+    try {
+        const response = await subnetsApi.listAddresses(subnetId)
+        // Filter for available IPs
+        subnetAddresses.value[subnetId] = (response.addresses || []).filter(a => !a.allocated && !a.reserved)
+    } catch (err) {
+        console.error('Failed to fetch subnet addresses:', err)
+    } finally {
+        addressesLoading.value[subnetId] = false
+    }
+}
+
+const handleSubnetChange = (iface: InterfaceForm) => {
+    iface.ip_address = ''
+    if (iface.network_type === 'public' && iface.subnet_id) {
+        fetchSubnetAddresses(iface.subnet_id)
+    }
 }
 
 const handleVpcChange = (iface: InterfaceForm) => {
@@ -429,7 +459,7 @@ const handleCreateInstance = async () => {
     const form = newInstanceForm.value
     createError.value = ''
     if (!form.hostname || !form.image_id || !form.flavor_id) {
-        createError.value = 'Please fill in Hostname, Image, and Flavor.'
+        createError.value = t('messages.fillRequired')
         return
     }
 
@@ -440,7 +470,7 @@ const handleCreateInstance = async () => {
 
     // Validation for Credentials
     if (form.keys.length === 0 && !form.root_passwd) {
-        createError.value = 'Please provide either an SSH Key or a Root Password for instance login.'
+        createError.value = t('messages.credentialsRequired')
         return
     }
 
@@ -483,6 +513,9 @@ const handleCreateInstance = async () => {
                     payload.public_addresses = [{ id: iface.public_ip_id }]
                 } else if (iface.subnet_id) {
                     payload.subnet = { id: iface.subnet_id }
+                    if (iface.ip_address) {
+                        payload.ip_address = iface.ip_address
+                    }
                 }
             } else {
                 payload.subnet = { id: iface.subnet_id }
@@ -746,8 +779,8 @@ onMounted(() => fetchInstances())
                   
                   <div v-if="enableSSHKeys" class="multi-select-container mt-2" v-click-outside="() => sshKeysDropdownOpen = false">
                       <div class="multi-select-trigger" @click="sshKeysDropdownOpen = !sshKeysDropdownOpen">
-                           <span v-if="newInstanceForm.keys.length === 0" class="placeholder">{{ $t('dashboard.forms.placeholder.selectSSHKey') || 'Select SSH Keys' }}</span>
-                          <span v-else class="selected-count">{{ newInstanceForm.keys.length }} Keys Selected</span>
+                           <span v-if="newInstanceForm.keys.length === 0" class="placeholder">{{ $t('dashboard.forms.placeholder.selectSSHKey') }}</span>
+                          <span v-else class="selected-count">{{ $t('messages.keysSelected', { count: newInstanceForm.keys.length }) }}</span>
                           <ChevronDown :size="16" />
                       </div>
                       <div v-if="sshKeysDropdownOpen" class="multi-select-dropdown">
@@ -772,18 +805,18 @@ onMounted(() => fetchInstances())
                       <div class="form-row">
                           <div class="form-col">
                                <label class="form-label text-xs">{{ $t('auth.password') }}</label>
-                              <input v-model="tempPassword" type="password" class="form-input" placeholder="Enter password" />
+                              <input v-model="tempPassword" type="password" class="form-input" :placeholder="$t('auth.password')" />
                           </div>
                           <div class="form-col">
                                <label class="form-label text-xs">{{ $t('auth.confirmPassword') }}</label>
-                              <input v-model="confirmPassword" type="password" class="form-input" placeholder="Confirm password" />
+                              <input v-model="confirmPassword" type="password" class="form-input" :placeholder="$t('auth.confirmPassword')" />
                           </div>
                       </div>
                       <div v-if="tempPassword && confirmPassword && tempPassword !== confirmPassword" class="text-error text-xs mt-1">
                            {{ $t('auth.passwordMismatch') }}
                       </div>
                       <div v-else-if="tempPassword && confirmPassword === tempPassword" class="text-success text-xs mt-1">
-                          Password confirmed.
+                          {{ $t('messages.passwordConfirmed') }}
                       </div>
                   </div>
               </div>
@@ -803,15 +836,15 @@ onMounted(() => fetchInstances())
                   <div class="radio-group">
                       <label class="radio-label">
                           <input type="radio" value="vpc" v-model="newInstanceForm.primary_interface.network_type" @change="handleNetworkTypeChange(newInstanceForm.primary_interface)">
-                          <span>VPC</span>
+                          <span>{{ $t('dashboard.forms.networkTypeVpc') }}</span>
                       </label>
                       <label class="radio-label">
                           <input type="radio" value="isolated" v-model="newInstanceForm.primary_interface.network_type" @change="handleNetworkTypeChange(newInstanceForm.primary_interface)">
-                          <span>Isolated</span>
+                          <span>{{ $t('dashboard.forms.networkTypeIsolated') }}</span>
                       </label>
                       <label class="radio-label">
                           <input type="radio" value="public" v-model="newInstanceForm.primary_interface.network_type" @change="handleNetworkTypeChange(newInstanceForm.primary_interface)">
-                          <span>Public</span>
+                          <span>{{ $t('dashboard.forms.networkTypePublic') }}</span>
                       </label>
                   </div>
               </div>
@@ -829,40 +862,40 @@ onMounted(() => fetchInstances())
                        <label class="form-label">{{ $t('dashboard.table.subnet') }}</label>
                       <select v-model="newInstanceForm.primary_interface.subnet_id" class="form-select" :disabled="!newInstanceForm.primary_interface.vpc_id">
                            <option value="" disabled>{{ $t('dashboard.forms.placeholder.selectSubnet') }}</option>
-                          <option v-for="sub in getFilteredSubnets(newInstanceForm.primary_interface.vpc_id)" :key="sub.id" :value="sub.id">{{ sub.name }} ({{ sub.network || sub.network_cidr }}) - {{ sub.available_count ?? 0 }} Available IPs</option>
+                          <option v-for="sub in getFilteredSubnets(newInstanceForm.primary_interface.vpc_id)" :key="sub.id" :value="sub.id">{{ sub.name }} ({{ sub.network || sub.network_cidr }}) - {{ $t('dashboard.forms.availableIps', { count: sub.available_count ?? 0 }) }}</option>
                       </select>
                   </div>
               </div>
 
               <!-- Isolated Subnets -->
               <div class="form-group" v-else-if="newInstanceForm.primary_interface.network_type === 'isolated'">
-                   <label class="form-label">{{ $t('dashboard.forms.isolatedSubnet') || 'Isolated Subnet' }}</label>
+                   <label class="form-label">{{ $t('dashboard.forms.isolatedSubnet') }}</label>
                   <select v-model="newInstanceForm.primary_interface.subnet_id" class="form-select">
-                      <option value="" disabled>Select Isolated Subnet</option>
-                      <option v-for="sub in getIsolatedSubnets()" :key="sub.id" :value="sub.id">{{ sub.name }} ({{ sub.network || sub.network_cidr }}) - {{ sub.available_count ?? 0 }} Available IPs</option>
+                      <option value="" disabled>{{ $t('dashboard.forms.placeholder.selectIsolatedSubnet') }}</option>
+                      <option v-for="sub in getIsolatedSubnets()" :key="sub.id" :value="sub.id">{{ sub.name }} ({{ sub.network || sub.network_cidr }}) - {{ $t('dashboard.forms.availableIps', { count: sub.available_count ?? 0 }) }}</option>
                   </select>
               </div>
 
               <!-- Public Network -->
               <div class="form-row" v-else-if="newInstanceForm.primary_interface.network_type === 'public'">
                   <div class="form-group">
-                       <label class="form-label">{{ $t('dashboard.overview.publicIp') }}</label>
-                      <select v-model="newInstanceForm.primary_interface.public_ip_id" class="form-select">
-                           <option value="">{{ $t('dashboard.forms.placeholder.autoAllocate') || 'Auto-allocate' }}</option>
-                          <option v-for="fip in getAvailablePublicIps()" :key="fip.id" :value="fip.id">{{ fip.ip_address }}</option>
+                      <label class="form-label">{{ $t('dashboard.forms.publicSubnet') }}</label>
+                      <select v-model="newInstanceForm.primary_interface.subnet_id" class="form-select" @change="handleSubnetChange(newInstanceForm.primary_interface)">
+                          <option value="" disabled>{{ $t('dashboard.forms.placeholder.selectPublicSubnet') }}</option>
+                          <option v-for="sub in getPublicSubnets()" :key="sub.id" :value="sub.id">{{ sub.name }} ({{ sub.network || sub.network_cidr }}) - {{ $t('dashboard.forms.availableIps', { count: sub.available_count ?? 0 }) }}</option>
                       </select>
                   </div>
                   <div class="form-group">
-                       <label class="form-label">{{ $t('dashboard.forms.publicSubnet') || 'Public Subnet' }}</label>
-                      <select v-model="newInstanceForm.primary_interface.subnet_id" class="form-select">
-                          <option value="" disabled>Select Public Subnet</option>
-                          <option v-for="sub in getPublicSubnets()" :key="sub.id" :value="sub.id">{{ sub.name }} ({{ sub.network || sub.network_cidr }}) - {{ sub.available_count ?? 0 }} Available IPs</option>
+                      <label class="form-label">{{ $t('dashboard.forms.ipAddress') }}</label>
+                      <select v-model="newInstanceForm.primary_interface.ip_address" class="form-select" :disabled="!newInstanceForm.primary_interface.subnet_id || addressesLoading[newInstanceForm.primary_interface.subnet_id]">
+                          <option value="">{{ $t('dashboard.forms.placeholder.autoAllocate') }}</option>
+                          <option v-for="addr in (subnetAddresses[newInstanceForm.primary_interface.subnet_id] || [])" :key="addr.address" :value="addr.address">{{ addr.address }}</option>
                       </select>
                   </div>
               </div>
 
               <div class="form-group">
-                   <label class="form-label">{{ $t('dashboard.forms.securityGroupsOptional') || 'Security Groups (Optional)' }}</label>
+                   <label class="form-label">{{ $t('dashboard.forms.securityGroupsOptional') }}</label>
                   <div class="checkbox-group compact">
                       <label v-for="sg in getFilteredSecurityGroups(newInstanceForm.primary_interface.network_type === 'vpc' ? newInstanceForm.primary_interface.vpc_id : undefined)" :key="sg.id" class="checkbox-label">
                           <input type="checkbox" :value="sg.id" v-model="newInstanceForm.primary_interface.security_group_ids">
@@ -880,7 +913,7 @@ onMounted(() => fetchInstances())
           <div class="secondary-interfaces-list" v-if="newInstanceForm.secondary_interfaces.length > 0">
             <div v-for="(iface, idx) in newInstanceForm.secondary_interfaces" :key="idx" class="form-section secondary-section">
                 <div class="section-header">
-                    <div class="section-title">Secondary Interface #{{ idx + 1 }}</div>
+                    <div class="section-title">{{ $t('dashboard.forms.sections.secondaryInterface') }} #{{ idx + 1 }}</div>
                     <button class="btn btn-ghost btn-sm text-error remove-btn" @click="removeSecondaryInterface(idx)">
                         <MinusCircle :size="16" />
                     </button>
@@ -890,49 +923,49 @@ onMounted(() => fetchInstances())
                     <div class="radio-group mini">
                         <label class="radio-label">
                             <input type="radio" value="vpc" v-model="iface.network_type" @change="handleNetworkTypeChange(iface)">
-                            <span>VPC</span>
+                            <span>{{ $t('dashboard.forms.networkTypeVpc') }}</span>
                         </label>
                         <label class="radio-label">
                             <input type="radio" value="isolated" v-model="iface.network_type" @change="handleNetworkTypeChange(iface)">
-                            <span>Isolated</span>
+                            <span>{{ $t('dashboard.forms.networkTypeIsolated') }}</span>
                         </label>
                         <label class="radio-label">
                             <input type="radio" value="public" v-model="iface.network_type" @change="handleNetworkTypeChange(iface)">
-                            <span>Public</span>
+                            <span>{{ $t('dashboard.forms.networkTypePublic') }}</span>
                         </label>
                     </div>
                 </div>
 
                 <div class="form-row" v-if="iface.network_type === 'vpc'">
                     <select v-model="iface.vpc_id" class="form-select" @change="handleVpcChange(iface)">
-                        <option value="" disabled>Select VPC</option>
+                        <option value="" disabled>{{ $t('dashboard.forms.placeholder.selectVpc') }}</option>
                         <option v-for="vpc in availableVPCs" :key="vpc.id" :value="vpc.id">{{ vpc.name }}</option>
                     </select>
                     <select v-model="iface.subnet_id" class="form-select" :disabled="!iface.vpc_id">
                         <option value="" disabled>Select Subnet</option>
-                        <option v-for="sub in getFilteredSubnets(iface.vpc_id)" :key="sub.id" :value="sub.id">{{ sub.name }} ({{ sub.network || sub.network_cidr }}) - {{ sub.available_count ?? 0 }} Available IPs</option>
+                        <option v-for="sub in getFilteredSubnets(iface.vpc_id)" :key="sub.id" :value="sub.id">{{ sub.name }} ({{ sub.network || sub.network_cidr }}) - {{ $t('dashboard.forms.availableIps', { count: sub.available_count ?? 0 }) }}</option>
                     </select>
                 </div>
                 <div class="form-group" v-else-if="iface.network_type === 'isolated'">
                     <select v-model="iface.subnet_id" class="form-select">
-                        <option value="" disabled>Select Isolated Subnet</option>
-                        <option v-for="sub in getIsolatedSubnets()" :key="sub.id" :value="sub.id">{{ sub.name }} ({{ sub.network || sub.network_cidr }}) - {{ sub.available_count ?? 0 }} Available IPs</option>
+                        <option value="" disabled>{{ $t('dashboard.forms.placeholder.selectIsolatedSubnet') }}</option>
+                        <option v-for="sub in getIsolatedSubnets()" :key="sub.id" :value="sub.id">{{ sub.name }} ({{ sub.network || sub.network_cidr }}) - {{ $t('dashboard.forms.availableIps', { count: sub.available_count ?? 0 }) }}</option>
                     </select>
                 </div>
                 <!-- Public Network for Secondary -->
                 <div class="form-row" v-else-if="iface.network_type === 'public'">
-                    <select v-model="iface.public_ip_id" class="form-select">
-                        <option value="">Auto-allocate</option>
-                        <option v-for="fip in getAvailablePublicIps()" :key="fip.id" :value="fip.id">{{ fip.ip_address }}</option>
+                    <select v-model="iface.subnet_id" class="form-select" @change="handleSubnetChange(iface)">
+                        <option value="" disabled>{{ $t('dashboard.forms.placeholder.selectPublicSubnet') }}</option>
+                        <option v-for="sub in getPublicSubnets()" :key="sub.id" :value="sub.id">{{ sub.name }} ({{ sub.network || sub.network_cidr }}) - {{ $t('dashboard.forms.availableIps', { count: sub.available_count ?? 0 }) }}</option>
                     </select>
-                    <select v-model="iface.subnet_id" class="form-select">
-                        <option value="" disabled>Select Public Subnet</option>
-                        <option v-for="sub in getPublicSubnets()" :key="sub.id" :value="sub.id">{{ sub.name }} ({{ sub.network || sub.network_cidr }}) - {{ sub.available_count ?? 0 }} Available IPs</option>
+                    <select v-model="iface.ip_address" class="form-select" :disabled="!iface.subnet_id || addressesLoading[iface.subnet_id]">
+                        <option value="">{{ $t('dashboard.forms.placeholder.autoAllocate') }}</option>
+                        <option v-for="addr in (subnetAddresses[iface.subnet_id] || [])" :key="addr.address" :value="addr.address">{{ addr.address }}</option>
                     </select>
                 </div>
 
                 <div class="form-group mt-2">
-                    <label class="form-label text-xs">Security Groups (Optional)</label>
+                    <label class="form-label text-xs">{{ $t('dashboard.forms.securityGroupsOptional') }}</label>
                     <div class="checkbox-group compact">
                         <label v-for="sg in getFilteredSecurityGroups(iface.network_type === 'vpc' ? iface.vpc_id : undefined)" :key="sg.id" class="checkbox-label">
                             <input type="checkbox" :value="sg.id" v-model="iface.security_group_ids">
@@ -945,7 +978,7 @@ onMounted(() => fetchInstances())
 
           <div class="add-interface-row">
             <button class="btn btn-outline btn-sm w-full" @click="addSecondaryInterface" :disabled="newInstanceForm.secondary_interfaces.length >= 7">
-                <PlusCircle :size="14" /> Add Secondary Interface
+                <PlusCircle :size="14" /> {{ $t('dashboard.buttons.addSecondaryInterface') }}
             </button>
           </div>
 
@@ -954,7 +987,7 @@ onMounted(() => fetchInstances())
             <div class="advanced-trigger" @click="newInstanceForm.advanced_expanded = !newInstanceForm.advanced_expanded">
                 <div class="trigger-label">
                     <Server :size="16" />
-                    <span>Advanced Options</span>
+                    <span>{{ $t('dashboard.forms.sections.advancedOptions') }}</span>
                 </div>
                 <ChevronDown v-if="!newInstanceForm.advanced_expanded" :size="20" />
                 <ChevronUp v-else :size="20" />
@@ -962,13 +995,13 @@ onMounted(() => fetchInstances())
 
             <div class="advanced-content" v-if="newInstanceForm.advanced_expanded">
                 <div class="form-group">
-                    <label class="form-label">System Port</label>
-                    <input v-model.number="newInstanceForm.login_port" type="number" class="form-input" placeholder="Login Port (default 22)" />
+                    <label class="form-label">{{ $t('dashboard.forms.systemPort') }}</label>
+                    <input v-model.number="newInstanceForm.login_port" type="number" class="form-input" :placeholder="$t('dashboard.forms.systemPortPlaceholder')" />
                 </div>
 
                 <div class="form-group">
                     <div class="flex-row">
-                        <label class="form-label mb-0">Enable Nested Virtualization</label>
+                        <label class="form-label mb-0">{{ $t('dashboard.forms.enableNested') }}</label>
                         <label class="switch">
                             <input type="checkbox" v-model="newInstanceForm.nested_enable">
                             <span class="slider"></span>
@@ -977,15 +1010,15 @@ onMounted(() => fetchInstances())
                 </div>
 
                 <div class="form-group">
-                    <label class="form-label">User Data Type</label>
+                    <label class="form-label">{{ $t('dashboard.forms.userdataType') }}</label>
                     <select v-model="newInstanceForm.userdata_type" class="form-select">
-                        <option value="plain">Plain Text</option>
-                        <option value="base64">Base64</option>
+                        <option value="plain">{{ $t('dashboard.forms.userdataTypePlain') }}</option>
+                        <option value="base64">{{ $t('dashboard.forms.userdataTypeBase64') }}</option>
                     </select>
                 </div>
 
                 <div class="form-group">
-                    <label class="form-label">User Data</label>
+                    <label class="form-label">{{ $t('dashboard.forms.userData') }}</label>
                     <textarea v-model="newInstanceForm.userdata" class="form-textarea" rows="4" placeholder="#!/bin/bash..."></textarea>
                 </div>
             </div>

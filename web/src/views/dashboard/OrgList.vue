@@ -199,7 +199,7 @@ onMounted(fetchOrgs)
                   <p>{{ $t('messages.noResults') }}</p>
                </div>
                <div v-else>
-                  <p>No organizations found.</p>
+                  <p>{{ $t('messages.noOrgsFound') }}</p>
                </div>
             </td>
           </tr>

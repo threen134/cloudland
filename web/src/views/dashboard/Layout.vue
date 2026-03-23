@@ -414,7 +414,7 @@ onUnmounted(() => {
           <div class="header-dropdown" @mouseenter="activeDropdown = 'lang'" @mouseleave="activeDropdown = null">
             <button class="lang-toggle-btn">
               <Globe :size="16" />
-              <span>{{ currentLang === 'en' ? 'EN' : '中文' }}</span>
+              <span>{{ $t('languages.' + currentLang) }}</span>
               <ChevronDown :size="14" />
             </button>
             <div class="dropdown-menu-portal" v-show="activeDropdown === 'lang'">
@@ -422,7 +422,7 @@ onUnmounted(() => {
                 English
               </div>
               <div class="dropdown-item-portal" :class="{ active: currentLang === 'zh' }" @click="handleSwitchLanguage('zh')">
-                简体中文
+                {{ $t('languages.zh_hans') }}
               </div>
             </div>
           </div>

@@ -757,6 +757,21 @@ async def patch_subnets_id(
         proxy_path="/subnets/{id}"
     )
 
+@router.get("/addresses/{uuid}", summary="list addresses by subnet uuid")
+async def get_addresses_uuid(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user)
+):
+    """
+    list addresses by subnet uuid
+    """
+    return await proxy_service.forward_to_region(
+        request=request,
+        db=db,
+        proxy_path="/addresses/{uuid}"
+    )
+
 @router.patch("/subnets/{id}/addresses/{address_id}", summary="patch an address")
 async def patch_subnets_id_addresses_address_id(
     request: Request,
