@@ -408,7 +408,7 @@ func (a *SubnetAdmin) Create(ctx context.Context, vlan int, name, network, gatew
 		err = NewCLError(ErrPermissionDenied, "Not authorized for this operation", nil)
 		return
 	}
-	if rtype == "public" {
+	if rtype == "public" || rtype == "private" {
 		permit = memberShip.IsSystemAdmin()
 		if !permit {
 			logger.Error("Not authorized for this operation")
@@ -416,8 +416,8 @@ func (a *SubnetAdmin) Create(ctx context.Context, vlan int, name, network, gatew
 			return
 		}
 		if router != nil {
-			logger.Error("Public subnet can not be created in a vpc")
-			err = NewCLError(ErrPublicSubnetCannotInVPC, "Not able to create public subnet in a vpc", nil)
+			logger.Errorf("%s subnet can not be created in a vpc", rtype)
+			err = NewCLError(ErrPublicSubnetCannotInVPC, fmt.Sprintf("Not able to create %s subnet in a vpc", rtype), nil)
 			return
 		}
 	}
@@ -558,7 +558,12 @@ func (a *SubnetAdmin) Delete(ctx context.Context, subnet *model.Subnet) (err err
 		}
 	}()
 	memberShip := GetMemberShip(ctx)
-	permit := memberShip.CheckResourceOrg(model.OrgWriter, subnet.Owner)
+	var permit bool
+	if subnet.Type == "public" || subnet.Type == "private" {
+		permit = memberShip.IsSystemAdmin()
+	} else {
+		permit = memberShip.CheckResourceOrg(model.OrgWriter, subnet.Owner)
+	}
 	if !permit {
 		logger.Error("Not authorized to delete the subnet")
 		err = NewCLError(ErrPermissionDenied, "Not authorized to delete the subnet", nil)

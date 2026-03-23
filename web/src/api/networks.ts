@@ -58,7 +58,7 @@ export interface Subnet {
     end_ip?: string
     dns?: string
     dhcp?: boolean
-    type?: 'public' | 'internal' | 'site'
+    type?: 'public' | 'internal' | 'private' | 'site'
     vpc?: { id: string; name: string }
     vlan?: number
     idle_count?: number
@@ -85,7 +85,7 @@ export interface SubnetPayload {
     dns?: string
     base_domain?: string
     dhcp?: boolean
-    type?: 'public' | 'internal' | 'site'
+    type?: 'public' | 'internal' | 'private' | 'site'
     vpc?: { id: string }
     group?: { id: string }
     vlan?: number

@@ -4,6 +4,7 @@ import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import { subnetsApi, vpcsApi, type Subnet, type SubnetPayload, type VPC } from '../../api/networks'
 import { isValidName } from '../../utils/validation'
+import { useAuthStore } from '../../stores/auth'
 
 import { Network, Plus, Trash2, Edit, Search, X, Globe, Cpu, Zap, RefreshCw, ChevronDown, HelpCircle } from 'lucide-vue-next'
 import DeleteModal from '../../components/modals/DeleteModal.vue'
@@ -82,6 +83,8 @@ const openCreateModal = async () => {
     createModalVisible.value = true
 }
 
+const authStore = useAuthStore()
+const isSystemAdmin = computed(() => authStore.user?.role === 'admin' || authStore.user?.is_superuser)
 const requiresVpc = computed(() => newSubnetForm.value.type === 'internal')
 
 const closeCreateModal = () => {
@@ -146,6 +149,7 @@ const getTypeClass = (type: string) => {
     const map: Record<string, string> = {
         'public': 'badge-success',
         'internal': 'badge-primary',
+        'private': 'badge-info',
         'site': 'badge-warning'
     }
     return map[type] || 'badge-gray'
@@ -348,7 +352,8 @@ onMounted(fetchSubnets)
                 <label class="form-label">{{ $t('dashboard.table.type') }}</label>
                 <select v-model="newSubnetForm.type" class="form-input">
                   <option value="internal">Internal</option>
-                  <option value="public">Public</option>
+                  <option v-if="isSystemAdmin" value="public">Public</option>
+                  <option v-if="isSystemAdmin" value="private">Private</option>
                   <option value="site">Site</option>
                 </select>
               </div>

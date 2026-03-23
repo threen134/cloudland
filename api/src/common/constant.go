@@ -23,6 +23,7 @@ const (
 
 	Public   SubnetType = "public"
 	Internal SubnetType = "internal"
+	Private  SubnetType = "private"
 	Site     SubnetType = "site"
 	Vrrp     SubnetType = "vrrp"
 

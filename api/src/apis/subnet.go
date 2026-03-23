@@ -83,7 +83,7 @@ type SubnetPayload struct {
 type SubnetPatchPayload struct {
 	Name     string         `json:"name" binding:"omitempty,min=2,max=64"`
 	Group    *BaseReference `json:"group" binding:"omitempty"`
-	Type     SubnetType     `json:"type" binding:"omitempty,oneof=public internal site"`
+	Type     SubnetType     `json:"type" binding:"omitempty,oneof=public internal private site"`
 	Priority int32          `json:"priority" binding:"omitempty,gte=0,lte=100000"`
 }
 
@@ -218,7 +218,7 @@ func (v *SubnetAPI) Create(c *gin.Context) {
 		return
 	}
 	if payload.VPC == nil && payload.Type == Internal {
-		ErrorResponse(c, http.StatusBadRequest, "VPC must be specified if network type not public", err)
+		ErrorResponse(c, http.StatusBadRequest, "VPC must be specified for internal subnets", err)
 		return
 	}
 	var router *model.Router

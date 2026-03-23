@@ -69,7 +69,7 @@ func sendFdbRules(ctx context.Context, instance *model.Instance, vrrpInstance *m
 	}
 	for _, iface := range interfaces {
 		subnetType := iface.Address.Subnet.Type
-		if subnetType != string(Public) {
+		if subnetType != string(Public) && subnetType != string(Private) {
 			spreadRules = append(spreadRules, &FdbRule{Instance: iface.Name, Vni: iface.Address.Subnet.Vlan, InnerIP: iface.Address.Address, InnerMac: iface.MacAddr, OuterIP: hyper.HostIP, Gateway: iface.Address.Subnet.Gateway, Router: iface.Address.Subnet.RouterID})
 		}
 	}
@@ -82,7 +82,7 @@ func sendFdbRules(ctx context.Context, instance *model.Instance, vrrpInstance *m
 	}
 	for _, iface := range allIfaces {
 		subnetType := iface.Address.Subnet.Type
-		if iface.Address == nil || iface.Address.Subnet == nil || subnetType == "public" {
+		if iface.Address == nil || iface.Address.Subnet == nil || subnetType == "public" || subnetType == "private" {
 			continue
 		}
 		if iface.Hyper == -1 {
