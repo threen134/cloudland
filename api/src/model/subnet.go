@@ -31,7 +31,7 @@ type Subnet struct {
 	Routes       string   `gorm:"type:varchar(256)"`
 	Priority     int32    `gorm:"default:0"` /* Priority for subnet selection, lower value means higher priority */
 	GroupID      int64    `gorm:"index"`
-	Group        *IpGroup `gorm:"foreignkey:GroupID;-" json:"-"`
+	Group        *IpGroup `gorm:"foreignkey:GroupID" json:"-"`
 	IdleCount    int64         `gorm:"-"`
 	OwnerInfo    *Organization `gorm:"-"` /* Transient: populated for SystemAdmin list view */
 }
