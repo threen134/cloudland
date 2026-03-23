@@ -51,7 +51,7 @@ type ImagePayload struct {
 	UUID         string         `json:"uuid,omitempty" binding:"omitempty"`
 	Name         string         `json:"name" binding:"required,min=2,max=32"`
 	OSCode       string         `json:"os_code" binding:"required,oneof=linux windows other"`
-	DownloadURL  string         `json:"download_url" binding:"required,http_url"`
+	DownloadURL  string         `json:"download_url" binding:"required,url"`
 	OSVersion    string         `json:"os_version" binding:"required,min=2,max=32"`
 	User         string         `json:"user" binding:"required,min=2,max=32"`
 	InstanceUUID string         `json:"instance_uuid"`
