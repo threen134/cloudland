@@ -83,10 +83,13 @@ export interface SubnetPayload {
     start_ip?: string
     end_ip?: string
     dns?: string
+    base_domain?: string
     dhcp?: boolean
     type?: 'public' | 'internal' | 'site'
     vpc?: { id: string }
+    group?: { id: string }
     vlan?: number
+    priority?: number
 }
 
 export interface SubnetListResponse {

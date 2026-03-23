@@ -301,29 +301,6 @@ onMounted(fetchAlarmDetail)
 .btn-danger-outline:hover { background: #fef2f2; }
 
 /* Modal */
-.modal-overlay {
-  position: fixed; inset: 0; background: rgba(0, 0, 0, 0.5);
-  display: flex; align-items: center; justify-content: center; z-index: 1000;
-}
-
-.modal-content {
-  background: var(--bg-primary); border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-xl); width: 90%;
-}
-
-.modal-header {
-  display: flex; justify-content: space-between; align-items: center;
-  padding: 20px 24px; border-bottom: 1px solid var(--border-light);
-}
-
-.modal-header h3 { margin: 0; font-size: 1.125rem; }
-.modal-body { padding: 24px; }
-
-.modal-footer {
-  display: flex; justify-content: flex-end; gap: 8px;
-  padding: 16px 24px; border-top: 1px solid var(--border-light);
-}
-
 .btn-danger {
   background: #ef4444; color: white; border: none;
   padding: 8px 16px; border-radius: var(--radius-md); cursor: pointer; font-weight: 500;

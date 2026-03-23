@@ -5,7 +5,7 @@ import { useRouter } from 'vue-router'
 import { subnetsApi, vpcsApi, type Subnet, type SubnetPayload, type VPC } from '../../api/networks'
 import { isValidName } from '../../utils/validation'
 
-import { Network, Plus, Trash2, Edit, Search, X, Globe, Cpu, Zap, RefreshCw } from 'lucide-vue-next'
+import { Network, Plus, Trash2, Edit, Search, X, Globe, Cpu, Zap, RefreshCw, ChevronDown, HelpCircle } from 'lucide-vue-next'
 import DeleteModal from '../../components/modals/DeleteModal.vue'
 
 const subnets = ref<Subnet[]>([])
@@ -17,13 +17,20 @@ const router = useRouter()
 const createModalVisible = ref(false)
 const creating = ref(false)
 const createError = ref('')
+const showAdvanced = ref(false)
 const newSubnetForm = ref<SubnetPayload>({
     name: '',
     network_cidr: '10.0.1.0/24',
     gateway: '10.0.1.1',
     type: 'internal',
     dhcp: true,
-    vpc: { id: '' }
+    vpc: { id: '' },
+    vlan: undefined,
+    start_ip: '',
+    end_ip: '',
+    dns: '',
+    base_domain: '',
+    priority: undefined,
 })
 
 const { t } = useI18n()
@@ -62,11 +69,20 @@ const openCreateModal = async () => {
         gateway: '10.0.1.1',
         type: 'internal',
         dhcp: true,
-        vpc: { id: '' }
+        vpc: { id: '' },
+        vlan: undefined,
+        start_ip: '',
+        end_ip: '',
+        dns: '',
+        base_domain: '',
+        priority: undefined,
     }
+    showAdvanced.value = false
     await fetchVpcs()
     createModalVisible.value = true
 }
+
+const requiresVpc = computed(() => newSubnetForm.value.type === 'internal')
 
 const closeCreateModal = () => {
     createModalVisible.value = false
@@ -75,19 +91,38 @@ const closeCreateModal = () => {
 
 const handleCreateSubnet = async () => {
     createError.value = ''
-    if (!newSubnetForm.value.name || !newSubnetForm.value.network_cidr || !newSubnetForm.value.vpc?.id) {
-        createError.value = 'Please fill in Name, CIDR, and select a VPC.'
+    if (!newSubnetForm.value.name || !newSubnetForm.value.network_cidr) {
+        createError.value = 'Please fill in Name and CIDR.'
         return
     }
     if (!isNameValid.value) {
         createError.value = t('messages.invalidHostname')
         return
     }
+    if (requiresVpc.value && !newSubnetForm.value.vpc?.id) {
+        createError.value = 'VPC is required for internal subnets.'
+        return
+    }
 
-    
+    // Build clean payload, omit empty optional fields
+    const payload: SubnetPayload = {
+        name: newSubnetForm.value.name,
+        network_cidr: newSubnetForm.value.network_cidr,
+        type: newSubnetForm.value.type,
+        dhcp: newSubnetForm.value.dhcp,
+    }
+    if (newSubnetForm.value.gateway) payload.gateway = newSubnetForm.value.gateway
+    if (newSubnetForm.value.vpc?.id) payload.vpc = newSubnetForm.value.vpc
+    if (newSubnetForm.value.start_ip) payload.start_ip = newSubnetForm.value.start_ip
+    if (newSubnetForm.value.end_ip) payload.end_ip = newSubnetForm.value.end_ip
+    if (newSubnetForm.value.dns) payload.dns = newSubnetForm.value.dns
+    if (newSubnetForm.value.base_domain) payload.base_domain = newSubnetForm.value.base_domain
+    if (newSubnetForm.value.vlan) payload.vlan = newSubnetForm.value.vlan
+    if (newSubnetForm.value.priority != null) payload.priority = newSubnetForm.value.priority
+
     creating.value = true
     try {
-        await subnetsApi.create(newSubnetForm.value)
+        await subnetsApi.create(payload)
         await fetchSubnets()
         closeCreateModal()
     } catch (err: any) {
@@ -274,62 +309,41 @@ onMounted(fetchSubnets)
 
     <!-- Create Subnet Modal -->
     <div v-if="createModalVisible" class="modal-overlay" @click.self="closeCreateModal">
-      <div class="modal-content card">
+      <div class="modal-content card" style="max-width: 600px;">
         <div class="modal-header">
           <h3>{{ $t('dashboard.buttons.createSubnet') }}</h3>
           <button class="btn btn-ghost btn-sm icon-btn" @click="closeCreateModal">
             <X :size="20" />
           </button>
         </div>
-        
+
         <div class="modal-body">
-          <div class="form-grid">
+          <!-- Section 1: Basic Info -->
+          <div class="form-section">
+            <div class="form-section-title">{{ $t('dashboard.forms.sections.general') }}</div>
             <div class="form-group">
-              <label class="form-label">{{ $t('dashboard.table.name') }}</label>
-              <input 
-                v-model="newSubnetForm.name" 
-                type="text" 
-                :class="['form-input', { 'input-error': !isNameValid }]" 
-                placeholder="e.g. backend-subnet" 
+              <label class="form-label">{{ $t('dashboard.table.name') }} *</label>
+              <input
+                v-model="newSubnetForm.name"
+                type="text"
+                :class="['form-input', { 'input-error': !isNameValid }]"
+                placeholder="e.g. backend-subnet"
               />
               <div v-if="!isNameValid" class="text-error text-xs mt-1">
                 {{ $t('messages.invalidHostname') }}
               </div>
-
-            </div>
-            
-            <div class="form-group">
-              <label class="form-label">{{ $t('dashboard.forms.vpc') }}</label>
-              <select v-model="newSubnetForm.vpc!.id" class="form-input">
-                <option value="" disabled>{{ $t('dashboard.forms.placeholder.selectVpc') }}</option>
-                <option v-for="vpc in vpcs" :key="vpc.id" :value="vpc.id">
-                  {{ vpc.name }} ({{ vpc.id }})
-                </option>
-              </select>
             </div>
 
             <div class="form-row">
               <div class="form-group flex-1">
-                <label class="form-label">{{ $t('dashboard.forms.cidr') }}</label>
-                <input 
-                  v-model="newSubnetForm.network_cidr" 
-                  type="text" 
-                  class="form-input" 
-                  placeholder="e.g. 10.0.1.0/24" 
+                <label class="form-label">{{ $t('dashboard.forms.cidr') }} *</label>
+                <input
+                  v-model="newSubnetForm.network_cidr"
+                  type="text"
+                  class="form-input"
+                  placeholder="e.g. 10.0.1.0/24"
                 />
               </div>
-              <div class="form-group flex-1">
-                <label class="form-label">{{ $t('dashboard.forms.gateway') }}</label>
-                <input 
-                  v-model="newSubnetForm.gateway" 
-                  type="text" 
-                  class="form-input" 
-                  placeholder="e.g. 10.0.1.1" 
-                />
-              </div>
-            </div>
-
-            <div class="form-row">
               <div class="form-group flex-1">
                 <label class="form-label">{{ $t('dashboard.table.type') }}</label>
                 <select v-model="newSubnetForm.type" class="form-input">
@@ -338,8 +352,40 @@ onMounted(fetchSubnets)
                   <option value="site">Site</option>
                 </select>
               </div>
+            </div>
+
+            <div class="form-group" v-if="requiresVpc">
+              <label class="form-label">{{ $t('dashboard.forms.vpc') }} *</label>
+              <select v-model="newSubnetForm.vpc!.id" class="form-input">
+                <option value="" disabled>{{ $t('dashboard.forms.placeholder.selectVpc') }}</option>
+                <option v-for="vpc in vpcs" :key="vpc.id" :value="vpc.id">
+                  {{ vpc.name }} ({{ vpc.id }})
+                </option>
+              </select>
+            </div>
+          </div>
+
+          <!-- Section 2: Network Configuration -->
+          <div class="form-section">
+            <div class="form-section-title">{{ $t('dashboard.forms.sections.networkConfig') }}</div>
+            <div class="form-row">
               <div class="form-group flex-1">
-                <label class="form-label">{{ $t('dashboard.table.dhcp') }}</label>
+                <label class="form-label">{{ $t('dashboard.forms.gateway') }}</label>
+                <input
+                  v-model="newSubnetForm.gateway"
+                  type="text"
+                  class="form-input"
+                  placeholder="e.g. 10.0.1.1"
+                />
+              </div>
+              <div class="form-group flex-1">
+                <label class="form-label">
+                  {{ $t('dashboard.table.dhcp') }}
+                  <span class="tooltip-wrapper">
+                    <HelpCircle :size="13" class="help-icon" />
+                    <span class="tooltip-text">{{ $t('dashboard.forms.dhcpTooltip') }}</span>
+                  </span>
+                </label>
                 <div class="toggle-group">
                   <label class="toggle-switch">
                     <input type="checkbox" v-model="newSubnetForm.dhcp">
@@ -349,12 +395,91 @@ onMounted(fetchSubnets)
                 </div>
               </div>
             </div>
+
+            <div class="form-row">
+              <div class="form-group flex-1">
+                <label class="form-label">{{ $t('dashboard.forms.startIp') }}</label>
+                <input
+                  v-model="newSubnetForm.start_ip"
+                  type="text"
+                  class="form-input"
+                  placeholder="e.g. 10.0.1.2"
+                />
+              </div>
+              <div class="form-group flex-1">
+                <label class="form-label">{{ $t('dashboard.forms.endIp') }}</label>
+                <input
+                  v-model="newSubnetForm.end_ip"
+                  type="text"
+                  class="form-input"
+                  placeholder="e.g. 10.0.1.254"
+                />
+              </div>
+            </div>
+
+            <div class="form-row">
+              <div class="form-group flex-1">
+                <label class="form-label">{{ $t('dashboard.forms.dns') }}</label>
+                <input
+                  v-model="newSubnetForm.dns"
+                  type="text"
+                  class="form-input"
+                  placeholder="e.g. 8.8.8.8"
+                />
+              </div>
+              <div class="form-group flex-1">
+                <label class="form-label">{{ $t('dashboard.forms.baseDomain') }}</label>
+                <input
+                  v-model="newSubnetForm.base_domain"
+                  type="text"
+                  class="form-input"
+                  placeholder="e.g. example.com"
+                />
+              </div>
+            </div>
+          </div>
+
+          <!-- Section 3: Advanced Options (collapsible) -->
+          <div class="form-section">
+            <div class="form-section-title form-section-toggle" @click="showAdvanced = !showAdvanced">
+              {{ $t('dashboard.forms.sections.advanced') }}
+              <ChevronDown :size="14" :class="['chevron-icon', { 'chevron-open': showAdvanced }]" />
+            </div>
+            <div v-if="showAdvanced" class="form-section-body">
+              <div class="form-row">
+                <div class="form-group flex-1">
+                  <label class="form-label">{{ $t('dashboard.forms.vlan') }}</label>
+                  <input
+                    v-model.number="newSubnetForm.vlan"
+                    type="number"
+                    class="form-input"
+                    placeholder="Auto"
+                    min="1"
+                    max="16777215"
+                  />
+                  <div class="form-hint">1-16777215, auto-generated if empty</div>
+                </div>
+                <div class="form-group flex-1">
+                  <label class="form-label">{{ $t('dashboard.forms.priority') }}</label>
+                  <input
+                    v-model.number="newSubnetForm.priority"
+                    type="number"
+                    class="form-input"
+                    placeholder="0"
+                    min="0"
+                    max="100000"
+                  />
+                  <div class="form-hint">0-100000, lower = higher priority</div>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
+
         <div v-if="createError" class="text-error" style="margin: 0 var(--spacing-6) var(--spacing-4); font-size:var(--font-size-sm);background:var(--error-light);padding:var(--spacing-2);border-radius:var(--radius-sm)">
           {{ createError }}
         </div>
-        
+
         <div class="modal-footer">
           <button class="btn btn-secondary" @click="closeCreateModal" :disabled="creating">{{ $t('actions.cancel') }}</button>
           <button class="btn btn-primary" @click="handleCreateSubnet" :disabled="creating">
@@ -512,4 +637,113 @@ onMounted(fetchSubnets)
 .header-actions { display: flex; gap: 8px; align-items: center; }
 .spinning { animation: spin 1s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
+
+.form-section {
+  margin-bottom: var(--spacing-4);
+}
+
+.form-section:last-child {
+  margin-bottom: 0;
+}
+
+.form-section-title {
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: var(--spacing-3);
+  padding-bottom: var(--spacing-2);
+  border-bottom: 1px solid var(--border-light);
+}
+
+.form-section-toggle {
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  user-select: none;
+}
+
+.form-section-toggle:hover {
+  color: var(--primary-color);
+}
+
+.chevron-icon {
+  transition: transform 0.2s;
+}
+
+.chevron-open {
+  transform: rotate(180deg);
+}
+
+.form-section-body {
+  animation: fadeIn 0.2s ease-out;
+  padding-top: var(--spacing-2);
+}
+
+.form-hint {
+  font-size: 0.7rem;
+  color: var(--text-light);
+  margin-top: 4px;
+}
+
+.tooltip-wrapper {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  margin-left: 4px;
+  cursor: help;
+}
+
+.help-icon {
+  color: var(--text-secondary);
+  transition: color 0.15s;
+}
+
+.tooltip-wrapper:hover .help-icon {
+  color: var(--primary-color);
+}
+
+.tooltip-text {
+  visibility: hidden;
+  opacity: 0;
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 0;
+  background: var(--gray-900);
+  color: #fff;
+  font-size: 0.75rem;
+  font-weight: normal;
+  text-transform: none;
+  letter-spacing: normal;
+  line-height: 1.4;
+  padding: 8px 12px;
+  border-radius: var(--radius-md);
+  white-space: normal;
+  width: 260px;
+  z-index: 10;
+  transition: opacity 0.15s, visibility 0.15s;
+  pointer-events: none;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+}
+
+.tooltip-text::after {
+  content: '';
+  position: absolute;
+  top: 100%;
+  left: 16px;
+  border: 5px solid transparent;
+  border-top-color: var(--gray-900);
+}
+
+.tooltip-wrapper:hover .tooltip-text {
+  visibility: visible;
+  opacity: 1;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
 </style>

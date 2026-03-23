@@ -666,29 +666,6 @@ onMounted(fetchRegions)
 .icon-btn-table.text-error:hover { background-color: #fef2f2; color: var(--error-600); }
 
 /* Modals */
-.modal-overlay {
-    position: fixed; inset: 0; background: rgba(0,0,0,0.5);
-    display: flex; align-items: center; justify-content: center; z-index: 1000;
-}
-
-.modal-content {
-    background: var(--bg-primary); border-radius: var(--radius-lg);
-    box-shadow: var(--shadow-xl); width: 90%; max-height: 85vh; overflow-y: auto;
-}
-
-.modal-header {
-    display: flex; justify-content: space-between; align-items: center;
-    padding: 20px 24px; border-bottom: 1px solid var(--border-light);
-}
-
-.modal-header h3 { margin: 0; font-size: 1.125rem; }
-.modal-body { padding: 24px; }
-
-.modal-footer {
-    display: flex; justify-content: flex-end; gap: 8px;
-    padding: 16px 24px; border-top: 1px solid var(--border-light);
-}
-
 .form-stack { display: flex; flex-direction: column; gap: 16px; }
 .form-group { display: flex; flex-direction: column; }
 .form-label { font-size: 0.8125rem; color: var(--text-secondary); margin-bottom: 4px; font-weight: 500; }
@@ -747,9 +724,4 @@ onMounted(fetchRegions)
 
 @keyframes spin { to { transform: rotate(360deg); } }
 .spinning { animation: spin 1s linear infinite; }
-
-@keyframes fadeIn {
-    from { opacity: 0; transform: translateY(10px); }
-    to { opacity: 1; transform: translateY(0); }
-}
 </style>

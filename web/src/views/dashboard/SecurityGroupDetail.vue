@@ -415,43 +415,6 @@ onMounted(fetchGroup)
 }
 
 /* Modal */
-.modal-overlay {
-    position: fixed;
-    top: 0; left: 0; right: 0; bottom: 0;
-    background: rgba(0,0,0,0.5);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    z-index: 1000;
-}
-
-.modal-content {
-    width: 100%;
-    max-width: 500px;
-}
-
-.modal-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 16px;
-    border-bottom: 1px solid var(--border-light);
-}
-
-.modal-header h3 { margin: 0; font-size: 18px; }
-
-.modal-body {
-    padding: 20px;
-}
-
-.modal-footer {
-    padding: 16px;
-    border-top: 1px solid var(--border-light);
-    display: flex;
-    justify-content: flex-end;
-    gap: 12px;
-}
-
 .form-group {
     margin-bottom: 16px;
 }
