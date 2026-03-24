@@ -946,6 +946,7 @@ export default {
     messages: {
         loading: '加载中...',
         creating: '正在创建...',
+        placeholderDescription: '请输入简短的描述...',
         deleting: '正在删除...',
         starting: '正在启动...',
         noData: '未发现数据。',

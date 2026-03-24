@@ -27,7 +27,8 @@ type VPCAPI struct{}
 
 type VPCResponse struct {
 	*ResourceReference
-	Subnets []*SubnetResponse `json:"subnets,omitempty"`
+	Description string            `json:"description,omitempty"`
+	Subnets     []*SubnetResponse `json:"subnets,omitempty"`
 }
 
 type VPCListResponse struct {
@@ -38,11 +39,13 @@ type VPCListResponse struct {
 }
 
 type VPCPayload struct {
-	Name string `json:"name" binding:"required,min=2,max=32"`
+	Name        string `json:"name" binding:"required,min=2,max=32"`
+	Description string `json:"description" binding:"max=256"`
 }
 
 type VPCPatchPayload struct {
-	Name string `json:"name" binding:"required,min=2,max=32"`
+	Name        string  `json:"name" binding:"required,min=2,max=32"`
+	Description *string `json:"description" binding:"omitempty,max=256"`
 }
 
 // @Summary get a vpc
@@ -100,7 +103,7 @@ func (v *VPCAPI) Patch(c *gin.Context) {
 		return
 	}
 	logger.Debugf("Patching vpc %s with %+v", uuID, payload)
-	router, err = routerAdmin.Update(ctx, router.ID, payload.Name, 0)
+	router, err = routerAdmin.Update(ctx, router.ID, payload.Name, payload.Description, 0)
 	if err != nil {
 		logger.Errorf("Failed to update vpc %s, %+v", uuID, err)
 		ErrorResponse(c, http.StatusBadRequest, "Failed to update vpc", err)
@@ -164,7 +167,7 @@ func (v *VPCAPI) Create(c *gin.Context) {
 		return
 	}
 	logger.Debugf("Creating vpc with %+v", payload)
-	router, err := routerAdmin.Create(ctx, payload.Name)
+	router, err := routerAdmin.Create(ctx, payload.Name, payload.Description)
 	if err != nil {
 		logger.Errorf("Failed to create vpc: %+v", err)
 		ErrorResponse(c, http.StatusBadRequest, "Failed to create vpc", err)
@@ -189,6 +192,7 @@ func (v *VPCAPI) getVPCResponse(ctx context.Context, router *model.Router) (vpcR
 			CreatedAt: router.CreatedAt.Format(TimeStringForMat),
 			UpdatedAt: router.UpdatedAt.Format(TimeStringForMat),
 		},
+		Description: router.Description,
 	}
 	vpcResp.Subnets = make([]*SubnetResponse, len(router.Subnets))
 	for i, subnet := range router.Subnets {

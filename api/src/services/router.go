@@ -65,7 +65,7 @@ func createRouterIface(ctx context.Context, rtype string, router *model.Router, 
 	return
 }
 
-func (a *RouterAdmin) Create(ctx context.Context, name string) (router *model.Router, err error) {
+func (a *RouterAdmin) Create(ctx context.Context, name, description string) (router *model.Router, err error) {
 	logger.Infof("ENTER RouterAdmin.Create: name=%s", name)
 	defer func() {
 		if err != nil {
@@ -88,7 +88,7 @@ func (a *RouterAdmin) Create(ctx context.Context, name string) (router *model.Ro
 			EndTransaction(ctx, err)
 		}
 	}()
-	router = &model.Router{Model: model.Model{Creater: memberShip.UserID}, Owner: owner, Name: name, Status: "available"}
+	router = &model.Router{Model: model.Model{Creater: memberShip.UserID}, Owner: owner, Name: name, Description: description, Status: "available"}
 	err = db.Create(router).Error
 	if err != nil {
 		logger.Error("DB failed to create router ", err)
@@ -215,8 +215,8 @@ func (a *RouterAdmin) GetRouter(ctx context.Context, reference *BaseReference) (
 	return
 }
 
-func (a *RouterAdmin) Update(ctx context.Context, id int64, name string, pubID int64) (router *model.Router, err error) {
-	logger.Infof("ENTER RouterAdmin.Update: id=%d, name=%s, pubID=%d", id, name, pubID)
+func (a *RouterAdmin) Update(ctx context.Context, id int64, name string, description *string, pubID int64) (router *model.Router, err error) {
+	logger.Infof("ENTER RouterAdmin.Update: id=%d, name=%s, description=%v, pubID=%d", id, name, description, pubID)
 	defer func() {
 		if err != nil {
 			logger.Errorf("EXIT RouterAdmin.Update: error=%v", err)
@@ -231,10 +231,18 @@ func (a *RouterAdmin) Update(ctx context.Context, id int64, name string, pubID i
 		err = NewCLError(ErrRouterNotFound, "Failed to find router", err)
 		return
 	}
+	updates := map[string]interface{}{}
 	if router.Name != name {
 		router.Name = name
-		if err = db.Model(router).Update("name", router.Name).Error; err != nil {
-			logger.Error("Failed to save router", err)
+		updates["name"] = name
+	}
+	if description != nil && router.Description != *description {
+		router.Description = *description
+		updates["description"] = *description
+	}
+	if len(updates) > 0 {
+		if err = db.Model(router).Updates(updates).Error; err != nil {
+			logger.Error("Failed to update router", err)
 			err = NewCLError(ErrRouterUpdateFailed, "Failed to update router", err)
 			return
 		}

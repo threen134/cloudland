@@ -947,6 +947,7 @@ export default {
     messages: {
         loading: 'Loading...',
         creating: 'Creating...',
+        placeholderDescription: 'Enter a short description...',
         deleting: 'Deleting...',
         noVolumes: 'No volumes found. Create your first volume to get started.',
         noVpcs: 'No VPCs found. Create your first VPC to get started.',

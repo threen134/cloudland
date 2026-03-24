@@ -18,7 +18,8 @@ const createModalVisible = ref(false)
 const creating = ref(false)
 const createError = ref('')
 const newVPCForm = ref({
-    name: ''
+    name: '',
+    description: ''
 })
 
 const { t } = useI18n()
@@ -56,7 +57,7 @@ const filteredVPCs = computed(() => {
 })
 
 const openCreateModal = () => {
-    newVPCForm.value = { name: '' }
+    newVPCForm.value = { name: '', description: '' }
     createModalVisible.value = true
 }
 
@@ -252,7 +253,16 @@ onMounted(() => {
             <div v-if="!isNameValid" class="text-error text-xs mt-1">
               {{ $t('messages.invalidHostname') }}
             </div>
-
+          </div>
+          
+          <div class="form-group mt-4">
+            <label class="form-label">{{ $t('dashboard.table.description') }}</label>
+            <textarea 
+              v-model="newVPCForm.description" 
+              class="form-input" 
+              rows="3"
+              :placeholder="$t('messages.placeholderDescription')"
+            ></textarea>
           </div>
         </div>
         <div v-if="createError" class="text-error" style="margin: 0 var(--spacing-6) var(--spacing-4); font-size:var(--font-size-sm);background:var(--error-light);padding:var(--spacing-2);border-radius:var(--radius-sm)">

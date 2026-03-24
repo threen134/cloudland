@@ -179,6 +179,10 @@ onMounted(() => {
                 <span :class="['badge', getStatusClass(vpc.status)]">{{ vpc.status || 'Active' }}</span>
               </span>
             </div>
+            <div class="info-row">
+              <span class="info-label">{{ $t('dashboard.table.description') }}</span>
+              <span class="info-value">{{ vpc.description || '-' }}</span>
+            </div>
           </div>
         </div>
 

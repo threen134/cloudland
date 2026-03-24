@@ -6,6 +6,7 @@ import client from './client'
 export interface VPC {
     id: string
     name: string
+    description?: string
     status?: string
     subnets?: Subnet[]
     created_at?: string
@@ -15,6 +16,7 @@ export interface VPC {
 
 export interface VPCPayload {
     name: string
+    description?: string
 }
 
 export interface VPCListResponse {
