@@ -963,6 +963,7 @@ export default {
         success: '操作成功',
         createSuccess: '创建成功。',
         deleteSuccess: '删除成功。',
+        updateSuccess: '更新成功。',
         copied: '已复制',
         yes: '是',
         no: '否',

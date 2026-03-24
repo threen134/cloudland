@@ -217,9 +217,13 @@ onMounted(() => {
                 <span class="label"><Server :size="14" /> {{ $t('dashboard.table.status') }}</span>
                 <span class="value">{{ getStatusText(volume.status) }}</span>
               </div>
-              
-              <div class="dropdown-divider" style="margin: 8px 0; opacity: 0.5;"></div>
-              
+            </div>
+          </div>
+
+          <!-- Metadata Card -->
+          <div class="card info-card">
+            <h3>{{ $t('dashboard.table.metadata') }}</h3>
+            <div class="key-value-list">
               <div class="kv-item">
                 <span class="label">{{ $t('dashboard.table.owner') }}</span>
                 <span class="value">{{ volume.owner || '-' }}</span>

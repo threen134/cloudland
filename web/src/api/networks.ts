@@ -41,6 +41,10 @@ export const vpcsApi = {
     },
     delete: async (id: string): Promise<void> => {
         await client.delete(`/vpcs/${id}`)
+    },
+    patch: async (id: string, payload: VPCPayload): Promise<VPC> => {
+        const response = await client.patch(`/vpcs/${id}`, payload)
+        return response.data
     }
 }
 

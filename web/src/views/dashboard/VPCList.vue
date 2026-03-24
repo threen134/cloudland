@@ -1,11 +1,11 @@
 <script setup lang="ts">
 import { ref, onMounted, computed, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { vpcsApi, type VPC } from '../../api/networks'
+import { vpcsApi, subnetsApi, type VPC, type SubnetPayload } from '../../api/networks'
 import { useRegionStore } from '../../stores/region'
 import { isValidName } from '../../utils/validation'
 
-import { Layers, Plus, Trash2, Network, Search as SearchIcon, X, RefreshCw } from 'lucide-vue-next'
+import { Layers, Plus, Trash2, Network, Search as SearchIcon, X, RefreshCw, Pencil, ChevronDown, HelpCircle } from 'lucide-vue-next'
 import DeleteModal from '../../components/modals/DeleteModal.vue'
 
 const region = useRegionStore()
@@ -126,6 +126,135 @@ const confirmDelete = async () => {
     }
 }
 
+// --- Edit VPC Modal ---
+const editModalVisible = ref(false)
+const editingVPC = ref(false)
+const editError = ref('')
+const editTarget = ref<VPC | null>(null)
+const editForm = ref({ name: '', description: '' })
+
+const openEditModal = (vpc: VPC) => {
+    editTarget.value = vpc
+    editForm.value = { name: vpc.name, description: vpc.description || '' }
+    editError.value = ''
+    editModalVisible.value = true
+}
+
+const closeEditModal = () => {
+    editModalVisible.value = false
+    editTarget.value = null
+    editError.value = ''
+}
+
+const handleEditVPC = async () => {
+    editError.value = ''
+    if (!editForm.value.name.trim()) {
+        editError.value = t('messages.invalidHostname')
+        return
+    }
+    if (!isValidName(editForm.value.name)) {
+        editError.value = t('messages.invalidHostname')
+        return
+    }
+    editingVPC.value = true
+    try {
+        await vpcsApi.patch(editTarget.value!.id, {
+            name: editForm.value.name,
+            description: editForm.value.description,
+        })
+        await fetchVPCs()
+        closeEditModal()
+    } catch (err: any) {
+        editError.value = err.response?.data?.error_message || err.message || t('messages.error')
+    } finally {
+        editingVPC.value = false
+    }
+}
+
+// --- Create Subnet Modal ---
+const createSubnetVisible = ref(false)
+const creatingSubnet = ref(false)
+const createSubnetError = ref('')
+const subnetTargetVPC = ref<VPC | null>(null)
+const showAdvanced = ref(false)
+const newSubnetForm = ref<SubnetPayload>({
+    name: '',
+    network_cidr: '',
+    gateway: '',
+    type: 'internal',
+    dhcp: true,
+    vpc: { id: '' },
+    vlan: undefined,
+    start_ip: '',
+    end_ip: '',
+    dns: '',
+    base_domain: '',
+})
+const isSubnetNameValid = computed(() => isValidName(newSubnetForm.value.name))
+
+const openCreateSubnetModal = (vpc: VPC) => {
+    subnetTargetVPC.value = vpc
+    newSubnetForm.value = {
+        name: '',
+        network_cidr: '',
+        gateway: '',
+        type: 'internal',
+        dhcp: true,
+        vpc: { id: vpc.id },
+        vlan: undefined,
+        start_ip: '',
+        end_ip: '',
+        dns: '',
+        base_domain: '',
+    }
+    showAdvanced.value = false
+    createSubnetError.value = ''
+    createSubnetVisible.value = true
+}
+
+const closeCreateSubnetModal = () => {
+    createSubnetVisible.value = false
+    subnetTargetVPC.value = null
+    createSubnetError.value = ''
+}
+
+const handleCreateSubnet = async () => {
+    createSubnetError.value = ''
+    if (!newSubnetForm.value.name || !newSubnetForm.value.network_cidr) {
+        createSubnetError.value = 'Please fill in Name and CIDR.'
+        return
+    }
+    if (!isSubnetNameValid.value) {
+        createSubnetError.value = t('messages.invalidHostname')
+        return
+    }
+
+    const payload: SubnetPayload = {
+        name: newSubnetForm.value.name,
+        network_cidr: newSubnetForm.value.network_cidr,
+        type: 'internal',
+        dhcp: newSubnetForm.value.dhcp,
+        vpc: { id: subnetTargetVPC.value!.id },
+    }
+    if (newSubnetForm.value.gateway) payload.gateway = newSubnetForm.value.gateway
+    if (newSubnetForm.value.start_ip) payload.start_ip = newSubnetForm.value.start_ip
+    if (newSubnetForm.value.end_ip) payload.end_ip = newSubnetForm.value.end_ip
+    if (newSubnetForm.value.dns) payload.dns = newSubnetForm.value.dns
+    if (newSubnetForm.value.base_domain) payload.base_domain = newSubnetForm.value.base_domain
+    if (newSubnetForm.value.vlan) payload.vlan = newSubnetForm.value.vlan
+
+    creatingSubnet.value = true
+    try {
+        await subnetsApi.create(payload)
+        await fetchVPCs()
+        closeCreateSubnetModal()
+    } catch (err: any) {
+        createSubnetError.value = err.response?.data?.error_message || err.message || t('messages.error')
+    } finally {
+        creatingSubnet.value = false
+    }
+}
+
 onMounted(() => {
     if (region.currentRegionId) {
         fetchVPCs()
@@ -218,7 +347,10 @@ onMounted(() => {
             </td>
             <td>
               <div class="actions">
-                <button class="btn btn-ghost btn-sm" :title="$t('dashboard.buttons.addRule')">
+                <button class="btn btn-ghost btn-sm" :title="$t('actions.edit')" @click="openEditModal(vpc)">
+                  <Pencil :size="14" />
+                </button>
+                <button class="btn btn-ghost btn-sm" :title="$t('dashboard.buttons.createSubnet')" @click="openCreateSubnetModal(vpc)">
                   <Plus :size="14" />
                 </button>
                 <button class="btn btn-ghost btn-sm text-error" :title="$t('actions.delete')" @click="handleDeleteClick(vpc)">
@@ -288,6 +420,190 @@ onMounted(() => {
       @close="closeDeleteModal"
       @confirm="confirmDelete"
     />
+
+    <!-- Edit VPC Modal -->
+    <div v-if="editModalVisible" class="modal-overlay" @click.self="closeEditModal">
+      <div class="modal-content card">
+        <div class="modal-header">
+          <h3>{{ $t('actions.edit') }} - {{ editTarget?.name }}</h3>
+          <button class="btn btn-ghost btn-sm icon-btn" @click="closeEditModal">
+            <X :size="20" />
+          </button>
+        </div>
+        <div class="modal-body">
+          <div class="form-group">
+            <label class="form-label">{{ $t('dashboard.table.name') }}</label>
+            <input
+              v-model="editForm.name"
+              type="text"
+              :class="['form-input', { 'input-error': editForm.name && !isValidName(editForm.name) }]"
+              :placeholder="$t('dashboard.table.name')"
+            />
+            <div v-if="editForm.name && !isValidName(editForm.name)" class="text-error text-xs mt-1">
+              {{ $t('messages.invalidHostname') }}
+            </div>
+          </div>
+          <div class="form-group mt-4">
+            <label class="form-label">{{ $t('dashboard.table.description') }}</label>
+            <textarea
+              v-model="editForm.description"
+              class="form-input"
+              rows="3"
+              :placeholder="$t('messages.placeholderDescription')"
+            ></textarea>
+          </div>
+        </div>
+        <div v-if="editError" class="text-error" style="margin: 0 var(--spacing-6) var(--spacing-4); font-size:var(--font-size-sm);background:var(--error-light);padding:var(--spacing-2);border-radius:var(--radius-sm)">
+          {{ editError }}
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-secondary" @click="closeEditModal" :disabled="editingVPC">{{ $t('actions.cancel') }}</button>
+          <button class="btn btn-primary" @click="handleEditVPC" :disabled="editingVPC">
+            <span v-if="editingVPC" class="loading-spinner" style="width: 16px; height: 16px; border-width: 2px;"></span>
+            {{ $t('actions.confirm') }}
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Create Subnet Modal -->
+    <div v-if="createSubnetVisible" class="modal-overlay" @click.self="closeCreateSubnetModal">
+      <div class="modal-content card" style="max-width: 600px;">
+        <div class="modal-header">
+          <h3>{{ $t('dashboard.buttons.createSubnet') }} - {{ subnetTargetVPC?.name }}</h3>
+          <button class="btn btn-ghost btn-sm icon-btn" @click="closeCreateSubnetModal">
+            <X :size="20" />
+          </button>
+        </div>
+        <div class="modal-body">
+          <div class="form-group">
+            <label class="form-label">{{ $t('dashboard.table.name') }} *</label>
+            <input
+              v-model="newSubnetForm.name"
+              type="text"
+              :class="['form-input', { 'input-error': newSubnetForm.name && !isSubnetNameValid }]"
+              placeholder="e.g. backend-subnet"
+            />
+            <div v-if="newSubnetForm.name && !isSubnetNameValid" class="text-error text-xs mt-1">
+              {{ $t('messages.invalidHostname') }}
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">{{ $t('dashboard.forms.cidr') }} *</label>
+            <input
+              v-model="newSubnetForm.network_cidr"
+              type="text"
+              class="form-input"
+              placeholder="e.g. 10.0.1.0/24"
+            />
+          </div>
+
+          <div class="form-row">
+            <div class="form-group flex-1">
+              <label class="form-label">{{ $t('dashboard.forms.gateway') }}</label>
+              <input
+                v-model="newSubnetForm.gateway"
+                type="text"
+                class="form-input"
+                placeholder="e.g. 10.0.1.1"
+              />
+            </div>
+            <div class="form-group flex-1">
+              <label class="form-label">
+                {{ $t('dashboard.table.dhcp') }}
+                <span class="tooltip-wrapper">
+                  <HelpCircle :size="13" class="help-icon" />
+                  <span class="tooltip-text">{{ $t('dashboard.forms.dhcpTooltip') }}</span>
+                </span>
+              </label>
+              <div class="toggle-group">
+                <label class="toggle-switch">
+                  <input type="checkbox" v-model="newSubnetForm.dhcp">
+                  <span class="toggle-slider"></span>
+                </label>
+                <span class="toggle-label">{{ newSubnetForm.dhcp ? $t('dashboard.alarmActions.enabled') : $t('dashboard.alarmActions.disabled') }}</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="form-row">
+            <div class="form-group flex-1">
+              <label class="form-label">{{ $t('dashboard.forms.dns') }}</label>
+              <input
+                v-model="newSubnetForm.dns"
+                type="text"
+                class="form-input"
+                placeholder="e.g. 8.8.8.8"
+              />
+            </div>
+            <div class="form-group flex-1">
+              <label class="form-label">{{ $t('dashboard.forms.baseDomain') }}</label>
+              <input
+                v-model="newSubnetForm.base_domain"
+                type="text"
+                class="form-input"
+                placeholder="e.g. example.com"
+              />
+            </div>
+          </div>
+
+          <!-- Advanced Options -->
+          <div class="form-section">
+            <div class="form-section-title form-section-toggle" @click="showAdvanced = !showAdvanced">
+              {{ $t('dashboard.forms.sections.advanced') }}
+              <ChevronDown :size="14" :class="['chevron-icon', { 'chevron-open': showAdvanced }]" />
+            </div>
+            <div v-if="showAdvanced" class="form-section-body">
+              <div class="form-row">
+                <div class="form-group flex-1">
+                  <label class="form-label">{{ $t('dashboard.forms.startIp') }}</label>
+                  <input
+                    v-model="newSubnetForm.start_ip"
+                    type="text"
+                    class="form-input"
+                    placeholder="e.g. 10.0.1.2"
+                  />
+                </div>
+                <div class="form-group flex-1">
+                  <label class="form-label">{{ $t('dashboard.forms.endIp') }}</label>
+                  <input
+                    v-model="newSubnetForm.end_ip"
+                    type="text"
+                    class="form-input"
+                    placeholder="e.g. 10.0.1.254"
+                  />
+                </div>
+              </div>
+              <div class="form-group">
+                <label class="form-label">VXLAN</label>
+                <input
+                  v-model.number="newSubnetForm.vlan"
+                  type="number"
+                  class="form-input"
+                  placeholder="Auto"
+                  min="1"
+                  max="16777215"
+                />
+                <div class="form-hint">1-16777215, auto-generated if empty</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div v-if="createSubnetError" class="text-error" style="margin: 0 var(--spacing-6) var(--spacing-4); font-size:var(--font-size-sm);background:var(--error-light);padding:var(--spacing-2);border-radius:var(--radius-sm)">
+          {{ createSubnetError }}
+        </div>
+
+        <div class="modal-footer">
+          <button class="btn btn-secondary" @click="closeCreateSubnetModal" :disabled="creatingSubnet">{{ $t('actions.cancel') }}</button>
+          <button class="btn btn-primary" @click="handleCreateSubnet" :disabled="creatingSubnet">
+            <span v-if="creatingSubnet" class="loading-spinner" style="width: 16px; height: 16px; border-width: 2px;"></span>
+            {{ creatingSubnet ? $t('messages.creating') : $t('dashboard.buttons.createSubnet') }}
+          </button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -449,4 +765,105 @@ onMounted(() => {
 .header-actions { display: flex; gap: 8px; align-items: center; }
 .spinning { animation: spin 1s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
+
+/* Form elements for modals */
+.form-row {
+  display: flex;
+  gap: var(--spacing-4);
+}
+
+.flex-1 { flex: 1; }
+
+.form-hint {
+  font-size: var(--font-size-xs);
+  color: var(--text-light);
+  margin-top: 4px;
+}
+
+.form-section {
+  margin-top: var(--spacing-3);
+}
+
+.form-section-title {
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  color: var(--text-secondary);
+  padding: var(--spacing-2) 0;
+  border-bottom: 1px solid var(--border-light);
+  margin-bottom: var(--spacing-3);
+}
+
+.form-section-toggle {
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  user-select: none;
+}
+
+.form-section-toggle:hover { color: var(--primary-color); }
+
+.form-section-body { padding-top: var(--spacing-3); }
+
+.chevron-icon { transition: transform 0.2s; }
+.chevron-open { transform: rotate(180deg); }
+
+/* Toggle switch */
+.toggle-group { display: flex; align-items: center; gap: var(--spacing-2); margin-top: 4px; }
+
+.toggle-switch {
+  position: relative;
+  display: inline-block;
+  width: 36px;
+  height: 20px;
+  cursor: pointer;
+}
+
+.toggle-switch input { opacity: 0; width: 0; height: 0; }
+
+.toggle-slider {
+  position: absolute;
+  inset: 0;
+  background: var(--gray-300);
+  border-radius: 20px;
+  transition: background 0.2s;
+}
+
+.toggle-slider::before {
+  content: '';
+  position: absolute;
+  width: 16px;
+  height: 16px;
+  left: 2px;
+  bottom: 2px;
+  background: white;
+  border-radius: 50%;
+  transition: transform 0.2s;
+}
+
+.toggle-switch input:checked + .toggle-slider { background: var(--primary-color); }
+.toggle-switch input:checked + .toggle-slider::before { transform: translateX(16px); }
+
+.toggle-label { font-size: var(--font-size-sm); color: var(--text-secondary); }
+
+/* Tooltip */
+.tooltip-wrapper { position: relative; display: inline-flex; cursor: help; }
+.help-icon { color: var(--text-light); }
+
+.tooltip-text {
+  display: none;
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--gray-800);
+  color: white;
+  padding: 6px 10px;
+  border-radius: var(--radius-sm);
+  font-size: var(--font-size-xs);
+  white-space: nowrap;
+  z-index: 20;
+}
+
+.tooltip-wrapper:hover .tooltip-text { display: block; }
 </style>

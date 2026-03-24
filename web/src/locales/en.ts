@@ -962,6 +962,7 @@ export default {
         success: 'Operation successful',
         createSuccess: 'Created successfully.',
         deleteSuccess: 'Deleted successfully.',
+        updateSuccess: 'Updated successfully.',
         copied: 'Copied!',
         yes: 'Yes',
         no: 'No',
