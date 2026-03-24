@@ -139,6 +139,7 @@ export interface FloatingIP {
     name?: string
     ip_address: string
     public_ip?: string
+    type?: string
     status?: string
     instance?: { id: string; name: string }
     interface?: { id: string }

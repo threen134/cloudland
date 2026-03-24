@@ -413,6 +413,14 @@ export default {
         alarmSentAt: 'Sent At',
         alarmError: 'Error',
         alarmNoDeliveryLogs: 'No delivery logs for this event.',
+        floatingIPDetail: {
+            publicIp: 'Public IP',
+            internalIp: 'Internal IP',
+            association: 'Association',
+            interfaceId: 'Interface ID',
+            interfaceIp: 'Interface IP',
+            loadError: 'Failed to load Floating IP details.',
+        },
         instanceDetail: {
             monitoringAlerts: 'Monitoring & Alerts',
             linkRule: 'Link Rule',

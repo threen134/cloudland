@@ -49,6 +49,7 @@ type InstanceInfo struct {
 type FloatingIpResponse struct {
 	*ResourceReference
 	PublicIp        string           `json:"public_ip"`
+	Type            string           `json:"type,omitempty"`
 	TargetInterface *TargetInterface `json:"target_interface,omitempty"`
 	VPC             *BaseReference   `json:"vpc,omitempty"`
 	Inbound         int32            `json:"inbound"`
@@ -367,6 +368,7 @@ func (v *FloatingIpAPI) getFloatingIpResponse(ctx context.Context, floatingIp *m
 			UpdatedAt: floatingIp.UpdatedAt.Format(TimeStringForMat),
 		},
 		PublicIp: floatingIp.FipAddress,
+		Type:     floatingIp.Type,
 		Inbound:  floatingIp.Inbound,
 		Outbound: floatingIp.Outbound,
 	}

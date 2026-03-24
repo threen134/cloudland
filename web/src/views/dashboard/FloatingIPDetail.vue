@@ -2,7 +2,7 @@
 import { ref, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { floatingIpsApi, type FloatingIP } from '../../api/networks'
-import { ArrowLeft, Globe, Trash2, Server, Network } from 'lucide-vue-next'
+import { ArrowLeft, Globe, Trash2, Server, Network, Copy, Check, ChevronDown, Pencil } from 'lucide-vue-next'
 import { useI18n } from 'vue-i18n'
 import DeleteModal from '../../components/modals/DeleteModal.vue'
 
@@ -13,6 +13,8 @@ const fipId = route.params.id as string
 const fip = ref<FloatingIP | null>(null)
 const loading = ref(true)
 const error = ref('')
+const copiedField = ref<string | null>(null)
+const showActionMenu = ref(false)
 const { t } = useI18n()
 
 // --- Delete Confirmation Modal Logic ---
@@ -52,7 +54,7 @@ const fetchFip = async () => {
         fip.value = response
     } catch (err) {
         console.error('Failed to fetch Floating IP:', err)
-        error.value = 'Failed to load Floating IP details.'
+        error.value = t('dashboard.floatingIPDetail.loadError')
     } finally {
         loading.value = false
     }
@@ -62,8 +64,31 @@ const goBack = () => {
     router.back()
 }
 
+const toggleActionMenu = () => {
+    showActionMenu.value = !showActionMenu.value
+}
+
+const closeActionMenu = () => {
+    showActionMenu.value = false
+}
+
+const copyToClipboard = (text: string, field: string) => {
+    navigator.clipboard.writeText(text).then(() => {
+        copiedField.value = field
+        setTimeout(() => { copiedField.value = null }, 2000)
+    })
+}
+
 const getStatusClass = (status: string) => {
-    return status === 'in-use' ? 'status-success' : 'status-warning'
+    const statusMap: Record<string, string> = {
+        'in-use': 'status-success',
+        'available': 'status-success',
+        'active': 'status-success',
+        'creating': 'status-pending',
+        'deleting': 'status-pending',
+        'error': 'status-error'
+    }
+    return statusMap[status] || 'status-warning'
 }
 
 onMounted(fetchFip)
@@ -89,81 +114,96 @@ onMounted(fetchFip)
         <div v-else-if="fip" class="detail-content">
             <!-- Title Bar -->
             <div class="title-bar card">
-                <div class="resource-icon">
-                    <Globe :size="24" />
-                </div>
                 <div class="title-info">
-                    <h1>{{ fip.name || fip.public_ip || fip.ip_address }}</h1>
-                    <div class="subtitle">
-                        <span class="id-text">{{ fip.id }}</span>
-                        <span v-if="fip.public_ip && fip.name" class="ip-text">{{ fip.public_ip }}</span>
-                        <!-- Status removed as requested in list view logic, or keep if useful in detail -->
+                    <div class="title-icon">
+                        <Globe :size="28" />
+                    </div>
+                    <div>
+                        <h2 class="resource-title">
+                            {{ fip.name || fip.public_ip || fip.ip_address }}
+                            <span :class="['badge', getStatusClass(fip.status || '')]">{{ fip.status || '-' }}</span>
+                        </h2>
+                        <div class="resource-id-row">
+                            <span class="resource-id-text">{{ fip.id }}</span>
+                            <button class="copy-btn" @click="copyToClipboard(fip.id, 'id')" :title="$t('messages.copied')">
+                                <Check v-if="copiedField === 'id'" :size="12" class="copied-icon" />
+                                <Copy v-else :size="12" />
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                <div class="title-actions">
+                    <div class="action-dropdown">
+                        <button class="btn btn-primary" @click="toggleActionMenu">
+                            {{ $t('actions.actions') }} <ChevronDown :size="14" />
+                        </button>
+                        <Transition name="dropdown">
+                            <div v-if="showActionMenu" class="dropdown-menu">
+                                <button class="dropdown-item dropdown-item-danger" @click="handleDeleteClick">
+                                    <Trash2 :size="14" /> {{ $t('actions.delete') }}
+                                </button>
+                            </div>
+                        </Transition>
+                        <div v-if="showActionMenu" class="dropdown-backdrop" @click="closeActionMenu"></div>
                     </div>
                 </div>
             </div>
 
-            <!-- Info Grid -->
-            <div class="info-grid">
-                <!-- General Info -->
-                <div class="card info-card">
-                    <h3>{{ $t('dashboard.table.generalInformation') }}</h3>
-                    <div class="key-value-list">
-                        <div class="kv-item">
-                            <span class="label">{{ $t('dashboard.table.name') }}</span>
-                            <span class="value">{{ fip.name || '-' }}</span>
-                        </div>
-                        <div class="kv-item">
-                            <span class="label">Public IP</span>
-                            <span class="value mono">{{ fip.public_ip || '-' }}</span>
-                        </div>
-                        <div class="kv-item">
-                            <span class="label">Internal IP</span>
-                            <span class="value mono">{{ fip.ip_address }}</span>
-                        </div>
-                        <div class="kv-item">
-                            <span class="label">{{ $t('dashboard.table.createdAt') }}</span>
-                            <span class="value">{{ fip.created_at || '-' }}</span>
-                        </div>
-                        <div class="kv-item">
-                            <span class="label">Updated At</span>
-                            <span class="value">{{ fip.updated_at || '-' }}</span>
+            <!-- Info Sections -->
+            <div class="two-col-layout">
+                <div class="col-stack">
+                    <!-- General Info Card -->
+                    <div class="card info-card">
+                        <h3>{{ $t('dashboard.table.generalInformation') }}</h3>
+                        <div class="key-value-list">
+                            <div class="kv-item">
+                                <span class="label">{{ $t('dashboard.table.name') }}</span>
+                                <span class="value">{{ fip.name || '-' }}</span>
+                            </div>
+                            <div class="kv-item">
+                                <span class="label">{{ $t('dashboard.floatingIPDetail.publicIp') }}</span>
+                                <span class="value mono">{{ fip.public_ip || '-' }}</span>
+                            </div>
+                            <div class="kv-item">
+                                <span class="label">{{ $t('dashboard.floatingIPDetail.internalIp') }}</span>
+                                <span class="value mono">{{ fip.ip_address }}</span>
+                            </div>
+                            <div class="kv-item">
+                                <span class="label">{{ $t('dashboard.table.createdAt') }}</span>
+                                <span class="value">{{ fip.created_at || '-' }}</span>
+                            </div>
+                            <div class="kv-item">
+                                <span class="label">{{ $t('dashboard.table.updatedAt') }}</span>
+                                <span class="value">{{ fip.updated_at || '-' }}</span>
+                            </div>
                         </div>
                     </div>
                 </div>
 
-                <!-- Association -->
-                <div class="card info-card">
-                    <h3>Association</h3>
-                    <div class="key-value-list">
-                        <div class="kv-item">
-                            <span class="label"><Server :size="14" /> Instance</span>
-                            <span class="value" v-if="fip.target_interface?.from_instance">
-                                <router-link :to="{name: 'instance-detail', params: {id: fip.target_interface.from_instance.id}}" class="text-link">
-                                    {{ fip.target_interface.from_instance.hostname }}
-                                </router-link>
-                            </span>
-                            <span class="value text-secondary" v-else>{{ $t('messages.notAttached') }}</span>
-                        </div>
-                         <div class="kv-item">
-                            <span class="label"><Network :size="14" /> Interface ID</span>
-                            <span class="value mono">{{ fip.target_interface?.id || '-' }}</span>
-                        </div>
-                        <div class="kv-item">
-                            <span class="label">Interface IP</span>
-                            <span class="value mono">{{ fip.target_interface?.ip_address || '-' }}</span>
+                <div class="col-stack">
+                    <!-- Association Card -->
+                    <div class="card info-card">
+                        <h3>{{ $t('dashboard.floatingIPDetail.association') }}</h3>
+                        <div class="key-value-list">
+                            <div class="kv-item">
+                                <span class="label"><Server :size="14" /> {{ $t('dashboard.table.instance') }}</span>
+                                <span class="value" v-if="fip.target_interface?.from_instance">
+                                    <router-link :to="{name: 'instance-detail', params: {id: fip.target_interface.from_instance.id}}" class="text-link">
+                                        {{ fip.target_interface.from_instance.hostname }}
+                                    </router-link>
+                                </span>
+                                <span class="value text-secondary" v-else>{{ $t('messages.notAttached') }}</span>
+                            </div>
+                            <div class="kv-item">
+                                <span class="label"><Network :size="14" /> {{ $t('dashboard.floatingIPDetail.interfaceId') }}</span>
+                                <span class="value mono">{{ fip.target_interface?.id || '-' }}</span>
+                            </div>
+                            <div class="kv-item">
+                                <span class="label">{{ $t('dashboard.floatingIPDetail.interfaceIp') }}</span>
+                                <span class="value mono">{{ fip.target_interface?.ip_address || '-' }}</span>
+                            </div>
                         </div>
                     </div>
-                </div>
-            </div>
-
-            <!-- Action Bar -->
-             <div class="action-bar card">
-                <div class="action-group">
-                </div>
-                <div class="action-group">
-                     <button class="btn btn-danger" @click="handleDeleteClick">
-                        <Trash2 :size="16" /> {{ $t('actions.delete') }}
-                    </button>
                 </div>
             </div>
         </div>
@@ -200,61 +240,159 @@ onMounted(fetchFip)
 
 /* Title Bar */
 .title-bar {
-    display: flex;
-    align-items: center;
-    gap: var(--spacing-4);
-    padding: var(--spacing-6);
-    margin-bottom: var(--spacing-6);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: var(--spacing-5);
 }
 
-.resource-icon {
-    width: 48px;
-    height: 48px;
-    background: var(--bg-tertiary);
-    color: var(--primary-color);
+.title-info {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-4);
+}
+
+.title-icon {
+  width: 52px;
+  height: 52px;
+  border-radius: var(--radius-lg);
+  background: linear-gradient(135deg, var(--primary-50), var(--primary-100));
+  color: var(--primary-color);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.resource-title {
+  margin: 0 0 4px 0;
+  font-size: var(--font-size-xl);
+  font-weight: var(--font-weight-semibold);
+  color: var(--primary-color);
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-3);
+}
+
+.resource-id-row {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-2);
+}
+
+.resource-id-text {
+  font-size: var(--font-size-xs);
+  color: var(--text-light);
+  font-family: var(--font-family-mono);
+}
+
+.copy-btn {
+  background: none;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-sm);
+  padding: 2px 5px;
+  cursor: pointer;
+  color: var(--text-light);
+  display: inline-flex;
+  align-items: center;
+  transition: all 0.15s;
+}
+
+.copy-btn:hover {
+  color: var(--primary-color);
+  border-color: var(--primary-200);
+  background: var(--primary-50);
+}
+
+.copied-icon {
+  color: var(--success-color);
+}
+
+.title-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-3);
+}
+
+/* Action Dropdown */
+.action-dropdown {
+    position: relative;
+}
+
+.dropdown-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 9;
+}
+
+.dropdown-menu {
+    position: absolute;
+    top: calc(100% + 6px);
+    right: 0;
+    min-width: 200px;
+    background: var(--bg-primary, #fff);
+    border: 1px solid var(--border-light);
     border-radius: var(--radius-md);
-    display: flex;
-    align-items: center;
-    justify-content: center;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+    padding: 4px 0;
+    z-index: 10;
 }
 
-.title-info h1 {
-    font-size: var(--font-size-xl);
-    font-weight: 600;
-    margin: 0 0 4px 0;
-    color: var(--text-primary);
-}
-
-.subtitle {
+.dropdown-item {
     display: flex;
     align-items: center;
-    gap: var(--spacing-3);
+    gap: 10px;
+    width: 100%;
+    padding: 10px 16px;
+    border: none;
+    background: none;
     font-size: var(--font-size-sm);
+    color: var(--text-primary);
+    cursor: pointer;
+    transition: background 0.15s;
+    text-align: left;
 }
 
-.id-text {
-    font-family: var(--font-family-mono);
-    color: var(--text-secondary);
+.dropdown-item:hover:not(:disabled) {
+    background: var(--bg-hover, #f3f4f6);
 }
 
-.status-badge {
-    display: inline-flex;
-    padding: 2px 8px;
-    border-radius: 12px;
-    font-size: 11px;
-    font-weight: 600;
-    text-transform: uppercase;
+.dropdown-item-danger {
+    color: var(--error-color, #ef4444);
 }
 
-.status-success { background: var(--success-50); color: var(--success-700); }
-.status-warning { background: var(--warning-50); color: var(--warning-700); }
+.dropdown-item-danger:hover:not(:disabled) {
+    background: #fef2f2;
+}
 
-/* Info Grid */
-.info-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-    gap: var(--spacing-4);
-    margin-bottom: var(--spacing-6);
+.dropdown-divider {
+    height: 1px;
+    background: var(--border-light);
+    margin: 4px 0;
+}
+
+.dropdown-enter-active, .dropdown-leave-active {
+    transition: opacity 0.15s, transform 0.15s;
+}
+
+.dropdown-enter-from, .dropdown-leave-to {
+    opacity: 0;
+    transform: translateY(-4px);
+}
+
+/* Two-Column Layout */
+.two-col-layout {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--spacing-4);
+  margin-bottom: var(--spacing-6);
+  align-items: start;
+}
+
+.col-stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-4);
 }
 
 .info-card {
@@ -306,19 +444,6 @@ onMounted(fetchFip)
 
 .text-link:hover {
     text-decoration: underline;
-}
-
-/* Action Bar */
-.action-bar {
-    padding: var(--spacing-4);
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-}
-
-.action-group {
-    display: flex;
-    gap: var(--spacing-3);
 }
 
 .btn {

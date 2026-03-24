@@ -251,6 +251,7 @@ onMounted(fetchRegions)
                                 </div>
                             </td>
                             <td>
+                                <span class="status-pill"
                                     :class="region.maintenance_mode ? 'status-maintenance' : region.is_available ? 'status-available' : 'status-offline'">
                                     <Wrench v-if="region.maintenance_mode" :size="12" />
                                     <CheckCircle2 v-else-if="region.is_available" :size="12" />

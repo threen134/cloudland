@@ -411,7 +411,15 @@ export default {
         alarmNotifyType: '通知类型',
         alarmSentAt: '发送时间',
         alarmError: '错误',
-        alarmNoDeliveryLogs: '该事件暂无发送记录。',
+        alarmNoDeliveryLogs: '没有该事件的推送日志。',
+        floatingIPDetail: {
+            publicIp: '公网 IP',
+            internalIp: '内网 IP',
+            association: '关联信息',
+            interfaceId: '网卡 ID',
+            interfaceIp: '网卡 IP',
+            loadError: '无法加载弹性 IP 详情。',
+        },
         instanceDetail: {
             monitoringAlerts: '监控与告警',
             linkRule: '关联规则',

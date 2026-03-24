@@ -168,18 +168,19 @@ onMounted(fetchFloatingIPs)
           <tr>
             <th>{{ $t('dashboard.table.userName') }}</th>
             <th>{{ $t('dashboard.table.ipAddress') }}</th>
+            <th>{{ $t('dashboard.table.type') }}</th>
             <th>{{ $t('dashboard.table.attachedTo') }}</th>
             <th>{{ $t('dashboard.table.actions') }}</th>
           </tr>
         </thead>
         <tbody>
           <tr v-if="loading">
-            <td colspan="4" class="text-center">
+            <td colspan="5" class="text-center">
               <div class="loading-spinner" style="margin: 20px auto;"></div>
             </td>
           </tr>
           <tr v-else-if="filteredFloatingIPs.length === 0">
-            <td colspan="4" class="text-center text-secondary" style="padding: 48px;">
+            <td colspan="5" class="text-center text-secondary" style="padding: 48px;">
                <div v-if="searchQuery">
                   <Search :size="48" style="opacity: 0.3; margin-bottom: 16px;" />
                   <p>{{ $t('messages.noResults') }}</p>
@@ -208,6 +209,9 @@ onMounted(fetchFloatingIPs)
               <div class="ip-address">{{ fip.public_ip || fip.ip_address }}</div>
             </td>
             <td>
+              <span class="type-badge">{{ fip.type || '-' }}</span>
+            </td>
+            <td>
               <span 
                 v-if="fip.target_interface?.from_instance" 
                 class="resource-link"
@@ -219,13 +223,17 @@ onMounted(fetchFloatingIPs)
             </td>
             <td>
               <div class="actions">
-                <button v-if="!fip.target_interface" class="btn btn-ghost btn-sm" title="Attach">
+                <button v-if="!fip.target_interface" class="btn btn-ghost btn-sm" title="Attach"
+                  :disabled="fip.type !== 'floating' && fip.type !== 'site'">
                   <Link :size="14" /> Attach
                 </button>
-                <button v-else class="btn btn-ghost btn-sm" title="Detach">
+                <button v-else class="btn btn-ghost btn-sm" title="Detach"
+                  :disabled="fip.type !== 'floating' && fip.type !== 'site'">
                   <Unlink :size="14" /> Detach
                 </button>
-                <button class="btn btn-ghost btn-sm text-error" title="Release" @click="handleDeleteClick(fip)">
+                <button class="btn btn-ghost btn-sm text-error" title="Release"
+                  :disabled="fip.type !== 'floating' && fip.type !== 'loadbalancer'"
+                  @click="(fip.type === 'floating' || fip.type === 'loadbalancer') && handleDeleteClick(fip)">
                   <Trash2 :size="14" />
                 </button>
               </div>

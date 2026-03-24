@@ -2,7 +2,7 @@
 import { ref, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { subnetsApi, type Subnet } from '../../api/networks'
-import { ArrowLeft, Network, Trash2, Globe, Lock, Activity, Copy, Check } from 'lucide-vue-next'
+import { ArrowLeft, Network, Trash2, Globe, Lock, Activity, Copy, Check, ChevronDown, Pencil } from 'lucide-vue-next'
 import { useI18n } from 'vue-i18n'
 import DeleteModal from '../../components/modals/DeleteModal.vue'
 
@@ -14,6 +14,7 @@ const subnet = ref<Subnet | null>(null)
 const loading = ref(true)
 const error = ref('')
 const copiedField = ref<string | null>(null)
+const showActionMenu = ref(false)
 const { t } = useI18n()
 
 // --- Delete Confirmation Modal Logic ---
@@ -79,6 +80,14 @@ const getTypeBadgeClass = (type: string) => {
     return map[type] || 'badge-gray'
 }
 
+const toggleActionMenu = () => {
+    showActionMenu.value = !showActionMenu.value
+}
+
+const closeActionMenu = () => {
+    showActionMenu.value = false
+}
+
 onMounted(fetchSubnet)
 </script>
 
@@ -107,9 +116,12 @@ onMounted(fetchSubnet)
                         <Network :size="28" />
                     </div>
                     <div>
-                        <h2 class="resource-title">{{ subnet.name }}</h2>
+                        <h2 class="resource-title">
+                            {{ subnet.name }}
+                            <span :class="['badge', getTypeBadgeClass(subnet.type || 'internal')]">{{ subnet.type || 'internal' }}</span>
+                        </h2>
                         <div class="resource-id-row">
-                            <span class="resource-id">{{ subnet.id }}</span>
+                            <span class="resource-id-text">{{ subnet.id }}</span>
                             <button class="copy-btn" @click="copyToClipboard(subnet.id, 'id')" :title="$t('messages.copied')">
                                 <Check v-if="copiedField === 'id'" :size="12" class="copied-icon" />
                                 <Copy v-else :size="12" />
@@ -117,105 +129,112 @@ onMounted(fetchSubnet)
                         </div>
                     </div>
                 </div>
+                <div class="title-actions">
+                    <div class="action-dropdown">
+                        <button class="btn btn-primary" @click="toggleActionMenu">
+                            {{ $t('actions.actions') }} <ChevronDown :size="14" />
+                        </button>
+                        <Transition name="dropdown">
+                            <div v-if="showActionMenu" class="dropdown-menu">
+                                <button class="dropdown-item dropdown-item-danger" @click="handleDeleteClick">
+                                    <Trash2 :size="14" /> {{ $t('actions.delete') }}
+                                </button>
+                            </div>
+                        </Transition>
+                        <div v-if="showActionMenu" class="dropdown-backdrop" @click="closeActionMenu"></div>
+                    </div>
+                </div>
             </div>
 
-            <!-- Info Grid -->
-            <div class="info-grid">
-                <!-- General Info -->
-                <div class="card info-card">
-                    <h3>{{ $t('dashboard.table.generalInformation') }}</h3>
-                    <div class="key-value-list">
-                        <div class="kv-item">
-                            <span class="label">{{ $t('dashboard.table.name') }}</span>
-                            <span class="value">{{ subnet.name }}</span>
+            <!-- Info Sections -->
+            <div class="two-col-layout">
+                <div class="col-stack">
+                    <!-- General Info Card -->
+                    <div class="card info-card">
+                        <h3>{{ $t('dashboard.table.generalInformation') }}</h3>
+                        <div class="key-value-list">
+                            <div class="kv-item">
+                                <span class="label">{{ $t('dashboard.table.name') }}</span>
+                                <span class="value">{{ subnet.name }}</span>
+                            </div>
+                            <div class="kv-item">
+                                <span class="label">{{ $t('dashboard.table.createdAt') }}</span>
+                                <span class="value">{{ subnet.created_at || '-' }}</span>
+                            </div>
                         </div>
-                        <div class="kv-item">
-                            <span class="label">{{ $t('dashboard.table.createdAt') }}</span>
-                            <span class="value">{{ subnet.created_at || '-' }}</span>
+                    </div>
+
+                    <!-- Usage Stats Card -->
+                    <div class="card info-card">
+                        <h3>{{ $t('dashboard.table.ipUsageStats') }}</h3>
+                        <div class="key-value-list">
+                            <div class="kv-item">
+                                <span class="label">{{ $t('dashboard.table.totalIps') }}</span>
+                                <span class="value">{{ subnet.total_count }}</span>
+                            </div>
+                            <div class="kv-item">
+                                <span class="label">{{ $t('dashboard.table.allocated') }}</span>
+                                <span class="value text-blue">{{ subnet.allocated_count }}</span>
+                            </div>
+                            <div class="kv-item">
+                                <span class="label">{{ $t('dashboard.table.available') }}</span>
+                                <span class="value text-green">{{ subnet.available_count }}</span>
+                            </div>
+                            <div class="kv-item">
+                                <span class="label">{{ $t('dashboard.table.idleReserved') }}</span>
+                                <span class="value">{{ subnet.idle_count }} / {{ subnet.reserved_count }}</span>
+                            </div>
                         </div>
                     </div>
                 </div>
 
-                <!-- Network Details -->
-                <div class="card info-card">
-                    <h3>{{ $t('dashboard.table.networkDetails') }}</h3>
-                    <div class="key-value-list">
-                        <div class="kv-item" v-if="subnet.vpc">
-                            <span class="label">{{ $t('dashboard.table.vpc') }}</span>
-                            <span class="value">
-                                <router-link :to="{name: 'vpc-detail', params: {id: subnet.vpc.id}}" class="text-link">
-                                    {{ subnet.vpc.name }}
-                                </router-link>
-                            </span>
-                        </div>
-                        <div class="kv-item">
-                            <span class="label">{{ $t('dashboard.table.subnetType') }}</span>
-                            <span class="value">
-                                <span :class="['type-badge', getTypeBadgeClass(subnet.type || 'internal')]" style="padding: 2px 10px; font-size: 11px;">
-                                    {{ subnet.type || 'internal' }}
+                <div class="col-stack">
+                    <!-- Network Details Card -->
+                    <div class="card info-card">
+                        <h3>{{ $t('dashboard.table.networkDetails') }}</h3>
+                        <div class="key-value-list">
+                            <div class="kv-item" v-if="subnet.vpc">
+                                <span class="label">{{ $t('dashboard.table.vpc') }}</span>
+                                <span class="value">
+                                    <router-link :to="{name: 'vpc-detail', params: {id: subnet.vpc.id}}" class="text-link">
+                                        {{ subnet.vpc.name }}
+                                    </router-link>
                                 </span>
-                            </span>
-                        </div>
-                        <div class="kv-item">
-                             <span class="label">{{ $t('dashboard.table.cidr') }}</span>
-                             <span class="value mono">{{ subnet.network || subnet.network_cidr }}</span>
-                        </div>
-                        <div class="kv-item">
-                            <span class="label">{{ $t('dashboard.table.networkRange') }}</span>
-                            <span class="value mono">{{ subnet.start }} - {{ subnet.end }}</span>
-                        </div>
-                        <div class="kv-item">
-                            <span class="label">{{ $t('dashboard.table.gateway') }}</span>
-                            <span class="value mono">{{ subnet.gateway || '-' }}</span>
-                        </div>
-                        <div class="kv-item" v-if="subnet.vlan">
-                            <span class="label">{{ (subnet.vlan > 4094) ? 'VXLAN' : 'VLAN' }}</span>
-                            <span class="value mono">{{ subnet.vlan }}</span>
-                        </div>
-                        <div class="kv-item">
-                            <span class="label">{{ $t('dashboard.table.dhcp') }}</span>
-                            <span class="value">{{ subnet.dhcp ? 'Enabled' : 'Disabled' }}</span>
-                        </div>
-                        <div class="kv-item">
-                            <span class="label">DNS</span>
-                            <span class="value mono">{{ subnet.dns || '-' }}</span>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Usage Stats -->
-                <div class="card info-card">
-                    <h3>{{ $t('dashboard.table.ipUsageStats') }}</h3>
-                    <div class="key-value-list">
-                        <div class="kv-item">
-                            <span class="label">{{ $t('dashboard.table.totalIps') }}</span>
-                            <span class="value">{{ subnet.total_count }}</span>
-                        </div>
-                        <div class="kv-item">
-                            <span class="label">{{ $t('dashboard.table.allocated') }}</span>
-                            <span class="value text-blue">{{ subnet.allocated_count }}</span>
-                        </div>
-                        <div class="kv-item">
-                            <span class="label">{{ $t('dashboard.table.available') }}</span>
-                            <span class="value text-green">{{ subnet.available_count }}</span>
-                        </div>
-                        <div class="kv-item">
-                            <span class="label">{{ $t('dashboard.table.idleReserved') }}</span>
-                            <span class="value">{{ subnet.idle_count }} / {{ subnet.reserved_count }}</span>
+                            </div>
+                            <div class="kv-item">
+                                <span class="label">{{ $t('dashboard.table.subnetType') }}</span>
+                                <span class="value">
+                                    <span :class="['type-badge', getTypeBadgeClass(subnet.type || 'internal')]" style="padding: 2px 10px; font-size: 11px;">
+                                        {{ subnet.type || 'internal' }}
+                                    </span>
+                                </span>
+                            </div>
+                            <div class="kv-item">
+                                 <span class="label">{{ $t('dashboard.table.cidr') }}</span>
+                                 <span class="value mono">{{ subnet.network || subnet.network_cidr }}</span>
+                            </div>
+                            <div class="kv-item">
+                                <span class="label">{{ $t('dashboard.table.networkRange') }}</span>
+                                <span class="value mono">{{ subnet.start }} - {{ subnet.end }}</span>
+                            </div>
+                            <div class="kv-item">
+                                <span class="label">{{ $t('dashboard.table.gateway') }}</span>
+                                <span class="value mono">{{ subnet.gateway || '-' }}</span>
+                            </div>
+                            <div class="kv-item" v-if="subnet.vlan">
+                                <span class="label">{{ (subnet.vlan > 4094) ? 'VXLAN' : 'VLAN' }}</span>
+                                <span class="value mono">{{ subnet.vlan }}</span>
+                            </div>
+                            <div class="kv-item">
+                                <span class="label">{{ $t('dashboard.table.dhcp') }}</span>
+                                <span class="value">{{ subnet.dhcp ? 'Enabled' : 'Disabled' }}</span>
+                            </div>
+                            <div class="kv-item">
+                                <span class="label">DNS</span>
+                                <span class="value mono">{{ subnet.dns || '-' }}</span>
+                            </div>
                         </div>
                     </div>
-                </div>
-            </div>
-
-            <!-- Action Bar -->
-             <div class="action-bar card">
-                <div class="action-group">
-                    <!-- Placeholder for Edit logic -->
-                </div>
-                <div class="action-group">
-                    <button class="btn btn-danger" @click="handleDeleteClick">
-                        <Trash2 :size="16" /> {{ $t('actions.delete') }}
-                    </button>
                 </div>
             </div>
         </div>
@@ -252,97 +271,159 @@ onMounted(fetchSubnet)
 
 /* Title Bar */
 .title-bar {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: var(--spacing-5);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: var(--spacing-5);
 }
 
 .title-info {
-    display: flex;
-    align-items: center;
-    gap: var(--spacing-4);
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-4);
 }
 
 .title-icon {
-    width: 52px;
-    height: 52px;
-    border-radius: var(--radius-lg);
-    background: linear-gradient(135deg, var(--primary-50), var(--primary-100));
-    color: var(--primary-color);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    flex-shrink: 0;
+  width: 52px;
+  height: 52px;
+  border-radius: var(--radius-lg);
+  background: linear-gradient(135deg, var(--primary-50), var(--primary-100));
+  color: var(--primary-color);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
 }
 
 .resource-title {
-    margin: 0 0 4px 0;
-    font-size: var(--font-size-xl);
-    font-weight: var(--font-weight-semibold);
-    color: var(--primary-color);
+  margin: 0 0 4px 0;
+  font-size: var(--font-size-xl);
+  font-weight: var(--font-weight-semibold);
+  color: var(--primary-color);
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-3);
 }
 
 .resource-id-row {
-    display: flex;
-    align-items: center;
-    gap: var(--spacing-2);
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-2);
 }
 
-.resource-id {
-    font-size: var(--font-size-xs);
-    color: var(--text-light);
-    font-family: var(--font-family-mono);
+.resource-id-text {
+  font-size: var(--font-size-xs);
+  color: var(--text-light);
+  font-family: var(--font-family-mono);
 }
 
 .copy-btn {
-    background: none;
-    border: 1px solid var(--border-light);
-    border-radius: var(--radius-sm);
-    padding: 2px 5px;
-    cursor: pointer;
-    color: var(--text-light);
-    display: inline-flex;
-    align-items: center;
-    transition: all 0.15s;
+  background: none;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-sm);
+  padding: 2px 5px;
+  cursor: pointer;
+  color: var(--text-light);
+  display: inline-flex;
+  align-items: center;
+  transition: all 0.15s;
 }
 
 .copy-btn:hover {
-    color: var(--primary-color);
-    border-color: var(--primary-200);
-    background: var(--primary-50);
+  color: var(--primary-color);
+  border-color: var(--primary-200);
+  background: var(--primary-50);
 }
 
 .copied-icon {
-    color: var(--success-color);
+  color: var(--success-color);
 }
 
 .title-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-3);
+}
+
+/* Action Dropdown */
+.action-dropdown {
+    position: relative;
+}
+
+.dropdown-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 9;
+}
+
+.dropdown-menu {
+    position: absolute;
+    top: calc(100% + 6px);
+    right: 0;
+    min-width: 200px;
+    background: var(--bg-primary, #fff);
+    border: 1px solid var(--border-light);
+    border-radius: var(--radius-md);
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+    padding: 4px 0;
+    z-index: 10;
+}
+
+.dropdown-item {
     display: flex;
     align-items: center;
-    gap: var(--spacing-3);
-}
-
-.type-badge {
-    display: inline-flex;
-    padding: 6px 14px;
-    border-radius: 12px;
+    gap: 10px;
+    width: 100%;
+    padding: 10px 16px;
+    border: none;
+    background: none;
     font-size: var(--font-size-sm);
-    font-weight: 600;
-    text-transform: uppercase;
+    color: var(--text-primary);
+    cursor: pointer;
+    transition: background 0.15s;
+    text-align: left;
 }
 
-.badge-green { background: var(--success-50); color: var(--success-700); }
-.badge-blue { background: var(--info-50); color: var(--info-700); }
-.badge-purple { background: var(--primary-50); color: var(--primary-700); }
-.badge-gray { background: var(--gray-100); color: var(--gray-700); }
+.dropdown-item:hover:not(:disabled) {
+    background: var(--bg-hover, #f3f4f6);
+}
 
-/* Info Grid */
-.info-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-    gap: var(--spacing-4);
-    margin-bottom: var(--spacing-6);
+.dropdown-item-danger {
+    color: var(--error-color, #ef4444);
+}
+
+.dropdown-item-danger:hover:not(:disabled) {
+    background: #fef2f2;
+}
+
+.dropdown-divider {
+    height: 1px;
+    background: var(--border-light);
+    margin: 4px 0;
+}
+
+.dropdown-enter-active, .dropdown-leave-active {
+    transition: opacity 0.15s, transform 0.15s;
+}
+
+.dropdown-enter-from, .dropdown-leave-to {
+    opacity: 0;
+    transform: translateY(-4px);
+}
+
+/* Two-Column Layout */
+.two-col-layout {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--spacing-4);
+  margin-bottom: var(--spacing-6);
+  align-items: start;
+}
+
+.col-stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-4);
 }
 
 .info-card {
@@ -404,41 +485,9 @@ onMounted(fetchSubnet)
     color: var(--success-color);
 }
 
-/* Action Bar */
-.action-bar {
-    padding: var(--spacing-4);
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-}
-
-.action-group {
-    display: flex;
-    gap: var(--spacing-3);
-}
-
 .btn {
     display: inline-flex;
     align-items: center;
     gap: 6px;
-}
-
-.btn-danger {
-    background: var(--error-color);
-    color: white;
-    border: none;
-    padding: 8px 16px;
-    border-radius: var(--radius-md);
-    font-size: var(--font-size-sm);
-    font-weight: var(--font-weight-medium);
-    cursor: pointer;
-    display: inline-flex;
-    align-items: center;
-    gap: var(--spacing-2);
-    transition: background var(--transition-base);
-}
-
-.btn-danger:hover {
-    background: var(--error-dark);
 }
 </style>
