@@ -826,15 +826,11 @@ onMounted(() => fetchInstances())
               </router-link>
             </td>
             <td>
-              <div class="flavor-info">
-                   <div class="flavor-specs">
-                      <span class="spec-value">{{ instance.cpu }}C</span>
-                      <span class="spec-divider">/</span>
-                      <span class="spec-value">{{ formatMemory(instance.memory).replace(' GB', 'G').replace(' MB', 'M') }}</span>
-                   </div>
-                   <div v-if="instance.flavor" class="flavor-name" style="font-size: 11px; color: var(--text-light); margin-top: 2px;">
-                      {{ typeof instance.flavor === 'string' ? instance.flavor : instance.flavor.name }}
-                   </div>
+              <div class="specs-display">
+                <div class="specs-main">{{ instance.cpu }}C / {{ formatMemory(instance.memory).replace(' GB', 'G').replace(' MB', 'M') }}</div>
+                <div v-if="instance.flavor" class="specs-sub">
+                  {{ typeof instance.flavor === 'string' ? instance.flavor : instance.flavor.name }}
+                </div>
               </div>
             </td>
             <td>{{ instance.image?.name || '-' }}</td>
@@ -1638,30 +1634,7 @@ onMounted(() => fetchInstances())
   flex-direction: column;
 }
 
-.flavor-specs {
-  display: flex;
-  align-items: baseline;
-  gap: 4px;
-  font-family: var(--font-family); /* Use Inter */
-  color: var(--text-primary);
-  font-size: 14px;
-  font-weight: 700;
-  letter-spacing: -0.02em;
-}
-
-.spec-divider {
-  color: var(--text-light);
-  font-weight: 300;
-  margin: 0 1px;
-}
-
-.spec-value {
-  color: var(--primary-600);
-}
-
-.flavor-name {
-  color: var(--text-light);
-}
+/* Standardized specs use resource-info pattern */
 
 .ip-address {
   font-family: var(--font-family-mono);
