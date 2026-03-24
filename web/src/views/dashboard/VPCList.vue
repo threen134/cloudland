@@ -40,8 +40,8 @@ const fetchVPCs = async () => {
     }
 }
 
-watch(() => region.currentRegionUuid, (newUuid) => {
-    if (newUuid) {
+watch(() => region.currentRegionId, (newId) => {
+    if (newId) {
         fetchVPCs()
     }
 })
@@ -126,7 +126,7 @@ const confirmDelete = async () => {
 }
 
 onMounted(() => {
-    if (region.currentRegionUuid) {
+    if (region.currentRegionId) {
         fetchVPCs()
     }
 })

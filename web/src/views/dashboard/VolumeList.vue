@@ -43,8 +43,8 @@ const fetchVolumes = async () => {
 }
 
 // Re-fetch when region changes
-watch(() => region.currentRegionUuid, (newUuid) => {
-    if (newUuid) {
+watch(() => region.currentRegionId, (newId) => {
+    if (newId) {
         fetchVolumes()
     }
 })
@@ -52,11 +52,19 @@ watch(() => region.currentRegionUuid, (newUuid) => {
 const filteredVolumes = computed(() => {
     if (!searchQuery.value) return volumes.value
     const query = searchQuery.value.toLowerCase()
-    return volumes.value.filter(vol => 
-        vol.name.toLowerCase().includes(query) || 
-        vol.id.toLowerCase().includes(query)
-    )
+    return volumes.value.filter(vol => {
+        const nameMatch = (vol.name?.toLowerCase() || '').includes(query)
+        const idMatch = (vol.id?.toLowerCase() || '').includes(query)
+        const instanceMatch = (vol.instance?.name?.toLowerCase() || '').includes(query)
+        return nameMatch || idMatch || instanceMatch
+    })
 })
+
+const getStatusText = (status: string) => {
+    const key = status?.toLowerCase().replace(/ /g, '_')
+    const translated = t(`dashboard.volumeStatus.${key}`)
+    return translated === `dashboard.volumeStatus.${key}` ? status : translated
+}
 
 const formatSize = (size: number) => {
     if (size >= 1000) {
@@ -146,11 +154,11 @@ const confirmDelete = async () => {
 }
 
 onMounted(() => {
-    // If region UUID is already available, fetch immediately
-    if (region.currentRegionUuid) {
+    // If region ID is already available, fetch immediately
+    if (region.currentRegionId) {
         fetchVolumes()
     }
-    // Otherwise the watcher on currentRegionUuid will trigger the fetch
+    // Otherwise the watcher on currentRegionId will trigger the fetch
 })
 </script>
 
@@ -218,7 +226,7 @@ onMounted(() => {
             </td>
             <td>
               <span :class="['badge', getStatusClass(volume.status)]">
-                {{ volume.status }}
+                {{ getStatusText(volume.status) }}
               </span>
             </td>
             <td>{{ formatSize(volume.size) }}</td>
@@ -359,7 +367,7 @@ onMounted(() => {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: var(--spacing-6);
+  margin-bottom: 0px;
   padding-right: 20px;
 }
 
@@ -404,7 +412,7 @@ onMounted(() => {
 
 .table-card {
   padding: 0;
-  overflow: hidden;
+  overflow: visible;
 }
 
 .resource-name {

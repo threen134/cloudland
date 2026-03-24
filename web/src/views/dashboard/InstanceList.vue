@@ -4,7 +4,7 @@ import { useI18n } from 'vue-i18n'
 
 import { useRouter } from 'vue-router'
 import { instancesApi, type Instance } from '../../api/instances'
-import { Play, Square, RotateCw, Trash2, Plus, Terminal, MoreVertical, Search, X, Check, Server, ChevronDown, ChevronUp, PlusCircle, MinusCircle, RefreshCw, Cpu, HardDrive, Eye, EyeOff, Shuffle } from 'lucide-vue-next'
+import { Play, Square, RotateCw, Trash2, Plus, Terminal, MoreVertical, Search, X, Check, Server, ChevronDown, ChevronUp, PlusCircle, MinusCircle, RefreshCw, Cpu, HardDrive, Eye, EyeOff, Shuffle, Pencil, KeyRound, Maximize2 } from 'lucide-vue-next'
 
 import { imagesApi, type Image } from '../../api/images'
 import { vpcsApi, subnetsApi, securityGroupsApi, floatingIpsApi, type VPC, type Subnet, type SecurityGroup, type FloatingIP } from '../../api/networks'
@@ -66,10 +66,18 @@ const fetchInstances = async (showLoading: boolean = true) => {
 const filteredInstances = computed(() => {
     if (!searchQuery.value) return instanceList.value
     const query = searchQuery.value.toLowerCase()
-    return instanceList.value.filter(inst => 
-        inst.name.toLowerCase().includes(query) || 
-        inst.id.toLowerCase().includes(query)
-    )
+    return instanceList.value.filter(inst => {
+        const nameMatch = (inst.name?.toLowerCase() || '').includes(query)
+        const hostnameMatch = (inst.hostname?.toLowerCase() || '').includes(query)
+        const idMatch = (inst.id?.toLowerCase() || '').includes(query)
+        const ipMatch = (inst.ip_address?.toLowerCase() || '').includes(query)
+        const interfaceIpMatch = inst.interfaces?.some(iface => (iface.ip_address?.toLowerCase() || '').includes(query))
+        
+        const vpcMatch = (inst.vpc?.name?.toLowerCase() || '').includes(query)
+        const imageMatch = (inst.image?.name?.toLowerCase() || '').includes(query)
+        
+        return nameMatch || hostnameMatch || idMatch || ipMatch || interfaceIpMatch || vpcMatch || imageMatch
+    })
 })
 
 const navigateToDetail = (instance: Instance) => {
@@ -91,6 +99,12 @@ const getStatusClass = (status: string) => {
     return statusMap[status?.toLowerCase()] || 'status-pending'
 }
 
+const getStatusText = (status: string) => {
+    const key = status?.toLowerCase().replace(/ /g, '_')
+    const translated = t(`dashboard.instanceStatus.${key}`)
+    return translated === `dashboard.instanceStatus.${key}` ? status : translated
+}
+
 const formatMemory = (mb: number) => {
     if (mb >= 1024) {
         return `${(mb / 1024).toFixed(0)} GB`
@@ -104,24 +118,48 @@ const getIPAddress = (instance: Instance) => {
     return addr.split('/')[0]
 }
 
-const handleAction = async (instance: Instance, action: 'start' | 'stop' | 'restart') => {
+// --- Action States and Dropdown ---
+const activeActionMenuId = ref<string | null>(null)
+const toggleActionMenu = (instanceId: string) => {
+    activeActionMenuId.value = activeActionMenuId.value === instanceId ? null : instanceId
+}
+const closeActionMenu = () => {
+    activeActionMenuId.value = null
+}
+
+const handleAction = async (instance: Instance, action: 'start' | 'stop' | 'restart' | 'hard_stop' | 'hard_restart' | 'pause' | 'resume') => {
     actionLoading.value[instance.id] = action
+    closeActionMenu()
     try {
+        const hostname = instance.hostname
         switch (action) {
             case 'start':
-                await instancesApi.startInstance(instance.id, instance.hostname)
+                await instancesApi.startInstance(instance.id, hostname)
                 break
             case 'stop':
-                await instancesApi.stopInstance(instance.id, instance.hostname)
+                await instancesApi.stopInstance(instance.id, hostname)
                 break
             case 'restart':
-                await instancesApi.rebootInstance(instance.id, instance.hostname)
+                await instancesApi.rebootInstance(instance.id, hostname)
+                break
+            case 'hard_stop':
+                await instancesApi.hardStopInstance(instance.id, hostname)
+                break
+            case 'hard_restart':
+                await instancesApi.hardRebootInstance(instance.id, hostname)
+                break
+            case 'pause':
+                await instancesApi.pauseInstance(instance.id, hostname)
+                break
+            case 'resume':
+                await instancesApi.resumeInstance(instance.id, hostname)
                 break
         }
         
         let targetStableStates: string[] = []
-        if (action === 'start' || action === 'restart') targetStableStates = ['running', 'active', 'error']
-        if (action === 'stop') targetStableStates = ['stopped', 'shutoff', 'shut_off', 'error']
+        if (['start', 'restart', 'hard_restart', 'resume'].includes(action)) targetStableStates = ['running', 'active', 'error']
+        if (['stop', 'hard_stop'].includes(action)) targetStableStates = ['stopped', 'shutoff', 'shut_off', 'error']
+        if (action === 'pause') targetStableStates = ['paused', 'error']
 
         let attempts = 0
         const checkStatus = async () => {
@@ -146,6 +184,126 @@ const handleAction = async (instance: Instance, action: 'start' | 'stop' | 'rest
         console.error(`Failed to ${action} instance:`, error)
         actionLoading.value[instance.id] = null
         showToast(error.response?.data?.error_message || error.message || t('messages.error'), 'error')
+    }
+}
+
+// --- Rename Modal Logic ---
+const renameModalVisible = ref(false)
+const renameForm = ref({ hostname: '' })
+const renameLoading = ref(false)
+const renameError = ref('')
+const selectedInstance = ref<Instance | null>(null)
+
+const openRenameModal = (instance: Instance) => {
+    selectedInstance.value = instance
+    renameForm.value.hostname = instance.hostname || ''
+    renameError.value = ''
+    renameModalVisible.value = true
+    closeActionMenu()
+}
+
+const confirmRename = async () => {
+    if (!selectedInstance.value || !renameForm.value.hostname.trim()) {
+        renameError.value = t('dashboard.instanceDetail.hostnameRequired')
+        return
+    }
+    renameLoading.value = true
+    renameError.value = ''
+    try {
+        await instancesApi.renameInstance(selectedInstance.value.id, renameForm.value.hostname)
+        await fetchInstances(false)
+        renameModalVisible.value = false
+        showToast(t('dashboard.instanceDetail.renameSuccess'))
+    } catch (err: any) {
+        renameError.value = err.response?.data?.error_message || err.message || t('messages.error')
+    } finally {
+        renameLoading.value = false
+    }
+}
+
+// --- Reset Password Modal Logic ---
+const resetPasswordModalVisible = ref(false)
+const resetPasswordForm = ref({ user_name: 'root', password: '', confirmPassword: '' })
+const resetPasswordLoading = ref(false)
+const resetPasswordError = ref('')
+const showResetPassword = ref(false)
+
+const openResetPasswordModal = (instance: Instance) => {
+    selectedInstance.value = instance
+    resetPasswordForm.value = { user_name: 'root', password: '', confirmPassword: '' }
+    resetPasswordError.value = ''
+    showResetPassword.value = false
+    resetPasswordModalVisible.value = true
+    closeActionMenu()
+}
+
+const generateRandomResetPassword = () => {
+    const charset = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%&*'
+    const array = new Uint8Array(16)
+    crypto.getRandomValues(array)
+    const pwd = Array.from(array, b => charset[b % charset.length]).join('')
+    resetPasswordForm.value.password = pwd
+    resetPasswordForm.value.confirmPassword = pwd
+    showResetPassword.value = true
+}
+
+const confirmResetPassword = async () => {
+    if (!selectedInstance.value) return
+    if (resetPasswordForm.value.password.length < 8) {
+        resetPasswordError.value = t('dashboard.instanceDetail.passwordMinLength')
+        return
+    }
+    if (resetPasswordForm.value.password !== resetPasswordForm.value.confirmPassword) {
+        resetPasswordError.value = t('dashboard.instanceDetail.passwordMismatch')
+        return
+    }
+    resetPasswordLoading.value = true
+    resetPasswordError.value = ''
+    try {
+        await instancesApi.setUserPassword(selectedInstance.value.id, resetPasswordForm.value.user_name, resetPasswordForm.value.password)
+        resetPasswordModalVisible.value = false
+        showToast(t('dashboard.instanceDetail.resetPasswordSuccess'))
+    } catch (err: any) {
+        resetPasswordError.value = err.response?.data?.error_message || err.message || t('messages.error')
+    } finally {
+        resetPasswordLoading.value = false
+    }
+}
+
+// --- Resize Modal Logic ---
+const resizeModalVisible = ref(false)
+const resizeForm = ref({ cpu: 0, memory: 0 })
+const resizeLoading = ref(false)
+const resizeError = ref('')
+
+const openResizeModal = (instance: Instance) => {
+    selectedInstance.value = instance
+    resizeForm.value = {
+        cpu: instance.cpu || 0,
+        memory: instance.memory || 0,
+    }
+    resizeError.value = ''
+    resizeModalVisible.value = true
+    closeActionMenu()
+}
+
+const confirmResize = async () => {
+    if (!selectedInstance.value) return
+    if (resizeForm.value.cpu < 1 || resizeForm.value.memory < 1) {
+        resizeError.value = t('dashboard.instanceDetail.resizeInvalid')
+        return
+    }
+    resizeLoading.value = true
+    resizeError.value = ''
+    try {
+        await instancesApi.resizeInstance(selectedInstance.value.id, resizeForm.value.cpu, resizeForm.value.memory)
+        resizeModalVisible.value = false
+        showToast(t('dashboard.instanceDetail.resizeSuccess'))
+        await fetchInstances(false)
+    } catch (err: any) {
+        resizeError.value = err.response?.data?.error_message || err.message || t('messages.error')
+    } finally {
+        resizeLoading.value = false
     }
 }
 
@@ -653,7 +811,7 @@ onMounted(() => fetchInstances())
                </div>
             </td>
           </tr>
-          <tr v-else v-for="instance in filteredInstances" :key="instance.id">
+          <tr v-else v-for="instance in filteredInstances" :key="instance.id" :class="{'active-row': activeActionMenuId === instance.id}">
             <td>
               <div class="instance-info clickable" @click="navigateToDetail(instance)">
                 <div class="resource-icon">
@@ -683,51 +841,132 @@ onMounted(() => fetchInstances())
             </td>
             <td>
               <span :class="['badge', getStatusClass(instance.status)]">
-                {{ instance.status }}
+                {{ getStatusText(instance.status) }}
               </span>
             </td>
             <td>{{ instance.vpc?.name || '-' }}</td>
             <td>
-              <div class="actions">
-                <button 
-                  v-if="['stopped', 'shutoff', 'shut_off'].includes(instance.status?.toLowerCase())"
-                  class="btn btn-ghost btn-sm" 
-                  :title="$t('actions.start')"
-                  @click="handleAction(instance, 'start')"
-                  :disabled="!!actionLoading[instance.id]"
-                >
-                  <span v-if="actionLoading[instance.id] === 'start'" class="loading-spinner small"></span>
-                  <Play v-else :size="14" />
-                </button>
-                <button 
-                  v-else
-                  class="btn btn-ghost btn-sm" 
-                  :title="$t('actions.stop')"
-                  @click="handleAction(instance, 'stop')"
-                  :disabled="!!actionLoading[instance.id]"
-                >
-                  <span v-if="actionLoading[instance.id] === 'stop'" class="loading-spinner small"></span>
-                  <Square v-else :size="14" />
-                </button>
-                <button 
-                  class="btn btn-ghost btn-sm" 
-                  :title="$t('actions.restart')"
-                  @click="handleAction(instance, 'restart')"
-                  :disabled="!!actionLoading[instance.id] || instance.status !== 'running'"
-                >
-                  <span v-if="actionLoading[instance.id] === 'restart'" class="loading-spinner small"></span>
-                  <RotateCw v-else :size="14" />
-                </button>
-                <button 
-                  class="btn btn-ghost btn-sm" 
-                  :title="$t('actions.console')"
-                  @click="openConsole(instance)"
-                >
-                  <img src="/images/vnc.svg" alt="VNC" width="14" height="14" />
-                </button>
-                <button class="btn btn-ghost btn-sm text-error" :title="$t('actions.delete')" @click="handleDeleteClick(instance)">
-                  <Trash2 :size="14" />
-                </button>
+               <div class="actions">
+                 <button 
+                   v-if="['stopped', 'shutoff', 'shut_off'].includes(instance.status?.toLowerCase())"
+                   class="btn btn-ghost btn-sm" 
+                   :title="$t('actions.start')"
+                   @click="handleAction(instance, 'start')"
+                   :disabled="!!actionLoading[instance.id]"
+                 >
+                   <span v-if="actionLoading[instance.id] === 'start'" class="loading-spinner small"></span>
+                   <Play v-else :size="14" />
+                 </button>
+                 <button 
+                   v-else
+                   class="btn btn-ghost btn-sm" 
+                   :title="$t('actions.stop')"
+                   @click="handleAction(instance, 'stop')"
+                   :disabled="!!actionLoading[instance.id]"
+                 >
+                   <span v-if="actionLoading[instance.id] === 'stop'" class="loading-spinner small"></span>
+                   <Square v-else :size="14" />
+                 </button>
+                 <button 
+                   class="btn btn-ghost btn-sm" 
+                   :title="$t('actions.restart')"
+                   @click="handleAction(instance, 'restart')"
+                   :disabled="!!actionLoading[instance.id] || instance.status?.toLowerCase() !== 'running'"
+                 >
+                   <span v-if="actionLoading[instance.id] === 'restart'" class="loading-spinner small"></span>
+                   <RotateCw v-else :size="14" />
+                 </button>
+                 <button 
+                   class="btn btn-ghost btn-sm" 
+                   :title="$t('actions.console')"
+                   @click="openConsole(instance)"
+                 >
+                   <img src="/images/vnc.svg" alt="VNC" width="14" height="14" />
+                 </button>
+                 
+                 <div class="action-dropdown" style="position: relative;">
+                    <button class="btn btn-ghost btn-sm" @click.stop="toggleActionMenu(instance.id)" :title="$t('actions.more')">
+                        <MoreVertical :size="14" />
+                    </button>
+                    <Transition name="dropdown">
+                        <div v-if="activeActionMenuId === instance.id" class="dropdown-menu dropdown-menu-right" @click.stop v-click-outside="closeActionMenu">
+                            <button
+                                v-if="['stopped', 'shutoff', 'shut_off'].includes(instance.status?.toLowerCase())"
+                                class="dropdown-item"
+                                @click="handleAction(instance, 'start')"
+                                :disabled="!!actionLoading[instance.id]"
+                            >
+                                <Play :size="14" /> {{ $t('actions.start') }}
+                            </button>
+                            <button
+                                v-else
+                                class="dropdown-item"
+                                @click="handleAction(instance, 'stop')"
+                                :disabled="!!actionLoading[instance.id]"
+                            >
+                                <Square :size="14" /> {{ $t('actions.stop') }}
+                            </button>
+                            <button
+                                class="dropdown-item"
+                                @click="handleAction(instance, 'restart')"
+                                :disabled="!!actionLoading[instance.id] || instance.status?.toLowerCase() !== 'running'"
+                            >
+                                <RotateCw :size="14" /> {{ $t('actions.restart') }}
+                            </button>
+                            
+                            <div class="dropdown-divider"></div>
+                            
+                            <button
+                                class="dropdown-item"
+                                @click="handleAction(instance, 'hard_stop')"
+                                :disabled="!!actionLoading[instance.id] || ['stopped', 'shutoff', 'shut_off', 'paused'].includes(instance.status?.toLowerCase())"
+                            >
+                                <Square :size="14" /> {{ $t('dashboard.instanceDetail.hardStop') }}
+                            </button>
+                            <button
+                                class="dropdown-item"
+                                @click="handleAction(instance, 'hard_restart')"
+                                :disabled="!!actionLoading[instance.id] || ['stopped', 'shutoff', 'shut_off'].includes(instance.status?.toLowerCase())"
+                            >
+                                <RefreshCw :size="14" /> {{ $t('dashboard.instanceDetail.hardRestart') }}
+                            </button>
+                            <button
+                                v-if="instance.status?.toLowerCase() !== 'paused'"
+                                class="dropdown-item"
+                                @click="handleAction(instance, 'pause')"
+                                :disabled="!!actionLoading[instance.id] || instance.status?.toLowerCase() !== 'running'"
+                            >
+                                <span style="font-size: 14px; width: 14px; display: inline-block; text-align: center;">⏸</span> {{ $t('dashboard.instanceDetail.pause') }}
+                            </button>
+                            <button
+                                v-else
+                                class="dropdown-item"
+                                @click="handleAction(instance, 'resume')"
+                                :disabled="!!actionLoading[instance.id]"
+                            >
+                                <Play :size="14" /> {{ $t('dashboard.instanceDetail.resume') }}
+                            </button>
+                            
+                            <div class="dropdown-divider"></div>
+                            
+                            <button class="dropdown-item" @click="openRenameModal(instance)">
+                                <Pencil :size="14" /> {{ $t('dashboard.instanceDetail.rename') }}
+                            </button>
+                            <button class="dropdown-item" @click="openResetPasswordModal(instance)">
+                                <KeyRound :size="14" /> {{ $t('dashboard.instanceDetail.resetPassword') }}
+                            </button>
+                            <button class="dropdown-item" @click="openResizeModal(instance)">
+                                <Maximize2 :size="14" /> {{ $t('actions.resize') }}
+                            </button>
+                            
+                            <div class="dropdown-divider"></div>
+                            
+                            <button class="dropdown-item dropdown-item-danger" @click="handleDeleteClick(instance)">
+                                <Trash2 :size="14" /> {{ $t('actions.delete') }}
+                            </button>
+                        </div>
+                    </Transition>
+                 </div>
               </div>
             </td>
           </tr>
@@ -1098,6 +1337,124 @@ onMounted(() => fetchInstances())
       </div>
     </div>
 
+    <!-- Rename Modal -->
+    <div v-if="renameModalVisible" class="modal-overlay" @click.self="renameModalVisible = false" style="z-index: 1001;">
+      <div class="modal-content card" style="max-width: 400px;">
+        <div class="modal-header">
+          <h3>{{ $t('dashboard.instanceDetail.rename') }}</h3>
+          <button class="btn btn-ghost btn-sm icon-btn" @click="renameModalVisible = false">
+            <X :size="20" />
+          </button>
+        </div>
+        <div class="modal-body">
+          <div class="form-group">
+            <label class="form-label">{{ $t('dashboard.table.hostname') }}</label>
+            <input 
+              v-model="renameForm.hostname" 
+              type="text" 
+              class="form-input" 
+              :placeholder="$t('dashboard.table.hostname')"
+            />
+          </div>
+          <div v-if="renameError" class="text-error mt-2">{{ renameError }}</div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-ghost" @click="renameModalVisible = false">{{ $t('actions.cancel') }}</button>
+          <button class="btn btn-primary" @click="confirmRename" :disabled="renameLoading">
+            <span v-if="renameLoading" class="loading-spinner small"></span>
+            {{ $t('actions.confirm') }}
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Reset Password Modal -->
+    <div v-if="resetPasswordModalVisible" class="modal-overlay" @click.self="resetPasswordModalVisible = false" style="z-index: 1001;">
+      <div class="modal-content card" style="max-width: 450px;">
+        <div class="modal-header">
+          <h3>{{ $t('dashboard.instanceDetail.resetPassword') }}</h3>
+          <button class="btn btn-ghost btn-sm icon-btn" @click="resetPasswordModalVisible = false">
+            <X :size="20" />
+          </button>
+        </div>
+        <div class="modal-body">
+          <div class="form-group">
+            <label class="form-label">{{ $t('dashboard.instanceDetail.userName') }}</label>
+            <input v-model="resetPasswordForm.user_name" type="text" class="form-input" disabled />
+          </div>
+          <div class="form-group">
+            <label class="form-label">{{ $t('dashboard.instanceDetail.rootPassword') }}</label>
+            <div class="password-input-wrapper">
+              <input 
+                v-model="resetPasswordForm.password" 
+                :type="showResetPassword ? 'text' : 'password'" 
+                class="form-input" 
+                :placeholder="$t('dashboard.instanceDetail.passwordPlaceholder')" 
+              />
+              <button class="password-toggle" @click="showResetPassword = !showResetPassword">
+                <Eye v-if="!showResetPassword" :size="16" />
+                <EyeOff v-else :size="16" />
+              </button>
+            </div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">{{ $t('dashboard.instanceDetail.confirmPassword') }}</label>
+            <input 
+              v-model="resetPasswordForm.confirmPassword" 
+              :type="showResetPassword ? 'text' : 'password'" 
+              class="form-input" 
+              :placeholder="$t('dashboard.instanceDetail.confirmPassword')" 
+            />
+          </div>
+          <div class="mt-2">
+            <button class="btn btn-ghost btn-sm text-primary" @click="generateRandomResetPassword">
+              <RefreshCw :size="14" /> {{ $t('dashboard.instanceDetail.generatePassword') }}
+            </button>
+          </div>
+          <div v-if="resetPasswordError" class="text-error mt-3">{{ resetPasswordError }}</div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-ghost" @click="resetPasswordModalVisible = false">{{ $t('actions.cancel') }}</button>
+          <button class="btn btn-primary" @click="confirmResetPassword" :disabled="resetPasswordLoading">
+            <span v-if="resetPasswordLoading" class="loading-spinner small"></span>
+            {{ $t('actions.confirm') }}
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Resize Modal -->
+    <div v-if="resizeModalVisible" class="modal-overlay" @click.self="resizeModalVisible = false" style="z-index: 1001;">
+      <div class="modal-content card" style="max-width: 450px;">
+        <div class="modal-header">
+          <h3>{{ $t('actions.resize') }}</h3>
+          <button class="btn btn-ghost btn-sm icon-btn" @click="resizeModalVisible = false">
+            <X :size="20" />
+          </button>
+        </div>
+        <div class="modal-body">
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label">{{ $t('dashboard.instanceDetail.cpu') }} (Cores)</label>
+              <input v-model.number="resizeForm.cpu" type="number" class="form-input" min="1" />
+            </div>
+            <div class="form-group">
+              <label class="form-label">{{ $t('dashboard.instanceDetail.ram') }} (MB)</label>
+              <input v-model.number="resizeForm.memory" type="number" class="form-input" min="128" step="128" />
+            </div>
+          </div>
+          <div v-if="resizeError" class="text-error mt-2">{{ resizeError }}</div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-ghost" @click="resizeModalVisible = false">{{ $t('actions.cancel') }}</button>
+          <button class="btn btn-primary" @click="confirmResize" :disabled="resizeLoading">
+            <span v-if="resizeLoading" class="loading-spinner small"></span>
+            {{ $t('actions.confirm') }}
+          </button>
+        </div>
+      </div>
+    </div>
+
     <DeleteModal
       :show="deleteModalVisible"
       :resource-name="instanceToDelete?.name || instanceToDelete?.hostname"
@@ -1111,6 +1468,97 @@ onMounted(() => fetchInstances())
 </template>
 
 <style scoped>
+.dropdown-menu {
+    position: absolute;
+    top: 100%;
+    right: 0;
+    z-index: 10000;
+    min-width: 180px;
+    padding: 8px;
+    margin-top: 4px;
+    background: white;
+    border: 1px solid var(--border-light);
+    border-radius: var(--radius-md);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+.dropdown-menu-right {
+    right: 0;
+}
+
+.dropdown-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    padding: 8px 12px;
+    border: none;
+    background: transparent;
+    border-radius: var(--radius-sm);
+    color: var(--text-main);
+    font-size: var(--font-size-sm);
+    text-align: left;
+    cursor: pointer;
+    transition: background 0.2s;
+}
+
+.dropdown-item:hover {
+    background: var(--bg-secondary);
+}
+
+.dropdown-item:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.dropdown-item-danger {
+    color: var(--error-color);
+}
+
+.dropdown-item-danger:hover {
+    background: var(--error-light);
+}
+
+.dropdown-divider {
+    height: 1px;
+    background: var(--border-light);
+    margin: 8px 0;
+}
+
+.dropdown-enter-active, .dropdown-leave-active {
+    transition: opacity 0.2s, transform 0.2s;
+}
+
+.dropdown-enter-from, .dropdown-leave-to {
+    opacity: 0;
+    transform: translateY(-8px);
+}
+
+.password-input-wrapper {
+    position: relative;
+    display: flex;
+    align-items: center;
+}
+
+.password-toggle {
+    position: absolute;
+    right: 8px;
+    background: transparent;
+    border: none;
+    color: var(--text-light);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.modal-footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: 12px;
+    padding-top: 24px;
+}
+
 .page-header {
   display: flex;
   justify-content: space-between;
@@ -1160,7 +1608,12 @@ onMounted(() => fetchInstances())
 
 .table-card {
   padding: 0;
-  overflow: hidden;
+  overflow: visible;
+}
+
+.active-row {
+    position: relative;
+    z-index: 10;
 }
 
 .instance-info {

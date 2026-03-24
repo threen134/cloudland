@@ -420,6 +420,12 @@ const getStatusClass = (status: string) => {
     return statusMap[status?.toLowerCase()] || 'status-pending'
 }
 
+const getStatusText = (status: string) => {
+    const key = status?.toLowerCase().replace(/ /g, '_')
+    const translated = t(`dashboard.instanceStatus.${key}`)
+    return translated === `dashboard.instanceStatus.${key}` ? status : translated
+}
+
 const formatMemory = (mb?: number) => {
     if (!mb) return '-'
     if (mb >= 1024) {
@@ -479,7 +485,7 @@ onMounted(() => {
                     <div>
                         <h2 class="instance-title">
                             {{ instance.hostname }}
-                            <span :class="['badge', getStatusClass(instance.status)]">{{ instance.status }}</span>
+                            <span :class="['badge', getStatusClass(instance.status)]">{{ getStatusText(instance.status) }}</span>
                         </h2>
                         <div class="instance-id-row">
                             <span class="instance-id">{{ instance.id }}</span>

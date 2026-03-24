@@ -86,8 +86,8 @@ const filteredFloatingIPs = computed(() => {
     const query = searchQuery.value.toLowerCase()
     return floatingIps.value.filter(fip => 
         (fip.name?.toLowerCase() || '').includes(query) ||
-        (fip.public_ip || fip.ip_address).toLowerCase().includes(query) || 
-        fip.id.toLowerCase().includes(query)
+        (fip.public_ip || fip.ip_address || '').toLowerCase().includes(query) || 
+        (fip.id?.toLowerCase() || '').includes(query)
     )
 })
 
@@ -295,7 +295,7 @@ onMounted(fetchFloatingIPs)
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: var(--spacing-06);
+  margin-bottom: 0px;
   padding-right: 20px;
 }
 
@@ -340,7 +340,7 @@ onMounted(fetchFloatingIPs)
 
 .table-card {
   padding: 0;
-  overflow: hidden;
+  overflow: visible;
 }
 
 .fip-name {

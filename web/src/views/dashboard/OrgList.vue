@@ -45,8 +45,8 @@ const filteredOrgs = computed(() => {
     if (!searchQuery.value) return orgs.value
     const query = searchQuery.value.toLowerCase()
     return orgs.value.filter(org => 
-        org.name.toLowerCase().includes(query) || 
-        org.uuid.toLowerCase().includes(query)
+        (org.name?.toLowerCase() || '').includes(query) || 
+        (org.uuid?.toLowerCase() || '').includes(query)
     )
 })
 
@@ -363,7 +363,7 @@ onMounted(fetchOrgs)
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: var(--spacing-06);
+  margin-bottom: 0px;
   padding-right: 20px;
 }
 
@@ -408,7 +408,7 @@ onMounted(fetchOrgs)
 
 .table-card {
   padding: 0;
-  overflow: hidden;
+  overflow: visible;
 }
 
 .org-cell {

@@ -67,8 +67,8 @@ const fetchVPC = async () => {
     }
 }
 
-watch(() => region.currentRegionUuid, (newUuid) => {
-    if (newUuid) {
+watch(() => region.currentRegionId, (newId) => {
+    if (newId) {
         fetchVPC()
     }
 })
@@ -102,7 +102,7 @@ const copyToClipboard = (text: string, field: string) => {
 }
 
 onMounted(() => {
-    if (region.currentRegionUuid) {
+    if (region.currentRegionId) {
         fetchVPC()
     }
 })

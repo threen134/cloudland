@@ -31,8 +31,8 @@ const fetchVolume = async () => {
     }
 }
 
-watch(() => region.currentRegionUuid, (newUuid) => {
-    if (newUuid) {
+watch(() => region.currentRegionId, (newId) => {
+    if (newId) {
         fetchVolume()
     }
 })
@@ -92,7 +92,7 @@ const copyToClipboard = (text: string, field: string) => {
 }
 
 onMounted(() => {
-    if (region.currentRegionUuid) {
+    if (region.currentRegionId) {
         fetchVolume()
     }
 })

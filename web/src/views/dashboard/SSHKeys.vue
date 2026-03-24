@@ -42,9 +42,9 @@ const filteredKeys = computed(() => {
     if (!searchQuery.value) return keys.value
     const query = searchQuery.value.toLowerCase()
     return keys.value.filter(key => 
-        key.name.toLowerCase().includes(query) || 
-        key.finger_print?.toLowerCase().includes(query) ||
-        key.id.toLowerCase().includes(query)
+        (key.name?.toLowerCase() || '').includes(query) || 
+        (key.finger_print?.toLowerCase() || '').includes(query) ||
+        (key.id?.toLowerCase() || '').includes(query)
     )
 })
 
@@ -336,7 +336,7 @@ onMounted(fetchKeys)
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: var(--spacing-06);
+  margin-bottom: 0px;
   padding-right: 20px;
 }
 
@@ -381,7 +381,7 @@ onMounted(fetchKeys)
 
 .table-card {
   padding: 0;
-  overflow: hidden;
+  overflow: visible;
 }
 
 .key-name {

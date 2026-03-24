@@ -174,7 +174,7 @@ func (a *InterfaceAdminService) List(ctx context.Context, offset, limit int64, o
 	return
 }
 
-func (a *InterfaceAdminService) checkAddresses(ctx context.Context, iface *model.Interface, ifaceSubnets, siteSubnets []*model.Subnet, secondAddrsCount int, publicIps []*model.FloatingIp) (valid, changed bool) {
+func (a *InterfaceAdminService) checkAddresses(_ context.Context, iface *model.Interface, ifaceSubnets, siteSubnets []*model.Subnet, secondAddrsCount int, publicIps []*model.FloatingIp) (valid, changed bool) {
 	logger.Infof("ENTER InterfaceAdmin.checkAddresses: ifaceID=%d", iface.ID)
 	defer func() {
 		logger.Infof("EXIT InterfaceAdmin.checkAddresses: valid=%v, changed=%v", valid, changed)
