@@ -442,6 +442,14 @@ const navigateToSecurityGroup = (sgId: string) => {
     router.push({ name: 'security-group-detail', params: { id: sgId } })
 }
 
+const navigateToSubnet = (subnetId: string) => {
+    router.push({ name: 'subnet-detail', params: { id: subnetId } })
+}
+
+const navigateToVPC = (vpcId: string) => {
+    router.push({ name: 'vpc-detail', params: { id: vpcId } })
+}
+
 onMounted(() => {
     fetchInstance()
     fetchLinkedRules()
@@ -688,7 +696,12 @@ onMounted(() => {
                         <div class="key-value-list">
                             <div class="kv-item" v-if="instance.vpc?.name">
                                 <span class="label">{{ $t('dashboard.table.vpc') }}</span>
-                                <span class="value">{{ instance.vpc.name }}</span>
+                                <span class="value">
+                                    <a v-if="instance.vpc?.id" href="#" @click.prevent="navigateToVPC(instance.vpc.id)" class="resource-link">
+                                        {{ instance.vpc.name }}
+                                    </a>
+                                    <span v-else>{{ instance.vpc?.name || '-' }}</span>
+                                </span>
                             </div>
 
                             <div v-if="!instance.interfaces?.length" class="text-secondary empty-hint">
@@ -704,7 +717,12 @@ onMounted(() => {
                                     </div>
                                     <div class="kv-item interface-detail">
                                         <span class="label">{{ $t('dashboard.table.subnet') }}</span>
-                                        <span class="value">{{ iface.subnet?.name || '-' }}</span>
+                                        <span class="value">
+                                            <a v-if="iface.subnet?.id" href="#" @click.prevent="navigateToSubnet(iface.subnet.id)" class="resource-link">
+                                                {{ iface.subnet.name }}
+                                            </a>
+                                            <span v-else>{{ iface.subnet?.name || '-' }}</span>
+                                        </span>
                                     </div>
                                     <div class="kv-item interface-detail">
                                         <span class="label">{{ $t('dashboard.table.ipAddress') }}</span>

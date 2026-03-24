@@ -44,9 +44,7 @@ type KeyPayload struct {
 	UUID      string `json:"uuid,omitempty" binding:"omitempty"`
 }
 
-type KeyPatchPayload struct {
-	Name string `json:"name" binding:"required,min=2,max=32"`
-}
+
 
 // @Summary get a key
 // @Description get a key
@@ -73,20 +71,7 @@ func (v *KeyAPI) Get(c *gin.Context) {
 	c.JSON(http.StatusOK, keyResp)
 }
 
-// @Summary patch a key
-// @Description patch a key
-// @tags Key
-// @Accept  json
-// @Produce json
-// @Param   message	body   KeyPatchPayload  true   "Key patch payload"
-// @Success 200 {object} KeyResponse
-// @Failure 400 {object} common.APIError "Bad request"
-// @Failure 401 {object} common.APIError "Not authorized"
-// @Router /keys/{id} [patch]
-func (v *KeyAPI) Patch(c *gin.Context) {
-	keyResp := &KeyResponse{}
-	c.JSON(http.StatusOK, keyResp)
-}
+
 
 // @Summary delete a key
 // @Description delete a key

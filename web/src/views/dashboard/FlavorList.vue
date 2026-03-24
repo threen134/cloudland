@@ -4,7 +4,7 @@ import { useI18n } from 'vue-i18n'
 import { flavorsApi, type Flavor, type FlavorPayload } from '../../api/flavors'
 import { isValidName } from '../../utils/validation'
 
-import { Plus, Server, Search, Trash2, Edit, Cpu, HardDrive, X, RefreshCw } from 'lucide-vue-next'
+import { Plus, Server, Search, Trash2, Cpu, HardDrive, X, RefreshCw } from 'lucide-vue-next'
 
 const flavors = ref<Flavor[]>([])
 const loading = ref(false)
@@ -211,9 +211,7 @@ onMounted(fetchFlavors)
             </td>
             <td>
               <div class="actions">
-                <button class="btn btn-ghost btn-sm" title="Edit">
-                  <Edit :size="14" />
-                </button>
+
                 <button class="btn btn-ghost btn-sm text-error" title="Delete" @click="handleDeleteClick(flavor)">
                   <Trash2 :size="14" />
                 </button>
