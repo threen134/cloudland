@@ -151,6 +151,12 @@ export interface FloatingIP {
             hostname?: string;
         }
     }
+    vpc?: { id: string; name: string }
+    group?: { id: string; name: string }
+    subnet?: { id: string; name: string }
+    vlan?: number
+    inbound?: number
+    outbound?: number
     site_subnets?: Array<{ id: string; name: string }>
     created_at?: string
     updated_at?: string

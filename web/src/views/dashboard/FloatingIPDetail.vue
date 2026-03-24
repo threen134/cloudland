@@ -4,6 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { floatingIpsApi, type FloatingIP } from '../../api/networks'
 import { ArrowLeft, Globe, Trash2, Server, Network, Copy, Check, ChevronDown, Pencil } from 'lucide-vue-next'
 import { useI18n } from 'vue-i18n'
+import { useFloatingIP } from '../../composables/useFloatingIP'
 import DeleteModal from '../../components/modals/DeleteModal.vue'
 
 const route = useRoute()
@@ -16,6 +17,7 @@ const error = ref('')
 const copiedField = ref<string | null>(null)
 const showActionMenu = ref(false)
 const { t } = useI18n()
+const { getTypeBadgeClass, getTypeLabel } = useFloatingIP()
 
 // --- Delete Confirmation Modal Logic ---
 const deleteModalVisible = ref(false)
@@ -79,18 +81,6 @@ const copyToClipboard = (text: string, field: string) => {
     })
 }
 
-const getStatusClass = (status: string) => {
-    const statusMap: Record<string, string> = {
-        'in-use': 'status-success',
-        'available': 'status-success',
-        'active': 'status-success',
-        'creating': 'status-pending',
-        'deleting': 'status-pending',
-        'error': 'status-error'
-    }
-    return statusMap[status] || 'status-warning'
-}
-
 onMounted(fetchFip)
 </script>
 
@@ -121,7 +111,9 @@ onMounted(fetchFip)
                     <div>
                         <h2 class="resource-title">
                             {{ fip.name || fip.public_ip || fip.ip_address }}
-                            <span :class="['badge', getStatusClass(fip.status || '')]">{{ fip.status || '-' }}</span>
+                            <div class="badge-group">
+                                <span :class="['badge', getTypeBadgeClass(fip.type || '')]">{{ getTypeLabel(fip.type || '') }}</span>
+                            </div>
                         </h2>
                         <div class="resource-id-row">
                             <span class="resource-id-text">{{ fip.id }}</span>
@@ -134,13 +126,15 @@ onMounted(fetchFip)
                 </div>
                 <div class="title-actions">
                     <div class="action-dropdown">
-                        <button class="btn btn-primary" @click="toggleActionMenu">
+                        <button class="btn btn-primary" @click="toggleActionMenu" :disabled="fip.type === 'native'">
                             {{ $t('actions.actions') }} <ChevronDown :size="14" />
                         </button>
                         <Transition name="dropdown">
                             <div v-if="showActionMenu" class="dropdown-menu">
-                                <button class="dropdown-item dropdown-item-danger" @click="handleDeleteClick">
-                                    <Trash2 :size="14" /> {{ $t('actions.delete') }}
+                                <button class="dropdown-item dropdown-item-danger" 
+                                    :disabled="fip.type !== 'floating' && fip.type !== 'loadbalancer'"
+                                    @click="handleDeleteClick">
+                                    <Trash2 :size="14" /> {{ $t('actions.release') }}
                                 </button>
                             </div>
                         </Transition>
@@ -161,12 +155,20 @@ onMounted(fetchFip)
                                 <span class="value">{{ fip.name || '-' }}</span>
                             </div>
                             <div class="kv-item">
+                                <span class="label">{{ $t('dashboard.table.type') }}</span>
+                                <span class="value">{{ getTypeLabel(fip.type || '') }}</span>
+                            </div>
+                            <div class="kv-item">
                                 <span class="label">{{ $t('dashboard.floatingIPDetail.publicIp') }}</span>
                                 <span class="value mono">{{ fip.public_ip || '-' }}</span>
                             </div>
                             <div class="kv-item">
                                 <span class="label">{{ $t('dashboard.floatingIPDetail.internalIp') }}</span>
                                 <span class="value mono">{{ fip.ip_address }}</span>
+                            </div>
+                            <div class="kv-item">
+                                <span class="label">{{ $t('dashboard.table.owner') }}</span>
+                                <span class="value">{{ fip.owner || '-' }}</span>
                             </div>
                             <div class="kv-item">
                                 <span class="label">{{ $t('dashboard.table.createdAt') }}</span>
@@ -178,9 +180,60 @@ onMounted(fetchFip)
                             </div>
                         </div>
                     </div>
+
+                    <!-- Bandwidth Card -->
+                    <div class="card info-card">
+                        <h3>{{ $t('dashboard.floatingIPDetail.bandwidth') }}</h3>
+                        <div class="key-value-list">
+                            <div class="kv-item">
+                                <span class="label">{{ $t('dashboard.floatingIPDetail.inbound') }}</span>
+                                <span class="value">{{ fip.inbound || 0 }} Mbps</span>
+                            </div>
+                            <div class="kv-item">
+                                <span class="label">{{ $t('dashboard.floatingIPDetail.outbound') }}</span>
+                                <span class="value">{{ fip.outbound || 0 }} Mbps</span>
+                            </div>
+                        </div>
+                    </div>
                 </div>
 
                 <div class="col-stack">
+                    <!-- Network Info Card -->
+                    <div class="card info-card" v-if="fip.type !== 'native'">
+                        <h3>{{ $t('dashboard.table.networkDetails') }}</h3>
+                        <div class="key-value-list">
+                            <div class="kv-item">
+                                <span class="label">{{ $t('dashboard.table.vpc') }}</span>
+                                <span class="value" v-if="fip.vpc">
+                                    <router-link :to="{name: 'vpc-detail', params: {id: fip.vpc.id}}" class="text-link">
+                                        {{ fip.vpc.name }}
+                                    </router-link>
+                                </span>
+                                <span class="value text-secondary" v-else>-</span>
+                            </div>
+                            <div class="kv-item">
+                                <span class="label">{{ $t('dashboard.table.subnet') }}</span>
+                                <span class="value" v-if="fip.subnet">
+                                    <router-link :to="{name: 'subnet-detail', params: {id: fip.subnet.id}}" class="text-link">
+                                        {{ fip.subnet.name }}
+                                    </router-link>
+                                </span>
+                                <span class="value text-secondary" v-else>-</span>
+                            </div>
+                            <div class="kv-item">
+                                <span class="label">{{ $t('dashboard.floatingIPDetail.ipGroup') }}</span>
+                                <span class="value" v-if="fip.group">
+                                    {{ fip.group.name }}
+                                </span>
+                                <span class="value text-secondary" v-else>-</span>
+                            </div>
+                            <div class="kv-item">
+                                <span class="label">{{ $t('dashboard.floatingIPDetail.vlan') }}</span>
+                                <span class="value mono">{{ fip.vlan || '-' }}</span>
+                            </div>
+                        </div>
+                    </div>
+
                     <!-- Association Card -->
                     <div class="card info-card">
                         <h3>{{ $t('dashboard.floatingIPDetail.association') }}</h3>
@@ -272,6 +325,12 @@ onMounted(fetchFip)
   display: flex;
   align-items: center;
   gap: var(--spacing-3);
+  flex-wrap: wrap;
+}
+
+.badge-group {
+    display: flex;
+    gap: var(--spacing-2);
 }
 
 .resource-id-row {

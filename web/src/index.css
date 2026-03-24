@@ -207,6 +207,12 @@ p {
   box-shadow: var(--shadow-lg);
 }
 
+.btn:disabled,
+button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 /* ============================  
    CARDS (RakSmart Style)
    ============================ */

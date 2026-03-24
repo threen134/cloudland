@@ -4,9 +4,11 @@ import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import { floatingIpsApi, subnetsApi, type FloatingIP, type Subnet } from '../../api/networks'
 import { Globe2, Plus, Link, Unlink, Trash2, Search, X, RefreshCw } from 'lucide-vue-next'
+import { useFloatingIP } from '../../composables/useFloatingIP'
 import DeleteModal from '../../components/modals/DeleteModal.vue'
 
 const { t } = useI18n()
+const { getTypeBadgeClass, getTypeLabel } = useFloatingIP()
 const router = useRouter()
 const floatingIps = ref<FloatingIP[]>([])
 const loading = ref(false)
@@ -57,7 +59,7 @@ const closeCreateModal = () => {
 const handleCreateIP = async () => {
     createError.value = ''
     if (!newFipForm.value.selectedSubnetId) {
-        createError.value = 'Please select a subnet.'
+        createError.value = t('dashboard.forms.placeholder.selectSubnet')
         return
     }
 
@@ -90,11 +92,6 @@ const filteredFloatingIPs = computed(() => {
         (fip.id?.toLowerCase() || '').includes(query)
     )
 })
-
-// Status removed as requested
-// const getStatusClass = (status: string) => {
-//     return status === 'in-use' ? 'status-running' : 'status-active'
-// }
 
 const navigateToDetail = (fip: FloatingIP) => {
     router.push({ name: 'floating-ip-detail', params: { id: fip.id } })
@@ -199,17 +196,19 @@ onMounted(fetchFloatingIPs)
                     <Globe2 :size="16" />
                   </div>
                   <div>
-                    <div class="resource-name">{{ fip.name || 'Unnamed' }}</div>
+                    <div class="resource-name">{{ fip.name || $t('messages.unnamed') }}</div>
                     <div class="resource-id">{{ fip.id }}</div>
                   </div>
                 </div>
               </router-link>
             </td>
             <td>
-              <div class="ip-address">{{ fip.public_ip || fip.ip_address }}</div>
+              <div class="ip-address monospace">{{ fip.public_ip || fip.ip_address }}</div>
             </td>
             <td>
-              <span class="type-badge">{{ fip.type || '-' }}</span>
+              <span :class="['badge', getTypeBadgeClass(fip.type || '')]">
+                {{ getTypeLabel(fip.type || '') }}
+              </span>
             </td>
             <td>
               <span 
@@ -217,21 +216,21 @@ onMounted(fetchFloatingIPs)
                 class="resource-link"
                 @click="navigateToInstance(fip.target_interface.from_instance.id)"
               >
-                {{ fip.target_interface.from_instance.hostname || 'Unnamed Instance' }}
+                {{ fip.target_interface.from_instance.hostname || $t('messages.unnamed') }}
               </span>
-              <span v-else class="text-light">Not attached</span>
+              <span v-else class="text-light">{{ $t('messages.notAttached') }}</span>
             </td>
             <td>
               <div class="actions">
-                <button v-if="!fip.target_interface" class="btn btn-ghost btn-sm" title="Attach"
+                <button v-if="!fip.target_interface" class="btn btn-ghost btn-sm" :title="$t('actions.attach')"
                   :disabled="fip.type !== 'floating' && fip.type !== 'site'">
-                  <Link :size="14" /> Attach
+                  <Link :size="14" /> {{ $t('actions.attach') }}
                 </button>
-                <button v-else class="btn btn-ghost btn-sm" title="Detach"
+                <button v-else class="btn btn-ghost btn-sm" :title="$t('actions.detach')"
                   :disabled="fip.type !== 'floating' && fip.type !== 'site'">
-                  <Unlink :size="14" /> Detach
+                  <Unlink :size="14" /> {{ $t('actions.detach') }}
                 </button>
-                <button class="btn btn-ghost btn-sm text-error" title="Release"
+                <button class="btn btn-ghost btn-sm text-error" :title="$t('actions.release')"
                   :disabled="fip.type !== 'floating' && fip.type !== 'loadbalancer'"
                   @click="(fip.type === 'floating' || fip.type === 'loadbalancer') && handleDeleteClick(fip)">
                   <Trash2 :size="14" />
@@ -255,7 +254,7 @@ onMounted(fetchFloatingIPs)
         
         <div class="modal-body">
           <p class="text-secondary mb-4">
-            Allocate a new public IP address from a site subnet pool.
+            {{ $t('dashboard.floatingIPDetail.createDesc') }}
           </p>
 
           <div class="form-group">
@@ -264,12 +263,12 @@ onMounted(fetchFloatingIPs)
               v-model="newFipForm.name" 
               type="text" 
               class="form-input" 
-              placeholder="Optional: Enter a name for this FIP" 
+              :placeholder="$t('dashboard.floatingIPDetail.namePlaceholder')" 
             />
           </div>
 
           <div class="form-group">
-            <label class="form-label">Subnet Pool</label>
+            <label class="form-label">{{ $t('dashboard.floatingIPDetail.subnetPool') }}</label>
             <div class="select-wrapper">
                 <select v-model="newFipForm.selectedSubnetId" class="form-input">
                     <option v-for="subnet in siteSubnets" :key="subnet.id" :value="subnet.id">
@@ -381,6 +380,8 @@ onMounted(fetchFloatingIPs)
 .text-error {
   color: var(--error-color);
 }
+
+.monospace { font-family: var(--font-family-mono); }
 
 .btn-danger:hover { background: var(--error-dark); }
 .btn-danger:disabled { opacity: 0.5; cursor: not-allowed; }
