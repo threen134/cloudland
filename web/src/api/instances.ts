@@ -123,11 +123,39 @@ export const instancesApi = {
         return client.patch(`/instances/${id}`, { hostname, power_action: 'restart' })
     },
 
-    resizeInstance(id: string, flavorId: string) {
-        return client.post(`/instances/${id}/resize`, { flavor_id: flavorId })
+    hardStopInstance(id: string, hostname: string = '') {
+        return client.patch(`/instances/${id}`, { hostname, power_action: 'hard_stop' })
+    },
+
+    hardRebootInstance(id: string, hostname: string = '') {
+        return client.patch(`/instances/${id}`, { hostname, power_action: 'hard_restart' })
+    },
+
+    pauseInstance(id: string, hostname: string = '') {
+        return client.patch(`/instances/${id}`, { hostname, power_action: 'pause' })
+    },
+
+    resumeInstance(id: string, hostname: string = '') {
+        return client.patch(`/instances/${id}`, { hostname, power_action: 'resume' })
+    },
+
+    resizeInstance(id: string, cpu: number, memory: number) {
+        return client.post(`/instances/${id}/resize`, { cpu, memory })
     },
 
     getConsole(id: string) {
         return client.post(`/instances/${id}/console`)
+    },
+
+    setUserPassword(id: string, user_name: string, password: string) {
+        return client.post(`/instances/${id}/set_user_password`, { user_name, password })
+    },
+
+    reinstallInstance(id: string, payload: { image?: { id: string }, password?: string, keys?: { id: string }[], flavor?: string, login_port?: number }) {
+        return client.post(`/instances/${id}/reinstall`, payload)
+    },
+
+    renameInstance(id: string, hostname: string) {
+        return client.patch(`/instances/${id}`, { hostname })
     }
 }

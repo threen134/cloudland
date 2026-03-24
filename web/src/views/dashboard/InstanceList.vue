@@ -35,6 +35,16 @@ const instanceList = ref<Instance[]>([])
 const loading = ref(false)
 const actionLoading = ref<Record<string, string | null>>({})
 const searchQuery = ref('')
+
+// --- Toast Notification ---
+const toast = ref<{ message: string, type: 'success' | 'error' } | null>(null)
+let toastTimer: ReturnType<typeof setTimeout> | null = null
+
+const showToast = (message: string, type: 'success' | 'error' = 'success') => {
+    if (toastTimer) clearTimeout(toastTimer)
+    toast.value = { message, type }
+    toastTimer = setTimeout(() => { toast.value = null }, 3000)
+}
 const router = useRouter()
 const { t } = useI18n()
 
@@ -121,15 +131,21 @@ const handleAction = async (instance: Instance, action: 'start' | 'stop' | 'rest
             const currentStatus = currentInstance?.status?.toLowerCase() || ''
             if (!currentInstance || targetStableStates.includes(currentStatus) || attempts >= 15) {
                 actionLoading.value[instance.id] = null
+                if (currentStatus === 'error') {
+                    showToast(t('dashboard.instanceDetail.actionFailed', { action }), 'error')
+                } else {
+                    showToast(t('dashboard.instanceDetail.actionSuccess', { action }))
+                }
             } else {
                 setTimeout(checkStatus, 3000)
             }
         }
         
         setTimeout(checkStatus, 2000)
-    } catch (error) {
+    } catch (error: any) {
         console.error(`Failed to ${action} instance:`, error)
         actionLoading.value[instance.id] = null
+        showToast(error.response?.data?.error_message || error.message || t('messages.error'), 'error')
     }
 }
 
@@ -184,6 +200,7 @@ const confirmDelete = async () => {
         await instancesApi.deleteInstance(instanceToDelete.value.id)
         await fetchInstances()
         closeDeleteModal()
+        showToast(t('messages.deleteSuccess'))
     } catch (error: any) {
         console.error('Failed to delete instance:', error)
         deleteError.value = error.response?.data?.error_message || error.message || t('messages.error')
@@ -560,6 +577,7 @@ const handleCreateInstance = async () => {
         await instancesApi.createInstance(payload)
         await fetchInstances()
         closeCreateModal()
+        showToast(t('messages.createSuccess'))
     } catch (err: any) {
         console.error('Failed to create instance:', err)
         createError.value = err.response?.data?.error_message || err.message || t('messages.error')
@@ -574,6 +592,15 @@ onMounted(() => fetchInstances())
 
 <template>
   <div>
+    <!-- Toast Notification -->
+    <Transition name="toast">
+        <div v-if="toast" :class="['toast', 'toast-' + toast.type]" @click="toast = null">
+            <Check v-if="toast.type === 'success'" :size="16" />
+            <X v-else :size="16" />
+            {{ toast.message }}
+        </div>
+    </Transition>
+
     <div class="page-header">
       <div class="search-wrapper">
         <div class="search-box">
@@ -1602,6 +1629,54 @@ input:checked + .slider:before {
 .header-actions { display: flex; gap: 8px; align-items: center; }
 .spinning { animation: spin 1s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
+
+/* Toast Notification */
+.toast {
+    position: fixed;
+    top: 24px;
+    right: 24px;
+    z-index: 1000;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 12px 20px;
+    border-radius: var(--radius-md);
+    font-size: var(--font-size-sm);
+    font-weight: 500;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+    cursor: pointer;
+    max-width: 480px;
+}
+
+.toast-success {
+    background: #f0fdf4;
+    color: #166534;
+    border: 1px solid #bbf7d0;
+}
+
+.toast-error {
+    background: #fef2f2;
+    color: #991b1b;
+    border: 1px solid #fecaca;
+}
+
+.toast-enter-active {
+    transition: opacity 0.25s, transform 0.25s;
+}
+
+.toast-leave-active {
+    transition: opacity 0.2s, transform 0.2s;
+}
+
+.toast-enter-from {
+    opacity: 0;
+    transform: translateX(20px);
+}
+
+.toast-leave-to {
+    opacity: 0;
+    transform: translateX(20px);
+}
 </style>
 
 
