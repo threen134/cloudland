@@ -30,7 +30,7 @@ EXPOSE 9443
 
 ENTRYPOINT ["virtconsoleproxyd", \
     "--resolver-mode", "external", \
-    "--resolver-uri", "http://clbase:5005/consoleresolver", \
+    "--resolver-uri", "http://clapi:5005/consoleresolver", \
     "--listen-tls-ca", "/certs/console/cacert.pem", \
     "--listen-tls-cert", "/certs/console/servercert.pem", \
     "--listen-tls-key", "/certs/console/serverkey.pem", \

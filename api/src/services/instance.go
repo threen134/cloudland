@@ -1477,39 +1477,47 @@ func (a *InstanceAdmin) List(ctx context.Context, offset, limit int64, order, qu
 		}
 	}()
 	memberShip := GetMemberShip(ctx)
-	permit := memberShip.CheckOrgPermission(model.OrgReader)
-	if !permit {
+	if !memberShip.CheckOrgPermission(model.OrgReader) {
 		logger.Error("Not authorized for this operation")
 		err = NewCLError(ErrPermissionDenied, "Not authorized for this operation", nil)
 		return
 	}
-	db := DB()
 	if limit == 0 {
 		limit = 16
 	}
-
 	if order == "" {
 		order = "created_at"
 	}
 
-	if query != "" {
-		query = fmt.Sprintf("hostname like '%%%s%%'", query)
-	}
+	// Build base query with parameterized WHERE to prevent SQL injection
 	where, args := memberShip.GetOrgFilter()
+	baseQuery := DB().Where(where, args...)
+	if query != "" {
+		baseQuery = baseQuery.Where("hostname LIKE ?", "%"+query+"%")
+	}
+
+	// Count total
 	instances = []*model.Instance{}
-	if err = db.Model(&model.Instance{}).Where(where, args...).Where(query).Count(&total).Error; err != nil {
+	if err = baseQuery.Model(&model.Instance{}).Count(&total).Error; err != nil {
 		logger.Errorf("Failed to query total instances, %v", err)
 		return 0, nil, NewCLError(ErrSQLSyntaxError, "Failed to query total instances", err)
 	}
-	db = dbs.Sortby(db.Offset(offset).Limit(limit), order)
-	db = db.Preload("Volumes").Preload("Image").Preload("Zone").Preload("Flavor").Preload("Keys").Preload("Interfaces").Preload("Interfaces.Address").Preload("Interfaces.Address.Subnet")
-	if err = db.Where(where, args...).Where(query).Find(&instances).Error; err != nil {
+
+	// Fetch instances with top-level preloads (skip Interfaces here, loaded in detail below)
+	listQuery := dbs.Sortby(DB().Where(where, args...).Offset(offset).Limit(limit), order)
+	if query != "" {
+		listQuery = listQuery.Where("hostname LIKE ?", "%"+query+"%")
+	}
+	listQuery = listQuery.Preload("Volumes").Preload("Image").Preload("Zone").Preload("Flavor").Preload("Keys")
+	if err = listQuery.Find(&instances).Error; err != nil {
 		logger.Errorf("Failed to query instances, %v", err)
 		return 0, nil, NewCLError(ErrSQLSyntaxError, "Failed to query instances", err)
 	}
-	db = db.Offset(0).Limit(-1)
+
+	// Load sub-resources per instance using clean DB() to avoid preload pollution
+	isAdmin := memberShip.IsSystemAdmin()
 	for _, instance := range instances {
-		if err = db.Preload("SiteSubnets").Preload("SiteSubnets.Group").Preload("SecurityGroups").Preload("Address").Preload("Address.Subnet").Preload("SecondAddresses", func(db *gorm.DB) *gorm.DB {
+		if err = DB().Preload("SiteSubnets").Preload("SiteSubnets.Group").Preload("SecurityGroups").Preload("Address").Preload("Address.Subnet").Preload("SecondAddresses", func(db *gorm.DB) *gorm.DB {
 			return db.Order("addresses.updated_at")
 		}).Preload("SecondAddresses.Subnet").Where("instance = ?", instance.ID).Find(&instance.Interfaces).Error; err != nil {
 			logger.Errorf("Failed to query interfaces %v", err)
@@ -1517,7 +1525,7 @@ func (a *InstanceAdmin) List(ctx context.Context, offset, limit int64, order, qu
 			return
 		}
 
-		if err = db.Preload("Group").Preload("Subnet").Order("updated_at").Where("instance_id = ?", instance.ID).Find(&instance.FloatingIps).Error; err != nil {
+		if err = DB().Preload("Group").Preload("Subnet").Order("updated_at").Where("instance_id = ?", instance.ID).Find(&instance.FloatingIps).Error; err != nil {
 			logger.Errorf("Failed to query floating ip(s), %v", err)
 			err = NewCLError(ErrSQLSyntaxError, "Failed to query floating ip(s) for instance", err)
 			return
@@ -1525,19 +1533,16 @@ func (a *InstanceAdmin) List(ctx context.Context, offset, limit int64, order, qu
 
 		if instance.RouterID > 0 {
 			instance.Router = &model.Router{Model: model.Model{ID: instance.RouterID}}
-			if err = db.Take(instance.Router).Error; err != nil {
-				logger.Errorf("Failed to query router, %v", err)
-				err = NewCLError(ErrRouterNotFound, "Failed to query router for instance", err)
-				return
+			if queryErr := DB().Take(instance.Router).Error; queryErr != nil {
+				logger.Infof("Failed to query router for instance %d, skipping: %v", instance.ID, queryErr)
+				instance.Router = nil
 			}
 		}
-		permit := memberShip.IsSystemAdmin()
-		if permit {
+		if isAdmin {
 			instance.OwnerInfo = &model.Organization{Model: model.Model{ID: instance.Owner}}
-			if err = db.Take(instance.OwnerInfo).Error; err != nil {
-				logger.Error("Failed to query owner info", err)
-				err = NewCLError(ErrOwnerNotFound, "Failed to query owner info for instance", err)
-				return
+			if queryErr := DB().Take(instance.OwnerInfo).Error; queryErr != nil {
+				logger.Infof("Failed to query owner info for instance %d, skipping: %v", instance.ID, queryErr)
+				instance.OwnerInfo = nil
 			}
 		}
 	}

@@ -514,7 +514,7 @@ const handleCreateInstance = async () => {
                 } else if (iface.subnet_id) {
                     payload.subnet = { id: iface.subnet_id }
                     if (iface.ip_address) {
-                        payload.ip_address = iface.ip_address
+                        payload.ip_address = iface.ip_address.split('/')[0]
                     }
                 }
             } else {
@@ -889,7 +889,7 @@ onMounted(() => fetchInstances())
                       <label class="form-label">{{ $t('dashboard.forms.ipAddress') }}</label>
                       <select v-model="newInstanceForm.primary_interface.ip_address" class="form-select" :disabled="!newInstanceForm.primary_interface.subnet_id || addressesLoading[newInstanceForm.primary_interface.subnet_id]">
                           <option value="">{{ $t('dashboard.forms.placeholder.autoAllocate') }}</option>
-                          <option v-for="addr in (subnetAddresses[newInstanceForm.primary_interface.subnet_id] || [])" :key="addr.address" :value="addr.address">{{ addr.address }}</option>
+                          <option v-for="addr in (subnetAddresses[newInstanceForm.primary_interface.subnet_id] || [])" :key="addr.address" :value="addr.address">{{ addr.address.split('/')[0] }}</option>
                       </select>
                   </div>
               </div>
@@ -960,7 +960,7 @@ onMounted(() => fetchInstances())
                     </select>
                     <select v-model="iface.ip_address" class="form-select" :disabled="!iface.subnet_id || addressesLoading[iface.subnet_id]">
                         <option value="">{{ $t('dashboard.forms.placeholder.autoAllocate') }}</option>
-                        <option v-for="addr in (subnetAddresses[iface.subnet_id] || [])" :key="addr.address" :value="addr.address">{{ addr.address }}</option>
+                        <option v-for="addr in (subnetAddresses[iface.subnet_id] || [])" :key="addr.address" :value="addr.address">{{ addr.address.split('/')[0] }}</option>
                     </select>
                 </div>
 
