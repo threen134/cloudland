@@ -294,17 +294,17 @@ onMounted(async () => {
           </tr>
           <tr v-else v-for="image in filteredImages" :key="image.id">
             <td>
-              <div class="image-info clickable" @click="navigateToDetail(image)">
-                <div class="os-icon" :class="image.os_code">
-                  <Server v-if="image.os_code === 'linux'" :size="16" />
-                  <Monitor v-else-if="image.os_code === 'windows'" :size="16" />
-                  <Disc v-else :size="16" />
+              <router-link :to="{ name: 'image-detail', params: { id: image.id } }" class="resource-link">
+                <div class="resource-info">
+                  <div class="resource-icon" :class="image.os_code">
+                    <Disc :size="16" />
+                  </div>
+                  <div>
+                    <div class="resource-name">{{ image.name }}</div>
+                    <div class="resource-id">{{ image.id }}</div>
+                  </div>
                 </div>
-                <div>
-                  <div class="resource-name resource-link">{{ image.name }}</div>
-                  <div class="resource-id">{{ image.id }}</div>
-                </div>
-              </div>
+              </router-link>
             </td>
             <td>
               <span :class="['badge', image.public ? 'status-running' : 'status-stopped']">
@@ -553,51 +553,9 @@ onMounted(async () => {
   overflow: hidden;
 }
 
-.image-info {
-  display: flex;
-  align-items: center;
-  gap: var(--spacing-3);
-}
+/* .resource-info, .resource-icon etc. are global from index.css */
 
-.os-icon {
-  width: 32px;
-  height: 32px;
-  border-radius: var(--radius-sm);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-}
-
-.os-icon.linux { background-color: var(--success-light); color: var(--success-dark); }
-.os-icon.windows { background-color: var(--primary-light); color: var(--primary-color); }
-.os-icon.other { background-color: var(--bg-tertiary); color: var(--text-tertiary); }
-
-.resource-name {
-  font-weight: var(--font-weight-medium);
-  color: var(--primary-color);
-  font-size: var(--font-size-sm);
-}
-
-.resource-link {
-  color: var(--primary-600);
-  font-weight: 500;
-  cursor: pointer;
-}
-
-.resource-link:hover {
-  text-decoration: underline;
-}
-
-.clickable {
-  cursor: pointer;
-}
-
-.resource-id {
-  font-size: var(--font-size-xs);
-  color: var(--text-light);
-  font-family: var(--font-family-mono);
-}
+/* Global styles from index.css are used for .resource-name, .resource-id, .resource-link */
 
 .os-text {
   font-weight: 500;

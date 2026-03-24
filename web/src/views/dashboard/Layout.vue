@@ -265,7 +265,7 @@ onUnmounted(() => {
               <Cpu :size="18" />
               <span>{{ $t('dashboard.flavors') }}</span>
             </RouterLink>
-            <RouterLink to="/dashboard/ssh-keys" class="nav-item" active-class="active">
+            <RouterLink to="/dashboard/keys" class="nav-item" active-class="active">
               <Key :size="18" />
               <span>{{ $t('dashboard.sshKeys') }}</span>
             </RouterLink>

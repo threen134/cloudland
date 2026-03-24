@@ -34,7 +34,7 @@ const handleDelete = async () => {
     deleting.value = true
     try {
         await keysApi.deleteKey(keyId)
-        router.push({ name: 'ssh-keys' })
+        router.push({ name: 'keys' })
     } catch (err) {
         console.error('Failed to delete SSH key:', err)
         alert('Failed to delete SSH key.')

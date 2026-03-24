@@ -256,8 +256,17 @@ onMounted(fetchSubnets)
           </tr>
           <tr v-else v-for="subnet in filteredSubnets" :key="subnet.id">
             <td>
-              <div class="resource-name resource-link" @click="navigateToDetail(subnet)">{{ subnet.name }}</div>
-              <div class="resource-id">{{ subnet.id }}</div>
+              <router-link :to="{ name: 'subnet-detail', params: { id: subnet.id } }" class="resource-link">
+                <div class="resource-info">
+                  <div class="resource-icon">
+                    <Network :size="16" />
+                  </div>
+                  <div>
+                    <div class="resource-name">{{ subnet.name }}</div>
+                    <div class="resource-id">{{ subnet.id }}</div>
+                  </div>
+                </div>
+              </router-link>
             </td>
             <td>
               <div class="cidr-group">
@@ -581,23 +590,19 @@ onMounted(fetchSubnets)
   overflow: hidden;
 }
 
-.resource-name {
-  font-weight: var(--font-weight-medium);
-  color: var(--primary-color);
-}
+/* .resource-info etc. are global from index.css */
 
 .resource-link {
+  text-decoration: none;
+  display: block;
+  padding: 4px 0;
+  border-radius: var(--radius-sm);
+  transition: all 0.15s;
+}
+
+.resource-link:hover .resource-name {
   color: var(--primary-600);
-  cursor: pointer;
-}
-
-.resource-link:hover {
   text-decoration: underline;
-}
-
-.resource-id {
-  font-size: var(--font-size-xs);
-  color: var(--text-light);
 }
 
 .cidr, .ip {

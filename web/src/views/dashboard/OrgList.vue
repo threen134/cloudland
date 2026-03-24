@@ -205,15 +205,17 @@ onMounted(fetchOrgs)
           </tr>
           <tr v-else v-for="org in filteredOrgs" :key="org.uuid">
             <td>
-              <div class="org-cell">
-                <div class="icon-box">
-                  <Building2 :size="16" />
+              <router-link :to="`/dashboard/orgs/${org.uuid}`" class="resource-link">
+                <div class="resource-info">
+                  <div class="resource-icon">
+                    <Building2 :size="16" />
+                  </div>
+                  <div>
+                    <div class="resource-name">{{ org.name }}</div>
+                    <div class="resource-id">{{ org.uuid }}</div>
+                  </div>
                 </div>
-                <div>
-                   <div class="org-name clickable" @click="router.push(`/dashboard/orgs/${org.uuid}`)">{{ org.name }}</div>
-                   <div class="org-id">{{ org.uuid }}</div>
-                </div>
-              </div>
+              </router-link>
             </td>
             <td>{{ org.description || '-' }}</td>
             <td>
@@ -411,40 +413,19 @@ onMounted(fetchOrgs)
   overflow: visible;
 }
 
-.org-cell {
-  display: flex;
-  align-items: center;
-  gap: var(--spacing-03);
-}
+/* .resource-info etc. are global from index.css */
 
-.icon-box {
-  width: 32px;
-  height: 32px;
+.resource-link {
+  text-decoration: none;
+  display: block;
+  padding: 4px 0;
   border-radius: var(--radius-sm);
-  background-color: rgba(var(--primary-rgb), 0.1);
-  color: var(--primary-color);
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  transition: all 0.15s;
 }
 
-.org-name {
-  font-weight: var(--font-weight-medium);
-  color: var(--text-main);
-}
-
-.org-name.clickable {
+.resource-link:hover .resource-name {
   color: var(--primary-600);
-  cursor: pointer;
-}
-
-.org-name.clickable:hover {
   text-decoration: underline;
-}
-
-.org-id {
-  font-size: var(--font-size-xs);
-  color: var(--text-light);
 }
 
 .owner-cell {

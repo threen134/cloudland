@@ -188,8 +188,17 @@ onMounted(fetchFlavors)
           </tr>
           <tr v-else v-for="flavor in filteredFlavors" :key="flavor.id">
             <td>
-              <div class="flavor-name">{{ flavor.name }}</div>
-              <div class="flavor-id">{{ flavor.id }}</div>
+              <div class="resource-link-static">
+                <div class="resource-info">
+                  <div class="resource-icon">
+                    <Server :size="16" />
+                  </div>
+                  <div>
+                    <div class="resource-name">{{ flavor.name }}</div>
+                    <div class="resource-id">{{ flavor.id }}</div>
+                  </div>
+                </div>
+              </div>
             </td>
             <td>
               <div class="spec-cell">
@@ -390,14 +399,11 @@ onMounted(fetchFlavors)
   overflow: hidden;
 }
 
-.flavor-name {
-  font-weight: var(--font-weight-medium);
-  color: var(--primary-color);
-}
+/* .resource-info etc. are global from index.css */
 
-.flavor-id {
-  font-size: var(--font-size-xs);
-  color: var(--text-light);
+.resource-link-static {
+  display: block;
+  padding: 4px 0;
 }
 
 .spec-cell {

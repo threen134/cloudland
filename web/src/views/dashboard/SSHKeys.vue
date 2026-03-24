@@ -171,7 +171,7 @@ onMounted(fetchKeys)
       <table class="data-table">
         <thead>
           <tr>
-            <th>{{ $t('dashboard.table.userName') }}</th>
+            <th>{{ $t('dashboard.table.nameId') }}</th>
             <th>{{ $t('dashboard.table.type') }}</th>
             <th>{{ $t('dashboard.table.fingerprint') }}</th>
             <th>{{ $t('dashboard.table.actions') }}</th>
@@ -197,11 +197,17 @@ onMounted(fetchKeys)
           </tr>
           <tr v-else v-for="key in filteredKeys" :key="key.id">
             <td>
-              <div class="key-name">
-                <Key :size="16" class="key-icon" />
-                {{ key.name }}
+              <div class="resource-link-static">
+                <div class="resource-info">
+                  <div class="resource-icon">
+                    <Key :size="16" />
+                  </div>
+                  <div>
+                    <div class="resource-name">{{ key.name }}</div>
+                    <div class="resource-id">{{ key.id }}</div>
+                  </div>
+                </div>
               </div>
-              <div class="key-id">{{ key.id }}</div>
             </td>
             <td>
               <span class="key-type">
@@ -384,21 +390,11 @@ onMounted(fetchKeys)
   overflow: visible;
 }
 
-.key-name {
-  display: flex;
-  align-items: center;
-  gap: var(--spacing-02);
-  font-weight: var(--font-weight-medium);
-}
+/* .resource-info etc. are global from index.css */
 
-.key-icon {
-  color: var(--primary-color);
-}
-
-.key-id {
-  font-size: var(--font-size-xs);
-  color: var(--text-light);
-  margin-left: 24px;
+.resource-link-static {
+  display: block;
+  padding: 4px 0;
 }
 
 .key-type {

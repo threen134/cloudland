@@ -276,15 +276,17 @@ onMounted(fetchUsers)
           </tr>
           <tr v-else v-for="user in filteredUsers" :key="user.uuid">
             <td>
-              <div class="user-cell">
-                <div class="avatar">
-                  <UserIcon :size="16" />
+              <router-link :to="{ name: 'user-detail', params: { id: user.uuid } }" class="resource-link">
+                <div class="resource-info">
+                  <div class="resource-icon">
+                    <UserIcon :size="16" />
+                  </div>
+                  <div>
+                    <div class="resource-name">{{ user.username }}</div>
+                    <div class="resource-id">{{ user.uuid }}</div>
+                  </div>
                 </div>
-                <div>
-                   <div class="user-name resource-link" @click="navigateToDetail(user)">{{ user.username }}</div>
-                   <div class="user-id">{{ user.uuid }}</div>
-                </div>
-              </div>
+              </router-link>
             </td>
             <td>{{ user.email }}</td>
             <td>
@@ -492,31 +494,19 @@ onMounted(fetchUsers)
   overflow: hidden;
 }
 
-.user-cell {
-  display: flex;
-  align-items: center;
-  gap: var(--spacing-3);
+/* .resource-info etc. are global from index.css */
+
+.resource-link {
+  text-decoration: none;
+  display: block;
+  padding: 4px 0;
+  border-radius: var(--radius-sm);
+  transition: all 0.15s;
 }
 
-.avatar {
-  width: 32px;
-  height: 32px;
-  border-radius: 50%;
-  background-color: var(--primary-light);
-  color: var(--primary-color);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.user-name {
-  font-weight: var(--font-weight-medium);
-  color: var(--text-main);
-}
-
-.user-id {
-  font-size: var(--font-size-xs);
-  color: var(--text-light);
+.resource-link:hover .resource-name {
+  color: var(--primary-600);
+  text-decoration: underline;
 }
 
 .role-badge {

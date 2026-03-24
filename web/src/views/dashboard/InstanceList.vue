@@ -813,15 +813,17 @@ onMounted(() => fetchInstances())
           </tr>
           <tr v-else v-for="instance in filteredInstances" :key="instance.id" :class="{'active-row': activeActionMenuId === instance.id}">
             <td>
-              <div class="instance-info clickable" @click="navigateToDetail(instance)">
-                <div class="resource-icon">
-                   <Server :size="16" />
+              <router-link :to="{ name: 'instance-detail', params: { id: instance.id } }" class="resource-link">
+                <div class="resource-info">
+                  <div class="resource-icon">
+                    <Server :size="16" />
+                  </div>
+                  <div>
+                    <div class="resource-name">{{ instance.hostname }}</div>
+                    <div class="resource-id">{{ instance.id }}</div>
+                  </div>
                 </div>
-                <div>
-                   <div class="instance-name resource-link">{{ instance.hostname }}</div>
-                   <div class="instance-id">{{ instance.id }}</div>
-                </div>
-              </div>
+              </router-link>
             </td>
             <td>
               <div class="flavor-info">
@@ -1616,45 +1618,19 @@ onMounted(() => fetchInstances())
     z-index: 10;
 }
 
-.instance-info {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.resource-icon {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 32px;
-  height: 32px;
-  background-color: var(--primary-50);
-  color: var(--primary-600);
-  border-radius: 6px;
-}
-
-.instance-name {
-  font-weight: var(--font-weight-medium);
-  color: var(--primary-color);
-}
+/* .resource-info etc. are global from index.css */
 
 .resource-link {
+  text-decoration: none;
+  display: block;
+  padding: 4px 0;
+  border-radius: var(--radius-sm);
+  transition: all 0.15s;
+}
+
+.resource-link:hover .resource-name {
   color: var(--primary-600);
-  font-weight: 500;
-  cursor: pointer;
-}
-
-.resource-link:hover {
   text-decoration: underline;
-}
-
-.clickable {
-  cursor: pointer;
-}
-
-.instance-id {
-  font-size: var(--font-size-xs);
-  color: var(--text-light);
 }
 
 .flavor-info {

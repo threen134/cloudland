@@ -220,8 +220,15 @@ onMounted(() => {
           <tr v-else v-for="volume in filteredVolumes" :key="volume.id">
             <td>
               <router-link :to="{ name: 'volume-detail', params: { id: volume.id } }" class="resource-link">
-                <div class="resource-name">{{ volume.name }}</div>
-                <div class="resource-id">{{ volume.id }}</div>
+                <div class="resource-info">
+                  <div class="resource-icon">
+                    <HardDrive :size="16" />
+                  </div>
+                  <div>
+                    <div class="resource-name">{{ volume.name }}</div>
+                    <div class="resource-id">{{ volume.id }}</div>
+                  </div>
+                </div>
               </router-link>
             </td>
             <td>
@@ -415,15 +422,7 @@ onMounted(() => {
   overflow: visible;
 }
 
-.resource-name {
-  font-weight: var(--font-weight-medium);
-  color: var(--primary-color);
-}
-
-.resource-id {
-  font-size: var(--font-size-xs);
-  color: var(--text-light);
-}
+/* .resource-info etc. are global from index.css */
 
 .resource-link {
   text-decoration: none;

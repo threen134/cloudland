@@ -170,7 +170,7 @@ onMounted(fetchZones)
           <tr v-else v-for="zone in filteredZones" :key="zone.name">
             <td>
               <router-link :to="{ name: 'zone-detail', params: { name: zone.name } }" class="resource-link">
-                <div class="vpc-info">
+                <div class="resource-info">
                   <div class="resource-icon">
                     <MapPin :size="16" />
                   </div>
@@ -337,7 +337,7 @@ onMounted(fetchZones)
 
 .table-card { padding: 0; overflow: hidden; }
 
-.vpc-info { display: flex; align-items: center; gap: var(--spacing-03); }
+/* Standardized resource-info is global from index.css */
 
 .resource-icon {
   width: 32px; height: 32px;

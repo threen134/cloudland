@@ -838,3 +838,54 @@ p {
   from { transform: translateY(20px); opacity: 0; }
   to { transform: translateY(0); opacity: 1; }
 }
+
+/* ============================
+   RESOURCE LIST STYLES
+   ============================ */
+.resource-info {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-4);
+}
+
+.resource-icon {
+  width: 32px;
+  height: 32px;
+  background: var(--primary-light);
+  color: var(--primary-color);
+  border-radius: var(--radius-sm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.resource-name {
+  font-weight: var(--font-weight-semibold);
+  color: var(--text-main);
+  font-size: var(--font-size-sm);
+}
+
+.resource-id {
+  font-size: var(--font-size-xs);
+  color: var(--text-light);
+  font-family: var(--font-family-mono);
+}
+
+.resource-link {
+  text-decoration: none;
+  display: block;
+  padding: 4px 0;
+  border-radius: var(--radius-sm);
+  transition: all 0.15s;
+}
+
+.resource-link:hover .resource-name {
+  color: var(--primary-600);
+  text-decoration: underline;
+}
+
+.resource-link-static {
+  display: block;
+  padding: 4px 0;
+}

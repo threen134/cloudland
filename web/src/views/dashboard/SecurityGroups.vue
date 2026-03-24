@@ -193,15 +193,17 @@ onMounted(fetchSecurityGroups)
     <div v-else class="security-groups-list">
       <div v-for="group in filteredSecurityGroups" :key="group.id" class="card sg-card">
         <div class="sg-header" @click="toggleGroup(group.id)">
-          <div class="sg-info">
+          <div class="resource-info">
             <component :is="isExpanded(group.id) ? ChevronDown : ChevronRight" :size="16" class="expand-icon" />
-
+            <div class="resource-icon">
+              <Shield :size="16" />
+            </div>
             <div>
-              <h3 class="sg-name">
-                <span class="resource-link" @click.stop="navigateToDetail(group)">{{ group.name }}</span>
+              <h3 class="resource-name-wrapper">
+                <span class="resource-name resource-link" @click.stop="navigateToDetail(group)">{{ group.name }}</span>
                 <span v-if="group.is_default" class="badge badge-primary">{{ $t('dashboard.table.default') || 'Default' }}</span>
               </h3>
-              <span class="sg-id">{{ group.id }} • {{ group.vpc?.name || $t('messages.noVpc') }}</span>
+              <div class="resource-id">{{ group.id }} • {{ group.vpc?.name || $t('messages.noVpc') }}</div>
             </div>
           </div>
           <div class="sg-stats">
@@ -420,29 +422,7 @@ onMounted(fetchSecurityGroups)
   background: var(--hover-ui);
 }
 
-.sg-info {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.expand-icon {
-  color: var(--text-light);
-}
-
-.sg-name {
-  display: flex;
-  align-items: center;
-  gap: var(--spacing-3);
-  font-size: var(--font-size-base);
-  font-weight: var(--font-weight-medium);
-  margin-bottom: 0;
-}
-
-.sg-id {
-  font-size: var(--font-size-xs);
-  color: var(--text-light);
-}
+/* .resource-info etc. are global from index.css */
 
 .sg-stats {
   display: flex;

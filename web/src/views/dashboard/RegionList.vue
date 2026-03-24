@@ -185,12 +185,19 @@ onMounted(fetchRegions)
 <template>
     <div class="region-list-page">
         <!-- Page Header -->
-        <div class="page-header-actions">
-            <div class="search-box">
-                <Search :size="18" class="search-icon" />
-                <input type="text" v-model="searchQuery" :placeholder="t('actions.search') + '...'" />
+        <div class="page-header">
+            <div class="search-wrapper">
+                <div class="search-box">
+                    <Search :size="16" class="search-icon" />
+                    <input 
+                        type="text" 
+                        v-model="searchQuery" 
+                        :placeholder="t('actions.search') + '...'" 
+                        class="search-input"
+                    />
+                </div>
             </div>
-            <div class="action-buttons">
+            <div class="header-actions">
                 <button class="btn btn-secondary btn-sm btn-icon" @click="fetchRegions" :title="t('actions.refresh')">
                     <RefreshCw :size="14" :class="{ 'spinning': isLoading }" />
                 </button>
@@ -224,8 +231,7 @@ onMounted(fetchRegions)
                 <table class="data-table">
                     <thead>
                         <tr>
-                            <th>{{ t('dashboard.table.name') }}</th>
-                            <th>{{ t('dashboard.table.id') }}</th>
+                            <th>{{ t('dashboard.table.nameId') }}</th>
                             <th>{{ t('dashboard.table.status') }}</th>
                             <th>{{ t('dashboard.table.description') }}</th>
                             <th>{{ t('dashboard.table.actions') }}</th>
@@ -234,21 +240,17 @@ onMounted(fetchRegions)
                     <tbody>
                         <tr v-for="region in filteredRegions" :key="region.uuid">
                             <td>
-                                <div class="name-cell">
-                                    <div class="region-icon">
-                                        <Globe2 :size="18" />
+                                <div class="resource-info">
+                                    <div class="resource-icon">
+                                        <Globe2 :size="16" />
                                     </div>
-                                    <div class="name-info">
-                                        <span class="main-name">{{ region.display_name || region.name }}</span>
-                                        <span class="sub-name">{{ region.name }}</span>
+                                    <div>
+                                        <div class="resource-name">{{ region.display_name || region.name }}</div>
+                                        <div class="resource-id">{{ region.name }} / {{ region.uuid }}</div>
                                     </div>
                                 </div>
                             </td>
                             <td>
-                                <code class="id-badge">{{ region.uuid }}</code>
-                            </td>
-                            <td>
-                                <span class="status-pill"
                                     :class="region.maintenance_mode ? 'status-maintenance' : region.is_available ? 'status-available' : 'status-offline'">
                                     <Wrench v-if="region.maintenance_mode" :size="12" />
                                     <CheckCircle2 v-else-if="region.is_available" :size="12" />
@@ -455,47 +457,59 @@ onMounted(fetchRegions)
     animation: fadeIn 0.4s ease-out;
 }
 
-.page-header-actions {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 24px;
-    gap: 16px;
+/* .resource-info etc. are global from index.css */
+
+.page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0px;
+  padding-right: 20px;
+}
+
+.search-wrapper {
+  flex: 1;
+  max-width: 400px;
 }
 
 .search-box {
-    position: relative;
-    flex: 1;
-    max-width: 400px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: var(--bg-secondary);
+  padding: 0 12px;
+  height: 40px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-light);
+  transition: all 0.2s;
+}
+
+.search-box:focus-within {
+  border-color: var(--primary-300);
+  box-shadow: 0 0 0 2px var(--primary-100);
 }
 
 .search-icon {
-    position: absolute;
-    left: 12px;
-    top: 50%;
-    transform: translateY(-50%);
-    color: var(--text-tertiary);
+  color: var(--gray-400);
 }
 
-.search-box input {
-    width: 100%;
-    padding: 10px 12px 10px 40px;
-    background-color: var(--bg-primary);
-    border: 1px solid var(--border-light);
-    border-radius: var(--radius-md);
-    font-size: 0.875rem;
-    transition: all 0.2s;
+.search-input {
+  border: none;
+  background: transparent;
+  width: 100%;
+  height: 100%;
+  font-size: 0.875rem;
+  color: var(--text-primary);
 }
 
-.search-box input:focus {
-    border-color: var(--primary-500);
-    box-shadow: 0 0 0 3px var(--primary-50);
-    outline: none;
+.search-input:focus {
+  outline: none;
 }
 
-.action-buttons {
-    display: flex;
-    gap: 12px;
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-2);
 }
 
 .table-card {
@@ -560,7 +574,7 @@ onMounted(fetchRegions)
 
 .data-table th {
     padding: 16px 24px;
-    background-color: #f8fafc;
+    background-color: var(--bg-secondary);
     border-bottom: 1px solid var(--border-light);
     color: var(--text-secondary);
     font-size: 0.75rem;
@@ -575,50 +589,7 @@ onMounted(fetchRegions)
     vertical-align: middle;
 }
 
-.data-table tr:hover td { background-color: #fcfdfe; }
-
-.name-cell {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-}
-
-.region-icon {
-    width: 36px;
-    height: 36px;
-    background: linear-gradient(135deg, var(--primary-50) 0%, #e0e7ff 100%);
-    color: var(--primary-600);
-    border-radius: 10px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    flex-shrink: 0;
-}
-
-.name-info {
-    display: flex;
-    flex-direction: column;
-}
-
-.main-name {
-    font-weight: 600;
-    color: var(--text-primary);
-    font-size: 0.9375rem;
-}
-
-.sub-name {
-    font-size: 0.75rem;
-    color: var(--text-tertiary);
-}
-
-.id-badge {
-    background-color: var(--bg-tertiary);
-    padding: 2px 6px;
-    border-radius: 4px;
-    font-family: var(--font-mono);
-    font-size: 0.75rem;
-    color: var(--text-secondary);
-}
+.data-table tr:hover td { background-color: var(--bg-secondary); }
 
 .desc-cell {
     max-width: 200px;

@@ -229,7 +229,7 @@ onMounted(fetchAlarms)
           <tr v-else v-for="a in filteredAlarms" :key="a.uuid">
             <td>
               <router-link :to="{ name: 'alarm-detail', params: { id: a.uuid } }" class="resource-link">
-                <div class="vpc-info">
+                <div class="resource-info">
                   <div class="resource-icon">
                     <AlertTriangle :size="16" />
                   </div>
@@ -402,28 +402,6 @@ onMounted(fetchAlarms)
 
 .table-card { padding: 0; overflow: hidden; }
 
-.vpc-info { display: flex; align-items: center; gap: var(--spacing-03); }
-
-.resource-icon {
-  width: 32px; height: 32px;
-  background: var(--primary-light);
-  color: var(--primary-color);
-  border-radius: var(--radius-sm);
-  display: flex; align-items: center; justify-content: center;
-}
-
-.resource-name { font-weight: var(--font-weight-semibold); color: var(--text-main); font-size: var(--font-size-sm); }
-
-.resource-id {
-  font-size: var(--font-size-xs); color: var(--text-light);
-  font-family: var(--font-family-mono);
-  max-width: 120px; overflow: hidden; text-overflow: ellipsis;
-}
-
-.resource-link {
-  text-decoration: none; display: block; padding: 4px 0;
-  border-radius: var(--radius-sm); transition: all 0.15s;
-}
 
 .resource-link:hover .resource-name { color: var(--primary-600); text-decoration: underline; }
 

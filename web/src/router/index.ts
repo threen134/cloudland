@@ -138,8 +138,9 @@ const router = createRouter({
                     component: () => import('../views/dashboard/FlavorList.vue')
                 },
                 {
-                    path: 'ssh-keys', // Keep old path for compatibility if needed
-                    redirect: 'keys'
+                    path: 'ssh-keys',
+                    name: 'ssh-keys-redirect',
+                    redirect: { name: 'keys' }
                 },
                 // Network Resources
                 {

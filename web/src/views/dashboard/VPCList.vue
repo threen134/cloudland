@@ -317,7 +317,7 @@ onMounted(() => {
           <tr v-else v-for="vpc in filteredVPCs" :key="vpc.id">
             <td>
               <router-link :to="{ name: 'vpc-detail', params: { id: vpc.id } }" class="resource-link">
-                <div class="vpc-info">
+                <div class="resource-info">
                   <div class="resource-icon">
                     <Layers :size="16" />
                   </div>
@@ -660,34 +660,7 @@ onMounted(() => {
   overflow: hidden;
 }
 
-.vpc-info {
-  display: flex;
-  align-items: center;
-  gap: var(--spacing-03);
-}
-
-.resource-icon {
-  width: 32px;
-  height: 32px;
-  background: var(--primary-light);
-  color: var(--primary-color);
-  border-radius: var(--radius-sm);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.resource-name {
-  font-weight: var(--font-weight-semibold);
-  color: var(--text-main);
-  font-size: var(--font-size-sm);
-}
-
-.resource-id {
-  font-size: var(--font-size-xs);
-  color: var(--text-light);
-  font-family: var(--font-family-mono);
-}
+/* .resource-info etc. are global from index.css */
 
 .resource-link {
   text-decoration: none;

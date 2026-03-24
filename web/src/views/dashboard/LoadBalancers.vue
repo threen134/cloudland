@@ -199,8 +199,17 @@ onMounted(fetchLoadBalancers)
           </tr>
           <tr v-else v-for="lb in filteredLoadBalancers" :key="lb.id">
             <td>
-              <div class="lb-name resource-link" @click="navigateToDetail(lb)">{{ lb.name }}</div>
-              <div class="lb-id">{{ lb.id }}</div>
+              <router-link :to="{ name: 'load-balancer-detail', params: { id: lb.id } }" class="resource-link">
+                <div class="resource-info">
+                  <div class="resource-icon">
+                    <GitFork :size="16" />
+                  </div>
+                  <div>
+                    <div class="resource-name">{{ lb.name }}</div>
+                    <div class="resource-id">{{ lb.id }}</div>
+                  </div>
+                </div>
+              </router-link>
             </td>
             <td>
               <span :class="['badge', getStatusClass(lb.status || '')]">{{ lb.status }}</span>
@@ -378,19 +387,19 @@ onMounted(fetchLoadBalancers)
   overflow: hidden;
 }
 
-.lb-name {
-  font-weight: var(--font-weight-medium);
-  color: var(--primary-color);
+/* .resource-info etc. are global from index.css */
+
+.resource-link {
+  text-decoration: none;
+  display: block;
+  padding: 4px 0;
+  border-radius: var(--radius-sm);
+  transition: all 0.15s;
 }
 
-.lb-id {
-  font-size: var(--font-size-xs);
-  color: var(--text-light);
-}
-
-.ip-address {
-  font-family: var(--font-family-mono);
-  font-size: var(--font-size-sm);
+.resource-link:hover .resource-name {
+  color: var(--primary-600);
+  text-decoration: underline;
 }
 
 .actions {

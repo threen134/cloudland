@@ -192,10 +192,17 @@ onMounted(fetchFloatingIPs)
           </tr>
           <tr v-else v-for="fip in filteredFloatingIPs" :key="fip.id">
             <td>
-              <div class="fip-name resource-link" @click="navigateToDetail(fip)">
-                {{ fip.name || 'Unnamed' }}
-              </div>
-              <div class="resource-id">{{ fip.id }}</div>
+              <router-link :to="{ name: 'floating-ip-detail', params: { id: fip.id } }" class="resource-link">
+                <div class="resource-info">
+                  <div class="resource-icon">
+                    <Globe2 :size="16" />
+                  </div>
+                  <div>
+                    <div class="resource-name">{{ fip.name || 'Unnamed' }}</div>
+                    <div class="resource-id">{{ fip.id }}</div>
+                  </div>
+                </div>
+              </router-link>
             </td>
             <td>
               <div class="ip-address">{{ fip.public_ip || fip.ip_address }}</div>
@@ -343,29 +350,19 @@ onMounted(fetchFloatingIPs)
   overflow: visible;
 }
 
-.fip-name {
-  font-weight: var(--font-weight-medium);
-  font-size: var(--font-size-base);
-}
-
-.ip-address {
-  font-family: var(--font-family-mono);
-  font-size: var(--font-size-sm);
-  color: var(--text-secondary);
-}
+/* .resource-info etc. are global from index.css */
 
 .resource-link {
+  text-decoration: none;
+  display: block;
+  padding: 4px 0;
+  border-radius: var(--radius-sm);
+  transition: all 0.15s;
+}
+
+.resource-link:hover .resource-name {
   color: var(--primary-600);
-  cursor: pointer;
-}
-
-.resource-link:hover {
   text-decoration: underline;
-}
-
-.resource-id {
-  font-size: var(--font-size-xs);
-  color: var(--text-light);
 }
 
 .actions {
