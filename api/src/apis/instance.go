@@ -92,6 +92,7 @@ type InstanceResponse struct {
 	Flavor      string                `json:"flavor"`
 	Image       *ResourceReference    `json:"image"`
 	Keys        []*ResourceReference  `json:"keys"`
+	RootPasswd  string                `json:"root_passwd,omitempty"`
 	PasswdLogin bool                  `json:"passwd_login"`
 	Zone        string                `json:"zone"`
 	VPC         *ResourceReference    `json:"vpc,omitempty"`
@@ -635,13 +636,14 @@ func (v *InstanceAPI) getInstanceResponse(ctx context.Context, instance *model.I
 			CreatedAt: instance.CreatedAt.Format(TimeStringForMat),
 			UpdatedAt: instance.UpdatedAt.Format(TimeStringForMat),
 		},
-		Hostname:  instance.Hostname,
-		LoginPort: int(instance.LoginPort),
-		Status:    instance.Status.String(),
-		Reason:    instance.Reason,
-		Cpu:       instance.Cpu,
-		Memory:    instance.Memory,
-		Disk:      instance.Disk,
+		Hostname:   instance.Hostname,
+		LoginPort:  int(instance.LoginPort),
+		Status:     instance.Status.String(),
+		Reason:     instance.Reason,
+		RootPasswd: instance.RootPasswd,
+		Cpu:        instance.Cpu,
+		Memory:     instance.Memory,
+		Disk:       instance.Disk,
 	}
 	if instance.Image != nil {
 		instanceResp.Image = &ResourceReference{
@@ -765,6 +767,7 @@ func (v *InstanceAPI) List(c *gin.Context) {
 			ErrorResponse(c, http.StatusInternalServerError, "Internal error", err)
 			return
 		}
+		instanceList[i].RootPasswd = ""
 	}
 	instanceListResp.Instances = instanceList
 	logger.Debugf("List instances success, %+v", instanceListResp)

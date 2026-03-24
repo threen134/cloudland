@@ -4,7 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { instancesApi, type Instance } from '../../api/instances'
 import { vmAlarmRulesApi, VM_RULE_TYPES, type VMAlarmRuleGroup, type VMRuleType } from '../../api/vmAlarmRules'
-import { ArrowLeft, Play, Square, RotateCw, Trash2, Terminal, Server, Cpu, HardDrive, Network, Key, ExternalLink, Copy, Check, ShieldAlert, Link, Unlink } from 'lucide-vue-next'
+import { ArrowLeft, Play, Square, RotateCw, Trash2, Terminal, Server, Cpu, HardDrive, Network, Key, ExternalLink, Copy, Check, ShieldAlert, Link, Unlink, Eye, EyeOff } from 'lucide-vue-next'
 import DeleteModal from '../../components/modals/DeleteModal.vue'
 
 const route = useRoute()
@@ -17,6 +17,7 @@ const loading = ref(true)
 const error = ref('')
 const actionLoading = ref<string | null>(null)
 const copiedField = ref<string | null>(null)
+const showPassword = ref(false)
 
 // --- Delete Confirmation Modal Logic ---
 const deleteModalVisible = ref(false)
@@ -58,7 +59,7 @@ const fetchInstance = async (showLoading: boolean = true) => {
         instance.value = data.instance || data
     } catch (err) {
         console.error('Failed to fetch instance:', err)
-        if (showLoading) error.value = 'Failed to load instance details.'
+        if (showLoading) error.value = t('dashboard.instanceDetail.loadError')
     } finally {
         if (showLoading) loading.value = false
     }
@@ -109,7 +110,7 @@ const openConsole = async () => {
     // Open window immediately to avoid popup blockers
     const consoleWindow = window.open('about:blank', '_blank')
     if (!consoleWindow) {
-        alert('Popup blocked! Please allow popups for this site.')
+        alert(t('dashboard.instanceDetail.popupBlocked'))
         return
     }
 
@@ -127,7 +128,7 @@ const openConsole = async () => {
     } catch (error: any) {
         console.error('Failed to get console info:', error)
         consoleWindow.close()
-        alert('Failed to get console info: ' + (error.response?.data?.error_message || error.message))
+        alert(t('dashboard.instanceDetail.consoleError') + (error.response?.data?.error_message || error.message))
     }
 }
 
@@ -303,7 +304,7 @@ onMounted(() => {
 
         <div v-else-if="error" class="error-container card">
             <p class="text-error">{{ error }}</p>
-            <button class="btn btn-primary" @click="() => fetchInstance()">Retry</button>
+            <button class="btn btn-primary" @click="() => fetchInstance()">{{ $t('actions.retry') }}</button>
         </div>
 
         <div v-else-if="instance" class="detail-content">
@@ -335,46 +336,60 @@ onMounted(() => {
             <div class="info-grid">
                 <!-- General Info -->
                 <div class="card info-card">
-                    <h3>General Information</h3>
+                    <h3>{{ $t('dashboard.instanceDetail.generalInfo') }}</h3>
                     <div class="key-value-list">
 
                         <div class="kv-item">
-                            <span class="label">Created At</span>
+                            <span class="label">{{ $t('dashboard.table.createdAt') }}</span>
                             <span class="value">{{ instance.created_at || '-' }}</span>
                         </div>
                         <div class="kv-item">
-                            <span class="label">Zone</span>
+                            <span class="label">{{ $t('dashboard.table.zone') }}</span>
                             <span class="value">{{ instance.zone || '-' }}</span>
                         </div>
                          <div class="kv-item">
-                            <span class="label">Hypervisor</span>
+                            <span class="label">{{ $t('dashboard.table.hyper') }}</span>
                             <span class="value">{{ instance.hypervisor || '-' }}</span>
+                        </div>
+                        <div class="kv-item" v-if="instance.root_passwd">
+                            <span class="label">{{ $t('dashboard.instanceDetail.rootPassword') }}</span>
+                            <span class="value" style="display: flex; align-items: center; gap: 6px;">
+                                <span class="mono">{{ showPassword ? instance.root_passwd : '••••••••' }}</span>
+                                <button class="icon-btn-inline" @click="showPassword = !showPassword" :title="showPassword ? $t('dashboard.instanceDetail.hidePassword') : $t('dashboard.instanceDetail.showPassword')">
+                                    <Eye v-if="!showPassword" :size="14" />
+                                    <EyeOff v-else :size="14" />
+                                </button>
+                                <button class="icon-btn-inline" @click="copyToClipboard(instance.root_passwd, 'root_passwd')" :title="$t('dashboard.instanceDetail.copyPassword')">
+                                    <Check v-if="copiedField === 'root_passwd'" :size="14" style="color: var(--success-color)" />
+                                    <Copy v-else :size="14" />
+                                </button>
+                            </span>
                         </div>
                     </div>
                 </div>
 
                 <!-- Specs -->
                 <div class="card info-card">
-                    <h3>Specifications</h3>
+                    <h3>{{ $t('dashboard.instanceDetail.specs') }}</h3>
                     <div class="key-value-list">
-                        <div class="kv-item" v-if="instance.flavor && typeof instance.flavor === 'object' && instance.flavor.name">
-                            <span class="label">Flavor</span>
-                            <span class="value">{{ instance.flavor.name }}</span>
+                        <div class="kv-item" v-if="instance.flavor">
+                            <span class="label">{{ $t('dashboard.table.flavor') }}</span>
+                            <span class="value">{{ typeof instance.flavor === 'string' ? instance.flavor : instance.flavor.name }}</span>
                         </div>
                         <div class="kv-item">
-                            <span class="label"><Cpu :size="14" /> vCPU</span>
-                            <span class="value">{{ instance.flavor?.cpu || instance.cpu || '-' }}</span>
+                            <span class="label"><Cpu :size="14" /> {{ $t('dashboard.instanceDetail.cpu') }}</span>
+                            <span class="value">{{ instance.cpu || (instance.flavor && typeof instance.flavor === 'object' ? instance.flavor.cpu : '-') }}</span>
                         </div>
                         <div class="kv-item">
-                             <span class="label"><Server :size="14" /> RAM</span>
-                             <span class="value">{{ formatMemory(instance.flavor?.memory || instance.memory) }}</span>
+                             <span class="label"><Server :size="14" /> {{ $t('dashboard.instanceDetail.ram') }}</span>
+                             <span class="value">{{ formatMemory(instance.memory || (instance.flavor && typeof instance.flavor === 'object' ? instance.flavor.memory : undefined)) }}</span>
                         </div>
                         <div class="kv-item">
-                             <span class="label"><HardDrive :size="14" /> Disk</span>
-                             <span class="value">{{ instance.flavor?.disk || instance.disk || '-' }} GB</span>
+                             <span class="label"><HardDrive :size="14" /> {{ $t('dashboard.instanceDetail.disk') }}</span>
+                             <span class="value">{{ instance.disk || (instance.flavor && typeof instance.flavor === 'object' ? instance.flavor.disk : '-') }} GB</span>
                         </div>
                          <div class="kv-item">
-                             <span class="label"><HardDrive :size="14" /> Image</span>
+                             <span class="label"><HardDrive :size="14" /> {{ $t('dashboard.instanceDetail.image') }}</span>
                              <span class="value">{{ instance.image?.name || '-' }}</span>
                         </div>
                     </div>
@@ -382,10 +397,10 @@ onMounted(() => {
 
                 <!-- Network -->
                 <div class="card info-card">
-                    <h3>Network</h3>
+                    <h3>{{ $t('dashboard.instanceDetail.network') }}</h3>
                     <div class="key-value-list">
                          <div class="kv-item" v-if="instance.vpc?.name">
-                            <span class="label">VPC</span>
+                            <span class="label">{{ $t('dashboard.table.vpc') }}</span>
                             <span class="value">{{ instance.vpc.name }}</span>
                         </div>
                         
@@ -396,34 +411,34 @@ onMounted(() => {
                             <div v-for="(iface, index) in instance.interfaces" :key="iface.id" class="interface-block" :style="{ marginTop: index > 0 ? '16px' : '8px', paddingTop: index > 0 ? '16px' : '0', borderTop: index > 0 ? '1px dashed var(--border-light)' : 'none' }">
                                 <div class="kv-item" style="margin-bottom: 8px;">
                                     <span class="label" style="color: var(--primary-color); font-weight: 500;">
-                                        <Network :size="14" /> {{ iface.name || 'Interface' }}
-                                        <span v-if="iface.is_primary" class="status-badge status-running" style="margin-left:8px; font-size: 10px; padding: 0 4px;">PRI</span>
+                                        <Network :size="14" /> {{ iface.name || $t('dashboard.instanceDetail.interface') }}
+                                        <span v-if="iface.is_primary" class="status-badge status-running" style="margin-left:8px; font-size: 10px; padding: 0 4px;">{{ $t('dashboard.instanceDetail.primary') }}</span>
                                     </span>
                                 </div>
                                 <div class="kv-item">
-                                    <span class="label" style="padding-left: 20px;">Subnet</span>
+                                    <span class="label" style="padding-left: 20px;">{{ $t('dashboard.table.subnet') }}</span>
                                     <span class="value">{{ iface.subnet?.name || '-' }}</span>
                                 </div>
                                 <div class="kv-item">
-                                    <span class="label" style="padding-left: 20px;">IP Address</span>
-                                    <span class="value mono">{{ iface.ip_address || '-' }}</span>
+                                    <span class="label" style="padding-left: 20px;">{{ $t('dashboard.table.ipAddress') }}</span>
+                                    <span class="value mono">{{ iface.ip_address ? iface.ip_address.split('/')[0] : '-' }}</span>
                                 </div>
                                 <div class="kv-item">
-                                    <span class="label" style="padding-left: 20px;">MAC Address</span>
+                                    <span class="label" style="padding-left: 20px;">{{ $t('dashboard.instanceDetail.macAddress') }}</span>
                                     <span class="value mono">{{ iface.mac_address || '-' }}</span>
                                 </div>
                                 <template v-for="fip in iface.floating_ips" :key="fip.id">
                                     <div v-if="(fip.ip_address || fip.fip_address) !== iface.ip_address" class="kv-item">
-                                        <span class="label" style="padding-left: 20px;">Floating IP</span>
+                                        <span class="label" style="padding-left: 20px;">{{ $t('dashboard.instanceDetail.floatingIp') }}</span>
                                         <span class="value mono">{{ fip.ip_address || fip.fip_address || '-' }}</span>
                                     </div>
                                     <div v-if="fip.vlan" class="kv-item">
-                                        <span class="label" style="padding-left: 20px;">FIP VLAN</span>
+                                        <span class="label" style="padding-left: 20px;">{{ $t('dashboard.instanceDetail.fipVlan') }}</span>
                                         <span class="value">{{ fip.vlan }}</span>
                                     </div>
                                 </template>
                                 <div class="kv-item" v-if="iface.security_groups?.length">
-                                    <span class="label" style="padding-left: 20px;">Security Groups</span>
+                                    <span class="label" style="padding-left: 20px;">{{ $t('dashboard.securityGroups') }}</span>
                                     <span class="value">
                                         <template v-for="(sg, sgIndex) in iface.security_groups" :key="sg.id">
                                             <a href="#" @click.prevent="navigateToSecurityGroup(sg.id)" class="resource-link">{{ sg.name || sg.id.substring(0, 8) }}</a><span v-if="sgIndex < iface.security_groups.length - 1">, </span>
@@ -438,7 +453,7 @@ onMounted(() => {
 
                 <!-- Storage -->
                 <div class="card info-card">
-                     <h3>Storage</h3>
+                     <h3>{{ $t('dashboard.instanceDetail.storage') }}</h3>
                      <div class="key-value-list">
                           <div v-if="!instance.volumes?.length" class="text-secondary" style="font-size: 13px;">
                               {{ $t('messages.noVolumesAttached') }}
@@ -446,8 +461,8 @@ onMounted(() => {
                           <div v-else v-for="volume in instance.volumes" :key="volume.id" class="kv-item">
                              <span class="label">
                                 <HardDrive :size="14" /> 
-                                {{ volume.target || volume.device || 'Volume' }}
-                                <span v-if="volume.booting || volume.boot_index === 0" class="status-badge status-success" style="margin-left:8px; font-size: 10px; padding: 0 4px;">BOOT</span>
+                                {{ volume.target || volume.device || $t('dashboard.instanceDetail.volume') }}
+                                <span v-if="volume.booting || volume.boot_index === 0" class="status-badge status-success" style="margin-left:8px; font-size: 10px; padding: 0 4px;">{{ $t('dashboard.instanceDetail.boot') }}</span>
                              </span>
                              <span class="value">
                                 <span v-if="volume.size" class="mono" style="margin-right: 8px; color: var(--text-secondary);">{{ volume.size }} GB</span>
@@ -463,14 +478,14 @@ onMounted(() => {
 
                 <!-- Security -->
                 <div class="card info-card">
-                     <h3>SSH Keys</h3>
+                     <h3>{{ $t('dashboard.sshKeys') }}</h3>
                     <div class="key-value-list">
                         <div v-if="!instance.keys?.length" class="kv-item">
-                            <span class="label"><Key :size="14" /> Key Pair</span>
+                            <span class="label"><Key :size="14" /> {{ $t('dashboard.instanceDetail.keyPair') }}</span>
                             <span class="value">-</span>
                         </div>
                         <div v-else v-for="key in instance.keys" :key="key.id" class="kv-item">
-                            <span class="label"><Key :size="14" /> Key Pair</span>
+                            <span class="label"><Key :size="14" /> {{ $t('dashboard.instanceDetail.keyPair') }}</span>
                             <span class="value">{{ key.name }}</span>
                         </div>
                     </div>
@@ -486,7 +501,7 @@ onMounted(() => {
                     </button>
                 </div>
                 <div v-if="alarmError" class="alarm-error-banner" @click="alarmError = ''">{{ alarmError }}</div>
-                <div v-if="alarmLoading" class="text-secondary" style="font-size: 13px; padding: 8px 0;">Loading...</div>
+                <div v-if="alarmLoading" class="text-secondary" style="font-size: 13px; padding: 8px 0;">{{ $t('messages.loading') }}</div>
                 <div v-else-if="linkedRules.length === 0" class="text-secondary" style="font-size: 13px; padding: 8px 0;">
                     {{ t('dashboard.instanceDetail.noLinkedRules') }}
                 </div>
@@ -527,7 +542,7 @@ onMounted(() => {
                         <h3>{{ t('dashboard.instanceDetail.linkRule') }}</h3>
                     </div>
                     <div class="modal-body">
-                        <div v-if="linkLoading" class="text-secondary" style="padding: 12px 0;">Loading...</div>
+                        <div v-if="linkLoading" class="text-secondary" style="padding: 12px 0;">{{ $t('messages.loading') }}</div>
                         <div v-else-if="availableRules.length === 0" class="text-secondary" style="padding: 12px 0;">
                             {{ t('dashboard.instanceDetail.noAvailableRules') }}
                         </div>
@@ -559,7 +574,7 @@ onMounted(() => {
                     >
                         <span v-if="actionLoading === 'start'" class="loading-spinner small mr-1"></span>
                         <Play v-else :size="16" /> 
-                        {{ actionLoading === 'start' ? 'Starting...' : 'Start' }}
+                        {{ actionLoading === 'start' ? $t('dashboard.instanceDetail.starting') : $t('actions.start') }}
                     </button>
                     <button 
                          v-else
@@ -569,7 +584,7 @@ onMounted(() => {
                     >
                         <span v-if="actionLoading === 'stop'" class="loading-spinner small mr-1"></span>
                         <Square v-else :size="16" /> 
-                        {{ actionLoading === 'stop' ? 'Stopping...' : 'Stop' }}
+                        {{ actionLoading === 'stop' ? $t('dashboard.instanceDetail.stopping') : $t('actions.stop') }}
                     </button>
                     <button 
                         class="btn btn-secondary"
@@ -578,10 +593,10 @@ onMounted(() => {
                     >
                         <span v-if="actionLoading === 'restart'" class="loading-spinner small mr-1"></span>
                         <RotateCw v-else :size="16" /> 
-                        {{ actionLoading === 'restart' ? 'Rebooting...' : 'Reboot' }}
+                        {{ actionLoading === 'restart' ? $t('dashboard.instanceDetail.rebooting') : $t('actions.restart') }}
                     </button>
                      <button class="btn btn-secondary" @click="openConsole">
-                        <img src="/images/vnc.svg" alt="VNC" width="16" height="16" /> Console
+                        <img src="/images/vnc.svg" alt="VNC" width="16" height="16" /> {{ $t('actions.console') }}
                     </button>
                 </div>
                 <div class="action-group">
@@ -665,6 +680,21 @@ onMounted(() => {
     font-size: var(--font-size-xs);
     color: var(--text-light);
     font-family: var(--font-family-mono);
+}
+
+.icon-btn-inline {
+    background: none;
+    border: none;
+    padding: 2px;
+    cursor: pointer;
+    color: var(--text-light);
+    display: inline-flex;
+    align-items: center;
+    transition: color 0.15s;
+}
+
+.icon-btn-inline:hover {
+    color: var(--primary-color);
 }
 
 .copy-btn {

@@ -9,10 +9,12 @@ package services
 
 import (
 	"context"
+	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math/big"
 	"net/http"
 	"strconv"
 	"strings"
@@ -35,6 +37,18 @@ const MaxmumSnapshot = 96
 
 type InstanceAdmin struct{}
 
+func generateRandomPassword(length int) (string, error) {
+	const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%&*"
+	password := make([]byte, length)
+	for i := range password {
+		idx, err := rand.Int(rand.Reader, big.NewInt(int64(len(charset))))
+		if err != nil {
+			return "", err
+		}
+		password[i] = charset[idx.Int64()]
+	}
+	return string(password), nil
+}
 
 type ExecutionCommand struct {
 	Control string
@@ -137,11 +151,15 @@ func (a *InstanceAdmin) Create(ctx context.Context, count int, prefix, userdata 
 		logger.Error("No valid hypervisor", err)
 		return
 	}
-	passwdLogin := false
-	if rootPasswd != "" {
-		passwdLogin = true
-		logger.Debug("Root password login enabled")
+	if rootPasswd == "" {
+		rootPasswd, err = generateRandomPassword(16)
+		if err != nil {
+			logger.Error("Failed to generate random password", err)
+			return nil, NewCLError(ErrEncryptionFailed, "Failed to generate random password", err)
+		}
+		logger.Debug("Generated random password for instance")
 	}
+	passwdLogin := true
 
 	driver := GetVolumeDriver()
 	imageVolumeID := ""
@@ -193,6 +211,7 @@ func (a *InstanceAdmin) Create(ctx context.Context, count int, prefix, userdata 
 			ImageID:        image.ID,
 			Snapshot:       int64(snapshot),
 			Keys:           keys,
+			RootPasswd:     rootPasswd,
 			PasswdLogin:    passwdLogin,
 			LoginPort:      int32(loginPort),
 			Userdata:       userdata,
@@ -645,14 +664,18 @@ func (a *InstanceAdmin) Reinstall(ctx context.Context, instance *model.Instance,
 		}
 	}
 
-	passwdLogin := false
-	if rootPasswd != "" {
-		passwdLogin = true
-		logger.Debug("Root password login enabled")
+	if rootPasswd == "" {
+		rootPasswd, err = generateRandomPassword(16)
+		if err != nil {
+			logger.Error("Failed to generate random password", err)
+			return NewCLError(ErrEncryptionFailed, "Failed to generate random password", err)
+		}
+		logger.Debug("Generated random password for reinstall")
 	}
 	instance.Status = model.InstanceStatusReinstalling
 	instance.LoginPort = int32(loginPort)
-	instance.PasswdLogin = passwdLogin
+	instance.RootPasswd = rootPasswd
+	instance.PasswdLogin = true
 	instance.ImageID = image.ID
 	instance.Image = image
 	instance.Cpu = cpu
@@ -747,6 +770,12 @@ func (a *InstanceAdmin) SetUserPassword(ctx context.Context, id int64, user, pas
 	if err != nil {
 		logger.Error("Set password command execution failed", err)
 		return
+	}
+	if user == "root" {
+		if err = db.Model(instance).Update("root_passwd", password).Error; err != nil {
+			logger.Error("Failed to update root password in database", err)
+			return
+		}
 	}
 	return
 }

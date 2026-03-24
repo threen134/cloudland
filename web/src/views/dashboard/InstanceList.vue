@@ -4,7 +4,7 @@ import { useI18n } from 'vue-i18n'
 
 import { useRouter } from 'vue-router'
 import { instancesApi, type Instance } from '../../api/instances'
-import { Play, Square, RotateCw, Trash2, Plus, Terminal, MoreVertical, Search, X, Check, Server, ChevronDown, ChevronUp, PlusCircle, MinusCircle, RefreshCw } from 'lucide-vue-next'
+import { Play, Square, RotateCw, Trash2, Plus, Terminal, MoreVertical, Search, X, Check, Server, ChevronDown, ChevronUp, PlusCircle, MinusCircle, RefreshCw, Cpu, HardDrive, Eye, EyeOff, Shuffle } from 'lucide-vue-next'
 
 import { imagesApi, type Image } from '../../api/images'
 import { vpcsApi, subnetsApi, securityGroupsApi, floatingIpsApi, type VPC, type Subnet, type SecurityGroup, type FloatingIP } from '../../api/networks'
@@ -89,7 +89,9 @@ const formatMemory = (mb: number) => {
 }
 
 const getIPAddress = (instance: Instance) => {
-    return instance.interfaces?.[0]?.ip_address || '-'
+    const addr = instance.interfaces?.[0]?.ip_address
+    if (!addr) return '-'
+    return addr.split('/')[0]
 }
 
 const handleAction = async (instance: Instance, action: 'start' | 'stop' | 'restart') => {
@@ -210,7 +212,18 @@ const sshKeysDropdownOpen = ref(false)
 const tempPassword = ref('')
 const confirmPassword = ref('')
 const enablePassword = ref(false)
+const showCreatePassword = ref(false)
 const enableSSHKeys = ref(false)
+
+const generateRandomPassword = () => {
+    const charset = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%&*'
+    const array = new Uint8Array(16)
+    crypto.getRandomValues(array)
+    const pwd = Array.from(array, b => charset[b % charset.length]).join('')
+    tempPassword.value = pwd
+    confirmPassword.value = pwd
+    showCreatePassword.value = true
+}
 
 const isHostnameValid = computed(() => isValidName(newInstanceForm.value.hostname))
 
@@ -303,6 +316,7 @@ const closeCreateModal = () => {
     sshKeysDropdownOpen.value = false
     enablePassword.value = false
     enableSSHKeys.value = false
+    showCreatePassword.value = false
     tempPassword.value = ''
     confirmPassword.value = ''
     createError.value = ''
@@ -468,11 +482,7 @@ const handleCreateInstance = async () => {
         return
     }
 
-    // Validation for Credentials
-    if (form.keys.length === 0 && !form.root_passwd) {
-        createError.value = t('messages.credentialsRequired')
-        return
-    }
+    // Note: password is optional - if not provided, the backend generates a random one
 
     // Validation for primary interface
     const pi = form.primary_interface
@@ -629,13 +639,16 @@ onMounted(() => fetchInstances())
               </div>
             </td>
             <td>
-              <div class="flavor-info" v-if="instance.flavor">
-                <span class="flavor-name">{{ instance.flavor.name }}</span>
-                <span class="flavor-specs">
-                  {{ instance.flavor.cpu }} vCPU • {{ formatMemory(instance.flavor.memory) }}
-                </span>
+              <div class="flavor-info">
+                   <div class="flavor-specs">
+                      <span class="spec-value">{{ instance.cpu }}C</span>
+                      <span class="spec-divider">/</span>
+                      <span class="spec-value">{{ formatMemory(instance.memory).replace(' GB', 'G').replace(' MB', 'M') }}</span>
+                   </div>
+                   <div v-if="instance.flavor" class="flavor-name" style="font-size: 11px; color: var(--text-light); margin-top: 2px;">
+                      {{ typeof instance.flavor === 'string' ? instance.flavor : instance.flavor.name }}
+                   </div>
               </div>
-              <span v-else class="text-light">-</span>
             </td>
             <td>{{ instance.image?.name || '-' }}</td>
             <td>
@@ -802,14 +815,32 @@ onMounted(() => fetchInstances())
                 </label>
                   
                   <div v-if="enablePassword" class="password-inline-fields mt-3">
+                      <div style="margin-bottom: 8px;">
+                          <button type="button" class="btn btn-sm btn-outline" @click="generateRandomPassword">
+                              <Shuffle :size="14" style="margin-right: 4px;" />
+                              {{ $t('dashboard.forms.generatePassword') }}
+                          </button>
+                      </div>
                       <div class="form-row">
                           <div class="form-col">
                                <label class="form-label text-xs">{{ $t('auth.password') }}</label>
-                              <input v-model="tempPassword" type="password" class="form-input" :placeholder="$t('auth.password')" />
+                               <div class="password-input-wrapper">
+                                  <input v-model="tempPassword" :type="showCreatePassword ? 'text' : 'password'" class="form-input" :placeholder="$t('auth.password')" />
+                                  <button type="button" class="password-toggle-btn" @click="showCreatePassword = !showCreatePassword">
+                                      <Eye v-if="!showCreatePassword" :size="14" />
+                                      <EyeOff v-else :size="14" />
+                                  </button>
+                               </div>
                           </div>
                           <div class="form-col">
                                <label class="form-label text-xs">{{ $t('auth.confirmPassword') }}</label>
-                              <input v-model="confirmPassword" type="password" class="form-input" :placeholder="$t('auth.confirmPassword')" />
+                               <div class="password-input-wrapper">
+                                  <input v-model="confirmPassword" :type="showCreatePassword ? 'text' : 'password'" class="form-input" :placeholder="$t('auth.confirmPassword')" />
+                                  <button type="button" class="password-toggle-btn" @click="showCreatePassword = !showCreatePassword">
+                                      <Eye v-if="!showCreatePassword" :size="14" />
+                                      <EyeOff v-else :size="14" />
+                                  </button>
+                               </div>
                           </div>
                       </div>
                       <div v-if="tempPassword && confirmPassword && tempPassword !== confirmPassword" class="text-error text-xs mt-1">
@@ -1151,13 +1182,28 @@ onMounted(() => fetchInstances())
   flex-direction: column;
 }
 
-.flavor-name {
-  font-weight: var(--font-weight-medium);
-  font-size: var(--font-size-sm);
+.flavor-specs {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  font-family: var(--font-family); /* Use Inter */
+  color: var(--text-primary);
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
 }
 
-.flavor-specs {
-  font-size: var(--font-size-xs);
+.spec-divider {
+  color: var(--text-light);
+  font-weight: 300;
+  margin: 0 1px;
+}
+
+.spec-value {
+  color: var(--primary-600);
+}
+
+.flavor-name {
   color: var(--text-light);
 }
 
@@ -1259,6 +1305,33 @@ onMounted(() => fetchInstances())
 
 .sub-modal { z-index: 1100; }
 .password-modal { max-width: 400px; }
+
+.password-input-wrapper {
+    position: relative;
+    display: flex;
+    align-items: center;
+}
+
+.password-input-wrapper .form-input {
+    padding-right: 32px;
+}
+
+.password-toggle-btn {
+    position: absolute;
+    right: 8px;
+    background: none;
+    border: none;
+    padding: 2px;
+    cursor: pointer;
+    color: var(--text-light);
+    display: inline-flex;
+    align-items: center;
+    transition: color 0.15s;
+}
+
+.password-toggle-btn:hover {
+    color: var(--primary-color);
+}
 .text-success { color: var(--success-color); }
 .btn-xs { padding: 2px 8px; font-size: 0.75rem; }
 .justify-start { justify-content: flex-start !important; }

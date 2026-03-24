@@ -18,6 +18,7 @@ export interface Instance {
     zone?: string
     owner?: string
     hypervisor?: string
+    root_passwd?: string
     login_port?: number
     created_at?: string
     keys?: any[]
