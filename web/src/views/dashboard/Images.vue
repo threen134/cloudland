@@ -214,6 +214,13 @@ const getStatusClass = (status: string | undefined) => {
     return 'status-stopped'
 }
 
+const getStatusText = (status: string | undefined) => {
+    if (!status) return t('dashboard.imageStatus.active')
+    const key = status.toLowerCase()
+    const translated = t(`dashboard.imageStatus.${key}`)
+    return translated === `dashboard.imageStatus.${key}` ? status : translated
+}
+
 onMounted(async () => {
     await fetchImages()
     filterImages()
@@ -318,7 +325,7 @@ onMounted(async () => {
             </td>
             <td>
                <span :class="['badge', getStatusClass(image.status)]">
-                  {{ image.status || 'active' }}
+                  {{ getStatusText(image.status) }}
                </span>
             </td>
             <td>

@@ -1,13 +1,15 @@
 <script setup lang="ts">
 import { ref, onMounted, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { useI18n } from 'vue-i18n'
 import { imagesApi, type Image } from '../../api/images'
 import { useAuthStore } from '../../stores/auth'
 import { useTenantStore } from '../../stores/tenant'
-import { ArrowLeft, HardDrive, Trash2, Server, Monitor, Disc, Copy, Check, Tag, CalendarDays, Eye, EyeOff } from 'lucide-vue-next'
+import { ArrowLeft, HardDrive, Trash2, Server, Monitor, Disc, Copy, Check, Tag, CalendarDays, Eye, EyeOff, ChevronDown } from 'lucide-vue-next'
 
 const route = useRoute()
 const router = useRouter()
+const { t } = useI18n()
 const imageId = route.params.id as string
 const auth = useAuthStore()
 const tenant = useTenantStore()
@@ -20,6 +22,15 @@ const error = ref('')
 const deleting = ref(false)
 const togglingVisibility = ref(false)
 const copiedField = ref<string | null>(null)
+const showActionMenu = ref(false)
+
+const toggleActionMenu = () => {
+    showActionMenu.value = !showActionMenu.value
+}
+
+const closeActionMenu = () => {
+    showActionMenu.value = false
+}
 
 const canDelete = computed(() => {
     if (!image.value) return false
@@ -88,6 +99,22 @@ const formatSize = (bytes?: number) => {
     return `${(bytes / Math.pow(k, i)).toFixed(1)} ${units[i]}`
 }
 
+const getStatusText = (status: string | undefined) => {
+    if (!status) return t('dashboard.imageStatus.active')
+    const key = status.toLowerCase()
+    const translated = t(`dashboard.imageStatus.${key}`)
+    return translated === `dashboard.imageStatus.${key}` ? status : translated
+}
+
+const getStatusClass = (status: string | undefined) => {
+    if (!status) return 'status-running'
+    const s = status.toLowerCase()
+    if (s === 'active' || s === 'available') return 'status-running'
+    if (s === 'error' || s === 'failed') return 'status-error'
+    if (s === 'deleting' || s === 'pending') return 'status-pending'
+    return 'status-stopped'
+}
+
 onMounted(fetchImage)
 </script>
 
@@ -116,7 +143,12 @@ onMounted(fetchImage)
                         <Disc :size="28" />
                     </div>
                     <div>
-                        <h2 class="image-title">{{ image.name }}</h2>
+                        <h2 class="image-title">
+                            {{ image.name }}
+                            <span :class="['badge', getStatusClass(image.status)]">
+                                {{ getStatusText(image.status) }}
+                            </span>
+                        </h2>
                         <div class="image-id-row">
                             <span class="image-id">{{ image.id }}</span>
                             <button class="copy-btn" @click="copyToClipboard(image.id, 'id')" :title="$t('messages.copied')">
@@ -127,85 +159,90 @@ onMounted(fetchImage)
                     </div>
                 </div>
                 <div class="title-actions">
-                    <span :class="['badge', 'badge-lg', image.public ? 'status-running' : 'status-stopped']">
-                        {{ image.public ? $t('dashboard.table.public') : $t('dashboard.table.private') }}
-                    </span>
+                    <div class="action-dropdown">
+                        <button class="btn btn-primary" @click="toggleActionMenu">
+                            {{ $t('actions.actions') }} <ChevronDown :size="14" />
+                        </button>
+                        <Transition name="dropdown">
+                            <div v-if="showActionMenu" class="dropdown-menu" @click="closeActionMenu">
+                                <button v-if="isSuperuser" class="dropdown-item" @click="toggleVisibility" :disabled="togglingVisibility">
+                                    <EyeOff v-if="image.public" :size="14" />
+                                    <Eye v-else :size="14" />
+                                    {{ image.public ? $t('dashboard.table.setPrivate') : $t('dashboard.table.setPublic') }}
+                                </button>
+                                <div v-if="isSuperuser && canDelete" class="dropdown-divider"></div>
+                                <button v-if="canDelete" class="dropdown-item dropdown-item-danger" @click="handleDelete" :disabled="deleting">
+                                    <Trash2 :size="14" /> {{ $t('actions.delete') }}
+                                </button>
+                            </div>
+                        </Transition>
+                        <div v-if="showActionMenu" class="dropdown-backdrop" @click="closeActionMenu"></div>
+                    </div>
                 </div>
             </div>
 
             <!-- Info Grid -->
-            <div class="info-grid">
-                <!-- General Info -->
-                <div class="card info-card">
-                    <h3>{{ $t('dashboard.table.generalInformation') }}</h3>
-                    <div class="key-value-list">
-                        <div class="kv-item">
-                             <span class="label"><Server :size="14" /> {{ $t('dashboard.table.status') }}</span>
-                            <span class="value">{{ image.status || 'Active' }}</span>
+            <!-- Two-Column Layout -->
+            <div class="two-col-layout">
+                <div class="col-stack">
+                    <!-- General Info -->
+                    <div class="card info-card">
+                        <h3>{{ $t('dashboard.table.generalInformation') }}</h3>
+                        <div class="key-value-list">
+                            <div class="kv-item">
+                                <span class="label"><Server :size="14" /> {{ $t('dashboard.table.status') }}</span>
+                                <span class="value">{{ getStatusText(image.status) }}</span>
+                            </div>
+                            <div class="kv-item">
+                                <span class="label"><CalendarDays :size="14" /> {{ $t('dashboard.table.createdAt') }}</span>
+                                <span class="value">{{ image.created_at || '-' }}</span>
+                            </div>
                         </div>
-                         <div class="kv-item">
-                             <span class="label"><CalendarDays :size="14" /> {{ $t('dashboard.table.createdAt') }}</span>
-                            <span class="value">{{ image.created_at || '-' }}</span>
+                    </div>
+
+                    <!-- OS Components -->
+                    <div class="card info-card">
+                        <h3>{{ $t('dashboard.table.osKernel') }}</h3>
+                        <div class="key-value-list">
+                            <div class="kv-item">
+                                <span class="label">{{ $t('dashboard.table.osFamily') }}</span>
+                                <span class="value">{{ image.os_family || '-' }}</span>
+                            </div>
+                            <div class="kv-item">
+                                <span class="label">{{ $t('dashboard.table.osVersion') }}</span>
+                                <span class="value">{{ image.os_version || '-' }}</span>
+                            </div>
+                            <div class="kv-item">
+                                <span class="label">{{ $t('dashboard.table.architecture') }}</span>
+                                <span class="value mono">{{ image.architecture || 'x86_64' }}</span>
+                            </div>
+                            <div class="kv-item">
+                                <span class="label">{{ $t('dashboard.table.bootLoader') }}</span>
+                                <span class="value">{{ image.boot_loader || 'BIOS' }}</span>
+                            </div>
                         </div>
                     </div>
                 </div>
 
-                <!-- OS Components -->
-                <div class="card info-card">
-                     <h3>{{ $t('dashboard.table.osKernel') }}</h3>
-                    <div class="key-value-list">
-                        <div class="kv-item">
-                             <span class="label">{{ $t('dashboard.table.osFamily') }}</span>
-                            <span class="value">{{ image.os_family || '-' }}</span>
-                        </div>
-                         <div class="kv-item">
-                             <span class="label">{{ $t('dashboard.table.osVersion') }}</span>
-                            <span class="value">{{ image.os_version || '-' }}</span>
-                        </div>
-                        <div class="kv-item">
-                             <span class="label">{{ $t('dashboard.table.architecture') }}</span>
-                            <span class="value mono">{{ image.architecture || 'x86_64' }}</span>
-                        </div>
-                         <div class="kv-item">
-                             <span class="label">{{ $t('dashboard.table.bootLoader') }}</span>
-                            <span class="value">{{ image.boot_loader || 'BIOS' }}</span>
+                <div class="col-stack">
+                    <!-- File Specs -->
+                    <div class="card info-card">
+                        <h3>{{ $t('dashboard.table.fileDetails') }}</h3>
+                        <div class="key-value-list">
+                            <div class="kv-item">
+                                <span class="label">{{ $t('dashboard.table.format') }}</span>
+                                <span class="value uppercase">{{ image.format || 'qcow2' }}</span>
+                            </div>
+                            <div class="kv-item">
+                                <span class="label">{{ $t('dashboard.table.size') }}</span>
+                                <span class="value">{{ formatSize(image.size) }}</span>
+                            </div>
+                            <div class="kv-item">
+                                <span class="label">{{ $t('dashboard.table.defaultUser') }}</span>
+                                <span class="value mono">{{ image.user || 'root' }}</span>
+                            </div>
                         </div>
                     </div>
-                </div>
-
-                <!-- File Specs -->
-                <div class="card info-card">
-                     <h3>{{ $t('dashboard.table.fileDetails') }}</h3>
-                    <div class="key-value-list">
-                         <div class="kv-item">
-                             <span class="label">{{ $t('dashboard.table.format') }}</span>
-                            <span class="value uppercase">{{ image.format || 'qcow2' }}</span>
-                        </div>
-                         <div class="kv-item">
-                             <span class="label">{{ $t('dashboard.table.size') }}</span>
-                            <span class="value">{{ formatSize(image.size) }}</span>
-                        </div>
-                         <div class="kv-item">
-                             <span class="label">{{ $t('dashboard.table.defaultUser') }}</span>
-                            <span class="value mono">{{ image.user || 'root' }}</span>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Action Bar -->
-             <div class="action-bar card">
-                <div class="action-group">
-                    <button v-if="isSuperuser" class="btn btn-secondary" @click="toggleVisibility" :disabled="togglingVisibility">
-                        <EyeOff v-if="image.public" :size="16" />
-                        <Eye v-else :size="16" />
-                        {{ image.public ? $t('dashboard.table.setPrivate') : $t('dashboard.table.setPublic') }}
-                    </button>
-                </div>
-                <div class="action-group">
-                    <button v-if="canDelete" class="btn btn-danger" @click="handleDelete" :disabled="deleting">
-                        <Trash2 :size="16" /> {{ $t('actions.delete') }}
-                    </button>
                 </div>
             </div>
         </div>
@@ -261,6 +298,15 @@ onMounted(fetchImage)
     font-size: var(--font-size-xl);
     font-weight: var(--font-weight-semibold);
     color: var(--primary-color);
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-3);
+}
+
+.image-title .badge {
+    font-size: var(--font-size-xs);
+    font-weight: 500;
+    vertical-align: middle;
 }
 
 .image-id-row {
@@ -303,19 +349,108 @@ onMounted(fetchImage)
     gap: var(--spacing-3);
 }
 
-.badge-lg {
+/* Action Dropdown */
+.action-dropdown {
+    position: relative;
+}
+
+.dropdown-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 9;
+}
+
+.dropdown-menu {
+    position: absolute;
+    top: calc(100% + 6px);
+    right: 0;
+    min-width: 180px;
+    background: var(--bg-primary, #fff);
+    border: 1px solid var(--border-light);
+    border-radius: var(--radius-md);
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+    padding: 4px 0;
+    z-index: 10;
+}
+
+.dropdown-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    padding: 8px 14px;
+    border: none;
+    background: none;
     font-size: var(--font-size-sm);
-    padding: 6px 14px;
+    color: var(--text-primary);
+    cursor: pointer;
+    transition: background 0.15s;
+    text-align: left;
 }
 
-/* Info Grid */
-.info-grid {
+.dropdown-item:hover:not(:disabled) {
+    background: var(--bg-hover, #f3f4f6);
+}
+
+.dropdown-item:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
+
+.dropdown-item-danger {
+    color: var(--error-color, #ef4444);
+}
+
+.dropdown-item-danger:hover:not(:disabled) {
+    background: #fef2f2;
+}
+
+.dropdown-divider {
+    height: 1px;
+    background: var(--border-light);
+    margin: 4px 0;
+}
+
+.dropdown-enter-active {
+    transition: opacity 0.15s, transform 0.15s;
+}
+
+.dropdown-leave-active {
+    transition: opacity 0.1s, transform 0.1s;
+}
+
+.dropdown-enter-from {
+    opacity: 0;
+    transform: translateY(-4px);
+}
+
+.dropdown-leave-to {
+    opacity: 0;
+    transform: translateY(-4px);
+}
+
+/* Two-Column Layout */
+.two-col-layout {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    grid-template-columns: 1fr 1fr;
     gap: var(--spacing-4);
-    margin-bottom: var(--spacing-6);
+    margin-bottom: var(--spacing-4);
+    align-items: start;
 }
 
+.col-stack {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-4);
+}
+
+@media (max-width: 768px) {
+    .two-col-layout {
+        grid-template-columns: 1fr;
+    }
+}
+
+/* Info Cards */
 .info-card {
     padding: var(--spacing-5);
 }
@@ -354,7 +489,7 @@ onMounted(fetchImage)
     text-align: right;
 }
 
-.value.mono {
+.value.mono, .mono {
     font-family: var(--font-family-mono);
 }
 
@@ -362,41 +497,16 @@ onMounted(fetchImage)
     text-transform: uppercase;
 }
 
-/* Action Bar */
-.action-bar {
-    padding: var(--spacing-4);
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-}
-
-.action-group {
-    display: flex;
-    gap: var(--spacing-3);
-}
-
 .btn {
     display: inline-flex;
     align-items: center;
     gap: 6px;
+    transition: all var(--transition-base);
 }
 
-.btn-danger {
-    background: var(--error-color);
-    color: white;
-    border: none;
-    padding: 8px 16px;
-    border-radius: var(--radius-md);
-    font-size: var(--font-size-sm);
-    font-weight: var(--font-weight-medium);
-    cursor: pointer;
-    display: inline-flex;
-    align-items: center;
-    gap: var(--spacing-2);
-    transition: background var(--transition-base);
-}
-
-.btn-danger:hover {
-    background: var(--error-dark);
+.btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    filter: grayscale(100%);
 }
 </style>

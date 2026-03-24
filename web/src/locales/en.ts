@@ -625,6 +625,15 @@ export default {
             paused: 'Paused',
             error: 'Error',
         },
+        imageStatus: {
+            active: 'Active',
+            available: 'Available',
+            saving: 'Saving',
+            queued: 'Queued',
+            pending: 'Pending',
+            deleting: 'Deleting',
+            error: 'Error',
+        },
         volumeStatus: {
             available: 'Available',
             attached: 'Attached',

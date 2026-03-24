@@ -624,6 +624,15 @@ export default {
             paused: '已暂停',
             error: '错误',
         },
+        imageStatus: {
+            active: '可用',
+            available: '可用',
+            saving: '保存中',
+            queued: '排队中',
+            pending: '处理中',
+            deleting: '删除中',
+            error: '错误',
+        },
         volumeStatus: {
             available: '可用',
             attached: '已挂载',
