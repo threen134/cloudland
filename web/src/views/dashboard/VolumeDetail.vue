@@ -1,18 +1,29 @@
 <script setup lang="ts">
 import { ref, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { useI18n } from 'vue-i18n'
 import { volumesApi, type Volume } from '../../api/volumes'
 import { useRegionStore } from '../../stores/region'
-import { ArrowLeft, HardDrive, Paperclip, Maximize, Trash2, Copy, Check, Server, Play } from 'lucide-vue-next'
+import { ArrowLeft, HardDrive, Paperclip, Maximize, Trash2, Copy, Check, Server, Play, ChevronDown, CalendarDays } from 'lucide-vue-next'
 
 const route = useRoute()
 const router = useRouter()
+const { t } = useI18n()
 const region = useRegionStore()
 
 const volume = ref<Volume | null>(null)
 const loading = ref(false)
 const error = ref<string | null>(null)
 const copiedField = ref<string | null>(null)
+const showActionMenu = ref(false)
+
+const toggleActionMenu = () => {
+    showActionMenu.value = !showActionMenu.value
+}
+
+const closeActionMenu = () => {
+    showActionMenu.value = false
+}
 
 const fetchVolume = async () => {
     const id = route.params.id as string
@@ -52,11 +63,19 @@ const formatSize = (size: number) => {
     return `${size} GB`
 }
 
-const getStatusClass = (status: string) => {
+const getStatusText = (status: string | undefined) => {
+    if (!status) return '-'
+    const key = status.toLowerCase()
+    const translated = t(`dashboard.volumeStatus.${key}`)
+    return translated === `dashboard.volumeStatus.${key}` ? status : translated
+}
+
+const getStatusClass = (status: string | undefined) => {
+    if (!status) return 'status-pending'
     const statusMap: Record<string, string> = {
-        'available': 'status-active',
-        'attached': 'status-running',
-        'in-use': 'status-running',
+        'available': 'status-running',
+        'attached': 'status-success',
+        'in-use': 'status-success',
         'creating': 'status-pending',
         'deleting': 'status-pending',
         'detaching': 'status-pending',
@@ -132,7 +151,12 @@ onMounted(() => {
             <HardDrive :size="28" />
           </div>
           <div>
-            <h2 class="volume-title">{{ volume.name }}</h2>
+            <h2 class="volume-title">
+                {{ volume.name }}
+                <span :class="['badge', getStatusClass(volume.status)]">
+                    {{ getStatusText(volume.status) }}
+                </span>
+            </h2>
             <div class="volume-id-row">
               <span class="volume-id">{{ volume.id }}</span>
               <button class="copy-btn" @click="copyToClipboard(volume.id, 'id')" :title="$t('messages.copied')">
@@ -143,121 +167,116 @@ onMounted(() => {
           </div>
         </div>
         <div class="title-actions">
-          <span :class="['badge', 'badge-lg', getStatusClass(volume.status)]">
-            {{ volume.status }}
-          </span>
+           <div class="action-dropdown">
+                <button class="btn btn-primary" @click="toggleActionMenu">
+                    {{ $t('actions.actions') }} <ChevronDown :size="14" />
+                </button>
+                <Transition name="dropdown">
+                    <div v-if="showActionMenu" class="dropdown-menu">
+                        <button class="dropdown-item">
+                            <Paperclip :size="14" /> {{ $t('actions.attach') }} / {{ $t('actions.detach') }}
+                        </button>
+                        <button class="dropdown-item">
+                            <Maximize :size="14" /> {{ $t('actions.resize') }}
+                        </button>
+                        <div class="dropdown-divider"></div>
+                        <button class="dropdown-item dropdown-item-danger" @click.stop="handleDelete">
+                            <Trash2 :size="14" /> {{ $t('actions.delete') }}
+                        </button>
+                    </div>
+                </Transition>
+                <div v-if="showActionMenu" class="dropdown-backdrop" @click="closeActionMenu"></div>
+           </div>
         </div>
       </div>
 
       <!-- Info Sections -->
-      <div class="info-grid">
-        <!-- Basic Info Card -->
-        <div class="card info-card">
-          <h3>{{ $t('dashboard.table.generalInformation') }}</h3>
-          <div class="key-value-list">
-            <div class="kv-item">
-              <span class="label"><HardDrive :size="14" /> {{ $t('dashboard.table.size') }}</span>
-              <span class="value">{{ formatSize(volume.size) }}</span>
-            </div>
-            <div class="kv-item">
-              <span class="label"><Maximize :size="14" /> {{ $t('dashboard.table.format') }}</span>
-              <span class="value">{{ volume.format || '-' }}</span>
-            </div>
-            <div class="kv-item">
-              <span class="label"><Play :size="14" /> {{ $t('dashboard.table.boot') }}</span>
-              <span class="value">
-                <span :class="['status-badge', volume.booting ? 'status-success' : 'status-default']" style="font-size: 10px; padding: 0 6px;">
-                  {{ volume.booting ? 'YES' : 'NO' }}
+      <div class="two-col-layout">
+        <div class="col-stack">
+          <!-- Basic Info Card (Merged with Metadata) -->
+          <div class="card info-card">
+            <h3>{{ $t('dashboard.table.generalInformation') }}</h3>
+            <div class="key-value-list">
+              <div class="kv-item">
+                <span class="label"><HardDrive :size="14" /> {{ $t('dashboard.table.size') }}</span>
+                <span class="value">{{ formatSize(volume.size) }}</span>
+              </div>
+              <div class="kv-item">
+                <span class="label"><Maximize :size="14" /> {{ $t('dashboard.table.format') }}</span>
+                <span class="value" style="text-transform: uppercase;">{{ volume.format || '-' }}</span>
+              </div>
+              <div class="kv-item">
+                <span class="label"><Play :size="14" /> {{ $t('dashboard.table.boot') }}</span>
+                <span class="value">
+                  <span :class="['status-badge', volume.booting ? 'status-success' : 'status-default']">
+                    {{ volume.booting ? $t('messages.yes') : $t('messages.no') }}
+                  </span>
                 </span>
-              </span>
-            </div>
-            <div class="kv-item">
-              <span class="label">{{ $t('dashboard.table.status') }}</span>
-              <span class="value">
-                <span :class="['badge', getStatusClass(volume.status)]">{{ volume.status }}</span>
-              </span>
-            </div>
-          </div>
-        </div>
-
-        <!-- Attachment Info Card -->
-        <div class="card info-card">
-          <h3>{{ $t('dashboard.table.attachedTo') }}</h3>
-          <div class="key-value-list">
-            <div class="kv-item">
-              <span class="label"><Server :size="14" /> {{ $t('dashboard.instances') }}</span>
-              <span v-if="volume.instance" class="value text-primary clickable" @click="navigateToInstance(volume.instance.id)">
-                {{ volume.instance.name }}
-              </span>
-              <span v-else class="value text-light">{{ $t('messages.notAttached') }}</span>
-            </div>
-            <div v-if="volume.instance" class="kv-item">
-               <span class="label">{{ $t('dashboard.table.instanceId') }}</span>
-              <span class="value mono">{{ volume.instance.id }}</span>
-            </div>
-            <div class="kv-item">
-               <span class="label">{{ $t('dashboard.table.target') }}</span>
-              <span class="value mono">{{ volume.target || '-' }}</span>
-            </div>
-            <div class="kv-item">
-               <span class="label">{{ $t('dashboard.table.path') }}</span>
-              <span class="value mono">{{ volume.path || '-' }}</span>
+              </div>
+              <div class="kv-item">
+                <span class="label"><Server :size="14" /> {{ $t('dashboard.table.status') }}</span>
+                <span class="value">{{ getStatusText(volume.status) }}</span>
+              </div>
+              
+              <div class="dropdown-divider" style="margin: 8px 0; opacity: 0.5;"></div>
+              
+              <div class="kv-item">
+                <span class="label">{{ $t('dashboard.table.owner') }}</span>
+                <span class="value">{{ volume.owner || '-' }}</span>
+              </div>
+              <div class="kv-item">
+                <span class="label"><CalendarDays :size="14" /> {{ $t('dashboard.table.created') }}</span>
+                <span class="value">{{ formatDate(volume.created_at) }}</span>
+              </div>
+              <div class="kv-item">
+                <span class="label"><CalendarDays :size="14" /> {{ $t('dashboard.table.updatedAt') }}</span>
+                <span class="value">{{ formatDate(volume.updated_at) }}</span>
+              </div>
             </div>
           </div>
         </div>
 
-        <!-- QoS Info Card -->
-        <div class="card info-card">
-           <h3>{{ $t('dashboard.table.performance') }}</h3>
-          <div class="key-value-list">
-            <div class="kv-item">
-               <span class="label">{{ $t('dashboard.table.iopsLimitBurst') }}</span>
-              <span class="value">{{ volume.iops_limit ?? '-' }} / {{ volume.iops_burst ?? '-' }}</span>
-            </div>
-            <div class="kv-item">
-               <span class="label">{{ $t('dashboard.table.bpsLimitBurst') }}</span>
-              <span class="value">{{ volume.bps_limit ?? '-' }} / {{ volume.bps_burst ?? '-' }}</span>
-            </div>
-          </div>
-        </div>
-
-        <!-- Metadata Card -->
-        <div class="card info-card">
-           <h3>{{ $t('dashboard.table.metadata') }}</h3>
-          <div class="key-value-list">
-            <div class="kv-item">
-               <span class="label">{{ $t('dashboard.table.owner') }}</span>
-              <span class="value">{{ volume.owner || '-' }}</span>
-            </div>
-            <div class="kv-item">
-               <span class="label">{{ $t('dashboard.table.created') }}</span>
-              <span class="value">{{ formatDate(volume.created_at) }}</span>
-            </div>
-            <div class="kv-item">
-               <span class="label">{{ $t('dashboard.table.updatedAt') }}</span>
-              <span class="value">{{ formatDate(volume.updated_at) }}</span>
+        <div class="col-stack">
+          <!-- Attachment Info Card -->
+          <div class="card info-card">
+            <h3>{{ $t('dashboard.table.attachedTo') }}</h3>
+            <div class="key-value-list">
+              <div class="kv-item">
+                <span class="label"><Server :size="14" /> {{ $t('dashboard.instances') }}</span>
+                <span v-if="volume.instance" class="value text-primary clickable" @click="navigateToInstance(volume.instance.id)">
+                  {{ volume.instance.name }}
+                </span>
+                <span v-else class="value text-light">{{ $t('messages.notAttached') }}</span>
+              </div>
+              <div v-if="volume.instance" class="kv-item">
+                <span class="label">{{ $t('dashboard.table.instanceId') }}</span>
+                <span class="value mono">{{ volume.instance.id }}</span>
+              </div>
+              <div class="kv-item">
+                <span class="label">{{ $t('dashboard.table.target') }}</span>
+                <span class="value mono">{{ volume.target || '-' }}</span>
+              </div>
+              <div class="kv-item">
+                <span class="label">{{ $t('dashboard.table.path') }}</span>
+                <span class="value mono">{{ volume.path || '-' }}</span>
+              </div>
             </div>
           </div>
-        </div>
-      </div>
 
-      <!-- Action Bar -->
-      <div class="action-bar card">
-        <div class="action-group">
-          <button class="btn btn-secondary">
-            <Paperclip :size="16" />
-            {{ $t('actions.attach') }} / {{ $t('actions.detach') }}
-          </button>
-          <button class="btn btn-secondary">
-            <Maximize :size="16" />
-            {{ $t('actions.resize') }}
-          </button>
-        </div>
-        <div class="action-group">
-          <button class="btn btn-danger" @click="handleDelete">
-            <Trash2 :size="16" />
-            {{ $t('actions.delete') }}
-          </button>
+          <!-- QoS Info Card -->
+          <div class="card info-card">
+            <h3>{{ $t('dashboard.table.performance') }}</h3>
+            <div class="key-value-list">
+              <div class="kv-item">
+                <span class="label">{{ $t('dashboard.table.iopsLimitBurst') }}</span>
+                <span class="value">{{ volume.iops_limit ?? '-' }} / {{ volume.iops_burst ?? '-' }}</span>
+              </div>
+              <div class="kv-item">
+                <span class="label">{{ $t('dashboard.table.bpsLimitBurst') }}</span>
+                <span class="value">{{ volume.bps_limit ?? '-' }} / {{ volume.bps_burst ?? '-' }}</span>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -319,6 +338,14 @@ onMounted(() => {
   font-size: var(--font-size-xl);
   font-weight: var(--font-weight-semibold);
   color: var(--primary-color);
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-3);
+}
+
+.volume-title .badge {
+  font-size: var(--font-size-xs);
+  font-weight: 500;
 }
 
 .volume-id-row {
@@ -361,29 +388,85 @@ onMounted(() => {
   gap: var(--spacing-3);
 }
 
-.badge-lg {
-  font-size: var(--font-size-sm);
-  padding: 6px 14px;
+/* Action Dropdown */
+.action-dropdown {
+    position: relative;
 }
 
-/* Status markers used locally */
-.status-badge {
-    display: inline-flex;
-    padding: 2px 8px;
-    border-radius: 12px;
-    font-size: 11px;
-    font-weight: 600;
-    text-transform: uppercase;
+.dropdown-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 9;
 }
-.status-success { background: var(--success-50); color: var(--success-700); }
-.status-default { background: var(--gray-100); color: var(--gray-700); }
 
-/* Info Grid */
-.info-grid {
+.dropdown-menu {
+    position: absolute;
+    top: calc(100% + 6px);
+    right: 0;
+    min-width: 200px;
+    background: var(--bg-primary, #fff);
+    border: 1px solid var(--border-light);
+    border-radius: var(--radius-md);
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+    padding: 4px 0;
+    z-index: 10;
+}
+
+.dropdown-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    padding: 10px 16px;
+    border: none;
+    background: none;
+    font-size: var(--font-size-sm);
+    color: var(--text-primary);
+    cursor: pointer;
+    transition: background 0.15s;
+    text-align: left;
+}
+
+.dropdown-item:hover:not(:disabled) {
+    background: var(--bg-hover, #f3f4f6);
+}
+
+.dropdown-item-danger {
+    color: var(--error-color, #ef4444);
+}
+
+.dropdown-item-danger:hover:not(:disabled) {
+    background: #fef2f2;
+}
+
+.dropdown-divider {
+    height: 1px;
+    background: var(--border-light);
+    margin: 4px 0;
+}
+
+.dropdown-enter-active, .dropdown-leave-active {
+    transition: opacity 0.15s, transform 0.15s;
+}
+
+.dropdown-enter-from, .dropdown-leave-to {
+    opacity: 0;
+    transform: translateY(-4px);
+}
+
+/* Two-Column Layout */
+.two-col-layout {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  grid-template-columns: 1fr 1fr;
   gap: var(--spacing-4);
   margin-bottom: var(--spacing-6);
+  align-items: start;
+}
+
+.col-stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-4);
 }
 
 .info-card {
@@ -447,54 +530,20 @@ onMounted(() => {
   font-weight: normal;
 }
 
-/* Action Bar */
-.action-bar {
-  padding: var(--spacing-4);
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
+.status-badge {
+    display: inline-flex;
+    padding: 2px 10px;
+    border-radius: 12px;
+    font-size: var(--font-size-xs);
+    font-weight: 500;
 }
-
-.action-group {
-    display: flex;
-    gap: var(--spacing-3);
-}
-
-.btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.btn-danger {
-  background: var(--error-color);
-  color: white;
-  border: none;
-  padding: 8px 16px;
-  border-radius: var(--radius-md);
-  font-size: var(--font-size-sm);
-  font-weight: var(--font-weight-medium);
-  cursor: pointer;
-  display: inline-flex;
-  align-items: center;
-  gap: var(--spacing-2);
-  transition: background var(--transition-base);
-}
-
-.btn-danger:hover {
-  background: var(--error-dark);
-}
+.status-success { background: var(--success-50); color: var(--success-700); }
+.status-default { background: var(--gray-100); color: var(--gray-700); }
 
 /* Responsive */
 @media (max-width: 768px) {
-  .info-grid {
+  .two-col-layout {
     grid-template-columns: 1fr;
-  }
-
-  .title-bar {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: var(--spacing-3);
   }
 }
 </style>

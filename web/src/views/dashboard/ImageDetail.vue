@@ -148,6 +148,9 @@ onMounted(fetchImage)
                             <span :class="['badge', getStatusClass(image.status)]">
                                 {{ getStatusText(image.status) }}
                             </span>
+                            <span :class="['badge', image.public ? 'status-running' : 'status-stopped']">
+                                {{ image.public ? $t('dashboard.table.public') : $t('dashboard.table.private') }}
+                            </span>
                         </h2>
                         <div class="image-id-row">
                             <span class="image-id">{{ image.id }}</span>
