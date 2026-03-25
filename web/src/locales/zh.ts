@@ -642,6 +642,7 @@ export default {
             target: '挂载点',
             path: '路径',
             publicKey: '公钥',
+            default: '默认',
         },
         instanceStatus: {
             running: '运行中',
@@ -711,6 +712,12 @@ export default {
         subnetDetail: {
             loadError: '加载子网详情失败。',
         },
+        securityGroupDetail: {
+            loadError: '加载安全组详情失败。',
+            deleteConfirm: '确定要删除此安全组吗？此操作无法撤销。',
+            deleteRuleConfirm: '确定要删除此安全组规则吗？',
+            ruleCount: '{n} 条规则',
+        },
         buttons: {
             createInstance: '创建云服务器',
             createFlavor: '创建规格',
@@ -765,7 +772,9 @@ export default {
                 selectSubnet: '请选择子网',
                 selectSSHKey: '请选择 SSH 密钥',
                 none: '无',
+                all: '全部',
                 auto: '自动',
+                sgNameExample: '例如：web-servers',
                 nameExample: '例如：web-server-01',
                 vpcNameExample: '例如：生产环境-VPC',
                 subnetNameExample: '例如：后端-子网',

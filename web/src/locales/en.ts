@@ -643,6 +643,7 @@ export default {
             target: 'Target',
             path: 'Path',
             publicKey: 'Public Key',
+            default: 'Default',
         },
         instanceStatus: {
             running: 'Running',
@@ -712,6 +713,12 @@ export default {
         subnetDetail: {
             loadError: 'Failed to load subnet details.',
         },
+        securityGroupDetail: {
+            loadError: 'Failed to load security group details.',
+            deleteConfirm: 'Are you sure you want to delete this security group? This action cannot be undone.',
+            deleteRuleConfirm: 'Are you sure you want to delete this security rule?',
+            ruleCount: '{n} Rule | {n} Rules',
+        },
         buttons: {
             createInstance: 'Create Instance',
             createFlavor: 'Create Specification',
@@ -778,6 +785,8 @@ export default {
                 dnsExample: 'e.g. 8.8.8.8',
                 domainExample: 'e.g. example.com',
                 ipExample: 'e.g. 10.0.1.10',
+                all: 'All',
+                sgNameExample: 'e.g. web-servers',
             },
             sections: {
                 general: 'General Settings',

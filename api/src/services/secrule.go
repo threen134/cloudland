@@ -58,8 +58,8 @@ func (a *SecruleAdminService) ApplySecgroup(ctx context.Context, secgroup *model
 	return
 }
 
-func (a *SecruleAdminService) Update(ctx context.Context, id int64, name, remoteIp, direction, protocol string, portMin, portMax int) (secrule *model.SecurityRule, err error) {
-	logger.Infof("ENTER SecruleAdmin.Update: id=%d, name=%s, remoteIp=%s, direction=%s, protocol=%s, portMin=%d, portMax=%d", id, name, remoteIp, direction, protocol, portMin, portMax)
+func (a *SecruleAdminService) Update(ctx context.Context, secrule *model.SecurityRule, secgroup *model.SecurityGroup, name, remoteIp, direction, protocol string, portMin, portMax int32) (err error) {
+	logger.Infof("ENTER SecruleAdmin.Update: id=%d, name=%s, remoteIp=%s, direction=%s, protocol=%s, portMin=%d, portMax=%d", secrule.ID, name, remoteIp, direction, protocol, portMin, portMax)
 	defer func() {
 		if err != nil {
 			logger.Errorf("EXIT SecruleAdmin.Update: error=%v", err)
@@ -67,25 +67,27 @@ func (a *SecruleAdminService) Update(ctx context.Context, id int64, name, remote
 			logger.Info("EXIT SecruleAdmin.Update: success")
 		}
 	}()
-	ctx, db := GetContextDB(ctx)
-	secrule = &model.SecurityRule{Model: model.Model{ID: id}}
-	err = db.Take(secrule).Error
-	if err != nil {
-		logger.Error("DB failed to query security rules ", err)
-		err = NewCLError(ErrSecurityRuleNotFound, "Failed to find security rule", err)
+	memberShip := GetMemberShip(ctx)
+	permit := memberShip.CheckResourceOrg(model.OrgWriter, secrule.Owner)
+	if !permit {
+		logger.Error("Not authorized for this operation")
+		err = NewCLError(ErrPermissionDenied, "Not authorized for this operation", nil)
 		return
 	}
+	ctx, db := GetContextDB(ctx)
 	if remoteIp != "" {
 		netLen := strings.Split(remoteIp, "/")
-		NetLen, _ := strconv.Atoi(netLen[1])
-		if NetLen < 0 || NetLen > 32 {
-			logger.Error("Invalid Netmask,fill in valid one")
-			err = fmt.Errorf("Invalid Netmask for RemoteIp, please fill a valid one")
+		if len(netLen) != 2 {
+			err = NewCLError(ErrInvalidParameter, "Invalid CIDR format for RemoteIp", nil)
+			return
+		}
+		n, _ := strconv.Atoi(netLen[1])
+		if n < 0 || n > 32 {
+			err = NewCLError(ErrInvalidParameter, "Invalid Netmask for RemoteIp", nil)
 			return
 		}
 		secrule.RemoteIp = remoteIp
 	}
-	//direction
 	if direction != "" {
 		secrule.Direction = direction
 	}
@@ -95,39 +97,37 @@ func (a *SecruleAdminService) Update(ctx context.Context, id int64, name, remote
 	if name != "" {
 		secrule.Name = name
 	}
-	if portMin <= portMax {
-		if portMin > 0 && portMin < 65536 {
-			secrule.PortMin = int32(portMin)
-			if portMax > 0 && portMax < 65536 {
-				secrule.PortMax = int32(portMax)
-			} else if portMax > 65535 {
-				logger.Error("it's out of range, please input less than 65536")
-				err = NewCLError(ErrInvalidParameter, "Invalid PortMax", nil)
-				return
-			} else {
-				secrule.PortMax = -1
-			}
-		} else if portMin < -1 || portMin == 0 {
-			logger.Error("it's out of range,please fill a valid port")
-			err = NewCLError(ErrInvalidParameter, "Invalid PortMin", nil)
-			return
-		} else if portMin > 65535 {
-			logger.Error("it's out of range, please input less than 65537")
-			err = NewCLError(ErrInvalidParameter, "Invalid PortMin", nil)
-			return
-		} else {
-			secrule.PortMin = -1
-		}
-
+	// Note: protocol field is already updated above, so secrule.Protocol reflects the new value
+	if secrule.Protocol == "icmp" {
+		secrule.PortMin = -1
+		secrule.PortMax = -1
 	} else {
-		logger.Error("PortMax should be greater than PortMin")
-		err = NewCLError(ErrInvalidParameter, "PortMax should be greater than PortMin", nil)
-		return
+		if portMin > 0 && portMin <= 65535 {
+			secrule.PortMin = portMin
+		} else if portMin > 65535 {
+			err = NewCLError(ErrInvalidParameter, "PortMin out of range, must be 1-65535", nil)
+			return
+		}
+		if portMax > 0 && portMax <= 65535 {
+			secrule.PortMax = portMax
+		} else if portMax > 65535 {
+			err = NewCLError(ErrInvalidParameter, "PortMax out of range, must be 1-65535", nil)
+			return
+		}
+		if secrule.PortMin > secrule.PortMax {
+			err = NewCLError(ErrInvalidParameter, "PortMax should be greater than or equal to PortMin", nil)
+			return
+		}
 	}
 	err = db.Model(secrule).Updates(secrule).Error
 	if err != nil {
 		logger.Error("DB failed to save security rule ", err)
 		err = NewCLError(ErrSecurityRuleUpdateFailed, "Failed to update security rule", err)
+		return
+	}
+	err = a.ApplySecgroup(ctx, secgroup)
+	if err != nil {
+		logger.Error("Failed to apply security group", err)
 		return
 	}
 	return

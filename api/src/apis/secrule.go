@@ -54,6 +54,12 @@ type SecurityRulePayload struct {
 }
 
 type SecrulePatchPayload struct {
+	Name       string `json:"name" binding:"omitempty,min=2,max=32"`
+	RemoteCIDR string `json:"remote_cidr" binding:"omitempty,cidrv4"`
+	Direction  string `json:"direction" binding:"omitempty,oneof=ingress egress"`
+	Protocol   string `json:"protocol" binding:"omitempty,oneof=tcp udp icmp"`
+	PortMin    int32  `json:"port_min" binding:"omitempty,gte=1,lte=65535"`
+	PortMax    int32  `json:"port_max" binding:"omitempty,gte=1,lte=65535"`
 }
 
 // @Summary get a secrule
@@ -123,6 +129,53 @@ func (v *SecruleAPI) Delete(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusNoContent, nil)
+}
+
+// @Summary patch a secrule
+// @Description patch a secrule
+// @tags Security Group
+// @Accept  json
+// @Produce json
+// @Param   message	body   SecrulePatchPayload  true   "Secrule patch payload"
+// @Success 200 {object} SecruleResponse
+// @Failure 400 {object} common.APIError "Bad request"
+// @Failure 401 {object} common.APIError "Not authorized"
+// @Router /security_groups/{id}/rules/{rule_id} [patch]
+func (v *SecruleAPI) Patch(c *gin.Context) {
+	ctx := c.Request.Context()
+	sgID := c.Param("id")
+	secgroup, err := secgroupAdmin.GetSecgroupByUUID(ctx, sgID)
+	if err != nil {
+		logger.Errorf("Failed to get security group: %+v", err)
+		ErrorResponse(c, http.StatusBadRequest, "Invalid security group query", err)
+		return
+	}
+	ruleID := c.Param("rule_id")
+	secrule, err := secruleAdmin.GetSecruleByUUID(ctx, ruleID, secgroup)
+	if err != nil {
+		logger.Errorf("Failed to get secrule %s, %+v", ruleID, err)
+		ErrorResponse(c, http.StatusBadRequest, "Invalid query", err)
+		return
+	}
+	payload := &SecrulePatchPayload{}
+	err = c.ShouldBindJSON(payload)
+	if err != nil {
+		logger.Errorf("Failed to bind json, %+v", err)
+		ErrorResponse(c, http.StatusBadRequest, "Invalid input JSON", err)
+		return
+	}
+	logger.Debugf("Patching secrule %s of SG %s with %+v", ruleID, sgID, payload)
+	err = secruleAdmin.Update(ctx, secrule, secgroup, payload.Name, payload.RemoteCIDR, payload.Direction, payload.Protocol, payload.PortMin, payload.PortMax)
+	if err != nil {
+		ErrorResponse(c, http.StatusBadRequest, "Not able to patch", err)
+		return
+	}
+	secruleResp, err := v.getSecruleResponse(ctx, secrule)
+	if err != nil {
+		ErrorResponse(c, http.StatusInternalServerError, "Internal error", err)
+		return
+	}
+	c.JSON(http.StatusOK, secruleResp)
 }
 
 // @Summary create a secrule

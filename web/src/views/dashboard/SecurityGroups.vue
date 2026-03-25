@@ -43,7 +43,16 @@ const fetchSecurityGroups = async () => {
             securityGroupsApi.list(),
             vpcsApi.list()
         ])
-        securityGroups.value = groupsResponse.security_groups || []
+        const groups = groupsResponse.security_groups || []
+        groups.forEach(group => {
+            if (group.security_rules) {
+                group.security_rules.sort((a, b) => {
+                    if (a.direction === b.direction) return 0
+                    return a.direction === 'ingress' ? -1 : 1
+                })
+            }
+        })
+        securityGroups.value = groups
         vpcs.value = vpcsResponse.vpcs || []
     } catch (err) {
         console.error('API fetch failed:', err)
@@ -104,11 +113,14 @@ const filteredSecurityGroups = computed(() => {
 })
 
 const formatPort = (rule: SecurityRule) => {
+    if (rule.protocol === 'icmp' || (rule.port_min != null && rule.port_min < 0)) {
+        return '-'
+    }
     if (rule.port_min === rule.port_max) {
-        return rule.port_min?.toString() || 'All'
+        return rule.port_min?.toString() || t('dashboard.forms.placeholder.all')
     }
     if (rule.port_min === 1 && rule.port_max === 65535) {
-        return 'All'
+        return t('dashboard.forms.placeholder.all')
     }
     return `${rule.port_min}-${rule.port_max}`
 }
@@ -207,7 +219,7 @@ onMounted(fetchSecurityGroups)
             </div>
           </div>
           <div class="sg-stats">
-            <span class="rule-count">{{ group.security_rules?.length || 0 }} {{ $t('dashboard.buttons.addRule').replace('Add ', '') }}s</span>
+            <span class="rule-count">{{ $t('dashboard.securityGroupDetail.ruleCount', { n: group.security_rules?.length || 0 }) }}</span>
             <button class="btn btn-ghost btn-sm" @click.stop>
               <Plus :size="14" /> {{ $t('dashboard.buttons.addRule') }}
             </button>
@@ -232,7 +244,7 @@ onMounted(fetchSecurityGroups)
               <tr v-else v-for="rule in group.security_rules" :key="rule.id">
                 <td>
                   <span :class="['direction-badge', rule.direction]">
-                    {{ rule.direction }}
+                    {{ rule.direction === 'ingress' ? $t('dashboard.table.ingress') : $t('dashboard.table.egress') }}
                   </span>
                 </td>
                 <td class="protocol">{{ rule.protocol.toUpperCase() }}</td>
@@ -268,7 +280,7 @@ onMounted(fetchSecurityGroups)
               v-model="newGroupForm.name" 
               type="text" 
               :class="['form-input', { 'input-error': !isNameValid }]" 
-              placeholder="e.g. web-servers" 
+              :placeholder="$t('dashboard.forms.placeholder.sgNameExample')" 
             />
             <div v-if="!isNameValid" class="text-error text-xs mt-1">
               {{ $t('messages.invalidHostname') }}

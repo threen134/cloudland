@@ -295,6 +295,10 @@ export const securityGroupsApi = {
     },
     deleteRule: async (groupId: string, ruleId: string): Promise<void> => {
         await client.delete(`/security_groups/${groupId}/rules/${ruleId}`)
+    },
+    patchRule: async (groupId: string, ruleId: string, rule: Partial<SecurityRulePayload>): Promise<SecurityRule> => {
+        const response = await client.patch(`/security_groups/${groupId}/rules/${ruleId}`, rule)
+        return response.data
     }
 }
 
