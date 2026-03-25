@@ -44,6 +44,7 @@ type SubnetResponse struct {
 	AvailableCount int64              `json:"available_count"`
 	Vlan           int                `json:"vlan"`
 	Priority       int32              `json:"priority"`
+	Dhcp           bool               `json:"dhcp"`
 }
 
 type SiteSubnetInfo struct {
@@ -85,6 +86,7 @@ type SubnetPatchPayload struct {
 	Group    *BaseReference `json:"group" binding:"omitempty"`
 	Type     SubnetType     `json:"type" binding:"omitempty,oneof=public internal private site"`
 	Priority int32          `json:"priority" binding:"omitempty,gte=0,lte=100000"`
+	Dhcp     *bool          `json:"dhcp" binding:"omitempty"`
 }
 
 // @Summary get a subnet
@@ -158,8 +160,11 @@ func (v *SubnetAPI) Patch(c *gin.Context) {
 			subnet.Group = nil
 		}
 	}
+	if payload.Dhcp != nil {
+		subnet.Dhcp = *payload.Dhcp
+	}
 	subnet.Priority = payload.Priority
-	err = subnetAdmin.Update(ctx, subnet.ID, subnet.Name, subnet.Type, subnet.Group, payload.Priority)
+	err = subnetAdmin.Update(ctx, subnet.ID, subnet.Name, subnet.Type, subnet.Group, payload.Priority, subnet.Dhcp)
 	if err != nil {
 		logger.Errorf("Failed to update subnet %s, %+v", uuID, err)
 		ErrorResponse(c, http.StatusBadRequest, "Failed to update subnet", err)
@@ -287,6 +292,7 @@ func (v *SubnetAPI) getSubnetResponse(ctx context.Context, subnet *model.Subnet)
 		Type:       SubnetType(subnet.Type),
 		Vlan:       int(subnet.Vlan),
 		Priority:   subnet.Priority,
+		Dhcp:       subnet.Dhcp,
 	}
 	if subnet.Router != nil {
 		router := subnet.Router

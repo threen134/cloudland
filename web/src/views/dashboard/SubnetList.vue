@@ -96,7 +96,7 @@ const closeCreateModal = () => {
 const handleCreateSubnet = async () => {
     createError.value = ''
     if (!newSubnetForm.value.name || !newSubnetForm.value.network_cidr) {
-        createError.value = 'Please fill in Name and CIDR.'
+        createError.value = t('messages.fillNameAndCidr')
         return
     }
     if (!isNameValid.value) {
@@ -230,7 +230,7 @@ onMounted(fetchSubnets)
             <th>{{ $t('dashboard.table.nameId') }}</th>
             <th>{{ $t('dashboard.table.cidr') }}</th>
             <th>{{ $t('dashboard.table.networkRange') }} / VLAN</th>
-            <th>Usage (Alloc/Avail/Total)</th>
+            <th>{{ $t('dashboard.table.allocated') }} / {{ $t('dashboard.table.available') }} / {{ $t('dashboard.overview.total') }}</th>
             <th>{{ $t('dashboard.table.vpc') }}</th>
             <th>{{ $t('dashboard.table.type') }}</th>
             <th>{{ $t('dashboard.table.actions') }}</th>
@@ -308,7 +308,7 @@ onMounted(fetchSubnets)
             </td>
             <td>
               <span :class="['badge', getTypeClass(subnet.type || '')]">
-                {{ subnet.type || 'internal' }}
+                {{ $t('dashboard.subnetTypes.' + (subnet.type || 'internal')) }}
               </span>
             </td>
             <td>
@@ -350,7 +350,7 @@ onMounted(fetchSubnets)
                 v-model="newSubnetForm.name"
                 type="text"
                 :class="['form-input', { 'input-error': !isNameValid }]"
-                placeholder="e.g. backend-subnet"
+                :placeholder="$t('dashboard.forms.placeholder.subnetNameExample')"
               />
               <div v-if="!isNameValid" class="text-error text-xs mt-1">
                 {{ $t('messages.invalidHostname') }}
@@ -360,10 +360,10 @@ onMounted(fetchSubnets)
             <div class="form-group">
               <label class="form-label">{{ $t('dashboard.table.type') }}</label>
               <select v-model="newSubnetForm.type" class="form-input">
-                <option value="internal">Internal</option>
-                <option v-if="isSystemAdmin" value="public">Public</option>
-                <option v-if="isSystemAdmin" value="private">Private</option>
-                <option value="site">Site</option>
+                <option value="internal">{{ $t('dashboard.subnetTypes.internal') }}</option>
+                <option v-if="isSystemAdmin" value="public">{{ $t('dashboard.subnetTypes.public') }}</option>
+                <option v-if="isSystemAdmin" value="private">{{ $t('dashboard.subnetTypes.private') }}</option>
+                <option value="site">{{ $t('dashboard.subnetTypes.site') }}</option>
               </select>
             </div>
 
@@ -373,7 +373,7 @@ onMounted(fetchSubnets)
                 v-model="newSubnetForm.network_cidr"
                 type="text"
                 class="form-input"
-                placeholder="e.g. 10.0.1.0/24"
+                :placeholder="$t('dashboard.forms.placeholder.cidrExample')"
               />
             </div>
 
@@ -388,7 +388,7 @@ onMounted(fetchSubnets)
             </div>
 
             <div class="form-group" v-if="newSubnetForm.type === 'public' || newSubnetForm.type === 'private'">
-              <label class="form-label">VLAN *</label>
+              <label class="form-label">{{ $t('dashboard.forms.vlan') }} *</label>
               <input
                 v-model.number="newSubnetForm.vlan"
                 type="number"
@@ -397,7 +397,7 @@ onMounted(fetchSubnets)
                 min="1"
                 max="4094"
               />
-              <div class="form-hint">1-4094, required</div>
+              <div class="form-hint">{{ $t('dashboard.vpcDetail.vlanPublicHint') }}</div>
             </div>
 
             <div class="form-row">
@@ -407,7 +407,7 @@ onMounted(fetchSubnets)
                   v-model="newSubnetForm.gateway"
                   type="text"
                   class="form-input"
-                  placeholder="e.g. 10.0.1.1"
+                  :placeholder="$t('dashboard.forms.placeholder.gatewayExample')"
                 />
               </div>
               <div class="form-group flex-1">
@@ -436,7 +436,7 @@ onMounted(fetchSubnets)
                   v-model="newSubnetForm.dns"
                   type="text"
                   class="form-input"
-                  placeholder="e.g. 8.8.8.8"
+                  :placeholder="$t('dashboard.forms.placeholder.dnsExample')"
                 />
               </div>
               <div class="form-group flex-1">
@@ -445,7 +445,7 @@ onMounted(fetchSubnets)
                   v-model="newSubnetForm.base_domain"
                   type="text"
                   class="form-input"
-                  placeholder="e.g. example.com"
+                  :placeholder="$t('dashboard.forms.placeholder.domainExample')"
                 />
               </div>
             </div>
@@ -466,7 +466,7 @@ onMounted(fetchSubnets)
                     v-model="newSubnetForm.start_ip"
                     type="text"
                     class="form-input"
-                    placeholder="e.g. 10.0.1.2"
+                    :placeholder="$t('dashboard.forms.placeholder.ipExample')"
                   />
                 </div>
                 <div class="form-group flex-1">
@@ -475,7 +475,7 @@ onMounted(fetchSubnets)
                     v-model="newSubnetForm.end_ip"
                     type="text"
                     class="form-input"
-                    placeholder="e.g. 10.0.1.254"
+                    :placeholder="$t('dashboard.forms.placeholder.ipExample')"
                   />
                 </div>
               </div>
@@ -488,11 +488,11 @@ onMounted(fetchSubnets)
                     v-model.number="newSubnetForm.vlan"
                     type="number"
                     class="form-input"
-                    placeholder="Auto"
+                    :placeholder="$t('dashboard.forms.placeholder.auto')"
                     min="1"
                     max="16777215"
                   />
-                  <div class="form-hint">1-16777215, auto-generated if empty</div>
+                  <div class="form-hint">{{ $t('dashboard.vpcDetail.vlanHint') }}</div>
                 </div>
                 <div class="form-group flex-1" v-if="newSubnetForm.type === 'public'">
                   <label class="form-label">{{ $t('dashboard.forms.priority') }}</label>

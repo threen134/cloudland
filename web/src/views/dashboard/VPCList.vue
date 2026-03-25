@@ -192,6 +192,10 @@ const newSubnetForm = ref<SubnetPayload>({
 })
 const isSubnetNameValid = computed(() => isValidName(newSubnetForm.value.name))
 
+const getStatusText = (status: string | undefined) => {
+    return t(`dashboard.vpcStatus.${status?.toLowerCase() || 'active'}`)
+}
+
 const openCreateSubnetModal = (vpc: VPC) => {
     subnetTargetVPC.value = vpc
     newSubnetForm.value = {
@@ -331,19 +335,24 @@ onMounted(() => {
             <td>
               <span class="status-pill status-active">
                 <span class="status-dot"></span>
-                {{ vpc.status || 'Active' }}
+                {{ getStatusText(vpc.status) }}
               </span>
             </td>
             <td>
-              <div class="subnet-badges">
-                <div v-if="vpc.subnets && vpc.subnets.length > 0">
-                  <span v-for="sub in vpc.subnets" :key="sub.id" class="subnet-badge" :title="sub.network || sub.network_cidr">
-                    <Network :size="10" />
-                    {{ sub.name }}
-                  </span>
+              <div class="subnet-count-wrapper" v-if="vpc.subnets && vpc.subnets.length > 0">
+                <span class="subnet-count-badge">
+                  <Network :size="12" />
+                  {{ vpc.subnets.length }}
+                </span>
+                <div class="subnet-popover">
+                  <router-link v-for="sub in vpc.subnets" :key="sub.id" :to="{ name: 'subnet-detail', params: { id: sub.id } }" class="subnet-popover-item">
+                    <Network :size="12" />
+                    <span class="subnet-popover-name">{{ sub.name }}</span>
+                    <span class="subnet-popover-cidr">{{ sub.network || sub.network_cidr }}</span>
+                  </router-link>
                 </div>
-                <span v-else class="text-secondary">{{ $t('messages.noData') }}</span>
               </div>
+              <span v-else class="text-secondary">{{ $t('messages.noData') }}</span>
             </td>
             <td>
               <div class="actions">
@@ -380,7 +389,7 @@ onMounted(() => {
               v-model="newVPCForm.name" 
               type="text" 
               :class="['form-input', { 'input-error': !isNameValid }]" 
-              placeholder="e.g. production-vpc" 
+              :placeholder="$t('dashboard.forms.placeholder.vpcNameExample')" 
             />
             <div v-if="!isNameValid" class="text-error text-xs mt-1">
               {{ $t('messages.invalidHostname') }}
@@ -482,7 +491,7 @@ onMounted(() => {
               v-model="newSubnetForm.name"
               type="text"
               :class="['form-input', { 'input-error': newSubnetForm.name && !isSubnetNameValid }]"
-              placeholder="e.g. backend-subnet"
+              :placeholder="$t('dashboard.forms.placeholder.subnetNameExample')"
             />
             <div v-if="newSubnetForm.name && !isSubnetNameValid" class="text-error text-xs mt-1">
               {{ $t('messages.invalidHostname') }}
@@ -495,7 +504,7 @@ onMounted(() => {
               v-model="newSubnetForm.network_cidr"
               type="text"
               class="form-input"
-              placeholder="e.g. 10.0.1.0/24"
+              :placeholder="$t('dashboard.forms.placeholder.cidrExample')"
             />
           </div>
 
@@ -506,7 +515,7 @@ onMounted(() => {
                 v-model="newSubnetForm.gateway"
                 type="text"
                 class="form-input"
-                placeholder="e.g. 10.0.1.1"
+                :placeholder="$t('dashboard.forms.placeholder.gatewayExample')"
               />
             </div>
             <div class="form-group flex-1">
@@ -534,7 +543,7 @@ onMounted(() => {
                 v-model="newSubnetForm.dns"
                 type="text"
                 class="form-input"
-                placeholder="e.g. 8.8.8.8"
+                :placeholder="$t('dashboard.forms.placeholder.dnsExample')"
               />
             </div>
             <div class="form-group flex-1">
@@ -543,7 +552,7 @@ onMounted(() => {
                 v-model="newSubnetForm.base_domain"
                 type="text"
                 class="form-input"
-                placeholder="e.g. example.com"
+                :placeholder="$t('dashboard.forms.placeholder.domainExample')"
               />
             </div>
           </div>
@@ -562,7 +571,7 @@ onMounted(() => {
                     v-model="newSubnetForm.start_ip"
                     type="text"
                     class="form-input"
-                    placeholder="e.g. 10.0.1.2"
+                    :placeholder="$t('dashboard.forms.placeholder.ipExample')"
                   />
                 </div>
                 <div class="form-group flex-1">
@@ -571,7 +580,7 @@ onMounted(() => {
                     v-model="newSubnetForm.end_ip"
                     type="text"
                     class="form-input"
-                    placeholder="e.g. 10.0.1.254"
+                    :placeholder="$t('dashboard.forms.placeholder.ipExample')"
                   />
                 </div>
               </div>
@@ -581,11 +590,11 @@ onMounted(() => {
                   v-model.number="newSubnetForm.vlan"
                   type="number"
                   class="form-input"
-                  placeholder="Auto"
+                  :placeholder="$t('dashboard.forms.placeholder.auto')"
                   min="1"
                   max="16777215"
                 />
-                <div class="form-hint">1-16777215, auto-generated if empty</div>
+                <div class="form-hint">{{ $t('dashboard.vpcDetail.vlanHint') }}</div>
               </div>
             </div>
           </div>
@@ -660,6 +669,11 @@ onMounted(() => {
   overflow: hidden;
 }
 
+.table-card td {
+  overflow: visible;
+  position: relative;
+}
+
 /* .resource-info etc. are global from index.css */
 
 .resource-link {
@@ -694,22 +708,71 @@ onMounted(() => {
   border-radius: 50%;
 }
 
-.subnet-badges {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
+.subnet-count-wrapper {
+  position: relative;
+  display: inline-block;
 }
 
-.subnet-badge {
+.subnet-count-badge {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  padding: 2px 8px;
+  padding: 2px 10px;
   background: var(--gray-10);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-sm);
   font-size: var(--font-size-xs);
   color: var(--text-secondary);
+  cursor: default;
+}
+
+.subnet-popover {
+  display: none;
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 50;
+  min-width: 260px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-md);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
+  padding: 6px 0;
+}
+
+.subnet-count-wrapper:hover .subnet-popover {
+  display: block;
+}
+
+.subnet-popover-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  font-size: var(--font-size-xs);
+  color: var(--text-secondary);
+  text-decoration: none;
+  transition: all 0.2s;
+}
+
+.subnet-popover-item:hover {
+  background: var(--primary-50);
+  color: var(--primary-color);
+}
+
+.subnet-popover-item:hover .subnet-popover-name {
+  color: var(--primary-600);
+  text-decoration: underline;
+}
+
+.subnet-popover-name {
+  font-weight: var(--font-weight-medium);
+  color: var(--primary-color);
+}
+
+.subnet-popover-cidr {
+  color: var(--text-light);
+  margin-left: auto;
 }
 
 .actions {

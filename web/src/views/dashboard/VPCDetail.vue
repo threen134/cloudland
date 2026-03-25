@@ -147,7 +147,7 @@ const closeCreateSubnetModal = () => {
 const handleCreateSubnet = async () => {
     createSubnetError.value = ''
     if (!newSubnetForm.value.name || !newSubnetForm.value.network_cidr) {
-        createSubnetError.value = 'Please fill in Name and CIDR.'
+        createSubnetError.value = t('messages.fillNameAndCidr')
         return
     }
     if (!isSubnetNameValid.value) {
@@ -194,7 +194,7 @@ const fetchVPC = async () => {
         vpc.value = response
     } catch (err: any) {
         console.error('Failed to fetch VPC:', err)
-        error.value = err.message || 'Failed to load VPC details'
+        error.value = err.message || t('dashboard.vpcDetail.loadError')
     } finally {
         loading.value = false
     }
@@ -227,6 +227,12 @@ const getStatusClass = (status?: string) => {
         'error': 'status-error'
     }
     return statusMap[status || ''] || 'status-running'
+}
+
+const getStatusText = (status?: string) => {
+    if (!status) return t('dashboard.vpcStatus.active')
+    const key = status.toLowerCase()
+    return t(`dashboard.vpcStatus.${key}`)
 }
 
 const formatDate = (dateStr?: string) => {
@@ -294,7 +300,7 @@ onMounted(() => {
           <div>
             <h2 class="resource-title">
               {{ vpc.name }}
-              <span :class="['badge', getStatusClass(vpc.status)]">{{ vpc.status || 'Active' }}</span>
+              <span :class="['badge', getStatusClass(vpc.status)]">{{ getStatusText(vpc.status) }}</span>
             </h2>
             <div class="resource-id-row">
               <span class="resource-id-text">{{ vpc.id }}</span>
@@ -343,7 +349,7 @@ onMounted(() => {
               <div class="kv-item">
                 <span class="label">{{ $t('dashboard.table.status') }}</span>
                 <span class="value">
-                  <span :class="['status-badge', getStatusClass(vpc.status)]">{{ vpc.status || 'Active' }}</span>
+                  <span :class="['status-badge', getStatusClass(vpc.status)]">{{ getStatusText(vpc.status) }}</span>
                 </span>
               </div>
               <div class="kv-item">
@@ -404,18 +410,20 @@ onMounted(() => {
             <tbody>
               <tr v-for="subnet in vpc.subnets" :key="subnet.id">
                 <td>
-                  <div class="text-primary font-medium">{{ subnet.name }}</div>
-                  <div class="text-light mono" style="font-size: 11px;">{{ subnet.id }}</div>
+                  <router-link :to="{ name: 'subnet-detail', params: { id: subnet.id } }" class="subnet-link">
+                    <div class="text-blue font-medium">{{ subnet.name }}</div>
+                    <div class="text-light mono" style="font-size: 11px;">{{ subnet.id }}</div>
+                  </router-link>
                 </td>
                 <td><span class="mono">{{ (subnet.network || subnet.network_cidr) || '-' }}</span></td>
                 <td><span class="mono">{{ subnet.gateway || '-' }}</span></td>
                 <td>
-                  <span class="badge badge-secondary">{{ subnet.type || 'internal' }}</span>
+                  <span class="badge badge-secondary">{{ $t('dashboard.subnetTypes.' + (subnet.type || 'internal')) }}</span>
                 </td>
                 <td>{{ subnet.vlan ?? '-' }}</td>
                 <td>
                   <span :class="['badge', subnet.dhcp ? 'status-running' : 'status-stopped']">
-                    {{ subnet.dhcp ? 'ON' : 'OFF' }}
+                    {{ subnet.dhcp ? $t('dashboard.alarmActions.enabled') : $t('dashboard.alarmActions.disabled') }}
                   </span>
                 </td>
               </tr>
@@ -485,7 +493,7 @@ onMounted(() => {
                 v-model="newSubnetForm.name"
                 type="text"
                 :class="['form-input', { 'input-error': newSubnetForm.name && !isSubnetNameValid }]"
-                placeholder="e.g. backend-subnet"
+                :placeholder="$t('dashboard.forms.placeholder.subnetNameExample')"
               />
               <div v-if="newSubnetForm.name && !isSubnetNameValid" class="text-error text-xs mt-1">
                 {{ $t('messages.invalidHostname') }}
@@ -498,7 +506,7 @@ onMounted(() => {
                 v-model="newSubnetForm.network_cidr"
                 type="text"
                 class="form-input"
-                placeholder="e.g. 10.0.1.0/24"
+                :placeholder="$t('dashboard.forms.placeholder.cidrExample')"
               />
             </div>
 
@@ -509,7 +517,7 @@ onMounted(() => {
                   v-model="newSubnetForm.gateway"
                   type="text"
                   class="form-input"
-                  placeholder="e.g. 10.0.1.1"
+                  :placeholder="$t('dashboard.forms.placeholder.gatewayExample')"
                 />
               </div>
               <div class="form-group flex-1">
@@ -537,7 +545,7 @@ onMounted(() => {
                   v-model="newSubnetForm.dns"
                   type="text"
                   class="form-input"
-                  placeholder="e.g. 8.8.8.8"
+                  :placeholder="$t('dashboard.forms.placeholder.dnsExample')"
                 />
               </div>
               <div class="form-group flex-1">
@@ -546,7 +554,7 @@ onMounted(() => {
                   v-model="newSubnetForm.base_domain"
                   type="text"
                   class="form-input"
-                  placeholder="e.g. example.com"
+                  :placeholder="$t('dashboard.forms.placeholder.domainExample')"
                 />
               </div>
             </div>
@@ -565,7 +573,7 @@ onMounted(() => {
                       v-model="newSubnetForm.start_ip"
                       type="text"
                       class="form-input"
-                      placeholder="e.g. 10.0.1.2"
+                      :placeholder="$t('dashboard.forms.placeholder.ipExample')"
                     />
                   </div>
                   <div class="form-group flex-1">
@@ -574,7 +582,7 @@ onMounted(() => {
                       v-model="newSubnetForm.end_ip"
                       type="text"
                       class="form-input"
-                      placeholder="e.g. 10.0.1.254"
+                      :placeholder="$t('dashboard.forms.placeholder.ipExample')"
                     />
                   </div>
                 </div>
@@ -584,11 +592,11 @@ onMounted(() => {
                     v-model.number="newSubnetForm.vlan"
                     type="number"
                     class="form-input"
-                    placeholder="Auto"
+                    :placeholder="$t('dashboard.forms.placeholder.auto')"
                     min="1"
                     max="16777215"
                   />
-                  <div class="form-hint">1-16777215, auto-generated if empty</div>
+                  <div class="form-hint">{{ $t('dashboard.vpcDetail.vlanHint') }}</div>
                 </div>
               </div>
             </div>
@@ -791,6 +799,18 @@ onMounted(() => {
   display: flex;
   flex-direction: column;
   gap: var(--spacing-4);
+}
+
+.subnet-link {
+  text-decoration: none;
+  display: block;
+  border-radius: var(--radius-sm);
+  transition: all 0.2s;
+}
+
+.subnet-link:hover .text-blue {
+  color: var(--primary-600);
+  text-decoration: underline;
 }
 
 .info-card {

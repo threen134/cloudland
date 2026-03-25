@@ -272,8 +272,8 @@ func (a *SubnetAdmin) GetSubnet(ctx context.Context, reference *BaseReference) (
 	return
 }
 
-func (a *SubnetAdmin) Update(ctx context.Context, id int64, name, subnetType string, ipGroup *model.IpGroup, priority int32) (err error) {
-	logger.Infof("ENTER SubnetAdmin.Update: id=%d, name=%s, subnetType=%s, ipGroup=%+v, priority=%d", id, name, subnetType, ipGroup, priority)
+func (a *SubnetAdmin) Update(ctx context.Context, id int64, name, subnetType string, ipGroup *model.IpGroup, priority int32, dhcp bool) (err error) {
+	logger.Infof("ENTER SubnetAdmin.Update: id=%d, name=%s, subnetType=%s, ipGroup=%+v, priority=%d, dhcp=%t", id, name, subnetType, ipGroup, priority, dhcp)
 	defer func() {
 		if err != nil {
 			logger.Errorf("EXIT SubnetAdmin.Update: error=%v", err)
@@ -292,6 +292,7 @@ func (a *SubnetAdmin) Update(ctx context.Context, id int64, name, subnetType str
 		"name":     name,
 		"type":     subnetType,
 		"priority": priority,
+		"dhcp":     dhcp,
 	}
 
 	if ipGroup != nil {

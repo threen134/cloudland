@@ -32,6 +32,7 @@ type SecurityGroupResponse struct {
 	IsDefault        bool               `json:"is_default"`
 	VPC              *ResourceReference `json:"vpc,omitempty"`
 	TargetInterfaces []*TargetInterface `json:"target_interfaces,omitempty"`
+	SecurityRules    []*SecruleResponse `json:"security_rules,omitempty"`
 }
 
 type SecurityGroupListResponse struct {
@@ -217,6 +218,17 @@ func (v *SecgroupAPI) getSecgroupResponse(ctx context.Context, secgroup *model.S
 		secgroupResp.VPC = &ResourceReference{
 			ID:   secgroup.Router.UUID,
 			Name: secgroup.Router.Name,
+		}
+	}
+	_, secrules, rulesErr := secruleAdmin.List(ctx, 0, -1, "-created_at", secgroup)
+	if rulesErr != nil {
+		logger.Errorf("Failed to load rules for secgroup %s: %v", secgroup.UUID, rulesErr)
+	} else {
+		for _, rule := range secrules {
+			ruleResp, _ := secruleAPI.getSecruleResponse(ctx, rule)
+			if ruleResp != nil {
+				secgroupResp.SecurityRules = append(secgroupResp.SecurityRules, ruleResp)
+			}
 		}
 	}
 	err = secgroupAdmin.GetSecgroupInterfaces(ctx, secgroup)

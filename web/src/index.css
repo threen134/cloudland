@@ -868,7 +868,7 @@ button:disabled {
 
 .resource-name {
   font-weight: var(--font-weight-semibold);
-  color: var(--text-main);
+  color: var(--primary-color);
   font-size: var(--font-size-sm);
 }
 

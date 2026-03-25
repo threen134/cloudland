@@ -54,7 +54,7 @@ const fetchSubnet = async () => {
         subnet.value = response
     } catch (err) {
         console.error('Failed to fetch subnet:', err)
-        error.value = 'Failed to load subnet details.'
+        error.value = t('dashboard.subnetDetail.loadError')
     } finally {
         loading.value = false
     }
@@ -118,7 +118,7 @@ onMounted(fetchSubnet)
                     <div>
                         <h2 class="resource-title">
                             {{ subnet.name }}
-                            <span :class="['badge', getTypeBadgeClass(subnet.type || 'internal')]">{{ subnet.type || 'internal' }}</span>
+                            <span :class="['badge', getTypeBadgeClass(subnet.type || 'internal')]">{{ $t('dashboard.subnetTypes.' + (subnet.type || 'internal')) }}</span>
                         </h2>
                         <div class="resource-id-row">
                             <span class="resource-id-text">{{ subnet.id }}</span>
