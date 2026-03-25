@@ -1,11 +1,14 @@
 <script setup lang="ts">
 import { ref, onMounted, computed } from 'vue'
-import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { orgsApi, type Organization } from '../../api/orgs'
-import { Plus, Building2, Trash2, Edit2, User, Search, X, Eye, RefreshCw } from 'lucide-vue-next'
+import { type OrgResourceQuotaUpdate } from '../../api/quota'
+import { useAuthStore } from '../../stores/auth'
+import { useQuota } from '../../composables/useQuota'
+import { Plus, Building2, Trash2, Edit2, User, Search, X, Gauge, RefreshCw } from 'lucide-vue-next'
 
-const router = useRouter()
+const authStore = useAuthStore()
+const isSuperuser = computed(() => authStore.user?.is_superuser === true)
 
 const { t } = useI18n()
 
@@ -148,6 +151,37 @@ const confirmDelete = async () => {
     }
 }
 
+// --- Quota Modal ---
+const quotaModalVisible = ref(false)
+const quotaOrgId = ref('')
+const quotaOrgName = ref('')
+const {
+    quotaSummary,
+    quotaLoading,
+    quotaError,
+    editingQuota,
+    savingQuota,
+    fetchQuota,
+    handleSaveQuota: handleSaveQuotaBase,
+    getUsagePercent,
+    getUsageColor,
+} = useQuota()
+
+const openQuotaModal = (org: Organization) => {
+    quotaOrgId.value = org.uuid
+    quotaOrgName.value = org.name
+    quotaSummary.value = null
+    quotaError.value = ''
+    quotaModalVisible.value = true
+    fetchQuota(org.uuid)
+}
+
+const closeQuotaModal = () => {
+    quotaModalVisible.value = false
+}
+
+const handleSaveQuota = (regionName: string) => handleSaveQuotaBase(quotaOrgId.value, regionName)
+
 onMounted(fetchOrgs)
 </script>
 
@@ -228,13 +262,13 @@ onMounted(fetchOrgs)
             <td>{{ org.created_at || '-' }}</td>
             <td>
               <div class="actions">
-                <button class="btn btn-ghost btn-sm" title="View" @click="router.push(`/dashboard/orgs/${org.uuid}`)">
-                  <Eye :size="14" />
-                </button>
-                <button class="btn btn-ghost btn-sm" title="Edit" @click="openEditModal(org)">
+                <button class="btn btn-ghost btn-sm" :title="$t('actions.edit')" @click="openEditModal(org)">
                   <Edit2 :size="14" />
                 </button>
-                <button class="btn btn-ghost btn-sm text-error" title="Delete" @click="handleDeleteClick(org)">
+                <button class="btn btn-ghost btn-sm" :title="$t('quota.manage')" @click="openQuotaModal(org)">
+                  <Gauge :size="14" />
+                </button>
+                <button class="btn btn-ghost btn-sm text-error" :title="$t('actions.delete')" @click="handleDeleteClick(org)">
                   <Trash2 :size="14" />
                 </button>
               </div>
@@ -322,6 +356,90 @@ onMounted(fetchOrgs)
             <span v-if="editing" class="loading-spinner" style="width: 16px; height: 16px; border-width: 2px;"></span>
             {{ editing ? $t('messages.loading') : $t('actions.confirm') }}
           </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Quota Management Modal -->
+    <div v-if="quotaModalVisible" class="modal-overlay" @click.self="closeQuotaModal">
+      <div class="modal-content card" style="max-width: 700px; width: 95%;">
+        <div class="modal-header">
+          <h3><Gauge :size="18" style="margin-right: 8px;" />{{ $t('quota.manage') }} — {{ quotaOrgName }}</h3>
+          <button class="btn btn-ghost btn-sm icon-btn" @click="closeQuotaModal"><X :size="20" /></button>
+        </div>
+        <div class="modal-body" style="padding: var(--spacing-6); max-height: 60vh; overflow-y: auto;">
+          <div v-if="quotaLoading" class="text-center" style="padding: 48px;">
+            <div class="loading-spinner" style="margin: 0 auto;"></div>
+          </div>
+          <div v-else-if="quotaError" class="text-center" style="padding: 24px;">
+            <p class="text-error">{{ quotaError }}</p>
+            <button class="btn btn-secondary btn-sm" @click="fetchQuota(quotaOrgId)">{{ $t('actions.retry') }}</button>
+          </div>
+          <div v-else-if="quotaSummary && quotaSummary.regions.length > 0">
+            <div v-for="region in quotaSummary.regions" :key="region.region_name" class="quota-region-card">
+              <h5 class="quota-region-title">{{ region.region_name }}</h5>
+              <table class="data-table quota-table">
+                <thead>
+                  <tr>
+                    <th>{{ $t('dashboard.table.name') }}</th>
+                    <th>{{ $t('quota.limit') }}</th>
+                    <th>{{ $t('quota.used') }}</th>
+                    <th style="width: 200px;">{{ $t('dashboard.table.status') }}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="res in [
+                    { key: 'cpu_cores', qkey: 'max_cpu_cores', label: $t('quota.cpuCores') },
+                    { key: 'ram_gb', qkey: 'max_ram_gb', label: $t('quota.ramGb') },
+                    { key: 'disk_gb', qkey: 'max_disk_gb', label: $t('quota.diskGb') },
+                    { key: 'public_ips', qkey: 'max_public_ips', label: $t('quota.publicIps') },
+                  ]" :key="res.key">
+                    <td>{{ res.label }}</td>
+                    <td>
+                      <input
+                        v-if="isSuperuser"
+                        type="number"
+                        class="form-input quota-input"
+                        :value="editingQuota[region.region_name]?.[res.qkey as keyof OrgResourceQuotaUpdate]"
+                        @input="(e: any) => { if (editingQuota[region.region_name]) (editingQuota[region.region_name] as any)[res.qkey] = Number(e.target.value) }"
+                        min="0"
+                        step="1"
+                      />
+                      <span v-else>{{ (region.quota as any)[res.qkey] }}</span>
+                    </td>
+                    <td>{{ (region.consumption as any)[res.key] }}</td>
+                    <td>
+                      <div class="usage-bar-container">
+                        <div
+                          class="usage-bar"
+                          :style="{
+                            width: getUsagePercent((region.consumption as any)[res.key], (region.quota as any)[res.qkey]) + '%',
+                            background: getUsageColor(getUsagePercent((region.consumption as any)[res.key], (region.quota as any)[res.qkey]))
+                          }"
+                        ></div>
+                      </div>
+                      <span class="usage-text">{{ getUsagePercent((region.consumption as any)[res.key], (region.quota as any)[res.qkey]) }}%</span>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+              <div v-if="isSuperuser" class="quota-save-row">
+                <button
+                  class="btn btn-primary btn-sm"
+                  @click="handleSaveQuota(region.region_name)"
+                  :disabled="savingQuota === region.region_name"
+                >
+                  {{ savingQuota === region.region_name ? $t('messages.loading') : $t('actions.save') }}
+                </button>
+              </div>
+            </div>
+          </div>
+          <div v-else class="text-center text-secondary" style="padding: 48px;">
+            {{ $t('quota.noQuota') || 'No quota assigned' }}
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-secondary" @click="closeQuotaModal">{{ $t('actions.close') || $t('actions.cancel') }}</button>
         </div>
       </div>
     </div>
@@ -468,4 +586,31 @@ onMounted(fetchOrgs)
 .header-actions { display: flex; gap: 8px; align-items: center; }
 .spinning { animation: spin 1s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
+
+.quota-region-card {
+  padding: var(--spacing-4) 0;
+  border-bottom: 1px solid var(--border-light);
+}
+.quota-region-card:last-child { border-bottom: none; }
+.quota-region-title {
+  margin: 0 0 var(--spacing-3);
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-semibold);
+  color: var(--text-primary);
+}
+.quota-table { margin-bottom: var(--spacing-3); }
+.quota-input { width: 100px; padding: 4px 8px; font-size: var(--font-size-sm); }
+.quota-save-row { display: flex; justify-content: flex-end; padding-top: var(--spacing-2); }
+.usage-bar-container {
+  display: inline-block;
+  width: 120px;
+  height: 8px;
+  background: var(--bg-tertiary, #e5e7eb);
+  border-radius: 4px;
+  overflow: hidden;
+  vertical-align: middle;
+  margin-right: var(--spacing-2);
+}
+.usage-bar { height: 100%; border-radius: 4px; transition: width 0.3s ease; }
+.usage-text { font-size: var(--font-size-xs); color: var(--text-secondary); }
 </style>

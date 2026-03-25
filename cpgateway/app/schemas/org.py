@@ -10,6 +10,7 @@ class OrgCreate(BaseModel):
 
 class OrgUpdate(BaseModel):
     name: Optional[str] = None
+    description: Optional[str] = None
 
 
 class OrgResponse(BaseModel):

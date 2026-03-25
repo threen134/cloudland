@@ -52,8 +52,8 @@ const emptyStats: SystemStats = {
 onMounted(async () => {
     try {
         // Fetch resource data and quota in parallel
-        const orgUuid = localStorage.getItem('cloudland_org_id') || ''
-        const regionName = regionStore.currentRegion?.name || ''
+        const orgUuid = auth.user?.current_org_uuid || ''
+        const regionName = regionStore.currentRegion?.name || auth.user?.current_region || ''
 
         const [instRes, volRes, imgRes, vpcRes, fipRes, quotaRes] = await Promise.all([
             instancesApi.fetchInstances(),

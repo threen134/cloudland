@@ -12,6 +12,8 @@ interface User {
     is_superuser?: boolean
     language?: string
     role?: 'admin' | 'user'
+    current_org_uuid?: string
+    current_region?: string
 }
 
 export const useAuthStore = defineStore('auth', () => {

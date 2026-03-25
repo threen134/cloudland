@@ -1,12 +1,13 @@
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { orgsApi, ORG_ROLES, type Organization, type OrgMember, type OrgInvitation } from '../../api/orgs'
-import { quotaApi, type OrgResourceSummary, type OrgResourceInfo, type OrgResourceQuotaUpdate } from '../../api/quota'
-import { ArrowLeft, Building2, Users, Trash2, Shield, Crown, X, Mail, Clock, XCircle, Gauge } from 'lucide-vue-next'
+import { type OrgResourceQuotaUpdate } from '../../api/quota'
+import { ArrowLeft, Building2, Users, Trash2, Shield, Crown, X, Mail, Clock, XCircle, Gauge, ChevronDown } from 'lucide-vue-next'
 import { useAuthStore } from '../../stores/auth'
+import { useQuota } from '../../composables/useQuota'
 
 const { t } = useI18n()
 const authStore = useAuthStore()
@@ -23,68 +24,33 @@ const error = ref('')
 // Tabs
 const activeTab = ref<'members' | 'quota'>('members')
 
+// Quota modal
+const quotaModalVisible = ref(false)
+
 // Invitations
 const invitations = ref<OrgInvitation[]>([])
 const invitationsLoading = ref(false)
 
 // Quota
-const quotaSummary = ref<OrgResourceSummary | null>(null)
-const quotaLoading = ref(false)
-const quotaError = ref('')
-const editingQuota = ref<Record<string, OrgResourceQuotaUpdate>>({})
-const savingQuota = ref<string | null>(null)
+const {
+    quotaSummary,
+    quotaLoading,
+    quotaError,
+    editingQuota,
+    savingQuota,
+    fetchQuota,
+    handleSaveQuota: handleSaveQuotaBase,
+    getUsagePercent,
+    getUsageColor,
+} = useQuota()
 const isSuperuser = computed(() => authStore.user?.is_superuser === true)
 
-const fetchQuota = async () => {
-    quotaLoading.value = true
-    quotaError.value = ''
-    try {
-        const response = await quotaApi.getOrgResourceSummary(orgId)
-        quotaSummary.value = response.data
-        // Initialize editing state
-        editingQuota.value = {}
-        for (const region of (response.data.regions || [])) {
-            editingQuota.value[region.region_name] = {
-                max_cpu_cores: region.quota.max_cpu_cores,
-                max_ram_gb: region.quota.max_ram_gb,
-                max_public_ips: region.quota.max_public_ips,
-                max_disk_gb: region.quota.max_disk_gb,
-            }
-        }
-    } catch (err: any) {
-        quotaError.value = err.response?.data?.detail || 'Failed to load quota'
-    } finally {
-        quotaLoading.value = false
-    }
-}
+const handleSaveQuota = (regionName: string) => handleSaveQuotaBase(orgId, regionName)
 
-const handleSaveQuota = async (regionName: string) => {
-    savingQuota.value = regionName
-    try {
-        await quotaApi.updateOrgQuota(orgId, regionName, editingQuota.value[regionName])
-        await fetchQuota()
-    } catch (err: any) {
-        quotaError.value = err.response?.data?.detail || 'Failed to update quota'
-    } finally {
-        savingQuota.value = null
-    }
-}
-
-const getUsagePercent = (used: number, limit: number) => {
-    if (limit <= 0) return 0
-    return Math.min(100, Math.round((used / limit) * 100))
-}
-
-const getUsageColor = (percent: number) => {
-    if (percent > 90) return 'var(--error-color, #ef4444)'
-    if (percent > 75) return '#f59e0b'
-    return '#22c55e'
-}
-
-const switchTab = (tab: 'members' | 'quota') => {
-    activeTab.value = tab
-    if (tab === 'quota' && !quotaSummary.value) {
-        fetchQuota()
+const openQuotaModal = () => {
+    quotaModalVisible.value = true
+    if (!quotaSummary.value) {
+        fetchQuota(orgId)
     }
 }
 
@@ -258,10 +224,25 @@ const handleTransfer = async () => {
 
 const getRoleName = (role: number) => ORG_ROLES[role] || 'Unknown'
 
+// Actions dropdown
+const showActionMenu = ref(false)
+const toggleActionMenu = () => { showActionMenu.value = !showActionMenu.value }
+const closeActionMenu = () => { showActionMenu.value = false }
+
+const handleKeydown = (e: KeyboardEvent) => {
+    if (e.key === 'Escape') closeActionMenu()
+}
+
 onMounted(() => {
     fetchOrg()
     fetchMembers()
     fetchInvitations()
+    fetchQuota(orgId)
+    document.addEventListener('keydown', handleKeydown)
+})
+
+onUnmounted(() => {
+    document.removeEventListener('keydown', handleKeydown)
 })
 </script>
 
@@ -301,6 +282,26 @@ onMounted(() => {
               </div>
             </div>
           </div>
+          <div class="action-dropdown">
+            <button class="btn btn-primary" @click="toggleActionMenu">
+              {{ $t('actions.actions') }} <ChevronDown :size="14" />
+            </button>
+            <Transition name="dropdown">
+              <div v-if="showActionMenu" class="dropdown-menu" @click="closeActionMenu">
+                <button class="dropdown-item" @click="openAddMember">
+                  <Mail :size="14" /> {{ $t('dashboard.org.inviteMember') || 'Invite Member' }}
+                </button>
+                <button class="dropdown-item" @click="openTransfer">
+                  <Crown :size="14" /> {{ $t('dashboard.org.transferOwnership') }}
+                </button>
+                <div class="dropdown-divider"></div>
+                <button class="dropdown-item" @click="openQuotaModal">
+                  <Gauge :size="14" /> {{ $t('quota.manage') }}
+                </button>
+              </div>
+            </Transition>
+            <div v-if="showActionMenu" class="dropdown-backdrop" @click="closeActionMenu"></div>
+          </div>
         </div>
 
         <div class="detail-grid">
@@ -325,20 +326,20 @@ onMounted(() => {
 
       <!-- Tabs -->
       <div class="tab-bar">
-        <button class="tab-btn" :class="{ active: activeTab === 'members' }" @click="switchTab('members')">
+        <button class="tab-btn" :class="{ active: activeTab === 'members' }" @click="activeTab = 'members'">
           <Users :size="16" /> {{ $t('dashboard.org.members') }}
         </button>
-        <button class="tab-btn" :class="{ active: activeTab === 'quota' }" @click="switchTab('quota')">
-          <Gauge :size="16" /> {{ $t('quota.manage') }}
+        <button class="tab-btn" :class="{ active: activeTab === 'quota' }" @click="activeTab = 'quota'">
+          <Gauge :size="16" /> {{ $t('quota.limit') }}
         </button>
       </div>
 
-      <!-- Quota Tab -->
+      <!-- Quota Tab (read-only) -->
       <div v-if="activeTab === 'quota'" class="card">
-        <div v-if="quotaLoading" class="text-center" style="padding: 48px;">
+        <div v-if="quotaLoading" class="text-center" style="padding: 32px;">
           <div class="loading-spinner" style="margin: 0 auto;"></div>
         </div>
-        <div v-else-if="quotaError" class="text-center" style="padding: 48px;">
+        <div v-else-if="quotaError" class="text-center" style="padding: 24px;">
           <p class="text-error">{{ quotaError }}</p>
           <button class="btn btn-secondary btn-sm" @click="fetchQuota">{{ $t('actions.retry') }}</button>
         </div>
@@ -349,9 +350,9 @@ onMounted(() => {
               <thead>
                 <tr>
                   <th>{{ $t('dashboard.table.name') }}</th>
-                  <th>{{ $t('quota.limit') || 'Quota' }}</th>
-                  <th>{{ $t('quota.used') || 'Used' }}</th>
-                  <th style="width: 200px;">{{ $t('dashboard.table.status') || 'Usage' }}</th>
+                  <th>{{ $t('quota.limit') }}</th>
+                  <th>{{ $t('quota.used') }}</th>
+                  <th style="width: 200px;">{{ $t('dashboard.table.status') }}</th>
                 </tr>
               </thead>
               <tbody>
@@ -362,18 +363,7 @@ onMounted(() => {
                   { key: 'public_ips', qkey: 'max_public_ips', label: $t('quota.publicIps') },
                 ]" :key="res.key">
                   <td>{{ res.label }}</td>
-                  <td>
-                    <input
-                      v-if="isSuperuser"
-                      type="number"
-                      class="form-input quota-input"
-                      :value="editingQuota[region.region_name]?.[res.qkey as keyof OrgResourceQuotaUpdate]"
-                      @input="(e: any) => { if (editingQuota[region.region_name]) (editingQuota[region.region_name] as any)[res.qkey] = Number(e.target.value) }"
-                      min="0"
-                      step="1"
-                    />
-                    <span v-else>{{ (region.quota as any)[res.qkey] }}</span>
-                  </td>
+                  <td>{{ (region.quota as any)[res.qkey] }}</td>
                   <td>{{ (region.consumption as any)[res.key] }}</td>
                   <td>
                     <div class="usage-bar-container">
@@ -390,34 +380,17 @@ onMounted(() => {
                 </tr>
               </tbody>
             </table>
-            <div v-if="isSuperuser" class="quota-save-row">
-              <button
-                class="btn btn-primary btn-sm"
-                @click="handleSaveQuota(region.region_name)"
-                :disabled="savingQuota === region.region_name"
-              >
-                {{ savingQuota === region.region_name ? $t('messages.loading') : $t('actions.save') }}
-              </button>
-            </div>
           </div>
         </div>
-        <div v-else class="text-center text-secondary" style="padding: 48px;">
+        <div v-else class="text-center text-secondary" style="padding: 32px;">
           {{ $t('quota.noQuota') || 'No quota assigned' }}
         </div>
       </div>
 
       <!-- Members Card -->
-      <div v-show="activeTab === 'members'" class="card">
+      <div v-if="activeTab === 'members'" class="card">
         <div class="card-header-row">
           <h4><Users :size="18" /> {{ $t('dashboard.org.members') }}</h4>
-          <div class="card-header-actions">
-            <button class="btn btn-secondary btn-sm" @click="openTransfer">
-              <Crown :size="14" /> {{ $t('dashboard.org.transferOwnership') }}
-            </button>
-            <button class="btn btn-primary btn-sm" @click="openAddMember">
-              <Mail :size="14" /> {{ t('dashboard.org.inviteMember') || 'Invite Member' }}
-            </button>
-          </div>
         </div>
 
         <!-- Pending Invitations -->
@@ -501,6 +474,90 @@ onMounted(() => {
         </table>
       </div>
     </template>
+
+    <!-- Quota Management Modal -->
+    <div v-if="quotaModalVisible" class="modal-overlay" @click.self="quotaModalVisible = false">
+      <div class="modal-content card" style="max-width: 700px; width: 95%;">
+        <div class="modal-header">
+          <h3><Gauge :size="18" style="margin-right: 8px;" />{{ $t('quota.manage') }}</h3>
+          <button class="btn btn-ghost btn-sm icon-btn" @click="quotaModalVisible = false"><X :size="20" /></button>
+        </div>
+        <div class="modal-body" style="padding: var(--spacing-6); max-height: 60vh; overflow-y: auto;">
+          <div v-if="quotaLoading" class="text-center" style="padding: 48px;">
+            <div class="loading-spinner" style="margin: 0 auto;"></div>
+          </div>
+          <div v-else-if="quotaError" class="text-center" style="padding: 24px;">
+            <p class="text-error">{{ quotaError }}</p>
+            <button class="btn btn-secondary btn-sm" @click="fetchQuota">{{ $t('actions.retry') }}</button>
+          </div>
+          <div v-else-if="quotaSummary && quotaSummary.regions.length > 0">
+            <div v-for="region in quotaSummary.regions" :key="region.region_name" class="quota-region-card">
+              <h5 class="quota-region-title">{{ region.region_name }}</h5>
+              <table class="data-table quota-table">
+                <thead>
+                  <tr>
+                    <th>{{ $t('dashboard.table.name') }}</th>
+                    <th>{{ $t('quota.limit') }}</th>
+                    <th>{{ $t('quota.used') }}</th>
+                    <th style="width: 200px;">{{ $t('dashboard.table.status') }}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="res in [
+                    { key: 'cpu_cores', qkey: 'max_cpu_cores', label: $t('quota.cpuCores') },
+                    { key: 'ram_gb', qkey: 'max_ram_gb', label: $t('quota.ramGb') },
+                    { key: 'disk_gb', qkey: 'max_disk_gb', label: $t('quota.diskGb') },
+                    { key: 'public_ips', qkey: 'max_public_ips', label: $t('quota.publicIps') },
+                  ]" :key="res.key">
+                    <td>{{ res.label }}</td>
+                    <td>
+                      <input
+                        v-if="isSuperuser"
+                        type="number"
+                        class="form-input quota-input"
+                        :value="editingQuota[region.region_name]?.[res.qkey as keyof OrgResourceQuotaUpdate]"
+                        @input="(e: any) => { if (editingQuota[region.region_name]) (editingQuota[region.region_name] as any)[res.qkey] = Number(e.target.value) }"
+                        min="0"
+                        step="1"
+                      />
+                      <span v-else>{{ (region.quota as any)[res.qkey] }}</span>
+                    </td>
+                    <td>{{ (region.consumption as any)[res.key] }}</td>
+                    <td>
+                      <div class="usage-bar-container">
+                        <div
+                          class="usage-bar"
+                          :style="{
+                            width: getUsagePercent((region.consumption as any)[res.key], (region.quota as any)[res.qkey]) + '%',
+                            background: getUsageColor(getUsagePercent((region.consumption as any)[res.key], (region.quota as any)[res.qkey]))
+                          }"
+                        ></div>
+                      </div>
+                      <span class="usage-text">{{ getUsagePercent((region.consumption as any)[res.key], (region.quota as any)[res.qkey]) }}%</span>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+              <div v-if="isSuperuser" class="quota-save-row">
+                <button
+                  class="btn btn-primary btn-sm"
+                  @click="handleSaveQuota(region.region_name)"
+                  :disabled="savingQuota === region.region_name"
+                >
+                  {{ savingQuota === region.region_name ? $t('messages.loading') : $t('actions.save') }}
+                </button>
+              </div>
+            </div>
+          </div>
+          <div v-else class="text-center text-secondary" style="padding: 48px;">
+            {{ $t('quota.noQuota') || 'No quota assigned' }}
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-secondary" @click="quotaModalVisible = false">{{ $t('actions.close') || $t('actions.cancel') }}</button>
+        </div>
+      </div>
+    </div>
 
     <!-- Invite Member Modal -->
     <div v-if="addMemberVisible" class="modal-overlay" @click.self="addMemberVisible = false">
@@ -715,6 +772,63 @@ onMounted(() => {
   justify-content: space-between;
   align-items: center;
   margin-bottom: var(--spacing-4);
+}
+
+.action-dropdown {
+  position: relative;
+}
+
+.dropdown-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  min-width: 200px;
+  background: var(--bg-primary, #fff);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-md);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+  padding: 4px 0;
+  z-index: 10;
+}
+
+.dropdown-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 10px 16px;
+  border: none;
+  background: none;
+  font-size: var(--font-size-sm);
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: background 0.15s;
+  text-align: left;
+}
+
+.dropdown-item:hover:not(:disabled) {
+  background: var(--bg-hover, #f3f4f6);
+}
+
+.dropdown-divider {
+  height: 1px;
+  background: var(--border-light);
+  margin: 4px 0;
+}
+
+.dropdown-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 9;
+}
+
+.dropdown-enter-active, .dropdown-leave-active {
+  transition: opacity 0.15s, transform 0.15s;
+}
+
+.dropdown-enter-from, .dropdown-leave-to {
+  opacity: 0;
+  transform: translateY(-4px);
 }
 
 .card-header-row h4 {

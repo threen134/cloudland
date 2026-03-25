@@ -217,6 +217,8 @@ async def update_org(
 
     if org_in.name is not None:
         org.name = org_in.name
+    if org_in.description is not None:
+        org.description = org_in.description
 
     await db.commit()
     await db.refresh(org)
