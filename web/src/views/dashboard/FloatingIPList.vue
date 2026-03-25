@@ -2,8 +2,9 @@
 import { ref, onMounted, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
-import { floatingIpsApi, subnetsApi, type FloatingIP, type Subnet } from '../../api/networks'
-import { Globe2, Plus, Link, Unlink, Trash2, Search, X, RefreshCw } from 'lucide-vue-next'
+import { floatingIpsApi, subnetsApi, type FloatingIP, type FloatingIPPayload, type Subnet } from '../../api/networks'
+import { instancesApi, type Instance } from '../../api/instances'
+import { Globe2, Plus, Link, Unlink, Trash2, Search, X, RefreshCw, ChevronDown, ChevronUp } from 'lucide-vue-next'
 import { useFloatingIP } from '../../composables/useFloatingIP'
 import DeleteModal from '../../components/modals/DeleteModal.vue'
 
@@ -16,11 +17,22 @@ const searchQuery = ref('')
 const createModalVisible = ref(false)
 const creating = ref(false)
 const createError = ref('')
+const showAdvanced = ref(false)
+
 const newFipForm = ref({
     name: '',
-    selectedSubnetId: ''
+    selectedSiteSubnetId: '',
+    selectedPublicSubnetId: '',
+    inbound: null as number | null,
+    outbound: null as number | null,
+    instanceId: '',
+    publicIp: '',
+    activationCount: null as number | null,
 })
+
 const siteSubnets = ref<Subnet[]>([])
+const publicSubnets = ref<Subnet[]>([])
+const instances = ref<Instance[]>([])
 
 const fetchFloatingIPs = async () => {
     loading.value = true
@@ -30,25 +42,47 @@ const fetchFloatingIPs = async () => {
             subnetsApi.list()
         ])
         floatingIps.value = ipResponse.floating_ips || []
-        
-        // Filter for site subnets (assuming type 'site' is what we want for FIP pools)
-        // Adjust logic if 'public' is the correct type, but 'site' was mentioned in types
-        siteSubnets.value = (subnetsResponse.subnets || []).filter(s => s.type === 'site')
+
+        const allSubnets = subnetsResponse.subnets || []
+        siteSubnets.value = allSubnets.filter(s => s.type === 'site')
+        publicSubnets.value = allSubnets.filter(s => s.type === 'public')
     } catch (err) {
         console.error('API fetch failed:', err)
         floatingIps.value = []
         siteSubnets.value = []
+        publicSubnets.value = []
     } finally {
         loading.value = false
+    }
+}
+
+const fetchInstances = async () => {
+    try {
+        const response = await instancesApi.fetchInstances()
+        instances.value = (response.data?.instances || []).filter((inst: Instance) =>
+            inst.vpc && inst.status !== 'provisioning' && inst.interfaces?.some(iface => iface.is_primary)
+        )
+    } catch (err) {
+        console.error('Failed to fetch instances:', err)
+        instances.value = []
     }
 }
 
 const openCreateModal = () => {
     newFipForm.value = {
         name: '',
-        selectedSubnetId: siteSubnets.value[0]?.id || ''
+        selectedSiteSubnetId: '',
+        selectedPublicSubnetId: '',
+        inbound: null,
+        outbound: null,
+        instanceId: '',
+        publicIp: '',
+        activationCount: null,
     }
+    showAdvanced.value = false
+    createError.value = ''
     createModalVisible.value = true
+    fetchInstances()
 }
 
 const closeCreateModal = () => {
@@ -58,22 +92,51 @@ const closeCreateModal = () => {
 
 const handleCreateIP = async () => {
     createError.value = ''
-    if (!newFipForm.value.selectedSubnetId) {
-        createError.value = t('dashboard.forms.placeholder.selectSubnet')
+    const form = newFipForm.value
+
+    if (!form.name || form.name.length < 2 || form.name.length > 32) {
+        createError.value = t('dashboard.floatingIPDetail.nameRequired')
         return
     }
 
     creating.value = true
     try {
-        await floatingIpsApi.create({
-            name: newFipForm.value.name || undefined,
-            site_subnets: [{ id: newFipForm.value.selectedSubnetId }]
-        })
-        
-        // Refresh list
+        const payload: FloatingIPPayload = {
+            name: form.name,
+        }
+
+        if (form.selectedSiteSubnetId) {
+            payload.site_subnets = [{ id: form.selectedSiteSubnetId }]
+        }
+        if (form.selectedPublicSubnetId) {
+            payload.public_subnets = [{ id: form.selectedPublicSubnetId }]
+        }
+        if (form.inbound && form.inbound > 0) {
+            payload.inbound = form.inbound
+        }
+        if (form.outbound && form.outbound > 0) {
+            payload.outbound = form.outbound
+        }
+        if (form.instanceId) {
+            payload.instance = { id: form.instanceId }
+        }
+        if (form.publicIp) {
+            if (!/^(\d{1,3}\.){3}\d{1,3}$/.test(form.publicIp)) {
+                createError.value = t('dashboard.floatingIPDetail.invalidIp')
+                creating.value = false
+                return
+            }
+            payload.public_ip = form.publicIp
+        }
+        if (form.activationCount && form.activationCount > 0) {
+            payload.activation_count = form.activationCount
+        }
+
+        await floatingIpsApi.create(payload)
+
         const response = await floatingIpsApi.list()
         floatingIps.value = response.floating_ips || []
-        
+
         closeCreateModal()
     } catch (err: any) {
         console.error('Failed to create floating IP:', err)
@@ -129,6 +192,80 @@ const confirmDelete = async () => {
         deleteError.value = error.response?.data?.error_message || error.message || t('messages.error')
     } finally {
         deletingResource.value = false
+    }
+}
+
+// --- Attach Modal ---
+const attachModalVisible = ref(false)
+const attaching = ref(false)
+const attachError = ref('')
+const fipToAttach = ref<FloatingIP | null>(null)
+const selectedInstanceId = ref('')
+
+const handleAttachClick = (fip: FloatingIP) => {
+    fipToAttach.value = fip
+    selectedInstanceId.value = ''
+    attachError.value = ''
+    attachModalVisible.value = true
+    fetchInstances()
+}
+
+const closeAttachModal = () => {
+    attachModalVisible.value = false
+    fipToAttach.value = null
+    attachError.value = ''
+}
+
+const confirmAttach = async () => {
+    if (!fipToAttach.value || !selectedInstanceId.value) {
+        attachError.value = t('dashboard.floatingIPDetail.selectInstance')
+        return
+    }
+    attaching.value = true
+    attachError.value = ''
+    try {
+        await floatingIpsApi.attach(fipToAttach.value.id, selectedInstanceId.value)
+        await fetchFloatingIPs()
+        closeAttachModal()
+    } catch (err: any) {
+        console.error('Failed to attach floating IP:', err)
+        attachError.value = err.response?.data?.error_message || err.message || t('messages.error')
+    } finally {
+        attaching.value = false
+    }
+}
+
+// --- Detach Confirmation Modal ---
+const detachModalVisible = ref(false)
+const detaching = ref(false)
+const detachError = ref('')
+const fipToDetach = ref<FloatingIP | null>(null)
+
+const handleDetachClick = (fip: FloatingIP) => {
+    fipToDetach.value = fip
+    detachError.value = ''
+    detachModalVisible.value = true
+}
+
+const closeDetachModal = () => {
+    detachModalVisible.value = false
+    fipToDetach.value = null
+    detachError.value = ''
+}
+
+const confirmDetach = async () => {
+    if (!fipToDetach.value) return
+    detaching.value = true
+    detachError.value = ''
+    try {
+        await floatingIpsApi.detach(fipToDetach.value.id)
+        await fetchFloatingIPs()
+        closeDetachModal()
+    } catch (err: any) {
+        console.error('Failed to detach floating IP:', err)
+        detachError.value = err.response?.data?.error_message || err.message || t('messages.error')
+    } finally {
+        detaching.value = false
     }
 }
 
@@ -223,11 +360,13 @@ onMounted(fetchFloatingIPs)
             <td>
               <div class="actions">
                 <button v-if="!fip.target_interface" class="btn btn-ghost btn-sm" :title="$t('actions.attach')"
-                  :disabled="fip.type !== 'floating' && fip.type !== 'site'">
+                  :disabled="fip.type !== 'floating' && fip.type !== 'site'"
+                  @click="(fip.type === 'floating' || fip.type === 'site') && handleAttachClick(fip)">
                   <Link :size="14" /> {{ $t('actions.attach') }}
                 </button>
                 <button v-else class="btn btn-ghost btn-sm" :title="$t('actions.detach')"
-                  :disabled="fip.type !== 'floating' && fip.type !== 'site'">
+                  :disabled="fip.type !== 'floating' && fip.type !== 'site'"
+                  @click="(fip.type === 'floating' || fip.type === 'site') && handleDetachClick(fip)">
                   <Unlink :size="14" /> {{ $t('actions.detach') }}
                 </button>
                 <button class="btn btn-ghost btn-sm text-error" :title="$t('actions.release')"
@@ -244,49 +383,204 @@ onMounted(fetchFloatingIPs)
 
     <!-- Create Floating IP Modal -->
     <div v-if="createModalVisible" class="modal-overlay" @click.self="closeCreateModal">
-      <div class="modal-content card">
+      <div class="modal-content card modal-wide">
         <div class="modal-header">
           <h3>{{ $t('dashboard.buttons.createIp') }}</h3>
           <button class="btn btn-ghost btn-sm icon-btn" @click="closeCreateModal">
             <X :size="20" />
           </button>
         </div>
-        
+
         <div class="modal-body">
           <p class="text-secondary mb-4">
             {{ $t('dashboard.floatingIPDetail.createDesc') }}
           </p>
 
+          <!-- Name (required) -->
           <div class="form-group">
-            <label class="form-label">{{ $t('dashboard.forms.name') }}</label>
-            <input 
-              v-model="newFipForm.name" 
-              type="text" 
-              class="form-input" 
-              :placeholder="$t('dashboard.floatingIPDetail.namePlaceholder')" 
+            <label class="form-label">{{ $t('dashboard.forms.name') }} <span class="text-error">*</span></label>
+            <input
+              v-model="newFipForm.name"
+              type="text"
+              class="form-input"
+              maxlength="32"
+              :placeholder="$t('dashboard.floatingIPDetail.namePlaceholder')"
             />
           </div>
 
-          <div class="form-group">
+          <!-- Bandwidth -->
+          <div class="form-row">
+            <div class="form-group form-group-half">
+              <label class="form-label">{{ $t('dashboard.floatingIPDetail.inbound') }}</label>
+              <div class="input-with-suffix">
+                <input
+                  v-model.number="newFipForm.inbound"
+                  type="number"
+                  class="form-input"
+                  min="1" max="20000"
+                  :placeholder="$t('dashboard.floatingIPDetail.inboundPlaceholder')"
+                />
+                <span class="input-suffix">{{ $t('dashboard.floatingIPDetail.mbps') }}</span>
+              </div>
+            </div>
+            <div class="form-group form-group-half">
+              <label class="form-label">{{ $t('dashboard.floatingIPDetail.outbound') }}</label>
+              <div class="input-with-suffix">
+                <input
+                  v-model.number="newFipForm.outbound"
+                  type="number"
+                  class="form-input"
+                  min="1" max="20000"
+                  :placeholder="$t('dashboard.floatingIPDetail.outboundPlaceholder')"
+                />
+                <span class="input-suffix">{{ $t('dashboard.floatingIPDetail.mbps') }}</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Site Subnet -->
+          <div class="form-group" v-if="siteSubnets.length > 0">
             <label class="form-label">{{ $t('dashboard.floatingIPDetail.subnetPool') }}</label>
             <div class="select-wrapper">
-                <select v-model="newFipForm.selectedSubnetId" class="form-input">
-                    <option v-for="subnet in siteSubnets" :key="subnet.id" :value="subnet.id">
-                        {{ subnet.name }} ({{ subnet.network || subnet.network_cidr }})
-                    </option>
-                </select>
+              <select v-model="newFipForm.selectedSiteSubnetId" class="form-input">
+                <option value="">{{ $t('dashboard.floatingIPDetail.selectSubnet') }}</option>
+                <option v-for="subnet in siteSubnets" :key="subnet.id" :value="subnet.id">
+                  {{ subnet.name }} ({{ subnet.network || subnet.network_cidr }})
+                </option>
+              </select>
+            </div>
+          </div>
+
+          <!-- Public Subnet -->
+          <div class="form-group" v-if="publicSubnets.length > 0">
+            <label class="form-label">{{ $t('dashboard.floatingIPDetail.publicSubnet') }}</label>
+            <div class="select-wrapper">
+              <select v-model="newFipForm.selectedPublicSubnetId" class="form-input">
+                <option value="">{{ $t('dashboard.floatingIPDetail.selectSubnet') }}</option>
+                <option v-for="subnet in publicSubnets" :key="subnet.id" :value="subnet.id">
+                  {{ subnet.name }} ({{ subnet.network || subnet.network_cidr }})
+                </option>
+              </select>
+            </div>
+          </div>
+
+          <!-- Bind Instance -->
+          <div class="form-group">
+            <label class="form-label">{{ $t('dashboard.floatingIPDetail.bindInstance') }}</label>
+            <div class="select-wrapper">
+              <select v-model="newFipForm.instanceId" class="form-input">
+                <option value="">{{ $t('dashboard.floatingIPDetail.selectInstance') }}</option>
+                <option v-for="inst in instances" :key="inst.id" :value="inst.id">
+                  {{ inst.hostname || inst.name }} ({{ inst.ip_address || inst.id }})
+                </option>
+              </select>
+            </div>
+          </div>
+
+          <!-- Advanced Options -->
+          <div class="advanced-toggle" @click="showAdvanced = !showAdvanced">
+            <span>{{ $t('dashboard.floatingIPDetail.advancedOptions') }}</span>
+            <ChevronDown v-if="!showAdvanced" :size="16" />
+            <ChevronUp v-else :size="16" />
+          </div>
+
+          <div v-if="showAdvanced" class="advanced-section">
+            <!-- Public IP -->
+            <div class="form-group">
+              <label class="form-label">{{ $t('dashboard.floatingIPDetail.publicIp') }}</label>
+              <input
+                v-model="newFipForm.publicIp"
+                type="text"
+                class="form-input"
+                :placeholder="$t('dashboard.floatingIPDetail.publicIpPlaceholder')"
+              />
+            </div>
+
+            <!-- Activation Count -->
+            <div class="form-group">
+              <label class="form-label">{{ $t('dashboard.floatingIPDetail.activationCount') }}</label>
+              <input
+                v-model.number="newFipForm.activationCount"
+                type="number"
+                class="form-input"
+                min="1" max="64"
+                :placeholder="$t('dashboard.floatingIPDetail.activationCountPlaceholder')"
+              />
             </div>
           </div>
         </div>
+
         <div v-if="createError" class="text-error" style="margin: 0 var(--spacing-6) var(--spacing-4); font-size:var(--font-size-sm);background:var(--error-light);padding:var(--spacing-2);border-radius:var(--radius-sm)">
           {{ createError }}
         </div>
-        
+
         <div class="modal-footer">
           <button class="btn btn-secondary" @click="closeCreateModal" :disabled="creating">{{ $t('actions.cancel') }}</button>
           <button class="btn btn-primary" @click="handleCreateIP" :disabled="creating">
             <span v-if="creating" class="loading-spinner" style="width: 16px; height: 16px; border-width: 2px;"></span>
             {{ creating ? $t('messages.creating') : $t('dashboard.buttons.createIp') }}
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Attach Floating IP Modal -->
+    <div v-if="attachModalVisible" class="modal-overlay" @click.self="closeAttachModal">
+      <div class="modal-content card">
+        <div class="modal-header">
+          <h3>{{ $t('actions.attach') }} - {{ fipToAttach?.name || fipToAttach?.public_ip }}</h3>
+          <button class="btn btn-ghost btn-sm icon-btn" @click="closeAttachModal">
+            <X :size="20" />
+          </button>
+        </div>
+        <div class="modal-body">
+          <div class="form-group">
+            <label class="form-label">{{ $t('dashboard.floatingIPDetail.bindInstance') }} <span class="text-error">*</span></label>
+            <div class="select-wrapper">
+              <select v-model="selectedInstanceId" class="form-input">
+                <option value="">{{ $t('dashboard.floatingIPDetail.selectInstance') }}</option>
+                <option v-for="inst in instances" :key="inst.id" :value="inst.id">
+                  {{ inst.hostname || inst.name }} ({{ inst.ip_address || inst.id }})
+                </option>
+              </select>
+            </div>
+          </div>
+        </div>
+        <div v-if="attachError" class="text-error" style="margin: 0 var(--spacing-6) var(--spacing-4); font-size:var(--font-size-sm);background:var(--error-light);padding:var(--spacing-2);border-radius:var(--radius-sm)">
+          {{ attachError }}
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-secondary" @click="closeAttachModal" :disabled="attaching">{{ $t('actions.cancel') }}</button>
+          <button class="btn btn-primary" @click="confirmAttach" :disabled="attaching || !selectedInstanceId">
+            <span v-if="attaching" class="loading-spinner" style="width: 16px; height: 16px; border-width: 2px;"></span>
+            {{ attaching ? $t('messages.loading') : $t('actions.attach') }}
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Detach Confirmation Modal -->
+    <div v-if="detachModalVisible" class="modal-overlay" @click.self="closeDetachModal">
+      <div class="modal-content card">
+        <div class="modal-header">
+          <h3>{{ $t('actions.detach') }} - {{ fipToDetach?.name || fipToDetach?.public_ip }}</h3>
+          <button class="btn btn-ghost btn-sm icon-btn" @click="closeDetachModal">
+            <X :size="20" />
+          </button>
+        </div>
+        <div class="modal-body">
+          <p class="text-secondary">
+            {{ $t('messages.confirmDetach') }}
+          </p>
+        </div>
+        <div v-if="detachError" class="text-error" style="margin: 0 var(--spacing-6) var(--spacing-4); font-size:var(--font-size-sm);background:var(--error-light);padding:var(--spacing-2);border-radius:var(--radius-sm)">
+          {{ detachError }}
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-secondary" @click="closeDetachModal" :disabled="detaching">{{ $t('actions.cancel') }}</button>
+          <button class="btn btn-primary" @click="confirmDetach" :disabled="detaching">
+            <span v-if="detaching" class="loading-spinner" style="width: 16px; height: 16px; border-width: 2px;"></span>
+            {{ detaching ? $t('messages.loading') : $t('actions.detach') }}
           </button>
         </div>
       </div>
@@ -389,4 +683,57 @@ onMounted(fetchFloatingIPs)
 .header-actions { display: flex; gap: 8px; align-items: center; }
 .spinning { animation: spin 1s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
+
+.modal-wide {
+  width: 560px;
+  max-width: 90vw;
+}
+
+.form-row {
+  display: flex;
+  gap: var(--spacing-4);
+}
+
+.form-group-half {
+  flex: 1;
+}
+
+.input-with-suffix {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.input-with-suffix .form-input {
+  padding-right: 50px;
+}
+
+.input-suffix {
+  position: absolute;
+  right: 12px;
+  color: var(--gray-400);
+  font-size: var(--font-size-sm);
+  pointer-events: none;
+}
+
+.advanced-toggle {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+  color: var(--primary-600);
+  font-size: var(--font-size-sm);
+  padding: var(--spacing-2) 0;
+  user-select: none;
+}
+
+.advanced-toggle:hover {
+  color: var(--primary-700);
+}
+
+.advanced-section {
+  padding-top: var(--spacing-2);
+  border-top: 1px solid var(--border-light);
+  margin-top: var(--spacing-2);
+}
 </style>

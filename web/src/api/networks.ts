@@ -164,8 +164,17 @@ export interface FloatingIP {
 }
 
 export interface FloatingIPPayload {
-    name?: string
+    name: string
+    public_subnet?: { id: string }
+    public_subnets?: Array<{ id: string }>
     site_subnets?: Array<{ id: string } | { name: string }>
+    public_ip?: string
+    instance?: { id: string }
+    load_balancer?: { id: string }
+    inbound?: number
+    outbound?: number
+    activation_count?: number
+    group?: { id: string }
 }
 
 export interface FloatingIPListResponse {
@@ -188,22 +197,22 @@ export const floatingIpsApi = {
         const response = await client.post('/floating_ips', payload)
         return response.data
     },
-    patch: async (id: string, payload: { name?: string; interface?: { id: string } | null }): Promise<FloatingIP> => {
+    patch: async (id: string, payload: { instance?: { id: string } | null; load_balancer?: { id: string } | null; inbound?: number; outbound?: number; group?: { id: string } | null }): Promise<FloatingIP> => {
         const response = await client.patch(`/floating_ips/${id}`, payload)
         return response.data
     },
     delete: async (id: string): Promise<void> => {
         await client.delete(`/floating_ips/${id}`)
     },
-    attach: async (id: string, interfaceId: string): Promise<FloatingIP> => {
+    attach: async (id: string, instanceId: string): Promise<FloatingIP> => {
         const response = await client.patch(`/floating_ips/${id}`, {
-            interface: { id: interfaceId }
+            instance: { id: instanceId }
         })
         return response.data
     },
     detach: async (id: string): Promise<FloatingIP> => {
         const response = await client.patch(`/floating_ips/${id}`, {
-            interface: null
+            instance: null
         })
         return response.data
     }

@@ -404,7 +404,7 @@ func (a *RouterAdmin) List(ctx context.Context, offset, limit int64, order, quer
 		return
 	}
 	db = dbs.Sortby(db.Offset(offset).Limit(limit), order)
-	if err = db.Where(queryBuilder, args...).Where(query).Find(&routers).Error; err != nil {
+	if err = db.Preload("Subnets").Where(queryBuilder, args...).Where(query).Find(&routers).Error; err != nil {
 		logger.Error("DB failed to query routers, %v", err)
 		err = NewCLError(ErrSQLSyntaxError, "Failed to query routers", err)
 		return
