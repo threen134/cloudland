@@ -61,8 +61,7 @@ async def _do_sync(org_id: int, region_id: int, internal_endpoint: str, internal
         # --- Instances (CPU + RAM) ---
         instances = await _fetch(client, f"{base}/instances", headers)
         if instances is None:
-            logger.warning(f"ConsumptionSync: failed to fetch instances, aborting sync for org={org_id}")
-            return
+            raise RuntimeError(f"failed to fetch instances for org={org_id}")
         for inst in instances:
             totals["cpu_cores"] += float(inst.get("cpu", 0))
             totals["ram_gb"] += float(inst.get("memory", 0)) / 1024.0
@@ -70,16 +69,14 @@ async def _do_sync(org_id: int, region_id: int, internal_endpoint: str, internal
         # --- Volumes (Disk) ---
         volumes = await _fetch(client, f"{base}/volumes", headers)
         if volumes is None:
-            logger.warning(f"ConsumptionSync: failed to fetch volumes, aborting sync for org={org_id}")
-            return
+            raise RuntimeError(f"failed to fetch volumes for org={org_id}")
         for vol in volumes:
             totals["disk_gb"] += float(vol.get("size", 0))
 
         # --- Floating IPs (Public IPs) ---
         fips = await _fetch(client, f"{base}/floating_ips", headers)
         if fips is None:
-            logger.warning(f"ConsumptionSync: failed to fetch floating_ips, aborting sync for org={org_id}")
-            return
+            raise RuntimeError(f"failed to fetch floating_ips for org={org_id}")
         totals["public_ips"] = len(fips)
 
     # 写入数据库（新建独立 session，避免与登录 session 冲突）
@@ -94,8 +91,7 @@ async def _do_sync(org_id: int, region_id: int, internal_endpoint: str, internal
         )
         consumption = result.scalars().first()
         if not consumption:
-            logger.warning(f"ConsumptionSync: no record for org={org_id}, region={region_id}, skipping")
-            return
+            raise RuntimeError(f"no consumption record for org={org_id}, region={region_id}")
 
         consumption.cpu_cores = totals["cpu_cores"]
         consumption.ram_gb = totals["ram_gb"]
