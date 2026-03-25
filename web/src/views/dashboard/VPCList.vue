@@ -666,7 +666,7 @@ onMounted(() => {
 
 .table-card {
   padding: 0;
-  overflow: hidden;
+  overflow: visible;
 }
 
 .table-card td {

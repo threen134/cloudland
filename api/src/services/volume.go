@@ -442,7 +442,12 @@ func (a *VolumeAdmin) Delete(ctx context.Context, volume *model.Volume) (err err
 		return
 	}
 
-	if volume.IsBusy() || volume.IsAttached() {
+	if volume.IsAttached() {
+		logger.Errorf("Volume is attached to an instance, cannot be deleted %+v", volume)
+		err = NewCLError(ErrVolumeIsInUse, fmt.Sprintf("Volume[%s](%s) is attached to an instance, please detach it first", volume.Name, volume.UUID), nil)
+		return
+	}
+	if volume.IsBusy() {
 		logger.Errorf("Volume is busy, cannot be deleted %+v", volume)
 		err = NewCLError(ErrVolumeIsBusy, fmt.Sprintf("Volume[%s](%s) is busy, cannot be deleted", volume.Name, volume.UUID), nil)
 		return
