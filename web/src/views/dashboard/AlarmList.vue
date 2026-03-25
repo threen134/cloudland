@@ -281,7 +281,7 @@ onMounted(fetchAlarms)
               </div>
               <div class="form-group">
                 <label class="form-label">{{ t('dashboard.table.name') }} *</label>
-                <input type="text" v-model="createForm.name" class="form-input" placeholder="e.g. node-down-alert" />
+                <input type="text" v-model="createForm.name" class="form-input" :placeholder="t('dashboard.forms.placeholder.alarmNameExample')" />
               </div>
               <div class="form-group">
                 <label class="form-label">{{ t('dashboard.table.description') }}</label>

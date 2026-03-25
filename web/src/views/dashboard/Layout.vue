@@ -204,7 +204,7 @@ onUnmounted(() => {
       <div class="sidebar-header">
         <RouterLink to="/" class="logo-link">
           <Cloud :size="28" class="logo-icon" />
-          <span class="logo-text">CloudLand</span>
+          <span class="logo-text">{{ $t('site.name') }}</span>
         </RouterLink>
         <button class="collapse-btn" @click="toggleSidebar">
            <component :is="isSidebarCollapsed ? PanelLeftOpen : PanelLeftClose" :size="18" />

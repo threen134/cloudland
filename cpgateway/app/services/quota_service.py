@@ -126,6 +126,36 @@ class QuotaService:
         await db.commit()
         logger.info(f"Quota reserved: org={org_id}, region={region_id}, amount={amount}")
 
+    async def add_consumption(
+        self, db: AsyncSession, org_id: int, region_id: int, amount: Dict[str, float],
+    ) -> None:
+        """直接增加资源消费（不检查配额），用于超级管理员操作追踪"""
+        if not amount:
+            return
+
+        result = await db.execute(
+            select(OrgResourceConsumption)
+            .where(
+                OrgResourceConsumption.org_id == org_id,
+                OrgResourceConsumption.region_id == region_id,
+            )
+            .with_for_update()
+        )
+        consumption = result.scalars().first()
+        if not consumption:
+            logger.warning(f"Add consumption skipped: no record for org={org_id}, region={region_id}")
+            return
+
+        for res_field, add_amount in amount.items():
+            if add_amount <= 0:
+                continue
+            if res_field in RESOURCE_FIELD_MAP:
+                current = getattr(consumption, res_field, 0)
+                setattr(consumption, res_field, current + add_amount)
+
+        await db.commit()
+        logger.info(f"Consumption added (no quota check): org={org_id}, region={region_id}, amount={amount}")
+
     async def release(
         self, db: AsyncSession, org_id: int, region_id: int, amount: Dict[str, float],
     ) -> None:

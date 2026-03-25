@@ -186,11 +186,11 @@ class ProxyService:
         is_superuser = claims.get("sr") == 1
         is_system_org = org_obj and org_obj.org_type == OrgType.SYSTEM
 
-        if not is_superuser and not is_system_org and org_internal_id:
+        if org_internal_id:
             quota_action = ProxyService._match_quota_rule(request.method, proxy_path)
 
             if quota_action == "consume":
-                # CREATE: extract resource amount, check and reserve
+                # CREATE: extract resource amount, check quota and reserve
                 resource_amount = await ProxyService._extract_resource_amount(
                     request, proxy_path, region_obj, forwarded_headers,
                 )

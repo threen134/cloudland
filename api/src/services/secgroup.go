@@ -92,8 +92,8 @@ func (a *SecgroupAdmin) Switch(ctx context.Context, newSg *model.SecurityGroup, 
 	return
 }
 
-func (a *SecgroupAdmin) Update(ctx context.Context, secgroup *model.SecurityGroup, name string, isDefault bool) (err error) {
-	logger.Infof("ENTER SecgroupAdmin.Update: secgroupID=%d, name=%s, isDefault=%t", secgroup.ID, name, isDefault)
+func (a *SecgroupAdmin) Update(ctx context.Context, secgroup *model.SecurityGroup, name, description string, isDefault bool) (err error) {
+	logger.Infof("ENTER SecgroupAdmin.Update: secgroupID=%d, name=%s, description=%s, isDefault=%t", secgroup.ID, name, description, isDefault)
 	defer func() {
 		if err != nil {
 			logger.Errorf("EXIT SecgroupAdmin.Update: error=%v", err)
@@ -109,6 +109,9 @@ func (a *SecgroupAdmin) Update(ctx context.Context, secgroup *model.SecurityGrou
 	}()
 	if name != "" && secgroup.Name != name {
 		secgroup.Name = name
+	}
+	if description != "" && secgroup.Description != description {
+		secgroup.Description = description
 	}
 	if isDefault && secgroup.IsDefault != isDefault {
 		secgroup.IsDefault = isDefault
@@ -225,7 +228,7 @@ func (a *SecgroupAdmin) GetDefaultSecgroup(ctx context.Context) (secgroup *model
 	if org.DefaultSG == 0 {
 		timestamp := time.Now().UnixNano()
 		secgroupName := fmt.Sprintf("default-%d", timestamp)
-		secgroup, err = a.Create(ctx, secgroupName, true, nil)
+		secgroup, err = a.Create(ctx, secgroupName, "", true, nil)
 		if err != nil {
 			logger.Error("Failed to create account secgroup ", err)
 			return
@@ -416,8 +419,8 @@ func (a *SecgroupAdmin) RemoveInstanceLoginPort(ctx context.Context, instance *m
 	return
 }
 
-func (a *SecgroupAdmin) Create(ctx context.Context, name string, isDefault bool, router *model.Router) (secgroup *model.SecurityGroup, err error) {
-	logger.Infof("ENTER SecgroupAdmin.Create: name=%s, isDefault=%t, routerID=%v", name, isDefault, router)
+func (a *SecgroupAdmin) Create(ctx context.Context, name, description string, isDefault bool, router *model.Router) (secgroup *model.SecurityGroup, err error) {
+	logger.Infof("ENTER SecgroupAdmin.Create: name=%s, description=%s, isDefault=%t, routerID=%v", name, description, isDefault, router)
 	defer func() {
 		if err != nil {
 			logger.Errorf("EXIT SecgroupAdmin.Create: error=%v", err)
@@ -450,7 +453,7 @@ func (a *SecgroupAdmin) Create(ctx context.Context, name string, isDefault bool,
 			EndTransaction(ctx, err)
 		}
 	}()
-	secgroup = &model.SecurityGroup{Model: model.Model{Creater: memberShip.UserID}, Owner: owner, Name: name, IsDefault: isDefault, RouterID: routerID}
+	secgroup = &model.SecurityGroup{Model: model.Model{Creater: memberShip.UserID}, Owner: owner, Name: name, Description: description, IsDefault: isDefault, RouterID: routerID}
 	err = db.Create(secgroup).Error
 	if err != nil {
 		logger.Errorf("DB failed to create security group %s, %v", name, err)

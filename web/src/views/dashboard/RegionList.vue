@@ -310,16 +310,16 @@ onMounted(fetchRegions)
                         <div class="form-stack">
                             <div class="form-group">
                                 <label class="form-label">{{ t('dashboard.regionActions.name') }} *</label>
-                                <input type="text" v-model="createForm.name" class="form-input" placeholder="e.g. us-east-1" />
+                                <input type="text" v-model="createForm.name" class="form-input" :placeholder="t('dashboard.forms.placeholder.regionIdExample')" />
                                 <span class="form-hint">{{ t('dashboard.regionActions.nameHint') }}</span>
                             </div>
                             <div class="form-group">
                                 <label class="form-label">{{ t('dashboard.regionActions.displayName') }}</label>
-                                <input type="text" v-model="createForm.display_name" class="form-input" placeholder="e.g. US East (Virginia)" />
+                                <input type="text" v-model="createForm.display_name" class="form-input" :placeholder="t('dashboard.forms.placeholder.regionNameExample')" />
                             </div>
                             <div class="form-group">
                                 <label class="form-label">{{ t('dashboard.regionActions.internalEndpoint') }} *</label>
-                                <input type="text" v-model="createForm.internal_endpoint" class="form-input" placeholder="http://cloudland-api:8080" />
+                                <input type="text" v-model="createForm.internal_endpoint" class="form-input" :placeholder="t('dashboard.forms.placeholder.endpointExample')" />
                                 <span class="form-hint">{{ t('dashboard.regionActions.internalEndpointHint') }}</span>
                             </div>
                             <div class="form-group">

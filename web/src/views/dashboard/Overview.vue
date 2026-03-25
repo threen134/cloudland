@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
 import { useAuthStore } from '../../stores/auth'
+import { useRegionStore } from '../../stores/region'
 import { useI18n } from 'vue-i18n'
 import { Server, HardDrive, Cpu, Layers, Disc, GitFork, Activity, Globe } from 'lucide-vue-next'
 
@@ -11,6 +12,7 @@ import { vpcsApi, floatingIpsApi } from '../../api/networks'
 import { quotaApi } from '../../api/quota'
 
 const auth = useAuthStore()
+const regionStore = useRegionStore()
 const { t } = useI18n()
 const displayName = computed(() => auth.user?.username || auth.user?.name || 'User')
 
@@ -51,7 +53,7 @@ onMounted(async () => {
     try {
         // Fetch resource data and quota in parallel
         const orgUuid = localStorage.getItem('cloudland_org_id') || ''
-        const regionName = localStorage.getItem('cloudland_region') || ''
+        const regionName = regionStore.currentRegion?.name || ''
 
         const [instRes, volRes, imgRes, vpcRes, fipRes, quotaRes] = await Promise.all([
             instancesApi.fetchInstances(),
@@ -261,29 +263,29 @@ const getPercentColor = (percent: number) => {
             <li class="activity-item">
               <div class="activity-icon bg-blue-light"><Server :size="16" class="text-blue"/></div>
               <div class="activity-details">
-                <span class="activity-text">Instance <strong>web-server-01</strong> started</span>
-                <span class="activity-time">10 mins ago</span>
+                <span class="activity-text">{{ $t('dashboard.overview.activity.instanceStarted', { name: 'web-server-01' }) }}</span>
+                <span class="activity-time">{{ $t('dashboard.overview.minsAgo', { n: 10 }) }}</span>
               </div>
             </li>
              <li class="activity-item">
               <div class="activity-icon bg-teal-light"><HardDrive :size="16" class="text-teal"/></div>
               <div class="activity-details">
-                <span class="activity-text">Volume <strong>data-vol-01</strong> attached</span>
-                <span class="activity-time">1 hour ago</span>
+                <span class="activity-text">{{ $t('dashboard.overview.activity.volumeAttached', { name: 'data-vol-01' }) }}</span>
+                <span class="activity-time">{{ $t('dashboard.overview.hoursAgo', { n: 1 }) }}</span>
               </div>
             </li>
              <li class="activity-item">
               <div class="activity-icon bg-purple-light"><Layers :size="16" class="text-purple"/></div>
               <div class="activity-details">
-                <span class="activity-text">New VPC <strong>dev-env</strong> created</span>
-                <span class="activity-time">3 hours ago</span>
+                <span class="activity-text">{{ $t('dashboard.overview.activity.vpcCreated', { name: 'dev-env' }) }}</span>
+                <span class="activity-time">{{ $t('dashboard.overview.hoursAgo', { n: 3 }) }}</span>
               </div>
             </li>
              <li class="activity-item">
               <div class="activity-icon bg-rose-light"><Activity :size="16" class="text-rose"/></div>
               <div class="activity-details">
-                <span class="activity-text">Security Group rule updated</span>
-                <span class="activity-time">5 hours ago</span>
+                <span class="activity-text">{{ $t('dashboard.overview.activity.sgRuleUpdated') }}</span>
+                <span class="activity-time">{{ $t('dashboard.overview.hoursAgo', { n: 5 }) }}</span>
               </div>
             </li>
           </ul>

@@ -30,6 +30,7 @@ type SecgroupAPI struct{}
 type SecurityGroupResponse struct {
 	*ResourceReference
 	IsDefault        bool               `json:"is_default"`
+	Description      string             `json:"description,omitempty"`
 	VPC              *ResourceReference `json:"vpc,omitempty"`
 	TargetInterfaces []*TargetInterface `json:"target_interfaces,omitempty"`
 	SecurityRules    []*SecruleResponse `json:"security_rules,omitempty"`
@@ -43,14 +44,16 @@ type SecurityGroupListResponse struct {
 }
 
 type SecurityGroupPayload struct {
-	Name      string         `json:"name" binding:"required,min=2,max=32"`
-	VPC       *BaseReference `json:"vpc" binding:"omitempty"`
-	IsDefault bool           `json:"is_default" binding:"omitempty"`
+	Name        string         `json:"name" binding:"required,min=2,max=32"`
+	Description string         `json:"description" binding:"omitempty,max=256"`
+	VPC         *BaseReference `json:"vpc" binding:"omitempty"`
+	IsDefault   bool           `json:"is_default" binding:"omitempty"`
 }
 
 type SecurityGroupPatchPayload struct {
-	Name      string `json:"name" binding:"required,min=2,max=32"`
-	IsDefault bool   `json:"is_default" binding:"omitempty"`
+	Name        string `json:"name" binding:"required,min=2,max=32"`
+	Description string `json:"description" binding:"omitempty,max=256"`
+	IsDefault   bool   `json:"is_default" binding:"omitempty"`
 }
 
 // @Summary get a secgroup
@@ -114,7 +117,7 @@ func (v *SecgroupAPI) Patch(c *gin.Context) {
 		ErrorResponse(c, http.StatusBadRequest, "Not allowed to patch default security group to false", err)
 		return
 	}
-	err = secgroupAdmin.Update(ctx, secgroup, payload.Name, payload.IsDefault)
+	err = secgroupAdmin.Update(ctx, secgroup, payload.Name, payload.Description, payload.IsDefault)
 	if err != nil {
 		logger.Errorf("Failed to patch secgroup %s, %+v", uuID, err)
 		ErrorResponse(c, http.StatusBadRequest, "Patch security group failed", err)
@@ -187,7 +190,7 @@ func (v *SecgroupAPI) Create(c *gin.Context) {
 			return
 		}
 	}
-	secgroup, err := secgroupAdmin.Create(ctx, payload.Name, payload.IsDefault, router)
+	secgroup, err := secgroupAdmin.Create(ctx, payload.Name, payload.Description, payload.IsDefault, router)
 	if err != nil {
 		logger.Errorf("Failed to create secgroup %+v, %+v", payload, err)
 		ErrorResponse(c, http.StatusBadRequest, "Not able to create", err)
@@ -212,7 +215,8 @@ func (v *SecgroupAPI) getSecgroupResponse(ctx context.Context, secgroup *model.S
 			CreatedAt: secgroup.CreatedAt.Format(TimeStringForMat),
 			UpdatedAt: secgroup.UpdatedAt.Format(TimeStringForMat),
 		},
-		IsDefault: secgroup.IsDefault,
+		IsDefault:   secgroup.IsDefault,
+		Description: secgroup.Description,
 	}
 	if secgroup.Router != nil {
 		secgroupResp.VPC = &ResourceReference{

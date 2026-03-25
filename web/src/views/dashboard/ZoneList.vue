@@ -215,7 +215,7 @@ onMounted(fetchZones)
             <div class="form-stack">
               <div class="form-group">
                 <label class="form-label">{{ t('dashboard.table.name') }} *</label>
-                <input type="text" v-model="createForm.name" class="form-input" placeholder="e.g. zone-a" />
+                <input type="text" v-model="createForm.name" class="form-input" :placeholder="t('dashboard.forms.placeholder.zoneNameExample')" />
               </div>
               <div class="form-group">
                 <label class="form-label">{{ t('dashboard.zoneActions.remark') }}</label>

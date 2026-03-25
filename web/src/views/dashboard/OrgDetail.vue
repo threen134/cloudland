@@ -515,7 +515,7 @@ onMounted(() => {
           </p>
           <div class="form-group">
             <label class="form-label">{{ $t('dashboard.table.email') }}</label>
-            <input v-model="addMemberForm.email" type="email" class="form-input" placeholder="user@example.com" />
+            <input v-model="addMemberForm.email" type="email" class="form-input" :placeholder="$t('dashboard.forms.placeholder.emailExample')" />
           </div>
           <div class="form-group">
             <label class="form-label">{{ $t('dashboard.org.role') }}</label>

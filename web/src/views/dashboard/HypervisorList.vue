@@ -159,7 +159,7 @@ const handleDelete = async () => {
         deletingHyper.value = null
         await fetchHypervisors()
     } catch (err: any) {
-        toast.error(err.response?.data?.error || 'Delete failed')
+        toast.error(err.response?.data?.error || t('messages.deleteFailed'))
     } finally {
         deleting.value = false
     }
@@ -297,27 +297,27 @@ onMounted(fetchHypervisors)
             <div class="form-grid">
               <div class="form-group">
                 <label class="form-label">IP *</label>
-                <input type="text" v-model="deployForm.ip" class="form-input" placeholder="192.168.1.100" />
+                <input type="text" v-model="deployForm.ip" class="form-input" :placeholder="t('dashboard.forms.placeholder.ipExample')" />
               </div>
               <div class="form-group">
                 <label class="form-label">{{ t('dashboard.table.hostname') }} *</label>
-                <input type="text" v-model="deployForm.hostname" class="form-input" placeholder="compute-01" />
+                <input type="text" v-model="deployForm.hostname" class="form-input" :placeholder="t('dashboard.forms.placeholder.hostnameExample')" />
               </div>
               <div class="form-group">
                 <label class="form-label">{{ t('dashboard.hypervisorDeploy.networkDevice') }}</label>
-                <input type="text" v-model="deployForm.network_device" class="form-input" placeholder="eth0" />
+                <input type="text" v-model="deployForm.network_device" class="form-input" :placeholder="t('dashboard.forms.placeholder.netDeviceExample')" />
               </div>
               <div class="form-group">
                 <label class="form-label">{{ t('dashboard.hypervisorDeploy.vlanDevice') }}</label>
-                <input type="text" v-model="deployForm.vlan_device" class="form-input" :placeholder="deployForm.network_device || 'eth0'" />
+                <input type="text" v-model="deployForm.vlan_device" class="form-input" :placeholder="deployForm.network_device || t('dashboard.forms.placeholder.netDeviceExample')" />
               </div>
               <div class="form-group">
                 <label class="form-label">{{ t('dashboard.hypervisorDeploy.dnsServer') }}</label>
-                <input type="text" v-model="deployForm.dns_server" class="form-input" placeholder="8.8.8.8" />
+                <input type="text" v-model="deployForm.dns_server" class="form-input" :placeholder="t('dashboard.forms.placeholder.dnsExample')" />
               </div>
               <div class="form-group">
                 <label class="form-label">{{ t('dashboard.hypervisorDeploy.domain') }}</label>
-                <input type="text" v-model="deployForm.domain" class="form-input" placeholder="example.com" />
+                <input type="text" v-model="deployForm.domain" class="form-input" :placeholder="t('dashboard.forms.placeholder.domainExample')" />
               </div>
               <div class="form-group">
                 <label class="form-label">{{ t('dashboard.table.zone') }}</label>

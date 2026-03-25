@@ -237,6 +237,7 @@ export interface SecurityRule {
 export interface SecurityGroup {
     id: string
     name: string
+    description?: string
     is_default?: boolean
     vpc?: { id: string; name: string }
     target_interfaces?: Array<{
@@ -257,6 +258,7 @@ export interface SecurityGroup {
 
 export interface SecurityGroupPayload {
     name: string
+    description?: string
     is_default?: boolean
     vpc?: { id: string }
 }
@@ -290,7 +292,7 @@ export const securityGroupsApi = {
         const response = await client.post('/security_groups', payload)
         return response.data
     },
-    patch: async (id: string, payload: { name?: string; is_default?: boolean }): Promise<SecurityGroup> => {
+    patch: async (id: string, payload: { name?: string; description?: string; is_default?: boolean }): Promise<SecurityGroup> => {
         const response = await client.patch(`/security_groups/${id}`, payload)
         return response.data
     },

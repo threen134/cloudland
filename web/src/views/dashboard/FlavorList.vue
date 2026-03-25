@@ -249,7 +249,7 @@ onMounted(fetchFlavors)
                 v-model="newFlavorForm.name" 
                 type="text" 
                 :class="['form-input', { 'input-error': !isNameValid }]" 
-                placeholder="e.g. s6.large.2" 
+                :placeholder="$t('dashboard.forms.placeholder.flavorNameExample')" 
               />
               <div v-if="!isNameValid" class="text-error text-xs mt-1">
                 {{ $t('messages.invalidHostname') }}

@@ -314,7 +314,7 @@ onMounted(fetchRules)
                                         <option value="in">Inbound</option>
                                         <option value="out">Outbound</option>
                                     </select>
-                                    <input v-model.number="rule.limit" type="number" class="form-input rule-input-sm" placeholder="Limit %" min="1" max="100" />
+                                    <input v-model.number="rule.limit" type="number" class="form-input rule-input-sm" :placeholder="$t('dashboard.forms.placeholder.limitPercentExample')" min="1" max="100" />
                                     <input v-model.number="rule.duration" type="number" class="form-input rule-input-sm" :placeholder="t('dashboard.vmAlarmRules.durationMin')" min="1" />
                                     <button v-if="createForm.rules.length > 1" class="icon-btn-table text-error" @click="removeRuleRow(idx)">
                                         <Trash2 :size="14" />

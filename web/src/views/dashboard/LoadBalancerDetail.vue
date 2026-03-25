@@ -1,9 +1,11 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { useI18n } from 'vue-i18n'
 import { loadBalancersApi, type LoadBalancer } from '../../api/networks'
 import { ArrowLeft, GitFork, Trash2, Activity, Globe } from 'lucide-vue-next'
 
+const { t } = useI18n()
 const route = useRoute()
 const router = useRouter()
 const lbId = route.params.id as string
@@ -21,14 +23,14 @@ const fetchLB = async () => {
         lb.value = response
     } catch (err) {
         console.error('Failed to fetch load balancer:', err)
-        error.value = 'Failed to load load balancer details.'
+        error.value = t('dashboard.loadBalancerDetail.loadError')
     } finally {
         loading.value = false
     }
 }
 
 const handleDelete = async () => {
-    if (!confirm('Are you sure you want to delete this load balancer? This action cannot be undone.')) return
+    if (!confirm(t('dashboard.loadBalancerDetail.deleteConfirm'))) return
     
     deleting.value = true
     try {
@@ -36,7 +38,7 @@ const handleDelete = async () => {
         router.push({ name: 'load-balancers' })
     } catch (err) {
         console.error('Failed to delete load balancer:', err)
-        alert('Failed to delete load balancer.')
+        alert(t('dashboard.loadBalancerDetail.deleteFailed'))
         deleting.value = false
     }
 }
@@ -72,7 +74,7 @@ onMounted(fetchLB)
 
         <div v-else-if="error" class="error-container card">
             <p class="text-error">{{ error }}</p>
-            <button class="btn btn-primary" @click="fetchLB">Retry</button>
+            <button class="btn btn-primary" @click="fetchLB">{{ $t('dashboard.loadBalancerDetail.retry') }}</button>
         </div>
 
         <div v-else-if="lb" class="detail-content">
@@ -92,7 +94,7 @@ onMounted(fetchLB)
                 </div>
                 <div class="title-actions">
                     <button class="btn btn-danger" @click="handleDelete" :disabled="deleting">
-                        <Trash2 :size="16" /> {{ deleting ? 'Deleting...' : 'Delete LB' }}
+                        <Trash2 :size="16" /> {{ deleting ? $t('dashboard.loadBalancerDetail.deleting') : $t('dashboard.loadBalancerDetail.deleteLb') }}
                     </button>
                 </div>
             </div>
@@ -101,14 +103,14 @@ onMounted(fetchLB)
             <div class="info-grid">
                 <!-- General Info -->
                 <div class="card info-card">
-                    <h3>General Information</h3>
+                    <h3>{{ $t('dashboard.loadBalancerDetail.generalInfo') }}</h3>
                     <div class="key-value-list">
                         <div class="kv-item">
-                            <span class="label">Name</span>
+                            <span class="label">{{ $t('dashboard.loadBalancerDetail.name') }}</span>
                             <span class="value">{{ lb.name }}</span>
                         </div>
                         <div class="kv-item">
-                             <span class="label">VPC</span>
+                             <span class="label">{{ $t('dashboard.loadBalancerDetail.vpc') }}</span>
                              <span class="value" v-if="lb.vpc">
                                 <router-link :to="{name: 'vpc-detail', params: {id: lb.vpc.id}}" class="text-link">
                                     {{ lb.vpc.name }}
@@ -117,7 +119,7 @@ onMounted(fetchLB)
                              <span class="value" v-else>-</span>
                         </div>
                          <div class="kv-item">
-                            <span class="label">Created At</span>
+                            <span class="label">{{ $t('dashboard.loadBalancerDetail.createdAt') }}</span>
                             <span class="value">{{ lb.created_at || '-' }}</span>
                         </div>
                     </div>
@@ -125,10 +127,10 @@ onMounted(fetchLB)
 
                 <!-- Network Info -->
                 <div class="card info-card">
-                    <h3>Network</h3>
+                    <h3>{{ $t('dashboard.loadBalancerDetail.network') }}</h3>
                      <div class="key-value-list">
                         <div class="kv-item">
-                            <span class="label">VIP Address</span>
+                            <span class="label">{{ $t('dashboard.loadBalancerDetail.vipAddress') }}</span>
                             <span class="value mono">{{ lb.floating_ips?.[0]?.ip_address || '-' }}</span>
                         </div>
                     </div>
@@ -138,17 +140,17 @@ onMounted(fetchLB)
             <!-- Listeners -->
             <div class="card listeners-card">
                 <div class="card-header">
-                    <h3>Listeners</h3>
+                    <h3>{{ $t('dashboard.loadBalancerDetail.listeners') }}</h3>
                     <!-- Add Listener logic can be here -->
                 </div>
                 <div class="table-responsive">
                     <table class="data-table">
                         <thead>
                             <tr>
-                                <th>Name</th>
-                                <th>Protocol/Port</th>
-                                <th>Status</th>
-                                <th>Backends</th>
+                                <th>{{ $t('dashboard.table.name') }}</th>
+                                <th>{{ $t('dashboard.loadBalancerDetail.protocol') || 'Protocol/Port' }}</th>
+                                <th>{{ $t('dashboard.table.status') }}</th>
+                                <th>{{ $t('dashboard.loadBalancerDetail.backends') }}</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -158,8 +160,8 @@ onMounted(fetchLB)
                              <tr v-else v-for="listener in lb.listeners" :key="listener.id">
                                 <td>{{ listener.name }}</td>
                                 <td class="mono">{{ listener.mode.toUpperCase() }}:{{ listener.port }}</td>
-                                <td>{{ listener.status || 'active' }}</td>
-                                <td>{{ listener.backends?.length || 0 }} backends</td>
+                                 <td>{{ listener.status || 'active' }}</td>
+                                <td>{{ listener.backends?.length || 0 }} {{ $t('dashboard.loadBalancerDetail.backends') }}</td>
                             </tr>
                         </tbody>
                     </table>

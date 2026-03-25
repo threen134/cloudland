@@ -222,7 +222,7 @@ onMounted(fetchChannels)
                             </div>
                             <div class="form-group">
                                 <label class="form-label">Webhook URL</label>
-                                <input v-model="form.config[form.type === 'feishu' ? 'webhook_url' : 'url']" class="form-input" placeholder="https://..." required />
+                                <input v-model="form.config[form.type === 'feishu' ? 'webhook_url' : 'url']" class="form-input" :placeholder="$t('dashboard.forms.placeholder.webhookExample')" required />
                             </div>
                             <div class="form-group" v-if="form.type === 'feishu'">
                                 <label class="form-label">{{ t('dashboard.notificationSecret') }}</label>

@@ -16,6 +16,7 @@ const creating = ref(false)
 const createError = ref('')
 const newGroupForm = ref({
     name: '',
+    description: '',
     vpc_id: ''
 })
 
@@ -36,7 +37,7 @@ const toggleGroup = (id: string) => {
 
 const isExpanded = (id: string) => expandedGroups.value.includes(id)
 
-type SortKey = 'direction' | 'protocol' | 'port' | 'remote_cidr'
+type SortKey = 'name' | 'direction' | 'protocol' | 'port' | 'remote_cidr'
 type SortOrder = 'asc' | 'desc'
 const ruleSortKey = ref<SortKey>('direction')
 const ruleSortOrder = ref<SortOrder>('asc')
@@ -54,6 +55,8 @@ const sortRules = (rules: SecurityRule[]) => {
     return [...rules].sort((a, b) => {
         const dir = ruleSortOrder.value === 'asc' ? 1 : -1
         switch (ruleSortKey.value) {
+            case 'name':
+                return dir * (a.name || '').localeCompare(b.name || '')
             case 'direction':
                 return dir * a.direction.localeCompare(b.direction)
             case 'protocol':
@@ -87,7 +90,7 @@ const fetchSecurityGroups = async () => {
 }
 
 const openCreateModal = () => {
-    newGroupForm.value = { name: '', vpc_id: vpcs.value[0]?.id || '' }
+    newGroupForm.value = { name: '', description: '', vpc_id: vpcs.value[0]?.id || '' }
     createModalVisible.value = true
 }
 
@@ -108,6 +111,7 @@ const handleCreateGroup = async () => {
     try {
         await securityGroupsApi.create({
             name: newGroupForm.value.name,
+            description: newGroupForm.value.description,
             vpc: { id: newGroupForm.value.vpc_id },
             is_default: false
         })
@@ -177,6 +181,7 @@ const editingRuleId = ref<string | null>(null)
 const addingRule = ref(false)
 const addRuleError = ref('')
 const newRule = ref({
+    name: '',
     direction: 'ingress',
     protocol: 'tcp',
     port_min: 80,
@@ -187,7 +192,7 @@ const newRule = ref({
 const openAddRuleModal = (groupId: string) => {
     ruleModalGroupId.value = groupId
     editingRuleId.value = null
-    newRule.value = { direction: 'ingress', protocol: 'tcp', port_min: 80, port_max: 80, remote_cidr: '0.0.0.0/0' }
+    newRule.value = { name: '', direction: 'ingress', protocol: 'tcp', port_min: 80, port_max: 80, remote_cidr: '0.0.0.0/0' }
     addRuleError.value = ''
     ruleModalVisible.value = true
 }
@@ -196,6 +201,7 @@ const openEditRuleModal = (groupId: string, rule: SecurityRule) => {
     ruleModalGroupId.value = groupId
     editingRuleId.value = rule.id
     newRule.value = {
+        name: rule.name || '',
         direction: rule.direction,
         protocol: rule.protocol,
         port_min: rule.protocol === 'icmp' ? 1 : (rule.port_min || 1),
@@ -368,6 +374,7 @@ onMounted(fetchSecurityGroups)
                 <span v-if="group.is_default" class="badge badge-primary">{{ $t('dashboard.table.default') }}</span>
                 <span class="sg-vpc-badge" v-if="group.vpc?.name">{{ group.vpc.name }}</span>
               </div>
+              <div class="sg-description" v-if="group.description">{{ group.description }}</div>
               <div class="sg-id">{{ group.id }}</div>
             </div>
           </div>
@@ -397,6 +404,12 @@ onMounted(fetchSecurityGroups)
           <table class="rules-table">
             <thead>
               <tr>
+                <th class="sortable-th" @click="toggleRuleSort('name')">
+                  {{ $t('dashboard.table.name') }}
+                  <ArrowUp v-if="ruleSortKey === 'name' && ruleSortOrder === 'asc'" :size="12" />
+                  <ArrowDown v-else-if="ruleSortKey === 'name' && ruleSortOrder === 'desc'" :size="12" />
+                  <ArrowUpDown v-else :size="12" class="sort-idle" />
+                </th>
                 <th class="sortable-th" @click="toggleRuleSort('direction')">
                   {{ $t('dashboard.table.direction') }}
                   <ArrowUp v-if="ruleSortKey === 'direction' && ruleSortOrder === 'asc'" :size="12" />
@@ -426,9 +439,10 @@ onMounted(fetchSecurityGroups)
             </thead>
             <tbody>
               <tr v-if="!group.security_rules?.length">
-                <td colspan="5" class="text-center text-secondary">{{ $t('messages.noData') }}</td>
+                <td colspan="6" class="text-center text-secondary">{{ $t('messages.noData') }}</td>
               </tr>
               <tr v-else v-for="rule in sortRules(group.security_rules)" :key="rule.id">
+                <td>{{ rule.name || '-' }}</td>
                 <td>
                   <span :class="['direction-badge', rule.direction]">
                     {{ rule.direction === 'ingress' ? $t('dashboard.table.ingress') : $t('dashboard.table.egress') }}
@@ -477,6 +491,16 @@ onMounted(fetchSecurityGroups)
           </div>
 
           <div class="form-group">
+            <label class="form-label">{{ $t('dashboard.forms.description') }}</label>
+            <input
+              v-model="newGroupForm.description"
+              type="text"
+              class="form-input"
+              :placeholder="$t('dashboard.forms.placeholder.none')"
+            />
+          </div>
+
+          <div class="form-group">
             <label class="form-label">{{ $t('dashboard.forms.vpc') }}</label>
             <div class="select-wrapper">
                 <select v-model="newGroupForm.vpc_id" class="form-input">
@@ -509,6 +533,10 @@ onMounted(fetchSecurityGroups)
           <button class="btn btn-ghost btn-sm icon-btn" @click="closeRuleModal"><X :size="20" /></button>
         </div>
         <div class="modal-body">
+          <div class="form-group">
+            <label class="form-label">{{ $t('dashboard.table.name') }}</label>
+            <input v-model="newRule.name" type="text" class="form-input" :placeholder="$t('dashboard.forms.placeholder.nameExample')">
+          </div>
           <div class="form-group">
             <label class="form-label">{{ $t('dashboard.table.direction') }}</label>
             <div class="select-wrapper">
@@ -748,6 +776,11 @@ onMounted(fetchSecurityGroups)
   font-size: var(--font-size-xs);
   color: var(--text-tertiary);
   font-family: var(--font-family-mono);
+  margin-top: 2px;
+}
+.sg-description {
+  font-size: var(--font-size-xs);
+  color: var(--text-secondary);
   margin-top: 2px;
 }
 

@@ -284,7 +284,7 @@ onMounted(() => {
               v-model="newVolumeForm.name" 
               type="text" 
               :class="['form-input', { 'input-error': !isNameValid }]" 
-              placeholder="e.g. data-disk-01" 
+              :placeholder="$t('dashboard.forms.placeholder.volumeNameExample')" 
             />
             <div v-if="!isNameValid" class="text-error text-xs mt-1">
               {{ $t('messages.invalidHostname') }}

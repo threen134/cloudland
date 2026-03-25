@@ -20,10 +20,13 @@ const addRuleError = ref('')
 
 const isEditingName = ref(false)
 const newName = ref('')
-const savingName = ref(false)
+const isEditingDesc = ref(false)
+const newDesc = ref('')
+const savingInfo = ref(false)
 
 const showAddRuleModal = ref(false)
 const newRule = ref({
+    name: '',
     direction: 'ingress',
     protocol: 'tcp',
     port_min: 80,
@@ -31,7 +34,7 @@ const newRule = ref({
     remote_cidr: '0.0.0.0/0'
 })
 
-type SortKey = 'direction' | 'protocol' | 'port' | 'remote_cidr'
+type SortKey = 'name' | 'direction' | 'protocol' | 'port' | 'remote_cidr'
 type SortOrder = 'asc' | 'desc'
 const sortKey = ref<SortKey>('direction')
 const sortOrder = ref<SortOrder>('asc')
@@ -50,6 +53,8 @@ const sortedRules = computed(() => {
     return [...rules].sort((a, b) => {
         const dir = sortOrder.value === 'asc' ? 1 : -1
         switch (sortKey.value) {
+            case 'name':
+                return dir * (a.name || '').localeCompare(b.name || '')
             case 'direction':
                 return dir * a.direction.localeCompare(b.direction)
             case 'protocol':
@@ -105,6 +110,7 @@ const handleDeleteRule = async (ruleId: string) => {
 const openAddRuleModal = () => {
     editingRuleId.value = null
     newRule.value = {
+        name: '',
         direction: 'ingress',
         protocol: 'tcp',
         port_min: 80,
@@ -117,6 +123,7 @@ const openAddRuleModal = () => {
 const openEditRuleModal = (rule: SecurityRule) => {
     editingRuleId.value = rule.id
     newRule.value = {
+        name: rule.name || '',
         direction: rule.direction,
         protocol: rule.protocol,
         port_min: rule.protocol === 'icmp' ? 1 : (rule.port_min || 1),
@@ -150,22 +157,41 @@ const startEditName = () => {
     isEditingName.value = true
 }
 
-const saveName = async () => {
-    if (!newName.value || newName.value === group.value?.name) {
+const saveInfo = async () => {
+    const payload: { name?: string; description?: string } = {}
+    if (isEditingName.value && newName.value && newName.value !== group.value?.name) {
+        payload.name = newName.value
+    }
+    if (isEditingDesc.value && newDesc.value !== group.value?.description) {
+        payload.description = newDesc.value
+    }
+
+    if (Object.keys(payload).length === 0) {
         isEditingName.value = false
+        isEditingDesc.value = false
         return
     }
-    savingName.value = true
+
+    savingInfo.value = true
     try {
-        await securityGroupsApi.patch(groupId, { name: newName.value })
-        if (group.value) group.value.name = newName.value
+        await securityGroupsApi.patch(groupId, payload)
+        if (group.value) {
+            if (payload.name) group.value.name = payload.name
+            if (payload.description !== undefined) group.value.description = payload.description
+        }
         isEditingName.value = false
+        isEditingDesc.value = false
     } catch (err) {
-        console.error('Failed to update name:', err)
+        console.error('Failed to update info:', err)
         alert(t('messages.error'))
     } finally {
-        savingName.value = false
+        savingInfo.value = false
     }
+}
+
+const startEditDesc = () => {
+    newDesc.value = group.value?.description || ''
+    isEditingDesc.value = true
 }
 
 const goBack = () => {
@@ -257,11 +283,26 @@ onMounted(fetchGroup)
                         <div class="kv-item">
                              <span class="label">{{ $t('dashboard.table.name') }}</span>
                             <div v-if="isEditingName" class="edit-name-group">
-                                <input v-model="newName" type="text" class="form-input form-input-sm" @keyup.enter="saveName" @keyup.esc="isEditingName = false">
-                                <button class="btn btn-primary btn-sm" @click="saveName" :disabled="savingName">{{ $t('actions.save') }}</button>
-                                <button class="btn btn-ghost btn-sm" @click="isEditingName = false" :disabled="savingName">{{ $t('actions.cancel') }}</button>
+                                <input v-model="newName" type="text" class="form-input form-input-sm" @keyup.enter="saveInfo" @keyup.esc="isEditingName = false">
+                                <button class="btn btn-primary btn-sm" @click="saveInfo" :disabled="savingInfo">{{ $t('actions.save') }}</button>
+                                <button class="btn btn-ghost btn-sm" @click="isEditingName = false" :disabled="savingInfo">{{ $t('actions.cancel') }}</button>
                             </div>
-                            <span v-else class="value">{{ group.name }}</span>
+                            <div v-else class="value-with-edit">
+                                <span class="value">{{ group.name }}</span>
+                                <button class="btn-icon-link" @click="startEditName"><Edit :size="12" /></button>
+                            </div>
+                        </div>
+                        <div class="kv-item">
+                             <span class="label">{{ $t('dashboard.table.description') }}</span>
+                            <div v-if="isEditingDesc" class="edit-name-group">
+                                <input v-model="newDesc" type="text" class="form-input form-input-sm" @keyup.enter="saveInfo" @keyup.esc="isEditingDesc = false">
+                                <button class="btn btn-primary btn-sm" @click="saveInfo" :disabled="savingInfo">{{ $t('actions.save') }}</button>
+                                <button class="btn btn-ghost btn-sm" @click="isEditingDesc = false" :disabled="savingInfo">{{ $t('actions.cancel') }}</button>
+                            </div>
+                            <div v-else class="value-with-edit">
+                                <span class="value">{{ group.description || '-' }}</span>
+                                <button class="btn-icon-link" @click="startEditDesc"><Edit :size="12" /></button>
+                            </div>
                         </div>
                         <div class="kv-item">
                               <span class="label">{{ $t('dashboard.table.vpc') }}</span>
@@ -335,6 +376,12 @@ onMounted(fetchGroup)
                     <table class="data-table">
                         <thead>
                             <tr>
+                                 <th class="sortable-th" @click="toggleSort('name')">
+                                     {{ $t('dashboard.table.name') }}
+                                     <ArrowUp v-if="sortKey === 'name' && sortOrder === 'asc'" :size="12" />
+                                     <ArrowDown v-else-if="sortKey === 'name' && sortOrder === 'desc'" :size="12" />
+                                     <ArrowUpDown v-else :size="12" class="sort-idle" />
+                                 </th>
                                  <th class="sortable-th" @click="toggleSort('direction')">
                                      {{ $t('dashboard.table.direction') }}
                                      <ArrowUp v-if="sortKey === 'direction' && sortOrder === 'asc'" :size="12" />
@@ -364,9 +411,10 @@ onMounted(fetchGroup)
                         </thead>
                         <tbody>
                             <tr v-if="!sortedRules.length">
-                                 <td colspan="5" class="text-center text-secondary">{{ $t('messages.noData') }}</td>
+                                 <td colspan="6" class="text-center text-secondary">{{ $t('messages.noData') }}</td>
                             </tr>
                             <tr v-else v-for="rule in sortedRules" :key="rule.id">
+                                <td>{{ rule.name || '-' }}</td>
                                 <td>
                                     <span :class="['direction-badge', rule.direction]">
                                          {{ rule.direction === 'ingress' ? $t('dashboard.table.ingress') : $t('dashboard.table.egress') }}
@@ -398,6 +446,10 @@ onMounted(fetchGroup)
                     <button class="btn btn-ghost btn-sm icon-btn" @click="showAddRuleModal = false"><X :size="20" /></button>
                 </div>
                 <div class="modal-body">
+                    <div class="form-group">
+                         <label class="form-label">{{ $t('dashboard.table.name') }}</label>
+                         <input v-model="newRule.name" type="text" class="form-input" :placeholder="$t('dashboard.forms.placeholder.nameExample')">
+                    </div>
                     <div class="form-group">
                          <label class="form-label">{{ $t('dashboard.table.direction') }}</label>
                         <select v-model="newRule.direction" class="form-input">
@@ -561,6 +613,27 @@ onMounted(fetchGroup)
 
 .text-link:hover {
     text-decoration: underline;
+}
+
+.value-with-edit {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-2);
+}
+
+.btn-icon-link {
+    background: none;
+    border: none;
+    padding: 0;
+    color: var(--text-tertiary);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    transition: color var(--transition-fast);
+}
+
+.btn-icon-link:hover {
+    color: var(--primary-color);
 }
 
 /* Rules Card */

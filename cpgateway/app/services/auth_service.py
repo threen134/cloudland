@@ -250,6 +250,11 @@ class AuthService:
 
         logger.info(f"Login: user={user.username}, org={org.name if org else 'none'}, region={target_region}")
 
+        # 登录成功后异步对账 consumption（不阻塞登录响应）
+        if org and region_obj:
+            from app.services.consumption_sync_service import trigger_sync
+            trigger_sync(org.id, region_obj.id, region_obj.internal_endpoint, region_obj.internal_secret)
+
         return {
             "access_token": access_token,
             "token_type": "bearer",

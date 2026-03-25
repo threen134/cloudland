@@ -252,7 +252,7 @@ onMounted(fetchLoadBalancers)
               v-model="newLBForm.name" 
               type="text" 
               :class="['form-input', { 'input-error': !isNameValid }]" 
-              placeholder="e.g. web-lb-01" 
+              :placeholder="$t('dashboard.forms.placeholder.lbNameExample')" 
             />
             <div v-if="!isNameValid" class="text-error text-xs mt-1">
               {{ $t('messages.invalidHostname') }}

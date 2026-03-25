@@ -1,9 +1,11 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { useI18n } from 'vue-i18n'
 import { usersApi, type User } from '../../api/users'
 import { ArrowLeft, User as UserIcon, Trash2, Mail, Shield, AlertTriangle } from 'lucide-vue-next'
 
+const { t } = useI18n()
 const route = useRoute()
 const router = useRouter()
 const userId = route.params.id as string
@@ -21,14 +23,14 @@ const fetchUser = async () => {
         user.value = response.data as any
     } catch (err) {
         console.error('Failed to fetch user:', err)
-        error.value = 'Failed to load user details.'
+        error.value = t('dashboard.userDetail.loadError')
     } finally {
         loading.value = false
     }
 }
 
 const handleDelete = async () => {
-    if (!confirm('Are you sure you want to delete this user? This action cannot be undone.')) return
+    if (!confirm(t('dashboard.userDetail.deleteConfirm'))) return
     
     deleting.value = true
     try {
@@ -36,7 +38,7 @@ const handleDelete = async () => {
         router.push({ name: 'users' })
     } catch (err) {
         console.error('Failed to delete user:', err)
-        alert('Failed to delete user.')
+        alert(t('dashboard.userDetail.deleteFailed'))
         deleting.value = false
     }
 }
@@ -66,7 +68,7 @@ onMounted(fetchUser)
 
         <div v-else-if="error" class="error-container card">
             <p class="text-error">{{ error }}</p>
-            <button class="btn btn-primary" @click="fetchUser">Retry</button>
+            <button class="btn btn-primary" @click="fetchUser">{{ $t('dashboard.userDetail.retry') }}</button>
         </div>
 
         <div v-else-if="user" class="detail-content">
@@ -76,7 +78,7 @@ onMounted(fetchUser)
                     <UserIcon :size="32" />
                 </div>
                 <div class="title-info">
-                    <h1>{{ user.username || user.name || 'Unknown User' }}</h1>
+                    <h1>{{ user.username || user.name || $t('dashboard.userDetail.unknownUser') }}</h1>
                     <div class="subtitle">
                         <span class="id-text">{{ user.uuid }}</span>
                         <span :class="['status-badge', getStatusClass(user.status || 'active')]">
@@ -86,7 +88,7 @@ onMounted(fetchUser)
                 </div>
                 <div class="title-actions">
                     <button class="btn btn-danger" @click="handleDelete" :disabled="deleting">
-                        <Trash2 :size="16" /> {{ deleting ? 'Deleting...' : 'Delete User' }}
+                        <Trash2 :size="16" /> {{ deleting ? $t('dashboard.userDetail.deleting') : $t('dashboard.userDetail.deleteUser') }}
                     </button>
                 </div>
             </div>
@@ -95,22 +97,22 @@ onMounted(fetchUser)
             <div class="info-grid">
                 <!-- General Info -->
                 <div class="card info-card">
-                    <h3>General Information</h3>
+                    <h3>{{ $t('dashboard.userDetail.generalInfo') }}</h3>
                     <div class="key-value-list">
                         <div class="kv-item">
-                            <span class="label">Username</span>
+                            <span class="label">{{ $t('dashboard.userDetail.username') }}</span>
                             <span class="value">{{ user.username || user.name }}</span>
                         </div>
                         <div class="kv-item">
-                            <span class="label"><Mail :size="14" /> Email</span>
+                            <span class="label"><Mail :size="14" /> {{ $t('dashboard.userDetail.email') }}</span>
                             <span class="value">{{ user.email || '-' }}</span>
                         </div>
                         <div class="kv-item">
-                            <span class="label"><Shield :size="14" /> Role</span>
+                            <span class="label"><Shield :size="14" /> {{ $t('dashboard.userDetail.role') }}</span>
                             <span class="value">{{ user.role || 'Member' }}</span>
                         </div>
                         <div class="kv-item">
-                            <span class="label">Created At</span>
+                            <span class="label">{{ $t('dashboard.userDetail.createdAt') }}</span>
                             <span class="value">{{ user.created_at || '-' }}</span>
                         </div>
                     </div>
@@ -118,14 +120,14 @@ onMounted(fetchUser)
 
                 <!-- Organization Info -->
                  <div class="card info-card">
-                    <h3>Organization</h3>
+                    <h3>{{ $t('dashboard.userDetail.organization') }}</h3>
                      <div class="key-value-list">
                         <div class="kv-item">
-                            <span class="label">Organization UUID</span>
+                            <span class="label">{{ $t('dashboard.userDetail.orgUuid') }}</span>
                             <span class="value mono">{{ user.org?.uuid || '-' }}</span>
                         </div>
                          <div class="kv-item">
-                            <span class="label">Organization Name</span>
+                            <span class="label">{{ $t('dashboard.userDetail.orgName') }}</span>
                             <span class="value">{{ user.org?.name || '-' }}</span>
                         </div>
                     </div>

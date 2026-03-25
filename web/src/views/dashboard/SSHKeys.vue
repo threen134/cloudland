@@ -253,7 +253,7 @@ onMounted(fetchKeys)
               v-model="newKeyForm.name" 
               type="text" 
               :class="['form-input', { 'input-error': !isNameValid }]" 
-              placeholder="e.g. My Laptop Key" 
+              :placeholder="$t('dashboard.forms.placeholder.sshKeyNameExample')" 
             />
             <div v-if="!isNameValid" class="text-error text-xs mt-1">
               {{ $t('messages.invalidHostname') }}
@@ -267,7 +267,7 @@ onMounted(fetchKeys)
               v-model="newKeyForm.public_key" 
               class="form-input" 
               rows="5" 
-              placeholder="ssh-rsa AAAAB3NzaC1yc2E..."
+              :placeholder="$t('dashboard.forms.placeholder.sshPubKeyExample')" 
               style="font-family: monospace; font-size: 0.8em;"
             ></textarea>
             <p class="helper-text">{{ $t('dashboard.forms.publicKeyHelp') }}</p>

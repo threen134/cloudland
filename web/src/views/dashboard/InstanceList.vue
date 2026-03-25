@@ -72,11 +72,14 @@ const filteredInstances = computed(() => {
         const idMatch = (inst.id?.toLowerCase() || '').includes(query)
         const ipMatch = (inst.ip_address?.toLowerCase() || '').includes(query)
         const interfaceIpMatch = inst.interfaces?.some(iface => (iface.ip_address?.toLowerCase() || '').includes(query))
+        const fipMatch = inst.interfaces?.some(iface => iface.floating_ips?.some((fip: any) => 
+            fip.type?.toLowerCase() !== 'native' && (fip.fip_address?.toLowerCase() || '').includes(query)
+        ))
         
         const vpcMatch = (inst.vpc?.name?.toLowerCase() || '').includes(query)
         const imageMatch = (inst.image?.name?.toLowerCase() || '').includes(query)
         
-        return nameMatch || hostnameMatch || idMatch || ipMatch || interfaceIpMatch || vpcMatch || imageMatch
+        return nameMatch || hostnameMatch || idMatch || ipMatch || interfaceIpMatch || fipMatch || vpcMatch || imageMatch
     })
 })
 
@@ -114,9 +117,21 @@ const formatMemory = (mb: number) => {
 }
 
 const getIPAddress = (instance: Instance) => {
-    const addr = instance.interfaces?.[0]?.ip_address
+    const primaryIface = instance.interfaces?.find(iface => iface.is_primary) || instance.interfaces?.[0]
+    const addr = primaryIface?.ip_address
     if (!addr) return '-'
     return addr.split('/')[0]
+}
+
+const getFloatingIP = (instance: Instance) => {
+    const primaryIface = instance.interfaces?.find(iface => iface.is_primary) || instance.interfaces?.[0]
+    if (primaryIface?.floating_ips && primaryIface.floating_ips.length > 0) {
+        const fip = primaryIface.floating_ips.find((f: any) => f.type?.toLowerCase() !== 'native')
+        if (fip && fip.fip_address) {
+            return fip.fip_address.split('/')[0]
+        }
+    }
+    return null
 }
 
 // --- Action States and Dropdown ---
@@ -836,7 +851,13 @@ onMounted(() => fetchInstances())
             </td>
             <td>{{ instance.image?.name || '-' }}</td>
             <td>
-              <code class="ip-address">{{ getIPAddress(instance) }}</code>
+              <div class="ip-display">
+                <code class="ip-address">{{ getIPAddress(instance) }}</code>
+                <div v-if="getFloatingIP(instance)" class="fip-address" :title="$t('dashboard.floatingIP.address')">
+                  <span class="fip-label">FIP:</span>
+                  <code class="text-primary">{{ getFloatingIP(instance) }}</code>
+                </div>
+              </div>
             </td>
             <td>
               <span :class="['badge', getStatusClass(instance.status)]">
@@ -1315,7 +1336,7 @@ onMounted(() => fetchInstances())
 
                 <div class="form-group">
                     <label class="form-label">{{ $t('dashboard.forms.userData') }}</label>
-                    <textarea v-model="newInstanceForm.userdata" class="form-textarea" rows="4" placeholder="#!/bin/bash..."></textarea>
+                    <textarea v-model="newInstanceForm.userdata" class="form-textarea" rows="4" :placeholder="$t('dashboard.forms.placeholder.userdataExample')"></textarea>
                 </div>
             </div>
           </div>
@@ -1640,6 +1661,27 @@ onMounted(() => fetchInstances())
 .ip-address {
   font-family: var(--font-family-mono);
   font-size: var(--font-size-sm);
+}
+
+.ip-display {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.fip-address {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.75rem;
+  color: var(--primary-600);
+}
+
+.fip-label {
+  font-weight: 600;
+  color: var(--primary-400);
+  font-size: 0.7rem;
+  margin-right: 2px;
 }
 
 .actions {

@@ -229,8 +229,8 @@ onMounted(fetchSubnets)
           <tr>
             <th>{{ $t('dashboard.table.nameId') }}</th>
             <th>{{ $t('dashboard.table.cidr') }}</th>
-            <th>{{ $t('dashboard.table.networkRange') }} / VLAN</th>
-            <th>{{ $t('dashboard.table.allocated') }} / {{ $t('dashboard.table.available') }} / {{ $t('dashboard.overview.total') }}</th>
+            <th>{{ $t('dashboard.table.rangeVlan') }}</th>
+            <th>{{ $t('dashboard.table.ipUsage') }}</th>
             <th>{{ $t('dashboard.table.vpc') }}</th>
             <th>{{ $t('dashboard.table.type') }}</th>
             <th>{{ $t('dashboard.table.actions') }}</th>
@@ -393,7 +393,7 @@ onMounted(fetchSubnets)
                 v-model.number="newSubnetForm.vlan"
                 type="number"
                 class="form-input"
-                placeholder="e.g. 100"
+                :placeholder="$t('dashboard.forms.placeholder.vlanExample')" 
                 min="1"
                 max="4094"
               />
@@ -500,7 +500,7 @@ onMounted(fetchSubnets)
                     v-model.number="newSubnetForm.priority"
                     type="number"
                     class="form-input"
-                    placeholder="0"
+                    :placeholder="$t('dashboard.forms.placeholder.numberExample')"
                     min="0"
                     max="100000"
                   />

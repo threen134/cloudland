@@ -18,6 +18,7 @@ type SecurityGroup struct {
 	Model
 	Owner      int64         `gorm:"unique_index:idx_account_secgroup;default:1"` /* The organization ID of the resource */
 	Name       string        `gorm:"unique_index:idx_account_secgroup;type:varchar(64)"`
+	Description string       `gorm:"type:varchar(256)"`
 	IsDefault  bool          `gorm:"default:false"`
 	Interfaces []*Interface  `gorm:"many2many:secgroup_ifaces;"`
 	RouterID   int64

@@ -165,6 +165,6 @@ func AdminInit() {
 		ctx = memberShip.SetContext(ctx)
 		sgName := fmt.Sprintf("%s-%d", SystemDefaultSGName, adminOrg.ID)
 		_ = sgName // unused for now, use the constant name
-		_, _ = (&SecgroupAdmin{}).Create(ctx, SystemDefaultSGName, true, nil)
+		_, _ = (&SecgroupAdmin{}).Create(ctx, SystemDefaultSGName, "System default security group", true, nil)
 	}
 }

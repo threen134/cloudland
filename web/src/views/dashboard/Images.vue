@@ -362,7 +362,7 @@ onMounted(async () => {
                 v-model="newImageForm.name" 
                 type="text" 
                 :class="['form-input', { 'input-error': !isNameValid }]" 
-                placeholder="e.g. Ubuntu 22.04 Custom" 
+                :placeholder="$t('dashboard.forms.placeholder.imageNameExample')" 
               />
               <div v-if="!isNameValid" class="text-error text-xs mt-1">
                 {{ $t('messages.invalidHostname') }}
@@ -376,7 +376,7 @@ onMounted(async () => {
                 v-model="newImageForm.download_url" 
                 type="text" 
                 class="form-input" 
-                placeholder="https://example.com/image.qcow2" 
+                :placeholder="$t('dashboard.forms.placeholder.urlExample')" 
               />
             </div>
 
@@ -405,7 +405,7 @@ onMounted(async () => {
                   v-model="newImageForm.os_family" 
                   type="text" 
                   class="form-input" 
-                  placeholder="e.g. Ubuntu" 
+                  :placeholder="$t('dashboard.forms.placeholder.osFamilyExample')" 
                 />
               </div>
               <div class="form-group flex-1">
@@ -414,7 +414,7 @@ onMounted(async () => {
                   v-model="newImageForm.os_version" 
                   type="text" 
                   class="form-input" 
-                  placeholder="e.g. 22.04" 
+                  :placeholder="$t('dashboard.forms.placeholder.osVersionExample')" 
                 />
               </div>
             </div>
@@ -433,7 +433,7 @@ onMounted(async () => {
                 v-model="newImageForm.user" 
                 type="text" 
                 class="form-input" 
-                placeholder="e.g. root or ubuntu" 
+                :placeholder="$t('dashboard.forms.placeholder.defaultUserExample')" 
               />
             </div>
           </div>
