@@ -341,7 +341,7 @@ func (a *FloatingIpAdminService) Attach(ctx context.Context, floatingIp *model.F
 		return
 	}
 	ctx, db := GetContextDB(ctx)
-	if instance == nil || (instance.Status == "pending") {
+	if instance == nil || (instance.Status == model.InstanceStatusProvisioning) {
 		logger.Error("Instance is not running")
 		err = NewCLError(ErrInstanceInvalidState, "Instance is not running", nil)
 		return

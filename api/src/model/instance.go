@@ -13,7 +13,7 @@ import (
 type InstanceStatus string
 
 const (
-	InstanceStatusPending      InstanceStatus = "pending"
+	InstanceStatusProvisioning InstanceStatus = "provisioning"
 	InstanceStatusRunning      InstanceStatus = "running"
 	InstanceStatusShutoff      InstanceStatus = "shut_off"
 	InstanceStatusPaused       InstanceStatus = "paused"

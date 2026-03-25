@@ -635,7 +635,7 @@ export default {
             stopped: '已停止',
             shutoff: '已关机',
             shut_off: '已关机',
-            pending: '挂起中',
+            provisioning: '创建中',
             starting: '正在启动',
             stopping: '正在停止',
             paused: '已暂停',

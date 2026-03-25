@@ -218,7 +218,7 @@ func (a *InstanceAdmin) Create(ctx context.Context, count int, prefix, userdata 
 			UserdataType:   userdataType,
 			Vendordata:     vendorData,
 			VendordataType: vendorDataType,
-			Status:         model.InstanceStatusPending,
+			Status:         model.InstanceStatusProvisioning,
 			ZoneID:         zoneID,
 			RouterID:       routerID,
 			Cpu:            cpu,

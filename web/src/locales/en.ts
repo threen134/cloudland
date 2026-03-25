@@ -636,7 +636,7 @@ export default {
             stopped: 'Stopped',
             shutoff: 'Shut Off',
             shut_off: 'Shut Off',
-            pending: 'Pending',
+            provisioning: 'Provisioning',
             starting: 'Starting',
             stopping: 'Stopping',
             paused: 'Paused',

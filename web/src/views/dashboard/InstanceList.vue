@@ -91,7 +91,8 @@ const getStatusClass = (status: string) => {
         'stopped': 'status-stopped',
         'shutoff': 'status-stopped',
         'shut_off': 'status-stopped',
-        'pending': 'status-pending',
+        'paused': 'status-paused',
+        'provisioning': 'status-pending',
         'starting': 'status-pending',
         'stopping': 'status-pending',
         'error': 'status-error'
