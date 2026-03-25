@@ -40,23 +40,24 @@ func Authorize() gin.HandlerFunc {
 		}
 
 		// 2. Read identity from X-* headers (set by CPGateway Proxy)
+		// X-User-ID is optional (user management moved to CPGateway).
+		// If present it must be a valid int64; if absent, Creater defaults to 0.
+		var uid int64
 		userIDStr := c.Request.Header.Get("X-User-ID")
-		if userIDStr == "" {
-			ErrorResponse(c, http.StatusUnauthorized, "Missing X-User-ID header", nil)
-			c.Abort()
-			return
-		}
-
-		uid, err := strconv.ParseInt(userIDStr, 10, 64)
-		if err != nil {
-			ErrorResponse(c, http.StatusBadRequest, "Invalid X-User-ID value", err)
-			c.Abort()
-			return
+		if userIDStr != "" {
+			var err error
+			uid, err = strconv.ParseInt(userIDStr, 10, 64)
+			if err != nil {
+				ErrorResponse(c, http.StatusBadRequest, "Invalid X-User-ID value", err)
+				c.Abort()
+				return
+			}
 		}
 
 		orgIDStr := c.Request.Header.Get("X-Org-ID")
 		var oid int64
 		if orgIDStr != "" {
+			var err error
 			oid, err = strconv.ParseInt(orgIDStr, 10, 64)
 			if err != nil {
 				ErrorResponse(c, http.StatusBadRequest, "Invalid X-Org-ID value", err)
