@@ -238,7 +238,8 @@ func (v *SecgroupAPI) getSecgroupResponse(ctx context.Context, secgroup *model.S
 	for _, iface := range secgroup.Interfaces {
 		targetIface := &TargetInterface{
 			ResourceReference: &ResourceReference{
-				ID: iface.UUID,
+				ID:   iface.UUID,
+				Name: iface.Name,
 			},
 		}
 		if iface.Address != nil {

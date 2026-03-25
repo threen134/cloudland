@@ -717,6 +717,10 @@ export default {
             deleteConfirm: '确定要删除此安全组吗？此操作无法撤销。',
             deleteRuleConfirm: '确定要删除此安全组规则吗？',
             ruleCount: '{n} 条规则',
+            associatedInterfaces: '关联网卡',
+            noInterfaces: '暂无网卡使用此安全组。',
+            ipAddress: 'IP 地址',
+            instance: '虚拟机',
         },
         buttons: {
             createInstance: '创建云服务器',

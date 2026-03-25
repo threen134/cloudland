@@ -1,9 +1,9 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { securityGroupsApi, type SecurityGroup, type SecurityRule } from '../../api/networks'
-import { ArrowLeft, Shield, Trash2, Plus, X, Edit } from 'lucide-vue-next'
+import { ArrowLeft, Shield, Trash2, Plus, X, Edit, ArrowUpDown, ArrowUp, ArrowDown, Network, Server } from 'lucide-vue-next'
 
 const route = useRoute()
 const router = useRouter()
@@ -31,17 +31,44 @@ const newRule = ref({
     remote_cidr: '0.0.0.0/0'
 })
 
+type SortKey = 'direction' | 'protocol' | 'port' | 'remote_cidr'
+type SortOrder = 'asc' | 'desc'
+const sortKey = ref<SortKey>('direction')
+const sortOrder = ref<SortOrder>('asc')
+
+const toggleSort = (key: SortKey) => {
+    if (sortKey.value === key) {
+        sortOrder.value = sortOrder.value === 'asc' ? 'desc' : 'asc'
+    } else {
+        sortKey.value = key
+        sortOrder.value = 'asc'
+    }
+}
+
+const sortedRules = computed(() => {
+    const rules = group.value?.security_rules || []
+    return [...rules].sort((a, b) => {
+        const dir = sortOrder.value === 'asc' ? 1 : -1
+        switch (sortKey.value) {
+            case 'direction':
+                return dir * a.direction.localeCompare(b.direction)
+            case 'protocol':
+                return dir * a.protocol.localeCompare(b.protocol)
+            case 'port':
+                return dir * ((a.port_min ?? -1) - (b.port_min ?? -1))
+            case 'remote_cidr':
+                return dir * (a.remote_cidr || '').localeCompare(b.remote_cidr || '')
+            default:
+                return 0
+        }
+    })
+})
+
 const fetchGroup = async () => {
     loading.value = true
     error.value = ''
     try {
         const response = await securityGroupsApi.get(groupId)
-        if (response.security_rules) {
-            response.security_rules.sort((a, b) => {
-                if (a.direction === b.direction) return 0
-                return a.direction === 'ingress' ? -1 : 1
-            })
-        }
         group.value = response
     } catch (err) {
         console.error('Failed to fetch security group:', err)
@@ -145,6 +172,18 @@ const goBack = () => {
     router.back()
 }
 
+const WELL_KNOWN_PORTS: Record<number, string> = {
+    20: 'FTP-Data', 21: 'FTP', 22: 'SSH', 23: 'Telnet', 25: 'SMTP',
+    53: 'DNS', 67: 'DHCP', 68: 'DHCP', 80: 'HTTP', 110: 'POP3',
+    119: 'NNTP', 123: 'NTP', 143: 'IMAP', 161: 'SNMP', 162: 'SNMP-Trap',
+    389: 'LDAP', 443: 'HTTPS', 445: 'SMB', 465: 'SMTPS',
+    514: 'Syslog', 587: 'SMTP', 636: 'LDAPS', 993: 'IMAPS', 995: 'POP3S',
+    1433: 'MSSQL', 1521: 'Oracle', 2049: 'NFS', 3306: 'MySQL',
+    3389: 'RDP', 5432: 'PostgreSQL', 5672: 'AMQP', 5900: 'VNC',
+    6379: 'Redis', 8080: 'HTTP-Alt', 8443: 'HTTPS-Alt',
+    9090: 'Prometheus', 9200: 'Elasticsearch', 27017: 'MongoDB',
+}
+
 const formatPort = (rule: SecurityRule) => {
     if (rule.protocol === 'icmp' || (rule.port_min != null && rule.port_min < 0)) {
         return '-'
@@ -156,6 +195,14 @@ const formatPort = (rule: SecurityRule) => {
         return t('dashboard.forms.placeholder.all')
     }
     return `${rule.port_min}-${rule.port_max}`
+}
+
+const getServiceName = (rule: SecurityRule): string | null => {
+    if (rule.protocol === 'icmp' || rule.port_min == null || rule.port_min < 0) return null
+    if (rule.port_min === rule.port_max && WELL_KNOWN_PORTS[rule.port_min]) {
+        return WELL_KNOWN_PORTS[rule.port_min]
+    }
+    return null
 }
 
 onMounted(fetchGroup)
@@ -233,6 +280,49 @@ onMounted(fetchGroup)
                 </div>
             </div>
 
+            <!-- Associated Interfaces -->
+            <div class="card interfaces-card">
+                <div class="card-header">
+                    <h3>{{ $t('dashboard.securityGroupDetail.associatedInterfaces') }}</h3>
+                </div>
+                <div class="table-responsive">
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>{{ $t('dashboard.table.name') }}</th>
+                                <th>{{ $t('dashboard.securityGroupDetail.ipAddress') }}</th>
+                                <th>{{ $t('dashboard.securityGroupDetail.instance') }}</th>
+                                <th>{{ $t('dashboard.floatingIPDetail.interfaceId') }}</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr v-if="!group.target_interfaces?.length">
+                                <td colspan="4" class="text-center text-secondary">{{ $t('dashboard.securityGroupDetail.noInterfaces') }}</td>
+                            </tr>
+                            <tr v-else v-for="iface in group.target_interfaces" :key="iface.id">
+                                <td>{{ iface.name || '-' }}</td>
+                                <td>
+                                    <div class="iface-cell">
+                                        <Network :size="14" class="text-secondary" />
+                                        <span class="mono">{{ iface.ip_address || '-' }}</span>
+                                    </div>
+                                </td>
+                                <td>
+                                    <div v-if="iface.from_instance" class="iface-cell">
+                                        <Server :size="14" class="text-secondary" />
+                                        <router-link :to="{ name: 'instance-detail', params: { id: iface.from_instance.id } }" class="text-link">
+                                            {{ iface.from_instance.hostname || iface.from_instance.id }}
+                                        </router-link>
+                                    </div>
+                                    <span v-else class="text-secondary">-</span>
+                                </td>
+                                <td class="mono text-secondary">{{ iface.id }}</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
             <!-- Rules -->
             <div class="card rules-card">
                 <div class="card-header">
@@ -245,25 +335,45 @@ onMounted(fetchGroup)
                     <table class="data-table">
                         <thead>
                             <tr>
-                                 <th>{{ $t('dashboard.table.direction') }}</th>
-                                 <th>{{ $t('dashboard.table.protocol') }}</th>
-                                 <th>{{ $t('dashboard.table.portRange') }}</th>
-                                 <th>{{ $t('dashboard.table.remoteCidr') }}</th>
+                                 <th class="sortable-th" @click="toggleSort('direction')">
+                                     {{ $t('dashboard.table.direction') }}
+                                     <ArrowUp v-if="sortKey === 'direction' && sortOrder === 'asc'" :size="12" />
+                                     <ArrowDown v-else-if="sortKey === 'direction' && sortOrder === 'desc'" :size="12" />
+                                     <ArrowUpDown v-else :size="12" class="sort-idle" />
+                                 </th>
+                                 <th class="sortable-th" @click="toggleSort('protocol')">
+                                     {{ $t('dashboard.table.protocol') }}
+                                     <ArrowUp v-if="sortKey === 'protocol' && sortOrder === 'asc'" :size="12" />
+                                     <ArrowDown v-else-if="sortKey === 'protocol' && sortOrder === 'desc'" :size="12" />
+                                     <ArrowUpDown v-else :size="12" class="sort-idle" />
+                                 </th>
+                                 <th class="sortable-th" @click="toggleSort('port')">
+                                     {{ $t('dashboard.table.portRange') }}
+                                     <ArrowUp v-if="sortKey === 'port' && sortOrder === 'asc'" :size="12" />
+                                     <ArrowDown v-else-if="sortKey === 'port' && sortOrder === 'desc'" :size="12" />
+                                     <ArrowUpDown v-else :size="12" class="sort-idle" />
+                                 </th>
+                                 <th class="sortable-th" @click="toggleSort('remote_cidr')">
+                                     {{ $t('dashboard.table.remoteCidr') }}
+                                     <ArrowUp v-if="sortKey === 'remote_cidr' && sortOrder === 'asc'" :size="12" />
+                                     <ArrowDown v-else-if="sortKey === 'remote_cidr' && sortOrder === 'desc'" :size="12" />
+                                     <ArrowUpDown v-else :size="12" class="sort-idle" />
+                                 </th>
                                  <th>{{ $t('dashboard.table.actions') }}</th>
                             </tr>
                         </thead>
                         <tbody>
-                            <tr v-if="!group.security_rules?.length">
+                            <tr v-if="!sortedRules.length">
                                  <td colspan="5" class="text-center text-secondary">{{ $t('messages.noData') }}</td>
                             </tr>
-                            <tr v-else v-for="rule in group.security_rules" :key="rule.id">
+                            <tr v-else v-for="rule in sortedRules" :key="rule.id">
                                 <td>
                                     <span :class="['direction-badge', rule.direction]">
                                          {{ rule.direction === 'ingress' ? $t('dashboard.table.ingress') : $t('dashboard.table.egress') }}
                                     </span>
                                 </td>
                                 <td class="mono">{{ rule.protocol.toUpperCase() }}</td>
-                                <td class="mono">{{ formatPort(rule) }}</td>
+                                <td class="mono">{{ formatPort(rule) }} <span v-if="getServiceName(rule)" class="service-tag">{{ getServiceName(rule) }}</span></td>
                                 <td class="mono">{{ rule.remote_cidr }}</td>
                                 <td>
                                     <button class="btn btn-ghost btn-sm" :title="$t('actions.edit')" @click="openEditRuleModal(rule)">
@@ -279,7 +389,7 @@ onMounted(fetchGroup)
                 </div>
             </div>
         </div>
-        
+
         <!-- Add Rule Modal -->
         <div v-if="showAddRuleModal" class="modal-overlay" @click.self="showAddRuleModal = false">
              <div class="modal-content card">
@@ -492,6 +602,38 @@ onMounted(fetchGroup)
     font-family: var(--font-family-mono);
 }
 
+.sortable-th {
+    cursor: pointer;
+    user-select: none;
+    display: table-cell;
+}
+
+.sortable-th:hover {
+    color: var(--primary-color);
+}
+
+.sortable-th svg {
+    vertical-align: middle;
+    margin-left: 4px;
+}
+
+.sort-idle {
+    opacity: 0.3;
+}
+
+.service-tag {
+    display: inline-block;
+    padding: 1px 6px;
+    border-radius: 4px;
+    font-size: 10px;
+    font-weight: 600;
+    font-family: var(--font-family-base);
+    background: var(--primary-50);
+    color: var(--primary-700);
+    margin-left: 6px;
+    vertical-align: middle;
+}
+
 /* Modal */
 .form-group {
     margin-bottom: 16px;
@@ -518,5 +660,18 @@ onMounted(fetchGroup)
     border-radius: 6px;
      background: var(--bg-primary);
     color: var(--text-primary);
+}
+
+/* Interfaces Card */
+.interfaces-card {
+    padding: 0;
+    overflow: hidden;
+    margin-top: var(--spacing-4);
+}
+
+.iface-cell {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-2);
 }
 </style>

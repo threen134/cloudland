@@ -718,6 +718,10 @@ export default {
             deleteConfirm: 'Are you sure you want to delete this security group? This action cannot be undone.',
             deleteRuleConfirm: 'Are you sure you want to delete this security rule?',
             ruleCount: '{n} Rule | {n} Rules',
+            associatedInterfaces: 'Associated Interfaces',
+            noInterfaces: 'No interfaces are using this security group.',
+            ipAddress: 'IP Address',
+            instance: 'Instance',
         },
         buttons: {
             createInstance: 'Create Instance',

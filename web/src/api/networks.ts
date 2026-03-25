@@ -239,7 +239,16 @@ export interface SecurityGroup {
     name: string
     is_default?: boolean
     vpc?: { id: string; name: string }
-    target_interfaces?: Array<{ id: string; name?: string }>
+    target_interfaces?: Array<{
+        id: string
+        name?: string
+        ip_address?: string
+        from_instance?: {
+            id: string
+            hostname?: string
+            owner?: string
+        }
+    }>
     security_rules?: SecurityRule[]
     created_at?: string
     updated_at?: string
