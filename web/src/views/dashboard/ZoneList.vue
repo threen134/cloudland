@@ -206,7 +206,7 @@ onMounted(fetchZones)
     <!-- Create Modal -->
     <Teleport to="body">
       <div v-if="showCreateModal" class="modal-overlay" @click.self="showCreateModal = false">
-        <div class="modal-content" style="max-width: 480px;">
+        <div class="modal-content card" style="max-width: 480px;">
           <div class="modal-header">
             <h3>{{ t('dashboard.zoneActions.createTitle') }}</h3>
             <button class="btn btn-ghost btn-icon" @click="showCreateModal = false"><X :size="18" /></button>
@@ -243,7 +243,7 @@ onMounted(fetchZones)
     <!-- Edit Modal -->
     <Teleport to="body">
       <div v-if="showEditModal" class="modal-overlay" @click.self="showEditModal = false">
-        <div class="modal-content" style="max-width: 480px;">
+        <div class="modal-content card" style="max-width: 480px;">
           <div class="modal-header">
             <h3>{{ t('dashboard.zoneActions.editTitle') }} - {{ editingZone?.name }}</h3>
             <button class="btn btn-ghost btn-icon" @click="showEditModal = false"><X :size="18" /></button>
@@ -276,7 +276,7 @@ onMounted(fetchZones)
     <!-- Delete Confirm Modal -->
     <Teleport to="body">
       <div v-if="showDeleteModal" class="modal-overlay" @click.self="showDeleteModal = false">
-        <div class="modal-content" style="max-width: 440px;">
+        <div class="modal-content card" style="max-width: 440px;">
           <div class="modal-header">
             <h3>{{ t('dashboard.zoneActions.deleteTitle') }}</h3>
             <button class="btn btn-ghost btn-icon" @click="showDeleteModal = false"><X :size="18" /></button>

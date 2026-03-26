@@ -265,7 +265,7 @@ onMounted(fetchAlarms)
     <!-- Create Modal -->
     <Teleport to="body">
       <div v-if="showCreateModal" class="modal-overlay" @click.self="showCreateModal = false">
-        <div class="modal-content" style="max-width: 560px;">
+        <div class="modal-content card" style="max-width: 560px;">
           <div class="modal-header">
             <h3>{{ t('dashboard.alarmActions.createTitle') }}</h3>
             <button class="btn btn-ghost btn-icon" @click="showCreateModal = false"><X :size="18" /></button>
@@ -315,7 +315,7 @@ onMounted(fetchAlarms)
     <!-- Delete Confirm Modal -->
     <Teleport to="body">
       <div v-if="showDeleteConfirm" class="modal-overlay" @click.self="showDeleteConfirm = false">
-        <div class="modal-content" style="max-width: 440px;">
+        <div class="modal-content card" style="max-width: 440px;">
           <div class="modal-header">
             <h3>{{ t('dashboard.alarmActions.deleteTitle') }}</h3>
             <button class="btn btn-ghost btn-icon" @click="showDeleteConfirm = false"><X :size="18" /></button>

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Plus, Trash2, Search, Bell, Pencil, ToggleLeft, ToggleRight, RefreshCw } from 'lucide-vue-next'
+import { Plus, Trash2, Search, Bell, Pencil, ToggleLeft, ToggleRight, RefreshCw, X } from 'lucide-vue-next'
 import { useToast } from '../../composables/useToast'
 import { notificationsApi, type NotificationChannel, type CreateChannelPayload } from '../../api/notifications'
 
@@ -207,10 +207,10 @@ onMounted(fetchChannels)
         <!-- Create/Edit Modal -->
         <Teleport to="body">
             <div v-if="showCreateModal" class="modal-overlay" @click.self="showCreateModal = false">
-                <div class="modal-content" style="max-width: 520px;">
+                <div class="modal-content card" style="max-width: 520px;">
                     <div class="modal-header">
                         <h3>{{ editTarget ? t('actions.edit') : t('actions.create') }} {{ t('dashboard.notificationChannel') }}</h3>
-                        <button class="btn btn-ghost btn-icon" @click="showCreateModal = false">✕</button>
+                        <button class="btn btn-ghost btn-icon" @click="showCreateModal = false"><X :size="18" /></button>
                     </div>
                     <div class="modal-body">
                         <div class="form-stack">
@@ -246,10 +246,10 @@ onMounted(fetchChannels)
         <!-- Delete Confirm Modal -->
         <Teleport to="body">
             <div v-if="showDeleteModal" class="modal-overlay" @click.self="showDeleteModal = false">
-                <div class="modal-content" style="max-width: 440px;">
+                <div class="modal-content card" style="max-width: 440px;">
                     <div class="modal-header">
                         <h3>{{ t('actions.confirmDelete') }}</h3>
-                        <button class="btn btn-ghost btn-icon" @click="showDeleteModal = false">✕</button>
+                        <button class="btn btn-ghost btn-icon" @click="showDeleteModal = false"><X :size="18" /></button>
                     </div>
                     <div class="modal-body">
                         <p>{{ t('messages.confirmDeleteChannel', { name: deleteTarget?.name }) }}</p>

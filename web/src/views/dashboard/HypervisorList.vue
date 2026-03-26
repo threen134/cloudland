@@ -286,7 +286,7 @@ onMounted(fetchHypervisors)
     <!-- Deploy Modal -->
     <Teleport to="body">
       <div v-if="showDeployModal" class="modal-overlay" @click.self="closeDeployModal">
-        <div class="modal-content" style="max-width: 560px;">
+        <div class="modal-content card" style="max-width: 560px;">
           <div class="modal-header">
             <h3>{{ t('dashboard.hypervisorActions.deploy') }}</h3>
             <button class="btn btn-ghost btn-icon" @click="closeDeployModal"><X :size="18" /></button>
@@ -365,7 +365,7 @@ onMounted(fetchHypervisors)
     <!-- Delete Confirm Modal -->
     <Teleport to="body">
       <div v-if="showDeleteConfirm" class="modal-overlay" @click.self="showDeleteConfirm = false">
-        <div class="modal-content" style="max-width: 440px;">
+        <div class="modal-content card" style="max-width: 440px;">
           <div class="modal-header">
             <h3>{{ t('dashboard.hypervisorActions.deleteTitle') }}</h3>
             <button class="btn btn-ghost btn-icon" @click="showDeleteConfirm = false"><X :size="18" /></button>

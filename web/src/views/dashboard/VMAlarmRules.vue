@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Plus, Trash2, Search, ShieldAlert, Link, RefreshCw } from 'lucide-vue-next'
+import { Plus, Trash2, Search, ShieldAlert, Link, RefreshCw, X } from 'lucide-vue-next'
 import { vmAlarmRulesApi, VM_RULE_TYPES, type VMAlarmRuleGroup, type VMRuleType } from '../../api/vmAlarmRules'
 import { alarmEventsApi } from '../../api/alarmEvents'
 import { notificationsApi, type NotificationChannel } from '../../api/notifications'
@@ -279,10 +279,10 @@ onMounted(fetchRules)
         <!-- Create Modal -->
         <Teleport to="body">
             <div v-if="showCreateModal" class="modal-overlay" @click.self="showCreateModal = false">
-                <div class="modal-content modal-lg">
+                <div class="modal-content card" style="max-width: 600px;">
                     <div class="modal-header">
                         <h3>{{ t('dashboard.vmAlarmRules.createTitle', { type: selectedType.toUpperCase() }) }}</h3>
-                        <button class="btn btn-ghost btn-icon" @click="showCreateModal = false">✕</button>
+                        <button class="btn btn-ghost btn-icon" @click="showCreateModal = false"><X :size="18" /></button>
                     </div>
                     <div class="modal-body">
                         <div class="form-stack">
@@ -334,10 +334,10 @@ onMounted(fetchRules)
         <!-- Delete Modal -->
         <Teleport to="body">
             <div v-if="showDeleteModal" class="modal-overlay" @click.self="showDeleteModal = false">
-                <div class="modal-content" style="max-width: 440px;">
+                <div class="modal-content card" style="max-width: 440px;">
                     <div class="modal-header">
                         <h3>{{ t('actions.confirmDelete') }}</h3>
-                        <button class="btn btn-ghost btn-icon" @click="showDeleteModal = false">✕</button>
+                        <button class="btn btn-ghost btn-icon" @click="showDeleteModal = false"><X :size="18" /></button>
                     </div>
                     <div class="modal-body">
                         <p>{{ t('dashboard.vmAlarmRules.deleteConfirm', { name: deleteTarget?.name }) }}</p>
@@ -353,10 +353,10 @@ onMounted(fetchRules)
         <!-- Bind Channels Modal -->
         <Teleport to="body">
             <div v-if="showBindModal" class="modal-overlay" @click.self="showBindModal = false">
-                <div class="modal-content" style="max-width: 480px;">
+                <div class="modal-content card" style="max-width: 480px;">
                     <div class="modal-header">
                         <h3>{{ t('dashboard.vmAlarmRules.bindChannels') }} - {{ bindTarget?.name }}</h3>
-                        <button class="btn btn-ghost btn-icon" @click="showBindModal = false">✕</button>
+                        <button class="btn btn-ghost btn-icon" @click="showBindModal = false"><X :size="18" /></button>
                     </div>
                     <div class="modal-body">
                         <div v-if="bindLoading" class="loading-spinner" style="margin: 20px auto;"></div>

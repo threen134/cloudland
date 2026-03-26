@@ -183,8 +183,7 @@ onMounted(fetchRegions)
 </script>
 
 <template>
-    <div class="region-list-page">
-        <!-- Page Header -->
+    <div>
         <div class="page-header">
             <div class="search-wrapper">
                 <div class="search-box">
@@ -208,81 +207,78 @@ onMounted(fetchRegions)
             </div>
         </div>
 
-        <!-- Regions Table -->
         <div class="card table-card">
-            <div v-if="isLoading && regions.length === 0" class="loading-state">
-                <div class="spinner"></div>
-                <span>{{ t('messages.loading') }}</span>
-            </div>
-
-            <div v-else-if="regions.length === 0" class="empty-state">
-                <div class="empty-icon-wrapper">
-                    <Globe2 :size="48" />
-                </div>
-                <h3>{{ t('messages.noData') }}</h3>
-                <p>{{ t('dashboard.regionActions.noRegions') }}</p>
-                <button class="btn btn-primary" @click="openCreateModal">
-                    <Plus :size="18" />
-                    <span>{{ t('dashboard.regionActions.registerFirstRegion') }}</span>
-                </button>
-            </div>
-
-            <div v-else class="table-responsive">
-                <table class="data-table">
-                    <thead>
-                        <tr>
-                            <th>{{ t('dashboard.table.nameId') }}</th>
-                            <th>{{ t('dashboard.table.status') }}</th>
-                            <th>{{ t('dashboard.table.description') }}</th>
-                            <th>{{ t('dashboard.table.actions') }}</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <tr v-for="region in filteredRegions" :key="region.uuid">
-                            <td>
-                                <div class="resource-info">
-                                    <div class="resource-icon">
-                                        <Globe2 :size="16" />
-                                    </div>
-                                    <div>
-                                        <div class="resource-name">{{ region.display_name || region.name }}</div>
-                                        <div class="resource-id">{{ region.name }} / {{ region.uuid }}</div>
-                                    </div>
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>{{ t('dashboard.table.nameId') }}</th>
+                        <th>{{ t('dashboard.table.status') }}</th>
+                        <th>{{ t('dashboard.table.description') }}</th>
+                        <th>{{ t('dashboard.table.actions') }}</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr v-if="isLoading && regions.length === 0">
+                        <td colspan="4" class="text-center" style="padding: 48px;">
+                            <div class="loading-spinner" style="margin: 0 auto;"></div>
+                        </td>
+                    </tr>
+                    <tr v-else-if="filteredRegions.length === 0">
+                        <td colspan="4" class="text-center text-secondary" style="padding: 48px;">
+                            <div v-if="searchQuery">
+                                <Search :size="48" style="opacity: 0.3; margin-bottom: 16px;" />
+                                <p>{{ t('messages.noResults') }}</p>
+                            </div>
+                            <div v-else>
+                                <Globe2 :size="48" style="opacity: 0.3; margin-bottom: 16px;" />
+                                <p>{{ t('dashboard.regionActions.noRegions') }}</p>
+                            </div>
+                        </td>
+                    </tr>
+                    <tr v-else v-for="region in filteredRegions" :key="region.uuid">
+                        <td>
+                            <div class="resource-info">
+                                <div class="resource-icon">
+                                    <Globe2 :size="16" />
                                 </div>
-                            </td>
-                            <td>
-                                <span class="status-pill"
-                                    :class="region.maintenance_mode ? 'status-maintenance' : region.is_available ? 'status-available' : 'status-offline'">
-                                    <Wrench v-if="region.maintenance_mode" :size="12" />
-                                    <CheckCircle2 v-else-if="region.is_available" :size="12" />
-                                    <AlertCircle v-else :size="12" />
-                                    {{ region.maintenance_mode ? t('dashboard.regionActions.maintenance') : region.is_available ? t('dashboard.regionActions.available') : t('dashboard.regionActions.offline') }}
-                                </span>
-                            </td>
-                            <td class="desc-cell">{{ region.description || '-' }}</td>
-                            <td>
-                                <div class="table-actions">
-                                    <button class="icon-btn-table" @click="openEditModal(region)" :title="t('actions.edit')">
-                                        <Settings2 :size="16" />
-                                    </button>
-                                    <button class="icon-btn-table" @click="confirmRotate(region)" :title="t('dashboard.regionActions.rotateSecret')">
-                                        <KeyRound :size="16" />
-                                    </button>
-                                    <button class="icon-btn-table text-error" @click="confirmDelete(region)" :title="t('actions.delete')">
-                                        <Trash2 :size="16" />
-                                    </button>
+                                <div>
+                                    <div class="resource-name">{{ region.display_name || region.name }}</div>
+                                    <div class="resource-id">{{ region.name }} / {{ region.uuid }}</div>
                                 </div>
-                            </td>
-                        </tr>
-                    </tbody>
-                </table>
-            </div>
+                            </div>
+                        </td>
+                        <td>
+                            <span class="status-pill"
+                                :class="region.maintenance_mode ? 'status-maintenance' : region.is_available ? 'status-available' : 'status-offline'">
+                                <Wrench v-if="region.maintenance_mode" :size="12" />
+                                <CheckCircle2 v-else-if="region.is_available" :size="12" />
+                                <AlertCircle v-else :size="12" />
+                                {{ region.maintenance_mode ? t('dashboard.regionActions.maintenance') : region.is_available ? t('dashboard.regionActions.available') : t('dashboard.regionActions.offline') }}
+                            </span>
+                        </td>
+                        <td class="desc-cell">{{ region.description || '-' }}</td>
+                        <td>
+                            <div class="table-actions">
+                                <button class="icon-btn-table" @click="openEditModal(region)" :title="t('actions.edit')">
+                                    <Settings2 :size="16" />
+                                </button>
+                                <button class="icon-btn-table" @click="confirmRotate(region)" :title="t('dashboard.regionActions.rotateSecret')">
+                                    <KeyRound :size="16" />
+                                </button>
+                                <button class="icon-btn-table text-error" @click="confirmDelete(region)" :title="t('actions.delete')">
+                                    <Trash2 :size="16" />
+                                </button>
+                            </div>
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
         </div>
 
         <!-- Create Modal -->
         <Teleport to="body">
             <div v-if="showCreateModal" class="modal-overlay" @click.self="!createdSecret && (showCreateModal = false)">
-                <div class="modal-content" style="max-width: 560px;">
+                <div class="modal-content card" style="max-width: 560px;">
                     <div class="modal-header">
                         <h3>{{ t('dashboard.regionActions.createTitle') }}</h3>
                         <button class="btn btn-ghost btn-icon" @click="showCreateModal = false"><X :size="18" /></button>
@@ -351,7 +347,7 @@ onMounted(fetchRegions)
         <!-- Edit Modal -->
         <Teleport to="body">
             <div v-if="showEditModal" class="modal-overlay" @click.self="showEditModal = false">
-                <div class="modal-content" style="max-width: 560px;">
+                <div class="modal-content card" style="max-width: 560px;">
                     <div class="modal-header">
                         <h3>{{ t('dashboard.regionActions.editTitle') }}</h3>
                         <button class="btn btn-ghost btn-icon" @click="showEditModal = false"><X :size="18" /></button>
@@ -393,7 +389,7 @@ onMounted(fetchRegions)
         <!-- Delete Confirm Modal -->
         <Teleport to="body">
             <div v-if="showDeleteModal" class="modal-overlay" @click.self="showDeleteModal = false">
-                <div class="modal-content" style="max-width: 440px;">
+                <div class="modal-content card" style="max-width: 440px;">
                     <div class="modal-header">
                         <h3>{{ t('dashboard.regionActions.deleteTitle') }}</h3>
                         <button class="btn btn-ghost btn-icon" @click="showDeleteModal = false"><X :size="18" /></button>
@@ -415,7 +411,7 @@ onMounted(fetchRegions)
         <!-- Rotate Secret Modal -->
         <Teleport to="body">
             <div v-if="showRotateModal" class="modal-overlay" @click.self="!rotatedSecret && (showRotateModal = false)">
-                <div class="modal-content" style="max-width: 500px;">
+                <div class="modal-content card" style="max-width: 500px;">
                     <div class="modal-header">
                         <h3>{{ t('dashboard.regionActions.rotateSecretTitle') }}</h3>
                         <button class="btn btn-ghost btn-icon" @click="showRotateModal = false"><X :size="18" /></button>
@@ -454,10 +450,6 @@ onMounted(fetchRegions)
 </template>
 
 <style scoped>
-.region-list-page {
-    animation: fadeIn 0.4s ease-out;
-}
-
 /* .resource-info etc. are global from index.css */
 
 .page-header {
@@ -514,83 +506,9 @@ onMounted(fetchRegions)
 }
 
 .table-card {
-    background: var(--bg-primary);
-    border-radius: var(--radius-lg);
-    border: 1px solid var(--border-light);
-    box-shadow: var(--shadow-sm);
+    padding: 0;
     overflow: hidden;
-    min-height: 300px;
 }
-
-.loading-state, .empty-state {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    padding: 64px 24px;
-    text-align: center;
-}
-
-.spinner {
-    width: 32px;
-    height: 32px;
-    border: 3px solid var(--border-light);
-    border-top-color: var(--primary-500);
-    border-radius: 50%;
-    animation: spin 1s linear infinite;
-    margin-bottom: 16px;
-}
-
-.empty-icon-wrapper {
-    width: 80px;
-    height: 80px;
-    background-color: var(--bg-tertiary);
-    border-radius: 24px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    margin-bottom: 24px;
-    color: var(--text-tertiary);
-}
-
-.empty-state h3 {
-    font-size: 1.25rem;
-    font-weight: 600;
-    margin-bottom: 8px;
-}
-
-.empty-state p {
-    color: var(--text-secondary);
-    margin-bottom: 24px;
-    max-width: 320px;
-}
-
-.table-responsive { overflow-x: auto; }
-
-.data-table {
-    width: 100%;
-    border-collapse: collapse;
-    text-align: left;
-}
-
-.data-table th {
-    padding: 16px 24px;
-    background-color: var(--bg-secondary);
-    border-bottom: 1px solid var(--border-light);
-    color: var(--text-secondary);
-    font-size: 0.75rem;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-}
-
-.data-table td {
-    padding: 16px 24px;
-    border-bottom: 1px solid var(--border-light);
-    vertical-align: middle;
-}
-
-.data-table tr:hover td { background-color: var(--bg-secondary); }
 
 .desc-cell {
     max-width: 200px;
