@@ -4,7 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { useToast } from '../../composables/useToast'
 import { securityGroupsApi, type SecurityGroup, type SecurityRule } from '../../api/networks'
-import { ArrowLeft, Shield, Trash2, Plus, X, Edit, ArrowUpDown, ArrowUp, ArrowDown, Network, Server } from 'lucide-vue-next'
+import { ArrowLeft, Shield, Trash2, Plus, X, Edit, ArrowUpDown, ArrowUp, ArrowDown, Network, Server, ChevronDown, Search } from 'lucide-vue-next'
 
 const route = useRoute()
 const router = useRouter()
@@ -20,13 +20,24 @@ const addingRule = ref(false)
 const editingRuleId = ref<string | null>(null)
 const addRuleError = ref('')
 
-const isEditingName = ref(false)
-const newName = ref('')
-const isEditingDesc = ref(false)
-const newDesc = ref('')
+const showEditModal = ref(false)
+const editForm = ref({ name: '', description: '' })
 const savingInfo = ref(false)
+const editError = ref('')
 
 const showAddRuleModal = ref(false)
+const showActionMenu = ref(false)
+const activeTab = ref<'rules' | 'interfaces'>('rules')
+const showRuleFilter = ref(false)
+const ruleFilter = ref({ direction: '', protocol: '', keyword: '' })
+
+const toggleRuleFilter = () => {
+    showRuleFilter.value = !showRuleFilter.value
+    if (!showRuleFilter.value) {
+        ruleFilter.value = { direction: '', protocol: '', keyword: '' }
+    }
+}
+
 const newRule = ref({
     name: '',
     direction: 'ingress',
@@ -52,7 +63,16 @@ const toggleSort = (key: SortKey) => {
 
 const sortedRules = computed(() => {
     const rules = group.value?.security_rules || []
-    return [...rules].sort((a, b) => {
+    const { direction, protocol, keyword } = ruleFilter.value
+    const kw = keyword.trim().toLowerCase()
+    const filtered = rules.filter(r => {
+        if (direction && r.direction !== direction) return false
+        if (protocol && r.protocol !== protocol) return false
+        if (kw && ![r.name, r.remote_cidr, r.protocol, r.direction]
+            .filter(Boolean).some(v => v!.toLowerCase().includes(kw))) return false
+        return true
+    })
+    return [...filtered].sort((a, b) => {
         const dir = sortOrder.value === 'asc' ? 1 : -1
         switch (sortKey.value) {
             case 'name':
@@ -85,9 +105,13 @@ const fetchGroup = async () => {
     }
 }
 
+const toggleActionMenu = () => { showActionMenu.value = !showActionMenu.value }
+const closeActionMenu = () => { showActionMenu.value = false }
+
 const handleDelete = async () => {
+    closeActionMenu()
     if (!confirm(t('dashboard.securityGroupDetail.deleteConfirm'))) return
-    
+
     deleting.value = true
     try {
         await securityGroupsApi.delete(groupId)
@@ -157,26 +181,26 @@ const handleAddRule = async () => {
     }
 }
 
-const startEditName = () => {
-    newName.value = group.value?.name || ''
-    isEditingName.value = true
+const openEditModal = () => {
+    closeActionMenu()
+    editForm.value = { name: group.value?.name || '', description: group.value?.description || '' }
+    editError.value = ''
+    showEditModal.value = true
 }
 
 const saveInfo = async () => {
+    editError.value = ''
     const payload: { name?: string; description?: string } = {}
-    if (isEditingName.value && newName.value && newName.value !== group.value?.name) {
-        payload.name = newName.value
+    if (editForm.value.name && editForm.value.name !== group.value?.name) {
+        payload.name = editForm.value.name
     }
-    if (isEditingDesc.value && newDesc.value !== group.value?.description) {
-        payload.description = newDesc.value
+    if (editForm.value.description !== (group.value?.description || '')) {
+        payload.description = editForm.value.description
     }
-
     if (Object.keys(payload).length === 0) {
-        isEditingName.value = false
-        isEditingDesc.value = false
+        showEditModal.value = false
         return
     }
-
     savingInfo.value = true
     try {
         await securityGroupsApi.patch(groupId, payload)
@@ -184,25 +208,17 @@ const saveInfo = async () => {
             if (payload.name) group.value.name = payload.name
             if (payload.description !== undefined) group.value.description = payload.description
         }
-        isEditingName.value = false
-        isEditingDesc.value = false
+        showEditModal.value = false
         toast.success(t('messages.updateSuccess'))
-    } catch (err) {
+    } catch (err: any) {
         console.error('Failed to update info:', err)
-        alert(t('messages.error'))
+        editError.value = err.response?.data?.error_message || err.message || t('messages.error')
     } finally {
         savingInfo.value = false
     }
 }
 
-const startEditDesc = () => {
-    newDesc.value = group.value?.description || ''
-    isEditingDesc.value = true
-}
-
-const goBack = () => {
-    router.back()
-}
+const goBack = () => { router.back() }
 
 const WELL_KNOWN_PORTS: Record<number, string> = {
     20: 'FTP-Data', 21: 'FTP', 22: 'SSH', 23: 'Telnet', 25: 'SMTP',
@@ -271,48 +287,47 @@ onMounted(fetchGroup)
                     </div>
                 </div>
                 <div class="title-actions">
-                    <button class="btn btn-secondary" @click="startEditName" style="margin-right: var(--spacing-2)">
-                        <Edit :size="16" /> {{ $t('actions.edit') }}
-                    </button>
-                    <button class="btn btn-danger" @click="handleDelete" :disabled="deleting || group.is_default">
-                        <Trash2 :size="16" /> {{ deleting ? $t('messages.deleting') : $t('actions.delete') }}
-                    </button>
+                    <div class="action-dropdown">
+                        <button class="btn btn-primary" @click="toggleActionMenu">
+                            {{ $t('actions.actions') }} <ChevronDown :size="14" />
+                        </button>
+                        <div v-if="showActionMenu" class="dropdown-backdrop" @click="closeActionMenu" />
+                        <Transition name="dropdown">
+                            <div v-if="showActionMenu" class="dropdown-menu">
+                                <button class="dropdown-item" @click="openEditModal">
+                                    <Edit :size="14" /> {{ $t('actions.edit') }}
+                                </button>
+                                <div class="dropdown-divider" />
+                                <button
+                                    class="dropdown-item dropdown-item-danger"
+                                    @click="handleDelete"
+                                    :disabled="deleting || group.is_default"
+                                >
+                                    <Trash2 :size="14" />
+                                    {{ deleting ? $t('messages.deleting') : $t('actions.delete') }}
+                                </button>
+                            </div>
+                        </Transition>
+                    </div>
                 </div>
             </div>
 
             <!-- Info Grid -->
             <div class="info-grid">
-                <!-- General Info -->
                 <div class="card info-card">
-                     <h3>{{ $t('dashboard.table.generalInformation') }}</h3>
+                    <h3>{{ $t('dashboard.table.generalInformation') }}</h3>
                     <div class="key-value-list">
                         <div class="kv-item">
-                             <span class="label">{{ $t('dashboard.table.name') }}</span>
-                            <div v-if="isEditingName" class="edit-name-group">
-                                <input v-model="newName" type="text" class="form-input form-input-sm" @keyup.enter="saveInfo" @keyup.esc="isEditingName = false">
-                                <button class="btn btn-primary btn-sm" @click="saveInfo" :disabled="savingInfo">{{ $t('actions.save') }}</button>
-                                <button class="btn btn-ghost btn-sm" @click="isEditingName = false" :disabled="savingInfo">{{ $t('actions.cancel') }}</button>
-                            </div>
-                            <div v-else class="value-with-edit">
-                                <span class="value">{{ group.name }}</span>
-                                <button class="btn-icon-link" @click="startEditName"><Edit :size="12" /></button>
-                            </div>
+                            <span class="label">{{ $t('dashboard.table.name') }}</span>
+                            <span class="value">{{ group.name }}</span>
                         </div>
                         <div class="kv-item">
-                             <span class="label">{{ $t('dashboard.table.description') }}</span>
-                            <div v-if="isEditingDesc" class="edit-name-group">
-                                <input v-model="newDesc" type="text" class="form-input form-input-sm" @keyup.enter="saveInfo" @keyup.esc="isEditingDesc = false">
-                                <button class="btn btn-primary btn-sm" @click="saveInfo" :disabled="savingInfo">{{ $t('actions.save') }}</button>
-                                <button class="btn btn-ghost btn-sm" @click="isEditingDesc = false" :disabled="savingInfo">{{ $t('actions.cancel') }}</button>
-                            </div>
-                            <div v-else class="value-with-edit">
-                                <span class="value">{{ group.description || '-' }}</span>
-                                <button class="btn-icon-link" @click="startEditDesc"><Edit :size="12" /></button>
-                            </div>
+                            <span class="label">{{ $t('dashboard.table.description') }}</span>
+                            <span class="value">{{ group.description || '-' }}</span>
                         </div>
                         <div class="kv-item">
-                              <span class="label">{{ $t('dashboard.table.vpc') }}</span>
-                             <span class="value" v-if="group.vpc">
+                            <span class="label">{{ $t('dashboard.table.vpc') }}</span>
+                            <span class="value" v-if="group.vpc">
                                 <router-link :to="{name: 'vpc-detail', params: {id: group.vpc.id}}" class="text-link">
                                     {{ group.vpc.name }}
                                 </router-link>
@@ -320,65 +335,75 @@ onMounted(fetchGroup)
                             <span class="value" v-else>-</span>
                         </div>
                         <div class="kv-item">
-                             <span class="label">{{ $t('dashboard.table.createdAt') }}</span>
+                            <span class="label">{{ $t('dashboard.table.createdAt') }}</span>
                             <span class="value">{{ group.created_at || '-' }}</span>
                         </div>
                     </div>
                 </div>
             </div>
 
-            <!-- Associated Interfaces -->
-            <div class="card interfaces-card">
-                <div class="card-header">
-                    <h3>{{ $t('dashboard.securityGroupDetail.associatedInterfaces') }}</h3>
+            <!-- Tabbed Section -->
+            <div class="card tab-card">
+                <div class="tab-header">
+                    <div class="tab-nav">
+                        <button
+                            :class="['tab-btn', { active: activeTab === 'rules' }]"
+                            @click="activeTab = 'rules'"
+                        >
+                            {{ $t('dashboard.table.securityRules') }}
+                            <span class="tab-count">{{ group.security_rules?.length || 0 }}</span>
+                        </button>
+                        <button
+                            :class="['tab-btn', { active: activeTab === 'interfaces' }]"
+                            @click="activeTab = 'interfaces'"
+                        >
+                            {{ $t('dashboard.securityGroupDetail.associatedInterfaces') }}
+                            <span class="tab-count">{{ group.target_interfaces?.length || 0 }}</span>
+                        </button>
+                    </div>
+                    <div v-if="activeTab === 'rules'" class="tab-header-actions">
+                        <button :class="['btn btn-ghost btn-sm', { 'btn-filter-active': showRuleFilter }]" @click="toggleRuleFilter">
+                            <Search :size="14" />
+                        </button>
+                        <button class="btn btn-primary btn-sm" @click="openAddRuleModal">
+                            <Plus :size="14" /> {{ $t('dashboard.buttons.addRule') }}
+                        </button>
+                    </div>
                 </div>
-                <div class="table-responsive">
-                    <table class="data-table">
-                        <thead>
-                            <tr>
-                                <th>{{ $t('dashboard.table.name') }}</th>
-                                <th>{{ $t('dashboard.securityGroupDetail.ipAddress') }}</th>
-                                <th>{{ $t('dashboard.securityGroupDetail.instance') }}</th>
-                                <th>{{ $t('dashboard.floatingIPDetail.interfaceId') }}</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <tr v-if="!group.target_interfaces?.length">
-                                <td colspan="4" class="text-center text-secondary">{{ $t('dashboard.securityGroupDetail.noInterfaces') }}</td>
-                            </tr>
-                            <tr v-else v-for="iface in group.target_interfaces" :key="iface.id">
-                                <td>{{ iface.name || '-' }}</td>
-                                <td>
-                                    <div class="iface-cell">
-                                        <Network :size="14" class="text-secondary" />
-                                        <span class="mono">{{ iface.ip_address || '-' }}</span>
-                                    </div>
-                                </td>
-                                <td>
-                                    <div v-if="iface.from_instance" class="iface-cell">
-                                        <Server :size="14" class="text-secondary" />
-                                        <router-link :to="{ name: 'instance-detail', params: { id: iface.from_instance.id } }" class="text-link">
-                                            {{ iface.from_instance.hostname || iface.from_instance.id }}
-                                        </router-link>
-                                    </div>
-                                    <span v-else class="text-secondary">-</span>
-                                </td>
-                                <td class="mono text-secondary">{{ iface.id }}</td>
-                            </tr>
-                        </tbody>
-                    </table>
-                </div>
-            </div>
 
-            <!-- Rules -->
-            <div class="card rules-card">
-                <div class="card-header">
-                     <h3>{{ $t('dashboard.table.securityRules') }}</h3>
-                     <button class="btn btn-primary btn-sm" @click="openAddRuleModal">
-                        <Plus :size="14" /> {{ $t('dashboard.buttons.addRule') }}
-                    </button>
+                <!-- Rules Filter Bar -->
+                <div v-if="activeTab === 'rules' && showRuleFilter" class="filter-bar">
+                    <div class="select-wrapper filter-select">
+                        <select v-model="ruleFilter.direction" class="form-input form-input-sm">
+                            <option value="">{{ $t('dashboard.table.direction') }}: {{ $t('dashboard.forms.placeholder.all') }}</option>
+                            <option value="ingress">{{ $t('dashboard.table.ingress') }}</option>
+                            <option value="egress">{{ $t('dashboard.table.egress') }}</option>
+                        </select>
+                    </div>
+                    <div class="select-wrapper filter-select">
+                        <select v-model="ruleFilter.protocol" class="form-input form-input-sm">
+                            <option value="">{{ $t('dashboard.table.protocol') }}: {{ $t('dashboard.forms.placeholder.all') }}</option>
+                            <option value="tcp">TCP</option>
+                            <option value="udp">UDP</option>
+                            <option value="icmp">ICMP</option>
+                        </select>
+                    </div>
+                    <div class="filter-search">
+                        <Search :size="14" class="filter-search-icon" />
+                        <input
+                            v-model="ruleFilter.keyword"
+                            type="text"
+                            class="filter-search-input"
+                            :placeholder="$t('dashboard.forms.placeholder.nameExample')"
+                        />
+                        <button v-if="ruleFilter.keyword" class="filter-clear" @click="ruleFilter.keyword = ''">
+                            <X :size="12" />
+                        </button>
+                    </div>
                 </div>
-                <div class="table-responsive">
+
+                <!-- Rules Tab -->
+                <div v-if="activeTab === 'rules'" class="table-responsive">
                     <table class="data-table">
                         <thead>
                             <tr>
@@ -440,6 +465,74 @@ onMounted(fetchGroup)
                             </tr>
                         </tbody>
                     </table>
+                </div>
+
+                <!-- Interfaces Tab -->
+                <div v-if="activeTab === 'interfaces'" class="table-responsive">
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>{{ $t('dashboard.table.name') }}</th>
+                                <th>{{ $t('dashboard.securityGroupDetail.ipAddress') }}</th>
+                                <th>{{ $t('dashboard.securityGroupDetail.instance') }}</th>
+                                <th>{{ $t('dashboard.floatingIPDetail.interfaceId') }}</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr v-if="!group.target_interfaces?.length">
+                                <td colspan="4" class="text-center text-secondary">{{ $t('dashboard.securityGroupDetail.noInterfaces') }}</td>
+                            </tr>
+                            <tr v-else v-for="iface in group.target_interfaces" :key="iface.id">
+                                <td>{{ iface.name || '-' }}</td>
+                                <td>
+                                    <div class="iface-cell">
+                                        <Network :size="14" class="text-secondary" />
+                                        <span class="mono">{{ iface.ip_address || '-' }}</span>
+                                    </div>
+                                </td>
+                                <td>
+                                    <div v-if="iface.from_instance" class="iface-cell">
+                                        <Server :size="14" class="text-secondary" />
+                                        <router-link :to="{ name: 'instance-detail', params: { id: iface.from_instance.id } }" class="text-link">
+                                            {{ iface.from_instance.hostname || iface.from_instance.id }}
+                                        </router-link>
+                                    </div>
+                                    <span v-else class="text-secondary">-</span>
+                                </td>
+                                <td class="mono text-secondary">{{ iface.id }}</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- Edit Security Group Modal -->
+        <div v-if="showEditModal" class="modal-overlay" @click.self="showEditModal = false">
+            <div class="modal-content card">
+                <div class="modal-header">
+                    <h3>{{ $t('actions.edit') }}</h3>
+                    <button class="btn btn-ghost btn-sm icon-btn" @click="showEditModal = false"><X :size="20" /></button>
+                </div>
+                <div class="modal-body">
+                    <div class="form-group">
+                        <label class="form-label">{{ $t('dashboard.table.name') }}</label>
+                        <input v-model="editForm.name" type="text" class="form-input" @keyup.enter="saveInfo" />
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">{{ $t('dashboard.table.description') }}</label>
+                        <input v-model="editForm.description" type="text" class="form-input" :placeholder="$t('dashboard.forms.placeholder.none')" @keyup.enter="saveInfo" />
+                    </div>
+                    <div v-if="editError" class="text-error" style="font-size:var(--font-size-sm);background:var(--error-light);padding:var(--spacing-2);border-radius:var(--radius-sm)">
+                        {{ editError }}
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-secondary" @click="showEditModal = false" :disabled="savingInfo">{{ $t('actions.cancel') }}</button>
+                    <button class="btn btn-primary" @click="saveInfo" :disabled="savingInfo">
+                        <span v-if="savingInfo" class="loading-spinner" style="width:16px;height:16px;border-width:2px;"></span>
+                        {{ savingInfo ? $t('messages.saving') : $t('actions.save') }}
+                    </button>
                 </div>
             </div>
         </div>
@@ -570,6 +663,72 @@ onMounted(fetchGroup)
     font-weight: 600;
 }
 
+/* Action Dropdown */
+.action-dropdown {
+    position: relative;
+}
+
+.dropdown-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 9;
+}
+
+.dropdown-menu {
+    position: absolute;
+    top: calc(100% + 6px);
+    right: 0;
+    min-width: 160px;
+    background: var(--bg-primary, #fff);
+    border: 1px solid var(--border-light);
+    border-radius: var(--radius-md);
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+    padding: 4px 0;
+    z-index: 10;
+}
+
+.dropdown-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    padding: 8px 14px;
+    border: none;
+    background: none;
+    font-size: var(--font-size-sm);
+    color: var(--text-primary);
+    cursor: pointer;
+    transition: background 0.15s;
+    text-align: left;
+}
+
+.dropdown-item:hover:not(:disabled) {
+    background: var(--bg-hover, #f3f4f6);
+}
+
+.dropdown-item:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
+
+.dropdown-item-danger {
+    color: var(--error-color, #ef4444);
+}
+
+.dropdown-item-danger:hover:not(:disabled) {
+    background: #fef2f2;
+}
+
+.dropdown-divider {
+    height: 1px;
+    background: var(--border-light);
+    margin: 4px 0;
+}
+
+.dropdown-enter-active { transition: opacity 0.15s, transform 0.15s; }
+.dropdown-leave-active { transition: opacity 0.1s, transform 0.1s; }
+.dropdown-enter-from, .dropdown-leave-to { opacity: 0; transform: translateY(-4px); }
+
 /* Info Grid */
 .info-grid {
     display: grid;
@@ -605,21 +764,19 @@ onMounted(fetchGroup)
 
 .kv-item .label {
     color: var(--text-secondary);
+    display: flex;
+    align-items: center;
+    gap: 6px;
 }
 
 .kv-item .value {
     color: var(--text-primary);
     font-weight: 500;
+    text-align: right;
 }
 
-.text-link {
-    color: var(--primary-600);
-    text-decoration: none;
-}
-
-.text-link:hover {
-    text-decoration: underline;
-}
+.text-link { color: var(--primary-600); text-decoration: none; }
+.text-link:hover { text-decoration: underline; }
 
 .value-with-edit {
     display: flex;
@@ -638,27 +795,147 @@ onMounted(fetchGroup)
     transition: color var(--transition-fast);
 }
 
-.btn-icon-link:hover {
-    color: var(--primary-color);
-}
+.btn-icon-link:hover { color: var(--primary-color); }
 
-/* Rules Card */
-.rules-card {
+/* Tabs */
+.tab-card {
     padding: 0;
     overflow: hidden;
 }
 
-.card-header {
+.tab-header {
     display: flex;
-    justify-content: space-between;
     align-items: center;
-    padding: var(--spacing-4) var(--spacing-5);
+    justify-content: space-between;
+    padding: 0 var(--spacing-5);
     border-bottom: 1px solid var(--border-light);
 }
 
-.card-header h3 {
-    margin: 0;
-    font-size: var(--font-size-md);
+.tab-nav {
+    display: flex;
+    gap: 0;
+}
+
+.tab-btn {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-2);
+    padding: var(--spacing-4) var(--spacing-4);
+    background: none;
+    border: none;
+    border-bottom: 2px solid transparent;
+    font-size: var(--font-size-sm);
+    font-weight: 500;
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: color 0.15s, border-color 0.15s;
+    margin-bottom: -1px;
+}
+
+.tab-btn:hover {
+    color: var(--text-primary);
+}
+
+.tab-btn.active {
+    color: var(--primary-color);
+    border-bottom-color: var(--primary-color);
+}
+
+.tab-count {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 20px;
+    height: 18px;
+    padding: 0 5px;
+    background: var(--bg-tertiary);
+    border-radius: 9px;
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text-secondary);
+}
+
+.tab-btn.active .tab-count {
+    background: var(--primary-50);
+    color: var(--primary-700);
+}
+
+.tab-header-actions {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-2);
+}
+
+.btn-filter-active {
+    background: var(--primary-50);
+    color: var(--primary-color);
+}
+
+.filter-bar {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-2);
+    padding: var(--spacing-3) var(--spacing-5);
+    border-bottom: 1px solid var(--border-light);
+    background: var(--bg-secondary, #f9fafb);
+}
+
+.filter-select {
+    width: 160px;
+    flex-shrink: 0;
+}
+
+.filter-search {
+    position: relative;
+    display: flex;
+    align-items: center;
+    flex: 1;
+    max-width: 260px;
+}
+
+.filter-search-icon {
+    position: absolute;
+    left: 9px;
+    color: var(--text-tertiary);
+    pointer-events: none;
+}
+
+.filter-search-input {
+    width: 100%;
+    padding: 6px 28px 6px 32px;
+    border: 1px solid var(--border-light);
+    border-radius: 6px;
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    font-size: var(--font-size-sm);
+    line-height: 1.5;
+    outline: none;
+    transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
+}
+
+.filter-search-input:focus {
+    border-color: var(--primary-color);
+    box-shadow: 0 0 0 3px var(--primary-100);
+}
+
+.filter-search-input::placeholder {
+    color: var(--text-light);
+}
+
+.filter-clear {
+    position: absolute;
+    right: 8px;
+    background: none;
+    border: none;
+    padding: 0;
+    color: var(--text-tertiary);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+}
+
+.filter-clear:hover {
+    color: var(--text-primary);
 }
 
 .table-responsive {
@@ -677,9 +954,7 @@ onMounted(fetchGroup)
 .direction-badge.ingress { background: var(--success-50); color: var(--success-dark); }
 .direction-badge.egress { background: var(--info-50); color: var(--info-dark); }
 
-.mono {
-    font-family: var(--font-family-mono);
-}
+.mono { font-family: var(--font-family-mono); }
 
 .sortable-th {
     cursor: pointer;
@@ -687,18 +962,9 @@ onMounted(fetchGroup)
     display: table-cell;
 }
 
-.sortable-th:hover {
-    color: var(--primary-color);
-}
-
-.sortable-th svg {
-    vertical-align: middle;
-    margin-left: 4px;
-}
-
-.sort-idle {
-    opacity: 0.3;
-}
+.sortable-th:hover { color: var(--primary-color); }
+.sortable-th svg { vertical-align: middle; margin-left: 4px; }
+.sort-idle { opacity: 0.3; }
 
 .service-tag {
     display: inline-block;
@@ -713,15 +979,15 @@ onMounted(fetchGroup)
     vertical-align: middle;
 }
 
-/* Modal */
-.form-group {
-    margin-bottom: 16px;
+.iface-cell {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-2);
 }
 
-.form-row {
-    display: flex;
-    gap: 16px;
-}
+/* Modal */
+.form-group { margin-bottom: 16px; }
+.form-row { display: flex; gap: 16px; }
 .flex-1 { flex: 1; }
 
 .form-label {
@@ -737,20 +1003,7 @@ onMounted(fetchGroup)
     padding: 8px 12px;
     border: 1px solid var(--border-light);
     border-radius: 6px;
-     background: var(--bg-primary);
+    background: var(--bg-primary);
     color: var(--text-primary);
-}
-
-/* Interfaces Card */
-.interfaces-card {
-    padding: 0;
-    overflow: hidden;
-    margin-top: var(--spacing-4);
-}
-
-.iface-cell {
-    display: flex;
-    align-items: center;
-    gap: var(--spacing-2);
 }
 </style>

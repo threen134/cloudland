@@ -11,6 +11,7 @@ import (
 	"context"
 	"fmt"
 	"math/big"
+	"strings"
 	"math/rand"
 	"net"
 	"time"
@@ -369,12 +370,12 @@ func setRouting(ctx context.Context, subnet *model.Subnet, _ bool) (err error) {
 		err = NewCLError(ErrSecurityGroupNotFound, "Security group not found", err)
 		return
 	}
-	_, err = (&SecruleAdminService{}).Create(ctx, "", subnet.Network, "ingress", "tcp", 1, 65535, secgroup)
+	_, err = (&SecruleAdminService{}).Create(ctx, fmt.Sprintf("subnet-%s-ingress-tcp", strings.ReplaceAll(subnet.Network, "/", "-")), subnet.Network, "ingress", "tcp", 1, 65535, secgroup)
 	if err != nil {
 		logger.Error("Failed to create security rule", err)
 		return
 	}
-	_, err = (&SecruleAdminService{}).Create(ctx, "", subnet.Network, "ingress", "udp", 1, 65535, secgroup)
+	_, err = (&SecruleAdminService{}).Create(ctx, fmt.Sprintf("subnet-%s-ingress-udp", strings.ReplaceAll(subnet.Network, "/", "-")), subnet.Network, "ingress", "udp", 1, 65535, secgroup)
 	if err != nil {
 		logger.Error("Failed to create security rule", err)
 		return

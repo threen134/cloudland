@@ -9,6 +9,7 @@ package services
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	. "api/src/common"
@@ -460,37 +461,37 @@ func (a *SecgroupAdmin) Create(ctx context.Context, name, description string, is
 		err = NewCLError(ErrSecurityGroupCreateFailed, "Failed to create security group", err)
 		return
 	}
-	_, err = (&SecruleAdminService{}).Create(ctx, "", "0.0.0.0/0", "egress", "tcp", 1, 65535, secgroup)
+	_, err = (&SecruleAdminService{}).Create(ctx, "default-egress-tcp", "0.0.0.0/0", "egress", "tcp", 1, 65535, secgroup)
 	if err != nil {
 		logger.Error("Failed to create security rule", err)
 		return
 	}
-	_, err = (&SecruleAdminService{}).Create(ctx, "", "0.0.0.0/0", "egress", "udp", 1, 65535, secgroup)
+	_, err = (&SecruleAdminService{}).Create(ctx, "default-egress-udp", "0.0.0.0/0", "egress", "udp", 1, 65535, secgroup)
 	if err != nil {
 		logger.Error("Failed to create security rule", err)
 		return
 	}
-	_, err = (&SecruleAdminService{}).Create(ctx, "", "0.0.0.0/0", "ingress", "tcp", 22, 22, secgroup)
+	_, err = (&SecruleAdminService{}).Create(ctx, "default-ingress-ssh", "0.0.0.0/0", "ingress", "tcp", 22, 22, secgroup)
 	if err != nil {
 		logger.Error("Failed to create security rule", err)
 		return
 	}
-	_, err = (&SecruleAdminService{}).Create(ctx, "", "0.0.0.0/0", "ingress", "tcp", 3389, 3389, secgroup)
+	_, err = (&SecruleAdminService{}).Create(ctx, "default-ingress-rdp", "0.0.0.0/0", "ingress", "tcp", 3389, 3389, secgroup)
 	if err != nil {
 		logger.Error("Failed to create security rule", err)
 		return
 	}
-	_, err = (&SecruleAdminService{}).Create(ctx, "", "0.0.0.0/0", "ingress", "udp", 68, 68, secgroup)
+	_, err = (&SecruleAdminService{}).Create(ctx, "default-ingress-dhcp", "0.0.0.0/0", "ingress", "udp", 68, 68, secgroup)
 	if err != nil {
 		logger.Error("Failed to create security rule", err)
 		return
 	}
-	_, err = (&SecruleAdminService{}).Create(ctx, "", "0.0.0.0/0", "egress", "icmp", -1, -1, secgroup)
+	_, err = (&SecruleAdminService{}).Create(ctx, "default-egress-icmp", "0.0.0.0/0", "egress", "icmp", -1, -1, secgroup)
 	if err != nil {
 		logger.Error("Failed to create security rule", err)
 		return
 	}
-	_, err = (&SecruleAdminService{}).Create(ctx, "", "0.0.0.0/0", "ingress", "icmp", -1, -1, secgroup)
+	_, err = (&SecruleAdminService{}).Create(ctx, "default-ingress-icmp", "0.0.0.0/0", "ingress", "icmp", -1, -1, secgroup)
 	if err != nil {
 		logger.Error("Failed to create security rule", err)
 		return
@@ -504,12 +505,12 @@ func (a *SecgroupAdmin) Create(ctx context.Context, name, description string, is
 			return
 		}
 		for _, subnet := range subnets {
-			_, err = (&SecruleAdminService{}).Create(ctx, "", subnet.Network, "ingress", "tcp", 1, 65535, secgroup)
+			_, err = (&SecruleAdminService{}).Create(ctx, fmt.Sprintf("subnet-%s-ingress-tcp", strings.ReplaceAll(subnet.Network, "/", "-")), subnet.Network, "ingress", "tcp", 1, 65535, secgroup)
 			if err != nil {
 				logger.Error("Failed to create security rule", err)
 				return
 			}
-			_, err = (&SecruleAdminService{}).Create(ctx, "", subnet.Network, "ingress", "udp", 1, 65535, secgroup)
+			_, err = (&SecruleAdminService{}).Create(ctx, fmt.Sprintf("subnet-%s-ingress-udp", strings.ReplaceAll(subnet.Network, "/", "-")), subnet.Network, "ingress", "udp", 1, 65535, secgroup)
 			if err != nil {
 				logger.Error("Failed to create security rule", err)
 				return

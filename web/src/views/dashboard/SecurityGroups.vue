@@ -6,7 +6,7 @@ import { useToast } from '../../composables/useToast'
 import { securityGroupsApi, vpcsApi, type SecurityGroup, type SecurityRule, type VPC } from '../../api/networks'
 import { isValidName } from '../../utils/validation'
 
-import { Shield, Plus, Trash2, ChevronDown, ChevronRight, Search, X, RefreshCw, Edit, ArrowUpDown, ArrowUp, ArrowDown, Network } from 'lucide-vue-next'
+import { Shield, Plus, Trash2, ChevronDown, ChevronRight, Search, X, RefreshCw, Edit, ArrowUpDown, ArrowUp, ArrowDown, Network, HelpCircle } from 'lucide-vue-next'
 
 const securityGroups = ref<SecurityGroup[]>([])
 const loading = ref(false)
@@ -18,7 +18,8 @@ const createError = ref('')
 const newGroupForm = ref({
     name: '',
     description: '',
-    vpc_id: ''
+    vpc_id: '',
+    is_default: false
 })
 
 const { t } = useI18n()
@@ -44,6 +45,30 @@ type SortOrder = 'asc' | 'desc'
 const ruleSortKey = ref<SortKey>('direction')
 const ruleSortOrder = ref<SortOrder>('asc')
 
+type GroupFilter = { direction: string; protocol: string; keyword: string; show: boolean }
+const groupFilters = ref<Record<string, GroupFilter>>({})
+
+const getGroupFilter = (groupId: string): GroupFilter => {
+    if (!groupFilters.value[groupId]) {
+        groupFilters.value[groupId] = { direction: '', protocol: '', keyword: '', show: false }
+    }
+    return groupFilters.value[groupId]
+}
+
+const toggleGroupFilter = (groupId: string) => {
+    const f = getGroupFilter(groupId)
+    f.show = !f.show
+    if (f.show) {
+        if (!expandedGroups.value.includes(groupId)) {
+            expandedGroups.value.push(groupId)
+        }
+    } else {
+        f.direction = ''
+        f.protocol = ''
+        f.keyword = ''
+    }
+}
+
 const toggleRuleSort = (key: SortKey) => {
     if (ruleSortKey.value === key) {
         ruleSortOrder.value = ruleSortOrder.value === 'asc' ? 'desc' : 'asc'
@@ -53,8 +78,18 @@ const toggleRuleSort = (key: SortKey) => {
     }
 }
 
-const sortRules = (rules: SecurityRule[]) => {
-    return [...rules].sort((a, b) => {
+const sortRules = (rules: SecurityRule[], groupId: string) => {
+    const f = getGroupFilter(groupId)
+    const filtered = rules.filter(r => {
+        if (f.direction && r.direction !== f.direction) return false
+        if (f.protocol && r.protocol !== f.protocol) return false
+        if (f.keyword) {
+            const kw = f.keyword.toLowerCase()
+            if (![r.name, r.remote_cidr, r.protocol, r.direction].filter(Boolean).some(v => v!.toLowerCase().includes(kw))) return false
+        }
+        return true
+    })
+    return [...filtered].sort((a, b) => {
         const dir = ruleSortOrder.value === 'asc' ? 1 : -1
         switch (ruleSortKey.value) {
             case 'name':
@@ -92,7 +127,7 @@ const fetchSecurityGroups = async () => {
 }
 
 const openCreateModal = () => {
-    newGroupForm.value = { name: '', description: '', vpc_id: vpcs.value[0]?.id || '' }
+    newGroupForm.value = { name: '', description: '', vpc_id: '', is_default: false }
     createModalVisible.value = true
 }
 
@@ -103,7 +138,7 @@ const closeCreateModal = () => {
 
 const handleCreateGroup = async () => {
     createError.value = ''
-    if (!newGroupForm.value.name || !newGroupForm.value.vpc_id) return
+    if (!newGroupForm.value.name) return
     if (!isNameValid.value) {
         createError.value = t('messages.invalidHostname')
         return
@@ -114,8 +149,8 @@ const handleCreateGroup = async () => {
         await securityGroupsApi.create({
             name: newGroupForm.value.name,
             description: newGroupForm.value.description,
-            vpc: { id: newGroupForm.value.vpc_id },
-            is_default: false
+            ...(newGroupForm.value.vpc_id ? { vpc: { id: newGroupForm.value.vpc_id } } : {}),
+            is_default: newGroupForm.value.vpc_id ? newGroupForm.value.is_default : false
         })
 
         const response = await securityGroupsApi.list()
@@ -392,6 +427,9 @@ onMounted(fetchSecurityGroups)
               {{ group.target_interfaces.length }} {{ $t('dashboard.securityGroupDetail.associatedInterfaces') }}
             </span>
             <span class="rule-count-badge">{{ group.security_rules?.length || 0 }} {{ $t('dashboard.table.securityRules') }}</span>
+            <button :class="['btn btn-ghost btn-sm', { 'btn-filter-active': getGroupFilter(group.id).show }]" :title="$t('actions.filter')" @click.stop="toggleGroupFilter(group.id)">
+              <Search :size="14" />
+            </button>
             <button class="btn btn-ghost btn-sm" :title="$t('dashboard.buttons.addRule')" @click.stop="openAddRuleModal(group.id)">
               <Plus :size="14" />
             </button>
@@ -407,6 +445,37 @@ onMounted(fetchSecurityGroups)
         </div>
 
         <div v-show="isExpanded(group.id)" class="sg-rules">
+          <!-- Per-group filter bar -->
+          <div v-if="getGroupFilter(group.id).show" class="sg-filter-bar">
+            <div class="select-wrapper sg-filter-select">
+              <select v-model="getGroupFilter(group.id).direction" class="form-input form-input-sm">
+                <option value="">{{ $t('dashboard.table.direction') }}: {{ $t('dashboard.forms.placeholder.all') }}</option>
+                <option value="ingress">{{ $t('dashboard.table.ingress') }}</option>
+                <option value="egress">{{ $t('dashboard.table.egress') }}</option>
+              </select>
+            </div>
+            <div class="select-wrapper sg-filter-select">
+              <select v-model="getGroupFilter(group.id).protocol" class="form-input form-input-sm">
+                <option value="">{{ $t('dashboard.table.protocol') }}: {{ $t('dashboard.forms.placeholder.all') }}</option>
+                <option value="tcp">TCP</option>
+                <option value="udp">UDP</option>
+                <option value="icmp">ICMP</option>
+              </select>
+            </div>
+            <div class="sg-filter-search">
+              <Search :size="13" class="sg-filter-search-icon" />
+              <input
+                v-model="getGroupFilter(group.id).keyword"
+                type="text"
+                class="sg-filter-search-input"
+                :placeholder="$t('dashboard.forms.placeholder.nameExample')"
+              />
+              <button v-if="getGroupFilter(group.id).keyword" class="filter-clear" @click="getGroupFilter(group.id).keyword = ''">
+                <X :size="12" />
+              </button>
+            </div>
+          </div>
+
           <table class="rules-table">
             <thead>
               <tr>
@@ -444,10 +513,10 @@ onMounted(fetchSecurityGroups)
               </tr>
             </thead>
             <tbody>
-              <tr v-if="!group.security_rules?.length">
+              <tr v-if="!sortRules(group.security_rules, group.id).length">
                 <td colspan="6" class="text-center text-secondary">{{ $t('messages.noData') }}</td>
               </tr>
-              <tr v-else v-for="rule in sortRules(group.security_rules)" :key="rule.id">
+              <tr v-else v-for="rule in sortRules(group.security_rules, group.id)" :key="rule.id">
                 <td>{{ rule.name || '-' }}</td>
                 <td>
                   <span :class="['direction-badge', rule.direction]">
@@ -507,14 +576,26 @@ onMounted(fetchSecurityGroups)
           </div>
 
           <div class="form-group">
-            <label class="form-label">{{ $t('dashboard.forms.vpc') }}</label>
+            <label class="form-label">{{ $t('dashboard.forms.vpc') }} <span class="text-optional">({{ $t('dashboard.forms.optional') }})</span></label>
             <div class="select-wrapper">
                 <select v-model="newGroupForm.vpc_id" class="form-input">
+                    <option value="">{{ $t('dashboard.forms.placeholder.none') }}</option>
                     <option v-for="vpc in vpcs" :key="vpc.id" :value="vpc.id">
                         {{ vpc.name }} ({{ vpc.id }})
                     </option>
                 </select>
             </div>
+          </div>
+
+          <div v-if="newGroupForm.vpc_id" class="form-group form-group-checkbox">
+            <label class="checkbox-label">
+              <input type="checkbox" v-model="newGroupForm.is_default" class="checkbox-input" />
+              <span>{{ $t('dashboard.forms.setAsDefault') }}</span>
+              <span class="help-icon-wrap">
+                <HelpCircle :size="14" class="help-icon" />
+                <span class="help-tooltip">{{ $t('dashboard.forms.setAsDefaultTooltip') }}</span>
+              </span>
+            </label>
           </div>
         </div>
         <div v-if="createError" class="text-error" style="margin: 0 var(--spacing-6) var(--spacing-4); font-size:var(--font-size-sm);background:var(--error-light);padding:var(--spacing-2);border-radius:var(--radius-sm)">
@@ -801,6 +882,80 @@ onMounted(fetchSecurityGroups)
   border: 1px solid var(--border-light);
 }
 
+.text-optional {
+  font-size: var(--font-size-xs);
+  color: var(--text-tertiary);
+  font-weight: 400;
+}
+
+.form-group-checkbox {
+  padding-top: var(--spacing-1);
+}
+
+.checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-2);
+  cursor: pointer;
+  font-size: var(--font-size-sm);
+  color: var(--text-primary);
+}
+
+.checkbox-input {
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+  accent-color: var(--primary);
+}
+
+.help-icon-wrap {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  margin-left: 2px;
+}
+
+.help-icon {
+  color: var(--text-tertiary);
+  cursor: default;
+  flex-shrink: 0;
+}
+
+.help-tooltip {
+  display: none;
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--gray-800, #1f2937);
+  color: #fff;
+  font-size: var(--font-size-xs);
+  font-weight: 400;
+  line-height: 1.5;
+  padding: 6px 10px;
+  border-radius: var(--radius-sm);
+  white-space: normal;
+  width: 220px;
+  text-align: left;
+  pointer-events: none;
+  z-index: 100;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.18);
+}
+
+.help-tooltip::after {
+  content: '';
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  border: 5px solid transparent;
+  border-top-color: var(--gray-800, #1f2937);
+}
+
+.help-icon-wrap:hover .help-tooltip {
+  display: block;
+}
+
 .sg-header-right {
   display: flex;
   align-items: center;
@@ -830,6 +985,77 @@ onMounted(fetchSecurityGroups)
 .sg-rules {
   border-top: 1px solid var(--border-subtle);
   background: var(--gray-50);
+}
+
+.sg-filter-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-2);
+  padding: var(--spacing-2) var(--spacing-4);
+  border-bottom: 1px solid var(--border-light);
+  background: var(--bg-secondary, #f9fafb);
+}
+
+.sg-filter-select {
+  width: 150px;
+  flex-shrink: 0;
+}
+
+.sg-filter-search {
+  position: relative;
+  display: flex;
+  align-items: center;
+  flex: 1;
+  max-width: 240px;
+}
+
+.sg-filter-search-icon {
+  position: absolute;
+  left: 9px;
+  color: var(--text-tertiary);
+  pointer-events: none;
+}
+
+.sg-filter-search-input {
+  width: 100%;
+  padding: 6px 28px 6px 30px;
+  border: 1px solid var(--border-light);
+  border-radius: 6px;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font-size: var(--font-size-sm);
+  outline: none;
+  transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
+}
+
+.sg-filter-search-input:focus {
+  border-color: var(--primary-color);
+  box-shadow: 0 0 0 3px var(--primary-100);
+}
+
+.sg-filter-search-input::placeholder {
+  color: var(--text-light);
+}
+
+.filter-clear {
+  position: absolute;
+  right: 8px;
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+}
+
+.filter-clear:hover {
+  color: var(--text-primary);
+}
+
+.btn-filter-active {
+  background: var(--primary-50);
+  color: var(--primary-color);
 }
 
 .rules-table {
