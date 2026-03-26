@@ -506,6 +506,13 @@ export default {
             resetPasswordSuccess: 'Password reset successfully.',
             resizeSuccess: 'Resize request submitted successfully.',
             renameSuccess: 'Instance renamed successfully.',
+            editSecurityGroups: 'Edit Security Groups',
+            editSecurityGroupsTitle: 'Edit Security Groups for {name}',
+            securityGroupsUpdated: 'Security groups updated successfully.',
+            noSecurityGroupsAvailable: 'No security groups available for this VPC.',
+            sgRequiresVpc: 'This instance has no VPC, cannot manage security groups.',
+            sgListTruncated: 'Showing first 200 security groups. Use the search in Security Groups page to find others.',
+            sgEmptyWillUseDefault: 'No groups selected — saving will reset to the VPC default security group.',
         },
         userDetail: {
             title: 'User Details',

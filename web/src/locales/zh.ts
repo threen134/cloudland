@@ -505,6 +505,13 @@ export default {
             resetPasswordSuccess: '密码重置成功。',
             resizeSuccess: '扩容请求已提交。',
             renameSuccess: '实例重命名成功。',
+            editSecurityGroups: '编辑安全组',
+            editSecurityGroupsTitle: '编辑 {name} 的安全组',
+            securityGroupsUpdated: '安全组更新成功。',
+            noSecurityGroupsAvailable: '该 VPC 下暂无可用安全组。',
+            sgRequiresVpc: '该实例未关联 VPC，无法管理安全组。',
+            sgListTruncated: '仅显示前 200 条安全组，如需查找其他请前往安全组页面搜索。',
+            sgEmptyWillUseDefault: '未选择任何安全组 — 保存后将重置为 VPC 默认安全组。',
         },
         userDetail: {
             title: '用户详情',

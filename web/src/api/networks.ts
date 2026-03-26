@@ -280,7 +280,7 @@ export interface SecurityGroupListResponse {
 }
 
 export const securityGroupsApi = {
-    list: async (params?: { offset?: number; limit?: number }): Promise<SecurityGroupListResponse> => {
+    list: async (params?: { offset?: number; limit?: number; vpc_id?: string }): Promise<SecurityGroupListResponse> => {
         const response = await client.get('/security_groups', { params })
         return response.data
     },

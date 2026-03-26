@@ -4,8 +4,9 @@ import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { useToast } from '../../composables/useToast'
 import { instancesApi, type Instance } from '../../api/instances'
+import { securityGroupsApi, type SecurityGroup } from '../../api/networks'
 import { vmAlarmRulesApi, VM_RULE_TYPES, type VMAlarmRuleGroup, type VMRuleType } from '../../api/vmAlarmRules'
-import { ArrowLeft, Play, Square, RotateCw, Trash2, Server, Cpu, HardDrive, Network, Key, ExternalLink, Copy, Check, ShieldAlert, Link, Unlink, Eye, EyeOff, ChevronDown, KeyRound, RefreshCw, Maximize2, Pencil, Shuffle } from 'lucide-vue-next'
+import { ArrowLeft, Play, Square, RotateCw, Trash2, Server, Cpu, HardDrive, Network, Key, ExternalLink, Copy, Check, ShieldAlert, Link, Unlink, Eye, EyeOff, ChevronDown, KeyRound, RefreshCw, Maximize2, Pencil, Shuffle, Shield } from 'lucide-vue-next'
 import DeleteModal from '../../components/modals/DeleteModal.vue'
 
 const route = useRoute()
@@ -446,6 +447,75 @@ const navigateToVPC = (vpcId: string) => {
     router.push({ name: 'vpc-detail', params: { id: vpcId } })
 }
 
+// --- Edit Security Groups Modal ---
+interface EditingInterface {
+    id: string
+    name?: string
+    currentSgs: { id: string; name: string }[]
+}
+
+const showEditSgModal = ref(false)
+const editingSgIface = ref<EditingInterface | null>(null)
+const availableSecgroups = ref<SecurityGroup[]>([])
+const sgListTruncated = ref(false)
+const selectedSgIds = ref<Set<string>>(new Set())
+const editSgLoading = ref(false)
+const editSgError = ref('')
+
+const openEditSgModal = async (iface: NonNullable<Instance['interfaces']>[number]) => {
+    const vpcId = instance.value?.vpc?.id
+    if (!vpcId) {
+        toast.error(t('dashboard.instanceDetail.sgRequiresVpc'))
+        return
+    }
+    editingSgIface.value = {
+        id: iface.id,
+        name: iface.name,
+        currentSgs: iface.security_groups || [],
+    }
+    selectedSgIds.value = new Set((iface.security_groups || []).map(sg => sg.id))
+    editSgError.value = ''
+    sgListTruncated.value = false
+    editSgLoading.value = true
+    showEditSgModal.value = true
+    try {
+        const pageSize = 200
+        const result = await securityGroupsApi.list({ limit: pageSize, vpc_id: vpcId })
+        availableSecgroups.value = result.security_groups || []
+        sgListTruncated.value = result.total > pageSize
+    } catch (err: any) {
+        editSgError.value = err.response?.data?.error_message || err.message || t('messages.error')
+    } finally {
+        editSgLoading.value = false
+    }
+}
+
+const toggleSg = (sgId: string) => {
+    if (selectedSgIds.value.has(sgId)) {
+        selectedSgIds.value.delete(sgId)
+    } else {
+        selectedSgIds.value.add(sgId)
+    }
+    selectedSgIds.value = new Set(selectedSgIds.value)
+}
+
+const confirmEditSg = async () => {
+    if (!editingSgIface.value) return
+    editSgLoading.value = true
+    editSgError.value = ''
+    try {
+        const payload = { security_groups: [...selectedSgIds.value].map(id => ({ id })) }
+        await instancesApi.patchInterface(instanceId, editingSgIface.value.id, payload)
+        showEditSgModal.value = false
+        toast.success(t('dashboard.instanceDetail.securityGroupsUpdated'))
+        await fetchInstance(false)
+    } catch (err: any) {
+        editSgError.value = err.response?.data?.error_message || err.message || t('messages.error')
+    } finally {
+        editSgLoading.value = false
+    }
+}
+
 onMounted(() => {
     fetchInstance()
     fetchLinkedRules()
@@ -731,12 +801,18 @@ onMounted(() => {
                                             <span class="value">{{ fip.vlan }}</span>
                                         </div>
                                     </template>
-                                    <div class="kv-item interface-detail" v-if="iface.security_groups?.length">
+                                    <div class="kv-item interface-detail">
                                         <span class="label">{{ $t('dashboard.securityGroups') }}</span>
-                                        <span class="value">
-                                            <template v-for="(sg, sgIndex) in iface.security_groups" :key="sg.id">
-                                                <a href="#" @click.prevent="navigateToSecurityGroup(sg.id)" class="resource-link">{{ sg.name || sg.id.substring(0, 8) }}</a><span v-if="sgIndex < iface.security_groups.length - 1">, </span>
+                                        <span class="value sg-value-row">
+                                            <template v-if="iface.security_groups?.length">
+                                                <template v-for="(sg, sgIndex) in iface.security_groups" :key="sg.id">
+                                                    <a href="#" @click.prevent="navigateToSecurityGroup(sg.id)" class="resource-link">{{ sg.name || sg.id.substring(0, 8) }}</a><span v-if="sgIndex < iface.security_groups.length - 1">, </span>
+                                                </template>
                                             </template>
+                                            <span v-else class="text-secondary">-</span>
+                                            <button class="btn-icon-inline" @click="openEditSgModal(iface)" :aria-label="$t('dashboard.instanceDetail.editSecurityGroups')" :title="$t('dashboard.instanceDetail.editSecurityGroups')">
+                                                <Pencil :size="12" />
+                                            </button>
                                         </span>
                                     </div>
                                 </div>
@@ -841,6 +917,35 @@ onMounted(() => {
             @close="closeDeleteModal"
             @confirm="confirmDelete"
         />
+
+        <!-- Edit Security Groups Modal -->
+        <div v-if="showEditSgModal" class="modal-overlay" @click.self="showEditSgModal = false">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h3><Shield :size="16" /> {{ $t('dashboard.instanceDetail.editSecurityGroupsTitle', { name: editingSgIface?.name || editingSgIface?.id?.substring(0, 8) }) }}</h3>
+                </div>
+                <div class="modal-body">
+                    <div v-if="editSgError" class="modal-error">{{ editSgError }}</div>
+                    <div v-if="sgListTruncated" class="modal-warning">{{ $t('dashboard.instanceDetail.sgListTruncated') }}</div>
+                    <div v-if="editSgLoading && availableSecgroups.length === 0" class="text-secondary empty-hint">{{ $t('messages.loading') }}</div>
+                    <div v-else-if="availableSecgroups.length === 0" class="text-secondary empty-hint">{{ $t('dashboard.instanceDetail.noSecurityGroupsAvailable') }}</div>
+                    <div v-else class="sg-checkbox-list">
+                        <label v-for="sg in availableSecgroups" :key="sg.id" class="sg-checkbox-item">
+                            <input type="checkbox" :checked="selectedSgIds.has(sg.id)" @change="toggleSg(sg.id)" />
+                            <span class="sg-checkbox-name">{{ sg.name }}</span>
+                            <span v-if="sg.is_default" class="status-badge status-running mini-badge">{{ $t('dashboard.instanceDetail.primary') }}</span>
+                        </label>
+                    </div>
+                    <div v-if="selectedSgIds.size === 0 && !editSgLoading" class="sg-empty-hint">{{ $t('dashboard.instanceDetail.sgEmptyWillUseDefault') }}</div>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-ghost" @click="showEditSgModal = false">{{ $t('actions.cancel') }}</button>
+                    <button class="btn btn-primary" @click="confirmEditSg" :disabled="editSgLoading">
+                        {{ editSgLoading ? $t('messages.loading') : $t('actions.save') }}
+                    </button>
+                </div>
+            </div>
+        </div>
 
         <!-- Reset Password Modal -->
         <div v-if="showResetPasswordModal" class="modal-overlay" @click.self="showResetPasswordModal = false">
@@ -1529,5 +1634,79 @@ onMounted(() => {
 .toast-leave-to {
     opacity: 0;
     transform: translateX(20px);
+}
+
+/* Security Group inline edit */
+.sg-value-row {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
+}
+
+.btn-icon-inline {
+    background: none;
+    border: none;
+    padding: 2px;
+    cursor: pointer;
+    color: var(--text-light);
+    display: inline-flex;
+    align-items: center;
+    transition: color 0.15s;
+    flex-shrink: 0;
+}
+
+.btn-icon-inline:hover {
+    color: var(--primary-color);
+}
+
+.sg-checkbox-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    max-height: 300px;
+    overflow-y: auto;
+}
+
+.sg-checkbox-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 8px;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    transition: background 0.15s;
+}
+
+.sg-checkbox-item:hover {
+    background: var(--bg-secondary);
+}
+
+.sg-checkbox-item input[type="checkbox"] {
+    cursor: pointer;
+}
+
+.sg-checkbox-name {
+    flex: 1;
+    font-size: var(--font-size-sm);
+}
+
+.modal-warning {
+    padding: 8px 12px;
+    background: var(--warning-bg, #fffbeb);
+    border: 1px solid var(--warning-border, #fcd34d);
+    border-radius: var(--radius-sm);
+    color: var(--warning-text, #92400e);
+    font-size: var(--font-size-sm);
+    margin-bottom: 12px;
+}
+
+.sg-empty-hint {
+    margin-top: 10px;
+    padding: 6px 10px;
+    background: var(--bg-secondary);
+    border-radius: var(--radius-sm);
+    font-size: var(--font-size-sm);
+    color: var(--text-secondary);
 }
 </style>

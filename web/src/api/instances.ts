@@ -157,5 +157,9 @@ export const instancesApi = {
 
     renameInstance(id: string, hostname: string) {
         return client.patch(`/instances/${id}`, { hostname })
+    },
+
+    patchInterface(instanceId: string, ifaceId: string, payload: { security_groups?: BaseReference[] }) {
+        return client.patch(`/instances/${instanceId}/interfaces/${ifaceId}`, payload)
     }
 }
