@@ -3,7 +3,7 @@ import { ref, onMounted, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import { useToast } from '../../composables/useToast'
-import { loadBalancersApi, vpcsApi, type LoadBalancer, type VPC } from '../../api/networks'
+import { loadBalancersApi, vpcsApi, type LoadBalancer, type VPC, type LoadBalancerPayload } from '../../api/networks'
 import { isValidName } from '../../utils/validation'
 
 import { GitFork, Plus, Trash2, Search, Edit, X, RefreshCw } from 'lucide-vue-next'
@@ -16,12 +16,53 @@ const creating = ref(false)
 const createError = ref('')
 const newLBForm = ref({
     name: '',
-    vpc_id: ''
+    description: '',
+    vpc_id: '',
+    zone: ''
 })
 
 const { t } = useI18n()
 const toast = useToast()
 const isNameValid = computed(() => isValidName(newLBForm.value.name))
+
+// --- Edit Modal ---
+const editModalVisible = ref(false)
+const editing = ref(false)
+const editError = ref('')
+const lbToEdit = ref<LoadBalancer | null>(null)
+const editForm = ref({ name: '', description: '' })
+const isEditValid = computed(() => isValidName(editForm.value.name))
+
+const handleEditClick = (item: LoadBalancer) => {
+    lbToEdit.value = item
+    editForm.value = { name: item.name, description: item.description || '' }
+    editError.value = ''
+    editModalVisible.value = true
+}
+const closeEditModal = () => {
+    editModalVisible.value = false
+    lbToEdit.value = null
+    editError.value = ''
+}
+const confirmEdit = async () => {
+    if (!lbToEdit.value) return
+    if (!isEditValid.value) {
+        editError.value = t('messages.invalidHostname')
+        return
+    }
+    editing.value = true
+    editError.value = ''
+    try {
+        await loadBalancersApi.patch(lbToEdit.value.id, { name: editForm.value.name, description: editForm.value.description })
+        await fetchLoadBalancers()
+        closeEditModal()
+        toast.success(t('messages.success'))
+    } catch (error: any) {
+        editError.value = error.response?.data?.error_message || error.message || t('messages.error')
+    } finally {
+        editing.value = false
+    }
+}
 
 const vpcs = ref<VPC[]>([])
 const router = useRouter()
@@ -45,7 +86,7 @@ const fetchLoadBalancers = async () => {
 }
 
 const openCreateModal = () => {
-    newLBForm.value = { name: '', vpc_id: vpcs.value[0]?.id || '' }
+    newLBForm.value = { name: '', description: '', vpc_id: vpcs.value[0]?.id || '', zone: '' }
     createModalVisible.value = true
 }
 
@@ -65,10 +106,13 @@ const handleCreateLB = async () => {
     
     creating.value = true
     try {
-        await loadBalancersApi.create({
+        const payload: LoadBalancerPayload = {
             name: newLBForm.value.name,
             vpc: { id: newLBForm.value.vpc_id }
-        })
+        }
+        if (newLBForm.value.description) payload.description = newLBForm.value.description
+        if (newLBForm.value.zone) payload.zone = newLBForm.value.zone
+        await loadBalancersApi.create(payload)
         
         // Refresh list
         const response = await loadBalancersApi.list()
@@ -97,8 +141,11 @@ const getStatusClass = (status: string) => {
     const map: Record<string, string> = {
         'active': 'status-running',
         'running': 'status-running',
+        'available': 'status-running',
         'inactive': 'status-stopped',
-        'error': 'status-error'
+        'stopped': 'status-stopped',
+        'error': 'status-error',
+        'failed': 'status-error',
     }
     return map[status?.toLowerCase()] || 'status-pending'
 }
@@ -179,7 +226,7 @@ onMounted(fetchLoadBalancers)
             <th>{{ $t('dashboard.table.status') }}</th>
             <th>{{ $t('dashboard.table.ipAddress') }}</th>
             <th>{{ $t('dashboard.table.vpc') }}</th>
-            <th>{{ $t('dashboard.table.listener') }}s</th>
+            <th>{{ $t('dashboard.loadBalancerDetail.listeners') }}</th>
             <th>{{ $t('dashboard.table.actions') }}</th>
           </tr>
         </thead>
@@ -211,6 +258,7 @@ onMounted(fetchLoadBalancers)
                   <div>
                     <div class="resource-name">{{ lb.name }}</div>
                     <div class="resource-id">{{ lb.id }}</div>
+                    <div v-if="lb.description" class="resource-desc">{{ lb.description }}</div>
                   </div>
                 </div>
               </router-link>
@@ -219,7 +267,7 @@ onMounted(fetchLoadBalancers)
               <span :class="['badge', getStatusClass(lb.status || '')]">{{ lb.status }}</span>
             </td>
             <td>
-              <code class="ip-address">{{ lb.floating_ips?.[0]?.ip_address || '-' }}</code>
+              <code class="ip-address">{{ lb.floating_ips?.[0]?.fip_address || '-' }}</code>
             </td>
             <td>{{ lb.vpc?.name || '-' }}</td>
             <td class="text-secondary text-sm">
@@ -227,7 +275,7 @@ onMounted(fetchLoadBalancers)
             </td>
             <td>
               <div class="actions">
-                <button class="btn btn-ghost btn-sm" :title="$t('actions.edit')">
+                <button class="btn btn-ghost btn-sm" :title="$t('actions.edit')" @click="handleEditClick(lb)">
                   <Edit :size="14" />
                 </button>
                 <button class="btn btn-ghost btn-sm text-error" title="Delete" @click="handleDeleteClick(lb)">
@@ -265,14 +313,23 @@ onMounted(fetchLoadBalancers)
           </div>
           
           <div class="form-group">
+            <label class="form-label">{{ $t('dashboard.forms.description') }}（{{ $t('dashboard.forms.optional') }}）</label>
+            <input v-model="newLBForm.description" type="text" class="form-input" :placeholder="$t('messages.placeholderDescription')" />
+          </div>
+
+          <div class="form-group">
             <label class="form-label">{{ $t('dashboard.forms.vpc') }}</label>
             <div class="select-wrapper">
                 <select v-model="newLBForm.vpc_id" class="form-input">
                     <option v-for="vpc in vpcs" :key="vpc.id" :value="vpc.id">
-                        {{ vpc.name }} ({{ vpc.id }})
+                        {{ vpc.name }} ({{ vpc.id.slice(0, 8) }}...)
                     </option>
                 </select>
             </div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">{{ $t('dashboard.forms.zone') }}（{{ $t('dashboard.forms.optional') }}）</label>
+            <input v-model="newLBForm.zone" type="text" class="form-input" placeholder="e.g. zone1" />
           </div>
         </div>
         <div v-if="createError" class="text-error" style="margin: 0 var(--spacing-6) var(--spacing-4); font-size:var(--font-size-sm);background:var(--error-light);padding:var(--spacing-2);border-radius:var(--radius-sm)">
@@ -284,6 +341,48 @@ onMounted(fetchLoadBalancers)
           <button class="btn btn-primary" @click="handleCreateLB" :disabled="creating">
             <span v-if="creating" class="loading-spinner" style="width: 16px; height: 16px; border-width: 2px;"></span>
             {{ creating ? $t('messages.creating') : $t('dashboard.buttons.createLoadBalancer') }}
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Edit Modal -->
+    <div v-if="editModalVisible" class="modal-overlay" @click.self="closeEditModal">
+      <div class="modal-content card" style="max-width: 460px;">
+        <div class="modal-header">
+          <h3>{{ $t('actions.edit') }}</h3>
+          <button class="btn btn-ghost btn-sm icon-btn" @click="closeEditModal"><X :size="20" /></button>
+        </div>
+        <div class="modal-body">
+          <div class="form-group">
+            <label class="form-label">{{ $t('dashboard.forms.name') }}</label>
+            <input
+              v-model="editForm.name"
+              type="text"
+              :class="['form-input', { 'input-error': !isEditValid }]"
+              :placeholder="$t('dashboard.forms.placeholder.lbNameExample')"
+              @keyup.enter="confirmEdit"
+            />
+            <div v-if="!isEditValid" class="text-error text-xs mt-1">{{ $t('messages.invalidHostname') }}</div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">{{ $t('dashboard.forms.description') }}</label>
+            <input
+              v-model="editForm.description"
+              type="text"
+              class="form-input"
+              :placeholder="$t('messages.placeholderDescription')"
+            />
+          </div>
+        </div>
+        <div v-if="editError" class="text-error" style="margin: 0 var(--spacing-6) var(--spacing-4); font-size:var(--font-size-sm);background:var(--error-light);padding:var(--spacing-2);border-radius:var(--radius-sm)">
+          {{ editError }}
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-secondary" @click="closeEditModal" :disabled="editing">{{ $t('actions.cancel') }}</button>
+          <button class="btn btn-primary" @click="confirmEdit" :disabled="editing || !isEditValid">
+            <span v-if="editing" class="loading-spinner" style="width:16px;height:16px;border-width:2px"></span>
+            {{ editing ? $t('messages.saving') : $t('actions.save') }}
           </button>
         </div>
       </div>
@@ -441,5 +540,11 @@ onMounted(fetchLoadBalancers)
 
 .resource-link:hover {
   text-decoration: underline;
+}
+
+.resource-desc {
+  font-size: var(--font-size-xs);
+  color: var(--text-tertiary);
+  margin-top: 2px;
 }
 </style>

@@ -267,7 +267,7 @@ func CreateVrrpInstance(ctx context.Context, name string, router *model.Router, 
 	return
 }
 
-func (a *LoadBalancerAdmin) Create(ctx context.Context, name string, router *model.Router, zone *model.Zone) (loadBalancer *model.LoadBalancer, err error) {
+func (a *LoadBalancerAdmin) Create(ctx context.Context, name, description string, router *model.Router, zone *model.Zone) (loadBalancer *model.LoadBalancer, err error) {
 	logger.Infof("ENTER LoadBalancerAdmin.Create: name=%s, routerID=%d", name, router.ID)
 	defer func() {
 		if err != nil {
@@ -296,7 +296,7 @@ func (a *LoadBalancerAdmin) Create(ctx context.Context, name string, router *mod
 		err = NewCLError(ErrVrrpInstanceCreateFailed, "Failed to create vrrp instance", err)
 		return
 	}
-	loadBalancer = &model.LoadBalancer{Model: model.Model{Creater: memberShip.UserID}, Owner: owner, Name: name, RouterID: router.ID, VrrpInstanceID: vrrpInstance.ID, Status: "pending"}
+	loadBalancer = &model.LoadBalancer{Model: model.Model{Creater: memberShip.UserID}, Owner: owner, Name: name, Description: description, RouterID: router.ID, VrrpInstanceID: vrrpInstance.ID, Status: "pending"}
 	err = db.Create(loadBalancer).Error
 	if err != nil {
 		logger.Error("DB failed to create load balancer ", err)
@@ -418,7 +418,7 @@ func (a *LoadBalancerAdmin) GetLoadBalancer(ctx context.Context, reference *Base
 	return
 }
 
-func (a *LoadBalancerAdmin) Update(ctx context.Context, loadBalancer *model.LoadBalancer, name string) (lb *model.LoadBalancer, err error) {
+func (a *LoadBalancerAdmin) Update(ctx context.Context, loadBalancer *model.LoadBalancer, name, description string) (lb *model.LoadBalancer, err error) {
 	logger.Infof("ENTER LoadBalancerAdmin.Update: lbID=%d, name=%s", loadBalancer.ID, name)
 	defer func() {
 		if err != nil {
@@ -428,9 +428,17 @@ func (a *LoadBalancerAdmin) Update(ctx context.Context, loadBalancer *model.Load
 		}
 	}()
 	ctx, db := GetContextDB(ctx)
+	updates := map[string]interface{}{}
 	if loadBalancer.Name != name {
 		loadBalancer.Name = name
-		if err = db.Model(loadBalancer).Update("name", loadBalancer.Name).Error; err != nil {
+		updates["name"] = name
+	}
+	if loadBalancer.Description != description {
+		loadBalancer.Description = description
+		updates["description"] = description
+	}
+	if len(updates) > 0 {
+		if err = db.Model(loadBalancer).Updates(updates).Error; err != nil {
 			logger.Error("Failed to save load balancer", err)
 			err = NewCLError(ErrRouterUpdateFailed, "Failed to update load balancer", err)
 			return

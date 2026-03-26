@@ -29,10 +29,11 @@ type LoadBalancerAPI struct{}
 
 type LoadBalancerResponse struct {
 	*ResourceReference
-	FloatingIps        []*FloatingIpInfo    `json:"floating_ips,omitempty"`
-	Listeners        []*ListenerResponse    `json:"listeners,omitempty"`
-	VPC              *ResourceReference `json:"vpc,omitempty"`
-	Status    string             `json:"status"`
+	Description string               `json:"description,omitempty"`
+	FloatingIps []*FloatingIpInfo    `json:"floating_ips,omitempty"`
+	Listeners   []*ListenerResponse  `json:"listeners,omitempty"`
+	VPC         *ResourceReference   `json:"vpc,omitempty"`
+	Status      string               `json:"status"`
 }
 
 type LoadBalancerListResponse struct {
@@ -43,14 +44,16 @@ type LoadBalancerListResponse struct {
 }
 
 type LoadBalancerPayload struct {
-	Name      string         `json:"name" binding:"required,min=2,max=32"`
-	VPC       *BaseReference `json:"vpc" binding:"required"`
-	Zone      string         `json:"zone" binding:"omitempty,min=1,max=32"`
+	Name        string         `json:"name" binding:"required,min=2,max=32"`
+	Description string         `json:"description" binding:"omitempty,max=255"`
+	VPC         *BaseReference `json:"vpc" binding:"required"`
+	Zone        string         `json:"zone" binding:"omitempty,min=1,max=32"`
 }
 
 type LoadBalancerPatchPayload struct {
-	Name      string `json:"name" binding:"required,min=2,max=32"`
-	Action    string `json:"action" binding:"omitempty,oneof=enable disable"`
+	Name        string `json:"name" binding:"required,min=2,max=32"`
+	Description string `json:"description" binding:"omitempty,max=255"`
+	Action      string `json:"action" binding:"omitempty,oneof=enable disable"`
 }
 
 // @Summary get a loadBalancer
@@ -109,14 +112,12 @@ func (v *LoadBalancerAPI) Patch(c *gin.Context) {
 		return
 	}
 	logger.Debugf("Patching loadBalancer %s with %+v", uuID, payload)
-	/*
-	err = loadBalancerAdmin.Update(ctx, loadBalancer, payload.Name, payload.IsDefault)
+	loadBalancer, err = loadBalancerAdmin.Update(ctx, loadBalancer, payload.Name, payload.Description)
 	if err != nil {
 		logger.Errorf("Failed to patch loadBalancer %s, %+v", uuID, err)
 		ErrorResponse(c, http.StatusBadRequest, "Patch load balancer failed", err)
 		return
 	}
-	*/
 	loadBalancerResp, err := v.getLoadBalancerResponse(ctx, loadBalancer)
 	if err != nil {
 		ErrorResponse(c, http.StatusInternalServerError, "Internal error", err)
@@ -193,7 +194,7 @@ func (v *LoadBalancerAPI) Create(c *gin.Context) {
 			return
 		}
 	}
-	loadBalancer, err := loadBalancerAdmin.Create(ctx, payload.Name, router, zone)
+	loadBalancer, err := loadBalancerAdmin.Create(ctx, payload.Name, payload.Description, router, zone)
 	if err != nil {
 		logger.Errorf("Failed to create loadBalancer %+v, %+v", payload, err)
 		ErrorResponse(c, http.StatusBadRequest, "Not able to create", err)
@@ -218,7 +219,8 @@ func (v *LoadBalancerAPI) getLoadBalancerResponse(ctx context.Context, loadBalan
 			CreatedAt: loadBalancer.CreatedAt.Format(TimeStringForMat),
 			UpdatedAt: loadBalancer.UpdatedAt.Format(TimeStringForMat),
 		},
-		Status: loadBalancer.Status,
+		Description: loadBalancer.Description,
+		Status:      loadBalancer.Status,
 	}
 	if loadBalancer.Router != nil {
 		loadBalancerResp.VPC = &ResourceReference{

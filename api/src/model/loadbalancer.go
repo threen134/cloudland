@@ -26,6 +26,7 @@ type LoadBalancer struct {
 	HaFlag         int           `default:"1" json:"ha_flag"`
 	Owner          int64         `gorm:"default:1"` /* The organization ID of the resource */
 	Name           string        `gorm:"unique_index:idx_router_lb;type:varchar(64)"`
+	Description    string        `gorm:"type:varchar(255)"`
 	Status         string        `gorm:"type:varchar(32)"`
 	FloatingIps    []*FloatingIp `gorm:"foreignkey:LoadBalancerID"`
 	RouterID       int64         `gorm:"unique_index:idx_router_lb"`

@@ -319,10 +319,10 @@ export const securityGroupsApi = {
 export interface Backend {
     id: string
     name?: string
-    address: string
-    port: number
-    weight?: number
+    endpoint: string
     status?: string
+    created_at?: string
+    owner?: string
 }
 
 export interface Listener {
@@ -339,9 +339,10 @@ export interface Listener {
 export interface LoadBalancer {
     id: string
     name: string
+    description?: string
     status?: string
     vpc?: { id: string; name: string }
-    floating_ips?: Array<{ id: string; ip_address: string }>
+    floating_ips?: Array<{ id: string; name?: string; fip_address?: string }>
     listeners?: Listener[]
     created_at?: string
     updated_at?: string
@@ -350,6 +351,7 @@ export interface LoadBalancer {
 
 export interface LoadBalancerPayload {
     name: string
+    description?: string
     vpc: { id: string }
     zone?: string
 }
@@ -363,10 +365,8 @@ export interface ListenerPayload {
 }
 
 export interface BackendPayload {
-    name?: string
-    address: string
-    port: number
-    weight?: number
+    name: string
+    endpoint: string
 }
 
 export interface LoadBalancerListResponse {
@@ -389,7 +389,7 @@ export const loadBalancersApi = {
         const response = await client.post('/load_balancers', payload)
         return response.data
     },
-    patch: async (id: string, payload: { name?: string; action?: 'enable' | 'disable' }): Promise<LoadBalancer> => {
+    patch: async (id: string, payload: { name?: string; description?: string; action?: 'enable' | 'disable' }): Promise<LoadBalancer> => {
         const response = await client.patch(`/load_balancers/${id}`, payload)
         return response.data
     },
@@ -411,6 +411,13 @@ export const loadBalancersApi = {
     },
     deleteBackend: async (lbId: string, listenerId: string, backendId: string): Promise<void> => {
         await client.delete(`/load_balancers/${lbId}/listeners/${listenerId}/backends/${backendId}`)
+    },
+    addFloatingIp: async (lbId: string, payload: { name: string; public_subnet?: { id: string }; inbound?: number; outbound?: number }): Promise<FloatingIP> => {
+        const response = await client.post(`/load_balancers/${lbId}/floating_ips`, payload)
+        return response.data
+    },
+    deleteFloatingIp: async (lbId: string, fipId: string): Promise<void> => {
+        await client.delete(`/load_balancers/${lbId}/floating_ips/${fipId}`)
     }
 }
 
