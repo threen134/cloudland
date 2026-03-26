@@ -5,10 +5,12 @@ import { useRouter } from 'vue-router'
 import { usersApi, type User } from '../../api/users'
 import { orgsApi } from '../../api/orgs'
 import { useTenantStore } from '../../stores/tenant'
+import { useToast } from '../../composables/useToast'
 import { User as UserIcon, Plus, Trash2, Edit, Search, X, RefreshCw } from 'lucide-vue-next'
 
 const { t } = useI18n()
 const tenantStore = useTenantStore()
+const toast = useToast()
 
 const users = ref<User[]>([])
 const loading = ref(false)
@@ -129,6 +131,7 @@ const handleInviteUser = async () => {
         await orgsApi.inviteMember(orgId, inviteForm.value)
         await fetchUsers()
         closeCreateModal()
+        toast.success(t('messages.createSuccess'))
     } catch (err: any) {
         console.error('Failed to invite user:', err)
         createError.value = err.response?.data?.error_message || err.response?.data?.detail || err.message || t('messages.error')
@@ -168,6 +171,7 @@ const handleEditUser = async () => {
         })
         await fetchUsers()
         closeEditModal()
+        toast.success(t('messages.updateSuccess'))
     } catch (err: any) {
         console.error('Failed to update user:', err)
         editError.value = err.response?.data?.error_message || err.message || t('messages.error')
@@ -210,6 +214,7 @@ const confirmDelete = async () => {
         }
         await fetchUsers()
         closeDeleteModal()
+        toast.success(t('messages.deleteSuccess'))
     } catch (error: any) {
         console.error('Failed to delete user:', error)
         deleteError.value = error.response?.data?.error_message || error.message || t('messages.error')

@@ -2,6 +2,7 @@
 import { ref, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
+import { useToast } from '../../composables/useToast'
 import { volumesApi, type Volume } from '../../api/volumes'
 import { useRegionStore } from '../../stores/region'
 import { ArrowLeft, HardDrive, Paperclip, Maximize, Trash2, Copy, Check, Server, Play, ChevronDown, CalendarDays } from 'lucide-vue-next'
@@ -9,6 +10,7 @@ import { ArrowLeft, HardDrive, Paperclip, Maximize, Trash2, Copy, Check, Server,
 const route = useRoute()
 const router = useRouter()
 const { t } = useI18n()
+const toast = useToast()
 const region = useRegionStore()
 
 const volume = ref<Volume | null>(null)
@@ -96,6 +98,7 @@ const handleDelete = async () => {
     
     try {
         await volumesApi.delete(route.params.id as string)
+        toast.success(t('messages.deleteSuccess'))
         router.push({ name: 'volumes' })
     } catch (err) {
         console.error('Failed to delete volume:', err)

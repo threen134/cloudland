@@ -2,12 +2,14 @@
 import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
+import { useToast } from '../../composables/useToast'
 import { securityGroupsApi, type SecurityGroup, type SecurityRule } from '../../api/networks'
 import { ArrowLeft, Shield, Trash2, Plus, X, Edit, ArrowUpDown, ArrowUp, ArrowDown, Network, Server } from 'lucide-vue-next'
 
 const route = useRoute()
 const router = useRouter()
 const { t } = useI18n()
+const toast = useToast()
 const groupId = route.params.id as string
 
 const group = ref<SecurityGroup | null>(null)
@@ -89,6 +91,7 @@ const handleDelete = async () => {
     deleting.value = true
     try {
         await securityGroupsApi.delete(groupId)
+        toast.success(t('messages.deleteSuccess'))
         router.push({ name: 'security-groups' })
     } catch (err) {
         console.error('Failed to delete security group:', err)
@@ -102,6 +105,7 @@ const handleDeleteRule = async (ruleId: string) => {
     try {
         await securityGroupsApi.deleteRule(groupId, ruleId)
         await fetchGroup()
+        toast.success(t('messages.deleteSuccess'))
     } catch (err) {
         console.error('Failed to delete rule:', err)
     }
@@ -144,6 +148,7 @@ const handleAddRule = async () => {
         }
         showAddRuleModal.value = false
         await fetchGroup()
+        toast.success(editingRuleId.value ? t('messages.updateSuccess') : t('messages.createSuccess'))
     } catch (err: any) {
         console.error('Failed to save rule:', err)
         addRuleError.value = err.response?.data?.error_message || err.message || t('messages.error')
@@ -181,6 +186,7 @@ const saveInfo = async () => {
         }
         isEditingName.value = false
         isEditingDesc.value = false
+        toast.success(t('messages.updateSuccess'))
     } catch (err) {
         console.error('Failed to update info:', err)
         alert(t('messages.error'))

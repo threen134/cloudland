@@ -2,6 +2,7 @@
 import { ref, onMounted, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
+import { useToast } from '../../composables/useToast'
 import { imagesApi, type Image } from '../../api/images'
 import { useAuthStore } from '../../stores/auth'
 import { useTenantStore } from '../../stores/tenant'
@@ -10,6 +11,7 @@ import { ArrowLeft, HardDrive, Trash2, Server, Monitor, Disc, Copy, Check, Tag, 
 const route = useRoute()
 const router = useRouter()
 const { t } = useI18n()
+const toast = useToast()
 const imageId = route.params.id as string
 const auth = useAuthStore()
 const tenant = useTenantStore()
@@ -66,6 +68,7 @@ const handleDelete = async () => {
     deleting.value = true
     try {
         await imagesApi.deleteImage(imageId)
+        toast.success(t('messages.deleteSuccess'))
         router.push({ name: 'images' })
     } catch (err) {
         console.error('Failed to delete image:', err)
@@ -79,6 +82,7 @@ const toggleVisibility = async () => {
     togglingVisibility.value = true
     try {
         await imagesApi.patchImage(imageId, { public: !image.value.public })
+        toast.success(t('messages.updateSuccess'))
         await fetchImage()
     } catch (err) {
         console.error('Failed to toggle visibility:', err)

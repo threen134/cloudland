@@ -3,7 +3,8 @@ import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { useAuthStore } from '../../stores/auth'
-import { Cloud, User, Lock, ArrowRight, HelpCircle, XCircle, AlertTriangle } from 'lucide-vue-next'
+import { Cloud, User, Lock, ArrowRight, XCircle, AlertTriangle, Eye, EyeOff, Languages } from 'lucide-vue-next'
+import { setLanguage, getCurrentLanguage } from '../../locales'
 import SecurityVerify from '../../components/auth/SecurityVerify.vue'
 
 const { t } = useI18n()
@@ -15,9 +16,17 @@ const password = ref('')
 const rememberMe = ref(false)
 const errorMessage = ref('')
 const isVerified = ref(false)
+const showPassword = ref(false)
+const currentLang = ref(getCurrentLanguage())
 
 const handleVerify = () => {
   isVerified.value = true
+}
+
+const toggleLang = () => {
+  const newLang = currentLang.value === 'zh' ? 'en' : 'zh'
+  setLanguage(newLang)
+  currentLang.value = newLang
 }
 
 const handleSubmit = async () => {
@@ -27,7 +36,7 @@ const handleSubmit = async () => {
     router.push('/dashboard')
   } catch (error: any) {
     console.error('Login failed:', error)
-    isVerified.value = false // Reset verification on failure
+    isVerified.value = false
     if (error.response?.status === 401) {
       errorMessage.value = t('auth.invalidCredentials')
     } else {
@@ -47,9 +56,11 @@ const handleSubmit = async () => {
         </div>
         <span>CloudLand</span>
       </router-link>
-      <div class="pl-nav-icons">
-        <button class="pl-icon-btn"><Lock :size="18" /></button>
-        <button class="pl-icon-btn"><HelpCircle :size="18" /></button>
+      <div class="pl-nav-actions">
+        <button class="pl-lang-btn" @click="toggleLang" :title="currentLang === 'zh' ? 'Switch to English' : '切换到中文'">
+          <Languages :size="16" />
+          <span>{{ currentLang === 'zh' ? 'EN' : '中文' }}</span>
+        </button>
       </div>
     </header>
 
@@ -106,12 +117,21 @@ const handleSubmit = async () => {
                 <div class="pl-input-wrapper">
                   <Lock class="pl-input-icon" :size="18" />
                   <input 
-                    type="password" 
+                    :type="showPassword ? 'text' : 'password'" 
                     class="pl-input" 
                     v-model="password"
                     required 
                     placeholder="••••••••"
                   />
+                  <button 
+                    type="button" 
+                    class="pl-password-toggle"
+                    @click="showPassword = !showPassword"
+                    tabindex="-1"
+                  >
+                    <EyeOff v-if="showPassword" :size="18" />
+                    <Eye v-else :size="18" />
+                  </button>
                 </div>
               </div>
 
@@ -174,7 +194,7 @@ const handleSubmit = async () => {
   min-height: 100vh;
   display: flex;
   flex-direction: column;
-  background-color: #f4f8fb;
+  background: linear-gradient(180deg, #e0f2fe 0%, #f0f9ff 40%, #f8fafc 100%);
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   color: #1a2332;
 }
@@ -211,27 +231,30 @@ const handleSubmit = async () => {
   justify-content: center;
 }
 
-.pl-nav-icons {
+.pl-nav-actions {
   display: flex;
   gap: 12px;
 }
 
-.pl-icon-btn {
-  width: 40px;
-  height: 40px;
+.pl-lang-btn {
   display: flex;
   align-items: center;
-  justify-content: center;
-  border-radius: 50%;
-  border: none;
-  background: transparent;
-  color: #4a5568;
+  gap: 6px;
+  padding: 8px 14px;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.7);
+  color: #475569;
   cursor: pointer;
-  transition: background 0.2s;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  transition: all 0.2s;
 }
 
-.pl-icon-btn:hover {
-  background: rgba(0, 0, 0, 0.05);
+.pl-lang-btn:hover {
+  background: #fff;
+  border-color: #cbd5e1;
+  color: #0ea5e9;
 }
 
 /* ── Main Layout ── */
@@ -252,7 +275,7 @@ const handleSubmit = async () => {
   flex: 1.4;
   background: linear-gradient(135deg, #bae6fd 0%, #0ea5e9 100%);
   color: #fff;
-  padding: 80px 8%;
+  padding: 60px 8%;
   display: flex;
   flex-direction: column;
   justify-content: center;
@@ -261,25 +284,25 @@ const handleSubmit = async () => {
 }
 
 .pl-card-left-content {
-  margin-bottom: 80px;
+  position: relative;
+  z-index: 1;
 }
 
 .pl-hero-title {
-  font-size: 3rem;
+  font-size: 2.75rem;
   font-weight: 800;
   line-height: 1.2;
-  margin-bottom: 32px;
+  margin-bottom: 20px;
   letter-spacing: -0.01em;
   color: #fff;
   text-shadow: 0 2px 40px rgba(14, 165, 233, 0.3);
-  white-space: nowrap;
 }
 
 .pl-hero-subtitle {
-  font-size: 1.125rem;
+  font-size: 1.0625rem;
   line-height: 1.7;
   color: rgba(255, 255, 255, 0.9);
-  max-width: 500px;
+  max-width: 460px;
 }
 
 .pl-decor-wave {
@@ -295,7 +318,7 @@ const handleSubmit = async () => {
 /* ── Right Panel (Form) ── */
 .pl-card-right {
   flex: 0.6;
-  padding: 80px;
+  padding: 60px 72px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -309,17 +332,17 @@ const handleSubmit = async () => {
 }
 
 .pl-form-title {
-  font-size: 2rem;
+  font-size: 1.875rem;
   font-weight: 800;
   color: #1a2332;
-  margin-bottom: 12px;
+  margin-bottom: 10px;
   letter-spacing: -0.01em;
 }
 
 .pl-form-subtitle {
   font-size: 0.9375rem;
   color: #64748b;
-  margin-bottom: 40px;
+  margin-bottom: 36px;
 }
 
 .pl-error-box {
@@ -354,7 +377,7 @@ const handleSubmit = async () => {
 }
 
 .pl-form-group {
-  margin-bottom: 24px;
+  margin-bottom: 22px;
 }
 
 .pl-label {
@@ -379,12 +402,13 @@ const handleSubmit = async () => {
 
 .pl-input {
   width: 100%;
-  padding: 14px 16px 14px 48px;
+  padding: 14px 48px 14px 48px;
   background: #f1f5f9;
   border: 2px solid transparent;
   border-radius: 14px;
   font-size: 0.9375rem;
   transition: all 0.2s;
+  color: #1a2332;
 }
 
 .pl-input:focus {
@@ -394,11 +418,34 @@ const handleSubmit = async () => {
   box-shadow: 0 0 0 4px rgba(14, 165, 233, 0.1);
 }
 
+/* Password Toggle */
+.pl-password-toggle {
+  position: absolute;
+  right: 14px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: none;
+  border: none;
+  color: #94a3b8;
+  cursor: pointer;
+  padding: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  transition: all 0.2s;
+}
+
+.pl-password-toggle:hover {
+  color: #64748b;
+  background: rgba(0, 0, 0, 0.04);
+}
+
 .pl-form-actions {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 32px;
+  margin-bottom: 28px;
 }
 
 .pl-checkbox {
@@ -459,9 +506,9 @@ const handleSubmit = async () => {
 
 .pl-btn-login {
   width: 100%;
-  height: 56px;
+  height: 54px;
   padding: 0 24px;
-  background: #0ea5e9;
+  background: linear-gradient(135deg, #0ea5e9 0%, #06b6d4 100%);
   color: #fff;
   border: none;
   border-radius: 14px;
@@ -477,7 +524,7 @@ const handleSubmit = async () => {
 }
 
 .pl-btn-login:hover {
-  background: #0284c7;
+  background: linear-gradient(135deg, #0284c7 0%, #0891b2 100%);
   transform: translateY(-1px);
   box-shadow: 0 12px 28px rgba(14, 165, 233, 0.3);
 }
@@ -492,7 +539,7 @@ const handleSubmit = async () => {
   display: flex;
   align-items: center;
   justify-content: center;
-  margin: 40px 0 24px;
+  margin: 28px 0 20px;
   position: relative;
 }
 
@@ -513,7 +560,7 @@ const handleSubmit = async () => {
 
 .pl-btn-request {
   width: 100%;
-  height: 52px;
+  height: 50px;
   background: #fff;
   color: #1a2332;
   border: 1px solid #e2e8f0;
@@ -576,8 +623,11 @@ const handleSubmit = async () => {
 
 /* ── Responsive ── */
 @media (max-width: 1024px) {
-  .pl-card {
-    max-width: 900px;
+  .pl-features {
+    grid-template-columns: 1fr;
+  }
+  .pl-hero-title {
+    font-size: 2.25rem;
   }
 }
 
@@ -585,17 +635,28 @@ const handleSubmit = async () => {
   .pl-card {
     flex-direction: column;
     max-width: 480px;
+    margin: 20px auto;
     border-radius: 24px;
+    overflow: hidden;
+    box-shadow: 0 20px 40px rgba(0, 0, 0, 0.08);
   }
   .pl-card-left {
-    padding: 100px 40px 40px;
-    min-height: 240px;
+    padding: 48px 32px;
+    min-height: auto;
+  }
+  .pl-features {
+    display: none;
   }
   .pl-hero-title {
-    font-size: 2.25rem;
+    font-size: 1.75rem;
+    margin-bottom: 12px;
+  }
+  .pl-hero-subtitle {
+    font-size: 0.9375rem;
+    margin-bottom: 0;
   }
   .pl-card-right {
-    padding: 48px 40px;
+    padding: 40px 32px;
   }
 }
 
@@ -612,6 +673,13 @@ const handleSubmit = async () => {
   .pl-card {
     box-shadow: none;
     border-radius: 0;
+    margin: 0;
+  }
+  .pl-card-left {
+    padding: 40px 24px;
+  }
+  .pl-card-right {
+    padding: 32px 24px;
   }
   .pl-footer {
     flex-direction: column;
@@ -626,4 +694,3 @@ const handleSubmit = async () => {
   }
 }
 </style>
-

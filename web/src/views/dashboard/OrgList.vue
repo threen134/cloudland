@@ -5,12 +5,14 @@ import { orgsApi, type Organization } from '../../api/orgs'
 import { type OrgResourceQuotaUpdate } from '../../api/quota'
 import { useAuthStore } from '../../stores/auth'
 import { useQuota } from '../../composables/useQuota'
+import { useToast } from '../../composables/useToast'
 import { Plus, Building2, Trash2, Edit2, User, Search, X, Gauge, RefreshCw } from 'lucide-vue-next'
 
 const authStore = useAuthStore()
 const isSuperuser = computed(() => authStore.user?.is_superuser === true)
 
 const { t } = useI18n()
+const toast = useToast()
 
 const orgs = ref<Organization[]>([])
 const loading = ref(false)
@@ -75,6 +77,7 @@ const handleCreateOrg = async () => {
         await orgsApi.createOrg(newOrgForm.value)
         await fetchOrgs()
         closeCreateModal()
+        toast.success(t('messages.createSuccess'))
     } catch (err: any) {
         console.error('Failed to create organization:', err)
         createError.value = err.response?.data?.error_message || err.message || t('messages.error')
@@ -112,6 +115,7 @@ const handleEditOrg = async () => {
         })
         await fetchOrgs()
         closeEditModal()
+        toast.success(t('messages.updateSuccess'))
     } catch (err: any) {
         console.error('Failed to update organization:', err)
         editError.value = err.response?.data?.error_message || err.message || t('messages.error')
@@ -143,6 +147,7 @@ const confirmDelete = async () => {
         await orgsApi.deleteOrg(resourceToDelete.value.uuid)
         await fetchOrgs()
         closeDeleteModal()
+        toast.success(t('messages.deleteSuccess'))
     } catch (error: any) {
         console.error('Failed to delete organization:', error)
         deleteError.value = error.response?.data?.error_message || error.message || t('messages.error')
@@ -180,7 +185,14 @@ const closeQuotaModal = () => {
     quotaModalVisible.value = false
 }
 
-const handleSaveQuota = (regionName: string) => handleSaveQuotaBase(quotaOrgId.value, regionName)
+const handleSaveQuota = async (regionName: string) => {
+    try {
+        await handleSaveQuotaBase(quotaOrgId.value, regionName)
+        toast.success(t('messages.updateSuccess'))
+    } catch (err: any) {
+        toast.error(err.response?.data?.error_message || err.message || t('messages.error'))
+    }
+}
 
 onMounted(fetchOrgs)
 </script>

@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
 import { keysApi, type SSHKey } from '../../api/keys'
+import { useToast } from '../../composables/useToast'
 import { ArrowLeft, Key, Trash2, Copy, Check } from 'lucide-vue-next'
 
 const route = useRoute()
@@ -13,6 +15,8 @@ const loading = ref(true)
 const error = ref('')
 const deleting = ref(false)
 const copied = ref(false)
+const toast = useToast()
+const { t } = useI18n()
 
 const fetchKey = async () => {
     loading.value = true
@@ -34,6 +38,7 @@ const handleDelete = async () => {
     deleting.value = true
     try {
         await keysApi.deleteKey(keyId)
+        toast.success(t('messages.deleteSuccess'))
         router.push({ name: 'keys' })
     } catch (err) {
         console.error('Failed to delete SSH key:', err)

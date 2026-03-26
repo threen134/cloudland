@@ -2,6 +2,7 @@
 import { ref, onMounted, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
+import { useToast } from '../../composables/useToast'
 import { floatingIpsApi, subnetsApi, type FloatingIP, type FloatingIPPayload, type Subnet } from '../../api/networks'
 import { instancesApi, type Instance } from '../../api/instances'
 import { Globe2, Plus, Link, Unlink, Trash2, Search, X, RefreshCw, ChevronDown, ChevronUp } from 'lucide-vue-next'
@@ -9,6 +10,7 @@ import { useFloatingIP } from '../../composables/useFloatingIP'
 import DeleteModal from '../../components/modals/DeleteModal.vue'
 
 const { t } = useI18n()
+const toast = useToast()
 const { getTypeBadgeClass, getTypeLabel } = useFloatingIP()
 const router = useRouter()
 const floatingIps = ref<FloatingIP[]>([])
@@ -138,6 +140,7 @@ const handleCreateIP = async () => {
         floatingIps.value = response.floating_ips || []
 
         closeCreateModal()
+        toast.success(t('messages.createSuccess'))
     } catch (err: any) {
         console.error('Failed to create floating IP:', err)
         createError.value = err.response?.data?.error_message || err.message || t('messages.error')
@@ -187,6 +190,7 @@ const confirmDelete = async () => {
         await floatingIpsApi.delete(resourceToDelete.value.id)
         await fetchFloatingIPs()
         closeDeleteModal()
+        toast.success(t('messages.deleteSuccess'))
     } catch (error: any) {
         console.error('Failed to delete floating IP:', error)
         deleteError.value = error.response?.data?.error_message || error.message || t('messages.error')
@@ -227,6 +231,7 @@ const confirmAttach = async () => {
         await floatingIpsApi.attach(fipToAttach.value.id, selectedInstanceId.value)
         await fetchFloatingIPs()
         closeAttachModal()
+        toast.success(t('messages.attachSuccess') || t('messages.updateSuccess'))
     } catch (err: any) {
         console.error('Failed to attach floating IP:', err)
         attachError.value = err.response?.data?.error_message || err.message || t('messages.error')
@@ -261,6 +266,7 @@ const confirmDetach = async () => {
         await floatingIpsApi.detach(fipToDetach.value.id)
         await fetchFloatingIPs()
         closeDetachModal()
+        toast.success(t('messages.detachSuccess') || t('messages.updateSuccess'))
     } catch (err: any) {
         console.error('Failed to detach floating IP:', err)
         detachError.value = err.response?.data?.error_message || err.message || t('messages.error')

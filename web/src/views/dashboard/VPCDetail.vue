@@ -6,6 +6,7 @@ import { isValidName } from '../../utils/validation'
 import { useRegionStore } from '../../stores/region'
 import { ArrowLeft, Layers, Network, Trash2, Plus, Copy, Check, Pencil, ChevronDown, CalendarDays, ShieldAlert, X, HelpCircle } from 'lucide-vue-next'
 import { useI18n } from 'vue-i18n'
+import { useToast } from '../../composables/useToast'
 import DeleteModal from '../../components/modals/DeleteModal.vue'
 
 const route = useRoute()
@@ -19,15 +20,7 @@ const error = ref<string | null>(null)
 const copiedField = ref<string | null>(null)
 const showActionMenu = ref(false)
 
-// --- Toast Notification ---
-const toast = ref<{ message: string, type: 'success' | 'error' } | null>(null)
-let toastTimer: ReturnType<typeof setTimeout> | null = null
-
-const showToast = (message: string, type: 'success' | 'error' = 'success') => {
-    if (toastTimer) clearTimeout(toastTimer)
-    toast.value = { message, type }
-    toastTimer = setTimeout(() => { toast.value = null }, 3000)
-}
+const toast = useToast()
 
 // --- Delete Confirmation Modal Logic ---
 const deleteModalVisible = ref(false)
@@ -49,6 +42,7 @@ const confirmDelete = async () => {
     deleteError.value = ''
     try {
         await vpcsApi.delete(vpc.value.id)
+        toast.success(t('messages.deleteSuccess'))
         router.push({ name: 'vpcs' })
     } catch (err: any) {
         console.error('Failed to delete VPC:', err)
@@ -90,7 +84,7 @@ const confirmEdit = async () => {
             description: editForm.value.description
         })
         showEditModal.value = false
-        showToast(t('messages.updateSuccess'))
+        toast.success(t('messages.updateSuccess'))
         await fetchVPC()
     } catch (err: any) {
         editError.value = err.response?.data?.error_message || err.message || t('messages.error')
@@ -173,7 +167,7 @@ const handleCreateSubnet = async () => {
     try {
         await subnetsApi.create(payload)
         closeCreateSubnetModal()
-        showToast(t('messages.createSuccess'))
+        toast.success(t('messages.createSuccess'))
         await fetchVPC()
     } catch (err: any) {
         console.error('Failed to create subnet:', err)
@@ -257,14 +251,7 @@ onMounted(() => {
 
 <template>
   <div class="detail-page">
-    <!-- Toast Notification -->
-    <Transition name="toast">
-        <div v-if="toast" :class="['toast', 'toast-' + toast.type]" @click="toast = null">
-            <Check v-if="toast.type === 'success'" :size="16" />
-            <ShieldAlert v-else :size="16" />
-            {{ toast.message }}
-        </div>
-    </Transition>
+    <!-- Toast Notification removed -->
 
     <!-- Header -->
     <div class="detail-header">

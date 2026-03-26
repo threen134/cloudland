@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
-// import { useRouter } from 'vue-router'
+import { useToast } from '../../composables/useToast'
 import { keysApi, type SSHKey } from '../../api/keys'
 import { isValidName } from '../../utils/validation'
 
@@ -21,6 +21,7 @@ const newKeyForm = ref({
 
 
 const { t } = useI18n()
+const toast = useToast()
 const isNameValid = computed(() => isValidName(newKeyForm.value.name))
 
 // const router = useRouter()
@@ -97,6 +98,7 @@ const handleCreateKey = async () => {
         await keysApi.createKey(newKeyForm.value)
         await fetchKeys()
         closeCreateModal()
+        toast.success(t('messages.createSuccess'))
     } catch (err: any) {
         console.error('Failed to create key:', err)
         createError.value = err.response?.data?.error_message || err.message || t('messages.error')
@@ -128,6 +130,7 @@ const confirmDelete = async () => {
         await keysApi.deleteKey(resourceToDelete.value.id)
         await fetchKeys()
         closeDeleteModal()
+        toast.success(t('messages.deleteSuccess'))
     } catch (error: any) {
         console.error('Failed to delete SSH key:', error)
         if (error.response?.data?.error_code === 161006 || error.response?.data?.error_code_str === 'SSHKeyInUse') {

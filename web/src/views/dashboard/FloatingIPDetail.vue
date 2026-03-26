@@ -4,6 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { floatingIpsApi, type FloatingIP } from '../../api/networks'
 import { ArrowLeft, Globe, Trash2, Server, Network, Copy, Check, ChevronDown, Pencil } from 'lucide-vue-next'
 import { useI18n } from 'vue-i18n'
+import { useToast } from '../../composables/useToast'
 import { useFloatingIP } from '../../composables/useFloatingIP'
 import DeleteModal from '../../components/modals/DeleteModal.vue'
 
@@ -17,6 +18,7 @@ const error = ref('')
 const copiedField = ref<string | null>(null)
 const showActionMenu = ref(false)
 const { t } = useI18n()
+const toast = useToast()
 const { getTypeBadgeClass, getTypeLabel } = useFloatingIP()
 
 // --- Delete Confirmation Modal Logic ---
@@ -39,6 +41,7 @@ const confirmDelete = async () => {
     deleteError.value = ''
     try {
         await floatingIpsApi.delete(fipId)
+        toast.success(t('messages.deleteSuccess'))
         router.push({ name: 'floating-ips' })
     } catch (err: any) {
         console.error('Failed to release Floating IP:', err)

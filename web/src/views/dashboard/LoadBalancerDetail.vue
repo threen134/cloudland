@@ -3,9 +3,11 @@ import { ref, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { loadBalancersApi, type LoadBalancer } from '../../api/networks'
+import { useToast } from '../../composables/useToast'
 import { ArrowLeft, GitFork, Trash2, Activity, Globe } from 'lucide-vue-next'
 
 const { t } = useI18n()
+const toast = useToast()
 const route = useRoute()
 const router = useRouter()
 const lbId = route.params.id as string
@@ -35,6 +37,7 @@ const handleDelete = async () => {
     deleting.value = true
     try {
         await loadBalancersApi.delete(lbId)
+        toast.success(t('messages.deleteSuccess'))
         router.push({ name: 'load-balancers' })
     } catch (err) {
         console.error('Failed to delete load balancer:', err)

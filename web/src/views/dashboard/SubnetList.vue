@@ -2,6 +2,7 @@
 import { ref, onMounted, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
+import { useToast } from '../../composables/useToast'
 import { subnetsApi, vpcsApi, type Subnet, type SubnetPayload, type VPC } from '../../api/networks'
 import { isValidName } from '../../utils/validation'
 import { useAuthStore } from '../../stores/auth'
@@ -36,6 +37,7 @@ const newSubnetForm = ref<SubnetPayload>({
 })
 
 const { t } = useI18n()
+const toast = useToast()
 const isNameValid = computed(() => isValidName(newSubnetForm.value.name))
 
 
@@ -134,6 +136,7 @@ const handleCreateSubnet = async () => {
         await subnetsApi.create(payload)
         await fetchSubnets()
         closeCreateModal()
+        toast.success(t('messages.createSuccess'))
     } catch (err: any) {
         console.error('Failed to create subnet:', err)
         createError.value = err.response?.data?.error_message || err.message || t('messages.error')
@@ -188,6 +191,7 @@ const confirmDelete = async () => {
         await subnetsApi.delete(resourceToDelete.value.id)
         await fetchSubnets()
         closeDeleteModal()
+        toast.success(t('messages.deleteSuccess'))
     } catch (error: any) {
         console.error('Failed to delete subnet:', error)
         deleteError.value = error.response?.data?.error_message || error.message || t('messages.error')

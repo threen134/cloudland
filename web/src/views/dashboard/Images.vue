@@ -5,6 +5,7 @@ import { useRouter } from 'vue-router'
 import { imagesApi, type Image, type ImagePayload } from '../../api/images'
 import { isValidName } from '../../utils/validation'
 import { useAuthStore } from '../../stores/auth'
+import { useToast } from '../../composables/useToast'
 import { useTenantStore } from '../../stores/tenant'
 
 import { Disc, Search, Monitor, Server, Trash2, Plus, X, Globe, Cpu, User, Eye, EyeOff, RefreshCw } from 'lucide-vue-next'
@@ -19,6 +20,7 @@ const auth = useAuthStore()
 const tenant = useTenantStore()
 const isSuperuser = computed(() => auth.user?.is_superuser === true)
 const currentOrgName = computed(() => tenant.currentOrg?.name || '')
+const toast = useToast()
 
 const createModalVisible = ref(false)
 const creating = ref(false)
@@ -89,6 +91,7 @@ const handleCreateImage = async () => {
         await imagesApi.createImage(newImageForm.value)
         await fetchImages()
         closeCreateModal()
+        toast.success(t('messages.createSuccess'))
     } catch (err: any) {
         console.error('Failed to create image:', err)
         createError.value = err.response?.data?.error_message || err.message || t('messages.error')
@@ -138,8 +141,10 @@ const toggleVisibility = async (image: Image) => {
         await imagesApi.patchImage(image.id, { public: !image.public })
         await fetchImages()
         filterImages()
+        toast.success(t('messages.updateSuccess'))
     } catch (err: any) {
         console.error('Failed to toggle visibility:', err)
+        toast.error(err.response?.data?.error_message || err.message || t('messages.error'))
     }
 }
 
@@ -197,6 +202,7 @@ const confirmDelete = async () => {
         await fetchImages()
         filterImages()
         closeDeleteModal()
+        toast.success(t('messages.deleteSuccess'))
     } catch (error: any) {
         console.error('Failed to delete image:', error)
         deleteError.value = error.response?.data?.error_message || error.message || t('messages.error')

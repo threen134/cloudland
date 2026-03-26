@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { useToast } from '../../composables/useToast'
 import { flavorsApi, type Flavor, type FlavorPayload } from '../../api/flavors'
 import { isValidName } from '../../utils/validation'
 
@@ -9,6 +10,7 @@ import { Plus, Server, Search, Trash2, Cpu, HardDrive, X, RefreshCw } from 'luci
 const flavors = ref<Flavor[]>([])
 const loading = ref(false)
 const searchQuery = ref('')
+const toast = useToast()
 
 const createModalVisible = ref(false)
 const creating = ref(false)
@@ -69,6 +71,7 @@ const handleCreateFlavor = async () => {
         await flavorsApi.createFlavor(newFlavorForm.value)
         await fetchFlavors()
         closeCreateModal()
+        toast.success(t('messages.createSuccess'))
     } catch (err: any) {
         console.error('Failed to create flavor:', err)
         createError.value = err.response?.data?.error_message || err.message || t('messages.error')
@@ -109,6 +112,7 @@ const confirmDelete = async () => {
         await flavorsApi.deleteFlavor(resourceToDelete.value.name || resourceToDelete.value.id)
         await fetchFlavors()
         closeDeleteModal()
+        toast.success(t('messages.deleteSuccess'))
     } catch (error: any) {
         console.error('Failed to delete flavor:', error)
         deleteError.value = error.response?.data?.error_message || error.message || t('messages.error')

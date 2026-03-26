@@ -8,8 +8,10 @@ import { type OrgResourceQuotaUpdate } from '../../api/quota'
 import { ArrowLeft, Building2, Users, Trash2, Shield, Crown, X, Mail, Clock, XCircle, Gauge, ChevronDown } from 'lucide-vue-next'
 import { useAuthStore } from '../../stores/auth'
 import { useQuota } from '../../composables/useQuota'
+import { useToast } from '../../composables/useToast'
 
 const { t } = useI18n()
+const toast = useToast()
 const authStore = useAuthStore()
 const route = useRoute()
 const router = useRouter()
@@ -133,6 +135,7 @@ const handleAddMember = async () => {
     addingMember.value = true
     try {
         await orgsApi.inviteMember(orgId, { email, org_role: addMemberForm.value.org_role })
+        toast.success(t('messages.createSuccess'))
         await fetchInvitations()
         addMemberVisible.value = false
     } catch (err: any) {
@@ -148,6 +151,7 @@ const handleCancelInvitation = async (inv: OrgInvitation) => {
     cancellingInvitation.value = inv.uuid
     try {
         await orgsApi.cancelInvitation(orgId, inv.uuid)
+        toast.success(t('messages.deleteSuccess'))
         await fetchInvitations()
     } catch (err: any) {
         console.error('Failed to cancel invitation:', err)
@@ -168,6 +172,7 @@ const handleChangeRole = async () => {
     changingRole.value = true
     try {
         await orgsApi.updateMemberRole(orgId, changeRoleForm.value.user_uuid, { org_role: changeRoleForm.value.org_role })
+        toast.success(t('messages.updateSuccess'))
         await fetchMembers()
         changeRoleVisible.value = false
     } catch (err: any) {
@@ -190,6 +195,7 @@ const handleRemoveMember = async () => {
     removeMemberError.value = ''
     try {
         await orgsApi.removeMember(orgId, memberToRemove.value.user_uuid)
+        toast.success(t('messages.deleteSuccess'))
         await fetchMembers()
         removeMemberVisible.value = false
     } catch (err: any) {
@@ -212,6 +218,7 @@ const handleTransfer = async () => {
     transferError.value = ''
     try {
         await orgsApi.transferOwnership(orgId, transferTargetId.value)
+        toast.success(t('messages.updateSuccess'))
         await fetchOrg()
         await fetchMembers()
         transferVisible.value = false

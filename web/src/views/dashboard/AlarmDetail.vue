@@ -58,6 +58,7 @@ const handleDelete = async () => {
     deleting.value = true
     try {
         await alarmsApi.deleteAlarmRule(alarm.value.uuid)
+        toast.success(t('messages.deleteSuccess'))
         router.push({ name: 'alarms' })
     } catch (err: any) {
         toast.error(err.response?.data?.error || 'Delete failed')

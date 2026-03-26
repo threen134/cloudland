@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted, computed, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { useToast } from '../../composables/useToast'
 import { vpcsApi, subnetsApi, type VPC, type SubnetPayload } from '../../api/networks'
 import { useRegionStore } from '../../stores/region'
 import { isValidName } from '../../utils/validation'
@@ -23,6 +24,7 @@ const newVPCForm = ref({
 })
 
 const { t } = useI18n()
+const toast = useToast()
 const isNameValid = computed(() => isValidName(newVPCForm.value.name))
 
 
@@ -83,6 +85,7 @@ const handleCreateVPC = async () => {
         await vpcsApi.create(newVPCForm.value)
         await fetchVPCs()
         closeCreateModal()
+        toast.success(t('messages.createSuccess'))
     } catch (err: any) {
         console.error('Failed to create VPC:', err)
         createError.value = err.response?.data?.error_message || err.message || t('messages.error')
@@ -114,6 +117,7 @@ const confirmDelete = async () => {
         await vpcsApi.delete(resourceToDelete.value.id)
         await fetchVPCs()
         closeDeleteModal()
+        toast.success(t('messages.deleteSuccess'))
     } catch (error: any) {
         console.error('Failed to delete VPC:', error)
         if (error.response?.data?.error_code === 131307 || error.response?.data?.error_code_str === 'RouterHasFloatingIPs') {
@@ -164,6 +168,7 @@ const handleEditVPC = async () => {
         })
         await fetchVPCs()
         closeEditModal()
+        toast.success(t('messages.updateSuccess'))
     } catch (err: any) {
         editError.value = err.response?.data?.error_message || err.message || t('messages.error')
     } finally {
@@ -252,6 +257,7 @@ const handleCreateSubnet = async () => {
         await subnetsApi.create(payload)
         await fetchVPCs()
         closeCreateSubnetModal()
+        toast.success(t('messages.createSuccess'))
     } catch (err: any) {
         createSubnetError.value = err.response?.data?.error_message || err.message || t('messages.error')
     } finally {

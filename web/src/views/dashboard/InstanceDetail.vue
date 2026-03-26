@@ -2,6 +2,7 @@
 import { ref, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
+import { useToast } from '../../composables/useToast'
 import { instancesApi, type Instance } from '../../api/instances'
 import { vmAlarmRulesApi, VM_RULE_TYPES, type VMAlarmRuleGroup, type VMRuleType } from '../../api/vmAlarmRules'
 import { ArrowLeft, Play, Square, RotateCw, Trash2, Server, Cpu, HardDrive, Network, Key, ExternalLink, Copy, Check, ShieldAlert, Link, Unlink, Eye, EyeOff, ChevronDown, KeyRound, RefreshCw, Maximize2, Pencil, Shuffle } from 'lucide-vue-next'
@@ -20,15 +21,7 @@ const copiedField = ref<string | null>(null)
 const showPassword = ref(false)
 const showActionMenu = ref(false)
 
-// --- Toast Notification ---
-const toast = ref<{ message: string, type: 'success' | 'error' } | null>(null)
-let toastTimer: ReturnType<typeof setTimeout> | null = null
-
-const showToast = (message: string, type: 'success' | 'error' = 'success') => {
-    if (toastTimer) clearTimeout(toastTimer)
-    toast.value = { message, type }
-    toastTimer = setTimeout(() => { toast.value = null }, 3000)
-}
+const toast = useToast()
 
 const toggleActionMenu = () => {
     showActionMenu.value = !showActionMenu.value
@@ -58,6 +51,7 @@ const confirmDelete = async () => {
     deleteError.value = ''
     try {
         await instancesApi.deleteInstance(instanceId)
+        toast.success(t('messages.deleteSuccess'))
         router.push({ name: 'instances' })
     } catch (err: any) {
         console.error('Failed to delete instance:', err)
@@ -127,9 +121,9 @@ const handleAction = async (action: 'start' | 'stop' | 'restart' | 'hard_stop' |
             if (targetStableStates.includes(currentStatus) || attempts >= 15) {
                 actionLoading.value = null
                 if (currentStatus === 'error') {
-                    showToast(t('dashboard.instanceDetail.actionFailed', { action }), 'error')
+                    toast.error(t('dashboard.instanceDetail.actionFailed', { action }))
                 } else {
-                    showToast(t('dashboard.instanceDetail.actionSuccess', { action }))
+                    toast.success(t('dashboard.instanceDetail.actionSuccess', { action }))
                 }
             } else {
                 setTimeout(checkStatus, 3000)
@@ -141,7 +135,7 @@ const handleAction = async (action: 'start' | 'stop' | 'restart' | 'hard_stop' |
     } catch (err: any) {
         console.error(`Failed to ${action} instance:`, err)
         actionLoading.value = null
-        showToast(err.response?.data?.error_message || err.message || t('messages.error'), 'error')
+        toast.error(err.response?.data?.error_message || err.message || t('messages.error'))
     }
 }
 
@@ -273,6 +267,7 @@ const linkRule = async (rule: LinkedRule) => {
         await vmAlarmRulesApi.linkRule(rule.rule_id, [{ vm_uuid: instanceId }])
         showLinkModal.value = false
         await fetchLinkedRules()
+        toast.success(t('messages.updateSuccess'))
     } catch (err: any) {
         console.error('Failed to link rule:', err)
         alarmError.value = err.response?.data?.error || t('messages.error')
@@ -284,6 +279,7 @@ const unlinkRule = async (rule: LinkedRule) => {
     try {
         await vmAlarmRulesApi.unlinkRule(rule.rule_id, [{ vm_uuid: instanceId }])
         await fetchLinkedRules()
+        toast.success(t('messages.updateSuccess'))
     } catch (err: any) {
         console.error('Failed to unlink rule:', err)
         alarmError.value = err.response?.data?.error || t('messages.error')
@@ -330,7 +326,7 @@ const confirmResetPassword = async () => {
     try {
         await instancesApi.setUserPassword(instanceId, resetPasswordForm.value.user_name, resetPasswordForm.value.password)
         showResetPasswordModal.value = false
-        showToast(t('dashboard.instanceDetail.resetPasswordSuccess'))
+        toast.success(t('dashboard.instanceDetail.resetPasswordSuccess'))
         await fetchInstance(false)
     } catch (err: any) {
         resetPasswordError.value = err.response?.data?.error_message || err.message || t('messages.error')
@@ -364,7 +360,7 @@ const confirmResize = async () => {
     try {
         await instancesApi.resizeInstance(instanceId, resizeForm.value.cpu, resizeForm.value.memory)
         showResizeModal.value = false
-        showToast(t('dashboard.instanceDetail.resizeSuccess'))
+        toast.success(t('dashboard.instanceDetail.resizeSuccess'))
         await fetchInstance(false)
     } catch (err: any) {
         resizeError.value = err.response?.data?.error_message || err.message || t('messages.error')
@@ -395,7 +391,7 @@ const confirmRename = async () => {
     try {
         await instancesApi.renameInstance(instanceId, renameForm.value.hostname)
         showRenameModal.value = false
-        showToast(t('dashboard.instanceDetail.renameSuccess'))
+        toast.success(t('dashboard.instanceDetail.renameSuccess'))
         await fetchInstance(false)
     } catch (err: any) {
         renameError.value = err.response?.data?.error_message || err.message || t('messages.error')
@@ -458,14 +454,7 @@ onMounted(() => {
 
 <template>
     <div class="detail-page">
-        <!-- Toast Notification -->
-        <Transition name="toast">
-            <div v-if="toast" :class="['toast', 'toast-' + toast.type]" @click="toast = null">
-                <Check v-if="toast.type === 'success'" :size="16" />
-                <ShieldAlert v-else :size="16" />
-                {{ toast.message }}
-            </div>
-        </Transition>
+        <!-- Toast Notification removed -->
 
         <!-- Back Button -->
         <div class="detail-header">

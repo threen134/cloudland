@@ -5,7 +5,11 @@ import { migrationsApi, type Migration } from '../../api/migrations'
 import { instancesApi, type Instance } from '../../api/instances'
 import { hypervisorsApi, type Hypervisor } from '../../api/hypervisors'
 import { Search as SearchIcon, ArrowRightLeft, Plus, X, RefreshCw } from 'lucide-vue-next'
+import { useToast } from '../../composables/useToast'
+import { useI18n } from 'vue-i18n'
 
+const { t } = useI18n()
+const toast = useToast()
 const migrationList = ref<Migration[]>([])
 const loading = ref(false)
 const searchQuery = ref('')
@@ -94,7 +98,7 @@ const fetchResources = async () => {
 
 const handleCreateMigration = async () => {
     if (!newMigrationForm.value.instance_id) {
-        alert('Please select an instance to migrate.')
+        toast.error('Please select an instance to migrate.')
         return
     }
 
@@ -113,9 +117,10 @@ const handleCreateMigration = async () => {
         await migrationsApi.createMigration(payload)
         await fetchMigrations()
         closeCreateModal()
-    } catch (err) {
+        toast.success(t('messages.createSuccess'))
+    } catch (err: any) {
         console.error('Failed to start migration:', err)
-        alert('Failed to start migration task.')
+        toast.error(err.response?.data?.error || 'Failed to start migration task.')
     } finally {
         creatingMigration.value = false
     }

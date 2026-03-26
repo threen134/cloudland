@@ -2,9 +2,11 @@
 import { ref, computed, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Plus, Trash2, Search, Bell, Pencil, ToggleLeft, ToggleRight, RefreshCw } from 'lucide-vue-next'
+import { useToast } from '../../composables/useToast'
 import { notificationsApi, type NotificationChannel, type CreateChannelPayload } from '../../api/notifications'
 
 const { t } = useI18n()
+const toast = useToast()
 const channels = ref<NotificationChannel[]>([])
 const loading = ref(false)
 const searchQuery = ref('')
@@ -81,9 +83,10 @@ const submitForm = async () => {
         }
         showCreateModal.value = false
         await fetchChannels()
+        toast.success(editTarget.value ? t('messages.updateSuccess') : t('messages.createSuccess'))
     } catch (err: any) {
         console.error('Failed to save channel:', err)
-        errorMsg.value = err.response?.data?.error || t('messages.error')
+        toast.error(err.response?.data?.error || t('messages.error'))
     }
 }
 
@@ -99,9 +102,10 @@ const executeDelete = async () => {
         showDeleteModal.value = false
         deleteTarget.value = null
         await fetchChannels()
+        toast.success(t('messages.deleteSuccess'))
     } catch (err: any) {
         console.error('Failed to delete channel:', err)
-        errorMsg.value = err.response?.data?.error || t('messages.error')
+        toast.error(err.response?.data?.error || t('messages.error'))
     }
 }
 
@@ -109,9 +113,10 @@ const toggleEnabled = async (ch: NotificationChannel) => {
     try {
         await notificationsApi.update(ch.uuid, { enabled: !ch.enabled })
         await fetchChannels()
+        toast.success(t('messages.updateSuccess'))
     } catch (err: any) {
         console.error('Failed to toggle channel:', err)
-        errorMsg.value = err.response?.data?.error || t('messages.error')
+        toast.error(err.response?.data?.error || t('messages.error'))
     }
 }
 

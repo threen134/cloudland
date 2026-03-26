@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted, computed, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { useToast } from '../../composables/useToast'
 import { volumesApi, type Volume } from '../../api/volumes'
 import { useRegionStore } from '../../stores/region'
 import { isValidName } from '../../utils/validation'
@@ -24,6 +25,7 @@ const newVolumeForm = ref({
 })
 
 const { t } = useI18n()
+const toast = useToast()
 const isNameValid = computed(() => isValidName(newVolumeForm.value.name))
 
 const fetchVolumes = async () => {
@@ -114,6 +116,7 @@ const handleCreateVolume = async () => {
         await volumesApi.create(newVolumeForm.value)
         await fetchVolumes()
         closeCreateModal()
+        toast.success(t('messages.createSuccess'))
     } catch (err: any) {
         console.error('Failed to create volume:', err)
         createError.value = err.response?.data?.error_message || err.message || t('messages.error')
@@ -145,6 +148,7 @@ const confirmDelete = async () => {
         await volumesApi.delete(resourceToDelete.value.id)
         await fetchVolumes()
         closeDeleteModal()
+        toast.success(t('messages.deleteSuccess'))
     } catch (error: any) {
         console.error('Failed to delete volume:', error)
         deleteError.value = error.response?.data?.error_message || error.message || t('messages.error')

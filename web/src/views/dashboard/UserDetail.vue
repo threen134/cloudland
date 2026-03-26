@@ -2,10 +2,12 @@
 import { ref, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
+import { useToast } from '../../composables/useToast'
 import { usersApi, type User } from '../../api/users'
 import { ArrowLeft, User as UserIcon, Trash2, Mail, Shield, AlertTriangle } from 'lucide-vue-next'
 
 const { t } = useI18n()
+const toast = useToast()
 const route = useRoute()
 const router = useRouter()
 const userId = route.params.id as string
@@ -35,6 +37,7 @@ const handleDelete = async () => {
     deleting.value = true
     try {
         await usersApi.deleteUser(userId)
+        toast.success(t('messages.deleteSuccess'))
         router.push({ name: 'users' })
     } catch (err) {
         console.error('Failed to delete user:', err)

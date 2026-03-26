@@ -2,6 +2,7 @@
 import { ref, onMounted, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
+import { useToast } from '../../composables/useToast'
 import { loadBalancersApi, vpcsApi, type LoadBalancer, type VPC } from '../../api/networks'
 import { isValidName } from '../../utils/validation'
 
@@ -19,6 +20,7 @@ const newLBForm = ref({
 })
 
 const { t } = useI18n()
+const toast = useToast()
 const isNameValid = computed(() => isValidName(newLBForm.value.name))
 
 const vpcs = ref<VPC[]>([])
@@ -73,6 +75,7 @@ const handleCreateLB = async () => {
         loadBalancers.value = response.load_balancers || []
         
         closeCreateModal()
+        toast.success(t('messages.createSuccess'))
     } catch (err: any) {
         console.error('Failed to create load balancer:', err)
         createError.value = err.response?.data?.error_message || err.message || t('messages.error')
@@ -132,6 +135,7 @@ const confirmDelete = async () => {
         await loadBalancersApi.delete(resourceToDelete.value.id)
         await fetchLoadBalancers()
         closeDeleteModal()
+        toast.success(t('messages.deleteSuccess'))
     } catch (error: any) {
         console.error('Failed to delete load balancer:', error)
         deleteError.value = error.response?.data?.error_message || error.message || t('messages.error')

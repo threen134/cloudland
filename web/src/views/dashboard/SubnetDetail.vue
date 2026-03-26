@@ -4,6 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { subnetsApi, type Subnet } from '../../api/networks'
 import { ArrowLeft, Network, Trash2, Globe, Lock, Activity, Copy, Check, ChevronDown, Pencil } from 'lucide-vue-next'
 import { useI18n } from 'vue-i18n'
+import { useToast } from '../../composables/useToast'
 import DeleteModal from '../../components/modals/DeleteModal.vue'
 
 const route = useRoute()
@@ -16,6 +17,7 @@ const error = ref('')
 const copiedField = ref<string | null>(null)
 const showActionMenu = ref(false)
 const { t } = useI18n()
+const toast = useToast()
 
 // --- Delete Confirmation Modal Logic ---
 const deleteModalVisible = ref(false)
@@ -37,6 +39,7 @@ const confirmDelete = async () => {
     deleteError.value = ''
     try {
         await subnetsApi.delete(subnetId)
+        toast.success(t('messages.deleteSuccess'))
         router.push({ name: 'subnets' })
     } catch (err: any) {
         console.error('Failed to delete subnet:', err)

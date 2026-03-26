@@ -2,6 +2,7 @@
 import { ref, onMounted, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
+import { useToast } from '../../composables/useToast'
 import { securityGroupsApi, vpcsApi, type SecurityGroup, type SecurityRule, type VPC } from '../../api/networks'
 import { isValidName } from '../../utils/validation'
 
@@ -21,6 +22,7 @@ const newGroupForm = ref({
 })
 
 const { t } = useI18n()
+const toast = useToast()
 const isNameValid = computed(() => isValidName(newGroupForm.value.name))
 
 const vpcs = ref<VPC[]>([])
@@ -120,6 +122,7 @@ const handleCreateGroup = async () => {
         securityGroups.value = response.security_groups || []
 
         closeCreateModal()
+        toast.success(t('messages.createSuccess'))
     } catch (err: any) {
         console.error('Failed to create security group:', err)
         createError.value = err.response?.data?.error_message || err.message || t('messages.error')
@@ -228,6 +231,7 @@ const handleSaveRule = async () => {
         }
         closeRuleModal()
         await fetchSecurityGroups()
+        toast.success(editingRuleId.value ? t('messages.updateSuccess') : t('messages.createSuccess'))
     } catch (err: any) {
         console.error('Failed to save rule:', err)
         addRuleError.value = err.response?.data?.error_message || err.message || t('messages.error')
@@ -259,6 +263,7 @@ const confirmDelete = async () => {
         await securityGroupsApi.deleteRule(ruleToDelete.value.groupId, ruleToDelete.value.rule.id)
         await fetchSecurityGroups()
         closeDeleteModal()
+        toast.success(t('messages.deleteSuccess'))
     } catch (error: any) {
         console.error('Failed to delete security rule:', error)
         deleteError.value = error.response?.data?.error_message || error.message || t('messages.error')
@@ -293,6 +298,7 @@ const confirmDeleteGroup = async () => {
         await securityGroupsApi.delete(groupToDelete.value.id)
         await fetchSecurityGroups()
         closeDeleteGroupModal()
+        toast.success(t('messages.deleteSuccess'))
     } catch (error: any) {
         console.error('Failed to delete security group:', error)
         deleteGroupError.value = error.response?.data?.error_message || error.message || t('messages.error')
