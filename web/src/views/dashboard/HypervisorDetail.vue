@@ -3,7 +3,7 @@ import { ref, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { hypervisorsApi, type Hypervisor } from '../../api/hypervisors'
 import { zonesApi } from '../../api/zones'
-import { ArrowLeft, ServerCog, Copy, Check, Edit, Save, X, Wrench, Loader2 } from 'lucide-vue-next'
+import { ArrowLeft, Server, Cpu, Copy, Check, Edit, Save, X, Wrench, Loader2 } from 'lucide-vue-next'
 import { useI18n } from 'vue-i18n'
 import { useToast } from '../../composables/useToast'
 
@@ -174,7 +174,7 @@ onMounted(fetchHypervisorDetail)
 
     <!-- Error State -->
     <div v-else-if="error" class="error-container card">
-      <ServerCog :size="48" style="opacity: 0.3; margin-bottom: 16px;" />
+      <Server :size="48" style="opacity: 0.3; margin-bottom: 16px;" />
       <p class="text-secondary">{{ error }}</p>
       <button class="btn btn-primary btn-sm" @click="fetchHypervisorDetail" style="margin-top: 12px;">
         {{ t('actions.refresh') }}
@@ -187,7 +187,7 @@ onMounted(fetchHypervisorDetail)
       <div class="title-bar card">
         <div class="title-info">
           <div class="title-icon">
-            <ServerCog :size="28" />
+            <Server :size="28" />
           </div>
           <div>
             <h2 class="resource-title">{{ hypervisor.hostname }}</h2>

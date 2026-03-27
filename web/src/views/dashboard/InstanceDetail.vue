@@ -6,7 +6,7 @@ import { useToast } from '../../composables/useToast'
 import { instancesApi, type Instance } from '../../api/instances'
 import { securityGroupsApi, type SecurityGroup } from '../../api/networks'
 import { vmAlarmRulesApi, VM_RULE_TYPES, type VMAlarmRuleGroup, type VMRuleType } from '../../api/vmAlarmRules'
-import { ArrowLeft, Play, Square, RotateCw, Trash2, Server, Cpu, HardDrive, Network, Key, ExternalLink, Copy, Check, ShieldAlert, Link, Unlink, Eye, EyeOff, ChevronDown, KeyRound, RefreshCw, Maximize2, Pencil, Shuffle, Shield } from 'lucide-vue-next'
+import { ArrowLeft, Play, Square, RotateCw, Trash2, Server, Monitor, Cpu, HardDrive, MemoryStick, Network, Key, ExternalLink, Copy, Check, ShieldAlert, Link, Unlink, Eye, EyeOff, ChevronDown, KeyRound, RefreshCw, Maximize2, Pencil, Shuffle, Shield } from 'lucide-vue-next'
 import DeleteModal from '../../components/modals/DeleteModal.vue'
 
 const route = useRoute()
@@ -547,7 +547,7 @@ onMounted(() => {
             <div class="title-bar card">
                 <div class="title-info">
                     <div class="title-icon">
-                        <Server :size="28" />
+                        <Monitor :size="28" />
                     </div>
                     <div>
                         <h2 class="instance-title">
@@ -711,7 +711,7 @@ onMounted(() => {
                                 <span class="value">{{ instance.cpu || (instance.flavor && typeof instance.flavor === 'object' ? instance.flavor.cpu : '-') }}</span>
                             </div>
                             <div class="kv-item">
-                                <span class="label"><Server :size="14" /> {{ $t('dashboard.instanceDetail.ram') }}</span>
+                                <span class="label"><MemoryStick :size="14" /> {{ $t('dashboard.instanceDetail.ram') }}</span>
                                 <span class="value">{{ formatMemory(instance.memory || (instance.flavor && typeof instance.flavor === 'object' ? instance.flavor.memory : undefined)) }}</span>
                             </div>
                             <div class="kv-item">

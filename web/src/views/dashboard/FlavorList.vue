@@ -5,7 +5,7 @@ import { useToast } from '../../composables/useToast'
 import { flavorsApi, type Flavor, type FlavorPayload } from '../../api/flavors'
 import { isValidName } from '../../utils/validation'
 
-import { Plus, Server, Search, Trash2, Cpu, HardDrive, X, RefreshCw } from 'lucide-vue-next'
+import { Plus, SquareStack, MemoryStick, Search, Trash2, Cpu, HardDrive, X, RefreshCw } from 'lucide-vue-next'
 
 const flavors = ref<Flavor[]>([])
 const loading = ref(false)
@@ -185,7 +185,7 @@ onMounted(fetchFlavors)
                   <p>{{ $t('messages.noResults') }}</p>
                </div>
                <div v-else>
-                  <Server :size="48" style="opacity: 0.3; margin-bottom: 16px;" />
+                  <SquareStack :size="48" style="opacity: 0.3; margin-bottom: 16px;" />
                   <p class="text-secondary">{{ $t('messages.noData') }}</p>
                </div>
             </td>
@@ -195,7 +195,7 @@ onMounted(fetchFlavors)
               <div class="resource-link-static">
                 <div class="resource-info">
                   <div class="resource-icon">
-                    <Server :size="16" />
+                    <SquareStack :size="16" />
                   </div>
                   <div>
                     <div class="resource-name">{{ flavor.name }}</div>
@@ -212,7 +212,7 @@ onMounted(fetchFlavors)
             </td>
             <td>
               <div class="spec-cell">
-                <Server :size="14" class="text-secondary" />
+                <MemoryStick :size="14" class="text-secondary" />
                 <span>{{ formatRam(flavor.ram || flavor.memory) }}</span>
               </div>
             </td>

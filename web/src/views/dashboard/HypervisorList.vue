@@ -2,7 +2,7 @@
 import { ref, onMounted, computed } from 'vue'
 import { hypervisorsApi, type Hypervisor, type HyperDeployPayload } from '../../api/hypervisors'
 import { zonesApi } from '../../api/zones'
-import { Search as SearchIcon, ServerCog, Plus, Trash2, RefreshCw, Copy, Check, X, Loader2 } from 'lucide-vue-next'
+import { Search as SearchIcon, Server, Plus, Trash2, RefreshCw, Copy, Check, X, Loader2 } from 'lucide-vue-next'
 import { useI18n } from 'vue-i18n'
 import { useToast } from '../../composables/useToast'
 
@@ -212,28 +212,28 @@ onMounted(fetchHypervisors)
             <td colspan="8" class="text-center text-secondary" style="padding: 48px;">
                <div v-if="searchQuery">
                   <SearchIcon :size="48" style="opacity: 0.3; margin-bottom: 16px;" />
-                  <p>{{ t('messages.noResults') }}</p>
-               </div>
-               <div v-else class="empty-state">
-                  <ServerCog :size="48" style="opacity: 0.2; margin-bottom: 16px;" />
-                  <p>{{ t('messages.noData') }}</p>
-               </div>
-            </td>
-          </tr>
-          <tr v-else v-for="h in hypervisorList" :key="h.uuid">
-            <td>
-              <router-link :to="{ name: 'hypervisor-detail', params: { id: h.uuid } }" class="resource-link">
-                <div class="resource-info">
-                  <div class="resource-icon">
-                    <ServerCog :size="16" />
-                  </div>
-                  <div>
-                    <div class="resource-name">{{ h.hostname }}</div>
-                    <div class="resource-id">{{ h.uuid }}</div>
-                  </div>
+                   <p>{{ t('messages.noResults') }}</p>
                 </div>
-              </router-link>
-            </td>
+                <div v-else class="empty-state">
+                   <Server :size="48" style="opacity: 0.2; margin-bottom: 16px;" />
+                   <p>{{ t('messages.noData') }}</p>
+                </div>
+             </td>
+           </tr>
+           <tr v-else v-for="h in hypervisorList" :key="h.uuid">
+             <td>
+               <router-link :to="{ name: 'hypervisor-detail', params: { id: h.uuid } }" class="resource-link">
+                 <div class="resource-info">
+                   <div class="resource-icon">
+                     <Server :size="16" />
+                   </div>
+                   <div>
+                     <div class="resource-name">{{ h.hostname }}</div>
+                     <div class="resource-id">{{ h.uuid }}</div>
+                   </div>
+                 </div>
+               </router-link>
+             </td>
             <td><code class="mono-value">{{ h.host_ip }}</code></td>
             <td>
               <span class="status-pill" :class="getStatusInfo(h.status).class">

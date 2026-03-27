@@ -26,6 +26,9 @@ import {
     ChevronDown,
     ChevronRight,
     Cpu,
+    SquareStack,
+    Zap,
+    Monitor,
 
     Users,
     Languages,
@@ -250,7 +253,7 @@ onUnmounted(() => {
           </button>
           <div v-show="isExpanded('compute') || isSidebarCollapsed" class="section-items">
             <RouterLink to="/dashboard/instances" class="nav-item" active-class="active">
-              <Server :size="18" />
+              <Monitor :size="18" />
               <span>{{ $t('dashboard.instances') }}</span>
             </RouterLink>
             <RouterLink to="/dashboard/volumes" class="nav-item" active-class="active">
@@ -262,7 +265,7 @@ onUnmounted(() => {
               <span>{{ $t('dashboard.images') }}</span>
             </RouterLink>
             <RouterLink to="/dashboard/flavors" class="nav-item" active-class="active">
-              <Cpu :size="18" />
+              <SquareStack :size="18" />
               <span>{{ $t('dashboard.flavors') }}</span>
             </RouterLink>
             <RouterLink to="/dashboard/keys" class="nav-item" active-class="active">
@@ -342,7 +345,7 @@ onUnmounted(() => {
               <span>{{ $t('dashboard.zones') }}</span>
             </RouterLink>
             <RouterLink to="/dashboard/hypervisors" class="nav-item" active-class="active">
-              <ServerCog :size="18" />
+              <Server :size="18" />
               <span>{{ $t('dashboard.hypervisors') }}</span>
             </RouterLink>
             <RouterLink to="/dashboard/migrations" class="nav-item" active-class="active">

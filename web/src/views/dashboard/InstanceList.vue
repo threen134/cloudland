@@ -4,7 +4,7 @@ import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import { useToast } from '../../composables/useToast'
 import { instancesApi, type Instance } from '../../api/instances'
-import { Play, Square, RotateCw, Trash2, Plus, Terminal, MoreVertical, Search, X, Check, Server, ChevronDown, ChevronUp, PlusCircle, MinusCircle, RefreshCw, Cpu, HardDrive, Eye, EyeOff, Shuffle, Pencil, KeyRound, Maximize2 } from 'lucide-vue-next'
+import { Play, Square, RotateCw, Trash2, Plus, Terminal, MoreVertical, Search, X, Check, Monitor, ChevronDown, ChevronUp, PlusCircle, MinusCircle, RefreshCw, Cpu, HardDrive, Eye, EyeOff, Shuffle, Pencil, KeyRound, Maximize2, Server } from 'lucide-vue-next'
 
 import { imagesApi, type Image } from '../../api/images'
 import { vpcsApi, subnetsApi, securityGroupsApi, floatingIpsApi, type VPC, type Subnet, type SecurityGroup, type FloatingIP } from '../../api/networks'
@@ -808,7 +808,8 @@ onMounted(() => fetchInstances())
                   <p>{{ $t('messages.noResults') }}</p>
                </div>
                <div v-else>
-                  <p>{{ $t('messages.noInstances') }}</p>
+                  <Monitor :size="48" style="opacity: 0.3; margin-bottom: 16px;" />
+                  <p class="text-secondary">{{ $t('messages.noData') }}</p>
                </div>
             </td>
           </tr>
@@ -817,7 +818,7 @@ onMounted(() => fetchInstances())
               <router-link :to="{ name: 'instance-detail', params: { id: instance.id } }" class="resource-link">
                 <div class="resource-info">
                   <div class="resource-icon">
-                    <Server :size="16" />
+                    <Monitor :size="16" />
                   </div>
                   <div>
                     <div class="resource-name">{{ instance.hostname }}</div>
