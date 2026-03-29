@@ -14,8 +14,8 @@ RUN apk add --no-cache git
 # 复制 docs 源码
 COPY docs/ ./docs/
 
-# 调试: 验证文件是否存在
-RUN ls -la docs/public/api-v1.json
+# 移动 public 到 .vitepress/public (确保 VitePress 正确识别并复制到 dist)
+RUN mkdir -p docs/.vitepress/public && cp -r docs/public/* docs/.vitepress/public/
 
 # 编译文档
 RUN cd docs && npm install && npm run docs:build
