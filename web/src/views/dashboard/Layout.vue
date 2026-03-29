@@ -63,11 +63,7 @@ const toggleSidebar = () => {
     isSidebarCollapsed.value = !isSidebarCollapsed.value
 }
 
-const swaggerUrl = computed(() => {
-    return tenant.currentOrg?.org_type === 2
-        ? '/swagger/api/v1/index.html?view=full'
-        : '/swagger/api/v1/index.html'
-})
+const docsUrl = '/docs/'
 
 // Ensure sections are expanded when collapsing sidebar to show icons
 watch(isSidebarCollapsed, (collapsed) => {
@@ -433,32 +429,26 @@ onUnmounted(() => {
           <!-- Help Dropdown -->
           <div class="header-dropdown" @mouseenter="activeDropdown = 'help'" @mouseleave="activeDropdown = null">
             <button class="icon-btn" :title="$t('nav.help')">
-              <HelpCircle :size="18" />
+              <HelpCircle :size="16" />
             </button>
             <div class="dropdown-menu-portal" v-show="activeDropdown === 'help'">
               <div class="dropdown-item-portal">
-                <div style="display: flex; align-items: center; gap: 8px;">
-                  <CreditCard :size="14" />
-                  <span>{{ $t('nav.billing') }}</span>
-                </div>
+                <CreditCard :size="14" />
+                <span>{{ $t('nav.billing') }}</span>
               </div>
-              <a class="dropdown-item-portal" :href="swaggerUrl" target="_blank" rel="noopener" style="text-decoration: none; color: inherit;">
-                <div style="display: flex; align-items: center; gap: 8px;">
-                  <BookOpen :size="14" />
-                  <span>{{ $t('nav.docsAndApi') }}</span>
-                </div>
+              <a class="dropdown-item-portal" :href="docsUrl" target="_blank" rel="noopener">
+                <BookOpen :size="14" />
+                <span>{{ $t('nav.docsAndApi') }}</span>
               </a>
               <div class="dropdown-item-portal">
-                <div style="display: flex; align-items: center; gap: 8px;">
-                  <LifeBuoy :size="14" />
-                  <span>{{ $t('nav.support') }}</span>
-                </div>
+                <LifeBuoy :size="14" />
+                <span>{{ $t('nav.support') }}</span>
               </div>
             </div>
           </div>
 
           <button class="icon-btn" :title="$t('nav.notifications')">
-            <Bell :size="18" />
+            <Bell :size="16" />
           </button>
           <div class="header-dropdown" @mouseenter="activeDropdown = 'user'" @mouseleave="activeDropdown = null">
             <div class="user-profile">
@@ -786,7 +776,8 @@ onUnmounted(() => {
   border: none;
   color: var(--gray-400);
   cursor: pointer;
-  padding: 6px;
+  width: 36px;
+  height: 36px;
   border-radius: var(--radius-full);
   transition: all 0.2s;
   display: flex;
@@ -801,7 +792,6 @@ onUnmounted(() => {
 
 .header-dropdown {
   position: relative;
-  height: 100%;
   display: flex;
   align-items: center;
 }
@@ -812,8 +802,8 @@ onUnmounted(() => {
   gap: 6px;
   background: none;
   border: none;
-  padding: 6px 8px;
-  height: auto;
+  padding: 0 10px;
+  height: 36px;
   color: var(--text-secondary);
   font-size: 0.875rem;
   font-weight: 500;
@@ -831,14 +821,14 @@ onUnmounted(() => {
   position: absolute;
   top: 100%;
   right: 0;
-  width: 180px;
+  width: 200px;
   background-color: var(--bg-primary);
   border: 1px solid var(--border-light);
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-lg);
   z-index: 1000;
   padding: 6px;
-  margin-top: 8px;
+  margin-top: 10px;
 }
 
 .dropdown-menu-portal::before {
@@ -852,12 +842,16 @@ onUnmounted(() => {
 }
 
 .dropdown-item-portal {
+  display: flex;
+  align-items: center;
+  gap: 10px;
   padding: 10px 12px;
   font-size: 0.875rem;
   color: var(--text-secondary);
   cursor: pointer;
   border-radius: var(--radius-md);
   transition: all 0.2s;
+  text-decoration: none;
 }
 
 .dropdown-item-portal:hover {
@@ -875,14 +869,19 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 6px;
-  padding-left: 16px;
-  height: auto;
+  padding: 0 10px 0 16px;
+  height: 36px;
   border-left: 1px solid var(--border-light);
   cursor: pointer;
   font-size: 0.875rem;
   font-weight: 500;
   color: var(--text-primary);
+  border-radius: var(--radius-md);
+  transition: all 0.2s;
+}
+
+.user-profile:hover {
+  background-color: var(--bg-tertiary);
 }
 
 .user-profile:hover .user-avatar {

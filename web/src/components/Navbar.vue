@@ -12,11 +12,7 @@ const router = useRouter()
 const auth = useAuthStore()
 const tenant = useTenantStore()
 
-const swaggerUrl = computed(() => {
-    return tenant.currentOrg?.org_type === 2
-        ? '/swagger/api/v1/index.html?view=full'
-        : '/swagger/api/v1/index.html'
-})
+const docsUrl = '/docs/'
 
 const isMenuOpen = ref(false)
 const activeDropdown = ref<string | null>(null)
@@ -68,7 +64,7 @@ const solutionLinks = [
             <a href="tel:+1-800-000-0000"><Phone :size="14" /> +1-800-CLOUD</a>
           </div>
           <div class="top-links">
-            <a :href="swaggerUrl" target="_blank" rel="noopener">{{ t('nav.documentation') }}</a>
+            <a :href="docsUrl" target="_blank" rel="noopener">{{ t('nav.documentation') }}</a>
             <RouterLink to="/support">{{ t('nav.support') }}</RouterLink>
           </div>
         </div>

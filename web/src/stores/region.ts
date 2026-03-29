@@ -45,18 +45,28 @@ export const useRegionStore = defineStore('region', () => {
 
             // Map API response to Region interface
             // API now returns uuid instead of id
-            regions.value = data.map((r: any) => ({
-                id: r.uuid,
-                name: r.name,
-                label: r.description || r.name,
-                status: 'available' as const,
-                endpoint: r.endpoint_url,
-            }))
+            regions.value = data.map((r: any) => {
+                let status: 'available' | 'maintenance' | 'offline' = 'available'
+                if (r.maintenance_mode) {
+                    status = 'maintenance'
+                } else if (!r.is_available) {
+                    status = 'offline'
+                }
+
+                return {
+                    id: r.uuid,
+                    name: r.name,
+                    label: r.description || r.name,
+                    status,
+                    endpoint: r.endpoint_url,
+                }
+            })
 
             // Auto-select first available region if none selected or current selection no longer valid
-            const currentExists = regions.value.some(r => r.id === currentRegionId.value)
-            if ((!currentRegionId.value || !currentExists) && regions.value.length > 0) {
-                setCurrentRegion(regions.value[0].id)
+            // Use availableRegions to avoid selecting an offline region by default
+            const currentExists = availableRegions.value.some(r => r.id === currentRegionId.value)
+            if ((!currentRegionId.value || !currentExists) && availableRegions.value.length > 0) {
+                setCurrentRegion(availableRegions.value[0].id)
             }
         } catch (err: any) {
             console.warn('Failed to fetch regions:', err)
