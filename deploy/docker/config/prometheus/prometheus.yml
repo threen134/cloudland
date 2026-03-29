@@ -24,9 +24,13 @@ scrape_configs:
     http_sd_configs:
       - url: __CLAPI_SD_ENDPOINT__/api/v1/prometheus/sd/node_exporter
         refresh_interval: 30s
+        tls_config:
+          insecure_skip_verify: true
 
   # libvirt exporter 指标采集 (clapi http_sd 自动发现)
   - job_name: 'prometheus_libvirt_exporter'
     http_sd_configs:
       - url: __CLAPI_SD_ENDPOINT__/api/v1/prometheus/sd/libvirt_exporter
         refresh_interval: 30s
+        tls_config:
+          insecure_skip_verify: true
