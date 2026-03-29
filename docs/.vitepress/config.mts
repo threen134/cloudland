@@ -28,7 +28,7 @@ export default withMermaid(
         { text: '指南', link: '/guide/introduction' },
         { text: 'API 参考', link: '/api/overview' },
         { text: '架构', link: '/architecture/overview' },
-        { text: '部署', link: '/deployment/quick-start' },
+        { text: '部署', link: '/deployment/index' },
       ],
 
       sidebar: generateSidebar([
@@ -70,7 +70,9 @@ export default withMermaid(
           includeRootIndexFile: true,
           collapsed: true,
           useFolderTitleFromIndexFile: true,
-          useFolderLinkFromIndexFile: true
+          useFolderLinkFromIndexFile: true,
+          sortMenusByFrontmatterOrder: true,
+          frontmatterOrderDefaultValue: 10
         }
       ]),
 
@@ -125,14 +127,14 @@ export default withMermaid(
       theme: 'base',
       themeVariables: {
         primaryColor: '#e0f2fe',
-        primaryTextColor: '#0369a1',
+        primaryTextColor: '#1a2332',
         primaryBorderColor: '#0ea5e9',
         lineColor: '#0ea5e9',
         secondaryColor: '#f0f9ff',
         tertiaryColor: '#ffffff',
         stateBkg: '#e0f2fe',
         stateBorder: '#0ea5e9',
-        labelColor: '#0369a1',
+        labelColor: '#1a2332',
         fontFamily: "'Inter', sans-serif",
         fontSize: '14px'
       },

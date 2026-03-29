@@ -63,7 +63,7 @@ done
 sed -i '/^SCI_ENABLE_FAILOVER=/d' .env
 echo "SCI_ENABLE_FAILOVER=yes" >> .env
 sed -i '/^COMPOSE_PROFILES=/d' .env
-echo "COMPOSE_PROFILES=" >> .env # disable dev profile to use external DB
+echo "COMPOSE_PROFILES=full,region" >> .env # 全量 + 区域控制面，使用外部 DB（不启用 dev）
 
 required_vars=("PUBLIC_IP" "INTERNAL_IP" "NETWORK_DEVICE" "MANAGEMENT_VIP" "ADMIN_PASSWORD" "HA_ROLE" "PEER_IP" "VRRP_INTERFACE" "DB_HOST")
 missing_vars=()

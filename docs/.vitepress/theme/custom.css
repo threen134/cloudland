@@ -263,16 +263,58 @@
   stroke: none !important;
 }
 
-.mermaid .label, .mermaid .node .label {
+/* Mermaid Label & Text Color overrides - Optimized for Light/Dark mode transitions */
+.mermaid .label, 
+.mermaid .node .label,
+.mermaid text,
+.mermaid tspan {
   color: var(--vp-c-text-1) !important;
+  fill: var(--vp-c-text-1) !important;
   font-weight: 500 !important;
   font-family: 'Inter', var(--vp-font-family-base) !important;
 }
 
+/* For labels using HTML (div/span/small inside foreignObject) */
+.mermaid foreignObject div,
+.mermaid foreignObject span,
+.mermaid foreignObject p,
+.mermaid foreignObject small {
+  color: var(--vp-c-text-1) !important;
+}
+
+/* Edge Label Text */
+.mermaid .edgeLabel {
+  color: var(--vp-c-text-1) !important;
+  fill: var(--vp-c-text-1) !important;
+}
+
+/* Edge Label Background - Fix background/text color conflict */
+.mermaid .edgeLabel rect {
+  fill: #ffffff !important;
+  opacity: 0.8;
+}
+
+.dark .mermaid .edgeLabel rect {
+  fill: #1e293b !important;
+}
+
+/* Edge lines and markers - Use brand color but allow mermaid syntax overrides */
+.mermaid .edgePath .path {
+  stroke: var(--pl-primary);
+  stroke-width: 1.5px;
+}
+
+.mermaid .marker {
+  fill: var(--pl-primary);
+}
+
 .mermaid .cluster rect {
-  fill: rgba(14, 165, 233, 0.02) !important;
-  stroke: rgba(14, 165, 233, 0.2) !important;
-  stroke-dasharray: 4, 4 !important;
+  fill: transparent !important;
+  stroke: rgba(14, 165, 233, 0.3) !important;
+  stroke-width: 1.5px !important;
+  stroke-dasharray: 6, 3 !important;
+  rx: 8 !important;
+  ry: 8 !important;
 }
 
 /* ---- Layout Transparency (Allow Global Background to show through) ---- */

@@ -6,19 +6,31 @@
 #   2. bash scripts/init-certs.sh
 #   3. docker compose up -d --build
 #
+# Profile 说明:
+#   region - 区域控制面服务 (cloudland, clapi, consoleproxy, 监控栈)
+#   full   - 中央控制面 (nginx + cpgateway)
+#   dev    - 本地容器化 PostgreSQL
+#
+# 常用组合:
+#   COMPOSE_PROFILES=full,dev,region  → 全量单节点 (推荐)
+#   COMPOSE_PROFILES=full,dev         → 仅中央控制面 + 本地 DB (多 Region 中央节点)
+#   COMPOSE_PROFILES=full,region      → 全量 + 外部 DB (HA 部署)
+#   COMPOSE_PROFILES=region           → 仅区域控制面 (远程 Region 节点)
+#   COMPOSE_PROFILES=dev,region       → 区域控制面 + 本地 DB + cpgateway
+#
 # 服务清单:
 #   postgres        - PostgreSQL 数据库 (profile: dev)
-#   cloudland       - 主控服务 (SCI 通信)
-#   clapi           - REST API (统一 API 服务)
-#   consoleproxy    - VNC 控制台代理
+#   cloudland       - 主控服务 (SCI 通信) (profile: region)
+#   clapi           - REST API (统一 API 服务) (profile: region)
+#   consoleproxy    - VNC 控制台代理 (profile: region)
 #   cpgateway       - 控制平面网关 (认证/代理/Region管理) (profile: dev, full)
 #   nginx           - 反向代理 / SSL 终端 / Vue.js UI (profile: full)
-#   prometheus      - 监控指标采集
-#   alertmanager    - 告警管理
-#   grafana         - 监控仪表盘
-#   loki            - 日志聚合
-#   promtail        - 日志采集
-#   alarm-rules-mgr - 告警规则管理
+#   prometheus      - 监控指标采集 (profile: region)
+#   alertmanager    - 告警管理 (profile: region)
+#   grafana         - 监控仪表盘 (profile: region)
+#   loki            - 日志聚合 (profile: region)
+#   promtail        - 日志采集 (profile: region)
+#   alarm-rules-mgr - 告警规则管理 (profile: region)
 # =============================================================================
 
 services:
@@ -56,6 +68,8 @@ services:
     image: cloudland-cland:latest
     container_name: cloudland-cland
     restart: unless-stopped
+    profiles:
+      - region
     # 使用 host 网络以便与外部 hyper 节点通信 (SCI 协议)
     network_mode: host
     environment:
@@ -82,6 +96,8 @@ services:
     image: cloudland-clapi:latest
     container_name: cloudland-clapi
     restart: unless-stopped
+    profiles:
+      - region
     environment:
       # 用于生成发往前端的 VNC Console 代理地址，不控制本容器物理监听 IP
       PUBLIC_IP: ${PUBLIC_IP:-127.0.0.1}
@@ -117,6 +133,8 @@ services:
     image: cloudland-consoleproxy:latest
     container_name: cloudland-consoleproxy
     restart: unless-stopped
+    profiles:
+      - region
     volumes:
       - ./volumes/certs/console:/certs/console:ro
     ports:
@@ -164,7 +182,9 @@ services:
       cloudland:
         ipv4_address: 172.28.0.96
     depends_on:
-      - clapi
+      clapi:
+        condition: service_started
+        required: false
 
   # ---------- Nginx 反向代理 (profile: full) ----------
   nginx:
@@ -190,14 +210,19 @@ services:
       cloudland:
         ipv4_address: 172.28.0.50
     depends_on:
-      - cpgateway
-      - consoleproxy
+      cpgateway:
+        condition: service_started
+      consoleproxy:
+        condition: service_started
+        required: false
 
   # ---------- Prometheus ----------
   prometheus:
     image: prom/prometheus:v2.48.0
     container_name: cloudland-prometheus
     restart: unless-stopped
+    profiles:
+      - region
     user: "nobody"
     environment:
       CLAPI_SD_ENDPOINT: "${CLAPI_SD_ENDPOINT:-http://clapi:8255}"
@@ -240,6 +265,8 @@ services:
     image: quay.io/prometheus/alertmanager:v0.26.0
     container_name: cloudland-alertmanager
     restart: unless-stopped
+    profiles:
+      - region
     user: "65534:65534"
     volumes:
       - ./volumes/alertmanager:/data
@@ -273,6 +300,8 @@ services:
     image: grafana/grafana-oss:10.2.0
     container_name: cloudland-grafana
     restart: unless-stopped
+    profiles:
+      - region
     environment:
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
     volumes:
@@ -292,6 +321,8 @@ services:
     image: grafana/loki:2.9.2
     container_name: cloudland-loki
     restart: unless-stopped
+    profiles:
+      - region
     volumes:
       - ./config/loki/loki-config.yaml:/etc/loki/local-config.yaml:ro
       - loki_data:/loki
@@ -307,6 +338,8 @@ services:
     image: grafana/promtail:2.9.2
     container_name: cloudland-promtail
     restart: unless-stopped
+    profiles:
+      - region
     volumes:
       - ./config/promtail/promtail-config.yaml:/etc/promtail/config.yml:ro
       - /var/run/docker.sock:/var/run/docker.sock:ro
@@ -327,6 +360,8 @@ services:
     image: cloudland-alarm-rules-manager:latest
     container_name: cloudland-alarm-rules-mgr
     restart: unless-stopped
+    profiles:
+      - region
     environment:
       ALARM_RULES_LISTEN: "0.0.0.0:8256"
       ALARM_RULES_CERT: "/certs/cland/selfsigned.crt"
