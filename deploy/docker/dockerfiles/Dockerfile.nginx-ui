@@ -26,9 +26,11 @@ WORKDIR /build
 # 安装 git (VitePress 构建过程必要)
 RUN apk add --no-cache git
 
-# 复制 docs 源码并编译
+# 复制 docs 源码及依赖的外部文件
 COPY docs/ ./docs/
-RUN mkdir -p docs/.vitepress/public && cp -r docs/public/* docs/.vitepress/public/
+COPY api/docs/routes/v1_swagger.json /tmp/api-v1.json
+RUN rm -f docs/public/api-v1.json && mv /tmp/api-v1.json docs/public/api-v1.json
+
 RUN cd docs && npm install && npm run docs:build
 
 # ---- Stage 3: Nginx + 静态文件 ----
