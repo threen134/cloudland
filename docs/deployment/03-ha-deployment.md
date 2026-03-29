@@ -1,3 +1,6 @@
+---
+order: 30
+---
 # 高可用 (HA) 部署
 
 CloudLand 支持双控制节点 **Active/Standby (主备)** 模式。通过 Keepalived 实现 VRRP VIP 漂移，以及外部数据库支持，确保区域控制面在单一主节点发生故障时能够自动切换。

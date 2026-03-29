@@ -1,3 +1,6 @@
+---
+order: 60
+---
 # 配置参考手册
 
 CloudLand 采用分层配置策略。对于容器化部署，大部分关键参数通过 Docker 环境变量控制，而业务细节则通过配置文件挂载。
@@ -15,6 +18,7 @@ CloudLand 采用分层配置策略。对于容器化部署，大部分关键参�
 
 可用 Profile：
 - **`region`** — 区域控制面（cloudland、clapi、consoleproxy、监控栈）
+- **`region-gateway`** — Region 边缘网关（VNC WebSocket TLS 终端，多 Region 远程节点使用）
 - **`full`** — 中央控制面（Nginx + CPGateway + Web UI）
 - **`dev`** — 本地容器化 PostgreSQL
 
@@ -59,7 +63,17 @@ CloudLand 采用分层配置策略。对于容器化部署，大部分关键参�
 | `FEISHU_WEBHOOK_URL` | 飞书自定义机器人 Webhook 地址。 | `https://open.feishu.cn/...` |
 | `FEISHU_SECRET` | 飞书机器人签名校验密钥（可选）。 | - |
 
-### 7. 监控
+### 7. Region Gateway（多 Region 部署）
+
+以下变量仅在多 Region 远程节点（`COMPOSE_PROFILES` 包含 `region-gateway`）时需要配置。单节点模式无需设置。
+
+| 变量名 | 说明 | 示例 |
+| :--- | :--- | :--- |
+| `REGION_GATEWAY_PORT` | Region Gateway 对外监听端口（默认 8443，避免与中央 Nginx 443 冲突）。 | `8443` |
+| `CONSOLE_HOST` | clapi 返回给前端的 VNC Console 地址。留空时回退到请求 Host。 | `region1-gw.example.com` |
+| `CONSOLE_PORT` | clapi 返回给前端的 VNC Console 端口。留空时不带端口号。 | `8443` |
+
+### 8. 监控
 | 变量名 | 说明 | 示例 |
 | :--- | :--- | :--- |
 | `CLAPI_SD_ENDPOINT` | Prometheus http_sd 服务发现地址。 | `http://clapi:8255` |
@@ -78,7 +92,8 @@ CloudLand 采用分层配置策略。对于容器化部署，大部分关键参�
 ├── docker-compose.yml       # 容器编排主文件
 ├── .env                     # 运行时环境变量配置
 ├── config/                  # 静态配置文件目录
-│   ├── nginx/               # Nginx 站点配置及负载均衡设置
+│   ├── nginx/               # 中央 Nginx 站点配置及负载均衡设置
+│   ├── region-gateway/      # Region Gateway 配置（多 Region VNC WebSocket 边缘入口）
 │   ├── prometheus/          # 监控采集规则
 │   └── grafana/             # 这里的 dashboard 定义
 ├── scripts/                 # 管理及自动化部署脚本
@@ -129,7 +144,7 @@ rm -rf volumes/certs/*
 # 触发重新生成
 bash scripts/init-certs.sh
 # 重启依赖服务
-docker compose restart nginx clapi consoleproxy
+docker compose restart nginx clapi consoleproxy region-gateway
 ```
 
 > [!NOTE]

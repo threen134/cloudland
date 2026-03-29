@@ -7,16 +7,18 @@
 #   3. docker compose up -d --build
 #
 # Profile 说明:
-#   region - 区域控制面服务 (cloudland, clapi, consoleproxy, 监控栈)
-#   full   - 中央控制面 (nginx + cpgateway)
-#   dev    - 本地容器化 PostgreSQL
+#   region         - 区域控制面服务 (cloudland, clapi, consoleproxy, 监控栈)
+#   region-gateway - Region 边缘网关 (VNC WebSocket TLS 终端，多 Region 远程节点使用)
+#   full           - 中央控制面 (nginx + cpgateway)
+#   dev            - 本地容器化 PostgreSQL
 #
 # 常用组合:
-#   COMPOSE_PROFILES=full,dev,region  → 全量单节点 (推荐)
-#   COMPOSE_PROFILES=full,dev         → 仅中央控制面 + 本地 DB (多 Region 中央节点)
-#   COMPOSE_PROFILES=full,region      → 全量 + 外部 DB (HA 部署)
-#   COMPOSE_PROFILES=region           → 仅区域控制面 (远程 Region 节点)
-#   COMPOSE_PROFILES=dev,region       → 区域控制面 + 本地 DB + cpgateway
+#   COMPOSE_PROFILES=full,dev,region          → 全量单节点 (推荐)
+#   COMPOSE_PROFILES=full,dev                 → 仅中央控制面 + 本地 DB (多 Region 中央节点)
+#   COMPOSE_PROFILES=full,region              → 全量 + 外部 DB (HA 部署)
+#   COMPOSE_PROFILES=region,region-gateway    → 远程 Region 节点 (含 VNC 边缘网关)
+#   COMPOSE_PROFILES=region                   → 仅区域控制面 (远程 Region 节点，无 VNC 边缘网关)
+#   COMPOSE_PROFILES=dev,region               → 区域控制面 + 本地 DB + cpgateway
 #
 # 服务清单:
 #   postgres        - PostgreSQL 数据库 (profile: dev)
@@ -31,6 +33,7 @@
 #   loki            - 日志聚合 (profile: region)
 #   promtail        - 日志采集 (profile: region)
 #   alarm-rules-mgr - 告警规则管理 (profile: region)
+#   region-gateway  - Region VNC WebSocket 边缘网关 (profile: region-gateway)
 # =============================================================================
 
 services:
@@ -113,6 +116,10 @@ services:
       MONITOR_HOST: prometheus
       MONITOR_PORT: "9090"
       CPGATEWAY_SECRET_KEY: ${CPGATEWAY_SECRET_KEY:-change-me-in-production}
+      # VNC Console URL 配置 (多 Region 模式下指向 Region Gateway 地址)
+      # 留空时回退到请求的 Host，单节点模式开箱即用
+      CONSOLE_HOST: ${CONSOLE_HOST:-}
+      CONSOLE_PORT: "${CONSOLE_PORT:-}"
     volumes:
       - ./volumes/certs:/certs:ro
       - ./volumes/certs/cland/selfsigned.crt:/etc/ssl/certs/alarm_rules_manager.crt:ro
@@ -378,6 +385,27 @@ services:
     depends_on:
       prometheus:
         condition: service_healthy
+
+  # ---------- Region Gateway (VNC WebSocket 边缘入口) ----------
+  # 多 Region 部署时，每个远程 Region 通过此 Nginx 在边缘终结 TLS，
+  # 将 /websockify 转发给内部 consoleproxy。
+  # 单节点模式 (full,dev,region) 不需要此服务，中央 Nginx 直接处理。
+  region-gateway:
+    image: nginx:alpine
+    container_name: cloudland-region-gateway
+    restart: unless-stopped
+    profiles:
+      - region-gateway
+    volumes:
+      - ./config/region-gateway/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./volumes/certs/region-gw:/certs/region-gw:ro
+    ports:
+      - "${REGION_GATEWAY_PORT:-8443}:443"
+    networks:
+      cloudland:
+        ipv4_address: 172.28.0.45
+    depends_on:
+      - consoleproxy
 
 # ---------- 网络 ----------
 networks:

@@ -8,7 +8,7 @@
 set -e
 
 CERT_DIR="${1:-./volumes/certs}"
-mkdir -p "$CERT_DIR"/{cland,nginx,console}
+mkdir -p "$CERT_DIR"/{cland,nginx,console,region-gw}
 
 echo "==> 检查证书工具..."
 if ! command -v certtool &>/dev/null; then
@@ -111,8 +111,30 @@ EOF
     echo "    完成: $CERT_DIR/console/"
 fi
 
+# ----- 4. Region Gateway 证书 (多 Region 部署的 VNC WebSocket 边缘入口) -----
+if [ -e "$CERT_DIR/region-gw/selfsigned.key" ] && [ -e "$CERT_DIR/region-gw/selfsigned.crt" ]; then
+    echo "==> Region Gateway 证书已存在，跳过"
+else
+    echo "==> 生成 Region Gateway 自签名证书..."
+    cat > /tmp/region-gw-cert.info <<EOF
+organization = cloudland
+cn = cloudland-region-gateway
+tls_www_server
+encryption_key
+signing_key
+EOF
+    certtool --generate-privkey --outfile "$CERT_DIR/region-gw/selfsigned.key" > /dev/null 2>&1
+    certtool --generate-self-signed \
+        --load-privkey "$CERT_DIR/region-gw/selfsigned.key" \
+        --template /tmp/region-gw-cert.info \
+        --outfile "$CERT_DIR/region-gw/selfsigned.crt" > /dev/null 2>&1
+    rm -f /tmp/region-gw-cert.info
+    echo "    完成: $CERT_DIR/region-gw/"
+fi
+
 echo ""
 echo "=== 所有证书已就绪 ==="
-echo "  CloudLand:     $CERT_DIR/cland/"
-echo "  Nginx:         $CERT_DIR/nginx/"
-echo "  Console Proxy: $CERT_DIR/console/"
+echo "  CloudLand:       $CERT_DIR/cland/"
+echo "  Nginx:           $CERT_DIR/nginx/"
+echo "  Console Proxy:   $CERT_DIR/console/"
+echo "  Region Gateway:  $CERT_DIR/region-gw/"

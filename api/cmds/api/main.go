@@ -63,6 +63,12 @@ func init() {
 		os.Exit(1)
 	}
 	fmt.Printf("Configuration loaded successfully from conf/config.toml\n")
+
+	// 绑定环境变量: 允许通过 CONSOLE_HOST / CONSOLE_PORT 覆盖配置文件中的 console.host / console.port
+	// 用于多 Region 部署时指定 Region Gateway 地址
+	viper.BindEnv("console.host", "CONSOLE_HOST")
+	viper.BindEnv("console.port", "CONSOLE_PORT")
+
 	rlog.InitLogger("clapi.log")
 	fmt.Printf("Logger initialized, logs are being written to clapi.log\n")
 	

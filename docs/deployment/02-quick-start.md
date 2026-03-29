@@ -1,3 +1,6 @@
+---
+order: 20
+---
 # 快速开始（单节点部署）
 
 本指南介绍如何在 **单台 Ubuntu 控制节点** 上通过 Docker Compose 快速构建包含完整 Web UI、监控告警、用户认证及数据库的 CloudLand 全量环境。
@@ -123,38 +126,14 @@ curl -sk -X POST https://<PUBLIC_IP>/api/v1/regions \
 
 ---
 
-## 备选：仅区域控制面部署
+## 进阶：多区域扩展
 
-如果您已有外部认证系统或只需直接 API 集成，可以跳过 CPGateway 和 Web UI，仅部署区域控制面：
+如果您需要部署更多的地理区域，或在已有中央控制面的情况下通过**仅部署区域控制面**来横向扩展资源，请参考：
 
-```bash
-# 设置配置参数（不需要 CPGATEWAY_SECRET_KEY）
-export PUBLIC_IP=1.2.3.4
-export INTERNAL_IP=192.168.1.100
-export NETWORK_DEVICE=eth0
-export MANAGEMENT_VIP=192.168.1.100
-export DB_LISTEN_IP=127.0.0.1
-export POSTGRES_PASSWORD=your_db_password
-export COMPOSE_PROFILES=dev,region       # 仅区域控制面 + 本地数据库
-
-# 执行部署
-curl -sSL https://raw.githubusercontent.com/threen134/cloudland/staging/deploy/docker/scripts/deploy-control-node.sh | sudo -E bash
-```
-
-此模式下的访问方式：
-
-| 服务 | URL | 说明 |
-| :--- | :--- | :--- |
-| REST API（直接访问） | `https://<INTERNAL_IP>:8255/api/v1/` | 无认证，直接操作 |
-| Grafana 看板 | `http://<PUBLIC_IP>:3000` | admin / `GRAFANA_ADMIN_PASSWORD` |
-| Prometheus | `http://<PUBLIC_IP>:9090` | 监控指标 |
-
-```
-# 仅区域控制面的请求路径（无认证层）
-User → clapi (直接访问) → cloudland → 计算节点
-```
+- [多区域部署 (Multi-Region)](./05-multi-region.md)
 
 ---
 
 ## 下一步
+
 部署完成控制面后，请前往 [添加计算节点](./04-compute-node.md) 扩展您的云算力。
