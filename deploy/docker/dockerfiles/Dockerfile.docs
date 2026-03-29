@@ -11,16 +11,11 @@ WORKDIR /build
 # 安装 git (VitePress 构建过程和某些插件如 Scalar 需要使用 git/Node22)
 RUN apk add --no-cache git
 
-# 调试: 查看目录结构
-RUN ls -la
+# 复制 docs 源码
+COPY docs/ ./docs/
 
-# 安装依赖
-COPY docs/package*.json ./
-RUN npm install
-
-# 复制源码并构建
-COPY docs/ ./
-RUN npm run docs:build
+# 编译文档
+RUN cd docs && npm install && npm run docs:build
 
 # ---- Stage 2: Serve Docs ----
 FROM nginx:1.25-alpine
@@ -28,7 +23,7 @@ FROM nginx:1.25-alpine
 WORKDIR /usr/share/nginx/html
 
 # 复制 VitePress 构建产物
-COPY --from=builder /build/.vitepress/dist ./
+COPY --from=builder /build/docs/.vitepress/dist ./
 
 EXPOSE 80
 
