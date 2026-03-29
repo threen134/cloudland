@@ -212,26 +212,9 @@ services:
     depends_on:
       cpgateway:
         condition: service_started
-      docs:
-        condition: service_started
-        required: false
       consoleproxy:
         condition: service_started
         required: false
-
-  # ---------- Docs Documentation (VitePress) ----------
-  docs:
-    build:
-      context: ../../
-      dockerfile: deploy/docker/dockerfiles/Dockerfile.docs
-    image: cloudland-docs:latest
-    container_name: cloudland-docs
-    restart: unless-stopped
-    profiles:
-      - full
-    networks:
-      cloudland:
-        ipv4_address: 172.28.0.55
 
   # ---------- Prometheus ----------
   prometheus:

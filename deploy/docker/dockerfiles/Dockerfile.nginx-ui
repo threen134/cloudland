@@ -18,13 +18,28 @@ COPY web/ ./
 RUN sed -i 's/= await _checkWebCodecsH264DecodeSupport();/= false;/' node_modules/@novnc/novnc/lib/util/browser.js
 RUN npm run build
 
-# ---- Stage 2: Nginx + 静态文件 ----
+# ---- Stage 2: 编译 Docs ----
+FROM node:22-alpine AS builder-docs
+
+WORKDIR /build
+
+# 安装 git (VitePress 构建过程必要)
+RUN apk add --no-cache git
+
+# 复制 docs 源码并编译
+COPY docs/ ./docs/
+RUN cd docs && npm install && npm run docs:build
+
+# ---- Stage 3: Nginx + 静态文件 ----
 FROM nginx:1.25-alpine
 
 WORKDIR /usr/share/nginx/html
 
 # 复制 Vue.js 构建产物
 COPY --from=builder /build/dist /usr/share/cloudland-ui
+
+# 复制 Docs 构建产物
+COPY --from=builder-docs /build/docs/.vitepress/dist /usr/share/cloudland-docs
 
 # 复制 nginx 配置
 COPY deploy/docker/config/nginx/nginx.conf /etc/nginx/nginx.conf
