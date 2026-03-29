@@ -1,0 +1,220 @@
+@endpoint = https://165.192.110.235
+@admin_username = admin@local.com
+@admin_password = AgFFTFV8AzK4FG0
+
+### Auth: Get System Admin Token
+# @name sys_admin_login
+POST {{endpoint}}/api/v1/auth/token
+Content-Type: application/json
+
+{
+    "username": "{{admin_username}}",
+    "password": "{{admin_password}}"
+}
+
+###
+@sys_admin_token = {{sys_admin_login.response.body.access_token}}
+
+### 1.1 查询 Org 列表 (验证登录)
+GET {{endpoint}}/api/v1/orgs
+Authorization: Bearer {{sys_admin_token}}
+
+# ==========================================
+# 场景一：新用户注册开通租户
+# ==========================================
+@new_user_email = alice@example.com
+@new_user_username = alice
+@new_user_password = Password123!
+@new_org_name = Alice Team
+@new_org_slug = alice-team
+
+### 1.1 注册并创建 Org
+# @name alice_register
+POST {{endpoint}}/api/v1/auth/register
+Content-Type: application/json
+
+{
+    "email": "{{new_user_email}}",
+    "username": "{{new_user_username}}",
+    "password": "{{new_user_password}}",
+    "org_name": "{{new_org_name}}",
+    "org_slug": "{{new_org_slug}}",
+    "language": "zh"
+}
+
+###
+@alice_user_uuid = {{alice_register.response.body.user.uuid}}
+
+### 1.2 SA 激活用户 (模拟邮件激活)
+PUT {{endpoint}}/api/v1/users/{{alice_user_uuid}}/enable
+Authorization: Bearer {{sys_admin_token}}
+
+### 1.3 获取 Alice 所属 Org ID
+# @name get_alice_profile
+GET {{endpoint}}/api/v1/users/{{alice_user_uuid}}
+Authorization: Bearer {{sys_admin_token}}
+
+###
+@alice_org_uuid = {{alice_register.response.body.user.status == 1 ? "check_manual" : alice_register.response.body.user.uuid}}
+# 注意：V2 注册响应中不直接返回 Org UUID，需要通过其他接口获取，或者从注册时的 slug 对应
+
+### 1.4 Alice 登录
+# @name alice_login
+POST {{endpoint}}/api/v1/auth/token
+Content-Type: application/json
+
+{
+    "username": "{{new_user_username}}",
+    "password": "{{new_user_password}}"
+}
+
+###
+@alice_token = {{alice_login.response.body.access_token}}
+@alice_org_uuid_from_login = {{alice_login.response.body.org_uuid}}
+
+# ==========================================
+# 场景二：邀请用户加入 Org
+# ==========================================
+@invite_email = bob@example.com
+@invite_username = bob
+@invite_password = Password123!
+
+### 2.1 创建并邀请新用户 (Bob)
+# @name bob_invite
+POST {{endpoint}}/api/v1/orgs/{{alice_org_uuid_from_login}}/invitations
+Authorization: Bearer {{alice_token}}
+Content-Type: application/json
+
+{
+    "email": "{{invite_email}}",
+    "org_role": 1
+}
+
+###
+@bob_invitation_token = {{bob_invite.response.body.uuid}}
+# 实际上邀请 Token 是在邮件里的，这里假设我们能拿到或者通过其他方式获取
+
+### 2.2 Bob 接受邀请 (设置用户名密码并激活)
+# @name bob_accept
+POST {{endpoint}}/api/v1/auth/invitation/accept
+Content-Type: application/json
+
+{
+    "token": "{{bob_invite.response.body.token}}",
+    "username": "{{invite_username}}",
+    "password": "{{invite_password}}"
+}
+
+### 2.3 Bob 登录验证
+# @name bob_login
+POST {{endpoint}}/api/v1/auth/token
+Content-Type: application/json
+
+{
+    "username": "{{invite_username}}",
+    "password": "{{invite_password}}"
+}
+
+###
+@bob_token = {{bob_login.response.body.access_token}}
+
+### 2.4 获取 Bob 的 User UUID
+# @name get_bob_me
+GET {{endpoint}}/api/v1/auth/me
+Authorization: Bearer {{bob_token}}
+
+###
+@bob_user_uuid = {{get_bob_me.response.body.uuid}}
+
+# ==========================================
+# 权限与资源隔离测试
+# ==========================================
+
+### 3.1 Reader (Bob) 尝试查询本 Org 实例
+GET {{endpoint}}/api/v1/instances
+Authorization: Bearer {{bob_token}}
+
+### 3.2 Reader (Bob) 尝试创建实例 (应被拒绝 403)
+POST {{endpoint}}/api/v1/instances
+Authorization: Bearer {{bob_token}}
+Content-Type: application/json
+
+{
+    "name": "bob-test-instance",
+    "image_id": "1",
+    "flavor_id": "1",
+    "subnet_id": "1"
+}
+
+### 3.3 Admin/Owner (Alice) 创建实例 (成功)
+# @name create_alice_instance
+POST {{endpoint}}/api/v1/instances
+Authorization: Bearer {{alice_token}}
+Content-Type: application/json
+
+{
+    "name": "alice-test-instance",
+    "image_id": "1",
+    "flavor_id": "1",
+    "subnet_id": "1"
+}
+
+### 3.4 SA 跨 Org 查询实例
+# 未指定 X-Resource-Org，应返回所有实例
+GET {{endpoint}}/api/v1/instances
+Authorization: Bearer {{sys_admin_token}}
+
+### 3.5 SA 指定 Org 上下文查询
+GET {{endpoint}}/api/v1/instances
+Authorization: Bearer {{sys_admin_token}}
+X-Resource-Org: {{alice_org_uuid_from_login}}
+
+# ==========================================
+# 用户状态机与生命周期测试
+# ==========================================
+
+### 4.1 Alice 从 Org 中移除 Bob
+DELETE {{endpoint}}/api/v1/orgs/{{alice_org_uuid_from_login}}/members/{{bob_user_uuid}}
+Authorization: Bearer {{alice_token}}
+
+### 4.2 Bob 登录 (应为 Dormant 状态, 允许登录但受限)
+# @name bob_dormant_login
+POST {{endpoint}}/api/v1/auth/token
+Content-Type: application/json
+
+{
+    "username": "{{invite_username}}",
+    "password": "{{invite_password}}"
+}
+
+###
+@bob_dormant_token = {{bob_dormant_login.response.body.access_token}}
+
+### 4.3 Bob (Dormant) 尝试查询实例列表 (应返回 403)
+GET {{endpoint}}/api/v1/instances
+Authorization: Bearer {{bob_dormant_token}}
+
+# ==========================================
+# 修改个人信息与密码、切换 Org 上下文
+# ==========================================
+
+### 5.1 用户修改个人信息
+PATCH {{endpoint}}/api/v1/users/{{alice_user_uuid}}/profile
+Authorization: Bearer {{alice_token}}
+Content-Type: application/json
+
+{
+    "first_name": "Alice",
+    "last_name": "Smith",
+    "language": "en"
+}
+
+### 5.2 切换 Org 登录态 (SwitchOrg)
+POST {{endpoint}}/api/v1/auth/switch-org
+Authorization: Bearer {{alice_token}}
+Content-Type: application/json
+
+{
+    "org_uuid": "{{alice_org_uuid_from_login}}",
+    "region": "cn-north-1"
+}

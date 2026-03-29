@@ -37,28 +37,40 @@ export default withMermaid(
           scanStartPath: 'guide',
           resolvePath: '/guide/',
           useTitleFromFileHeading: true,
-          includeRootIndexFile: true
+          includeRootIndexFile: true,
+          collapsed: true,
+          useFolderTitleFromIndexFile: true,
+          useFolderLinkFromIndexFile: true
         },
         {
           documentRootPath: '.',
           scanStartPath: 'api',
           resolvePath: '/api/',
           useTitleFromFileHeading: true,
-          includeRootIndexFile: true
+          includeRootIndexFile: true,
+          collapsed: true,
+          useFolderTitleFromIndexFile: true,
+          useFolderLinkFromIndexFile: true
         },
         {
           documentRootPath: '.',
           scanStartPath: 'architecture',
           resolvePath: '/architecture/',
           useTitleFromFileHeading: true,
-          includeRootIndexFile: true
+          includeRootIndexFile: true,
+          collapsed: true,
+          useFolderTitleFromIndexFile: true,
+          useFolderLinkFromIndexFile: true
         },
         {
           documentRootPath: '.',
           scanStartPath: 'deployment',
           resolvePath: '/deployment/',
           useTitleFromFileHeading: true,
-          includeRootIndexFile: true
+          includeRootIndexFile: true,
+          collapsed: true,
+          useFolderTitleFromIndexFile: true,
+          useFolderLinkFromIndexFile: true
         }
       ]),
 
