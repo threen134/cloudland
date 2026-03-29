@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { useRouter } from 'vue-router'
 import {
     Globe2, Plus, Search, RefreshCw, Settings2, Trash2, X,
     CheckCircle2, AlertCircle, KeyRound, Copy, Check, Loader2, ExternalLink, Wrench
@@ -10,6 +11,7 @@ import { useToast } from '../../composables/useToast'
 
 const { t } = useI18n()
 const toast = useToast()
+const router = useRouter()
 
 const regions = ref<RegionPublic[]>([])
 const isLoading = ref(false)
@@ -25,6 +27,8 @@ const createForm = ref<CreateRegionPayload>({
     internal_secret: 'auto-generate',
     description: ''
 })
+const endpointHost = ref('')
+const endpointPort = ref('8255')
 const createdSecret = ref<string | null>(null)
 
 // Edit modal
@@ -71,15 +75,56 @@ const fetchRegions = async () => {
     }
 }
 
+const splitEndpoint = (endpoint: string) => {
+    if (!endpoint) return { host: '', port: '8255' }
+    try {
+        if (endpoint.startsWith('http://') || endpoint.startsWith('https://')) {
+            const url = new URL(endpoint)
+            return {
+                host: `${url.protocol}//${url.hostname}`,
+                port: url.port || '8255'
+            }
+        }
+    } catch (e) {}
+    return { host: endpoint, port: '8255' }
+}
+
+const ensurePort = (endpoint: string) => {
+    // keeping this as safety fallback but will use the combined host+port primarily
+    if (!endpoint) return endpoint
+    try {
+        if (endpoint.startsWith('http://') || endpoint.startsWith('https://')) {
+            const url = new URL(endpoint)
+            if (!url.port) {
+                url.port = '8255'
+                const result = url.toString()
+                return endpoint.endsWith('/') ? result : result.replace(/\/$/, '')
+            }
+        }
+    } catch (e) {}
+    return endpoint
+}
+
 // Create
 const openCreateModal = () => {
     createForm.value = { name: '', display_name: '', internal_endpoint: '', internal_secret: 'auto-generate', description: '' }
+    endpointHost.value = ''
+    endpointPort.value = '8255'
     createdSecret.value = null
     showCreateModal.value = true
 }
 
 const handleCreate = async () => {
-    if (!createForm.value.name || !createForm.value.internal_endpoint) return
+    if (!createForm.value.name || !endpointHost.value) return
+    
+    let host = endpointHost.value.trim()
+    if (!host.startsWith('http://') && !host.startsWith('https://')) {
+        host = 'http://' + host
+    }
+
+    const port = endpointPort.value.trim() || '8255'
+    createForm.value.internal_endpoint = `${host}:${port}`.replace(/:+$/, '')
+
     creating.value = true
     try {
         const response = await regionsApi.createRegion(createForm.value)
@@ -87,8 +132,13 @@ const handleCreate = async () => {
         createdSecret.value = created.internal_secret
         toast.success(t('dashboard.regionActions.createdSuccess'))
         await fetchRegions()
+        if (!createdSecret.value) {
+            router.go(0)
+        }
     } catch (err: any) {
-        const msg = err.response?.data?.detail || err.response?.data?.message || 'Create failed'
+        let msg = err.response?.data?.detail
+        if (Array.isArray(msg)) msg = msg[0]?.msg
+        msg = msg || err.response?.data?.message || 'Create failed'
         toast.error(msg)
     } finally {
         creating.value = false
@@ -101,6 +151,11 @@ const openEditModal = async (region: RegionPublic) => {
         const response = await regionsApi.getRegion(region.uuid)
         const detail = response.data as RegionAdmin
         editingRegion.value = detail
+        
+        const { host, port } = splitEndpoint(detail.internal_endpoint)
+        endpointHost.value = host
+        endpointPort.value = port
+
         editForm.value = {
             display_name: detail.display_name || '',
             internal_endpoint: detail.internal_endpoint,
@@ -115,12 +170,23 @@ const openEditModal = async (region: RegionPublic) => {
 
 const handleEdit = async () => {
     if (!editingRegion.value) return
+
+    let host = endpointHost.value.trim()
+    if (host) {
+        if (!host.startsWith('http://') && !host.startsWith('https://')) {
+            host = 'http://' + host
+        }
+        const port = endpointPort.value.trim() || '8255'
+        editForm.value.internal_endpoint = `${host}:${port}`.replace(/:+$/, '')
+    }
+
     editing.value = true
     try {
         await regionsApi.updateRegion(editingRegion.value.uuid, editForm.value)
         showEditModal.value = false
         toast.success(t('messages.success'))
         await fetchRegions()
+        router.go(0)
     } catch (err: any) {
         toast.error(err.response?.data?.detail || 'Update failed')
     } finally {
@@ -148,6 +214,11 @@ const handleDelete = async () => {
     } finally {
         deleting.value = false
     }
+}
+
+const closeAndReload = () => {
+    showCreateModal.value = false
+    router.go(0)
 }
 
 // Rotate secret
@@ -281,7 +352,7 @@ onMounted(fetchRegions)
                 <div class="modal-content card" style="max-width: 560px;">
                     <div class="modal-header">
                         <h3>{{ t('dashboard.regionActions.createTitle') }}</h3>
-                        <button class="btn btn-ghost btn-icon" @click="showCreateModal = false"><X :size="18" /></button>
+                        <button class="btn btn-ghost btn-icon" @click="createdSecret ? closeAndReload() : (showCreateModal = false)"><X :size="18" /></button>
                     </div>
 
                     <!-- Show secret after creation -->
@@ -315,7 +386,12 @@ onMounted(fetchRegions)
                             </div>
                             <div class="form-group">
                                 <label class="form-label">{{ t('dashboard.regionActions.internalEndpoint') }} *</label>
-                                <input type="text" v-model="createForm.internal_endpoint" class="form-input" :placeholder="t('dashboard.forms.placeholder.endpointExample')" />
+                                <div style="display: flex; gap: 8px;">
+                                    <input type="text" v-model="endpointHost" class="form-input" style="flex: 1;" :placeholder="t('dashboard.forms.placeholder.endpointExample')" />
+                                    <div style="width: 100px;">
+                                        <input type="text" v-model="endpointPort" class="form-input" placeholder="8255" />
+                                    </div>
+                                </div>
                                 <span class="form-hint">{{ t('dashboard.regionActions.internalEndpointHint') }}</span>
                             </div>
                             <div class="form-group">
@@ -331,10 +407,10 @@ onMounted(fetchRegions)
                     </div>
 
                     <div class="modal-footer">
-                        <button v-if="createdSecret" class="btn btn-primary" @click="showCreateModal = false">{{ t('actions.close') }}</button>
+                        <button v-if="createdSecret" class="btn btn-primary" @click="closeAndReload">{{ t('actions.close') }}</button>
                         <template v-else>
                             <button class="btn btn-secondary" @click="showCreateModal = false">{{ t('actions.cancel') }}</button>
-                            <button class="btn btn-primary" @click="handleCreate" :disabled="creating || !createForm.name || !createForm.internal_endpoint">
+                            <button class="btn btn-primary" @click="handleCreate" :disabled="creating || !createForm.name || !endpointHost">
                                 <Loader2 v-if="creating" :size="14" class="spinning" />
                                 {{ creating ? t('messages.creating') : t('actions.create') }}
                             </button>
@@ -359,8 +435,13 @@ onMounted(fetchRegions)
                                 <input type="text" v-model="editForm.display_name" class="form-input" />
                             </div>
                             <div class="form-group">
-                                <label class="form-label">{{ t('dashboard.regionActions.internalEndpoint') }}</label>
-                                <input type="text" v-model="editForm.internal_endpoint" class="form-input" />
+                                <label class="form-label">{{ t('dashboard.regionActions.internalEndpoint') }} *</label>
+                                <div style="display: flex; gap: 8px;">
+                                    <input type="text" v-model="endpointHost" class="form-input" style="flex: 1;" />
+                                    <div style="width: 100px;">
+                                        <input type="text" v-model="endpointPort" class="form-input" placeholder="8255" />
+                                    </div>
+                                </div>
                             </div>
                             <div class="form-group">
                                 <label class="form-label">{{ t('dashboard.table.description') }}</label>

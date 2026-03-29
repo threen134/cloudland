@@ -93,12 +93,14 @@ docker compose logs -f
 
 | 字段 | 说明 | 示例 |
 | :--- | :--- | :--- |
-| Region Name | 区域唯一标识 | `default` |
-| Display Name | 区域显示名称 | `默认区域` |
-| Internal Endpoint | clapi 服务地址（`https://<INTERNAL_IP>:8255`） | `https://192.168.1.100:8255` |
-| Internal Secret | 必须与 `.env` 中的 `CPGATEWAY_SECRET_KEY` 一致 | `your_secret_key_change_me` |
+| **Region Name** | 区域唯一标识 | `default` |
+| **Display Name** | 区域显示名称 | `默认区域` |
+| **API 地址** | 请输入 IP 或域名 (协议可选，默认 http) | `192.168.1.100` |
+| **端口** | clapi 服务端口 (默认 8255) | `8255` |
+| **Internal Secret**| 必须与 `.env` 中的 `CPGATEWAY_SECRET_KEY` 一致 | `your_secret_key_change_me` |
 
-4. 创建成功后，系统会显示生成的 Secret，请妥善保管。
+4. **关键交互**：对于单节点 (All-in-One) 部署，**请勿使用 "auto-generate"**。请务必手动输入您在步骤 1 中设置的 `CPGATEWAY_SECRET_KEY`，以确保中央控面能即刻通过认证并连通该区域。
+5. 创建成功后，该区域将进入“心跳探测”状态，待探测成功后即变为 **Available (可用)**。
 
 ### 方式二：通过 REST API
 

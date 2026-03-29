@@ -996,7 +996,7 @@ export default {
             nameHint: '仅限小写字母、数字和连字符（至少2个字符）',
             displayName: '显示名称',
             internalEndpoint: '内部端点',
-            internalEndpointHint: '该区域 Cloudland 后端的内部 API 地址',
+            internalEndpointHint: '后端 API 地址，若不指定端口则默认使用 8255',
             internalSecret: '内部密钥',
             internalSecretHint: '保留 "auto-generate" 将自动生成随机密钥',
             available: '可用',
@@ -1013,6 +1013,7 @@ export default {
             offline: '离线',
             registerFirstRegion: '注册第一个可用区',
             noRegions: '系统中尚未注册任何可用区。',
+            endpointError: '内部端点必须以 http:// 或 https:// 开头',
         },
         zoneActions: {
             createTitle: '创建可用区',

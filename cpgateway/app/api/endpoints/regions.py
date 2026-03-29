@@ -61,7 +61,7 @@ async def create_region(
         display_name=region_in.display_name or region_in.name,
         internal_endpoint=region_in.internal_endpoint.strip(),
         internal_secret=secret,
-        is_available=True,
+        is_available=False,
         description=region_in.description,
     )
     db.add(region)

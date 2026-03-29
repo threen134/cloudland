@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from typing import Optional, List
 from datetime import datetime
 
@@ -13,6 +13,13 @@ class RegionCreate(BaseModel):
     internal_secret: str = "auto-generate"
     description: Optional[str] = None
 
+    @field_validator("internal_endpoint")
+    @classmethod
+    def validate_endpoint(cls, v: str) -> str:
+        if not (v.startswith("http://") or v.startswith("https://")):
+            raise ValueError("Internal endpoint must start with http:// or https://")
+        return v
+
 
 class RegionUpdate(BaseModel):
     """更新 Region"""
@@ -21,6 +28,13 @@ class RegionUpdate(BaseModel):
     is_available: Optional[bool] = None
     maintenance_mode: Optional[bool] = None
     description: Optional[str] = None
+
+    @field_validator("internal_endpoint")
+    @classmethod
+    def validate_endpoint(cls, v: Optional[str]) -> Optional[str]:
+        if v and not (v.startswith("http://") or v.startswith("https://")):
+            raise ValueError("Internal endpoint must start with http:// or https://")
+        return v
 
 
 class RegionPublic(BaseModel):

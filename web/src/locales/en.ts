@@ -997,7 +997,7 @@ export default {
             nameHint: 'Lowercase letters, numbers, and hyphens only (min 2 chars)',
             displayName: 'Display Name',
             internalEndpoint: 'Internal Endpoint',
-            internalEndpointHint: 'The internal API URL of the Cloudland backend for this region',
+            internalEndpointHint: 'Backend API URL, defaults to port 8255 if not specified',
             internalSecret: 'Internal Secret',
             internalSecretHint: 'Leave as "auto-generate" to create a random secret',
             available: 'Available',
@@ -1014,6 +1014,7 @@ export default {
             offline: 'Offline',
             registerFirstRegion: 'Register First Region',
             noRegions: 'No regions have been registered in the system yet.',
+            endpointError: 'Internal endpoint must start with http:// or https://',
         },
         zoneActions: {
             createTitle: 'Create Zone',
