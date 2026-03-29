@@ -477,10 +477,18 @@ onMounted(fetchRegions)
                     </div>
                     <div class="modal-body">
                         <p>{{ t('dashboard.regionActions.deleteConfirm', { name: deletingRegion?.display_name || deletingRegion?.name }) }}</p>
+                        <div class="delete-warning-box">
+                            <i class="fas fa-exclamation-triangle"></i>
+                            <p>{{ t('dashboard.regionActions.deleteWarning') }}</p>
+                        </div>
                     </div>
                     <div class="modal-footer">
                         <button class="btn btn-secondary" @click="showDeleteModal = false">{{ t('actions.cancel') }}</button>
-                        <button class="btn btn-danger" @click="handleDelete" :disabled="deleting">
+                        <button 
+                            class="btn btn-danger" 
+                            @click="handleDelete" 
+                            :disabled="deleting || !deletingRegion?.maintenance_mode"
+                        >
                             <Loader2 v-if="deleting" :size="14" class="spinning" />
                             {{ deleting ? t('messages.deleting') : t('actions.delete') }}
                         </button>
@@ -695,4 +703,27 @@ onMounted(fetchRegions)
 
 @keyframes spin { to { transform: rotate(360deg); } }
 .spinning { animation: spin 1s linear infinite; }
+
+.delete-warning-box {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-top: 1rem;
+    padding: 12px 16px;
+    background: rgba(239, 68, 68, 0.05);
+    border: 1px solid rgba(239, 68, 68, 0.2);
+    border-radius: var(--radius-md);
+    color: #ef4444;
+}
+
+.delete-warning-box i {
+    font-size: 1.125rem;
+}
+
+.delete-warning-box p {
+    margin: 0;
+    font-size: 0.875rem;
+    line-height: 1.4;
+    font-weight: 500;
+}
 </style>

@@ -158,7 +158,17 @@ async def delete_region(
     """
     region = await _get_region_or_404(db, region_uuid)
 
-    # 1. 安全保护：检查整个 Region 的资源消费总量 (Check for any active resources)
+    # 1. 安全保护：必须处于维护模式才能删除 (Must be in maintenance mode)
+    if not region.maintenance_mode:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                f"Cannot delete region '{region.name}': "
+                "The region must be put into maintenance mode first."
+            )
+        )
+
+    # 2. 安全保护：检查整个 Region 的资源消费总量 (Check for any active resources)
     # 只有当该 Region 在所有 Org 下的已用资源均为 0 时，才允许删除
     usage_result = await db.execute(
         select(
@@ -179,11 +189,11 @@ async def delete_region(
             )
         )
 
-    # 2. 清理网关侧的关联记录 (Clean up CPGateway side records)
+    # 3. 清理网关侧的关联记录 (Clean up CPGateway side records)
     await db.execute(delete(OrgResourceQuota).where(OrgResourceQuota.region_id == region.id))
     await db.execute(delete(OrgResourceConsumption).where(OrgResourceConsumption.region_id == region.id))
 
-    # 3. 删除 Region 本身
+    # 4. 删除 Region 本身
     await db.delete(region)
     await db.commit()
     logger.info(f"Region '{region.name}' deleted by {current_user.username}")

@@ -992,6 +992,7 @@ export default {
             editTitle: '编辑区域',
             deleteTitle: '删除区域',
             deleteConfirm: '确定要删除区域 "{name}" 吗？这将移除所有关联的配额记录，且无法撤销。',
+            deleteWarning: '注意：只有处于“维护模式”且没有任何活跃资源（虚机/云硬盘等）的区域才能被删除。',
             name: '区域名称',
             nameHint: '仅限小写字母、数字和连字符（至少2个字符）',
             displayName: '显示名称',

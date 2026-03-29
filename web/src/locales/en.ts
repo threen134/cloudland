@@ -993,6 +993,7 @@ export default {
             editTitle: 'Edit Region',
             deleteTitle: 'Delete Region',
             deleteConfirm: 'Are you sure you want to delete region "{name}"? This will remove all associated quota records and cannot be undone.',
+            deleteWarning: 'Warning: Only regions in "Maintenance Mode" with no active resources (VMs/Volumes/etc.) can be deleted.',
             name: 'Region Name',
             nameHint: 'Lowercase letters, numbers, and hyphens only (min 2 chars)',
             displayName: 'Display Name',
