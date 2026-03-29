@@ -28,6 +28,7 @@ RUN apk add --no-cache git
 
 # 复制 docs 源码并编译
 COPY docs/ ./docs/
+RUN mkdir -p docs/.vitepress/public && cp -r docs/public/* docs/.vitepress/public/
 RUN cd docs && npm install && npm run docs:build
 
 # ---- Stage 3: Nginx + 静态文件 ----
