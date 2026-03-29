@@ -1,0 +1,29 @@
+# =============================================================================
+# CloudLand Documentation (VitePress)
+# 构建: docker build -f dockerfiles/Dockerfile.docs -t cloudland-docs ../../
+# =============================================================================
+
+# ---- Stage 1: Build Docs ----
+FROM node:20-alpine AS builder
+
+WORKDIR /build
+
+# 安装依赖
+COPY docs/package*.json ./
+RUN npm install
+
+# 复制源码并构建
+COPY docs/ ./
+RUN npm run docs:build
+
+# ---- Stage 2: Serve Docs ----
+FROM nginx:1.25-alpine
+
+WORKDIR /usr/share/nginx/html
+
+# 复制 VitePress 构建产物
+COPY --from=builder /build/.vitepress/dist ./
+
+EXPOSE 80
+
+CMD ["nginx", "-g", "daemon off;"]
