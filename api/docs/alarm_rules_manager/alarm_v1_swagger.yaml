@@ -568,6 +568,8 @@ definitions:
         $ref: '#/definitions/common.BaseReference'
       target_interface:
         $ref: '#/definitions/apis.TargetInterface'
+      type:
+        type: string
       updated_at:
         type: string
       vlan:
@@ -613,6 +615,8 @@ definitions:
       ip:
         type: string
       network_device:
+        type: string
+      private_vlan_device:
         type: string
       virt_type:
         type: string
@@ -730,18 +734,14 @@ definitions:
         items:
           type: string
         type: array
+      public:
+        type: boolean
       user:
         maxLength: 32
         minLength: 2
         type: string
       uuid:
         type: string
-    required:
-    - name
-    - os_code
-    - os_family
-    - os_version
-    - user
     type: object
   apis.ImagePayload:
     properties:
@@ -811,6 +811,8 @@ definitions:
         type: string
       owner:
         type: string
+      public:
+        type: boolean
       size:
         type: integer
       status:
@@ -1037,6 +1039,8 @@ definitions:
       passwd_login:
         type: boolean
       reason:
+        type: string
+      root_passwd:
         type: string
       status:
         type: string
@@ -1274,15 +1278,6 @@ definitions:
       total:
         type: integer
     type: object
-  apis.KeyPatchPayload:
-    properties:
-      name:
-        maxLength: 32
-        minLength: 2
-        type: string
-    required:
-    - name
-    type: object
   apis.KeyPayload:
     properties:
       name:
@@ -1410,6 +1405,9 @@ definitions:
         - enable
         - disable
         type: string
+      description:
+        maxLength: 255
+        type: string
       name:
         maxLength: 32
         minLength: 2
@@ -1419,6 +1417,9 @@ definitions:
     type: object
   apis.LoadBalancerPayload:
     properties:
+      description:
+        maxLength: 255
+        type: string
       name:
         maxLength: 32
         minLength: 2
@@ -1436,6 +1437,8 @@ definitions:
   apis.LoadBalancerResponse:
     properties:
       created_at:
+        type: string
+      description:
         type: string
       floating_ips:
         items:
@@ -1563,6 +1566,34 @@ definitions:
       total:
         type: integer
     type: object
+  apis.SecrulePatchPayload:
+    properties:
+      direction:
+        enum:
+        - ingress
+        - egress
+        type: string
+      name:
+        maxLength: 32
+        minLength: 2
+        type: string
+      port_max:
+        maximum: 65535
+        minimum: 1
+        type: integer
+      port_min:
+        maximum: 65535
+        minimum: 1
+        type: integer
+      protocol:
+        enum:
+        - tcp
+        - udp
+        - icmp
+        type: string
+      remote_cidr:
+        type: string
+    type: object
   apis.SecruleResponse:
     properties:
       created_at:
@@ -1605,6 +1636,9 @@ definitions:
     type: object
   apis.SecurityGroupPatchPayload:
     properties:
+      description:
+        maxLength: 256
+        type: string
       is_default:
         type: boolean
       name:
@@ -1616,6 +1650,9 @@ definitions:
     type: object
   apis.SecurityGroupPayload:
     properties:
+      description:
+        maxLength: 256
+        type: string
       is_default:
         type: boolean
       name:
@@ -1631,6 +1668,8 @@ definitions:
     properties:
       created_at:
         type: string
+      description:
+        type: string
       id:
         type: string
       is_default:
@@ -1639,6 +1678,10 @@ definitions:
         type: string
       owner:
         type: string
+      security_rules:
+        items:
+          $ref: '#/definitions/apis.SecruleResponse'
+        type: array
       target_interfaces:
         items:
           $ref: '#/definitions/apis.TargetInterface'
@@ -1744,6 +1787,8 @@ definitions:
     type: object
   apis.SubnetPatchPayload:
     properties:
+      dhcp:
+        type: boolean
       group:
         $ref: '#/definitions/common.BaseReference'
       name:
@@ -1760,6 +1805,7 @@ definitions:
         enum:
         - public
         - internal
+        - private
         - site
     type: object
   apis.SubnetPayload:
@@ -1808,6 +1854,8 @@ definitions:
         type: integer
       created_at:
         type: string
+      dhcp:
+        type: boolean
       dns:
         type: string
       end:
@@ -1911,6 +1959,9 @@ definitions:
     type: object
   apis.VPCPatchPayload:
     properties:
+      description:
+        maxLength: 256
+        type: string
       name:
         maxLength: 32
         minLength: 2
@@ -1920,6 +1971,9 @@ definitions:
     type: object
   apis.VPCPayload:
     properties:
+      description:
+        maxLength: 256
+        type: string
       name:
         maxLength: 32
         minLength: 2
@@ -1930,6 +1984,8 @@ definitions:
   apis.VPCResponse:
     properties:
       created_at:
+        type: string
+      description:
         type: string
       id:
         type: string
@@ -2242,12 +2298,14 @@ definitions:
     enum:
     - public
     - internal
+    - private
     - site
     - vrrp
     type: string
     x-enum-varnames:
     - Public
     - Internal
+    - Private
     - Site
     - Vrrp
   main.RuleFileRequest:
@@ -4660,35 +4718,6 @@ paths:
       summary: get a key
       tags:
       - Key
-    patch:
-      consumes:
-      - application/json
-      description: patch a key
-      parameters:
-      - description: Key patch payload
-        in: body
-        name: message
-        required: true
-        schema:
-          $ref: '#/definitions/apis.KeyPatchPayload'
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/apis.KeyResponse'
-        "400":
-          description: Bad request
-          schema:
-            $ref: '#/definitions/common.APIError'
-        "401":
-          description: Not authorized
-          schema:
-            $ref: '#/definitions/common.APIError'
-      summary: patch a key
-      tags:
-      - Key
   /load_balancers:
     get:
       consumes:
@@ -6604,6 +6633,35 @@ paths:
           schema:
             $ref: '#/definitions/common.APIError'
       summary: get a secrule
+      tags:
+      - Security Group
+    patch:
+      consumes:
+      - application/json
+      description: patch a secrule
+      parameters:
+      - description: Secrule patch payload
+        in: body
+        name: message
+        required: true
+        schema:
+          $ref: '#/definitions/apis.SecrulePatchPayload'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.SecruleResponse'
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: patch a secrule
       tags:
       - Security Group
   /subnets:

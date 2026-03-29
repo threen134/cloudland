@@ -199,16 +199,23 @@ services:
     container_name: cloudland-prometheus
     restart: unless-stopped
     user: "nobody"
+    environment:
+      CLAPI_SD_ENDPOINT: "${CLAPI_SD_ENDPOINT:-http://clapi:8255}"
     volumes:
-      - ./config/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./config/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml.tmpl:ro
       - ./volumes/prometheus/general_rules:/etc/prometheus/general_rules
       - ./volumes/prometheus/rules_enabled:/etc/prometheus/rules_enabled
       - prometheus_data:/prometheus
+    entrypoint: ["/bin/sh", "-c"]
     command:
-      - "--config.file=/etc/prometheus/prometheus.yml"
-      - "--storage.tsdb.retention.time=720h"
-      - "--storage.tsdb.path=/prometheus"
-      - "--web.enable-lifecycle"
+      - |
+        sed "s|__CLAPI_SD_ENDPOINT__|$$CLAPI_SD_ENDPOINT|g" \
+          /etc/prometheus/prometheus.yml.tmpl > /tmp/prometheus.yml &&
+        exec /bin/prometheus \
+          --config.file=/tmp/prometheus.yml \
+          --storage.tsdb.retention.time=720h \
+          --storage.tsdb.path=/prometheus \
+          --web.enable-lifecycle
     ports:
       - "9090:9090"
     networks:

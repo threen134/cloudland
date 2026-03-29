@@ -63,6 +63,9 @@ func Register() (r *gin.Engine) {
 	r.GET("/api/v1/version", versionAPI.Get)
 	r.POST("/api/v1/alerts/process", notificationAPI.ProcessAlertWebhookV2)
 	r.POST("/api/v1/alerts/resource-adjustment", adjustAPI.ProcessResourceAdjustmentWebhook)
+
+	// Prometheus http_sd_configs endpoint (无需认证，供 Prometheus 自动发现)
+	r.GET("/api/v1/prometheus/sd/:exporter", prometheusSDAPI.GetTargets)
 	authGroup := r.Group("").Use(Authorize())
 	{
 		//authGroup.GET("/api/v1/version", versionAPI.Get)

@@ -2,7 +2,7 @@ from fastapi import FastAPI, Request
 from app.core.config import settings
 from app.core.logging_config import setup_logging, logger
 from app.api.endpoints import auth, users, resources, regions, orgs, notification_channels, alarm_summary
-from app.api.endpoints.cloudland import compute, network, authorization, zone, administration, alarm
+from app.api.endpoints.cloudland import compute, network, authorization, zone, administration, alarm, monitor
 from app.core.database import engine, Base, AsyncSessionLocal
 import time
 import asyncio
@@ -149,6 +149,7 @@ app.include_router(authorization.router, prefix=f"{settings.API_V1_STR}", tags=[
 app.include_router(zone.router, prefix=f"{settings.API_V1_STR}", tags=["Zone"])
 app.include_router(administration.router, prefix=f"{settings.API_V1_STR}", tags=["Administration"])
 app.include_router(alarm.router, prefix=f"{settings.API_V1_STR}", tags=["Alarm"])
+app.include_router(monitor.router, prefix=f"{settings.API_V1_STR}", tags=["Monitoring"])
 
 
 @app.get("/")

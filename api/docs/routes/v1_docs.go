@@ -3489,50 +3489,6 @@ const docTemplatev1 = `{
                         }
                     }
                 }
-            },
-            "patch": {
-                "description": "patch a key",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Key"
-                ],
-                "summary": "patch a key",
-                "parameters": [
-                    {
-                        "description": "Key patch payload",
-                        "name": "message",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/apis.KeyPatchPayload"
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/apis.KeyResponse"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad request",
-                        "schema": {
-                            "$ref": "#/definitions/common.APIError"
-                        }
-                    },
-                    "401": {
-                        "description": "Not authorized",
-                        "schema": {
-                            "$ref": "#/definitions/common.APIError"
-                        }
-                    }
-                }
             }
         },
         "/load_balancers": {
@@ -6353,6 +6309,50 @@ const docTemplatev1 = `{
                         }
                     }
                 }
+            },
+            "patch": {
+                "description": "patch a secrule",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Security Group"
+                ],
+                "summary": "patch a secrule",
+                "parameters": [
+                    {
+                        "description": "Secrule patch payload",
+                        "name": "message",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/apis.SecrulePatchPayload"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apis.SecruleResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
             }
         },
         "/subnets": {
@@ -8164,6 +8164,9 @@ const docTemplatev1 = `{
                 "target_interface": {
                     "$ref": "#/definitions/apis.TargetInterface"
                 },
+                "type": {
+                    "type": "string"
+                },
                 "updated_at": {
                     "type": "string"
                 },
@@ -8235,6 +8238,9 @@ const docTemplatev1 = `{
                     "type": "string"
                 },
                 "network_device": {
+                    "type": "string"
+                },
+                "private_vlan_device": {
                     "type": "string"
                 },
                 "virt_type": {
@@ -8378,13 +8384,6 @@ const docTemplatev1 = `{
         },
         "apis.ImagePatchPayload": {
             "type": "object",
-            "required": [
-                "name",
-                "os_code",
-                "os_family",
-                "os_version",
-                "user"
-            ],
             "properties": {
                 "name": {
                     "type": "string",
@@ -8412,6 +8411,9 @@ const docTemplatev1 = `{
                     "items": {
                         "type": "string"
                     }
+                },
+                "public": {
+                    "type": "boolean"
                 },
                 "user": {
                     "type": "string",
@@ -8517,6 +8519,9 @@ const docTemplatev1 = `{
                 },
                 "owner": {
                     "type": "string"
+                },
+                "public": {
+                    "type": "boolean"
                 },
                 "size": {
                     "type": "integer"
@@ -8844,6 +8849,9 @@ const docTemplatev1 = `{
                     "type": "boolean"
                 },
                 "reason": {
+                    "type": "string"
+                },
+                "root_passwd": {
                     "type": "string"
                 },
                 "status": {
@@ -9187,19 +9195,6 @@ const docTemplatev1 = `{
                 }
             }
         },
-        "apis.KeyPatchPayload": {
-            "type": "object",
-            "required": [
-                "name"
-            ],
-            "properties": {
-                "name": {
-                    "type": "string",
-                    "maxLength": 32,
-                    "minLength": 2
-                }
-            }
-        },
         "apis.KeyPayload": {
             "type": "object",
             "required": [
@@ -9389,6 +9384,10 @@ const docTemplatev1 = `{
                         "disable"
                     ]
                 },
+                "description": {
+                    "type": "string",
+                    "maxLength": 255
+                },
                 "name": {
                     "type": "string",
                     "maxLength": 32,
@@ -9403,6 +9402,10 @@ const docTemplatev1 = `{
                 "vpc"
             ],
             "properties": {
+                "description": {
+                    "type": "string",
+                    "maxLength": 255
+                },
                 "name": {
                     "type": "string",
                     "maxLength": 32,
@@ -9422,6 +9425,9 @@ const docTemplatev1 = `{
             "type": "object",
             "properties": {
                 "created_at": {
+                    "type": "string"
+                },
+                "description": {
                     "type": "string"
                 },
                 "floating_ips": {
@@ -9612,6 +9618,44 @@ const docTemplatev1 = `{
                 }
             }
         },
+        "apis.SecrulePatchPayload": {
+            "type": "object",
+            "properties": {
+                "direction": {
+                    "type": "string",
+                    "enum": [
+                        "ingress",
+                        "egress"
+                    ]
+                },
+                "name": {
+                    "type": "string",
+                    "maxLength": 32,
+                    "minLength": 2
+                },
+                "port_max": {
+                    "type": "integer",
+                    "maximum": 65535,
+                    "minimum": 1
+                },
+                "port_min": {
+                    "type": "integer",
+                    "maximum": 65535,
+                    "minimum": 1
+                },
+                "protocol": {
+                    "type": "string",
+                    "enum": [
+                        "tcp",
+                        "udp",
+                        "icmp"
+                    ]
+                },
+                "remote_cidr": {
+                    "type": "string"
+                }
+            }
+        },
         "apis.SecruleResponse": {
             "type": "object",
             "properties": {
@@ -9679,6 +9723,10 @@ const docTemplatev1 = `{
                 "name"
             ],
             "properties": {
+                "description": {
+                    "type": "string",
+                    "maxLength": 256
+                },
                 "is_default": {
                     "type": "boolean"
                 },
@@ -9695,6 +9743,10 @@ const docTemplatev1 = `{
                 "name"
             ],
             "properties": {
+                "description": {
+                    "type": "string",
+                    "maxLength": 256
+                },
                 "is_default": {
                     "type": "boolean"
                 },
@@ -9714,6 +9766,9 @@ const docTemplatev1 = `{
                 "created_at": {
                     "type": "string"
                 },
+                "description": {
+                    "type": "string"
+                },
                 "id": {
                     "type": "string"
                 },
@@ -9725,6 +9780,12 @@ const docTemplatev1 = `{
                 },
                 "owner": {
                     "type": "string"
+                },
+                "security_rules": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/apis.SecruleResponse"
+                    }
                 },
                 "target_interfaces": {
                     "type": "array",
@@ -9881,6 +9942,9 @@ const docTemplatev1 = `{
         "apis.SubnetPatchPayload": {
             "type": "object",
             "properties": {
+                "dhcp": {
+                    "type": "boolean"
+                },
                 "group": {
                     "$ref": "#/definitions/common.BaseReference"
                 },
@@ -9898,6 +9962,7 @@ const docTemplatev1 = `{
                     "enum": [
                         "public",
                         "internal",
+                        "private",
                         "site"
                     ],
                     "allOf": [
@@ -9973,6 +10038,9 @@ const docTemplatev1 = `{
                 },
                 "created_at": {
                     "type": "string"
+                },
+                "dhcp": {
+                    "type": "boolean"
                 },
                 "dns": {
                     "type": "string"
@@ -10133,6 +10201,10 @@ const docTemplatev1 = `{
                 "name"
             ],
             "properties": {
+                "description": {
+                    "type": "string",
+                    "maxLength": 256
+                },
                 "name": {
                     "type": "string",
                     "maxLength": 32,
@@ -10146,6 +10218,10 @@ const docTemplatev1 = `{
                 "name"
             ],
             "properties": {
+                "description": {
+                    "type": "string",
+                    "maxLength": 256
+                },
                 "name": {
                     "type": "string",
                     "maxLength": 32,
@@ -10157,6 +10233,9 @@ const docTemplatev1 = `{
             "type": "object",
             "properties": {
                 "created_at": {
+                    "type": "string"
+                },
+                "description": {
                     "type": "string"
                 },
                 "id": {
@@ -10616,12 +10695,14 @@ const docTemplatev1 = `{
             "enum": [
                 "public",
                 "internal",
+                "private",
                 "site",
                 "vrrp"
             ],
             "x-enum-varnames": [
                 "Public",
                 "Internal",
+                "Private",
                 "Site",
                 "Vrrp"
             ]
