@@ -14,6 +14,9 @@ RUN apk add --no-cache git
 # 复制 docs 源码
 COPY docs/ ./docs/
 
+# 调试: 验证文件是否存在
+RUN ls -la docs/public/api-v1.json
+
 # 编译文档
 RUN cd docs && npm install && npm run docs:build
 
