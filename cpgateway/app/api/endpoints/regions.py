@@ -2,6 +2,7 @@ import re
 import secrets
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import func, delete
 from sqlalchemy.future import select
 from typing import List
 
@@ -150,9 +151,39 @@ async def delete_region(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_superuser),
 ):
-    """删除 Region（仅 SystemAdmin）"""
+    """
+    删除 Region (Delete Region)
+    
+    安全保护：如果该 Region 下还有活跃的云服务器、云硬盘等资源，为了避免资源孤儿，必须先清空资源。
+    """
     region = await _get_region_or_404(db, region_uuid)
 
+    # 1. 安全保护：检查整个 Region 的资源消费总量 (Check for any active resources)
+    # 只有当该 Region 在所有 Org 下的已用资源均为 0 时，才允许删除
+    usage_result = await db.execute(
+        select(
+            func.sum(OrgResourceConsumption.cpu_cores),
+            func.sum(OrgResourceConsumption.ram_gb),
+            func.sum(OrgResourceConsumption.disk_gb),
+            func.sum(OrgResourceConsumption.public_ips)
+        ).where(OrgResourceConsumption.region_id == region.id)
+    )
+    row = usage_result.one()
+    if any(float(v or 0) > 0 for v in row):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                f"Cannot delete region '{region.name}': "
+                "There are still active resources (VMs, volumes, or floating IPs). "
+                "Please delete all resources in this region first."
+            )
+        )
+
+    # 2. 清理网关侧的关联记录 (Clean up CPGateway side records)
+    await db.execute(delete(OrgResourceQuota).where(OrgResourceQuota.region_id == region.id))
+    await db.execute(delete(OrgResourceConsumption).where(OrgResourceConsumption.region_id == region.id))
+
+    # 3. 删除 Region 本身
     await db.delete(region)
     await db.commit()
     logger.info(f"Region '{region.name}' deleted by {current_user.username}")
