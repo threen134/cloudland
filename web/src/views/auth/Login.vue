@@ -182,7 +182,7 @@ const handleSubmit = async () => {
         <a href="#">{{ t('privateCloud.footer.security') }}</a>
         <a href="#">{{ t('privateCloud.footer.terms') }}</a>
         <a href="#">{{ t('privateCloud.footer.privacy') }}</a>
-        <a href="/swagger/api/v1/index.html" target="_blank" rel="noopener">{{ t('nav.documentation') }}</a>
+        <router-link to="/api-reference">{{ t('nav.documentation') }}</router-link>
       </div>
     </footer>
   </div>

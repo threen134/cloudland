@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <title>CloudLand API Reference</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="icon" type="image/x-icon" href="/favicon.ico">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    body { margin: 0; padding: 0; font-family: 'Inter', sans-serif; }
+    .scalar-api-reference { 
+        --scalar-color-1: #1a2332;
+        --scalar-color-2: #475569;
+        --scalar-color-3: #64748b;
+        --scalar-color-accent: #0ea5e9;
+        --scalar-font: 'Inter', sans-serif;
+        --scalar-radius: 12px;
+        --scalar-background-1: #ffffff;
+        --scalar-background-2: #f8fafc;
+        --scalar-background-3: #f0f9ff;
+        --scalar-sidebar-background: #ffffff;
+        --scalar-sidebar-border: #e2e8f0;
+        --scalar-header-background: #ffffff;
+    }
+    .scalar-header {
+        background: linear-gradient(135deg, #bae6fd 0%, #0ea5e9 100%) !important;
+        color: white !important;
+    }
+    .scalar-header svg { fill: white !important; }
+  </style>
+</head>
+<body>
+  <script id="api-reference" data-url="/api-v1.json"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@scalar/api-reference@1.125.12/dist/browser/standalone.min.js"></script>
+  <script>
+    const reference = document.getElementById('api-reference')
+    reference.setAttribute('data-configuration', JSON.stringify({
+        theme: 'default',
+        showSidebar: true,
+        layout: 'modern',
+        hideDownloadButton: false,
+        metaData: {
+            title: 'CloudLand API Reference',
+            description: 'APIs for CloudLand Functions'
+        }
+    }))
+  </script>
+</body>
+</html>

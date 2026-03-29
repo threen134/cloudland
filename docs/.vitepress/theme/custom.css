@@ -25,6 +25,11 @@
   --vp-c-brand-3: #0369a1;
   --vp-c-brand-soft: rgba(14, 165, 233, 0.1);
 
+  /* Navbar & UI Variables - Force glassmorphism defaults */
+  --vp-nav-bg-color: rgba(255, 255, 255, 0.5);
+  --vp-nav-border-color: rgba(255, 255, 255, 0.2);
+  --vp-local-nav-bg-color: rgba(255, 255, 255, 0.4);
+
   /* Text colors */
   --vp-c-text-1: var(--pl-text-heading);
   --vp-c-text-2: var(--pl-text-body);
@@ -47,13 +52,24 @@
   --vp-c-text-2: #cbd5e1;
   
   --pl-bg-glacier: #0f172a;
+
+  /* Dark mode text colors */
+  --pl-text-heading: #f8fafc;
+  --pl-text-body: #cbd5e1;
+
+  /* Dark mode glass vars */
+  --vp-nav-bg-color: rgba(15, 23, 42, 0.3);
+  --vp-nav-border-color: rgba(255, 255, 255, 0.05);
+  --vp-local-nav-bg-color: rgba(15, 23, 42, 0.3);
 }
 
-/* ---- Global Styles ---- */
-
-/* Use the Login page's glacier gradient for the site background (Light mode only) */
+/* Global Background - ensure consistent "Starry Sky / Glacier" feel across all pages */
 :not(.dark) body {
-  background: var(--pl-bg-glacier) fixed;
+  background: var(--pl-bg-glacier) fixed !important;
+}
+
+.dark body {
+  background: radial-gradient(circle at 50% 10%, #1e293b 0%, #0f172a 100%) fixed !important;
 }
 
 /* Heading alignment with Login style */
@@ -85,23 +101,34 @@
   border-color: rgba(255, 255, 255, 0.05) !important;
 }
 
-/* Sidebar Styling (Sync with Login Input focus style) */
+/* Sidebar Styling (Premium Floating Style) */
 .VPSidebarItem.is-active > .item {
-  background-color: #fff !important;
-  border: 1px solid var(--pl-primary);
-  box-shadow: 0 0 0 3px rgba(14, 165, 233, 0.1);
-  border-radius: 10px;
-  margin-right: 12px;
+  background-color: rgba(14, 165, 233, 0.1) !important; /* Light brand tint */
+  border-left: 4px solid var(--pl-primary) !important; /* Left indicator bar */
+  border-radius: 0 10px 10px 0 !important; /* Rounded right corners */
+  margin-right: 14px;
+  box-shadow: none !important;
+  border-top: none !important;
+  border-bottom: none !important;
+  border-right: none !important;
+  transition: all 0.2s ease;
 }
 
 .VPSidebarItem.is-active > .item > .link > .text {
   color: var(--pl-primary) !important;
   font-weight: 700;
+  padding-left: 12px; /* Pull text away from the bar */
+}
+
+/* Subtle hover effect for all menu items */
+.VPSidebarItem .item:hover {
+  background-color: rgba(14, 165, 233, 0.05) !important;
+  border-radius: 8px;
+  margin-right: 14px;
 }
 
 .dark .VPSidebarItem.is-active > .item {
-  background-color: var(--vp-c-bg-soft) !important;
-  border-color: var(--pl-primary);
+  background-color: rgba(14, 165, 233, 0.15) !important;
 }
 
 /* Button & Action Styles (Sync with .pl-btn-login) */
@@ -119,11 +146,316 @@
   box-shadow: 0 12px 24px rgba(14, 165, 233, 0.3) !important;
 }
 
-/* Mermaid Styling adjustments */
+/* Mermaid & D2 Diagram Styles (Glacial Blue Glass / White Base) */
 .mermaid {
-  background: rgba(255, 255, 255, 0.5);
-  backdrop-filter: blur(4px);
-  padding: 1.5rem;
-  border-radius: var(--pl-radius-xl);
+  background: white !important; /* Base white for clarity in light mode */
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  padding: 3rem 1rem;
+  border-radius: 12px;
   border: 1px solid rgba(14, 165, 233, 0.1);
+  box-shadow: 
+    0 10px 40px rgba(0, 0, 0, 0.05),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.5);
+  margin: 3rem 0;
+  display: flex !important;
+  justify-content: center;
+  overflow-x: auto !important; /* Allow scroll for wide diagrams */
+  overflow-y: visible !important;
+  transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+  min-height: 200px;
+}
+
+.mermaid svg {
+  background: white !important; /* Ensure internal SVG background is white */
+}
+
+.mermaid:hover {
+  transform: translateY(-4px) scale(1.01);
+  box-shadow: 0 20px 60px rgba(14, 165, 233, 0.15);
+  border-color: rgba(14, 165, 233, 0.3);
+}
+
+.dark .mermaid {
+  background: rgba(15, 23, 42, 0.6) !important;
+  border-color: rgba(255, 255, 255, 0.05);
+  box-shadow: 
+    0 20px 50px rgba(0, 0, 0, 0.4),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.05);
+}
+
+.dark .mermaid svg {
+  background: transparent !important; /* Dark mode should use the frosted container back */
+}
+
+.mermaid svg {
+  max-width: 100% !important;
+  height: auto !important;
+  padding: 20px !important; /* Internal breathing room to avoid clipping */
+  overflow: visible !important; /* CRITICAL: Allow text to 'overhang' if vbox is too small */
+}
+
+.mermaid svg * {
+  overflow: visible !important; /* Force all sub-elements (foreignObject, rect) to show content */
+}
+
+/* Internal Mermaid Node Styling (Ice Blue) */
+.mermaid .node rect, 
+.mermaid .node circle, 
+.mermaid .node ellipse, 
+.mermaid .node polygon, 
+.mermaid .node path {
+  fill: rgba(14, 165, 233, 0.05) !important;
+  stroke: #0ea5e9 !important;
+  stroke-width: 1.5px !important;
+  transition: all 0.2s ease;
+}
+
+.mermaid .edgePath .path {
+  stroke: #0ea5e9 !important;
+  stroke-width: 1px !important;
+}
+
+.mermaid .marker {
+  fill: #0ea5e9 !important;
+  stroke: none !important;
+}
+
+.mermaid .label, .mermaid .node .label {
+  color: var(--vp-c-text-1) !important;
+  font-weight: 500 !important;
+  font-family: 'Inter', var(--vp-font-family-base) !important;
+}
+
+.mermaid .cluster rect {
+  fill: rgba(14, 165, 233, 0.02) !important;
+  stroke: rgba(14, 165, 233, 0.2) !important;
+  stroke-dasharray: 4, 4 !important;
+}
+
+/* ---- Layout Transparency (Allow Global Background to show through) ---- */
+.VPContent, .VPDoc, .VPHome {
+  background-color: transparent !important;
+}
+
+/* Sidebar Glassmorphism */
+.VPSidebar, 
+.VPSidebar .container, 
+.VPSidebar .curtain,
+.VPSidebar .item {
+  background-color: transparent !important;
+}
+
+.VPSidebar {
+  background-color: rgba(255, 255, 255, 0.2) !important;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-right: 1px solid rgba(255, 255, 255, 0.1) !important;
+}
+
+.dark .VPSidebar {
+  background-color: rgba(15, 23, 42, 0.4) !important;
+  border-right: 1px solid rgba(255, 255, 255, 0.05) !important;
+}
+
+/* ---- Navbar & Header Styling (Unified Premium Layout) ---- */
+
+/*
+ * 核心策略: 玻璃拟态效果统一放在 .VPNav (最外层 <header>) 上,
+ * 内部所有子元素 (VPNavBar, content-body, title, divider 等) 全部透明,
+ * 避免 doc 页面 has-sidebar 模式下出现分层背景。
+ */
+.VPNav {
+  background-color: var(--vp-nav-bg-color) !important;
+  backdrop-filter: blur(20px) !important;
+  -webkit-backdrop-filter: blur(20px) !important;
+  border-bottom: 1px solid var(--vp-nav-border-color) !important;
+  transition: all 0.3s ease;
+}
+
+/* 清除 VPNavBar 及所有内部元素的背景 — 让 .VPNav 统一负责 */
+.VPNavBar,
+.VPNavBar.has-sidebar,
+.VPNavBar:not(.home),
+.VPNavBar.screen-open {
+  background-color: transparent !important;
+  border-bottom: none !important;
+}
+
+/* content-body 在 has-sidebar 模式下会被 scoped 样式加背景, 必须覆盖 */
+.VPNavBar .content-body,
+.VPNavBar:not(.home.top) .content-body,
+.VPNavBar:not(.has-sidebar):not(.home.top) .content-body {
+  background-color: transparent !important;
+}
+
+/* title 区域保持透明 */
+.VPNavBar .title,
+.VPNavBar.has-sidebar .title {
+  background-color: transparent !important;
+}
+
+/* 分割线统一样式 */
+.VPNavBar .divider,
+.VPNavBar .divider-line,
+.VPNavBar:not(.home) .divider-line,
+.VPNavBar:not(.home.top) .divider-line {
+  background-color: transparent !important;
+}
+
+/* 导航菜单背景透明 */
+.VPNavBarMenu {
+  background-color: transparent !important;
+}
+
+/*
+ * has-sidebar 布局修正:
+ * VitePress 在 doc 页面 (960px+) 会将 .wrapper padding 清零、
+ * .title 绝对定位到 sidebar 宽度、.content 左移 sidebar 宽度,
+ * 导致导航栏左侧布局与首页不一致。
+ * 以下覆盖将 has-sidebar 的布局还原为与首页相同的流式横排。
+ */
+
+/* 1. wrapper: 恢复与首页一致的内边距 */
+.VPNavBar.has-sidebar .wrapper {
+  padding: 0 32px !important;
+}
+
+/* 2. container: 统一 flex 布局 */
+.VPNavBar .container {
+  display: flex !important;
+  justify-content: space-between !important;
+  align-items: center !important;
+  max-width: calc(var(--vp-layout-max-width) - 64px) !important;
+  margin: 0 auto !important;
+}
+
+.VPNavBar.has-sidebar .container {
+  max-width: calc(var(--vp-layout-max-width) - 64px) !important;
+}
+
+/* 3. title: 取消绝对定位, 回到正常流 */
+@media (min-width: 960px) {
+  .VPNavBar.has-sidebar .title {
+    position: relative !important;
+    width: auto !important;
+    padding: 0 !important;
+    left: auto !important;
+    top: auto !important;
+  }
+}
+
+@media (min-width: 1440px) {
+  .VPNavBar.has-sidebar .title {
+    position: relative !important;
+    width: auto !important;
+    padding: 0 !important;
+    padding-left: 0 !important;
+    left: auto !important;
+  }
+}
+
+/* 4. content: 取消 sidebar 宽度的左偏移 */
+@media (min-width: 960px) {
+  .VPNavBar.has-sidebar .content {
+    padding-left: 0 !important;
+    padding-right: 0 !important;
+  }
+}
+
+@media (min-width: 1440px) {
+  .VPNavBar.has-sidebar .content {
+    padding-left: 0 !important;
+    padding-right: 0 !important;
+  }
+}
+
+/* 5. divider: 取消 sidebar 宽度的左偏移 */
+@media (min-width: 960px) {
+  .VPNavBar.has-sidebar .divider {
+    padding-left: 0 !important;
+  }
+}
+
+@media (min-width: 1440px) {
+  .VPNavBar.has-sidebar .divider {
+    padding-left: 0 !important;
+  }
+}
+
+.VPNavBarTitle {
+  order: -1 !important; /* Force logo to far left */
+  margin-right: 32px !important;
+}
+
+.VPNavBarSearch {
+  flex-grow: 1 !important;
+  display: flex !important;
+  justify-content: flex-start !important;
+}
+
+/* Force Search to Desktop style (with text) even on Doc pages */
+@media (min-width: 768px) {
+  .DocSearch-Button {
+    background-color: var(--vp-nav-bg-color) !important;
+    border: 1px solid var(--vp-nav-border-color) !important;
+    backdrop-filter: blur(4px) !important;
+    border-radius: 8px !important;
+    margin-left: 0 !important;
+    width: auto !important;
+    min-width: 150px !important;
+    transition: all 0.2s ease !important;
+  }
+
+  .DocSearch-Button:hover {
+    background-color: rgba(255, 255, 255, 0.8) !important;
+    border-color: var(--pl-primary) !important;
+  }
+
+  .dark .DocSearch-Button {
+    background-color: var(--vp-nav-bg-color) !important;
+    border-color: var(--vp-nav-border-color) !important;
+  }
+
+  .dark .DocSearch-Button:hover {
+    background-color: rgba(30, 41, 59, 0.6) !important;
+    border-color: var(--pl-primary) !important;
+  }
+}
+
+/* Unify Search Shortcut Icons (K button) */
+.DocSearch-Button .DocSearch-Button-Placeholder {
+  color: var(--vp-c-text-2) !important;
+  font-size: 14px !important;
+}
+
+.DocSearch-Button .DocSearch-Button-Keys kbd {
+  background: rgba(255, 255, 255, 0.2) !important;
+  border: 1px solid var(--vp-nav-border-color) !important;
+  box-shadow: none !important;
+  color: var(--vp-c-text-2) !important;
+  width: 20px !important;
+  height: 20px !important;
+}
+
+.dark .DocSearch-Button .DocSearch-Button-Keys kbd {
+  background: rgba(0, 0, 0, 0.2) !important;
+}
+
+/* Sub-nav (Local Nav) 与主导航保持一致的玻璃拟态 */
+.VPLocalNav {
+  background-color: var(--vp-local-nav-bg-color) !important;
+  backdrop-filter: blur(20px) !important;
+  -webkit-backdrop-filter: blur(20px) !important;
+  border-bottom: 1px solid var(--vp-nav-border-color) !important;
+}
+
+/* Ensure the nav screen (mobile menu) also follows the style */
+.VPNavScreen {
+  background-color: rgba(255, 255, 255, 0.8) !important;
+  backdrop-filter: blur(30px);
+}
+
+.dark .VPNavScreen {
+  background-color: rgba(15, 23, 42, 0.9) !important;
 }

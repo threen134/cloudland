@@ -16,8 +16,15 @@
 
 ```mermaid
 graph LR
-    API[API Layer] -->|RPC| CLAND[cland]
-    CLAND -->|Msg| SCI[SCI Bus]
-    SCI -->|Action| HYP1[Hypervisor 1]
-    SCI -->|Action| HYP2[Hypervisor 2]
+    API["API 服务层"]
+    CLAND["控制中枢 (cland)"]
+    style CLAND stroke:#0ea5e9,stroke-width:2px
+    SCI["消息总线 (SCI Bus)"]
+    HYP1["计算节点 (Hypervisor 1)"]
+    HYP2["计算节点 (Hypervisor 2)"]
+
+    API -->|RPC 指令| CLAND
+    CLAND -->|异步消息| SCI
+    SCI -->|任务分发| HYP1
+    SCI -->|任务分发| HYP2
 ```

@@ -21,8 +21,8 @@ sequenceDiagram
     participant Cland as Master Cland
 
     User->>API: HTTP 请求 (含 JWT)
-    API->>API: 验证角色权限
+    Note over API: 验证角色权限
     API->>Worker: HTTP/RPC 调用
     Worker->>Cland: 请求控制面
-    Cland-->>User: 返回结果
+    Cland-->>User: 直接/间接返回
 ```

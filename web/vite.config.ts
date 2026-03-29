@@ -16,21 +16,25 @@ export default defineConfig(({ mode }) => {
     build: {
       target: 'esnext'
     },
-    server: apiTarget
-      ? {
-          proxy: {
-            '/api': {
-              target: apiTarget,
-              changeOrigin: true,
-              secure: false,
-            },
-            '/swagger': {
-              target: apiTarget,
-              changeOrigin: true,
-              secure: false,
-            }
-          }
-        }
-      : undefined
+    server: {
+      proxy: {
+        '/docs': {
+          target: 'http://localhost:5174',
+          changeOrigin: true,
+        },
+        ...(apiTarget ? {
+          '/api': {
+            target: apiTarget,
+            changeOrigin: true,
+            secure: false,
+          },
+          '/swagger': {
+            target: apiTarget,
+            changeOrigin: true,
+            secure: false,
+          },
+        } : {}),
+      }
+    }
   }
 })

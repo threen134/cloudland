@@ -1,12 +1,18 @@
 import { defineConfig } from 'vitepress'
 import { withMermaid } from 'vitepress-plugin-mermaid'
+import { generateSidebar } from 'vitepress-sidebar'
 
 export default withMermaid(
   defineConfig({
+    base: '/docs',
     title: 'CloudLand',
     description: '轻量级 IaaS 云平台 — 文档中心',
     lang: 'zh-CN',
     lastUpdated: true,
+
+    markdown: {
+      // Mermaid configuration is handled by withMermaid
+    },
 
     head: [
       ['link', { rel: 'icon', type: 'image/svg+xml', href: '/logo.svg' }],
@@ -25,82 +31,36 @@ export default withMermaid(
         { text: '部署', link: '/deployment/quick-start' },
       ],
 
-      sidebar: {
-        '/guide/': [
-          {
-            text: '入门',
-            collapsed: false,
-            items: [
-              { text: '项目简介', link: '/guide/introduction' },
-              { text: '快速开始', link: '/guide/getting-started' },
-              { text: '核心概念', link: '/guide/concepts' },
-            ]
-          },
-          {
-            text: '资源管理',
-            collapsed: false,
-            items: [
-              { text: '虚拟机实例', link: '/guide/instances' },
-              { text: '网络与 VPC', link: '/guide/networking' },
-              { text: '存储卷', link: '/guide/volumes' },
-              { text: '镜像管理', link: '/guide/images' },
-              { text: '安全组', link: '/guide/security-groups' },
-              { text: '负载均衡', link: '/guide/load-balancers' },
-            ]
-          },
-          {
-            text: '运维管理',
-            collapsed: false,
-            items: [
-              { text: '组织与用户', link: '/guide/organizations' },
-              { text: '计算节点管理', link: '/guide/hypervisors' },
-              { text: '监控告警', link: '/guide/monitoring' },
-            ]
-          },
-        ],
-
-        '/api/': [
-          {
-            text: 'API 参考',
-            collapsed: false,
-            items: [
-              { text: '概览', link: '/api/overview' },
-              { text: '认证', link: '/api/authentication' },
-              { text: '实例', link: '/api/instances' },
-              { text: '网络', link: '/api/networks' },
-              { text: '存储', link: '/api/storage' },
-              { text: '镜像', link: '/api/images-api' },
-              { text: '安全组', link: '/api/security-groups-api' },
-            ]
-          },
-        ],
-
-        '/architecture/': [
-          {
-            text: '系统架构',
-            collapsed: false,
-            items: [
-              { text: '架构概览', link: '/architecture/overview' },
-              { text: '控制面 (cland)', link: '/architecture/control-plane' },
-              { text: 'API 服务层', link: '/architecture/api-layer' },
-              { text: '计算节点生命周期', link: '/architecture/node-lifecycle' },
-            ]
-          },
-        ],
-
-        '/deployment/': [
-          {
-            text: '部署指南',
-            collapsed: false,
-            items: [
-              { text: '快速部署', link: '/deployment/quick-start' },
-              { text: '环境准备', link: '/deployment/prerequisites' },
-              { text: 'Docker 部署', link: '/deployment/docker' },
-              { text: '配置说明', link: '/deployment/configuration' },
-            ]
-          },
-        ],
-      },
+      sidebar: generateSidebar([
+        {
+          documentRootPath: '.',
+          scanStartPath: 'guide',
+          resolvePath: '/guide/',
+          useTitleFromFileHeading: true,
+          includeRootIndexFile: true
+        },
+        {
+          documentRootPath: '.',
+          scanStartPath: 'api',
+          resolvePath: '/api/',
+          useTitleFromFileHeading: true,
+          includeRootIndexFile: true
+        },
+        {
+          documentRootPath: '.',
+          scanStartPath: 'architecture',
+          resolvePath: '/architecture/',
+          useTitleFromFileHeading: true,
+          includeRootIndexFile: true
+        },
+        {
+          documentRootPath: '.',
+          scanStartPath: 'deployment',
+          resolvePath: '/deployment/',
+          useTitleFromFileHeading: true,
+          includeRootIndexFile: true
+        }
+      ]),
 
       socialLinks: [
         { icon: 'github', link: 'https://github.com/maplerime/cloudland' }
@@ -150,7 +110,37 @@ export default withMermaid(
     },
 
     mermaid: {
-      // Mermaid config options
+      theme: 'base',
+      themeVariables: {
+        primaryColor: '#e0f2fe',
+        primaryTextColor: '#0369a1',
+        primaryBorderColor: '#0ea5e9',
+        lineColor: '#0ea5e9',
+        secondaryColor: '#f0f9ff',
+        tertiaryColor: '#ffffff',
+        stateBkg: '#e0f2fe',
+        stateBorder: '#0ea5e9',
+        labelColor: '#0369a1',
+        fontFamily: "'Inter', sans-serif",
+        fontSize: '14px'
+      },
+      // Flattened config for better plugin compatibility
+      flowchart: {
+        padding: 30, // Increased padding
+        useMaxWidth: false, // Don't force width, let layout grow
+        htmlLabels: true,
+        curve: 'basis'
+      },
+      sequence: {
+        diagramMarginX: 60,
+        diagramMarginY: 20,
+        actorMargin: 60,
+        width: 160,
+        height: 70,
+        boxMargin: 15,
+        messageMargin: 40,
+        mirrorActors: true
+      }
     },
 
     mermaidPlugin: {
