@@ -344,6 +344,13 @@ onMounted(fetchHypervisorDetail)
           <div class="modal-body">
             <div class="form-grid" style="grid-template-columns: 1fr 1fr; gap: 16px;">
               <div class="form-group">
+                 <label class="form-label">{{ t('dashboard.table.status') }}</label>
+                <select v-model="form.status" class="form-select">
+                    <option :value="0">Disabled</option>
+                    <option :value="1">Active</option>
+                </select>
+              </div>
+              <div class="form-group">
                  <label class="form-label">{{ t('dashboard.table.zone') }}</label>
                 <select v-model="form.zone_id" class="form-select">
                     <option :value="0">-</option>

@@ -1,12 +1,10 @@
 <script setup lang="ts">
-import { ref, watch, onMounted, onUnmounted } from 'vue'
+import { ref, watch } from 'vue'
 import { hypervisorsApi } from '../../api/hypervisors'
-import { Chart as ChartJS, CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend, Filler } from 'chart.js'
 import { Line } from 'vue-chartjs'
 import { useI18n } from 'vue-i18n'
 import { Activity, Clock, RefreshCw } from 'lucide-vue-next'
-
-ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend, Filler)
+import { useMonitoring, TIME_RANGES, CHART_OPTIONS } from '../../composables/useMonitoring'
 
 const props = defineProps<{
     hostname: string
@@ -14,109 +12,25 @@ const props = defineProps<{
 
 const { t } = useI18n()
 
-// --- Filter State ---
-const timeRange = ref('1h')
-const step = ref('60s')
-const customStart = ref('')
-const customEnd = ref('')
-const loading = ref(false)
-const error = ref('')
-
-const ranges = [
-    { label: '1h', value: '1h', step: '60s' },
-    { label: '6h', value: '6h', step: '5m' },
-    { label: '24h', value: '24h', step: '10m' },
-    { label: '7d', value: '7d', step: '1h' },
-    { label: '30d', value: '30d', step: '2h' },
-]
-
-// --- Helper to get default datetime strings for custom range ---
-const getDefaultCustomDates = () => {
-    const end = new Date()
-    const start = new Date(end.getTime() - 3600 * 1000)
-    const pad = (n: number) => n.toString().padStart(2, '0')
-    const format = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
-    return { start: format(start), end: format(end) }
-}
-
-// --- Charts Data ---
 const cpuData = ref<any>(null)
 const memData = ref<any>(null)
-
-const chartOptions = {
-    responsive: true,
-    maintainAspectRatio: false,
-    plugins: {
-        legend: {
-            display: true,
-            position: 'bottom' as const,
-            labels: { boxWidth: 12, usePointStyle: true, font: { size: 11 } }
-        },
-        tooltip: {
-            mode: 'index' as const,
-            intersect: false,
-        }
-    },
-    scales: {
-        x: {
-            display: true,
-            grid: { display: false },
-            ticks: { maxRotation: 0, autoSkip: true, maxTicksLimit: 8, font: { size: 10 } }
-        },
-        y: {
-            beginAtZero: true,
-            grid: { color: 'rgba(0, 0, 0, 0.05)' },
-            ticks: { font: { size: 10 } }
-        }
-    },
-    elements: {
-        line: { tension: 0.3, borderWidth: 2 },
-        point: { radius: 0, hoverRadius: 4 }
-    }
-}
-
-const formatTimestamp = (ts: string) => {
-    const d = new Date(parseInt(ts) * 1000)
-    if (timeRange.value === '1h' || timeRange.value === '6h') {
-        return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-    }
-    return d.toLocaleDateString([], { month: '2-digit', day: '2-digit' }) + ' ' + d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-}
 
 const fetchData = async () => {
     if (!props.hostname) return
     loading.value = true
     error.value = ''
-    
-    let startTs: number
-    let endTs: number = Math.floor(Date.now() / 1000)
 
-    if (timeRange.value === 'custom') {
-        if (!customStart.value || !customEnd.value) {
-            error.value = 'Please select both start and end times'
-            loading.value = false
-            return
-        }
-        startTs = Math.floor(new Date(customStart.value).getTime() / 1000)
-        endTs = Math.floor(new Date(customEnd.value).getTime() / 1000)
-        
-        const duration = endTs - startTs
-        if (duration <= 3600) step.value = '60s'
-        else if (duration <= 86400) step.value = '10m'
-        else if (duration <= 7 * 86400) step.value = '1h'
-        else step.value = '6h'
-    } else {
-        startTs = endTs - 3600
-        if (timeRange.value === '6h') startTs = endTs - 6 * 3600
-        if (timeRange.value === '24h') startTs = endTs - 24 * 3600
-        if (timeRange.value === '7d') startTs = endTs - 7 * 24 * 3600
-        if (timeRange.value === '30d') startTs = endTs - 30 * 24 * 3600
+    const range = getTimeRange()
+    if (!range) {
+        error.value = 'Please select both start and end times'
+        loading.value = false
+        return
     }
 
     const commonPayload = {
         hostname: [props.hostname],
-        start: startTs.toString(),
-        end: endTs.toString(),
+        start: range.startTs.toString(),
+        end: range.endTs.toString(),
         step: step.value
     }
 
@@ -127,8 +41,8 @@ const fetchData = async () => {
         ])
 
         // Parse CPU
-        const cpuResult = cpuRes.data?.data?.result?.[0] || cpuRes.data?.[0]?.data?.result?.[0]
-        if (cpuResult) {
+        const cpuResult = cpuRes.data?.data?.result?.[0]
+        if (cpuResult?.values?.length) {
             cpuData.value = {
                 labels: cpuResult.values.map((v: any) => formatTimestamp(v.time)),
                 datasets: [{
@@ -141,13 +55,13 @@ const fetchData = async () => {
             }
         }
 
-        // Parse Memory
-        const memResult = memRes.data?.data?.result?.[0] || memRes.data?.[0]?.data?.result?.[0]
-        if (memResult && memResult.values && memResult.values.length >= 2) {
-            const totalSamples = memResult.values[0] || []
-            const usedSamples = memResult.values[1] || []
-            
-            if (totalSamples.length > 0) {
+        // Parse Memory — mergeMemoryResults returns values as [totalValues, usedValues]
+        const memResult = memRes.data?.data?.result?.[0]
+        if (memResult?.values && Array.isArray(memResult.values) && memResult.values.length >= 2) {
+            const totalSamples = memResult.values[0]
+            const usedSamples = memResult.values[1]
+
+            if (Array.isArray(totalSamples) && totalSamples.length > 0 && Array.isArray(usedSamples)) {
                 const labels = totalSamples.map((v: any) => formatTimestamp(v.time))
                 memData.value = {
                     labels,
@@ -170,7 +84,7 @@ const fetchData = async () => {
                 }
             }
         }
-        
+
     } catch (err: any) {
         console.error('Failed to fetch host metrics:', err)
         error.value = t('dashboard.monitoring.loadError')
@@ -179,27 +93,12 @@ const fetchData = async () => {
     }
 }
 
-const setRange = (range: any) => {
-    timeRange.value = range.value
-    step.value = range.step
-    fetchData()
-}
+const {
+    timeRange, step, customStart, customEnd, loading, error,
+    formatTimestamp, getTimeRange, setRange, toggleCustom,
+} = useMonitoring(fetchData)
 
 watch(() => props.hostname, fetchData)
-
-onMounted(fetchData)
-
-let refreshInterval: any = null
-onMounted(() => {
-    refreshInterval = setInterval(() => {
-        if (timeRange.value === '1h') fetchData()
-    }, 60000)
-})
-
-onUnmounted(() => {
-    if (refreshInterval) clearInterval(refreshInterval)
-})
-
 </script>
 
 <template>
@@ -211,8 +110,8 @@ onUnmounted(() => {
             </div>
             <div class="monitor-actions">
                 <div class="range-selector">
-                    <button 
-                        v-for="r in ranges" 
+                    <button
+                        v-for="r in TIME_RANGES"
                         :key="r.value"
                         class="btn btn-ghost btn-xs"
                         :class="{ active: timeRange === r.value }"
@@ -220,10 +119,10 @@ onUnmounted(() => {
                     >
                         {{ r.label }}
                     </button>
-                    <button 
+                    <button
                         class="btn btn-ghost btn-xs"
                         :class="{ active: timeRange === 'custom' }"
-                        @click="timeRange = 'custom'"
+                        @click="toggleCustom"
                     >
                         {{ t('dashboard.monitoring.custom') }}
                     </button>
@@ -261,7 +160,7 @@ onUnmounted(() => {
                     </span>
                 </div>
                 <div class="chart-body">
-                    <Line v-if="cpuData" :data="cpuData" :options="chartOptions" />
+                    <Line v-if="cpuData" :data="cpuData" :options="CHART_OPTIONS" />
                     <div v-else-if="loading" class="chart-loading">Loading...</div>
                     <div v-else class="chart-empty">{{ t('dashboard.monitoring.noCpuData') }}</div>
                 </div>
@@ -275,7 +174,7 @@ onUnmounted(() => {
                     </span>
                 </div>
                 <div class="chart-body">
-                    <Line v-if="memData" :data="memData" :options="chartOptions" />
+                    <Line v-if="memData" :data="memData" :options="CHART_OPTIONS" />
                     <div v-else-if="loading" class="chart-loading">Loading...</div>
                     <div v-else class="chart-empty">{{ t('dashboard.monitoring.noMemoryData') }}</div>
                 </div>
@@ -436,7 +335,7 @@ onUnmounted(() => {
     .charts-grid {
         grid-template-columns: 1fr;
     }
-    
+
     .custom-range-picker {
         flex-direction: column;
         align-items: flex-start;

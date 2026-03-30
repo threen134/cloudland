@@ -70,7 +70,7 @@ var (
 		"volume_write":     `expontech_tianshu_vol_op_bytes_persecond{mode='write',volName='%s'}`,
 		"host_cpu":         `100 - (avg by (hostname) (rate(node_cpu_seconds_total{mode="idle",hostname=~"%s"}[2m])) * 100)`,
 		"host_mem_total":   `node_memory_MemTotal_bytes{hostname=~"%s"} / 1024`,
-		"host_mem_free":    `(node_memory_MemFree_bytes{hostname=~"%s"} + node_memory_Buffers_bytes{hostname=~"%s"} + node_memory_Cached_bytes{hostname=~"%s"}) / 1024`,
+		"host_mem_free":    `(node_memory_MemFree_bytes{hostname=~"%[1]s"} + node_memory_Buffers_bytes{hostname=~"%[1]s"} + node_memory_Cached_bytes{hostname=~"%[1]s"}) / 1024`,
 	}
 )
 
@@ -789,7 +789,7 @@ func (api *MonitorAPI) GetHyperMemory(c *gin.Context) {
 
 	hostnameFilter := strings.Join(request.Hostname, "|")
 	totalQuery := fmt.Sprintf(rangeQueries["host_mem_total"], hostnameFilter)
-	freeQuery := fmt.Sprintf(rangeQueries["host_mem_free"], hostnameFilter, hostnameFilter, hostnameFilter)
+	freeQuery := fmt.Sprintf(rangeQueries["host_mem_free"], hostnameFilter)
 
 	totalResult, err := queryPrometheus(PrometheusRangeURL, totalQuery, fmt.Sprintf("%d", start), fmt.Sprintf("%d", end), request.Step)
 	if err != nil || totalResult.Status != "success" {
