@@ -460,7 +460,13 @@ cd /opt/cloudland/deploy/docker && docker compose restart cloudland
 | :--- | :--- | :--- |
 | `CONTROLLER_IP` | 控制节点 IP（**必填**） | `192.168.1.100` |
 | `HOSTNAME` | 本节点名称 | `hyper01` |
-| `NETWORK_DEVICE` | 管理网卡名 | `eth0` |
+| `NETWORK_DEVICE` | 管理网卡名 (跑 VXLAN 与 SCI 管理) | `eth0` |
+| `VLAN_DEVICE` | 业务网卡名 (跑外网 VLAN) | 与 `NETWORK_DEVICE` 相同 |
+| `PRIVATE_VLAN_DEVICE` | 私有网卡名 (跑 RFC 1918 VLAN) | 与 `VLAN_DEVICE` 相同 |
+| `DNS_SERVER` | 默认 DNS 服务器 | `8.8.8.8` |
+| `DOMAIN` | 内部基础域名 | `example.com` |
+| `ZONE_NAME` | 所属可用区 | `zone0` |
+| `VIRT_TYPE` | 虚拟化类型 | `kvm-x86_64` |
 | `SCI_CLIENT_ID` | 节点 ID，全局唯一递增 | `0` |
 | `SCI_ENABLE_FAILOVER` | HA 模式设为 `yes` | `no` |
 
