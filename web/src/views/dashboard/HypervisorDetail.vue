@@ -288,15 +288,24 @@ onMounted(fetchHypervisorDetail)
             <div class="info-rows">
               <div class="info-row">
                 <span class="info-label">{{ t('dashboard.table.vcpus') }}</span>
-                <span class="info-value">{{ hypervisor.cpu }} / {{ hypervisor.cpu_total }} cores</span>
+                <span class="info-value">
+                  {{ hypervisor.cpu }} / {{ hypervisor.cpu_total }} cores 
+                  <span class="avail-badge">{{ t('dashboard.table.available') }}</span>
+                </span>
               </div>
               <div class="info-row">
                 <span class="info-label">{{ t('dashboard.table.memory') }}</span>
-                <span class="info-value">{{ formatMemory(hypervisor.memory) }} / {{ formatMemory(hypervisor.memory_total) }}</span>
+                <span class="info-value">
+                  {{ formatMemory(hypervisor.memory) }} / {{ formatMemory(hypervisor.memory_total) }} 
+                  <span class="avail-badge">{{ t('dashboard.table.available') }}</span>
+                </span>
               </div>
               <div class="info-row">
                 <span class="info-label">{{ t('dashboard.table.disk') }}</span>
-                <span class="info-value">{{ formatDisk(hypervisor.disk) }} / {{ formatDisk(hypervisor.disk_total) }}</span>
+                <span class="info-value">
+                  {{ formatDisk(hypervisor.disk) }} / {{ formatDisk(hypervisor.disk_total) }} 
+                  <span class="avail-badge">{{ t('dashboard.table.available') }}</span>
+                </span>
               </div>
             </div>
           </div>
@@ -629,6 +638,16 @@ onMounted(fetchHypervisorDetail)
 }
 
 .info-value.mono { font-family: var(--font-family-mono); font-size: var(--font-size-xs); }
+
+.avail-badge {
+  font-family: var(--font-family-sans);
+  background: rgba(16, 185, 129, 0.1);
+  color: #10b981;
+  padding: 1px 6px; border-radius: 4px; font-size: 0.65rem;
+  font-weight: 600;
+  margin-left: 6px;
+  vertical-align: middle;
+}
 
 .form-grid {
   display: grid;

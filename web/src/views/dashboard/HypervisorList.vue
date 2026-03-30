@@ -196,9 +196,9 @@ onMounted(fetchHypervisors)
             <th>{{ t('dashboard.table.nameId') }}</th>
             <th>{{ t('dashboard.table.hostIp') }}</th>
             <th>{{ t('dashboard.table.status') }}</th>
-            <th>{{ t('dashboard.table.vcpus') }}</th>
-            <th>{{ t('dashboard.table.memory') }}</th>
-            <th>{{ t('dashboard.table.disk') }}</th>
+            <th>{{ t('dashboard.table.vcpus') }} ({{ t('dashboard.table.available') }})</th>
+            <th>{{ t('dashboard.table.memory') }} ({{ t('dashboard.table.available') }})</th>
+            <th>{{ t('dashboard.table.disk') }} ({{ t('dashboard.table.available') }})</th>
             <th>{{ t('dashboard.table.zone') }}</th>
             <th>{{ t('dashboard.table.actions') }}</th>
           </tr>

@@ -237,8 +237,14 @@ onMounted(async () => {
                 </span>
               </div>
               <div class="hyper-stats">
-                <span class="stat-item">CPU {{ getUsagePercent(h.cpu, h.cpu_total) }}%</span>
-                <span class="stat-item">MEM {{ getUsagePercent(h.memory, h.memory_total) }}%</span>
+                <span class="stat-item">
+                  CPU {{ getUsagePercent(h.cpu, h.cpu_total) }}% 
+                  <span class="avail-badge">{{ t('dashboard.table.available') }}</span>
+                </span>
+                <span class="stat-item">
+                  MEM {{ getUsagePercent(h.memory, h.memory_total) }}% 
+                  <span class="avail-badge">{{ t('dashboard.table.available') }}</span>
+                </span>
               </div>
             </div>
           </div>
@@ -411,7 +417,17 @@ onMounted(async () => {
 }
 .hyper-link:hover { text-decoration: underline; }
 .hyper-stats { display: flex; gap: 12px; }
-.stat-item { font-size: var(--font-size-xs); color: var(--text-secondary); font-family: var(--font-family-mono); }
+.stat-item { 
+  font-size: var(--font-size-xs); color: var(--text-secondary); font-family: var(--font-family-mono); 
+  display: flex; align-items: center; gap: 4px;
+}
+.avail-badge {
+  font-family: var(--font-family-sans);
+  background: rgba(16, 185, 129, 0.1);
+  color: #10b981;
+  padding: 0 4px; border-radius: 4px; font-size: 0.65rem;
+  font-weight: 500;
+}
 
 .status-pill-sm {
   font-size: 0.6875rem; padding: 1px 6px; border-radius: 10px; font-weight: 500;
