@@ -74,3 +74,27 @@ async def get_volume_history(
     return await proxy_service.forward_to_region(
         request=request, db=db, proxy_path="/metrics/instances/volume/his_data",
     )
+
+
+# --- 宿主机历史指标查询（透传到 Region clapi）---
+
+@router.post("/metrics/hypers/cpu/his_data", summary="Query hypervisor CPU history")
+async def get_hyper_cpu_history(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    return await proxy_service.forward_to_region(
+        request=request, db=db, proxy_path="/metrics/hypers/cpu/his_data",
+    )
+
+
+@router.post("/metrics/hypers/memory/his_data", summary="Query hypervisor memory history")
+async def get_hyper_memory_history(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    return await proxy_service.forward_to_region(
+        request=request, db=db, proxy_path="/metrics/hypers/memory/his_data",
+    )

@@ -161,5 +161,22 @@ export const instancesApi = {
 
     patchInterface(instanceId: string, ifaceId: string, payload: { security_groups?: BaseReference[] }) {
         return client.patch(`/instances/${instanceId}/interfaces/${ifaceId}`, payload)
+    },
+
+    // Monitoring Metrics
+    getCPUMetrics(payload: { id: string[], start: string, end: string, step: string }) {
+        return client.post('/metrics/instances/cpu/his_data', payload)
+    },
+
+    getMemoryMetrics(payload: { id: string[], start: string, end: string, step: string }) {
+        return client.post('/metrics/instances/memory/his_data', payload)
+    },
+
+    getDiskMetrics(payload: { id: string[], disk: string[], start: string, end: string, step: string }) {
+        return client.post('/metrics/instances/disk/his_data', payload)
+    },
+
+    getNetworkMetrics(payload: { id: string[], network: string[], start: string, end: string, step: string }) {
+        return client.post('/metrics/instances/network/his_data', payload)
     }
 }

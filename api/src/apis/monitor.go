@@ -68,6 +68,9 @@ var (
 		"traffic":          `increase(libvirt_domain_interface_stats_receive_bytes_total{domain=~"%s",target_device=~"%s"}[1h]) / 1024`, // ingress only, KB per hour
 		"volume_read":      `expontech_tianshu_vol_op_bytes_persecond{mode='read',volName='%s'}`,
 		"volume_write":     `expontech_tianshu_vol_op_bytes_persecond{mode='write',volName='%s'}`,
+		"host_cpu":         `100 - (avg by (hostname) (rate(node_cpu_seconds_total{mode="idle",hostname=~"%s"}[2m])) * 100)`,
+		"host_mem_total":   `node_memory_MemTotal_bytes{hostname=~"%s"} / 1024`,
+		"host_mem_free":    `(node_memory_MemFree_bytes{hostname=~"%s"} + node_memory_Buffers_bytes{hostname=~"%s"} + node_memory_Cached_bytes{hostname=~"%s"}) / 1024`,
 	}
 )
 
@@ -138,6 +141,7 @@ type MetricsRequest struct {
 	End     string   `json:"end" binding:"required"`
 	Step    string   `json:"step" binding:"required"`
 	ID      []string `json:"id"`
+	Hostname []string `json:"hostname"`
 	Disk    []string `json:"disk"`
 	Network []string `json:"network"`
 	VolName []string `json:"volName"`
@@ -733,6 +737,75 @@ func (api *MonitorAPI) GetDisk(c *gin.Context) {
 	c.JSON(http.StatusOK, result)
 }
 
+// GetHyperCPU returns host CPU metrics
+func (api *MonitorAPI) GetHyperCPU(c *gin.Context) {
+	var request MetricsRequest
+	if err := c.BindJSON(&request); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"status": "error", "message": "Invalid request body"})
+		return
+	}
+
+	if len(request.Hostname) == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"status": "error", "message": "Hostname is required"})
+		return
+	}
+
+	start, end, err := validateAndParseTimeParams(request.Start, request.End, request.Step)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"status": "error", "message": err.Error()})
+		return
+	}
+
+	hostnameFilter := strings.Join(request.Hostname, "|")
+	query := fmt.Sprintf(rangeQueries["host_cpu"], hostnameFilter)
+
+	result, err := queryPrometheus(PrometheusRangeURL, query, fmt.Sprintf("%d", start), fmt.Sprintf("%d", end), request.Step)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"status": "error", "message": "Failed to query metrics"})
+		return
+	}
+
+	c.JSON(http.StatusOK, formatResponse(result, "cpu"))
+}
+
+// GetHyperMemory returns host memory metrics
+func (api *MonitorAPI) GetHyperMemory(c *gin.Context) {
+	var request MetricsRequest
+	if err := c.BindJSON(&request); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"status": "error", "message": "Invalid request body"})
+		return
+	}
+
+	if len(request.Hostname) == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"status": "error", "message": "Hostname is required"})
+		return
+	}
+
+	start, end, err := validateAndParseTimeParams(request.Start, request.End, request.Step)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"status": "error", "message": err.Error()})
+		return
+	}
+
+	hostnameFilter := strings.Join(request.Hostname, "|")
+	totalQuery := fmt.Sprintf(rangeQueries["host_mem_total"], hostnameFilter)
+	freeQuery := fmt.Sprintf(rangeQueries["host_mem_free"], hostnameFilter, hostnameFilter, hostnameFilter)
+
+	totalResult, err := queryPrometheus(PrometheusRangeURL, totalQuery, fmt.Sprintf("%d", start), fmt.Sprintf("%d", end), request.Step)
+	if err != nil || totalResult.Status != "success" {
+		c.JSON(http.StatusInternalServerError, gin.H{"status": "error", "message": "Failed to query total memory"})
+		return
+	}
+
+	freeResult, err := queryPrometheus(PrometheusRangeURL, freeQuery, fmt.Sprintf("%d", start), fmt.Sprintf("%d", end), request.Step)
+	if err != nil || freeResult.Status != "success" {
+		c.JSON(http.StatusInternalServerError, gin.H{"status": "error", "message": "Failed to query free memory"})
+		return
+	}
+
+	c.JSON(http.StatusOK, mergeMemoryResults(freeResult, totalResult))
+}
+
 func getWDSToken() (string, error) {
 	tokenMutex.Lock()
 	defer tokenMutex.Unlock()
@@ -1257,7 +1330,10 @@ func mergeMemoryResults(unused, total *PrometheusResponse) *MemoryResponse {
 
 	// Collect unused data
 	for _, r := range unused.Data.Result {
-		domain := r.Metric["domain"]
+		domain, ok := r.Metric["domain"]
+		if !ok || domain == "" {
+			domain = r.Metric["hostname"]
+		}
 		resultMap[domain] = struct {
 			metric struct {
 				Domain   string
@@ -1272,7 +1348,7 @@ func mergeMemoryResults(unused, total *PrometheusResponse) *MemoryResponse {
 				Instance string
 				Job      string
 			}{
-				Domain:   r.Metric["domain"],
+				Domain:   domain,
 				Instance: r.Metric["instance"],
 				Job:      r.Metric["job"],
 			},
@@ -1282,7 +1358,10 @@ func mergeMemoryResults(unused, total *PrometheusResponse) *MemoryResponse {
 
 	// Merge total data
 	for _, r := range total.Data.Result {
-		domain := r.Metric["domain"]
+		domain, ok := r.Metric["domain"]
+		if !ok || domain == "" {
+			domain = r.Metric["hostname"]
+		}
 		if item, exists := resultMap[domain]; exists {
 			item.totalValues = r.Values
 			resultMap[domain] = item
@@ -1612,6 +1691,9 @@ func formatResponse(resp *PrometheusResponse, metricType string) interface{} {
 			}
 
 			result.Metric.Domain = r.Metric["domain"]
+			if result.Metric.Domain == "" {
+				result.Metric.Domain = r.Metric["hostname"]
+			}
 			result.Metric.Instance = r.Metric["instance"]
 			result.Metric.Job = r.Metric["job"]
 

@@ -232,7 +232,7 @@ services:
       - region
     user: "nobody"
     environment:
-      CLAPI_SD_ENDPOINT: "${CLAPI_SD_ENDPOINT:-http://clapi:8255}"
+      CLAPI_SD_ENDPOINT: "${CLAPI_SD_ENDPOINT:-https://clapi:8255}"
     volumes:
       - ./config/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml.tmpl:ro
       - ./volumes/prometheus/general_rules:/etc/prometheus/general_rules

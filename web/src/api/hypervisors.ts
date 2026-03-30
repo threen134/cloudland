@@ -81,5 +81,14 @@ export const hypervisorsApi = {
 
     deleteHypervisor(uuid: string) {
         return client.delete(`/hypers/${uuid}`)
+    },
+
+    // Monitoring Metrics
+    getCPUMetrics(payload: { hostname: string[], start: string, end: string, step: string }) {
+        return client.post('/metrics/hypers/cpu/his_data', payload)
+    },
+
+    getMemoryMetrics(payload: { hostname: string[], start: string, end: string, step: string }) {
+        return client.post('/metrics/hypers/memory/his_data', payload)
     }
 }

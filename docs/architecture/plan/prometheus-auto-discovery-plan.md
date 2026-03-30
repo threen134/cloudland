@@ -136,7 +136,7 @@ scrape_configs:
 
 | 变量 | 默认值 | 说明 |
 |------|--------|------|
-| `CLAPI_SD_ENDPOINT` | `http://clapi:8255` | clapi 的可达地址。同一 docker-compose 使用默认值；跨主机部署改为 `http://<INTERNAL_IP>:8255` |
+| `CLAPI_SD_ENDPOINT` | `https://clapi:8255` | clapi 的可达地址。同一 docker-compose 使用默认值；跨主机部署改为 `http://<INTERNAL_IP>:8255` |
 
 Docker Compose 中 Prometheus 容器启动时通过 `sed` 将 `__CLAPI_SD_ENDPOINT__` 替换为实际值：
 
@@ -146,7 +146,7 @@ Docker Compose 中 Prometheus 容器启动时通过 `sed` 将 `__CLAPI_SD_ENDPOI
 services:
   prometheus:
     environment:
-      CLAPI_SD_ENDPOINT: "${CLAPI_SD_ENDPOINT:-http://clapi:8255}"
+      CLAPI_SD_ENDPOINT: "${CLAPI_SD_ENDPOINT:-https://clapi:8255}"
     volumes:
       - ./config/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml.tmpl:ro
     entrypoint: ["/bin/sh", "-c"]
@@ -190,7 +190,7 @@ services:
 
 1. **编译验证**：`cd api && go build ./...` 通过
 2. **部署验证**：重建 clapi 镜像，`docker compose up -d clapi prometheus`
-3. **http_sd 端点验证**：`curl -s http://clapi:8255/api/v1/prometheus/sd/libvirt_exporter | jq .` 确认返回所有 hyper
+3. **http_sd 端点验证**：`curl -s https://clapi:8255/api/v1/prometheus/sd/libvirt_exporter | jq .` 确认返回所有 hyper
 4. **Prometheus targets 状态**：访问 `http://${PUBLIC_IP}:9090/api/v1/targets` 确认所有 job 状态为 `up`
 5. **指标验证**：查询 `libvirt_domain_info_cpu_time_seconds_total` 确认有数据返回
 

@@ -267,7 +267,7 @@ curl -k -X POST https://<PUBLIC_IP>/api/v1/regions \
   -d '{
     "name": "default",
     "display_name": "默认区域",
-    "internal_endpoint": "http://clapi:8255",
+    "internal_endpoint": "https://clapi:8255",
     "internal_secret": "<CPGATEWAY_SECRET_KEY>",
     "is_available": true,
     "description": "默认 CloudLand 区域"
@@ -276,7 +276,7 @@ curl -k -X POST https://<PUBLIC_IP>/api/v1/regions \
 
 > [!IMPORTANT]
 > - `internal_secret` 必须与 `.env` 文件中的 `CPGATEWAY_SECRET_KEY` 一致
-> - 单机部署使用 `http://clapi:8255`（Docker 内部网络）
+> - 单机部署使用 `https://clapi:8255`（Docker 内部网络）
 > - 跨机部署使用 `http://<INTERNAL_IP>:8255`
 
 完成后即可通过 Web UI 正常使用所有功能。

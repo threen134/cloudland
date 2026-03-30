@@ -234,6 +234,9 @@ func Register() (r *gin.Engine) {
 			metricsGroup.POST("/instances/traffic/his_data", monitorAPI.GetTraffic)
 			metricsGroup.POST("/instances/volume/his_data", monitorAPI.GetVolume)
 
+			metricsGroup.POST("/hypers/cpu/his_data", monitorAPI.GetHyperCPU)
+			metricsGroup.POST("/hypers/memory/his_data", monitorAPI.GetHyperMemory)
+
 			metricsGroup.POST("/alarm/cpu/rules", alarmAPI.CreateCPURule)
 			metricsGroup.GET("/alarm/cpu/rules", alarmAPI.GetCPURules)
 			metricsGroup.GET("/alarm/active-rules", alarmAPI.GetActiveRules)

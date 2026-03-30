@@ -3,7 +3,8 @@ import { ref, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { hypervisorsApi, type Hypervisor } from '../../api/hypervisors'
 import { zonesApi } from '../../api/zones'
-import { ArrowLeft, Server, Cpu, Copy, Check, Edit, Save, X, Wrench, Loader2 } from 'lucide-vue-next'
+import { ArrowLeft, Server, Cpu, Copy, Check, Edit, Save, X, Wrench, Loader2, ChevronDown, Pencil, Settings, Info, Activity } from 'lucide-vue-next'
+import HostMonitoringCharts from '../../components/monitoring/HostMonitoringCharts.vue'
 import { useI18n } from 'vue-i18n'
 import { useToast } from '../../composables/useToast'
 
@@ -18,6 +19,9 @@ const copiedField = ref<string | null>(null)
 const saving = ref(false)
 const editMode = ref(false)
 const zoneList = ref<any[]>([])
+const showActionMenu = ref(false)
+const toggleActionMenu = () => { showActionMenu.value = !showActionMenu.value }
+const closeActionMenu = () => { showActionMenu.value = false }
 
 const STATUS_MAP: Record<number, { label: string; class: string }> = {
     0: { label: 'Disabled', class: 'status-disabled' },
@@ -43,6 +47,12 @@ const maintainForm = ref({
     migrate: true,
     target_hyper: -1
 })
+
+const activeTab = ref('overview')
+const tabs = [
+    { id: 'overview', label: 'dashboard.table.overview', icon: Info },
+    { id: 'monitor', label: 'dashboard.instanceDetail.resourceMonitoring', icon: Activity }
+]
 
 const fetchHypervisorDetail = async () => {
     loading.value = true
@@ -96,6 +106,7 @@ const getStatusInfo = (status: number) => {
 const goBack = () => { router.push({ name: 'hypervisors' }) }
 
 const toggleEdit = async () => {
+    closeActionMenu()
     editMode.value = true
     try {
         const resp = await zonesApi.fetchZones()
@@ -134,6 +145,7 @@ const handleSave = async () => {
 
 // Maintain
 const openMaintainModal = () => {
+    closeActionMenu()
     maintainForm.value = { migrate: true, target_hyper: -1 }
     showMaintainModal.value = true
 }
@@ -183,14 +195,16 @@ onMounted(fetchHypervisorDetail)
 
     <!-- Detail Content -->
     <div v-else-if="hypervisor" class="detail-content">
-      <!-- Title Bar -->
       <div class="title-bar card">
         <div class="title-info">
           <div class="title-icon">
             <Server :size="28" />
           </div>
           <div>
-            <h2 class="resource-title">{{ hypervisor.hostname }}</h2>
+            <h2 class="resource-title">
+              {{ hypervisor.hostname }}
+              <span :class="['badge', getStatusInfo(hypervisor.status).class]">{{ hypervisor.status_name || getStatusInfo(hypervisor.status).label }}</span>
+            </h2>
             <div class="resource-id-row">
               <span class="resource-id-text">{{ hypervisor.uuid }}</span>
               <button class="copy-btn" @click="copyToClipboard(hypervisor.uuid, 'uuid')" :title="t('messages.copied')">
@@ -201,146 +215,169 @@ onMounted(fetchHypervisorDetail)
           </div>
         </div>
         <div class="title-actions">
-          <button v-if="hypervisor.status === 1" class="btn btn-secondary btn-sm" @click="openMaintainModal">
-            <Wrench :size="14" />
-            {{ t('dashboard.hypervisorActions.maintain') }}
-          </button>
-          <span :class="['badge', 'badge-lg', getStatusInfo(hypervisor.status).class]">
-            {{ hypervisor.status_name || getStatusInfo(hypervisor.status).label }}
-          </span>
+          <div class="action-dropdown">
+            <button class="btn btn-primary" @click="toggleActionMenu">
+              {{ t('actions.actions') }} <ChevronDown :size="14" />
+            </button>
+            <Transition name="dropdown">
+              <div v-if="showActionMenu" class="dropdown-menu">
+                <button v-if="hypervisor.status === 1" class="dropdown-item" @click="openMaintainModal">
+                  <Wrench :size="14" /> {{ t('dashboard.hypervisorActions.maintain') }}
+                </button>
+                <button class="dropdown-item" @click="toggleEdit">
+                  <Pencil :size="14" /> {{ t('actions.edit') }}
+                </button>
+              </div>
+            </Transition>
+            <div v-if="showActionMenu" class="dropdown-backdrop" @click="closeActionMenu"></div>
+          </div>
         </div>
+      </div>
+
+      <!-- Tabs -->
+      <div class="detail-tabs">
+        <button 
+          v-for="tab in tabs" 
+          :key="tab.id"
+          class="tab-btn" 
+          :class="{ active: activeTab === tab.id }"
+          @click="activeTab = tab.id"
+        >
+          <component :is="tab.icon" :size="16" />
+          {{ t(tab.label) }}
+        </button>
       </div>
 
       <!-- Info Sections -->
-      <div class="info-grid">
-        <!-- Basic Info Card -->
-        <div class="info-card card">
-          <h3 class="card-section-title">{{ t('dashboard.table.overview') }}</h3>
-          <div class="info-rows">
-            <div class="info-row">
-              <span class="info-label">{{ t('dashboard.table.hostname') }}</span>
-              <span class="info-value">{{ hypervisor.hostname }}</span>
+      <div v-if="activeTab === 'overview'">
+        <div class="info-grid">
+          <!-- Basic Info Card -->
+          <div class="info-card card">
+            <h3 class="card-section-title">{{ t('dashboard.table.overview') }}</h3>
+            <div class="info-rows">
+              <div class="info-row">
+                <span class="info-label">{{ t('dashboard.table.hostname') }}</span>
+                <span class="info-value">{{ hypervisor.hostname }}</span>
+              </div>
+              <div class="info-row">
+                <span class="info-label">{{ t('dashboard.table.hostIp') }}</span>
+                <span class="info-value mono">{{ hypervisor.host_ip }}</span>
+              </div>
+              <div class="info-row">
+                <span class="info-label">Route IP</span>
+                <span class="info-value mono">{{ hypervisor.route_ip || '-' }}</span>
+              </div>
+              <div class="info-row">
+                <span class="info-label">{{ t('dashboard.hypervisorDeploy.virtType') }}</span>
+                <span class="info-value">{{ hypervisor.virt_type }}</span>
+              </div>
+              <div class="info-row">
+                <span class="info-label">Host ID</span>
+                <span class="info-value mono">{{ hypervisor.hostid }}</span>
+              </div>
+              <div class="info-row">
+                <span class="info-label">{{ t('dashboard.table.zone') }}</span>
+                <span class="info-value">{{ hypervisor.zone_name || '-' }}</span>
+              </div>
             </div>
-            <div class="info-row">
-              <span class="info-label">{{ t('dashboard.table.hostIp') }}</span>
-              <span class="info-value mono">{{ hypervisor.host_ip }}</span>
-            </div>
-            <div class="info-row">
-              <span class="info-label">Route IP</span>
-              <span class="info-value mono">{{ hypervisor.route_ip || '-' }}</span>
-            </div>
-            <div class="info-row">
-              <span class="info-label">{{ t('dashboard.hypervisorDeploy.virtType') }}</span>
-              <span class="info-value">{{ hypervisor.virt_type }}</span>
-            </div>
-            <div class="info-row">
-              <span class="info-label">Host ID</span>
-              <span class="info-value mono">{{ hypervisor.hostid }}</span>
+          </div>
+
+          <!-- Resources Card -->
+          <div class="info-card card">
+            <h3 class="card-section-title">{{ t('dashboard.table.resourcesCapacity') }}</h3>
+            <div class="info-rows">
+              <div class="info-row">
+                <span class="info-label">{{ t('dashboard.table.vcpus') }}</span>
+                <span class="info-value">{{ hypervisor.cpu }} / {{ hypervisor.cpu_total }} cores</span>
+              </div>
+              <div class="info-row">
+                <span class="info-label">{{ t('dashboard.table.memory') }}</span>
+                <span class="info-value">{{ formatMemory(hypervisor.memory) }} / {{ formatMemory(hypervisor.memory_total) }}</span>
+              </div>
+              <div class="info-row">
+                <span class="info-label">{{ t('dashboard.table.disk') }}</span>
+                <span class="info-value">{{ formatDisk(hypervisor.disk) }} / {{ formatDisk(hypervisor.disk_total) }}</span>
+              </div>
             </div>
           </div>
         </div>
 
-        <!-- Resources Card -->
-        <div class="info-card card">
-          <h3 class="card-section-title">{{ t('dashboard.table.resourcesCapacity') }}</h3>
+        <!-- Overcommit Card -->
+        <div class="info-card card" style="margin-bottom: var(--spacing-5);">
+          <h3 class="card-section-title">{{ t('dashboard.table.overcommit') }}</h3>
+          
           <div class="info-rows">
             <div class="info-row">
-              <span class="info-label">{{ t('dashboard.table.vcpus') }}</span>
-              <span class="info-value">{{ hypervisor.cpu }} / {{ hypervisor.cpu_total }} cores</span>
+               <span class="info-label">{{ t('dashboard.table.cpuOverCommit') }}</span>
+              <span class="info-value">{{ hypervisor.cpu_over_rate }}x</span>
             </div>
             <div class="info-row">
-              <span class="info-label">{{ t('dashboard.table.memory') }}</span>
-              <span class="info-value">{{ formatMemory(hypervisor.memory) }} / {{ formatMemory(hypervisor.memory_total) }}</span>
+               <span class="info-label">{{ t('dashboard.table.memOverCommit') }}</span>
+              <span class="info-value">{{ hypervisor.mem_over_rate }}x</span>
             </div>
             <div class="info-row">
-              <span class="info-label">{{ t('dashboard.table.disk') }}</span>
-              <span class="info-value">{{ formatDisk(hypervisor.disk) }} / {{ formatDisk(hypervisor.disk_total) }}</span>
+               <span class="info-label">{{ t('dashboard.table.diskOverCommit') }}</span>
+              <span class="info-value">{{ hypervisor.disk_over_rate }}x</span>
+            </div>
+            <div class="info-row" v-if="hypervisor.remark">
+               <span class="info-label">{{ t('dashboard.table.remark') }}</span>
+              <span class="info-value">{{ hypervisor.remark }}</span>
             </div>
           </div>
         </div>
       </div>
 
-      <!-- Configuration Card -->
-      <div class="info-card card" style="margin-bottom: var(--spacing-5);">
-        <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border-light); margin-bottom: var(--spacing-4); padding-bottom: var(--spacing-3);">
-           <h3 class="card-section-title" style="margin: 0; padding: 0; border: none;">{{ t('dashboard.table.configuration') }}</h3>
-          <button v-if="!editMode" class="btn btn-secondary btn-sm" @click="toggleEdit">
-            <Edit :size="14" /> {{ t('actions.edit') }}
-          </button>
-          <div v-else style="display: flex; gap: 8px;">
-            <button class="btn btn-ghost btn-sm" @click="cancelEdit" :disabled="saving">
-               <X :size="14" /> {{ t('actions.cancel') }}
-            </button>
-            <button class="btn btn-primary btn-sm" @click="handleSave" :disabled="saving">
-              <Save :size="14" v-if="!saving" />
-               {{ saving ? t('messages.loading') : t('actions.save') }}
-            </button>
-          </div>
-        </div>
-
-        <div class="info-rows" v-if="!editMode">
-          <div class="info-row">
-             <span class="info-label">{{ t('dashboard.table.status') }}</span>
-            <span class="info-value">
-              <span :class="['badge', getStatusInfo(hypervisor.status).class]">{{ hypervisor.status_name || getStatusInfo(hypervisor.status).label }}</span>
-            </span>
-          </div>
-          <div class="info-row">
-             <span class="info-label">{{ t('dashboard.table.zone') }}</span>
-            <span class="info-value">{{ hypervisor.zone_name || '-' }}</span>
-          </div>
-          <div class="info-row">
-             <span class="info-label">{{ t('dashboard.table.cpuOverCommit') }}</span>
-            <span class="info-value">{{ hypervisor.cpu_over_rate }}x</span>
-          </div>
-          <div class="info-row">
-             <span class="info-label">{{ t('dashboard.table.memOverCommit') }}</span>
-            <span class="info-value">{{ hypervisor.mem_over_rate }}x</span>
-          </div>
-          <div class="info-row">
-             <span class="info-label">{{ t('dashboard.table.diskOverCommit') }}</span>
-            <span class="info-value">{{ hypervisor.disk_over_rate }}x</span>
-          </div>
-          <div class="info-row" v-if="hypervisor.remark">
-             <span class="info-label">{{ t('dashboard.table.remark') }}</span>
-            <span class="info-value">{{ hypervisor.remark }}</span>
-          </div>
-        </div>
-
-        <div class="form-grid" v-else>
-          <div class="form-group">
-             <label class="form-label">{{ t('dashboard.table.status') }}</label>
-            <select v-model="form.status" class="form-select">
-                <option :value="0">Disabled</option>
-                <option :value="1">Active</option>
-            </select>
-          </div>
-          <div class="form-group">
-             <label class="form-label">{{ t('dashboard.table.zone') }}</label>
-            <select v-model="form.zone_id" class="form-select">
-                <option :value="0">-</option>
-                <option v-for="z in zoneList" :key="z.id" :value="z.id">{{ z.name }}</option>
-            </select>
-          </div>
-          <div class="form-group">
-             <label class="form-label">{{ t('dashboard.table.cpuOverCommit') }}</label>
-            <input type="number" step="0.1" min="1" v-model="form.cpu_over_rate" class="form-select" />
-          </div>
-          <div class="form-group">
-             <label class="form-label">{{ t('dashboard.table.memOverCommit') }}</label>
-            <input type="number" step="0.1" min="1" v-model="form.mem_over_rate" class="form-select" />
-          </div>
-          <div class="form-group">
-             <label class="form-label">{{ t('dashboard.table.diskOverCommit') }}</label>
-            <input type="number" step="0.1" min="1" v-model="form.disk_over_rate" class="form-select" />
-          </div>
-          <div class="form-group">
-             <label class="form-label">{{ t('dashboard.table.remark') }}</label>
-            <input type="text" v-model="form.remark" class="form-select" />
-          </div>
-        </div>
+      <!-- Monitoring Content -->
+      <div v-else-if="activeTab === 'monitor'" class="monitor-section">
+        <HostMonitoringCharts :hostname="hypervisor.hostname" />
       </div>
     </div>
+
+    <!-- Edit Overcommit Modal -->
+    <Teleport to="body">
+      <div v-if="editMode" class="modal-overlay" @click.self="cancelEdit">
+        <div class="modal-content" style="max-width: 500px;">
+          <div class="modal-header">
+            <h3>{{ t('actions.edit') }} {{ t('dashboard.table.overcommit') }}</h3>
+            <button class="btn btn-ghost btn-icon" @click="cancelEdit"><X :size="18" /></button>
+          </div>
+          <div class="modal-body">
+            <div class="form-grid" style="grid-template-columns: 1fr 1fr; gap: 16px;">
+              <div class="form-group">
+                 <label class="form-label">{{ t('dashboard.table.zone') }}</label>
+                <select v-model="form.zone_id" class="form-select">
+                    <option :value="0">-</option>
+                    <option v-for="z in zoneList" :key="z.id" :value="z.id">{{ z.name }}</option>
+                </select>
+              </div>
+              <div class="form-group">
+                 <label class="form-label">{{ t('dashboard.table.cpuOverCommit') }}</label>
+                <input type="number" step="0.1" min="1" v-model="form.cpu_over_rate" class="form-select" />
+              </div>
+              <div class="form-group">
+                 <label class="form-label">{{ t('dashboard.table.memOverCommit') }}</label>
+                <input type="number" step="0.1" min="1" v-model="form.mem_over_rate" class="form-select" />
+              </div>
+              <div class="form-group">
+                 <label class="form-label">{{ t('dashboard.table.diskOverCommit') }}</label>
+                <input type="number" step="0.1" min="1" v-model="form.disk_over_rate" class="form-select" />
+              </div>
+              <div class="form-group" style="grid-column: span 2;">
+                 <label class="form-label">{{ t('dashboard.table.remark') }}</label>
+                <input type="text" v-model="form.remark" class="form-select" />
+              </div>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button class="btn btn-secondary" @click="cancelEdit" :disabled="saving">{{ t('actions.cancel') }}</button>
+            <button class="btn btn-primary" @click="handleSave" :disabled="saving">
+              <Loader2 v-if="saving" :size="14" class="spinning" />
+              {{ saving ? t('messages.loading') : t('actions.save') }}
+            </button>
+          </div>
+        </div>
+      </div>
+    </Teleport>
 
     <!-- Maintain Modal -->
     <Teleport to="body">
@@ -437,10 +474,19 @@ onMounted(fetchHypervisorDetail)
 }
 
 .resource-title {
-  margin: 0 0 4px 0;
+  margin: 0;
   font-size: var(--font-size-xl);
   font-weight: var(--font-weight-semibold);
   color: var(--text-primary);
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-3);
+}
+
+.resource-title .badge {
+  font-size: var(--font-size-xs);
+  font-weight: 500;
+  vertical-align: middle;
 }
 
 .resource-id-row { display: flex; align-items: center; gap: var(--spacing-2); }
@@ -467,6 +513,67 @@ onMounted(fetchHypervisorDetail)
 .copied-icon { color: var(--success-color); }
 .title-actions { display: flex; align-items: center; gap: var(--spacing-3); }
 .badge-lg { font-size: var(--font-size-sm); padding: 6px 14px; }
+
+/* Action Dropdown */
+.action-dropdown {
+  position: relative;
+}
+
+.dropdown-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 9;
+}
+
+.dropdown-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  min-width: 180px;
+  background: var(--bg-primary, #fff);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-md);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+  padding: 4px 0;
+  z-index: 10;
+}
+
+.dropdown-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 14px;
+  border: none;
+  background: none;
+  font-size: var(--font-size-sm);
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: background 0.15s;
+  text-align: left;
+}
+
+.dropdown-item:hover:not(:disabled) {
+  background: var(--bg-hover, #f3f4f6);
+}
+
+.dropdown-enter-active {
+  transition: opacity 0.15s, transform 0.15s;
+}
+
+.dropdown-leave-active {
+  transition: opacity 0.1s, transform 0.1s;
+}
+
+.dropdown-enter-from {
+  opacity: 0;
+  transform: translateY(-4px);
+}
+
+.dropdown-leave-to {
+  opacity: 0;
+  transform: translateY(-4px);
+}
 
 .badge.status-active, .status-active { background: rgba(16, 185, 129, 0.1); color: #10b981; }
 .status-error { background: rgba(239, 68, 68, 0.1); color: #ef4444; }
@@ -549,6 +656,57 @@ onMounted(fetchHypervisorDetail)
 
 .spinning { animation: spin 1s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
+
+.detail-tabs {
+  display: flex;
+  gap: var(--spacing-4);
+  margin-bottom: var(--spacing-6);
+  border-bottom: 1px solid var(--border-color);
+  padding: 0 var(--spacing-2);
+}
+
+.tab-btn {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-2);
+  padding: var(--spacing-3) var(--spacing-4);
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: var(--text-secondary);
+  font-size: 0.95rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+  margin-bottom: -1px;
+}
+
+.tab-btn:hover {
+  color: var(--text-primary);
+}
+
+.tab-btn.active {
+  color: var(--text-primary);
+  border-bottom-color: var(--primary-color);
+}
+
+.tab-btn svg {
+  opacity: 0.7;
+}
+
+.tab-btn.active svg {
+  opacity: 1;
+  color: var(--primary-color);
+}
+
+.monitor-section {
+  animation: fadeIn 0.3s ease-out;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
 
 @media (max-width: 768px) {
   .info-grid, .form-grid { grid-template-columns: 1fr; }

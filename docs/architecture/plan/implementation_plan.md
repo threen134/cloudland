@@ -96,7 +96,7 @@ SCI_LOG_DIRECTORY: ""   # 空字符串 = stdout JSON 模式
 1. **编译验证**：在本地运行 `make` 确保 C++ 代码编译成功，无新增 warning。
 
 2. **Docker 验证（cloudland）**：
-   - 在测试服务器 (`165.192.110.235`) 上构建并部署。
+   - 在测试服务器 (`165.192.110.233`) 上构建并部署。
    - `docker compose logs -f cloudland-cland` 查看是否输出单行 JSON。
    - 确认 `level`、`file`、`line`、`message`、`request_id` 字段均存在。
 

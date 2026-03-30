@@ -76,7 +76,7 @@ CloudLand 采用分层配置策略。对于容器化部署，大部分关键参�
 ### 8. 监控
 | 变量名 | 说明 | 示例 |
 | :--- | :--- | :--- |
-| `CLAPI_SD_ENDPOINT` | Prometheus http_sd 服务发现地址。 | `http://clapi:8255` |
+| `CLAPI_SD_ENDPOINT` | Prometheus http_sd 服务发现地址。 | `https://clapi:8255` |
 | `GRAFANA_ADMIN_PASSWORD` | Grafana 管理员密码。 | `admin` |
 | `SLACK_WEBHOOK_URL` | Slack 告警 Webhook（可选）。 | `https://hooks.slack.com/...` |
 | `SLACK_CHANNEL` | Slack 告警频道。 | `#cloudland-alerts` |

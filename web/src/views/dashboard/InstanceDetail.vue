@@ -5,8 +5,9 @@ import { useI18n } from 'vue-i18n'
 import { useToast } from '../../composables/useToast'
 import { instancesApi, type Instance } from '../../api/instances'
 import { securityGroupsApi, type SecurityGroup } from '../../api/networks'
+import MonitoringCharts from '../../components/monitoring/MonitoringCharts.vue'
 import { vmAlarmRulesApi, VM_RULE_TYPES, type VMAlarmRuleGroup, type VMRuleType } from '../../api/vmAlarmRules'
-import { ArrowLeft, Play, Square, RotateCw, Trash2, Server, Monitor, Cpu, HardDrive, MemoryStick, Network, Key, ExternalLink, Copy, Check, ShieldAlert, Link, Unlink, Eye, EyeOff, ChevronDown, KeyRound, RefreshCw, Maximize2, Pencil, Shuffle, Shield } from 'lucide-vue-next'
+import { ArrowLeft, Play, Square, RotateCw, Trash2, Server, Monitor, Cpu, HardDrive, MemoryStick, Network, Key, ExternalLink, Copy, Check, ShieldAlert, Link, Unlink, Eye, EyeOff, ChevronDown, KeyRound, RefreshCw, Maximize2, Pencil, Shuffle, Shield, Activity } from 'lucide-vue-next'
 import DeleteModal from '../../components/modals/DeleteModal.vue'
 
 const route = useRoute()
@@ -21,6 +22,7 @@ const actionLoading = ref<string | null>(null)
 const copiedField = ref<string | null>(null)
 const showPassword = ref(false)
 const showActionMenu = ref(false)
+const activeTab = ref<'info' | 'monitoring' | 'alerts'>('info')
 
 const toast = useToast()
 
@@ -662,9 +664,32 @@ onMounted(() => {
                     </div>
                 </div>
             </div>
+            <!-- Tabs Navigation -->
+            <div class="card tabs-nav-container">
+                <div class="tabs-nav">
+                    <button 
+                        :class="['tab-btn', { active: activeTab === 'info' }]"
+                        @click="activeTab = 'info'"
+                    >
+                        <Server :size="16" /> {{ $t('dashboard.instanceDetail.generalInfo') }}
+                    </button>
+                    <button 
+                        :class="['tab-btn', { active: activeTab === 'monitoring' }]"
+                        @click="activeTab = 'monitoring'"
+                    >
+                        <Activity :size="16" /> {{ $t('dashboard.instanceDetail.resourceMonitoring') }}
+                    </button>
+                    <button 
+                        :class="['tab-btn', { active: activeTab === 'alerts' }]"
+                        @click="activeTab = 'alerts'"
+                    >
+                        <ShieldAlert :size="16" /> {{ t('dashboard.instanceDetail.monitoringAlerts') }}
+                    </button>
+                </div>
+            </div>
 
-            <!-- Two-Column Layout -->
-            <div class="two-col-layout">
+            <!-- Two-Column Layout (Info Tab) -->
+            <div v-if="activeTab === 'info'" class="two-col-layout">
                 <!-- Left Column: General Info + Storage -->
                 <div class="col-stack">
                     <div class="card info-card">
@@ -836,8 +861,16 @@ onMounted(() => {
                 </div>
             </div>
 
-            <!-- Monitoring & Alerts (Full Width) -->
-            <div class="card alarm-card">
+            <!-- Monitoring Charts (Monitoring Tab) -->
+            <MonitoringCharts 
+                v-if="activeTab === 'monitoring'"
+                :instance-id="instance.id" 
+                :interfaces="instance.interfaces || []" 
+                :volumes="instance.volumes || []" 
+            />
+
+            <!-- Monitoring & Alerts (Alerts Tab) -->
+            <div v-if="activeTab === 'alerts'" class="card alarm-card">
                 <div class="alarm-card-header">
                     <h3><ShieldAlert :size="16" /> {{ t('dashboard.instanceDetail.monitoringAlerts') }}</h3>
                     <button class="btn btn-ghost btn-sm" @click="openLinkModal">
@@ -1708,5 +1741,54 @@ onMounted(() => {
     border-radius: var(--radius-sm);
     font-size: var(--font-size-sm);
     color: var(--text-secondary);
+}
+
+/* Tabs Navigation Styles */
+.tabs-nav-container {
+    padding: 0;
+    margin-bottom: var(--spacing-6);
+    overflow: hidden;
+    border: none;
+    background: transparent;
+    box-shadow: none;
+}
+
+.tabs-nav {
+    display: flex;
+    padding: 0;
+    border-bottom: 1px solid var(--border-light);
+    background: transparent;
+}
+
+.tab-btn {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-2);
+    padding: var(--spacing-4) var(--spacing-6);
+    background: none;
+    border: none;
+    border-bottom: 2px solid transparent;
+    font-size: var(--font-size-sm);
+    font-weight: 500;
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: all 0.2s;
+    margin-bottom: -1px;
+}
+
+.tab-btn:hover {
+    color: var(--text-primary);
+}
+
+.tab-btn.active {
+    color: var(--primary-color);
+    border-bottom-color: var(--primary-color);
+    background: white;
+    border-top-left-radius: var(--radius-md);
+    border-top-right-radius: var(--radius-md);
+}
+
+.alarm-card {
+    margin-top: 0;
 }
 </style>

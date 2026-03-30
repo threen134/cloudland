@@ -18,7 +18,7 @@
 #  13. 清理测试数据
 #
 # 使用方法:
-#   export BASE_URL=https://165.192.110.235
+#   export BASE_URL=https://165.192.110.233
 #   export ADMIN_USER=admin
 #   export ADMIN_PASS=AgFFTFV8AzK4FG0
 #   bash Funcitontest/test_user_invitation_api.sh
@@ -30,7 +30,7 @@ set -euo pipefail
 set +H  # Disable bash history expansion (! in strings)
 
 # ---------- 配置 ----------
-BASE_URL="${BASE_URL:-https://165.192.110.235}"
+BASE_URL="${BASE_URL:-https://165.192.110.233}"
 API="${BASE_URL}/api/v1"
 ADMIN_USER="${ADMIN_USER:-admin}"
 ADMIN_PASS="${ADMIN_PASS:-AgFFTFV8AzK4FG0}"
