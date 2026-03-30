@@ -24,39 +24,6 @@ var (
 
 type LoadBalancerAdmin struct{}
 
-type BackendConfig struct {
-	BackendURL string `json:"backend_url"`
-	Status     string `json:"status"`
-}
-
-type ListenerConfig struct {
-	Name     string           `json:"name"`
-	Mode     string           `json:"mode"`
-	Key      string           `json:"key"`
-	Cert     string           `json:"cert"`
-	Port     int32            `json:"port"`
-	Backends []*BackendConfig `json:"backends"`
-}
-
-type LoadBalancerConfig struct {
-	Listeners   []*ListenerConfig `json:"listeners"`
-	FloatingIps []string          `json:"floating_ips"`
-}
-
-type LoadBalancerFloatingIp struct {
-	Address  string `json:"address"`
-	Vlan     int64  `json:"vlan"`
-	Gateway  string `json:"gateway"`
-	MarkID   int64  `json:"mark_id"`
-	Inbound  int32  `json:"inbound"`
-	Outbound int32  `json:"outbound"`
-}
-
-type LoadBalancerFloatingIpConfig struct {
-	FloatingIps []*LoadBalancerFloatingIp `json:"floating_ips"`
-	Ports       []int32                   `json:"ports"`
-}
-
 func GetVrrpInterfaces(ctx context.Context, vrrpInstance *model.VrrpInstance) (vrrpIface1, vrrpIface2 *model.Interface, err error) {
 	logger.Infof("ENTER GetVrrpInterfaces: vrrpInstanceID=%d", vrrpInstance.ID)
 	defer func() {
@@ -170,7 +137,7 @@ func CreateVrrpConf(ctx context.Context, loadBalancer *model.LoadBalancer) (err 
 		logger.Errorf("Failed to get load balancer floating ip json data, %v", err)
 		return
 	}
-	vrrpIface1, vrrpIface2, err := GetVrrpInterfaces(ctx, loadBalancer.VrrpInstance)
+	vrrpIface1, vrrpIface2, err := GetVrrpInterfaces(ctx, loadBalancer.VrrpInstance.ID)
 	if err != nil {
 		logger.Error("No valid hypervisor", err)
 		return
@@ -511,7 +478,7 @@ func (a *LoadBalancerAdmin) Delete(ctx context.Context, loadBalancer *model.Load
 	vrrpInstance := loadBalancer.VrrpInstance
 	vrrpSubnet := vrrpInstance.VrrpSubnet
 	routerID := loadBalancer.RouterID
-	vrrpIface1, vrrpIface2, err := GetVrrpInterfaces(ctx, vrrpInstance)
+	vrrpIface1, vrrpIface2, err := GetVrrpInterfaces(ctx, vrrpInstance.ID)
 	if err != nil {
 		logger.Error("Failed to get vrrp interfaces", err)
 		err = NewCLError(ErrInterfaceDeleteFailed, "Failed to delete vrrp interface 2", err)
