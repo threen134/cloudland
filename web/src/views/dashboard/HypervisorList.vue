@@ -2,7 +2,7 @@
 import { ref, onMounted, computed } from 'vue'
 import { hypervisorsApi, type Hypervisor, type HyperDeployPayload } from '../../api/hypervisors'
 import { zonesApi } from '../../api/zones'
-import { Search as SearchIcon, Server, Plus, Trash2, RefreshCw, Copy, Check, X, Loader2 } from 'lucide-vue-next'
+import { Search as SearchIcon, Server, Plus, Trash2, RefreshCw, Copy, Check, X, Loader2, HelpCircle } from 'lucide-vue-next'
 import { useI18n } from 'vue-i18n'
 import { useToast } from '../../composables/useToast'
 
@@ -26,6 +26,7 @@ const deployForm = ref<HyperDeployPayload>({
     hostname: '',
     network_device: 'eth0',
     vlan_device: '',
+    private_vlan_device: '',
     dns_server: '8.8.8.8',
     domain: 'example.com',
     zone_name: '',
@@ -106,7 +107,7 @@ const usagePercent = (used: number, total: number) => {
 // Deploy
 const openDeployModal = async () => {
     deployForm.value = {
-        ip: '', hostname: '', network_device: 'eth0', vlan_device: '',
+        ip: '', hostname: '', network_device: '', vlan_device: '', private_vlan_device: '',
         dns_server: '8.8.8.8', domain: 'example.com', zone_name: '', virt_type: 'kvm-x86_64'
     }
     deployResult.value = null
@@ -119,7 +120,7 @@ const openDeployModal = async () => {
 }
 
 const handleDeploy = async () => {
-    if (!deployForm.value.ip || !deployForm.value.hostname) return
+    if (!deployForm.value.ip || !deployForm.value.hostname || !deployForm.value.network_device) return
     deploying.value = true
     try {
         const resp = await hypervisorsApi.deployHypervisor(deployForm.value)
@@ -304,12 +305,34 @@ onMounted(fetchHypervisors)
                 <input type="text" v-model="deployForm.hostname" class="form-input" :placeholder="t('dashboard.forms.placeholder.hostnameExample')" />
               </div>
               <div class="form-group">
-                <label class="form-label">{{ t('dashboard.hypervisorDeploy.networkDevice') }}</label>
+                <label class="form-label">
+                  {{ t('dashboard.hypervisorDeploy.networkDevice') }} *
+                  <span class="tooltip-wrapper">
+                    <HelpCircle :size="14" class="help-icon" />
+                    <span class="tooltip-text">{{ t('dashboard.hypervisorDeploy.tooltips.networkDevice') }}</span>
+                  </span>
+                </label>
                 <input type="text" v-model="deployForm.network_device" class="form-input" :placeholder="t('dashboard.forms.placeholder.netDeviceExample')" />
               </div>
               <div class="form-group">
-                <label class="form-label">{{ t('dashboard.hypervisorDeploy.vlanDevice') }}</label>
+                <label class="form-label">
+                  {{ t('dashboard.hypervisorDeploy.vlanDevice') }}
+                  <span class="tooltip-wrapper">
+                    <HelpCircle :size="14" class="help-icon" />
+                    <span class="tooltip-text">{{ t('dashboard.hypervisorDeploy.tooltips.vlanDevice') }}</span>
+                  </span>
+                </label>
                 <input type="text" v-model="deployForm.vlan_device" class="form-input" :placeholder="deployForm.network_device || t('dashboard.forms.placeholder.netDeviceExample')" />
+              </div>
+              <div class="form-group">
+                <label class="form-label">
+                  {{ t('dashboard.hypervisorDeploy.privateVlanDevice') }}
+                  <span class="tooltip-wrapper">
+                    <HelpCircle :size="14" class="help-icon" />
+                    <span class="tooltip-text">{{ t('dashboard.hypervisorDeploy.tooltips.privateVlanDevice') }}</span>
+                  </span>
+                </label>
+                <input type="text" v-model="deployForm.private_vlan_device" class="form-input" :placeholder="deployForm.vlan_device || deployForm.network_device || t('dashboard.forms.placeholder.netDeviceExample')" />
               </div>
               <div class="form-group">
                 <label class="form-label">{{ t('dashboard.hypervisorDeploy.dnsServer') }}</label>
@@ -354,7 +377,7 @@ onMounted(fetchHypervisors)
 
           <div class="modal-footer">
             <button class="btn btn-secondary" @click="closeDeployModal">{{ deployResult ? t('actions.close') : t('actions.cancel') }}</button>
-            <button v-if="!deployResult" class="btn btn-primary" @click="handleDeploy" :disabled="deploying || !deployForm.ip || !deployForm.hostname">
+            <button v-if="!deployResult" class="btn btn-primary" @click="handleDeploy" :disabled="deploying || !deployForm.ip || !deployForm.hostname || !deployForm.network_device">
               {{ deploying ? t('messages.loading') : t('dashboard.hypervisorActions.deploy') }}
             </button>
           </div>
@@ -538,10 +561,70 @@ onMounted(fetchHypervisors)
 .form-group { display: flex; flex-direction: column; }
 
 .form-label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
   font-size: 0.8125rem;
   color: var(--text-secondary);
   margin-bottom: 4px;
   font-weight: 500;
+}
+
+:deep(.modal-body) {
+  overflow: visible !important;
+}
+
+.help-icon {
+  color: var(--text-tertiary);
+  opacity: 0.7;
+  transition: opacity 0.2s;
+}
+
+.tooltip-wrapper {
+  position: relative;
+  display: inline-flex;
+  cursor: help;
+}
+
+.tooltip-text {
+  display: none;
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: -10px;
+  background: #1f2937;
+  color: white;
+  padding: 8px 12px;
+  border-radius: 4px;
+  font-size: 0.75rem;
+  font-weight: 400;
+  width: 220px;
+  line-height: 1.4;
+  z-index: 1000;
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.4);
+  pointer-events: none;
+  white-space: normal;
+  text-align: left;
+}
+
+/* Tooltip arrow */
+.tooltip-text::after {
+  content: "";
+  position: absolute;
+  top: 100%;
+  left: 17px;
+  margin-left: -5px;
+  border-width: 5px;
+  border-style: solid;
+  border-color: #1f2937 transparent transparent transparent;
+}
+
+.tooltip-wrapper:hover .tooltip-text {
+  display: block;
+}
+
+.tooltip-wrapper:hover .help-icon {
+  opacity: 1;
+  color: var(--primary-500);
 }
 
 .form-input {

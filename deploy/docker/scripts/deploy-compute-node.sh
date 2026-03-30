@@ -206,11 +206,14 @@ for p in "${SEARCH_PATHS[@]}"; do
             || printf '%s\n' "$LOCAL_PUB" >> /home/cland/.ssh/authorized_keys
         grep -qF "$LOCAL_PUB" /root/.ssh/authorized_keys 2>/dev/null \
             || printf '%s\n' "$LOCAL_PUB" >> /root/.ssh/authorized_keys
-        # 私钥写入所有需要的位置
-        cp "$p/cland.key" "$CLOUDLAND_DIR/deploy/.ssh/cland.key"
-        cp "$p/cland.key.pub" "$CLOUDLAND_DIR/deploy/.ssh/cland.key.pub"
+        # 私钥写入所有需要的位置 (如果是搜索到目标路径本身，则跳过拷贝操作，避免 cp 报错)
+        TARGET_SSH_DIR="$CLOUDLAND_DIR/deploy/.ssh"
+        if [ "$(realpath "$p")" != "$(realpath "$TARGET_SSH_DIR")" ]; then
+            cp "$p/cland.key" "$TARGET_SSH_DIR/cland.key"
+            cp "$p/cland.key.pub" "$TARGET_SSH_DIR/cland.key.pub"
+        fi
         cp "$p/cland.key" /root/.ssh/id_rsa
-        chmod 600 /root/.ssh/id_rsa "$CLOUDLAND_DIR/deploy/.ssh/cland.key"
+        chmod 600 /root/.ssh/id_rsa "$TARGET_SSH_DIR/cland.key"
         log "从本地文件获取 SSH 密钥: $p"
         SSH_KEYS_INSTALLED="local"
         break

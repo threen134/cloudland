@@ -73,6 +73,8 @@ curl -sk -X POST https://<PUBLIC_IP>/api/v1/hypers \
     "ip": "192.168.1.10",
     "hostname": "compute-01",
     "network_device": "eth0",
+    "vlan_device": "eth0",
+    "private_vlan_device": "eth0",
     "virt_type": "kvm-x86_64"
   }'
 ```

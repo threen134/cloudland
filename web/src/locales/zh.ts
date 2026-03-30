@@ -961,6 +961,12 @@ export default {
         hypervisorDeploy: {
             networkDevice: '网络设备',
             vlanDevice: 'VLAN 设备',
+            privateVlanDevice: '私有 VLAN 设备',
+            tooltips: {
+                networkDevice: '承载 VXLAN 隧道和管理通信的物理网卡（必填）',
+                vlanDevice: '承载标准 802.1Q VLAN 的南北向流量，默认为 Network Device',
+                privateVlanDevice: '承载 RFC 1918 私有网段的二层 VLAN 流量，默认为 VLAN Device',
+            },
             dnsServer: 'DNS 服务器',
             domain: '域名',
             virtType: '虚拟化类型',

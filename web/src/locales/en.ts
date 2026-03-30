@@ -962,6 +962,12 @@ export default {
         hypervisorDeploy: {
             networkDevice: 'Network Device',
             vlanDevice: 'VLAN Device',
+            privateVlanDevice: 'Private VLAN Device',
+            tooltips: {
+                networkDevice: 'Carries VXLAN tunnel and SCI management communication (required)',
+                vlanDevice: 'Carries north-south 802.1Q VLAN traffic, default same as Network Device',
+                privateVlanDevice: 'Carries east-west RFC 1918 private VLAN traffic, default same as VLAN Device',
+            },
             dnsServer: 'DNS Server',
             domain: 'Domain',
             virtType: 'Virt Type',

@@ -39,6 +39,7 @@ export interface HyperDeployPayload {
     hostname: string
     network_device?: string
     vlan_device?: string
+    private_vlan_device?: string
     dns_server?: string
     domain?: string
     zone_name?: string
