@@ -397,6 +397,10 @@ export default {
         alarms: '节点告警',
         regions: '区域管理',
         alerting: '告警管理',
+        alarm: {
+            enabled: '已启用',
+            disabled: '已禁用',
+        },
         alarmEvents: '告警事件',
         notificationChannels: '通知渠道',
         notificationChannel: '通知渠道',
@@ -599,6 +603,22 @@ export default {
             ruleIdPlaceholder: '留空则自动生成',
             thresholds: '阈值配置',
             durationMin: '持续时间(分)',
+            linkedCount: '{count} 个实例',
+            ruleId: '规则 ID',
+            ruleTypes: {
+                cpu: 'CPU',
+                memory: '内存',
+                bw: '带宽',
+            },
+            directions: {
+                in: '入站',
+                out: '出站',
+            },
+            levels: {
+                critical: '紧急',
+                warning: '告警',
+                info: '提示',
+            },
         },
         overview: {
             title: '概览',
@@ -1056,6 +1076,7 @@ export default {
     // 通用操作
     actions: {
         actions: '操作',
+        add: '添加',
         create: '创建',
         delete: '删除',
         edit: '编辑',

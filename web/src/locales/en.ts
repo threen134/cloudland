@@ -398,6 +398,10 @@ export default {
         alarms: 'Node Alarm Rules',
         regions: 'Regions',
         alerting: 'Alerting',
+        alarm: {
+            enabled: 'Enabled',
+            disabled: 'Disabled',
+        },
         alarmEvents: 'Alarm Events',
         notificationChannels: 'Notification Channels',
         notificationChannel: 'Notification Channel',
@@ -600,6 +604,22 @@ export default {
             ruleIdPlaceholder: 'Auto-generated if empty',
             thresholds: 'Thresholds',
             durationMin: 'Duration (min)',
+            linkedCount: '{count} VMs',
+            ruleId: 'Rule ID',
+            ruleTypes: {
+                cpu: 'CPU',
+                memory: 'Memory',
+                bw: 'Bandwidth',
+            },
+            directions: {
+                in: 'Inbound',
+                out: 'Outbound',
+            },
+            levels: {
+                critical: 'Critical',
+                warning: 'Warning',
+                info: 'Info',
+            },
         },
         overview: {
             title: 'Dashboard',
@@ -1057,6 +1077,7 @@ export default {
     // Common actions
     actions: {
         actions: 'Actions',
+        add: 'Add',
         create: 'Create',
         delete: 'Delete',
         edit: 'Edit',

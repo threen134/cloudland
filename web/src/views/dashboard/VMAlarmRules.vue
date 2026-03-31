@@ -14,10 +14,9 @@ const regionStore = useRegionStore()
 const rules = ref<VMAlarmRuleGroup[]>([])
 const loading = ref(false)
 const errorMsg = ref('')
-const selectedType = ref<VMRuleType>('cpu')
 const searchQuery = ref('')
 const page = ref(1)
-const pageSize = ref(20)
+const pageSize = ref(100) // Increase pageSize to fetch more rules at once
 const totalPages = ref(1)
 const total = ref(0)
 
@@ -27,6 +26,7 @@ const createForm = ref({
     name: '',
     rule_id: '',
     level: 'warning',
+    type: 'cpu' as VMRuleType,
     rules: [{ name: '', limit: 80, duration: 5, rule: 'gt' }] as Record<string, any>[],
 })
 
@@ -52,13 +52,19 @@ const filteredRules = computed(() => {
 const fetchRules = async () => {
     loading.value = true
     try {
-        const res = await vmAlarmRulesApi.listRules(selectedType.value, {
-            page: page.value,
-            page_size: pageSize.value,
+        const types: VMRuleType[] = ['cpu', 'memory', 'bw']
+        const results = await Promise.all(types.map(t => vmAlarmRulesApi.listRules(t)))
+        
+        const allRules: VMAlarmRuleGroup[] = []
+        results.forEach((res, idx) => {
+            const type = types[idx]
+            const typeRules = (res.data.data || []).map(r => ({ ...r, type }))
+            allRules.push(...typeRules)
         })
-        rules.value = res.data.data || []
-        total.value = res.data.meta?.total || 0
-        totalPages.value = res.data.meta?.total_pages || 1
+        
+        rules.value = allRules
+        total.value = allRules.length
+        totalPages.value = 1
     } catch (err) {
         console.error('Failed to fetch VM alarm rules:', err)
         errorMsg.value = t('messages.error')
@@ -72,11 +78,18 @@ const openCreate = () => {
         name: '',
         rule_id: '',
         level: 'warning',
-        rules: selectedType.value === 'bw'
-            ? [{ direction: 'in', name: '', limit: 80, duration: 5 }]
-            : [{ name: '', limit: 80, duration: 5, rule: 'gt' }],
+        type: 'cpu',
+        rules: [{ name: '', limit: 80, duration: 5, rule: 'gt' }],
     }
     showCreateModal.value = true
+}
+
+const onTypeChange = () => {
+    if (createForm.value.type === 'bw') {
+        createForm.value.rules = [{ direction: 'in', name: '', limit: 80, duration: 5 }]
+    } else {
+        createForm.value.rules = [{ name: '', limit: 80, duration: 5, rule: 'gt' }]
+    }
 }
 
 const submitCreate = async () => {
@@ -92,11 +105,11 @@ const submitCreate = async () => {
             level: createForm.value.level,
         }
 
-        if (selectedType.value === 'cpu') {
+        if (createForm.value.type === 'cpu') {
             await vmAlarmRulesApi.createCPURule({ ...base, rules: createForm.value.rules as any })
-        } else if (selectedType.value === 'memory') {
+        } else if (createForm.value.type === 'memory') {
             await vmAlarmRulesApi.createMemoryRule({ ...base, rules: createForm.value.rules as any })
-        } else {
+        } else if (createForm.value.type === 'bw') {
             await vmAlarmRulesApi.createBWRule({ ...base, enable: true, rules: createForm.value.rules as any })
         }
         showCreateModal.value = false
@@ -113,9 +126,9 @@ const confirmDelete = (rule: VMAlarmRuleGroup) => {
 }
 
 const executeDelete = async () => {
-    if (!deleteTarget.value) return
+    if (!deleteTarget.value || !deleteTarget.value.type) return
     try {
-        await vmAlarmRulesApi.deleteRule(selectedType.value, deleteTarget.value.rule_id)
+        await vmAlarmRulesApi.deleteRule(deleteTarget.value.type, deleteTarget.value.rule_id)
         showDeleteModal.value = false
         deleteTarget.value = null
         await fetchRules()
@@ -172,7 +185,7 @@ const toggleChannel = (uuid: string) => {
 }
 
 const addRuleRow = () => {
-    if (selectedType.value === 'bw') {
+    if (createForm.value.type === 'bw') {
         createForm.value.rules.push({ direction: 'out', name: '', limit: 80, duration: 5 })
     } else {
         createForm.value.rules.push({ name: '', limit: 80, duration: 5, rule: 'gt' })
@@ -188,7 +201,6 @@ const removeRuleRow = (index: number) => {
 const prevPage = () => { if (page.value > 1) page.value-- }
 const nextPage = () => { if (page.value < totalPages.value) page.value++ }
 
-watch([selectedType], () => { page.value = 1; fetchRules() })
 watch([page], fetchRules)
 onMounted(fetchRules)
 </script>
@@ -201,9 +213,6 @@ onMounted(fetchRules)
                     <Search :size="16" class="search-icon" />
                     <input v-model="searchQuery" :placeholder="t('actions.search') + '...'" class="search-input" />
                 </div>
-                <select v-model="selectedType" class="filter-select">
-                    <option v-for="rt in VM_RULE_TYPES" :key="rt.value" :value="rt.value">{{ rt.label }}</option>
-                </select>
             </div>
             <div class="header-actions">
                 <button class="btn btn-secondary btn-sm btn-icon" @click="fetchRules" :title="t('actions.refresh')">
@@ -223,7 +232,8 @@ onMounted(fetchRules)
                 <thead>
                     <tr>
                         <th>{{ t('dashboard.table.name') }}</th>
-                        <th>Rule ID</th>
+                        <th>{{ t('dashboard.table.type') }}</th>
+                        <th>{{ t('dashboard.vmAlarmRules.ruleId') }}</th>
                         <th>{{ t('dashboard.vmAlarmRules.level') }}</th>
                         <th>{{ t('dashboard.vmAlarmRules.linkedVMs') }}</th>
                         <th>{{ t('dashboard.table.status') }}</th>
@@ -232,12 +242,12 @@ onMounted(fetchRules)
                 </thead>
                 <tbody>
                     <tr v-if="loading">
-                        <td colspan="6" class="text-center">
+                        <td colspan="7" class="text-center">
                             <div class="loading-spinner" style="margin: 20px auto;"></div>
                         </td>
                     </tr>
                     <tr v-else-if="filteredRules.length === 0">
-                        <td colspan="6" class="text-center text-secondary" style="padding: 48px;">
+                        <td colspan="7" class="text-center text-secondary" style="padding: 48px;">
                             <div class="empty-state">
                                 <ShieldAlert :size="48" style="opacity: 0.2; margin-bottom: 16px;" />
                                 <p>{{ t('messages.noData') }}</p>
@@ -246,11 +256,18 @@ onMounted(fetchRules)
                     </tr>
                     <tr v-else v-for="rule in filteredRules" :key="rule.rule_id">
                         <td>{{ rule.name }}</td>
+                        <td>
+                            <span class="badge badge-secondary" style="text-transform: uppercase;">
+                                {{ rule.type ? t('dashboard.vmAlarmRules.ruleTypes.' + rule.type) : '-' }}
+                            </span>
+                        </td>
                         <td class="monospace">{{ rule.rule_id }}</td>
                         <td>
-                            <span class="badge" :class="'badge-' + rule.level">{{ rule.level }}</span>
+                            <span class="badge" :class="'badge-' + rule.level">
+                                {{ t('dashboard.vmAlarmRules.levels.' + rule.level) }}
+                            </span>
                         </td>
-                        <td>{{ rule.linkedvms?.length || 0 }} VMs</td>
+                        <td>{{ t('dashboard.vmAlarmRules.linkedCount', { count: rule.linkedvms?.length || 0 }) }}</td>
                         <td>
                             <span class="badge" :class="rule.enable ? 'badge-success' : 'badge-muted'">
                                 {{ rule.enable ? t('dashboard.alarm.enabled') : t('dashboard.alarm.disabled') }}
@@ -281,25 +298,33 @@ onMounted(fetchRules)
             <div v-if="showCreateModal" class="modal-overlay" @click.self="showCreateModal = false">
                 <div class="modal-content card" style="max-width: 600px;">
                     <div class="modal-header">
-                        <h3>{{ t('dashboard.vmAlarmRules.createTitle', { type: selectedType.toUpperCase() }) }}</h3>
+                        <h3>{{ t('dashboard.vmAlarmRules.createTitle', { type: createForm.type.toUpperCase() }) }}</h3>
                         <button class="btn btn-ghost btn-icon" @click="showCreateModal = false"><X :size="18" /></button>
                     </div>
                     <div class="modal-body">
                         <div class="form-stack">
                             <div class="form-group">
+                                <label class="form-label">{{ t('dashboard.table.type') }}</label>
+                                <select v-model="createForm.type" class="form-input" @change="onTypeChange">
+                                    <option v-for="rt in VM_RULE_TYPES" :key="rt.value" :value="rt.value">
+                                        {{ t('dashboard.vmAlarmRules.ruleTypes.' + rt.value) }}
+                                    </option>
+                                </select>
+                            </div>
+                            <div class="form-group">
                                 <label class="form-label">{{ t('dashboard.table.name') }}</label>
                                 <input v-model="createForm.name" class="form-input" required />
                             </div>
                             <div class="form-group">
-                                <label class="form-label">Rule ID</label>
+                                <label class="form-label">{{ t('dashboard.vmAlarmRules.ruleId') }}</label>
                                 <input v-model="createForm.rule_id" class="form-input" :placeholder="t('dashboard.vmAlarmRules.ruleIdPlaceholder')" />
                             </div>
                             <div class="form-group">
                                 <label class="form-label">{{ t('dashboard.vmAlarmRules.level') }}</label>
                                 <select v-model="createForm.level" class="form-input">
-                                    <option value="critical">Critical</option>
-                                    <option value="warning">Warning</option>
-                                    <option value="info">Info</option>
+                                    <option value="critical">{{ t('dashboard.vmAlarmRules.levels.critical') }}</option>
+                                    <option value="warning">{{ t('dashboard.vmAlarmRules.levels.warning') }}</option>
+                                    <option value="info">{{ t('dashboard.vmAlarmRules.levels.info') }}</option>
                                 </select>
                             </div>
                             <div class="rules-section">
@@ -310,9 +335,9 @@ onMounted(fetchRules)
                                     </button>
                                 </div>
                                 <div v-for="(rule, idx) in createForm.rules" :key="idx" class="rule-row">
-                                    <select v-if="selectedType === 'bw'" v-model="rule.direction" class="form-input rule-input-sm">
-                                        <option value="in">Inbound</option>
-                                        <option value="out">Outbound</option>
+                                    <select v-if="createForm.type === 'bw'" v-model="rule.direction" class="form-input rule-input-sm">
+                                        <option value="in">{{ t('dashboard.vmAlarmRules.directions.in') }}</option>
+                                        <option value="out">{{ t('dashboard.vmAlarmRules.directions.out') }}</option>
                                     </select>
                                     <input v-model.number="rule.limit" type="number" class="form-input rule-input-sm" :placeholder="$t('dashboard.forms.placeholder.limitPercentExample')" min="1" max="100" />
                                     <input v-model.number="rule.duration" type="number" class="form-input rule-input-sm" :placeholder="t('dashboard.vmAlarmRules.durationMin')" min="1" />

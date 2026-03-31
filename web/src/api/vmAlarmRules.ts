@@ -29,6 +29,7 @@ export interface VMAlarmRuleGroup {
     region_id: string
     level: string
     enable: boolean
+    type?: VMRuleType
 }
 
 export interface VMAlarmRuleListResponse {
