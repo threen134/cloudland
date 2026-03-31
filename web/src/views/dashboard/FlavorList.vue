@@ -57,7 +57,7 @@ const closeCreateModal = () => {
 const handleCreateFlavor = async () => {
     createError.value = ''
     if (!newFlavorForm.value.name) {
-        createError.value = 'Please enter a flavor name.'
+        createError.value = t('dashboard.flavorActions.enterName')
         return
     }
     if (!isNameValid.value) {
@@ -125,13 +125,13 @@ const formatRam = (val: number | string) => {
     const mb = typeof val === 'string' ? parseInt(val) : val
     if (!mb) return '-'
     if (mb >= 1024) {
-        return `${(mb / 1024).toFixed(0)} GB`
+        return `${(mb / 1024).toFixed(0)} ${t('specs.gb')}`
     }
     // If the value is very small (like 1, 2, 4), it's probably already in GB
     if (mb < 64) {
-        return `${mb} GB`
+        return `${mb} ${t('specs.gb')}`
     }
-    return `${mb} MB`
+    return `${mb} ${t('specs.mb')}`
 }
 
 onMounted(fetchFlavors)
@@ -219,13 +219,13 @@ onMounted(fetchFlavors)
             <td>
               <div class="spec-cell">
                 <HardDrive :size="14" class="text-secondary" />
-                <span>{{ flavor.disk }} GB</span>
+                <span>{{ flavor.disk }} {{ $t('specs.gb') }}</span>
               </div>
             </td>
             <td>
               <div class="actions">
 
-                <button class="btn btn-ghost btn-sm text-error" title="Delete" @click="handleDeleteClick(flavor)">
+                <button class="btn btn-ghost btn-sm text-error" :title="$t('actions.delete')" @click="handleDeleteClick(flavor)">
                   <Trash2 :size="14" />
                 </button>
               </div>
@@ -283,7 +283,7 @@ onMounted(fetchFlavors)
                     class="form-input" 
                     min="16"
                   />
-                  <span class="unit">MB</span>
+                  <span class="unit">{{ $t('specs.mb') }}</span>
                 </div>
               </div>
             </div>
@@ -297,7 +297,7 @@ onMounted(fetchFlavors)
                   class="form-input" 
                   min="1"
                 />
-                <span class="unit">GB</span>
+                <span class="unit">{{ $t('specs.gb') }}</span>
               </div>
             </div>
           </div>

@@ -167,6 +167,7 @@ type CPUResponse struct {
 				Domain   string `json:"domain"`
 				Instance string `json:"instance"`
 				Job      string `json:"job"`
+				UUID     string `json:"uuid,omitempty"`
 			} `json:"metric"`
 			Values []struct { // one-dimensional array
 				Time  string `json:"time"`
@@ -189,6 +190,7 @@ type MemoryResponse struct {
 				Domain   string `json:"domain"`
 				Instance string `json:"instance"`
 				Job      string `json:"job"`
+				UUID     string `json:"uuid,omitempty"`
 			} `json:"metric"`
 			Values [][]struct { // two-dimensional array [total, used]
 				Time  string `json:"time"`
@@ -484,12 +486,15 @@ func (api *MonitorAPI) GetCPU(c *gin.Context) {
 		return
 	}
 
-	// convert UUID to index ID
+	// convert UUID to index ID, build reverse domain→uuid map
 	var instanceIDs []string
+	domainToUUID := make(map[string]string)
 	for _, uuid := range request.ID {
 		logger.Debug("Attempting to convert UUID: %s\n", uuid)
 		if instanceID, ok := getInstanceIDFromCache(uuid); ok {
-			instanceIDs = append(instanceIDs, "inst-"+strconv.Itoa(instanceID))
+			domain := "inst-" + strconv.Itoa(instanceID)
+			instanceIDs = append(instanceIDs, domain)
+			domainToUUID[domain] = uuid
 			continue
 		}
 		instanceID, err := services.GetDBIndexByInstanceUUID(c, uuid)
@@ -503,7 +508,9 @@ func (api *MonitorAPI) GetCPU(c *gin.Context) {
 			return
 		}
 		logger.Debug("Successfully converted UUID %s to instanceID %d\n", uuid, instanceID)
-		instanceIDs = append(instanceIDs, "inst-"+strconv.Itoa(instanceID))
+		domain := "inst-" + strconv.Itoa(instanceID)
+		instanceIDs = append(instanceIDs, domain)
+		domainToUUID[domain] = uuid
 		addToCache(uuid, instanceID)
 	}
 
@@ -529,19 +536,22 @@ func (api *MonitorAPI) GetCPU(c *gin.Context) {
 		return
 	}
 
-	// format result
+	// format result and fill uuid
 	formattedResult := formatResponse(result, "cpu")
 	if formattedResult != nil {
 		if cpuResp, ok := formattedResult.(*CPUResponse); ok {
 			for i := range cpuResp.Data.Result {
+				domain := cpuResp.Data.Result[i].Metric.Domain
 				cpuResp.Data.Result[i].Metric = struct {
 					Domain   string `json:"domain"`
 					Instance string `json:"instance"`
 					Job      string `json:"job"`
+					UUID     string `json:"uuid,omitempty"`
 				}{
-					Domain:   cpuResp.Data.Result[i].Metric.Domain,
+					Domain:   domain,
 					Instance: cpuResp.Data.Result[i].Metric.Instance,
 					Job:      cpuResp.Data.Result[i].Metric.Job,
+					UUID:     domainToUUID[domain],
 				}
 			}
 		}
@@ -571,10 +581,13 @@ func (api *MonitorAPI) GetMemory(c *gin.Context) {
 	}
 
 	var instanceIDs []string
+	domainToUUID := make(map[string]string)
 	for _, uuid := range request.ID {
 		logger.Debug("Attempting to convert UUID: %s\n", uuid)
 		if instanceID, ok := getInstanceIDFromCache(uuid); ok {
-			instanceIDs = append(instanceIDs, "inst-"+strconv.Itoa(instanceID))
+			domain := "inst-" + strconv.Itoa(instanceID)
+			instanceIDs = append(instanceIDs, domain)
+			domainToUUID[domain] = uuid
 			continue
 		}
 		instanceID, err := services.GetDBIndexByInstanceUUID(c, uuid)
@@ -588,7 +601,9 @@ func (api *MonitorAPI) GetMemory(c *gin.Context) {
 			return
 		}
 		logger.Debug("Successfully converted UUID %s to instanceID %d\n", uuid, instanceID)
-		instanceIDs = append(instanceIDs, "inst-"+strconv.Itoa(instanceID))
+		domain := "inst-" + strconv.Itoa(instanceID)
+		instanceIDs = append(instanceIDs, domain)
+		domainToUUID[domain] = uuid
 		addToCache(uuid, instanceID)
 	}
 
@@ -622,17 +637,20 @@ func (api *MonitorAPI) GetMemory(c *gin.Context) {
 		return
 	}
 
-	// merge results
+	// merge results and fill uuid
 	result := mergeMemoryResults(unusedResult, totalResult)
 	for i := range result.Data.Result {
+		domain := result.Data.Result[i].Metric.Domain
 		result.Data.Result[i].Metric = struct {
 			Domain   string `json:"domain"`
 			Instance string `json:"instance"`
 			Job      string `json:"job"`
+			UUID     string `json:"uuid,omitempty"`
 		}{
-			Domain:   result.Data.Result[i].Metric.Domain,
+			Domain:   domain,
 			Instance: result.Data.Result[i].Metric.Instance,
 			Job:      result.Data.Result[i].Metric.Job,
+			UUID:     domainToUUID[domain],
 		}
 	}
 	c.JSON(http.StatusOK, result)
@@ -1375,6 +1393,7 @@ func mergeMemoryResults(unused, total *PrometheusResponse) *MemoryResponse {
 				Domain   string `json:"domain"`
 				Instance string `json:"instance"`
 				Job      string `json:"job"`
+				UUID     string `json:"uuid,omitempty"`
 			} `json:"metric"`
 			Values [][]struct {
 				Time  string `json:"time"`
@@ -1386,6 +1405,7 @@ func mergeMemoryResults(unused, total *PrometheusResponse) *MemoryResponse {
 			Domain   string `json:"domain"`
 			Instance string `json:"instance"`
 			Job      string `json:"job"`
+			UUID     string `json:"uuid,omitempty"`
 		}{
 			Domain:   item.metric.Domain,
 			Instance: item.metric.Instance,
@@ -1683,6 +1703,7 @@ func formatResponse(resp *PrometheusResponse, metricType string) interface{} {
 					Domain   string `json:"domain"`
 					Instance string `json:"instance"`
 					Job      string `json:"job"`
+					UUID     string `json:"uuid,omitempty"`
 				} `json:"metric"`
 				Values []struct { // one-dimensional array
 					Time  string `json:"time"`

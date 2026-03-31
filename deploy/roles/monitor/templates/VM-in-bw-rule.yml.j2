@@ -1,7 +1,7 @@
 groups:
-- name: bw_in_{{ owner }}_{{ rule_group }}
+- name: bw_in_{{ owner }}_{{ rule_group }}_{{ detail_index }}
   rules:
-  - alert: HighBWInUsage_{{ owner }}_{{ rule_group }}
+  - alert: HighBWInUsage_{{ owner }}_{{ rule_group }}_{{ detail_index }}
     expr: |
       (
         (rate(libvirt_domain_interface_stats_receive_bytes_total[1m]) / 1024 / 1024)

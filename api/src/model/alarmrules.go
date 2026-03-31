@@ -113,6 +113,7 @@ type CPURuleDetail struct {
 	Over         int    `gorm:"column:over;check:over >= 1"`
 	DownDuration int    `gorm:"column:down_duration;check:down_duration >= 1"`
 	DownTo       int    `gorm:"column:down_to;check:down_to <= 100"`
+	Level        string `gorm:"type:varchar(32);column:level" json:"level"`
 }
 
 type MemoryRuleDetail struct {
@@ -125,6 +126,7 @@ type MemoryRuleDetail struct {
 	Over         int    `gorm:"column:over;check:over >= 1"`
 	DownDuration int    `gorm:"column:down_duration;check:down_duration >= 1"`
 	DownTo       int    `gorm:"column:down_to;check:down_to <= 100"`
+	Level        string `gorm:"type:varchar(32);column:level" json:"level"`
 }
 
 type BWRuleDetail struct {
@@ -136,6 +138,8 @@ type BWRuleDetail struct {
 	Direction string `gorm:"type:varchar(8);check:direction IN ('in','out')"`
 	Limit     int    `gorm:"check:limit >= 1 AND limit <= 100"`
 	Duration  int    `gorm:"check:duration >= 1"`
+
+	Level string `gorm:"type:varchar(32);column:level" json:"level"`
 
 	// Legacy dual-direction fields - kept for backward compatibility
 	// Inbound parameters - negative values indicate disabled rules

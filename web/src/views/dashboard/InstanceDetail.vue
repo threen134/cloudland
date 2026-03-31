@@ -213,7 +213,7 @@ const fetchLinkedRules = async () => {
                 if (rule.linkedvms?.includes(instanceId)) {
                     linked.push({
                         type: type as VMRuleType,
-                        typeLabel: label,
+                        typeLabel: t('dashboard.vmAlarmRules.ruleTypes.' + type),
                         rule_id: rule.rule_id,
                         name: rule.name,
                         level: rule.level,
@@ -248,7 +248,7 @@ const openLinkModal = async () => {
                 if (!rule.linkedvms?.includes(instanceId)) {
                     available.push({
                         type: type as VMRuleType,
-                        typeLabel: label,
+                        typeLabel: t('dashboard.vmAlarmRules.ruleTypes.' + type),
                         rule_id: rule.rule_id,
                         name: rule.name,
                         level: rule.level,
@@ -428,9 +428,9 @@ const getStatusText = (status: string) => {
 const formatMemory = (mb?: number) => {
     if (!mb) return '-'
     if (mb >= 1024) {
-        return `${(mb / 1024).toFixed(0)} GB`
+        return `${(mb / 1024).toFixed(0)} ${t('specs.gb')}`
     }
-    return `${mb} MB`
+    return `${mb} ${t('specs.mb')}`
 }
 
 const navigateToVolume = (volumeId: string) => {
@@ -741,7 +741,7 @@ onMounted(() => {
                             </div>
                             <div class="kv-item">
                                 <span class="label"><HardDrive :size="14" /> {{ $t('dashboard.instanceDetail.disk') }}</span>
-                                <span class="value">{{ instance.disk || (instance.flavor && typeof instance.flavor === 'object' ? instance.flavor.disk : '-') }} GB</span>
+                                <span class="value">{{ instance.disk || (instance.flavor && typeof instance.flavor === 'object' ? instance.flavor.disk : '-') }} {{ t('specs.gb') }}</span>
                             </div>
                             <div class="kv-item">
                                 <span class="label"><HardDrive :size="14" /> {{ $t('dashboard.instanceDetail.image') }}</span>
@@ -763,7 +763,7 @@ onMounted(() => {
                                     <span v-if="volume.booting || volume.boot_index === 0" class="status-badge status-success mini-badge">{{ $t('dashboard.instanceDetail.boot') }}</span>
                                 </span>
                                 <span class="value">
-                                    <span v-if="volume.size" class="mono volume-size">{{ volume.size }} GB</span>
+                                    <span v-if="volume.size" class="mono volume-size">{{ volume.size }} {{ t('specs.gb') }}</span>
                                     <a href="#" @click.prevent="navigateToVolume(volume.id)" class="resource-link">
                                         {{ volume.name || volume.id.substring(0, 8) }} <ExternalLink :size="12" class="inline-icon" />
                                     </a>
@@ -896,7 +896,7 @@ onMounted(() => {
                         <tr v-for="rule in linkedRules" :key="rule.rule_id">
                             <td>{{ rule.name }}</td>
                             <td><span class="badge badge-secondary">{{ rule.typeLabel }}</span></td>
-                            <td><span class="badge" :class="'badge-' + rule.level">{{ rule.level }}</span></td>
+                            <td><span class="badge" :class="'badge-' + rule.level">{{ t('dashboard.vmAlarmRules.levels.' + rule.level) }}</span></td>
                             <td>
                                 <span class="badge" :class="rule.enable ? 'badge-success' : 'badge-muted'">
                                     {{ rule.enable ? t('dashboard.alarm.enabled') : t('dashboard.alarm.disabled') }}
@@ -928,7 +928,7 @@ onMounted(() => {
                                 <div class="rule-pick-info">
                                     <span class="rule-pick-name">{{ rule.name }}</span>
                                     <span class="badge badge-secondary">{{ rule.typeLabel }}</span>
-                                    <span class="badge" :class="'badge-' + rule.level">{{ rule.level }}</span>
+                                    <span class="badge" :class="'badge-' + rule.level">{{ t('dashboard.vmAlarmRules.levels.' + rule.level) }}</span>
                                 </div>
                                 <Link :size="14" class="rule-pick-icon" />
                             </div>
@@ -1035,11 +1035,11 @@ onMounted(() => {
                 <div class="modal-body">
                     <div v-if="resizeError" class="modal-error">{{ resizeError }}</div>
                     <div class="form-group">
-                        <label>{{ $t('dashboard.instanceDetail.cpu') }}</label>
+                        <label>{{ $t('dashboard.instanceDetail.cpuLabel') }}</label>
                         <input v-model.number="resizeForm.cpu" type="number" min="1" class="form-input" />
                     </div>
                     <div class="form-group">
-                        <label>{{ $t('dashboard.instanceDetail.ram') }} (MB)</label>
+                        <label>{{ $t('dashboard.instanceDetail.ramLabel') }}</label>
                         <input v-model.number="resizeForm.memory" type="number" min="1" class="form-input" />
                     </div>
                 </div>

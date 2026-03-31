@@ -5,12 +5,14 @@ export interface CPURuleDetail {
     rule: string
     limit: number
     duration: number
+    level: string
 }
 
 export interface MemoryRuleDetail {
     name: string
     limit: number
     duration: number
+    level: string
 }
 
 export interface BWRuleDetail {
@@ -18,6 +20,7 @@ export interface BWRuleDetail {
     name: string
     limit: number
     duration: number
+    level: string
 }
 
 export interface VMAlarmRuleGroup {
@@ -60,7 +63,6 @@ export const vmAlarmRulesApi = {
         owner: string
         rule_id: string
         region_id: string
-        level: string
         duration_minutes?: number
         rules: CPURuleDetail[]
         linkedvms?: string[]
@@ -73,7 +75,6 @@ export const vmAlarmRulesApi = {
         owner: string
         rule_id: string
         region_id: string
-        level: string
         rules: MemoryRuleDetail[]
         linkedvms?: string[]
     }) {
@@ -85,7 +86,6 @@ export const vmAlarmRulesApi = {
         owner: string
         rule_id: string
         region_id: string
-        level: string
         enable: boolean
         rules: BWRuleDetail[]
         linkedvms?: { instance_id: string; target_device: string }[]

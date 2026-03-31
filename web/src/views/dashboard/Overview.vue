@@ -224,7 +224,7 @@ const getPercentColor = (percent: number) => {
             <div class="progress-bg">
               <div class="progress-fill" :style="{ width: stats.cpu.percentage + '%', backgroundColor: getPercentColor(stats.cpu.percentage) }"></div>
             </div>
-            <div class="usage-meta">{{ stats.cpu.used }} / {{ stats.cpu.total }} vCPUs</div>
+            <div class="usage-meta">{{ stats.cpu.used }} / {{ stats.cpu.total }} {{ $t('dashboard.overview.cpuUnit') }}</div>
           </div>
 
           <!-- Memory -->

@@ -1,7 +1,7 @@
 groups:
-- name: memory_{{ owner }}_{{ rule_group }}
+- name: memory_{{ owner }}_{{ rule_group }}_{{ detail_index }}
   rules:
-  - alert: MemoryUsage_{{ owner }}_{{ rule_group }}
+  - alert: MemoryUsage_{{ owner }}_{{ rule_group }}_{{ detail_index }}
     expr: |
       (
         (

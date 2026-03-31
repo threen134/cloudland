@@ -1,10 +1,10 @@
 <script setup lang="ts">
-import { ref, onMounted, computed, watch } from 'vue'
+import { ref, onMounted, computed, watch, onUnmounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import { useToast } from '../../composables/useToast'
 import { instancesApi, type Instance } from '../../api/instances'
-import { Play, Square, RotateCw, Trash2, Plus, Terminal, MoreVertical, Search, X, Check, Monitor, ChevronDown, ChevronUp, PlusCircle, MinusCircle, RefreshCw, Cpu, HardDrive, Eye, EyeOff, Shuffle, Pencil, KeyRound, Maximize2, Server } from 'lucide-vue-next'
+import { Play, Square, RotateCw, Trash2, Plus, Terminal, MoreVertical, Search, X, Check, Monitor, ChevronDown, ChevronUp, PlusCircle, MinusCircle, RefreshCw, Cpu, HardDrive, Eye, EyeOff, Shuffle, Pencil, KeyRound, Maximize2, Server, Activity } from 'lucide-vue-next'
 
 import { imagesApi, type Image } from '../../api/images'
 import { vpcsApi, subnetsApi, securityGroupsApi, floatingIpsApi, type VPC, type Subnet, type SecurityGroup, type FloatingIP } from '../../api/networks'
@@ -41,12 +41,62 @@ const { t } = useI18n()
 const toast = useToast()
 
 
+const instanceMetrics = ref<Record<string, { cpu: number, memory: number }>>({})
+let metricsTimer: any = null
+
+const fetchUsageMetrics = async () => {
+    const ids = filteredInstances.value
+        .filter(inst => ['running', 'active'].includes(inst.status?.toLowerCase()))
+        .map(inst => inst.id)
+    if (!ids.length) return
+
+    try {
+        const now = Math.floor(Date.now() / 1000)
+        const start = (now - 3600).toString()
+        const end = now.toString()
+
+        const [cpuRes, memRes] = await Promise.all([
+            instancesApi.getCPUMetrics({ id: ids, start, end, step: '60s' }),
+            instancesApi.getMemoryMetrics({ id: ids, start, end, step: '60s' })
+        ])
+
+        const newMetrics: Record<string, { cpu: number, memory: number }> = {}
+        ids.forEach(id => {
+            // CPU: match by metric.uuid, one-dimensional values array [{time, value}]
+            const cpuResult = cpuRes.data?.data?.result?.find((r: any) => r.metric?.uuid === id)
+            const cpuValues = cpuResult?.values || []
+            const lastCpu = cpuValues.length
+                ? parseFloat(cpuValues[cpuValues.length - 1].value || 0)
+                : 0
+
+            // Memory: match by metric.uuid, two-dimensional values array [totalValues[], usedValues[]]
+            const memResult = memRes.data?.data?.result?.find((r: any) => r.metric?.uuid === id)
+            let lastMem = 0
+            if (memResult?.values?.length >= 2) {
+                const totalValues = memResult.values[0]
+                const usedValues = memResult.values[1]
+                const total = totalValues.length ? parseFloat(totalValues[totalValues.length - 1].value || 0) : 0
+                const used = usedValues.length ? parseFloat(usedValues[usedValues.length - 1].value || 0) : 0
+                lastMem = total > 0 ? (used / total) * 100 : 0
+            }
+
+            newMetrics[id] = { cpu: lastCpu, memory: lastMem }
+        })
+        instanceMetrics.value = { ...instanceMetrics.value, ...newMetrics }
+    } catch (err) {
+        console.error('Failed to fetch instance usage:', err)
+    }
+}
+
 const fetchInstances = async (showLoading: boolean = true) => {
     if (showLoading) loading.value = true
     try {
         const response = await instancesApi.fetchInstances()
         const data = response.data as any
         instanceList.value = Array.isArray(data) ? data : (data.instances || [])
+        
+        // Start fetching metrics after full list is loaded
+        setTimeout(fetchUsageMetrics, 500)
     } catch (error) {
         console.error('API fetch failed:', error)
         instanceList.value = []
@@ -319,7 +369,7 @@ const openConsole = async (instance: Instance) => {
     // Open window immediately to avoid popup blockers
     const consoleWindow = window.open('about:blank', '_blank')
     if (!consoleWindow) {
-        alert('Popup blocked! Please allow popups for this site.')
+        toast.error(t('dashboard.instanceDetail.popupBlocked'))
         return
     }
 
@@ -337,7 +387,7 @@ const openConsole = async (instance: Instance) => {
     } catch (error: any) {
         console.error('Failed to get console info:', error)
         consoleWindow.close()
-        alert('Failed to get console info: ' + (error.response?.data?.error_message || error.message))
+        toast.error(t('dashboard.instanceDetail.consoleError') + (error.response?.data?.error_message || error.message))
     }
 }
 
@@ -670,15 +720,15 @@ const handleCreateInstance = async () => {
     // Validation for primary interface
     const pi = form.primary_interface
     if (pi.network_type === 'vpc' && (!pi.vpc_id || !pi.subnet_id)) {
-        createError.value = 'Please select VPC and Subnet for primary interface.'
+        createError.value = t('dashboard.instanceDetail.primaryVpcSubnetRequired')
         return
     }
     if (pi.network_type === 'isolated' && !pi.subnet_id) {
-        createError.value = 'Please select Subnet for isolated primary interface.'
+        createError.value = t('dashboard.instanceDetail.isolatedSubnetRequired')
         return
     }
     if (pi.network_type === 'public' && !pi.public_ip_id && !pi.subnet_id) {
-        createError.value = 'Please select Public Subnet for auto-allocation.'
+        createError.value = t('dashboard.instanceDetail.publicSubnetRequired')
         return
     }
 
@@ -686,11 +736,11 @@ const handleCreateInstance = async () => {
     for (let i = 0; i < form.secondary_interfaces.length; i++) {
         const si = form.secondary_interfaces[i]
         if (si.network_type === 'public' && !si.public_ip_id && !si.subnet_id) {
-            createError.value = `Please select Public Subnet for secondary interface #${i + 1} auto-allocation.`
+            createError.value = t('dashboard.instanceDetail.secondaryPublicSubnetRequired', { index: i + 1 })
             return
         }
         if (si.network_type === 'vpc' && (!si.vpc_id || !si.subnet_id)) {
-            createError.value = `Please select VPC and Subnet for secondary interface #${i + 1}.`
+            createError.value = t('dashboard.instanceDetail.secondaryVpcSubnetRequired', { index: i + 1 })
             return
         }
     }
@@ -753,7 +803,14 @@ const handleCreateInstance = async () => {
 }
 
 
-onMounted(() => fetchInstances())
+onMounted(() => {
+    fetchInstances()
+    metricsTimer = setInterval(fetchUsageMetrics, 30000) // update every 30s
+})
+
+onUnmounted(() => {
+    if (metricsTimer) clearInterval(metricsTimer)
+})
 </script>
 
 <template>
@@ -791,7 +848,7 @@ onMounted(() => fetchInstances())
             <th>{{ $t('dashboard.table.image') }}</th>
             <th>{{ $t('dashboard.table.ipAddress') }}</th>
             <th>{{ $t('dashboard.table.status') }}</th>
-            <th>{{ $t('dashboard.table.vpc') }}</th>
+            <th>{{ $t('dashboard.table.usage') }}</th>
             <th>{{ $t('dashboard.table.actions') }}</th>
           </tr>
         </thead>
@@ -822,7 +879,7 @@ onMounted(() => fetchInstances())
                   </div>
                   <div>
                     <div class="resource-name">{{ instance.hostname }}</div>
-                    <div class="resource-id">{{ instance.id }}</div>
+                    <div class="resource-id" :title="instance.id">{{ instance.id.substring(0, 8) }}...</div>
                   </div>
                 </div>
               </router-link>
@@ -850,46 +907,25 @@ onMounted(() => fetchInstances())
                 {{ getStatusText(instance.status) }}
               </span>
             </td>
-            <td>{{ instance.vpc?.name || '-' }}</td>
             <td>
+               <div class="instance-usage-summary" v-if="['running', 'active'].includes(instance.status?.toLowerCase())">
+                 <div class="usage-mini-item" :title="'CPU: ' + (instanceMetrics[instance.id]?.cpu || 0).toFixed(1) + '%'">
+                   <span class="usage-label">CPU</span>
+                   <div class="usage-progress-bg">
+                     <div class="usage-progress-bar cpu-bar" :style="{ width: (instanceMetrics[instance.id]?.cpu || 0) + '%' }"></div>
+                   </div>
+                 </div>
+                 <div class="usage-mini-item" :title="'MEM: ' + (instanceMetrics[instance.id]?.memory || 0).toFixed(1) + '%'">
+                   <span class="usage-label">MEM</span>
+                   <div class="usage-progress-bg">
+                     <div class="usage-progress-bar mem-bar" :style="{ width: (instanceMetrics[instance.id]?.memory || 0) + '%' }"></div>
+                   </div>
+                 </div>
+               </div>
+               <span v-else class="text-secondary text-xs">-</span>
+            </td>
+            <td class="actions-usage-cell">
                <div class="actions">
-                 <button 
-                   v-if="['stopped', 'shutoff', 'shut_off'].includes(instance.status?.toLowerCase())"
-                   class="btn btn-ghost btn-sm" 
-                   :title="$t('actions.start')"
-                   @click="handleAction(instance, 'start')"
-                   :disabled="!!actionLoading[instance.id]"
-                 >
-                   <span v-if="actionLoading[instance.id] === 'start'" class="loading-spinner small"></span>
-                   <Play v-else :size="14" />
-                 </button>
-                 <button 
-                   v-else
-                   class="btn btn-ghost btn-sm" 
-                   :title="$t('actions.stop')"
-                   @click="handleAction(instance, 'stop')"
-                   :disabled="!!actionLoading[instance.id]"
-                 >
-                   <span v-if="actionLoading[instance.id] === 'stop'" class="loading-spinner small"></span>
-                   <Square v-else :size="14" />
-                 </button>
-                 <button 
-                   class="btn btn-ghost btn-sm" 
-                   :title="$t('actions.restart')"
-                   @click="handleAction(instance, 'restart')"
-                   :disabled="!!actionLoading[instance.id] || instance.status?.toLowerCase() !== 'running'"
-                 >
-                   <span v-if="actionLoading[instance.id] === 'restart'" class="loading-spinner small"></span>
-                   <RotateCw v-else :size="14" />
-                 </button>
-                 <button 
-                   class="btn btn-ghost btn-sm" 
-                   :title="$t('actions.console')"
-                   @click="openConsole(instance)"
-                 >
-                   <img src="/images/vnc.svg" alt="VNC" width="14" height="14" />
-                 </button>
-                 
                  <div class="action-dropdown" style="position: relative;">
                     <button class="btn btn-ghost btn-sm" @click.stop="toggleActionMenu(instance.id)" :title="$t('actions.more')">
                         <MoreVertical :size="14" />
@@ -915,11 +951,15 @@ onMounted(() => fetchInstances())
                             <button
                                 class="dropdown-item"
                                 @click="handleAction(instance, 'restart')"
-                                :disabled="!!actionLoading[instance.id] || instance.status?.toLowerCase() !== 'running'"
+                                :disabled="!!actionLoading[instance.id] || !['running', 'active'].includes(instance.status?.toLowerCase())"
                             >
                                 <RotateCw :size="14" /> {{ $t('actions.restart') }}
                             </button>
                             
+                            <button class="dropdown-item" @click="openConsole(instance)">
+                                <Terminal :size="14" /> {{ $t('actions.console') }}
+                            </button>
+
                             <div class="dropdown-divider"></div>
                             
                             <button
@@ -1245,7 +1285,7 @@ onMounted(() => fetchInstances())
                         <option v-for="vpc in availableVPCs" :key="vpc.id" :value="vpc.id">{{ vpc.name }}</option>
                     </select>
                     <select v-model="iface.subnet_id" class="form-select" :disabled="!iface.vpc_id">
-                        <option value="" disabled>Select Subnet</option>
+                        <option value="" disabled>{{ $t('dashboard.forms.placeholder.selectSubnet') }}</option>
                         <option v-for="sub in getFilteredSubnets(iface.vpc_id)" :key="sub.id" :value="sub.id">{{ sub.name }} ({{ sub.network || sub.network_cidr }}) - {{ $t('dashboard.forms.availableIps', { count: sub.available_count ?? 0 }) }}</option>
                     </select>
                 </div>
@@ -1441,11 +1481,11 @@ onMounted(() => fetchInstances())
         <div class="modal-body">
           <div class="form-row">
             <div class="form-group">
-              <label class="form-label">{{ $t('dashboard.instanceDetail.cpu') }} (Cores)</label>
+              <label class="form-label">{{ $t('dashboard.instanceDetail.cpuLabel') }}</label>
               <input v-model.number="resizeForm.cpu" type="number" class="form-input" min="1" />
             </div>
             <div class="form-group">
-              <label class="form-label">{{ $t('dashboard.instanceDetail.ram') }} (MB)</label>
+              <label class="form-label">{{ $t('dashboard.instanceDetail.ramLabel') }}</label>
               <input v-model.number="resizeForm.memory" type="number" class="form-input" min="128" step="128" />
             </div>
           </div>
@@ -2062,6 +2102,53 @@ input:checked + .slider:before {
 @keyframes spin { to { transform: rotate(360deg); } }
 
 /* Toast Notification removed */
+.instance-usage-summary {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 80px;
+    padding: 2px 0;
+}
+
+.usage-mini-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.usage-label {
+    font-size: 10px;
+    font-weight: 600;
+    color: var(--text-tertiary);
+    width: 24px;
+    flex-shrink: 0;
+}
+
+.usage-progress-bg {
+    flex: 1;
+    height: 4px;
+    background: var(--bg-tertiary);
+    border-radius: 2px;
+    overflow: hidden;
+}
+
+.usage-progress-bar {
+    height: 100%;
+    border-radius: 2px;
+    transition: width 0.3s ease;
+}
+
+.cpu-bar { background: var(--primary-color); }
+.mem-bar { background: var(--accent-purple); }
+
+.actions-usage-cell {
+    text-align: right;
+    white-space: nowrap;
+}
+
+.text-xs {
+    font-size: 11px;
+}
 </style>
 
 

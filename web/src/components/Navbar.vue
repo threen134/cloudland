@@ -7,7 +7,7 @@ import { useAuthStore } from '../stores/auth'
 import { useTenantStore } from '../stores/tenant'
 import { setLanguage, getCurrentLanguage } from '../locales'
 
-const { t } = useI18n()
+const { t, locale } = useI18n()
 const router = useRouter()
 const auth = useAuthStore()
 const tenant = useTenantStore()
@@ -136,15 +136,15 @@ const solutionLinks = [
             <div class="nav-item dropdown" @mouseenter="activeDropdown = 'lang'" @mouseleave="activeDropdown = null">
               <button class="nav-link lang-btn">
                 <Globe :size="16" />
-                {{ currentLang === 'zh' ? '中文' : 'EN' }}
+                {{ locale === 'zh' ? t('languages.zh') : t('languages.en') }}
                 <ChevronDown :size="14" />
               </button>
               <div class="dropdown-menu dropdown-compact dropdown-right" v-show="activeDropdown === 'lang'">
                 <button class="dropdown-item" :class="{ active: currentLang === 'en' }" @click="switchLanguage('en')">
-                  English
+                  {{ t('languages.en') }}
                 </button>
                 <button class="dropdown-item" :class="{ active: currentLang === 'zh' }" @click="switchLanguage('zh')">
-                  简体中文
+                  {{ t('languages.zh_hans') }}
                 </button>
               </div>
             </div>

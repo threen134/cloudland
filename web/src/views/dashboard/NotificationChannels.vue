@@ -174,7 +174,7 @@ onMounted(fetchChannels)
                     <tr v-else v-for="ch in filteredChannels" :key="ch.uuid">
                         <td>{{ ch.name }}</td>
                         <td>
-                            <span class="badge" :class="ch.type === 'feishu' ? 'badge-info' : 'badge-secondary'">
+                            <span class="badge" :class="ch.type === 'feishu' ? 'badge-primary' : 'badge-secondary'">
                                 {{ ch.type === 'feishu' ? t('dashboard.notificationFeishu') : 'Webhook' }}
                             </span>
                         </td>
@@ -339,8 +339,8 @@ onMounted(fetchChannels)
     cursor: pointer; transition: all 0.2s;
 }
 
-.icon-btn-table:hover { background-color: var(--bg-tertiary); color: var(--primary-500); }
-.icon-btn-table.text-error:hover { background-color: #fef2f2; color: #ef4444; }
+.icon-btn-table:hover { background-color: var(--bg-tertiary); color: var(--primary-color); }
+.icon-btn-table.text-error:hover { background-color: var(--error-light); color: var(--error-dark); }
 .text-error { color: var(--text-tertiary); }
 
 .status-pill {
@@ -349,21 +349,20 @@ onMounted(fetchChannels)
     font-size: var(--font-size-xs); font-weight: var(--font-weight-medium);
 }
 
-.status-active { background: rgba(16, 185, 129, 0.1); color: #10b981; }
-.status-disabled { background: var(--gray-100); color: var(--gray-500); }
+.badge-primary { background: var(--primary-light); color: var(--primary-dark); }
+.badge-secondary { background: var(--accent-purple-light); color: var(--accent-purple); }
+
+.status-active { background: var(--success-light); color: var(--success-dark); }
+.status-disabled { background: var(--bg-tertiary); color: var(--text-tertiary); }
 .status-dot { width: 6px; height: 6px; background: currentColor; border-radius: 50%; }
 
-.badge-info { background: #3b82f6; color: white; }
-.badge-success { background: #22c55e; color: white; }
-.badge-muted { background: #6b7280; color: white; }
-.badge-secondary { background: #8b5cf6; color: white; }
-.text-danger { color: #ef4444; }
+.text-danger { color: var(--error-color); }
 .text-center { text-align: center; }
 
 .error-banner {
-    background: #fef2f2; color: #dc2626; border: 1px solid #fecaca;
-    border-radius: 6px; padding: 10px 14px; margin-bottom: 12px;
-    font-size: 13px; cursor: pointer;
+    background: var(--error-light); color: var(--error-dark); border: 1px solid var(--error-color);
+    border-radius: var(--radius-sm); padding: 10px 14px; margin-bottom: var(--spacing-4);
+    font-size: var(--font-size-sm); cursor: pointer;
 }
 
 /* Modal */
@@ -380,10 +379,10 @@ onMounted(fetchChannels)
 .form-input:focus { outline: none; border-color: var(--primary-300); box-shadow: 0 0 0 2px var(--primary-100); }
 
 .btn-danger {
-    background: #ef4444; color: white; border: none;
+    background: var(--error-color); color: white; border: none;
     padding: 8px 16px; border-radius: var(--radius-md); cursor: pointer; font-weight: 500;
 }
-.btn-danger:hover { background: #dc2626; }
+.btn-danger:hover { background: var(--error-dark); }
 
 .spinning { animation: spin 1s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }

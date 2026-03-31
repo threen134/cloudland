@@ -70,35 +70,40 @@ func rebuildCPURule(ctx context.Context, group *model.RuleGroupV2) error {
 		return fmt.Errorf("no CPU rule details for group %s", group.UUID)
 	}
 
-	rule := details[0]
-	ruleOperator := ">"
-	if rule.Rule == "lt" {
-		ruleOperator = "<"
-	}
-
 	safeOwner := filepath.Base(group.Owner)
 	safeUUID := filepath.Base(group.UUID)
 
-	ruleData := map[string]interface{}{
-		"owner":            safeOwner,
-		"rule_group":       safeUUID,
-		"name":             rule.Name,
-		"rule_operator":    ruleOperator,
-		"limit_value":      rule.Limit,
-		"duration_minutes": rule.Duration,
-		"rule_id":          fmt.Sprintf("alarm-cpu-%s-%s", safeOwner, safeUUID),
-		"global_rule_id":   group.RuleID,
-		"region_id":        group.RegionID,
-		"level":            group.Level,
-		"over":             rule.Over,
-		"duration":         rule.Duration,
-		"down_to":          rule.DownTo,
-		"down_duration":    rule.DownDuration,
-	}
+	for i, rule := range details {
+		ruleOperator := ">"
+		if rule.Rule == "lt" {
+			ruleOperator = "<"
+		}
 
-	templateFile := "VM-cpu-rule.yml.j2"
-	outputFile := fmt.Sprintf("cpu-%s-%s.yml", safeOwner, safeUUID)
-	return ProcessTemplate(templateFile, outputFile, ruleData)
+		ruleData := map[string]interface{}{
+			"owner":            safeOwner,
+			"rule_group":       safeUUID,
+			"name":             rule.Name,
+			"rule_operator":    ruleOperator,
+			"limit_value":      rule.Limit,
+			"duration_minutes": rule.Duration,
+			"rule_id":          fmt.Sprintf("alarm-cpu-%s-%s", safeOwner, safeUUID),
+			"global_rule_id":   group.RuleID,
+			"region_id":        group.RegionID,
+			"level":            rule.Level,
+			"detail_index":     i,
+			"over":             rule.Over,
+			"duration":         rule.Duration,
+			"down_to":          rule.DownTo,
+			"down_duration":    rule.DownDuration,
+		}
+
+		templateFile := "VM-cpu-rule.yml.j2"
+		outputFile := fmt.Sprintf("cpu-%s-%s-%d.yml", safeOwner, safeUUID, i)
+		if err := ProcessTemplate(templateFile, outputFile, ruleData); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func rebuildMemoryRule(ctx context.Context, group *model.RuleGroupV2) error {
@@ -108,35 +113,40 @@ func rebuildMemoryRule(ctx context.Context, group *model.RuleGroupV2) error {
 		return fmt.Errorf("no Memory rule details for group %s", group.UUID)
 	}
 
-	rule := details[0]
-	ruleOperator := ">"
-	if rule.Rule == "lt" {
-		ruleOperator = "<"
-	}
-
 	safeOwner := filepath.Base(group.Owner)
 	safeUUID := filepath.Base(group.UUID)
 
-	ruleData := map[string]interface{}{
-		"owner":            safeOwner,
-		"rule_group":       safeUUID,
-		"name":             rule.Name,
-		"rule_operator":    ruleOperator,
-		"limit_value":      rule.Limit,
-		"duration_minutes": rule.Duration,
-		"rule_id":          fmt.Sprintf("alarm-memory-%s-%s", safeOwner, safeUUID),
-		"global_rule_id":   group.RuleID,
-		"region_id":        group.RegionID,
-		"level":            group.Level,
-		"over":             rule.Over,
-		"duration":         rule.Duration,
-		"down_to":          rule.DownTo,
-		"down_duration":    rule.DownDuration,
-	}
+	for i, rule := range details {
+		ruleOperator := ">"
+		if rule.Rule == "lt" {
+			ruleOperator = "<"
+		}
 
-	templateFile := "VM-memory-rule.yml.j2"
-	outputFile := fmt.Sprintf("memory-%s-%s.yml", safeOwner, safeUUID)
-	return ProcessTemplate(templateFile, outputFile, ruleData)
+		ruleData := map[string]interface{}{
+			"owner":            safeOwner,
+			"rule_group":       safeUUID,
+			"name":             rule.Name,
+			"rule_operator":    ruleOperator,
+			"limit_value":      rule.Limit,
+			"duration_minutes": rule.Duration,
+			"rule_id":          fmt.Sprintf("alarm-memory-%s-%s", safeOwner, safeUUID),
+			"global_rule_id":   group.RuleID,
+			"region_id":        group.RegionID,
+			"level":            rule.Level,
+			"detail_index":     i,
+			"over":             rule.Over,
+			"duration":         rule.Duration,
+			"down_to":          rule.DownTo,
+			"down_duration":    rule.DownDuration,
+		}
+
+		templateFile := "VM-memory-rule.yml.j2"
+		outputFile := fmt.Sprintf("memory-%s-%s-%d.yml", safeOwner, safeUUID, i)
+		if err := ProcessTemplate(templateFile, outputFile, ruleData); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func rebuildBWRule(ctx context.Context, group *model.RuleGroupV2) error {
@@ -146,25 +156,40 @@ func rebuildBWRule(ctx context.Context, group *model.RuleGroupV2) error {
 		return fmt.Errorf("no BW rule details for group %s", group.UUID)
 	}
 
-	rule := details[0]
-
 	safeOwner := filepath.Base(group.Owner)
 	safeUUID := filepath.Base(group.UUID)
 
-	ruleData := map[string]interface{}{
-		"owner":            safeOwner,
-		"rule_group":       safeUUID,
-		"name":             rule.Name,
-		"rule_id":          fmt.Sprintf("alarm-bw-%s-%s", safeOwner, safeUUID),
-		"global_rule_id":   group.RuleID,
-		"region_id":        group.RegionID,
-		"level":            group.Level,
-		"direction":        rule.Direction,
-		"limit_value":      rule.Limit,
-		"duration_minutes": rule.Duration,
-	}
+	for i, rule := range details {
+		data := map[string]interface{}{
+			"owner":          safeOwner,
+			"rule_group":     safeUUID,
+			"global_rule_id": group.RuleID,
+			"region_id":      group.RegionID,
+			"level":          rule.Level,
+			"detail_index":   i,
+		}
 
-	templateFile := "VM-bw-rule.yml.j2"
-	outputFile := fmt.Sprintf("bw-%s-%s.yml", safeOwner, safeUUID)
-	return ProcessTemplate(templateFile, outputFile, ruleData)
+		var templateFile, outputFile string
+		switch rule.Direction {
+		case "in":
+			data["rule_id"] = fmt.Sprintf("alarm-bw-in-%s-%s", safeOwner, safeUUID)
+			data["in_threshold"] = rule.Limit
+			data["in_duration"] = rule.Duration
+			templateFile = "VM-in-bw-rule.yml.j2"
+			outputFile = fmt.Sprintf("bw-in-%s-%s-%d.yml", safeOwner, safeUUID, i)
+		case "out":
+			data["rule_id"] = fmt.Sprintf("alarm-bw-out-%s-%s", safeOwner, safeUUID)
+			data["out_threshold"] = rule.Limit
+			data["out_duration"] = rule.Duration
+			templateFile = "VM-out-bw-rule.yml.j2"
+			outputFile = fmt.Sprintf("bw-out-%s-%s-%d.yml", safeOwner, safeUUID, i)
+		default:
+			continue
+		}
+
+		if err := ProcessTemplate(templateFile, outputFile, data); err != nil {
+			return err
+		}
+	}
+	return nil
 }

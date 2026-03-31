@@ -37,7 +37,7 @@ const config = {
       <div class="pl-nav-actions">
         <span class="pl-api-badge">API Reference</span>
         <button class="pl-back-btn" @click="router.push('/dashboard')">
-          ← {{ t('nav.dashboard') || '返回控制台' }}
+          ← {{ t('nav.dashboard') }}
         </button>
       </div>
     </header>

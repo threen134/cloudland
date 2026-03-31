@@ -70,9 +70,9 @@ const getStatusText = (status: string) => {
 
 const formatSize = (size: number) => {
     if (size >= 1000) {
-        return `${(size / 1000).toFixed(1)} TB`
+        return `${(size / 1000).toFixed(1)} ${t('specs.tb')}`
     }
-    return `${size} GB`
+    return `${size} ${t('specs.gb')}`
 }
 
 const getStatusClass = (status: string) => {

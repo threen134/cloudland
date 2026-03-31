@@ -77,7 +77,7 @@ const closeCreateModal = () => {
 const handleCreateImage = async () => {
     createError.value = ''
     if (!newImageForm.value.name || !newImageForm.value.download_url) {
-        createError.value = 'Please fill in Name and Download URL.'
+        createError.value = t('dashboard.imageActions.fillRequired')
         return
     }
     if (!isNameValid.value) {
@@ -158,11 +158,11 @@ watch(searchQuery, filterImages)
 watch(selectedVisibility, filterImages)
 
 const formatSize = (bytes: number) => {
-    if (!bytes) return '0 B'
+    if (!bytes) return `0 ${t('specs.b')}`
     const k = 1024
-    const units = ['B', 'KB', 'MB', 'GB', 'TB']
+    const units = ['b', 'kb', 'mb', 'gb', 'tb']
     const i = Math.floor(Math.log(bytes) / Math.log(k))
-    return `${(bytes / Math.pow(k, i)).toFixed(1)} ${units[i]}`
+    return `${(bytes / Math.pow(k, i)).toFixed(1)} ${t('specs.' + units[i])}`
 }
 
 const getOsName = (image: Image) => {

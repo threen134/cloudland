@@ -7,7 +7,7 @@ import { Cloud, User, Lock, ArrowRight, XCircle, AlertTriangle, Eye, EyeOff, Lan
 import { setLanguage, getCurrentLanguage } from '../../locales'
 import SecurityVerify from '../../components/auth/SecurityVerify.vue'
 
-const { t } = useI18n()
+const { t, locale } = useI18n()
 const router = useRouter()
 const auth = useAuthStore()
 
@@ -57,9 +57,9 @@ const handleSubmit = async () => {
         <span>CloudLand</span>
       </router-link>
       <div class="pl-nav-actions">
-        <button class="pl-lang-btn" @click="toggleLang" :title="currentLang === 'zh' ? 'Switch to English' : '切换到中文'">
+        <button class="pl-lang-btn" @click="toggleLang" :title="t('nav.switchLang')">
           <Languages :size="16" />
-          <span>{{ currentLang === 'zh' ? 'EN' : '中文' }}</span>
+          <span>{{ locale === 'zh' ? 'EN' : '中文' }}</span>
         </button>
       </div>
     </header>

@@ -120,6 +120,7 @@ type (
 		Over         int       `json:"over" gorm:"check:over >= 1"`
 		DownTo       int       `json:"down_to" gorm:"check:down_to >= 0"`
 		DownDuration int       `json:"down_duration" gorm:"check:down_duration >= 1"`
+		Level        string    `json:"level" binding:"required,oneof=critical warning info"`
 		CreatedAt    time.Time `gorm:"autoCreateTime"`
 	}
 
@@ -133,6 +134,7 @@ type (
 		Over         int       `json:"over" gorm:"check:over >= 1"`
 		DownTo       int       `json:"down_to" gorm:"check:down_to >= 0"`
 		DownDuration int       `json:"down_duration" gorm:"check:down_duration >= 1"`
+		Level        string    `json:"level" binding:"required,oneof=critical warning info"`
 		CreatedAt    time.Time `gorm:"autoCreateTime"`
 	}
 
@@ -1207,7 +1209,7 @@ func (a *AlarmOperator) GetCPURuleDetails(ctx context.Context, groupUUID string)
 		}
 	}()
 	ctx, db := common.GetContextDB(ctx)
-	if err := db.Where("group_uuid = ?", groupUUID).Find(&details).Error; err != nil {
+	if err := db.Where("group_uuid = ?", groupUUID).Order("id ASC").Find(&details).Error; err != nil {
 		logger.Errorf("query CPU rules detail failed: groupUUID=%s, error=%v", groupUUID, err)
 	}
 	return details, nil
@@ -1223,7 +1225,7 @@ func (a *AlarmOperator) GetMemoryRuleDetails(ctx context.Context, groupUUID stri
 		}
 	}()
 	ctx, db := common.GetContextDB(ctx)
-	if err := db.Where("group_uuid = ?", groupUUID).Find(&details).Error; err != nil {
+	if err := db.Where("group_uuid = ?", groupUUID).Order("id ASC").Find(&details).Error; err != nil {
 		logger.Errorf("query Memory rules detail failed: groupUUID=%s, error=%v", groupUUID, err)
 	}
 	return details, nil
@@ -1301,7 +1303,7 @@ func (a *AlarmOperator) GetBWRuleDetails(ctx context.Context, groupUUID string) 
 		}
 	}()
 	ctx, db := common.GetContextDB(ctx)
-	if err := db.Where("group_uuid = ?", groupUUID).Find(&details).Error; err != nil {
+	if err := db.Where("group_uuid = ?", groupUUID).Order("id ASC").Find(&details).Error; err != nil {
 		logger.Errorf("query db BW rules detailed: groupUUID=%s, error=%v", groupUUID, err)
 		return nil, fmt.Errorf("query db BW rules detailed: %w", err)
 	}

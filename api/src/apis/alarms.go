@@ -587,13 +587,19 @@ func (a *AlarmAPI) CreateCPURule(c *gin.Context) {
 		Rules           []services.CPURule `json:"rules" binding:"required,min=1"`
 		LinkedVMs       []string         `json:"linkedvms"`
 		RegionID        string           `json:"region_id"`
-		Level           string           `json:"level"`
 		DurationMinutes int              `json:"duration_minutes"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	for _, rule := range req.Rules {
+		if rule.Level != "critical" && rule.Level != "warning" && rule.Level != "info" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("invalid level '%s', must be one of: critical, warning, info", rule.Level)})
+			return
+		}
+	}
+	safeOwnerCPU := filepath.Base(req.Owner)
 	group := &model.RuleGroupV2{
 		RuleID:          req.RuleID,
 		Name:            req.Name,
@@ -601,7 +607,6 @@ func (a *AlarmAPI) CreateCPURule(c *gin.Context) {
 		Owner:           req.Owner,
 		Enabled:         true,
 		RegionID:        req.RegionID,
-		Level:           req.Level,
 		DurationMinutes: req.DurationMinutes,
 	}
 	if err := a.operator.CreateRuleGroup(c.Request.Context(), group); err != nil {
@@ -618,6 +623,7 @@ func (a *AlarmAPI) CreateCPURule(c *gin.Context) {
 			Over:         rule.Over,
 			DownDuration: rule.DownDuration,
 			DownTo:       rule.DownTo,
+			Level:        rule.Level,
 		}
 		if err := a.operator.CreateCPURuleDetail(c.Request.Context(), detail); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "create rule detail failed: " + err.Error()})
@@ -632,48 +638,44 @@ func (a *AlarmAPI) CreateCPURule(c *gin.Context) {
 		// Update matched_vms.json with VM information
 		_ = a.UpdateMatchedVMsJSON(c.Request.Context(), req.LinkedVMs, group.UUID, "add", "alarm-cpu")
 	}
-	// Validate: only one rule can be created at a time
-	if len(req.Rules) != 1 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Only one rule can be created at a time."})
-		return
-	}
 
-	// Process only the first rule
-	rule := req.Rules[0]
-	// Convert gt/lt to >/< symbols for template
-	var ruleOperator string
-	switch rule.Rule {
-	case "gt":
-		ruleOperator = ">"
-	case "lt":
-		ruleOperator = "<"
-	default:
-		ruleOperator = ">"
-	}
+	// Render template for each rule detail
+	for i, rule := range req.Rules {
+		var ruleOperator string
+		switch rule.Rule {
+		case "gt":
+			ruleOperator = ">"
+		case "lt":
+			ruleOperator = "<"
+		default:
+			ruleOperator = ">"
+		}
 
-	ruleData := map[string]interface{}{
-		"owner":            req.Owner,
-		"rule_group":       group.UUID,
-		"name":             rule.Name,
-		"rule_operator":    ruleOperator,
-		"limit_value":      rule.Limit,
-		"duration_minutes": rule.Duration,
-		"rule_id":          fmt.Sprintf("alarm-cpu-%s-%s", req.Owner, group.UUID),
-		"global_rule_id":   group.RuleID,
-		"region_id":        req.RegionID,
-		"level":            req.Level,
-		"over":             rule.Over,
-		"duration":         rule.Duration,
-		"down_to":          rule.DownTo,
-		"down_duration":    rule.DownDuration,
-	}
+		ruleData := map[string]interface{}{
+			"owner":            safeOwnerCPU,
+			"rule_group":       group.UUID,
+			"name":             rule.Name,
+			"rule_operator":    ruleOperator,
+			"limit_value":      rule.Limit,
+			"duration_minutes": rule.Duration,
+			"rule_id":          fmt.Sprintf("alarm-cpu-%s-%s", safeOwnerCPU, group.UUID),
+			"global_rule_id":   group.RuleID,
+			"region_id":        req.RegionID,
+			"level":            rule.Level,
+			"detail_index":     i,
+			"over":             rule.Over,
+			"duration":         rule.Duration,
+			"down_to":          rule.DownTo,
+			"down_duration":    rule.DownDuration,
+		}
 
-	templateFile := "VM-cpu-rule.yml.j2"
-	outputFile := fmt.Sprintf("cpu-%s-%s.yml", req.Owner, group.UUID)
-	if err := services.ProcessTemplate(templateFile, outputFile, ruleData); err != nil {
-		log.Printf("Failed to render cpu rule template: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to render cpu rule template"})
-		return
+		templateFile := "VM-cpu-rule.yml.j2"
+		outputFile := fmt.Sprintf("cpu-%s-%s-%d.yml", safeOwnerCPU, group.UUID, i)
+		if err := services.ProcessTemplate(templateFile, outputFile, ruleData); err != nil {
+			log.Printf("Failed to render cpu rule template: %v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to render cpu rule template"})
+			return
+		}
 	}
 
 	services.ReloadPrometheusViaHTTP()
@@ -706,18 +708,17 @@ func (a *AlarmAPI) CreateMemoryRule(c *gin.Context) {
 		Rules           []services.MemoryRule `json:"rules" binding:"required,min=1"`
 		LinkedVMs       []string            `json:"linkedvms"`
 		RegionID        string              `json:"region_id"`
-		Level           string              `json:"level"`
 		DurationMinutes int                 `json:"duration_minutes"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-
-	// Validate: only one rule can be created at a time (BEFORE any database operations)
-	if len(req.Rules) != 1 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Only one rule can be created at a time."})
-		return
+	for _, rule := range req.Rules {
+		if rule.Level != "critical" && rule.Level != "warning" && rule.Level != "info" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("invalid level '%s', must be one of: critical, warning, info", rule.Level)})
+			return
+		}
 	}
 
 	// Validate: all linked VMs must exist in the database BEFORE creating any records
@@ -739,6 +740,7 @@ func (a *AlarmAPI) CreateMemoryRule(c *gin.Context) {
 		}
 	}
 
+	safeOwnerMemory := filepath.Base(req.Owner)
 	group := &model.RuleGroupV2{
 		RuleID:          req.RuleID,
 		Name:            req.Name,
@@ -746,7 +748,6 @@ func (a *AlarmAPI) CreateMemoryRule(c *gin.Context) {
 		Owner:           req.Owner,
 		Enabled:         true,
 		RegionID:        req.RegionID,
-		Level:           req.Level,
 		DurationMinutes: req.DurationMinutes,
 	}
 	if err := a.operator.CreateRuleGroup(c.Request.Context(), group); err != nil {
@@ -763,6 +764,7 @@ func (a *AlarmAPI) CreateMemoryRule(c *gin.Context) {
 			Over:         rule.Over,
 			DownDuration: rule.DownDuration,
 			DownTo:       rule.DownTo,
+			Level:        rule.Level,
 		}
 		if err := a.operator.CreateMemoryRuleDetail(c.Request.Context(), detail); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "create rule detail failed: " + err.Error()})
@@ -787,42 +789,43 @@ func (a *AlarmAPI) CreateMemoryRule(c *gin.Context) {
 		}
 	}
 
-	// Process only the first rule
-	rule := req.Rules[0]
-	// Convert gt/lt to >/< symbols for template
-	var ruleOperator string
-	switch rule.Rule {
-	case "gt":
-		ruleOperator = ">"
-	case "lt":
-		ruleOperator = "<"
-	default:
-		ruleOperator = ">"
-	}
+	// Render template for each rule detail
+	for i, rule := range req.Rules {
+		var ruleOperator string
+		switch rule.Rule {
+		case "gt":
+			ruleOperator = ">"
+		case "lt":
+			ruleOperator = "<"
+		default:
+			ruleOperator = ">"
+		}
 
-	ruleData := map[string]interface{}{
-		"owner":            req.Owner,
-		"rule_group":       group.UUID,
-		"name":             rule.Name,
-		"rule_operator":    ruleOperator,
-		"limit_value":      rule.Limit,
-		"duration_minutes": rule.Duration,
-		"rule_id":          fmt.Sprintf("alarm-memory-%s-%s", req.Owner, group.UUID),
-		"global_rule_id":   group.RuleID,
-		"region_id":        req.RegionID,
-		"level":            req.Level,
-		"over":             rule.Over,
-		"duration":         rule.Duration,
-		"down_to":          rule.DownTo,
-		"down_duration":    rule.DownDuration,
-	}
+		ruleData := map[string]interface{}{
+			"owner":            safeOwnerMemory,
+			"rule_group":       group.UUID,
+			"name":             rule.Name,
+			"rule_operator":    ruleOperator,
+			"limit_value":      rule.Limit,
+			"duration_minutes": rule.Duration,
+			"rule_id":          fmt.Sprintf("alarm-memory-%s-%s", safeOwnerMemory, group.UUID),
+			"global_rule_id":   group.RuleID,
+			"region_id":        req.RegionID,
+			"level":            rule.Level,
+			"detail_index":     i,
+			"over":             rule.Over,
+			"duration":         rule.Duration,
+			"down_to":          rule.DownTo,
+			"down_duration":    rule.DownDuration,
+		}
 
-	templateFile := "VM-memory-rule.yml.j2"
-	outputFile := fmt.Sprintf("memory-%s-%s.yml", req.Owner, group.UUID)
-	if err := services.ProcessTemplate(templateFile, outputFile, ruleData); err != nil {
-		log.Printf("Failed to render memory rule template: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to render memory rule template"})
-		return
+		templateFile := "VM-memory-rule.yml.j2"
+		outputFile := fmt.Sprintf("memory-%s-%s-%d.yml", safeOwnerMemory, group.UUID, i)
+		if err := services.ProcessTemplate(templateFile, outputFile, ruleData); err != nil {
+			log.Printf("Failed to render memory rule template: %v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to render memory rule template"})
+			return
+		}
 	}
 
 	services.ReloadPrometheusViaHTTP()
@@ -903,6 +906,7 @@ func (a *AlarmAPI) GetCPURules(c *gin.Context) {
 				"rule":     d.Rule,
 				"limit":    d.Limit,
 				"duration": d.Duration,
+				"level":    d.Level,
 			})
 		}
 
@@ -991,6 +995,7 @@ func (a *AlarmAPI) GetMemoryRules(c *gin.Context) {
 				"rule":     d.Rule,
 				"limit":    d.Limit,
 				"duration": d.Duration,
+				"level":    d.Level,
 			})
 		}
 
@@ -1097,22 +1102,22 @@ func (a *AlarmAPI) DeleteCPURule(c *gin.Context) {
 	// Remove related entries from matched_vms.json
 	_ = a.UpdateMatchedVMsJSON(c.Request.Context(), []string{}, groupUUID, "remove", "alarm-cpu")
 
-	// Delete symlink and rule file (paths consistent with creation)
-	fileName := fmt.Sprintf("cpu-%s-%s.yml", owner, groupUUID)
-	linkPath := filepath.Join(services.RulesEnabled, fileName)
-	rulePath := filepath.Join(services.RulesGeneral, fileName) // All rules now stored in general_rules
-
-	// Track deleted file paths
+	// Delete all indexed rule files (consistent with multi-detail creation)
 	deletedFiles := []string{}
-
-	// Delete symlink
-	if err := services.RemoveFile(linkPath); err == nil {
-		deletedFiles = append(deletedFiles, linkPath)
+	details, err := a.operator.GetCPURuleDetails(c.Request.Context(), groupUUID)
+	if err != nil {
+		log.Printf("[CPU-DELETE-WARNING] Failed to get rule details for file cleanup: %v", err)
 	}
-
-	// Delete rule file
-	if err := services.RemoveFile(rulePath); err == nil {
-		deletedFiles = append(deletedFiles, rulePath)
+	for i := range details {
+		fileName := fmt.Sprintf("cpu-%s-%s-%d.yml", owner, groupUUID, i)
+		linkPath := filepath.Join(services.RulesEnabled, fileName)
+		rulePath := filepath.Join(services.RulesGeneral, fileName)
+		if err := services.RemoveFile(linkPath); err == nil {
+			deletedFiles = append(deletedFiles, linkPath)
+		}
+		if err := services.RemoveFile(rulePath); err == nil {
+			deletedFiles = append(deletedFiles, rulePath)
+		}
 	}
 
 	// Delete rule-related table data
@@ -1226,25 +1231,23 @@ func (a *AlarmAPI) DeleteMemoryRule(c *gin.Context) {
 	owner := group.Owner
 	deletedFiles := make([]string, 0)
 
-	// Generate file paths
-	fileName := fmt.Sprintf("memory-%s-%s.yml", owner, groupUUID)
-
-	// Delete symlink in rules_enabled directory
-	linkPath := filepath.Join(services.RulesEnabled, fileName)
-	if err := services.RemoveFile(linkPath); err == nil {
-		deletedFiles = append(deletedFiles, linkPath)
-		log.Printf("[MEMORY-DELETE-INFO] Deleted symlink: %s", linkPath)
-	} else {
-		log.Printf("[MEMORY-DELETE-WARNING] Failed to delete symlink: %s, error: %v", linkPath, err)
+	// Delete all indexed rule files (consistent with multi-detail creation)
+	memDetails, err := a.operator.GetMemoryRuleDetails(c.Request.Context(), groupUUID)
+	if err != nil {
+		log.Printf("[MEMORY-DELETE-WARNING] Failed to get rule details for file cleanup: %v", err)
 	}
-
-	// Delete actual rule file in rules_general directory
-	rulePath := filepath.Join(services.RulesGeneral, fileName)
-	if err := services.RemoveFile(rulePath); err == nil {
-		deletedFiles = append(deletedFiles, rulePath)
-		log.Printf("[MEMORY-DELETE-INFO] Deleted rule file: %s", rulePath)
-	} else {
-		log.Printf("[MEMORY-DELETE-WARNING] Failed to delete rule file: %s, error: %v", rulePath, err)
+	for i := range memDetails {
+		fileName := fmt.Sprintf("memory-%s-%s-%d.yml", owner, groupUUID, i)
+		linkPath := filepath.Join(services.RulesEnabled, fileName)
+		rulePath := filepath.Join(services.RulesGeneral, fileName)
+		if err := services.RemoveFile(linkPath); err == nil {
+			deletedFiles = append(deletedFiles, linkPath)
+			log.Printf("[MEMORY-DELETE-INFO] Deleted symlink: %s", linkPath)
+		}
+		if err := services.RemoveFile(rulePath); err == nil {
+			deletedFiles = append(deletedFiles, rulePath)
+			log.Printf("[MEMORY-DELETE-INFO] Deleted rule file: %s", rulePath)
+		}
 	}
 
 	// Delete rule-related table data
@@ -1614,12 +1617,12 @@ func (a *AlarmAPI) CreateBWRule(c *gin.Context) {
 		Enable   bool   `json:"enable"`
 		RegionID string `json:"region_id" binding:"required"`
 		RuleID   string `json:"rule_id" binding:"required"`
-		Level    string `json:"level"` // critical/warning/info
 		Rules    []struct {
 			Direction string `json:"direction" binding:"required,oneof=in out"`
 			Name      string `json:"name"`
 			Limit     int    `json:"limit" binding:"required,min=1,max=100"`
 			Duration  int    `json:"duration" binding:"required,min=1"`
+			Level     string `json:"level" binding:"required,oneof=critical warning info"`
 		} `json:"rules" binding:"required,min=1"`
 		LinkedVMs []struct {
 			InstanceID   string `json:"instance_id" binding:"required"`
@@ -1630,6 +1633,7 @@ func (a *AlarmAPI) CreateBWRule(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	safeOwnerBW := filepath.Base(req.Owner)
 	group := &model.RuleGroupV2{
 		RuleID:   req.RuleID,
 		Name:     req.Name,
@@ -1637,7 +1641,6 @@ func (a *AlarmAPI) CreateBWRule(c *gin.Context) {
 		Owner:    req.Owner,
 		Enabled:  req.Enable,
 		RegionID: req.RegionID,
-		Level:    req.Level,
 	}
 	if err := a.operator.CreateRuleGroup(c.Request.Context(), group); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "operator failed: " + err.Error()})
@@ -1650,6 +1653,7 @@ func (a *AlarmAPI) CreateBWRule(c *gin.Context) {
 			Direction: rule.Direction,
 			Limit:     rule.Limit,
 			Duration:  rule.Duration,
+			Level:     rule.Level,
 			// Set legacy fields to -1 for backward compatibility
 			InThreshold:     -1,
 			InDuration:      -1,
@@ -1687,30 +1691,31 @@ func (a *AlarmAPI) CreateBWRule(c *gin.Context) {
 		}
 	}
 	// Render templates for each rule direction
-	for _, rule := range req.Rules {
+	for i, rule := range req.Rules {
 		data := map[string]interface{}{
-			"owner":          req.Owner,
+			"owner":          safeOwnerBW,
 			"rule_group":     group.UUID,
 			"global_rule_id": req.RuleID,
 			"region_id":      req.RegionID,
-			"level":          req.Level,
+			"level":          rule.Level,
+			"detail_index":   i,
 		}
 
 		var templateFile, outputFile string
 
 		switch rule.Direction {
 		case "in":
-			data["rule_id"] = fmt.Sprintf("alarm-bw-in-%s-%s", req.Owner, group.UUID)
+			data["rule_id"] = fmt.Sprintf("alarm-bw-in-%s-%s", safeOwnerBW, group.UUID)
 			data["in_threshold"] = rule.Limit
 			data["in_duration"] = rule.Duration
 			templateFile = "VM-in-bw-rule.yml.j2"
-			outputFile = fmt.Sprintf("bw-in-%s-%s.yml", req.Owner, group.UUID)
+			outputFile = fmt.Sprintf("bw-in-%s-%s-%d.yml", safeOwnerBW, group.UUID, i)
 		case "out":
-			data["rule_id"] = fmt.Sprintf("alarm-bw-out-%s-%s", req.Owner, group.UUID)
+			data["rule_id"] = fmt.Sprintf("alarm-bw-out-%s-%s", safeOwnerBW, group.UUID)
 			data["out_threshold"] = rule.Limit
 			data["out_duration"] = rule.Duration
 			templateFile = "VM-out-bw-rule.yml.j2"
-			outputFile = fmt.Sprintf("bw-out-%s-%s.yml", req.Owner, group.UUID)
+			outputFile = fmt.Sprintf("bw-out-%s-%s-%d.yml", safeOwnerBW, group.UUID, i)
 		default:
 			c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("Invalid direction: %s, must be 'in' or 'out'", rule.Direction)})
 			return
@@ -1799,6 +1804,7 @@ func (a *AlarmAPI) GetBWRules(c *gin.Context) {
 				"name":      d.Name,
 				"limit":     d.Limit,
 				"duration":  d.Duration,
+				"level":     d.Level,
 			})
 		}
 
@@ -1916,27 +1922,25 @@ func (a *AlarmAPI) DeleteBWRules(c *gin.Context) {
 	// Track deleted file paths
 	deletedFiles := []string{}
 
-	// Only delete files for directions that actually exist in the rule
-	for _, detail := range details {
+	// Delete all indexed rule files for each direction
+	for i, detail := range details {
 		var filename string
 		switch detail.Direction {
 		case "in":
-			filename = fmt.Sprintf("bw-in-%s-%s.yml", owner, groupUUID)
+			filename = fmt.Sprintf("bw-in-%s-%s-%d.yml", owner, groupUUID, i)
 		case "out":
-			filename = fmt.Sprintf("bw-out-%s-%s.yml", owner, groupUUID)
+			filename = fmt.Sprintf("bw-out-%s-%s-%d.yml", owner, groupUUID, i)
 		default:
 			log.Printf("[BW-WARNING] Unknown direction: %s", detail.Direction)
 			continue
 		}
 
 		linkPath := filepath.Join(services.RulesEnabled, filename)
-		rulePath := filepath.Join(services.RulesGeneral, filename) // All rules now stored in general_rules
+		rulePath := filepath.Join(services.RulesGeneral, filename)
 
-		// Delete symlink
 		if err := services.RemoveFile(linkPath); err == nil {
 			deletedFiles = append(deletedFiles, linkPath)
 		}
-		// Delete rule file
 		if err := services.RemoveFile(rulePath); err == nil {
 			deletedFiles = append(deletedFiles, rulePath)
 		}

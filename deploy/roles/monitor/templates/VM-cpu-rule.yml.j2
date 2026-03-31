@@ -1,7 +1,7 @@
 groups:
-- name: cpu_{{ owner }}_{{ rule_group }}
+- name: cpu_{{ owner }}_{{ rule_group }}_{{ detail_index }}
   rules:
-  - alert: CPUUsage_{{ owner }}_{{ rule_group }}
+  - alert: CPUUsage_{{ owner }}_{{ rule_group }}_{{ detail_index }}
     expr: |
       (
         (

@@ -40,12 +40,12 @@ const showDeleteConfirm = ref(false)
 const deletingHyper = ref<Hypervisor | null>(null)
 const deleting = ref(false)
 
-const STATUS_MAP: Record<number, { label: string; class: string }> = {
-    0: { label: 'Disabled', class: 'status-disabled' },
-    1: { label: 'Active', class: 'status-active' },
-    2: { label: 'Maintaining', class: 'status-warning' },
-    4: { label: 'Deploying', class: 'status-info' },
-    5: { label: 'Deploy Failed', class: 'status-error' }
+const STATUS_MAP: Record<number, { labelKey: string; class: string }> = {
+    0: { labelKey: 'disabled', class: 'status-disabled' },
+    1: { labelKey: 'active', class: 'status-active' },
+    2: { labelKey: 'maintaining', class: 'status-warning' },
+    4: { labelKey: 'deploying', class: 'status-info' },
+    5: { labelKey: 'deployFailed', class: 'status-error' }
 }
 
 const fetchHypervisors = async () => {
@@ -86,17 +86,23 @@ const onSearchInput = () => {
 }
 
 const getStatusInfo = (status: number) => {
-    return STATUS_MAP[status] || { label: `Unknown(${status})`, class: '' }
+    return STATUS_MAP[status] || { labelKey: 'unknown', class: '' }
+}
+
+const getStatusLabel = (status: number) => {
+    const info = getStatusInfo(status)
+    if (info.labelKey === 'unknown') return t('dashboard.hypervisorStatus.unknown', { status })
+    return t('dashboard.hypervisorStatus.' + info.labelKey)
 }
 
 const formatMemory = (mb: number) => {
-    if (mb >= 1024) return `${(mb / 1024).toFixed(1)} GB`
-    return `${mb} MB`
+    if (mb >= 1024) return `${(mb / 1024).toFixed(1)} ${t('specs.gb')}`
+    return `${mb} ${t('specs.mb')}`
 }
 
 const formatDisk = (gb: number) => {
-    if (gb >= 1024) return `${(gb / 1024).toFixed(1)} TB`
-    return `${gb} GB`
+    if (gb >= 1024) return `${(gb / 1024).toFixed(1)} ${t('specs.tb')}`
+    return `${gb} ${t('specs.gb')}`
 }
 
 const usagePercent = (used: number, total: number) => {
@@ -239,7 +245,7 @@ onMounted(fetchHypervisors)
             <td>
               <span class="status-pill" :class="getStatusInfo(h.status).class">
                 <span class="status-dot"></span>
-                {{ h.status_name || getStatusInfo(h.status).label }}
+                {{ h.status_name || getStatusLabel(h.status) }}
               </span>
             </td>
             <td>
@@ -400,7 +406,7 @@ onMounted(fetchHypervisors)
             <button class="btn btn-secondary" @click="showDeleteConfirm = false">{{ t('actions.cancel') }}</button>
             <button class="btn btn-danger" @click="handleDelete" :disabled="deleting">
               <Loader2 v-if="deleting" :size="14" class="spinning" />
-              {{ deleting ? t('messages.deleting') : t('actions.delete') }}
+              {{ deleting ? t('dashboard.deleteConfirm.deleting') : t('actions.delete') }}
             </button>
           </div>
         </div>
