@@ -120,7 +120,7 @@ const closeCreateModal = () => {
 const handleInviteUser = async () => {
     createError.value = ''
     if (!inviteForm.value.email) {
-        createError.value = t('dashboard.table.email') + ' is required.'
+        createError.value = t('messages.emailRequired')
         return
     }
 
@@ -158,7 +158,7 @@ const closeEditModal = () => {
 const handleEditUser = async () => {
     editError.value = ''
     if (!editUserForm.value.username) {
-        editError.value = 'Username is required.'
+        editError.value = t('messages.usernameRequired')
         return
     }
 
@@ -392,8 +392,8 @@ onMounted(fetchUsers)
           <div class="form-group">
             <label class="form-label">{{ $t('dashboard.table.role') }}</label>
             <select v-model="editUserForm.role" class="form-input">
-              <option value="user">User</option>
-              <option value="admin">Admin</option>
+              <option value="user">{{ $t('roles.member') }}</option>
+              <option value="admin">{{ $t('roles.admin') }}</option>
             </select>
           </div>
         </div>

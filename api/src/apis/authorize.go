@@ -100,6 +100,10 @@ func Authorize() gin.HandlerFunc {
 		}
 
 		logger.Infof("MemberShip from headers: %v\n", memberShip)
+		// Store in Gin's Keys so c.Value("membership") works when gin.Context
+		// is passed as context.Context to service functions (gin's Value() only
+		// checks c.Keys, not c.Request.Context()).
+		c.Set("membership", memberShip)
 		ctx := memberShip.SetContext(c.Request.Context())
 		c.Request = c.Request.WithContext(ctx)
 		c.Next()

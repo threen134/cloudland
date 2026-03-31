@@ -14,6 +14,9 @@ import { flavorsApi } from '../../api/flavors'
 import { zonesApi, type Zone } from '../../api/zones'
 import { isValidName } from '../../utils/validation'
 import DeleteModal from '../../components/modals/DeleteModal.vue'
+import { useRegionStore } from '../../stores/region'
+
+const region = useRegionStore()
 
 
 
@@ -804,8 +807,19 @@ const handleCreateInstance = async () => {
 
 
 onMounted(() => {
-    fetchInstances()
-    metricsTimer = setInterval(fetchUsageMetrics, 30000) // update every 30s
+    if (region.currentRegionId) {
+        fetchInstances()
+        metricsTimer = setInterval(fetchUsageMetrics, 30000) // update every 30s
+    }
+})
+
+// Re-fetch when region changes
+watch(() => region.currentRegionId, (newId) => {
+    if (newId) {
+        fetchInstances()
+        if (metricsTimer) clearInterval(metricsTimer)
+        metricsTimer = setInterval(fetchUsageMetrics, 30000)
+    }
 })
 
 onUnmounted(() => {

@@ -3,7 +3,9 @@ import { ref, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { migrationsApi, type Migration } from '../../api/migrations'
 import { ArrowLeft, ArrowRightLeft, Copy, Check } from 'lucide-vue-next'
+import { useI18n } from 'vue-i18n'
 
+const { t } = useI18n()
 const route = useRoute()
 const router = useRouter()
 const migration = ref<Migration | null>(null)
@@ -21,7 +23,7 @@ const fetchMigrationDetail = async () => {
         migration.value = data.migration || data
     } catch (err: any) {
         console.error('Failed to fetch migration detail:', err)
-        error.value = err.message || 'Failed to load Migration details'
+        error.value = err.message || t('dashboard.migrationDetail.loadError')
     } finally {
         loading.value = false
     }
@@ -55,7 +57,7 @@ onMounted(fetchMigrationDetail)
     <div class="detail-header">
       <button class="btn btn-ghost back-btn" @click="goBack">
         <ArrowLeft :size="18" />
-        <span>Migrations</span>
+        <span>{{ $t('dashboard.table.migration') }}</span>
       </button>
     </div>
 
@@ -83,7 +85,7 @@ onMounted(fetchMigrationDetail)
             <ArrowRightLeft :size="28" />
           </div>
           <div>
-            <h2 class="resource-title">Migration Task</h2>
+            <h2 class="resource-title">{{ $t('dashboard.migrationDetail.title') }}</h2>
             <div class="resource-id-row">
               <span class="resource-id-text">{{ migration.id }}</span>
               <button class="copy-btn" @click="copyToClipboard(migration.id.toString(), 'id')" :title="$t('messages.copied')">
@@ -104,22 +106,22 @@ onMounted(fetchMigrationDetail)
       <div class="info-grid">
         <!-- Basic Info Card -->
         <div class="info-card card">
-          <h3 class="card-section-title">Overview</h3>
+          <h3 class="card-section-title">{{ $t('dashboard.migrationDetail.overview') }}</h3>
           <div class="info-rows">
             <div class="info-row">
-              <span class="info-label">Instance ID</span>
+              <span class="info-label">{{ $t('dashboard.migrationDetail.instanceId') }}</span>
               <span class="info-value mono">{{ migration.instance_id }}</span>
             </div>
             <div class="info-row">
-              <span class="info-label">Type</span>
-              <span class="info-value">{{ migration.migration_type || 'Unknown' }}</span>
+              <span class="info-label">{{ $t('dashboard.migrationDetail.type') }}</span>
+              <span class="info-value">{{ migration.migration_type || $t('messages.unnamed') }}</span>
             </div>
             <div class="info-row">
-              <span class="info-label">Created At</span>
+              <span class="info-label">{{ $t('dashboard.migrationDetail.createdAt') }}</span>
               <span class="info-value mono">{{ new Date(migration.created_at).toLocaleString() }}</span>
             </div>
             <div class="info-row">
-              <span class="info-label">Updated At</span>
+              <span class="info-label">{{ $t('dashboard.migrationDetail.updatedAt') }}</span>
               <span class="info-value mono">{{ new Date(migration.updated_at).toLocaleString() }}</span>
             </div>
           </div>
@@ -127,18 +129,18 @@ onMounted(fetchMigrationDetail)
 
         <!-- Node Placement Card -->
         <div class="info-card card">
-          <h3 class="card-section-title">Placement Route</h3>
+          <h3 class="card-section-title">{{ $t('dashboard.migrationDetail.placementRoute') }}</h3>
           <div class="info-rows">
             <div class="info-row">
-              <span class="info-label">Source Node</span>
+              <span class="info-label">{{ $t('dashboard.migrationDetail.sourceNode') }}</span>
               <span class="info-value">{{ migration.source_node || '-' }}</span>
             </div>
             <div class="info-row">
-              <span class="info-label">Destination Node</span>
+              <span class="info-label">{{ $t('dashboard.migrationDetail.destinationNode') }}</span>
               <span class="info-value">{{ migration.dest_node || '-' }}</span>
             </div>
             <div class="info-row" v-if="migration.dest_compute && migration.dest_compute !== migration.dest_node">
-              <span class="info-label">Final Dest Compute</span>
+              <span class="info-label">{{ $t('dashboard.migrationDetail.finalDestCompute') }}</span>
               <span class="info-value">{{ migration.dest_compute }}</span>
             </div>
           </div>

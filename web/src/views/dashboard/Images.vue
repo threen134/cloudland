@@ -7,6 +7,9 @@ import { isValidName } from '../../utils/validation'
 import { useAuthStore } from '../../stores/auth'
 import { useToast } from '../../composables/useToast'
 import { useTenantStore } from '../../stores/tenant'
+import { useRegionStore } from '../../stores/region'
+
+const region = useRegionStore()
 
 import { Disc, Search, Monitor, Server, Trash2, Plus, X, Globe, Cpu, User, Eye, EyeOff, RefreshCw } from 'lucide-vue-next'
 
@@ -54,6 +57,13 @@ const fetchImages = async () => {
         loading.value = false
     }
 }
+
+// Re-fetch when region changes
+watch(() => region.currentRegionId, (newId) => {
+    if (newId) {
+        fetchImages()
+    }
+})
 
 const openCreateModal = () => {
     newImageForm.value = {
@@ -228,8 +238,10 @@ const getStatusText = (status: string | undefined) => {
 }
 
 onMounted(async () => {
-    await fetchImages()
-    filterImages()
+    if (region.currentRegionId) {
+        await fetchImages()
+        filterImages()
+    }
 })
 </script>
 

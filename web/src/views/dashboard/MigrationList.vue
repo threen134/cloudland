@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, computed } from 'vue'
+import { ref, onMounted, computed, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { migrationsApi, type Migration } from '../../api/migrations'
 import { instancesApi, type Instance } from '../../api/instances'
@@ -98,7 +98,7 @@ const fetchResources = async () => {
 
 const handleCreateMigration = async () => {
     if (!newMigrationForm.value.instance_id) {
-        toast.error('Please select an instance to migrate.')
+        toast.error(t('messages.selectInstanceToMigrate'))
         return
     }
 
@@ -120,13 +120,24 @@ const handleCreateMigration = async () => {
         toast.success(t('messages.createSuccess'))
     } catch (err: any) {
         console.error('Failed to start migration:', err)
-        toast.error(err.response?.data?.error || 'Failed to start migration task.')
+        toast.error(err.response?.data?.error || t('messages.startMigrationFailed'))
     } finally {
         creatingMigration.value = false
     }
 }
 
-onMounted(fetchMigrations)
+onMounted(() => {
+    if (region.currentRegionId) {
+        fetchMigrations()
+    }
+})
+
+// Re-fetch when region changes
+watch(() => region.currentRegionId, (newId) => {
+    if (newId) {
+        fetchMigrations()
+    }
+})
 </script>
 
 <template>
@@ -199,7 +210,7 @@ onMounted(fetchMigrations)
               </router-link>
             </td>
             <td><code class="mono-value">{{ m.instance_id }}</code></td>
-            <td>{{ m.migration_type || 'Unknown' }}</td>
+            <td>{{ m.migration_type || $t('messages.unnamed') }}</td>
             <td>{{ m.source_node || '-' }}</td>
             <td>{{ m.dest_node || '-' }}</td>
             <td>
@@ -247,7 +258,7 @@ onMounted(fetchMigrations)
                       {{ hyp.hostname }} ({{ hyp.hypervisor_type }})
                   </option>
               </select>
-              <small class="text-secondary" style="display: block; margin-top: 4px;">Leave blank to let the scheduler choose.</small>
+              <small class="text-secondary" style="display: block; margin-top: 4px;">{{ $t('messages.placementRouteHint') }}</small>
           </div>
 
           <div class="form-group row-gap">

@@ -1,7 +1,10 @@
 <script setup lang="ts">
-import { ref, onMounted, computed } from 'vue'
+import { ref, onMounted, computed, watch } from 'vue'
 import { hypervisorsApi, type Hypervisor, type HyperDeployPayload } from '../../api/hypervisors'
 import { zonesApi } from '../../api/zones'
+import { useRegionStore } from '../../stores/region'
+
+const region = useRegionStore()
 import { Search as SearchIcon, Server, Plus, Trash2, RefreshCw, Copy, Check, X, Loader2, HelpCircle } from 'lucide-vue-next'
 import { useI18n } from 'vue-i18n'
 import { useToast } from '../../composables/useToast'
@@ -68,6 +71,13 @@ const fetchHypervisors = async () => {
     }
 }
 
+// Re-fetch when region changes
+watch(() => region.currentRegionId, (newId) => {
+    if (newId) {
+        fetchHypervisors()
+    }
+})
+
 const totalPages = computed(() => Math.max(1, Math.ceil(totalCount.value / pageSize.value)))
 
 const goToPage = (page: number) => {
@@ -132,7 +142,7 @@ const handleDeploy = async () => {
         const resp = await hypervisorsApi.deployHypervisor(deployForm.value)
         deployResult.value = resp.data as any
     } catch (err: any) {
-        toast.error(err.response?.data?.error || 'Deploy failed')
+        toast.error(err.response?.data?.error || t('messages.deployFailed'))
     } finally {
         deploying.value = false
     }
@@ -172,7 +182,11 @@ const handleDelete = async () => {
     }
 }
 
-onMounted(fetchHypervisors)
+onMounted(() => {
+    if (region.currentRegionId) {
+        fetchHypervisors()
+    }
+})
 </script>
 
 <template>

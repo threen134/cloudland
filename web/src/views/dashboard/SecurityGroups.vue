@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, computed } from 'vue'
+import { ref, onMounted, computed, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import { useToast } from '../../composables/useToast'
@@ -7,6 +7,10 @@ import { securityGroupsApi, vpcsApi, type SecurityGroup, type SecurityRule, type
 import { isValidName } from '../../utils/validation'
 
 import { Shield, Plus, Trash2, ChevronDown, ChevronRight, Search, X, RefreshCw, Edit, ArrowUpDown, ArrowUp, ArrowDown, Network, HelpCircle } from 'lucide-vue-next'
+import { useRegionStore } from '../../stores/region'
+
+const region = useRegionStore()
+
 
 const securityGroups = ref<SecurityGroup[]>([])
 const loading = ref(false)
@@ -362,7 +366,18 @@ const hideIfaceTooltip = () => {
     ifaceTooltipGroup.value = null
 }
 
-onMounted(fetchSecurityGroups)
+onMounted(() => {
+    if (region.currentRegionId) {
+        fetchSecurityGroups()
+    }
+})
+
+// Re-fetch when region changes
+watch(() => region.currentRegionId, (newId) => {
+    if (newId) {
+        fetchSecurityGroups()
+    }
+})
 </script>
 
 <template>

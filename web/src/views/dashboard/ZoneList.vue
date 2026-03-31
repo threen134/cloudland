@@ -1,9 +1,12 @@
 <script setup lang="ts">
-import { ref, onMounted, computed } from 'vue'
+import { ref, onMounted, computed, watch } from 'vue'
 import { zonesApi, type Zone, type CreateZonePayload } from '../../api/zones'
 import { Search as SearchIcon, MapPin, Plus, RefreshCw, Trash2, Settings2, X, Loader2, Check } from 'lucide-vue-next'
 import { useI18n } from 'vue-i18n'
 import { useToast } from '../../composables/useToast'
+import { useRegionStore } from '../../stores/region'
+
+const region = useRegionStore()
 
 const { t } = useI18n()
 const toast = useToast()
@@ -40,6 +43,13 @@ const fetchZones = async () => {
         loading.value = false
     }
 }
+
+// Re-fetch when region changes
+watch(() => region.currentRegionId, (newId) => {
+    if (newId) {
+        fetchZones()
+    }
+})
 
 const filteredZones = computed(() => {
     if (!searchQuery.value) return zoneList.value
@@ -116,7 +126,11 @@ const handleDelete = async () => {
     }
 }
 
-onMounted(fetchZones)
+onMounted(() => {
+    if (region.currentRegionId) {
+        fetchZones()
+    }
+})
 </script>
 
 <template>

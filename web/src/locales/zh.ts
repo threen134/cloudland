@@ -697,7 +697,7 @@ export default {
             attachedTo: '挂载至',
             ipAddress: 'IP 地址',
             flavor: '规格',
-            rangeVlan: '网段范围 / VLAN',
+            rangeVlan: 'VLAN / VXLAN',
             ipUsage: '已分配 / 可用 / 总计',
             actions: '操作',
             usage: '资源使用率',
@@ -1107,6 +1107,21 @@ export default {
             associatedHypervisors: '关联计算节点',
             noHypervisors: '该可用区暂无计算节点',
         },
+        migrationDetail: {
+            title: '迁移任务',
+            id: '任务 ID',
+            overview: '概览',
+            instanceId: '云服务器 ID',
+            type: '类型',
+            createdAt: '创建时间',
+            updatedAt: '更新时间',
+            placementRoute: '调度路径',
+            sourceNode: '源节点',
+            destinationNode: '目标节点',
+            finalDestCompute: '最终目标计算节点',
+            status: '状态',
+            loadError: '加载迁移详情失败',
+        },
     },
 
     // 通用操作
@@ -1281,7 +1296,13 @@ export default {
         noOrgsFound: '未发现组织。',
         passwordConfirmed: '密码已确认。',
         itemsSelected: '已选择 {count} 个{items}',
-        keysSelected: '已选择 {count} 个密钥'
+        keysSelected: '已选择 {count} 个密钥',
+        deployFailed: '部署失败。',
+        selectInstanceToMigrate: '请选择要迁移的实例。',
+        startMigrationFailed: '启动迁移任务失败。',
+        usernameRequired: '用户名不能为空。',
+        emailRequired: '电子邮箱不能为空。',
+        placementRouteHint: '留空让系统自动选择最佳节点。',
     },
 
 

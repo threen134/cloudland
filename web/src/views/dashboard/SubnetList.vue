@@ -1,11 +1,14 @@
 <script setup lang="ts">
-import { ref, onMounted, computed } from 'vue'
+import { ref, onMounted, computed, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import { useToast } from '../../composables/useToast'
 import { subnetsApi, vpcsApi, type Subnet, type SubnetPayload, type VPC } from '../../api/networks'
 import { isValidName } from '../../utils/validation'
 import { useAuthStore } from '../../stores/auth'
+import { useRegionStore } from '../../stores/region'
+
+const region = useRegionStore()
 
 import { Network, Plus, Trash2, Edit, Search, X, Globe, Cpu, Zap, RefreshCw, ChevronDown, HelpCircle } from 'lucide-vue-next'
 import DeleteModal from '../../components/modals/DeleteModal.vue'
@@ -53,6 +56,14 @@ const fetchSubnets = async () => {
         loading.value = false
     }
 }
+
+// Re-fetch when region changes
+watch(() => region.currentRegionId, (newId) => {
+    if (newId) {
+        fetchSubnets()
+        fetchVpcs()
+    }
+})
 
 const fetchVpcs = async () => {
     try {
@@ -200,7 +211,12 @@ const confirmDelete = async () => {
     }
 }
 
-onMounted(fetchSubnets)
+onMounted(() => {
+    if (region.currentRegionId) {
+        fetchSubnets()
+        fetchVpcs()
+    }
+})
 </script>
 
 <template>
@@ -279,15 +295,12 @@ onMounted(fetchSubnets)
               </div>
             </td>
             <td>
-              <div class="range-info">
-                 <div class="text-xs monospace">{{ subnet.start }} - {{ subnet.end }}</div>
-                 <div class="vlan-info mt-1">
-                    <span v-if="subnet.vlan">
-                        <span class="badge badge-gray text-xs">
-                           {{ (subnet.vlan > 4094) ? 'VXLAN' : 'VLAN' }}: {{ subnet.vlan }}
-                        </span>
-                    </span>
-                 </div>
+              <div class="vlan-info">
+                <span v-if="subnet.vlan">
+                  <span class="badge badge-gray text-xs" :title="(subnet.vlan > 4094) ? 'VXLAN' : 'VLAN'">
+                    {{ subnet.vlan }}
+                  </span>
+                </span>
               </div>
             </td>
             <td>

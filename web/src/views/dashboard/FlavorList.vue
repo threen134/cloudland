@@ -1,9 +1,12 @@
 <script setup lang="ts">
-import { ref, onMounted, computed } from 'vue'
+import { ref, onMounted, computed, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useToast } from '../../composables/useToast'
 import { flavorsApi, type Flavor, type FlavorPayload } from '../../api/flavors'
+import { useRegionStore } from '../../stores/region'
 import { isValidName } from '../../utils/validation'
+
+const region = useRegionStore()
 
 import { Plus, SquareStack, MemoryStick, Search, Trash2, Cpu, HardDrive, X, RefreshCw } from 'lucide-vue-next'
 
@@ -38,6 +41,13 @@ const fetchFlavors = async () => {
         loading.value = false
     }
 }
+
+// Re-fetch when region changes
+watch(() => region.currentRegionId, (newId) => {
+    if (newId) {
+        fetchFlavors()
+    }
+})
 
 const openCreateModal = () => {
     newFlavorForm.value = {
@@ -134,7 +144,11 @@ const formatRam = (val: number | string) => {
     return `${mb} ${t('specs.mb')}`
 }
 
-onMounted(fetchFlavors)
+onMounted(() => {
+    if (region.currentRegionId) {
+        fetchFlavors()
+    }
+})
 </script>
 
 <template>
@@ -190,7 +204,7 @@ onMounted(fetchFlavors)
                </div>
             </td>
           </tr>
-          <tr v-else v-for="flavor in filteredFlavors" :key="flavor.id">
+          <tr v-else v-for="flavor in filteredFlavors" :key="flavor.id || flavor.name">
             <td>
               <div class="resource-link-static">
                 <div class="resource-info">
@@ -199,7 +213,7 @@ onMounted(fetchFlavors)
                   </div>
                   <div>
                     <div class="resource-name">{{ flavor.name }}</div>
-                    <div class="resource-id">{{ flavor.id }}</div>
+                    <div class="resource-id">{{ flavor.id || flavor.name }}</div>
                   </div>
                 </div>
               </div>

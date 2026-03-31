@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, computed } from 'vue'
+import { ref, onMounted, computed, watch } from 'vue'
 import { alarmsApi, RULE_TYPES, type NodeAlarmRule, type CreateNodeAlarmRulePayload } from '../../api/alarms'
 import { Search as SearchIcon, AlertTriangle, Plus, Trash2, RefreshCw, X, Loader2, RefreshCcw } from 'lucide-vue-next'
 import { useI18n } from 'vue-i18n'
@@ -165,7 +165,18 @@ const handleSync = async () => {
     }
 }
 
-onMounted(fetchAlarms)
+onMounted(() => {
+    if (region.currentRegionId) {
+        fetchAlarms()
+    }
+})
+
+// Re-fetch when region changes
+watch(() => region.currentRegionId, (newId) => {
+    if (newId) {
+        fetchAlarms()
+    }
+})
 </script>
 
 <template>

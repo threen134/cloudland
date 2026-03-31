@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, computed } from 'vue'
+import { ref, onMounted, computed, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import { useToast } from '../../composables/useToast'
@@ -8,6 +8,9 @@ import { instancesApi, type Instance } from '../../api/instances'
 import { Globe2, Plus, Link, Unlink, Trash2, Search, X, RefreshCw, ChevronDown, ChevronUp } from 'lucide-vue-next'
 import { useFloatingIP } from '../../composables/useFloatingIP'
 import DeleteModal from '../../components/modals/DeleteModal.vue'
+import { useRegionStore } from '../../stores/region'
+
+const region = useRegionStore()
 
 const { t } = useI18n()
 const toast = useToast()
@@ -275,7 +278,18 @@ const confirmDetach = async () => {
     }
 }
 
-onMounted(fetchFloatingIPs)
+onMounted(() => {
+    if (region.currentRegionId) {
+        fetchFloatingIPs()
+    }
+})
+
+// Re-fetch when region changes
+watch(() => region.currentRegionId, (newId) => {
+    if (newId) {
+        fetchFloatingIPs()
+    }
+})
 </script>
 
 <template>

@@ -63,8 +63,8 @@ var (
 		"memory_total":     `libvirt_domain_info_maximum_memory_bytes{domain=~"%s"} / 1024`,
 		"disk_read":        `rate(libvirt_domain_block_stats_read_bytes_total{domain=~"%s",target_device=~"%s"}[2m]) / 1024`,
 		"disk_write":       `rate(libvirt_domain_block_stats_write_bytes_total{domain=~"%s",target_device=~"%s"}[2m]) / 1024`,
-		"network_receive":  `rate(libvirt_domain_interface_stats_receive_bytes_total{domain=~"%s",target_device=~"%s"}[1m]) * 8 / 1024`,
-		"network_transmit": `rate(libvirt_domain_interface_stats_transmit_bytes_total{domain=~"%s",target_device=~"%s"}[1m]) * 8 / 1024`,
+		"network_receive":  `rate(libvirt_domain_interface_stats_receive_bytes_total{domain=~"%s",target_device=~"%s"}[1m]) / 1024`,
+		"network_transmit": `rate(libvirt_domain_interface_stats_transmit_bytes_total{domain=~"%s",target_device=~"%s"}[1m]) / 1024`,
 		"traffic":          `increase(libvirt_domain_interface_stats_receive_bytes_total{domain=~"%s",target_device=~"%s"}[1h]) / 1024`, // ingress only, KB per hour
 		"volume_read":      `expontech_tianshu_vol_op_bytes_persecond{mode='read',volName='%s'}`,
 		"volume_write":     `expontech_tianshu_vol_op_bytes_persecond{mode='write',volName='%s'}`,

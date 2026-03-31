@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, computed } from 'vue'
+import { ref, onMounted, computed, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import { useToast } from '../../composables/useToast'
@@ -191,7 +191,18 @@ const confirmDelete = async () => {
     }
 }
 
-onMounted(fetchLoadBalancers)
+onMounted(() => {
+    if (region.currentRegionId) {
+        fetchLoadBalancers()
+    }
+})
+
+// Re-fetch when region changes
+watch(() => region.currentRegionId, (newId) => {
+    if (newId) {
+        fetchLoadBalancers()
+    }
+})
 </script>
 
 <template>
