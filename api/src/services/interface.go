@@ -99,6 +99,35 @@ func (a *InterfaceAdminService) GetInterfaceByUUID(ctx context.Context, uuID str
 	return
 }
 
+// GetInterfacesByUUIDs batch-fetches interfaces by UUID list. Only returns interfaces
+// the caller is authorized to read; unrecognized UUIDs are silently omitted.
+func (a *InterfaceAdminService) GetInterfacesByUUIDs(ctx context.Context, uuIDs []string) (ifaces []*model.Interface, err error) {
+	logger.Infof("ENTER InterfaceAdmin.GetInterfacesByUUIDs: count=%d", len(uuIDs))
+	defer func() {
+		if err != nil {
+			logger.Errorf("EXIT InterfaceAdmin.GetInterfacesByUUIDs: error=%v", err)
+		} else {
+			logger.Infof("EXIT InterfaceAdmin.GetInterfacesByUUIDs: found=%d", len(ifaces))
+		}
+	}()
+	memberShip := GetMemberShip(ctx)
+	query, args := memberShip.GetOrgFilter()
+	_, db := GetContextDB(ctx)
+	err = db.Where(query, args...).Where("uuid IN (?)", uuIDs).Find(&ifaces).Error
+	if err != nil {
+		return nil, err
+	}
+	// Only returns interfaces the caller has OrgReader access to.
+	// Note: no Preload needed here — callers only use MacAddr and Instance fields.
+	var authorized []*model.Interface
+	for _, iface := range ifaces {
+		if memberShip.CheckResourceOrg(model.OrgReader, iface.Owner) {
+			authorized = append(authorized, iface)
+		}
+	}
+	return authorized, nil
+}
+
 func (a *InterfaceAdminService) Delete(ctx context.Context, instance *model.Instance, iface *model.Interface) (err error) {
 	logger.Infof("ENTER InterfaceAdmin.Delete: instanceID=%d, ifaceID=%d", instance.ID, iface.ID)
 	defer func() {

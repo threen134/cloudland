@@ -176,7 +176,7 @@ export const instancesApi = {
         return client.post('/metrics/instances/disk/his_data', payload)
     },
 
-    getNetworkMetrics(payload: { id: string[], network: string[], start: string, end: string, step: string }) {
+    getNetworkMetrics(payload: { interface_ids: string[], start: string, end: string, step: string }) {
         return client.post('/metrics/instances/network/his_data', payload)
     }
 }

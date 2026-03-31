@@ -87,24 +87,43 @@ const fetchData = async () => {
 
         // Network
         if (props.interfaces?.length > 0) {
-            const iface = props.interfaces.find(i => i.is_primary) || props.interfaces[0]
-            const tapName = iface.mac_address
-                ? 'tap' + iface.mac_address.replace(/:/g, '').slice(-6).toLowerCase()
-                : (iface.name || 'eth0')
+            const interfaceIDs: string[] = props.interfaces.map((i: any) => i.id).filter(Boolean)
+            if (interfaceIDs.length > 0) {
+                const netRes = await instancesApi.getNetworkMetrics({
+                    interface_ids: interfaceIDs,
+                    start: commonPayload.start,
+                    end: commonPayload.end,
+                    step: commonPayload.step,
+                })
+                // build interface_id → name lookup
+                const ifaceNameById: Record<string, string> = {}
+                props.interfaces.forEach((i: any, idx: number) => {
+                    if (i.id) ifaceNameById[i.id] = i.name || `eth${idx}`
+                })
 
-            const netRes = await instancesApi.getNetworkMetrics({
-                ...commonPayload,
-                network: [tapName]
-            })
-            const res = netRes.data?.data?.result?.[0]
-            if (res?.values && Array.isArray(res.values) && res.values.length >= 2) {
-                const labels = res.values[0].map((v: any) => formatTimestamp(v.time))
-                netData.value = {
-                    labels,
-                    datasets: [
-                        { label: t('dashboard.monitoring.receive'), data: res.values[0].map((v: any) => parseFloat(v.value)), borderColor: '#6366f1', fill: false },
-                        { label: t('dashboard.monitoring.transmit'), data: res.values[1].map((v: any) => parseFloat(v.value)), borderColor: '#f59e0b', fill: false }
-                    ]
+                const colors = ['#6366f1', '#f59e0b', '#10b981', '#ef4444', '#8b5cf6', '#06b6d4']
+                const datasets: any[] = []
+                let labels: string[] = []
+                let colorIdx = 0
+
+                const perIfaceResults: any[] = netRes.data || []
+                perIfaceResults.forEach((ifaceResult: any) => {
+                    const res = ifaceResult?.data?.result?.[0]
+                    if (!res?.values || res.values.length < 2) return
+                    // match by interface_id from metric, not by array index
+                    const ifaceUUID: string = res.metric?.interface_id || ''
+                    const ifaceName = ifaceNameById[ifaceUUID] || ifaceUUID.slice(0, 8)
+                    if (labels.length === 0) {
+                        labels = res.values[0].map((v: any) => formatTimestamp(v.time))
+                    }
+                    datasets.push(
+                        { label: `${ifaceName} ${t('dashboard.monitoring.receive')}`, data: res.values[0].map((v: any) => parseFloat(v.value)), borderColor: colors[colorIdx % colors.length], fill: false },
+                        { label: `${ifaceName} ${t('dashboard.monitoring.transmit')}`, data: res.values[1].map((v: any) => parseFloat(v.value)), borderColor: colors[(colorIdx + 1) % colors.length], fill: false }
+                    )
+                    colorIdx += 2
+                })
+                if (datasets.length > 0) {
+                    netData.value = { labels, datasets }
                 }
             }
         }

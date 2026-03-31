@@ -137,14 +137,21 @@ type PrometheusResponse struct {
 }
 
 type MetricsRequest struct {
-	Start   string   `json:"start" binding:"required"`
-	End     string   `json:"end" binding:"required"`
-	Step    string   `json:"step" binding:"required"`
-	ID      []string `json:"id"`
+	Start    string   `json:"start" binding:"required"`
+	End      string   `json:"end" binding:"required"`
+	Step     string   `json:"step" binding:"required"`
+	ID       []string `json:"id"`
 	Hostname []string `json:"hostname"`
-	Disk    []string `json:"disk"`
-	Network []string `json:"network"`
-	VolName []string `json:"volName"`
+	Disk     []string `json:"disk"`
+	Network  []string `json:"network"`
+	VolName  []string `json:"volName"`
+}
+
+type NetworkMetricsRequest struct {
+	Start        string   `json:"start" binding:"required"`
+	End          string   `json:"end" binding:"required"`
+	Step         string   `json:"step" binding:"required"`
+	InterfaceIDs []string `json:"interface_ids" binding:"required,min=1"`
 }
 
 type WDSVolumeResponse struct {
@@ -236,6 +243,7 @@ type NetworkResponse struct {
 				Instance     string `json:"instance"`
 				Job          string `json:"job"`
 				TargetDevice string `json:"target_device"`
+				InterfaceID  string `json:"interface_id"`
 			} `json:"metric"`
 			Values [][]struct { // two-dimensional array [receive speed, transmit speed]
 				Time  string `json:"time"`
@@ -1165,100 +1173,157 @@ func mergeVolumeResults(readRes, writeRes *PrometheusResponse, originalVolNames 
 // @Failure 400 {object} map[string]interface{} "Bad request"
 // @Router /metrics/instances/network/his_data [post]
 func (api *MonitorAPI) GetNetwork(c *gin.Context) {
-	var request MetricsRequest
+	var request NetworkMetricsRequest
 	if err := c.BindJSON(&request); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"status": "error", "message": "Invalid request body"})
 		return
 	}
 
-	if len(request.ID) == 0 {
-		c.JSON(http.StatusBadRequest, gin.H{"status": "error", "message": "Instance ID is required"})
-		return
-	}
-
-	if len(request.Network) == 0 {
-		logger.Warning("Network interface not provided in request")
-		c.JSON(http.StatusBadRequest, gin.H{"status": "error", "message": "Network interface is required"})
-		return
-	}
-	if len(request.ID) != len(request.Network) {
-		c.JSON(http.StatusBadRequest, gin.H{"status": "error", "message": "The number of instance IDs and network interfaces must be the same"})
-		return
-	}
-
-	var instanceIDs []string
-	for _, uuid := range request.ID {
-		logger.Info("Attempting to convert UUID: %s\n", uuid)
-		if instanceID, ok := getInstanceIDFromCache(uuid); ok {
-			instanceIDs = append(instanceIDs, "inst-"+strconv.Itoa(instanceID))
-			continue
-		}
-
-		instanceID, err := services.GetDBIndexByInstanceUUID(c, uuid)
-		if err != nil {
-			if errors.Is(err, gorm.ErrRecordNotFound) {
-				c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
-				return
-			}
-			logger.Errorf("failed to get instance: %v", err)
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Internal Server Error"})
-			return
-		}
-		logger.Info("Successfully converted UUID %s to instanceID %d\n", uuid, instanceID)
-		instanceIDs = append(instanceIDs, "inst-"+strconv.Itoa(instanceID))
-		addToCache(uuid, instanceID)
-	}
-
-	// validate time params
 	start, end, err := validateAndParseTimeParams(request.Start, request.End, request.Step)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"status": "error", "message": err.Error()})
 		return
 	}
 
-	var allResults []interface{}
-	for i, id := range instanceIDs {
-		network := request.Network[i]
+	// batch fetch all interfaces, skip any not found (don't fail the whole request)
+	ifaces, err := services.InterfaceAdmin.GetInterfacesByUUIDs(c, request.InterfaceIDs)
+	if err != nil {
+		logger.Errorf("failed to batch fetch interfaces: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"status": "error", "message": "Failed to fetch interfaces"})
+		return
+	}
 
-		// build inbound and outbound bandwidth query
-		receiveQuery := api.getRangeQuery("network_receive", []string{id}, []string{network})
-		transmitQuery := api.getRangeQuery("network_transmit", []string{id}, []string{network})
-		if receiveQuery == "" || transmitQuery == "" {
-			c.JSON(http.StatusBadRequest, gin.H{"status": "error", "message": "Invalid metric type"})
-			return
+	// build tap→ifaceUUID map, group tap names by instance domain
+	type ifaceInfo struct {
+		tapName     string
+		ifaceUUID   string
+		domainName  string
+	}
+	var validIfaces []ifaceInfo
+
+	for _, iface := range ifaces {
+		if iface.Instance == 0 {
+			logger.Warningf("skipping interface %s: not attached to an instance", iface.UUID)
+			continue
 		}
-
-		// execute query
-		receiveResult, err := queryPrometheus(PrometheusRangeURL, receiveQuery, fmt.Sprintf("%d", start), fmt.Sprintf("%d", end), request.Step)
-		if err != nil {
-			logger.Error("Failed to query network receive: %v", err)
-			c.JSON(http.StatusInternalServerError, gin.H{"status": "error", "message": "Failed to query metrics"})
-			return
+		mac := strings.ReplaceAll(iface.MacAddr, ":", "")
+		if len(mac) < 6 {
+			logger.Warningf("skipping interface %s: invalid MAC %s", iface.UUID, iface.MacAddr)
+			continue
 		}
+		tapName := "tap" + mac[len(mac)-6:]
+		domainName := "inst-" + strconv.Itoa(int(iface.Instance))
 
-		transmitResult, err := queryPrometheus(PrometheusRangeURL, transmitQuery, fmt.Sprintf("%d", start), fmt.Sprintf("%d", end), request.Step)
-		if err != nil {
-			logger.Error("Failed to query network transmit: %v", err)
-			c.JSON(http.StatusInternalServerError, gin.H{"status": "error", "message": "Failed to query metrics"})
-			return
+		validIfaces = append(validIfaces, ifaceInfo{
+			tapName:    tapName,
+			ifaceUUID:  iface.UUID,
+			domainName: domainName,
+		})
+	}
+
+	if len(validIfaces) == 0 {
+		c.JSON(http.StatusOK, []interface{}{})
+		return
+	}
+
+	// group by domain name so each instance only needs 2 Prometheus queries
+	type instanceGroup struct {
+		domainName string
+		ifaces     []ifaceInfo
+	}
+	domainMap := map[string]*instanceGroup{}
+	domainOrder := []string{}
+	for _, fi := range validIfaces {
+		if _, exists := domainMap[fi.domainName]; !exists {
+			domainMap[fi.domainName] = &instanceGroup{domainName: fi.domainName}
+			domainOrder = append(domainOrder, fi.domainName)
 		}
+		domainMap[fi.domainName].ifaces = append(domainMap[fi.domainName].ifaces, fi)
+	}
 
-		// merge results
-		result := mergeNetworkResults(receiveResult, transmitResult)
-		for i := range result.Data.Result {
-			result.Data.Result[i].Metric = struct {
-				Domain       string `json:"domain"`
-				Instance     string `json:"instance"`
-				Job          string `json:"job"`
-				TargetDevice string `json:"target_device"`
-			}{
-				Domain:       result.Data.Result[i].Metric.Domain,
-				Instance:     result.Data.Result[i].Metric.Instance,
-				Job:          result.Data.Result[i].Metric.Job,
-				TargetDevice: result.Data.Result[i].Metric.TargetDevice,
+	// tap→ifaceUUID reverse map for result enrichment
+	tapToIfaceUUID := map[string]string{}
+	for _, fi := range validIfaces {
+		tapToIfaceUUID[fi.tapName] = fi.ifaceUUID
+	}
+
+	type queryResult struct {
+		domainName     string
+		receiveResult  *PrometheusResponse
+		transmitResult *PrometheusResponse
+		err            error
+	}
+
+	resultCh := make(chan queryResult, len(domainOrder))
+
+	// concurrently query Prometheus per instance (2 queries each)
+	var wg sync.WaitGroup
+	for _, dn := range domainOrder {
+		grp := domainMap[dn]
+		wg.Add(1)
+		go func(grp *instanceGroup) {
+			defer wg.Done()
+			tapNames := make([]string, len(grp.ifaces))
+			for i, fi := range grp.ifaces {
+				tapNames[i] = fi.tapName
 			}
+			receiveQuery := api.getRangeQuery("network_receive", []string{grp.domainName}, tapNames)
+			transmitQuery := api.getRangeQuery("network_transmit", []string{grp.domainName}, tapNames)
+
+			recv, err := queryPrometheus(PrometheusRangeURL, receiveQuery, fmt.Sprintf("%d", start), fmt.Sprintf("%d", end), request.Step)
+			if err != nil {
+				resultCh <- queryResult{domainName: grp.domainName, err: err}
+				return
+			}
+			trans, err := queryPrometheus(PrometheusRangeURL, transmitQuery, fmt.Sprintf("%d", start), fmt.Sprintf("%d", end), request.Step)
+			if err != nil {
+				resultCh <- queryResult{domainName: grp.domainName, err: err}
+				return
+			}
+			resultCh <- queryResult{domainName: grp.domainName, receiveResult: recv, transmitResult: trans}
+		}(grp)
+	}
+	// close channel in a separate goroutine so range can drain concurrently,
+	// avoiding deadlock if goroutines block on a full channel before wg.Wait returns
+	go func() {
+		wg.Wait()
+		close(resultCh)
+	}()
+
+	// collect results, split per interface
+	// key: ifaceUUID → NetworkResponse
+	ifaceResults := map[string]*NetworkResponse{}
+	for qr := range resultCh {
+		if qr.err != nil {
+			logger.Errorf("prometheus query failed for %s: %v", qr.domainName, qr.err)
+			continue // skip failed instances, don't abort
 		}
-		allResults = append(allResults, result)
+		merged := mergeNetworkResults(qr.receiveResult, qr.transmitResult)
+		for i := range merged.Data.Result {
+			td := merged.Data.Result[i].Metric.TargetDevice
+			ifaceUUID, ok := tapToIfaceUUID[td]
+			if !ok {
+				continue
+			}
+			merged.Data.Result[i].Metric.InterfaceID = ifaceUUID
+			// wrap each interface as its own NetworkResponse
+			single := &NetworkResponse{Status: merged.Status}
+			single.Data.ChartType = merged.Data.ChartType
+			single.Data.Label = merged.Data.Label
+			single.Data.Unit = merged.Data.Unit
+			single.Data.ResultType = merged.Data.ResultType
+			single.Data.Result = append(single.Data.Result, merged.Data.Result[i])
+			ifaceResults[ifaceUUID] = single
+		}
+	}
+
+	// return in the same order as requested interface_ids so frontend can rely on it
+	allResults := make([]interface{}, 0, len(request.InterfaceIDs))
+	for _, uuid := range request.InterfaceIDs {
+		if r, ok := ifaceResults[uuid]; ok {
+			allResults = append(allResults, r)
+		}
+		// interfaces with no data are simply omitted
 	}
 
 	c.JSON(http.StatusOK, allResults)
@@ -1575,8 +1640,8 @@ func mergeNetworkResults(receive, transmit *PrometheusResponse) *NetworkResponse
 
 	// collect receive data
 	for _, r := range receive.Data.Result {
-		uuid := r.Metric["uuid"]
-		resultMap[uuid] = struct {
+		key := r.Metric["target_device"]
+		resultMap[key] = struct {
 			metric struct {
 				Domain       string
 				Instance     string
@@ -1603,10 +1668,10 @@ func mergeNetworkResults(receive, transmit *PrometheusResponse) *NetworkResponse
 
 	// merge transmit data
 	for _, r := range transmit.Data.Result {
-		uuid := r.Metric["uuid"]
-		if item, exists := resultMap[uuid]; exists {
+		key := r.Metric["target_device"]
+		if item, exists := resultMap[key]; exists {
 			item.transmitValues = r.Values
-			resultMap[uuid] = item
+			resultMap[key] = item
 		}
 	}
 
@@ -1618,6 +1683,7 @@ func mergeNetworkResults(receive, transmit *PrometheusResponse) *NetworkResponse
 				Instance     string `json:"instance"`
 				Job          string `json:"job"`
 				TargetDevice string `json:"target_device"`
+				InterfaceID  string `json:"interface_id"`
 			} `json:"metric"`
 			Values [][]struct {
 				Time  string `json:"time"`
@@ -1630,6 +1696,7 @@ func mergeNetworkResults(receive, transmit *PrometheusResponse) *NetworkResponse
 			Instance     string `json:"instance"`
 			Job          string `json:"job"`
 			TargetDevice string `json:"target_device"`
+			InterfaceID  string `json:"interface_id"`
 		}{
 			Domain:       item.metric.Domain,
 			Instance:     item.metric.Instance,
@@ -1739,7 +1806,7 @@ func formatResponse(resp *PrometheusResponse, metricType string) interface{} {
 			result.Values = values // directly assign one-dimensional array
 			cpuResp.Data.Result = append(cpuResp.Data.Result, result)
 		}
-		return cpuResp
+		return &cpuResp
 
 	case "disk_read":
 		var diskResp DiskResponse
@@ -1860,8 +1927,9 @@ func formatResponse(resp *PrometheusResponse, metricType string) interface{} {
 					Instance     string `json:"instance"`
 					Job          string `json:"job"`
 					TargetDevice string `json:"target_device"`
+					InterfaceID  string `json:"interface_id"`
 				} `json:"metric"`
-				Values [][]struct { // two-dimensional array
+				Values [][]struct {
 					Time  string `json:"time"`
 					Value string `json:"value"`
 				} `json:"values"`
@@ -1893,7 +1961,7 @@ func formatResponse(resp *PrometheusResponse, metricType string) interface{} {
 			result.Values = [][]struct {
 				Time  string `json:"time"`
 				Value string `json:"value"`
-			}{receiveValues} // wrap as two-dimensional array
+			}{receiveValues}
 			networkResp.Data.Result = append(networkResp.Data.Result, result)
 		}
 		return networkResp
@@ -1913,8 +1981,9 @@ func formatResponse(resp *PrometheusResponse, metricType string) interface{} {
 					Instance     string `json:"instance"`
 					Job          string `json:"job"`
 					TargetDevice string `json:"target_device"`
+					InterfaceID  string `json:"interface_id"`
 				} `json:"metric"`
-				Values [][]struct { // two-dimensional array
+				Values [][]struct {
 					Time  string `json:"time"`
 					Value string `json:"value"`
 				} `json:"values"`
@@ -1946,7 +2015,7 @@ func formatResponse(resp *PrometheusResponse, metricType string) interface{} {
 			result.Values = [][]struct {
 				Time  string `json:"time"`
 				Value string `json:"value"`
-			}{transmitValues} // wrap as two-dimensional array
+			}{transmitValues}
 			networkResp.Data.Result = append(networkResp.Data.Result, result)
 		}
 		return networkResp
