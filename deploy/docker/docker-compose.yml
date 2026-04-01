@@ -378,6 +378,7 @@ services:
       - ./volumes/certs:/certs:ro
       - ./volumes/prometheus/general_rules:/etc/prometheus/general_rules
       - ./volumes/prometheus/rules_enabled:/etc/prometheus/rules_enabled
+      - ./volumes/prometheus/node_templates:/etc/prometheus/node_templates:ro
     ports:
       - "8256:8256"
     networks:
