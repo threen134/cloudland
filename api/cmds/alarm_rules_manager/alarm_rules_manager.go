@@ -8,6 +8,7 @@ package main
 
 import (
 	"fmt"
+	"log"
 	"net/http"
 	"os"
 	"os/exec"
@@ -364,7 +365,9 @@ func (s *AlarmRulesManager) changeOwner(path, username string) error {
 	// Look up user
 	u, err := user.Lookup(username)
 	if err != nil {
-		return fmt.Errorf("Failed to look up user: %w", err)
+		// Skip chown gracefully if the user doesn't exist (e.g. in Docker containers)
+		log.Printf("Warning: skipping chown for %s: user %q not found: %v", path, username, err)
+		return nil
 	}
 
 	// Convert uid and gid to integers

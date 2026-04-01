@@ -31,6 +31,10 @@ else
     cat > /tmp/cland-cert.info <<EOF
 organization = cloudland
 ip_address = 127.0.0.1
+dns_name = alarm-rules-mgr
+dns_name = clapi
+dns_name = cloudland-clapi
+dns_name = cloudland-alarm-rules-mgr
 tls_www_server
 ca
 encryption_key
