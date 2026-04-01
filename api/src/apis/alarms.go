@@ -1680,7 +1680,6 @@ func (a *AlarmAPI) CreateBWRule(c *gin.Context) {
 		Name     string `json:"name" binding:"required"`
 		Enable   bool   `json:"enable"`
 		RegionID string `json:"region_id" binding:"required"`
-		RuleID   string `json:"rule_id" binding:"required"`
 		Rules    []struct {
 			Direction string `json:"direction" binding:"required,oneof=in out"`
 			Name      string `json:"name"`
@@ -1771,7 +1770,7 @@ func (a *AlarmAPI) CreateBWRule(c *gin.Context) {
 		data := map[string]interface{}{
 			"owner":          safeOwnerBW,
 			"rule_group":     group.UUID,
-			"global_rule_id": req.RuleID,
+			"global_rule_id": group.RuleID,
 			"region_id":      req.RegionID,
 			"level":          rule.Level,
 			"detail_index":   i,

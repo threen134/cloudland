@@ -428,6 +428,8 @@ export default {
         alarmNotifyType: 'Notify Type',
         alarmSentAt: 'Sent At',
         alarmError: 'Error',
+        alarmStatusFiring: 'Firing',
+        alarmStatusResolved: 'Resolved',
         alarmNoDeliveryLogs: 'No delivery logs for this event.',
         floatingIPDetail: {
             publicIp: 'Public IP',
@@ -651,6 +653,7 @@ export default {
             bindSuccess: 'VMs bound successfully',
             noVMsFound: 'No matching VMs found.',
             ruleCreatedButLinkFailed: 'Alarm rule created, but VM binding failed.',
+            targetDeviceRequired: 'Please fill in the network interface name (e.g. eth0) for all selected VMs.',
         },
         overview: {
             title: 'Dashboard',

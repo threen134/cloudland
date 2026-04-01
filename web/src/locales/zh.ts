@@ -428,6 +428,8 @@ export default {
         alarmSentAt: '发送时间',
         alarmError: '错误',
         alarmNoDeliveryLogs: '没有该事件的推送日志。',
+        alarmStatusFiring: '触发中',
+        alarmStatusResolved: '已恢复',
         floatingIPDetail: {
             publicIp: '公网 IP',
             internalIp: '内网 IP',
@@ -636,7 +638,7 @@ export default {
             },
             levels: {
                 critical: '紧急',
-                warning: '告警',
+                warning: '警告',
                 info: '提示',
             },
             noLinkedVMs: '该告警规则尚未关联实例。',
@@ -650,6 +652,7 @@ export default {
             bindSuccess: '虚拟机绑定成功',
             noVMsFound: '未找到匹配的虚拟机。',
             ruleCreatedButLinkFailed: '告警规则已创建，但虚拟机绑定失败。',
+            targetDeviceRequired: '请为所有已选虚拟机填写网卡名称（如 eth0）。',
         },
         overview: {
             title: '概览',

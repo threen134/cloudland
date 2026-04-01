@@ -120,7 +120,7 @@ onMounted(fetchAlarmDetail)
             {{ t('actions.delete') }}
           </button>
           <span :class="['badge', 'badge-lg', alarm.enabled ? 'status-active' : 'status-disabled']">
-            {{ alarm.enabled ? 'Enabled' : 'Disabled' }}
+            {{ alarm.enabled ? t('dashboard.alarm.enabled') : t('dashboard.alarm.disabled') }}
           </span>
         </div>
       </div>
@@ -154,7 +154,7 @@ onMounted(fetchAlarmDetail)
 
         <!-- Configuration Card -->
         <div class="info-card card">
-          <h3 class="card-section-title">Config</h3>
+          <h3 class="card-section-title">{{ t('dashboard.configuration') }}</h3>
           <div class="config-display">
             <pre>{{ JSON.stringify(alarm.config, null, 2) }}</pre>
           </div>

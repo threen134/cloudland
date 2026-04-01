@@ -28,6 +28,7 @@ const createForm = ref({
     type: 'cpu' as VMRuleType,
     rules: [{ name: '', limit: 80, duration: 5, rule: 'gt', level: 'warning' }] as Record<string, any>[],
     linkedvms: [] as string[],
+    bwLinkedVMs: [] as { instance_id: string; target_device: string }[],
     linkedchannels: [] as string[],
 })
 const createChannelsLoading = ref(false)
@@ -150,6 +151,7 @@ const openCreate = async () => {
         type: 'cpu',
         rules: [{ name: '', limit: 80, duration: 5, rule: 'gt', level: 'warning' }],
         linkedvms: [],
+        bwLinkedVMs: [],
         linkedchannels: [],
     }
     showCreateModal.value = true
@@ -181,10 +183,22 @@ const openCreate = async () => {
 const onTypeChange = () => {
     if (createForm.value.type === 'bw') {
         createForm.value.rules = [{ direction: 'in', name: '', limit: 80, duration: 5, level: 'warning' }]
+        createForm.value.bwLinkedVMs = []
     } else {
         createForm.value.rules = [{ name: '', limit: 80, duration: 5, rule: 'gt', level: 'warning' }]
     }
 }
+
+const toggleBWVM = (id: string) => {
+    const idx = createForm.value.bwLinkedVMs.findIndex(v => v.instance_id === id)
+    if (idx >= 0) {
+        createForm.value.bwLinkedVMs.splice(idx, 1)
+    } else {
+        createForm.value.bwLinkedVMs.push({ instance_id: id, target_device: 'eth0' })
+    }
+}
+
+const getBWVMEntry = (id: string) => createForm.value.bwLinkedVMs.find(v => v.instance_id === id)
 
 const submitCreate = async () => {
     try {
@@ -202,13 +216,23 @@ const submitCreate = async () => {
         } else if (createForm.value.type === 'memory') {
             res = await vmAlarmRulesApi.createMemoryRule({ ...base, rules: createForm.value.rules as any })
         } else if (createForm.value.type === 'bw') {
-            res = await vmAlarmRulesApi.createBWRule({ ...base, enable: true, rules: createForm.value.rules as any })
+            const invalidBWVM = createForm.value.bwLinkedVMs.find(v => !v.target_device.trim())
+            if (invalidBWVM) {
+                errorMsg.value = t('dashboard.vmAlarmRules.targetDeviceRequired')
+                return
+            }
+            res = await vmAlarmRulesApi.createBWRule({
+                ...base,
+                enable: true,
+                rules: createForm.value.rules as any,
+                linkedvms: createForm.value.bwLinkedVMs.length > 0 ? createForm.value.bwLinkedVMs : undefined,
+            })
         }
 
         const ruleUuid = res.data?.data?.uuid || res.data?.data?.group_uuid
 
-        // Link VMs if selected
-        if (createForm.value.linkedvms && createForm.value.linkedvms.length > 0 && ruleUuid) {
+        // Link VMs if selected (cpu/memory only; bw links are handled in createBWRule)
+        if (createForm.value.type !== 'bw' && createForm.value.linkedvms && createForm.value.linkedvms.length > 0 && ruleUuid) {
             try {
                 await vmAlarmRulesApi.linkRule(ruleUuid, createForm.value.linkedvms.map(id => ({ vm_uuid: id })))
             } catch (err) {
@@ -602,6 +626,23 @@ onMounted(fetchRules)
                                 <label class="form-label">{{ t('dashboard.vmAlarmRules.bindVMs') }} ({{ t('dashboard.forms.optional') }})</label>
                                 <div class="vm-create-selection">
                                     <div v-if="vmsLoading" class="loading-spinner small"></div>
+                                    <!-- BW 类型：每个 VM 需额外指定网卡 -->
+                                    <div v-else-if="createForm.type === 'bw'" class="channel-list" style="max-height: 200px; border: 1px solid var(--border-light); border-radius: 6px; padding: 4px;">
+                                        <div v-for="vm in allVMs" :key="vm.id" class="channel-item" style="gap: 8px;">
+                                            <input type="checkbox" :checked="!!getBWVMEntry(vm.id)" @change="toggleBWVM(vm.id)" />
+                                            <span class="channel-name" style="flex:1;">{{ vm.hostname || vm.name }}</span>
+                                            <input
+                                                v-if="getBWVMEntry(vm.id)"
+                                                :value="getBWVMEntry(vm.id)!.target_device"
+                                                @input="getBWVMEntry(vm.id)!.target_device = ($event.target as HTMLInputElement).value"
+                                                class="form-input"
+                                                style="width: 100px; padding: 2px 6px; font-size: 12px;"
+                                                placeholder="eth0"
+                                            />
+                                        </div>
+                                        <div v-if="allVMs.length === 0" class="text-muted p-2">{{ t('messages.noNics') }}</div>
+                                    </div>
+                                    <!-- CPU / Memory 类型 -->
                                     <div v-else class="channel-list" style="max-height: 160px; border: 1px solid var(--border-light); border-radius: 6px; padding: 4px;">
                                         <label v-for="vm in allVMs" :key="vm.id" class="channel-item">
                                             <input type="checkbox" :value="vm.id" v-model="createForm.linkedvms" />

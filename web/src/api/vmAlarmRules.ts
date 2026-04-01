@@ -111,10 +111,10 @@ export const vmAlarmRulesApi = {
     },
 
     enableRule(uuid: string) {
-        return client.post(`/metrics/api/v1/alarm/${uuid}/enable`)
+        return client.post(`/metrics/alarm/${uuid}/enable`)
     },
 
     disableRule(uuid: string) {
-        return client.post(`/metrics/api/v1/alarm/${uuid}/disable`)
+        return client.post(`/metrics/alarm/${uuid}/disable`)
     },
 }

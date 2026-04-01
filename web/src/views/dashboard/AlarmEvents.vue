@@ -95,8 +95,8 @@ onMounted(fetchEvents)
                 </div>
                 <select v-model="statusFilter" @change="fetchEvents" class="filter-select">
                     <option value="">{{ t('dashboard.alarmFilterAll') }}</option>
-                    <option value="firing">Firing</option>
-                    <option value="resolved">Resolved</option>
+                    <option value="firing">{{ t('dashboard.alarmStatusFiring') }}</option>
+                    <option value="resolved">{{ t('dashboard.alarmStatusResolved') }}</option>
                 </select>
             </div>
             <div class="header-actions">
@@ -137,12 +137,12 @@ onMounted(fetchEvents)
                             <td>{{ event.vm_name || event.vm_uuid }}</td>
                             <td>
                                 <span class="badge" :class="severityClass(event.severity)">
-                                    {{ event.severity }}
+                                    {{ t('dashboard.vmAlarmRules.levels.' + event.severity) }}
                                 </span>
                             </td>
                             <td>
                                 <span class="badge" :class="event.status === 'firing' ? 'badge-firing' : 'badge-resolved'">
-                                    {{ event.status }}
+                                    {{ event.status === 'firing' ? t('dashboard.alarmStatusFiring') : t('dashboard.alarmStatusResolved') }}
                                 </span>
                             </td>
                             <td>{{ formatTime(event.fired_at) }}</td>
@@ -176,7 +176,7 @@ onMounted(fetchEvents)
                                                 <td>
                                                     <CheckCircle v-if="log.status === 'sent'" :size="16" class="text-success" />
                                                     <XCircle v-else :size="16" class="text-danger" />
-                                                    {{ log.status }}
+                                                    <span style="vertical-align: middle; margin-left: 4px;">{{ log.status === 'sent' ? t('messages.success') : t('messages.error') }}</span>
                                                 </td>
                                                 <td>{{ formatTime(log.sent_at) }}</td>
                                                 <td class="error-cell">{{ log.error_message || '-' }}</td>
@@ -202,9 +202,9 @@ onMounted(fetchEvents)
 
         <!-- Pagination -->
         <div v-if="totalPages > 1" class="pagination">
-            <button class="btn btn-ghost btn-sm" :disabled="page <= 1" @click="prevPage">Prev</button>
-            <span class="page-info">{{ page }} / {{ totalPages }} ({{ total }} total)</span>
-            <button class="btn btn-ghost btn-sm" :disabled="page >= totalPages" @click="nextPage">Next</button>
+            <button class="btn btn-ghost btn-sm" :disabled="page <= 1" @click="prevPage">{{ t('dashboard.pagination.prev') }}</button>
+            <span class="page-info">{{ page }} / {{ totalPages }} ({{ total }} {{ t('dashboard.overview.total') }})</span>
+            <button class="btn btn-ghost btn-sm" :disabled="page >= totalPages" @click="nextPage">{{ t('dashboard.pagination.next') }}</button>
         </div>
     </div>
 </template>

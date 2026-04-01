@@ -197,6 +197,14 @@ const availableRules = ref<LinkedRule[]>([])
 const linkLoading = ref(false)
 const unlinkLoading = ref<string | null>(null)
 
+const getSeverityClass = (level: string) => {
+    return {
+        'badge-critical': level === 'critical',
+        'badge-warning': level === 'warning',
+        'badge-info': level === 'info'
+    }
+}
+
 const fetchLinkedRules = async () => {
     alarmLoading.value = true
     const linked: LinkedRule[] = []
@@ -896,7 +904,7 @@ onMounted(() => {
                         <tr v-for="rule in linkedRules" :key="rule.uuid">
                             <td>{{ rule.name }}</td>
                             <td><span class="badge badge-secondary">{{ rule.typeLabel }}</span></td>
-                            <td><span class="badge" :class="'badge-' + rule.level">{{ t('dashboard.vmAlarmRules.levels.' + rule.level) }}</span></td>
+                            <td><span class="badge" :class="getSeverityClass(rule.level)">{{ t('dashboard.vmAlarmRules.levels.' + rule.level) }}</span></td>
                             <td>
                                 <span class="badge" :class="rule.enable ? 'badge-success' : 'badge-muted'">
                                     {{ rule.enable ? t('dashboard.alarm.enabled') : t('dashboard.alarm.disabled') }}
@@ -928,7 +936,7 @@ onMounted(() => {
                                 <div class="rule-pick-info">
                                     <span class="rule-pick-name">{{ rule.name }}</span>
                                     <span class="badge badge-secondary">{{ rule.typeLabel }}</span>
-                                    <span class="badge" :class="'badge-' + rule.level">{{ t('dashboard.vmAlarmRules.levels.' + rule.level) }}</span>
+                                    <span class="badge" :class="getSeverityClass(rule.level)">{{ t('dashboard.vmAlarmRules.levels.' + rule.level) }}</span>
                                 </div>
                                 <Link :size="14" class="rule-pick-icon" />
                             </div>
