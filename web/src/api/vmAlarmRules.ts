@@ -26,7 +26,7 @@ export interface BWRuleDetail {
 export interface VMAlarmRuleGroup {
     rule_id: string
     name: string
-    owner: string
+    owner: number
     rules: Record<string, any>[]
     linkedvms: string[]
     region_id: string
@@ -60,7 +60,6 @@ export const vmAlarmRulesApi = {
 
     createCPURule(payload: {
         name: string
-        owner: string
         rule_id: string
         region_id: string
         duration_minutes?: number
@@ -72,7 +71,6 @@ export const vmAlarmRulesApi = {
 
     createMemoryRule(payload: {
         name: string
-        owner: string
         rule_id: string
         region_id: string
         rules: MemoryRuleDetail[]
@@ -83,7 +81,6 @@ export const vmAlarmRulesApi = {
 
     createBWRule(payload: {
         name: string
-        owner: string
         rule_id: string
         region_id: string
         enable: boolean

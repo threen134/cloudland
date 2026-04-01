@@ -6,6 +6,7 @@ from app.core.security import verify_access_token
 from app.core.config import settings
 from app.core.database import get_db
 from app.models.user import User, SystemRole
+from app.models.org import Organization
 
 oauth2_scheme = OAuth2PasswordBearer(
     tokenUrl=f"{settings.API_V1_STR}/auth/token/form"
@@ -57,3 +58,23 @@ async def get_current_superuser(
             detail="The user doesn't have enough privileges",
         )
     return current_user
+
+
+async def get_current_org(
+    token: str = Depends(oauth2_scheme),
+    db: AsyncSession = Depends(get_db),
+) -> Organization:
+    """从 JWT claims 中解析当前激活的组织，返回 Organization 对象（含整数 id）。"""
+    claims = verify_access_token(token)
+    if claims is None:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Could not validate credentials")
+    org_uuid = claims.get("org_id")  # JWT claim 'org_id' 实际存储的是 org UUID
+    if not org_uuid:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No active organization in token")
+    result = await db.execute(
+        select(Organization).where(Organization.uuid == org_uuid, Organization.deleted_at.is_(None))
+    )
+    org = result.scalars().first()
+    if not org:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Organization not found")
+    return org

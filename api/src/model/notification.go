@@ -32,7 +32,7 @@ func init() {
 // NotificationChannel 通知渠道镜像表（CPGateway 单向下发，clapi 只读使用）
 type NotificationChannel struct {
 	Model
-	UserID  int64  `gorm:"index" json:"user_id"`
+	OrgID   int64  `gorm:"index" json:"org_id"`
 	Name    string `gorm:"type:varchar(128)" json:"name"`
 	Type    string `gorm:"type:varchar(32)" json:"type"` // feishu, webhook
 	Config  string `gorm:"type:text" json:"config"`      // JSON 配置
@@ -44,7 +44,7 @@ type AlarmNotificationBinding struct {
 	Model
 	RuleGroupUUID string `gorm:"type:varchar(64);uniqueIndex:idx_rule_channel" json:"rule_group_uuid"`
 	ChannelUUID   string `gorm:"type:varchar(64);uniqueIndex:idx_rule_channel" json:"channel_uuid"`
-	UserID        int64  `gorm:"index" json:"user_id"` // 安全防御字段，防止越权绑定
+	OrgID         int64  `gorm:"index" json:"org_id"` // 租户隔离字段
 }
 
 // AlarmEvent 告警事件记录表

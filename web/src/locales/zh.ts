@@ -637,6 +637,13 @@ export default {
             },
             noLinkedVMs: '该告警规则尚未关联实例。',
             thresholdLimit: '阈值 / 限制',
+            bindVMs: '绑定虚拟机',
+            availableVMs: '可用虚拟机',
+            selectVMsToBind: '选择要绑定的虚拟机',
+            searchVMs: '搜索虚拟机名称...',
+            bindSuccess: '虚拟机绑定成功',
+            noVMsFound: '未找到匹配的虚拟机。',
+            ruleCreatedButLinkFailed: '告警规则已创建，但虚拟机绑定失败。',
         },
         overview: {
             title: '概览',

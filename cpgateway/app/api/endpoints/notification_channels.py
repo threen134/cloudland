@@ -6,8 +6,9 @@ from sqlalchemy import func
 from typing import List
 
 from app.core.database import get_db, AsyncSessionLocal
-from app.api.deps import get_current_active_user
+from app.api.deps import get_current_active_user, get_current_org
 from app.models.user import User
+from app.models.org import Organization
 from app.models.notification import NotificationChannel
 from app.schemas.notification import (
     ChannelCreate, ChannelUpdate, ChannelResponse, ChannelListResponse,
@@ -21,19 +22,19 @@ router = APIRouter()
 @router.get("", response_model=ChannelListResponse)
 async def list_channels(
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    current_org: Organization = Depends(get_current_org),
 ):
-    """列出当前用户的所有通知渠道"""
+    """列出当前组织的所有通知渠道"""
     count_result = await db.execute(
         select(func.count(NotificationChannel.id)).where(
-            NotificationChannel.user_id == current_user.id
+            NotificationChannel.org_id == current_org.id
         )
     )
     total = count_result.scalar() or 0
 
     result = await db.execute(
         select(NotificationChannel)
-        .where(NotificationChannel.user_id == current_user.id)
+        .where(NotificationChannel.org_id == current_org.id)
         .order_by(NotificationChannel.created_at.desc())
     )
     channels = result.scalars().all()
@@ -49,11 +50,11 @@ async def create_channel(
     channel_in: ChannelCreate,
     background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    current_org: Organization = Depends(get_current_org),
 ):
     """创建通知渠道，创建后异步推送到所有 Region"""
     channel = NotificationChannel(
-        user_id=current_user.id,
+        org_id=current_org.id,
         name=channel_in.name,
         type=channel_in.type,
         config=channel_in.config,
@@ -63,7 +64,7 @@ async def create_channel(
     await db.commit()
     await db.refresh(channel)
 
-    logger.info(f"User {current_user.id} created notification channel '{channel.name}' ({channel.uuid})")
+    logger.info(f"Org {current_org.id} created notification channel '{channel.name}' ({channel.uuid})")
 
     # 后台异步推送到所有 Region
     background_tasks.add_task(_sync_channel_to_regions, "upsert", channel.uuid)
@@ -75,10 +76,10 @@ async def create_channel(
 async def get_channel(
     channel_uuid: str,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    current_org: Organization = Depends(get_current_org),
 ):
     """获取通知渠道详情"""
-    channel = await _get_user_channel(db, channel_uuid, current_user.id)
+    channel = await _get_org_channel(db, channel_uuid, current_org.id)
     return ChannelResponse.model_validate(channel)
 
 
@@ -88,10 +89,10 @@ async def update_channel(
     channel_in: ChannelUpdate,
     background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    current_org: Organization = Depends(get_current_org),
 ):
     """更新通知渠道，更新后异步推送到所有 Region"""
-    channel = await _get_user_channel(db, channel_uuid, current_user.id)
+    channel = await _get_org_channel(db, channel_uuid, current_org.id)
 
     update_data = channel_in.model_dump(exclude_unset=True)
     for field, value in update_data.items():
@@ -100,7 +101,7 @@ async def update_channel(
     await db.commit()
     await db.refresh(channel)
 
-    logger.info(f"User {current_user.id} updated notification channel '{channel.name}' ({channel.uuid})")
+    logger.info(f"Org {current_org.id} updated notification channel '{channel.name}' ({channel.uuid})")
 
     background_tasks.add_task(_sync_channel_to_regions, "upsert", channel.uuid)
 
@@ -112,28 +113,28 @@ async def delete_channel(
     channel_uuid: str,
     background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    current_org: Organization = Depends(get_current_org),
 ):
     """删除通知渠道，删除后异步推送到所有 Region"""
-    channel = await _get_user_channel(db, channel_uuid, current_user.id)
+    channel = await _get_org_channel(db, channel_uuid, current_org.id)
 
     await db.delete(channel)
     await db.commit()
 
-    logger.info(f"User {current_user.id} deleted notification channel ({channel_uuid})")
+    logger.info(f"Org {current_org.id} deleted notification channel ({channel_uuid})")
 
     background_tasks.add_task(_sync_channel_to_regions, "delete", channel_uuid)
 
 
 # --- Helpers ---
 
-async def _get_user_channel(
-    db: AsyncSession, channel_uuid: str, user_id: int
+async def _get_org_channel(
+    db: AsyncSession, channel_uuid: str, org_id: int
 ) -> NotificationChannel:
     result = await db.execute(
         select(NotificationChannel).where(
             NotificationChannel.uuid == channel_uuid,
-            NotificationChannel.user_id == user_id,
+            NotificationChannel.org_id == org_id,
         )
     )
     channel = result.scalars().first()

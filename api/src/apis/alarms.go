@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"api/src/common"
 	"api/src/model"
 	"api/src/services"
 
@@ -581,13 +582,12 @@ func (a *AlarmAPI) UnlinkRuleFromVMWithType(ruleCategory string) gin.HandlerFunc
 // @Router /metrics/alarm/cpu/rules [post]
 func (a *AlarmAPI) CreateCPURule(c *gin.Context) {
 	var req struct {
-		RuleID          string           `json:"rule_id"`
-		Name            string           `json:"name" binding:"required"`
-		Owner           string           `json:"owner" binding:"required"`
+		RuleID          string             `json:"rule_id"`
+		Name            string             `json:"name" binding:"required"`
 		Rules           []services.CPURule `json:"rules" binding:"required,min=1"`
-		LinkedVMs       []string         `json:"linkedvms"`
-		RegionID        string           `json:"region_id"`
-		DurationMinutes int              `json:"duration_minutes"`
+		LinkedVMs       []string           `json:"linkedvms"`
+		RegionID        string             `json:"region_id"`
+		DurationMinutes int                `json:"duration_minutes"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -599,12 +599,17 @@ func (a *AlarmAPI) CreateCPURule(c *gin.Context) {
 			return
 		}
 	}
-	safeOwnerCPU := filepath.Base(req.Owner)
+	ms := common.GetMemberShip(c.Request.Context())
+	if ms.OrgID == 0 {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid organization context"})
+		return
+	}
+	safeOwnerCPU := strconv.FormatInt(ms.OrgID, 10)
 	group := &model.RuleGroupV2{
 		RuleID:          req.RuleID,
 		Name:            req.Name,
 		Type:            services.RuleTypeCPU,
-		Owner:           req.Owner,
+		Owner:           ms.OrgID,
 		Enabled:         true,
 		RegionID:        req.RegionID,
 		DurationMinutes: req.DurationMinutes,
@@ -702,13 +707,12 @@ func (a *AlarmAPI) CreateCPURule(c *gin.Context) {
 // @Router /metrics/alarm/memory/rules [post]
 func (a *AlarmAPI) CreateMemoryRule(c *gin.Context) {
 	var req struct {
-		RuleID          string              `json:"rule_id"`
-		Name            string              `json:"name" binding:"required"`
-		Owner           string              `json:"owner" binding:"required"`
+		RuleID          string                `json:"rule_id"`
+		Name            string                `json:"name" binding:"required"`
 		Rules           []services.MemoryRule `json:"rules" binding:"required,min=1"`
-		LinkedVMs       []string            `json:"linkedvms"`
-		RegionID        string              `json:"region_id"`
-		DurationMinutes int                 `json:"duration_minutes"`
+		LinkedVMs       []string              `json:"linkedvms"`
+		RegionID        string                `json:"region_id"`
+		DurationMinutes int                   `json:"duration_minutes"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -740,12 +744,17 @@ func (a *AlarmAPI) CreateMemoryRule(c *gin.Context) {
 		}
 	}
 
-	safeOwnerMemory := filepath.Base(req.Owner)
+	ms := common.GetMemberShip(c.Request.Context())
+	if ms.OrgID == 0 {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid organization context"})
+		return
+	}
+	safeOwnerMemory := strconv.FormatInt(ms.OrgID, 10)
 	group := &model.RuleGroupV2{
 		RuleID:          req.RuleID,
 		Name:            req.Name,
 		Type:            services.RuleTypeMemory,
-		Owner:           req.Owner,
+		Owner:           ms.OrgID,
 		Enabled:         true,
 		RegionID:        req.RegionID,
 		DurationMinutes: req.DurationMinutes,
@@ -864,10 +873,14 @@ func (a *AlarmAPI) GetCPURules(c *gin.Context) {
 		pageSize = 20
 	}
 
+	ms := common.GetMemberShip(c.Request.Context())
+	ownerFilter, ownerArgs := ms.GetOrgFilter()
 	queryParams := services.ListRuleGroupsParams{
-		RuleType: services.RuleTypeCPU,
-		Page:     page,
-		PageSize: pageSize,
+		RuleType:    services.RuleTypeCPU,
+		Page:        page,
+		PageSize:    pageSize,
+		OwnerFilter: ownerFilter,
+		OwnerArgs:   ownerArgs,
 	}
 
 	if groupUUID != "" {
@@ -956,11 +969,15 @@ func (a *AlarmAPI) GetMemoryRules(c *gin.Context) {
 		pageSize = 20
 	}
 
+	ms := common.GetMemberShip(c.Request.Context())
+	ownerFilter, ownerArgs := ms.GetOrgFilter()
 	queryParams := services.ListRuleGroupsParams{
-		RuleType: services.RuleTypeMemory,
-		Page:     page,
-		PageSize: pageSize,
-		RuleID:   ruleID,
+		RuleType:    services.RuleTypeMemory,
+		Page:        page,
+		PageSize:    pageSize,
+		RuleID:      ruleID,
+		OwnerFilter: ownerFilter,
+		OwnerArgs:   ownerArgs,
 	}
 
 	if groupUUID != "" {
@@ -1087,7 +1104,12 @@ func (a *AlarmAPI) DeleteCPURule(c *gin.Context) {
 		})
 		return
 	}
-	owner := group.Owner
+	ms := common.GetMemberShip(c.Request.Context())
+	if !ms.CheckResourceOrg(model.OrgWriter, group.Owner) {
+		c.JSON(http.StatusForbidden, gin.H{"error": "no permission to delete this rule"})
+		return
+	}
+	owner := strconv.FormatInt(group.Owner, 10)
 
 	// Delete all associated VMRuleLink
 	vmLinks, err := a.operator.GetLinkedVMs(c.Request.Context(), groupUUID)
@@ -1214,6 +1236,12 @@ func (a *AlarmAPI) DeleteMemoryRule(c *gin.Context) {
 		return
 	}
 
+	ms := common.GetMemberShip(c.Request.Context())
+	if !ms.CheckResourceOrg(model.OrgWriter, group.Owner) {
+		c.JSON(http.StatusForbidden, gin.H{"error": "no permission to delete this rule"})
+		return
+	}
+
 	// Query linked VMs before deletion
 	linkedVMs := make([]string, 0)
 	vmLinks, err := a.operator.GetLinkedVMs(c.Request.Context(), groupUUID)
@@ -1228,7 +1256,7 @@ func (a *AlarmAPI) DeleteMemoryRule(c *gin.Context) {
 		_ = a.UpdateMatchedVMsJSON(c.Request.Context(), linkedVMs, groupUUID, "remove", "alarm-memory")
 	}
 
-	owner := group.Owner
+	owner := strconv.FormatInt(group.Owner, 10)
 	deletedFiles := make([]string, 0)
 
 	// Delete all indexed rule files (consistent with multi-detail creation)
@@ -1613,7 +1641,6 @@ func (a *AlarmAPI) GetActiveRules(c *gin.Context) {
 func (a *AlarmAPI) CreateBWRule(c *gin.Context) {
 	var req struct {
 		Name     string `json:"name" binding:"required"`
-		Owner    string `json:"owner" binding:"required"`
 		Enable   bool   `json:"enable"`
 		RegionID string `json:"region_id" binding:"required"`
 		RuleID   string `json:"rule_id" binding:"required"`
@@ -1633,12 +1660,17 @@ func (a *AlarmAPI) CreateBWRule(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	safeOwnerBW := filepath.Base(req.Owner)
+	ms := common.GetMemberShip(c.Request.Context())
+	if ms.OrgID == 0 {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid organization context"})
+		return
+	}
+	safeOwnerBW := strconv.FormatInt(ms.OrgID, 10)
 	group := &model.RuleGroupV2{
 		RuleID:   req.RuleID,
 		Name:     req.Name,
 		Type:     services.RuleTypeBW,
-		Owner:    req.Owner,
+		Owner:    ms.OrgID,
 		Enabled:  req.Enable,
 		RegionID: req.RegionID,
 	}
@@ -1762,11 +1794,15 @@ func (a *AlarmAPI) GetBWRules(c *gin.Context) {
 		pageSize = 20
 	}
 
+	ms := common.GetMemberShip(c.Request.Context())
+	ownerFilter, ownerArgs := ms.GetOrgFilter()
 	queryParams := services.ListRuleGroupsParams{
-		RuleType: services.RuleTypeBW,
-		Page:     page,
-		PageSize: pageSize,
-		RuleID:   ruleID,
+		RuleType:    services.RuleTypeBW,
+		Page:        page,
+		PageSize:    pageSize,
+		RuleID:      ruleID,
+		OwnerFilter: ownerFilter,
+		OwnerArgs:   ownerArgs,
 	}
 
 	if groupUUID != "" {
@@ -1896,7 +1932,12 @@ func (a *AlarmAPI) DeleteBWRules(c *gin.Context) {
 		})
 		return
 	}
-	owner := group.Owner
+	ms := common.GetMemberShip(c.Request.Context())
+	if !ms.CheckResourceOrg(model.OrgWriter, group.Owner) {
+		c.JSON(http.StatusForbidden, gin.H{"error": "no permission to delete this rule"})
+		return
+	}
+	owner := strconv.FormatInt(group.Owner, 10)
 
 	// Delete all associated VMRuleLink
 	vmLinks, err := a.operator.GetLinkedVMs(c.Request.Context(), groupUUID)
@@ -2152,8 +2193,13 @@ func (a *AlarmAPI) processRuleMappings(ctx context.Context, groups interface{}, 
 // @Failure 500 {object} map[string]interface{} "Internal server error"
 // @Router /api/v1/metrics/alarm/sync-mappings [post]
 func (a *AlarmAPI) SyncAllVMRuleMappings(c *gin.Context) {
-	log.Printf("Starting full synchronization of VM rule mappings")
 	ctx := c.Request.Context()
+	ms := common.GetMemberShip(ctx)
+	if !ms.IsSystemAdmin() {
+		c.JSON(http.StatusForbidden, gin.H{"status": "error", "error": "system admin required"})
+		return
+	}
+	log.Printf("Starting full synchronization of VM rule mappings")
 
 	// Define all rule types to process
 	type ruleConfig struct {
@@ -2274,6 +2320,11 @@ func (a *AlarmAPI) ToggleRuleStatus(ruleType, action string) gin.HandlerFunc {
 		var groupEnabled bool
 
 		if ruleType == "adjust" {
+			ms := common.GetMemberShip(c.Request.Context())
+			if !ms.IsSystemAdmin() {
+				c.JSON(http.StatusForbidden, gin.H{"status": "error", "error": "system admin required to toggle adjust rules"})
+				return
+			}
 			// Query adjust_rule_group table using AdjustOperator
 			adjustOperator := &services.AdjustOperator{}
 			adjustGroup, err := adjustOperator.GetAdjustRulesByIdentifier(c.Request.Context(), uuid)
@@ -2305,9 +2356,14 @@ func (a *AlarmAPI) ToggleRuleStatus(ruleType, action string) gin.HandlerFunc {
 					return
 				}
 			}
+			ms := common.GetMemberShip(c.Request.Context())
+			if !ms.CheckResourceOrg(model.OrgWriter, group.Owner) {
+				c.JSON(http.StatusForbidden, gin.H{"status": "error", "error": "no permission to toggle this rule"})
+				return
+			}
 			groupUUID = group.UUID
 			groupType = group.Type
-			groupOwner = group.Owner
+			groupOwner = strconv.FormatInt(group.Owner, 10)
 			groupEnabled = group.Enabled
 		}
 
@@ -2706,10 +2762,15 @@ func (a *AlarmAPI) getSingleRuleByIdentifier(ctx context.Context, identifier str
 		return a.buildAdjustRuleResponse(ctx, adjustGroup, includeDetails, includeLinkedVMs)
 	}
 
+	ms := common.GetMemberShip(ctx)
+	ownerFilter, ownerArgs := ms.GetOrgFilter()
+
 	// 策略2: 尝试从告警规则表查询 (支持uuid)
 	groups, _, err := a.operator.ListRuleGroups(ctx, services.ListRuleGroupsParams{
-		GroupUUID: identifier,
-		PageSize:  1,
+		GroupUUID:   identifier,
+		PageSize:    1,
+		OwnerFilter: ownerFilter,
+		OwnerArgs:   ownerArgs,
 	})
 	if err == nil && len(groups) > 0 {
 		return a.buildAlarmRuleResponse(ctx, &groups[0], includeDetails, includeLinkedVMs)
@@ -2717,8 +2778,10 @@ func (a *AlarmAPI) getSingleRuleByIdentifier(ctx context.Context, identifier str
 
 	// 策略3: 尝试从告警规则表查询 (支持rule_id)
 	groups, _, err = a.operator.ListRuleGroups(ctx, services.ListRuleGroupsParams{
-		RuleID:   identifier,
-		PageSize: 1,
+		RuleID:      identifier,
+		PageSize:    1,
+		OwnerFilter: ownerFilter,
+		OwnerArgs:   ownerArgs,
 	})
 	if err == nil && len(groups) > 0 {
 		return a.buildAlarmRuleResponse(ctx, &groups[0], includeDetails, includeLinkedVMs)

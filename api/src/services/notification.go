@@ -40,7 +40,7 @@ func (n *NotificationAdmin) UpsertChannel(ctx context.Context, ch *model.Notific
 	}
 
 	return db.Model(&existing).Updates(map[string]interface{}{
-		"user_id": ch.UserID,
+		"org_id":  ch.OrgID,
 		"name":    ch.Name,
 		"type":    ch.Type,
 		"config":  ch.Config,
@@ -82,7 +82,7 @@ func (n *NotificationAdmin) BulkSyncChannels(ctx context.Context, channels []mod
 				return err
 			} else {
 				if err := tx.Model(&existing).Updates(map[string]interface{}{
-					"user_id": ch.UserID,
+					"org_id":  ch.OrgID,
 					"name":    ch.Name,
 					"type":    ch.Type,
 					"config":  ch.Config,
@@ -135,9 +135,9 @@ func (n *NotificationAdmin) GetChannelByUUID(ctx context.Context, channelUUID st
 	return &ch, nil
 }
 
-// ValidateChannelOwnership 校验渠道归属权
-// 区分两种错误：渠道未同步到本地（channel_not_synced）和渠道不属于当前用户（channel_not_owned）
-func (n *NotificationAdmin) ValidateChannelOwnership(ctx context.Context, channelUUIDs []string, userID int64) error {
+// ValidateChannelOwnership 校验渠道归属权（租户级隔离）
+// 区分两种错误：渠道未同步到本地（channel_not_synced）和渠道不属于当前组织（channel_not_owned）
+func (n *NotificationAdmin) ValidateChannelOwnership(ctx context.Context, channelUUIDs []string, orgID int64) error {
 	ctx, db := GetContextDB(ctx)
 
 	// 先检查渠道是否存在于本地镜像
@@ -147,10 +147,10 @@ func (n *NotificationAdmin) ValidateChannelOwnership(ctx context.Context, channe
 		return ErrChannelNotSynced
 	}
 
-	// 再检查归属权
+	// 再检查归属权（按组织）
 	var ownedCount int64
 	db.Model(&model.NotificationChannel{}).Where(
-		"uuid IN (?) AND user_id = ?", channelUUIDs, userID,
+		"uuid IN (?) AND org_id = ?", channelUUIDs, orgID,
 	).Count(&ownedCount)
 	if int(ownedCount) != len(channelUUIDs) {
 		return ErrChannelNotOwned
@@ -162,7 +162,7 @@ func (n *NotificationAdmin) ValidateChannelOwnership(ctx context.Context, channe
 // --- 告警绑定管理 ---
 
 // SetRuleBindings 设置规则的渠道绑定（全量替换，事务保证原子性）
-func (n *NotificationAdmin) SetRuleBindings(ctx context.Context, ruleGroupUUID string, channelUUIDs []string, userID int64) error {
+func (n *NotificationAdmin) SetRuleBindings(ctx context.Context, ruleGroupUUID string, channelUUIDs []string, orgID int64) error {
 	ctx, db := GetContextDB(ctx)
 
 	return db.Transaction(func(tx *gorm.DB) error {
@@ -176,7 +176,7 @@ func (n *NotificationAdmin) SetRuleBindings(ctx context.Context, ruleGroupUUID s
 			binding := &model.AlarmNotificationBinding{
 				RuleGroupUUID: ruleGroupUUID,
 				ChannelUUID:   chUUID,
-				UserID:        userID,
+				OrgID:         orgID,
 			}
 			if err := tx.Create(binding).Error; err != nil {
 				return err
@@ -314,11 +314,15 @@ func (n *NotificationAdmin) ListAlarmEvents(ctx context.Context, owner string, s
 	return total, events, nil
 }
 
-// CountFiringEvents 统计 firing 状态的告警数
-func (n *NotificationAdmin) CountFiringEvents(ctx context.Context) (int64, error) {
+// CountFiringEvents 统计 firing 状态的告警数，owner 为空时统计全局（内部接口用）
+func (n *NotificationAdmin) CountFiringEvents(ctx context.Context, owner string) (int64, error) {
 	ctx, db := GetContextDB(ctx)
+	query := db.Model(&model.AlarmEvent{}).Where("status = ?", "firing")
+	if owner != "" {
+		query = query.Where("owner = ?", owner)
+	}
 	var count int64
-	if err := db.Model(&model.AlarmEvent{}).Where("status = ?", "firing").Count(&count).Error; err != nil {
+	if err := query.Count(&count).Error; err != nil {
 		return 0, err
 	}
 	return count, nil

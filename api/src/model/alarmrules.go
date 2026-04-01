@@ -95,7 +95,7 @@ type RuleGroupV2 struct {
 	RuleID          string `gorm:"type:varchar(128);unique_index:idx_rule_id;column:rule_id"`
 	Name            string `gorm:"type:varchar(128);unique_index:idx_rule_group_name;column:name"`
 	Type            string `gorm:"type:varchar(32)"`
-	Owner           string `gorm:"type:varchar(255);index"`
+	Owner           int64  `gorm:"type:bigint;index"`
 	Enabled         bool   `gorm:"default:true"`
 	TriggerCnt      int    `gorm:"default:0"`
 	RegionID        string `gorm:"type:varchar(64)"`

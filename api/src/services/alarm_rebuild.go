@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"path/filepath"
+	"strconv"
 
 	"api/src/common"
 	"api/src/model"
@@ -70,7 +71,7 @@ func rebuildCPURule(ctx context.Context, group *model.RuleGroupV2) error {
 		return fmt.Errorf("no CPU rule details for group %s", group.UUID)
 	}
 
-	safeOwner := filepath.Base(group.Owner)
+	safeOwner := strconv.FormatInt(group.Owner, 10)
 	safeUUID := filepath.Base(group.UUID)
 
 	for i, rule := range details {
@@ -113,7 +114,7 @@ func rebuildMemoryRule(ctx context.Context, group *model.RuleGroupV2) error {
 		return fmt.Errorf("no Memory rule details for group %s", group.UUID)
 	}
 
-	safeOwner := filepath.Base(group.Owner)
+	safeOwner := strconv.FormatInt(group.Owner, 10)
 	safeUUID := filepath.Base(group.UUID)
 
 	for i, rule := range details {
@@ -156,7 +157,7 @@ func rebuildBWRule(ctx context.Context, group *model.RuleGroupV2) error {
 		return fmt.Errorf("no BW rule details for group %s", group.UUID)
 	}
 
-	safeOwner := filepath.Base(group.Owner)
+	safeOwner := strconv.FormatInt(group.Owner, 10)
 	safeUUID := filepath.Base(group.UUID)
 
 	for i, rule := range details {

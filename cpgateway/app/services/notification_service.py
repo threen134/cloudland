@@ -43,7 +43,7 @@ class NotificationSyncService:
                 "action": "upsert",
                 "channel": {
                     "uuid": channel.uuid,
-                    "user_id": channel.user_id,
+                    "org_id": channel.org_id,
                     "name": channel.name,
                     "type": channel.type,
                     "config": channel.config,
@@ -84,7 +84,7 @@ class NotificationSyncService:
             "channels": [
                 {
                     "uuid": ch.uuid,
-                    "user_id": ch.user_id,
+                    "org_id": ch.org_id,
                     "name": ch.name,
                     "type": ch.type,
                     "config": ch.config,

@@ -77,11 +77,13 @@ type RuleFileResponse struct {
 }
 
 type ListRuleGroupsParams struct {
-	RuleType  string
-	Page      int
-	PageSize  int
-	GroupUUID string
-	RuleID    string // Added: Support query by rule_id
+	RuleType    string
+	Page        int
+	PageSize    int
+	GroupUUID   string
+	RuleID      string // Added: Support query by rule_id
+	OwnerFilter string // SQL condition string, e.g. "owner = ?"
+	OwnerArgs   []interface{}
 }
 
 // AdaptiveQueryParams Adaptive query parameters
@@ -98,17 +100,6 @@ type (
 		GroupUUID string    `gorm:"column:group_uuid;type:varchar(36);index;not null"`
 		VMName    string    `gorm:"type:varchar(255);index;not null"`
 		CreatedAt time.Time `gorm:"autoCreateTime"`
-	}
-
-	RuleGroupV2 struct {
-		ID         string    `gorm:"primaryKey;type:varchar(36)"`
-		Name       string    `gorm:"index;size:255"`
-		Type       string    `gorm:"type:varchar(10);index"` // cpu/bw/memory/disk/network-in/network-out
-		Enabled    bool      `gorm:"default:true"`
-		Owner      string    `gorm:"type:varchar(255);index"`
-		CreatedAt  time.Time `gorm:"autoCreateTime"`
-		TriggerCnt int       `gorm:"default:0"`
-		UpdatedAt  time.Time
 	}
 
 	CPURule struct {
@@ -1189,6 +1180,9 @@ func (a *AlarmOperator) ListRuleGroups(ctx context.Context, params ListRuleGroup
 	// Added: Support query by rule_id
 	if params.RuleID != "" {
 		query = query.Where("rule_id = ?", params.RuleID)
+	}
+	if params.OwnerFilter != "" {
+		query = query.Where(params.OwnerFilter, params.OwnerArgs...)
 	}
 
 	if err = query.Count(&total).Error; err != nil {

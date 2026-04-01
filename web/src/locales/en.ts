@@ -638,6 +638,13 @@ export default {
             },
             noLinkedVMs: 'This alarm rule is not linked to any instances.',
             thresholdLimit: 'Threshold / Limit',
+            bindVMs: 'Bind Virtual Machines',
+            availableVMs: 'Available VMs',
+            selectVMsToBind: 'Select VMs to bind',
+            searchVMs: 'Search VM name...',
+            bindSuccess: 'VMs bound successfully',
+            noVMsFound: 'No matching VMs found.',
+            ruleCreatedButLinkFailed: 'Alarm rule created, but VM binding failed.',
         },
         overview: {
             title: 'Dashboard',

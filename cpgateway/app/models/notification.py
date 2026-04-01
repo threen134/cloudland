@@ -15,7 +15,7 @@ class NotificationChannel(Base):
 
     id = Column(BigInteger, primary_key=True, index=True, autoincrement=True)
     uuid = Column(String(36), unique=True, index=True, default=lambda: str(uuid.uuid4()))
-    user_id = Column(BigInteger, index=True, nullable=False)
+    org_id = Column(BigInteger, index=True, nullable=False)
     name = Column(String(128), nullable=False)
     type = Column(String(32), nullable=False)  # feishu, webhook
     config = Column(JSONB, nullable=False)      # {"webhook_url": "...", "secret": "..."}

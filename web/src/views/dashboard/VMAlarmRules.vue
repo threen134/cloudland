@@ -1,22 +1,23 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Plus, Trash2, Search, ShieldAlert, Link, RefreshCw, X, ChevronDown, ChevronRight } from 'lucide-vue-next'
+import { Plus, Trash2, Search, ShieldAlert, Link, RefreshCw, X, ChevronDown, ChevronRight, Monitor } from 'lucide-vue-next'
 import { vmAlarmRulesApi, VM_RULE_TYPES, type VMAlarmRuleGroup, type VMRuleType } from '../../api/vmAlarmRules'
 import { alarmEventsApi } from '../../api/alarmEvents'
 import { notificationsApi, type NotificationChannel } from '../../api/notifications'
-import { useAuthStore } from '../../stores/auth'
+import { instancesApi, type Instance } from '../../api/instances'
 import { useRegionStore } from '../../stores/region'
+import { useToast } from '../../composables/useToast'
 
 const { t } = useI18n()
-const auth = useAuthStore()
+const toast = useToast()
 const regionStore = useRegionStore()
 const rules = ref<VMAlarmRuleGroup[]>([])
 const loading = ref(false)
 const errorMsg = ref('')
 const searchQuery = ref('')
 const page = ref(1)
-const pageSize = ref(100) // Increase pageSize to fetch more rules at once
+const pageSize = ref(100)
 const totalPages = ref(1)
 const total = ref(0)
 
@@ -27,6 +28,7 @@ const createForm = ref({
     rule_id: '',
     type: 'cpu' as VMRuleType,
     rules: [{ name: '', limit: 80, duration: 5, rule: 'gt', level: 'warning' }] as Record<string, any>[],
+    linkedvms: [] as string[],
 })
 
 // Delete modal
@@ -39,6 +41,15 @@ const bindTarget = ref<VMAlarmRuleGroup | null>(null)
 const allChannels = ref<NotificationChannel[]>([])
 const selectedChannelUuids = ref<string[]>([])
 const bindLoading = ref(false)
+
+// VM Binding
+const showBindVMsModal = ref(false)
+const bindVMsTarget = ref<VMAlarmRuleGroup | null>(null)
+const allVMs = ref<Instance[]>([])
+const selectedVMUuids = ref<string[]>([])
+const vmsLoading = ref(false)
+const linkVMsLoading = ref(false)
+const vmSearchQuery = ref('')
 
 // Expansion logic
 const expandedRules = ref<string[]>([])
@@ -81,14 +92,27 @@ const fetchRules = async () => {
     }
 }
 
-const openCreate = () => {
+const openCreate = async () => {
     createForm.value = {
         name: '',
         rule_id: '',
         type: 'cpu',
         rules: [{ name: '', limit: 80, duration: 5, rule: 'gt', level: 'warning' }],
+        linkedvms: [],
     }
     showCreateModal.value = true
+    if (allVMs.value.length === 0) {
+        vmsLoading.value = true
+        try {
+            const res = await instancesApi.fetchInstances()
+            const data = res.data as any
+            allVMs.value = Array.isArray(data) ? data : (data.instances || [])
+        } catch (err) {
+            console.error('Failed to fetch instances:', err)
+        } finally {
+            vmsLoading.value = false
+        }
+    }
 }
 
 const onTypeChange = () => {
@@ -101,23 +125,32 @@ const onTypeChange = () => {
 
 const submitCreate = async () => {
     try {
-        const owner = auth.user?.username || ''
         const regionUuid = regionStore.currentRegionId || ''
+        const ruleId = createForm.value.rule_id || createForm.value.name.replace(/\s+/g, '_').toLowerCase()
 
         const base = {
             name: createForm.value.name,
-            owner,
-            rule_id: createForm.value.rule_id || createForm.value.name.replace(/\s+/g, '_').toLowerCase(),
             region_id: regionUuid,
         }
 
         if (createForm.value.type === 'cpu') {
-            await vmAlarmRulesApi.createCPURule({ ...base, rules: createForm.value.rules as any })
+            await vmAlarmRulesApi.createCPURule({ ...base, rule_id: ruleId, rules: createForm.value.rules as any })
         } else if (createForm.value.type === 'memory') {
-            await vmAlarmRulesApi.createMemoryRule({ ...base, rules: createForm.value.rules as any })
+            await vmAlarmRulesApi.createMemoryRule({ ...base, rule_id: ruleId, rules: createForm.value.rules as any })
         } else if (createForm.value.type === 'bw') {
-            await vmAlarmRulesApi.createBWRule({ ...base, enable: true, rules: createForm.value.rules as any })
+            await vmAlarmRulesApi.createBWRule({ ...base, rule_id: ruleId, enable: true, rules: createForm.value.rules as any })
         }
+
+        // Link VMs if selected
+        if (createForm.value.linkedvms && createForm.value.linkedvms.length > 0) {
+            try {
+                await vmAlarmRulesApi.linkRule(ruleId, createForm.value.linkedvms.map(id => ({ vm_uuid: id })))
+            } catch (err) {
+                console.error('Failed to link VMs after creation:', err)
+                toast.warning(t('dashboard.vmAlarmRules.ruleCreatedButLinkFailed'))
+            }
+        }
+
         showCreateModal.value = false
         await fetchRules()
     } catch (err: any) {
@@ -166,11 +199,12 @@ const openBindChannels = async (rule: VMAlarmRuleGroup) => {
     }
 }
 
-const saveBindings = async () => {
+const saveChannelBindings = async () => {
     if (!bindTarget.value) return
     try {
         await alarmEventsApi.bindRuleChannels(bindTarget.value.rule_id, selectedChannelUuids.value)
         showBindModal.value = false
+        toast.success(t('messages.success'))
     } catch (err: any) {
         const errCode = err.response?.data?.error
         if (errCode === 'channel_not_synced') {
@@ -187,6 +221,68 @@ const toggleChannel = (uuid: string) => {
         selectedChannelUuids.value.splice(idx, 1)
     } else {
         selectedChannelUuids.value.push(uuid)
+    }
+}
+
+// --- VM Binding ---
+const openBindVMs = async (rule: VMAlarmRuleGroup) => {
+    bindVMsTarget.value = rule
+    selectedVMUuids.value = rule.linkedvms ? [...rule.linkedvms] : []
+    showBindVMsModal.value = true
+    vmsLoading.value = true
+    vmSearchQuery.value = ''
+    try {
+        const res = await instancesApi.fetchInstances()
+        const data = res.data as any
+        allVMs.value = Array.isArray(data) ? data : (data.instances || [])
+    } catch (err) {
+        console.error('Failed to fetch instances:', err)
+        allVMs.value = []
+    } finally {
+        vmsLoading.value = false
+    }
+}
+
+const toggleVMSelection = (uuid: string) => {
+    const idx = selectedVMUuids.value.indexOf(uuid)
+    if (idx > -1) selectedVMUuids.value.splice(idx, 1)
+    else selectedVMUuids.value.push(uuid)
+}
+
+const filteredVMs = computed(() => {
+    if (!vmSearchQuery.value) return allVMs.value
+    const q = vmSearchQuery.value.toLowerCase()
+    return allVMs.value.filter(vm => 
+        (vm.hostname || vm.name || '').toLowerCase().includes(q) || 
+        vm.id.toLowerCase().includes(q)
+    )
+})
+
+const saveVMBindings = async () => {
+    if (!bindVMsTarget.value) return
+    linkVMsLoading.value = true
+    try {
+        const ruleId = bindVMsTarget.value.rule_id
+        const currentVMs = bindVMsTarget.value.linkedvms || []
+        
+        const toLink = selectedVMUuids.value.filter(id => !currentVMs.includes(id))
+        const toUnlink = currentVMs.filter(id => !selectedVMUuids.value.includes(id))
+        
+        if (toLink.length > 0) {
+            await vmAlarmRulesApi.linkRule(ruleId, toLink.map(id => ({ vm_uuid: id })))
+        }
+        if (toUnlink.length > 0) {
+            await vmAlarmRulesApi.unlinkRule(ruleId, toUnlink.map(id => ({ vm_uuid: id })))
+        }
+        
+        toast.success(t('dashboard.vmAlarmRules.bindSuccess'))
+        showBindVMsModal.value = false
+        await fetchRules()
+    } catch (err: any) {
+        console.error('Failed to save VM bindings:', err)
+        toast.error(err.response?.data?.error || t('messages.error'))
+    } finally {
+        linkVMsLoading.value = false
     }
 }
 
@@ -274,6 +370,9 @@ onMounted(fetchRules)
                             <span class="linked-badge">{{ t('dashboard.vmAlarmRules.linkedCount', { count: rule.linkedvms?.length || 0 }) }}</span>
                         </div>
                         <div class="rule-actions">
+                            <button class="icon-btn-table" @click.stop="openBindVMs(rule)" :title="t('dashboard.vmAlarmRules.bindVMs')">
+                                <Monitor :size="16" />
+                            </button>
                             <button class="icon-btn-table" @click.stop="openBindChannels(rule)" :title="t('dashboard.vmAlarmRules.bindChannels')">
                                 <Link :size="16" />
                             </button>
@@ -343,7 +442,7 @@ onMounted(fetchRules)
             <div v-if="showCreateModal" class="modal-overlay" @click.self="showCreateModal = false">
                 <div class="modal-content card" style="max-width: 600px;">
                     <div class="modal-header">
-                        <h3>{{ t('dashboard.vmAlarmRules.createTitle', { type: createForm.type.toUpperCase() }) }}</h3>
+                        <h3>{{ t('dashboard.vmAlarmRules.createTitle', { type: t('dashboard.vmAlarmRules.ruleTypes.' + createForm.type) }) }}</h3>
                         <button class="btn btn-ghost btn-icon" @click="showCreateModal = false"><X :size="18" /></button>
                     </div>
                     <div class="modal-body">
@@ -386,6 +485,20 @@ onMounted(fetchRules)
                                     <button v-if="createForm.rules.length > 1" class="btn btn-ghost btn-icon text-error" @click="removeRuleRow(idx)">
                                         <Trash2 :size="14" />
                                     </button>
+                                </div>
+                            </div>
+                            <div class="form-group mt-2">
+                                <label class="form-label">{{ t('dashboard.vmAlarmRules.bindVMs') }} ({{ t('actions.optional') }})</label>
+                                <div class="vm-create-selection">
+                                    <div v-if="vmsLoading" class="loading-spinner small"></div>
+                                    <div v-else class="channel-list" style="max-height: 160px; border: 1px solid var(--border-light); border-radius: 6px; padding: 4px;">
+                                        <label v-for="vm in allVMs" :key="vm.id" class="channel-item">
+                                            <input type="checkbox" :value="vm.id" v-model="createForm.linkedvms" />
+                                            <span class="channel-name">{{ vm.hostname || vm.name }}</span>
+                                            <span class="badge badge-secondary">{{ vm.id.substring(0, 8) }}</span>
+                                        </label>
+                                        <div v-if="allVMs.length === 0" class="text-muted p-2">{{ t('messages.noNics') }}</div>
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -440,7 +553,38 @@ onMounted(fetchRules)
                     </div>
                     <div class="modal-footer">
                         <button class="btn btn-secondary" @click="showBindModal = false">{{ t('actions.cancel') }}</button>
-                        <button class="btn btn-primary" @click="saveBindings" :disabled="bindLoading">{{ t('actions.save') }}</button>
+                        <button class="btn btn-primary" @click="saveChannelBindings" :disabled="bindLoading">{{ t('actions.save') }}</button>
+                    </div>
+                </div>
+            </div>
+        </Teleport>
+
+        <!-- Bind VMs Modal -->
+        <Teleport to="body">
+            <div v-if="showBindVMsModal" class="modal-overlay" @click.self="showBindVMsModal = false">
+                <div class="modal-content card" style="max-width: 480px;">
+                    <div class="modal-header">
+                        <h3>{{ t('dashboard.vmAlarmRules.bindVMs') }}</h3>
+                        <button class="btn btn-ghost btn-icon" @click="showBindVMsModal = false"><X :size="18" /></button>
+                    </div>
+                    <div class="modal-body">
+                        <p class="text-secondary mb-4">{{ t('dashboard.vmAlarmRules.selectVMsToBind') }}</p>
+                        <div class="search-box mb-4">
+                            <Search :size="16" class="search-icon" />
+                            <input v-model="vmSearchQuery" :placeholder="t('dashboard.vmAlarmRules.searchVMs')" class="search-input" />
+                        </div>
+                        <div v-if="vmsLoading" class="loading-spinner" style="margin: 20px auto;"></div>
+                        <div v-else class="channel-list">
+                            <label v-for="vm in filteredVMs" :key="vm.id" class="channel-item" @click="toggleVMSelection(vm.id)">
+                                <input type="checkbox" :checked="selectedVMUuids.includes(vm.id)" />
+                                <span class="channel-name">{{ vm.hostname || vm.name }}</span>
+                                <span class="badge badge-secondary">{{ vm.id.substring(0, 8) }}</span>
+                            </label>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button class="btn btn-secondary" @click="showBindVMsModal = false">{{ t('actions.cancel') }}</button>
+                        <button class="btn btn-primary" @click="saveVMBindings" :disabled="linkVMsLoading">{{ t('actions.save') }}</button>
                     </div>
                 </div>
             </div>

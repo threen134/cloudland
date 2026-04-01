@@ -66,7 +66,7 @@ func (a *NotificationAPI) SyncChannel(c *gin.Context) {
 			return
 		}
 		ch := &model.NotificationChannel{
-			UserID:  int64(req.Channel.UserID),
+			OrgID:   req.Channel.OrgID,
 			Name:    req.Channel.Name,
 			Type:    req.Channel.Type,
 			Config:  string(configJSON),
@@ -97,7 +97,7 @@ func (a *NotificationAPI) SyncChannel(c *gin.Context) {
 				return
 			}
 			channels[i] = model.NotificationChannel{
-				UserID:  int64(ch.UserID),
+				OrgID:   ch.OrgID,
 				Name:    ch.Name,
 				Type:    ch.Type,
 				Config:  string(configJSON),
@@ -120,7 +120,7 @@ func (a *NotificationAPI) SyncChannel(c *gin.Context) {
 
 type channelPayload struct {
 	UUID    string                 `json:"uuid"`
-	UserID  int                    `json:"user_id"`
+	OrgID   int64                  `json:"org_id"`
 	Name    string                 `json:"name"`
 	Type    string                 `json:"type"`
 	Config  map[string]interface{} `json:"config"`
@@ -154,8 +154,8 @@ func (a *NotificationAPI) BindRuleChannels(c *gin.Context) {
 	ctx := c.Request.Context()
 	memberShip := GetMemberShip(ctx)
 
-	// 校验渠道归属权
-	if err := a.admin.ValidateChannelOwnership(ctx, req.ChannelUUIDs, memberShip.UserID); err != nil {
+	// 校验渠道归属权（租户级）
+	if err := a.admin.ValidateChannelOwnership(ctx, req.ChannelUUIDs, memberShip.OrgID); err != nil {
 		if errors.Is(err, services.ErrChannelNotSynced) {
 			c.JSON(http.StatusConflict, gin.H{
 				"error":   "channel_not_synced",
@@ -172,7 +172,7 @@ func (a *NotificationAPI) BindRuleChannels(c *gin.Context) {
 		return
 	}
 
-	if err := a.admin.SetRuleBindings(ctx, req.RuleGroupUUID, req.ChannelUUIDs, memberShip.UserID); err != nil {
+	if err := a.admin.SetRuleBindings(ctx, req.RuleGroupUUID, req.ChannelUUIDs, memberShip.OrgID); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -225,9 +225,9 @@ func (a *NotificationAPI) ListAlarmEvents(c *gin.Context) {
 	statusFilter := c.Query("status")
 	countOnly := c.Query("count_only")
 
-	// count_only 模式：只返回数量
+	// count_only 模式：只返回数量（按当前组织过滤）
 	if countOnly == "true" {
-		count, err := a.admin.CountFiringEvents(ctx)
+		count, err := a.admin.CountFiringEvents(ctx, strconv.FormatInt(memberShip.OrgID, 10))
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
@@ -245,8 +245,8 @@ func (a *NotificationAPI) ListAlarmEvents(c *gin.Context) {
 		pageSize = 20
 	}
 
-	// 按当前用户的组织名过滤，实现租户隔离
-	total, events, err := a.admin.ListAlarmEvents(ctx, memberShip.OrgName, statusFilter, page, pageSize)
+	// 按当前用户的组织 ID 过滤，实现租户隔离（owner 字段存储的是 OrgID 字符串）
+	total, events, err := a.admin.ListAlarmEvents(ctx, strconv.FormatInt(memberShip.OrgID, 10), statusFilter, page, pageSize)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -283,7 +283,7 @@ func (a *NotificationAPI) GetAlarmDeliveryLogs(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "alarm event not found"})
 		return
 	}
-	if event.Owner != memberShip.OrgName {
+	if event.Owner != strconv.FormatInt(memberShip.OrgID, 10) {
 		c.JSON(http.StatusForbidden, gin.H{"error": "access denied"})
 		return
 	}
@@ -317,8 +317,8 @@ func (a *NotificationAPI) InternalListAlarmEvents(c *gin.Context) {
 	countOnly := c.Query("count_only")
 
 	if countOnly == "true" {
-		// 目前只支持 firing 计数（CPGateway alarm_summary 使用）
-		count, err := a.admin.CountFiringEvents(ctx)
+		// 内部接口：全局统计，不按 owner 过滤（CPGateway alarm_summary 使用）
+		count, err := a.admin.CountFiringEvents(ctx, "")
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
