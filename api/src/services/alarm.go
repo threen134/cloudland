@@ -48,6 +48,7 @@ var (
 	alarmPrometheusIP      string
 	alarmPrometheusPort    int
 	alarmPrometheusSSHPort int
+	alarmRulesManagerIP    string
 	isRemotePrometheus     bool
 	sshKeyPath             string
 	prometheusClient       *PrometheusClient
@@ -252,6 +253,7 @@ func init() {
 		alarmPrometheusPort = viper.GetInt("monitor.port")
 		alarmPrometheusSSHPort = viper.GetInt("monitor.sshport")
 		sshKeyPath = viper.GetString("monitor.sshkey")
+		alarmRulesManagerIP = viper.GetString("alarm_rules_manager.host")
 	}
 	if alarmPrometheusPort == 0 {
 		alarmPrometheusPort = 9090
@@ -262,12 +264,16 @@ func init() {
 	if sshKeyPath == "" {
 		sshKeyPath = "~/workspace/.ssh/cland.key"
 	}
+	// Use alarm_rules_manager.host if set, otherwise fall back to monitor.host
+	if alarmRulesManagerIP == "" {
+		alarmRulesManagerIP = alarmPrometheusIP
+	}
 	isRemotePrometheus = !isLocalIP(alarmPrometheusIP)
 	if !isRemotePrometheus || alarmPrometheusIP == "" {
 		alarmPrometheusIP = "localhost"
 	}
 	if isRemotePrometheus {
-		baseURL := fmt.Sprintf("https://%s:%d", alarmPrometheusIP, 8256)
+		baseURL := fmt.Sprintf("https://%s:%d", alarmRulesManagerIP, 8256)
 		certFile := "/etc/ssl/certs/alarm_rules_manager.crt"
 		client, err := AlertRUleClient(baseURL, certFile, "")
 		if err != nil {

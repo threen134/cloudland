@@ -115,6 +115,7 @@ services:
       CLOUDLAND_HOST: ${MANAGEMENT_VIP:-127.0.0.1}
       MONITOR_HOST: prometheus
       MONITOR_PORT: "9090"
+      ALARM_RULES_MANAGER_HOST: alarm-rules-mgr
       CPGATEWAY_SECRET_KEY: ${CPGATEWAY_SECRET_KEY:-change-me-in-production}
       # VNC Console URL 配置 (多 Region 模式下指向 Region Gateway 地址)
       # 留空时回退到请求的 Host，单节点模式开箱即用

@@ -25,6 +25,7 @@ else
     : "${CLOUDLAND_HOST:=cloudland}"
     : "${MONITOR_HOST:=prometheus}"
     : "${MONITOR_PORT:=9090}"
+    : "${ALARM_RULES_MANAGER_HOST:=${MONITOR_HOST}}"
 
     cat > "$CONF_FILE" <<_EOF_
 [base]
@@ -58,6 +59,9 @@ idle = 1
 [monitor]
 host = "${MONITOR_HOST}"
 port = "${MONITOR_PORT}"
+
+[alarm_rules_manager]
+host = "${ALARM_RULES_MANAGER_HOST}"
 
 [admin]
 email = "${ADMIN_EMAIL}"
