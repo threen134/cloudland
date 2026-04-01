@@ -187,6 +187,16 @@ interface LinkedRule {
     name: string
     level: string
     enable: boolean
+    rules?: any[]
+}
+
+const expandedRules = ref<Set<string>>(new Set())
+const toggleRuleExpand = (uuid: string) => {
+    if (expandedRules.value.has(uuid)) {
+        expandedRules.value.delete(uuid)
+    } else {
+        expandedRules.value.add(uuid)
+    }
 }
 
 const linkedRules = ref<LinkedRule[]>([])
@@ -198,10 +208,11 @@ const linkLoading = ref(false)
 const unlinkLoading = ref<string | null>(null)
 
 const getSeverityClass = (level: string) => {
+    const l = (level || '').toLowerCase()
     return {
-        'badge-critical': level === 'critical',
-        'badge-warning': level === 'warning',
-        'badge-info': level === 'info'
+        'badge-critical': l === 'critical',
+        'badge-warning': l === 'warning',
+        'badge-info': l === 'info'
     }
 }
 
@@ -226,6 +237,7 @@ const fetchLinkedRules = async () => {
                         name: rule.name,
                         level: rule.level,
                         enable: rule.enable,
+                        rules: rule.rules || [],
                     })
                 }
             }
@@ -566,7 +578,7 @@ onMounted(() => {
                         </h2>
                         <div class="instance-id-row">
                             <span class="instance-id">{{ instance.id }}</span>
-                            <button class="copy-btn" @click="copyToClipboard(instance.id, 'id')" :title="$t('messages.copied')">
+                            <button class="copy-btn" @click="copyToClipboard(instance.id, 'id')" :title="copiedField === 'id' ? $t('messages.copied') : $t('dashboard.instanceDetail.copyId')">
                                 <Check v-if="copiedField === 'id'" :size="12" class="copied-icon" />
                                 <Copy v-else :size="12" />
                             </button>
@@ -895,27 +907,69 @@ onMounted(() => {
                         <tr>
                             <th>{{ t('dashboard.table.name') }}</th>
                             <th>{{ t('dashboard.instanceDetail.ruleType') }}</th>
-                            <th>{{ t('dashboard.vmAlarmRules.level') }}</th>
+
                             <th>{{ t('dashboard.table.status') }}</th>
                             <th></th>
                         </tr>
                     </thead>
                     <tbody>
-                        <tr v-for="rule in linkedRules" :key="rule.uuid">
-                            <td>{{ rule.name }}</td>
-                            <td><span class="badge badge-secondary">{{ rule.typeLabel }}</span></td>
-                            <td><span class="badge" :class="getSeverityClass(rule.level)">{{ t('dashboard.vmAlarmRules.levels.' + rule.level) }}</span></td>
-                            <td>
-                                <span class="badge" :class="rule.enable ? 'badge-success' : 'badge-muted'">
-                                    {{ rule.enable ? t('dashboard.alarm.enabled') : t('dashboard.alarm.disabled') }}
-                                </span>
-                            </td>
-                            <td>
-                                <button class="btn btn-ghost btn-sm text-danger" @click="unlinkRule(rule)" :disabled="unlinkLoading === rule.uuid">
-                                    <Unlink :size="14" /> {{ t('dashboard.instanceDetail.unlink') }}
-                                </button>
-                            </td>
-                        </tr>
+                        <template v-for="rule in linkedRules" :key="rule.uuid">
+                            <tr :class="{ 'row-expanded': expandedRules.has(rule.uuid) }">
+                                <td class="expand-cell">
+                                    <button class="btn-icon-sm" @click="toggleRuleExpand(rule.uuid)">
+                                        <ChevronDown :size="14" :class="{ 'icon-rotate': expandedRules.has(rule.uuid) }" />
+                                    </button>
+                                    {{ rule.name }}
+                                </td>
+                                <td><span class="badge badge-secondary">{{ rule.typeLabel }}</span></td>
+                                <td>
+                                    <span class="badge" :class="rule.enable ? 'badge-success' : 'badge-muted'">
+                                        {{ rule.enable ? t('dashboard.alarm.enabled') : t('dashboard.alarm.disabled') }}
+                                    </span>
+                                </td>
+                                <td>
+                                    <div class="table-actions">
+                                        <button class="btn btn-ghost btn-sm text-danger" @click="unlinkRule(rule)" :disabled="unlinkLoading === rule.uuid">
+                                            <Unlink :size="14" /> {{ t('dashboard.instanceDetail.unlink') }}
+                                        </button>
+                                    </div>
+                                </td>
+                            </tr>
+                            <tr v-if="expandedRules.has(rule.uuid)" class="expansion-row">
+                                <td colspan="4" class="expansion-cell-full">
+                                    <div class="expansion-wrapper">
+                                        <table class="inner-table">
+                                            <thead>
+                                                <tr>
+                                                    <th v-if="rule.type === 'bw'">{{ t('dashboard.table.direction') }}</th>
+                                                        <th>{{ t('dashboard.vmAlarmRules.thresholdLimit') }}</th>
+                                                        <th>{{ t('dashboard.vmAlarmRules.durationMin') }}</th>
+                                                        <th>{{ t('dashboard.vmAlarmRules.ruleLevel') }}</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody>
+                                                    <tr v-for="(detail, idx) in rule.rules" :key="idx">
+                                                        <td v-if="rule.type === 'bw'">
+                                                            {{ detail.direction ? t('dashboard.vmAlarmRules.directions.' + detail.direction) : '-' }}
+                                                        </td>
+                                                        <td>
+                                                            <span v-if="rule.type === 'bw'">{{ (detail.limit / 1024 / 1024).toFixed(0) }} {{ t('specs.mbps') }}</span>
+                                                            <span v-else>{{ detail.limit }}%</span>
+                                                        </td>
+                                                        <td>{{ detail.duration }} {{ t('dashboard.alarm.minutes') }}</td>
+                                                        <td>
+                                                            <span v-if="detail.level || rule.level" class="badge" :class="getSeverityClass(detail.level || rule.level)">
+                                                                {{ t('dashboard.vmAlarmRules.levels.' + (detail.level || rule.level).toLowerCase()) }}
+                                                            </span>
+                                                            <span v-else>-</span>
+                                                        </td>
+                                                    </tr>
+                                                </tbody>
+                                        </table>
+                                    </div>
+                                </td>
+                            </tr>
+                        </template>
                     </tbody>
                 </table>
             </div>
@@ -936,7 +990,6 @@ onMounted(() => {
                                 <div class="rule-pick-info">
                                     <span class="rule-pick-name">{{ rule.name }}</span>
                                     <span class="badge badge-secondary">{{ rule.typeLabel }}</span>
-                                    <span class="badge" :class="getSeverityClass(rule.level)">{{ t('dashboard.vmAlarmRules.levels.' + rule.level) }}</span>
                                 </div>
                                 <Link :size="14" class="rule-pick-icon" />
                             </div>
@@ -1489,37 +1542,134 @@ onMounted(() => {
 
 .alarm-table th {
     text-align: left;
-    padding: 8px 12px;
-    color: var(--text-secondary);
+    padding: var(--spacing-3) var(--spacing-4);
+    color: var(--text-tertiary);
+    font-size: var(--font-size-xs);
     font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    background: var(--bg-secondary);
     border-bottom: 1px solid var(--border-light);
 }
 
 .alarm-table td {
-    padding: 8px 12px;
+    padding: var(--spacing-3) var(--spacing-4);
     border-bottom: 1px solid var(--border-light);
+    color: var(--text-primary);
 }
 
 .alarm-table tr:last-child td {
     border-bottom: none;
 }
 
-.badge-critical { background: #dc2626; color: white; }
-.badge-warning { background: #f59e0b; color: white; }
-.badge-info { background: #3b82f6; color: white; }
-.badge-success { background: #22c55e; color: white; }
-.badge-muted { background: #6b7280; color: white; }
-.badge-secondary { background: #8b5cf6; color: white; }
-.text-danger { color: #ef4444; }
+.badge-critical { background: var(--error-light); color: var(--error-dark); }
+.badge-warning { background: var(--warning-light); color: var(--warning-dark); }
+.badge-info { background: var(--info-light); color: var(--info-dark); }
+.badge-success { background: var(--success-light); color: var(--success-dark); }
+.badge-muted { background: var(--bg-tertiary); color: var(--text-tertiary); }
+.badge-secondary { background: var(--accent-purple-light); color: var(--accent-purple); }
+.text-danger { color: var(--error-color); }
+
+.expand-cell {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-2);
+}
+
+.btn-icon-sm {
+    background: none;
+    border: none;
+    padding: 2px;
+    cursor: pointer;
+    color: var(--text-tertiary);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s;
+}
+
+.btn-icon-sm:hover {
+    background: var(--bg-tertiary);
+    color: var(--primary-color);
+}
+
+.icon-rotate {
+    transform: rotate(180deg);
+}
+
+.table-actions {
+    display: flex;
+    justify-content: flex-end;
+}
+
+.row-expanded td {
+    border-bottom: none !important;
+}
+
+.expansion-cell-full {
+    padding: 0 !important;
+    background: var(--bg-primary);
+}
+
+.expansion-wrapper {
+    padding: var(--spacing-4) var(--spacing-6) var(--spacing-5) 42px;
+    width: 100%;
+}
+
+.section-label {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text-tertiary);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-bottom: var(--spacing-3);
+    display: block;
+}
+
+.inner-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12px;
+    background: var(--bg-primary);
+    border: 1px solid var(--border-light);
+    border-radius: var(--radius-sm);
+    overflow: hidden;
+}
+
+.inner-table tr:hover {
+    background-color: var(--bg-secondary);
+}
+
+.inner-table th {
+    text-align: left;
+    padding: 8px 12px;
+    background: var(--bg-tertiary);
+    color: var(--text-tertiary);
+    font-weight: 600;
+    font-size: 11px;
+    border-bottom: 1px solid var(--border-light);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.inner-table td {
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--border-light);
+    color: var(--text-primary);
+}
+
+.inner-table tr:last-child td {
+    border-bottom: none;
+}
 
 .alarm-error-banner {
-    background: #fef2f2;
-    color: #dc2626;
-    border: 1px solid #fecaca;
-    border-radius: 6px;
-    padding: 10px 14px;
-    margin-bottom: 12px;
-    font-size: 13px;
+    background: var(--error-light);
+    color: var(--error-dark);
+    border: 1px solid var(--error-light);
+    border-radius: var(--radius-md);
+    padding: var(--spacing-3) var(--spacing-4);
+    margin-bottom: var(--spacing-4);
+    font-size: var(--font-size-sm);
     cursor: pointer;
 }
 
@@ -1629,53 +1779,7 @@ onMounted(() => {
     color: var(--primary-color);
 }
 
-/* Toast Notification */
-.toast {
-    position: fixed;
-    top: 24px;
-    right: 24px;
-    z-index: 1000;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 12px 20px;
-    border-radius: var(--radius-md);
-    font-size: var(--font-size-sm);
-    font-weight: 500;
-    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
-    cursor: pointer;
-    max-width: 480px;
-}
 
-.toast-success {
-    background: #f0fdf4;
-    color: #166534;
-    border: 1px solid #bbf7d0;
-}
-
-.toast-error {
-    background: #fef2f2;
-    color: #991b1b;
-    border: 1px solid #fecaca;
-}
-
-.toast-enter-active {
-    transition: opacity 0.25s, transform 0.25s;
-}
-
-.toast-leave-active {
-    transition: opacity 0.2s, transform 0.2s;
-}
-
-.toast-enter-from {
-    opacity: 0;
-    transform: translateX(20px);
-}
-
-.toast-leave-to {
-    opacity: 0;
-    transform: translateX(20px);
-}
 
 /* Security Group inline edit */
 .sg-value-row {
@@ -1733,13 +1837,13 @@ onMounted(() => {
 }
 
 .modal-warning {
-    padding: 8px 12px;
-    background: var(--warning-bg, #fffbeb);
-    border: 1px solid var(--warning-border, #fcd34d);
-    border-radius: var(--radius-sm);
-    color: var(--warning-text, #92400e);
+    padding: var(--spacing-3) var(--spacing-4);
+    background: var(--warning-light);
+    border: 1px solid var(--warning-light);
+    border-radius: var(--radius-md);
+    color: var(--warning-dark);
     font-size: var(--font-size-sm);
-    margin-bottom: 12px;
+    margin-bottom: var(--spacing-4);
 }
 
 .sg-empty-hint {
@@ -1791,12 +1895,12 @@ onMounted(() => {
 .tab-btn.active {
     color: var(--primary-color);
     border-bottom-color: var(--primary-color);
-    background: white;
+    background: var(--bg-primary);
     border-top-left-radius: var(--radius-md);
     border-top-right-radius: var(--radius-md);
 }
 
 .alarm-card {
-    margin-top: 0;
+    margin-top: var(--spacing-4);
 }
 </style>

@@ -30,7 +30,7 @@ export interface VMAlarmRuleGroup {
     name: string
     owner: number
     rules: Record<string, any>[]
-    linkedvms: string[]
+    linkedvms: (string | { instance_id: string; target_device: string })[]
     region_id: string
     level: string
     enable: boolean

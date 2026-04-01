@@ -112,7 +112,7 @@ async def patch_floating_ips_id(
         proxy_path="/floating_ips/{id}"
     )
 
-@router.get("/instance/{id}/interfaces", summary="list interfaces")
+@router.get("/instances/{id}/interfaces", summary="list interfaces")
 async def get_instance_id_interfaces(
     request: Request,
     db: AsyncSession = Depends(get_db),
@@ -124,10 +124,10 @@ async def get_instance_id_interfaces(
     return await proxy_service.forward_to_region(
         request=request,
         db=db,
-        proxy_path="/instance/{id}/interfaces"
+        proxy_path="/instances/{id}/interfaces"
     )
 
-@router.post("/instance/{id}/interfaces", summary="create a interface")
+@router.post("/instances/{id}/interfaces", summary="create a interface")
 async def post_instance_id_interfaces(
     request: Request,
     db: AsyncSession = Depends(get_db),
@@ -139,10 +139,10 @@ async def post_instance_id_interfaces(
     return await proxy_service.forward_to_region(
         request=request,
         db=db,
-        proxy_path="/instance/{id}/interfaces"
+        proxy_path="/instances/{id}/interfaces"
     )
 
-@router.delete("/instance/{id}/interfaces/{interface_id}", summary="delete a interface")
+@router.delete("/instances/{id}/interfaces/{interface_id}", summary="delete a interface")
 async def delete_instance_id_interfaces_interface_id(
     request: Request,
     db: AsyncSession = Depends(get_db),
@@ -154,7 +154,7 @@ async def delete_instance_id_interfaces_interface_id(
     return await proxy_service.forward_to_region(
         request=request,
         db=db,
-        proxy_path="/instance/{id}/interfaces/{interface_id}"
+        proxy_path="/instances/{id}/interfaces/{interface_id}"
     )
 
 @router.get("/instances/{id}/interfaces/{interface_id}", summary="get a interface")

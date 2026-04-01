@@ -407,6 +407,7 @@ export default {
         alarm: {
             enabled: '已启用',
             disabled: '已禁用',
+            minutes: '分',
         },
         alarmEvents: '告警事件',
         notificationChannels: '通知渠道',
@@ -479,6 +480,13 @@ export default {
             noNetworkData: '未获取到网络数据',
             loadError: '获取监控数据失败',
             selectDatesError: '请同时选择开始和结束时间',
+            ranges: {
+                '1h': '1小时',
+                '6h': '6小时',
+                '24h': '24小时',
+                '7d': '7天',
+                '30d': '30天',
+            },
         },
         instanceDetail: {
             resourceMonitoring: '资源监控',
@@ -523,6 +531,7 @@ export default {
             showPassword: '显示密码',
             hidePassword: '隐藏密码',
             copyPassword: '复制密码',
+            copyId: '复制 ID',
             resetPassword: '重置密码',
             userName: '用户名',
             passwordPlaceholder: '至少8个字符',

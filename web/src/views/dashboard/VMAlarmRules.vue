@@ -56,6 +56,7 @@ const vmSearchQuery = ref('')
 // Expansion logic
 const expandedRules = ref<string[]>([])
 const ruleChannels = ref<Record<string, NotificationChannel[]>>({})
+const ruleChannelCounts = ref<Record<string, number>>({})
 
 const toggleRule = async (id: string) => {
     const idx = expandedRules.value.indexOf(id)
@@ -71,9 +72,11 @@ const toggleRule = async (id: string) => {
                 const bindings = (bindingsRes.data as any).bindings || []
                 const boundUuids: string[] = bindings.map((b: any) => b.channel_uuid)
                 ruleChannels.value[id] = allCh.filter(c => boundUuids.includes(c.uuid))
+                ruleChannelCounts.value[id] = ruleChannels.value[id].length
             } catch (err) {
                 console.error('Failed to load rule channels:', err)
                 ruleChannels.value[id] = []
+                ruleChannelCounts.value[id] = 0
             }
         }
     } else {
@@ -95,13 +98,16 @@ const getVMName = (id: string) => {
     return vm.hostname || vm.name || id.substring(0, 8)
 }
 
+const getLinkedVMId = (entry: string | { instance_id: string; target_device: string }) =>
+    typeof entry === 'string' ? entry : entry.instance_id
+
 const filteredRules = computed(() => {
     if (!searchQuery.value) return rules.value
     const q = searchQuery.value.toLowerCase()
     return rules.value.filter(r => {
         if (r.name.toLowerCase().includes(q) || r.uuid.toLowerCase().includes(q)) return true
         if (r.linkedvms) {
-            return r.linkedvms.some(id => getVMName(id).toLowerCase().includes(q))
+            return r.linkedvms.some(entry => getVMName(getLinkedVMId(entry as any)).toLowerCase().includes(q))
         }
         return false
     })
@@ -119,24 +125,41 @@ const fetchAllVMs = async () => {
 
 const fetchRules = async () => {
     loading.value = true
+    errorMsg.value = ''
     try {
-        // Fetch VMs first for name mapping
-        if (allVMs.value.length === 0) {
-            await fetchAllVMs()
-        }
         const types: VMRuleType[] = ['cpu', 'memory', 'bw']
-        const results = await Promise.all(types.map(t => vmAlarmRulesApi.listRules(t)))
-        
+        const [, ...ruleResults] = await Promise.allSettled([
+            allVMs.value.length === 0 ? fetchAllVMs() : Promise.resolve(),
+            ...types.map(type => vmAlarmRulesApi.listRules(type)),
+        ])
+
         const allRules: VMAlarmRuleGroup[] = []
-        results.forEach((res, idx) => {
+        ruleResults.forEach((result, idx) => {
             const type = types[idx]
-            const typeRules = (res.data.data || []).map(r => ({ ...r, type }))
-            allRules.push(...typeRules)
+            if (result.status === 'fulfilled') {
+                const typeRules = (result.value.data.data || []).map((r: any) => ({ ...r, type }))
+                allRules.push(...typeRules)
+            } else {
+                console.error(`Failed to fetch ${type} alarm rules:`, result.reason)
+            }
         })
-        
+
         rules.value = allRules
         total.value = allRules.length
         totalPages.value = 1
+
+        // Pre-fetch channel counts for all rules in background
+        Promise.allSettled(allRules.map(r => alarmEventsApi.getRuleChannels(r.uuid))).then(results => {
+            results.forEach((result, idx) => {
+                const uuid = allRules[idx].uuid
+                if (result.status === 'fulfilled') {
+                    const bindings = (result.value.data as any).bindings || []
+                    ruleChannelCounts.value[uuid] = bindings.length
+                } else {
+                    ruleChannelCounts.value[uuid] = 0
+                }
+            })
+        })
     } catch (err) {
         console.error('Failed to fetch VM alarm rules:', err)
         errorMsg.value = t('messages.error')
@@ -318,7 +341,9 @@ const saveChannelBindings = async () => {
     if (!bindTarget.value) return
     try {
         await alarmEventsApi.bindRuleChannels(bindTarget.value.uuid, selectedChannelUuids.value)
-        delete ruleChannels.value[bindTarget.value.uuid]
+        const uuid = bindTarget.value.uuid
+        ruleChannelCounts.value[uuid] = selectedChannelUuids.value.length
+        delete ruleChannels.value[uuid]
         showBindModal.value = false
         toast.success(t('messages.success'))
     } catch (err: any) {
@@ -343,7 +368,7 @@ const toggleChannel = (uuid: string) => {
 // --- VM Binding ---
 const openBindVMs = async (rule: VMAlarmRuleGroup) => {
     bindVMsTarget.value = rule
-    selectedVMUuids.value = rule.linkedvms ? [...rule.linkedvms] : []
+    selectedVMUuids.value = rule.linkedvms ? rule.linkedvms.map((e: any) => getLinkedVMId(e)) : []
     showBindVMsModal.value = true
     vmsLoading.value = true
     vmSearchQuery.value = ''
@@ -379,10 +404,10 @@ const saveVMBindings = async () => {
     linkVMsLoading.value = true
     try {
         const groupUuid = bindVMsTarget.value.uuid
-        const currentVMs = bindVMsTarget.value.linkedvms || []
+        const currentVMIds = (bindVMsTarget.value.linkedvms || []).map((e: any) => getLinkedVMId(e))
 
-        const toLink = selectedVMUuids.value.filter(id => !currentVMs.includes(id))
-        const toUnlink = currentVMs.filter(id => !selectedVMUuids.value.includes(id))
+        const toLink = selectedVMUuids.value.filter(id => !currentVMIds.includes(id))
+        const toUnlink = currentVMIds.filter(id => !selectedVMUuids.value.includes(id))
 
         if (toLink.length > 0) {
             await vmAlarmRulesApi.linkRule(groupUuid, toLink.map(id => ({ vm_uuid: id })))
@@ -478,7 +503,8 @@ onMounted(fetchRules)
                                     {{ rule.enable ? t('dashboard.alarm.enabled') : t('dashboard.alarm.disabled') }}
                                 </span>
                             </div>
-                            <span class="linked-badge">{{ t('dashboard.vmAlarmRules.linkedCount', { count: rule.linkedvms?.length || 0 }) }}</span>
+                            <span class="linked-badge">{{ t('dashboard.vmAlarmRules.linkedVMs') }} ({{ rule.linkedvms?.length || 0 }})</span>
+                            <span class="linked-badge">{{ t('dashboard.vmAlarmRules.linkedChannels') }} ({{ ruleChannelCounts[rule.uuid] ?? '…' }})</span>
                         </div>
                         <div class="rule-actions">
                             <button class="icon-btn-table" @click.stop="openBindVMs(rule)" :title="t('dashboard.vmAlarmRules.bindVMs')">
@@ -532,9 +558,9 @@ onMounted(fetchRules)
                         <div class="vms-section">
                             <div class="section-label">{{ t('dashboard.vmAlarmRules.linkedVMs') }} ({{ rule.linkedvms?.length || 0 }})</div>
                             <div class="linked-vms-chips">
-                                <div v-for="vmId in rule.linkedvms" :key="vmId" class="vm-chip" :title="vmId">
-                                    {{ getVMName(vmId) }}
-                                    <span class="badge badge-secondary" style="margin-left: 4px; font-size: 10px;">{{ vmId.substring(0, 8) }}</span>
+                                <div v-for="entry in rule.linkedvms" :key="getLinkedVMId(entry as any)" class="vm-chip" :title="getLinkedVMId(entry as any)">
+                                    {{ getVMName(getLinkedVMId(entry as any)) }}
+                                    <span class="badge badge-secondary" style="margin-left: 4px; font-size: 10px;">{{ getLinkedVMId(entry as any).substring(0, 8) }}</span>
                                 </div>
                                 <div v-if="!rule.linkedvms || rule.linkedvms.length === 0" class="text-secondary" style="font-size: 12px;">
                                     {{ t('dashboard.vmAlarmRules.noLinkedVMs') }}

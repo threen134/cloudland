@@ -50,8 +50,8 @@ const fetchData = async () => {
                 datasets: [{
                     label: t('dashboard.monitoring.cpuUsage'),
                     data: result.values.map((v: any) => parseFloat(v.value)),
-                    borderColor: '#3b82f6',
-                    backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                    borderColor: '#0ea5e9',
+                    backgroundColor: 'rgba(14, 165, 233, 0.1)',
                     fill: true,
                 }]
             }
@@ -101,7 +101,7 @@ const fetchData = async () => {
                     if (i.id) ifaceNameById[i.id] = i.name || `eth${idx}`
                 })
 
-                const colors = ['#6366f1', '#f59e0b', '#10b981', '#ef4444', '#8b5cf6', '#06b6d4']
+                const colors = ['#0ea5e9', '#06b6d4', '#10b981', '#f59e0b', '#8b5cf6', '#f43f5e']
                 const datasets: any[] = []
                 let labels: string[] = []
                 let colorIdx = 0
@@ -159,7 +159,7 @@ watch(() => props.instanceId, fetchData)
                         :class="['range-btn', { active: timeRange === r.value }]"
                         @click="setRange(r)"
                     >
-                        {{ r.label }}
+                        {{ t('dashboard.monitoring.ranges.' + r.value) }}
                     </button>
                     <button
                         :class="['range-btn', { active: timeRange === 'custom' }]"
@@ -227,7 +227,7 @@ watch(() => props.instanceId, fetchData)
 <style scoped>
 .monitoring-container {
     padding: var(--spacing-5);
-    margin-top: var(--spacing-5);
+    margin-top: var(--spacing-4);
 }
 
 .monitor-header {
@@ -284,7 +284,7 @@ watch(() => props.instanceId, fetchData)
 .range-btn.active {
     background: var(--bg-primary);
     color: var(--primary-color);
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+    box-shadow: var(--shadow-sm);
 }
 
 .custom-range-bar {
@@ -340,9 +340,9 @@ watch(() => props.instanceId, fetchData)
 }
 
 .chart-title {
-    font-size: var(--font-size-xs);
+    font-size: var(--font-size-tiny);
     font-weight: 600;
-    color: var(--text-secondary);
+    color: var(--text-tertiary);
     margin-bottom: var(--spacing-3);
     text-transform: uppercase;
     letter-spacing: 0.05em;

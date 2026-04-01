@@ -408,6 +408,7 @@ export default {
         alarm: {
             enabled: 'Enabled',
             disabled: 'Disabled',
+            minutes: 'min',
         },
         alarmEvents: 'Alarm Events',
         notificationChannels: 'Notification Channels',
@@ -480,6 +481,13 @@ export default {
             noNetworkData: 'No Network data found',
             loadError: 'Failed to load monitoring data',
             selectDatesError: 'Please select both start and end times',
+            ranges: {
+                '1h': '1h',
+                '6h': '6h',
+                '24h': '24h',
+                '7d': '7d',
+                '30d': '30d',
+            },
         },
         instanceDetail: {
             resourceMonitoring: 'Resource Monitoring',
@@ -524,6 +532,7 @@ export default {
             showPassword: 'Show password',
             hidePassword: 'Hide password',
             copyPassword: 'Copy password',
+            copyId: 'Copy ID',
             resetPassword: 'Reset Password',
             userName: 'Username',
             passwordPlaceholder: 'At least 8 characters',
