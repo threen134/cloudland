@@ -1919,7 +1919,7 @@ func (a *AdjustAPI) cleanupVMMetrics(ctx context.Context, vmUUID, ruleGroupUUID 
 // @Success 200 {object} map[string]interface{} "Rule links"
 // @Failure 400 {object} map[string]interface{} "Bad request"
 // @Failure 404 {object} map[string]interface{} "Rule not found"
-// @Router /metrics/api/v1/rules/links [get]
+// @Router /rules/links [get]
 func (a *AdjustAPI) GetRuleLinks(c *gin.Context) {
 	ruleID := c.Query("rule_id")
 	if ruleID == "" {
@@ -2095,7 +2095,7 @@ func (a *AdjustAPI) cleanupRuleMetricsOnNodes(ctx context.Context, ruleGroupUUID
 // @Param hyper_id query string false "Specific hyper node ID"
 // @Success 200 {object} map[string]interface{} "Regeneration result"
 // @Failure 500 {object} map[string]interface{} "Internal server error"
-// @Router /metrics/api/v1/adjust/regenerate-bandwidth-metrics [post]
+// @Router /adjust/regenerate-bandwidth-metrics [post]
 func (a *AdjustAPI) RegenerateBandwidthConfigMetrics(c *gin.Context) {
 	ctx := c.Request.Context()
 

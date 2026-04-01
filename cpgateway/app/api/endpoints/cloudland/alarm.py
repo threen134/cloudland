@@ -207,7 +207,7 @@ async def link_alarm_rule(
     current_user: User = Depends(get_current_active_user),
 ):
     return await proxy_service.forward_to_region(
-        request=request, db=db, proxy_path="/alarm/link",
+        request=request, db=db, proxy_path="/metrics/alarm/link",
     )
 
 
@@ -218,5 +218,5 @@ async def unlink_alarm_rule(
     current_user: User = Depends(get_current_active_user),
 ):
     return await proxy_service.forward_to_region(
-        request=request, db=db, proxy_path="/alarm/unlink",
+        request=request, db=db, proxy_path="/metrics/alarm/unlink",
     )

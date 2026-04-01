@@ -365,6 +365,21 @@ func (a *AlarmOperator) GetRulesByGroupUUID(ctx context.Context, groupUUID strin
 			Details:     details,
 		}
 		return (*model.RuleGroupV2)(unsafe.Pointer(result)), nil
+	case "memory":
+		details, err := a.GetMemoryRuleDetails(ctx, groupUUID)
+		if err != nil {
+			logger.Errorf("detail rules query failed: groupID=%s, error=%v", groupUUID, err)
+			return nil, fmt.Errorf("detail rules query failed: %w", err)
+		}
+		type ResultGroup struct {
+			model.RuleGroupV2
+			Details []model.MemoryRuleDetail `gorm:"-"`
+		}
+		result := &ResultGroup{
+			RuleGroupV2: groups[0],
+			Details:     details,
+		}
+		return (*model.RuleGroupV2)(unsafe.Pointer(result)), nil
 	case "bw":
 		details, err := a.GetBWRuleDetails(ctx, groupUUID)
 		if err != nil {

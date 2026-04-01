@@ -1351,7 +1351,7 @@ func (a *AlarmAPI) DeleteMemoryRule(c *gin.Context) {
 // @Produce json
 // @Success 200 {object} map[string]interface{} "Current alarms"
 // @Failure 500 {object} map[string]interface{} "Internal server error"
-// @Router /metrics/api/v1/current-alarms [get]
+// @Router /metrics/current-alarms [get]
 func (a *AlarmAPI) GetCurrentAlarms(c *gin.Context) {
 	client := &http.Client{Timeout: 5 * time.Second}
 	targetURL := fmt.Sprintf("http://%s:%d/api/v1/alerts", services.GetPrometheusIP(), services.GetPrometheusPort())
@@ -1415,7 +1415,7 @@ func (a *AlarmAPI) GetCurrentAlarms(c *gin.Context) {
 // @Success 200 {object} map[string]interface{} "Historical alarm data"
 // @Failure 400 {object} map[string]interface{} "Bad request"
 // @Failure 500 {object} map[string]interface{} "Internal server error"
-// @Router /metrics/api/v1/history-alarms [get]
+// @Router /metrics/history-alarms [get]
 func (a *AlarmAPI) GetHistoryAlarm(c *gin.Context) {
 	startStr := c.Query("start")
 	endStr := c.Query("end")
@@ -2235,7 +2235,7 @@ func (a *AlarmAPI) processRuleMappings(ctx context.Context, groups interface{}, 
 // @Produce json
 // @Success 200 {object} map[string]interface{} "Synchronization successful"
 // @Failure 500 {object} map[string]interface{} "Internal server error"
-// @Router /api/v1/metrics/alarm/sync-mappings [post]
+// @Router /metrics/alarm/sync-mappings [post]
 func (a *AlarmAPI) SyncAllVMRuleMappings(c *gin.Context) {
 	ctx := c.Request.Context()
 	ms := common.GetMemberShip(ctx)
