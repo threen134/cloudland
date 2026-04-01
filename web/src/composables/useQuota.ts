@@ -20,7 +20,7 @@ export function useQuota() {
             quotaSummary.value = response.data
             editingQuota.value = {}
             for (const region of (response.data.regions || [])) {
-                editingQuota.value[region.region_name] = {
+                editingQuota.value[region.region_uuid] = {
                     max_cpu_cores: region.quota.max_cpu_cores,
                     max_ram_gb: region.quota.max_ram_gb,
                     max_public_ips: region.quota.max_public_ips,
@@ -34,10 +34,10 @@ export function useQuota() {
         }
     }
 
-    const handleSaveQuota = async (orgId: string, regionName: string) => {
-        savingQuota.value = regionName
+    const handleSaveQuota = async (orgId: string, regionUuid: string) => {
+        savingQuota.value = regionUuid
         try {
-            await quotaApi.updateOrgQuota(orgId, regionName, editingQuota.value[regionName])
+            await quotaApi.updateOrgQuota(orgId, regionUuid, editingQuota.value[regionUuid])
             toast.success(t('messages.updateSuccess'))
             await fetchQuota(orgId)
         } catch (err: any) {

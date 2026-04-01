@@ -7,6 +7,9 @@ import { useRegionStore } from '../../stores/region'
 import { useI18n } from 'vue-i18n'
 import { setLanguage, getCurrentLanguage } from '../../locales'
 import { alarmEventsApi } from '../../api/alarmEvents'
+import { authApi } from '../../api/auth'
+import { setAuthToken } from '../../api/client'
+import { useToast } from '../../composables/useToast'
 import { 
     LayoutDashboard, 
     Server, 
@@ -57,7 +60,9 @@ const region = useRegionStore()
 const router = useRouter()
 const route = useRoute()
 const { t, locale } = useI18n()
+const toast = useToast()
 const isSidebarCollapsed = ref(false)
+const isSwitchingRegion = ref(false)
 
 const toggleSidebar = () => {
     isSidebarCollapsed.value = !isSidebarCollapsed.value
@@ -100,9 +105,23 @@ const handleSwitchLanguage = (lang: string) => {
     activeDropdown.value = null
 }
 
-const handleSwitchRegion = (regionId: string) => {
-    region.setCurrentRegion(regionId)
-    activeDropdown.value = null
+const handleSwitchRegion = async (regionId: string) => {
+    if (isSwitchingRegion.value) return
+    isSwitchingRegion.value = true
+    try {
+        const response = await authApi.switchRegion(regionId)
+        const newToken = response.data?.access_token
+        if (newToken) {
+            setAuthToken(newToken)
+        }
+        region.setCurrentRegion(regionId)
+        activeDropdown.value = null
+    } catch (err) {
+        console.error('Failed to switch region:', err)
+        toast.error(t('messages.error'))
+    } finally {
+        isSwitchingRegion.value = false
+    }
 }
 
 const handleSwitchOrg = async (orgId: string) => {
@@ -404,7 +423,10 @@ onUnmounted(() => {
             </button>
             <div class="dropdown-menu-portal" v-show="activeDropdown === 'region'">
               <div v-for="r in region.availableRegions" :key="r.id"
-                class="dropdown-item-portal" :class="{ active: region.currentRegionId === r.id }" @click="handleSwitchRegion(r.id)">
+                class="dropdown-item-portal"
+                :class="{ active: region.currentRegionId === r.id, disabled: isSwitchingRegion }"
+                :style="isSwitchingRegion ? { opacity: '0.6', cursor: 'not-allowed' } : {}"
+                @click="handleSwitchRegion(r.id)">
                 {{ $te('regions.' + r.name) ? $t('regions.' + r.name) : (r.label || r.name) }}
               </div>
             </div>

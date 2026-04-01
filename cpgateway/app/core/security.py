@@ -51,7 +51,7 @@ class TokenClaims(BaseModel):
     email: str
     org_id: str        # org uuid (kept as 'org_id' claim name for JWT compat)
     org_name: str      # Org 名称
-    region: str        # 目标 Region name
+    region: str        # 目标 Region UUID
     sr: int            # SystemRole (0=User, 1=Admin)
     or_: int           # OrgRole (0-3)
     st: int            # UserStatus (1/2/3)

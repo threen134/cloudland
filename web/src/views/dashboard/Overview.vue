@@ -53,7 +53,7 @@ onMounted(async () => {
     try {
         // Fetch resource data and quota in parallel
         const orgUuid = auth.user?.current_org_uuid || ''
-        const regionName = regionStore.currentRegion?.name || auth.user?.current_region || ''
+        const regionUuid = regionStore.currentRegionId || ''
 
         const [instRes, volRes, imgRes, vpcRes, fipRes, quotaRes] = await Promise.all([
             instancesApi.fetchInstances(),
@@ -61,8 +61,8 @@ onMounted(async () => {
             imagesApi.fetchImages(),
             vpcsApi.list({ limit: 100 }),
             floatingIpsApi.list({ limit: 100 }),
-            (orgUuid && regionName)
-                ? quotaApi.getOrgRegionResourceInfo(orgUuid, regionName).catch(() => null)
+            (orgUuid && regionUuid)
+                ? quotaApi.getOrgRegionResourceInfo(orgUuid, regionUuid).catch(() => null)
                 : Promise.resolve(null),
         ])
 

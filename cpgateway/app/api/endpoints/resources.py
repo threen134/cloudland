@@ -55,18 +55,19 @@ async def _get_org_or_404(db: AsyncSession, org_uuid: str) -> Organization:
     return org
 
 
-async def _get_region_by_name_or_404(db: AsyncSession, region_name: str) -> Region:
-    result = await db.execute(select(Region).where(Region.name == region_name))
+async def _get_region_by_uuid_or_404(db: AsyncSession, region_uuid: str) -> Region:
+    result = await db.execute(select(Region).where(Region.uuid == region_uuid))
     region = result.scalars().first()
     if not region:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Region '{region_name}' not found")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Region '{region_uuid}' not found")
     return region
 
 
-def _build_quota_schema(q: OrgResourceQuota, org_uuid: str, region_name: str) -> OrgResourceQuotaSchema:
+def _build_quota_schema(q: OrgResourceQuota, org_uuid: str, region: Region) -> OrgResourceQuotaSchema:
     return OrgResourceQuotaSchema(
         org_uuid=org_uuid,
-        region_name=region_name,
+        region_uuid=region.uuid,
+        region_name=region.name,
         max_cpu_cores=q.max_cpu_cores,
         max_ram_gb=q.max_ram_gb,
         max_public_ips=q.max_public_ips,
@@ -76,10 +77,11 @@ def _build_quota_schema(q: OrgResourceQuota, org_uuid: str, region_name: str) ->
     )
 
 
-def _build_consumption_schema(c: OrgResourceConsumption, org_uuid: str, region_name: str) -> OrgResourceConsumptionSchema:
+def _build_consumption_schema(c: OrgResourceConsumption, org_uuid: str, region: Region) -> OrgResourceConsumptionSchema:
     return OrgResourceConsumptionSchema(
         org_uuid=org_uuid,
-        region_name=region_name,
+        region_uuid=region.uuid,
+        region_name=region.name,
         cpu_cores=c.cpu_cores,
         ram_gb=c.ram_gb,
         public_ips=c.public_ips,
@@ -87,9 +89,10 @@ def _build_consumption_schema(c: OrgResourceConsumption, org_uuid: str, region_n
     )
 
 
-def _build_resource_info(q: OrgResourceQuota, c: OrgResourceConsumption, region_name: str) -> OrgResourceInfo:
+def _build_resource_info(q: OrgResourceQuota, c: OrgResourceConsumption, region: Region) -> OrgResourceInfo:
     return OrgResourceInfo(
-        region_name=region_name,
+        region_uuid=region.uuid,
+        region_name=region.name,
         quota=QuotaFields(
             max_cpu_cores=q.max_cpu_cores,
             max_ram_gb=q.max_ram_gb,
@@ -122,20 +125,20 @@ async def get_org_quotas(
         .where(OrgResourceQuota.org_id == org.id)
     )
     rows = result.all()
-    return [_build_quota_schema(q, org_uuid, r.name) for q, r in rows]
+    return [_build_quota_schema(q, org_uuid, r) for q, r in rows]
 
 
-@router.get("/quota/{org_uuid}/{region_name}", response_model=OrgResourceQuotaSchema)
+@router.get("/quota/{org_uuid}/{region_uuid}", response_model=OrgResourceQuotaSchema)
 async def get_org_region_quota(
     org_uuid: str,
-    region_name: str,
+    region_uuid: str,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
     """获取 org 在特定 region 的配额"""
     org = await _get_org_or_404(db, org_uuid)
     await _check_org_access(db, current_user, org)
-    region = await _get_region_by_name_or_404(db, region_name)
+    region = await _get_region_by_uuid_or_404(db, region_uuid)
     result = await db.execute(
         select(OrgResourceQuota).where(
             OrgResourceQuota.org_id == org.id,
@@ -145,20 +148,20 @@ async def get_org_region_quota(
     quota = result.scalars().first()
     if not quota:
         raise HTTPException(status_code=404, detail="Quota record not found for this org-region")
-    return _build_quota_schema(quota, org_uuid, region_name)
+    return _build_quota_schema(quota, org_uuid, region)
 
 
-@router.put("/quota/{org_uuid}/{region_name}", response_model=OrgResourceQuotaSchema)
+@router.put("/quota/{org_uuid}/{region_uuid}", response_model=OrgResourceQuotaSchema)
 async def update_org_region_quota(
     org_uuid: str,
-    region_name: str,
+    region_uuid: str,
     quota_update: OrgResourceQuotaUpdate,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_superuser),
 ):
     """设置 org 在特定 region 的配额（superuser only）"""
     org = await _get_org_or_404(db, org_uuid)
-    region = await _get_region_by_name_or_404(db, region_name)
+    region = await _get_region_by_uuid_or_404(db, region_uuid)
     result = await db.execute(
         select(OrgResourceQuota).where(
             OrgResourceQuota.org_id == org.id,
@@ -175,7 +178,7 @@ async def update_org_region_quota(
 
     await db.commit()
     await db.refresh(quota)
-    return _build_quota_schema(quota, org_uuid, region_name)
+    return _build_quota_schema(quota, org_uuid, region)
 
 
 # === Consumption Endpoints ===
@@ -195,20 +198,20 @@ async def get_org_consumptions(
         .where(OrgResourceConsumption.org_id == org.id)
     )
     rows = result.all()
-    return [_build_consumption_schema(c, org_uuid, r.name) for c, r in rows]
+    return [_build_consumption_schema(c, org_uuid, r) for c, r in rows]
 
 
-@router.get("/consumption/{org_uuid}/{region_name}", response_model=OrgResourceConsumptionSchema)
+@router.get("/consumption/{org_uuid}/{region_uuid}", response_model=OrgResourceConsumptionSchema)
 async def get_org_region_consumption(
     org_uuid: str,
-    region_name: str,
+    region_uuid: str,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
     """获取 org 在特定 region 的消费"""
     org = await _get_org_or_404(db, org_uuid)
     await _check_org_access(db, current_user, org)
-    region = await _get_region_by_name_or_404(db, region_name)
+    region = await _get_region_by_uuid_or_404(db, region_uuid)
     result = await db.execute(
         select(OrgResourceConsumption).where(
             OrgResourceConsumption.org_id == org.id,
@@ -218,7 +221,7 @@ async def get_org_region_consumption(
     consumption = result.scalars().first()
     if not consumption:
         raise HTTPException(status_code=404, detail="Consumption record not found for this org-region")
-    return _build_consumption_schema(consumption, org_uuid, region_name)
+    return _build_consumption_schema(consumption, org_uuid, region)
 
 
 # === Combined Info Endpoints ===
@@ -245,24 +248,24 @@ async def get_org_resource_summary(
     )
 
     regions = [
-        _build_resource_info(q, c, r.name)
+        _build_resource_info(q, c, r)
         for q, c, r in result.all()
     ]
 
     return OrgResourceSummary(org_uuid=org_uuid, regions=regions)
 
 
-@router.get("/info/{org_uuid}/{region_name}", response_model=OrgResourceInfo)
+@router.get("/info/{org_uuid}/{region_uuid}", response_model=OrgResourceInfo)
 async def get_org_region_resource_info(
     org_uuid: str,
-    region_name: str,
+    region_uuid: str,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
     """获取 org 在特定 region 的配额+消费（单次 JOIN 查询）"""
     org = await _get_org_or_404(db, org_uuid)
     await _check_org_access(db, current_user, org)
-    region = await _get_region_by_name_or_404(db, region_name)
+    region = await _get_region_by_uuid_or_404(db, region_uuid)
 
     result = await db.execute(
         select(OrgResourceQuota, OrgResourceConsumption)
@@ -281,4 +284,4 @@ async def get_org_region_resource_info(
         raise HTTPException(status_code=404, detail="Quota/consumption record not found for this org-region")
 
     quota, consumption = row
-    return _build_resource_info(quota, consumption, region_name)
+    return _build_resource_info(quota, consumption, region)

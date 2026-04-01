@@ -185,9 +185,9 @@ const closeQuotaModal = () => {
     quotaModalVisible.value = false
 }
 
-const handleSaveQuota = async (regionName: string) => {
+const handleSaveQuota = async (regionUuid: string) => {
     try {
-        await handleSaveQuotaBase(quotaOrgId.value, regionName)
+        await handleSaveQuotaBase(quotaOrgId.value, regionUuid)
         toast.success(t('messages.updateSuccess'))
     } catch (err: any) {
         toast.error(err.response?.data?.error_message || err.message || t('messages.error'))
@@ -412,8 +412,8 @@ onMounted(fetchOrgs)
                         v-if="isSuperuser"
                         type="number"
                         class="form-input quota-input"
-                        :value="editingQuota[region.region_name]?.[res.qkey as keyof OrgResourceQuotaUpdate]"
-                        @input="(e: any) => { if (editingQuota[region.region_name]) (editingQuota[region.region_name] as any)[res.qkey] = Number(e.target.value) }"
+                        :value="editingQuota[region.region_uuid]?.[res.qkey as keyof OrgResourceQuotaUpdate]"
+                        @input="(e: any) => { if (editingQuota[region.region_uuid]) (editingQuota[region.region_uuid] as any)[res.qkey] = Number(e.target.value) }"
                         min="0"
                         step="1"
                       />
@@ -438,10 +438,10 @@ onMounted(fetchOrgs)
               <div v-if="isSuperuser" class="quota-save-row">
                 <button
                   class="btn btn-primary btn-sm"
-                  @click="handleSaveQuota(region.region_name)"
-                  :disabled="savingQuota === region.region_name"
+                  @click="handleSaveQuota(region.region_uuid)"
+                  :disabled="savingQuota === region.region_uuid"
                 >
-                  {{ savingQuota === region.region_name ? $t('messages.loading') : $t('actions.save') }}
+                  {{ savingQuota === region.region_uuid ? $t('messages.loading') : $t('actions.save') }}
                 </button>
               </div>
             </div>

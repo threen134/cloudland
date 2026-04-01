@@ -45,6 +45,11 @@ export const authApi = {
         return client.post<LoginResponse>('/auth/switch-org', { org_uuid: orgUuid, region })
     },
 
+    // Switch region (returns new token)
+    switchRegion(regionUuid: string) {
+        return client.post<LoginResponse>('/auth/switch-region', { region: regionUuid })
+    },
+
     // Get current user's organizations
     getMyOrgs() {
         return client.get('/auth/me/orgs')

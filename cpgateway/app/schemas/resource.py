@@ -34,6 +34,7 @@ class OrgResourceQuotaUpdate(BaseModel):
 class OrgResourceQuota(QuotaFields):
     """单独返回配额时使用"""
     org_uuid: str
+    region_uuid: str
     region_name: str
     created_at: datetime
     updated_at: datetime
@@ -45,6 +46,7 @@ class OrgResourceQuota(QuotaFields):
 class OrgResourceConsumption(ConsumptionFields):
     """单独返回消费时使用"""
     org_uuid: str
+    region_uuid: str
     region_name: str
 
     class Config:
@@ -55,6 +57,7 @@ class OrgResourceConsumption(ConsumptionFields):
 
 class OrgResourceInfo(BaseModel):
     """单个 region 的配额和消费（嵌套用 Fields，避免重复字段）"""
+    region_uuid: str
     region_name: str
     consumption: ConsumptionFields
     quota: QuotaFields

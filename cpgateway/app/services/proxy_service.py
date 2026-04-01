@@ -132,15 +132,15 @@ class ProxyService:
                 raise HTTPException(status_code=401, detail="Token has been revoked")
 
         # 3. Resolve region
-        region_name = claims.get("region", "")
+        region_uuid = claims.get("region", "")
         result = await db.execute(
-            select(Region).where(Region.name == region_name)
+            select(Region).where(Region.uuid == region_uuid)
         )
         region_obj = result.scalars().first()
         if not region_obj:
-            raise HTTPException(status_code=404, detail=f"Region '{region_name}' not found")
+            raise HTTPException(status_code=404, detail=f"Region '{region_uuid}' not found")
         if not region_obj.is_available:
-            raise HTTPException(status_code=503, detail=f"Region '{region_name}' is currently unavailable")
+            raise HTTPException(status_code=503, detail=f"Region '{region_obj.name}' is currently unavailable")
 
         # 4. Resolve UUIDs to internal integer IDs
         user_uuid = claims.get("sub", "")

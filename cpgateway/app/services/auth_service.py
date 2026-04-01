@@ -219,12 +219,12 @@ class AuthService:
         target_region = ""
         if region:
             region_result = await db.execute(
-                select(Region).where(Region.name == region, Region.is_available == True)
+                select(Region).where(Region.uuid == region, Region.is_available == True)
             )
             region_obj = region_result.scalars().first()
             if not region_obj:
                 raise ValueError(f"Region '{region}' not found or unavailable")
-            target_region = region_obj.name
+            target_region = region_obj.uuid
         else:
             # Get first available region
             region_result = await db.execute(
@@ -232,7 +232,7 @@ class AuthService:
             )
             region_obj = region_result.scalars().first()
             if region_obj:
-                target_region = region_obj.name
+                target_region = region_obj.uuid
 
         # Build and sign token
         claims = build_token_claims(
@@ -313,7 +313,7 @@ class AuthService:
         target_region = region or current_claims.get("region", "")
         if target_region:
             region_result = await db.execute(
-                select(Region).where(Region.name == target_region, Region.is_available == True)
+                select(Region).where(Region.uuid == target_region, Region.is_available == True)
             )
             if not region_result.scalars().first():
                 raise ValueError(f"Region '{target_region}' not found or unavailable")
@@ -353,7 +353,7 @@ class AuthService:
         """切换 Region（Org 不变），签发新 Token，吊销旧 Token。重新查询 DB 获取最新 role/status。"""
         # Verify region
         region_result = await db.execute(
-            select(Region).where(Region.name == new_region, Region.is_available == True)
+            select(Region).where(Region.uuid == new_region, Region.is_available == True)
         )
         if not region_result.scalars().first():
             raise ValueError(f"Region '{new_region}' not found or unavailable")

@@ -47,7 +47,7 @@ const {
 } = useQuota()
 const isSuperuser = computed(() => authStore.user?.is_superuser === true)
 
-const handleSaveQuota = (regionName: string) => handleSaveQuotaBase(orgId, regionName)
+const handleSaveQuota = (regionUuid: string) => handleSaveQuotaBase(orgId, regionUuid)
 
 const openQuotaModal = () => {
     quotaModalVisible.value = true
@@ -522,8 +522,8 @@ onUnmounted(() => {
                         v-if="isSuperuser"
                         type="number"
                         class="form-input quota-input"
-                        :value="editingQuota[region.region_name]?.[res.qkey as keyof OrgResourceQuotaUpdate]"
-                        @input="(e: any) => { if (editingQuota[region.region_name]) (editingQuota[region.region_name] as any)[res.qkey] = Number(e.target.value) }"
+                        :value="editingQuota[region.region_uuid]?.[res.qkey as keyof OrgResourceQuotaUpdate]"
+                        @input="(e: any) => { if (editingQuota[region.region_uuid]) (editingQuota[region.region_uuid] as any)[res.qkey] = Number(e.target.value) }"
                         min="0"
                         step="1"
                       />
@@ -548,10 +548,10 @@ onUnmounted(() => {
               <div v-if="isSuperuser" class="quota-save-row">
                 <button
                   class="btn btn-primary btn-sm"
-                  @click="handleSaveQuota(region.region_name)"
-                  :disabled="savingQuota === region.region_name"
+                  @click="handleSaveQuota(region.region_uuid)"
+                  :disabled="savingQuota === region.region_uuid"
                 >
-                  {{ savingQuota === region.region_name ? $t('messages.loading') : $t('actions.save') }}
+                  {{ savingQuota === region.region_uuid ? $t('messages.loading') : $t('actions.save') }}
                 </button>
               </div>
             </div>

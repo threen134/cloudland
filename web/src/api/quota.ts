@@ -27,6 +27,7 @@ export interface OrgResourceQuotaUpdate {
 
 export interface OrgResourceQuota extends QuotaFields {
     org_uuid: string
+    region_uuid: string
     region_name: string
     created_at: string
     updated_at: string
@@ -34,12 +35,14 @@ export interface OrgResourceQuota extends QuotaFields {
 
 export interface OrgResourceConsumption extends ConsumptionFields {
     org_uuid: string
+    region_uuid: string
     region_name: string
 }
 
 // === 组合类型 ===
 
 export interface OrgResourceInfo {
+    region_uuid: string
     region_name: string
     consumption: ConsumptionFields
     quota: QuotaFields
@@ -57,17 +60,17 @@ export const quotaApi = {
     },
 
     // 获取 org 在特定 region 的配额+消费
-    getOrgRegionResourceInfo(orgUuid: string, regionName: string) {
-        return client.get<OrgResourceInfo>(`/resources/info/${orgUuid}/${regionName}`)
+    getOrgRegionResourceInfo(orgUuid: string, regionUuid: string) {
+        return client.get<OrgResourceInfo>(`/resources/info/${orgUuid}/${regionUuid}`)
     },
 
     // 获取 org 在特定 region 的配额
-    getOrgQuota(orgUuid: string, regionName: string) {
-        return client.get<OrgResourceQuota>(`/resources/quota/${orgUuid}/${regionName}`)
+    getOrgQuota(orgUuid: string, regionUuid: string) {
+        return client.get<OrgResourceQuota>(`/resources/quota/${orgUuid}/${regionUuid}`)
     },
 
     // 更新 org 在特定 region 的配额 (superuser only)
-    updateOrgQuota(orgUuid: string, regionName: string, payload: OrgResourceQuotaUpdate) {
-        return client.put<OrgResourceQuota>(`/resources/quota/${orgUuid}/${regionName}`, payload)
+    updateOrgQuota(orgUuid: string, regionUuid: string, payload: OrgResourceQuotaUpdate) {
+        return client.put<OrgResourceQuota>(`/resources/quota/${orgUuid}/${regionUuid}`, payload)
     },
 }
