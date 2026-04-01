@@ -10,6 +10,7 @@ import (
 	"math"
 	"net/http"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -32,6 +33,27 @@ type AlarmAPI struct {
 var alarmAPI = &AlarmAPI{
 	operator:   &services.AlarmOperator{},
 	alarmAdmin: &services.AlarmAdmin{},
+}
+
+var ruleNameRegex = regexp.MustCompile(`^[a-zA-Z][a-zA-Z0-9_]*$`)
+
+// isValidRuleName checks if the rule name starts with a letter and consists of only alphanumeric characters or underscores.
+func isValidRuleName(name string) bool {
+	return ruleNameRegex.MatchString(name)
+}
+
+// slugify converts a string to lowercase and replaces spaces with underscores.
+func slugify(s string) string {
+	return strings.ToLower(strings.ReplaceAll(s, " ", "_"))
+}
+
+// generateRuleID generates a persistent rule ID based on name and UUID.
+func generateRuleID(name, uuid string) string {
+	shortUUID := uuid
+	if len(uuid) > 8 {
+		shortUUID = uuid[:8]
+	}
+	return fmt.Sprintf("%s_%s", slugify(name), shortUUID)
 }
 
 // UpdateMatchedVMsJSON updates the matched_vms.json file, supporting one VM matching multiple rule groups
@@ -599,6 +621,11 @@ func (a *AlarmAPI) CreateCPURule(c *gin.Context) {
 			return
 		}
 	}
+	if !isValidRuleName(req.Name) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid rule name: must start with a letter and contain only alphanumeric characters or underscores"})
+		return
+	}
+
 	ms := common.GetMemberShip(c.Request.Context())
 	if ms.OrgID == 0 {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid organization context"})
@@ -606,14 +633,16 @@ func (a *AlarmAPI) CreateCPURule(c *gin.Context) {
 	}
 	safeOwnerCPU := strconv.FormatInt(ms.OrgID, 10)
 	group := &model.RuleGroupV2{
-		RuleID:          req.RuleID,
-		Name:            req.Name,
-		Type:            services.RuleTypeCPU,
-		Owner:           ms.OrgID,
-		Enabled:         true,
-		RegionID:        req.RegionID,
-		DurationMinutes: req.DurationMinutes,
+		Name:     req.Name,
+		Type:     services.RuleTypeCPU,
+		Owner:    ms.OrgID,
+		Enabled:  true,
+		RegionID: req.RegionID,
 	}
+	// Pre-generate UUID and RuleID
+	_ = group.BeforeCreate()
+	group.RuleID = generateRuleID(group.Name, group.UUID)
+
 	if err := a.operator.CreateRuleGroup(c.Request.Context(), group); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "operator failed: " + err.Error()})
 		return
@@ -744,6 +773,10 @@ func (a *AlarmAPI) CreateMemoryRule(c *gin.Context) {
 		}
 	}
 
+	if !isValidRuleName(req.Name) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid rule name: must start with a letter and contain only alphanumeric characters or underscores"})
+		return
+	}
 	ms := common.GetMemberShip(c.Request.Context())
 	if ms.OrgID == 0 {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid organization context"})
@@ -751,14 +784,16 @@ func (a *AlarmAPI) CreateMemoryRule(c *gin.Context) {
 	}
 	safeOwnerMemory := strconv.FormatInt(ms.OrgID, 10)
 	group := &model.RuleGroupV2{
-		RuleID:          req.RuleID,
-		Name:            req.Name,
-		Type:            services.RuleTypeMemory,
-		Owner:           ms.OrgID,
-		Enabled:         true,
-		RegionID:        req.RegionID,
-		DurationMinutes: req.DurationMinutes,
+		Name:     req.Name,
+		Type:     services.RuleTypeMemory,
+		Owner:    ms.OrgID,
+		Enabled:  true,
+		RegionID: req.RegionID,
 	}
+	// Pre-generate UUID and RuleID
+	_ = group.BeforeCreate()
+	group.RuleID = generateRuleID(group.Name, group.UUID)
+
 	if err := a.operator.CreateRuleGroup(c.Request.Context(), group); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "operator failed: " + err.Error()})
 		return
@@ -924,6 +959,7 @@ func (a *AlarmAPI) GetCPURules(c *gin.Context) {
 		}
 
 		responseData = append(responseData, gin.H{
+			"uuid":      group.UUID,
 			"rule_id":   group.RuleID,
 			"name":      group.Name,
 			"owner":     group.Owner,
@@ -1017,6 +1053,7 @@ func (a *AlarmAPI) GetMemoryRules(c *gin.Context) {
 		}
 
 		responseData = append(responseData, gin.H{
+			"uuid":      group.UUID,
 			"rule_id":   group.RuleID,
 			"name":      group.Name,
 			"owner":     group.Owner,
@@ -1660,6 +1697,10 @@ func (a *AlarmAPI) CreateBWRule(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	if !isValidRuleName(req.Name) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid rule name: must start with a letter and contain only alphanumeric characters or underscores"})
+		return
+	}
 	ms := common.GetMemberShip(c.Request.Context())
 	if ms.OrgID == 0 {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid organization context"})
@@ -1667,13 +1708,16 @@ func (a *AlarmAPI) CreateBWRule(c *gin.Context) {
 	}
 	safeOwnerBW := strconv.FormatInt(ms.OrgID, 10)
 	group := &model.RuleGroupV2{
-		RuleID:   req.RuleID,
 		Name:     req.Name,
 		Type:     services.RuleTypeBW,
 		Owner:    ms.OrgID,
 		Enabled:  req.Enable,
 		RegionID: req.RegionID,
 	}
+	// Pre-generate UUID and RuleID
+	_ = group.BeforeCreate()
+	group.RuleID = generateRuleID(group.Name, group.UUID)
+
 	if err := a.operator.CreateRuleGroup(c.Request.Context(), group); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "operator failed: " + err.Error()})
 		return
@@ -1763,10 +1807,9 @@ func (a *AlarmAPI) CreateBWRule(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"status": "success",
 		"data": gin.H{
-			"group_uuid": group.UUID,
-			"rule_id":    req.RuleID,
-			"enabled":    req.Enable,
-			"linkedvms":  req.LinkedVMs,
+			"uuid":      group.UUID,
+			"enabled":   req.Enable,
+			"linkedvms": req.LinkedVMs,
 		},
 	})
 }
@@ -1845,6 +1888,7 @@ func (a *AlarmAPI) GetBWRules(c *gin.Context) {
 		}
 
 		responseData = append(responseData, gin.H{
+			"uuid":      group.UUID,
 			"name":      group.Name,
 			"owner":     group.Owner,
 			"enable":    group.Enabled,

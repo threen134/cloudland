@@ -617,10 +617,13 @@ export default {
             deleteConfirm: '确定要删除告警规则 "{name}" 吗？此操作不可撤销。',
             ruleIdPlaceholder: '留空则自动生成',
             thresholds: '阈值配置',
+            thresholdHint: 'CPU/内存以百分比(%)为单位，带宽以 Mbps 为单位。',
             ruleLevel: '规则级别',
             durationMin: '持续时间(分)',
-            linkedCount: '{count} 个实例',
+            linkedCount: '已关联 {count} 台云主机',
             ruleId: '规则 ID',
+            nameStartLetterError: '名称必须以字母开头',
+            nameCharsetError: '名称只能包含字母、数字和下划线',
             ruleTypes: {
                 cpu: 'CPU',
                 memory: '内存',
@@ -1163,6 +1166,8 @@ export default {
         release: '释放',
         confirmDelete: '确认删除',
         cancelInvitation: '取消邀请',
+        enable: '启用',
+        disable: '禁用',
     },
 
     // 认证
@@ -1310,6 +1315,9 @@ export default {
         usernameRequired: '用户名不能为空。',
         emailRequired: '电子邮箱不能为空。',
         placementRouteHint: '留空让系统自动选择最佳节点。',
+        enabledSuccess: '规则已成功启用。',
+        disabledSuccess: '规则已成功禁用。',
+        operationFailed: '操作失败，请重试。',
     },
 
 

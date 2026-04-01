@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Plus, Trash2, Search, ShieldAlert, Link, RefreshCw, X, ChevronDown, ChevronRight, Monitor } from 'lucide-vue-next'
+import { Plus, Trash2, Search, ShieldAlert, Link, RefreshCw, X, ChevronDown, ChevronRight, Monitor, Power } from 'lucide-vue-next'
 import { vmAlarmRulesApi, VM_RULE_TYPES, type VMAlarmRuleGroup, type VMRuleType } from '../../api/vmAlarmRules'
 import { alarmEventsApi } from '../../api/alarmEvents'
 import { notificationsApi, type NotificationChannel } from '../../api/notifications'
@@ -25,7 +25,6 @@ const total = ref(0)
 const showCreateModal = ref(false)
 const createForm = ref({
     name: '',
-    rule_id: '',
     type: 'cpu' as VMRuleType,
     rules: [{ name: '', limit: 80, duration: 5, rule: 'gt', level: 'warning' }] as Record<string, any>[],
     linkedvms: [] as string[],
@@ -59,12 +58,19 @@ const toggleRule = (id: string) => {
     else expandedRules.value.splice(idx, 1)
 }
 const isExpanded = (id: string) => expandedRules.value.includes(id)
+const isNameValid = computed(() => /^[a-zA-Z][a-zA-Z0-9_]*$/.test(createForm.value.name))
+const nameError = computed(() => {
+    if (!createForm.value.name) return ''
+    if (!/^[a-zA-Z]/.test(createForm.value.name)) return t('dashboard.vmAlarmRules.nameStartLetterError')
+    if (!/^[a-zA-Z0-9_]*$/.test(createForm.value.name)) return t('dashboard.vmAlarmRules.nameCharsetError')
+    return ''
+})
 
 const filteredRules = computed(() => {
     if (!searchQuery.value) return rules.value
     const q = searchQuery.value.toLowerCase()
     return rules.value.filter(r =>
-        r.name.toLowerCase().includes(q) || r.rule_id.toLowerCase().includes(q)
+        r.name.toLowerCase().includes(q) || r.uuid.toLowerCase().includes(q)
     )
 })
 
@@ -95,7 +101,6 @@ const fetchRules = async () => {
 const openCreate = async () => {
     createForm.value = {
         name: '',
-        rule_id: '',
         type: 'cpu',
         rules: [{ name: '', limit: 80, duration: 5, rule: 'gt', level: 'warning' }],
         linkedvms: [],
@@ -125,26 +130,29 @@ const onTypeChange = () => {
 
 const submitCreate = async () => {
     try {
+        if (!isNameValid.value) return
         const regionUuid = regionStore.currentRegionId || ''
-        const ruleId = createForm.value.rule_id || createForm.value.name.replace(/\s+/g, '_').toLowerCase()
 
         const base = {
             name: createForm.value.name,
             region_id: regionUuid,
         }
 
+        let res: any
         if (createForm.value.type === 'cpu') {
-            await vmAlarmRulesApi.createCPURule({ ...base, rule_id: ruleId, rules: createForm.value.rules as any })
+            res = await vmAlarmRulesApi.createCPURule({ ...base, rules: createForm.value.rules as any })
         } else if (createForm.value.type === 'memory') {
-            await vmAlarmRulesApi.createMemoryRule({ ...base, rule_id: ruleId, rules: createForm.value.rules as any })
+            res = await vmAlarmRulesApi.createMemoryRule({ ...base, rules: createForm.value.rules as any })
         } else if (createForm.value.type === 'bw') {
-            await vmAlarmRulesApi.createBWRule({ ...base, rule_id: ruleId, enable: true, rules: createForm.value.rules as any })
+            res = await vmAlarmRulesApi.createBWRule({ ...base, enable: true, rules: createForm.value.rules as any })
         }
 
+        const ruleUuid = res.data?.data?.uuid || res.data?.data?.group_uuid
+
         // Link VMs if selected
-        if (createForm.value.linkedvms && createForm.value.linkedvms.length > 0) {
+        if (createForm.value.linkedvms && createForm.value.linkedvms.length > 0 && ruleUuid) {
             try {
-                await vmAlarmRulesApi.linkRule(ruleId, createForm.value.linkedvms.map(id => ({ vm_uuid: id })))
+                await vmAlarmRulesApi.linkRule(ruleUuid, createForm.value.linkedvms.map(id => ({ vm_uuid: id })))
             } catch (err) {
                 console.error('Failed to link VMs after creation:', err)
                 toast.warning(t('dashboard.vmAlarmRules.ruleCreatedButLinkFailed'))
@@ -162,6 +170,22 @@ const submitCreate = async () => {
 const confirmDelete = (rule: VMAlarmRuleGroup) => {
     deleteTarget.value = rule
     showDeleteModal.value = true
+}
+
+const toggleRuleStatus = async (rule: VMAlarmRuleGroup) => {
+    try {
+        if (rule.enable) {
+            await vmAlarmRulesApi.disableRule(rule.uuid)
+            rule.enable = false
+            toast.success(t('messages.disabledSuccess'))
+        } else {
+            await vmAlarmRulesApi.enableRule(rule.uuid)
+            rule.enable = true
+            toast.success(t('messages.enabledSuccess'))
+        }
+    } catch (err: any) {
+        toast.error(err.response?.data?.error || t('messages.operationFailed'))
+    }
 }
 
 const executeDelete = async () => {
@@ -341,30 +365,25 @@ onMounted(fetchRules)
         </div>
 
         <div v-else class="rules-list">
-            <div v-for="rule in filteredRules" :key="rule.rule_id" class="card rule-card" :class="{ 'rule-card-expanded': isExpanded(rule.rule_id) }">
-                <div class="rule-header" @click="toggleRule(rule.rule_id)">
+                <div v-for="rule in filteredRules" :key="rule.uuid" class="card rule-card" :class="{ 'rule-card-expanded': isExpanded(rule.uuid) }">
+                <div class="rule-header" @click="toggleRule(rule.uuid)">
                     <div class="rule-header-left">
-                        <component :is="isExpanded(rule.rule_id) ? ChevronDown : ChevronRight" :size="16" class="expand-icon" />
+                        <component :is="isExpanded(rule.uuid) ? ChevronDown : ChevronRight" :size="16" class="expand-icon" />
                         <div class="rule-info">
                             <div class="rule-name-row">
                                 <span class="rule-name-text">{{ rule.name }}</span>
+                            </div>
+                            <div class="rule-id monospace">{{ rule.uuid }}</div>
+                        </div>
+                    </div>
+                    <div class="rule-header-right">
+                        <div class="rule-summary-stats">
+                            <div class="rule-status-badges">
                                 <span class="badge badge-secondary" style="text-transform: uppercase;">
                                     {{ rule.type ? t('dashboard.vmAlarmRules.ruleTypes.' + rule.type) : '-' }}
                                 </span>
                                 <span class="badge" :class="rule.enable ? 'badge-success' : 'status-stopped'">
                                     {{ rule.enable ? t('dashboard.alarm.enabled') : t('dashboard.alarm.disabled') }}
-                                </span>
-                            </div>
-                            <div class="rule-id monospace">{{ rule.rule_id }}</div>
-                        </div>
-                    </div>
-                    <div class="rule-header-right">
-                        <div class="rule-summary-stats">
-                            <div class="level-badges">
-                                <span v-for="(r, idx) in (rule.rules || [])" :key="idx"
-                                    class="badge" :class="'badge-' + (r.level === 'critical' ? 'error' : (r.level === 'warning' ? 'warning' : 'primary'))"
-                                    style="margin-right: 4px;">
-                                    {{ t('dashboard.vmAlarmRules.levels.' + r.level) }}
                                 </span>
                             </div>
                             <span class="linked-badge">{{ t('dashboard.vmAlarmRules.linkedCount', { count: rule.linkedvms?.length || 0 }) }}</span>
@@ -376,14 +395,17 @@ onMounted(fetchRules)
                             <button class="icon-btn-table" @click.stop="openBindChannels(rule)" :title="t('dashboard.vmAlarmRules.bindChannels')">
                                 <Link :size="16" />
                             </button>
-                            <button class="icon-btn-table text-error" @click.stop="confirmDelete(rule)">
+                            <button class="icon-btn-table" :class="{ 'text-success': rule.enable, 'text-secondary': !rule.enable }" @click.stop="toggleRuleStatus(rule)" :title="rule.enable ? t('actions.disable') : t('actions.enable')">
+                                <Power :size="14" />
+                            </button>
+                            <button class="icon-btn-table" @click.stop="confirmDelete(rule)">
                                 <Trash2 :size="16" />
                             </button>
                         </div>
                     </div>
                 </div>
 
-                <div v-show="isExpanded(rule.rule_id)" class="rule-body">
+                <div v-show="isExpanded(rule.uuid)" class="rule-body">
                     <div class="rule-body-content">
                         <div v-if="rule.rules && rule.rules.length > 0" class="thresholds-section">
                             <div class="section-label">{{ t('dashboard.vmAlarmRules.thresholds') }}</div>
@@ -457,18 +479,25 @@ onMounted(fetchRules)
                             </div>
                             <div class="form-group">
                                 <label class="form-label">{{ t('dashboard.table.name') }}</label>
-                                <input v-model="createForm.name" class="form-input" required />
-                            </div>
-                            <div class="form-group">
-                                <label class="form-label">{{ t('dashboard.vmAlarmRules.ruleId') }}</label>
-                                <input v-model="createForm.rule_id" class="form-input" :placeholder="t('dashboard.vmAlarmRules.ruleIdPlaceholder')" />
+                                <input v-model="createForm.name" class="form-input" :class="{ 'input-error': nameError }" required />
+                                <div v-if="nameError" class="input-tip text-error">{{ nameError }}</div>
                             </div>
                             <div class="rules-section">
                                 <div class="rules-header">
-                                    <label class="form-label">{{ t('dashboard.vmAlarmRules.thresholds') }}</label>
+                                    <div class="rules-header-left">
+                                        <label class="form-label mb-0">{{ t('dashboard.vmAlarmRules.thresholds') }}</label>
+                                        <span class="input-tip ml-2">{{ t('dashboard.vmAlarmRules.thresholdHint') }}</span>
+                                    </div>
                                     <button class="btn btn-ghost btn-sm" @click="addRuleRow">
                                         <Plus :size="14" /> {{ t('actions.add') }}
                                     </button>
+                                </div>
+                                <div class="rule-labels-row">
+                                    <span v-if="createForm.type === 'bw'" class="rule-label-item" style="width: 120px;">{{ t('dashboard.table.direction') }}</span>
+                                    <span class="rule-label-item" style="width: 120px;">{{ t('dashboard.vmAlarmRules.thresholdLimit') }}</span>
+                                    <span class="rule-label-item" style="width: 120px;">{{ t('dashboard.vmAlarmRules.durationMin') }}</span>
+                                    <span class="rule-label-item" style="width: 120px;">{{ t('dashboard.vmAlarmRules.ruleLevel') }}</span>
+                                    <span class="rule-label-item" style="width: 32px;"></span>
                                 </div>
                                 <div v-for="(rule, idx) in createForm.rules" :key="idx" class="rule-row">
                                     <select v-if="createForm.type === 'bw'" v-model="rule.direction" class="form-input rule-input-sm">
@@ -737,7 +766,7 @@ onMounted(fetchRules)
     gap: 16px;
 }
 
-.level-badges {
+.rule-status-badges {
     display: flex;
     gap: 4px;
 }
@@ -877,8 +906,16 @@ onMounted(fetchRules)
 
 .rules-section { margin-top: 4px; }
 .rules-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+.rules-header-left { display: flex; align-items: center; gap: 8px; }
+.rule-labels-row { display: flex; gap: 8px; margin-bottom: 4px; padding: 0 4px; }
+.rule-label-item { font-size: 11px; color: var(--text-tertiary); font-weight: 600; text-transform: uppercase; letter-spacing: 0.02em; }
 .rule-row { display: flex; gap: 8px; margin-bottom: 6px; align-items: center; }
 .rule-input-sm { width: 120px; }
+.ml-2 { margin-left: 8px; }
+.mb-0 { margin-bottom: 0; }
+.mb-1 { margin-bottom: 4px; }
+.input-tip { font-size: 11px; color: var(--text-tertiary); line-height: 1.2; }
+
 
 .channel-list { max-height: 300px; overflow-y: auto; }
 .channel-item { display: flex; align-items: center; gap: 8px; padding: 8px; cursor: pointer; border-radius: 4px; }

@@ -618,9 +618,12 @@ export default {
             deleteConfirm: 'Are you sure you want to delete alarm rule "{name}"? This cannot be undone.',
             ruleIdPlaceholder: 'Auto-generated if empty',
             thresholds: 'Thresholds',
+            thresholdHint: 'CPU/Memory in percentage (%), Bandwidth in Mbps.',
             ruleLevel: 'Rule Level',
             durationMin: 'Duration (min)',
-            linkedCount: '{count} VMs',
+            linkedCount: 'Linked {count} VMs',
+            nameStartLetterError: 'Name must start with a letter',
+            nameCharsetError: 'Name can only contain letters, numbers, and underscores',
             ruleId: 'Rule ID',
             ruleTypes: {
                 cpu: 'CPU',
@@ -1165,6 +1168,8 @@ export default {
         release: 'Release',
         confirmDelete: 'Confirm Delete',
         cancelInvitation: 'Cancel Invitation',
+        enable: 'Enable',
+        disable: 'Disable',
     },
 
     // Auth
@@ -1312,6 +1317,9 @@ export default {
         usernameRequired: 'Username is required.',
         emailRequired: 'Email is required.',
         placementRouteHint: 'Leave blank to let the system auto-select the best node.',
+        enabledSuccess: 'Rule enabled successfully.',
+        disabledSuccess: 'Rule disabled successfully.',
+        operationFailed: 'Operation failed, please try again.',
     },
     roles: {
         owner: 'Owner',

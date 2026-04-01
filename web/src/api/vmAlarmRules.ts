@@ -24,6 +24,8 @@ export interface BWRuleDetail {
 }
 
 export interface VMAlarmRuleGroup {
+    uuid: string
+    created_at: string
     rule_id: string
     name: string
     owner: number
@@ -60,7 +62,7 @@ export const vmAlarmRulesApi = {
 
     createCPURule(payload: {
         name: string
-        rule_id: string
+        rule_id?: string
         region_id: string
         duration_minutes?: number
         rules: CPURuleDetail[]
@@ -71,7 +73,7 @@ export const vmAlarmRulesApi = {
 
     createMemoryRule(payload: {
         name: string
-        rule_id: string
+        rule_id?: string
         region_id: string
         rules: MemoryRuleDetail[]
         linkedvms?: string[]
@@ -81,7 +83,7 @@ export const vmAlarmRulesApi = {
 
     createBWRule(payload: {
         name: string
-        rule_id: string
+        rule_id?: string
         region_id: string
         enable: boolean
         rules: BWRuleDetail[]
@@ -106,5 +108,13 @@ export const vmAlarmRulesApi = {
             group_uuid: groupUuid,
             vm_links: vmLinks,
         })
+    },
+
+    enableRule(uuid: string) {
+        return client.post(`/metrics/api/v1/alarm/${uuid}/enable`)
+    },
+
+    disableRule(uuid: string) {
+        return client.post(`/metrics/api/v1/alarm/${uuid}/disable`)
     },
 }

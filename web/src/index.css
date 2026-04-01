@@ -545,6 +545,12 @@ button:disabled {
 .text-blue {
   color: var(--primary-color);
 }
+.text-success {
+  color: var(--success-color);
+}
+.text-danger {
+  color: var(--error-color);
+}
 
 .font-normal {
   font-weight: var(--font-weight-normal);

@@ -24,10 +24,10 @@ var logger = log.MustGetLogger("model")
 
 type Model struct {
 	ID        int64      `gorm:"primary_key"`
-	CreatedAt time.Time
+	CreatedAt time.Time  `json:"created_at"`
 	UpdatedAt time.Time
 	DeletedAt *time.Time `gorm:"index"`
-	UUID      string     `gorm:"type:varchar(64);index"`
+	UUID      string     `gorm:"type:varchar(64);index" json:"uuid"`
 	Creater   int64      `gorm:"default:0"` /* The user ID who created the resource (audit only) */
 }
 
