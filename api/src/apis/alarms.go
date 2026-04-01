@@ -2448,15 +2448,29 @@ func (a *AlarmAPI) ToggleRuleStatus(ruleType, action string) gin.HandlerFunc {
 			// Alarm rules: handle different rule types
 			switch groupType {
 			case services.RuleTypeCPU: // "cpu"
-				// Format: cpu-{owner}-{group_uuid}.yml (matches CreateCPURule)
-				rulePath := fmt.Sprintf("%s/cpu-%s-%s.yml", services.RulesGeneral, groupOwner, groupUUID)
-				ruleLinkPath := fmt.Sprintf("%s/cpu-%s-%s.yml", services.RulesEnabled, groupOwner, groupUUID)
-				filePaths = append(filePaths, FilePair{source: rulePath, link: ruleLinkPath})
+				// Format: cpu-{owner}-{group_uuid}-{i}.yml (one file per linked VM)
+				vmLinks, err := a.operator.GetLinkedVMs(c.Request.Context(), groupUUID)
+				if err != nil {
+					c.JSON(http.StatusInternalServerError, gin.H{"status": "error", "error": "Failed to get linked VMs: " + err.Error()})
+					return
+				}
+				for i := range vmLinks {
+					rulePath := fmt.Sprintf("%s/cpu-%s-%s-%d.yml", services.RulesGeneral, groupOwner, groupUUID, i)
+					ruleLinkPath := fmt.Sprintf("%s/cpu-%s-%s-%d.yml", services.RulesEnabled, groupOwner, groupUUID, i)
+					filePaths = append(filePaths, FilePair{source: rulePath, link: ruleLinkPath})
+				}
 			case services.RuleTypeMemory: // "memory"
-				// Format: memory-{owner}-{group_uuid}.yml (matches CreateMemoryRule)
-				rulePath := fmt.Sprintf("%s/memory-%s-%s.yml", services.RulesGeneral, groupOwner, groupUUID)
-				ruleLinkPath := fmt.Sprintf("%s/memory-%s-%s.yml", services.RulesEnabled, groupOwner, groupUUID)
-				filePaths = append(filePaths, FilePair{source: rulePath, link: ruleLinkPath})
+				// Format: memory-{owner}-{group_uuid}-{i}.yml (one file per linked VM)
+				vmLinks, err := a.operator.GetLinkedVMs(c.Request.Context(), groupUUID)
+				if err != nil {
+					c.JSON(http.StatusInternalServerError, gin.H{"status": "error", "error": "Failed to get linked VMs: " + err.Error()})
+					return
+				}
+				for i := range vmLinks {
+					rulePath := fmt.Sprintf("%s/memory-%s-%s-%d.yml", services.RulesGeneral, groupOwner, groupUUID, i)
+					ruleLinkPath := fmt.Sprintf("%s/memory-%s-%s-%d.yml", services.RulesEnabled, groupOwner, groupUUID, i)
+					filePaths = append(filePaths, FilePair{source: rulePath, link: ruleLinkPath})
+				}
 			case services.RuleTypeBW: // "bw"
 				// Format: bw-in-{owner}-{group_uuid}.yml and bw-out-{owner}-{group_uuid}.yml (matches CreateBWRule)
 				// Need to query BWRuleDetail to get all directions
@@ -2476,14 +2490,14 @@ func (a *AlarmAPI) ToggleRuleStatus(ruleType, action string) gin.HandlerFunc {
 					})
 					return
 				}
-				// Generate file paths for each direction
-				for _, detail := range details {
+				// Generate file paths for each direction (one file per detail, indexed)
+				for i, detail := range details {
 					var filename string
 					switch detail.Direction {
 					case "in":
-						filename = fmt.Sprintf("bw-in-%s-%s.yml", groupOwner, groupUUID)
+						filename = fmt.Sprintf("bw-in-%s-%s-%d.yml", groupOwner, groupUUID, i)
 					case "out":
-						filename = fmt.Sprintf("bw-out-%s-%s.yml", groupOwner, groupUUID)
+						filename = fmt.Sprintf("bw-out-%s-%s-%d.yml", groupOwner, groupUUID, i)
 					default:
 						log.Printf("[BW-WARNING] Unknown direction: %s, skipping", detail.Direction)
 						continue

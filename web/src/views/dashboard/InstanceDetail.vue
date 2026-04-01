@@ -183,7 +183,7 @@ const copyToClipboard = (text: string, field: string) => {
 interface LinkedRule {
     type: VMRuleType
     typeLabel: string
-    rule_id: string
+    uuid: string
     name: string
     level: string
     enable: boolean
@@ -214,7 +214,7 @@ const fetchLinkedRules = async () => {
                     linked.push({
                         type: type as VMRuleType,
                         typeLabel: t('dashboard.vmAlarmRules.ruleTypes.' + type),
-                        rule_id: rule.rule_id,
+                        uuid: rule.uuid,
                         name: rule.name,
                         level: rule.level,
                         enable: rule.enable,
@@ -249,7 +249,7 @@ const openLinkModal = async () => {
                     available.push({
                         type: type as VMRuleType,
                         typeLabel: t('dashboard.vmAlarmRules.ruleTypes.' + type),
-                        rule_id: rule.rule_id,
+                        uuid: rule.uuid,
                         name: rule.name,
                         level: rule.level,
                         enable: rule.enable,
@@ -267,7 +267,7 @@ const openLinkModal = async () => {
 
 const linkRule = async (rule: LinkedRule) => {
     try {
-        await vmAlarmRulesApi.linkRule(rule.rule_id, [{ vm_uuid: instanceId }])
+        await vmAlarmRulesApi.linkRule(rule.uuid, [{ vm_uuid: instanceId }])
         showLinkModal.value = false
         await fetchLinkedRules()
         toast.success(t('messages.updateSuccess'))
@@ -278,9 +278,9 @@ const linkRule = async (rule: LinkedRule) => {
 }
 
 const unlinkRule = async (rule: LinkedRule) => {
-    unlinkLoading.value = rule.rule_id
+    unlinkLoading.value = rule.uuid
     try {
-        await vmAlarmRulesApi.unlinkRule(rule.rule_id, [{ vm_uuid: instanceId }])
+        await vmAlarmRulesApi.unlinkRule(rule.uuid, [{ vm_uuid: instanceId }])
         await fetchLinkedRules()
         toast.success(t('messages.updateSuccess'))
     } catch (err: any) {
@@ -893,7 +893,7 @@ onMounted(() => {
                         </tr>
                     </thead>
                     <tbody>
-                        <tr v-for="rule in linkedRules" :key="rule.rule_id">
+                        <tr v-for="rule in linkedRules" :key="rule.uuid">
                             <td>{{ rule.name }}</td>
                             <td><span class="badge badge-secondary">{{ rule.typeLabel }}</span></td>
                             <td><span class="badge" :class="'badge-' + rule.level">{{ t('dashboard.vmAlarmRules.levels.' + rule.level) }}</span></td>
@@ -903,7 +903,7 @@ onMounted(() => {
                                 </span>
                             </td>
                             <td>
-                                <button class="btn btn-ghost btn-sm text-danger" @click="unlinkRule(rule)" :disabled="unlinkLoading === rule.rule_id">
+                                <button class="btn btn-ghost btn-sm text-danger" @click="unlinkRule(rule)" :disabled="unlinkLoading === rule.uuid">
                                     <Unlink :size="14" /> {{ t('dashboard.instanceDetail.unlink') }}
                                 </button>
                             </td>
@@ -924,7 +924,7 @@ onMounted(() => {
                             {{ t('dashboard.instanceDetail.noAvailableRules') }}
                         </div>
                         <div v-else class="rule-pick-list">
-                            <div v-for="rule in availableRules" :key="rule.rule_id" class="rule-pick-item" @click="linkRule(rule)">
+                            <div v-for="rule in availableRules" :key="rule.uuid" class="rule-pick-item" @click="linkRule(rule)">
                                 <div class="rule-pick-info">
                                     <span class="rule-pick-name">{{ rule.name }}</span>
                                     <span class="badge badge-secondary">{{ rule.typeLabel }}</span>

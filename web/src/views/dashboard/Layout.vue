@@ -8,7 +8,7 @@ import { useI18n } from 'vue-i18n'
 import { setLanguage, getCurrentLanguage } from '../../locales'
 import { alarmEventsApi } from '../../api/alarmEvents'
 import { authApi } from '../../api/auth'
-import { setAuthToken } from '../../api/client'
+import { setAuthToken, beginTokenSwitch } from '../../api/client'
 import { useToast } from '../../composables/useToast'
 import { 
     LayoutDashboard, 
@@ -108,6 +108,7 @@ const handleSwitchLanguage = (lang: string) => {
 const handleSwitchRegion = async (regionId: string) => {
     if (isSwitchingRegion.value) return
     isSwitchingRegion.value = true
+    const endSwitch = beginTokenSwitch()
     try {
         const response = await authApi.switchRegion(regionId)
         const newToken = response.data?.access_token
@@ -120,6 +121,7 @@ const handleSwitchRegion = async (regionId: string) => {
         console.error('Failed to switch region:', err)
         toast.error(t('messages.error'))
     } finally {
+        endSwitch()
         isSwitchingRegion.value = false
     }
 }

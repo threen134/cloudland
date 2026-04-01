@@ -1,6 +1,23 @@
 import axios from 'axios'
 import type { AxiosError, InternalAxiosRequestConfig, AxiosResponse } from 'axios'
 
+// Token switch lock — suspends concurrent requests until the new token is stored.
+// Usage: call beginTokenSwitch() before the switch API call, call the returned
+// function after setAuthToken() to release all waiting requests.
+let _tokenSwitchResolve: (() => void) | null = null
+let _tokenSwitchPromise: Promise<void> | null = null
+
+export const beginTokenSwitch = (): (() => void) => {
+    _tokenSwitchPromise = new Promise<void>(resolve => {
+        _tokenSwitchResolve = resolve
+    })
+    return () => {
+        _tokenSwitchPromise = null
+        _tokenSwitchResolve?.()
+        _tokenSwitchResolve = null
+    }
+}
+
 // Create axios instance
 const client = axios.create({
     baseURL: '/api/v1',
@@ -12,7 +29,13 @@ const client = axios.create({
 
 // Request interceptor - add auth token and tenant/region headers
 client.interceptors.request.use(
-    (config: InternalAxiosRequestConfig) => {
+    async (config: InternalAxiosRequestConfig) => {
+        // If a token switch is in progress, wait for it to complete before
+        // sending any request (except the switch call itself).
+        if (_tokenSwitchPromise && !config.url?.includes('/auth/switch-')) {
+            await _tokenSwitchPromise
+        }
+
         // Add JWT token if available
         const token = getToken()
         if (token && config.headers) {

@@ -24,7 +24,7 @@ const fetchData = async () => {
 
     const range = getTimeRange()
     if (!range) {
-        error.value = 'Please select both start and end times'
+        error.value = t('dashboard.monitoring.selectDatesError')
         loading.value = false
         return
     }

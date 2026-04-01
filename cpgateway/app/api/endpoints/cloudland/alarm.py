@@ -200,6 +200,30 @@ async def get_active_rules(
     )
 
 
+@router.post("/metrics/alarm/{uuid}/enable", summary="Enable an alarm rule")
+async def enable_alarm_rule(
+    uuid: str,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    return await proxy_service.forward_to_region(
+        request=request, db=db, proxy_path=f"/metrics/alarm/{uuid}/enable",
+    )
+
+
+@router.post("/metrics/alarm/{uuid}/disable", summary="Disable an alarm rule")
+async def disable_alarm_rule(
+    uuid: str,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    return await proxy_service.forward_to_region(
+        request=request, db=db, proxy_path=f"/metrics/alarm/{uuid}/disable",
+    )
+
+
 @router.post("/metrics/alarm/link", summary="Link alarm rule to VM")
 async def link_alarm_rule(
     request: Request,

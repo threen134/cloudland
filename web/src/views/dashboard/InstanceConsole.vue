@@ -155,7 +155,7 @@ onUnmounted(() => {
                 <button class="btn-console" @click="sendCtrlAltDel" :title="t('dashboard.console.cad')">
                    CAD
                 </button>
-                <button class="btn-console" @click="openExternal" :title="t('actions.external') || 'Open in External Client'">
+                <button class="btn-console" @click="openExternal" :title="t('actions.external')">
                     <ExternalLink :size="16" />
                 </button>
                 <button class="btn-console" @click="reload" :title="t('dashboard.console.reconnect')">

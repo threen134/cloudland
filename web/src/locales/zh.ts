@@ -476,6 +476,7 @@ export default {
             noMemoryData: '未获取到内存数据',
             noNetworkData: '未获取到网络数据',
             loadError: '获取监控数据失败',
+            selectDatesError: '请同时选择开始和结束时间',
         },
         instanceDetail: {
             resourceMonitoring: '资源监控',
@@ -639,6 +640,8 @@ export default {
                 info: '提示',
             },
             noLinkedVMs: '该告警规则尚未关联实例。',
+            linkedChannels: '通知渠道',
+            noLinkedChannels: '该告警规则尚未绑定通知渠道。',
             thresholdLimit: '阈值 / 限制',
             bindVMs: '绑定虚拟机',
             availableVMs: '可用虚拟机',
@@ -1168,6 +1171,7 @@ export default {
         cancelInvitation: '取消邀请',
         enable: '启用',
         disable: '禁用',
+        external: '外部客户端',
     },
 
     // 认证

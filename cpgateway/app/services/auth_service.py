@@ -335,7 +335,7 @@ class AuthService:
                 expires_at=datetime.fromtimestamp(old_exp, tz=timezone.utc),
             )
             db.add(revocation)
-            await db.commit()
+        await db.commit()
 
         return {
             "access_token": access_token,
@@ -422,7 +422,7 @@ class AuthService:
                 expires_at=datetime.fromtimestamp(old_exp, tz=timezone.utc),
             )
             db.add(revocation)
-            await db.commit()
+        await db.commit()
 
         return {
             "access_token": access_token,

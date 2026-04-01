@@ -477,6 +477,7 @@ export default {
             noMemoryData: 'No Memory data found',
             noNetworkData: 'No Network data found',
             loadError: 'Failed to load monitoring data',
+            selectDatesError: 'Please select both start and end times',
         },
         instanceDetail: {
             resourceMonitoring: 'Resource Monitoring',
@@ -640,6 +641,8 @@ export default {
                 info: 'Info',
             },
             noLinkedVMs: 'This alarm rule is not linked to any instances.',
+            linkedChannels: 'Notification Channels',
+            noLinkedChannels: 'No notification channels bound to this alarm rule.',
             thresholdLimit: 'Threshold / Limit',
             bindVMs: 'Bind Virtual Machines',
             availableVMs: 'Available VMs',
@@ -1170,6 +1173,7 @@ export default {
         cancelInvitation: 'Cancel Invitation',
         enable: 'Enable',
         disable: 'Disable',
+        external: 'External Client',
     },
 
     // Auth

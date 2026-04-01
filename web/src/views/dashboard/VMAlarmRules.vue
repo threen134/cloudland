@@ -28,7 +28,9 @@ const createForm = ref({
     type: 'cpu' as VMRuleType,
     rules: [{ name: '', limit: 80, duration: 5, rule: 'gt', level: 'warning' }] as Record<string, any>[],
     linkedvms: [] as string[],
+    linkedchannels: [] as string[],
 })
+const createChannelsLoading = ref(false)
 
 // Delete modal
 const showDeleteModal = ref(false)
@@ -52,10 +54,30 @@ const vmSearchQuery = ref('')
 
 // Expansion logic
 const expandedRules = ref<string[]>([])
-const toggleRule = (id: string) => {
+const ruleChannels = ref<Record<string, NotificationChannel[]>>({})
+
+const toggleRule = async (id: string) => {
     const idx = expandedRules.value.indexOf(id)
-    if (idx === -1) expandedRules.value.push(id)
-    else expandedRules.value.splice(idx, 1)
+    if (idx === -1) {
+        expandedRules.value.push(id)
+        if (!(id in ruleChannels.value)) {
+            try {
+                const [channelsRes, bindingsRes] = await Promise.all([
+                    notificationsApi.list(),
+                    alarmEventsApi.getRuleChannels(id),
+                ])
+                const allCh: NotificationChannel[] = channelsRes.data.channels || []
+                const bindings = (bindingsRes.data as any).bindings || []
+                const boundUuids: string[] = bindings.map((b: any) => b.channel_uuid)
+                ruleChannels.value[id] = allCh.filter(c => boundUuids.includes(c.uuid))
+            } catch (err) {
+                console.error('Failed to load rule channels:', err)
+                ruleChannels.value[id] = []
+            }
+        }
+    } else {
+        expandedRules.value.splice(idx, 1)
+    }
 }
 const isExpanded = (id: string) => expandedRules.value.includes(id)
 const isNameValid = computed(() => /^[a-zA-Z][a-zA-Z0-9_]*$/.test(createForm.value.name))
@@ -66,17 +88,41 @@ const nameError = computed(() => {
     return ''
 })
 
+const getVMName = (id: string) => {
+    const vm = allVMs.value.find(v => v.id === id)
+    if (!vm) return id.substring(0, 8)
+    return vm.hostname || vm.name || id.substring(0, 8)
+}
+
 const filteredRules = computed(() => {
     if (!searchQuery.value) return rules.value
     const q = searchQuery.value.toLowerCase()
-    return rules.value.filter(r =>
-        r.name.toLowerCase().includes(q) || r.uuid.toLowerCase().includes(q)
-    )
+    return rules.value.filter(r => {
+        if (r.name.toLowerCase().includes(q) || r.uuid.toLowerCase().includes(q)) return true
+        if (r.linkedvms) {
+            return r.linkedvms.some(id => getVMName(id).toLowerCase().includes(q))
+        }
+        return false
+    })
 })
+
+const fetchAllVMs = async () => {
+    try {
+        const res = await instancesApi.fetchInstances()
+        const data = res.data as any
+        allVMs.value = Array.isArray(data) ? data : (data.instances || [])
+    } catch (err) {
+        console.error('Failed to fetch instances:', err)
+    }
+}
 
 const fetchRules = async () => {
     loading.value = true
     try {
+        // Fetch VMs first for name mapping
+        if (allVMs.value.length === 0) {
+            await fetchAllVMs()
+        }
         const types: VMRuleType[] = ['cpu', 'memory', 'bw']
         const results = await Promise.all(types.map(t => vmAlarmRulesApi.listRules(t)))
         
@@ -104,6 +150,7 @@ const openCreate = async () => {
         type: 'cpu',
         rules: [{ name: '', limit: 80, duration: 5, rule: 'gt', level: 'warning' }],
         linkedvms: [],
+        linkedchannels: [],
     }
     showCreateModal.value = true
     if (allVMs.value.length === 0) {
@@ -116,6 +163,17 @@ const openCreate = async () => {
             console.error('Failed to fetch instances:', err)
         } finally {
             vmsLoading.value = false
+        }
+    }
+    if (allChannels.value.length === 0) {
+        createChannelsLoading.value = true
+        try {
+            const res = await notificationsApi.list()
+            allChannels.value = res.data.channels || []
+        } catch (err) {
+            console.error('Failed to fetch channels:', err)
+        } finally {
+            createChannelsLoading.value = false
         }
     }
 }
@@ -159,6 +217,15 @@ const submitCreate = async () => {
             }
         }
 
+        // Bind channels if selected
+        if (createForm.value.linkedchannels.length > 0 && ruleUuid) {
+            try {
+                await alarmEventsApi.bindRuleChannels(ruleUuid, createForm.value.linkedchannels)
+            } catch (err) {
+                console.error('Failed to bind channels after creation:', err)
+            }
+        }
+
         showCreateModal.value = false
         await fetchRules()
     } catch (err: any) {
@@ -191,7 +258,7 @@ const toggleRuleStatus = async (rule: VMAlarmRuleGroup) => {
 const executeDelete = async () => {
     if (!deleteTarget.value || !deleteTarget.value.type) return
     try {
-        await vmAlarmRulesApi.deleteRule(deleteTarget.value.type, deleteTarget.value.rule_id)
+        await vmAlarmRulesApi.deleteRule(deleteTarget.value.type, deleteTarget.value.uuid)
         showDeleteModal.value = false
         deleteTarget.value = null
         await fetchRules()
@@ -209,7 +276,7 @@ const openBindChannels = async (rule: VMAlarmRuleGroup) => {
     try {
         const [channelsRes, bindingsRes] = await Promise.all([
             notificationsApi.list(),
-            alarmEventsApi.getRuleChannels(rule.rule_id),
+            alarmEventsApi.getRuleChannels(rule.uuid),
         ])
         allChannels.value = channelsRes.data.channels || []
         const bindings = (bindingsRes.data as any).bindings || []
@@ -226,7 +293,8 @@ const openBindChannels = async (rule: VMAlarmRuleGroup) => {
 const saveChannelBindings = async () => {
     if (!bindTarget.value) return
     try {
-        await alarmEventsApi.bindRuleChannels(bindTarget.value.rule_id, selectedChannelUuids.value)
+        await alarmEventsApi.bindRuleChannels(bindTarget.value.uuid, selectedChannelUuids.value)
+        delete ruleChannels.value[bindTarget.value.uuid]
         showBindModal.value = false
         toast.success(t('messages.success'))
     } catch (err: any) {
@@ -286,17 +354,17 @@ const saveVMBindings = async () => {
     if (!bindVMsTarget.value) return
     linkVMsLoading.value = true
     try {
-        const ruleId = bindVMsTarget.value.rule_id
+        const groupUuid = bindVMsTarget.value.uuid
         const currentVMs = bindVMsTarget.value.linkedvms || []
-        
+
         const toLink = selectedVMUuids.value.filter(id => !currentVMs.includes(id))
         const toUnlink = currentVMs.filter(id => !selectedVMUuids.value.includes(id))
-        
+
         if (toLink.length > 0) {
-            await vmAlarmRulesApi.linkRule(ruleId, toLink.map(id => ({ vm_uuid: id })))
+            await vmAlarmRulesApi.linkRule(groupUuid, toLink.map(id => ({ vm_uuid: id })))
         }
         if (toUnlink.length > 0) {
-            await vmAlarmRulesApi.unlinkRule(ruleId, toUnlink.map(id => ({ vm_uuid: id })))
+            await vmAlarmRulesApi.unlinkRule(groupUuid, toUnlink.map(id => ({ vm_uuid: id })))
         }
         
         toast.success(t('dashboard.vmAlarmRules.bindSuccess'))
@@ -440,11 +508,25 @@ onMounted(fetchRules)
                         <div class="vms-section">
                             <div class="section-label">{{ t('dashboard.vmAlarmRules.linkedVMs') }} ({{ rule.linkedvms?.length || 0 }})</div>
                             <div class="linked-vms-chips">
-                                <div v-for="vmId in rule.linkedvms" :key="vmId" class="vm-chip">
-                                    {{ vmId }}
+                                <div v-for="vmId in rule.linkedvms" :key="vmId" class="vm-chip" :title="vmId">
+                                    {{ getVMName(vmId) }}
+                                    <span class="badge badge-secondary" style="margin-left: 4px; font-size: 10px;">{{ vmId.substring(0, 8) }}</span>
                                 </div>
                                 <div v-if="!rule.linkedvms || rule.linkedvms.length === 0" class="text-secondary" style="font-size: 12px;">
                                     {{ t('dashboard.vmAlarmRules.noLinkedVMs') }}
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="vms-section">
+                            <div class="section-label">{{ t('dashboard.vmAlarmRules.linkedChannels') }} ({{ (ruleChannels[rule.uuid] || []).length }})</div>
+                            <div class="linked-vms-chips">
+                                <div v-for="ch in ruleChannels[rule.uuid]" :key="ch.uuid" class="vm-chip" :title="ch.uuid">
+                                    {{ ch.name }}
+                                    <span class="badge badge-secondary" style="margin-left: 4px; font-size: 10px; text-transform: uppercase;">{{ ch.type }}</span>
+                                </div>
+                                <div v-if="!ruleChannels[rule.uuid] || ruleChannels[rule.uuid].length === 0" class="text-secondary" style="font-size: 12px;">
+                                    {{ t('dashboard.vmAlarmRules.noLinkedChannels') }}
                                 </div>
                             </div>
                         </div>
@@ -517,7 +599,7 @@ onMounted(fetchRules)
                                 </div>
                             </div>
                             <div class="form-group mt-2">
-                                <label class="form-label">{{ t('dashboard.vmAlarmRules.bindVMs') }} ({{ t('actions.optional') }})</label>
+                                <label class="form-label">{{ t('dashboard.vmAlarmRules.bindVMs') }} ({{ t('dashboard.forms.optional') }})</label>
                                 <div class="vm-create-selection">
                                     <div v-if="vmsLoading" class="loading-spinner small"></div>
                                     <div v-else class="channel-list" style="max-height: 160px; border: 1px solid var(--border-light); border-radius: 6px; padding: 4px;">
@@ -527,6 +609,20 @@ onMounted(fetchRules)
                                             <span class="badge badge-secondary">{{ vm.id.substring(0, 8) }}</span>
                                         </label>
                                         <div v-if="allVMs.length === 0" class="text-muted p-2">{{ t('messages.noNics') }}</div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="form-group mt-2">
+                                <label class="form-label">{{ t('dashboard.vmAlarmRules.linkedChannels') }} ({{ t('dashboard.forms.optional') }})</label>
+                                <div class="vm-create-selection">
+                                    <div v-if="createChannelsLoading" class="loading-spinner small"></div>
+                                    <div v-else class="channel-list" style="max-height: 160px; border: 1px solid var(--border-light); border-radius: 6px; padding: 4px;">
+                                        <label v-for="ch in allChannels" :key="ch.uuid" class="channel-item">
+                                            <input type="checkbox" :value="ch.uuid" v-model="createForm.linkedchannels" />
+                                            <span class="channel-name">{{ ch.name }}</span>
+                                            <span class="badge badge-secondary" style="text-transform: uppercase;">{{ ch.type }}</span>
+                                        </label>
+                                        <div v-if="allChannels.length === 0" class="text-muted p-2">{{ t('dashboard.vmAlarmRules.noLinkedChannels') }}</div>
                                     </div>
                                 </div>
                             </div>
@@ -576,7 +672,9 @@ onMounted(fetchRules)
                             <label v-for="ch in allChannels" :key="ch.uuid" class="channel-item" @click="toggleChannel(ch.uuid)">
                                 <input type="checkbox" :checked="selectedChannelUuids.includes(ch.uuid)" />
                                 <span class="channel-name">{{ ch.name }}</span>
-                                <span class="badge" :class="ch.type === 'feishu' ? 'badge-info' : 'badge-secondary'">{{ ch.type }}</span>
+                                <span class="badge" :class="ch.type === 'feishu' ? 'badge-info' : 'badge-secondary'">
+                                    {{ ch.type === 'feishu' ? t('dashboard.notificationFeishu') : (ch.type === 'webhook' ? t('dashboard.notificationCustomWebhook') : ch.type) }}
+                                </span>
                             </label>
                         </div>
                     </div>
@@ -849,7 +947,6 @@ onMounted(fetchRules)
     padding: 2px 10px;
     border-radius: 4px;
     font-size: 12px;
-    font-family: var(--font-family-mono, monospace);
 }
 
 .actions-cell { display: flex; gap: 4px; align-items: center; }

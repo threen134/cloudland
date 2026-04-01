@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import { authApi } from '../api/auth'
-import { setAuthToken } from '../api/client'
+import { setAuthToken, beginTokenSwitch } from '../api/client'
 
 export interface Organization {
     id: string
@@ -66,6 +66,7 @@ export const useTenantStore = defineStore('tenant', () => {
     const switchOrg = async (orgId: string) => {
         isSwitching.value = true
         error.value = null
+        const endSwitch = beginTokenSwitch()
 
         try {
             const response = await authApi.switchOrg(orgId)
@@ -80,6 +81,7 @@ export const useTenantStore = defineStore('tenant', () => {
             error.value = err.message
             throw err
         } finally {
+            endSwitch()
             isSwitching.value = false
         }
     }
