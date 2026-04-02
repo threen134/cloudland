@@ -1387,12 +1387,16 @@ export default {
         refresh: 'Refresh',
         cancel: 'Cancel',
         confirm: 'Confirm',
+        loading: 'Loading',
+        settings: 'Settings',
+        on: 'ON',
+        off: 'OFF',
     },
     settings: {
         title: 'System Settings',
         categoryGeneral: 'General',
         categoryQuota: 'Resource Quotas',
-        categoryNotification: 'Notification Channels',
+        notificationChannels: 'Notification Channels',
         category: {
             general: 'General',
             quota: 'Resource Quotas',
@@ -1410,6 +1414,13 @@ export default {
             feishu: 'Feishu',
             slack: 'Slack',
             webhook: 'Webhook',
+        },
+        testHint: 'Send a test message to verify the configuration of this channel.',
+        channelActivation: 'Channel Activation',
+        enableHint: 'Activate or deactivate this notification channel globally.',
+        fields: {
+            SLACK_WEBHOOK_URL: 'Slack Webhook URL',
+            SLACK_WEBHOOK_URL_desc: 'The Incoming Webhook URL used to send notifications to your Slack channel.',
         },
     },
 }

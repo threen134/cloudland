@@ -1387,12 +1387,16 @@ export default {
         refresh: '刷新',
         cancel: '取消',
         confirm: '确认',
+        loading: '加载中',
+        settings: '设置',
+        on: '开启',
+        off: '关闭',
     },
     settings: {
         title: '系统设置',
         categoryGeneral: '基础信息',
         categoryQuota: '资源配额',
-        categoryNotification: '通知渠道',
+        notificationChannels: '通知渠道',
         category: {
             general: '基础信息',
             quota: '资源配额',
@@ -1410,6 +1414,13 @@ export default {
             feishu: '飞书',
             slack: 'Slack',
             webhook: 'Webhook',
+        },
+        testHint: '发送测试消息以验证此渠道的配置。',
+        channelActivation: '渠道激活',
+        enableHint: '全局开启或关闭此通知渠道。',
+        fields: {
+            SLACK_WEBHOOK_URL: 'Slack Webhook 地址',
+            SLACK_WEBHOOK_URL_desc: '用于发送通知到 Slack 频道的 Incoming Webhook URL。',
         },
     },
 }
