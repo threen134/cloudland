@@ -2,7 +2,7 @@ import client from './client'
 
 export interface AlarmEvent {
     ID: number
-    UUID: string
+    uuid: string
     fingerprint: string
     rule_group_uuid: string
     alert_name: string
@@ -27,7 +27,7 @@ export interface AlarmEventListResponse {
 
 export interface AlarmDeliveryLog {
     ID: number
-    UUID: string
+    uuid: string
     event_uuid: string
     channel_uuid: string
     channel_name: string

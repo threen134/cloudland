@@ -128,10 +128,10 @@ onMounted(fetchEvents)
                             <div class="loading-spinner" style="margin: 20px auto;"></div>
                         </td>
                     </tr>
-                    <template v-else-if="filteredEvents.length > 0" v-for="event in filteredEvents" :key="event.UUID">
-                        <tr class="event-row" @click="toggleExpand(event.UUID)">
+                    <template v-else-if="filteredEvents.length > 0" v-for="event in filteredEvents" :key="event.uuid">
+                        <tr class="event-row" @click="toggleExpand(event.uuid)">
                             <td>
-                                <component :is="expandedEvent === event.UUID ? ChevronDown : ChevronRight" :size="14" />
+                                <component :is="expandedEvent === event.uuid ? ChevronDown : ChevronRight" :size="14" />
                             </td>
                             <td>{{ event.alert_name }}</td>
                             <td>{{ event.vm_name || event.vm_uuid }}</td>
@@ -150,12 +150,12 @@ onMounted(fetchEvents)
                             <td>{{ formatTime(event.resolved_at) }}</td>
                         </tr>
                         <!-- Expanded: Delivery Logs -->
-                        <tr v-if="expandedEvent === event.UUID" class="expanded-row">
+                        <tr v-if="expandedEvent === event.uuid" class="expanded-row">
                             <td colspan="8">
                                 <div class="delivery-logs">
                                     <h4>{{ t('dashboard.alarmDeliveryLogs') }}</h4>
-                                    <div v-if="loadingLogs === event.UUID" class="loading-spinner" style="margin: 12px auto;"></div>
-                                    <table v-else-if="deliveryLogs[event.UUID]?.length" class="data-table nested-table">
+                                    <div v-if="loadingLogs === event.uuid" class="loading-spinner" style="margin: 12px auto;"></div>
+                                    <table v-else-if="deliveryLogs[event.uuid]?.length" class="data-table nested-table">
                                         <thead>
                                             <tr>
                                                 <th>{{ t('dashboard.alarmChannelName') }}</th>
@@ -167,7 +167,7 @@ onMounted(fetchEvents)
                                             </tr>
                                         </thead>
                                         <tbody>
-                                            <tr v-for="log in deliveryLogs[event.UUID]" :key="log.UUID">
+                                            <tr v-for="log in deliveryLogs[event.uuid]" :key="log.uuid">
                                                 <td>{{ log.channel_name }}</td>
                                                 <td>{{ log.channel_type }}</td>
                                                 <td>

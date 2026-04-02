@@ -243,14 +243,22 @@ func (n *NotificationAdmin) UpsertAlarmEvent(ctx context.Context, fingerprint st
 
 	if err == gorm.ErrRecordNotFound {
 		// 新告警
+		vmUUID := alertData["vm_uuid"]
+		if vmUUID == "" {
+			vmUUID = alertData["instance_id"]
+		}
+		vmName := alertData["vm_name"]
+		if vmName == "" {
+			vmName = alertData["domain"]
+		}
 		event := &model.AlarmEvent{
 			Model:         model.Model{UUID: uuid.New().String()},
 			Fingerprint:   fingerprint,
 			RuleGroupUUID: alertData["rule_group"],
 			AlertName:     alertData["alertname"],
 			Owner:         alertData["owner"],
-			VMUUID:        alertData["vm_uuid"],
-			VMName:        alertData["vm_name"],
+			VMUUID:        vmUUID,
+			VMName:        vmName,
 			Severity:      alertData["severity"],
 			Status:        "firing",
 			Summary:       alertData["summary"],
@@ -356,3 +364,4 @@ func (n *NotificationAdmin) ListDeliveryLogs(ctx context.Context, eventUUID stri
 	}
 	return logs, nil
 }
+
