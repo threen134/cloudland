@@ -682,6 +682,21 @@ async def delete_security_groups_id_rules_rule_id(
         proxy_path="/security_groups/{id}/rules/{rule_id}"
     )
 
+@router.patch("/security_groups/{id}/rules/{rule_id}", summary="patch a secrule")
+async def patch_security_groups_id_rules_rule_id(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user)
+):
+    """
+    patch a secrule
+    """
+    return await proxy_service.forward_to_region(
+        request=request,
+        db=db,
+        proxy_path="/security_groups/{id}/rules/{rule_id}"
+    )
+
 @router.get("/subnets", summary="list subnets")
 async def get_subnets(
     request: Request,

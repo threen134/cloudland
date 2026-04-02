@@ -3,6 +3,7 @@ import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { useToast } from '../../composables/useToast'
+import { useSecurityGroup } from '../../composables/useSecurityGroup'
 import { securityGroupsApi, type SecurityGroup, type SecurityRule } from '../../api/networks'
 import { ArrowLeft, Shield, Trash2, Plus, X, Edit, ArrowUpDown, ArrowUp, ArrowDown, Network, Server, ChevronDown, Search } from 'lucide-vue-next'
 
@@ -10,6 +11,7 @@ const route = useRoute()
 const router = useRouter()
 const { t } = useI18n()
 const toast = useToast()
+const { translateDescription } = useSecurityGroup()
 const groupId = route.params.id as string
 
 const group = ref<SecurityGroup | null>(null)
@@ -254,6 +256,7 @@ const getServiceName = (rule: SecurityRule): string | null => {
 }
 
 onMounted(fetchGroup)
+
 </script>
 
 <template>
@@ -323,7 +326,7 @@ onMounted(fetchGroup)
                         </div>
                         <div class="kv-item">
                             <span class="label">{{ $t('dashboard.table.description') }}</span>
-                            <span class="value">{{ group.description || '-' }}</span>
+                            <span class="value">{{ translateDescription(group.description) || '-' }}</span>
                         </div>
                         <div class="kv-item">
                             <span class="label">{{ $t('dashboard.table.vpc') }}</span>

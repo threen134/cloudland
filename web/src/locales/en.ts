@@ -1421,6 +1421,8 @@ export default {
         fields: {
             SLACK_WEBHOOK_URL: 'Slack Webhook URL',
             SLACK_WEBHOOK_URL_desc: 'The Incoming Webhook URL used to send notifications to your Slack channel.',
+            ALARM_EVENT_RETENTION_DAYS: 'Alarm Event Retention Days',
+            ALARM_EVENT_RETENTION_DAYS_desc: 'Alarm events and delivery logs older than this number of days will be automatically cleaned up. Default: 30 days.',
         },
     },
 }

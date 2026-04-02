@@ -2,6 +2,7 @@ package services
 
 import (
 	"encoding/json"
+	"strconv"
 	"strings"
 
 	"api/src/model"
@@ -41,6 +42,19 @@ func GetMirrorSettingJSON(key string) interface{} {
 	var v interface{}
 	if err := json.Unmarshal([]byte(row.Value), &v); err != nil {
 		return nil
+	}
+	return v
+}
+
+// GetMirrorSettingInt 从镜像中读取 number 类型值，解析失败或不存在时返回 defaultVal。
+func GetMirrorSettingInt(key string, defaultVal int) int {
+	raw := GetMirrorSetting(key)
+	if raw == "" {
+		return defaultVal
+	}
+	v, err := strconv.Atoi(raw)
+	if err != nil {
+		return defaultVal
 	}
 	return v
 }

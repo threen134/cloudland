@@ -901,6 +901,8 @@ export default {
             noInterfaces: '暂无网卡使用此安全组。',
             ipAddress: 'IP 地址',
             instance: '虚拟机',
+            systemDefaultDescription: '系统默认安全组',
+            nativeForRouterDescription: '路由器 {name} 的原生安全组',
         },
         buttons: {
             createInstance: '创建云服务器',
@@ -1421,6 +1423,8 @@ export default {
         fields: {
             SLACK_WEBHOOK_URL: 'Slack Webhook 地址',
             SLACK_WEBHOOK_URL_desc: '用于发送通知到 Slack 频道的 Incoming Webhook URL。',
+            ALARM_EVENT_RETENTION_DAYS: '告警事件保留天数',
+            ALARM_EVENT_RETENTION_DAYS_desc: '超过该天数的告警事件及投递日志将被自动清理，默认 30 天。',
         },
     },
 }

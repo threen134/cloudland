@@ -8,7 +8,12 @@ SPDX-License-Identifier: Apache-2.0
 package apis
 
 import (
+	"context"
+	"time"
+
 	_ "api/docs/routes"
+	. "api/src/common"
+	"api/src/services"
 	"api/src/utils/log"
 
 	"github.com/gin-gonic/gin"
@@ -17,8 +22,41 @@ import (
 
 var logger = log.MustGetLogger("apis")
 
+const defaultAlarmEventRetentionDays = 30
+
+func startAlarmEventCleanup() {
+	admin := &services.NotificationAdmin{}
+	ticker := time.NewTicker(24 * time.Hour)
+	go func() {
+		// 等待服务完全启动后再执行首次清理
+		time.Sleep(10 * time.Second)
+		runAlarmEventCleanup(admin)
+		for range ticker.C {
+			runAlarmEventCleanup(admin)
+		}
+	}()
+}
+
+func runAlarmEventCleanup(admin *services.NotificationAdmin) {
+	retentionDays := services.GetMirrorSettingInt("ALARM_EVENT_RETENTION_DAYS", defaultAlarmEventRetentionDays)
+	if retentionDays < 1 {
+		retentionDays = defaultAlarmEventRetentionDays
+	}
+	ctx := context.Background()
+	ctx = SetContextDB(ctx, DB())
+	deleted, err := admin.CleanupExpiredAlarmEvents(ctx, retentionDays)
+	if err != nil {
+		logger.Errorf("Failed to cleanup expired alarm events: %v", err)
+		return
+	}
+	if deleted > 0 {
+		logger.Infof("Cleaned up %d expired alarm events (older than %d days)", deleted, retentionDays)
+	}
+}
+
 func Run() (err error) {
 	logger.Info("Starting cloudland api daemon...")
+	startAlarmEventCleanup()
 	r := Register()
 	cert := viper.GetString("rest.cert")
 	key := viper.GetString("rest.key")

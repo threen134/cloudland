@@ -3,6 +3,7 @@ import { ref, onMounted, computed, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import { useToast } from '../../composables/useToast'
+import { useSecurityGroup } from '../../composables/useSecurityGroup'
 import { securityGroupsApi, vpcsApi, type SecurityGroup, type SecurityRule, type VPC } from '../../api/networks'
 import { isValidName } from '../../utils/validation'
 
@@ -10,6 +11,7 @@ import { Shield, Plus, Trash2, ChevronDown, ChevronRight, Search, X, RefreshCw, 
 import { useRegionStore } from '../../stores/region'
 
 const region = useRegionStore()
+const { translateDescription } = useSecurityGroup()
 
 
 const securityGroups = ref<SecurityGroup[]>([])
@@ -378,6 +380,7 @@ watch(() => region.currentRegionId, (newId) => {
         fetchSecurityGroups()
     }
 })
+
 </script>
 
 <template>
@@ -430,7 +433,7 @@ watch(() => region.currentRegionId, (newId) => {
                 <span v-if="group.is_default" class="badge badge-primary">{{ $t('dashboard.table.default') }}</span>
                 <span class="sg-vpc-badge" v-if="group.vpc?.name">{{ group.vpc.name }}</span>
               </div>
-              <div class="sg-description" v-if="group.description">{{ group.description }}</div>
+              <div class="sg-description" v-if="group.description">{{ translateDescription(group.description) }}</div>
               <div class="sg-id">{{ group.id }}</div>
             </div>
           </div>

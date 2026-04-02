@@ -31,6 +31,7 @@ SETTINGS_METADATA: dict[str, tuple] = {
     "DEFAULT_TRAFFIC_GB":   ("number",  "quota",        "默认流量配额（GB）",   False, lambda: env_settings.DEFAULT_TRAFFIC_GB),
 
     # --- 通知渠道 ---
+    "ALARM_EVENT_RETENTION_DAYS": ("number", "notification",  "告警事件保留天数",     False, lambda: 30),
     "NOTIFICATION_CHANNELS": ("json",  "notification", "启用的通知渠道列表",  False, lambda: ["email"]),
 
     # SMTP

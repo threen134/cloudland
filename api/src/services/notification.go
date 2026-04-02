@@ -365,3 +365,26 @@ func (n *NotificationAdmin) ListDeliveryLogs(ctx context.Context, eventUUID stri
 	return logs, nil
 }
 
+// CleanupExpiredAlarmEvents 清理超过指定天数的告警事件及关联投递日志
+func (n *NotificationAdmin) CleanupExpiredAlarmEvents(ctx context.Context, retentionDays int) (int64, error) {
+	ctx, db := GetContextDB(ctx)
+	cutoff := time.Now().AddDate(0, 0, -retentionDays)
+
+	var deleted int64
+	err := db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Exec(
+			"DELETE FROM alarm_delivery_logs WHERE event_uuid IN (SELECT uuid FROM alarm_events WHERE last_fired_at < ?)",
+			cutoff,
+		).Error; err != nil {
+			return fmt.Errorf("failed to delete expired delivery logs: %w", err)
+		}
+		result := tx.Where("last_fired_at < ?", cutoff).Delete(&model.AlarmEvent{})
+		if result.Error != nil {
+			return fmt.Errorf("failed to delete expired alarm events: %w", result.Error)
+		}
+		deleted = result.RowsAffected
+		return nil
+	})
+	return deleted, err
+}
+
