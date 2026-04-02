@@ -3,6 +3,7 @@ import { ref, onMounted, computed, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import { useToast } from '../../composables/useToast'
+import { useRegionStore } from '../../stores/region'
 import { loadBalancersApi, vpcsApi, type LoadBalancer, type VPC, type LoadBalancerPayload } from '../../api/networks'
 import { isValidName } from '../../utils/validation'
 
@@ -23,6 +24,7 @@ const newLBForm = ref({
 
 const { t } = useI18n()
 const toast = useToast()
+const region = useRegionStore()
 const isNameValid = computed(() => isValidName(newLBForm.value.name))
 
 // --- Edit Modal ---

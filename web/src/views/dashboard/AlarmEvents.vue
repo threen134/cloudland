@@ -133,7 +133,9 @@ onMounted(fetchEvents)
                             <td>
                                 <component :is="expandedEvent === event.uuid ? ChevronDown : ChevronRight" :size="14" />
                             </td>
-                            <td>{{ event.alert_name }}</td>
+                            <td>
+                                <span class="alert-name-cell" :data-tooltip="event.alert_name">{{ event.alert_name }}</span>
+                            </td>
                             <td>{{ event.vm_name || event.vm_uuid }}</td>
                             <td>
                                 <span class="badge" :class="severityClass(event.severity)">
@@ -171,7 +173,12 @@ onMounted(fetchEvents)
                                                 <td>{{ log.channel_name }}</td>
                                                 <td>{{ log.channel_type }}</td>
                                                 <td>
-                                                    <span class="badge badge-secondary">{{ log.notify_type }}</span>
+                                                    <span class="badge" :class="{
+                                                        'badge-notify-trigger': log.notify_type === 'firing_trigger',
+                                                        'badge-notify-remind': log.notify_type === 'repeat_remind',
+                                                        'badge-resolved': log.notify_type === 'resolved',
+                                                        'badge-secondary': !['firing_trigger','repeat_remind','resolved'].includes(log.notify_type)
+                                                    }">{{ t('dashboard.alarmNotifyTypes.' + log.notify_type) }}</span>
                                                 </td>
                                                 <td>
                                                     <CheckCircle v-if="log.status === 'sent'" :size="16" class="text-success" />
@@ -292,11 +299,43 @@ onMounted(fetchEvents)
 .badge-warning { background: #f59e0b; color: white; }
 .badge-info { background: #3b82f6; color: white; }
 .badge-secondary { background: #6b7280; color: white; }
+.badge-notify-trigger { background: #1e3a8a; color: white; }
+.badge-notify-remind { background: #60a5fa; color: white; }
 .text-success { color: #22c55e; }
 .text-danger { color: #ef4444; }
 .text-center { text-align: center; }
 .text-muted { color: #9ca3af; }
 .error-cell { max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.alert-name-cell {
+    display: inline-block;
+    max-width: 200px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    vertical-align: bottom;
+    cursor: default;
+    position: relative;
+}
+.alert-name-cell::after {
+    content: attr(data-tooltip);
+    position: absolute;
+    left: 0;
+    top: 100%;
+    margin-top: 4px;
+    background: rgba(0, 0, 0, 0.75);
+    color: #fff;
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-size: 12px;
+    white-space: nowrap;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.15s;
+    z-index: 100;
+}
+.alert-name-cell:hover::after {
+    opacity: 1;
+}
 .error-banner {
     background: #fef2f2; color: #dc2626; border: 1px solid #fecaca;
     border-radius: 6px; padding: 10px 14px; margin-bottom: 12px;

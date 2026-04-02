@@ -432,6 +432,11 @@ export default {
         alarmStatusFiring: 'Firing',
         alarmStatusResolved: 'Resolved',
         alarmNoDeliveryLogs: 'No delivery logs for this event.',
+        alarmNotifyTypes: {
+            firing_trigger: 'Firing Trigger',
+            repeat_remind: 'Repeat Remind',
+            resolved: 'Resolved',
+        },
         floatingIPDetail: {
             publicIp: 'Public IP',
             internalIp: 'Internal IP',
@@ -1186,6 +1191,7 @@ export default {
         enable: 'Enable',
         disable: 'Disable',
         external: 'External Client',
+        more: 'More',
     },
 
     // Auth

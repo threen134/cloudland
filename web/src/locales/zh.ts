@@ -429,6 +429,11 @@ export default {
         alarmSentAt: '发送时间',
         alarmError: '错误',
         alarmNoDeliveryLogs: '没有该事件的推送日志。',
+        alarmNotifyTypes: {
+            firing_trigger: '首次触发',
+            repeat_remind: '重复提醒',
+            resolved: '已恢复',
+        },
         alarmStatusFiring: '触发中',
         alarmStatusResolved: '已恢复',
         floatingIPDetail: {
@@ -1184,6 +1189,7 @@ export default {
         enable: '启用',
         disable: '禁用',
         external: '外部客户端',
+        more: '更多',
     },
 
     // 认证

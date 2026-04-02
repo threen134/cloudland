@@ -4,9 +4,11 @@ import { alarmsApi, RULE_TYPES, type NodeAlarmRule, type CreateNodeAlarmRulePayl
 import { Search as SearchIcon, AlertTriangle, Plus, Trash2, RefreshCw, X, Loader2, RefreshCcw } from 'lucide-vue-next'
 import { useI18n } from 'vue-i18n'
 import { useToast } from '../../composables/useToast'
+import { useRegionStore } from '../../stores/region'
 
 const { t } = useI18n()
 const toast = useToast()
+const region = useRegionStore()
 const alarmList = ref<NodeAlarmRule[]>([])
 const loading = ref(false)
 const searchQuery = ref('')

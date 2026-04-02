@@ -7,8 +7,10 @@ import { hypervisorsApi, type Hypervisor } from '../../api/hypervisors'
 import { Search as SearchIcon, ArrowRightLeft, Plus, X, RefreshCw } from 'lucide-vue-next'
 import { useToast } from '../../composables/useToast'
 import { useI18n } from 'vue-i18n'
+import { useRegionStore } from '../../stores/region'
 
 const { t } = useI18n()
+const region = useRegionStore()
 const toast = useToast()
 const migrationList = ref<Migration[]>([])
 const loading = ref(false)
