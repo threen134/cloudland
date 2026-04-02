@@ -280,7 +280,8 @@ onMounted(fetchEvents)
 .expanded-row td { padding: 0; }
 .delivery-logs { padding: 12px 16px; background: var(--bg-secondary, #f9fafb); }
 .delivery-logs h4 { margin: 0 0 8px 0; font-size: 13px; }
-.nested-table { margin: 0; font-size: 13px; }
+.nested-table { margin: 0; font-size: 13px; width: 100%; }
+.nested-table th, .nested-table td { text-align: center; }
 
 .pagination { display: flex; align-items: center; justify-content: center; gap: 12px; padding: 16px 0; }
 .page-info { font-size: 13px; color: #6b7280; }
