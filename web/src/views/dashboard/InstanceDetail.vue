@@ -185,7 +185,6 @@ interface LinkedRule {
     typeLabel: string
     uuid: string
     name: string
-    level: string
     enable: boolean
     rules?: any[]
 }
@@ -235,7 +234,6 @@ const fetchLinkedRules = async () => {
                         typeLabel: t('dashboard.vmAlarmRules.ruleTypes.' + type),
                         uuid: rule.uuid,
                         name: rule.name,
-                        level: rule.level,
                         enable: rule.enable,
                         rules: rule.rules || [],
                     })
@@ -271,7 +269,6 @@ const openLinkModal = async () => {
                         typeLabel: t('dashboard.vmAlarmRules.ruleTypes.' + type),
                         uuid: rule.uuid,
                         name: rule.name,
-                        level: rule.level,
                         enable: rule.enable,
                     })
                 }
@@ -958,8 +955,8 @@ onMounted(() => {
                                                         </td>
                                                         <td>{{ detail.duration }} {{ t('dashboard.alarm.minutes') }}</td>
                                                         <td>
-                                                            <span v-if="detail.level || rule.level" class="badge" :class="getSeverityClass(detail.level || rule.level)">
-                                                                {{ t('dashboard.vmAlarmRules.levels.' + (detail.level || rule.level).toLowerCase()) }}
+                                                            <span v-if="detail.level" class="badge" :class="getSeverityClass(detail.level)">
+                                                                {{ t('dashboard.vmAlarmRules.levels.' + detail.level.toLowerCase()) }}
                                                             </span>
                                                             <span v-else>-</span>
                                                         </td>

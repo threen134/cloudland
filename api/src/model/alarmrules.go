@@ -99,7 +99,6 @@ type RuleGroupV2 struct {
 	Enabled         bool   `gorm:"default:true"`
 	TriggerCnt      int    `gorm:"default:0"`
 	RegionID        string `gorm:"type:varchar(64)"`
-	Level           string `gorm:"type:varchar(32)"`
 	DurationMinutes int
 }
 

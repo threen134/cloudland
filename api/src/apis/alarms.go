@@ -966,7 +966,6 @@ func (a *AlarmAPI) GetCPURules(c *gin.Context) {
 			"rules":     ruleDetails,
 			"linkedvms": linkedVMs,
 			"region_id": group.RegionID,
-			"level":     group.Level,
 			"enable":    group.Enabled,
 		})
 	}
@@ -1060,7 +1059,6 @@ func (a *AlarmAPI) GetMemoryRules(c *gin.Context) {
 			"rules":     ruleDetails,
 			"linkedvms": linkedVMs,
 			"region_id": group.RegionID,
-			"level":     group.Level,
 			"enable":    group.Enabled,
 		})
 	}
@@ -1893,7 +1891,6 @@ func (a *AlarmAPI) GetBWRules(c *gin.Context) {
 			"enable":    group.Enabled,
 			"region_id": group.RegionID,
 			"rule_id":   group.RuleID,
-			"level":     group.Level,
 			"rules":     ruleDetails,
 			"linkedvms": linkedVMs,
 		})

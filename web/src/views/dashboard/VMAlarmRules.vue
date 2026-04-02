@@ -53,6 +53,11 @@ const vmsLoading = ref(false)
 const linkVMsLoading = ref(false)
 const vmSearchQuery = ref('')
 
+// BW NIC selection
+const vmInterfaces = ref<Record<string, { id: string; name: string; ip_address?: string }[]>>({})
+const vmInterfacesLoading = ref<Record<string, boolean>>({})
+const expandedBWVMs = ref<string[]>([])
+
 // Expansion logic
 const expandedRules = ref<string[]>([])
 const ruleChannels = ref<Record<string, NotificationChannel[]>>({})
@@ -212,16 +217,44 @@ const onTypeChange = () => {
     }
 }
 
-const toggleBWVM = (id: string) => {
-    const idx = createForm.value.bwLinkedVMs.findIndex(v => v.instance_id === id)
-    if (idx >= 0) {
-        createForm.value.bwLinkedVMs.splice(idx, 1)
-    } else {
-        createForm.value.bwLinkedVMs.push({ instance_id: id, target_device: 'eth0' })
+const isBWVMChecked = (vmId: string) =>
+    createForm.value.bwLinkedVMs.some(v => v.instance_id === vmId)
+
+const isBWNICChecked = (vmId: string, nicName: string) =>
+    createForm.value.bwLinkedVMs.some(v => v.instance_id === vmId && v.target_device === nicName)
+
+const toggleBWVM = async (vmId: string) => {
+    const expanded = expandedBWVMs.value.includes(vmId)
+    if (expanded) {
+        // 收起：移除展开状态及该 VM 所有已选网卡
+        expandedBWVMs.value = expandedBWVMs.value.filter(id => id !== vmId)
+        createForm.value.bwLinkedVMs = createForm.value.bwLinkedVMs.filter(v => v.instance_id !== vmId)
+        return
+    }
+    // 展开：拉取网卡列表（缓存），不自动选中任何网卡
+    expandedBWVMs.value.push(vmId)
+    if (!vmInterfaces.value[vmId]) {
+        vmInterfacesLoading.value[vmId] = true
+        try {
+            const res = await instancesApi.getInterfaces(vmId)
+            vmInterfaces.value[vmId] = (res.data.interfaces || []).map(i => ({ id: i.id, name: i.name, ip_address: i.ip_address }))
+        } catch {
+            vmInterfaces.value[vmId] = []
+        } finally {
+            vmInterfacesLoading.value[vmId] = false
+        }
     }
 }
 
-const getBWVMEntry = (id: string) => createForm.value.bwLinkedVMs.find(v => v.instance_id === id)
+const toggleBWNIC = (vmId: string, nicName: string) => {
+    const idx = createForm.value.bwLinkedVMs.findIndex(v => v.instance_id === vmId && v.target_device === nicName)
+    if (idx >= 0) {
+        createForm.value.bwLinkedVMs.splice(idx, 1)
+    } else {
+        createForm.value.bwLinkedVMs.push({ instance_id: vmId, target_device: nicName })
+    }
+}
+
 
 const submitCreate = async () => {
     try {
@@ -239,11 +272,6 @@ const submitCreate = async () => {
         } else if (createForm.value.type === 'memory') {
             res = await vmAlarmRulesApi.createMemoryRule({ ...base, rules: createForm.value.rules as any })
         } else if (createForm.value.type === 'bw') {
-            const invalidBWVM = createForm.value.bwLinkedVMs.find(v => !v.target_device.trim())
-            if (invalidBWVM) {
-                errorMsg.value = t('dashboard.vmAlarmRules.targetDeviceRequired')
-                return
-            }
             res = await vmAlarmRulesApi.createBWRule({
                 ...base,
                 enable: true,
@@ -342,8 +370,9 @@ const saveChannelBindings = async () => {
     try {
         await alarmEventsApi.bindRuleChannels(bindTarget.value.uuid, selectedChannelUuids.value)
         const uuid = bindTarget.value.uuid
-        ruleChannelCounts.value[uuid] = selectedChannelUuids.value.length
-        delete ruleChannels.value[uuid]
+        const bound = allChannels.value.filter(c => selectedChannelUuids.value.includes(c.uuid))
+        ruleChannels.value[uuid] = bound
+        ruleChannelCounts.value[uuid] = bound.length
         showBindModal.value = false
         toast.success(t('messages.success'))
     } catch (err: any) {
@@ -652,19 +681,29 @@ onMounted(fetchRules)
                                 <label class="form-label">{{ t('dashboard.vmAlarmRules.bindVMs') }} ({{ t('dashboard.forms.optional') }})</label>
                                 <div class="vm-create-selection">
                                     <div v-if="vmsLoading" class="loading-spinner small"></div>
-                                    <!-- BW 类型：每个 VM 需额外指定网卡 -->
-                                    <div v-else-if="createForm.type === 'bw'" class="channel-list" style="max-height: 200px; border: 1px solid var(--border-light); border-radius: 6px; padding: 4px;">
-                                        <div v-for="vm in allVMs" :key="vm.id" class="channel-item" style="gap: 8px;">
-                                            <input type="checkbox" :checked="!!getBWVMEntry(vm.id)" @change="toggleBWVM(vm.id)" />
-                                            <span class="channel-name" style="flex:1;">{{ vm.hostname || vm.name }}</span>
-                                            <input
-                                                v-if="getBWVMEntry(vm.id)"
-                                                :value="getBWVMEntry(vm.id)!.target_device"
-                                                @input="getBWVMEntry(vm.id)!.target_device = ($event.target as HTMLInputElement).value"
-                                                class="form-input"
-                                                style="width: 100px; padding: 2px 6px; font-size: 12px;"
-                                                placeholder="eth0"
-                                            />
+                                    <!-- BW 类型：每个 VM 展开选择网卡 -->
+                                    <div v-else-if="createForm.type === 'bw'" class="channel-list" style="max-height: 260px; border: 1px solid var(--border-light); border-radius: 6px; padding: 4px;">
+                                        <div v-for="vm in allVMs" :key="vm.id">
+                                            <!-- VM 行 -->
+                                            <div class="channel-item" style="gap: 8px;">
+                                                <input type="checkbox" :checked="expandedBWVMs.includes(vm.id)" @change="toggleBWVM(vm.id)" />
+                                                <span class="channel-name" style="flex:1;">{{ vm.hostname || vm.name }}</span>
+                                                <span v-if="isBWVMChecked(vm.id)" class="badge badge-primary" style="font-size:10px;">{{ createForm.bwLinkedVMs.filter(v => v.instance_id === vm.id).length }} NIC</span>
+                                                <span v-if="vmInterfacesLoading[vm.id]" class="loading-spinner" style="width:12px;height:12px;"></span>
+                                            </div>
+                                            <!-- 网卡子列表 -->
+                                            <div v-if="expandedBWVMs.includes(vm.id) && vmInterfaces[vm.id]" style="padding-left: 24px;">
+                                                <label
+                                                    v-for="nic in vmInterfaces[vm.id]"
+                                                    :key="nic.name"
+                                                    class="channel-item"
+                                                    style="gap: 8px; font-size: 12px;"
+                                                >
+                                                    <input type="checkbox" :checked="isBWNICChecked(vm.id, nic.name)" @change="toggleBWNIC(vm.id, nic.name)" />
+                                                    <span class="channel-name">{{ nic.name }}</span>
+                                                    <span v-if="nic.ip_address" class="badge badge-secondary">{{ nic.ip_address }}</span>
+                                                </label>
+                                            </div>
                                         </div>
                                         <div v-if="allVMs.length === 0" class="text-muted p-2">{{ t('messages.noNics') }}</div>
                                     </div>
@@ -736,8 +775,8 @@ onMounted(fetchRules)
                             {{ t('dashboard.vmAlarmRules.noChannels') }}
                         </div>
                         <div v-else class="channel-list">
-                            <label v-for="ch in allChannels" :key="ch.uuid" class="channel-item" @click="toggleChannel(ch.uuid)">
-                                <input type="checkbox" :checked="selectedChannelUuids.includes(ch.uuid)" />
+                            <label v-for="ch in allChannels" :key="ch.uuid" class="channel-item">
+                                <input type="checkbox" :checked="selectedChannelUuids.includes(ch.uuid)" @change="toggleChannel(ch.uuid)" />
                                 <span class="channel-name">{{ ch.name }}</span>
                                 <span class="badge" :class="ch.type === 'feishu' ? 'badge-info' : 'badge-secondary'">
                                     {{ ch.type === 'feishu' ? t('dashboard.notificationFeishu') : (ch.type === 'webhook' ? t('dashboard.notificationCustomWebhook') : ch.type) }}

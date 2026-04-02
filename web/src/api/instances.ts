@@ -159,6 +159,10 @@ export const instancesApi = {
         return client.patch(`/instances/${id}`, { hostname })
     },
 
+    getInterfaces(instanceId: string) {
+        return client.get<{ interfaces: { id: string; name: string; ip_address?: string; is_primary?: boolean }[] }>(`/instances/${instanceId}/interfaces`)
+    },
+
     patchInterface(instanceId: string, ifaceId: string, payload: { security_groups?: BaseReference[] }) {
         return client.patch(`/instances/${instanceId}/interfaces/${ifaceId}`, payload)
     },

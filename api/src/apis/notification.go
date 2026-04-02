@@ -144,7 +144,7 @@ type channelPayload struct {
 func (a *NotificationAPI) BindRuleChannels(c *gin.Context) {
 	var req struct {
 		RuleGroupUUID string   `json:"rule_group_uuid" binding:"required"`
-		ChannelUUIDs  []string `json:"channel_uuids" binding:"required"`
+		ChannelUUIDs  []string `json:"channel_uuids"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -154,22 +154,24 @@ func (a *NotificationAPI) BindRuleChannels(c *gin.Context) {
 	ctx := c.Request.Context()
 	memberShip := GetMemberShip(ctx)
 
-	// 校验渠道归属权（租户级）
-	if err := a.admin.ValidateChannelOwnership(ctx, req.ChannelUUIDs, memberShip.OrgID); err != nil {
-		if errors.Is(err, services.ErrChannelNotSynced) {
-			c.JSON(http.StatusConflict, gin.H{
-				"error":   "channel_not_synced",
-				"message": "Some channels are not yet synced to this region. Please retry.",
-			})
-		} else if errors.Is(err, services.ErrChannelNotOwned) {
-			c.JSON(http.StatusForbidden, gin.H{
-				"error":   "channel_not_owned",
-				"message": "Some channels do not belong to you.",
-			})
-		} else {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+	// 校验渠道归属权（租户级，空数组时跳过）
+	if len(req.ChannelUUIDs) > 0 {
+		if err := a.admin.ValidateChannelOwnership(ctx, req.ChannelUUIDs, memberShip.OrgID); err != nil {
+			if errors.Is(err, services.ErrChannelNotSynced) {
+				c.JSON(http.StatusConflict, gin.H{
+					"error":   "channel_not_synced",
+					"message": "Some channels are not yet synced to this region. Please retry.",
+				})
+			} else if errors.Is(err, services.ErrChannelNotOwned) {
+				c.JSON(http.StatusForbidden, gin.H{
+					"error":   "channel_not_owned",
+					"message": "Some channels do not belong to you.",
+				})
+			} else {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			}
+			return
 		}
-		return
 	}
 
 	if err := a.admin.SetRuleBindings(ctx, req.RuleGroupUUID, req.ChannelUUIDs, memberShip.OrgID); err != nil {
