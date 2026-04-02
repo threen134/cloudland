@@ -238,6 +238,7 @@ services:
       - ./config/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml.tmpl:ro
       - ./volumes/prometheus/general_rules:/etc/prometheus/general_rules
       - ./volumes/prometheus/rules_enabled:/etc/prometheus/rules_enabled
+      - ./volumes/prometheus/lists:/etc/prometheus/lists:ro
       - prometheus_data:/prometheus
     entrypoint: ["/bin/sh", "-c"]
     command:
@@ -379,6 +380,7 @@ services:
       - ./volumes/prometheus/general_rules:/etc/prometheus/general_rules
       - ./volumes/prometheus/rules_enabled:/etc/prometheus/rules_enabled
       - ./volumes/prometheus/node_templates:/etc/prometheus/node_templates:ro
+      - ./volumes/prometheus/lists:/etc/prometheus/lists
     ports:
       - "8256:8256"
     networks:

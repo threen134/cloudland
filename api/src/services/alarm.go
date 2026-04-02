@@ -2661,7 +2661,7 @@ func UpdateMatchedVMsJSON(ctx context.Context, vmUUIDs []string, groupUUID, oper
 			}
 
 			newEntry := map[string]interface{}{
-				"targets": []string{"localhost:9109"},
+				"targets": []string{"localhost:9090"},
 				"labels": map[string]interface{}{
 					"domain":        domain,
 					"rule_id":       ruleID,

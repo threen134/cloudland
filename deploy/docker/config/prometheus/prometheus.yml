@@ -34,3 +34,32 @@ scrape_configs:
         refresh_interval: 30s
         tls_config:
           insecure_skip_verify: true
+
+  # VM 告警规则元数据 (file_sd 从 matched_vms.json 动态加载)
+  # 为每个 VM-规则组关联提供 domain/instance_id/rule_id 标签，供告警规则 JOIN 使用
+  - job_name: 'vm-group-metadata'
+    file_sd_configs:
+      - files:
+          - '/etc/prometheus/lists/matched_vms.json'
+        refresh_interval: 30s
+    metric_relabel_configs:
+      - source_labels: [__name__]
+        regex: 'up'
+        action: keep
+    relabel_configs:
+      - source_labels: [domain]
+        target_label: domain
+        action: replace
+      - source_labels: [instance_id]
+        target_label: instance_id
+        action: replace
+      - source_labels: [rule_id]
+        target_label: rule_id
+        action: replace
+      - source_labels: [target_device]
+        target_label: target_device
+        action: replace
+      # 将 instance 设为 domain，避免多条目被同一 host:port 覆盖
+      - source_labels: [domain]
+        target_label: instance
+        action: replace
