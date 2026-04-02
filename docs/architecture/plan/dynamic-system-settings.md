@@ -97,6 +97,7 @@ class SystemConfigVersion(Base):
 | | `FEISHU_SECRET` | string | true | 飞书签名密钥 |
 | | `SLACK_WEBHOOK_URL` | string | false | Slack Incoming Webhook 地址 |
 | | `CUSTOM_WEBHOOK_URL` | string | false | 自定义 Webhook 地址 |
+| | `CUSTOM_WEBHOOK_METHOD` | string | false | 自定义 Webhook HTTP 方法（GET/POST/PUT/PATCH） |
 | | `CUSTOM_WEBHOOK_HEADERS` | json | true | 自定义 Webhook Header（含 Auth） |
 
 ## 5. 多区域同步机制 (Region Mirroring)

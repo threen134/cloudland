@@ -4,12 +4,15 @@ import (
 	"bytes"
 	"crypto/hmac"
 	"crypto/sha256"
+	"crypto/tls"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
+	"net/smtp"
 	"strconv"
+	"strings"
 	"time"
 
 	"api/src/model"
@@ -60,6 +63,10 @@ func (n *AlarmNotifier) SendNotification(
 		err = n.sendFeishu(channel, event, notifyType)
 	case "webhook":
 		err = n.sendWebhook(channel, event, notifyType)
+	case "slack":
+		err = n.sendSlack(channel, event, notifyType)
+	case "email":
+		err = n.sendEmail(channel, event, notifyType)
 	default:
 		err = fmt.Errorf("unsupported channel type: %s", channel.Type)
 	}
@@ -86,8 +93,15 @@ func (n *AlarmNotifier) sendFeishu(
 	if err := json.Unmarshal([]byte(channel.Config), &config); err != nil {
 		return fmt.Errorf("parse feishu config: %w", err)
 	}
+	// channel.Config 为空时，从系统设置镜像中读取全局配置作为 fallback
 	if config.WebhookURL == "" {
-		return fmt.Errorf("feishu webhook_url is empty")
+		config.WebhookURL = GetMirrorSetting("FEISHU_WEBHOOK_URL")
+	}
+	if config.Secret == "" {
+		config.Secret = GetMirrorSetting("FEISHU_SECRET")
+	}
+	if config.WebhookURL == "" {
+		return fmt.Errorf("feishu webhook_url is empty (not configured in channel or system settings)")
 	}
 
 	// 构建飞书消息体
@@ -135,13 +149,25 @@ func (n *AlarmNotifier) sendWebhook(
 ) error {
 	var config struct {
 		URL     string            `json:"url"`
+		Method  string            `json:"method"`  // HTTP 方法，默认 POST
 		Headers map[string]string `json:"headers"`
 	}
 	if err := json.Unmarshal([]byte(channel.Config), &config); err != nil {
 		return fmt.Errorf("parse webhook config: %w", err)
 	}
 	if config.URL == "" {
-		return fmt.Errorf("webhook url is empty")
+		// fallback 到系统设置镜像中的全局 Webhook 配置
+		config.URL = GetMirrorSetting("CUSTOM_WEBHOOK_URL")
+	}
+	if config.URL == "" {
+		return fmt.Errorf("webhook url is empty (not configured in channel or system settings)")
+	}
+	if config.Method == "" {
+		// 优先使用 channel 配置中的 Method，其次从镜像读取，最后默认 POST
+		config.Method = GetMirrorSetting("CUSTOM_WEBHOOK_METHOD")
+		if config.Method == "" {
+			config.Method = "POST"
+		}
 	}
 
 	payload := map[string]interface{}{
@@ -167,7 +193,7 @@ func (n *AlarmNotifier) sendWebhook(
 		return fmt.Errorf("marshal webhook payload: %w", err)
 	}
 
-	req, err := http.NewRequest("POST", config.URL, bytes.NewBuffer(jsonData))
+	req, err := http.NewRequest(config.Method, config.URL, bytes.NewBuffer(jsonData))
 	if err != nil {
 		return fmt.Errorf("create webhook request: %w", err)
 	}
@@ -248,6 +274,146 @@ func (n *AlarmNotifier) getFeishuHeaderColor(event *model.AlarmEvent, notifyType
 	default:
 		return "yellow"
 	}
+}
+
+// sendSlack 发送 Slack Incoming Webhook 通知
+func (n *AlarmNotifier) sendSlack(
+	channel *model.NotificationChannel,
+	event *model.AlarmEvent,
+	notifyType string,
+) error {
+	var config struct {
+		WebhookURL string `json:"webhook_url"`
+	}
+	if err := json.Unmarshal([]byte(channel.Config), &config); err != nil {
+		return fmt.Errorf("parse slack config: %w", err)
+	}
+	// channel.Config 为空时，从系统设置镜像中读取全局 Slack Webhook URL
+	if config.WebhookURL == "" {
+		config.WebhookURL = GetMirrorSetting("SLACK_WEBHOOK_URL")
+	}
+	if config.WebhookURL == "" {
+		return fmt.Errorf("slack webhook_url is empty (not configured in channel or system settings)")
+	}
+
+	title := n.buildTitle(event, notifyType)
+	content := n.buildContent(event, notifyType)
+
+	// Slack Incoming Webhook payload：text 作为纯文本 fallback，blocks 提供富文本
+	payload := map[string]interface{}{
+		"text": title,
+		"blocks": []interface{}{
+			map[string]interface{}{
+				"type": "header",
+				"text": map[string]interface{}{
+					"type": "plain_text",
+					"text": title,
+				},
+			},
+			map[string]interface{}{
+				"type": "section",
+				"text": map[string]interface{}{
+					"type": "mrkdwn",
+					"text": content,
+				},
+			},
+		},
+	}
+
+	return n.doHTTPPost(config.WebhookURL, payload)
+}
+
+// sendEmail 发送告警邮件通知
+func (n *AlarmNotifier) sendEmail(
+	channel *model.NotificationChannel,
+	event *model.AlarmEvent,
+	notifyType string,
+) error {
+	var config struct {
+		To []string `json:"to"` // 收件人列表
+	}
+	if err := json.Unmarshal([]byte(channel.Config), &config); err != nil {
+		return fmt.Errorf("parse email config: %w", err)
+	}
+	if len(config.To) == 0 {
+		return fmt.Errorf("email channel has no recipients configured")
+	}
+
+	// 从系统设置镜像读取 SMTP 配置
+	host := GetMirrorSetting("SMTP_HOST")
+	if host == "" {
+		return fmt.Errorf("SMTP_HOST not configured in system settings")
+	}
+	port := GetMirrorSetting("SMTP_PORT")
+	if port == "" {
+		port = "587"
+	}
+	user := GetMirrorSetting("SMTP_USER")
+	password := GetMirrorSetting("SMTP_PASSWORD")
+	from := GetMirrorSetting("SMTP_FROM")
+	fromName := GetMirrorSetting("SMTP_FROM_NAME")
+	if fromName == "" {
+		fromName = "CloudLand"
+	}
+
+	title := n.buildTitle(event, notifyType)
+	content := n.buildContent(event, notifyType)
+	// 将 markdown 粗体转为纯文本
+	plainContent := strings.ReplaceAll(content, "**", "")
+
+	addr := host + ":" + port
+	toHeader := strings.Join(config.To, ", ")
+
+	msg := fmt.Sprintf("From: %s <%s>\r\nTo: %s\r\nSubject: %s\r\nMIME-Version: 1.0\r\nContent-Type: text/plain; charset=UTF-8\r\n\r\n%s",
+		fromName, from, toHeader, title, plainContent)
+
+	var auth smtp.Auth
+	if user != "" {
+		auth = smtp.PlainAuth("", user, password, host)
+	}
+
+	portNum, _ := strconv.Atoi(port)
+	if portNum == 465 {
+		// 隐式 SSL（SMTPS）
+		tlsConfig := &tls.Config{ServerName: host}
+		conn, err := tls.Dial("tcp", addr, tlsConfig)
+		if err != nil {
+			return fmt.Errorf("tls dial: %w", err)
+		}
+		client, err := smtp.NewClient(conn, host)
+		if err != nil {
+			conn.Close()
+			return fmt.Errorf("smtp new client: %w", err)
+		}
+		defer client.Close()
+		if auth != nil {
+			if err := client.Auth(auth); err != nil {
+				return fmt.Errorf("smtp auth: %w", err)
+			}
+		}
+		if err := client.Mail(from); err != nil {
+			return fmt.Errorf("smtp mail: %w", err)
+		}
+		for _, to := range config.To {
+			if err := client.Rcpt(to); err != nil {
+				return fmt.Errorf("smtp rcpt %s: %w", to, err)
+			}
+		}
+		w, err := client.Data()
+		if err != nil {
+			return fmt.Errorf("smtp data: %w", err)
+		}
+		if _, err := w.Write([]byte(msg)); err != nil {
+			return fmt.Errorf("smtp write: %w", err)
+		}
+		if err := w.Close(); err != nil {
+			return fmt.Errorf("smtp close data: %w", err)
+		}
+		return client.Quit()
+	}
+
+	// 端口 587 或其他：使用 STARTTLS 或明文
+	return smtp.SendMail(addr, auth, from, config.To, []byte(msg))
 }
 
 func (n *AlarmNotifier) doHTTPPost(url string, payload interface{}) error {

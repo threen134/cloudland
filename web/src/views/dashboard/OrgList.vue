@@ -68,7 +68,7 @@ const closeCreateModal = () => {
 const handleCreateOrg = async () => {
     createError.value = ''
     if (!newOrgForm.value.name) {
-        createError.value = 'Please enter an organization name.'
+        createError.value = t('dashboard.org.enterName')
         return
     }
 
@@ -103,7 +103,7 @@ const closeEditModal = () => {
 const handleEditOrg = async () => {
     editError.value = ''
     if (!editOrgForm.value.name) {
-        editError.value = 'Please enter an organization name.'
+        editError.value = t('dashboard.org.enterName')
         return
     }
 
@@ -227,7 +227,7 @@ onMounted(fetchOrgs)
           <tr>
             <th>{{ $t('dashboard.table.nameId') }}</th>
             <th>{{ $t('dashboard.table.description') }}</th>
-            <th>Owner ID</th>
+            <th>{{ $t('dashboard.table.owner') }} ID</th>
             <th>{{ $t('dashboard.table.created') }}</th>
             <th>{{ $t('dashboard.table.actions') }}</th>
           </tr>

@@ -1,10 +1,7 @@
 """
 统一通知模块 - 支持邮件 (SMTP) 和飞书机器人 (Feishu Bot) 两种方式。
 
-通过 settings.NOTIFICATION_METHOD 配置:
-  - "email"  : 仅发送邮件
-  - "feishu" : 仅发送飞书机器人消息
-  - "both"   : 同时发送
+通过动态设置 NOTIFICATION_CHANNELS 配置启用的渠道列表（如 ["email", "feishu"]）。
 """
 
 import time
@@ -13,11 +10,26 @@ import hashlib
 import base64
 import httpx
 import logging
-from app.core.config import settings
 from app.core.email import send_activation_email as _send_email
 from app.core.email import send_invitation_email as _send_invitation_email
 
 logger = logging.getLogger(__name__)
+
+
+async def _get_notification_config() -> dict:
+    """从动态设置获取通知相关配置"""
+    from app.core.database import AsyncSessionLocal
+    from app.services.settings_service import settings_service
+
+    async with AsyncSessionLocal() as db:
+        channels_raw = await settings_service.get(db, "NOTIFICATION_CHANNELS")
+        channels = channels_raw if isinstance(channels_raw, list) else ["email"]
+        return {
+            "channels": channels,
+            "feishu_webhook_url": await settings_service.get(db, "FEISHU_WEBHOOK_URL") or "",
+            "feishu_secret": await settings_service.get(db, "FEISHU_SECRET") or "",
+            "frontend_url": await settings_service.get(db, "FRONTEND_URL") or "",
+        }
 
 
 def _gen_feishu_sign(secret: str, timestamp: int) -> str:
@@ -27,14 +39,16 @@ def _gen_feishu_sign(secret: str, timestamp: int) -> str:
     return base64.b64encode(hmac_code).decode("utf-8")
 
 
-async def _send_feishu(email: str, username: str, token: str, language: str = "en") -> bool:
+async def _send_feishu(
+    config: dict, email: str, username: str, token: str, language: str = "en",
+) -> bool:
     """通过飞书机器人 Webhook 发送激活通知"""
-    webhook_url = settings.FEISHU_WEBHOOK_URL
+    webhook_url = config["feishu_webhook_url"]
     if not webhook_url:
         logger.warning("FEISHU_WEBHOOK_URL not configured, skipping feishu notification")
         return False
 
-    activation_link = f"{settings.FRONTEND_URL}/activate?token={token}"
+    activation_link = f"{config['frontend_url']}/activate?token={token}"
 
     if language == "zh":
         title = "CloudLand - 新用户注册激活"
@@ -68,9 +82,9 @@ async def _send_feishu(email: str, username: str, token: str, language: str = "e
     }
 
     # 如果配置了签名密钥，添加签名
-    if settings.FEISHU_SECRET:
+    if config["feishu_secret"]:
         timestamp = int(time.time())
-        sign = _gen_feishu_sign(settings.FEISHU_SECRET, timestamp)
+        sign = _gen_feishu_sign(config["feishu_secret"], timestamp)
         payload["timestamp"] = str(timestamp)
         payload["sign"] = sign
 
@@ -91,7 +105,7 @@ async def _send_feishu(email: str, username: str, token: str, language: str = "e
 
 async def send_activation_notification(email: str, username: str, token: str, language: str = "en") -> bool:
     """
-    根据 NOTIFICATION_METHOD 配置发送激活通知。
+    根据动态设置 NOTIFICATION_CHANNELS 发送激活通知。
 
     Args:
         email: 用户邮箱
@@ -102,19 +116,20 @@ async def send_activation_notification(email: str, username: str, token: str, la
     Returns:
         True if at least one notification method succeeded
     """
-    method = settings.NOTIFICATION_METHOD.lower().strip()
+    config = await _get_notification_config()
+    channels = config["channels"]
     results = []
 
-    if method in ("email", "both"):
+    if "email" in channels:
         ok = await _send_email(email, username, token, language)
         results.append(ok)
 
-    if method in ("feishu", "both"):
-        ok = await _send_feishu(email, username, token, language)
+    if "feishu" in channels:
+        ok = await _send_feishu(config, email, username, token, language)
         results.append(ok)
 
     if not results:
-        logger.warning(f"NOTIFICATION_METHOD='{method}' is invalid, falling back to email")
+        logger.warning(f"No valid notification channels configured, falling back to email")
         ok = await _send_email(email, username, token, language)
         results.append(ok)
 
@@ -126,24 +141,25 @@ async def send_invitation_notification(
     is_existing_user: bool = False, language: str = "en",
 ) -> bool:
     """
-    根据 NOTIFICATION_METHOD 配置发送邀请通知。
+    根据动态设置 NOTIFICATION_CHANNELS 发送邀请通知。
     """
-    method = settings.NOTIFICATION_METHOD.lower().strip()
+    config = await _get_notification_config()
+    channels = config["channels"]
     results = []
 
-    if method in ("email", "both"):
+    if "email" in channels:
         ok = await _send_invitation_email(
             email, org_name, inviter_name, token,
             is_existing_user=is_existing_user, language=language,
         )
         results.append(ok)
 
-    if method in ("feishu", "both"):
-        ok = await _send_feishu_invitation(email, org_name, inviter_name, token, language)
+    if "feishu" in channels:
+        ok = await _send_feishu_invitation(config, email, org_name, inviter_name, token, language)
         results.append(ok)
 
     if not results:
-        logger.warning(f"NOTIFICATION_METHOD='{method}' is invalid, falling back to email")
+        logger.warning(f"No valid notification channels configured, falling back to email")
         ok = await _send_invitation_email(
             email, org_name, inviter_name, token,
             is_existing_user=is_existing_user, language=language,
@@ -154,15 +170,15 @@ async def send_invitation_notification(
 
 
 async def _send_feishu_invitation(
-    email: str, org_name: str, inviter_name: str, token: str, language: str = "en",
+    config: dict, email: str, org_name: str, inviter_name: str, token: str, language: str = "en",
 ) -> bool:
     """通过飞书机器人 Webhook 发送邀请通知"""
-    webhook_url = settings.FEISHU_WEBHOOK_URL
+    webhook_url = config["feishu_webhook_url"]
     if not webhook_url:
         logger.warning("FEISHU_WEBHOOK_URL not configured, skipping feishu invitation notification")
         return False
 
-    accept_link = f"{settings.FRONTEND_URL}/invite/accept?token={token}"
+    accept_link = f"{config['frontend_url']}/invite/accept?token={token}"
 
     if language == "zh":
         title = f"CloudLand - 组织邀请: {org_name}"
@@ -193,9 +209,9 @@ async def _send_feishu_invitation(
         },
     }
 
-    if settings.FEISHU_SECRET:
+    if config["feishu_secret"]:
         timestamp = int(time.time())
-        sign = _gen_feishu_sign(settings.FEISHU_SECRET, timestamp)
+        sign = _gen_feishu_sign(config["feishu_secret"], timestamp)
         payload["timestamp"] = str(timestamp)
         payload["sign"] = sign
 

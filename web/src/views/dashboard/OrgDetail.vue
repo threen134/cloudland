@@ -285,7 +285,7 @@ onUnmounted(() => {
               <h3>{{ org.name }}</h3>
               <div class="detail-meta">
                 <span class="meta-item">UUID: {{ org.uuid }}</span>
-                <span class="meta-item" v-if="org.slug">Slug: {{ org.slug }}</span>
+                <span class="meta-item" v-if="org.slug">{{ $t('dashboard.table.slug') }}: {{ org.slug }}</span>
               </div>
             </div>
           </div>
@@ -296,7 +296,7 @@ onUnmounted(() => {
             <Transition name="dropdown">
               <div v-if="showActionMenu" class="dropdown-menu" @click="closeActionMenu">
                 <button class="dropdown-item" @click="openAddMember">
-                  <Mail :size="14" /> {{ $t('dashboard.org.inviteMember') || 'Invite Member' }}
+                  <Mail :size="14" /> {{ $t('dashboard.org.inviteMember') }}
                 </button>
                 <button class="dropdown-item" @click="openTransfer">
                   <Crown :size="14" /> {{ $t('dashboard.org.transferOwnership') }}
@@ -317,7 +317,7 @@ onUnmounted(() => {
             <span class="detail-value">{{ org.description || '-' }}</span>
           </div>
           <div class="detail-item">
-            <span class="detail-label">Owner</span>
+            <span class="detail-label">{{ $t('dashboard.table.owner') }}</span>
             <span class="detail-value">{{ org.owner_email || org.owner_uuid || '-' }}</span>
           </div>
           <div class="detail-item">
@@ -390,7 +390,7 @@ onUnmounted(() => {
           </div>
         </div>
         <div v-else class="text-center text-secondary" style="padding: 32px;">
-          {{ $t('quota.noQuota') || 'No quota assigned' }}
+          {{ $t('quota.noQuota') }}
         </div>
       </div>
 
@@ -402,7 +402,7 @@ onUnmounted(() => {
 
         <!-- Pending Invitations -->
         <div v-if="invitations.length > 0" class="invitations-section">
-          <h5 class="section-subtitle"><Clock :size="14" /> Pending Invitations</h5>
+          <h5 class="section-subtitle"><Clock :size="14" /> {{ $t('dashboard.org.pendingInvitations') }}</h5>
           <div class="invitation-list">
             <div v-for="inv in invitations" :key="inv.uuid" class="invitation-item">
               <div class="invitation-info">
@@ -410,8 +410,8 @@ onUnmounted(() => {
                 <span class="role-badge" :class="'role-' + inv.org_role">{{ getRoleName(inv.org_role) }}</span>
               </div>
               <div class="invitation-meta">
-                <span>Invited by {{ inv.inviter_email }}</span>
-                <span>Expires {{ new Date(inv.expires_at).toLocaleDateString() }}</span>
+                <span>{{ $t('dashboard.org.invitedBy', { user: inv.inviter_email }) }}</span>
+                <span>{{ $t('dashboard.org.expires', { date: new Date(inv.expires_at).toLocaleDateString() }) }}</span>
               </div>
               <button
                 class="btn btn-ghost btn-sm text-error"
@@ -429,9 +429,9 @@ onUnmounted(() => {
           <thead>
             <tr>
               <th>{{ $t('dashboard.table.userName') }}</th>
-              <th>Email</th>
+              <th>{{ $t('dashboard.table.email') || 'Email' }}</th>
               <th>{{ $t('dashboard.org.role') }}</th>
-              <th>Owner</th>
+              <th>{{ $t('dashboard.table.owner') || 'Owner' }}</th>
               <th>{{ $t('dashboard.table.actions') }}</th>
             </tr>
           </thead>
@@ -570,7 +570,7 @@ onUnmounted(() => {
     <div v-if="addMemberVisible" class="modal-overlay" @click.self="addMemberVisible = false">
       <div class="modal-content card" style="max-width: 460px;">
         <div class="modal-header">
-          <h3><Mail :size="18" /> Invite Member</h3>
+          <h3><Mail :size="18" /> {{ $t('dashboard.org.inviteMember') }}</h3>
           <button class="btn btn-ghost btn-sm icon-btn" @click="addMemberVisible = false"><X :size="20" /></button>
         </div>
         <div class="modal-body" style="padding: var(--spacing-6);">
@@ -598,7 +598,7 @@ onUnmounted(() => {
           <button class="btn btn-primary" @click="handleAddMember" :disabled="addingMember">
             <span v-if="addingMember" class="loading-spinner" style="width: 16px; height: 16px; border-width: 2px;"></span>
             <Mail v-if="!addingMember" :size="14" />
-            {{ addingMember ? $t('messages.loading') : $t('dashboard.org.inviteMember') || 'Send Invitation' }}
+            {{ addingMember ? $t('messages.loading') : $t('dashboard.org.sendInvitation') }}
           </button>
         </div>
       </div>

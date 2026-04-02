@@ -24,11 +24,11 @@ const toggleActionMenu = () => { showActionMenu.value = !showActionMenu.value }
 const closeActionMenu = () => { showActionMenu.value = false }
 
 const STATUS_MAP: Record<number, { label: string; class: string }> = {
-    0: { label: 'Disabled', class: 'status-disabled' },
-    1: { label: 'Active', class: 'status-active' },
-    2: { label: 'Maintaining', class: 'status-warning' },
-    4: { label: 'Deploying', class: 'status-info' },
-    5: { label: 'Deploy Failed', class: 'status-error' }
+    0: { label: 'dashboard.hypervisorStatus.disabled', class: 'status-disabled' },
+    1: { label: 'dashboard.hypervisorStatus.active', class: 'status-active' },
+    2: { label: 'dashboard.hypervisorStatus.maintaining', class: 'status-warning' },
+    4: { label: 'dashboard.hypervisorStatus.deploying', class: 'status-info' },
+    5: { label: 'dashboard.hypervisorStatus.deployFailed', class: 'status-error' }
 }
 
 const form = ref({
@@ -64,7 +64,7 @@ const fetchHypervisorDetail = async () => {
         syncForm()
     } catch (err: any) {
         console.error('Failed to fetch hypervisor detail:', err)
-        error.value = err.message || 'Failed to load Hypervisor details'
+        error.value = err.message || t('dashboard.hypervisorDetail.loadError')
     } finally {
         loading.value = false
     }
@@ -137,7 +137,7 @@ const handleSave = async () => {
         editMode.value = false
         toast.success(t('messages.success'))
     } catch (err: any) {
-        toast.error(err.response?.data?.error || 'Failed to update hypervisor')
+        toast.error(err.response?.data?.error || t('messages.error'))
     } finally {
         saving.value = false
     }
@@ -159,7 +159,7 @@ const handleMaintain = async () => {
         toast.success(t('messages.success'))
         await fetchHypervisorDetail()
     } catch (err: any) {
-        toast.error(err.response?.data?.error || 'Failed to start maintenance')
+        toast.error(err.response?.data?.error || t('messages.error'))
     } finally {
         maintaining.value = false
     }
@@ -203,7 +203,7 @@ onMounted(fetchHypervisorDetail)
           <div>
             <h2 class="resource-title">
               {{ hypervisor.hostname }}
-              <span :class="['badge', getStatusInfo(hypervisor.status).class]">{{ hypervisor.status_name || getStatusInfo(hypervisor.status).label }}</span>
+              <span :class="['badge', getStatusInfo(hypervisor.status).class]">{{ hypervisor.status_name || t(getStatusInfo(hypervisor.status).label) }}</span>
             </h2>
             <div class="resource-id-row">
               <span class="resource-id-text">{{ hypervisor.uuid }}</span>
@@ -264,7 +264,7 @@ onMounted(fetchHypervisorDetail)
                 <span class="info-value mono">{{ hypervisor.host_ip }}</span>
               </div>
               <div class="info-row">
-                <span class="info-label">Route IP</span>
+                <span class="info-label">{{ t('dashboard.table.routeIp') || 'Route IP' }}</span>
                 <span class="info-value mono">{{ hypervisor.route_ip || '-' }}</span>
               </div>
               <div class="info-row">
@@ -272,7 +272,7 @@ onMounted(fetchHypervisorDetail)
                 <span class="info-value">{{ hypervisor.virt_type }}</span>
               </div>
               <div class="info-row">
-                <span class="info-label">Host ID</span>
+                <span class="info-label">{{ t('dashboard.table.hostId') || 'Host ID' }}</span>
                 <span class="info-value mono">{{ hypervisor.hostid }}</span>
               </div>
               <div class="info-row">
@@ -289,7 +289,7 @@ onMounted(fetchHypervisorDetail)
               <div class="info-row">
                 <span class="info-label">{{ t('dashboard.table.vcpus') }}</span>
                 <span class="info-value">
-                  {{ hypervisor.cpu }} / {{ hypervisor.cpu_total }} cores 
+                  {{ hypervisor.cpu }} / {{ hypervisor.cpu_total }} {{ t('specs.cores_plain') || 'cores' }} 
                   <span class="avail-badge">{{ t('dashboard.table.available') }}</span>
                 </span>
               </div>
@@ -355,8 +355,8 @@ onMounted(fetchHypervisorDetail)
               <div class="form-group">
                  <label class="form-label">{{ t('dashboard.table.status') }}</label>
                 <select v-model="form.status" class="form-select">
-                    <option :value="0">Disabled</option>
-                    <option :value="1">Active</option>
+                    <option :value="0">{{ t('dashboard.hypervisorStatus.disabled') }}</option>
+                    <option :value="1">{{ t('dashboard.hypervisorStatus.active') }}</option>
                 </select>
               </div>
               <div class="form-group">

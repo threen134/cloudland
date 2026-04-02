@@ -176,7 +176,8 @@ const pageTitle = computed(() => {
         'regions': t('dashboard.regions'),
         'notification-channels': t('dashboard.notificationChannels'),
         'alarm-events': t('dashboard.alarmEvents'),
-        'vm-alarm-rules': t('dashboard.vmAlarmRules.title')
+        'vm-alarm-rules': t('dashboard.vmAlarmRules.title'),
+        'settings': t('settings.title')
     }
     return titles[route.name as string] || t('nav.dashboard')
 })
@@ -376,11 +377,11 @@ onUnmounted(() => {
           </div>
         </div>
 
-        <!-- Settings (no section) -->
-        <div class="nav-divider"></div>
-        <RouterLink to="/dashboard/settings" class="nav-item" active-class="active">
+        <!-- Settings (SuperAdmin only) -->
+        <div v-if="auth.user?.is_superuser" class="nav-divider"></div>
+        <RouterLink v-if="auth.user?.is_superuser" to="/dashboard/settings" class="nav-item" active-class="active">
           <Settings :size="18" />
-          <span>{{ $t('dashboard.settings') }}</span>
+          <span>{{ $t('settings.title') }}</span>
         </RouterLink>
       </nav>
 

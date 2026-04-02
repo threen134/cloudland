@@ -108,7 +108,7 @@ onMounted(fetchSubnet)
 
         <div v-else-if="error" class="error-container card">
             <p class="text-error">{{ error }}</p>
-            <button class="btn btn-primary" @click="fetchSubnet">Retry</button>
+            <button class="btn btn-primary" @click="fetchSubnet">{{ $t('actions.retry') }}</button>
         </div>
 
         <div v-else-if="subnet" class="detail-content">
@@ -208,7 +208,7 @@ onMounted(fetchSubnet)
                                 <span class="label">{{ $t('dashboard.table.subnetType') }}</span>
                                 <span class="value">
                                     <span :class="['type-badge', getTypeBadgeClass(subnet.type || 'internal')]" style="padding: 2px 10px; font-size: 11px;">
-                                        {{ subnet.type || 'internal' }}
+                                        {{ $t('dashboard.subnetTypes.' + (subnet.type || 'internal')) }}
                                     </span>
                                 </span>
                             </div>
@@ -230,10 +230,10 @@ onMounted(fetchSubnet)
                             </div>
                             <div class="kv-item">
                                 <span class="label">{{ $t('dashboard.table.dhcp') }}</span>
-                                <span class="value">{{ subnet.dhcp ? 'Enabled' : 'Disabled' }}</span>
+                                <span class="value">{{ subnet.dhcp ? $t('dashboard.alarm.enabled') : $t('dashboard.alarm.disabled') }}</span>
                             </div>
                             <div class="kv-item">
-                                <span class="label">DNS</span>
+                                <span class="label">{{ $t('dashboard.table.dns') || 'DNS' }}</span>
                                 <span class="value mono">{{ subnet.dns || '-' }}</span>
                             </div>
                         </div>

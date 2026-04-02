@@ -389,7 +389,7 @@ onMounted(async () => {
             </div>
             
             <div class="form-group">
-              <label class="form-label">Download URL</label>
+              <label class="form-label">{{ $t('dashboard.forms.downloadUrl') }}</label>
               <input 
                 v-model="newImageForm.download_url" 
                 type="text" 
@@ -402,16 +402,16 @@ onMounted(async () => {
               <div class="form-group flex-1">
                 <label class="form-label">{{ $t('dashboard.forms.osType') }}</label>
                 <select v-model="newImageForm.os_code" class="form-input">
-                  <option value="linux">Linux</option>
-                  <option value="windows">Windows</option>
-                  <option value="other">Other</option>
+                  <option value="linux">{{ $t('dashboard.forms.osTypes.linux') }}</option>
+                  <option value="windows">{{ $t('dashboard.forms.osTypes.windows') }}</option>
+                  <option value="other">{{ $t('dashboard.forms.osTypes.other') }}</option>
                 </select>
               </div>
               <div class="form-group flex-1">
                 <label class="form-label">{{ $t('dashboard.forms.bootLoader') }}</label>
                 <select v-model="newImageForm.boot_loader" class="form-input">
-                  <option value="bios">BIOS</option>
-                  <option value="uefi">UEFI</option>
+                  <option value="bios">{{ $t('dashboard.forms.bootLoaders.bios') }}</option>
+                  <option value="uefi">{{ $t('dashboard.forms.bootLoaders.uefi') }}</option>
                 </select>
               </div>
             </div>

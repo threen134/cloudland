@@ -311,6 +311,9 @@ func Register() (r *gin.Engine) {
 		// 内部同步接口（CPGateway 推送通知渠道变更）
 		authGroup.POST("/internal/notification-channels/sync", notificationAPI.SyncChannel)
 
+		// 内部同步接口（CPGateway 推送系统设置）
+		authGroup.POST("/internal/system-settings/sync", systemSettingAPI.SyncSystemSettings)
+
 		// 内部告警事件查询（CPGateway 全局汇总用）
 		authGroup.GET("/internal/alarm/events", notificationAPI.InternalListAlarmEvents)
 

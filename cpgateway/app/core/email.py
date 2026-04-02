@@ -1,23 +1,51 @@
 import aiosmtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
-from app.core.config import settings
 import logging
 
 logger = logging.getLogger(__name__)
 
 
-async def _send_smtp(message: MIMEMultipart) -> bool:
-    """Send an email message via SMTP."""
-    try:
-        smtp_kwargs = {
-            "hostname": settings.SMTP_HOST,
-            "port": settings.SMTP_PORT,
-            "start_tls": settings.SMTP_TLS,
+async def _get_email_config() -> dict:
+    """从动态设置获取邮件相关配置（三级降级：DB → 环境变量 → 默认值）"""
+    from app.core.database import AsyncSessionLocal
+    from app.services.settings_service import settings_service
+
+    async with AsyncSessionLocal() as db:
+        return {
+            "smtp_host": await settings_service.get(db, "SMTP_HOST") or "",
+            "smtp_port": int(await settings_service.get(db, "SMTP_PORT") or 587),
+            "smtp_tls": await settings_service.get(db, "SMTP_TLS"),
+            "smtp_user": await settings_service.get(db, "SMTP_USER") or "",
+            "smtp_password": await settings_service.get(db, "SMTP_PASSWORD") or "",
+            "smtp_from": await settings_service.get(db, "SMTP_FROM") or "",
+            "smtp_from_name": await settings_service.get(db, "SMTP_FROM_NAME") or "CloudLand",
+            "frontend_url": await settings_service.get(db, "FRONTEND_URL") or "",
         }
-        if settings.SMTP_USER:
-            smtp_kwargs["username"] = settings.SMTP_USER
-            smtp_kwargs["password"] = settings.SMTP_PASSWORD
+
+
+async def _send_smtp(message: MIMEMultipart, config: dict) -> bool:
+    """Send an email message via SMTP using dynamic settings."""
+    try:
+        host = config["smtp_host"]
+        port = config["smtp_port"]
+        tls = config["smtp_tls"]
+
+        smtp_kwargs = {
+            "hostname": host,
+            "port": port,
+        }
+
+        # 端口 465：隐式 SSL；tls=True + 其他端口：STARTTLS；否则明文
+        if port == 465:
+            smtp_kwargs["use_tls"] = True
+        elif tls:
+            smtp_kwargs["start_tls"] = True
+
+        if config["smtp_user"]:
+            smtp_kwargs["username"] = config["smtp_user"]
+            smtp_kwargs["password"] = config["smtp_password"]
+
         await aiosmtplib.send(message, **smtp_kwargs)
         return True
     except Exception as e:
@@ -28,24 +56,28 @@ async def _send_smtp(message: MIMEMultipart) -> bool:
 async def send_activation_email(email: str, username: str, token: str, language: str = "en") -> bool:
     """
     Send activation email to user
-    
+
     Args:
         email: User's email address
         username: User's username
         token: Activation token
         language: User's preferred language ('en' or 'zh')
-        
+
     Returns:
         True if email sent successfully, False otherwise
     """
+    config = await _get_email_config()
+
     # Skip email sending if SMTP host is not configured
-    if not settings.SMTP_HOST:
+    if not config["smtp_host"]:
         logger.warning(f"SMTP_HOST not configured, skipping email to {email}")
-        logger.info(f"Activation link for frontend would be: {settings.FRONTEND_URL}/activate?token={token}")
+        logger.info(f"Activation link for frontend would be: {config['frontend_url']}/activate?token={token}")
         return True
-    
-    activation_link = f"{settings.FRONTEND_URL}/activate?token={token}"
-    
+
+    activation_link = f"{config['frontend_url']}/activate?token={token}"
+    from_name = config["smtp_from_name"]
+    from_addr = config["smtp_from"]
+
     # Localized Content
     if language == "zh":
         subject = "欢迎来到 Cloudland - 请激活您的账户"
@@ -58,22 +90,22 @@ async def send_activation_email(email: str, username: str, token: str, language:
         note_text = "<strong>注意:</strong> 此链接在 24 小时内有效。"
         footer_ignore = "如果您没有注册过此账户，请忽略此邮件。"
         footer_rights = "© 2026 Cloudland Platform. 保留所有权利。"
-        
+
         text_fallback = f"""
         欢迎来到 Cloudland!
-        
+
         您好 {username},
-        
+
         欢迎加入 Cloudland！请访问以下链接激活您的账户：
-        
+
         {activation_link}
-        
+
         验证令牌: {token}
-        
+
         注意: 此链接在 24 小时内有效。
-        
+
         如果您没有注册过此账户，请忽略此邮件。
-        
+
         © 2026 Cloudland Platform. 保留所有权利。
         """
     else:
@@ -87,31 +119,31 @@ async def send_activation_email(email: str, username: str, token: str, language:
         note_text = "<strong>Note:</strong> This link will expire in 24 hours."
         footer_ignore = "If you did not sign up for this account, please ignore this email."
         footer_rights = "© 2026 Cloudland Platform. All rights reserved."
-        
+
         text_fallback = f"""
         Welcome to Cloudland!
-        
+
         Hello {username},
-        
+
         Welcome to Cloudland! Please visit the link below to activate your account:
-        
+
         {activation_link}
-        
+
         Verification Token: {token}
-        
+
         Note: This link will expire in 24 hours.
-        
+
         If you did not sign up for this account, please ignore this email.
-        
+
         © 2026 Cloudland Platform. All rights reserved.
         """
 
     # Create message
     message = MIMEMultipart("alternative")
     message["Subject"] = subject
-    message["From"] = f"{settings.SMTP_FROM_NAME} <{settings.SMTP_FROM}>"
+    message["From"] = f"{from_name} <{from_addr}>"
     message["To"] = email
-    
+
     # HTML email content
     html_content = f"""
     <!DOCTYPE html>
@@ -196,17 +228,17 @@ async def send_activation_email(email: str, username: str, token: str, language:
     </body>
     </html>
     """
-    
+
     # Text content remains using text_fallback
     text_content = text_fallback
-    
+
     # Attach both versions
     part1 = MIMEText(text_content, "plain", "utf-8")
     part2 = MIMEText(html_content, "html", "utf-8")
     message.attach(part1)
     message.attach(part2)
-    
-    ok = await _send_smtp(message)
+
+    ok = await _send_smtp(message, config)
     if ok:
         logger.info(f"Activation email sent successfully to {email}")
     return ok
@@ -227,13 +259,17 @@ async def send_invitation_email(
         is_existing_user: Whether the invitee already has an account
         language: Language preference ('en' or 'zh')
     """
-    if not settings.SMTP_HOST:
+    config = await _get_email_config()
+
+    if not config["smtp_host"]:
         logger.warning(f"SMTP_HOST not configured, skipping invitation email to {email}")
-        accept_link = f"{settings.FRONTEND_URL}/invite/accept?token={token}"
+        accept_link = f"{config['frontend_url']}/invite/accept?token={token}"
         logger.info(f"Invitation link: {accept_link}")
         return True
 
-    accept_link = f"{settings.FRONTEND_URL}/invite/accept?token={token}"
+    accept_link = f"{config['frontend_url']}/invite/accept?token={token}"
+    from_name = config["smtp_from_name"]
+    from_addr = config["smtp_from"]
 
     if language == "zh":
         subject = f"CloudLand - 您被邀请加入组织 {org_name}"
@@ -266,7 +302,7 @@ async def send_invitation_email(
 
     message = MIMEMultipart("alternative")
     message["Subject"] = subject
-    message["From"] = f"{settings.SMTP_FROM_NAME} <{settings.SMTP_FROM}>"
+    message["From"] = f"{from_name} <{from_addr}>"
     message["To"] = email
 
     html_content = f"""
@@ -354,7 +390,7 @@ async def send_invitation_email(
     message.attach(part1)
     message.attach(part2)
 
-    ok = await _send_smtp(message)
+    ok = await _send_smtp(message, config)
     if ok:
         logger.info(f"Invitation email sent to {email} for org {org_name}")
     return ok

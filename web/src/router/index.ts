@@ -269,11 +269,12 @@ const router = createRouter({
                     name: 'alarm-events',
                     component: () => import('../views/dashboard/AlarmEvents.vue')
                 },
-                // Settings
+                // Settings (SuperAdmin only)
                 {
                     path: 'settings',
                     name: 'settings',
-                    component: () => import('../views/dashboard/InstanceList.vue') // Placeholder
+                    component: () => import('../views/dashboard/SystemSettings.vue'),
+                    meta: { requiresSuperAdmin: true }
                 }
             ]
         },

@@ -1,7 +1,7 @@
 from fastapi import FastAPI, Request
 from app.core.config import settings
 from app.core.logging_config import setup_logging, logger
-from app.api.endpoints import auth, users, resources, regions, orgs, notification_channels, alarm_summary
+from app.api.endpoints import auth, users, resources, regions, orgs, notification_channels, alarm_summary, system_settings
 from app.api.endpoints.cloudland import compute, network, authorization, zone, administration, alarm, monitor
 from app.core.database import engine, Base, AsyncSessionLocal
 import time
@@ -39,6 +39,7 @@ async def startup():
     2. 创建 Root 超级管理员用户
     """
     from app.models import OrgResourceQuota, OrgResourceConsumption  # noqa: F401 — register all models
+    from app.models.system_setting import SystemSetting, SystemConfigVersion  # noqa: F401
     from app.models.user import User, SystemRole, UserStatus
     from app.models.org import Organization
     from app.models.member import Member
@@ -140,6 +141,7 @@ app.include_router(regions.router, prefix=f"{settings.API_V1_STR}/regions", tags
 app.include_router(resources.router, prefix=f"{settings.API_V1_STR}/resources", tags=["resources"])
 app.include_router(notification_channels.router, prefix=f"{settings.API_V1_STR}/notification-channels", tags=["Notification"])
 app.include_router(alarm_summary.router, prefix=f"{settings.API_V1_STR}", tags=["Alarm"])
+app.include_router(system_settings.router, prefix=f"{settings.API_V1_STR}/system/settings", tags=["System Settings"])
 
 
 # Cloudland Proxy Routes (forwarded to Cloudland internal)
