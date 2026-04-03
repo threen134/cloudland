@@ -227,11 +227,18 @@ class QuotaService:
             )
 
         if "/instances" in proxy_path:
-            flavor = data.get("flavor")
-            if isinstance(flavor, dict):
-                return extract_flavor_specs(flavor)
-            # flavor is null or a scalar ID — skip quota tracking for this delete
-            logger.warning(f"Cannot determine resource amount for instance {resource_id}: flavor={flavor!r}")
+            # Instance response has flat cpu/memory/disk fields directly.
+            # flavor is a string name, not an embedded object.
+            cpu = float(data.get("cpu") or 0)
+            memory = float(data.get("memory") or 0)
+            disk = float(data.get("disk") or 0)
+            if cpu or memory or disk:
+                return {
+                    "cpu_cores": cpu,
+                    "ram_gb": memory / 1024.0,
+                    "disk_gb": disk,
+                }
+            logger.warning(f"Instance {resource_id} has no cpu/memory/disk data, skipping quota tracking")
             return {}
         elif "/volumes" in proxy_path:
             return {"disk_gb": float(data.get("size", 0))}
