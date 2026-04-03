@@ -37,6 +37,7 @@ export function useQuota() {
             await fetchQuota(orgId)
         } catch (err: any) {
             quotaError.value = err.response?.data?.detail || 'Failed to update quota'
+            throw err
         } finally {
             savingQuota.value = null
         }

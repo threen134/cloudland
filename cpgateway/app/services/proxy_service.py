@@ -93,7 +93,7 @@ class ProxyService:
             cpu = body.get("cpu")
             memory = body.get("memory")
             disk = body.get("disk")
-            if cpu and memory:
+            if cpu is not None and memory is not None:
                 return {
                     "cpu_cores": float(cpu),
                     "ram_gb": float(memory) / 1024.0,
@@ -234,7 +234,7 @@ class ProxyService:
                     memory = body.get("memory")
                     disk = body.get("disk")
                     new_flavor_id = body.get("flavor")
-                    if cpu and memory:
+                    if cpu is not None and memory is not None:
                         new_amount = {
                             "cpu_cores": float(cpu),
                             "ram_gb": float(memory) / 1024.0,
@@ -246,7 +246,6 @@ class ProxyService:
                         )
                     else:
                         quota_action = None
-                        new_amount = {}
                     if quota_action:
                         old_amount = await quota_service.query_resource_amount(
                             region_obj, resolved_path, resource_id, forwarded_headers,
@@ -279,7 +278,6 @@ class ProxyService:
                         resource_amount = reserve_amount
 
         # 6. Construct backend URL
-
         clean_path = resolved_path.lstrip("/")
         backend_url = build_backend_url(region_obj.internal_endpoint, clean_path)
 
