@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import { ref, onMounted, computed, watch, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
+import { useI18n } from 'vue-i18n'
 import { useToast } from '../../composables/useToast'
 import { instancesApi, type Instance } from '../../api/instances'
-import { Play, Square, RotateCw, Trash2, Plus, Terminal, MoreVertical, Search, X, Check, Monitor, ChevronDown, ChevronUp, PlusCircle, MinusCircle, RefreshCw, Cpu, HardDrive, Eye, EyeOff, Shuffle, Pencil, KeyRound, Maximize2, Server, Activity } from 'lucide-vue-next'
+import { Play, Square, RotateCw, Trash2, Plus, Terminal, MoreVertical, Search, X, Check, Monitor, ChevronDown, ChevronUp, PlusCircle, MinusCircle, RefreshCw, Cpu, HardDrive, Eye, EyeOff, Shuffle, Pencil, KeyRound, Maximize2, Server, Activity, Network, Globe, HelpCircle } from 'lucide-vue-next'
 
 import { imagesApi, type Image } from '../../api/images'
 import { vpcsApi, subnetsApi, securityGroupsApi, floatingIpsApi, type VPC, type Subnet, type SecurityGroup, type FloatingIP } from '../../api/networks'
@@ -38,7 +39,24 @@ const loading = ref(false)
 const actionLoading = ref<Record<string, string | null>>({})
 const searchQuery = ref('')
 
+const ifaceTooltipVisible = ref(false)
+const ifaceTooltipPos = ref({ bottom: '0px', right: '0px' })
+
+const showIfaceHelp = (event: MouseEvent) => {
+    const rect = (event.currentTarget as HTMLElement).getBoundingClientRect()
+    ifaceTooltipPos.value = {
+        bottom: `${window.innerHeight - rect.top + 8}px`,
+        right: `${window.innerWidth - rect.right}px`
+    }
+    ifaceTooltipVisible.value = true
+}
+
+const hideIfaceHelp = () => {
+    ifaceTooltipVisible.value = false
+}
+
 const router = useRouter()
+const { t } = useI18n()
 const toast = useToast()
 
 
@@ -147,19 +165,10 @@ const getStatusClass = (status: string) => {
 }
 
 const getStatusText = (status: string) => {
-    const statusMap: Record<string, string> = {
-        'running': '运行中',
-        'active': '运行中',
-        'stopped': '已关机',
-        'shutoff': '已关机',
-        'shut_off': '已关机',
-        'paused': '已暂停',
-        'provisioning': '部署中',
-        'starting': '启动中',
-        'stopping': '关机中',
-        'error': '错误'
-    }
-    return statusMap[status?.toLowerCase()] || status
+    const s = status?.toLowerCase()
+    if (!s) return '-'
+    // Note: status keys are defined in dashboard.instanceStatus
+    return t(`dashboard.instanceStatus.${s}`) || status
 }
 
 const formatMemory = (mb: number) => {
@@ -194,6 +203,11 @@ const toggleActionMenu = (instanceId: string) => {
 }
 const closeActionMenu = () => {
     activeActionMenuId.value = null
+}
+
+const activeIpPopoverId = ref<string | null>(null)
+const closeIpPopover = () => {
+    activeIpPopoverId.value = null
 }
 
 const handleAction = async (instance: Instance, action: 'start' | 'stop' | 'restart' | 'hard_stop' | 'hard_restart' | 'pause' | 'resume') => {
@@ -239,18 +253,9 @@ const handleAction = async (instance: Instance, action: 'start' | 'stop' | 'rest
             if (!currentInstance || targetStableStates.includes(currentStatus) || attempts >= 15) {
                 actionLoading.value[instance.id] = null
                 if (currentStatus === 'error') {
-                    toast.error(`${action} 操作失败，实例进入错误状态。`)
+                    toast.error(t('dashboard.instanceDetail.actionFailed', { action: t(`dashboard.instanceDetail.${action}`) }))
                 } else {
-                    const actionMap: Record<string, string> = {
-                        'start': '开机',
-                        'stop': '关机',
-                        'restart': '重启',
-                        'hard_stop': '强制关机',
-                        'hard_restart': '强制重启',
-                        'pause': '暂停',
-                        'resume': '恢复'
-                    }
-                    toast.success(`${actionMap[action] || action} 操作已完成。`)
+                    toast.success(t('dashboard.instanceDetail.actionSuccess', { action: t(`dashboard.instanceDetail.${action}`) }))
                 }
             } else {
                 setTimeout(checkStatus, 3000)
@@ -261,7 +266,7 @@ const handleAction = async (instance: Instance, action: 'start' | 'stop' | 'rest
     } catch (error: any) {
         console.error(`Failed to ${action} instance:`, error)
         actionLoading.value[instance.id] = null
-        toast.error(error.response?.data?.error_message || error.message || '操作失败')
+        toast.error(error.response?.data?.error_message || error.message || t('dashboard.userDetail.loadError'))
     }
 }
 
@@ -281,8 +286,9 @@ const openRenameModal = (instance: Instance) => {
 }
 
 const confirmRename = async () => {
-    if (!selectedInstance.value || !renameForm.value.hostname.trim()) {
-        renameError.value = '主机名不能为空。'
+    if (!selectedInstance.value) return
+    if (!renameForm.value.hostname.trim()) {
+        renameError.value = t('dashboard.instanceDetail.hostnameRequired')
         return
     }
     renameLoading.value = true
@@ -291,9 +297,9 @@ const confirmRename = async () => {
         await instancesApi.renameInstance(selectedInstance.value.id, renameForm.value.hostname)
         await fetchInstances(false)
         renameModalVisible.value = false
-        toast.success('实例重命名成功。')
+        toast.success(t('dashboard.instanceDetail.renameSuccess'))
     } catch (err: any) {
-        renameError.value = err.response?.data?.error_message || err.message || '操作失败'
+        renameError.value = err.response?.data?.error_message || err.message || t('dashboard.userDetail.loadError')
     } finally {
         renameLoading.value = false
     }
@@ -328,11 +334,11 @@ const generateRandomResetPassword = () => {
 const confirmResetPassword = async () => {
     if (!selectedInstance.value) return
     if (resetPasswordForm.value.password.length < 8) {
-        resetPasswordError.value = '密码长度至少为8个字符。'
+        resetPasswordError.value = t('dashboard.instanceDetail.passwordMinLength')
         return
     }
     if (resetPasswordForm.value.password !== resetPasswordForm.value.confirmPassword) {
-        resetPasswordError.value = '两次输入的密码不一致。'
+        resetPasswordError.value = t('dashboard.instanceDetail.passwordMismatch')
         return
     }
     resetPasswordLoading.value = true
@@ -340,9 +346,9 @@ const confirmResetPassword = async () => {
     try {
         await instancesApi.setUserPassword(selectedInstance.value.id, resetPasswordForm.value.user_name, resetPasswordForm.value.password)
         resetPasswordModalVisible.value = false
-        toast.success('密码重置成功。')
+        toast.success(t('dashboard.instanceDetail.resetPasswordSuccess'))
     } catch (err: any) {
-        resetPasswordError.value = err.response?.data?.error_message || err.message || '操作失败'
+        resetPasswordError.value = err.response?.data?.error_message || err.message || t('dashboard.userDetail.loadError')
     } finally {
         resetPasswordLoading.value = false
     }
@@ -368,7 +374,7 @@ const openResizeModal = (instance: Instance) => {
 const confirmResize = async () => {
     if (!selectedInstance.value) return
     if (resizeForm.value.cpu < 1 || resizeForm.value.memory < 1) {
-        resizeError.value = 'CPU 和内存必须大于等于 1。'
+        resizeError.value = t('dashboard.instanceDetail.resizeInvalid')
         return
     }
     resizeLoading.value = true
@@ -376,10 +382,10 @@ const confirmResize = async () => {
     try {
         await instancesApi.resizeInstance(selectedInstance.value.id, resizeForm.value.cpu, resizeForm.value.memory)
         resizeModalVisible.value = false
-        toast.success('扩容请求已提交。')
+        toast.success(t('dashboard.instanceDetail.resizeSuccess'))
         await fetchInstances(false)
     } catch (err: any) {
-        resizeError.value = err.response?.data?.error_message || err.message || '操作失败'
+        resizeError.value = err.response?.data?.error_message || err.message || t('dashboard.userDetail.loadError')
     } finally {
         resizeLoading.value = false
     }
@@ -389,7 +395,7 @@ const openConsole = async (instance: Instance) => {
     // Open window immediately to avoid popup blockers
     const consoleWindow = window.open('about:blank', '_blank')
     if (!consoleWindow) {
-        toast.error('弹出窗口被拦截！请允许此站点的弹出窗口。')
+        toast.error(t('dashboard.instanceDetail.popupBlocked'))
         return
     }
 
@@ -407,7 +413,7 @@ const openConsole = async (instance: Instance) => {
     } catch (error: any) {
         console.error('Failed to get console info:', error)
         consoleWindow.close()
-        toast.error('获取控制台信息失败：' + (error.response?.data?.error_message || error.message))
+        toast.error(t('dashboard.instanceDetail.consoleError', { error: error.response?.data?.error_message || error.message }))
     }
 }
 
@@ -436,10 +442,10 @@ const confirmDelete = async () => {
         await instancesApi.deleteInstance(instanceToDelete.value.id)
         await fetchInstances()
         closeDeleteModal()
-        toast.success('删除成功')
+        toast.success(t('dashboard.instanceDetail.actionSuccess', { action: t('dashboard.buttons.delete') }))
     } catch (error: any) {
         console.error('Failed to delete instance:', error)
-        deleteError.value = error.response?.data?.error_message || error.message || '操作失败'
+        deleteError.value = error.response?.data?.error_message || error.message || t('dashboard.userDetail.loadError')
     } finally {
         deletingInstance.value = false
     }
@@ -483,7 +489,7 @@ const isHostnameValid = computed(() => isValidName(newInstanceForm.value.hostnam
 
 
 interface InterfaceForm {
-    network_type: 'isolated' | 'vpc' | 'public'
+    network_type: 'private' | 'vpc' | 'public'
     vpc_id: string
     subnet_id: string
     public_ip_id: string
@@ -518,9 +524,12 @@ const newInstanceForm = ref({
 })
 
 const addSecondaryInterface = () => {
+    const primaryVpcId = newInstanceForm.value.primary_interface.network_type === 'vpc'
+        ? newInstanceForm.value.primary_interface.vpc_id
+        : ''
     const newIface: InterfaceForm = {
         network_type: 'vpc',
-        vpc_id: '',
+        vpc_id: primaryVpcId,
         subnet_id: '',
         public_ip_id: '',
         ip_address: '',
@@ -637,6 +646,7 @@ const fetchResources = async () => {
             const subnets = availableSubnets.value.filter(s => s.vpc?.id === availableVPCs.value[0].id)
             if (subnets.length > 0) {
                 newInstanceForm.value.primary_interface.subnet_id = subnets[0].id
+                fetchSubnetAddresses(subnets[0].id)
             }
             autoSelectDefaultSGs(newInstanceForm.value.primary_interface)
         }
@@ -652,12 +662,51 @@ const getFilteredSubnets = (vpcId: string) => {
     return availableSubnets.value.filter(s => s.vpc?.id === vpcId)
 }
 
-const getIsolatedSubnets = () => {
-    return availableSubnets.value.filter(s => (!s.vpc || !s.vpc.id) && s.type?.toLowerCase() !== 'public')
+const getPrivateSubnets = () => {
+    return availableSubnets.value.filter(s => s.type?.toLowerCase() === 'private')
 }
 
 const getPublicSubnets = () => {
     return availableSubnets.value.filter(s => s.type?.toLowerCase() === 'public')
+}
+
+const getUsedVlans = (excludeSecondaryIndex: number): Set<number> => {
+    const usedVlans = new Set<number>()
+    const primarySubnetId = newInstanceForm.value.primary_interface.subnet_id
+    if (primarySubnetId) {
+        const sub = availableSubnets.value.find(s => s.id === primarySubnetId)
+        if (sub?.vlan) usedVlans.add(sub.vlan)
+    }
+    newInstanceForm.value.secondary_interfaces.forEach((iface, i) => {
+        if (i === excludeSecondaryIndex) return
+        if (iface.subnet_id) {
+            const sub = availableSubnets.value.find(s => s.id === iface.subnet_id)
+            if (sub?.vlan) usedVlans.add(sub.vlan)
+        }
+    })
+    return usedVlans
+}
+
+const getFilteredSubnetsForSecondary = (vpcId: string, excludeIndex: number) => {
+    if (!vpcId) return []
+    const usedVlans = getUsedVlans(excludeIndex)
+    return availableSubnets.value.filter(s =>
+        s.vpc?.id === vpcId && (!s.vlan || !usedVlans.has(s.vlan))
+    )
+}
+
+const getPrivateSubnetsForSecondary = (excludeIndex: number) => {
+    const usedVlans = getUsedVlans(excludeIndex)
+    return availableSubnets.value.filter(s =>
+        s.type?.toLowerCase() === 'private' && (!s.vlan || !usedVlans.has(s.vlan))
+    )
+}
+
+const getPublicSubnetsForSecondary = (excludeIndex: number) => {
+    const usedVlans = getUsedVlans(excludeIndex)
+    return availableSubnets.value.filter(s =>
+        s.type?.toLowerCase() === 'public' && (!s.vlan || !usedVlans.has(s.vlan))
+    )
 }
 
 const getAvailablePublicIps = () => {
@@ -666,18 +715,24 @@ const getAvailablePublicIps = () => {
 
 const getFilteredSecurityGroups = (vpcId?: string) => {
     if (!vpcId) {
-        // For isolated/public networks, show security groups not associated with any VPC
+        // For private/public networks, show security groups not associated with any VPC
         return availableSecurityGroups.value.filter(sg => !sg.vpc || !sg.vpc.id)
     }
     return availableSecurityGroups.value.filter(sg => sg.vpc?.id === vpcId)
 }
 
-const handleNetworkTypeChange = (iface: InterfaceForm) => {
-    iface.vpc_id = ''
+const handleNetworkTypeChange = (iface: InterfaceForm, isSecondary = false) => {
     iface.subnet_id = ''
     iface.public_ip_id = ''
     iface.ip_address = ''
     iface.security_group_ids = []
+    if (isSecondary && iface.network_type === 'vpc') {
+        iface.vpc_id = newInstanceForm.value.primary_interface.network_type === 'vpc'
+            ? newInstanceForm.value.primary_interface.vpc_id
+            : ''
+    } else {
+        iface.vpc_id = ''
+    }
     autoSelectDefaultSGs(iface)
 }
 
@@ -685,7 +740,8 @@ const subnetAddresses = ref<Record<string, any[]>>({})
 const addressesLoading = ref<Record<string, boolean>>({})
 
 const fetchSubnetAddresses = async (subnetId: string) => {
-    if (!subnetId || subnetAddresses.value[subnetId]) return
+    if (!subnetId) return
+    // Always fetch fresh addresses when requested to avoid empty cache issues
     addressesLoading.value[subnetId] = true
     try {
         const response = await subnetsApi.listAddresses(subnetId)
@@ -700,7 +756,7 @@ const fetchSubnetAddresses = async (subnetId: string) => {
 
 const handleSubnetChange = (iface: InterfaceForm) => {
     iface.ip_address = ''
-    if (iface.network_type === 'public' && iface.subnet_id) {
+    if (iface.subnet_id) {
         fetchSubnetAddresses(iface.subnet_id)
     }
 }
@@ -710,6 +766,39 @@ const handleVpcChange = (iface: InterfaceForm) => {
     iface.security_group_ids = []
     autoSelectDefaultSGs(iface)
 }
+
+watch(
+    () => newInstanceForm.value.primary_interface.vpc_id,
+    (newVpcId) => {
+        for (const iface of newInstanceForm.value.secondary_interfaces) {
+            if (iface.network_type === 'vpc') {
+                iface.vpc_id = newVpcId
+                iface.subnet_id = ''
+                iface.ip_address = ''
+                iface.security_group_ids = []
+                autoSelectDefaultSGs(iface)
+            }
+        }
+    }
+)
+
+watch(
+    () => newInstanceForm.value.primary_interface.network_type,
+    (newType) => {
+        if (newType === 'vpc') {
+            for (const iface of newInstanceForm.value.secondary_interfaces) {
+                if (iface.network_type !== 'vpc') {
+                    iface.network_type = 'vpc'
+                    iface.vpc_id = newInstanceForm.value.primary_interface.vpc_id
+                    iface.subnet_id = ''
+                    iface.ip_address = ''
+                    iface.security_group_ids = []
+                    autoSelectDefaultSGs(iface)
+                }
+            }
+        }
+    }
+)
 
 const autoSelectDefaultSGs = (iface: InterfaceForm) => {
     const vpcId = iface.network_type === 'vpc' ? iface.vpc_id : undefined
@@ -726,12 +815,12 @@ const handleCreateInstance = async () => {
     const form = newInstanceForm.value
     createError.value = ''
     if (!form.hostname || !form.image_id || !form.flavor_id) {
-        createError.value = '请填写所有必填项。'
+        createError.value = t('dashboard.overview.imageActions.fillRequired')
         return
     }
 
     if (!isHostnameValid.value) {
-        createError.value = '主机名格式无效。'
+        createError.value = t('dashboard.instanceDetail.invalidHostname')
         return
     }
 
@@ -740,15 +829,15 @@ const handleCreateInstance = async () => {
     // Validation for primary interface
     const pi = form.primary_interface
     if (pi.network_type === 'vpc' && (!pi.vpc_id || !pi.subnet_id)) {
-        createError.value = '请为主要网络接口选择 VPC 和子网。'
+        createError.value = t('dashboard.instanceDetail.primaryVpcSubnetRequired')
         return
     }
-    if (pi.network_type === 'isolated' && !pi.subnet_id) {
-        createError.value = '请为隔离的主要网络接口选择子网。'
+    if (pi.network_type === 'private' && !pi.subnet_id) {
+        createError.value = t('dashboard.instanceDetail.isolatedSubnetRequired')
         return
     }
     if (pi.network_type === 'public' && !pi.public_ip_id && !pi.subnet_id) {
-        createError.value = '请选择用于自动分配的公网子网。'
+        createError.value = t('dashboard.instanceDetail.publicSubnetRequired')
         return
     }
 
@@ -756,13 +845,24 @@ const handleCreateInstance = async () => {
     for (let i = 0; i < form.secondary_interfaces.length; i++) {
         const si = form.secondary_interfaces[i]
         if (si.network_type === 'public' && !si.public_ip_id && !si.subnet_id) {
-            createError.value = `请为第 ${i + 1} 个辅助网络接口的自动分配选择公网子网。`
+            createError.value = t('dashboard.instanceDetail.secondaryPublicSubnetRequired', { index: i + 1 })
             return
         }
         if (si.network_type === 'vpc' && (!si.vpc_id || !si.subnet_id)) {
-            createError.value = `请为第 ${i + 1} 个辅助网络接口选择 VPC 和子网。`
+            createError.value = t('dashboard.instanceDetail.secondaryVpcSubnetRequired', { index: i + 1 })
             return
         }
+    }
+
+    // Check for VLAN conflicts across all interfaces
+    const allSubnetIds = [
+        form.primary_interface.subnet_id,
+        ...form.secondary_interfaces.map(si => si.subnet_id)
+    ].filter(Boolean)
+    const vlans = allSubnetIds.map(id => availableSubnets.value.find(s => s.id === id)?.vlan).filter(Boolean)
+    if (vlans.length !== new Set(vlans).size) {
+        createError.value = t('dashboard.instanceDetail.vlanConflict')
+        return
     }
 
     creatingInstance.value = true
@@ -771,17 +871,15 @@ const handleCreateInstance = async () => {
             const payload: any = {
                 security_groups: iface.security_group_ids.map(id => ({ id }))
             }
-            if (iface.network_type === 'public') {
-                if (iface.public_ip_id) {
-                    payload.public_addresses = [{ id: iface.public_ip_id }]
-                } else if (iface.subnet_id) {
-                    payload.subnet = { id: iface.subnet_id }
-                    if (iface.ip_address) {
-                        payload.ip_address = iface.ip_address.split('/')[0]
-                    }
-                }
+            if (iface.network_type === 'public' && iface.public_ip_id) {
+                payload.public_addresses = [{ id: iface.public_ip_id }]
             } else {
-                payload.subnet = { id: iface.subnet_id }
+                if (iface.subnet_id) {
+                    payload.subnet = { id: iface.subnet_id }
+                }
+                if (iface.ip_address) {
+                    payload.ip_address = iface.ip_address.split('/')[0]
+                }
             }
             return payload
         }
@@ -813,14 +911,20 @@ const handleCreateInstance = async () => {
         await instancesApi.createInstance(payload)
         await fetchInstances()
         closeCreateModal()
-        toast.success('创建成功')
+        toast.success(t('dashboard.instanceDetail.actionSuccess', { action: t('dashboard.buttons.createInstance') }))
     } catch (err: any) {
         console.error('Failed to create instance:', err)
         const detail = err.response?.data?.detail
         if (detail?.error === 'quota_exceeded') {
-            createError.value = `限额已超出：资源 ${detail.resource} 在区域 ${detail.region}，请求数量 ${detail.requested}，可用数量 ${detail.available}，总限额 ${detail.limit}。`
+            createError.value = t('dashboard.instanceDetail.quotaExceeded', {
+                resource: detail.resource,
+                region: detail.region,
+                requested: detail.requested,
+                available: detail.available,
+                limit: detail.limit
+            })
         } else {
-            createError.value = err.response?.data?.error_message || detail?.message || err.message || '操作失败'
+            createError.value = err.response?.data?.error_message || detail?.message || err.message || t('dashboard.floatingIPDetail.loadError')
         }
     } finally {
         creatingInstance.value = false
@@ -860,17 +964,17 @@ onUnmounted(() => {
           <input 
             type="text" 
             v-model="searchQuery"
-            placeholder="搜索..." 
+            :placeholder="t('marketplace.searchPlaceholder')" 
             class="search-input"
           />
         </div>
       </div>
       <div class="header-actions">
-        <button class="btn btn-secondary btn-sm btn-icon" @click="fetchInstances()" title="刷新">
+        <button class="btn btn-secondary btn-sm btn-icon" @click="fetchInstances()" :title="t('dashboard.regions')">
           <RefreshCw :size="14" :class="{ spinning: loading }" />
         </button>
         <button class="btn btn-primary btn-sm" @click="openCreateModal">
-          <Plus :size="14" /> 创建实例
+          <Plus :size="14" /> {{ t('dashboard.buttons.createInstance') }}
         </button>
       </div>
     </div>
@@ -879,13 +983,13 @@ onUnmounted(() => {
       <table class="data-table">
         <thead>
           <tr>
-            <th>名称 / ID</th>
-            <th>规格</th>
-            <th>镜像</th>
-            <th>IP 地址</th>
-            <th>状态</th>
-            <th>资源使用率</th>
-            <th>操作</th>
+            <th>{{ t('dashboard.table.nameId') }}</th>
+            <th>{{ t('dashboard.table.flavor') }}</th>
+            <th>{{ t('dashboard.table.image') }}</th>
+            <th>{{ t('dashboard.table.ipAddress') }}</th>
+            <th>{{ t('dashboard.table.status') }}</th>
+            <th>{{ t('dashboard.overview.resourceUsage') }}</th>
+            <th>{{ t('dashboard.table.actions') }}</th>
           </tr>
         </thead>
         <tbody>
@@ -898,11 +1002,11 @@ onUnmounted(() => {
             <td colspan="7" class="text-center text-secondary" style="padding: 48px;">
                <div v-if="searchQuery">
                   <Search :size="48" style="opacity: 0.3; margin-bottom: 16px;" />
-                  <p>没有找到符合条件的记录。</p>
+                   <p>{{ t('dashboard.table.noResults') }}</p>
                </div>
                <div v-else>
                   <Monitor :size="48" style="opacity: 0.3; margin-bottom: 16px;" />
-                  <p class="text-secondary">暂无数据</p>
+                   <p class="text-secondary">{{ t('dashboard.table.noData') }}</p>
                </div>
             </td>
           </tr>
@@ -929,12 +1033,58 @@ onUnmounted(() => {
               </div>
             </td>
             <td>{{ instance.image?.name || '-' }}</td>
-            <td>
-              <div class="ip-display">
-                <code class="ip-address">{{ getIPAddress(instance) }}</code>
-                <div v-if="getFloatingIP(instance)" class="fip-address" title="弹性公网 IP">
-                  <span class="fip-label">FIP:</span>
-                  <code class="text-primary">{{ getFloatingIP(instance) }}</code>
+            <td @mouseleave="closeIpPopover">
+              <div class="ip-display-wrapper">
+                <!-- Show first 2 interfaces inline -->
+                <div class="ip-list">
+                  <div v-for="(iface, idx) in (instance.interfaces || []).slice(0, 2)" :key="idx" class="ip-item">
+                    <code class="ip-address">{{ iface.ip_address?.split('/')[0] || '-' }}</code>
+                    <span v-if="iface.floating_ips?.find((f: any) => f.type?.toLowerCase() !== 'native')?.fip_address" class="fip-inline">
+                      <Globe :size="10" />
+                      <code>{{ iface.floating_ips.find((f: any) => f.type?.toLowerCase() !== 'native').fip_address.split('/')[0] }}</code>
+                    </span>
+                  </div>
+                </div>
+
+                <!-- +more badge & Popover if > 2 interfaces -->
+                <div v-if="instance.interfaces && instance.interfaces.length > 2" class="more-ips-trigger">
+                  <button
+                    class="badge badge-multi-iface clickable"
+                    @mouseenter="activeIpPopoverId = instance.id"
+                  >
+                    <Network :size="10" />+{{ instance.interfaces.length - 2 }} {{ t('dashboard.instanceDetail.more').toLowerCase() }}
+                  </button>
+
+                  <Transition name="fade">
+                    <div v-if="activeIpPopoverId === instance.id" class="ip-popover card shadow-lg" @click.stop>
+                      <div class="popover-header">
+                        <Activity :size="12" /> {{ t('dashboard.instanceDetail.interfaceDetails') }} ({{ instance.interfaces.length }})
+                      </div>
+                      <table class="mini-data-table">
+                        <thead>
+                          <tr>
+                            <th>{{ t('dashboard.instanceDetail.interface') }}</th>
+                            <th>{{ t('dashboard.forms.subnet') }}</th>
+                            <th>{{ t('dashboard.table.private') }} IP</th>
+                            <th>FIP</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          <tr v-for="(iface, idx) in instance.interfaces" :key="idx">
+                            <td><span class="text-xs font-mono">eth{{ idx }}</span></td>
+                            <td><span class="text-xs text-secondary">{{ iface.subnet?.name || (iface.subnet?.id?.substring(0,8) + '...') || '-' }}</span></td>
+                            <td><code class="text-xs">{{ iface.ip_address?.split('/')[0] || '-' }}</code></td>
+                            <td>
+                              <code v-if="iface.floating_ips && iface.floating_ips.length > 0" class="text-xs text-primary">
+                                {{ iface.floating_ips.find((f: any) => f.type?.toLowerCase() !== 'native')?.fip_address?.split('/')[0] || '-' }}
+                              </code>
+                              <span v-else class="text-xs text-secondary">-</span>
+                            </td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    </div>
+                  </Transition>
                 </div>
               </div>
             </td>
@@ -963,7 +1113,7 @@ onUnmounted(() => {
             <td class="actions-usage-cell">
                <div class="actions">
                  <div class="action-dropdown" style="position: relative;">
-                    <button class="btn btn-ghost btn-sm" @click.stop="toggleActionMenu(instance.id)" title="更多">
+                    <button class="btn btn-ghost btn-sm" @click.stop="toggleActionMenu(instance.id)" :title="t('dashboard.instanceDetail.more')">
                         <MoreVertical :size="14" />
                     </button>
                     <Transition name="dropdown">
@@ -974,7 +1124,7 @@ onUnmounted(() => {
                                 @click="handleAction(instance, 'start')"
                                 :disabled="!!actionLoading[instance.id]"
                             >
-                                <Play :size="14" /> 启动
+                                <Play :size="14" /> {{ t('dashboard.instanceDetail.start') }}
                             </button>
                             <button
                                 v-else
@@ -982,18 +1132,18 @@ onUnmounted(() => {
                                 @click="handleAction(instance, 'stop')"
                                 :disabled="!!actionLoading[instance.id]"
                             >
-                                <Square :size="14" /> 关机
+                                <Square :size="14" /> {{ t('dashboard.instanceDetail.stop') }}
                             </button>
                             <button
                                 class="dropdown-item"
                                 @click="handleAction(instance, 'restart')"
                                 :disabled="!!actionLoading[instance.id] || !['running', 'active'].includes(instance.status?.toLowerCase())"
                             >
-                                <RotateCw :size="14" /> 重启
+                                <RotateCw :size="14" /> {{ t('dashboard.instanceDetail.restart') }}
                             </button>
                             
                             <button class="dropdown-item" @click="openConsole(instance)">
-                                <Terminal :size="14" /> 控制台
+                                <Terminal :size="14" /> {{ t('dashboard.instanceDetail.console') }}
                             </button>
 
                             <div class="dropdown-divider"></div>
@@ -1003,14 +1153,14 @@ onUnmounted(() => {
                                 @click="handleAction(instance, 'hard_stop')"
                                 :disabled="!!actionLoading[instance.id] || ['stopped', 'shutoff', 'shut_off', 'paused'].includes(instance.status?.toLowerCase())"
                             >
-                                <Square :size="14" /> 强制关机
+                                <Square :size="14" /> {{ t('dashboard.instanceDetail.hardStop') }}
                             </button>
                             <button
                                 class="dropdown-item"
                                 @click="handleAction(instance, 'hard_restart')"
                                 :disabled="!!actionLoading[instance.id] || ['stopped', 'shutoff', 'shut_off'].includes(instance.status?.toLowerCase())"
                             >
-                                <RefreshCw :size="14" /> 强制重启
+                                <RefreshCw :size="14" /> {{ t('dashboard.instanceDetail.hardRestart') }}
                             </button>
                             <button
                                 v-if="instance.status?.toLowerCase() !== 'paused'"
@@ -1018,7 +1168,7 @@ onUnmounted(() => {
                                 @click="handleAction(instance, 'pause')"
                                 :disabled="!!actionLoading[instance.id] || instance.status?.toLowerCase() !== 'running'"
                             >
-                                <span style="font-size: 14px; width: 14px; display: inline-block; text-align: center;">⏸</span> 暂停
+                                <span style="font-size: 14px; width: 14px; display: inline-block; text-align: center;">⏸</span> {{ t('dashboard.instanceDetail.pause') }}
                             </button>
                             <button
                                 v-else
@@ -1026,25 +1176,25 @@ onUnmounted(() => {
                                 @click="handleAction(instance, 'resume')"
                                 :disabled="!!actionLoading[instance.id]"
                             >
-                                <Play :size="14" /> 恢复
+                                <Play :size="14" /> {{ t('dashboard.instanceDetail.resume') }}
                             </button>
                             
                             <div class="dropdown-divider"></div>
                             
                             <button class="dropdown-item" @click="openRenameModal(instance)">
-                                <Pencil :size="14" /> 重命名
+                                <Pencil :size="14" /> {{ t('dashboard.instanceDetail.rename') }}
                             </button>
                             <button class="dropdown-item" @click="openResetPasswordModal(instance)">
-                                <KeyRound :size="14" /> 重置密码
+                                <KeyRound :size="14" /> {{ t('dashboard.instanceDetail.resetPassword') }}
                             </button>
                             <button class="dropdown-item" @click="openResizeModal(instance)">
-                                <Maximize2 :size="14" /> 扩容
+                                <Maximize2 :size="14" /> {{ t('dashboard.instanceDetail.resize') }}
                             </button>
                             
                             <div class="dropdown-divider"></div>
                             
                             <button class="dropdown-item dropdown-item-danger" @click="handleDeleteClick(instance)">
-                                <Trash2 :size="14" /> 删除
+                                <Trash2 :size="14" /> {{ t('dashboard.instanceDetail.delete') }}
                             </button>
                         </div>
                     </Transition>
@@ -1060,7 +1210,7 @@ onUnmounted(() => {
     <div v-if="createModalVisible" class="modal-overlay" @click.self="closeCreateModal">
       <div class="modal-content card" style="max-width: 600px;">
         <div class="modal-header">
-          <h3>创建实例</h3>
+          <h3>{{ t('dashboard.buttons.createInstance') }}</h3>
           <button class="btn btn-ghost btn-sm icon-btn" @click="closeCreateModal">
             <X :size="20" />
           </button>
@@ -1074,40 +1224,40 @@ onUnmounted(() => {
           <!-- Basic Info -->
           <div class="form-section">
             <div class="section-header collapsible-header" @click="newInstanceForm.general_expanded = !newInstanceForm.general_expanded">
-              <div class="section-title mb-0">基础信息</div>
+              <div class="section-title mb-0">{{ t('dashboard.instanceDetail.generalInfo') }}</div>
               <ChevronDown v-if="!newInstanceForm.general_expanded" :size="18" />
               <ChevronUp v-else :size="18" />
             </div>
 
             <div v-if="newInstanceForm.general_expanded" class="section-content mt-3">
               <div class="form-group">
-                  <label class="form-label">主机名 <span class="text-error">*</span></label>
+                  <label class="form-label">{{ t('dashboard.table.hostname') }} <span class="text-error">*</span></label>
                    <input 
                        v-model="newInstanceForm.hostname" 
                        type="text" 
                        :class="['form-input', { 'input-error': !isHostnameValid }]"
-                       placeholder="例如：web-server-01" 
+                       :placeholder="t('dashboard.forms.placeholder.nameExample')" 
                    />
                    <div v-if="!isHostnameValid" class="text-error text-xs mt-1">
-                       主机名格式无效
+                       {{ t('dashboard.instanceDetail.invalidHostname') }}
                    </div>
 
               </div>
 
               <div class="form-row">
                   <div class="form-group">
-                      <label class="form-label">镜像 <span class="text-error">*</span></label>
+                      <label class="form-label">{{ t('dashboard.forms.image') }} <span class="text-error">*</span></label>
                       <select v-model="newInstanceForm.image_id" class="form-select">
-                          <option value="" disabled>选择操作系统镜像</option>
+                          <option value="" disabled>{{ t('dashboard.forms.placeholder.selectImage') }}</option>
                           <option v-for="img in availableImages" :key="img.id" :value="img.id">
                               {{ img.name }}
                           </option>
                       </select>
                   </div>
                   <div class="form-group">
-                      <label class="form-label">规格 <span class="text-error">*</span></label>
+                      <label class="form-label">{{ t('dashboard.forms.flavor') }} <span class="text-error">*</span></label>
                       <select v-model="newInstanceForm.flavor_id" class="form-select">
-                          <option value="" disabled>选择配置规格</option>
+                          <option value="" disabled>{{ t('dashboard.forms.placeholder.selectFlavor') }}</option>
                           <option v-for="f in availableFlavors" :key="f.name || f.id" :value="f.name || f.id">
                               {{ f.name }} ({{ f.vcpus || f.cpu || 0 }} vCPU, {{ formatMemory(f.ram || f.memory || 0) }} RAM, {{ f.disk || 0 }} GB Disk)
                           </option>
@@ -1117,31 +1267,31 @@ onUnmounted(() => {
 
               <div class="form-row">
                   <div class="form-group">
-                       <label class="form-label">可用区</label>
+                       <label class="form-label">{{ t('dashboard.forms.zone') }}</label>
                        <select v-model="newInstanceForm.zone" class="form-select">
                            <option v-for="z in availableZones" :key="z.id" :value="z.name || z.id">
                                {{ z.name || z.id }}
                            </option>
-                           <option v-if="availableZones.length === 0" value="default">无</option>
+                           <option v-if="availableZones.length === 0" value="default">{{ t('dashboard.forms.placeholder.none') }}</option>
                        </select>
 
                   </div>
                   <div class="form-group">
-                       <label class="form-label">创建数量</label>
+                       <label class="form-label">{{ t('dashboard.instanceDetail.count') }}</label>
                       <input v-model.number="newInstanceForm.count" type="number" class="form-input" min="1" max="16" />
                   </div>
               </div>
 
               <div class="form-group">
-                  <label class="checkbox-label">
-                      <input type="checkbox" v-model="enableSSHKeys" @change="handleSSHKeysCheckboxChange">
-                     <span class="form-label mb-0">使用 SSH 密钥登录 <span class="text-error" v-if="!newInstanceForm.root_passwd">*</span></span>
-                </label>
+                  <div class="checkbox-label" style="cursor: default; width: fit-content;">
+                      <input type="checkbox" v-model="enableSSHKeys" @change="handleSSHKeysCheckboxChange" style="cursor: pointer;">
+                     <span class="form-label mb-0" style="cursor: default;">{{ t('dashboard.instanceDetail.sshLogin') }} <span class="text-error" v-if="!newInstanceForm.root_passwd">*</span></span>
+                </div>
                   
                   <div v-if="enableSSHKeys" class="multi-select-container mt-2" v-click-outside="() => sshKeysDropdownOpen = false">
                       <div class="multi-select-trigger" @click="sshKeysDropdownOpen = !sshKeysDropdownOpen">
-                           <span v-if="newInstanceForm.keys.length === 0" class="placeholder">选择 SSH 密钥</span>
-                          <span v-else class="selected-count">已选择 {{ newInstanceForm.keys.length }} 个密钥</span>
+                           <span v-if="newInstanceForm.keys.length === 0" class="placeholder">{{ t('dashboard.forms.placeholder.selectSSHKey') }}</span>
+                          <span v-else class="selected-count">{{ t('dashboard.instanceDetail.selectedCount', { count: newInstanceForm.keys.length }) }}</span>
                           <ChevronDown :size="16" />
                       </div>
                       <div v-if="sshKeysDropdownOpen" class="multi-select-dropdown">
@@ -1150,30 +1300,30 @@ onUnmounted(() => {
                                   <input type="checkbox" :value="k.id" v-model="newInstanceForm.keys">
                                   <span>{{ k.name }}</span>
                               </label>
-                               <div v-if="availableKeys.length === 0" class="p-2 text-secondary text-xs">暂无数据</div>
+                               <div v-if="availableKeys.length === 0" class="p-2 text-secondary text-xs">{{ t('dashboard.table.noData') }}</div>
                           </div>
                       </div>
                   </div>
               </div>
 
               <div class="form-group">
-                  <label class="checkbox-label">
-                      <input type="checkbox" v-model="enablePassword" @change="handlePasswordCheckboxChange">
-                     <span class="form-label mb-0">设置 Root 密码 <span class="text-error" v-if="newInstanceForm.keys.length === 0">*</span></span>
-                </label>
+                  <div class="checkbox-label" style="cursor: default; width: fit-content;">
+                      <input type="checkbox" v-model="enablePassword" @change="handlePasswordCheckboxChange" style="cursor: pointer;">
+                     <span class="form-label mb-0" style="cursor: default;">{{ t('dashboard.instanceDetail.setPassword') }} <span class="text-error" v-if="newInstanceForm.keys.length === 0">*</span></span>
+                </div>
                   
                   <div v-if="enablePassword" class="password-inline-fields mt-3">
                       <div style="margin-bottom: 8px;">
                           <button type="button" class="btn btn-sm btn-outline" @click="generateRandomPassword">
                               <Shuffle :size="14" style="margin-right: 4px;" />
-                              生成随机密码
+                              {{ t('dashboard.instanceDetail.generatePassword') }}
                           </button>
                       </div>
                       <div class="form-row">
                           <div class="form-col">
-                               <label class="form-label text-xs">密码</label>
+                               <label class="form-label text-xs">{{ t('dashboard.instanceDetail.rootPassword') }}</label>
                                <div class="password-input-wrapper">
-                                  <input v-model="tempPassword" :type="showCreatePassword ? 'text' : 'password'" class="form-input" placeholder="密码" />
+                                  <input v-model="tempPassword" :type="showCreatePassword ? 'text' : 'password'" class="form-input" :placeholder="t('dashboard.instanceDetail.rootPassword')" />
                                   <button type="button" class="password-toggle-btn" @click="showCreatePassword = !showCreatePassword">
                                       <Eye v-if="!showCreatePassword" :size="14" />
                                       <EyeOff v-else :size="14" />
@@ -1181,9 +1331,9 @@ onUnmounted(() => {
                                </div>
                           </div>
                           <div class="form-col">
-                               <label class="form-label text-xs">确认密码</label>
+                               <label class="form-label text-xs">{{ t('dashboard.instanceDetail.confirmPassword') }}</label>
                                <div class="password-input-wrapper">
-                                  <input v-model="confirmPassword" :type="showCreatePassword ? 'text' : 'password'" class="form-input" placeholder="确认密码" />
+                                  <input v-model="confirmPassword" :type="showCreatePassword ? 'text' : 'password'" class="form-input" :placeholder="t('dashboard.instanceDetail.confirmPassword')" />
                                   <button type="button" class="password-toggle-btn" @click="showCreatePassword = !showCreatePassword">
                                       <Eye v-if="!showCreatePassword" :size="14" />
                                       <EyeOff v-else :size="14" />
@@ -1192,79 +1342,95 @@ onUnmounted(() => {
                           </div>
                       </div>
                       <div v-if="tempPassword && confirmPassword && tempPassword !== confirmPassword" class="text-error text-xs mt-1">
-                           两次输入的密码不一致
+                           {{ t('dashboard.instanceDetail.passwordMismatch') }}
                       </div>
                       <div v-else-if="tempPassword && confirmPassword === tempPassword" class="text-success text-xs mt-1">
-                          密码一致
+                          {{ t('dashboard.instanceDetail.passwordSuccess') }}
                       </div>
                   </div>
               </div>
 
               <div class="form-group">
-                   <label class="form-label">网络类型</label>
+                   <label class="form-label">{{ t('dashboard.instanceDetail.networkType') }}</label>
                   <div class="radio-group">
                       <label class="radio-label">
                           <input type="radio" value="vpc" v-model="newInstanceForm.primary_interface.network_type" @change="handleNetworkTypeChange(newInstanceForm.primary_interface)">
-                          <span>私有网络 (VPC)</span>
-                      </label>
-                      <label class="radio-label">
-                          <input type="radio" value="isolated" v-model="newInstanceForm.primary_interface.network_type" @change="handleNetworkTypeChange(newInstanceForm.primary_interface)">
-                          <span>隔离网络 (Isolated)</span>
+                          <span>{{ t('dashboard.instanceDetail.networkTypes.vpc') }}</span>
                       </label>
                       <label class="radio-label">
                           <input type="radio" value="public" v-model="newInstanceForm.primary_interface.network_type" @change="handleNetworkTypeChange(newInstanceForm.primary_interface)">
-                          <span>公网网络 (Public)</span>
+                          <span>{{ t('dashboard.instanceDetail.networkTypes.public') }}</span>
+                      </label>
+                      <label class="radio-label">
+                          <input type="radio" value="private" v-model="newInstanceForm.primary_interface.network_type" @change="handleNetworkTypeChange(newInstanceForm.primary_interface)">
+                          <span>{{ t('dashboard.instanceDetail.networkTypes.private') }}</span>
                       </label>
                   </div>
               </div>
 
               <!-- VPC Type Subnets -->
-              <div class="form-row" v-if="newInstanceForm.primary_interface.network_type === 'vpc'">
+              <div class="form-row three-col" v-if="newInstanceForm.primary_interface.network_type === 'vpc'">
                   <div class="form-group">
-                       <label class="form-label">私有网络</label>
+                       <label class="form-label">{{ t('dashboard.forms.vpc') }}</label>
                       <select v-model="newInstanceForm.primary_interface.vpc_id" class="form-select" @change="handleVpcChange(newInstanceForm.primary_interface)">
-                           <option value="" disabled>选择 VPC</option>
+                           <option value="" disabled>{{ t('dashboard.forms.placeholder.selectVpc') }}</option>
                           <option v-for="vpc in availableVPCs" :key="vpc.id" :value="vpc.id">{{ vpc.name }}</option>
                       </select>
                   </div>
                   <div class="form-group">
-                       <label class="form-label">子网</label>
-                      <select v-model="newInstanceForm.primary_interface.subnet_id" class="form-select" :disabled="!newInstanceForm.primary_interface.vpc_id">
-                           <option value="" disabled>选择子网</option>
-                          <option v-for="sub in getFilteredSubnets(newInstanceForm.primary_interface.vpc_id)" :key="sub.id" :value="sub.id">{{ sub.name }} ({{ sub.network || sub.network_cidr }}) - 可用 IP: {{ sub.available_count ?? 0 }}</option>
+                       <label class="form-label">{{ t('dashboard.forms.subnet') }}</label>
+                      <select v-model="newInstanceForm.primary_interface.subnet_id" class="form-select" :disabled="!newInstanceForm.primary_interface.vpc_id" @change="handleSubnetChange(newInstanceForm.primary_interface)">
+                           <option value="" disabled>{{ t('dashboard.forms.placeholder.selectSubnet') }}</option>
+                          <option v-for="sub in getFilteredSubnets(newInstanceForm.primary_interface.vpc_id)" :key="sub.id" :value="sub.id">{{ sub.name }} ({{ sub.network || sub.network_cidr }}) - {{ t('dashboard.forms.placeholder.availableIp') }}: {{ sub.available_count ?? 0 }}</option>
+                      </select>
+                  </div>
+                  <div class="form-group">
+                      <label class="form-label">{{ t('dashboard.table.ipAddress') }}</label>
+                      <select v-model="newInstanceForm.primary_interface.ip_address" class="form-select" :disabled="!newInstanceForm.primary_interface.subnet_id || addressesLoading[newInstanceForm.primary_interface.subnet_id]">
+                          <option value="">{{ t('dashboard.forms.placeholder.autoAllocate') }}</option>
+                          <option v-for="addr in (subnetAddresses[newInstanceForm.primary_interface.subnet_id] || [])" :key="addr.address" :value="addr.address">{{ addr.address.split('/')[0] }}</option>
                       </select>
                   </div>
               </div>
 
-              <!-- Isolated Subnets -->
-              <div class="form-group" v-else-if="newInstanceForm.primary_interface.network_type === 'isolated'">
-                   <label class="form-label">隔离子网</label>
-                  <select v-model="newInstanceForm.primary_interface.subnet_id" class="form-select">
-                      <option value="" disabled>选择隔离子网</option>
-                      <option v-for="sub in getIsolatedSubnets()" :key="sub.id" :value="sub.id">{{ sub.name }} ({{ sub.network || sub.network_cidr }}) - 可用 IP: {{ sub.available_count ?? 0 }}</option>
-                  </select>
-              </div>
-
-              <!-- Public Network -->
+               <!-- Public Network -->
               <div class="form-row" v-else-if="newInstanceForm.primary_interface.network_type === 'public'">
                   <div class="form-group">
-                      <label class="form-label">公网子网</label>
+                      <label class="form-label">{{ t('dashboard.forms.publicSubnet') }}</label>
                       <select v-model="newInstanceForm.primary_interface.subnet_id" class="form-select" @change="handleSubnetChange(newInstanceForm.primary_interface)">
-                          <option value="" disabled>选择公网子网</option>
-                          <option v-for="sub in getPublicSubnets()" :key="sub.id" :value="sub.id">{{ sub.name }} ({{ sub.network || sub.network_cidr }}) - 可用 IP: {{ sub.available_count ?? 0 }}</option>
+                          <option value="" disabled>{{ t('dashboard.forms.placeholder.selectSubnet') }}</option>
+                          <option v-for="sub in getPublicSubnets()" :key="sub.id" :value="sub.id">{{ sub.name }} ({{ sub.network || sub.network_cidr }}) - {{ t('dashboard.forms.placeholder.availableIp') }}: {{ sub.available_count ?? 0 }}</option>
                       </select>
                   </div>
                   <div class="form-group">
-                      <label class="form-label">IP 地址</label>
+                      <label class="form-label">{{ t('dashboard.table.ipAddress') }}</label>
                       <select v-model="newInstanceForm.primary_interface.ip_address" class="form-select" :disabled="!newInstanceForm.primary_interface.subnet_id || addressesLoading[newInstanceForm.primary_interface.subnet_id]">
-                          <option value="">自动分配</option>
+                          <option value="">{{ t('dashboard.forms.placeholder.autoAllocate') }}</option>
+                          <option v-for="addr in (subnetAddresses[newInstanceForm.primary_interface.subnet_id] || [])" :key="addr.address" :value="addr.address">{{ addr.address.split('/')[0] }}</option>
+                      </select>
+                  </div>
+              </div>
+
+              <!-- Private Subnets -->
+              <div class="form-row" v-else-if="newInstanceForm.primary_interface.network_type === 'private'">
+                  <div class="form-group">
+                       <label class="form-label">{{ t('dashboard.forms.subnet') }}</label>
+                      <select v-model="newInstanceForm.primary_interface.subnet_id" class="form-select" @change="handleSubnetChange(newInstanceForm.primary_interface)">
+                          <option value="" disabled>{{ t('dashboard.forms.placeholder.selectSubnet') }}</option>
+                          <option v-for="sub in getPrivateSubnets()" :key="sub.id" :value="sub.id">{{ sub.name }} ({{ sub.network || sub.network_cidr }}) - {{ t('dashboard.forms.placeholder.availableIp') }}: {{ sub.available_count ?? 0 }}</option>
+                      </select>
+                  </div>
+                  <div class="form-group">
+                      <label class="form-label">{{ t('dashboard.table.ipAddress') }}</label>
+                      <select v-model="newInstanceForm.primary_interface.ip_address" class="form-select" :disabled="!newInstanceForm.primary_interface.subnet_id || addressesLoading[newInstanceForm.primary_interface.subnet_id]">
+                          <option value="">{{ t('dashboard.forms.placeholder.autoAllocate') }}</option>
                           <option v-for="addr in (subnetAddresses[newInstanceForm.primary_interface.subnet_id] || [])" :key="addr.address" :value="addr.address">{{ addr.address.split('/')[0] }}</option>
                       </select>
                   </div>
               </div>
 
               <div class="form-group">
-                   <label class="form-label">安全组 (可选)</label>
+                   <label class="form-label">{{ t('dashboard.forms.securityGroups') }} ({{ t('dashboard.forms.optional') }})</label>
                   <div class="checkbox-group compact">
                       <label v-for="sg in getFilteredSecurityGroups(newInstanceForm.primary_interface.network_type === 'vpc' ? newInstanceForm.primary_interface.vpc_id : undefined)" :key="sg.id" class="checkbox-label">
                           <input type="checkbox" :value="sg.id" v-model="newInstanceForm.primary_interface.security_group_ids">
@@ -1272,76 +1438,109 @@ onUnmounted(() => {
                       </label>
                   </div>
                   <div v-if="getFilteredSecurityGroups(newInstanceForm.primary_interface.network_type === 'vpc' ? newInstanceForm.primary_interface.vpc_id : undefined).length === 0" class="text-secondary text-xs mt-1">
-                       没有找到符合条件的记录。
+                       {{ t('dashboard.table.noResults') }}
                   </div>
               </div>
-            </div>
-          </div>
 
-          <!-- Secondary Interfaces -->
-          <div class="secondary-interfaces-list" v-if="newInstanceForm.secondary_interfaces.length > 0">
-            <div v-for="(iface, idx) in newInstanceForm.secondary_interfaces" :key="idx" class="form-section secondary-section">
-                <div class="section-header">
-                    <div class="section-title">辅助网络接口 #{{ idx + 1 }}</div>
-                    <button class="btn btn-ghost btn-sm text-error remove-btn" @click="removeSecondaryInterface(idx)">
-                        <MinusCircle :size="16" />
-                    </button>
-                </div>
-                
-                <div class="form-group">
-                    <div class="radio-group mini">
-                        <label class="radio-label">
-                            <input type="radio" value="vpc" v-model="iface.network_type" @change="handleNetworkTypeChange(iface)">
-                            <span>私有网络 (VPC)</span>
-                        </label>
-                        <label class="radio-label">
-                            <input type="radio" value="isolated" v-model="iface.network_type" @change="handleNetworkTypeChange(iface)">
-                            <span>隔离网络 (Isolated)</span>
-                        </label>
-                        <label class="radio-label">
-                            <input type="radio" value="public" v-model="iface.network_type" @change="handleNetworkTypeChange(iface)">
-                            <span>公网网络 (Public)</span>
-                        </label>
+              <div class="secondary-interfaces-list" v-if="newInstanceForm.secondary_interfaces.length > 0">
+                <div v-for="(iface, idx) in newInstanceForm.secondary_interfaces" :key="idx" class="form-section secondary-section">
+                    <div class="section-header">
+                        <div class="section-title" style="display:flex;align-items:center;gap:6px;">
+                            {{ t('dashboard.instanceDetail.secondaryInterfaceLabel', { index: idx + 1 }) }}
+                            <span class="iface-help-icon" @mouseenter="showIfaceHelp($event)" @mouseleave="hideIfaceHelp">
+                                <HelpCircle :size="14" />
+                            </span>
+                        </div>
+                        <button class="btn btn-ghost btn-sm text-error remove-btn" @click="removeSecondaryInterface(idx)">
+                            <MinusCircle :size="16" />
+                        </button>
+                    </div>
+                    
+                    <div class="form-group">
+                        <div class="radio-group mini">
+                            <label class="radio-label">
+                                <input type="radio" value="vpc" v-model="iface.network_type" @change="handleNetworkTypeChange(iface, true)">
+                                <span>{{ t('dashboard.instanceDetail.networkTypes.vpc') }}</span>
+                            </label>
+                            <label class="radio-label" :class="{ 'opacity-40': newInstanceForm.primary_interface.network_type === 'vpc' }">
+                                <input type="radio" value="public" v-model="iface.network_type" @change="handleNetworkTypeChange(iface, true)" :disabled="newInstanceForm.primary_interface.network_type === 'vpc'">
+                                <span>{{ t('dashboard.instanceDetail.networkTypes.public') }}</span>
+                            </label>
+                            <label class="radio-label" :class="{ 'opacity-40': newInstanceForm.primary_interface.network_type === 'vpc' }">
+                                <input type="radio" value="private" v-model="iface.network_type" @change="handleNetworkTypeChange(iface, true)" :disabled="newInstanceForm.primary_interface.network_type === 'vpc'">
+                                <span>{{ t('dashboard.instanceDetail.networkTypes.private') }}</span>
+                            </label>
+                        </div>
+                    </div>
+
+                    <div class="form-row three-col" v-if="iface.network_type === 'vpc'">
+                        <div class="form-group">
+                            <select v-model="iface.vpc_id" class="form-select" :disabled="newInstanceForm.primary_interface.network_type === 'vpc'" :title="newInstanceForm.primary_interface.network_type === 'vpc' ? t('dashboard.instanceDetail.secondaryIface.vpcShare') : ''" @change="handleVpcChange(iface)">
+                                <option value="" disabled>{{ t('dashboard.forms.placeholder.selectVpc') }}</option>
+                                <option v-for="vpc in availableVPCs" :key="vpc.id" :value="vpc.id">{{ vpc.name }}</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <select v-model="iface.subnet_id" class="form-select" :disabled="!iface.vpc_id" @change="handleSubnetChange(iface)">
+                                <option value="" disabled>{{ t('dashboard.forms.placeholder.selectSubnet') }}</option>
+                                <option v-for="sub in getFilteredSubnetsForSecondary(iface.vpc_id, idx)" :key="sub.id" :value="sub.id">{{ sub.name }} ({{ sub.network || sub.network_cidr }}) - {{ t('dashboard.forms.placeholder.availableIp') }}: {{ sub.available_count ?? 0 }}</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <select v-model="iface.ip_address" class="form-select" :disabled="!iface.subnet_id || addressesLoading[iface.subnet_id]">
+                                <option value="">{{ t('dashboard.forms.placeholder.autoAllocate') }} IP</option>
+                                <option v-for="addr in (subnetAddresses[iface.subnet_id] || [])" :key="addr.address" :value="addr.address">{{ addr.address.split('/')[0] }}</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="form-row" v-else-if="iface.network_type === 'public'">
+                        <div class="form-group">
+                            <select v-model="iface.subnet_id" class="form-select" @change="handleSubnetChange(iface)">
+                                <option value="" disabled>{{ t('dashboard.forms.placeholder.selectPublicSubnet') }}</option>
+                                <option v-for="sub in getPublicSubnetsForSecondary(idx)" :key="sub.id" :value="sub.id">{{ sub.name }} ({{ sub.network || sub.network_cidr }}) - {{ t('dashboard.forms.placeholder.availableIp') }}: {{ sub.available_count ?? 0 }}</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <select v-model="iface.ip_address" class="form-select" :disabled="!iface.subnet_id || addressesLoading[iface.subnet_id]">
+                                <option value="">{{ t('dashboard.forms.placeholder.autoAllocate') }} IP</option>
+                                <option v-for="addr in (subnetAddresses[iface.subnet_id] || [])" :key="addr.address" :value="addr.address">{{ addr.address.split('/')[0] }}</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="form-row" v-else-if="iface.network_type === 'private'">
+                        <div class="form-group">
+                            <select v-model="iface.subnet_id" class="form-select" @change="handleSubnetChange(iface)">
+                                <option value="" disabled>{{ t('dashboard.forms.placeholder.selectSubnet') }}</option>
+                                <option v-for="sub in getPrivateSubnetsForSecondary(idx)" :key="sub.id" :value="sub.id">{{ sub.name }} ({{ sub.network || sub.network_cidr }}) - {{ t('dashboard.forms.placeholder.availableIp') }}: {{ sub.available_count ?? 0 }}</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <select v-model="iface.ip_address" class="form-select" :disabled="!iface.subnet_id || addressesLoading[iface.subnet_id]">
+                                <option value="">{{ t('dashboard.forms.placeholder.autoAllocate') }} IP</option>
+                                <option v-for="addr in (subnetAddresses[iface.subnet_id] || [])" :key="addr.address" :value="addr.address">{{ addr.address.split('/')[0] }}</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="form-group mt-2">
+                        <label class="form-label text-xs">{{ t('dashboard.forms.securityGroups') }} ({{ t('dashboard.forms.optional') }})</label>
+                        <div class="checkbox-group compact">
+                            <label v-for="sg in getFilteredSecurityGroups(iface.network_type === 'vpc' ? iface.vpc_id : undefined)" :key="sg.id" class="checkbox-label">
+                                <input type="checkbox" :value="sg.id" v-model="iface.security_group_ids">
+                                <span>{{ sg.name }}</span>
+                            </label>
+                        </div>
                     </div>
                 </div>
+              </div>
 
-                <div class="form-row" v-if="iface.network_type === 'vpc'">
-                    <select v-model="iface.vpc_id" class="form-select" @change="handleVpcChange(iface)">
-                        <option value="" disabled>选择 VPC</option>
-                        <option v-for="vpc in availableVPCs" :key="vpc.id" :value="vpc.id">{{ vpc.name }}</option>
-                    </select>
-                    <select v-model="iface.subnet_id" class="form-select" :disabled="!iface.vpc_id">
-                        <option value="" disabled>选择子网</option>
-                        <option v-for="sub in getFilteredSubnets(iface.vpc_id)" :key="sub.id" :value="sub.id">{{ sub.name }} ({{ sub.network || sub.network_cidr }}) - 可用 IP: {{ sub.available_count ?? 0 }}</option>
-                    </select>
-                </div>
-                <div class="form-row" v-else-if="iface.network_type === 'public'">
-                    <select v-model="iface.subnet_id" class="form-select" @change="handleSubnetChange(iface)">
-                        <option value="" disabled>选择公网子网</option>
-                        <option v-for="sub in getPublicSubnets()" :key="sub.id" :value="sub.id">{{ sub.name }} ({{ sub.network || sub.network_cidr }}) - 可用 IP: {{ sub.available_count ?? 0 }}</option>
-                    </select>
-                    <select v-model="iface.ip_address" class="form-select" :disabled="!iface.subnet_id || addressesLoading[iface.subnet_id]">
-                        <option value="">自动分配</option>
-                        <option v-for="addr in (subnetAddresses[iface.subnet_id] || [])" :key="addr.address" :value="addr.address">{{ addr.address.split('/')[0] }}</option>
-                    </select>
-                </div>
-
-                <div class="form-group mt-2">
-                    <label class="form-label text-xs">安全组 (可选)</label>
-                    <div class="checkbox-group compact">
-                        <label v-for="sg in getFilteredSecurityGroups(iface.network_type === 'vpc' ? iface.vpc_id : undefined)" :key="sg.id" class="checkbox-label">
-                            <input type="checkbox" :value="sg.id" v-model="iface.security_group_ids">
-                            <span>{{ sg.name }}</span>
-                        </label>
-                    </div>
-                </div>
+              <div class="add-interface-row">
+                <button class="btn btn-outline btn-sm w-full" @click="addSecondaryInterface" :disabled="newInstanceForm.secondary_interfaces.length >= 7">
+                    <PlusCircle :size="14" /> {{ t('dashboard.buttons.addSecondaryInterface') }}
+                </button>
+              </div>
             </div>
-          </div>
-
-          <div class="add-interface-row">
-            <button class="btn btn-outline btn-sm w-full" @click="addSecondaryInterface" :disabled="newInstanceForm.secondary_interfaces.length >= 7">
-                <PlusCircle :size="14" /> 添加辅助网络接口
-            </button>
           </div>
 
           <!-- Advanced Options Expandable -->
@@ -1349,7 +1548,7 @@ onUnmounted(() => {
             <div class="advanced-trigger" @click="newInstanceForm.advanced_expanded = !newInstanceForm.advanced_expanded">
                 <div class="trigger-label">
                     <Server :size="16" />
-                    <span>高级选项</span>
+                    <span>{{ t('dashboard.instanceDetail.advancedOptions') }}</span>
                 </div>
                 <ChevronDown v-if="!newInstanceForm.advanced_expanded" :size="20" />
                 <ChevronUp v-else :size="20" />
@@ -1357,13 +1556,13 @@ onUnmounted(() => {
 
             <div class="advanced-content" v-if="newInstanceForm.advanced_expanded">
                 <div class="form-group">
-                    <label class="form-label">登录端口</label>
-                    <input v-model.number="newInstanceForm.login_port" type="number" class="form-input" placeholder="默认 22" />
+                    <label class="form-label">{{ t('dashboard.instanceDetail.loginPort') }}</label>
+                    <input v-model.number="newInstanceForm.login_port" type="number" class="form-input" :placeholder="t('dashboard.instanceDetail.loginPortPlaceholder')" />
                 </div>
 
                 <div class="form-group">
                     <div class="flex-row">
-                        <label class="form-label mb-0">启用嵌套虚拟化</label>
+                        <label class="form-label mb-0">{{ t('dashboard.instanceDetail.nestedVirtualization') }}</label>
                         <label class="switch">
                             <input type="checkbox" v-model="newInstanceForm.nested_enable">
                             <span class="slider"></span>
@@ -1372,16 +1571,16 @@ onUnmounted(() => {
                 </div>
 
                 <div class="form-group">
-                    <label class="form-label">用户数据类型</label>
+                    <label class="form-label">{{ t('dashboard.instanceDetail.userDataType') }}</label>
                     <select v-model="newInstanceForm.userdata_type" class="form-select">
-                        <option value="plain">普通文本</option>
+                        <option value="plain">{{ t('dashboard.instanceDetail.plain') }}</option>
                         <option value="base64">Base64</option>
                     </select>
                 </div>
 
                 <div class="form-group">
-                    <label class="form-label">用户数据 (Cloud-Init Script)</label>
-                    <textarea v-model="newInstanceForm.userdata" class="form-textarea" rows="4" placeholder="可选。在实例启动时运行的脚本..."></textarea>
+                    <label class="form-label">{{ t('dashboard.instanceDetail.userData') }}</label>
+                    <textarea v-model="newInstanceForm.userdata" class="form-textarea" rows="4" :placeholder="t('dashboard.instanceDetail.userDataPlaceholder')"></textarea>
                 </div>
             </div>
           </div>
@@ -1392,10 +1591,10 @@ onUnmounted(() => {
             {{ createError }}
           </div>
           <div style="display: flex; justify-content: flex-end; gap: var(--spacing-2);">
-            <button class="btn btn-secondary" @click="closeCreateModal" :disabled="creatingInstance">取消</button>
+            <button class="btn btn-secondary" @click="closeCreateModal" :disabled="creatingInstance">{{ t('marketplace.cancel') }}</button>
             <button class="btn btn-primary" @click="handleCreateInstance" :disabled="creatingInstance">
               <span v-if="creatingInstance" class="loading-spinner" style="width: 16px; height: 16px; border-width: 2px;"></span>
-              {{ creatingInstance ? '正在创建...' : '创建实例' }}
+              {{ creatingInstance ? t('dashboard.overview.loadingOverview') : t('dashboard.buttons.createInstance') }}
             </button>
           </div>
         </div>
@@ -1406,28 +1605,28 @@ onUnmounted(() => {
     <div v-if="renameModalVisible" class="modal-overlay" @click.self="renameModalVisible = false" style="z-index: 1001;">
       <div class="modal-content card" style="max-width: 400px;">
         <div class="modal-header">
-          <h3>重命名</h3>
+          <h3>{{ t('dashboard.instanceDetail.rename') }}</h3>
           <button class="btn btn-ghost btn-sm icon-btn" @click="renameModalVisible = false">
             <X :size="20" />
           </button>
         </div>
         <div class="modal-body">
           <div class="form-group">
-            <label class="form-label">主机名</label>
+            <label class="form-label">{{ t('dashboard.instanceDetail.hostname') }}</label>
             <input 
               v-model="renameForm.hostname" 
               type="text" 
               class="form-input" 
-              placeholder="主机名"
+              :placeholder="t('dashboard.table.hostname')"
             />
           </div>
           <div v-if="renameError" class="text-error mt-2">{{ renameError }}</div>
         </div>
         <div class="modal-footer">
-          <button class="btn btn-ghost" @click="renameModalVisible = false">取消</button>
+          <button class="btn btn-ghost" @click="renameModalVisible = false">{{ t('dashboard.buttons.cancel') }}</button>
           <button class="btn btn-primary" @click="confirmRename" :disabled="renameLoading">
             <span v-if="renameLoading" class="loading-spinner small"></span>
-            确定
+            {{ t('dashboard.buttons.confirm') }}
           </button>
         </div>
       </div>
@@ -1437,24 +1636,24 @@ onUnmounted(() => {
     <div v-if="resetPasswordModalVisible" class="modal-overlay" @click.self="resetPasswordModalVisible = false" style="z-index: 1001;">
       <div class="modal-content card" style="max-width: 450px;">
         <div class="modal-header">
-          <h3>重置密码</h3>
+          <h3>{{ t('dashboard.instanceDetail.resetPassword') }}</h3>
           <button class="btn btn-ghost btn-sm icon-btn" @click="resetPasswordModalVisible = false">
             <X :size="20" />
           </button>
         </div>
         <div class="modal-body">
           <div class="form-group">
-            <label class="form-label">用户名</label>
+            <label class="form-label">{{ t('dashboard.instanceDetail.userName') }}</label>
             <input v-model="resetPasswordForm.user_name" type="text" class="form-input" disabled />
           </div>
           <div class="form-group">
-            <label class="form-label">Root 密码</label>
+            <label class="form-label">{{ t('dashboard.instanceDetail.rootPassword') }}</label>
             <div class="password-input-wrapper">
               <input 
                 v-model="resetPasswordForm.password" 
                 :type="showResetPassword ? 'text' : 'password'" 
                 class="form-input" 
-                placeholder="至少8个字符" 
+                :placeholder="t('dashboard.instanceDetail.passwordPlaceholder')" 
               />
               <button class="password-toggle" @click="showResetPassword = !showResetPassword">
                 <Eye v-if="!showResetPassword" :size="16" />
@@ -1463,26 +1662,26 @@ onUnmounted(() => {
             </div>
           </div>
           <div class="form-group">
-            <label class="form-label">确认密码</label>
+            <label class="form-label">{{ t('dashboard.instanceDetail.confirmPassword') }}</label>
             <input 
               v-model="resetPasswordForm.confirmPassword" 
               :type="showResetPassword ? 'text' : 'password'" 
               class="form-input" 
-              placeholder="确认密码" 
+              :placeholder="t('dashboard.instanceDetail.confirmPassword')" 
             />
           </div>
           <div class="mt-2">
             <button class="btn btn-ghost btn-sm text-primary" @click="generateRandomResetPassword">
-              <RefreshCw :size="14" /> 生成随机密码
+              <RefreshCw :size="14" /> {{ t('dashboard.instanceDetail.generatePassword') }}
             </button>
           </div>
           <div v-if="resetPasswordError" class="text-error mt-3">{{ resetPasswordError }}</div>
         </div>
         <div class="modal-footer">
-          <button class="btn btn-ghost" @click="resetPasswordModalVisible = false">取消</button>
+          <button class="btn btn-ghost" @click="resetPasswordModalVisible = false">{{ t('dashboard.buttons.cancel') }}</button>
           <button class="btn btn-primary" @click="confirmResetPassword" :disabled="resetPasswordLoading">
             <span v-if="resetPasswordLoading" class="loading-spinner small"></span>
-            确定
+            {{ t('dashboard.buttons.confirm') }}
           </button>
         </div>
       </div>
@@ -1492,7 +1691,7 @@ onUnmounted(() => {
     <div v-if="resizeModalVisible" class="modal-overlay" @click.self="resizeModalVisible = false" style="z-index: 1001;">
       <div class="modal-content card" style="max-width: 450px;">
         <div class="modal-header">
-          <h3>扩容</h3>
+          <h3>{{ t('dashboard.instanceDetail.resize') }}</h3>
           <button class="btn btn-ghost btn-sm icon-btn" @click="resizeModalVisible = false">
             <X :size="20" />
           </button>
@@ -1500,25 +1699,43 @@ onUnmounted(() => {
         <div class="modal-body">
           <div class="form-row">
             <div class="form-group">
-              <label class="form-label">CPU (核)</label>
+              <label class="form-label">CPU ({{ t('dashboard.overview.cpuUnit') }})</label>
               <input v-model.number="resizeForm.cpu" type="number" class="form-input" min="1" />
             </div>
             <div class="form-group">
-              <label class="form-label">内存 (MB)</label>
+              <label class="form-label">{{ t('dashboard.overview.memory') }} (MB)</label>
               <input v-model.number="resizeForm.memory" type="number" class="form-input" min="128" step="128" />
             </div>
           </div>
           <div v-if="resizeError" class="text-error mt-2">{{ resizeError }}</div>
         </div>
         <div class="modal-footer">
-          <button class="btn btn-ghost" @click="resizeModalVisible = false">取消</button>
+          <button class="btn btn-ghost" @click="resizeModalVisible = false">{{ t('dashboard.buttons.cancel') }}</button>
           <button class="btn btn-primary" @click="confirmResize" :disabled="resizeLoading">
             <span v-if="resizeLoading" class="loading-spinner small"></span>
-            确定
+            {{ t('dashboard.buttons.confirm') }}
           </button>
         </div>
       </div>
     </div>
+
+    <Teleport to="body">
+      <div v-if="ifaceTooltipVisible" class="iface-help-tooltip"
+           :style="{ position: 'fixed', bottom: ifaceTooltipPos.bottom, right: ifaceTooltipPos.right, zIndex: '9999' }">
+          <div class="iface-help-title">
+              <HelpCircle :size="14" />
+              {{ t('dashboard.instanceDetail.secondaryIface.title') }}
+          </div>
+          <ul class="iface-help-list">
+              <li>{{ t('dashboard.instanceDetail.secondaryIface.limit') }}</li>
+              <li>{{ t('dashboard.instanceDetail.secondaryIface.vlan') }}</li>
+              <li>{{ t('dashboard.instanceDetail.secondaryIface.vpcLimit') }}</li>
+              <li>{{ t('dashboard.instanceDetail.secondaryIface.publicLimit') }}</li>
+              <li>{{ t('dashboard.instanceDetail.secondaryIface.publicVlan') }}</li>
+              <li>{{ t('dashboard.instanceDetail.secondaryIface.siteLimit') }}</li>
+          </ul>
+      </div>
+    </Teleport>
 
     <DeleteModal
       :show="deleteModalVisible"
@@ -1708,26 +1925,118 @@ onUnmounted(() => {
   font-size: var(--font-size-sm);
 }
 
-.ip-display {
+.ip-display-wrapper {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.ip-list {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 3px;
 }
 
-.fip-address {
+.ip-item {
   display: flex;
   align-items: center;
-  gap: 4px;
-  font-size: 0.75rem;
-  color: var(--primary-600);
+  gap: 6px;
 }
 
-.fip-label {
-  font-weight: 600;
-  color: var(--primary-400);
-  font-size: 0.7rem;
-  margin-right: 2px;
+.fip-inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  color: var(--primary-600);
+  font-size: var(--font-size-sm);
 }
+
+.more-ips-trigger {
+  position: relative;
+}
+
+.clickable {
+  cursor: pointer;
+}
+
+.badge-multi-iface {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  background-color: var(--primary-600);
+  color: #fff;
+  border: none;
+  border-radius: 4px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  padding: 2px 6px;
+}
+
+.badge-multi-iface:hover {
+  background-color: var(--primary-700);
+}
+
+.ip-popover {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  z-index: 100;
+  margin-top: 8px;
+  width: 340px;
+  padding: 0;
+  background: white;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  box-shadow: var(--shadow-lg);
+}
+
+.popover-header {
+  background: var(--bg-secondary);
+  padding: 8px 12px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  border-bottom: 1px solid var(--border-light);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.mini-data-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.mini-data-table th {
+  text-align: left;
+  padding: 6px 12px;
+  font-size: 10px;
+  color: var(--gray-500);
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border-light);
+}
+
+.mini-data-table td {
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--border-light);
+}
+
+.mini-data-table tr:last-child td {
+  border-bottom: none;
+}
+
+.fade-enter-active, .fade-leave-active {
+  transition: opacity 0.2s, transform 0.2s;
+}
+
+.fade-enter-from, .fade-leave-to {
+  opacity: 0;
+  transform: translateY(-5px);
+}
+
+
 
 .actions {
   display: flex;
@@ -1855,12 +2164,13 @@ onUnmounted(() => {
 .gap-4 { gap: 16px; }
 
 .form-row {
-
-
-
     display: grid;
     grid-template-columns: 1fr 1fr;
     gap: var(--spacing-4);
+}
+
+.form-row.three-col {
+    grid-template-columns: repeat(3, 1fr);
 }
 
 .form-section {
@@ -1877,6 +2187,97 @@ onUnmounted(() => {
     justify-content: space-between;
     align-items: center;
     margin-bottom: 0px;
+}
+
+.iface-help-icon {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    cursor: pointer;
+    color: var(--text-secondary, #888);
+    transition: all 0.2s;
+}
+
+.iface-help-icon:hover {
+    z-index: 10000;
+}
+
+.iface-help-tooltip {
+    position: fixed;
+    z-index: 9999;
+    width: max-content;
+    max-width: 420px;
+    background: var(--bg-primary);
+    border: 1px solid var(--border-light);
+    border-radius: var(--radius-lg);
+    padding: 16px;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.15);
+    font-size: 12px;
+    font-weight: normal;
+    color: var(--text-primary);
+    line-height: 1.6;
+    white-space: normal;
+    text-align: left;
+    animation: tooltipFadeIn 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+    transform-origin: bottom right;
+}
+
+@keyframes tooltipFadeIn {
+    from { opacity: 0; transform: scale(0.95) translateY(10px); }
+    to { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+.iface-help-tooltip::before {
+    content: '';
+    position: absolute;
+    right: 4px;
+    bottom: -6px;
+    top: auto;
+    width: 12px;
+    height: 12px;
+    background: var(--bg-primary);
+    border-right: 1px solid var(--border-light);
+    border-bottom: 1px solid var(--border-light);
+    transform: rotate(45deg);
+}
+
+.iface-help-title {
+    font-weight: 700;
+    font-size: 14px;
+    margin-bottom: 12px;
+    color: var(--primary-color);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    border-bottom: 1px solid var(--border-light);
+    padding-bottom: 8px;
+}
+
+.iface-help-list {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.iface-help-list li {
+    position: relative;
+    padding-left: 20px;
+    color: var(--text-secondary);
+}
+
+.iface-help-list li::before {
+    content: '';
+    position: absolute;
+    left: 4px;
+    top: 7px;
+    width: 6px;
+    height: 2px;
+    background: var(--primary-color);
+    border-radius: 2px;
+    opacity: 0.6;
 }
 
 .collapsible-header {

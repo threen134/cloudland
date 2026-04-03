@@ -457,6 +457,17 @@ button:disabled {
   color: var(--error-dark);
 }
 
+.badge-info {
+  background: var(--info-light);
+  color: var(--info-dark);
+}
+
+.badge-gray {
+  background: var(--gray-100);
+  color: var(--gray-600);
+}
+
+
 /* Status badges for tables */
 .status-running {
   background: var(--success-light);
@@ -708,6 +719,7 @@ button:disabled {
   .grid-4 {
     grid-template-columns: 1fr;
   }
+
 
   h1 {
     font-size: var(--font-size-4xl);

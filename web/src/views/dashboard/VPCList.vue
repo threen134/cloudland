@@ -345,16 +345,45 @@ onMounted(() => {
               </span>
             </td>
             <td>
-              <div class="subnet-count-wrapper" v-if="vpc.subnets && vpc.subnets.length > 0">
-                <span class="subnet-count-badge">
-                  <Network :size="12" />
-                  {{ vpc.subnets.length }}
-                </span>
-                <div class="subnet-popover">
-                  <router-link v-for="sub in vpc.subnets" :key="sub.id" :to="{ name: 'subnet-detail', params: { id: sub.id } }" class="subnet-popover-item">
-                    <Network :size="12" />
-                    <span class="subnet-popover-name">{{ sub.name }}</span>
-                    <span class="subnet-popover-cidr">{{ sub.network || sub.network_cidr }}</span>
+              <div class="subnets-column-wrapper" v-if="vpc.subnets && vpc.subnets.length > 0">
+                <div class="subnet-list-vertical">
+                  <div class="subnet-first-row">
+                    <router-link 
+                      :to="{ name: 'subnet-detail', params: { id: vpc.subnets[0].id } }" 
+                      class="subnet-inline-item"
+                    >
+                      <span class="inline-name">{{ vpc.subnets[0].name }}</span>
+                      <span class="inline-cidr">({{ vpc.subnets[0].network || vpc.subnets[0].network_cidr }})</span>
+                    </router-link>
+                    
+                    <div v-if="vpc.subnets.length > 2" class="subnet-more-wrapper">
+                      <button class="badge badge-multi-iface clickable">
+                        <Network :size="10" />
+                        +{{ vpc.subnets.length - 2 }} {{ $t('dashboard.instanceDetail.more').toLowerCase() }}
+                      </button>
+                      <div class="subnet-popover">
+                        <div class="subnet-popover-header">{{ $t('dashboard.subnets') }}</div>
+                        <router-link 
+                          v-for="sub in vpc.subnets.slice(2)" 
+                          :key="sub.id" 
+                          :to="{ name: 'subnet-detail', params: { id: sub.id } }" 
+                          class="subnet-popover-item"
+                        >
+                          <Network :size="12" />
+                          <span class="subnet-popover-name">{{ sub.name }}</span>
+                          <span class="subnet-popover-cidr">{{ sub.network || sub.network_cidr }}</span>
+                        </router-link>
+                      </div>
+                    </div>
+                  </div>
+                  
+                  <router-link 
+                    v-if="vpc.subnets.length > 1"
+                    :to="{ name: 'subnet-detail', params: { id: vpc.subnets[1].id } }" 
+                    class="subnet-inline-item"
+                  >
+                    <span class="inline-name">{{ vpc.subnets[1].name }}</span>
+                    <span class="inline-cidr">({{ vpc.subnets[1].network || vpc.subnets[1].network_cidr }})</span>
                   </router-link>
                 </div>
               </div>
@@ -715,47 +744,107 @@ onMounted(() => {
   border-radius: 50%;
 }
 
-.subnet-count-wrapper {
-  position: relative;
-  display: inline-block;
+.subnet-list-vertical {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  align-items: flex-start;
 }
 
-.subnet-count-badge {
+.subnet-first-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.badge-multi-iface {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  background-color: var(--primary-600);
+  color: #fff;
+  border: none;
+  border-radius: 4px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  padding: 2px 6px;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.badge-multi-iface:hover {
+  background-color: var(--primary-700);
+}
+
+.subnet-inline-item {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  padding: 2px 10px;
-  background: var(--gray-10);
+  padding: 4px 8px;
+  background: var(--bg-tertiary);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-sm);
   font-size: var(--font-size-xs);
+  color: var(--primary-600);
+  text-decoration: none;
+  transition: all 0.2s;
+  white-space: nowrap;
+}
+
+.inline-name {
+  font-weight: var(--font-weight-medium);
+}
+
+.inline-cidr {
   color: var(--text-secondary);
-  cursor: default;
+  font-family: var(--font-mono, monospace);
+  font-size: 0.9em;
+  font-weight: 600;
+}
+
+.subnet-inline-item:hover {
+  background: var(--primary-50);
+  border-color: var(--primary-200);
+  color: var(--primary-700);
+}
+
+.subnet-more-wrapper {
+  position: relative;
+  display: inline-block;
 }
 
 .subnet-popover {
   display: none;
   position: absolute;
-  top: calc(100% + 6px);
+  top: calc(100% + 8px);
   left: 0;
   z-index: 50;
   min-width: 260px;
   background: var(--bg-primary);
   border: 1px solid var(--border-light);
   border-radius: var(--radius-md);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
-  padding: 6px 0;
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+  padding: 8px 0;
 }
 
-.subnet-count-wrapper:hover .subnet-popover {
+.subnet-more-wrapper:hover .subnet-popover {
   display: block;
+}
+
+.subnet-popover-header {
+  padding: 4px 12px 8px;
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  color: var(--text-light);
+  border-bottom: 1px solid var(--border-subtle);
+  margin-bottom: 4px;
 }
 
 .subnet-popover-item {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 6px 12px;
+  padding: 8px 12px;
   font-size: var(--font-size-xs);
   color: var(--text-secondary);
   text-decoration: none;

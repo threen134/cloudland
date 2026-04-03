@@ -76,9 +76,10 @@ const copyToClipboard = (text: string, field: string) => {
 
 const getTypeBadgeClass = (type: string) => {
     const map: Record<string, string> = {
-        'public': 'badge-green',
-        'internal': 'badge-blue',
-        'site': 'badge-purple'
+        'public': 'badge-success',
+        'internal': 'badge-primary',
+        'private': 'badge-info',
+        'site': 'badge-warning'
     }
     return map[type] || 'badge-gray'
 }
@@ -225,7 +226,7 @@ onMounted(fetchSubnet)
                                 <span class="value mono">{{ subnet.gateway || '-' }}</span>
                             </div>
                             <div class="kv-item" v-if="subnet.vlan">
-                                <span class="label">{{ (subnet.vlan > 4094) ? 'VXLAN' : 'VLAN' }}</span>
+                                <span class="label">{{ (subnet.vlan > 4094) ? $t('dashboard.table.vxlan') : $t('dashboard.table.vlan') }}</span>
                                 <span class="value mono">{{ subnet.vlan }}</span>
                             </div>
                             <div class="kv-item">
@@ -233,7 +234,7 @@ onMounted(fetchSubnet)
                                 <span class="value">{{ subnet.dhcp ? $t('dashboard.alarm.enabled') : $t('dashboard.alarm.disabled') }}</span>
                             </div>
                             <div class="kv-item">
-                                <span class="label">{{ $t('dashboard.table.dns') || 'DNS' }}</span>
+                                <span class="label">{{ $t('dashboard.table.dns') }}</span>
                                 <span class="value mono">{{ subnet.dns || '-' }}</span>
                             </div>
                         </div>

@@ -117,12 +117,12 @@ const handleCreateSubnet = async () => {
         return
     }
     if (requiresVpc.value && !newSubnetForm.value.vpc?.id) {
-        createError.value = 'VPC is required for internal subnets.'
+        createError.value = t('messages.vpcRequiredForInternal')
         return
     }
 
     if ((newSubnetForm.value.type === 'public' || newSubnetForm.value.type === 'private') && (!newSubnetForm.value.vlan || newSubnetForm.value.vlan < 1 || newSubnetForm.value.vlan > 4094)) {
-        createError.value = 'VLAN is required and must be between 1 and 4094 for public/private subnets.'
+        createError.value = t('messages.vlanRequiredRange')
         return
     }
 
@@ -297,7 +297,7 @@ onMounted(() => {
             <td>
               <div class="vlan-info">
                 <span v-if="subnet.vlan">
-                  <span class="badge badge-gray text-xs" :title="(subnet.vlan > 4094) ? 'VXLAN' : 'VLAN'">
+                  <span class="badge badge-gray text-xs" :title="(subnet.vlan > 4094) ? $t('dashboard.table.vxlan') : $t('dashboard.table.vlan')">
                     {{ subnet.vlan }}
                   </span>
                 </span>
@@ -330,10 +330,10 @@ onMounted(() => {
             </td>
             <td>
               <div class="actions">
-                <button class="btn btn-ghost btn-sm" title="Edit">
+                <button class="btn btn-ghost btn-sm" :title="$t('actions.edit')">
                   <Edit :size="14" />
                 </button>
-                <button class="btn btn-ghost btn-sm text-error" title="Delete" @click="handleDeleteClick(subnet)">
+                <button class="btn btn-ghost btn-sm text-error" :title="$t('actions.delete')" @click="handleDeleteClick(subnet)">
                   <Trash2 :size="14" />
                 </button>
               </div>
@@ -499,7 +499,7 @@ onMounted(() => {
               <div class="form-row">
                 <div class="form-group flex-1" v-if="newSubnetForm.type !== 'public' && newSubnetForm.type !== 'private'">
                   <label class="form-label">
-                    {{ newSubnetForm.type === 'internal' ? 'VXLAN' : $t('dashboard.forms.vlan') }}
+                    {{ newSubnetForm.type === 'internal' ? $t('dashboard.table.vxlan') : $t('dashboard.forms.vlan') }}
                   </label>
                   <input
                     v-model.number="newSubnetForm.vlan"
@@ -521,7 +521,7 @@ onMounted(() => {
                     min="0"
                     max="100000"
                   />
-                  <div class="form-hint">0-100000, lower = higher priority</div>
+                  <div class="form-hint">{{ $t('dashboard.forms.priorityHint') }}</div>
                 </div>
               </div>
             </div>
@@ -671,10 +671,6 @@ onMounted(() => {
     flex-direction: column;
 }
 
-.badge-gray {
-    background: var(--gray-100);
-    color: var(--gray-700);
-}
 
 .text-error {
   color: var(--error-color);

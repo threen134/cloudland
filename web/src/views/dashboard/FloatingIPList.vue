@@ -38,6 +38,21 @@ const newFipForm = ref({
 const siteSubnets = ref<Subnet[]>([])
 const publicSubnets = ref<Subnet[]>([])
 const instances = ref<Instance[]>([])
+const subnetAddresses = ref<Record<string, any[]>>({})
+const addressesLoading = ref<Record<string, boolean>>({})
+
+const fetchSubnetAddresses = async (subnetId: string) => {
+    if (!subnetId) return
+    addressesLoading.value[subnetId] = true
+    try {
+        const response = await subnetsApi.listAddresses(subnetId)
+        subnetAddresses.value[subnetId] = (response.addresses || []).filter((a: any) => !a.allocated && !a.reserved)
+    } catch (err) {
+        console.error('Failed to fetch subnet addresses:', err)
+    } finally {
+        addressesLoading.value[subnetId] = false
+    }
+}
 
 const fetchFloatingIPs = async () => {
     loading.value = true
@@ -84,6 +99,7 @@ const openCreateModal = () => {
         publicIp: '',
         activationCount: null,
     }
+    subnetAddresses.value = {}
     showAdvanced.value = false
     createError.value = ''
     createModalVisible.value = true
@@ -290,6 +306,20 @@ watch(() => region.currentRegionId, (newId) => {
         fetchFloatingIPs()
     }
 })
+
+watch(() => newFipForm.value.selectedSiteSubnetId, (newId) => {
+    if (newId) {
+        newFipForm.value.selectedPublicSubnetId = ''
+        fetchSubnetAddresses(newId)
+    }
+})
+
+watch(() => newFipForm.value.selectedPublicSubnetId, (newId) => {
+    if (newId) {
+        newFipForm.value.selectedSiteSubnetId = ''
+        fetchSubnetAddresses(newId)
+    }
+})
 </script>
 
 <template>
@@ -484,6 +514,26 @@ watch(() => region.currentRegionId, (newId) => {
             </div>
           </div>
 
+          <!-- Public IP -->
+          <div class="form-group">
+            <label class="form-label">{{ $t('dashboard.floatingIPDetail.publicIp') }}</label>
+            <div class="select-wrapper" v-if="newFipForm.selectedSiteSubnetId || newFipForm.selectedPublicSubnetId">
+              <select v-model="newFipForm.publicIp" class="form-input" :disabled="addressesLoading[newFipForm.selectedSiteSubnetId || newFipForm.selectedPublicSubnetId]">
+                <option value="">{{ $t('dashboard.floatingIPDetail.autoAllocate') || '自动分配' }}</option>
+                <option v-for="addr in (subnetAddresses[newFipForm.selectedSiteSubnetId || newFipForm.selectedPublicSubnetId] || [])" :key="addr.address" :value="addr.address.split('/')[0]">
+                  {{ addr.address.split('/')[0] }}
+                </option>
+              </select>
+            </div>
+            <input
+              v-else
+              v-model="newFipForm.publicIp"
+              type="text"
+              class="form-input"
+              :placeholder="$t('dashboard.floatingIPDetail.publicIpPlaceholder')"
+            />
+          </div>
+
           <!-- Bind Instance -->
           <div class="form-group">
             <label class="form-label">{{ $t('dashboard.floatingIPDetail.bindInstance') }}</label>
@@ -505,17 +555,6 @@ watch(() => region.currentRegionId, (newId) => {
           </div>
 
           <div v-if="showAdvanced" class="advanced-section">
-            <!-- Public IP -->
-            <div class="form-group">
-              <label class="form-label">{{ $t('dashboard.floatingIPDetail.publicIp') }}</label>
-              <input
-                v-model="newFipForm.publicIp"
-                type="text"
-                class="form-input"
-                :placeholder="$t('dashboard.floatingIPDetail.publicIpPlaceholder')"
-              />
-            </div>
-
             <!-- Activation Count -->
             <div class="form-group">
               <label class="form-label">{{ $t('dashboard.floatingIPDetail.activationCount') }}</label>
