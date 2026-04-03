@@ -47,7 +47,14 @@ const {
 } = useQuota()
 const isSuperuser = computed(() => authStore.user?.is_superuser === true)
 
-const handleSaveQuota = (regionUuid: string) => handleSaveQuotaBase(orgId, regionUuid)
+const handleSaveQuota = async (regionUuid: string) => {
+    try {
+        await handleSaveQuotaBase(orgId, regionUuid)
+        toast.success(t('messages.updateSuccess'))
+    } catch (err: any) {
+        toast.error(err.response?.data?.detail || err.message || t('messages.error'))
+    }
+}
 
 const openQuotaModal = () => {
     quotaModalVisible.value = true

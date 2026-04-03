@@ -902,6 +902,7 @@ export default {
             noInterfaces: 'No interfaces are using this security group.',
             ipAddress: 'IP Address',
             instance: 'Instance',
+            portRangeError: 'Minimum port cannot be greater than maximum port',
         },
         buttons: {
             createInstance: 'Create Instance',

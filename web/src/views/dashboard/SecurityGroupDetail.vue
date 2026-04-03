@@ -165,6 +165,10 @@ const openEditRuleModal = (rule: SecurityRule) => {
 
 const handleAddRule = async () => {
     addRuleError.value = ''
+    if (newRule.value.protocol !== 'icmp' && newRule.value.port_min > newRule.value.port_max) {
+        addRuleError.value = t('dashboard.securityGroupDetail.portRangeError')
+        return
+    }
     addingRule.value = true
     try {
         if (editingRuleId.value) {

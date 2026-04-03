@@ -186,6 +186,12 @@ class ProxyService:
         is_superuser = claims.get("sr") == 1
         is_system_org = org_obj and org_obj.org_type == OrgType.SYSTEM
 
+        # Resolve path parameters before quota operations: quota logic calls
+        # _extract_resource_id() which needs the actual UUID, not the "{id}" template.
+        resolved_path = proxy_path
+        for param_name, param_value in request.path_params.items():
+            resolved_path = resolved_path.replace(f"{{{param_name}}}", str(param_value))
+
         if org_internal_id:
             quota_action = ProxyService._match_quota_rule(request.method, proxy_path)
 
@@ -202,22 +208,22 @@ class ProxyService:
 
             elif quota_action == "release":
                 # DELETE: query current resource amount before forwarding
-                resource_id = ProxyService._extract_resource_id(proxy_path)
+                resource_id = ProxyService._extract_resource_id(resolved_path)
                 resource_amount = await quota_service.query_resource_amount(
-                    region_obj, proxy_path, resource_id, forwarded_headers,
+                    region_obj, resolved_path, resource_id, forwarded_headers,
                 )
 
             elif quota_action == "resize":
                 # RESIZE: calculate diff between old and new
                 body = await request.json()
-                resource_id = ProxyService._extract_resource_id(proxy_path)
+                resource_id = ProxyService._extract_resource_id(resolved_path)
                 resource_diff = {}
 
                 if "instances" in proxy_path:
                     new_flavor_id = body.get("flavor")
                     if new_flavor_id is not None:
                         old_amount = await quota_service.query_resource_amount(
-                            region_obj, proxy_path, resource_id, forwarded_headers,
+                            region_obj, resolved_path, resource_id, forwarded_headers,
                         )
                         new_amount = await quota_service.query_flavor_amount(
                             region_obj, new_flavor_id, forwarded_headers,
@@ -233,7 +239,7 @@ class ProxyService:
                     new_size = body.get("size")
                     if new_size is not None:
                         old_amount = await quota_service.query_resource_amount(
-                            region_obj, proxy_path, resource_id, forwarded_headers,
+                            region_obj, resolved_path, resource_id, forwarded_headers,
                         )
                         resource_diff = {
                             "disk_gb": float(new_size) - old_amount.get("disk_gb", 0),
@@ -252,9 +258,6 @@ class ProxyService:
                         resource_amount = reserve_amount
 
         # 6. Construct backend URL
-        resolved_path = proxy_path
-        for param_name, param_value in request.path_params.items():
-            resolved_path = resolved_path.replace(f"{{{param_name}}}", str(param_value))
 
         clean_path = resolved_path.lstrip("/")
         backend_url = build_backend_url(region_obj.internal_endpoint, clean_path)

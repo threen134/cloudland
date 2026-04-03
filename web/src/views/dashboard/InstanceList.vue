@@ -799,7 +799,18 @@ const handleCreateInstance = async () => {
         toast.success(t('messages.createSuccess'))
     } catch (err: any) {
         console.error('Failed to create instance:', err)
-        createError.value = err.response?.data?.error_message || err.message || t('messages.error')
+        const detail = err.response?.data?.detail
+        if (detail?.error === 'quota_exceeded') {
+            createError.value = t('quota.exceededMessage', {
+                resource: detail.resource,
+                region: detail.region,
+                requested: detail.requested,
+                available: detail.available,
+                limit: detail.limit,
+            })
+        } else {
+            createError.value = err.response?.data?.error_message || detail?.message || err.message || t('messages.error')
+        }
     } finally {
         creatingInstance.value = false
     }
@@ -1380,19 +1391,19 @@ onUnmounted(() => {
                 </div>
             </div>
           </div>
-          <div v-if="createError" class="modal-body" style="padding-top: 0; padding-bottom: 0;">
-            <div class="text-error" style="margin-bottom:var(--spacing-4);font-size:var(--font-size-sm);background:var(--error-light);padding:var(--spacing-2);border-radius:var(--radius-sm)">
-              {{ createError }}
-            </div>
-          </div>
         </div>
-        
-        <div class="modal-footer">
-          <button class="btn btn-secondary" @click="closeCreateModal" :disabled="creatingInstance">{{ $t('actions.cancel') }}</button>
-          <button class="btn btn-primary" @click="handleCreateInstance" :disabled="creatingInstance">
-            <span v-if="creatingInstance" class="loading-spinner" style="width: 16px; height: 16px; border-width: 2px;"></span>
-            {{ creatingInstance ? $t('messages.creating') : $t('dashboard.buttons.createInstance') }}
-          </button>
+
+        <div class="modal-footer" style="flex-direction: column; align-items: stretch; gap: var(--spacing-2);">
+          <div v-if="createError" class="text-error" style="font-size:var(--font-size-sm);background:var(--error-light);padding:var(--spacing-2);border-radius:var(--radius-sm)">
+            {{ createError }}
+          </div>
+          <div style="display: flex; justify-content: flex-end; gap: var(--spacing-2);">
+            <button class="btn btn-secondary" @click="closeCreateModal" :disabled="creatingInstance">{{ $t('actions.cancel') }}</button>
+            <button class="btn btn-primary" @click="handleCreateInstance" :disabled="creatingInstance">
+              <span v-if="creatingInstance" class="loading-spinner" style="width: 16px; height: 16px; border-width: 2px;"></span>
+              {{ creatingInstance ? $t('messages.creating') : $t('dashboard.buttons.createInstance') }}
+            </button>
+          </div>
         </div>
       </div>
     </div>

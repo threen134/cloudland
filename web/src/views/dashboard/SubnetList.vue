@@ -134,7 +134,7 @@ const handleCreateSubnet = async () => {
         dhcp: newSubnetForm.value.dhcp,
     }
     if (newSubnetForm.value.gateway) payload.gateway = newSubnetForm.value.gateway
-    if (newSubnetForm.value.vpc?.id) payload.vpc = newSubnetForm.value.vpc
+    if (requiresVpc.value && newSubnetForm.value.vpc?.id) payload.vpc = newSubnetForm.value.vpc
     if (newSubnetForm.value.start_ip) payload.start_ip = newSubnetForm.value.start_ip
     if (newSubnetForm.value.end_ip) payload.end_ip = newSubnetForm.value.end_ip
     if (newSubnetForm.value.dns) payload.dns = newSubnetForm.value.dns
@@ -528,16 +528,17 @@ onMounted(() => {
           </div>
         </div>
 
-        <div v-if="createError" class="text-error" style="margin: 0 var(--spacing-6) var(--spacing-4); font-size:var(--font-size-sm);background:var(--error-light);padding:var(--spacing-2);border-radius:var(--radius-sm)">
-          {{ createError }}
-        </div>
-
-        <div class="modal-footer">
-          <button class="btn btn-secondary" @click="closeCreateModal" :disabled="creating">{{ $t('actions.cancel') }}</button>
-          <button class="btn btn-primary" @click="handleCreateSubnet" :disabled="creating">
-            <span v-if="creating" class="loading-spinner" style="width: 16px; height: 16px; border-width: 2px;"></span>
-            {{ creating ? $t('messages.creating') : $t('dashboard.buttons.createSubnet') }}
-          </button>
+        <div class="modal-footer" style="flex-direction: column; align-items: stretch; gap: var(--spacing-2);">
+          <div v-if="createError" class="text-error" style="font-size:var(--font-size-sm);background:var(--error-light);padding:var(--spacing-2);border-radius:var(--radius-sm)">
+            {{ createError }}
+          </div>
+          <div style="display: flex; justify-content: flex-end; gap: var(--spacing-2);">
+            <button class="btn btn-secondary" @click="closeCreateModal" :disabled="creating">{{ $t('actions.cancel') }}</button>
+            <button class="btn btn-primary" @click="handleCreateSubnet" :disabled="creating">
+              <span v-if="creating" class="loading-spinner" style="width: 16px; height: 16px; border-width: 2px;"></span>
+              {{ creating ? $t('messages.creating') : $t('dashboard.buttons.createSubnet') }}
+            </button>
+          </div>
         </div>
       </div>
     </div>

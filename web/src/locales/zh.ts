@@ -903,6 +903,7 @@ export default {
             instance: '虚拟机',
             systemDefaultDescription: '系统默认安全组',
             nativeForRouterDescription: '路由器 {name} 的原生安全组',
+            portRangeError: '起始端口不能大于结束端口',
         },
         buttons: {
             createInstance: '创建云服务器',

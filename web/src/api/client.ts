@@ -74,10 +74,10 @@ client.interceptors.response.use(
 
             switch (status) {
                 case 429: {
-                    // Quota exceeded
-                    const data = error.response?.data as any
-                    if (data?.error === 'quota_exceeded') {
-                        const { resource, region, requested, available, limit } = data
+                    // Quota exceeded — FastAPI wraps detail in { detail: { ... } }
+                    const detail = (error.response?.data as any)?.detail
+                    if (detail?.error === 'quota_exceeded') {
+                        const { resource, region, requested, available, limit } = detail
                         console.error(
                             `Quota exceeded: ${resource} in ${region} — requested ${requested}, available ${available} (limit: ${limit})`
                         )

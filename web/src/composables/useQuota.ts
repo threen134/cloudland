@@ -1,7 +1,5 @@
 import { ref } from 'vue'
 import { quotaApi, type OrgResourceSummary, type OrgResourceQuotaUpdate } from '../api/quota'
-import { useToast } from './useToast'
-import { useI18n } from 'vue-i18n'
 
 export function useQuota() {
     const quotaSummary = ref<OrgResourceSummary | null>(null)
@@ -9,8 +7,6 @@ export function useQuota() {
     const quotaError = ref('')
     const editingQuota = ref<Record<string, OrgResourceQuotaUpdate>>({})
     const savingQuota = ref<string | null>(null)
-    const toast = useToast()
-    const { t } = useI18n()
 
     const fetchQuota = async (orgId: string) => {
         quotaLoading.value = true
@@ -38,7 +34,6 @@ export function useQuota() {
         savingQuota.value = regionUuid
         try {
             await quotaApi.updateOrgQuota(orgId, regionUuid, editingQuota.value[regionUuid])
-            toast.success(t('messages.updateSuccess'))
             await fetchQuota(orgId)
         } catch (err: any) {
             quotaError.value = err.response?.data?.detail || 'Failed to update quota'
