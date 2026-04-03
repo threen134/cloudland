@@ -73,17 +73,6 @@ type VlanInfo struct {
 	MoreAddresses []string        `json:"more_addresses"`
 }
 
-func isPrivateNetwork(network string) bool {
-	ip, _, err := net.ParseCIDR(network)
-	if err != nil {
-		ip = net.ParseIP(network)
-		if ip == nil {
-			logger.Errorf("isPrivateNetwork: failed to parse network %q, treating as non-private", network)
-			return false
-		}
-	}
-	return ip.IsPrivate()
-}
 
 func GetInterfaceInfo(ctx context.Context, instance *model.Instance, iface *model.Interface) (vlanInfo *VlanInfo, err error) {
 	ctx, db := GetContextDB(ctx)
@@ -107,7 +96,7 @@ func GetInterfaceInfo(ctx context.Context, instance *model.Instance, iface *mode
 	subnet := iface.Address.Subnet
 	vlanInfo = &VlanInfo{
 		Device:        iface.Name,
-		IsPrivate:     subnet.Vlan < 4095 && isPrivateNetwork(subnet.Network),
+		IsPrivate:     subnet.Type == "private",
 		Vlan:          subnet.Vlan,
 		Inbound:       iface.Inbound,
 		Outbound:      iface.Outbound,

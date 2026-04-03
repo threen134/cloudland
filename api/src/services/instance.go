@@ -964,6 +964,7 @@ func (a *InstanceAdmin) buildMetadata(ctx context.Context, primaryIface *Interfa
 	}
 	vlans = append(vlans, &VlanInfo{
 		Device:        "eth0",
+		IsPrivate:     iface.Address.Subnet.Type == "private",
 		Vlan:          vlan,
 		Inbound:       inbound,
 		Outbound:      outbound,
@@ -998,6 +999,7 @@ func (a *InstanceAdmin) buildMetadata(ctx context.Context, primaryIface *Interfa
 		}
 		vlans = append(vlans, &VlanInfo{
 			Device:        ifname,
+			IsPrivate:     subnet.Type == "private",
 			Vlan:          subnet.Vlan,
 			Inbound:       inbound,
 			Outbound:      outbound,
@@ -1094,6 +1096,7 @@ func (a *InstanceAdmin) GetMetadata(ctx context.Context, instance *model.Instanc
 		instLinks = append(instLinks, &NetworkLink{MacAddr: iface.MacAddr, Mtu: uint(iface.Mtu), ID: iface.Name, Type: "phy"})
 		vlans = append(vlans, &VlanInfo{
 			Device:        iface.Name,
+			IsPrivate:     subnet.Type == "private",
 			Vlan:          subnet.Vlan,
 			Inbound:       iface.Inbound,
 			Outbound:      iface.Outbound,
