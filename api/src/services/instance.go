@@ -107,10 +107,14 @@ func (a *InstanceAdmin) Create(ctx context.Context, count int, prefix, userdata 
 		err = NewCLError(ErrInvalidParameter, "Public addresses are not allowed to set when count > 1", nil)
 		return
 	}
+	var execCommands []*ExecutionCommand
 	ctx, db, newTransaction := StartTransaction(ctx)
 	defer func() {
 		if newTransaction {
 			EndTransaction(ctx, err)
+		}
+		if err == nil {
+			a.executeCommandList(ctx, execCommands)
 		}
 	}()
 	memberShip := GetMemberShip(ctx)
@@ -179,7 +183,7 @@ func (a *InstanceAdmin) Create(ctx context.Context, count int, prefix, userdata 
 		logger.Debugf("Using volume driver %s with pool ID %s", driver, poolID)
 	}
 
-	execCommands := []*ExecutionCommand{}
+	execCommands = []*ExecutionCommand{}
 	i := 0
 	hostname := prefix
 	for i < count {
@@ -277,7 +281,6 @@ func (a *InstanceAdmin) Create(ctx context.Context, count int, prefix, userdata 
 		instances = append(instances, instance)
 		i++
 	}
-	a.executeCommandList(ctx, execCommands)
 	return
 }
 

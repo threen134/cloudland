@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { X, Trash2 } from 'lucide-vue-next'
-import { useI18n } from 'vue-i18n'
 
 const props = defineProps<{
     show: boolean
@@ -13,7 +12,6 @@ const props = defineProps<{
 }>()
 
 const emit = defineEmits(['close', 'confirm'])
-const { t } = useI18n()
 
 const handleClose = () => {
     if (!props.loading) {
@@ -30,7 +28,7 @@ const handleConfirm = () => {
     <div v-if="show" class="modal-overlay" @click.self="handleClose">
         <div class="modal-content card delete-modal">
             <div class="modal-header">
-                <h3>{{ title || t('actions.delete') }}</h3>
+                <h3>{{ title || '删除' }}</h3>
                 <button class="btn btn-ghost btn-sm icon-btn" @click="handleClose" :disabled="loading">
                     <X :size="20" />
                 </button>
@@ -41,10 +39,10 @@ const handleConfirm = () => {
                         <Trash2 :size="32" />
                     </div>
                     <p class="delete-warning-text">
-                        {{ message || t('dashboard.deleteConfirm.message') }}
+                        {{ message || '确定要删除此资源吗？此操作无法撤销。' }}
                     </p>
                     <div v-if="resourceName || resourceId" class="delete-resource-info">
-                        <span class="delete-resource-label">{{ t('dashboard.deleteConfirm.resource') }}</span>
+                        <span class="delete-resource-label">资源</span>
                         <span v-if="resourceName" class="delete-resource-name">{{ resourceName }}</span>
                         <span v-if="resourceId" class="delete-resource-id">{{ resourceId }}</span>
                     </div>
@@ -55,12 +53,12 @@ const handleConfirm = () => {
             </div>
             <div class="modal-footer">
                 <button class="btn btn-secondary" @click="handleClose" :disabled="loading">
-                    {{ t('actions.cancel') }}
+                    取消
                 </button>
                 <button class="btn btn-danger" @click="handleConfirm" :disabled="loading">
                     <span v-if="loading" class="loading-spinner" style="width: 16px; height: 16px; border-width: 2px;"></span>
                     <Trash2 v-else :size="14" />
-                    {{ loading ? (t('dashboard.deleteConfirm.deleting') || 'Deleting...') : (t('actions.delete') || 'Delete') }}
+                    {{ loading ? ('删除中...') : ('删除') }}
                 </button>
             </div>
         </div>

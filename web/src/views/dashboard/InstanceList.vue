@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { ref, onMounted, computed, watch, onUnmounted } from 'vue'
-import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import { useToast } from '../../composables/useToast'
 import { instancesApi, type Instance } from '../../api/instances'
@@ -40,7 +39,6 @@ const actionLoading = ref<Record<string, string | null>>({})
 const searchQuery = ref('')
 
 const router = useRouter()
-const { t } = useI18n()
 const toast = useToast()
 
 
@@ -149,9 +147,19 @@ const getStatusClass = (status: string) => {
 }
 
 const getStatusText = (status: string) => {
-    const key = status?.toLowerCase().replace(/ /g, '_')
-    const translated = t(`dashboard.instanceStatus.${key}`)
-    return translated === `dashboard.instanceStatus.${key}` ? status : translated
+    const statusMap: Record<string, string> = {
+        'running': '运行中',
+        'active': '运行中',
+        'stopped': '已关机',
+        'shutoff': '已关机',
+        'shut_off': '已关机',
+        'paused': '已暂停',
+        'provisioning': '部署中',
+        'starting': '启动中',
+        'stopping': '关机中',
+        'error': '错误'
+    }
+    return statusMap[status?.toLowerCase()] || status
 }
 
 const formatMemory = (mb: number) => {
@@ -231,9 +239,18 @@ const handleAction = async (instance: Instance, action: 'start' | 'stop' | 'rest
             if (!currentInstance || targetStableStates.includes(currentStatus) || attempts >= 15) {
                 actionLoading.value[instance.id] = null
                 if (currentStatus === 'error') {
-                    toast.error(t('dashboard.instanceDetail.actionFailed', { action }))
+                    toast.error(`${action} 操作失败，实例进入错误状态。`)
                 } else {
-                    toast.success(t('dashboard.instanceDetail.actionSuccess', { action }))
+                    const actionMap: Record<string, string> = {
+                        'start': '开机',
+                        'stop': '关机',
+                        'restart': '重启',
+                        'hard_stop': '强制关机',
+                        'hard_restart': '强制重启',
+                        'pause': '暂停',
+                        'resume': '恢复'
+                    }
+                    toast.success(`${actionMap[action] || action} 操作已完成。`)
                 }
             } else {
                 setTimeout(checkStatus, 3000)
@@ -244,7 +261,7 @@ const handleAction = async (instance: Instance, action: 'start' | 'stop' | 'rest
     } catch (error: any) {
         console.error(`Failed to ${action} instance:`, error)
         actionLoading.value[instance.id] = null
-        toast.error(error.response?.data?.error_message || error.message || t('messages.error'))
+        toast.error(error.response?.data?.error_message || error.message || '操作失败')
     }
 }
 
@@ -265,7 +282,7 @@ const openRenameModal = (instance: Instance) => {
 
 const confirmRename = async () => {
     if (!selectedInstance.value || !renameForm.value.hostname.trim()) {
-        renameError.value = t('dashboard.instanceDetail.hostnameRequired')
+        renameError.value = '主机名不能为空。'
         return
     }
     renameLoading.value = true
@@ -274,9 +291,9 @@ const confirmRename = async () => {
         await instancesApi.renameInstance(selectedInstance.value.id, renameForm.value.hostname)
         await fetchInstances(false)
         renameModalVisible.value = false
-        toast.success(t('dashboard.instanceDetail.renameSuccess'))
+        toast.success('实例重命名成功。')
     } catch (err: any) {
-        renameError.value = err.response?.data?.error_message || err.message || t('messages.error')
+        renameError.value = err.response?.data?.error_message || err.message || '操作失败'
     } finally {
         renameLoading.value = false
     }
@@ -311,11 +328,11 @@ const generateRandomResetPassword = () => {
 const confirmResetPassword = async () => {
     if (!selectedInstance.value) return
     if (resetPasswordForm.value.password.length < 8) {
-        resetPasswordError.value = t('dashboard.instanceDetail.passwordMinLength')
+        resetPasswordError.value = '密码长度至少为8个字符。'
         return
     }
     if (resetPasswordForm.value.password !== resetPasswordForm.value.confirmPassword) {
-        resetPasswordError.value = t('dashboard.instanceDetail.passwordMismatch')
+        resetPasswordError.value = '两次输入的密码不一致。'
         return
     }
     resetPasswordLoading.value = true
@@ -323,9 +340,9 @@ const confirmResetPassword = async () => {
     try {
         await instancesApi.setUserPassword(selectedInstance.value.id, resetPasswordForm.value.user_name, resetPasswordForm.value.password)
         resetPasswordModalVisible.value = false
-        toast.success(t('dashboard.instanceDetail.resetPasswordSuccess'))
+        toast.success('密码重置成功。')
     } catch (err: any) {
-        resetPasswordError.value = err.response?.data?.error_message || err.message || t('messages.error')
+        resetPasswordError.value = err.response?.data?.error_message || err.message || '操作失败'
     } finally {
         resetPasswordLoading.value = false
     }
@@ -351,7 +368,7 @@ const openResizeModal = (instance: Instance) => {
 const confirmResize = async () => {
     if (!selectedInstance.value) return
     if (resizeForm.value.cpu < 1 || resizeForm.value.memory < 1) {
-        resizeError.value = t('dashboard.instanceDetail.resizeInvalid')
+        resizeError.value = 'CPU 和内存必须大于等于 1。'
         return
     }
     resizeLoading.value = true
@@ -359,10 +376,10 @@ const confirmResize = async () => {
     try {
         await instancesApi.resizeInstance(selectedInstance.value.id, resizeForm.value.cpu, resizeForm.value.memory)
         resizeModalVisible.value = false
-        toast.success(t('dashboard.instanceDetail.resizeSuccess'))
+        toast.success('扩容请求已提交。')
         await fetchInstances(false)
     } catch (err: any) {
-        resizeError.value = err.response?.data?.error_message || err.message || t('messages.error')
+        resizeError.value = err.response?.data?.error_message || err.message || '操作失败'
     } finally {
         resizeLoading.value = false
     }
@@ -372,7 +389,7 @@ const openConsole = async (instance: Instance) => {
     // Open window immediately to avoid popup blockers
     const consoleWindow = window.open('about:blank', '_blank')
     if (!consoleWindow) {
-        toast.error(t('dashboard.instanceDetail.popupBlocked'))
+        toast.error('弹出窗口被拦截！请允许此站点的弹出窗口。')
         return
     }
 
@@ -390,7 +407,7 @@ const openConsole = async (instance: Instance) => {
     } catch (error: any) {
         console.error('Failed to get console info:', error)
         consoleWindow.close()
-        toast.error(t('dashboard.instanceDetail.consoleError') + (error.response?.data?.error_message || error.message))
+        toast.error('获取控制台信息失败：' + (error.response?.data?.error_message || error.message))
     }
 }
 
@@ -419,10 +436,10 @@ const confirmDelete = async () => {
         await instancesApi.deleteInstance(instanceToDelete.value.id)
         await fetchInstances()
         closeDeleteModal()
-        toast.success(t('messages.deleteSuccess'))
+        toast.success('删除成功')
     } catch (error: any) {
         console.error('Failed to delete instance:', error)
-        deleteError.value = error.response?.data?.error_message || error.message || t('messages.error')
+        deleteError.value = error.response?.data?.error_message || error.message || '操作失败'
     } finally {
         deletingInstance.value = false
     }
@@ -709,12 +726,12 @@ const handleCreateInstance = async () => {
     const form = newInstanceForm.value
     createError.value = ''
     if (!form.hostname || !form.image_id || !form.flavor_id) {
-        createError.value = t('messages.fillRequired')
+        createError.value = '请填写所有必填项。'
         return
     }
 
     if (!isHostnameValid.value) {
-        createError.value = t('messages.invalidHostname')
+        createError.value = '主机名格式无效。'
         return
     }
 
@@ -723,15 +740,15 @@ const handleCreateInstance = async () => {
     // Validation for primary interface
     const pi = form.primary_interface
     if (pi.network_type === 'vpc' && (!pi.vpc_id || !pi.subnet_id)) {
-        createError.value = t('dashboard.instanceDetail.primaryVpcSubnetRequired')
+        createError.value = '请为主要网络接口选择 VPC 和子网。'
         return
     }
     if (pi.network_type === 'isolated' && !pi.subnet_id) {
-        createError.value = t('dashboard.instanceDetail.isolatedSubnetRequired')
+        createError.value = '请为隔离的主要网络接口选择子网。'
         return
     }
     if (pi.network_type === 'public' && !pi.public_ip_id && !pi.subnet_id) {
-        createError.value = t('dashboard.instanceDetail.publicSubnetRequired')
+        createError.value = '请选择用于自动分配的公网子网。'
         return
     }
 
@@ -739,11 +756,11 @@ const handleCreateInstance = async () => {
     for (let i = 0; i < form.secondary_interfaces.length; i++) {
         const si = form.secondary_interfaces[i]
         if (si.network_type === 'public' && !si.public_ip_id && !si.subnet_id) {
-            createError.value = t('dashboard.instanceDetail.secondaryPublicSubnetRequired', { index: i + 1 })
+            createError.value = `请为第 ${i + 1} 个辅助网络接口的自动分配选择公网子网。`
             return
         }
         if (si.network_type === 'vpc' && (!si.vpc_id || !si.subnet_id)) {
-            createError.value = t('dashboard.instanceDetail.secondaryVpcSubnetRequired', { index: i + 1 })
+            createError.value = `请为第 ${i + 1} 个辅助网络接口选择 VPC 和子网。`
             return
         }
     }
@@ -796,20 +813,14 @@ const handleCreateInstance = async () => {
         await instancesApi.createInstance(payload)
         await fetchInstances()
         closeCreateModal()
-        toast.success(t('messages.createSuccess'))
+        toast.success('创建成功')
     } catch (err: any) {
         console.error('Failed to create instance:', err)
         const detail = err.response?.data?.detail
         if (detail?.error === 'quota_exceeded') {
-            createError.value = t('quota.exceededMessage', {
-                resource: detail.resource,
-                region: detail.region,
-                requested: detail.requested,
-                available: detail.available,
-                limit: detail.limit,
-            })
+            createError.value = `限额已超出：资源 ${detail.resource} 在区域 ${detail.region}，请求数量 ${detail.requested}，可用数量 ${detail.available}，总限额 ${detail.limit}。`
         } else {
-            createError.value = err.response?.data?.error_message || detail?.message || err.message || t('messages.error')
+            createError.value = err.response?.data?.error_message || detail?.message || err.message || '操作失败'
         }
     } finally {
         creatingInstance.value = false
@@ -849,17 +860,17 @@ onUnmounted(() => {
           <input 
             type="text" 
             v-model="searchQuery"
-            :placeholder="$t('actions.search') + '...'" 
+            placeholder="搜索..." 
             class="search-input"
           />
         </div>
       </div>
       <div class="header-actions">
-        <button class="btn btn-secondary btn-sm btn-icon" @click="fetchInstances()" :title="$t('actions.refresh')">
+        <button class="btn btn-secondary btn-sm btn-icon" @click="fetchInstances()" title="刷新">
           <RefreshCw :size="14" :class="{ spinning: loading }" />
         </button>
         <button class="btn btn-primary btn-sm" @click="openCreateModal">
-          <Plus :size="14" /> {{ $t('dashboard.buttons.createInstance') }}
+          <Plus :size="14" /> 创建实例
         </button>
       </div>
     </div>
@@ -868,13 +879,13 @@ onUnmounted(() => {
       <table class="data-table">
         <thead>
           <tr>
-            <th>{{ $t('dashboard.table.nameId') }}</th>
-            <th>{{ $t('dashboard.table.flavor') }}</th>
-            <th>{{ $t('dashboard.table.image') }}</th>
-            <th>{{ $t('dashboard.table.ipAddress') }}</th>
-            <th>{{ $t('dashboard.table.status') }}</th>
-            <th>{{ $t('dashboard.table.usage') }}</th>
-            <th>{{ $t('dashboard.table.actions') }}</th>
+            <th>名称 / ID</th>
+            <th>规格</th>
+            <th>镜像</th>
+            <th>IP 地址</th>
+            <th>状态</th>
+            <th>资源使用率</th>
+            <th>操作</th>
           </tr>
         </thead>
         <tbody>
@@ -887,11 +898,11 @@ onUnmounted(() => {
             <td colspan="7" class="text-center text-secondary" style="padding: 48px;">
                <div v-if="searchQuery">
                   <Search :size="48" style="opacity: 0.3; margin-bottom: 16px;" />
-                  <p>{{ $t('messages.noResults') }}</p>
+                  <p>没有找到符合条件的记录。</p>
                </div>
                <div v-else>
                   <Monitor :size="48" style="opacity: 0.3; margin-bottom: 16px;" />
-                  <p class="text-secondary">{{ $t('messages.noData') }}</p>
+                  <p class="text-secondary">暂无数据</p>
                </div>
             </td>
           </tr>
@@ -921,7 +932,7 @@ onUnmounted(() => {
             <td>
               <div class="ip-display">
                 <code class="ip-address">{{ getIPAddress(instance) }}</code>
-                <div v-if="getFloatingIP(instance)" class="fip-address" :title="$t('dashboard.floatingIP.address')">
+                <div v-if="getFloatingIP(instance)" class="fip-address" title="弹性公网 IP">
                   <span class="fip-label">FIP:</span>
                   <code class="text-primary">{{ getFloatingIP(instance) }}</code>
                 </div>
@@ -952,7 +963,7 @@ onUnmounted(() => {
             <td class="actions-usage-cell">
                <div class="actions">
                  <div class="action-dropdown" style="position: relative;">
-                    <button class="btn btn-ghost btn-sm" @click.stop="toggleActionMenu(instance.id)" :title="$t('actions.more')">
+                    <button class="btn btn-ghost btn-sm" @click.stop="toggleActionMenu(instance.id)" title="更多">
                         <MoreVertical :size="14" />
                     </button>
                     <Transition name="dropdown">
@@ -963,7 +974,7 @@ onUnmounted(() => {
                                 @click="handleAction(instance, 'start')"
                                 :disabled="!!actionLoading[instance.id]"
                             >
-                                <Play :size="14" /> {{ $t('actions.start') }}
+                                <Play :size="14" /> 启动
                             </button>
                             <button
                                 v-else
@@ -971,18 +982,18 @@ onUnmounted(() => {
                                 @click="handleAction(instance, 'stop')"
                                 :disabled="!!actionLoading[instance.id]"
                             >
-                                <Square :size="14" /> {{ $t('actions.stop') }}
+                                <Square :size="14" /> 关机
                             </button>
                             <button
                                 class="dropdown-item"
                                 @click="handleAction(instance, 'restart')"
                                 :disabled="!!actionLoading[instance.id] || !['running', 'active'].includes(instance.status?.toLowerCase())"
                             >
-                                <RotateCw :size="14" /> {{ $t('actions.restart') }}
+                                <RotateCw :size="14" /> 重启
                             </button>
                             
                             <button class="dropdown-item" @click="openConsole(instance)">
-                                <Terminal :size="14" /> {{ $t('actions.console') }}
+                                <Terminal :size="14" /> 控制台
                             </button>
 
                             <div class="dropdown-divider"></div>
@@ -992,14 +1003,14 @@ onUnmounted(() => {
                                 @click="handleAction(instance, 'hard_stop')"
                                 :disabled="!!actionLoading[instance.id] || ['stopped', 'shutoff', 'shut_off', 'paused'].includes(instance.status?.toLowerCase())"
                             >
-                                <Square :size="14" /> {{ $t('dashboard.instanceDetail.hardStop') }}
+                                <Square :size="14" /> 强制关机
                             </button>
                             <button
                                 class="dropdown-item"
                                 @click="handleAction(instance, 'hard_restart')"
                                 :disabled="!!actionLoading[instance.id] || ['stopped', 'shutoff', 'shut_off'].includes(instance.status?.toLowerCase())"
                             >
-                                <RefreshCw :size="14" /> {{ $t('dashboard.instanceDetail.hardRestart') }}
+                                <RefreshCw :size="14" /> 强制重启
                             </button>
                             <button
                                 v-if="instance.status?.toLowerCase() !== 'paused'"
@@ -1007,7 +1018,7 @@ onUnmounted(() => {
                                 @click="handleAction(instance, 'pause')"
                                 :disabled="!!actionLoading[instance.id] || instance.status?.toLowerCase() !== 'running'"
                             >
-                                <span style="font-size: 14px; width: 14px; display: inline-block; text-align: center;">⏸</span> {{ $t('dashboard.instanceDetail.pause') }}
+                                <span style="font-size: 14px; width: 14px; display: inline-block; text-align: center;">⏸</span> 暂停
                             </button>
                             <button
                                 v-else
@@ -1015,25 +1026,25 @@ onUnmounted(() => {
                                 @click="handleAction(instance, 'resume')"
                                 :disabled="!!actionLoading[instance.id]"
                             >
-                                <Play :size="14" /> {{ $t('dashboard.instanceDetail.resume') }}
+                                <Play :size="14" /> 恢复
                             </button>
                             
                             <div class="dropdown-divider"></div>
                             
                             <button class="dropdown-item" @click="openRenameModal(instance)">
-                                <Pencil :size="14" /> {{ $t('dashboard.instanceDetail.rename') }}
+                                <Pencil :size="14" /> 重命名
                             </button>
                             <button class="dropdown-item" @click="openResetPasswordModal(instance)">
-                                <KeyRound :size="14" /> {{ $t('dashboard.instanceDetail.resetPassword') }}
+                                <KeyRound :size="14" /> 重置密码
                             </button>
                             <button class="dropdown-item" @click="openResizeModal(instance)">
-                                <Maximize2 :size="14" /> {{ $t('actions.resize') }}
+                                <Maximize2 :size="14" /> 扩容
                             </button>
                             
                             <div class="dropdown-divider"></div>
                             
                             <button class="dropdown-item dropdown-item-danger" @click="handleDeleteClick(instance)">
-                                <Trash2 :size="14" /> {{ $t('actions.delete') }}
+                                <Trash2 :size="14" /> 删除
                             </button>
                         </div>
                     </Transition>
@@ -1049,7 +1060,7 @@ onUnmounted(() => {
     <div v-if="createModalVisible" class="modal-overlay" @click.self="closeCreateModal">
       <div class="modal-content card" style="max-width: 600px;">
         <div class="modal-header">
-          <h3>{{ $t('dashboard.buttons.createInstance') }}</h3>
+          <h3>创建实例</h3>
           <button class="btn btn-ghost btn-sm icon-btn" @click="closeCreateModal">
             <X :size="20" />
           </button>
@@ -1063,40 +1074,40 @@ onUnmounted(() => {
           <!-- Basic Info -->
           <div class="form-section">
             <div class="section-header collapsible-header" @click="newInstanceForm.general_expanded = !newInstanceForm.general_expanded">
-              <div class="section-title mb-0">{{ $t('dashboard.forms.sections.general') }}</div>
+              <div class="section-title mb-0">基础信息</div>
               <ChevronDown v-if="!newInstanceForm.general_expanded" :size="18" />
               <ChevronUp v-else :size="18" />
             </div>
 
             <div v-if="newInstanceForm.general_expanded" class="section-content mt-3">
               <div class="form-group">
-                  <label class="form-label">{{ $t('dashboard.table.hostname') }} <span class="text-error">*</span></label>
+                  <label class="form-label">主机名 <span class="text-error">*</span></label>
                    <input 
                        v-model="newInstanceForm.hostname" 
                        type="text" 
                        :class="['form-input', { 'input-error': !isHostnameValid }]"
-                       :placeholder="$t('dashboard.forms.placeholder.nameExample')" 
+                       placeholder="例如：web-server-01" 
                    />
                    <div v-if="!isHostnameValid" class="text-error text-xs mt-1">
-                       {{ $t('messages.invalidHostname') }}
+                       主机名格式无效
                    </div>
 
               </div>
 
               <div class="form-row">
                   <div class="form-group">
-                      <label class="form-label">{{ $t('dashboard.forms.image') }} <span class="text-error">*</span></label>
+                      <label class="form-label">镜像 <span class="text-error">*</span></label>
                       <select v-model="newInstanceForm.image_id" class="form-select">
-                          <option value="" disabled>{{ $t('dashboard.forms.placeholder.selectImage') }}</option>
+                          <option value="" disabled>选择操作系统镜像</option>
                           <option v-for="img in availableImages" :key="img.id" :value="img.id">
                               {{ img.name }}
                           </option>
                       </select>
                   </div>
                   <div class="form-group">
-                      <label class="form-label">{{ $t('dashboard.forms.flavor') }} <span class="text-error">*</span></label>
+                      <label class="form-label">规格 <span class="text-error">*</span></label>
                       <select v-model="newInstanceForm.flavor_id" class="form-select">
-                          <option value="" disabled>{{ $t('dashboard.forms.placeholder.selectFlavor') }}</option>
+                          <option value="" disabled>选择配置规格</option>
                           <option v-for="f in availableFlavors" :key="f.name || f.id" :value="f.name || f.id">
                               {{ f.name }} ({{ f.vcpus || f.cpu || 0 }} vCPU, {{ formatMemory(f.ram || f.memory || 0) }} RAM, {{ f.disk || 0 }} GB Disk)
                           </option>
@@ -1106,17 +1117,17 @@ onUnmounted(() => {
 
               <div class="form-row">
                   <div class="form-group">
-                       <label class="form-label">{{ $t('dashboard.table.zone') }}</label>
+                       <label class="form-label">可用区</label>
                        <select v-model="newInstanceForm.zone" class="form-select">
                            <option v-for="z in availableZones" :key="z.id" :value="z.name || z.id">
                                {{ z.name || z.id }}
                            </option>
-                           <option v-if="availableZones.length === 0" value="default">{{ $t('dashboard.forms.placeholder.none') }}</option>
+                           <option v-if="availableZones.length === 0" value="default">无</option>
                        </select>
 
                   </div>
                   <div class="form-group">
-                       <label class="form-label">{{ $t('dashboard.forms.count') }}</label>
+                       <label class="form-label">创建数量</label>
                       <input v-model.number="newInstanceForm.count" type="number" class="form-input" min="1" max="16" />
                   </div>
               </div>
@@ -1124,13 +1135,13 @@ onUnmounted(() => {
               <div class="form-group">
                   <label class="checkbox-label">
                       <input type="checkbox" v-model="enableSSHKeys" @change="handleSSHKeysCheckboxChange">
-                     <span class="form-label mb-0">{{ $t('dashboard.forms.useSSHKeys') }} <span class="text-error" v-if="!newInstanceForm.root_passwd">*</span></span>
+                     <span class="form-label mb-0">使用 SSH 密钥登录 <span class="text-error" v-if="!newInstanceForm.root_passwd">*</span></span>
                 </label>
                   
                   <div v-if="enableSSHKeys" class="multi-select-container mt-2" v-click-outside="() => sshKeysDropdownOpen = false">
                       <div class="multi-select-trigger" @click="sshKeysDropdownOpen = !sshKeysDropdownOpen">
-                           <span v-if="newInstanceForm.keys.length === 0" class="placeholder">{{ $t('dashboard.forms.placeholder.selectSSHKey') }}</span>
-                          <span v-else class="selected-count">{{ $t('messages.keysSelected', { count: newInstanceForm.keys.length }) }}</span>
+                           <span v-if="newInstanceForm.keys.length === 0" class="placeholder">选择 SSH 密钥</span>
+                          <span v-else class="selected-count">已选择 {{ newInstanceForm.keys.length }} 个密钥</span>
                           <ChevronDown :size="16" />
                       </div>
                       <div v-if="sshKeysDropdownOpen" class="multi-select-dropdown">
@@ -1139,7 +1150,7 @@ onUnmounted(() => {
                                   <input type="checkbox" :value="k.id" v-model="newInstanceForm.keys">
                                   <span>{{ k.name }}</span>
                               </label>
-                               <div v-if="availableKeys.length === 0" class="p-2 text-secondary text-xs">{{ $t('messages.noData') }}</div>
+                               <div v-if="availableKeys.length === 0" class="p-2 text-secondary text-xs">暂无数据</div>
                           </div>
                       </div>
                   </div>
@@ -1148,21 +1159,21 @@ onUnmounted(() => {
               <div class="form-group">
                   <label class="checkbox-label">
                       <input type="checkbox" v-model="enablePassword" @change="handlePasswordCheckboxChange">
-                     <span class="form-label mb-0">{{ $t('dashboard.forms.setRootPassword') }} <span class="text-error" v-if="newInstanceForm.keys.length === 0">*</span></span>
+                     <span class="form-label mb-0">设置 Root 密码 <span class="text-error" v-if="newInstanceForm.keys.length === 0">*</span></span>
                 </label>
                   
                   <div v-if="enablePassword" class="password-inline-fields mt-3">
                       <div style="margin-bottom: 8px;">
                           <button type="button" class="btn btn-sm btn-outline" @click="generateRandomPassword">
                               <Shuffle :size="14" style="margin-right: 4px;" />
-                              {{ $t('dashboard.forms.generatePassword') }}
+                              生成随机密码
                           </button>
                       </div>
                       <div class="form-row">
                           <div class="form-col">
-                               <label class="form-label text-xs">{{ $t('auth.password') }}</label>
+                               <label class="form-label text-xs">密码</label>
                                <div class="password-input-wrapper">
-                                  <input v-model="tempPassword" :type="showCreatePassword ? 'text' : 'password'" class="form-input" :placeholder="$t('auth.password')" />
+                                  <input v-model="tempPassword" :type="showCreatePassword ? 'text' : 'password'" class="form-input" placeholder="密码" />
                                   <button type="button" class="password-toggle-btn" @click="showCreatePassword = !showCreatePassword">
                                       <Eye v-if="!showCreatePassword" :size="14" />
                                       <EyeOff v-else :size="14" />
@@ -1170,9 +1181,9 @@ onUnmounted(() => {
                                </div>
                           </div>
                           <div class="form-col">
-                               <label class="form-label text-xs">{{ $t('auth.confirmPassword') }}</label>
+                               <label class="form-label text-xs">确认密码</label>
                                <div class="password-input-wrapper">
-                                  <input v-model="confirmPassword" :type="showCreatePassword ? 'text' : 'password'" class="form-input" :placeholder="$t('auth.confirmPassword')" />
+                                  <input v-model="confirmPassword" :type="showCreatePassword ? 'text' : 'password'" class="form-input" placeholder="确认密码" />
                                   <button type="button" class="password-toggle-btn" @click="showCreatePassword = !showCreatePassword">
                                       <Eye v-if="!showCreatePassword" :size="14" />
                                       <EyeOff v-else :size="14" />
@@ -1181,38 +1192,28 @@ onUnmounted(() => {
                           </div>
                       </div>
                       <div v-if="tempPassword && confirmPassword && tempPassword !== confirmPassword" class="text-error text-xs mt-1">
-                           {{ $t('auth.passwordMismatch') }}
+                           两次输入的密码不一致
                       </div>
                       <div v-else-if="tempPassword && confirmPassword === tempPassword" class="text-success text-xs mt-1">
-                          {{ $t('messages.passwordConfirmed') }}
+                          密码一致
                       </div>
                   </div>
               </div>
-            </div>
-          </div>
 
-          <div class="form-section">
-            <div class="section-header collapsible-header" @click="newInstanceForm.primary_expanded = !newInstanceForm.primary_expanded">
-               <div class="section-title mb-0">{{ $t('dashboard.forms.sections.primaryNetwork') }}</div>
-              <ChevronDown v-if="!newInstanceForm.primary_expanded" :size="18" />
-              <ChevronUp v-else :size="18" />
-            </div>
-
-            <div v-if="newInstanceForm.primary_expanded" class="section-content mt-3">
               <div class="form-group">
-                   <label class="form-label">{{ $t('dashboard.forms.networkType') }}</label>
+                   <label class="form-label">网络类型</label>
                   <div class="radio-group">
                       <label class="radio-label">
                           <input type="radio" value="vpc" v-model="newInstanceForm.primary_interface.network_type" @change="handleNetworkTypeChange(newInstanceForm.primary_interface)">
-                          <span>{{ $t('dashboard.forms.networkTypeVpc') }}</span>
+                          <span>私有网络 (VPC)</span>
                       </label>
                       <label class="radio-label">
                           <input type="radio" value="isolated" v-model="newInstanceForm.primary_interface.network_type" @change="handleNetworkTypeChange(newInstanceForm.primary_interface)">
-                          <span>{{ $t('dashboard.forms.networkTypeIsolated') }}</span>
+                          <span>隔离网络 (Isolated)</span>
                       </label>
                       <label class="radio-label">
                           <input type="radio" value="public" v-model="newInstanceForm.primary_interface.network_type" @change="handleNetworkTypeChange(newInstanceForm.primary_interface)">
-                          <span>{{ $t('dashboard.forms.networkTypePublic') }}</span>
+                          <span>公网网络 (Public)</span>
                       </label>
                   </div>
               </div>
@@ -1220,50 +1221,50 @@ onUnmounted(() => {
               <!-- VPC Type Subnets -->
               <div class="form-row" v-if="newInstanceForm.primary_interface.network_type === 'vpc'">
                   <div class="form-group">
-                       <label class="form-label">{{ $t('dashboard.table.vpc') }}</label>
+                       <label class="form-label">私有网络</label>
                       <select v-model="newInstanceForm.primary_interface.vpc_id" class="form-select" @change="handleVpcChange(newInstanceForm.primary_interface)">
-                           <option value="" disabled>{{ $t('dashboard.forms.placeholder.selectVpc') }}</option>
+                           <option value="" disabled>选择 VPC</option>
                           <option v-for="vpc in availableVPCs" :key="vpc.id" :value="vpc.id">{{ vpc.name }}</option>
                       </select>
                   </div>
                   <div class="form-group">
-                       <label class="form-label">{{ $t('dashboard.table.subnet') }}</label>
+                       <label class="form-label">子网</label>
                       <select v-model="newInstanceForm.primary_interface.subnet_id" class="form-select" :disabled="!newInstanceForm.primary_interface.vpc_id">
-                           <option value="" disabled>{{ $t('dashboard.forms.placeholder.selectSubnet') }}</option>
-                          <option v-for="sub in getFilteredSubnets(newInstanceForm.primary_interface.vpc_id)" :key="sub.id" :value="sub.id">{{ sub.name }} ({{ sub.network || sub.network_cidr }}) - {{ $t('dashboard.forms.availableIps', { count: sub.available_count ?? 0 }) }}</option>
+                           <option value="" disabled>选择子网</option>
+                          <option v-for="sub in getFilteredSubnets(newInstanceForm.primary_interface.vpc_id)" :key="sub.id" :value="sub.id">{{ sub.name }} ({{ sub.network || sub.network_cidr }}) - 可用 IP: {{ sub.available_count ?? 0 }}</option>
                       </select>
                   </div>
               </div>
 
               <!-- Isolated Subnets -->
               <div class="form-group" v-else-if="newInstanceForm.primary_interface.network_type === 'isolated'">
-                   <label class="form-label">{{ $t('dashboard.forms.isolatedSubnet') }}</label>
+                   <label class="form-label">隔离子网</label>
                   <select v-model="newInstanceForm.primary_interface.subnet_id" class="form-select">
-                      <option value="" disabled>{{ $t('dashboard.forms.placeholder.selectIsolatedSubnet') }}</option>
-                      <option v-for="sub in getIsolatedSubnets()" :key="sub.id" :value="sub.id">{{ sub.name }} ({{ sub.network || sub.network_cidr }}) - {{ $t('dashboard.forms.availableIps', { count: sub.available_count ?? 0 }) }}</option>
+                      <option value="" disabled>选择隔离子网</option>
+                      <option v-for="sub in getIsolatedSubnets()" :key="sub.id" :value="sub.id">{{ sub.name }} ({{ sub.network || sub.network_cidr }}) - 可用 IP: {{ sub.available_count ?? 0 }}</option>
                   </select>
               </div>
 
               <!-- Public Network -->
               <div class="form-row" v-else-if="newInstanceForm.primary_interface.network_type === 'public'">
                   <div class="form-group">
-                      <label class="form-label">{{ $t('dashboard.forms.publicSubnet') }}</label>
+                      <label class="form-label">公网子网</label>
                       <select v-model="newInstanceForm.primary_interface.subnet_id" class="form-select" @change="handleSubnetChange(newInstanceForm.primary_interface)">
-                          <option value="" disabled>{{ $t('dashboard.forms.placeholder.selectPublicSubnet') }}</option>
-                          <option v-for="sub in getPublicSubnets()" :key="sub.id" :value="sub.id">{{ sub.name }} ({{ sub.network || sub.network_cidr }}) - {{ $t('dashboard.forms.availableIps', { count: sub.available_count ?? 0 }) }}</option>
+                          <option value="" disabled>选择公网子网</option>
+                          <option v-for="sub in getPublicSubnets()" :key="sub.id" :value="sub.id">{{ sub.name }} ({{ sub.network || sub.network_cidr }}) - 可用 IP: {{ sub.available_count ?? 0 }}</option>
                       </select>
                   </div>
                   <div class="form-group">
-                      <label class="form-label">{{ $t('dashboard.forms.ipAddress') }}</label>
+                      <label class="form-label">IP 地址</label>
                       <select v-model="newInstanceForm.primary_interface.ip_address" class="form-select" :disabled="!newInstanceForm.primary_interface.subnet_id || addressesLoading[newInstanceForm.primary_interface.subnet_id]">
-                          <option value="">{{ $t('dashboard.forms.placeholder.autoAllocate') }}</option>
+                          <option value="">自动分配</option>
                           <option v-for="addr in (subnetAddresses[newInstanceForm.primary_interface.subnet_id] || [])" :key="addr.address" :value="addr.address">{{ addr.address.split('/')[0] }}</option>
                       </select>
                   </div>
               </div>
 
               <div class="form-group">
-                   <label class="form-label">{{ $t('dashboard.forms.securityGroupsOptional') }}</label>
+                   <label class="form-label">安全组 (可选)</label>
                   <div class="checkbox-group compact">
                       <label v-for="sg in getFilteredSecurityGroups(newInstanceForm.primary_interface.network_type === 'vpc' ? newInstanceForm.primary_interface.vpc_id : undefined)" :key="sg.id" class="checkbox-label">
                           <input type="checkbox" :value="sg.id" v-model="newInstanceForm.primary_interface.security_group_ids">
@@ -1271,7 +1272,7 @@ onUnmounted(() => {
                       </label>
                   </div>
                   <div v-if="getFilteredSecurityGroups(newInstanceForm.primary_interface.network_type === 'vpc' ? newInstanceForm.primary_interface.vpc_id : undefined).length === 0" class="text-secondary text-xs mt-1">
-                       {{ $t('messages.noResults') }}
+                       没有找到符合条件的记录。
                   </div>
               </div>
             </div>
@@ -1281,7 +1282,7 @@ onUnmounted(() => {
           <div class="secondary-interfaces-list" v-if="newInstanceForm.secondary_interfaces.length > 0">
             <div v-for="(iface, idx) in newInstanceForm.secondary_interfaces" :key="idx" class="form-section secondary-section">
                 <div class="section-header">
-                    <div class="section-title">{{ $t('dashboard.forms.sections.secondaryInterface') }} #{{ idx + 1 }}</div>
+                    <div class="section-title">辅助网络接口 #{{ idx + 1 }}</div>
                     <button class="btn btn-ghost btn-sm text-error remove-btn" @click="removeSecondaryInterface(idx)">
                         <MinusCircle :size="16" />
                     </button>
@@ -1291,49 +1292,42 @@ onUnmounted(() => {
                     <div class="radio-group mini">
                         <label class="radio-label">
                             <input type="radio" value="vpc" v-model="iface.network_type" @change="handleNetworkTypeChange(iface)">
-                            <span>{{ $t('dashboard.forms.networkTypeVpc') }}</span>
+                            <span>私有网络 (VPC)</span>
                         </label>
                         <label class="radio-label">
                             <input type="radio" value="isolated" v-model="iface.network_type" @change="handleNetworkTypeChange(iface)">
-                            <span>{{ $t('dashboard.forms.networkTypeIsolated') }}</span>
+                            <span>隔离网络 (Isolated)</span>
                         </label>
                         <label class="radio-label">
                             <input type="radio" value="public" v-model="iface.network_type" @change="handleNetworkTypeChange(iface)">
-                            <span>{{ $t('dashboard.forms.networkTypePublic') }}</span>
+                            <span>公网网络 (Public)</span>
                         </label>
                     </div>
                 </div>
 
                 <div class="form-row" v-if="iface.network_type === 'vpc'">
                     <select v-model="iface.vpc_id" class="form-select" @change="handleVpcChange(iface)">
-                        <option value="" disabled>{{ $t('dashboard.forms.placeholder.selectVpc') }}</option>
+                        <option value="" disabled>选择 VPC</option>
                         <option v-for="vpc in availableVPCs" :key="vpc.id" :value="vpc.id">{{ vpc.name }}</option>
                     </select>
                     <select v-model="iface.subnet_id" class="form-select" :disabled="!iface.vpc_id">
-                        <option value="" disabled>{{ $t('dashboard.forms.placeholder.selectSubnet') }}</option>
-                        <option v-for="sub in getFilteredSubnets(iface.vpc_id)" :key="sub.id" :value="sub.id">{{ sub.name }} ({{ sub.network || sub.network_cidr }}) - {{ $t('dashboard.forms.availableIps', { count: sub.available_count ?? 0 }) }}</option>
+                        <option value="" disabled>选择子网</option>
+                        <option v-for="sub in getFilteredSubnets(iface.vpc_id)" :key="sub.id" :value="sub.id">{{ sub.name }} ({{ sub.network || sub.network_cidr }}) - 可用 IP: {{ sub.available_count ?? 0 }}</option>
                     </select>
                 </div>
-                <div class="form-group" v-else-if="iface.network_type === 'isolated'">
-                    <select v-model="iface.subnet_id" class="form-select">
-                        <option value="" disabled>{{ $t('dashboard.forms.placeholder.selectIsolatedSubnet') }}</option>
-                        <option v-for="sub in getIsolatedSubnets()" :key="sub.id" :value="sub.id">{{ sub.name }} ({{ sub.network || sub.network_cidr }}) - {{ $t('dashboard.forms.availableIps', { count: sub.available_count ?? 0 }) }}</option>
-                    </select>
-                </div>
-                <!-- Public Network for Secondary -->
                 <div class="form-row" v-else-if="iface.network_type === 'public'">
                     <select v-model="iface.subnet_id" class="form-select" @change="handleSubnetChange(iface)">
-                        <option value="" disabled>{{ $t('dashboard.forms.placeholder.selectPublicSubnet') }}</option>
-                        <option v-for="sub in getPublicSubnets()" :key="sub.id" :value="sub.id">{{ sub.name }} ({{ sub.network || sub.network_cidr }}) - {{ $t('dashboard.forms.availableIps', { count: sub.available_count ?? 0 }) }}</option>
+                        <option value="" disabled>选择公网子网</option>
+                        <option v-for="sub in getPublicSubnets()" :key="sub.id" :value="sub.id">{{ sub.name }} ({{ sub.network || sub.network_cidr }}) - 可用 IP: {{ sub.available_count ?? 0 }}</option>
                     </select>
                     <select v-model="iface.ip_address" class="form-select" :disabled="!iface.subnet_id || addressesLoading[iface.subnet_id]">
-                        <option value="">{{ $t('dashboard.forms.placeholder.autoAllocate') }}</option>
+                        <option value="">自动分配</option>
                         <option v-for="addr in (subnetAddresses[iface.subnet_id] || [])" :key="addr.address" :value="addr.address">{{ addr.address.split('/')[0] }}</option>
                     </select>
                 </div>
 
                 <div class="form-group mt-2">
-                    <label class="form-label text-xs">{{ $t('dashboard.forms.securityGroupsOptional') }}</label>
+                    <label class="form-label text-xs">安全组 (可选)</label>
                     <div class="checkbox-group compact">
                         <label v-for="sg in getFilteredSecurityGroups(iface.network_type === 'vpc' ? iface.vpc_id : undefined)" :key="sg.id" class="checkbox-label">
                             <input type="checkbox" :value="sg.id" v-model="iface.security_group_ids">
@@ -1346,7 +1340,7 @@ onUnmounted(() => {
 
           <div class="add-interface-row">
             <button class="btn btn-outline btn-sm w-full" @click="addSecondaryInterface" :disabled="newInstanceForm.secondary_interfaces.length >= 7">
-                <PlusCircle :size="14" /> {{ $t('dashboard.buttons.addSecondaryInterface') }}
+                <PlusCircle :size="14" /> 添加辅助网络接口
             </button>
           </div>
 
@@ -1355,7 +1349,7 @@ onUnmounted(() => {
             <div class="advanced-trigger" @click="newInstanceForm.advanced_expanded = !newInstanceForm.advanced_expanded">
                 <div class="trigger-label">
                     <Server :size="16" />
-                    <span>{{ $t('dashboard.forms.sections.advancedOptions') }}</span>
+                    <span>高级选项</span>
                 </div>
                 <ChevronDown v-if="!newInstanceForm.advanced_expanded" :size="20" />
                 <ChevronUp v-else :size="20" />
@@ -1363,13 +1357,13 @@ onUnmounted(() => {
 
             <div class="advanced-content" v-if="newInstanceForm.advanced_expanded">
                 <div class="form-group">
-                    <label class="form-label">{{ $t('dashboard.forms.systemPort') }}</label>
-                    <input v-model.number="newInstanceForm.login_port" type="number" class="form-input" :placeholder="$t('dashboard.forms.systemPortPlaceholder')" />
+                    <label class="form-label">登录端口</label>
+                    <input v-model.number="newInstanceForm.login_port" type="number" class="form-input" placeholder="默认 22" />
                 </div>
 
                 <div class="form-group">
                     <div class="flex-row">
-                        <label class="form-label mb-0">{{ $t('dashboard.forms.enableNested') }}</label>
+                        <label class="form-label mb-0">启用嵌套虚拟化</label>
                         <label class="switch">
                             <input type="checkbox" v-model="newInstanceForm.nested_enable">
                             <span class="slider"></span>
@@ -1378,16 +1372,16 @@ onUnmounted(() => {
                 </div>
 
                 <div class="form-group">
-                    <label class="form-label">{{ $t('dashboard.forms.userdataType') }}</label>
+                    <label class="form-label">用户数据类型</label>
                     <select v-model="newInstanceForm.userdata_type" class="form-select">
-                        <option value="plain">{{ $t('dashboard.forms.userdataTypePlain') }}</option>
-                        <option value="base64">{{ $t('dashboard.forms.userdataTypeBase64') }}</option>
+                        <option value="plain">普通文本</option>
+                        <option value="base64">Base64</option>
                     </select>
                 </div>
 
                 <div class="form-group">
-                    <label class="form-label">{{ $t('dashboard.forms.userData') }}</label>
-                    <textarea v-model="newInstanceForm.userdata" class="form-textarea" rows="4" :placeholder="$t('dashboard.forms.placeholder.userdataExample')"></textarea>
+                    <label class="form-label">用户数据 (Cloud-Init Script)</label>
+                    <textarea v-model="newInstanceForm.userdata" class="form-textarea" rows="4" placeholder="可选。在实例启动时运行的脚本..."></textarea>
                 </div>
             </div>
           </div>
@@ -1398,10 +1392,10 @@ onUnmounted(() => {
             {{ createError }}
           </div>
           <div style="display: flex; justify-content: flex-end; gap: var(--spacing-2);">
-            <button class="btn btn-secondary" @click="closeCreateModal" :disabled="creatingInstance">{{ $t('actions.cancel') }}</button>
+            <button class="btn btn-secondary" @click="closeCreateModal" :disabled="creatingInstance">取消</button>
             <button class="btn btn-primary" @click="handleCreateInstance" :disabled="creatingInstance">
               <span v-if="creatingInstance" class="loading-spinner" style="width: 16px; height: 16px; border-width: 2px;"></span>
-              {{ creatingInstance ? $t('messages.creating') : $t('dashboard.buttons.createInstance') }}
+              {{ creatingInstance ? '正在创建...' : '创建实例' }}
             </button>
           </div>
         </div>
@@ -1412,28 +1406,28 @@ onUnmounted(() => {
     <div v-if="renameModalVisible" class="modal-overlay" @click.self="renameModalVisible = false" style="z-index: 1001;">
       <div class="modal-content card" style="max-width: 400px;">
         <div class="modal-header">
-          <h3>{{ $t('dashboard.instanceDetail.rename') }}</h3>
+          <h3>重命名</h3>
           <button class="btn btn-ghost btn-sm icon-btn" @click="renameModalVisible = false">
             <X :size="20" />
           </button>
         </div>
         <div class="modal-body">
           <div class="form-group">
-            <label class="form-label">{{ $t('dashboard.table.hostname') }}</label>
+            <label class="form-label">主机名</label>
             <input 
               v-model="renameForm.hostname" 
               type="text" 
               class="form-input" 
-              :placeholder="$t('dashboard.table.hostname')"
+              placeholder="主机名"
             />
           </div>
           <div v-if="renameError" class="text-error mt-2">{{ renameError }}</div>
         </div>
         <div class="modal-footer">
-          <button class="btn btn-ghost" @click="renameModalVisible = false">{{ $t('actions.cancel') }}</button>
+          <button class="btn btn-ghost" @click="renameModalVisible = false">取消</button>
           <button class="btn btn-primary" @click="confirmRename" :disabled="renameLoading">
             <span v-if="renameLoading" class="loading-spinner small"></span>
-            {{ $t('actions.confirm') }}
+            确定
           </button>
         </div>
       </div>
@@ -1443,24 +1437,24 @@ onUnmounted(() => {
     <div v-if="resetPasswordModalVisible" class="modal-overlay" @click.self="resetPasswordModalVisible = false" style="z-index: 1001;">
       <div class="modal-content card" style="max-width: 450px;">
         <div class="modal-header">
-          <h3>{{ $t('dashboard.instanceDetail.resetPassword') }}</h3>
+          <h3>重置密码</h3>
           <button class="btn btn-ghost btn-sm icon-btn" @click="resetPasswordModalVisible = false">
             <X :size="20" />
           </button>
         </div>
         <div class="modal-body">
           <div class="form-group">
-            <label class="form-label">{{ $t('dashboard.instanceDetail.userName') }}</label>
+            <label class="form-label">用户名</label>
             <input v-model="resetPasswordForm.user_name" type="text" class="form-input" disabled />
           </div>
           <div class="form-group">
-            <label class="form-label">{{ $t('dashboard.instanceDetail.rootPassword') }}</label>
+            <label class="form-label">Root 密码</label>
             <div class="password-input-wrapper">
               <input 
                 v-model="resetPasswordForm.password" 
                 :type="showResetPassword ? 'text' : 'password'" 
                 class="form-input" 
-                :placeholder="$t('dashboard.instanceDetail.passwordPlaceholder')" 
+                placeholder="至少8个字符" 
               />
               <button class="password-toggle" @click="showResetPassword = !showResetPassword">
                 <Eye v-if="!showResetPassword" :size="16" />
@@ -1469,26 +1463,26 @@ onUnmounted(() => {
             </div>
           </div>
           <div class="form-group">
-            <label class="form-label">{{ $t('dashboard.instanceDetail.confirmPassword') }}</label>
+            <label class="form-label">确认密码</label>
             <input 
               v-model="resetPasswordForm.confirmPassword" 
               :type="showResetPassword ? 'text' : 'password'" 
               class="form-input" 
-              :placeholder="$t('dashboard.instanceDetail.confirmPassword')" 
+              placeholder="确认密码" 
             />
           </div>
           <div class="mt-2">
             <button class="btn btn-ghost btn-sm text-primary" @click="generateRandomResetPassword">
-              <RefreshCw :size="14" /> {{ $t('dashboard.instanceDetail.generatePassword') }}
+              <RefreshCw :size="14" /> 生成随机密码
             </button>
           </div>
           <div v-if="resetPasswordError" class="text-error mt-3">{{ resetPasswordError }}</div>
         </div>
         <div class="modal-footer">
-          <button class="btn btn-ghost" @click="resetPasswordModalVisible = false">{{ $t('actions.cancel') }}</button>
+          <button class="btn btn-ghost" @click="resetPasswordModalVisible = false">取消</button>
           <button class="btn btn-primary" @click="confirmResetPassword" :disabled="resetPasswordLoading">
             <span v-if="resetPasswordLoading" class="loading-spinner small"></span>
-            {{ $t('actions.confirm') }}
+            确定
           </button>
         </div>
       </div>
@@ -1498,7 +1492,7 @@ onUnmounted(() => {
     <div v-if="resizeModalVisible" class="modal-overlay" @click.self="resizeModalVisible = false" style="z-index: 1001;">
       <div class="modal-content card" style="max-width: 450px;">
         <div class="modal-header">
-          <h3>{{ $t('actions.resize') }}</h3>
+          <h3>扩容</h3>
           <button class="btn btn-ghost btn-sm icon-btn" @click="resizeModalVisible = false">
             <X :size="20" />
           </button>
@@ -1506,21 +1500,21 @@ onUnmounted(() => {
         <div class="modal-body">
           <div class="form-row">
             <div class="form-group">
-              <label class="form-label">{{ $t('dashboard.instanceDetail.cpuLabel') }}</label>
+              <label class="form-label">CPU (核)</label>
               <input v-model.number="resizeForm.cpu" type="number" class="form-input" min="1" />
             </div>
             <div class="form-group">
-              <label class="form-label">{{ $t('dashboard.instanceDetail.ramLabel') }}</label>
+              <label class="form-label">内存 (MB)</label>
               <input v-model.number="resizeForm.memory" type="number" class="form-input" min="128" step="128" />
             </div>
           </div>
           <div v-if="resizeError" class="text-error mt-2">{{ resizeError }}</div>
         </div>
         <div class="modal-footer">
-          <button class="btn btn-ghost" @click="resizeModalVisible = false">{{ $t('actions.cancel') }}</button>
+          <button class="btn btn-ghost" @click="resizeModalVisible = false">取消</button>
           <button class="btn btn-primary" @click="confirmResize" :disabled="resizeLoading">
             <span v-if="resizeLoading" class="loading-spinner small"></span>
-            {{ $t('actions.confirm') }}
+            确定
           </button>
         </div>
       </div>
