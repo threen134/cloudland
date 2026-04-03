@@ -83,17 +83,27 @@ class ProxyService:
     ) -> dict:
         """
         从 CREATE 请求中提取资源需求量。
-        - POST /instances: 提取 flavor_id，查 Cloudland 获取 cpu/ram/disk
+        - POST /instances: 优先读请求体的 cpu/memory/disk；仅当未提供时才通过 flavor 查询
         - POST /volumes: 直接从请求体取 size
         - POST /floating_ips: 固定返回 {"public_ips": 1}
         """
         body = await request.json()
 
         if "instances" in proxy_path:
+            cpu = body.get("cpu")
+            memory = body.get("memory")
+            disk = body.get("disk")
+            if cpu and memory:
+                return {
+                    "cpu_cores": float(cpu),
+                    "ram_gb": float(memory) / 1024.0,
+                    "disk_gb": float(disk or 0),
+                }
+            # fallback: flavor name provided without explicit cpu/memory
             flavor_id = body.get("flavor")
-            if flavor_id is None:
-                return {}
-            return await quota_service.query_flavor_amount(region, flavor_id, headers)
+            if flavor_id:
+                return await quota_service.query_flavor_amount(region, flavor_id, headers)
+            return {}
 
         elif "volumes" in proxy_path:
             size = body.get("size")
@@ -220,20 +230,31 @@ class ProxyService:
                 resource_diff = {}
 
                 if "instances" in proxy_path:
+                    cpu = body.get("cpu")
+                    memory = body.get("memory")
+                    disk = body.get("disk")
                     new_flavor_id = body.get("flavor")
-                    if new_flavor_id is not None:
-                        old_amount = await quota_service.query_resource_amount(
-                            region_obj, resolved_path, resource_id, forwarded_headers,
-                        )
+                    if cpu and memory:
+                        new_amount = {
+                            "cpu_cores": float(cpu),
+                            "ram_gb": float(memory) / 1024.0,
+                            "disk_gb": float(disk or 0),
+                        }
+                    elif new_flavor_id:
                         new_amount = await quota_service.query_flavor_amount(
                             region_obj, new_flavor_id, forwarded_headers,
+                        )
+                    else:
+                        quota_action = None
+                        new_amount = {}
+                    if quota_action:
+                        old_amount = await quota_service.query_resource_amount(
+                            region_obj, resolved_path, resource_id, forwarded_headers,
                         )
                         resource_diff = {
                             k: new_amount.get(k, 0) - old_amount.get(k, 0)
                             for k in old_amount
                         }
-                    else:
-                        quota_action = None
 
                 elif "volumes" in proxy_path:
                     new_size = body.get("size")
