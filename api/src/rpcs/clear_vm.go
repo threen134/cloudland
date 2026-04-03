@@ -39,10 +39,14 @@ func deleteInterfaces(ctx context.Context, instance *model.Instance, vrrpInstanc
 		interfaces = []*model.Interface{instIface}
 	}
 	hyper := &model.Hyper{}
-	err = db.Where("hostid = ?", hyperNode).Take(hyper).Error
-	if err != nil {
-		logger.Error("Failed to query hypervisor")
-		return
+	if hyperNode >= 0 {
+		err = db.Where("hostid = ?", hyperNode).Take(hyper).Error
+		if err != nil {
+			logger.Error("Failed to query hypervisor")
+			return
+		}
+	} else {
+		logger.Infof("Skipping hyper lookup for hyperNode=%d (instance never placed on a hypervisor)", hyperNode)
 	}
 	if routerID > 0 {
 		err = db.Where("router_id = ?", routerID).Find(&instances).Error

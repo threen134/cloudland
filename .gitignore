@@ -110,4 +110,4 @@ cpgateway/keys/
 # Sensitive local tools
 get_metrics.sh
 api.http
-clapi
+api/clapi
