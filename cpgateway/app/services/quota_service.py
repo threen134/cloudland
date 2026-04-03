@@ -227,10 +227,12 @@ class QuotaService:
             )
 
         if "/instances" in proxy_path:
-            flavor = data.get("flavor", {})
+            flavor = data.get("flavor")
             if isinstance(flavor, dict):
                 return extract_flavor_specs(flavor)
-            raise HTTPException(status_code=502, detail=f"Invalid flavor data for instance {resource_id}")
+            # flavor is null or a scalar ID — skip quota tracking for this delete
+            logger.warning(f"Cannot determine resource amount for instance {resource_id}: flavor={flavor!r}")
+            return {}
         elif "/volumes" in proxy_path:
             return {"disk_gb": float(data.get("size", 0))}
 
