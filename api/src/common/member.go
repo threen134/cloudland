@@ -20,6 +20,7 @@ type MemberShip struct {
 	OrgName    string
 	OrgRole    model.OrgRole
 	IsOrgOwner bool
+	AllOrgs    bool
 }
 
 // IsSystemAdmin checks if the user is a system administrator.
@@ -37,10 +38,10 @@ func (m *MemberShip) EffectiveOrgRole() model.OrgRole {
 }
 
 // GetOrgFilter returns parameterized SQL filter for resource queries.
-// SystemAdmin: ("", nil) — global view (all orgs)
-// Normal user: ("owner = ?", []interface{}{m.OrgID})
+// SystemAdmin with AllOrgs=true: ("", nil) — global view across all orgs.
+// All other users: scoped to current org.
 func (m *MemberShip) GetOrgFilter() (query string, args []interface{}) {
-	if m.IsSystemAdmin() {
+	if m.AllOrgs && m.IsSystemAdmin() {
 		return "", nil
 	}
 	return "owner = ?", []interface{}{m.OrgID}

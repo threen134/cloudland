@@ -6,18 +6,14 @@ import { usersApi, type User } from '../../api/users'
 import { orgsApi } from '../../api/orgs'
 import { useTenantStore } from '../../stores/tenant'
 import { useToast } from '../../composables/useToast'
+import { useCopyId } from '../../composables/useCopyId'
 import { User as UserIcon, Plus, Trash2, Edit, Search, X, RefreshCw, Check, Copy } from 'lucide-vue-next'
 
 const { t } = useI18n()
 const tenantStore = useTenantStore()
 const toast = useToast()
 
-const copiedId = ref<string | null>(null)
-const copyId = (id: string) => {
-    navigator.clipboard.writeText(id)
-    copiedId.value = id
-    setTimeout(() => { copiedId.value = null }, 2000)
-}
+const { copiedId, copyId } = useCopyId()
 
 const users = ref<User[]>([])
 const loading = ref(false)
@@ -297,7 +293,7 @@ onMounted(fetchUsers)
                     <div class="resource-name">{{ user.username }}</div>
                     <div class="resource-id-row">
                       <span class="resource-id" :title="user.uuid">{{ user.uuid.slice(0, 8) }}...</span>
-                      <button class="copy-btn-mini" @click.stop.prevent="copyId(user.uuid)" :title="t('actions.copy')">
+                      <button class="copy-btn-mini" @click.stop.prevent="copyId(user.uuid)" :title="t('actions.copy')" :aria-label="t('actions.copy')">
                         <Check v-if="copiedId === user.uuid" :size="10" style="color: #10b981;" />
                         <Copy v-else :size="10" />
                       </button>

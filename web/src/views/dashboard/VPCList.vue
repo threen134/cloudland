@@ -2,6 +2,7 @@
 import { ref, onMounted, computed, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useToast } from '../../composables/useToast'
+import { useCopyId } from '../../composables/useCopyId'
 import { vpcsApi, subnetsApi, type VPC, type SubnetPayload } from '../../api/networks'
 import { useRegionStore } from '../../stores/region'
 import { isValidName } from '../../utils/validation'
@@ -27,12 +28,7 @@ const { t } = useI18n()
 const toast = useToast()
 const isNameValid = computed(() => isValidName(newVPCForm.value.name))
 
-const copiedId = ref<string | null>(null)
-const copyId = (id: string) => {
-    navigator.clipboard.writeText(id)
-    copiedId.value = id
-    setTimeout(() => { copiedId.value = null }, 2000)
-}
+const { copiedId, copyId } = useCopyId()
 
 
 const fetchVPCs = async () => {
@@ -342,7 +338,7 @@ onMounted(() => {
                     <div class="resource-name">{{ vpc.name }}</div>
                     <div class="resource-id-row">
                       <span class="resource-id" :title="vpc.id">{{ vpc.id.slice(0, 8) }}...</span>
-                      <button class="copy-btn-mini" @click.stop.prevent="copyId(vpc.id)" :title="t('actions.copy')">
+                      <button class="copy-btn-mini" @click.stop.prevent="copyId(vpc.id)" :title="t('actions.copy')" :aria-label="t('actions.copy')">
                         <Check v-if="copiedId === vpc.id" :size="10" style="color: #10b981;" />
                         <Copy v-else :size="10" />
                       </button>

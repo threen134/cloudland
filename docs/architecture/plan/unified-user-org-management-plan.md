@@ -544,6 +544,52 @@ func Authorize(c *gin.Context) {
 
 ---
 
+### 2.8 资源列表 Org 隔离 + SystemAdmin 全局视图 ✅ 已实施
+
+**背景**：切换到 IBM org 后，SystemAdmin 仍能看到所有 org 的资源，因为 `GetOrgFilter()` 对 SystemAdmin 不加过滤。
+
+**修改 `api/src/common/member.go`**
+
+```go
+// MemberShip 新增 AllOrgs 字段
+type MemberShip struct {
+    ...
+    AllOrgs bool  // 仅对 SystemAdmin 有效，为 true 时返回所有 org 的资源
+}
+
+// GetOrgFilter：所有用户（含 SystemAdmin）默认按当前 org 过滤
+// SystemAdmin 传入 ?all_orgs=true 时返回全局视图
+func (m *MemberShip) GetOrgFilter() (query string, args []interface{}) {
+    if m.AllOrgs && m.IsSystemAdmin() {
+        return "", nil
+    }
+    return "owner = ?", []interface{}{m.OrgID}
+}
+```
+
+**修改 `api/src/apis/authorize.go`**
+
+middleware 读取 `all_orgs` query 参数，仅对 SystemAdmin 生效：
+
+```go
+allOrgs := c.Query("all_orgs") == "true" && systemRole == model.SystemAdmin
+memberShip := &MemberShip{
+    ...
+    AllOrgs: allOrgs,
+}
+```
+
+**使用方式**：
+
+```
+GET /api/v1/instances            # 只看当前 org 的资源（所有用户）
+GET /api/v1/instances?all_orgs=true  # 看所有 org 的资源（仅 SystemAdmin 有效）
+```
+
+**影响范围**：所有使用 `GetOrgFilter()` 的资源 List 操作（instances、volumes、subnets、floating_ips、security_groups 等），无需逐一修改 handler。
+
+---
+
 ## 第三部分：数据迁移
 
 ### 迁移顺序
@@ -597,8 +643,8 @@ Step 6：Cloudland 移除 user/org/member 表和相关 API（双轨期结束后�
 | 文件 | 操作 |
 |------|------|
 | `web/src/routes/jwt.go` | **删除**（Cloudland 不再验签，Middle 统一处理） |
-| `web/src/common/member.go` | 修改（GetMemberShipFromHeaders 替换 GetDBMemberShip） |
-| `web/src/apis/authorize.go` | 修改（去 JWT/DB 查询，改读 X-* Header + 验证共享密钥） |
+| `api/src/common/member.go` | 修改（GetMemberShipFromHeaders 替换 GetDBMemberShip；新增 AllOrgs 字段；GetOrgFilter 按 org 隔离）✅ |
+| `api/src/apis/authorize.go` | 修改（去 JWT/DB 查询，改读 X-* Header + 验证共享密钥；读取 all_orgs 参数）✅ |
 | `web/src/routes/user.go` | 修改（写操作返回 501） |
 | `web/src/routes/org.go` | 修改（写操作返回 501） |
 | `web/src/routes/admin.go` | 修改（adminInit 移到 Middle） |

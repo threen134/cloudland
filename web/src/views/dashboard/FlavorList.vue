@@ -2,6 +2,7 @@
 import { ref, onMounted, computed, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useToast } from '../../composables/useToast'
+import { useCopyId } from '../../composables/useCopyId'
 import { flavorsApi, type Flavor, type FlavorPayload } from '../../api/flavors'
 import { useRegionStore } from '../../stores/region'
 import { isValidName } from '../../utils/validation'
@@ -15,12 +16,7 @@ const loading = ref(false)
 const searchQuery = ref('')
 const toast = useToast()
 
-const copiedId = ref<string | null>(null)
-const copyId = (id: string) => {
-    navigator.clipboard.writeText(id)
-    copiedId.value = id
-    setTimeout(() => { copiedId.value = null }, 2000)
-}
+const { copiedId, copyId } = useCopyId()
 
 const createModalVisible = ref(false)
 const creating = ref(false)

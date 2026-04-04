@@ -3,6 +3,7 @@ import { ref, onMounted, computed, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import { useToast } from '../../composables/useToast'
+import { useCopyId } from '../../composables/useCopyId'
 import { subnetsApi, vpcsApi, type Subnet, type SubnetPayload, type VPC } from '../../api/networks'
 import { isValidName } from '../../utils/validation'
 import { useAuthStore } from '../../stores/auth'
@@ -43,12 +44,7 @@ const { t } = useI18n()
 const toast = useToast()
 const isNameValid = computed(() => isValidName(newSubnetForm.value.name))
 
-const copiedId = ref<string | null>(null)
-const copyId = (id: string) => {
-    navigator.clipboard.writeText(id)
-    copiedId.value = id
-    setTimeout(() => { copiedId.value = null }, 2000)
-}
+const { copiedId, copyId } = useCopyId()
 
 
 const fetchSubnets = async () => {
@@ -292,7 +288,7 @@ onMounted(() => {
                     <div class="resource-name">{{ subnet.name }}</div>
                     <div class="resource-id-row">
                       <span class="resource-id" :title="subnet.id">{{ subnet.id.slice(0, 8) }}...</span>
-                      <button class="copy-btn-mini" @click.stop.prevent="copyId(subnet.id)" :title="t('actions.copy')">
+                      <button class="copy-btn-mini" @click.stop.prevent="copyId(subnet.id)" :title="t('actions.copy')" :aria-label="t('actions.copy')">
                         <Check v-if="copiedId === subnet.id" :size="10" style="color: #10b981;" />
                         <Copy v-else :size="10" />
                       </button>

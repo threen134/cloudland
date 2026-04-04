@@ -8,6 +8,7 @@ const region = useRegionStore()
 import { Search as SearchIcon, Server, Plus, Trash2, RefreshCw, Copy, Check, X, Loader2, HelpCircle, Pencil, Wrench, MoreVertical, ChevronDown } from 'lucide-vue-next'
 import { useI18n } from 'vue-i18n'
 import { useToast } from '../../composables/useToast'
+import { useCopyId } from '../../composables/useCopyId'
 
 const vClickOutside = {
   mounted(el: any, binding: any) {
@@ -87,12 +88,7 @@ const closeActionMenu = () => {
     activeActionMenuId.value = null
 }
 
-const copiedId = ref<string | null>(null)
-const copyId = (id: string) => {
-    navigator.clipboard.writeText(id)
-    copiedId.value = id
-    setTimeout(() => { copiedId.value = null }, 2000)
-}
+const { copiedId, copyId } = useCopyId()
 
 const STATUS_MAP: Record<number, { labelKey: string; class: string }> = {
     0: { labelKey: 'disabled', class: 'status-disabled' },
@@ -375,7 +371,7 @@ onMounted(() => {
                       <div class="resource-name">{{ h.hostname }}</div>
                       <div class="resource-id-row">
                         <span class="resource-id" :title="h.uuid">{{ h.uuid.slice(0, 8) }}...</span>
-                        <button class="copy-btn-mini" @click.stop.prevent="copyId(h.uuid)" :title="t('actions.copy')">
+                        <button class="copy-btn-mini" @click.stop.prevent="copyId(h.uuid)" :title="t('actions.copy')" :aria-label="t('actions.copy')">
                           <Check v-if="copiedId === h.uuid" :size="10" style="color: #10b981;" />
                           <Copy v-else :size="10" />
                         </button>

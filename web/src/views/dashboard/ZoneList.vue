@@ -4,6 +4,7 @@ import { zonesApi, type Zone, type CreateZonePayload } from '../../api/zones'
 import { Search as SearchIcon, MapPin, Plus, RefreshCw, Trash2, Settings2, X, Loader2, Check, Copy } from 'lucide-vue-next'
 import { useI18n } from 'vue-i18n'
 import { useToast } from '../../composables/useToast'
+import { useCopyId } from '../../composables/useCopyId'
 import { useRegionStore } from '../../stores/region'
 
 const region = useRegionStore()
@@ -13,12 +14,7 @@ const toast = useToast()
 const zoneList = ref<Zone[]>([])
 const loading = ref(false)
 
-const copiedId = ref<string | null>(null)
-const copyId = (id: string) => {
-    navigator.clipboard.writeText(id)
-    copiedId.value = id
-    setTimeout(() => { copiedId.value = null }, 2000)
-}
+const { copiedId, copyId } = useCopyId()
 const searchQuery = ref('')
 
 // Create modal
@@ -201,7 +197,7 @@ onMounted(() => {
                       <span class="resource-id" :title="zone.id || '-'">
                         {{ (zone.id || '-').slice(0, 8) }}{{ (zone.id || '').length > 8 ? '...' : '' }}
                       </span>
-                      <button v-if="zone.id" class="copy-btn-mini" @click.stop.prevent="copyId(zone.id)" :title="t('actions.copy')">
+                      <button v-if="zone.id" class="copy-btn-mini" @click.stop.prevent="copyId(zone.id)" :title="t('actions.copy')" :aria-label="t('actions.copy')">
                         <Check v-if="copiedId === zone.id" :size="10" style="color: #10b981;" />
                         <Copy v-else :size="10" />
                       </button>

@@ -4,6 +4,7 @@ import { alarmsApi, RULE_TYPES, type NodeAlarmRule, type CreateNodeAlarmRulePayl
 import { Search as SearchIcon, AlertTriangle, Plus, Trash2, RefreshCw, X, Loader2, RefreshCcw } from 'lucide-vue-next'
 import { useI18n } from 'vue-i18n'
 import { useToast } from '../../composables/useToast'
+import { useCopyId } from '../../composables/useCopyId'
 import { useRegionStore } from '../../stores/region'
 
 const { t } = useI18n()
@@ -11,12 +12,7 @@ const toast = useToast()
 const region = useRegionStore()
 const alarmList = ref<NodeAlarmRule[]>([])
 const loading = ref(false)
-const copiedId = ref<string | null>(null)
-const copyId = (id: string) => {
-    navigator.clipboard.writeText(id)
-    copiedId.value = id
-    setTimeout(() => { copiedId.value = null }, 2000)
-}
+const { copiedId, copyId } = useCopyId()
 const searchQuery = ref('')
 const filterRuleType = ref('')
 
@@ -256,7 +252,7 @@ watch(() => region.currentRegionId, (newId) => {
                     <div class="resource-name">{{ a.name }}</div>
                     <div class="resource-id-row">
                       <span class="resource-id" :title="a.uuid">{{ a.uuid.slice(0, 8) }}...</span>
-                      <button class="copy-btn-mini" @click.stop.prevent="copyId(a.uuid)" :title="t('actions.copy')">
+                      <button class="copy-btn-mini" @click.stop.prevent="copyId(a.uuid)" :title="t('actions.copy')" :aria-label="t('actions.copy')">
                         <Check v-if="copiedId === a.uuid" :size="10" style="color: #10b981;" />
                         <Copy v-else :size="10" />
                       </button>

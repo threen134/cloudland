@@ -3,6 +3,7 @@ import { ref, onMounted, computed, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import { useToast } from '../../composables/useToast'
+import { useCopyId } from '../../composables/useCopyId'
 import { useSecurityGroup } from '../../composables/useSecurityGroup'
 import { securityGroupsApi, vpcsApi, type SecurityGroup, type SecurityRule, type VPC } from '../../api/networks'
 import { isValidName } from '../../utils/validation'
@@ -32,12 +33,7 @@ const { t } = useI18n()
 const toast = useToast()
 const isNameValid = computed(() => isValidName(newGroupForm.value.name))
 
-const copiedId = ref<string | null>(null)
-const copyId = (id: string) => {
-    navigator.clipboard.writeText(id)
-    copiedId.value = id
-    setTimeout(() => { copiedId.value = null }, 2000)
-}
+const { copiedId, copyId } = useCopyId()
 
 const vpcs = ref<VPC[]>([])
 const router = useRouter()
@@ -447,7 +443,7 @@ watch(() => region.currentRegionId, (newId) => {
               <div class="sg-description" v-if="group.description">{{ translateDescription(group.description) }}</div>
               <div class="resource-id-row">
                 <span class="sg-id" :title="group.id">{{ group.id.slice(0, 8) }}...</span>
-                <button class="copy-btn-mini" @click.stop.prevent="copyId(group.id)" :title="t('actions.copy')">
+                <button class="copy-btn-mini" @click.stop.prevent="copyId(group.id)" :title="t('actions.copy')" :aria-label="t('actions.copy')">
                   <Check v-if="copiedId === group.id" :size="10" style="color: #10b981;" />
                   <Copy v-else :size="10" />
                 </button>

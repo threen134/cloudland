@@ -6,6 +6,7 @@ import { instancesApi, type Instance } from '../../api/instances'
 import { hypervisorsApi, type Hypervisor } from '../../api/hypervisors'
 import { Search as SearchIcon, ArrowRightLeft, Plus, X, RefreshCw, Check, Copy } from 'lucide-vue-next'
 import { useToast } from '../../composables/useToast'
+import { useCopyId } from '../../composables/useCopyId'
 import { useI18n } from 'vue-i18n'
 import { useRegionStore } from '../../stores/region'
 
@@ -15,12 +16,7 @@ const toast = useToast()
 const migrationList = ref<Migration[]>([])
 const loading = ref(false)
 
-const copiedId = ref<string | null>(null)
-const copyId = (id: string) => {
-    navigator.clipboard.writeText(id)
-    copiedId.value = id
-    setTimeout(() => { copiedId.value = null }, 2000)
-}
+const { copiedId, copyId } = useCopyId()
 const searchQuery = ref('')
 const router = useRouter()
 
@@ -215,7 +211,7 @@ watch(() => region.currentRegionId, (newId) => {
                     <div class="resource-name">{{ $t('dashboard.table.migration') }}</div>
                     <div class="resource-id-row">
                       <span class="resource-id" :title="m.id.toString()">{{ m.id.toString().slice(0, 8) }}{{ m.id.toString().length > 8 ? '...' : '' }}</span>
-                      <button class="copy-btn-mini" @click.stop.prevent="copyId(m.id.toString())" :title="t('actions.copy')">
+                      <button class="copy-btn-mini" @click.stop.prevent="copyId(m.id.toString())" :title="t('actions.copy')" :aria-label="t('actions.copy')">
                         <Check v-if="copiedId === m.id.toString()" :size="10" style="color: #10b981;" />
                         <Copy v-else :size="10" />
                       </button>
@@ -227,7 +223,7 @@ watch(() => region.currentRegionId, (newId) => {
             <td>
               <div class="resource-id-row">
                 <span class="resource-id" :title="m.instance_id">{{ m.instance_id.slice(0, 8) }}...</span>
-                <button class="copy-btn-mini" @click.stop.prevent="copyId(m.instance_id)" :title="t('actions.copy')">
+                <button class="copy-btn-mini" @click.stop.prevent="copyId(m.instance_id)" :title="t('actions.copy')" :aria-label="t('actions.copy')">
                   <Check v-if="copiedId === m.instance_id" :size="10" style="color: #10b981;" />
                   <Copy v-else :size="10" />
                 </button>

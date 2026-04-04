@@ -3,6 +3,7 @@ import { ref, onMounted, computed, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import { useToast } from '../../composables/useToast'
+import { useCopyId } from '../../composables/useCopyId'
 import { useRegionStore } from '../../stores/region'
 import { loadBalancersApi, vpcsApi, type LoadBalancer, type VPC, type LoadBalancerPayload } from '../../api/networks'
 import { isValidName } from '../../utils/validation'
@@ -25,12 +26,7 @@ const newLBForm = ref({
 const { t } = useI18n()
 const toast = useToast()
 
-const copiedId = ref<string | null>(null)
-const copyId = (id: string) => {
-    navigator.clipboard.writeText(id)
-    copiedId.value = id
-    setTimeout(() => { copiedId.value = null }, 2000)
-}
+const { copiedId, copyId } = useCopyId()
 const region = useRegionStore()
 const isNameValid = computed(() => isValidName(newLBForm.value.name))
 
@@ -279,7 +275,7 @@ watch(() => region.currentRegionId, (newId) => {
                     <div class="resource-name">{{ lb.name }}</div>
                     <div class="resource-id-row">
                       <span class="resource-id" :title="lb.id">{{ lb.id.slice(0, 8) }}...</span>
-                      <button class="copy-btn-mini" @click.stop.prevent="copyId(lb.id)" :title="t('actions.copy')">
+                      <button class="copy-btn-mini" @click.stop.prevent="copyId(lb.id)" :title="t('actions.copy')" :aria-label="t('actions.copy')">
                         <Check v-if="copiedId === lb.id" :size="10" style="color: #10b981;" />
                         <Copy v-else :size="10" />
                       </button>

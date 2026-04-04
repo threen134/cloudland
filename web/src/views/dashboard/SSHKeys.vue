@@ -2,6 +2,7 @@
 import { ref, onMounted, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useToast } from '../../composables/useToast'
+import { useCopyId } from '../../composables/useCopyId'
 import { keysApi, type SSHKey } from '../../api/keys'
 import { isValidName } from '../../utils/validation'
 
@@ -10,12 +11,7 @@ import { Key, Plus, Trash2, Copy, Check, Search, X, RefreshCw } from 'lucide-vue
 const keys = ref<SSHKey[]>([])
 const loading = ref(false)
 const copiedFingerprintId = ref<string | null>(null)
-const copiedId = ref<string | null>(null)
-const copyId = (id: string) => {
-    navigator.clipboard.writeText(id)
-    copiedId.value = id
-    setTimeout(() => { copiedId.value = null }, 2000)
-}
+const { copiedId, copyId } = useCopyId()
 const searchQuery = ref('')
 const createModalVisible = ref(false)
 const creating = ref(false)
@@ -215,7 +211,7 @@ onMounted(fetchKeys)
                     <div class="resource-name">{{ key.name }}</div>
                     <div class="resource-id-row">
                       <span class="resource-id" :title="key.id">{{ key.id.slice(0, 8) }}...</span>
-                      <button class="copy-btn-mini" @click.stop.prevent="copyId(key.id)" :title="t('actions.copy')">
+                      <button class="copy-btn-mini" @click.stop.prevent="copyId(key.id)" :title="t('actions.copy')" :aria-label="t('actions.copy')">
                         <Check v-if="copiedId === key.id" :size="10" style="color: #10b981;" />
                         <Copy v-else :size="10" />
                       </button>

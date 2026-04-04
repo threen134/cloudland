@@ -2,6 +2,7 @@
 import { ref, onMounted, computed, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useToast } from '../../composables/useToast'
+import { useCopyId } from '../../composables/useCopyId'
 import { volumesApi, type Volume } from '../../api/volumes'
 import { useRegionStore } from '../../stores/region'
 import { isValidName } from '../../utils/validation'
@@ -28,12 +29,7 @@ const { t } = useI18n()
 const toast = useToast()
 const isNameValid = computed(() => isValidName(newVolumeForm.value.name))
 
-const copiedId = ref<string | null>(null)
-const copyId = (id: string) => {
-    navigator.clipboard.writeText(id)
-    copiedId.value = id
-    setTimeout(() => { copiedId.value = null }, 2000)
-}
+const { copiedId, copyId } = useCopyId()
 
 const fetchVolumes = async () => {
 
@@ -239,7 +235,7 @@ onMounted(() => {
                     <div class="resource-name">{{ volume.name }}</div>
                     <div class="resource-id-row">
                       <span class="resource-id" :title="volume.id">{{ volume.id.slice(0, 8) }}...</span>
-                      <button class="copy-btn-mini" @click.stop.prevent="copyId(volume.id)" :title="t('actions.copy')">
+                      <button class="copy-btn-mini" @click.stop.prevent="copyId(volume.id)" :title="t('actions.copy')" :aria-label="t('actions.copy')">
                         <Check v-if="copiedId === volume.id" :size="10" style="color: #10b981;" />
                         <Copy v-else :size="10" />
                       </button>
