@@ -606,12 +606,12 @@ onUnmounted(() => {
             {{ $t('dashboard.org.inviteHint') }}
           </p>
           <div class="form-group">
-            <label class="form-label">{{ $t('dashboard.table.email') }}</label>
-            <input v-model="addMemberForm.email" type="email" class="form-input" :placeholder="$t('dashboard.forms.placeholder.emailExample')" />
+            <label class="form-label" for="invite_email">{{ $t('dashboard.table.email') }}</label>
+            <input id="invite_email" v-model="addMemberForm.email" type="email" class="form-input" :placeholder="$t('dashboard.forms.placeholder.emailExample')" />
           </div>
           <div class="form-group">
-            <label class="form-label">{{ $t('dashboard.org.role') }}</label>
-            <select v-model="addMemberForm.org_role" class="form-input">
+            <label class="form-label" for="invite_role">{{ $t('dashboard.org.role') }}</label>
+            <select id="invite_role" v-model="addMemberForm.org_role" class="form-input">
               <option :value="1">{{ $t('roles.reader') }}</option>
               <option :value="2">{{ $t('roles.writer') }}</option>
               <option :value="3">{{ $t('roles.admin') }}</option>
@@ -644,8 +644,8 @@ onUnmounted(() => {
             {{ $t('dashboard.org.changeRoleFor') }} <strong>{{ changeRoleForm.username }}</strong>
           </p>
           <div class="form-group">
-            <label class="form-label">{{ $t('dashboard.org.role') }}</label>
-            <select v-model="changeRoleForm.org_role" class="form-input">
+            <label class="form-label" for="change_role_select">{{ $t('dashboard.org.role') }}</label>
+            <select id="change_role_select" v-model="changeRoleForm.org_role" class="form-input">
               <option :value="1">{{ $t('roles.reader') }}</option>
               <option :value="2">{{ $t('roles.writer') }}</option>
               <option :value="3">{{ $t('roles.admin') }}</option>
@@ -706,8 +706,8 @@ onUnmounted(() => {
             {{ $t('dashboard.org.transferConfirm') }}
           </p>
           <div class="form-group">
-            <label class="form-label">{{ $t('dashboard.org.selectNewOwner') }}</label>
-            <select v-model="transferTargetId" class="form-input">
+            <label class="form-label" for="transfer_owner_target">{{ $t('dashboard.org.selectNewOwner') }}</label>
+            <select id="transfer_owner_target" v-model="transferTargetId" class="form-input">
               <option :value="null" disabled>-- {{ $t('dashboard.org.selectMember') }} --</option>
               <option v-for="m in members.filter(m => !m.is_owner)" :key="m.user_uuid" :value="m.user_uuid">
                 {{ m.username }} ({{ m.email }})

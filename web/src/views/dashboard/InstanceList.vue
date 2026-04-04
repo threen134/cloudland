@@ -963,7 +963,7 @@ onUnmounted(() => {
 
     <div class="page-header">
       <div class="search-wrapper">
-        <div class="search-box">
+        <label class="search-box">
           <Search :size="16" class="search-icon" />
           <input 
             type="text" 
@@ -971,7 +971,7 @@ onUnmounted(() => {
             :placeholder="t('marketplace.searchPlaceholder')" 
             class="search-input"
           />
-        </div>
+        </label>
       </div>
       <div class="header-actions">
         <button class="btn btn-secondary btn-sm btn-icon" @click="fetchInstances()" :title="t('dashboard.regions')">
@@ -1241,8 +1241,9 @@ onUnmounted(() => {
 
             <div v-if="newInstanceForm.general_expanded" class="section-content mt-3">
               <div class="form-group">
-                  <label class="form-label">{{ t('dashboard.table.hostname') }} <span class="text-error">*</span></label>
+                  <label class="form-label" for="hostname">{{ t('dashboard.table.hostname') }} <span class="text-error">*</span></label>
                    <input 
+                       id="hostname"
                        v-model="newInstanceForm.hostname" 
                        type="text" 
                        :class="['form-input', { 'input-error': !isHostnameValid }]"
@@ -1256,8 +1257,8 @@ onUnmounted(() => {
 
               <div class="form-row">
                   <div class="form-group">
-                      <label class="form-label">{{ t('dashboard.forms.image') }} <span class="text-error">*</span></label>
-                      <select v-model="newInstanceForm.image_id" class="form-select">
+                      <label class="form-label" for="image_id">{{ t('dashboard.forms.image') }} <span class="text-error">*</span></label>
+                      <select id="image_id" v-model="newInstanceForm.image_id" class="form-select">
                           <option value="" disabled>{{ t('dashboard.forms.placeholder.selectImage') }}</option>
                           <option v-for="img in availableImages" :key="img.id" :value="img.id">
                               {{ img.name }}
@@ -1265,8 +1266,8 @@ onUnmounted(() => {
                       </select>
                   </div>
                   <div class="form-group">
-                      <label class="form-label">{{ t('dashboard.forms.flavor') }} <span class="text-error">*</span></label>
-                      <select v-model="newInstanceForm.flavor_id" class="form-select">
+                      <label class="form-label" for="flavor_id">{{ t('dashboard.forms.flavor') }} <span class="text-error">*</span></label>
+                      <select id="flavor_id" v-model="newInstanceForm.flavor_id" class="form-select">
                           <option value="" disabled>{{ t('dashboard.forms.placeholder.selectFlavor') }}</option>
                           <option v-for="f in availableFlavors" :key="f.name || f.id" :value="f.name || f.id">
                               {{ f.name }} ({{ f.vcpus || f.cpu || 0 }} vCPU, {{ formatMemory(f.ram || f.memory || 0) }} RAM, {{ f.disk || 0 }} GB Disk)

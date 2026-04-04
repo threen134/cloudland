@@ -152,7 +152,7 @@ onMounted(fetchKeys)
   <div>
     <div class="page-header">
       <div class="search-wrapper">
-        <div class="search-box">
+        <label class="search-box">
           <Search :size="16" class="search-icon" />
           <input 
             type="text" 
@@ -160,7 +160,7 @@ onMounted(fetchKeys)
             :placeholder="$t('actions.search') + '...'" 
             class="search-input"
           />
-        </div>
+        </label>
       </div>
       <div class="header-actions">
         <button class="btn btn-secondary btn-sm btn-icon" @click="fetchKeys" :title="$t('actions.refresh')">
@@ -259,8 +259,9 @@ onMounted(fetchKeys)
         
         <div class="modal-body">
           <div class="form-group">
-            <label class="form-label">{{ $t('dashboard.forms.name') }}</label>
+            <label class="form-label" for="name">{{ $t('dashboard.forms.name') }}</label>
             <input 
+              id="name"
               v-model="newKeyForm.name" 
               type="text" 
               :class="['form-input', { 'input-error': !isNameValid }]" 
@@ -273,8 +274,9 @@ onMounted(fetchKeys)
           </div>
           
           <div class="form-group">
-            <label class="form-label">{{ $t('dashboard.forms.publicKey') }}</label>
+            <label class="form-label" for="public_key">{{ $t('dashboard.forms.publicKey') }}</label>
             <textarea 
+              id="public_key"
               v-model="newKeyForm.public_key" 
               class="form-input" 
               rows="5" 

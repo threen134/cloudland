@@ -279,7 +279,7 @@ onMounted(() => {
   <div class="vpc-list-container">
     <div class="page-header">
       <div class="search-wrapper">
-        <div class="search-box">
+        <label class="search-box">
           <SearchIcon :size="16" class="search-icon" />
           <input 
             type="text" 
@@ -287,7 +287,7 @@ onMounted(() => {
             :placeholder="$t('actions.search') + '...'" 
             class="search-input"
           />
-        </div>
+        </label>
       </div>
       <div class="header-actions">
         <button class="btn btn-secondary btn-sm btn-icon" @click="fetchVPCs" :title="$t('actions.refresh')">
@@ -428,8 +428,9 @@ onMounted(() => {
         
         <div class="modal-body">
           <div class="form-group">
-             <label class="form-label">{{ $t('dashboard.table.name') }}</label>
+             <label class="form-label" for="vpc_name">{{ $t('dashboard.table.name') }}</label>
             <input 
+              id="vpc_name"
               v-model="newVPCForm.name" 
               type="text" 
               :class="['form-input', { 'input-error': !isNameValid }]" 
@@ -441,8 +442,9 @@ onMounted(() => {
           </div>
           
           <div class="form-group mt-4">
-            <label class="form-label">{{ $t('dashboard.table.description') }}</label>
+            <label class="form-label" for="vpc_description">{{ $t('dashboard.table.description') }}</label>
             <textarea 
+              id="vpc_description"
               v-model="newVPCForm.description" 
               class="form-input" 
               rows="3"
@@ -486,8 +488,9 @@ onMounted(() => {
         </div>
         <div class="modal-body">
           <div class="form-group">
-            <label class="form-label">{{ $t('dashboard.table.name') }}</label>
+            <label class="form-label" for="edit_vpc_name">{{ $t('dashboard.table.name') }}</label>
             <input
+              id="edit_vpc_name"
               v-model="editForm.name"
               type="text"
               :class="['form-input', { 'input-error': editForm.name && !isValidName(editForm.name) }]"
@@ -498,8 +501,9 @@ onMounted(() => {
             </div>
           </div>
           <div class="form-group mt-4">
-            <label class="form-label">{{ $t('dashboard.table.description') }}</label>
+            <label class="form-label" for="edit_vpc_description">{{ $t('dashboard.table.description') }}</label>
             <textarea
+              id="edit_vpc_description"
               v-model="editForm.description"
               class="form-input"
               rows="3"
@@ -531,8 +535,9 @@ onMounted(() => {
         </div>
         <div class="modal-body">
           <div class="form-group">
-            <label class="form-label">{{ $t('dashboard.table.name') }} *</label>
+            <label class="form-label" for="subnet_name">{{ $t('dashboard.table.name') }} *</label>
             <input
+              id="subnet_name"
               v-model="newSubnetForm.name"
               type="text"
               :class="['form-input', { 'input-error': newSubnetForm.name && !isSubnetNameValid }]"
@@ -544,8 +549,9 @@ onMounted(() => {
           </div>
 
           <div class="form-group">
-            <label class="form-label">{{ $t('dashboard.forms.cidr') }} *</label>
+            <label class="form-label" for="subnet_cidr">{{ $t('dashboard.forms.cidr') }} *</label>
             <input
+              id="subnet_cidr"
               v-model="newSubnetForm.network_cidr"
               type="text"
               class="form-input"
@@ -555,8 +561,9 @@ onMounted(() => {
 
           <div class="form-row">
             <div class="form-group flex-1">
-              <label class="form-label">{{ $t('dashboard.forms.gateway') }}</label>
+              <label class="form-label" for="subnet_gateway">{{ $t('dashboard.forms.gateway') }}</label>
               <input
+                id="subnet_gateway"
                 v-model="newSubnetForm.gateway"
                 type="text"
                 class="form-input"
@@ -564,7 +571,7 @@ onMounted(() => {
               />
             </div>
             <div class="form-group flex-1">
-              <label class="form-label">
+              <label class="form-label" for="subnet_dhcp">
                 {{ $t('dashboard.table.dhcp') }}
                 <span class="tooltip-wrapper">
                   <HelpCircle :size="13" class="help-icon" />
@@ -573,7 +580,7 @@ onMounted(() => {
               </label>
               <div class="toggle-group">
                 <label class="toggle-switch">
-                  <input type="checkbox" v-model="newSubnetForm.dhcp">
+                  <input id="subnet_dhcp" type="checkbox" v-model="newSubnetForm.dhcp">
                   <span class="toggle-slider"></span>
                 </label>
                 <span class="toggle-label">{{ newSubnetForm.dhcp ? $t('dashboard.alarmActions.enabled') : $t('dashboard.alarmActions.disabled') }}</span>
@@ -583,8 +590,9 @@ onMounted(() => {
 
           <div class="form-row">
             <div class="form-group flex-1">
-              <label class="form-label">{{ $t('dashboard.forms.dns') }}</label>
+              <label class="form-label" for="subnet_dns">{{ $t('dashboard.forms.dns') }}</label>
               <input
+                id="subnet_dns"
                 v-model="newSubnetForm.dns"
                 type="text"
                 class="form-input"
@@ -592,8 +600,9 @@ onMounted(() => {
               />
             </div>
             <div class="form-group flex-1">
-              <label class="form-label">{{ $t('dashboard.forms.baseDomain') }}</label>
+              <label class="form-label" for="subnet_base_domain">{{ $t('dashboard.forms.baseDomain') }}</label>
               <input
+                id="subnet_base_domain"
                 v-model="newSubnetForm.base_domain"
                 type="text"
                 class="form-input"
@@ -611,8 +620,9 @@ onMounted(() => {
             <div v-if="showAdvanced" class="form-section-body">
               <div class="form-row">
                 <div class="form-group flex-1">
-                  <label class="form-label">{{ $t('dashboard.forms.startIp') }}</label>
+                  <label class="form-label" for="subnet_start_ip">{{ $t('dashboard.forms.startIp') }}</label>
                   <input
+                    id="subnet_start_ip"
                     v-model="newSubnetForm.start_ip"
                     type="text"
                     class="form-input"
@@ -620,8 +630,9 @@ onMounted(() => {
                   />
                 </div>
                 <div class="form-group flex-1">
-                  <label class="form-label">{{ $t('dashboard.forms.endIp') }}</label>
+                  <label class="form-label" for="subnet_end_ip">{{ $t('dashboard.forms.endIp') }}</label>
                   <input
+                    id="subnet_end_ip"
                     v-model="newSubnetForm.end_ip"
                     type="text"
                     class="form-input"
@@ -630,8 +641,9 @@ onMounted(() => {
                 </div>
               </div>
               <div class="form-group">
-                <label class="form-label">VXLAN</label>
+                <label class="form-label" for="subnet_vlan">VXLAN</label>
                 <input
+                  id="subnet_vlan"
                   v-model.number="newSubnetForm.vlan"
                   type="number"
                   class="form-input"

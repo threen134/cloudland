@@ -137,20 +137,20 @@ onMounted(() => {
           <div v-if="!invitationInfo?.is_existing_user" class="new-user-form">
             <p class="form-hint">{{ $t('acceptInvitation.createAccountToJoin') }}</p>
             <div class="form-group">
-              <label class="form-label">{{ $t('acceptInvitation.email') }}</label>
-              <input type="email" class="form-input" :value="invitationInfo?.email" disabled />
+              <label class="form-label" for="email">{{ $t('acceptInvitation.email') }}</label>
+              <input id="email" name="email" type="email" class="form-input" :value="invitationInfo?.email" disabled />
             </div>
             <div class="form-group">
-              <label class="form-label">{{ $t('acceptInvitation.username') }}</label>
-              <input v-model="username" type="text" class="form-input" :placeholder="$t('acceptInvitation.usernamePlaceholder')" />
+              <label class="form-label" for="username">{{ $t('acceptInvitation.username') }}</label>
+              <input id="username" name="username" v-model="username" type="text" class="form-input" :placeholder="$t('acceptInvitation.usernamePlaceholder')" />
             </div>
             <div class="form-group">
-              <label class="form-label">{{ $t('acceptInvitation.password') }}</label>
-              <input v-model="password" type="password" class="form-input" :placeholder="$t('acceptInvitation.passwordPlaceholder')" />
+              <label class="form-label" for="password">{{ $t('acceptInvitation.password') }}</label>
+              <input id="password" name="password" v-model="password" type="password" class="form-input" :placeholder="$t('acceptInvitation.passwordPlaceholder')" />
             </div>
             <div class="form-group">
-              <label class="form-label">{{ $t('acceptInvitation.confirmPassword') }}</label>
-              <input v-model="confirmPassword" type="password" class="form-input" :placeholder="$t('acceptInvitation.confirmPasswordPlaceholder')" />
+              <label class="form-label" for="confirmPassword">{{ $t('acceptInvitation.confirmPassword') }}</label>
+              <input id="confirmPassword" name="confirmPassword" v-model="confirmPassword" type="password" class="form-input" :placeholder="$t('acceptInvitation.confirmPasswordPlaceholder')" />
             </div>
           </div>
 

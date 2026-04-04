@@ -99,10 +99,12 @@ const handleSubmit = async () => {
 
             <form @submit.prevent="handleSubmit" class="pl-form">
               <div class="pl-form-group">
-                <label class="pl-label">{{ t('auth.username') }}</label>
+                <label class="pl-label" for="email">{{ t('auth.username') }}</label>
                 <div class="pl-input-wrapper">
                   <User class="pl-input-icon" :size="18" />
                   <input 
+                    id="email"
+                    name="email"
                     type="text" 
                     class="pl-input" 
                     v-model="email"
@@ -113,10 +115,12 @@ const handleSubmit = async () => {
               </div>
               
               <div class="pl-form-group">
-                <label class="pl-label">{{ t('auth.password') }}</label>
+                <label class="pl-label" for="password">{{ t('auth.password') }}</label>
                 <div class="pl-input-wrapper">
                   <Lock class="pl-input-icon" :size="18" />
                   <input 
+                    id="password"
+                    name="password"
                     :type="showPassword ? 'text' : 'password'" 
                     class="pl-input" 
                     v-model="password"
@@ -136,8 +140,8 @@ const handleSubmit = async () => {
               </div>
 
               <div class="pl-form-actions">
-                <label class="pl-checkbox">
-                  <input type="checkbox" v-model="rememberMe" />
+                <label class="pl-checkbox" for="rememberMe">
+                  <input id="rememberMe" name="rememberMe" type="checkbox" v-model="rememberMe" />
                   <span class="pl-checkbox-box"></span>
                   <span class="pl-checkbox-label">{{ t('auth.rememberMe') }}</span>
                 </label>

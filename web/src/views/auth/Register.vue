@@ -103,8 +103,10 @@ const handleSubmit = async () => {
         <form @submit.prevent="handleSubmit" class="auth-form">
           <div class="form-row">
             <div class="form-group">
-              <label class="form-label">{{ t('auth.lastName') }}</label>
+              <label class="form-label" for="lastName">{{ t('auth.lastName') }}</label>
               <input 
+                id="lastName"
+                name="lastName"
                 v-model="form.lastName" 
                 type="text" 
                 class="form-control minimal" 
@@ -113,8 +115,10 @@ const handleSubmit = async () => {
               />
             </div>
             <div class="form-group">
-              <label class="form-label">{{ t('auth.firstName') }}</label>
+              <label class="form-label" for="firstName">{{ t('auth.firstName') }}</label>
               <input 
+                id="firstName"
+                name="firstName"
                 v-model="form.firstName" 
                 type="text" 
                 class="form-control minimal" 
@@ -125,10 +129,12 @@ const handleSubmit = async () => {
           </div>
 
           <div class="form-group">
-            <label class="form-label">{{ t('auth.username') }}</label>
+            <label class="form-label" for="username">{{ t('auth.username') }}</label>
             <div class="input-wrapper">
               <User class="input-icon" :size="18" />
               <input 
+                id="username"
+                name="username"
                 v-model="form.username" 
                 type="text" 
                 class="form-control" 
@@ -143,10 +149,12 @@ const handleSubmit = async () => {
           </div>
 
           <div class="form-group">
-            <label class="form-label">{{ t('auth.email') }}</label>
+            <label class="form-label" for="email">{{ t('auth.email') }}</label>
             <div class="input-wrapper">
               <Mail class="input-icon" :size="18" />
               <input 
+                id="email"
+                name="email"
                 v-model="form.email" 
                 type="email" 
                 class="form-control" 
@@ -157,10 +165,12 @@ const handleSubmit = async () => {
           </div>
 
           <div class="form-group">
-            <label class="form-label">{{ t('auth.orgName') }}</label>
+            <label class="form-label" for="orgName">{{ t('auth.orgName') }}</label>
             <div class="input-wrapper">
               <Building2 class="input-icon" :size="18" />
               <input
+                id="orgName"
+                name="orgName"
                 v-model="form.orgName"
                 type="text"
                 class="form-control"
@@ -172,10 +182,12 @@ const handleSubmit = async () => {
           </div>
 
           <div class="form-group">
-            <label class="form-label">{{ t('auth.orgSlug') }}</label>
+            <label class="form-label" for="orgSlug">{{ t('auth.orgSlug') }}</label>
             <div class="input-wrapper">
               <Building2 class="input-icon" :size="18" />
               <input
+                id="orgSlug"
+                name="orgSlug"
                 v-model="form.orgSlug"
                 type="text"
                 class="form-control"
@@ -188,10 +200,12 @@ const handleSubmit = async () => {
           </div>
 
           <div class="form-group">
-            <label class="form-label">{{ t('auth.password') }}</label>
+            <label class="form-label" for="password">{{ t('auth.password') }}</label>
             <div class="input-wrapper">
               <Lock class="input-icon" :size="18" />
               <input 
+                id="password"
+                name="password"
                 v-model="form.password" 
                 :type="showPassword ? 'text' : 'password'" 
                 class="form-control" 
@@ -212,10 +226,12 @@ const handleSubmit = async () => {
           </div>
 
           <div class="form-group">
-            <label class="form-label">{{ t('auth.confirmPassword') }}</label>
+            <label class="form-label" for="confirmPassword">{{ t('auth.confirmPassword') }}</label>
             <div class="input-wrapper">
               <Lock class="input-icon" :size="18" />
               <input 
+                id="confirmPassword"
+                name="confirmPassword"
                 v-model="form.confirmPassword" 
                 :type="showConfirmPassword ? 'text' : 'password'" 
                 class="form-control" 
