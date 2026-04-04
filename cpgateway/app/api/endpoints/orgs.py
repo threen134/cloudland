@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy import func as sa_func
@@ -16,6 +16,7 @@ from app.schemas.org import (
 from app.schemas.invitation import InvitationCreate, InvitationResponse
 from app.services.invitation_service import invitation_service
 from app.services.quota_service import initialize_org_quotas
+from app.services.org_sync_service import org_sync_service
 
 router = APIRouter()
 
@@ -77,6 +78,7 @@ async def _build_member_response(db: AsyncSession, m: Member) -> MemberResponse:
 @router.post("", response_model=OrgResponse, status_code=status.HTTP_201_CREATED)
 async def create_org(
     org_in: OrgCreate,
+    background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_superuser),
 ):
@@ -113,6 +115,9 @@ async def create_org(
     db.add(member)
     await db.commit()
     await db.refresh(org)
+
+    # 异步同步到所有 Region 的 clapi（不阻塞响应）
+    background_tasks.add_task(org_sync_service.sync_org_to_all_regions, db, org)
 
     return _build_org_response(org, current_user)
 

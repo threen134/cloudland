@@ -599,5 +599,25 @@ func (a *OrgAdmin) List(ctx context.Context, offset, limit int64, order, query s
 	return
 }
 
+// UpsertOrgByID syncs an org record from CPGateway into the local organizations table.
+// Uses PostgreSQL INSERT ... ON CONFLICT (id) DO UPDATE so it is safe to call multiple times.
+// owner_user_id is always set to 1 (the local admin user); default_sg stays 0 and is
+// lazily created the first time the org creates a VM.
+func (a *OrgAdmin) UpsertOrgByID(ctx context.Context, id int64, name, slug string) error {
+	logger.Infof("ENTER OrgAdmin.UpsertOrgByID: id=%d name=%s slug=%s", id, name, slug)
+	_, db := GetContextDB(ctx)
+	err := db.Exec(`
+		INSERT INTO organizations (id, name, slug, org_type, owner_user_id, default_sg, created_at, updated_at)
+		VALUES (?, ?, ?, 1, 1, 0, NOW(), NOW())
+		ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, slug = EXCLUDED.slug, updated_at = NOW()
+	`, id, name, slug).Error
+	if err != nil {
+		logger.Errorf("EXIT OrgAdmin.UpsertOrgByID: error=%v", err)
+	} else {
+		logger.Infof("EXIT OrgAdmin.UpsertOrgByID: ok")
+	}
+	return err
+}
+
 // --- View layer ---
 

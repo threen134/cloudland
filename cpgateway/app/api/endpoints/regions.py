@@ -83,10 +83,11 @@ async def create_region(
 
 
 async def _provision_new_region(region_id: int, region_name: str):
-    """新区域注册后，异步推送全量通知渠道和系统设置"""
+    """新区域注册后，异步推送全量通知渠道、系统设置和 org 列表"""
     try:
         from app.services.notification_service import notification_sync_service
         from app.services.settings_sync_service import settings_sync_service
+        from app.services.org_sync_service import org_sync_service
         async with AsyncSessionLocal() as db:
             res = await db.execute(select(Region).where(Region.id == region_id))
             r = res.scalars().first()
@@ -95,6 +96,8 @@ async def _provision_new_region(region_id: int, region_name: str):
                 logger.info(f"Provisioned notification channels to new region '{region_name}'")
                 await settings_sync_service.push_settings_to_region(db, r)
                 logger.info(f"Provisioned system settings to new region '{region_name}'")
+                await org_sync_service.sync_all_orgs_to_region(db, r)
+                logger.info(f"Provisioned orgs to new region '{region_name}'")
     except Exception as e:
         logger.error(f"Failed to provision new region '{region_name}': {e}")
 
