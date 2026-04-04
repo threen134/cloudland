@@ -127,6 +127,7 @@ async def get_region(
 async def update_region(
     region_uuid: str,
     region_in: RegionUpdate,
+    background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_superuser),
 ):
@@ -146,8 +147,17 @@ async def update_region(
     elif update_data.get("is_available") is True:
         region.maintenance_mode = False
 
+    was_brought_online = (
+        update_data.get("is_available") is True
+        and not update_data.get("maintenance_mode")
+    )
+
     await db.commit()
     await db.refresh(region)
+
+    # Region 手动上线时补全同步，防止下线期间有新 org 注册
+    if was_brought_online:
+        background_tasks.add_task(_provision_new_region, region.id, region.name)
 
     logger.info(f"Region '{region.name}' updated by {current_user.username}")
     return region

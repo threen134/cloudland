@@ -67,6 +67,7 @@ class HeartbeatService:
                     try:
                         from app.services.notification_service import notification_sync_service
                         from app.services.settings_sync_service import settings_sync_service
+                        from app.services.org_sync_service import org_sync_service
                         async with AsyncSessionLocal() as sync_db:
                             res = await sync_db.execute(
                                 select(Region).where(Region.id == region_id)
@@ -77,6 +78,8 @@ class HeartbeatService:
                                 logger.info(f"Cold start channel sync triggered for region '{region_name}'")
                                 await settings_sync_service.push_settings_to_region(sync_db, r)
                                 logger.info(f"Cold start system settings sync triggered for region '{region_name}'")
+                                await org_sync_service.sync_all_orgs_to_region(sync_db, r)
+                                logger.info(f"Cold start org sync triggered for region '{region_name}'")
                     except Exception as e:
                         logger.error(f"Cold start sync failed for region '{region_name}': {e}")
 
