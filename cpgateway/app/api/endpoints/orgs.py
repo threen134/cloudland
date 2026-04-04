@@ -15,6 +15,7 @@ from app.schemas.org import (
 )
 from app.schemas.invitation import InvitationCreate, InvitationResponse
 from app.services.invitation_service import invitation_service
+from app.services.quota_service import initialize_org_quotas
 
 router = APIRouter()
 
@@ -94,8 +95,10 @@ async def create_org(
         owner_user_id=current_user.id,
     )
     db.add(org)
-    await db.commit()
-    await db.refresh(org)
+    await db.flush()  # Get org.id without committing
+
+    # Initialize org-region quota/consumption for all available regions
+    await initialize_org_quotas(db, org.id)
 
     # Add owner as Admin member
     member = Member(
@@ -105,6 +108,7 @@ async def create_org(
     )
     db.add(member)
     await db.commit()
+    await db.refresh(org)
 
     return _build_org_response(org, current_user)
 

@@ -15,10 +15,7 @@ from app.schemas.region import (
     RegionPublic, RegionAdmin, RegionCreated, RegionSecretRotated,
 )
 from app.models.org import Organization
-from app.models.org_resource_quota import OrgResourceQuota
-from app.models.org_resource_consumption import OrgResourceConsumption
-from app.core.config import settings as app_settings
-from app.services.settings_service import settings_service
+from app.services.quota_service import initialize_region_quotas
 from app.core.logging_config import logger
 
 router = APIRouter()
@@ -70,29 +67,8 @@ async def create_region(
     db.add(region)
     await db.flush()  # Get region.id without committing
 
-    # 从动态设置读取配额默认值（三级降级：DB → 环境变量 → 硬编码默认）
-    default_cpu = int(await settings_service.get(db, "DEFAULT_CPU_CORES") or app_settings.DEFAULT_CPU_CORES)
-    default_ram = int(await settings_service.get(db, "DEFAULT_RAM_GB") or app_settings.DEFAULT_RAM_GB)
-    default_ips = int(await settings_service.get(db, "DEFAULT_PUBLIC_IPS") or app_settings.DEFAULT_PUBLIC_IPS)
-    default_disk = int(await settings_service.get(db, "DEFAULT_DISK_GB") or app_settings.DEFAULT_DISK_GB)
-
     # Initialize quota/consumption for all existing orgs in this new region
-    orgs_result = await db.execute(
-        select(Organization).where(Organization.deleted_at.is_(None))
-    )
-    for org in orgs_result.scalars().all():
-        db.add(OrgResourceQuota(
-            org_id=org.id,
-            region_id=region.id,
-            max_cpu_cores=default_cpu,
-            max_ram_gb=default_ram,
-            max_public_ips=default_ips,
-            max_disk_gb=default_disk,
-        ))
-        db.add(OrgResourceConsumption(
-            org_id=org.id,
-            region_id=region.id,
-        ))
+    await initialize_region_quotas(db, region.id)
 
     # Single atomic commit: region + all org quota/consumption records
     await db.commit()

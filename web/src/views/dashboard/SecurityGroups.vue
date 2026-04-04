@@ -235,6 +235,12 @@ const newRule = ref({
     port_max: 80,
     remote_cidr: '0.0.0.0/0'
 })
+const portRangeInvalid = computed(() =>
+    newRule.value.protocol !== 'icmp' &&
+    newRule.value.port_min != null &&
+    newRule.value.port_max != null &&
+    newRule.value.port_min > newRule.value.port_max
+)
 
 const openAddRuleModal = (groupId: string) => {
     ruleModalGroupId.value = groupId
@@ -266,7 +272,7 @@ const closeRuleModal = () => {
 
 const handleSaveRule = async () => {
     addRuleError.value = ''
-    if (newRule.value.protocol !== 'icmp' && newRule.value.port_min > newRule.value.port_max) {
+    if (portRangeInvalid.value) {
         addRuleError.value = t('dashboard.securityGroupDetail.portRangeError')
         return
     }
@@ -678,12 +684,15 @@ watch(() => region.currentRegionId, (newId) => {
           <div v-if="newRule.protocol !== 'icmp'" class="form-row">
             <div class="form-group flex-1">
               <label class="form-label">{{ $t('dashboard.table.portMin') }}</label>
-              <input v-model.number="newRule.port_min" type="number" class="form-input" min="1" max="65535">
+              <input v-model.number="newRule.port_min" type="number" class="form-input" :class="{ 'input-error': portRangeInvalid }" min="1" max="65535">
             </div>
             <div class="form-group flex-1">
               <label class="form-label">{{ $t('dashboard.table.portMax') }}</label>
-              <input v-model.number="newRule.port_max" type="number" class="form-input" min="1" max="65535">
+              <input v-model.number="newRule.port_max" type="number" class="form-input" :class="{ 'input-error': portRangeInvalid }" min="1" max="65535">
             </div>
+          </div>
+          <div v-if="portRangeInvalid" class="port-range-error">
+            {{ $t('dashboard.securityGroupDetail.portRangeError') }}
           </div>
           <div class="form-group">
             <label class="form-label">{{ $t('dashboard.table.remoteCidr') }}</label>
@@ -695,7 +704,7 @@ watch(() => region.currentRegionId, (newId) => {
         </div>
         <div class="modal-footer">
           <button class="btn btn-secondary" @click="closeRuleModal" :disabled="addingRule">{{ $t('actions.cancel') }}</button>
-          <button class="btn btn-primary" @click="handleSaveRule" :disabled="addingRule">
+          <button class="btn btn-primary" @click="handleSaveRule" :disabled="addingRule || portRangeInvalid">
             <span v-if="addingRule" class="loading-spinner" style="width: 16px; height: 16px; border-width: 2px;"></span>
             {{ addingRule ? (editingRuleId ? $t('messages.saving') : $t('messages.creating')) : (editingRuleId ? $t('actions.save') : $t('dashboard.buttons.addRule')) }}
           </button>
@@ -1147,6 +1156,18 @@ watch(() => region.currentRegionId, (newId) => {
 
 .port {
   font-family: var(--font-family-mono);
+}
+
+.input-error {
+  border-color: var(--error-color) !important;
+  box-shadow: 0 0 0 3px var(--error-light) !important;
+}
+
+.port-range-error {
+  font-size: var(--font-size-xs);
+  color: var(--error-color);
+  margin-top: calc(-1 * var(--spacing-3));
+  margin-bottom: var(--spacing-2);
 }
 
 .cidr {

@@ -1,5 +1,5 @@
 import httpx
-from typing import Dict
+from typing import Dict, Tuple
 
 from fastapi import HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -11,6 +11,57 @@ from app.models.region import Region
 
 from app.core.config import settings
 from app.core.logging_config import logger
+
+
+def _safe_float(val, default: float) -> float:
+    try:
+        return float(val)
+    except (TypeError, ValueError):
+        return float(default)
+
+
+def _safe_int(val, default: int) -> int:
+    try:
+        return int(val)
+    except (TypeError, ValueError):
+        return int(default)
+
+
+async def _get_default_quota_values(db: AsyncSession) -> Tuple[float, float, int, float]:
+    """从 system_settings 读取默认配额（三级降级：DB → 环境变量 → 硬编码默认）"""
+    from app.services.settings_service import settings_service
+    cpu = _safe_float(await settings_service.get(db, "DEFAULT_CPU_CORES"), settings.DEFAULT_CPU_CORES)
+    ram = _safe_float(await settings_service.get(db, "DEFAULT_RAM_GB"), settings.DEFAULT_RAM_GB)
+    ips = _safe_int(await settings_service.get(db, "DEFAULT_PUBLIC_IPS"), settings.DEFAULT_PUBLIC_IPS)
+    disk = _safe_float(await settings_service.get(db, "DEFAULT_DISK_GB"), settings.DEFAULT_DISK_GB)
+    return cpu, ram, ips, disk
+
+
+async def initialize_org_quotas(db: AsyncSession, org_id: int) -> None:
+    """为新建 org 在所有可用 region 初始化配额和消耗记录（flush 后、commit 前调用）"""
+    cpu, ram, ips, disk = await _get_default_quota_values(db)
+    regions_result = await db.execute(select(Region))
+    for region in regions_result.scalars().all():
+        db.add(OrgResourceQuota(
+            org_id=org_id, region_id=region.id,
+            max_cpu_cores=cpu, max_ram_gb=ram,
+            max_public_ips=ips, max_disk_gb=disk,
+        ))
+        db.add(OrgResourceConsumption(org_id=org_id, region_id=region.id))
+
+
+async def initialize_region_quotas(db: AsyncSession, region_id: int) -> None:
+    """为新建 region 对所有现有 org 初始化配额和消耗记录（flush 后、commit 前调用）"""
+    from app.models.org import Organization
+    cpu, ram, ips, disk = await _get_default_quota_values(db)
+    orgs_result = await db.execute(select(Organization).where(Organization.deleted_at.is_(None)))
+    for org in orgs_result.scalars().all():
+        db.add(OrgResourceQuota(
+            org_id=org.id, region_id=region_id,
+            max_cpu_cores=cpu, max_ram_gb=ram,
+            max_public_ips=ips, max_disk_gb=disk,
+        ))
+        db.add(OrgResourceConsumption(org_id=org.id, region_id=region_id))
 
 
 def build_backend_url(internal_endpoint: str, api_path: str = "") -> str:

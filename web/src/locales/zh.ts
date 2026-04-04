@@ -1479,8 +1479,8 @@ export default {
         fields: {
             SLACK_WEBHOOK_URL: 'Slack Webhook 地址',
             SLACK_WEBHOOK_URL_desc: '用于发送通知到 Slack 频道的 Incoming Webhook URL。',
-            ALARM_EVENT_RETENTION_DAYS: '告警事件保留天数',
-            ALARM_EVENT_RETENTION_DAYS_desc: '超过该天数的告警事件及投递日志将被自动清理，默认 30 天。',
+            ALARM_EVENT_RETENTION_DAYS: 'VM 告警事件保留天数',
+            ALARM_EVENT_RETENTION_DAYS_desc: '虚拟机告警事件及投递日志的保留天数，超过该天数的记录将被自动清理，默认 30 天。',
         },
     },
 }

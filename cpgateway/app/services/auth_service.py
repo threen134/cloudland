@@ -83,20 +83,8 @@ class AuthService:
         await db.flush()  # Get org.id without committing
 
         # Initialize org-region quota/consumption for all available regions
-        regions_result = await db.execute(select(Region))
-        for region in regions_result.scalars().all():
-            db.add(OrgResourceQuota(
-                org_id=org.id,
-                region_id=region.id,
-                max_cpu_cores=settings.DEFAULT_CPU_CORES,
-                max_ram_gb=settings.DEFAULT_RAM_GB,
-                max_public_ips=settings.DEFAULT_PUBLIC_IPS,
-                max_disk_gb=settings.DEFAULT_DISK_GB,
-            ))
-            db.add(OrgResourceConsumption(
-                org_id=org.id,
-                region_id=region.id,
-            ))
+        from app.services.quota_service import initialize_org_quotas
+        await initialize_org_quotas(db, org.id)
 
         # Add user as Admin member of the org
         member = Member(

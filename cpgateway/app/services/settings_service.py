@@ -22,6 +22,7 @@ SETTINGS_METADATA: dict[str, tuple] = {
     # --- 基础信息 ---
     "PROJECT_NAME":         ("string",  "general",      "项目名称",         False, lambda: env_settings.PROJECT_NAME),
     "FRONTEND_URL":         ("string",  "general",      "前端访问地址",     False, lambda: env_settings.FRONTEND_URL),
+    "ALARM_EVENT_RETENTION_DAYS": ("number", "general", "VM 告警事件保留天数", False, lambda: 30),
 
     # --- 资源配额 ---
     "DEFAULT_CPU_CORES":    ("number",  "quota",        "默认 CPU 配额（核）",   False, lambda: env_settings.DEFAULT_CPU_CORES),
@@ -31,7 +32,6 @@ SETTINGS_METADATA: dict[str, tuple] = {
     "DEFAULT_TRAFFIC_GB":   ("number",  "quota",        "默认流量配额（GB）",   False, lambda: env_settings.DEFAULT_TRAFFIC_GB),
 
     # --- 通知渠道 ---
-    "ALARM_EVENT_RETENTION_DAYS": ("number", "notification",  "告警事件保留天数",     False, lambda: 30),
     "NOTIFICATION_CHANNELS": ("json",  "notification", "启用的通知渠道列表",  False, lambda: ["email"]),
 
     # SMTP
