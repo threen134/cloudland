@@ -1,7 +1,7 @@
 import client from './client'
 
 export interface Zone {
-    id: number
+    id: string
     name: string
     default: boolean
     remark: string

@@ -9,7 +9,13 @@ import { Key, Plus, Trash2, Copy, Check, Search, X, RefreshCw } from 'lucide-vue
 
 const keys = ref<SSHKey[]>([])
 const loading = ref(false)
+const copiedFingerprintId = ref<string | null>(null)
 const copiedId = ref<string | null>(null)
+const copyId = (id: string) => {
+    navigator.clipboard.writeText(id)
+    copiedId.value = id
+    setTimeout(() => { copiedId.value = null }, 2000)
+}
 const searchQuery = ref('')
 const createModalVisible = ref(false)
 const creating = ref(false)
@@ -57,9 +63,9 @@ const filteredKeys = computed(() => {
 const copyFingerprint = async (key: SSHKey) => {
     if (key.finger_print) {
         await navigator.clipboard.writeText(key.finger_print)
-        copiedId.value = key.id
+        copiedFingerprintId.value = key.id
         setTimeout(() => {
-            copiedId.value = null
+            copiedFingerprintId.value = null
         }, 2000)
     }
 }
@@ -207,7 +213,13 @@ onMounted(fetchKeys)
                   </div>
                   <div>
                     <div class="resource-name">{{ key.name }}</div>
-                    <div class="resource-id">{{ key.id }}</div>
+                    <div class="resource-id-row">
+                      <span class="resource-id" :title="key.id">{{ key.id.slice(0, 8) }}...</span>
+                      <button class="copy-btn-mini" @click.stop.prevent="copyId(key.id)" :title="t('actions.copy')">
+                        <Check v-if="copiedId === key.id" :size="10" style="color: #10b981;" />
+                        <Copy v-else :size="10" />
+                      </button>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -223,9 +235,9 @@ onMounted(fetchKeys)
                 <button 
                   class="btn btn-ghost btn-sm copy-btn" 
                   @click="copyFingerprint(key)"
-                  :title="copiedId === key.id ? $t('messages.copied') : $t('actions.copy')"
+                  :title="copiedFingerprintId === key.id ? $t('messages.copied') : $t('actions.copy')"
                 >
-                  <component :is="copiedId === key.id ? Check : Copy" :size="14" />
+                  <component :is="copiedFingerprintId === key.id ? Check : Copy" :size="14" />
                 </button>
               </div>
             </td>

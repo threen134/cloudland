@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Plus, Trash2, Search, ShieldAlert, Link, RefreshCw, X, ChevronDown, ChevronRight, Monitor, Power } from 'lucide-vue-next'
+import { Plus, Trash2, Search, ShieldAlert, Link, RefreshCw, X, ChevronDown, ChevronRight, Monitor, Power, Check, Copy } from 'lucide-vue-next'
 import { vmAlarmRulesApi, VM_RULE_TYPES, type VMAlarmRuleGroup, type VMRuleType } from '../../api/vmAlarmRules'
 import { alarmEventsApi } from '../../api/alarmEvents'
 import { notificationsApi, type NotificationChannel } from '../../api/notifications'
@@ -20,6 +20,13 @@ const page = ref(1)
 const pageSize = ref(100)
 const totalPages = ref(1)
 const total = ref(0)
+
+const copiedId = ref<string | null>(null)
+const copyId = (id: string) => {
+    navigator.clipboard.writeText(id)
+    copiedId.value = id
+    setTimeout(() => { copiedId.value = null }, 2000)
+}
 
 // Create modal
 const showCreateModal = ref(false)
@@ -519,7 +526,13 @@ onMounted(fetchRules)
                             <div class="rule-name-row">
                                 <span class="rule-name-text">{{ rule.name }}</span>
                             </div>
-                            <div class="rule-id monospace">{{ rule.uuid }}</div>
+                            <div class="resource-id-row">
+                                <span class="rule-id monospace" :title="rule.uuid">{{ rule.uuid.slice(0, 8) }}...</span>
+                                <button class="copy-btn-mini" @click.stop.prevent="copyId(rule.uuid)" :title="t('actions.copy')">
+                                    <Check v-if="copiedId === rule.uuid" :size="10" style="color: #10b981;" />
+                                    <Copy v-else :size="10" />
+                                </button>
+                            </div>
                         </div>
                     </div>
                     <div class="rule-header-right">

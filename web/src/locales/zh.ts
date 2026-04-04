@@ -877,6 +877,7 @@ export default {
             starting: '正在启动',
             stopping: '正在关机',
             paused: '已暂停',
+            deleting: '删除中',
             error: '错误',
         },
         imageStatus: {
@@ -970,6 +971,7 @@ export default {
             addSecondaryInterface: '添加扩展网络接口',
             confirm: '确定',
             cancel: '取消',
+            delete: '删除',
         },
         deleteConfirm: {
             message: '确定要删除此资源吗？此操作无法撤销。',

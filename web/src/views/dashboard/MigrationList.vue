@@ -4,7 +4,7 @@ import { useRouter } from 'vue-router'
 import { migrationsApi, type Migration } from '../../api/migrations'
 import { instancesApi, type Instance } from '../../api/instances'
 import { hypervisorsApi, type Hypervisor } from '../../api/hypervisors'
-import { Search as SearchIcon, ArrowRightLeft, Plus, X, RefreshCw } from 'lucide-vue-next'
+import { Search as SearchIcon, ArrowRightLeft, Plus, X, RefreshCw, Check, Copy } from 'lucide-vue-next'
 import { useToast } from '../../composables/useToast'
 import { useI18n } from 'vue-i18n'
 import { useRegionStore } from '../../stores/region'
@@ -14,6 +14,13 @@ const region = useRegionStore()
 const toast = useToast()
 const migrationList = ref<Migration[]>([])
 const loading = ref(false)
+
+const copiedId = ref<string | null>(null)
+const copyId = (id: string) => {
+    navigator.clipboard.writeText(id)
+    copiedId.value = id
+    setTimeout(() => { copiedId.value = null }, 2000)
+}
 const searchQuery = ref('')
 const router = useRouter()
 
@@ -206,12 +213,26 @@ watch(() => region.currentRegionId, (newId) => {
                   </div>
                   <div>
                     <div class="resource-name">{{ $t('dashboard.table.migration') }}</div>
-                    <div class="resource-id">{{ m.id }}</div>
+                    <div class="resource-id-row">
+                      <span class="resource-id" :title="m.id.toString()">{{ m.id.toString().slice(0, 8) }}{{ m.id.toString().length > 8 ? '...' : '' }}</span>
+                      <button class="copy-btn-mini" @click.stop.prevent="copyId(m.id.toString())" :title="t('actions.copy')">
+                        <Check v-if="copiedId === m.id.toString()" :size="10" style="color: #10b981;" />
+                        <Copy v-else :size="10" />
+                      </button>
+                    </div>
                   </div>
                 </div>
               </router-link>
             </td>
-            <td><code class="mono-value">{{ m.instance_id }}</code></td>
+            <td>
+              <div class="resource-id-row">
+                <span class="resource-id" :title="m.instance_id">{{ m.instance_id.slice(0, 8) }}...</span>
+                <button class="copy-btn-mini" @click.stop.prevent="copyId(m.instance_id)" :title="t('actions.copy')">
+                  <Check v-if="copiedId === m.instance_id" :size="10" style="color: #10b981;" />
+                  <Copy v-else :size="10" />
+                </button>
+              </div>
+            </td>
             <td>{{ m.migration_type || $t('messages.unnamed') }}</td>
             <td>{{ m.source_node || '-' }}</td>
             <td>{{ m.dest_node || '-' }}</td>

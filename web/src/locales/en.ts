@@ -878,6 +878,7 @@ export default {
             starting: 'Starting',
             stopping: 'Stopping',
             paused: 'Paused',
+            deleting: 'Deleting',
             error: 'Error',
         },
         imageStatus: {
@@ -969,6 +970,7 @@ export default {
             addSecondaryInterface: 'Add Secondary Interface',
             confirm: 'Confirm',
             cancel: 'Cancel',
+            delete: 'Delete',
         },
         deleteConfirm: {
             message: 'Are you sure you want to delete this resource? This action cannot be undone.',

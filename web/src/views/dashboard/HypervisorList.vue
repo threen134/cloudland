@@ -5,9 +5,23 @@ import { zonesApi } from '../../api/zones'
 import { useRegionStore } from '../../stores/region'
 
 const region = useRegionStore()
-import { Search as SearchIcon, Server, Plus, Trash2, RefreshCw, Copy, Check, X, Loader2, HelpCircle } from 'lucide-vue-next'
+import { Search as SearchIcon, Server, Plus, Trash2, RefreshCw, Copy, Check, X, Loader2, HelpCircle, Pencil, Wrench, MoreVertical, ChevronDown } from 'lucide-vue-next'
 import { useI18n } from 'vue-i18n'
 import { useToast } from '../../composables/useToast'
+
+const vClickOutside = {
+  mounted(el: any, binding: any) {
+    el.clickOutsideEvent = (event: Event) => {
+      if (!(el === event.target || el.contains(event.target))) {
+        binding.value(event)
+      }
+    }
+    document.addEventListener('click', el.clickOutsideEvent)
+  },
+  unmounted(el: any) {
+    document.removeEventListener('click', el.clickOutsideEvent)
+  }
+}
 
 const { t } = useI18n()
 const toast = useToast()
@@ -42,6 +56,43 @@ const copiedCmd = ref(false)
 const showDeleteConfirm = ref(false)
 const deletingHyper = ref<Hypervisor | null>(null)
 const deleting = ref(false)
+
+// Edit
+const showEditModal = ref(false)
+const editingHyper = ref<Hypervisor | null>(null)
+const saving = ref(false)
+const editForm = ref({
+    status: 0,
+    zone_id: 0,
+    cpu_over_rate: 1,
+    mem_over_rate: 1,
+    disk_over_rate: 1,
+    remark: ''
+})
+
+// Maintain
+const showMaintainModal = ref(false)
+const maintainingHyper = ref<Hypervisor | null>(null)
+const maintaining = ref(false)
+const maintainForm = ref({
+    migrate: true,
+    target_hyper: -1
+})
+
+const activeActionMenuId = ref<string | null>(null)
+const toggleActionMenu = (uuid: string) => {
+    activeActionMenuId.value = activeActionMenuId.value === uuid ? null : uuid
+}
+const closeActionMenu = () => {
+    activeActionMenuId.value = null
+}
+
+const copiedId = ref<string | null>(null)
+const copyId = (id: string) => {
+    navigator.clipboard.writeText(id)
+    copiedId.value = id
+    setTimeout(() => { copiedId.value = null }, 2000)
+}
 
 const STATUS_MAP: Record<number, { labelKey: string; class: string }> = {
     0: { labelKey: 'disabled', class: 'status-disabled' },
@@ -165,6 +216,7 @@ const closeDeployModal = () => {
 const confirmDelete = (h: Hypervisor) => {
     deletingHyper.value = h
     showDeleteConfirm.value = true
+    closeActionMenu()
 }
 
 const handleDelete = async () => {
@@ -175,10 +227,81 @@ const handleDelete = async () => {
         showDeleteConfirm.value = false
         deletingHyper.value = null
         await fetchHypervisors()
+        toast.success(t('messages.deleteSuccess'))
     } catch (err: any) {
         toast.error(err.response?.data?.error || t('messages.deleteFailed'))
     } finally {
         deleting.value = false
+    }
+}
+
+// Edit logic
+const openEditModal = async (h: Hypervisor) => {
+    editingHyper.value = h
+    editForm.value = {
+        status: h.status,
+        zone_id: h.zone_id,
+        cpu_over_rate: h.cpu_over_rate || 1,
+        mem_over_rate: h.mem_over_rate || 1,
+        disk_over_rate: h.disk_over_rate || 1,
+        remark: h.remark || ''
+    }
+    showEditModal.value = true
+    closeActionMenu()
+    
+    // Fetch zones if not already loaded
+    if (zoneList.value.length === 0) {
+        try {
+            const resp = await zonesApi.fetchZones()
+            const data = resp.data as any
+            zoneList.value = Array.isArray(data) ? data : (data.zones || [])
+        } catch { zoneList.value = [] }
+    }
+}
+
+const handleEditSave = async () => {
+    if (!editingHyper.value) return
+    saving.value = true
+    try {
+        const payload: any = {}
+        if (editForm.value.status !== editingHyper.value.status) payload.status = editForm.value.status
+        if (editForm.value.zone_id !== editingHyper.value.zone_id) payload.zone_id = editForm.value.zone_id
+        if (editForm.value.cpu_over_rate !== editingHyper.value.cpu_over_rate) payload.cpu_over_rate = Number(editForm.value.cpu_over_rate)
+        if (editForm.value.mem_over_rate !== editingHyper.value.mem_over_rate) payload.mem_over_rate = Number(editForm.value.mem_over_rate)
+        if (editForm.value.disk_over_rate !== editingHyper.value.disk_over_rate) payload.disk_over_rate = Number(editForm.value.disk_over_rate)
+        if (editForm.value.remark !== (editingHyper.value.remark || '')) payload.remark = editForm.value.remark
+
+        await hypervisorsApi.updateHypervisor(editingHyper.value.uuid, payload)
+        showEditModal.value = false
+        toast.success(t('messages.success'))
+        await fetchHypervisors()
+    } catch (err: any) {
+        toast.error(err.response?.data?.error || t('messages.error'))
+    } finally {
+        saving.value = false
+    }
+}
+
+// Maintain logic
+const openMaintainModal = (h: Hypervisor) => {
+    maintainingHyper.value = h
+    maintainForm.value = { migrate: true, target_hyper: -1 }
+    showMaintainModal.value = true
+    closeActionMenu()
+}
+
+const handleMaintain = async () => {
+    if (!maintainingHyper.value) return
+    maintaining.value = true
+    try {
+        await hypervisorsApi.maintainHypervisor(maintainingHyper.value.uuid, maintainForm.value)
+        showMaintainModal.value = false
+        toast.success(t('messages.success'))
+        await fetchHypervisors()
+    } catch (err: any) {
+        toast.error(err.response?.data?.error || t('messages.error'))
+    } finally {
+        maintaining.value = false
     }
 }
 
@@ -241,20 +364,26 @@ onMounted(() => {
                 </div>
              </td>
            </tr>
-           <tr v-else v-for="h in hypervisorList" :key="h.uuid">
+           <tr v-else v-for="h in hypervisorList" :key="h.uuid" :class="{'active-row': activeActionMenuId === h.uuid}">
              <td>
                <router-link :to="{ name: 'hypervisor-detail', params: { id: h.uuid } }" class="resource-link">
                  <div class="resource-info">
                    <div class="resource-icon">
                      <Server :size="16" />
                    </div>
-                   <div>
-                     <div class="resource-name">{{ h.hostname }}</div>
-                     <div class="resource-id">{{ h.uuid }}</div>
-                   </div>
-                 </div>
-               </router-link>
-             </td>
+                    <div>
+                      <div class="resource-name">{{ h.hostname }}</div>
+                      <div class="resource-id-row">
+                        <span class="resource-id" :title="h.uuid">{{ h.uuid.slice(0, 8) }}...</span>
+                        <button class="copy-btn-mini" @click.stop.prevent="copyId(h.uuid)" :title="t('actions.copy')">
+                          <Check v-if="copiedId === h.uuid" :size="10" style="color: #10b981;" />
+                          <Copy v-else :size="10" />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </router-link>
+              </td>
             <td><code class="mono-value">{{ h.host_ip }}</code></td>
             <td>
               <span class="status-pill" :class="getStatusInfo(h.status).class">
@@ -281,10 +410,26 @@ onMounted(() => {
               </div>
             </td>
             <td>{{ h.zone_name || '-' }}</td>
-            <td>
-              <button class="icon-btn-table text-error" @click.prevent="confirmDelete(h)" :title="t('actions.delete')">
-                <Trash2 :size="16" />
-              </button>
+            <td class="actions-cell">
+              <div class="action-dropdown">
+                <button class="icon-btn-table" @click.stop="toggleActionMenu(h.uuid)" :title="t('actions.actions')">
+                  <MoreVertical :size="16" />
+                </button>
+                <Transition name="dropdown">
+                  <div v-if="activeActionMenuId === h.uuid" class="dropdown-menu dropdown-menu-right" @click.stop v-click-outside="closeActionMenu">
+                    <button class="dropdown-item" @click="openEditModal(h)">
+                        <Pencil :size="14" /> {{ t('actions.edit') }}
+                    </button>
+                    <button v-if="h.status === 1" class="dropdown-item" @click="openMaintainModal(h)">
+                        <Wrench :size="14" /> {{ t('dashboard.hypervisorActions.maintain') }}
+                    </button>
+                    <div class="dropdown-divider"></div>
+                    <button class="dropdown-item text-error" @click="confirmDelete(h)">
+                        <Trash2 :size="14" /> {{ t('actions.delete') }}
+                    </button>
+                  </div>
+                </Transition>
+              </div>
             </td>
           </tr>
         </tbody>
@@ -426,6 +571,93 @@ onMounted(() => {
         </div>
       </div>
     </Teleport>
+    <!-- Edit Modal -->
+    <Teleport to="body">
+      <div v-if="showEditModal" class="modal-overlay" @click.self="showEditModal = false">
+        <div class="modal-content card" style="max-width: 500px;">
+          <div class="modal-header">
+            <h3>{{ t('actions.edit') }} - {{ editingHyper?.hostname }}</h3>
+            <button class="btn btn-ghost btn-icon" @click="showEditModal = false"><X :size="18" /></button>
+          </div>
+          <div class="modal-body">
+            <div class="form-grid" style="grid-template-columns: 1fr 1fr; gap: 16px;">
+              <div class="form-group">
+                <label class="form-label">{{ t('dashboard.table.status') }}</label>
+                <select v-model="editForm.status" class="form-input">
+                  <option :value="0">{{ t('dashboard.hypervisorStatus.disabled') }}</option>
+                  <option :value="1">{{ t('dashboard.hypervisorStatus.active') }}</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label class="form-label">{{ t('dashboard.table.zone') }}</label>
+                <select v-model="editForm.zone_id" class="form-input">
+                  <option :value="0">-</option>
+                  <option v-for="z in zoneList" :key="z.id" :value="z.id">{{ z.name }}</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label class="form-label">{{ t('dashboard.table.cpuOverCommit') }}</label>
+                <input type="number" step="0.1" min="1" v-model="editForm.cpu_over_rate" class="form-input" />
+              </div>
+              <div class="form-group">
+                <label class="form-label">{{ t('dashboard.table.memOverCommit') }}</label>
+                <input type="number" step="0.1" min="1" v-model="editForm.mem_over_rate" class="form-input" />
+              </div>
+              <div class="form-group">
+                <label class="form-label">{{ t('dashboard.table.diskOverCommit') }}</label>
+                <input type="number" step="0.1" min="1" v-model="editForm.disk_over_rate" class="form-input" />
+              </div>
+              <div class="form-group" style="grid-column: span 2;">
+                <label class="form-label">{{ t('dashboard.table.remark') }}</label>
+                <input type="text" v-model="editForm.remark" class="form-input" :placeholder="t('dashboard.table.remark')" />
+              </div>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button class="btn btn-secondary" @click="showEditModal = false" :disabled="saving">{{ t('actions.cancel') }}</button>
+            <button class="btn btn-primary" @click="handleEditSave" :disabled="saving">
+              <Loader2 v-if="saving" :size="14" class="spinning" />
+              {{ saving ? t('messages.saving') : t('actions.save') }}
+            </button>
+          </div>
+        </div>
+      </div>
+    </Teleport>
+
+    <!-- Maintain Modal -->
+    <Teleport to="body">
+      <div v-if="showMaintainModal" class="modal-overlay" @click.self="showMaintainModal = false">
+        <div class="modal-content card" style="max-width: 460px;">
+          <div class="modal-header">
+            <h3>{{ t('dashboard.hypervisorActions.maintainTitle') }}</h3>
+            <button class="btn btn-ghost btn-icon" @click="showMaintainModal = false"><X :size="18" /></button>
+          </div>
+          <div class="modal-body">
+            <p style="margin-bottom: 16px; color: var(--text-secondary); font-size: 0.875rem;">
+              {{ t('dashboard.hypervisorActions.maintainDesc', { hostname: maintainingHyper?.hostname }) }}
+            </p>
+            <div class="form-group" style="margin-bottom: 16px;">
+              <label class="form-label" style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                <input type="checkbox" v-model="maintainForm.migrate" />
+                {{ t('dashboard.hypervisorActions.migrateInstances') }}
+              </label>
+            </div>
+            <div v-if="maintainForm.migrate" class="form-group">
+              <label class="form-label">{{ t('dashboard.hypervisorActions.targetHyper') }}</label>
+              <input type="number" v-model="maintainForm.target_hyper" class="form-input" />
+              <span style="font-size: 0.75rem; color: var(--text-light); margin-top: 4px;">{{ t('dashboard.hypervisorActions.targetHyperHint') }}</span>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button class="btn btn-secondary" @click="showMaintainModal = false">{{ t('actions.cancel') }}</button>
+            <button class="btn btn-warning" @click="handleMaintain" :disabled="maintaining">
+              <Loader2 v-if="maintaining" :size="14" class="spinning" />
+              {{ maintaining ? t('messages.loading') : t('dashboard.hypervisorActions.maintain') }}
+            </button>
+          </div>
+        </div>
+      </div>
+    </Teleport>
   </div>
 </template>
 
@@ -479,7 +711,7 @@ onMounted(() => {
 
 .search-input:focus { outline: none; }
 
-.table-card { padding: 0; overflow: hidden; }
+.table-card { padding: 0; overflow: visible; }
 
 .resource-link {
   text-decoration: none;
@@ -647,20 +879,100 @@ onMounted(() => {
   color: var(--primary-500);
 }
 
-.form-input {
-  width: 100%;
-  padding: 8px 12px;
+/* Action Dropdown */
+.action-dropdown {
+  position: relative;
+  display: flex;
+  justify-content: center;
+}
+
+.dropdown-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  min-width: 160px;
+  background: var(--bg-primary);
   border: 1px solid var(--border-light);
   border-radius: var(--radius-md);
-  font-size: 0.875rem;
-  background: var(--bg-primary);
-  color: var(--text-primary);
+  box-shadow: var(--shadow-lg);
+  padding: 4px 0;
+  z-index: 100;
 }
+
+.dropdown-menu-right {
+    right: 0;
+    left: auto;
+}
+
+.active-row {
+  position: relative;
+  z-index: 20;
+}
+
+.dropdown-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 12px;
+  border: none;
+  background: none;
+  font-size: 0.8125rem;
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: background 0.15s;
+  text-align: left;
+}
+
+.dropdown-item:hover:not(:disabled) {
+  background: var(--bg-tertiary);
+}
+
+.dropdown-item.text-error {
+  color: #ef4444;
+}
+
+.dropdown-item.text-error:hover {
+  background: #fef2f2;
+}
+
+.dropdown-divider {
+  height: 1px;
+  background: var(--border-light);
+  margin: 4px 0;
+}
+
+.dropdown-enter-active, .dropdown-leave-active {
+  transition: all 0.2s ease;
+}
+
+.dropdown-enter-from, .dropdown-leave-to {
+  opacity: 0;
+  transform: translateY(-8px);
+}
+
+.btn-warning {
+  background: #f59e0b;
+  color: white;
+  border: none;
+  padding: 8px 16px;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  font-weight: 500;
+}
+
+.btn-warning:hover { background: #d97706; }
+.btn-warning:disabled { opacity: 0.5; cursor: not-allowed; }
 
 .form-input:focus {
   outline: none;
   border-color: var(--primary-300);
   box-shadow: 0 0 0 2px var(--primary-100);
+}
+
+.actions-cell {
+  width: 80px;
+  text-align: center;
 }
 
 .btn-danger {

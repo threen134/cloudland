@@ -431,6 +431,7 @@ const getStatusClass = (status: string) => {
         'provisioning': 'status-pending',
         'starting': 'status-pending',
         'stopping': 'status-pending',
+        'deleting': 'status-pending',
         'error': 'status-error'
     }
     return statusMap[status?.toLowerCase()] || 'status-pending'

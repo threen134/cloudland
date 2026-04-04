@@ -50,6 +50,12 @@ const rotatedSecret = ref<string | null>(null)
 
 // Copy
 const copiedField = ref<string | null>(null)
+const copiedId = ref<string | null>(null)
+const copyId = (id: string) => {
+    navigator.clipboard.writeText(id)
+    copiedId.value = id
+    setTimeout(() => { copiedId.value = null }, 2000)
+}
 
 const filteredRegions = computed(() => {
     if (!searchQuery.value) return regions.value
@@ -314,7 +320,15 @@ onMounted(fetchRegions)
                                 </div>
                                 <div>
                                     <div class="resource-name">{{ region.display_name || region.name }}</div>
-                                    <div class="resource-id">{{ region.name }} / {{ region.uuid }}</div>
+                                    <div class="resource-id-row">
+                                      <span class="resource-id" :title="region.name + ' / ' + region.uuid">
+                                        {{ region.name }} / {{ region.uuid.slice(0, 8) }}...
+                                      </span>
+                                      <button class="copy-btn-mini" @click.stop.prevent="copyId(region.uuid)" :title="t('actions.copy')">
+                                        <Check v-if="copiedId === region.uuid" :size="10" style="color: #10b981;" />
+                                        <Copy v-else :size="10" />
+                                      </button>
+                                    </div>
                                 </div>
                             </div>
                         </td>

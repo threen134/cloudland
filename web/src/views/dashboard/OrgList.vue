@@ -6,13 +6,20 @@ import { type OrgResourceQuotaUpdate } from '../../api/quota'
 import { useAuthStore } from '../../stores/auth'
 import { useQuota } from '../../composables/useQuota'
 import { useToast } from '../../composables/useToast'
-import { Plus, Building2, Trash2, Edit2, User, Search, X, Gauge, RefreshCw } from 'lucide-vue-next'
+import { Plus, Building2, Trash2, Edit2, User, Search, X, Gauge, RefreshCw, Check, Copy } from 'lucide-vue-next'
 
 const authStore = useAuthStore()
 const isSuperuser = computed(() => authStore.user?.is_superuser === true)
 
 const { t } = useI18n()
 const toast = useToast()
+
+const copiedId = ref<string | null>(null)
+const copyId = (id: string) => {
+    navigator.clipboard.writeText(id)
+    copiedId.value = id
+    setTimeout(() => { copiedId.value = null }, 2000)
+}
 
 const orgs = ref<Organization[]>([])
 const loading = ref(false)
@@ -258,7 +265,13 @@ onMounted(fetchOrgs)
                   </div>
                   <div>
                     <div class="resource-name">{{ org.name }}</div>
-                    <div class="resource-id">{{ org.uuid }}</div>
+                    <div class="resource-id-row">
+                      <span class="resource-id" :title="org.uuid">{{ org.uuid.slice(0, 8) }}...</span>
+                      <button class="copy-btn-mini" @click.stop.prevent="copyId(org.uuid)" :title="t('actions.copy')">
+                        <Check v-if="copiedId === org.uuid" :size="10" style="color: #10b981;" />
+                        <Copy v-else :size="10" />
+                      </button>
+                    </div>
                   </div>
                 </div>
               </router-link>
@@ -267,7 +280,13 @@ onMounted(fetchOrgs)
             <td>
               <div class="owner-cell" v-if="org.owner_uuid">
                 <User :size="12" />
-                <span>{{ org.owner_uuid }}</span>
+                <div class="resource-id-row">
+                  <span class="resource-id" :title="org.owner_uuid">{{ org.owner_uuid.slice(0, 8) }}...</span>
+                  <button class="copy-btn-mini" @click.stop.prevent="copyId(org.owner_uuid)" :title="t('actions.copy')">
+                    <Check v-if="copiedId === org.owner_uuid" :size="10" style="color: #10b981;" />
+                    <Copy v-else :size="10" />
+                  </button>
+                </div>
               </div>
               <span v-else>-</span>
             </td>

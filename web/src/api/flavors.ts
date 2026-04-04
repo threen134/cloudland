@@ -1,7 +1,7 @@
 import client from './client'
 
 export interface Flavor {
-    id: string
+    uuid: string
     name: string
     vcpus: number
     ram: number

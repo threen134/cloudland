@@ -8,12 +8,19 @@ import { isValidName } from '../../utils/validation'
 
 const region = useRegionStore()
 
-import { Plus, SquareStack, MemoryStick, Search, Trash2, Cpu, HardDrive, X, RefreshCw } from 'lucide-vue-next'
+import { Plus, SquareStack, MemoryStick, Search, Trash2, Cpu, HardDrive, X, Check, Copy, RefreshCw } from 'lucide-vue-next'
 
 const flavors = ref<Flavor[]>([])
 const loading = ref(false)
 const searchQuery = ref('')
 const toast = useToast()
+
+const copiedId = ref<string | null>(null)
+const copyId = (id: string) => {
+    navigator.clipboard.writeText(id)
+    copiedId.value = id
+    setTimeout(() => { copiedId.value = null }, 2000)
+}
 
 const createModalVisible = ref(false)
 const creating = ref(false)
@@ -93,9 +100,9 @@ const handleCreateFlavor = async () => {
 const filteredFlavors = computed(() => {
     if (!searchQuery.value) return flavors.value
     const query = searchQuery.value.toLowerCase()
-    return flavors.value.filter(flavor => 
-        flavor.name.toLowerCase().includes(query) || 
-        flavor.id.toLowerCase().includes(query)
+    return flavors.value.filter(flavor =>
+        flavor.name.toLowerCase().includes(query) ||
+        (flavor.uuid || '').toLowerCase().includes(query)
     )
 })
 
@@ -204,7 +211,7 @@ onMounted(() => {
                </div>
             </td>
           </tr>
-          <tr v-else v-for="flavor in filteredFlavors" :key="flavor.id || flavor.name">
+          <tr v-else v-for="flavor in filteredFlavors" :key="flavor.uuid || flavor.name">
             <td>
               <div class="resource-link-static">
                 <div class="resource-info">
@@ -213,7 +220,13 @@ onMounted(() => {
                   </div>
                   <div>
                     <div class="resource-name">{{ flavor.name }}</div>
-                    <div class="resource-id">{{ flavor.id || flavor.name }}</div>
+                    <div class="resource-id-row">
+                      <span class="resource-id" :title="flavor.uuid">{{ (flavor.uuid || '').slice(0, 8) }}...</span>
+                      <button class="copy-btn-mini" @click.stop.prevent="flavor.uuid && copyId(flavor.uuid)" :title="t('actions.copy')" :aria-label="t('actions.copy')">
+                        <Check v-if="copiedId === flavor.uuid" :size="10" style="color: #10b981;" />
+                        <Copy v-else :size="10" />
+                      </button>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -345,7 +358,7 @@ onMounted(() => {
             <div style="background:var(--bg-secondary);border:1px solid var(--border-light);border-radius:var(--radius-md);padding:var(--spacing-3) var(--spacing-4);text-align:left">
               <span style="font-size:var(--font-size-xs);color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.05em;display:block;margin-bottom:var(--spacing-1)">{{ $t('dashboard.deleteConfirm.resource') }}</span>
               <span style="font-weight:var(--font-weight-semibold);display:block">{{ resourceToDelete?.name }}</span>
-              <span style="font-size:var(--font-size-xs);color:var(--text-light);font-family:var(--font-family-mono);display:block;margin-top:2px">{{ resourceToDelete?.id }}</span>
+              <span style="font-size:var(--font-size-xs);color:var(--text-light);font-family:var(--font-family-mono);display:block;margin-top:2px">{{ resourceToDelete?.uuid }}</span>
             </div>
             <div v-if="deleteError" class="text-error" style="margin-top:var(--spacing-4);font-size:var(--font-size-sm);background:var(--error-light);padding:var(--spacing-2);border-radius:var(--radius-sm)">
               {{ deleteError }}

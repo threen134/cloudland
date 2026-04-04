@@ -25,6 +25,7 @@ var flavorAdmin = &services.FlavorAdmin{}
 type FlavorAPI struct{}
 
 type FlavorResponse struct {
+	UUID   string `json:"uuid"`
 	Name   string `json:"name"`
 	Cpu    int32  `json:"cpu"`
 	Memory int32  `json:"memory"`
@@ -128,6 +129,7 @@ func (v *FlavorAPI) Create(c *gin.Context) {
 
 func (v *FlavorAPI) getFlavorResponse(_ context.Context, flavor *model.Flavor) (flavorResp *FlavorResponse, err error) {
 	flavorResp = &FlavorResponse{
+		UUID:   flavor.UUID,
 		Name:   flavor.Name,
 		Cpu:    flavor.Cpu,
 		Memory: flavor.Memory,

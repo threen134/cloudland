@@ -7,7 +7,7 @@ import { useSecurityGroup } from '../../composables/useSecurityGroup'
 import { securityGroupsApi, vpcsApi, type SecurityGroup, type SecurityRule, type VPC } from '../../api/networks'
 import { isValidName } from '../../utils/validation'
 
-import { Shield, Plus, Trash2, ChevronDown, ChevronRight, Search, X, RefreshCw, Edit, ArrowUpDown, ArrowUp, ArrowDown, Network, HelpCircle } from 'lucide-vue-next'
+import { Shield, Plus, Trash2, ChevronDown, ChevronRight, Search, X, RefreshCw, Edit, ArrowUpDown, ArrowUp, ArrowDown, Network, HelpCircle, Check, Copy } from 'lucide-vue-next'
 import { useRegionStore } from '../../stores/region'
 
 const region = useRegionStore()
@@ -31,6 +31,13 @@ const newGroupForm = ref({
 const { t } = useI18n()
 const toast = useToast()
 const isNameValid = computed(() => isValidName(newGroupForm.value.name))
+
+const copiedId = ref<string | null>(null)
+const copyId = (id: string) => {
+    navigator.clipboard.writeText(id)
+    copiedId.value = id
+    setTimeout(() => { copiedId.value = null }, 2000)
+}
 
 const vpcs = ref<VPC[]>([])
 const router = useRouter()
@@ -438,7 +445,13 @@ watch(() => region.currentRegionId, (newId) => {
                 <span class="sg-vpc-badge" v-if="group.vpc?.name">{{ group.vpc.name }}</span>
               </div>
               <div class="sg-description" v-if="group.description">{{ translateDescription(group.description) }}</div>
-              <div class="sg-id">{{ group.id }}</div>
+              <div class="resource-id-row">
+                <span class="sg-id" :title="group.id">{{ group.id.slice(0, 8) }}...</span>
+                <button class="copy-btn-mini" @click.stop.prevent="copyId(group.id)" :title="t('actions.copy')">
+                  <Check v-if="copiedId === group.id" :size="10" style="color: #10b981;" />
+                  <Copy v-else :size="10" />
+                </button>
+              </div>
             </div>
           </div>
           <div class="sg-header-right">

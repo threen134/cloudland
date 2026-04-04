@@ -4,7 +4,7 @@ import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { useToast } from '../../composables/useToast'
 import { instancesApi, type Instance } from '../../api/instances'
-import { Play, Square, RotateCw, Trash2, Plus, Terminal, MoreVertical, Search, X, Check, Monitor, ChevronDown, ChevronUp, PlusCircle, MinusCircle, RefreshCw, Cpu, HardDrive, Eye, EyeOff, Shuffle, Pencil, KeyRound, Maximize2, Server, Activity, Network, Globe, HelpCircle } from 'lucide-vue-next'
+import { Play, Square, RotateCw, Trash2, Plus, Terminal, MoreVertical, Search, X, Check, Copy, Monitor, ChevronDown, ChevronUp, PlusCircle, MinusCircle, RefreshCw, Cpu, HardDrive, Eye, EyeOff, Shuffle, Pencil, KeyRound, Maximize2, Server, Activity, Network, Globe, HelpCircle } from 'lucide-vue-next'
 
 import { imagesApi, type Image } from '../../api/images'
 import { vpcsApi, subnetsApi, securityGroupsApi, floatingIpsApi, type VPC, type Subnet, type SecurityGroup, type FloatingIP } from '../../api/networks'
@@ -159,6 +159,7 @@ const getStatusClass = (status: string) => {
         'provisioning': 'status-pending',
         'starting': 'status-pending',
         'stopping': 'status-pending',
+        'deleting': 'status-pending',
         'error': 'status-error'
     }
     return statusMap[status?.toLowerCase()] || 'status-pending'
@@ -208,6 +209,13 @@ const closeActionMenu = () => {
 const activeIpPopoverId = ref<string | null>(null)
 const closeIpPopover = () => {
     activeIpPopoverId.value = null
+}
+
+const copiedId = ref<string | null>(null)
+const copyId = (id: string) => {
+    navigator.clipboard.writeText(id)
+    copiedId.value = id
+    setTimeout(() => { copiedId.value = null }, 2000)
 }
 
 const handleAction = async (instance: Instance, action: 'start' | 'stop' | 'restart' | 'hard_stop' | 'hard_restart' | 'pause' | 'resume') => {
@@ -1019,7 +1027,13 @@ onUnmounted(() => {
                   </div>
                   <div>
                     <div class="resource-name">{{ instance.hostname }}</div>
-                    <div class="resource-id" :title="instance.id">{{ instance.id.substring(0, 8) }}...</div>
+                    <div class="resource-id-row">
+                      <span class="resource-id" :title="instance.id">{{ instance.id.substring(0, 8) }}...</span>
+                      <button class="copy-btn-mini" @click.stop.prevent="copyId(instance.id)" :title="t('actions.copy')">
+                        <Check v-if="copiedId === instance.id" :size="10" style="color: #10b981;" />
+                        <Copy v-else :size="10" />
+                      </button>
+                    </div>
                   </div>
                 </div>
               </router-link>
@@ -2518,6 +2532,7 @@ input:checked + .slider:before {
 }
 
 .header-actions { display: flex; gap: 8px; align-items: center; }
+
 .spinning { animation: spin 1s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 

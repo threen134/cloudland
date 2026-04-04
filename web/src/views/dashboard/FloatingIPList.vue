@@ -5,7 +5,7 @@ import { useRouter } from 'vue-router'
 import { useToast } from '../../composables/useToast'
 import { floatingIpsApi, subnetsApi, type FloatingIP, type FloatingIPPayload, type Subnet } from '../../api/networks'
 import { instancesApi, type Instance } from '../../api/instances'
-import { Globe2, Plus, Link, Unlink, Trash2, Search, X, RefreshCw, ChevronDown, ChevronUp } from 'lucide-vue-next'
+import { Globe2, Plus, Link, Unlink, Trash2, Search, X, RefreshCw, Check, Copy, ChevronDown, ChevronUp } from 'lucide-vue-next'
 import { useFloatingIP } from '../../composables/useFloatingIP'
 import DeleteModal from '../../components/modals/DeleteModal.vue'
 import { useRegionStore } from '../../stores/region'
@@ -16,6 +16,13 @@ const { t } = useI18n()
 const toast = useToast()
 const { getTypeBadgeClass, getTypeLabel } = useFloatingIP()
 const router = useRouter()
+
+const copiedId = ref<string | null>(null)
+const copyId = (id: string) => {
+    navigator.clipboard.writeText(id)
+    copiedId.value = id
+    setTimeout(() => { copiedId.value = null }, 2000)
+}
 const floatingIps = ref<FloatingIP[]>([])
 const loading = ref(false)
 const searchQuery = ref('')
@@ -384,7 +391,13 @@ watch(() => newFipForm.value.selectedPublicSubnetId, (newId) => {
                   </div>
                   <div>
                     <div class="resource-name">{{ fip.name || $t('messages.unnamed') }}</div>
-                    <div class="resource-id">{{ fip.id }}</div>
+                    <div class="resource-id-row">
+                      <span class="resource-id" :title="fip.id">{{ fip.id.slice(0, 8) }}...</span>
+                      <button class="copy-btn-mini" @click.stop.prevent="copyId(fip.id)" :title="t('actions.copy')">
+                        <Check v-if="copiedId === fip.id" :size="10" style="color: #10b981;" />
+                        <Copy v-else :size="10" />
+                      </button>
+                    </div>
                   </div>
                 </div>
               </router-link>

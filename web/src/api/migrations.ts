@@ -1,7 +1,7 @@
 import client from './client'
 
 export interface Migration {
-    id: number
+    id: string
     instance_id: string
     source_node: string
     dest_node: string

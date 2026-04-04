@@ -11,7 +11,7 @@ import { useRegionStore } from '../../stores/region'
 
 const region = useRegionStore()
 
-import { Disc, Search, Monitor, Server, Trash2, Plus, X, Globe, Cpu, User, Eye, EyeOff, RefreshCw } from 'lucide-vue-next'
+import { Disc, Search, Monitor, Server, Trash2, Plus, X, Globe, Cpu, User, Eye, EyeOff, Check, Copy, RefreshCw } from 'lucide-vue-next'
 
 const images = ref<Image[]>([])
 const loading = ref(false)
@@ -24,6 +24,13 @@ const tenant = useTenantStore()
 const isSuperuser = computed(() => auth.user?.is_superuser === true)
 const currentOrgName = computed(() => tenant.currentOrg?.name || '')
 const toast = useToast()
+
+const copiedId = ref<string | null>(null)
+const copyId = (id: string) => {
+    navigator.clipboard.writeText(id)
+    copiedId.value = id
+    setTimeout(() => { copiedId.value = null }, 2000)
+}
 
 const createModalVisible = ref(false)
 const creating = ref(false)
@@ -319,7 +326,13 @@ onMounted(async () => {
                   </div>
                   <div>
                     <div class="resource-name">{{ image.name }}</div>
-                    <div class="resource-id">{{ image.id }}</div>
+                    <div class="resource-id-row">
+                      <span class="resource-id" :title="image.id">{{ image.id.slice(0, 8) }}...</span>
+                      <button class="copy-btn-mini" @click.stop.prevent="copyId(image.id)" :title="t('actions.copy')">
+                        <Check v-if="copiedId === image.id" :size="10" style="color: #10b981;" />
+                        <Copy v-else :size="10" />
+                      </button>
+                    </div>
                   </div>
                 </div>
               </router-link>

@@ -243,7 +243,7 @@ func (v *ZoneAPI) Patch(c *gin.Context) {
 func (v *ZoneAPI) getZoneResponse(_ context.Context, zone *model.Zone) (zoneResp *ZoneResponse, err error) {
 	zoneResp = &ZoneResponse{
 		ResourceReference: &ResourceReference{
-			ID:        strconv.FormatInt(zone.ID, 10),
+			ID:        zone.UUID,
 			Name:      zone.Name,
 			CreatedAt: zone.CreatedAt.Format(TimeStringForMat),
 			UpdatedAt: zone.UpdatedAt.Format(TimeStringForMat),

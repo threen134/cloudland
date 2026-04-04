@@ -904,6 +904,31 @@ button:disabled {
   transition: all 0.15s;
 }
 
+.resource-id-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.copy-btn-mini {
+  background: none;
+  border: 1px solid var(--border-light);
+  border-radius: 4px;
+  padding: 1px 3px;
+  cursor: pointer;
+  color: var(--text-light);
+  display: flex;
+  align-items: center;
+  transition: all 0.2s;
+  line-height: 1;
+}
+
+.copy-btn-mini:hover {
+  color: var(--primary-500);
+  border-color: var(--primary-300);
+  background: var(--bg-tertiary);
+}
+
 .resource-link:hover .resource-name {
   color: var(--primary-600);
   text-decoration: underline;
