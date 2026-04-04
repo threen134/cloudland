@@ -6,7 +6,7 @@ from sqlalchemy.future import select
 
 from app.models.region import Region
 from app.models.user import User
-from app.models.org import Organization, OrgType
+from app.models.org import Organization, OrgType, OrgStatus
 from app.models.token_revocation import TokenRevocation
 from app.core.security import verify_access_token
 from app.core.config import settings
@@ -187,7 +187,14 @@ class ProxyService:
             "X-Forwarded-Secret": region_obj.internal_secret,
         }
 
-        # 5. [NEW] Quota check — superuser and system org skip
+        # 5. Org status check
+        if org_obj:
+            if org_obj.status in (OrgStatus.PENDING, OrgStatus.DISABLED):
+                raise HTTPException(status_code=403, detail="Organization is not accessible")
+            if org_obj.status == OrgStatus.SUSPENDED and request.method != "GET":
+                raise HTTPException(status_code=403, detail="Organization is suspended")
+
+        # 6. [NEW] Quota check — superuser and system org skip
         quota_action = None
         reserved = False
         resource_amount = None

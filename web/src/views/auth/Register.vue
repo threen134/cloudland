@@ -2,7 +2,7 @@
 import { ref, reactive, computed } from 'vue'
 import { useRouter, RouterLink } from 'vue-router'
 import { useI18n } from 'vue-i18n'
-import { Cloud, User, Mail, Lock, ArrowRight, ShieldCheck, Check, Building2 } from 'lucide-vue-next'
+import { Cloud, User, Mail, Lock, ArrowRight, ShieldCheck, Check, Building2, XCircle, Eye, EyeOff } from 'lucide-vue-next'
 import { authApi } from '../../api/auth'
 
 const { t, locale } = useI18n()
@@ -20,6 +20,9 @@ const form = reactive({
   orgSlug: ''
 })
 
+const showPassword = ref(false)
+const showConfirmPassword = ref(false)
+
 const autoGenerateSlug = () => {
   if (form.orgName && !form.orgSlug) {
     form.orgSlug = form.orgName
@@ -33,9 +36,21 @@ const isPasswordMismatch = computed(() => {
   return !!(form.password && form.confirmPassword && form.password !== form.confirmPassword)
 })
 
+const usernameError = computed(() => {
+  if (!form.username) return ''
+  if (/^[0-9]/.test(form.username)) return t('auth.usernameStartLetterError')
+  if (!/^[a-zA-Z0-9]+$/.test(form.username)) return t('auth.usernameCharsetError')
+  return ''
+})
+
 const handleSubmit = async () => {
     if (form.password !== form.confirmPassword) {
       alert(t('auth.passwordMismatch')) 
+      return
+    }
+
+    if (usernameError.value) {
+      alert(usernameError.value)
       return
     }
 
@@ -117,10 +132,14 @@ const handleSubmit = async () => {
                 v-model="form.username" 
                 type="text" 
                 class="form-control" 
+                :class="{ 'border-error': !!usernameError }"
                 required 
                 :placeholder="t('auth.username')" 
               />
             </div>
+            <span v-if="usernameError" class="error-text">
+              <XCircle :size="12" /> {{ usernameError }}
+            </span>
           </div>
 
           <div class="form-group">
@@ -174,12 +193,21 @@ const handleSubmit = async () => {
               <Lock class="input-icon" :size="18" />
               <input 
                 v-model="form.password" 
-                type="password" 
+                :type="showPassword ? 'text' : 'password'" 
                 class="form-control" 
-                :class="{ 'border-error': isPasswordMismatch }"
+                :class="{ 'border-error': isPasswordMismatch, 'with-suffix': true }"
                 required 
                 placeholder="••••••••" 
               />
+              <button 
+                type="button" 
+                class="password-toggle"
+                @click="showPassword = !showPassword"
+                tabindex="-1"
+              >
+                <EyeOff v-if="showPassword" :size="18" />
+                <Eye v-else :size="18" />
+              </button>
             </div>
           </div>
 
@@ -189,12 +217,21 @@ const handleSubmit = async () => {
               <Lock class="input-icon" :size="18" />
               <input 
                 v-model="form.confirmPassword" 
-                type="password" 
+                :type="showConfirmPassword ? 'text' : 'password'" 
                 class="form-control" 
-                :class="{ 'border-error': isPasswordMismatch }"
+                :class="{ 'border-error': isPasswordMismatch, 'with-suffix': true }"
                 required 
                 placeholder="••••••••" 
               />
+              <button 
+                type="button" 
+                class="password-toggle"
+                @click="showConfirmPassword = !showConfirmPassword"
+                tabindex="-1"
+              >
+                <EyeOff v-if="showConfirmPassword" :size="18" />
+                <Eye v-else :size="18" />
+              </button>
             </div>
             <span v-if="isPasswordMismatch" class="error-text">
               <XCircle :size="12" /> {{ t('auth.passwordMismatch') }}
@@ -204,7 +241,7 @@ const handleSubmit = async () => {
           <button 
             type="submit" 
             class="btn btn-primary btn-block btn-lg"
-            :disabled="isLoading || isPasswordMismatch"
+            :disabled="isLoading || isPasswordMismatch || !!usernameError"
           >
             <span>{{ isLoading ? t('auth.signingIn') : t('nav.signUp') }}</span>
             <ArrowRight v-if="!isLoading" :size="18" />
@@ -393,6 +430,33 @@ p {
 
 .form-control:focus + .input-icon {
   color: var(--primary-500);
+}
+
+.form-control.with-suffix {
+  padding-right: 42px;
+}
+
+.password-toggle {
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: none;
+  border: none;
+  color: var(--text-light);
+  cursor: pointer;
+  padding: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-md);
+  transition: all 0.2s;
+  z-index: 2;
+}
+
+.password-toggle:hover {
+  color: var(--primary-500);
+  background: var(--primary-50);
 }
 
 .border-error {

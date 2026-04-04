@@ -7,11 +7,11 @@ from typing import List
 from app.core.database import get_db
 from app.api.deps import get_current_active_user, get_current_superuser
 from app.models.user import User, SystemRole
-from app.models.org import Organization, OrgType
+from app.models.org import Organization, OrgType, OrgStatus
 from app.models.member import Member, OrgRole, InvitationStatus
 from app.schemas.org import (
     OrgCreate, OrgUpdate, OrgResponse, OrgDetail,
-    MemberAdd, MemberUpdate, MemberResponse, TransferOwner,
+    MemberAdd, MemberUpdate, MemberResponse, TransferOwner, OrgStatusUpdate,
 )
 from app.schemas.invitation import InvitationCreate, InvitationResponse
 from app.services.invitation_service import invitation_service
@@ -49,7 +49,10 @@ def _build_org_response(org: Organization, owner: User) -> OrgResponse:
         name=org.name,
         slug=org.slug,
         org_type=org.org_type,
+        status=org.status,
         owner_uuid=owner.uuid if owner else "",
+        owner_name=owner.username if owner else None,
+        owner_email=owner.email if owner else None,
         created_at=org.created_at,
     )
 
@@ -93,6 +96,7 @@ async def create_org(
         slug=org_in.slug,
         org_type=OrgType.TEAM,
         owner_user_id=current_user.id,
+        status=OrgStatus.ACTIVE,
     )
     db.add(org)
     await db.flush()  # Get org.id without committing
@@ -250,6 +254,35 @@ async def delete_org(
     org.deleted_at = now
     org.slug = f"{org.slug}_del{ts}"
     await db.commit()
+
+
+@router.patch("/{org_uuid}/status", response_model=OrgResponse)
+async def update_org_status(
+    org_uuid: str,
+    status_in: OrgStatusUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_superuser),
+):
+    """修改 Org 状态（仅 SystemAdmin）。不允许手动设为 PENDING(0)。"""
+    if status_in.status == OrgStatus.PENDING:
+        raise HTTPException(status_code=400, detail="Cannot manually set org status to PENDING")
+    try:
+        new_status = OrgStatus(status_in.status)
+    except ValueError:
+        raise HTTPException(status_code=400, detail=f"Invalid status value: {status_in.status}")
+
+    org = await _get_org_or_404(db, org_uuid)
+
+    if org.org_type == OrgType.SYSTEM:
+        raise HTTPException(status_code=400, detail="Cannot change status of system organization")
+
+    org.status = new_status
+    await db.commit()
+    await db.refresh(org)
+
+    owner_result = await db.execute(select(User).where(User.id == org.owner_user_id))
+    owner = owner_result.scalars().first()
+    return _build_org_response(org, owner)
 
 
 # --- Member Management ---

@@ -131,4 +131,9 @@ export const orgsApi = {
     cancelInvitation(orgUuid: string, invitationUuid: string) {
         return client.delete(`/orgs/${orgUuid}/invitations/${invitationUuid}`)
     },
+
+    // Update organization status
+    updateOrgStatus(uuid: string, status: number) {
+        return client.patch(`/orgs/${uuid}/status`, { status })
+    },
 }

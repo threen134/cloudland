@@ -14,7 +14,7 @@ from app.core.security import verify_access_token
 from app.services.auth_service import auth_service
 from app.services.invitation_service import invitation_service
 from app.core.logging_config import logger
-from app.models.user import User, SystemRole
+from app.models.user import User, SystemRole, UserStatus
 from app.models.org import Organization
 from app.models.member import Member, OrgRole
 
@@ -171,7 +171,7 @@ async def get_me(request: Request, db: AsyncSession = Depends(get_db)):
         "last_name": user.last_name,
         "system_role": user.system_role,
         "is_superuser": user.is_superuser,
-        "status": user.status,
+        "status": UserStatus(user.status).name.lower(),
         "current_org_uuid": claims.get("org_id"),
         "current_region": claims.get("region"),
     }
@@ -216,6 +216,7 @@ async def get_my_orgs(request: Request, db: AsyncSession = Depends(get_db)):
                 name=org.name,
                 slug=org.slug,
                 org_type=org.org_type,
+                status=org.status,
                 org_role=member_map[org.id].org_role if org.id in member_map else int(OrgRole.ADMIN),
                 is_owner=(org.owner_user_id == user.id),
                 is_current=(org.uuid == current_org_uuid),
@@ -240,6 +241,7 @@ async def get_my_orgs(request: Request, db: AsyncSession = Depends(get_db)):
                 name=org.name,
                 slug=org.slug,
                 org_type=org.org_type,
+                status=org.status,
                 org_role=member.org_role,
                 is_owner=(org.owner_user_id == user.id),
                 is_current=(org.uuid == current_org_uuid),

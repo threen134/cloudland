@@ -18,7 +18,10 @@ class OrgResponse(BaseModel):
     name: str
     slug: str
     org_type: int
+    status: int
     owner_uuid: str
+    owner_name: Optional[str] = None
+    owner_email: Optional[str] = None
     created_at: datetime
 
     class Config:
@@ -58,12 +61,17 @@ class TransferOwner(BaseModel):
     new_owner_uuid: str
 
 
+class OrgStatusUpdate(BaseModel):
+    status: int
+
+
 class UserOrgItem(BaseModel):
     """用户所属 Org 列表项（供前端切换 Org 下拉框使用）"""
     uuid: str
     name: str
     slug: str
     org_type: int = 1
+    status: int = 1
     org_role: int
     is_owner: bool
     is_current: bool = False

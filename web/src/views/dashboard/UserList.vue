@@ -95,15 +95,8 @@ const filteredUsers = computed(() => {
     )
 })
 
-const userStatusMap: Record<number | string, string> = {
-    0: 'invited',
-    1: 'active',
-    2: 'inactive',
-    3: 'inactive',
-}
-const getUserStatus = (status: number | string | undefined): string => {
-    if (status === undefined || status === null) return 'active'
-    return userStatusMap[status] || String(status)
+const getUserStatus = (status: string | undefined): string => {
+    return status || 'active'
 }
 
 const navigateToDetail = (user: User) => {

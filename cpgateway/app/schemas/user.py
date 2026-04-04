@@ -1,6 +1,7 @@
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, EmailStr, Field, field_validator
 from datetime import datetime
 from typing import Optional, Literal, List
+from app.models.user import UserStatus
 
 
 class UserBase(BaseModel):
@@ -28,11 +29,21 @@ class UserInDBBase(UserBase):
     is_active: bool
     is_superuser: bool = False
     system_role: int = 0
-    status: int = 1
+    status: str = "active"
     first_name: str = ""
     last_name: str = ""
     remark: str = ""
     created_at: datetime
+
+    @field_validator('status', mode='before')
+    @classmethod
+    def convert_status(cls, v):
+        if isinstance(v, int):
+            try:
+                return UserStatus(v).name.lower()
+            except ValueError:
+                return str(v)
+        return v
 
     class Config:
         from_attributes = True

@@ -4,7 +4,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
 from app.models.user import User, SystemRole, UserStatus
-from app.models.org import Organization, OrgType
+from app.models.org import Organization, OrgType, OrgStatus
 from app.models.member import Member, OrgRole
 from app.models.region import Region
 from app.models.token_revocation import TokenRevocation
@@ -72,12 +72,13 @@ class AuthService:
 
         await db.flush()  # Get target_user.id without committing
 
-        # Create Org with user as owner (org is ready, but user is inactive until activation)
+        # Create Org with user as owner (org is PENDING until user activates account)
         org = Organization(
             name=user_in.org_name,
             slug=user_in.org_slug,
             org_type=OrgType.TEAM,
             owner_user_id=target_user.id,
+            status=OrgStatus.PENDING,
         )
         db.add(org)
         await db.flush()  # Get org.id without committing
@@ -120,6 +121,14 @@ class AuthService:
 
         user.is_active = True
         user.status = UserStatus.ACTIVE  # User has Org from registration
+
+        # Activate the org that was created during registration
+        from sqlalchemy import update
+        await db.execute(
+            update(Organization)
+            .where(Organization.owner_user_id == user.id, Organization.status == OrgStatus.PENDING)
+            .values(status=OrgStatus.ACTIVE)
+        )
 
         await db.commit()
 
@@ -277,6 +286,9 @@ class AuthService:
         org = org_result.scalars().first()
         if not org:
             raise ValueError("Organization not found")
+
+        if org.status in (OrgStatus.PENDING, OrgStatus.DISABLED):
+            raise PermissionError("Organization is not accessible")
 
         # Verify membership
         effective_org_role = OrgRole.NONE

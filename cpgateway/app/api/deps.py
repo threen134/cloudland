@@ -6,7 +6,7 @@ from app.core.security import verify_access_token
 from app.core.config import settings
 from app.core.database import get_db
 from app.models.user import User, SystemRole
-from app.models.org import Organization
+from app.models.org import Organization, OrgStatus
 
 oauth2_scheme = OAuth2PasswordBearer(
     tokenUrl=f"{settings.API_V1_STR}/auth/token/form"
@@ -77,4 +77,15 @@ async def get_current_org(
     org = result.scalars().first()
     if not org:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Organization not found")
+    if org.status in (OrgStatus.PENDING, OrgStatus.DISABLED):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Organization is not accessible")
+    return org
+
+
+async def get_current_active_org(
+    org: Organization = Depends(get_current_org),
+) -> Organization:
+    """在 get_current_org 基础上额外拒绝 SUSPENDED 状态（写操作专用）。"""
+    if org.status == OrgStatus.SUSPENDED:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Organization is suspended")
     return org

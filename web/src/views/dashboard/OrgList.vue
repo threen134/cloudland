@@ -7,7 +7,10 @@ import { useAuthStore } from '../../stores/auth'
 import { useQuota } from '../../composables/useQuota'
 import { useToast } from '../../composables/useToast'
 import { useCopyId } from '../../composables/useCopyId'
-import { Plus, Building2, Trash2, Edit2, User, Search, X, Gauge, RefreshCw, Check, Copy } from 'lucide-vue-next'
+import { 
+    Plus, Building2, Trash2, Edit2, User, Search, X, Gauge, RefreshCw, Check, Copy,
+    CheckCircle, AlertCircle, ShieldAlert, PauseCircle, PlayCircle 
+} from 'lucide-vue-next'
 
 const authStore = useAuthStore()
 const isSuperuser = computed(() => authStore.user?.is_superuser === true)
@@ -197,6 +200,16 @@ const handleSaveQuota = async (regionUuid: string) => {
     }
 }
 
+const handleUpdateStatus = async (orgId: string, status: number) => {
+    try {
+        await orgsApi.updateOrgStatus(orgId, status)
+        await fetchOrgs()
+        toast.success(t('messages.updateSuccess'))
+    } catch (err: any) {
+        toast.error(err.response?.data?.error_message || err.message || t('messages.error'))
+    }
+}
+
 onMounted(fetchOrgs)
 </script>
 
@@ -230,7 +243,8 @@ onMounted(fetchOrgs)
           <tr>
             <th>{{ $t('dashboard.table.nameId') }}</th>
             <th>{{ $t('dashboard.table.description') }}</th>
-            <th>{{ $t('dashboard.table.owner') }} ID</th>
+            <th>{{ $t('dashboard.table.status') }}</th>
+            <th>{{ $t('dashboard.table.owner') }}</th>
             <th>{{ $t('dashboard.table.created') }}</th>
             <th>{{ $t('dashboard.table.actions') }}</th>
           </tr>
@@ -274,7 +288,33 @@ onMounted(fetchOrgs)
             </td>
             <td>{{ org.description || '-' }}</td>
             <td>
-              <div class="owner-cell" v-if="org.owner_uuid">
+              <div class="status-cell" :class="'status-' + (org.status || 0)">
+                <CheckCircle v-if="org.status === 1" :size="14" />
+                <PauseCircle v-else-if="org.status === 2" :size="14" />
+                <ShieldAlert v-else-if="org.status === 3" :size="14" />
+                <AlertCircle v-else :size="14" />
+                <span>
+                  {{ 
+                    org.status === 0 ? $t('dashboard.org.status.pending') :
+                    org.status === 1 ? $t('dashboard.org.status.active') :
+                    org.status === 2 ? $t('dashboard.org.status.suspended') :
+                    org.status === 3 ? $t('dashboard.org.status.disabled') :
+                    $t('dashboard.org.status.pending')
+                  }}
+                </span>
+              </div>
+            </td>
+            <td>
+              <div class="owner-cell" v-if="org.owner_name || org.owner_email">
+                <div class="owner-info">
+                  <div class="owner-name">
+                    <User :size="12" />
+                    <span>{{ org.owner_name }}</span>
+                  </div>
+                  <div class="owner-email" v-if="org.owner_email">{{ org.owner_email }}</div>
+                </div>
+              </div>
+              <div class="owner-cell" v-else-if="org.owner_uuid">
                 <User :size="12" />
                 <div class="resource-id-row">
                   <span class="resource-id" :title="org.owner_uuid">{{ org.owner_uuid.slice(0, 8) }}...</span>
@@ -295,6 +335,18 @@ onMounted(fetchOrgs)
                 <button class="btn btn-ghost btn-sm" :title="$t('quota.manage')" @click="openQuotaModal(org)">
                   <Gauge :size="14" />
                 </button>
+                <!-- Admin Status Actions -->
+                <template v-if="isSuperuser">
+                  <button v-if="org.status !== 1" class="btn btn-ghost btn-sm text-success" :title="$t('actions.enable')" @click="handleUpdateStatus(org.uuid, 1)">
+                    <PlayCircle :size="14" />
+                  </button>
+                  <button v-if="org.status === 1" class="btn btn-ghost btn-sm text-warning" :title="$t('dashboard.org.status.suspended')" @click="handleUpdateStatus(org.uuid, 2)">
+                    <PauseCircle :size="14" />
+                  </button>
+                  <button v-if="org.status !== 3" class="btn btn-ghost btn-sm text-error" :title="$t('actions.disable')" @click="handleUpdateStatus(org.uuid, 3)">
+                    <ShieldAlert :size="14" />
+                  </button>
+                </template>
                 <button class="btn btn-ghost btn-sm text-error" :title="$t('actions.delete')" @click="handleDeleteClick(org)">
                   <Trash2 :size="14" />
                 </button>
@@ -582,6 +634,26 @@ onMounted(fetchOrgs)
   font-family: var(--font-family-mono);
   font-size: var(--font-size-xs);
   color: var(--text-secondary);
+}
+
+.owner-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.owner-name {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--text-primary);
+  font-weight: var(--font-weight-medium);
+}
+
+.owner-email {
+  color: var(--text-tertiary);
+  font-size: var(--font-size-tiny);
+  padding-left: 16px;
 }
 
 .actions {

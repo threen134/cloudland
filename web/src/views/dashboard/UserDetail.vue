@@ -51,7 +51,9 @@ const goBack = () => {
 }
 
 const getStatusClass = (status: string) => {
-    return status === 'active' ? 'status-success' : 'status-warning'
+    if (status === 'active') return 'status-success'
+    if (status === 'disabled') return 'status-danger'
+    return 'status-warning'
 }
 
 onMounted(fetchUser)
@@ -85,7 +87,7 @@ onMounted(fetchUser)
                     <div class="subtitle">
                         <span class="id-text">{{ user.uuid }}</span>
                         <span :class="['status-badge', getStatusClass(user.status || 'active')]">
-                            {{ user.status || 'active' }}
+                            {{ $t('userStatus.' + (user.status || 'active')) }}
                         </span>
                     </div>
                 </div>

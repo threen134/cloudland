@@ -5,7 +5,10 @@ import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { orgsApi, ORG_ROLES, type Organization, type OrgMember, type OrgInvitation } from '../../api/orgs'
 import { type OrgResourceQuotaUpdate } from '../../api/quota'
-import { ArrowLeft, Building2, Users, Trash2, Shield, Crown, X, Mail, Clock, XCircle, Gauge, ChevronDown } from 'lucide-vue-next'
+import { 
+    ArrowLeft, Building2, Users, Trash2, Shield, Crown, X, Mail, Clock, XCircle, Gauge, ChevronDown,
+    CheckCircle, AlertCircle, ShieldAlert, PauseCircle 
+} from 'lucide-vue-next'
 import { useAuthStore } from '../../stores/auth'
 import { useQuota } from '../../composables/useQuota'
 import { useToast } from '../../composables/useToast'
@@ -332,6 +335,24 @@ onUnmounted(() => {
             <span class="detail-value">{{ org.member_count ?? members.length }}</span>
           </div>
           <div class="detail-item">
+            <span class="detail-label">{{ $t('dashboard.table.status') }}</span>
+            <div class="status-cell" :class="'status-' + (org.status || 0)">
+                <CheckCircle v-if="org.status === 1" :size="14" />
+                <PauseCircle v-else-if="org.status === 2" :size="14" />
+                <ShieldAlert v-else-if="org.status === 3" :size="14" />
+                <AlertCircle v-else :size="14" />
+                <span>
+                  {{ 
+                    org.status === 0 ? $t('dashboard.org.status.pending') :
+                    org.status === 1 ? $t('dashboard.org.status.active') :
+                    org.status === 2 ? $t('dashboard.org.status.suspended') :
+                    org.status === 3 ? $t('dashboard.org.status.disabled') :
+                    $t('dashboard.org.status.pending')
+                  }}
+                </span>
+            </div>
+          </div>
+          <div class="detail-item">
             <span class="detail-label">{{ $t('dashboard.table.created') }}</span>
             <span class="detail-value">{{ org.created_at || '-' }}</span>
           </div>
@@ -355,7 +376,7 @@ onUnmounted(() => {
         </div>
         <div v-else-if="quotaError" class="text-center" style="padding: 24px;">
           <p class="text-error">{{ quotaError }}</p>
-          <button class="btn btn-secondary btn-sm" @click="fetchQuota">{{ $t('actions.retry') }}</button>
+          <button class="btn btn-secondary btn-sm" @click="fetchQuota(orgId)">{{ $t('actions.retry') }}</button>
         </div>
         <div v-else-if="quotaSummary && quotaSummary.regions.length > 0">
           <div v-for="region in quotaSummary.regions" :key="region.region_name" class="quota-region-card">
@@ -502,7 +523,7 @@ onUnmounted(() => {
           </div>
           <div v-else-if="quotaError" class="text-center" style="padding: 24px;">
             <p class="text-error">{{ quotaError }}</p>
-            <button class="btn btn-secondary btn-sm" @click="fetchQuota">{{ $t('actions.retry') }}</button>
+            <button class="btn btn-secondary btn-sm" @click="fetchQuota(orgId)">{{ $t('actions.retry') }}</button>
           </div>
           <div v-else-if="quotaSummary && quotaSummary.regions.length > 0">
             <div v-for="region in quotaSummary.regions" :key="region.region_name" class="quota-region-card">

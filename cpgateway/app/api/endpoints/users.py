@@ -63,7 +63,7 @@ async def enable_user(
     user.status = UserStatus.ACTIVE if has_membership else UserStatus.DORMANT
     user.is_active = True
     await db.commit()
-    return {"status": "ok", "new_status": user.status}
+    return {"status": "ok", "new_status": UserStatus(user.status).name.lower()}
 
 
 @router.put("/{user_uuid}/disable")

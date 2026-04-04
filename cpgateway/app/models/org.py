@@ -11,6 +11,13 @@ class OrgType(IntEnum):
     SYSTEM = 2
 
 
+class OrgStatus(IntEnum):
+    PENDING   = 0  # 待激活（用户注册后未激活账号）
+    ACTIVE    = 1  # 正常运营
+    SUSPENDED = 2  # 暂停（资源保留，禁止写操作）
+    DISABLED  = 3  # 禁用（禁止登录和任何访问）
+
+
 class Organization(Base):
     """
     全局组织模型 (Organization)
@@ -31,6 +38,7 @@ class Organization(Base):
     org_type = Column(Integer, default=OrgType.TEAM, nullable=False)
     owner_user_id = Column(BigInteger, ForeignKey("users.id"), nullable=False)
     default_sg = Column(BigInteger, default=0)
+    status = Column(Integer, default=OrgStatus.PENDING, nullable=False)
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())

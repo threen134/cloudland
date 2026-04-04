@@ -494,6 +494,22 @@ button:disabled {
   color: var(--primary-color);
 }
 
+/* Organization Status Styles */
+.status-cell {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-medium);
+}
+
+.status-0 { background: var(--warning-light); color: var(--warning-dark); }
+.status-1 { background: var(--success-light); color: var(--success-dark); }
+.status-2 { background: var(--error-light); color: var(--error-dark); }
+.status-3 { background: var(--gray-100); color: var(--gray-600); }
+
 /* ============================  
    TABLES
    ============================ */

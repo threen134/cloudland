@@ -6,7 +6,7 @@ from sqlalchemy import func
 from typing import List
 
 from app.core.database import get_db, AsyncSessionLocal
-from app.api.deps import get_current_active_user, get_current_org
+from app.api.deps import get_current_active_user, get_current_org, get_current_active_org
 from app.models.user import User
 from app.models.org import Organization
 from app.models.notification import NotificationChannel
@@ -50,7 +50,7 @@ async def create_channel(
     channel_in: ChannelCreate,
     background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
-    current_org: Organization = Depends(get_current_org),
+    current_org: Organization = Depends(get_current_active_org),
 ):
     """创建通知渠道，创建后异步推送到所有 Region"""
     channel = NotificationChannel(
@@ -89,7 +89,7 @@ async def update_channel(
     channel_in: ChannelUpdate,
     background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
-    current_org: Organization = Depends(get_current_org),
+    current_org: Organization = Depends(get_current_active_org),
 ):
     """更新通知渠道，更新后异步推送到所有 Region"""
     channel = await _get_org_channel(db, channel_uuid, current_org.id)
@@ -113,7 +113,7 @@ async def delete_channel(
     channel_uuid: str,
     background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
-    current_org: Organization = Depends(get_current_org),
+    current_org: Organization = Depends(get_current_active_org),
 ):
     """删除通知渠道，删除后异步推送到所有 Region"""
     channel = await _get_org_channel(db, channel_uuid, current_org.id)

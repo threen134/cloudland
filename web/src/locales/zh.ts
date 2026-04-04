@@ -396,6 +396,12 @@ export default {
             sendInvitation: '发送邀请',
             role: '角色',
             enterName: '请输入组织名称。',
+            status: {
+                pending: '待定',
+                active: '活跃',
+                suspended: '已暂停',
+                disabled: '已禁用',
+            },
         },
         keys: '秘钥管理',
         region: '区域',
@@ -1306,6 +1312,8 @@ export default {
         orgNamePlaceholder: '我的公司',
         orgSlugPlaceholder: 'my-company',
         orgSlugHint: '仅支持小写字母、数字和连字符',
+        usernameStartLetterError: '用户名必须以字母开头',
+        usernameCharsetError: '用户名只能包含字母和数字',
     },
 
     acceptInvitation: {
@@ -1432,7 +1440,9 @@ export default {
         active: '活跃',
         inactive: '禁用',
         pending: '待定',
-        invited: '已邀请'
+        invited: '已邀请',
+        dormant: '待激活',
+        disabled: '已禁用'
     },
     languages: {
         en: 'English',

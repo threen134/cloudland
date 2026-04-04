@@ -397,6 +397,12 @@ export default {
             sendInvitation: 'Send Invitation',
             role: 'Role',
             enterName: 'Please enter an organization name.',
+            status: {
+                pending: 'Pending',
+                active: 'Active',
+                suspended: 'Suspended',
+                disabled: 'Disabled',
+            },
         },
         keys: 'Keys',
         region: 'Region',
@@ -1306,6 +1312,8 @@ export default {
         orgNamePlaceholder: 'My Company',
         orgSlugPlaceholder: 'my-company',
         orgSlugHint: 'Lowercase letters, numbers, and hyphens only',
+        usernameStartLetterError: 'Username must start with a letter',
+        usernameCharsetError: 'Username can only contain letters and numbers',
     },
 
     acceptInvitation: {
@@ -1430,7 +1438,9 @@ export default {
         active: 'Active',
         inactive: 'Inactive',
         pending: 'Pending',
-        invited: 'Invited'
+        invited: 'Invited',
+        dormant: 'Pending Activation',
+        disabled: 'Disabled'
     },
     languages: {
         en: 'English',
