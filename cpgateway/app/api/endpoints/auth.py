@@ -17,12 +17,13 @@ from app.core.logging_config import logger
 from app.models.user import User, SystemRole, UserStatus
 from app.models.org import Organization
 from app.models.member import Member, OrgRole
+from app.models.token_revocation import TokenRevocation
 
 router = APIRouter()
 
 
-def _extract_claims(request: Request) -> dict:
-    """从 Authorization Header 提取并验证 JWT claims。"""
+async def _extract_claims(request: Request, db: AsyncSession) -> dict:
+    """从 Authorization Header 提取并验证 JWT claims，同时检查是否已吊销。"""
     auth_header = request.headers.get("Authorization", "")
     if not auth_header.lower().startswith("bearer "):
         raise HTTPException(status_code=401, detail="Missing or invalid Authorization header")
@@ -30,6 +31,14 @@ def _extract_claims(request: Request) -> dict:
     claims = verify_access_token(token_str)
     if claims is None:
         raise HTTPException(status_code=401, detail="Invalid or expired token")
+    
+    # 检查 Token 是否已吊销
+    jti = claims.get("jti")
+    if jti:
+        result = await db.execute(select(TokenRevocation).where(TokenRevocation.jti == jti))
+        if result.scalars().first():
+            raise HTTPException(status_code=401, detail="Token has been revoked")
+            
     return claims
 
 
@@ -113,7 +122,7 @@ async def switch_org(
     db: AsyncSession = Depends(get_db),
 ):
     """切换 Org（可选同时切换 Region），签发新 Token，吊销旧 Token。"""
-    claims = _extract_claims(request)
+    claims = await _extract_claims(request, db)
     try:
         result = await auth_service.switch_org(
             db, claims, switch_in.org_uuid, region=switch_in.region,
@@ -123,6 +132,9 @@ async def switch_org(
         raise HTTPException(status_code=404, detail=str(e))
     except PermissionError as e:
         raise HTTPException(status_code=403, detail=str(e))
+    except Exception:
+        logger.exception("Switch org error")
+        raise HTTPException(status_code=500, detail="Internal server error during org switch")
 
 
 @router.post("/switch-region", response_model=TokenWithContext)
@@ -132,12 +144,15 @@ async def switch_region(
     db: AsyncSession = Depends(get_db),
 ):
     """切换 Region（Org 不变），签发新 Token，吊销旧 Token。"""
-    claims = _extract_claims(request)
+    claims = await _extract_claims(request, db)
     try:
         result = await auth_service.switch_region(db, claims, switch_in.region)
         return result
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
+    except Exception:
+        logger.exception("Switch region error")
+        raise HTTPException(status_code=500, detail="Internal server error during region switch")
 
 
 # --- Token Revocation ---
@@ -148,7 +163,7 @@ async def revoke_token(
     db: AsyncSession = Depends(get_db),
 ):
     """吊销当前 Token。"""
-    claims = _extract_claims(request)
+    claims = await _extract_claims(request, db)
     await auth_service.revoke_token(db, claims)
 
 
@@ -157,7 +172,7 @@ async def revoke_token(
 @router.get("/me")
 async def get_me(request: Request, db: AsyncSession = Depends(get_db)):
     """获取当前用户信息"""
-    claims = _extract_claims(request)
+    claims = await _extract_claims(request, db)
     user_uuid = claims["sub"]
     result = await db.execute(select(User).where(User.uuid == user_uuid))
     user = result.scalars().first()
@@ -182,7 +197,7 @@ async def get_my_orgs(request: Request, db: AsyncSession = Depends(get_db)):
     """查询当前用户所属的所有 Org（供前端切换 Org 下拉框使用）
     admin/superuser 可以看到所有 Org。
     """
-    claims = _extract_claims(request)
+    claims = await _extract_claims(request, db)
     user_uuid = claims["sub"]
     current_org_uuid = claims.get("org_id", "")
 

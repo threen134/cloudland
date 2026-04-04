@@ -2,6 +2,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Optional, Dict, Any
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from app.models.user import User, SystemRole, UserStatus
 from app.models.org import Organization, OrgType, OrgStatus
@@ -330,11 +331,14 @@ class AuthService:
         # Revoke old token
         if old_jti:
             old_exp = current_claims.get("exp", 0)
-            revocation = TokenRevocation(
-                jti=old_jti,
-                expires_at=datetime.fromtimestamp(old_exp, tz=timezone.utc),
+            await db.execute(
+                pg_insert(TokenRevocation)
+                .values(
+                    jti=old_jti,
+                    expires_at=datetime.fromtimestamp(old_exp, tz=timezone.utc),
+                )
+                .on_conflict_do_nothing(index_elements=["jti"])
             )
-            db.add(revocation)
         await db.commit()
 
         return {
@@ -417,11 +421,14 @@ class AuthService:
         # Revoke old token
         if old_jti:
             old_exp = current_claims.get("exp", 0)
-            revocation = TokenRevocation(
-                jti=old_jti,
-                expires_at=datetime.fromtimestamp(old_exp, tz=timezone.utc),
+            await db.execute(
+                pg_insert(TokenRevocation)
+                .values(
+                    jti=old_jti,
+                    expires_at=datetime.fromtimestamp(old_exp, tz=timezone.utc),
+                )
+                .on_conflict_do_nothing(index_elements=["jti"])
             )
-            db.add(revocation)
         await db.commit()
 
         return {
@@ -440,11 +447,14 @@ class AuthService:
         if not jti:
             return
         exp = current_claims.get("exp", 0)
-        revocation = TokenRevocation(
-            jti=jti,
-            expires_at=datetime.fromtimestamp(exp, tz=timezone.utc),
+        await db.execute(
+            pg_insert(TokenRevocation)
+            .values(
+                jti=jti,
+                expires_at=datetime.fromtimestamp(exp, tz=timezone.utc),
+            )
+            .on_conflict_do_nothing(index_elements=["jti"])
         )
-        db.add(revocation)
         await db.commit()
 
 

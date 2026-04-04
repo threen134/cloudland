@@ -2,6 +2,7 @@ import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import { authApi } from '../api/auth'
 import { setAuthToken, beginTokenSwitch } from '../api/client'
+import { useAuthStore } from './auth'
 
 export interface Organization {
     id: string
@@ -67,6 +68,7 @@ export const useTenantStore = defineStore('tenant', () => {
         isSwitching.value = true
         error.value = null
         const endSwitch = beginTokenSwitch()
+        const auth = useAuthStore()
 
         try {
             const response = await authApi.switchOrg(orgId)
@@ -74,16 +76,27 @@ export const useTenantStore = defineStore('tenant', () => {
             if (newToken) {
                 setAuthToken(newToken)
             }
-            currentOrgId.value = orgId
             localStorage.setItem('cloudland_org_id', orgId)
         } catch (err: any) {
             console.error('Failed to switch org:', err)
             error.value = err.message
-            throw err
-        } finally {
-            endSwitch()
             isSwitching.value = false
+            throw err
         }
+
+        // Fetch fresh user info (role/status might change across orgs)
+        try {
+            await auth.refreshUser()
+        } catch (err) {
+            console.warn('Post-switch user refresh failed:', err)
+        }
+
+        // Release lock after token + user info are both updated
+        endSwitch()
+        isSwitching.value = false
+
+        // Trigger reactivity LAST so RouterView key changes and components re-mount with full new context
+        currentOrgId.value = orgId
     }
 
     // Set current organization (local only, no API call)

@@ -21,6 +21,21 @@ export const useAuthStore = defineStore('auth', () => {
     const isLoading = ref(true)
     const failedAttempts = ref(0)
 
+    const refreshUser = async () => {
+        try {
+            const res = await authApi.getUserInfo()
+            // API returns { message, user: {...} } — extract the nested user object
+            const userData = res.data?.user || res.data
+            user.value = userData
+            const userStorage = localStorage.getItem('cloudland_remember') === '1' ? localStorage : sessionStorage
+            userStorage.setItem('cloudland_user', JSON.stringify(user.value))
+            return userData
+        } catch (err) {
+            console.error('Failed to refresh user info:', err)
+            throw err
+        }
+    }
+
     // Initialize from local/session storage
     const init = () => {
         const storedUser = sessionStorage.getItem('cloudland_user') || localStorage.getItem('cloudland_user')
@@ -31,15 +46,7 @@ export const useAuthStore = defineStore('auth', () => {
             if (token) {
                 setAuthToken(token)
                 // Fetch fresh user info to ensure we have the latest (e.g. username)
-                authApi.getUserInfo().then(res => {
-                    // API returns { message, user: {...} } — extract the nested user object
-                    const userData = res.data?.user || res.data
-                    user.value = userData
-                    const userStorage = localStorage.getItem('cloudland_remember') === '1' ? localStorage : sessionStorage
-                    userStorage.setItem('cloudland_user', JSON.stringify(user.value))
-                }).catch(err => {
-                    console.error('Failed to refresh user info:', err)
-                })
+                refreshUser().catch(() => {})
             }
         }
 
@@ -89,5 +96,5 @@ export const useAuthStore = defineStore('auth', () => {
     // Run init immediately
     init()
 
-    return { user, isLoading, failedAttempts, login, logout }
+    return { user, isLoading, failedAttempts, login, logout, refreshUser }
 })

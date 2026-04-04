@@ -130,11 +130,15 @@ const handleSwitchOrg = async (orgId: string) => {
     try {
         await tenant.switchOrg(orgId)
         activeDropdown.value = null
-        router.go(0)
     } catch (err) {
         console.error('Failed to switch org:', err)
     }
 }
+
+// Global data refresh on context change
+watch([() => tenant.currentOrgId, () => region.currentRegionId], () => {
+    fetchFiringCount()
+})
 
 // Page title based on route
 const pageTitle = computed(() => {
@@ -158,7 +162,6 @@ const pageTitle = computed(() => {
         'load-balancer-detail': t('dashboard.loadBalancers'),
         'ssh-keys': t('dashboard.sshKeys'),
         'ssh-key-detail': t('dashboard.sshKeys'),
-        'settings': t('dashboard.settings'),
         'users': t('dashboard.users'),
         'user-detail': t('dashboard.users'),
         'orgs': t('dashboard.organizations'),
@@ -504,7 +507,7 @@ onUnmounted(() => {
 
       <!-- Page Content -->
       <div class="page-content">
-        <RouterView />
+        <RouterView :key="`${route.name}-${tenant.currentOrgId}-${region.currentRegionId}`" />
       </div>
     </main>
   </div>
