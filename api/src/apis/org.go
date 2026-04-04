@@ -22,7 +22,7 @@ var orgAdmin = &services.OrgAdmin{}
 // Called by CPGateway to keep the local organizations table in sync.
 func SyncOrg(c *gin.Context) {
 	var req struct {
-		ID   int64  `json:"id" binding:"required"`
+		ID   int64  `json:"id" binding:"required,min=1"`
 		Name string `json:"name" binding:"required"`
 		Slug string `json:"slug"`
 	}

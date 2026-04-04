@@ -117,7 +117,9 @@ async def create_org(
     await db.refresh(org)
 
     # 异步同步到所有 Region 的 clapi（不阻塞响应）
-    background_tasks.add_task(org_sync_service.sync_org_to_all_regions, db, org)
+    background_tasks.add_task(
+        org_sync_service.sync_org_to_all_regions, org.id, org.name, org.slug or ""
+    )
 
     return _build_org_response(org, current_user)
 
