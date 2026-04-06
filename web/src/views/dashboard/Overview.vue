@@ -56,13 +56,13 @@ onMounted(async () => {
         const regionUuid = regionStore.currentRegionId || ''
 
         const [instRes, volRes, imgRes, vpcRes, fipRes, quotaRes] = await Promise.all([
-            instancesApi.fetchInstances(),
-            volumesApi.list({ limit: 100 }),
-            imagesApi.fetchImages(),
-            vpcsApi.list({ limit: 100 }),
-            floatingIpsApi.list({ limit: 100 }),
+            instancesApi.fetchInstances().catch(err => { console.warn('Instances fetch failed:', err); return { data: [] } }),
+            volumesApi.list({ limit: 100 }).catch(err => { console.warn('Volumes fetch failed:', err); return { volumes: [] } }),
+            imagesApi.fetchImages().catch(err => { console.warn('Images fetch failed:', err); return { data: [] } }),
+            vpcsApi.list({ limit: 100 }).catch(err => { console.warn('VPCs fetch failed:', err); return { vpcs: [] } }),
+            floatingIpsApi.list({ limit: 100 }).catch(err => { console.warn('FIPs fetch failed:', err); return { floating_ips: [] } }),
             (orgUuid && regionUuid)
-                ? quotaApi.getOrgRegionResourceInfo(orgUuid, regionUuid).catch(() => null)
+                ? quotaApi.getOrgRegionResourceInfo(orgUuid, regionUuid).catch(err => { console.warn('Quota fetch failed:', err); return null })
                 : Promise.resolve(null),
         ])
 

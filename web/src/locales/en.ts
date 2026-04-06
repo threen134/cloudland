@@ -397,6 +397,8 @@ export default {
             sendInvitation: 'Send Invitation',
             role: 'Role',
             enterName: 'Please enter an organization name.',
+            selectOrg: 'Select Organization',
+            noOrgs: 'No organizations',
             status: {
                 pending: 'Pending',
                 active: 'Active',

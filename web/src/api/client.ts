@@ -1,20 +1,29 @@
 import axios from 'axios'
 import type { AxiosError, InternalAxiosRequestConfig, AxiosResponse } from 'axios'
 
-// Token switch lock — suspends concurrent requests until the new token is stored.
-// Usage: call beginTokenSwitch() before the switch API call, call the returned
-// function after setAuthToken() to release all waiting requests.
+let _tokenSwitchCount = 0
 let _tokenSwitchResolve: (() => void) | null = null
 let _tokenSwitchPromise: Promise<void> | null = null
 
 export const beginTokenSwitch = (): (() => void) => {
-    _tokenSwitchPromise = new Promise<void>(resolve => {
-        _tokenSwitchResolve = resolve
-    })
+    _tokenSwitchCount++
+    if (!_tokenSwitchPromise) {
+        _tokenSwitchPromise = new Promise<void>(resolve => {
+            _tokenSwitchResolve = resolve
+        })
+    }
+    
+    let resolved = false
     return () => {
-        _tokenSwitchPromise = null
-        _tokenSwitchResolve?.()
-        _tokenSwitchResolve = null
+        if (resolved) return
+        resolved = true
+        _tokenSwitchCount--
+        if (_tokenSwitchCount <= 0) {
+            _tokenSwitchResolve?.()
+            _tokenSwitchPromise = null
+            _tokenSwitchResolve = null
+            _tokenSwitchCount = 0
+        }
     }
 }
 
@@ -32,8 +41,12 @@ client.interceptors.request.use(
     async (config: InternalAxiosRequestConfig) => {
         // If a token switch is in progress, wait for it to complete before
         // sending any request (except the switch call itself).
-        if (_tokenSwitchPromise && !config.url?.includes('/auth/switch-')) {
-            await _tokenSwitchPromise
+        if (_tokenSwitchPromise && !config.url?.startsWith('/auth/')) {
+            // Safety timeout: never block a request for more than 15 seconds
+            await Promise.race([
+                _tokenSwitchPromise,
+                new Promise<void>(resolve => setTimeout(resolve, 15000))
+            ])
         }
 
         // Add JWT token if available

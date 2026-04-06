@@ -396,6 +396,8 @@ export default {
             sendInvitation: '发送邀请',
             role: '角色',
             enterName: '请输入组织名称。',
+            selectOrg: '选择组织',
+            noOrgs: '未发现组织',
             status: {
                 pending: '待定',
                 active: '活跃',

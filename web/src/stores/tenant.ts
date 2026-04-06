@@ -82,17 +82,21 @@ export const useTenantStore = defineStore('tenant', () => {
             error.value = err.message
             isSwitching.value = false
             throw err
+        } finally {
+            // Release token lock IMMEDIATELY after the token is updated.
+            // This MUST happen before refreshUser() because refreshUser calls
+            // /auth/me which would be blocked by the token switch lock (deadlock).
+            endSwitch()
         }
 
-        // Fetch fresh user info (role/status might change across orgs)
+        // Fetch fresh user info AFTER lock is released (this call goes through
+        // the normal request interceptor and must not be blocked by our own lock)
         try {
             await auth.refreshUser()
         } catch (err) {
             console.warn('Post-switch user refresh failed:', err)
         }
 
-        // Release lock after token + user info are both updated
-        endSwitch()
         isSwitching.value = false
 
         // Trigger reactivity LAST so RouterView key changes and components re-mount with full new context
