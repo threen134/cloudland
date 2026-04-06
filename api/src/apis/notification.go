@@ -20,11 +20,13 @@ import (
 type NotificationAPI struct {
 	admin    *services.NotificationAdmin
 	notifier *services.AlarmNotifier
+	orgAdmin *services.OrgAdmin
 }
 
 var notificationAPI = &NotificationAPI{
 	admin:    &services.NotificationAdmin{},
 	notifier: services.NewAlarmNotifier(),
+	orgAdmin: &services.OrgAdmin{},
 }
 
 // --- 内部通知渠道同步接口（CPGateway 推送，Authorize 中间件校验 X-Forwarded-Secret）---
@@ -303,11 +305,12 @@ func (a *NotificationAPI) GetAlarmDeliveryLogs(c *gin.Context) {
 
 // InternalListAlarmEvents CPGateway 内部调用的告警事件接口
 // @Summary Internal list alarm events
-// @Description Internal endpoint for CPGateway to query alarm events without owner filtering
+// @Description Internal endpoint for CPGateway to query alarm events, filtered by org_uuid when provided
 // @Tags Notification
 // @Accept json
 // @Produce json
 // @Param count_only query string false "If 'true', only return firing event count"
+// @Param org_uuid query string false "Filter by organization UUID"
 // @Param status query string false "Filter by status"
 // @Param page query int false "Page number" default(1)
 // @Param page_size query int false "Page size" default(20)
@@ -317,10 +320,20 @@ func (a *NotificationAPI) GetAlarmDeliveryLogs(c *gin.Context) {
 func (a *NotificationAPI) InternalListAlarmEvents(c *gin.Context) {
 	ctx := c.Request.Context()
 	countOnly := c.Query("count_only")
+	orgUUID := c.Query("org_uuid")
+
+	owner := ""
+	if orgUUID != "" {
+		org, err := a.orgAdmin.GetOrgByUUID(ctx, orgUUID)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid org_uuid"})
+			return
+		}
+		owner = strconv.FormatInt(org.ID, 10)
+	}
 
 	if countOnly == "true" {
-		// 内部接口：全局统计，不按 owner 过滤（CPGateway alarm_summary 使用）
-		count, err := a.admin.CountFiringEvents(ctx, "")
+		count, err := a.admin.CountFiringEvents(ctx, owner)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
@@ -329,7 +342,6 @@ func (a *NotificationAPI) InternalListAlarmEvents(c *gin.Context) {
 		return
 	}
 
-	// 内部接口不过滤 owner，返回全量数据供 CPGateway 聚合
 	statusFilter := c.Query("status")
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
 	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "20"))
@@ -339,7 +351,7 @@ func (a *NotificationAPI) InternalListAlarmEvents(c *gin.Context) {
 	if pageSize < 1 || pageSize > 100 {
 		pageSize = 20
 	}
-	total, events, err := a.admin.ListAlarmEvents(ctx, "", statusFilter, page, pageSize)
+	total, events, err := a.admin.ListAlarmEvents(ctx, owner, statusFilter, page, pageSize)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return

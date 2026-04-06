@@ -48,6 +48,19 @@ async def get_current_active_user(
     return current_user
 
 
+async def get_org_uuid_from_token(
+    token: str = Depends(oauth2_scheme),
+) -> str:
+    """从 JWT claims 直接提取 org UUID，不做 DB 查询。适用于只需要 org UUID 而不需要完整 org 对象的场景。"""
+    claims = verify_access_token(token)
+    if claims is None:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Could not validate credentials")
+    org_uuid = claims.get("org_id")
+    if not org_uuid:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No active organization in token")
+    return org_uuid
+
+
 async def get_current_superuser(
     current_user: User = Depends(get_current_active_user),
 ) -> User:

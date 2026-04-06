@@ -4,7 +4,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
 from app.core.database import get_db
-from app.api.deps import get_current_active_user
+from app.api.deps import get_current_active_user, get_org_uuid_from_token
 from app.models.user import User
 from app.models.region import Region
 from app.schemas.notification import AlarmSummaryResponse, AlarmSummaryRegion
@@ -17,9 +17,10 @@ router = APIRouter(tags=["Alarm"])
 async def get_alarm_summary(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
+    org_uuid: str = Depends(get_org_uuid_from_token),
 ):
     """
-    全局告警汇总：并发查询所有活跃 Region 的 firing 告警数。
+    全局告警汇总：并发查询所有活跃 Region 中当前 Org 的 firing 告警数。
     单个 Region 超时（2s）时返回 firing_count=-1，前端可展示"不可达"。
     """
     result = await db.execute(
@@ -34,7 +35,7 @@ async def get_alarm_summary(
         return AlarmSummaryResponse(regions=[], total_firing=0)
 
     tasks = [
-        notification_sync_service.get_alarm_firing_count(region)
+        notification_sync_service.get_alarm_firing_count(region, org_uuid)
         for region in regions
     ]
     try:

@@ -146,8 +146,8 @@ class NotificationSyncService:
         raise last_exc
 
     @staticmethod
-    async def get_alarm_firing_count(region: Region) -> int:
-        """查询单个 Region 的 firing 告警数"""
+    async def get_alarm_firing_count(region: Region, org_uuid: str) -> int:
+        """查询单个 Region 指定 Org 的 firing 告警数"""
         base_url = region.internal_endpoint.rstrip("/")
         url = f"{base_url}/api/v1/internal/alarm/events"
 
@@ -155,7 +155,7 @@ class NotificationSyncService:
             async with httpx.AsyncClient(verify=False, timeout=2.0) as client:
                 response = await client.get(
                     url,
-                    params={"status": "firing", "count_only": "true"},
+                    params={"status": "firing", "count_only": "true", "org_uuid": org_uuid},
                     headers={
                         "X-Forwarded-Secret": region.internal_secret,
                         "X-User-ID": "0",
