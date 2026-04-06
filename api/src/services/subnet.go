@@ -754,14 +754,25 @@ func (a *SubnetAdmin) List(ctx context.Context, offset, limit int64, order, quer
 		order = "created_at"
 	}
 
-	queryBuilder, args := memberShip.GetOrgFilter()
+	// Build owner/visibility filter:
+	// SystemAdmin with AllOrgs: no filter (see everything)
+	// Regular users: own org subnets + all public/private subnets (shared infrastructure)
+	var ownerFilter string
+	var ownerArgs []interface{}
+	if memberShip.AllOrgs && memberShip.IsSystemAdmin() {
+		ownerFilter = ""
+		ownerArgs = nil
+	} else {
+		ownerFilter = "owner = ? OR type IN ('public', 'private')"
+		ownerArgs = []interface{}{memberShip.OrgID}
+	}
 	subnets = []*model.Subnet{}
-	if err = db.Model(&model.Subnet{}).Where(queryBuilder, args...).Where(query).Where(intQuery).Count(&total).Error; err != nil {
+	if err = db.Model(&model.Subnet{}).Where(ownerFilter, ownerArgs...).Where(query).Where(intQuery).Count(&total).Error; err != nil {
 		err = NewCLError(ErrSQLSyntaxError, "Failed to count subnets", err)
 		return
 	}
 	db = dbs.Sortby(db.Offset(offset).Limit(limit), order)
-	if err = db.Preload("Group").Preload("Router").Where(queryBuilder, args...).Where(query).Where(intQuery).Find(&subnets).Error; err != nil {
+	if err = db.Preload("Group").Preload("Router").Where(ownerFilter, ownerArgs...).Where(query).Where(intQuery).Find(&subnets).Error; err != nil {
 		err = NewCLError(ErrSQLSyntaxError, "Database failed to query subnets", err)
 		return
 	}
