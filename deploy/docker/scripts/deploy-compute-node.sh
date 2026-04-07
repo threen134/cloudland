@@ -232,7 +232,14 @@ chmod 600 /root/.ssh/authorized_keys 2>/dev/null || true
 # ============ 5. 编译安装 SCI 和 CloudLand ============
 log "5/15 - 编译安装 SCI 和 CloudLand 二进制"
 
-apt-get install -y build-essential autoconf automake libtool make g++ libssl-dev libjsoncpp-dev
+apt-get install -y build-essential autoconf automake libtool make g++ libssl-dev libjsoncpp-dev git
+
+if [ ! -d "$CLOUDLAND_DIR/sci" ]; then
+    log "未检测到完整的源码 (缺少 sci 目录)，开始自动拉取..."
+    git clone https://github.com/threen134/cloudland.git /tmp/cloudland
+    cp -r /tmp/cloudland/* "$CLOUDLAND_DIR/"
+    rm -rf /tmp/cloudland
+fi
 
 cd "$CLOUDLAND_DIR/sci"
 ./configure && make && make install
