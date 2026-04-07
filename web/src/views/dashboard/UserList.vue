@@ -229,6 +229,8 @@ onMounted(fetchUsers)
         <label class="search-box">
           <Search :size="16" class="search-icon" />
           <input 
+            id="searchQuery"
+            name="searchQuery"
             type="text" 
             v-model="searchQuery"
             :placeholder="$t('actions.search') + '...'" 
@@ -331,15 +333,17 @@ onMounted(fetchUsers)
             <label class="form-label" for="user_email">{{ $t('dashboard.table.email') }}</label>
             <input
               id="user_email"
+              name="email"
               v-model="inviteForm.email"
               type="email"
               class="form-input"
               :placeholder="$t('dashboard.table.email')"
+              autocomplete="email"
             />
           </div>
           <div class="form-group">
             <label class="form-label" for="user_role">{{ $t('dashboard.table.role') }}</label>
-            <select id="user_role" v-model="inviteForm.org_role" class="form-input" :disabled="inviteForm.is_superuser">
+            <select id="user_role" name="role" v-model="inviteForm.org_role" class="form-input" :disabled="inviteForm.is_superuser">
               <option :value="1">{{ $t('roles.reader') }}</option>
               <option :value="2">{{ $t('roles.writer') }}</option>
               <option :value="3">{{ $t('roles.admin') }}</option>
@@ -380,25 +384,29 @@ onMounted(fetchUsers)
             <label class="form-label" for="edit_user_name">{{ $t('dashboard.table.userName') }}</label>
             <input 
               id="edit_user_name"
+              name="username"
               v-model="editUserForm.username" 
               type="text" 
               class="form-input" 
               :placeholder="$t('dashboard.table.userName')" 
+              autocomplete="username"
             />
           </div>
           <div class="form-group">
             <label class="form-label" for="edit_user_email">{{ $t('dashboard.table.email') }}</label>
             <input 
               id="edit_user_email"
+              name="email"
               v-model="editUserForm.email" 
               type="email" 
               class="form-input" 
               :placeholder="$t('dashboard.table.email')" 
+              autocomplete="email"
             />
           </div>
           <div class="form-group">
             <label class="form-label" for="edit_user_role">{{ $t('dashboard.table.role') }}</label>
-            <select id="edit_user_role" v-model="editUserForm.role" class="form-input">
+            <select id="edit_user_role" name="role" v-model="editUserForm.role" class="form-input">
               <option value="user">{{ $t('roles.member') }}</option>
               <option value="admin">{{ $t('roles.admin') }}</option>
             </select>

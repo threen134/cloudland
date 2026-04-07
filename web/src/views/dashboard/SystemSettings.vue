@@ -282,24 +282,24 @@ onUnmounted(() => {
                                 <div class="form-control">
                                     <div v-if="setting.value_type === 'boolean'" class="bool-wrap">
                                         <label class="custom-toggle sm">
-                                            <input :id="setting.key" type="checkbox" :disabled="!enabledChannels.includes(activeChannelTab)" :checked="!!editValues[setting.key]" @change="editValues[setting.key] = ($event.target as HTMLInputElement).checked" />
+                                            <input :id="setting.key" :name="setting.key" type="checkbox" :disabled="!enabledChannels.includes(activeChannelTab)" :checked="!!editValues[setting.key]" @change="editValues[setting.key] = ($event.target as HTMLInputElement).checked" />
                                             <span class="toggle-slider"></span>
                                         </label>
                                         <span class="bool-status-text">{{ !!editValues[setting.key] ? $t('common.on') : $t('common.off') }}</span>
                                     </div>
                                     <div v-else-if="setting.value_type === 'number'" class="input-wrap">
-                                        <input :id="setting.key" type="number" class="form-input" :disabled="!enabledChannels.includes(activeChannelTab)" v-model.number="editValues[setting.key]" />
+                                        <input :id="setting.key" :name="setting.key" type="number" class="form-input" :disabled="!enabledChannels.includes(activeChannelTab)" v-model.number="editValues[setting.key]" />
                                     </div>
                                     <div v-else-if="setting.value_type === 'secret'" class="input-wrap">
-                                        <input :id="setting.key" type="password" class="form-input" :disabled="!enabledChannels.includes(activeChannelTab)" v-model="editValues[setting.key]" :placeholder="$t('settings.secretPlaceholder')" autocomplete="new-password" />
+                                        <input :id="setting.key" :name="setting.key" type="password" class="form-input" :disabled="!enabledChannels.includes(activeChannelTab)" v-model="editValues[setting.key]" :placeholder="$t('settings.secretPlaceholder')" autocomplete="new-password" />
                                         <Shield class="icon-inner" :size="16" />
                                     </div>
                                     <div v-else-if="setting.value_type === 'json'" class="input-wrap">
-                                        <textarea :id="setting.key" class="form-input code-area" :disabled="!enabledChannels.includes(activeChannelTab)" v-model="editValues[setting.key]" rows="4" spellcheck="false" />
+                                        <textarea :id="setting.key" :name="setting.key" class="form-input code-area" :disabled="!enabledChannels.includes(activeChannelTab)" v-model="editValues[setting.key]" rows="4" spellcheck="false" />
                                         <div class="type-tag">JSON</div>
                                     </div>
                                     <div v-else class="input-wrap">
-                                        <input :id="setting.key" type="text" class="form-input" :disabled="!enabledChannels.includes(activeChannelTab)" v-model="editValues[setting.key]" />
+                                        <input :id="setting.key" :name="setting.key" type="text" class="form-input" :disabled="!enabledChannels.includes(activeChannelTab)" v-model="editValues[setting.key]" />
                                     </div>
                                 </div>
                             </div>
@@ -335,24 +335,24 @@ onUnmounted(() => {
                             <div class="form-control">
                                 <div v-if="setting.value_type === 'boolean'" class="bool-wrap">
                                     <label class="custom-toggle sm">
-                                        <input :id="setting.key" type="checkbox" :checked="!!editValues[setting.key]" @change="editValues[setting.key] = ($event.target as HTMLInputElement).checked" />
+                                        <input :id="setting.key" :name="setting.key" type="checkbox" :checked="!!editValues[setting.key]" @change="editValues[setting.key] = ($event.target as HTMLInputElement).checked" />
                                         <span class="toggle-slider"></span>
                                     </label>
                                     <span class="bool-status-text">{{ !!editValues[setting.key] ? $t('common.on') : $t('common.off') }}</span>
                                 </div>
                                 <div v-else-if="setting.value_type === 'number'" class="input-wrap">
-                                    <input :id="setting.key" type="number" class="form-input" v-model.number="editValues[setting.key]" />
+                                    <input :id="setting.key" :name="setting.key" type="number" class="form-input" v-model.number="editValues[setting.key]" />
                                 </div>
                                 <div v-else-if="setting.value_type === 'secret'" class="input-wrap">
-                                    <input :id="setting.key" type="password" class="form-input" v-model="editValues[setting.key]" :placeholder="$t('settings.secretPlaceholder')" autocomplete="new-password" />
+                                    <input :id="setting.key" :name="setting.key" type="password" class="form-input" v-model="editValues[setting.key]" :placeholder="$t('settings.secretPlaceholder')" autocomplete="new-password" />
                                     <Shield class="icon-inner" :size="16" />
                                 </div>
                                 <div v-else-if="setting.value_type === 'json'" class="input-wrap">
-                                    <textarea :id="setting.key" class="form-input code-area" v-model="editValues[setting.key]" rows="6" spellcheck="false" />
+                                    <textarea :id="setting.key" :name="setting.key" class="form-input code-area" v-model="editValues[setting.key]" rows="6" spellcheck="false" />
                                     <div class="type-tag">JSON</div>
                                 </div>
                                 <div v-else class="input-wrap">
-                                    <input :id="setting.key" type="text" class="form-input" v-model="editValues[setting.key]" />
+                                    <input :id="setting.key" :name="setting.key" type="text" class="form-input" v-model="editValues[setting.key]" />
                                 </div>
                             </div>
                         </div>

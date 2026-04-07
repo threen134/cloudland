@@ -5,6 +5,16 @@ let _tokenSwitchCount = 0
 let _tokenSwitchResolve: (() => void) | null = null
 let _tokenSwitchPromise: Promise<void> | null = null
 
+// Track when the last token switch completed so the 401 handler can
+// distinguish "revoked old token" from "genuinely expired session".
+let _lastTokenSwitchAt = 0
+
+/** Returns true if a token switch is active or finished within the last 5 s. */
+export const isTokenSwitchRecent = (): boolean => {
+    if (_tokenSwitchCount > 0) return true
+    return Date.now() - _lastTokenSwitchAt < 5000
+}
+
 export const beginTokenSwitch = (): (() => void) => {
     _tokenSwitchCount++
     if (!_tokenSwitchPromise) {
@@ -23,6 +33,7 @@ export const beginTokenSwitch = (): (() => void) => {
             _tokenSwitchPromise = null
             _tokenSwitchResolve = null
             _tokenSwitchCount = 0
+            _lastTokenSwitchAt = Date.now()
         }
     }
 }
@@ -75,6 +86,19 @@ client.interceptors.request.use(
     }
 )
 
+const getErrorDetail = (error: AxiosError): string =>
+    (error.response?.data as any)?.detail || 'unknown'
+
+const forceLogout = (reason: string, url?: string) => {
+    console.error(`[client] auth failure on ${url ?? '?'} — ${reason}. Clearing session and redirecting to login.`)
+    clearAuthToken()
+    localStorage.removeItem('cloudland_user')
+    sessionStorage.removeItem('cloudland_user')
+    if (!window.location.pathname.includes('/login')) {
+        window.location.href = '/login'
+    }
+}
+
 // Response interceptor - handle errors globally
 client.interceptors.response.use(
     (response: AxiosResponse) => {
@@ -98,36 +122,38 @@ client.interceptors.response.use(
                     }
                     break
                 }
-                case 401:
-
-
+                case 401: {
+                    const errorDetail = getErrorDetail(error)
                     // Check if 401 is caused by region backend failure (not a real auth issue)
-                    const errorDetail = (error.response?.data as any)?.detail || ''
                     if (typeof errorDetail === 'string' && errorDetail.toLowerCase().includes('region')) {
                         console.warn('Region backend auth failed:', errorDetail)
                         break
                     }
 
-                    // Unauthorized - clear auth and redirect to login
-                    clearAuthToken()
-                    localStorage.removeItem('cloudland_user')
-                    sessionStorage.removeItem('cloudland_user')
-                    // Only redirect if not already on login page
-                    if (!window.location.pathname.includes('/login')) {
-                        window.location.href = '/login'
-                    }
-                    break
-                case 403: {
-                    // Check if 403 is caused by expired/invalid credentials
-                    const detail403 = (error.response?.data as any)?.detail || ''
-                    if (typeof detail403 === 'string' && detail403.toLowerCase().includes('credentials')) {
-                        // Token expired or invalid - clear auth and redirect to login
-                        clearAuthToken()
-                        localStorage.removeItem('cloudland_user')
-                        sessionStorage.removeItem('cloudland_user')
-                        if (!window.location.pathname.includes('/login')) {
-                            window.location.href = '/login'
+                    // If a token switch is in progress or just finished, a 401
+                    // likely means the request used a stale/revoked token.
+                    // Retry once with the current (fresh) token instead of
+                    // nuking the session.
+                    if (isTokenSwitchRecent()) {
+                        const freshToken = getToken()
+                        const originalConfig = error.config
+                        if (freshToken && originalConfig && !(originalConfig as any).__retried) {
+                            (originalConfig as any).__retried = true
+                            originalConfig.headers.Authorization = `Bearer ${freshToken}`
+                            console.warn('401 during token switch — retrying with fresh token')
+                            return client.request(originalConfig)
                         }
+                        // If retry already happened or no token, fall through
+                    }
+
+                    forceLogout(`401 detail: ${errorDetail}`, error.config?.url)
+                    break
+                }
+                case 403: {
+                    const detail403 = getErrorDetail(error)
+                    // Token expired or invalid — credentials mismatch signals session is no longer valid
+                    if (typeof detail403 === 'string' && detail403.toLowerCase().includes('credentials')) {
+                        forceLogout(`403 detail: ${detail403}`, error.config?.url)
                     } else {
                         console.error('Access forbidden:', detail403)
                     }

@@ -155,6 +155,8 @@ onMounted(fetchKeys)
         <label class="search-box">
           <Search :size="16" class="search-icon" />
           <input 
+            id="searchQuery"
+            name="searchQuery"
             type="text" 
             v-model="searchQuery"
             :placeholder="$t('actions.search') + '...'" 
@@ -262,6 +264,7 @@ onMounted(fetchKeys)
             <label class="form-label" for="name">{{ $t('dashboard.forms.name') }}</label>
             <input 
               id="name"
+              name="name"
               v-model="newKeyForm.name" 
               type="text" 
               :class="['form-input', { 'input-error': !isNameValid }]" 
@@ -277,6 +280,7 @@ onMounted(fetchKeys)
             <label class="form-label" for="public_key">{{ $t('dashboard.forms.publicKey') }}</label>
             <textarea 
               id="public_key"
+              name="public_key"
               v-model="newKeyForm.public_key" 
               class="form-input" 
               rows="5" 

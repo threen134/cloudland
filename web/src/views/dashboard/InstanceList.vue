@@ -966,6 +966,8 @@ onUnmounted(() => {
         <label class="search-box">
           <Search :size="16" class="search-icon" />
           <input 
+            id="searchQuery"
+            name="searchQuery"
             type="text" 
             v-model="searchQuery"
             :placeholder="t('marketplace.searchPlaceholder')" 
@@ -1244,6 +1246,7 @@ onUnmounted(() => {
                   <label class="form-label" for="hostname">{{ t('dashboard.table.hostname') }} <span class="text-error">*</span></label>
                    <input 
                        id="hostname"
+                       name="hostname"
                        v-model="newInstanceForm.hostname" 
                        type="text" 
                        :class="['form-input', { 'input-error': !isHostnameValid }]"
@@ -1258,7 +1261,7 @@ onUnmounted(() => {
               <div class="form-row">
                   <div class="form-group">
                       <label class="form-label" for="image_id">{{ t('dashboard.forms.image') }} <span class="text-error">*</span></label>
-                      <select id="image_id" v-model="newInstanceForm.image_id" class="form-select">
+                      <select id="image_id" name="image_id" v-model="newInstanceForm.image_id" class="form-select">
                           <option value="" disabled>{{ t('dashboard.forms.placeholder.selectImage') }}</option>
                           <option v-for="img in availableImages" :key="img.id" :value="img.id">
                               {{ img.name }}
@@ -1267,7 +1270,7 @@ onUnmounted(() => {
                   </div>
                   <div class="form-group">
                       <label class="form-label" for="flavor_id">{{ t('dashboard.forms.flavor') }} <span class="text-error">*</span></label>
-                      <select id="flavor_id" v-model="newInstanceForm.flavor_id" class="form-select">
+                      <select id="flavor_id" name="flavor_id" v-model="newInstanceForm.flavor_id" class="form-select">
                           <option value="" disabled>{{ t('dashboard.forms.placeholder.selectFlavor') }}</option>
                           <option v-for="f in availableFlavors" :key="f.name || f.id" :value="f.name || f.id">
                               {{ f.name }} ({{ f.vcpus || f.cpu || 0 }} vCPU, {{ formatMemory(f.ram || f.memory || 0) }} RAM, {{ f.disk || 0 }} GB Disk)
@@ -1279,7 +1282,7 @@ onUnmounted(() => {
               <div class="form-row">
                   <div class="form-group">
                        <label class="form-label">{{ t('dashboard.forms.zone') }}</label>
-                       <select v-model="newInstanceForm.zone" class="form-select">
+                       <select id="zone" name="zone" v-model="newInstanceForm.zone" class="form-select">
                            <option v-for="z in availableZones" :key="z.id" :value="z.name || z.id">
                                {{ z.name || z.id }}
                            </option>
@@ -1289,7 +1292,7 @@ onUnmounted(() => {
                   </div>
                   <div class="form-group">
                        <label class="form-label">{{ t('dashboard.instanceDetail.count') }}</label>
-                      <input v-model.number="newInstanceForm.count" type="number" class="form-input" min="1" max="16" />
+                      <input id="instanceCount" name="instanceCount" v-model.number="newInstanceForm.count" type="number" class="form-input" min="1" max="16" />
                   </div>
               </div>
 
@@ -1334,7 +1337,7 @@ onUnmounted(() => {
                           <div class="form-col">
                                <label class="form-label text-xs">{{ t('dashboard.instanceDetail.rootPassword') }}</label>
                                <div class="password-input-wrapper">
-                                  <input v-model="tempPassword" :type="showCreatePassword ? 'text' : 'password'" class="form-input" :placeholder="t('dashboard.instanceDetail.rootPassword')" />
+                                  <input id="rootPassword" name="rootPassword" v-model="tempPassword" :type="showCreatePassword ? 'text' : 'password'" class="form-input" :placeholder="t('dashboard.instanceDetail.rootPassword')" autocomplete="new-password" />
                                   <button type="button" class="password-toggle-btn" @click="showCreatePassword = !showCreatePassword">
                                       <Eye v-if="!showCreatePassword" :size="14" />
                                       <EyeOff v-else :size="14" />
@@ -1344,7 +1347,7 @@ onUnmounted(() => {
                           <div class="form-col">
                                <label class="form-label text-xs">{{ t('dashboard.instanceDetail.confirmPassword') }}</label>
                                <div class="password-input-wrapper">
-                                  <input v-model="confirmPassword" :type="showCreatePassword ? 'text' : 'password'" class="form-input" :placeholder="t('dashboard.instanceDetail.confirmPassword')" />
+                                  <input id="confirmPassword" name="confirmPassword" v-model="confirmPassword" :type="showCreatePassword ? 'text' : 'password'" class="form-input" :placeholder="t('dashboard.instanceDetail.confirmPassword')" autocomplete="new-password" />
                                   <button type="button" class="password-toggle-btn" @click="showCreatePassword = !showCreatePassword">
                                       <Eye v-if="!showCreatePassword" :size="14" />
                                       <EyeOff v-else :size="14" />
@@ -1568,14 +1571,14 @@ onUnmounted(() => {
             <div class="advanced-content" v-if="newInstanceForm.advanced_expanded">
                 <div class="form-group">
                     <label class="form-label">{{ t('dashboard.instanceDetail.loginPort') }}</label>
-                    <input v-model.number="newInstanceForm.login_port" type="number" class="form-input" :placeholder="t('dashboard.instanceDetail.loginPortPlaceholder')" />
+                    <input id="loginPort" name="loginPort" v-model.number="newInstanceForm.login_port" type="number" class="form-input" :placeholder="t('dashboard.instanceDetail.loginPortPlaceholder')" />
                 </div>
 
                 <div class="form-group">
                     <div class="flex-row">
                         <label class="form-label mb-0">{{ t('dashboard.instanceDetail.nestedVirtualization') }}</label>
                         <label class="switch">
-                            <input type="checkbox" v-model="newInstanceForm.nested_enable">
+                            <input id="nestedVirtualization" name="nestedVirtualization" type="checkbox" v-model="newInstanceForm.nested_enable">
                             <span class="slider"></span>
                         </label>
                     </div>
@@ -1583,7 +1586,7 @@ onUnmounted(() => {
 
                 <div class="form-group">
                     <label class="form-label">{{ t('dashboard.instanceDetail.userDataType') }}</label>
-                    <select v-model="newInstanceForm.userdata_type" class="form-select">
+                    <select id="userdataType" name="userdataType" v-model="newInstanceForm.userdata_type" class="form-select">
                         <option value="plain">{{ t('dashboard.instanceDetail.plain') }}</option>
                         <option value="base64">Base64</option>
                     </select>
@@ -1591,7 +1594,7 @@ onUnmounted(() => {
 
                 <div class="form-group">
                     <label class="form-label">{{ t('dashboard.instanceDetail.userData') }}</label>
-                    <textarea v-model="newInstanceForm.userdata" class="form-textarea" rows="4" :placeholder="t('dashboard.instanceDetail.userDataPlaceholder')"></textarea>
+                    <textarea id="userdata" name="userdata" v-model="newInstanceForm.userdata" class="form-textarea" rows="4" :placeholder="t('dashboard.instanceDetail.userDataPlaceholder')"></textarea>
                 </div>
             </div>
           </div>
@@ -1625,6 +1628,8 @@ onUnmounted(() => {
           <div class="form-group">
             <label class="form-label">{{ t('dashboard.instanceDetail.hostname') }}</label>
             <input 
+              id="renameHostname"
+              name="hostname"
               v-model="renameForm.hostname" 
               type="text" 
               class="form-input" 
@@ -1661,10 +1666,13 @@ onUnmounted(() => {
             <label class="form-label">{{ t('dashboard.instanceDetail.rootPassword') }}</label>
             <div class="password-input-wrapper">
               <input 
+                id="resetPassword"
+                name="password"
                 v-model="resetPasswordForm.password" 
                 :type="showResetPassword ? 'text' : 'password'" 
                 class="form-input" 
                 :placeholder="t('dashboard.instanceDetail.passwordPlaceholder')" 
+                autocomplete="new-password"
               />
               <button class="password-toggle" @click="showResetPassword = !showResetPassword">
                 <Eye v-if="!showResetPassword" :size="16" />
@@ -1675,10 +1683,13 @@ onUnmounted(() => {
           <div class="form-group">
             <label class="form-label">{{ t('dashboard.instanceDetail.confirmPassword') }}</label>
             <input 
+              id="confirmResetPassword"
+              name="confirmPassword"
               v-model="resetPasswordForm.confirmPassword" 
               :type="showResetPassword ? 'text' : 'password'" 
               class="form-input" 
               :placeholder="t('dashboard.instanceDetail.confirmPassword')" 
+              autocomplete="new-password"
             />
           </div>
           <div class="mt-2">

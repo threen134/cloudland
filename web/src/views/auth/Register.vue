@@ -112,6 +112,7 @@ const handleSubmit = async () => {
                 class="form-control minimal" 
                 required 
                 :placeholder="t('auth.lastName')" 
+                autocomplete="family-name"
               />
             </div>
             <div class="form-group">
@@ -124,6 +125,7 @@ const handleSubmit = async () => {
                 class="form-control minimal" 
                 required 
                 :placeholder="t('auth.firstName')" 
+                autocomplete="given-name"
               />
             </div>
           </div>
@@ -141,6 +143,7 @@ const handleSubmit = async () => {
                 :class="{ 'border-error': !!usernameError }"
                 required 
                 :placeholder="t('auth.username')" 
+                autocomplete="username"
               />
             </div>
             <span v-if="usernameError" class="error-text">
@@ -160,6 +163,7 @@ const handleSubmit = async () => {
                 class="form-control" 
                 required 
                 placeholder="john@example.com" 
+                autocomplete="email"
               />
             </div>
           </div>
@@ -177,6 +181,7 @@ const handleSubmit = async () => {
                 required
                 :placeholder="t('auth.orgNamePlaceholder')"
                 @blur="autoGenerateSlug"
+                autocomplete="organization"
               />
             </div>
           </div>
@@ -194,6 +199,7 @@ const handleSubmit = async () => {
                 required
                 :placeholder="t('auth.orgSlugPlaceholder')"
                 pattern="^[a-z0-9][a-z0-9-]*[a-z0-9]$"
+                autocomplete="off"
               />
             </div>
             <span class="hint-text">{{ t('auth.orgSlugHint') }}</span>
@@ -212,6 +218,7 @@ const handleSubmit = async () => {
                 :class="{ 'border-error': isPasswordMismatch, 'with-suffix': true }"
                 required 
                 placeholder="••••••••" 
+                autocomplete="new-password"
               />
               <button 
                 type="button" 
@@ -238,6 +245,7 @@ const handleSubmit = async () => {
                 :class="{ 'border-error': isPasswordMismatch, 'with-suffix': true }"
                 required 
                 placeholder="••••••••" 
+                autocomplete="new-password"
               />
               <button 
                 type="button" 

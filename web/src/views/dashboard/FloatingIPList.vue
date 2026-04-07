@@ -332,6 +332,8 @@ watch(() => newFipForm.value.selectedPublicSubnetId, (newId) => {
         <div class="search-box">
           <Search :size="16" class="search-icon" />
           <input 
+            id="searchQuery"
+            name="searchQuery"
             type="text" 
             v-model="searchQuery"
             :placeholder="$t('actions.search') + '...'" 
@@ -459,6 +461,8 @@ watch(() => newFipForm.value.selectedPublicSubnetId, (newId) => {
           <div class="form-group">
             <label class="form-label">{{ $t('dashboard.forms.name') }} <span class="text-error">*</span></label>
             <input
+              id="ipName"
+              name="ipName"
               v-model="newFipForm.name"
               type="text"
               class="form-input"
@@ -473,6 +477,8 @@ watch(() => newFipForm.value.selectedPublicSubnetId, (newId) => {
               <label class="form-label">{{ $t('dashboard.floatingIPDetail.inbound') }}</label>
               <div class="input-with-suffix">
                 <input
+                  id="inbound"
+                  name="inbound"
                   v-model.number="newFipForm.inbound"
                   type="number"
                   class="form-input"
@@ -486,6 +492,8 @@ watch(() => newFipForm.value.selectedPublicSubnetId, (newId) => {
               <label class="form-label">{{ $t('dashboard.floatingIPDetail.outbound') }}</label>
               <div class="input-with-suffix">
                 <input
+                  id="outbound"
+                  name="outbound"
                   v-model.number="newFipForm.outbound"
                   type="number"
                   class="form-input"
@@ -501,7 +509,7 @@ watch(() => newFipForm.value.selectedPublicSubnetId, (newId) => {
           <div class="form-group" v-if="siteSubnets.length > 0">
             <label class="form-label">{{ $t('dashboard.floatingIPDetail.subnetPool') }}</label>
             <div class="select-wrapper">
-              <select v-model="newFipForm.selectedSiteSubnetId" class="form-input">
+              <select id="siteSubnet" name="siteSubnet" v-model="newFipForm.selectedSiteSubnetId" class="form-input">
                 <option value="">{{ $t('dashboard.floatingIPDetail.selectSubnet') }}</option>
                 <option v-for="subnet in siteSubnets" :key="subnet.id" :value="subnet.id">
                   {{ subnet.name }} ({{ subnet.network || subnet.network_cidr }})
@@ -514,7 +522,7 @@ watch(() => newFipForm.value.selectedPublicSubnetId, (newId) => {
           <div class="form-group" v-if="publicSubnets.length > 0">
             <label class="form-label">{{ $t('dashboard.floatingIPDetail.publicSubnet') }}</label>
             <div class="select-wrapper">
-              <select v-model="newFipForm.selectedPublicSubnetId" class="form-input">
+              <select id="publicSubnet" name="publicSubnet" v-model="newFipForm.selectedPublicSubnetId" class="form-input">
                 <option value="">{{ $t('dashboard.floatingIPDetail.selectSubnet') }}</option>
                 <option v-for="subnet in publicSubnets" :key="subnet.id" :value="subnet.id">
                   {{ subnet.name }} ({{ subnet.network || subnet.network_cidr }})
@@ -527,7 +535,7 @@ watch(() => newFipForm.value.selectedPublicSubnetId, (newId) => {
           <div class="form-group">
             <label class="form-label">{{ $t('dashboard.floatingIPDetail.publicIp') }}</label>
             <div class="select-wrapper" v-if="newFipForm.selectedSiteSubnetId || newFipForm.selectedPublicSubnetId">
-              <select v-model="newFipForm.publicIp" class="form-input" :disabled="addressesLoading[newFipForm.selectedSiteSubnetId || newFipForm.selectedPublicSubnetId]">
+              <select id="publicIpSelect" name="publicIp" v-model="newFipForm.publicIp" class="form-input" :disabled="addressesLoading[newFipForm.selectedSiteSubnetId || newFipForm.selectedPublicSubnetId]">
                 <option value="">{{ $t('dashboard.floatingIPDetail.autoAllocate') || '自动分配' }}</option>
                 <option v-for="addr in (subnetAddresses[newFipForm.selectedSiteSubnetId || newFipForm.selectedPublicSubnetId] || [])" :key="addr.address" :value="addr.address.split('/')[0]">
                   {{ addr.address.split('/')[0] }}
@@ -535,7 +543,8 @@ watch(() => newFipForm.value.selectedPublicSubnetId, (newId) => {
               </select>
             </div>
             <input
-              v-else
+              id="publicIpInput"
+              name="publicIp"
               v-model="newFipForm.publicIp"
               type="text"
               class="form-input"
@@ -547,7 +556,7 @@ watch(() => newFipForm.value.selectedPublicSubnetId, (newId) => {
           <div class="form-group">
             <label class="form-label">{{ $t('dashboard.floatingIPDetail.bindInstance') }}</label>
             <div class="select-wrapper">
-              <select v-model="newFipForm.instanceId" class="form-input">
+              <select id="instanceId" name="instanceId" v-model="newFipForm.instanceId" class="form-input">
                 <option value="">{{ $t('dashboard.floatingIPDetail.selectInstance') }}</option>
                 <option v-for="inst in instances" :key="inst.id" :value="inst.id">
                   {{ inst.hostname || inst.name }} ({{ inst.ip_address || inst.id }})
@@ -568,6 +577,8 @@ watch(() => newFipForm.value.selectedPublicSubnetId, (newId) => {
             <div class="form-group">
               <label class="form-label">{{ $t('dashboard.floatingIPDetail.activationCount') }}</label>
               <input
+                id="activationCount"
+                name="activationCount"
                 v-model.number="newFipForm.activationCount"
                 type="number"
                 class="form-input"
@@ -606,7 +617,7 @@ watch(() => newFipForm.value.selectedPublicSubnetId, (newId) => {
           <div class="form-group">
             <label class="form-label">{{ $t('dashboard.floatingIPDetail.bindInstance') }} <span class="text-error">*</span></label>
             <div class="select-wrapper">
-              <select v-model="selectedInstanceId" class="form-input">
+              <select id="attachInstanceId" name="instanceId" v-model="selectedInstanceId" class="form-input">
                 <option value="">{{ $t('dashboard.floatingIPDetail.selectInstance') }}</option>
                 <option v-for="inst in instances" :key="inst.id" :value="inst.id">
                   {{ inst.hostname || inst.name }} ({{ inst.ip_address || inst.id }})

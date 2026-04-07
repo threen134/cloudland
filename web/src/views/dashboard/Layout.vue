@@ -210,10 +210,17 @@ const fetchFiringCount = async () => {
 
 // Refresh firing count every 60s
 let firingTimer: ReturnType<typeof setInterval> | null = null
-onMounted(() => {
-    tenant.fetchOrganizations()
-    region.fetchRegions()
-    fetchFiringCount()
+onMounted(async () => {
+    try {
+        // Must await: switchOrg() issues a new token and revokes the old one.
+        // Resources loaded after this point use the org-scoped token.
+        await tenant.fetchOrganizations()
+    } catch (err: any) {
+        console.error('[Layout] fetchOrganizations failed, forcing logout:', err?.response?.data?.detail || err?.message || err)
+        handleLogout()
+        return
+    }
+    Promise.all([region.fetchRegions(), fetchFiringCount()])
     firingTimer = setInterval(fetchFiringCount, 60000)
 })
 onUnmounted(() => {

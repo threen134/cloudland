@@ -110,6 +110,7 @@ const handleSubmit = async () => {
                     v-model="email"
                     required 
                     :placeholder="t('auth.username')"
+                    autocomplete="username"
                   />
                 </div>
               </div>
@@ -126,6 +127,7 @@ const handleSubmit = async () => {
                     v-model="password"
                     required 
                     placeholder="••••••••"
+                    autocomplete="current-password"
                   />
                   <button 
                     type="button" 
