@@ -16,8 +16,9 @@ var logger = rlog.MustGetLogger("services")
 func Init() {
 	AdminInit()
 	RebuildAlarmRulesOnStartup()
-	// 启动时从 DB 重建 hyper-hosts，确保 dnsmasq 能解析所有已注册节点
-	RebuildDnsHostsFile()
-	// 启动时应用一次 DNS 上游配置，确保 dnsmasq 与数据库镜像一致
-	ApplyDnsUpstream()
+	// 异步初始化 DNS：重建 hosts 文件 + 应用上游配置，不阻塞主启动流程
+	go func() {
+		RebuildDnsHostsFile()
+		ApplyDnsUpstream()
+	}()
 }

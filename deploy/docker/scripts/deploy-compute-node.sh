@@ -118,6 +118,7 @@ DNS=$CONTROLLER_IP
 DNSStubListener=no
 EOF
     systemctl restart systemd-resolved
+    resolvectl flush-caches 2>/dev/null || true
     # 将 /etc/resolv.conf 指向 resolved 的非 stub 文件（包含真实 DNS 地址）
     ln -sf /run/systemd/resolve/resolv.conf /etc/resolv.conf
 else

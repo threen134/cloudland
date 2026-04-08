@@ -13,6 +13,7 @@ import (
 
 	. "api/src/common"
 	"api/src/model"
+	"api/src/services"
 )
 
 func init() {
@@ -125,6 +126,12 @@ func HyperStatus(ctx context.Context, args []string) (status string, err error) 
 	if err != nil {
 		logger.Error("Failed to update hyper", err)
 		return
+	}
+	// 同步 DNS：部署失败时清理条目；IP 或 hostname 变化时更新映射（避免每次心跳写文件）
+	if hyperStatus == 5 { // HYPER_DEPLOY_FAILED
+		services.RemoveHostFromDns(hyperName)
+	} else if hostIP != "" && (hyper.HostIP != hostIP || hyper.Hostname != hyperName) {
+		services.RegisterHostInDns(hyperName, hostIP)
 	}
 	resource := &model.Resource{
 		Hostid:      int32(hyperID),
