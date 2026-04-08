@@ -60,9 +60,9 @@ func (a *SystemSettingAPI) SyncSystemSettings(c *gin.Context) {
 		return
 	}
 
-	// 批量插入（比循环单条 Save 效率高）
-	if len(req.Settings) > 0 {
-		if err := tx.Create(&req.Settings).Error; err != nil {
+	// 逐条插入（GORM v1 不支持 slice 批量 Create）
+	for i := range req.Settings {
+		if err := tx.Create(&req.Settings[i]).Error; err != nil {
 			tx.Rollback()
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to insert settings: " + err.Error()})
 			return
