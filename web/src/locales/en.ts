@@ -1491,6 +1491,8 @@ export default {
             SLACK_WEBHOOK_URL_desc: 'The Incoming Webhook URL used to send notifications to your Slack channel.',
             ALARM_EVENT_RETENTION_DAYS: 'VM Alarm Event Retention Days',
             ALARM_EVENT_RETENTION_DAYS_desc: 'Retention period (in days) for VM alarm events and delivery logs. Records older than this value will be automatically cleaned up. Default: 30 days.',
+            DNS_UPSTREAM: 'DNS Upstream',
+            DNS_UPSTREAM_desc: 'Upstream DNS server for queries not matching internal node hostnames. Supports comma-separated multiple addresses, e.g. 8.8.8.8,8.8.4.4.',
         },
     },
 }

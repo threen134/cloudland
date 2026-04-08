@@ -85,18 +85,43 @@ log "1/15 - 系统基础配置 (base role)"
 # 设置 hostname
 hostnamectl set-hostname "$HOSTNAME"
 
-# 生成 /etc/hosts（与 Ansible base/templates/hosts.j2 对齐）
+# 生成 /etc/hosts
+# 本机 hostname 必须解析到本机 IP（SCI cloudlet 用 gethostname() 查找本地 scid）
+# 不能映射到控制节点 IP，否则 cloudlet 会连到控制节点的 scid 而非本机
+OWN_IP=$(ip addr show "$NETWORK_DEVICE" 2>/dev/null | grep 'inet ' | awk '{print $2}' | cut -d/ -f1 | head -1)
+if [ -z "$OWN_IP" ]; then
+    OWN_IP=$(hostname -I | awk '{print $1}')
+fi
+if [ -z "$OWN_IP" ]; then
+    log "ERROR: 无法获取本机 IP，请检查 NETWORK_DEVICE=$NETWORK_DEVICE"
+    exit 1
+fi
 cat > /etc/hosts <<EOF
 127.0.0.1   localhost localhost.localdomain localhost4 localhost4.localdomain4
 ::1         localhost localhost.localdomain localhost6 localhost6.localdomain6
 
 # CloudLand nodes
-$CONTROLLER_IP $HOSTNAME
+$OWN_IP $HOSTNAME
 EOF
 
 # 追加其他节点
 if [ -n "$OTHER_NODES" ]; then
     echo "$OTHER_NODES" >> /etc/hosts
+fi
+
+# 将 DNS 指向控制节点的 dnsmasq，兼容 systemd-resolved
+if systemctl is-active --quiet systemd-resolved 2>/dev/null; then
+    mkdir -p /etc/systemd/resolved.conf.d/
+    cat > /etc/systemd/resolved.conf.d/cloudland.conf <<EOF
+[Resolve]
+DNS=$CONTROLLER_IP
+DNSStubListener=no
+EOF
+    systemctl restart systemd-resolved
+    # 将 /etc/resolv.conf 指向 resolved 的非 stub 文件（包含真实 DNS 地址）
+    ln -sf /run/systemd/resolve/resolv.conf /etc/resolv.conf
+else
+    echo "nameserver $CONTROLLER_IP" > /etc/resolv.conf
 fi
 
 # 文件描述符上限

@@ -322,6 +322,7 @@ func (a *HyperAdmin) Deploy(ctx context.Context, ip, hostname, networkDevice, vl
 			if err = db.Save(hyper).Error; err != nil {
 				return nil, "", NewCLError(ErrSQLSyntaxError, "Failed to update existing hypervisor record", err)
 			}
+			RegisterHostInDns(hostname, ip)
 		} else {
 			return nil, "", NewCLError(ErrHypervisorInvalidState, "Hypervisor with this hostname already exists and is not in a retryable state", nil)
 		}
@@ -358,6 +359,7 @@ func (a *HyperAdmin) Deploy(ctx context.Context, ip, hostname, networkDevice, vl
 			return nil, "", NewCLError(ErrSQLSyntaxError, "Failed to create hypervisor record", err)
 		}
 		logger.Infof("Created new hypervisor record for %s (HostID: %d, IP: %s, Zone: %s)", hostname, hostID, ip, zoneName)
+		RegisterHostInDns(hostname, ip)
 	}
 
 	// Construct deploy command
@@ -491,6 +493,7 @@ func (a *HyperAdmin) Delete(ctx context.Context, hostID int32) (err error) {
 		return NewCLError(ErrSQLSyntaxError, "Failed to delete hypervisor record", err)
 	}
 
+	RemoveHostFromDns(hyper.Hostname)
 	logger.Infof("Hypervisor %d deleted successfully from database (Hostname: %s)", hostID, hyper.Hostname)
 	return nil
 }

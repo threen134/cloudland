@@ -4,6 +4,7 @@ import (
 	"net/http"
 
 	"api/src/model"
+	"api/src/services"
 
 	. "api/src/common"
 
@@ -83,5 +84,9 @@ func (a *SystemSettingAPI) SyncSystemSettings(c *gin.Context) {
 	}
 
 	logger.Infof("System settings synced: %d settings, version=%d", len(req.Settings), req.ConfigVersion)
+
+	// 异步应用 DNS 上游配置（不阻塞 HTTP 响应）
+	go services.ApplyDnsUpstream()
+
 	c.JSON(http.StatusOK, gin.H{"status": "ok", "synced": len(req.Settings), "version": req.ConfigVersion})
 }

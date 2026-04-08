@@ -4,7 +4,8 @@
 # 使用方法:
 #   1. cp .env.example .env && 编辑 .env
 #   2. bash scripts/init-certs.sh
-#   3. docker compose up -d --build
+#   3. mkdir -p ../dns/hosts ../dns/conf.d && touch ../dns/hosts/hyper-hosts && echo "server=8.8.8.8" > ../dns/conf.d/upstream.conf
+#   4. docker compose up -d --build
 #
 # Profile 说明:
 #   region         - 区域控制面服务 (cloudland, clapi, consoleproxy, 监控栈)
@@ -62,6 +63,28 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+
+  # ---------- dnsmasq (内部 DNS) ----------
+  dnsmasq:
+    image: drpsychick/dnsmasq:2.89
+    container_name: cloudland-dnsmasq
+    restart: unless-stopped
+    profiles:
+      - region
+    network_mode: host
+    cap_add:
+      - NET_ADMIN
+    volumes:
+      - ../dns/hosts:/etc/dnsmasq.hosts:ro   # hosts 专用目录，inotify 监听
+      - ../dns/conf.d:/etc/dnsmasq.conf.d:ro # 上游配置目录，SIGHUP 重载
+    command: >
+      --no-hosts
+      --hostsdir=/etc/dnsmasq.hosts
+      --conf-dir=/etc/dnsmasq.conf.d,*.conf
+      --listen-address=${INTERNAL_IP:-127.0.0.1}
+      --bind-interfaces
+      --port=53
+      --log-queries
 
   # ---------- CloudLand 主控 ----------
   cloudland:
@@ -126,6 +149,8 @@ services:
       - ./volumes/certs/cland/selfsigned.crt:/etc/ssl/certs/alarm_rules_manager.crt:ro
       - ../.ssh:/opt/cloudland/deploy/.ssh:ro
       - ./volumes/prometheus/node_templates:/etc/prometheus/node_templates:ro
+      - ../dns:/opt/cloudland/dns
+      - /var/run/docker.sock:/var/run/docker.sock  # 用于向 dnsmasq 发送 SIGHUP；已知安全取舍
     ports:
       - "${INTERNAL_IP:-127.0.0.1}:8255:8255"
       - "${INTERNAL_IP:-127.0.0.1}:5005:5005"
@@ -179,6 +204,7 @@ services:
       SMTP_FROM_NAME: "CloudLand"
       FEISHU_WEBHOOK_URL: ${FEISHU_WEBHOOK_URL:-}
       FEISHU_SECRET: ${FEISHU_SECRET:-}
+      DNS_UPSTREAM: ${DNS_UPSTREAM:-8.8.8.8}
       LISTEN_ADDR: "0.0.0.0"
       LISTEN_PORT: "8000"
     volumes:

@@ -76,6 +76,9 @@ class Settings(BaseSettings):
     DEFAULT_PUBLIC_IPS: int = 2
     DEFAULT_DISK_GB: float = 50.0
 
+    # --- 内部 DNS ---
+    DNS_UPSTREAM: str = "8.8.8.8"
+
     @model_validator(mode='after')
     def check_db_config(self):
         """验证数据库配置是否完整"""

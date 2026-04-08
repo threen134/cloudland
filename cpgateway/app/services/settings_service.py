@@ -24,6 +24,10 @@ SETTINGS_METADATA: dict[str, tuple] = {
     "FRONTEND_URL":         ("string",  "general",      "前端访问地址",     False, lambda: env_settings.FRONTEND_URL),
     "ALARM_EVENT_RETENTION_DAYS": ("number", "general", "VM 告警事件保留天数", False, lambda: 30),
 
+    # --- 内部 DNS ---
+    "DNS_UPSTREAM":         ("string",  "general",      "内部 DNS 上游转发地址（计算节点 hostname 未匹配时转发至此）",
+                             False, lambda: env_settings.DNS_UPSTREAM or "8.8.8.8"),
+
     # --- 资源配额 ---
     "DEFAULT_CPU_CORES":    ("number",  "quota",        "默认 CPU 配额（核）",   False, lambda: env_settings.DEFAULT_CPU_CORES),
     "DEFAULT_RAM_GB":       ("number",  "quota",        "默认内存配额（GB）",   False, lambda: env_settings.DEFAULT_RAM_GB),

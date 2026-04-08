@@ -1493,6 +1493,8 @@ export default {
             SLACK_WEBHOOK_URL_desc: '用于发送通知到 Slack 频道的 Incoming Webhook URL。',
             ALARM_EVENT_RETENTION_DAYS: 'VM 告警事件保留天数',
             ALARM_EVENT_RETENTION_DAYS_desc: '虚拟机告警事件及投递日志的保留天数，超过该天数的记录将被自动清理，默认 30 天。',
+            DNS_UPSTREAM: 'DNS 上游转发',
+            DNS_UPSTREAM_desc: '内部 dnsmasq 未能匹配节点 hostname 时，将 DNS 查询转发到此地址。支持逗号分隔多个地址，如 8.8.8.8,8.8.4.4。',
         },
     },
 }
