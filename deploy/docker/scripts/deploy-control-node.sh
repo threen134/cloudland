@@ -164,6 +164,24 @@ fi
 # ============ 5. 启动服务与证书 ============
 log "5/5 - 启动 CloudLand 控制面服务"
 bash scripts/init-certs.sh
+
+# 预初始化 dnsmasq 所需目录和占位文件
+# dnsmasq 容器启动时要求 --hostsdir 和 --conf-dir 路径存在，否则会告警/空转
+# cland 容器通过 docker-compose dns: 字段独立指向本机 dnsmasq，无需改宿主 resolv.conf
+DNS_UPSTREAM_VAL=$(grep '^DNS_UPSTREAM=' .env | cut -d'=' -f2- || echo "")
+mkdir -p ../dns/hosts ../dns/conf.d
+[ -f ../dns/hosts/hyper-hosts ] || touch ../dns/hosts/hyper-hosts
+# 支持逗号分隔的多个上游地址，每个一行 server= (对齐 clapi ApplyDnsUpstream 实现)
+# 这是 bootstrap 配置，clapi 启动后会根据 DB 中 DNS_UPSTREAM 设置覆写
+if [ ! -f ../dns/conf.d/upstream.conf ]; then
+    if [ -n "$DNS_UPSTREAM_VAL" ]; then
+        printf '%s\n' "$DNS_UPSTREAM_VAL" | tr ',' '\n' | awk 'NF{print "server="$1}' \
+            > ../dns/conf.d/upstream.conf
+    else
+        echo "server=8.8.8.8" > ../dns/conf.d/upstream.conf
+    fi
+fi
+
 docker compose pull || warn "部分官方镜像拉取失败，尝试本地构建..."
 docker compose up -d --build
 

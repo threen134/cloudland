@@ -86,6 +86,13 @@ services:
       --bind-interfaces
       --port=53
       --log-queries
+    # 进程存活即代表 53 端口已绑定 (--keep-in-foreground 模式下绑定失败会立即退出)
+    healthcheck:
+      test: ["CMD-SHELL", "pgrep -x dnsmasq >/dev/null || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 3s
 
   # ---------- CloudLand 主控 ----------
   cloudland:
@@ -99,6 +106,10 @@ services:
       - region
     # 使用 host 网络以便与外部 hyper 节点通信 (SCI 协议)
     network_mode: host
+    # 覆盖容器内 /etc/resolv.conf，指向本机 dnsmasq（host 网络下 INTERNAL_IP 直连）
+    # 目的：SCI_BE_add 解析 worknode-XX 时走 dnsmasq 的 hyper-hosts，而非宿主云平台 DNS
+    dns:
+      - ${INTERNAL_IP:-127.0.0.1}
     environment:
       SCI_DEVICE_NAME: ${NETWORK_DEVICE:-eth0}
       MANAGEMENT_VIP: ${MANAGEMENT_VIP:-127.0.0.1}
@@ -112,6 +123,9 @@ services:
       - ../.ssh:/opt/cloudland/deploy/.ssh:ro
       - cland_log:/opt/cloudland/log
       - cland_cache:/opt/cloudland/cache
+    depends_on:
+      dnsmasq:
+        condition: service_healthy
 
 
   # ---------- clapi (REST API) ----------
