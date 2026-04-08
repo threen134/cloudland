@@ -78,6 +78,7 @@ services:
       - ../dns/hosts:/etc/dnsmasq.hosts:ro   # hosts 专用目录，inotify 监听
       - ../dns/conf.d:/etc/dnsmasq.conf.d:ro # 上游配置目录，SIGHUP 重载
     command: >
+      --keep-in-foreground
       --no-hosts
       --hostsdir=/etc/dnsmasq.hosts
       --conf-dir=/etc/dnsmasq.conf.d,*.conf
