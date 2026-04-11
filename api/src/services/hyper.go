@@ -11,11 +11,16 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strings"
 
 	. "api/src/common"
 	"api/src/dbs"
 	"api/src/model"
 )
+
+// clandPubKeyPath is the path inside the clapi container where cland.key.pub
+// is mounted (see docker-compose.yml: ../.ssh:/opt/cloudland/deploy/.ssh:ro).
+const clandPubKeyPath = "/opt/cloudland/deploy/.ssh/cland.key.pub"
 
 var (
 	hyperAdmin = &HyperAdmin{}
@@ -375,10 +380,34 @@ func (a *HyperAdmin) Deploy(ctx context.Context, ip, hostname, networkDevice, vl
 		deployScriptURL = "https://raw.githubusercontent.com/threen134/cloudland/staging/deploy/docker/scripts/deploy-compute-node.sh"
 	}
 
+	// Embed cland.key.pub into the deploy command so the compute node can install
+	// it into cland's authorized_keys BEFORE calling /internal/node/add. Without
+	// this, the very first SCI_BE_add to a remote node fails libpsec verification
+	// (see project memory: SCI launch model — chicken-and-egg).
+	pubKeyExport := ""
+	if data, readErr := os.ReadFile(clandPubKeyPath); readErr == nil {
+		pubKey := strings.TrimSpace(string(data))
+		switch {
+		case pubKey == "":
+			logger.Warningf("cland.key.pub at %s is empty; deploy_command will omit CLAND_PUBKEY", clandPubKeyPath)
+		case strings.ContainsAny(pubKey, "'\n\r"):
+			// Sanity check: standard ssh-rsa/ed25519 pubkeys never contain single
+			// quotes or newlines. If they do, the comment field has been hand-edited
+			// in a way that would break our single-quoted shell embed. Refuse to
+			// embed and let the operator fix the key, rather than emitting a broken
+			// deploy_command.
+			logger.Warningf("cland.key.pub at %s contains unsafe characters (quote/newline); deploy_command will omit CLAND_PUBKEY", clandPubKeyPath)
+		default:
+			pubKeyExport = fmt.Sprintf("CLAND_PUBKEY='%s' ", pubKey)
+		}
+	} else {
+		logger.Warningf("cannot read cland.key.pub at %s: %v; deploy_command will omit CLAND_PUBKEY", clandPubKeyPath, readErr)
+	}
+
 	deployCmd = fmt.Sprintf(
-		"export CONTROLLER_IP=%s HOSTNAME=%s NETWORK_DEVICE=%s VLAN_DEVICE=%s PRIVATE_VLAN_DEVICE=%s DNS_SERVER=%s SCI_CLIENT_ID=%d DOMAIN=%s ZONE_NAME=%s VIRT_TYPE=%s; "+
+		"export %sCONTROLLER_IP=%s HOSTNAME=%s NETWORK_DEVICE=%s VLAN_DEVICE=%s PRIVATE_VLAN_DEVICE=%s DNS_SERVER=%s SCI_CLIENT_ID=%d DOMAIN=%s ZONE_NAME=%s VIRT_TYPE=%s; "+
 			"curl -sSL %s | sudo -E bash",
-		controllerIP, hostname, networkDevice, vlanDevice, privateVlanDevice, dnsServer, hostID, domain, zoneName, virtType,
+		pubKeyExport, controllerIP, hostname, networkDevice, vlanDevice, privateVlanDevice, dnsServer, hostID, domain, zoneName, virtType,
 		deployScriptURL,
 	)
 

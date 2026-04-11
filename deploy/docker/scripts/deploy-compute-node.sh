@@ -208,14 +208,37 @@ apt-get install -y qemu-system-x86 qemu-utils bridge-utils ipcalc ipset \
     libvirt-daemon-system-systemd libvirt-clients dnsmasq-base dnsmasq-utils \
     conntrack cloud-utils
 
+# Docker（用于跑 libvirt-exporter 和 promtail-agent 监控容器）
+if ! command -v docker &>/dev/null; then
+    log "安装 Docker (docker.io)..."
+    apt-get install -y docker.io
+fi
+systemctl enable --now docker
+
 pip3 install pyparsing
 
 # ============ 4. SSH 配置 ============
 log "4/15 - 配置 SSH 免密"
 
 mkdir -p /home/cland/.ssh /root/.ssh "$CLOUDLAND_DIR/deploy/.ssh"
+touch /home/cland/.ssh/authorized_keys /root/.ssh/authorized_keys
 
 SSH_KEYS_INSTALLED=""
+
+# 优先从 deploy 命令传入的 CLAND_PUBKEY env 装公钥（解决鸡生蛋问题）
+# 控制面 clapi 的 POST /api/v1/hypers 会把 cland.key.pub 内容嵌入到 deploy_command
+# 里。第一次部署时本地肯定没有 cland.key/cland.key.pub，本地搜索会失败；如果不在
+# /internal/node/add 之前先把这把公钥写到 cland 的 authorized_keys 里，控制面通过
+# scidv1:6188 走 SCI_BE_add 时 libpsec 验签必然失败 (-2022 LAUNCH_FAILED)。
+# 注意：这里只装公钥，不 set SSH_KEYS_INSTALLED — 私钥仍然走下面 /internal/node/add
+# 注册响应那条路径分发。
+if [ -n "${CLAND_PUBKEY:-}" ]; then
+    grep -qF "$CLAND_PUBKEY" /home/cland/.ssh/authorized_keys \
+        || printf '%s\n' "$CLAND_PUBKEY" >> /home/cland/.ssh/authorized_keys
+    grep -qF "$CLAND_PUBKEY" /root/.ssh/authorized_keys \
+        || printf '%s\n' "$CLAND_PUBKEY" >> /root/.ssh/authorized_keys
+    log "已通过 CLAND_PUBKEY env 安装控制面公钥到 authorized_keys"
+fi
 
 # 尝试从本地文件获取（兼容手动部署）
 SEARCH_PATHS=("$SCRIPT_DIR/.ssh" "$CLOUDLAND_DIR/deploy/.ssh")

@@ -79,6 +79,7 @@ services:
       - ../dns/conf.d:/etc/dnsmasq.conf.d:ro # 上游配置目录，SIGHUP 重载
     command: >
       --keep-in-foreground
+      --no-resolv
       --no-hosts
       --hostsdir=/etc/dnsmasq.hosts
       --conf-dir=/etc/dnsmasq.conf.d,*.conf
