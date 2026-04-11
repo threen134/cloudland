@@ -510,11 +510,16 @@ func (a *HyperAdmin) Delete(ctx context.Context, hostID int32) (err error) {
 		}
 	}
 
-	// Remove from SCI if it was registered (Status != 4 is pre-active)
+	// Remove from SCI if it was registered (Status != 4 is pre-active).
+	// Use a local variable so the failure does NOT pollute the named return `err`
+	// — the next statement (db.Delete) used to overwrite `err` and silently swallow
+	// this failure, which is why DELETE looked like 204 No Content even when SCI
+	// cleanup left the persist file dirty. Now SCI removeBackend treats
+	// BACKEND_NOTFOUND as success (see rpcworker.cpp), so anything left here is a
+	// real failure that operators need to know about.
 	if hyper.Status != 4 {
-		if err = NodeRemove(hostID); err != nil {
-			logger.Errorf("Failed to remove node %d from SCI: %v", hostID, err)
-			// Decide if this should block DB deletion. Usually better to continue cleanup if SCI fails.
+		if removeErr := NodeRemove(hostID); removeErr != nil {
+			logger.Errorf("SCI NodeRemove failed for hostid=%d hostname=%s: %v — DB row will still be deleted, but cland persist may need manual cleanup at /opt/cloudland/cache/registered_nodes.json", hostID, hyper.Hostname, removeErr)
 		}
 	}
 

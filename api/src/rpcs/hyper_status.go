@@ -84,12 +84,14 @@ func HyperStatus(ctx context.Context, args []string) (status string, err error) 
 	hyper := &model.Hyper{Hostid: int32(hyperID)}
 	err = db.Where("hostid = ?", hyperID).Take(hyper).Error
 	if err != nil {
-		logger.Error("Failed to take hyper", err)
-		err = db.Create(hyper).Error
-		if err != nil {
-			logger.Error("Failed to create hyper", err)
-			return
-		}
+		// Do NOT auto-create. If admin explicitly DELETE'd this hyper, any orphan
+		// heartbeat from a still-running cloudlet must be ignored, not used to
+		// resurrect the row. New nodes are created up-front by POST /api/v1/hypers
+		// (services.HyperAdmin.Deploy) before the compute node ever heartbeats,
+		// so a missing row here always means "deleted, ignore me".
+		logger.Warningf("hyper_status RPC for unknown hostid=%d (name=%s); ignoring orphan heartbeat", hyperID, hyperName)
+		err = nil
+		return
 	}
 	// PET-769 should maintain the hypervisor's over commit rates in admin console and admin API
 	// args 12 cpu_over_rate, args 13 mem_over_rate, args 14 disk_over_rate are float values

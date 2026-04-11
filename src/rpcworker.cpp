@@ -507,7 +507,15 @@ void RpcWorker::runServer() {
     int rc = sciNet.removeBackend(id);
     Json::Value resp;
     Json::FastWriter writer;
-    if (rc == 0) {
+    // SCI_ERR_BACKEND_NOTFOUND (-2008) means the BE was never registered with
+    // the SCI router (e.g. half-broken nodes whose original SCI_BE_add failed,
+    // or repeated DELETEs). From the caller's perspective that's success — the
+    // node is already absent. Still call persistNodeRemove so a subsequent cland
+    // restart won't restore the orphan from registered_nodes.json.
+    if (rc == 0 || rc == SCI_ERR_BACKEND_NOTFOUND) {
+      if (rc == SCI_ERR_BACKEND_NOTFOUND) {
+        log_warn("removeBackend: id=%d not in SCI router (already gone), still cleaning persist", id);
+      }
       resp["status"] = "ok";
       persistNodeRemove(id);
     } else {
