@@ -388,10 +388,15 @@ int Launcher::launchBE(int beID, const char * hostname)
         topology.routingList->removeBE(beID);
     } else {
         if (mode == REGISTER) {
+            // Wait for this specific BE's reverse connection; the global
+            // allRouted() count breaks when a prior failed add left an
+            // orphan queueInfo entry.
             int times = 0;
-            while (!topology.routingList->allRouted()) {
-                if (times >= (waitTimes * 1000000  / WAIT_INTERVAL))
+            while (!topology.routingList->isRouted(beID)) {
+                if (times >= (waitTimes * 1000000  / WAIT_INTERVAL)) {
+                    topology.routingList->removeBE(beID);
                     return SCI_ERR_LAUNCH_FAILED;
+                }
                 times++;
                 SysUtil::sleep(WAIT_INTERVAL);
             }

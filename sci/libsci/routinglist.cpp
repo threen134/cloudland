@@ -568,7 +568,19 @@ bool RoutingList::allRouted()
         }
     }
 
-    return (numOfQueues() == numOfStreams()); 
+    return (numOfQueues() == numOfStreams());
+}
+
+bool RoutingList::isRouted(int hndl)
+{
+    bool routed = false;
+    lock();
+    ROUTING_MAP::iterator it = routers.find(hndl);
+    if ((it != routers.end()) && (it->second.stream != NULL)) {
+        routed = true;
+    }
+    unlock();
+    return routed;
 }
 
 void RoutingList::addBE(sci_group_t group, int successor_id, int be_id, bool init)

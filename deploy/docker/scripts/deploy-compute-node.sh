@@ -39,7 +39,9 @@ fi
 
 
 # ============ 读取配置文件 ============
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# 通过 `bash -s < script.sh` / `curl … | bash` 这种管道执行时，BASH_SOURCE[0]
+# 是空的，直接展开会被 set -u 拦截。用 :- 默认值兜底指到当前工作目录。
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$PWD/deploy-compute-node.sh}")" 2>/dev/null && pwd || echo "$PWD")"
 ENV_FILE="$SCRIPT_DIR/compute.env"
 
 if [ -f "$ENV_FILE" ]; then
@@ -80,7 +82,7 @@ log() { echo -e "\n\033[1;32m[$(date '+%H:%M:%S')] $1\033[0m"; }
 warn() { echo -e "\033[1;33m[WARN] $1\033[0m"; }
 
 # ============ 1. base 角色：系统基础配置 ============
-log "1/15 - 系统基础配置 (base role)"
+log "1/16 - 系统基础配置 (base role)"
 
 # 设置 hostname
 hostnamectl set-hostname "$HOSTNAME"
@@ -150,7 +152,7 @@ systemctl mask ufw 2>/dev/null || true
 systemctl stop ufw 2>/dev/null || true
 
 # ============ 2. base 防火墙规则 ============
-log "2/15 - 配置 iptables 基础规则"
+log "2/16 - 配置 iptables 基础规则"
 
 iptables -P INPUT ACCEPT
 iptables -P FORWARD ACCEPT
@@ -199,7 +201,7 @@ SCRIPT
 chmod +x /etc/network/if-post-down.d/iptablessave
 
 # ============ 3. 安装依赖包 ============
-log "3/15 - 安装依赖包"
+log "3/16 - 安装依赖包"
 
 apt-get install -y jq wget mkisofs network-manager net-tools python3-pip
 
@@ -218,7 +220,7 @@ systemctl enable --now docker
 pip3 install pyparsing
 
 # ============ 4. SSH 配置 ============
-log "4/15 - 配置 SSH 免密"
+log "4/16 - 配置 SSH 免密"
 
 mkdir -p /home/cland/.ssh /root/.ssh "$CLOUDLAND_DIR/deploy/.ssh"
 touch /home/cland/.ssh/authorized_keys /root/.ssh/authorized_keys
@@ -279,7 +281,7 @@ chmod 600 /home/cland/.ssh/authorized_keys 2>/dev/null || true
 chmod 600 /root/.ssh/authorized_keys 2>/dev/null || true
 
 # ============ 5. 编译安装 SCI 和 CloudLand ============
-log "5/15 - 编译安装 SCI 和 CloudLand 二进制"
+log "5/16 - 编译安装 SCI 和 CloudLand 二进制"
 
 apt-get install -y build-essential autoconf automake libtool make g++ libssl-dev libjsoncpp-dev git
 
@@ -297,14 +299,14 @@ cd "$CLOUDLAND_DIR/src"
 make clean && make && make install
 
 # ============ 6. 创建目录结构 ============
-log "6/15 - 创建目录结构"
+log "6/16 - 创建目录结构"
 
 mkdir -p "$CLOUDLAND_DIR"/{log,run,cache}
 mkdir -p "$CLOUDLAND_DIR/cache"/{backup,image,instance,meta,router,volume,dnsmasq,xml,qemu_agent}
 chown -R cland:cland "$CLOUDLAND_DIR"
 
 # ============ 7. 创建 backend 软链接 ============
-log "7/15 - 创建 scripts/backend → kvm 软链接"
+log "7/16 - 创建 scripts/backend → kvm 软链接"
 
 ln -sfn "$CLOUDLAND_DIR/scripts/kvm" "$CLOUDLAND_DIR/scripts/backend"
 chown -h cland:cland "$CLOUDLAND_DIR/scripts/backend"
@@ -314,7 +316,7 @@ chmod -R 755 "$CLOUDLAND_DIR/scripts/kvm"
 
 # ============ 8. 配置 cloudrc.local ============
 # 与 Ansible hyper/templates/cloudrc.local.kvm-x86_64.j2 完全对齐
-log "8/15 - 配置 cloudrc.local"
+log "8/16 - 配置 cloudrc.local"
 
 cat > "$CLOUDLAND_DIR/scripts/cloudrc.local" <<EOF
 # -*- mode: sh -*-
@@ -336,7 +338,7 @@ EOF
 chown cland:cland "$CLOUDLAND_DIR/scripts/cloudrc.local"
 
 # ============ 9. KVM 嵌套虚拟化 ============
-log "9/15 - 配置 KVM 嵌套虚拟化"
+log "9/16 - 配置 KVM 嵌套虚拟化"
 
 cat > /etc/modprobe.d/kvm-nested.conf <<EOF
 options kvm-intel nested=1
@@ -346,7 +348,7 @@ options kvm-intel ept=1
 EOF
 
 # ============ 10. 配置并启动服务 ============
-log "10/15 - 配置并启动 scid/cloudlet/libvirtd/NetworkManager"
+log "10/16 - 配置并启动 scid/cloudlet/libvirtd/NetworkManager"
 
 mkdir -p /etc/sysconfig
 
@@ -414,7 +416,7 @@ virsh net-destroy default 2>/dev/null || true
 virsh net-undefine default 2>/dev/null || true
 
 # ============ 11. Netplan + networkd 配置 ============
-log "11/15 - 切换 netplan 渲染器为 NetworkManager 并屏蔽 networkd"
+log "11/16 - 切换 netplan 渲染器为 NetworkManager 并屏蔽 networkd"
 
 # 下载 yq 工具
 YQ=/tmp/yq
@@ -439,7 +441,7 @@ systemctl stop systemd-networkd 2>/dev/null || true
 systemctl mask systemd-networkd
 
 # ============ 12. 内核参数 ============
-log "12/15 - 配置内核参数"
+log "12/16 - 配置内核参数"
 
 modprobe br_netfilter
 
@@ -466,7 +468,7 @@ iptables -A FORWARD -j REJECT --reject-with icmp-host-prohibited
 iptables-save -c > /etc/iptables.rules
 
 # ============ 13. 监控部署 (monitor_hyper 角色) ============
-log "13/15 - 部署监控 agent"
+log "13/16 - 部署监控 agent"
 
 # --- prometheus-node-exporter (端口 9101 + textfile 采集器) ---
 apt-get install -y prometheus-node-exporter
@@ -578,7 +580,7 @@ else
 fi
 
 # ============ 14. 计量部署 (metering_hyper 角色) ============
-log "14/15 - 部署南北向流量计量"
+log "14/16 - 部署南北向流量计量"
 
 mkdir -p "$CLOUDLAND_DIR/scripts/metering"
 
@@ -620,58 +622,44 @@ else
 fi
 
 # ============ 15. 通过 API 向控制面注册计算节点 ============
-log "15/15 - 通过 API 向控制面注册计算节点"
+log "15/16 - 通过 API 向控制面注册计算节点"
 RPC_SERVER_PORT="${RPC_SERVER_PORT:-5006}"
-for i in 1 2 3; do
-    REGISTER_RESP=$(curl -sf -X POST "http://${CONTROLLER_IP}:${RPC_SERVER_PORT}/internal/node/add" \
-        -H "Content-Type: application/json" \
-        -d "{\"hostname\": \"${HOSTNAME}\", \"id\": ${SCI_CLIENT_ID}, \"level\": 1}" 2>/dev/null || true)
-    if [ -n "$REGISTER_RESP" ] && echo "$REGISTER_RESP" | jq -e '.status == "ok"' &>/dev/null; then
-        log "节点注册成功"
+REGISTER_RESP_FILE="$(mktemp)"
+HTTP_CODE=$(curl -s --max-time 90 -o "$REGISTER_RESP_FILE" -w "%{http_code}" \
+    -X POST "http://${CONTROLLER_IP}:${RPC_SERVER_PORT}/internal/node/add" \
+    -H "Content-Type: application/json" \
+    -d "{\"hostname\": \"${HOSTNAME}\", \"id\": ${SCI_CLIENT_ID}, \"level\": 1}" || echo "000")
 
-        # 从注册响应中提取 SSH key（如果本地未安装）
-        if [ -z "$SSH_KEYS_INSTALLED" ]; then
-            PUB_KEY=$(echo "$REGISTER_RESP" | jq -r '.public_key // empty')
-            PRIV_KEY=$(echo "$REGISTER_RESP" | jq -r '.private_key // empty')
-            if [ -n "$PUB_KEY" ] && [ -n "$PRIV_KEY" ]; then
-                # 公钥 → authorized_keys（追加模式，避免覆盖已有公钥）
-                grep -qF "$PUB_KEY" /home/cland/.ssh/authorized_keys 2>/dev/null \
-                    || printf '%s\n' "$PUB_KEY" >> /home/cland/.ssh/authorized_keys
-                grep -qF "$PUB_KEY" /root/.ssh/authorized_keys 2>/dev/null \
-                    || printf '%s\n' "$PUB_KEY" >> /root/.ssh/authorized_keys
+if [ "$HTTP_CODE" != "200" ]; then
+    echo -e "\033[1;31m[ERROR] 节点注册失败 (HTTP ${HTTP_CODE})\033[0m" >&2
+    [ -s "$REGISTER_RESP_FILE" ] && cat "$REGISTER_RESP_FILE" >&2
+    rm -f "$REGISTER_RESP_FILE"
+    exit 1
+fi
 
-                # 私钥 → 三个位置（使用 printf 确保多行内容原样写入）：
-                # 1. $deploy_dir/.ssh/cland.key — 运行时脚本读取路径（cloudrc:24）
-                # 2. /root/.ssh/id_rsa — root 用户 SSH 默认路径
-                # 3. /home/cland/.ssh/cland.key — cland 用户备份
-                mkdir -p "$CLOUDLAND_DIR/deploy/.ssh"
-                printf '%s\n' "$PRIV_KEY" > "$CLOUDLAND_DIR/deploy/.ssh/cland.key"
-                printf '%s\n' "$PUB_KEY"  > "$CLOUDLAND_DIR/deploy/.ssh/cland.key.pub"
-                cp "$CLOUDLAND_DIR/deploy/.ssh/cland.key" /root/.ssh/id_rsa
-                cp "$CLOUDLAND_DIR/deploy/.ssh/cland.key" /home/cland/.ssh/cland.key
+log "节点注册成功"
 
-                # 权限设置
-                chown -R cland:cland /home/cland/.ssh "$CLOUDLAND_DIR/deploy/.ssh"
-                chmod 700 /home/cland/.ssh
-                chmod 600 /home/cland/.ssh/authorized_keys /home/cland/.ssh/cland.key
-                chmod 600 /root/.ssh/id_rsa /root/.ssh/authorized_keys
-                chmod 600 "$CLOUDLAND_DIR/deploy/.ssh/cland.key"
-
-                log "从控制节点注册响应中获取 SSH 密钥成功"
-                SSH_KEYS_INSTALLED="api"
-            else
-                warn "控制节点未返回 SSH 密钥"
-            fi
-        fi
-        break
-    else
-        warn "节点注册失败 (尝试 $i/3)，5 秒后重试..."
-        sleep 5
+if [ -z "${SSH_KEYS_INSTALLED:-}" ] && jq -e '.status == "ok"' "$REGISTER_RESP_FILE" &>/dev/null; then
+    PRIV_KEY=$(jq -r '.private_key // empty' "$REGISTER_RESP_FILE")
+    PUB_KEY=$(jq -r '.public_key // empty' "$REGISTER_RESP_FILE")
+    if [ -n "$PRIV_KEY" ] && [ -n "$PUB_KEY" ]; then
+        mkdir -p "$CLOUDLAND_DIR/deploy/.ssh"
+        printf '%s\n' "$PRIV_KEY" > "$CLOUDLAND_DIR/deploy/.ssh/cland.key"
+        printf '%s\n' "$PUB_KEY"  > "$CLOUDLAND_DIR/deploy/.ssh/cland.key.pub"
+        cp "$CLOUDLAND_DIR/deploy/.ssh/cland.key" /root/.ssh/id_rsa
+        cp "$CLOUDLAND_DIR/deploy/.ssh/cland.key" /home/cland/.ssh/cland.key
+        chown -R cland:cland /home/cland/.ssh "$CLOUDLAND_DIR/deploy/.ssh"
+        chmod 600 /home/cland/.ssh/cland.key /root/.ssh/id_rsa \
+                  "$CLOUDLAND_DIR/deploy/.ssh/cland.key"
+        log "从注册响应中同步获取 cland.key 私钥"
+        SSH_KEYS_INSTALLED="api"
     fi
-done
+fi
 
-if [ -z "$SSH_KEYS_INSTALLED" ]; then
-    warn "未能获取 SSH 密钥，请手动配置"
+rm -f "$REGISTER_RESP_FILE"
+
+if [ -z "${SSH_KEYS_INSTALLED:-}" ]; then
+    log "cland 私钥未分发（公钥已通过 CLAND_PUBKEY bootstrap）"
 fi
 
 # ============ 16. 部署监控代理 Promtail (Trace 日志回传) ============

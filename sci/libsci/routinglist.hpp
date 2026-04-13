@@ -86,6 +86,7 @@ class RoutingList
         int stopRouting(int hndl);
         int stopRouting();
         bool allRouted();
+        bool isRouted(int hndl);
         routingInfo * getRouter(int hndl);
 
         int setRecoverChildren();
