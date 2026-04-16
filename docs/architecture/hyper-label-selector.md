@@ -91,7 +91,7 @@ subnet selector **必须同时指定 pod 和 vlan**——pod 限定故障域，v
 
 2. **创建 FIP**：用户必须显式指定 `(pod, public-vlan)`。后端按这两个值匹配一个 public FIP 池 subnet，从中分配一个 IP；FIP 记录里**继承** `(pod, public-vlan)` 作为属性（实际存储可以直接复用 `subnet_id` join 出来，无需冗余列）。
 
-3. **绑定 FIP 到 VM 的 VPC 接口**（仅 FIP 池类型 / public vlan 校验**只发生在这一步**）：cloudland 的 FIP 是 **host-NAT 模型**——FIP 直接在 VM 所在 hyper 上配 NAT（见 [floatingip.go:389](api/src/services/floatingip.go#L389) `inter=%d` 用的是 `instance.Hyper`），**不走独立 router gateway**。绑定校验 **两层**：
+3. **绑定 FIP 到 VM 的 VPC 接口**（仅 FIP 池类型 / public vlan 校验**只发生在这一步**）：cloudland 的 FIP 是 **host-NAT 模型**——FIP 直接在 VM 所在 hyper 上配 NAT（见 `api/src/services/floatingip.go:389` 处 `inter=%d` 用的是 `instance.Hyper`），**不走独立 router gateway**。绑定校验 **两层**：
 
    a. **VPC 层**：VM 所在 VPC 必须挂载一个相同 `(pod, public-vlan)` 的 public subnet（要么 FIP 池本身，要么 public 原生），否则 VPC 路由不通该公网 vlan，NAT 无意义。
    b. **Hyper 层**：VM 当前 hyper 必须满足 `pod=FIP.pod AND vlan-public=FIP.public-vlan`，否则拒绝绑定（UI 提示先迁移到匹配 hyper）。
@@ -225,7 +225,7 @@ hyperGroup, err := GetHyperGroupBySelector(ctx, finalSel, -1)
 - **新增校验**：subnet 创建时如果 selector 命中 0 台 hyper，**警告但不阻止**（允许提前规划）
 - IP 分配本身不变（subnet → IP 池），但 IP 实际下发到 OVS 只发生在 selector 命中的 hyper 上
 
-### 5. FIP 创建路径（[services/floatingip.go](api/src/services/floatingip.go) Create）
+### 5. FIP 创建路径（`api/src/services/floatingip.go` Create）
 
 ```go
 // 入参新增（必填）：pod, public_vlan
@@ -237,7 +237,7 @@ sub, err := findFIPPoolSubnet(ctx, req.Pod, req.PublicVlan)
 
 前端 FIP 创建表单：先选 `pod`（下拉来自 hyper.pod 去重），再级联出该 pod 下可用的 `public-vlan` 列表（来自该 pod 内 hyper 的 `vlan-public` label 去重）。
 
-### 6. FIP 绑定路径（[services/floatingip.go:389](api/src/services/floatingip.go#L389) AttachToInstance）
+### 6. FIP 绑定路径（`api/src/services/floatingip.go:389` AttachToInstance）
 
 ```go
 // 现有代码：control := fmt.Sprintf("inter=%d", instance.Hyper) — 直接在 VM hyper 上配 NAT
