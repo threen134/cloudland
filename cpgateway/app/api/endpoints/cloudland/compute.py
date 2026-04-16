@@ -1,8 +1,10 @@
-from fastapi import APIRouter, Depends, Request, Response
+import json
+
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_db
 from app.api.deps import get_current_active_user
-from app.models.user import User
+from app.models.user import SystemRole, User
 from app.services.proxy_service import proxy_service
 
 router = APIRouter(tags=['Compute'])
@@ -331,6 +333,19 @@ async def post_instances(
     """
     create a instance
     """
+    body_bytes = await request.body()
+    if body_bytes:
+        try:
+            payload = json.loads(body_bytes)
+        except ValueError:
+            payload = None
+        if isinstance(payload, dict) and payload.get("hypervisor") is not None:
+            is_admin = current_user.is_superuser or current_user.system_role == SystemRole.ADMIN
+            if not is_admin:
+                raise HTTPException(
+                    status_code=403,
+                    detail="Only system admin can pin an instance to a specific hypervisor",
+                )
     return await proxy_service.forward_to_region(
         request=request,
         db=db,

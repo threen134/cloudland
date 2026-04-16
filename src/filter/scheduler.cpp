@@ -280,6 +280,18 @@ int filter_input(void *user_param, sci_group_t group, void *buffer, int size) {
       } else {
         rc = bcast_message(msgID, group, buffer, size);
       }
+    } else if (inter != NULL) {
+      fprintf(stderr,
+              "[SCHEDULER] filter_input: pinned msgID=%d to node %d (inter=)\n",
+              msgID, target);
+      rc = SCI_Filter_bcast(SCHEDULE_FILTER, 1, &target, 1, &buffer, &size);
+      if (rc != SCI_SUCCESS) {
+        fprintf(stderr,
+                "[SCHEDULER] filter_input: SCI_Filter_bcast to pinned node %d "
+                "failed rc=%d\n",
+                target, rc);
+        rc = upload_message(msgID, myID, group, "error=resource", message);
+      }
     } else {
       long cpu = getValue(control, "cpu=", NULL);
       long memory = getValue(control, "memory=", NULL);

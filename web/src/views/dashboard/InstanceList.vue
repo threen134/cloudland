@@ -13,11 +13,15 @@ import { vpcsApi, subnetsApi, securityGroupsApi, floatingIpsApi, type VPC, type 
 import { keysApi, type SSHKey } from '../../api/keys'
 import { flavorsApi } from '../../api/flavors'
 import { zonesApi, type Zone } from '../../api/zones'
+import { hypervisorsApi, type Hypervisor } from '../../api/hypervisors'
 import { isValidName } from '../../utils/validation'
 import DeleteModal from '../../components/modals/DeleteModal.vue'
 import { useRegionStore } from '../../stores/region'
+import { useAuthStore } from '../../stores/auth'
 
 const region = useRegionStore()
+const authStore = useAuthStore()
+const isSystemAdmin = computed(() => authStore.user?.role === 'admin' || authStore.user?.is_superuser === true)
 
 
 
@@ -470,6 +474,7 @@ const availableSecurityGroups = ref<SecurityGroup[]>([])
 const availableKeys = ref<SSHKey[]>([])
 const availableFloatingIps = ref<FloatingIP[]>([])
 const availableZones = ref<Zone[]>([])
+const availableHypers = ref<Hypervisor[]>([])
 const sshKeysDropdownOpen = ref(false)
 
 const tempPassword = ref('')
@@ -489,6 +494,12 @@ const generateRandomPassword = () => {
 }
 
 const isHostnameValid = computed(() => isValidName(newInstanceForm.value.hostname))
+
+const hypersForZone = computed(() => {
+    const zone = newInstanceForm.value.zone
+    if (!zone) return availableHypers.value
+    return availableHypers.value.filter(h => h.zone_name === zone)
+})
 
 
 
@@ -513,6 +524,7 @@ const newInstanceForm = ref({
     userdata_type: 'plain',
     userdata: '',
     nested_enable: false,
+    hypervisor: null as string | null,
     primary_interface: {
         network_type: 'vpc' as const,
         vpc_id: '',
@@ -560,6 +572,7 @@ const openCreateModal = () => {
         userdata_type: 'plain',
         userdata: '',
         nested_enable: false,
+        hypervisor: null,
         primary_interface: {
             network_type: 'vpc',
             vpc_id: '',
@@ -641,6 +654,18 @@ const fetchResources = async () => {
         // Set default zone if available
         if (availableZones.value.length > 0) {
             newInstanceForm.value.zone = String(availableZones.value[0].name || availableZones.value[0].id)
+        }
+
+        if (isSystemAdmin.value) {
+            try {
+                const hypersRes = await hypervisorsApi.fetchHypervisors({ limit: 500 })
+                availableHypers.value = hypersRes.data.hypers || []
+            } catch (err) {
+                console.error('Failed to fetch hypervisors:', err)
+                availableHypers.value = []
+            }
+        } else {
+            availableHypers.value = []
         }
 
 
@@ -804,6 +829,16 @@ watch(
     }
 )
 
+watch(
+    () => newInstanceForm.value.zone,
+    () => {
+        const current = newInstanceForm.value.hypervisor
+        if (current != null && !hypersForZone.value.some(h => h.uuid === current)) {
+            newInstanceForm.value.hypervisor = null
+        }
+    }
+)
+
 const autoSelectDefaultSGs = (iface: InterfaceForm) => {
     const vpcId = iface.network_type === 'vpc' ? iface.vpc_id : undefined
     const filtered = getFilteredSecurityGroups(vpcId)
@@ -910,6 +945,10 @@ const handleCreateInstance = async () => {
 
         if (form.root_passwd) {
             payload.root_passwd = form.root_passwd
+        }
+
+        if (isSystemAdmin.value && form.hypervisor != null) {
+            payload.hypervisor = form.hypervisor
         }
 
         await instancesApi.createInstance(payload)
@@ -1569,6 +1608,17 @@ onUnmounted(() => {
             </div>
 
             <div class="advanced-content" v-if="newInstanceForm.advanced_expanded">
+                <div class="form-group" v-if="isSystemAdmin">
+                    <label class="form-label">{{ t('dashboard.instanceDetail.pinHypervisor') }}</label>
+                    <select id="pinHypervisor" name="pinHypervisor" v-model="newInstanceForm.hypervisor" class="form-select">
+                        <option :value="null">{{ t('dashboard.instanceDetail.hypervisorAuto') }}</option>
+                        <option v-for="h in hypersForZone" :key="h.uuid" :value="h.uuid">
+                            {{ h.hostname }} ({{ h.status_name }})
+                        </option>
+                    </select>
+                    <small class="form-hint">{{ t('dashboard.instanceDetail.hypervisorHint') }}</small>
+                </div>
+
                 <div class="form-group">
                     <label class="form-label">{{ t('dashboard.instanceDetail.loginPort') }}</label>
                     <input id="loginPort" name="loginPort" v-model.number="newInstanceForm.login_port" type="number" class="form-input" :placeholder="t('dashboard.instanceDetail.loginPortPlaceholder')" />

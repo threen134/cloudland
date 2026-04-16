@@ -24,13 +24,10 @@ var hyperAdmin = &services.HyperAdmin{}
 type HyperAPI struct{}
 
 type HyperResponse struct {
-	ID            int64   `json:"id"`
 	UUID          string  `json:"uuid"`
-	Hostid        int32   `json:"hostid"`
 	Hostname      string  `json:"hostname"`
 	Status        int32   `json:"status"`
 	StatusName    string  `json:"status_name"`
-	Parentid      int32   `json:"parentid"`
 	Children      int32   `json:"children"`
 	HostIP        string  `json:"host_ip"`
 	RouteIP       string  `json:"route_ip"`
@@ -38,7 +35,6 @@ type HyperResponse struct {
 	CpuOverRate   float32 `json:"cpu_over_rate"`
 	MemOverRate   float32 `json:"mem_over_rate"`
 	DiskOverRate  float32 `json:"disk_over_rate"`
-	ZoneID        int64   `json:"zone_id"`
 	ZoneName      string  `json:"zone_name"`
 	Remark        string  `json:"remark"`
 	Cpu           int64   `json:"cpu"`
@@ -341,13 +337,10 @@ func (v *HyperAPI) Delete(c *gin.Context) {
 // convertHyperToResponse converts a model.Hyper to HyperResponse
 func convertHyperToResponse(hyper *model.Hyper) *HyperResponse {
 	resp := &HyperResponse{
-		ID:           hyper.ID,
 		UUID:         hyper.UUID,
-		Hostid:       hyper.Hostid,
 		Hostname:     hyper.Hostname,
 		Status:       hyper.Status,
 		StatusName:   hyper.GetStatus(),
-		Parentid:     hyper.Parentid,
 		Children:     hyper.Children,
 		HostIP:       hyper.HostIP,
 		RouteIP:      hyper.RouteIP,
@@ -355,7 +348,6 @@ func convertHyperToResponse(hyper *model.Hyper) *HyperResponse {
 		CpuOverRate:  hyper.CpuOverRate,
 		MemOverRate:  hyper.MemOverRate,
 		DiskOverRate: hyper.DiskOverRate,
-		ZoneID:       hyper.ZoneID,
 		Remark:       hyper.Remark,
 	}
 

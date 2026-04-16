@@ -231,21 +231,18 @@ const handleDelete = async () => {
     }
 }
 
+const editingZoneId = ref<number>(0)
+
+const resolveZoneIdByName = (name: string): number => {
+    const match = zoneList.value.find((z: any) => z.name === name)
+    return match ? (match as any).id : 0
+}
+
 // Edit logic
 const openEditModal = async (h: Hypervisor) => {
     editingHyper.value = h
-    editForm.value = {
-        status: h.status,
-        zone_id: h.zone_id,
-        cpu_over_rate: h.cpu_over_rate || 1,
-        mem_over_rate: h.mem_over_rate || 1,
-        disk_over_rate: h.disk_over_rate || 1,
-        remark: h.remark || ''
-    }
-    showEditModal.value = true
     closeActionMenu()
-    
-    // Fetch zones if not already loaded
+
     if (zoneList.value.length === 0) {
         try {
             const resp = await zonesApi.fetchZones()
@@ -253,6 +250,17 @@ const openEditModal = async (h: Hypervisor) => {
             zoneList.value = Array.isArray(data) ? data : (data.zones || [])
         } catch { zoneList.value = [] }
     }
+
+    editingZoneId.value = resolveZoneIdByName(h.zone_name)
+    editForm.value = {
+        status: h.status,
+        zone_id: editingZoneId.value,
+        cpu_over_rate: h.cpu_over_rate || 1,
+        mem_over_rate: h.mem_over_rate || 1,
+        disk_over_rate: h.disk_over_rate || 1,
+        remark: h.remark || ''
+    }
+    showEditModal.value = true
 }
 
 const handleEditSave = async () => {
@@ -261,7 +269,7 @@ const handleEditSave = async () => {
     try {
         const payload: any = {}
         if (editForm.value.status !== editingHyper.value.status) payload.status = editForm.value.status
-        if (editForm.value.zone_id !== editingHyper.value.zone_id) payload.zone_id = editForm.value.zone_id
+        if (editForm.value.zone_id !== editingZoneId.value) payload.zone_id = editForm.value.zone_id
         if (editForm.value.cpu_over_rate !== editingHyper.value.cpu_over_rate) payload.cpu_over_rate = Number(editForm.value.cpu_over_rate)
         if (editForm.value.mem_over_rate !== editingHyper.value.mem_over_rate) payload.mem_over_rate = Number(editForm.value.mem_over_rate)
         if (editForm.value.disk_over_rate !== editingHyper.value.disk_over_rate) payload.disk_over_rate = Number(editForm.value.disk_over_rate)

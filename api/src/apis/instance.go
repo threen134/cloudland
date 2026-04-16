@@ -55,7 +55,7 @@ type InstanceRescuePayload struct {
 
 type InstancePayload struct {
 	Count               int                 `json:"count" binding:"omitempty,gte=1,lte=16"`
-	Hypervisor          *int                `json:"hypervisor" binding:"omitempty,gte=0,lte=65535"`
+	Hypervisor          *string             `json:"hypervisor" binding:"omitempty,uuid"`
 	Hostname            string              `json:"hostname" binding:"required,hostname|fqdn"`
 	Keys                []*BaseReference    `json:"keys" binding:"omitempty,gte=0,lte=16"`
 	RootPasswd          string              `json:"root_passwd" binding:"omitempty,min=8,max=32"`
@@ -570,7 +570,13 @@ func (v *InstanceAPI) Create(c *gin.Context) {
 	}
 	hypervisor := -1
 	if payload.Hypervisor != nil {
-		hypervisor = *payload.Hypervisor
+		hyper, herr := hyperAdmin.GetHyperByUUID(ctx, *payload.Hypervisor)
+		if herr != nil {
+			logger.Errorf("Failed to find hypervisor by UUID %s: %+v", *payload.Hypervisor, herr)
+			ErrorResponse(c, http.StatusBadRequest, "Specified hypervisor not found", herr)
+			return
+		}
+		hypervisor = int(hyper.Hostid)
 	}
 	if flavor == nil && (payload.Cpu <= 0 || payload.Memory <= 0 || payload.Disk <= 0) {
 		logger.Errorf("no valid configuration")

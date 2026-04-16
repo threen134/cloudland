@@ -1,13 +1,10 @@
 import client from './client'
 
 export interface Hypervisor {
-    id: number
     uuid: string
-    hostid: number
     hostname: string
     status: number
     status_name: string
-    parentid: number
     children: number
     host_ip: string
     route_ip: string
@@ -15,7 +12,6 @@ export interface Hypervisor {
     cpu_over_rate: number
     mem_over_rate: number
     disk_over_rate: number
-    zone_id: number
     zone_name: string
     remark: string
     cpu: number

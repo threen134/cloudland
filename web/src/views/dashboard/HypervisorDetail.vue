@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { hypervisorsApi, type Hypervisor } from '../../api/hypervisors'
 import { zonesApi } from '../../api/zones'
@@ -70,11 +70,17 @@ const fetchHypervisorDetail = async () => {
     }
 }
 
+const currentZoneId = computed(() => {
+    if (!hypervisor.value) return 0
+    const match = zoneList.value.find((z: any) => z.name === hypervisor.value!.zone_name)
+    return match ? (match as any).id : 0
+})
+
 const syncForm = () => {
     if (!hypervisor.value) return
     form.value = {
         status: hypervisor.value.status,
-        zone_id: hypervisor.value.zone_id,
+        zone_id: currentZoneId.value,
         cpu_over_rate: hypervisor.value.cpu_over_rate || 1,
         mem_over_rate: hypervisor.value.mem_over_rate || 1,
         disk_over_rate: hypervisor.value.disk_over_rate || 1,
@@ -113,6 +119,7 @@ const toggleEdit = async () => {
         const data = resp.data as any
         zoneList.value = Array.isArray(data) ? data : (data.zones || [])
     } catch { zoneList.value = [] }
+    syncForm()
 }
 
 const cancelEdit = () => {
@@ -126,7 +133,7 @@ const handleSave = async () => {
     try {
         const payload: any = {}
         if (form.value.status !== hypervisor.value.status) payload.status = form.value.status
-        if (form.value.zone_id !== hypervisor.value.zone_id) payload.zone_id = form.value.zone_id
+        if (form.value.zone_id !== currentZoneId.value) payload.zone_id = form.value.zone_id
         if (form.value.cpu_over_rate !== hypervisor.value.cpu_over_rate) payload.cpu_over_rate = Number(form.value.cpu_over_rate)
         if (form.value.mem_over_rate !== hypervisor.value.mem_over_rate) payload.mem_over_rate = Number(form.value.mem_over_rate)
         if (form.value.disk_over_rate !== hypervisor.value.disk_over_rate) payload.disk_over_rate = Number(form.value.disk_over_rate)
@@ -270,10 +277,6 @@ onMounted(fetchHypervisorDetail)
               <div class="info-row">
                 <span class="info-label">{{ t('dashboard.hypervisorDeploy.virtType') }}</span>
                 <span class="info-value">{{ hypervisor.virt_type }}</span>
-              </div>
-              <div class="info-row">
-                <span class="info-label">{{ t('dashboard.table.hostId') || 'Host ID' }}</span>
-                <span class="info-value mono">{{ hypervisor.hostid }}</span>
               </div>
               <div class="info-row">
                 <span class="info-label">{{ t('dashboard.table.zone') }}</span>
