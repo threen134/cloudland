@@ -1,7 +1,7 @@
 from fastapi import FastAPI, Request
 from app.core.config import settings
 from app.core.logging_config import setup_logging, logger
-from app.api.endpoints import auth, users, resources, regions, orgs, notification_channels, alarm_summary, system_settings
+from app.api.endpoints import auth, users, resources, regions, orgs, notification_channels, alarm_summary, system_settings, infrastructure
 from app.api.endpoints.cloudland import compute, network, authorization, zone, administration, alarm, monitor
 from app.core.database import engine, Base, AsyncSessionLocal
 import time
@@ -142,6 +142,7 @@ app.include_router(resources.router, prefix=f"{settings.API_V1_STR}/resources", 
 app.include_router(notification_channels.router, prefix=f"{settings.API_V1_STR}/notification-channels", tags=["Notification"])
 app.include_router(alarm_summary.router, prefix=f"{settings.API_V1_STR}", tags=["Alarm"])
 app.include_router(system_settings.router, prefix=f"{settings.API_V1_STR}/system/settings", tags=["System Settings"])
+app.include_router(infrastructure.router, prefix=f"{settings.API_V1_STR}/system/infrastructure", tags=["Infrastructure"])
 
 
 # Cloudland Proxy Routes (forwarded to Cloudland internal)

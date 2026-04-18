@@ -356,6 +356,10 @@ func Register() (r *gin.Engine) {
 		// 内部同步接口（CPGateway 推送系统设置）
 		authGroup.POST("/internal/system-settings/sync", systemSettingAPI.SyncSystemSettings)
 
+		// 运行时基础设施配置只读查询（CPGateway Infrastructure tab 透传）
+		authGroup.GET("/internal/runtime-config", runtimeConfigAPI.GetRuntimeConfig)
+		authGroup.POST("/internal/runtime-config/test-s3", runtimeConfigAPI.TestS3)
+
 		// 内部同步接口（CPGateway 推送 org 记录，保持 organizations 表一致）
 		authGroup.POST("/internal/orgs/sync", SyncOrg)
 

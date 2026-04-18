@@ -1,13 +1,15 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import {
     Save, Send, RefreshCw, ChevronRight,
     Settings2, Lightbulb, Bell, Layers, Shield,
-    Globe, Mail, MessageSquare, Webhook
+    Globe, Mail, MessageSquare, Webhook,
+    Server, Database, HardDrive, CheckCircle2, XCircle, Info
 } from 'lucide-vue-next'
 import { useToast } from '../../composables/useToast'
 import { systemSettingsApi, type SystemSetting } from '../../api/systemSettings'
+import { infrastructureApi, type InfrastructureConfig, type TestS3Response } from '../../api/infrastructure'
 
 const { t, te } = useI18n()
 const toast = useToast()
@@ -30,7 +32,7 @@ const getFieldDesc = (setting: SystemSetting): string => {
 }
 
 // Categories configuration
-const categories = ['general', 'quota', 'notification']
+const categories = ['general', 'quota', 'notification', 'infrastructure']
 const activeMainTab = ref('general')
 const activeChannelTab = ref('email')
 
@@ -38,6 +40,7 @@ const categoryIconsMap: Record<string, any> = {
     general: Settings2,
     quota: Layers,
     notification: Bell,
+    infrastructure: Server,
 }
 
 const getCategoryIcon = (category: string) => {
@@ -143,6 +146,91 @@ const testChannel = async (channel: string) => {
     }
 }
 
+// --- Infrastructure tab state ---
+const infraConfig = ref<InfrastructureConfig | null>(null)
+const infraLoading = ref(false)
+const infraError = ref<string>('')
+const testingS3 = ref(false)
+const s3TestResult = ref<TestS3Response | null>(null)
+
+const fetchInfrastructure = async () => {
+    infraLoading.value = true
+    infraError.value = ''
+    s3TestResult.value = null
+    try {
+        const res = await infrastructureApi.get()
+        infraConfig.value = res.data
+    } catch (err: any) {
+        infraError.value = err?.response?.data?.detail || err?.message || 'Failed to load'
+        infraConfig.value = null
+    } finally {
+        infraLoading.value = false
+    }
+}
+
+const testS3Connection = async () => {
+    testingS3.value = true
+    s3TestResult.value = null
+    try {
+        const res = await infrastructureApi.testS3()
+        s3TestResult.value = res.data
+        if (res.data.success) {
+            toast.success(t('settings.infra.testS3Success'))
+        } else {
+            toast.error(t('settings.infra.testS3Failed', { message: res.data.message }))
+        }
+    } catch (err: any) {
+        const msg = err?.response?.data?.detail || err?.message || 'Unknown error'
+        s3TestResult.value = { success: false, message: msg }
+        toast.error(t('settings.infra.testS3Failed', { message: msg }))
+    } finally {
+        testingS3.value = false
+    }
+}
+
+// infrastructure 字段分组（只读展示）
+const infraGroups = computed(() => {
+    if (!infraConfig.value) return []
+    const c = infraConfig.value
+    return [
+        {
+            icon: Database,
+            title: t('settings.infra.groupS3'),
+            fields: [
+                { label: 'S3_ENDPOINT', value: c.s3_endpoint || '—' },
+                { label: 'S3_ACCESS_KEY', value: c.s3_access_key || '—' },
+                { label: 'S3_SECRET_KEY', value: c.s3_secret_key_set ? c.s3_secret_key : t('settings.infra.unset'), secret: true },
+                { label: 'S3_BUCKET', value: c.s3_bucket || '—' },
+                { label: 'S3_REGION', value: c.s3_region || '—' },
+                { label: 'S3_USE_SSL', value: String(c.s3_use_ssl) },
+                { label: 'S3_UPLOAD_TIMEOUT_MINUTES', value: String(c.s3_upload_timeout_minutes || '—') },
+            ],
+        },
+        {
+            icon: HardDrive,
+            title: t('settings.infra.groupMinio'),
+            fields: [
+                { label: 'MINIO_HOSTNAME', value: c.minio_hostname || '—' },
+            ],
+        },
+        {
+            icon: Server,
+            title: t('settings.infra.groupCapture'),
+            fields: [
+                { label: 'CLAPI_HOSTNAME', value: c.clapi_hostname || '—' },
+                { label: 'CLAPI_INTERNAL_URL', value: c.clapi_internal_url || t('settings.infra.autoDerived') },
+                { label: 'SCI_SHARED_SECRET', value: c.sci_shared_secret_set ? c.sci_shared_secret : t('settings.infra.unset'), secret: true },
+            ],
+        },
+    ]
+})
+
+watch(activeMainTab, (tab) => {
+    if (tab === 'infrastructure' && !infraConfig.value && !infraLoading.value) {
+        fetchInfrastructure()
+    }
+})
+
 const enabledChannels = computed<string[]>(() => {
     const raw = editValues.value['NOTIFICATION_CHANNELS']
     if (!raw) return []
@@ -197,10 +285,10 @@ onUnmounted(() => {
                 <h2>{{ $t('settings.title') }}</h2>
             </div>
             <div class="header-apps">
-                <button type="button" class="btn btn-secondary btn-icon-only" @click.stop.prevent="fetchSettings" :disabled="loading" :title="$t('common.refresh')" :aria-label="$t('common.refresh')">
-                    <RefreshCw :size="18" :class="{ spin: loading }" />
+                <button type="button" class="btn btn-secondary btn-icon-only" @click.stop.prevent="activeMainTab === 'infrastructure' ? fetchInfrastructure() : fetchSettings()" :disabled="loading || infraLoading" :title="$t('common.refresh')" :aria-label="$t('common.refresh')">
+                    <RefreshCw :size="18" :class="{ spin: loading || infraLoading }" />
                 </button>
-                <button type="button" class="btn btn-primary btn-save-main" @click.stop.prevent="saveSettings" :disabled="saving || loading">
+                <button v-if="activeMainTab !== 'infrastructure'" type="button" class="btn btn-primary btn-save-main" @click.stop.prevent="saveSettings" :disabled="saving || loading">
                     <Save :size="18" />
                     <span>{{ saving ? $t('common.saving') : $t('common.save') }}</span>
                 </button>
@@ -322,6 +410,98 @@ onUnmounted(() => {
                             </div>
                         </div>
                     </div>
+                </div>
+
+                <!-- Infrastructure Context (read-only runtime config) -->
+                <div v-else-if="activeMainTab === 'infrastructure'" class="focused-panel pc-24 infrastructure">
+                    <!-- Modify hint banner -->
+                    <div class="infra-hint-banner">
+                        <Info :size="16" class="hint-icon" />
+                        <div class="hint-text">
+                            <div class="hint-title">{{ $t('settings.infra.readOnlyTitle') }}</div>
+                            <div class="hint-desc">{{ $t('settings.infra.readOnlyDesc') }}</div>
+                        </div>
+                    </div>
+
+                    <!-- Loading / Error states -->
+                    <div v-if="infraLoading" class="infra-state-box">
+                        <div class="loading-spinner sm"></div>
+                        <span>{{ $t('common.loading') }}</span>
+                    </div>
+                    <div v-else-if="infraError" class="infra-state-box error">
+                        <XCircle :size="18" />
+                        <span>{{ infraError }}</span>
+                        <button class="btn btn-sm btn-secondary" @click="fetchInfrastructure">
+                            <RefreshCw :size="14" />
+                            {{ $t('actions.retry') }}
+                        </button>
+                    </div>
+
+                    <template v-else-if="infraConfig">
+                        <!-- Mode Card -->
+                        <div class="infra-mode-card" :class="`mode-${infraConfig.mode}`">
+                            <div class="mode-header">
+                                <div class="mode-badge">
+                                    <span class="dot"></span>
+                                    {{ $t(`settings.infra.mode.${infraConfig.mode}`) }}
+                                </div>
+                                <div class="mode-title">{{ $t('settings.infra.currentMode') }}</div>
+                            </div>
+                            <p class="mode-desc">{{ $t(`settings.infra.modeDesc.${infraConfig.mode}`) }}</p>
+                            <div class="mode-meta">
+                                <span class="meta-item">
+                                    <span class="meta-label">Region:</span>
+                                    <span class="meta-value">{{ infraConfig.region_name }}</span>
+                                </span>
+                                <span class="meta-item">
+                                    <span class="meta-label">S3 Client:</span>
+                                    <span class="meta-value" :class="{ 'ok': infraConfig.s3_enabled, 'nok': !infraConfig.s3_enabled }">
+                                        <CheckCircle2 v-if="infraConfig.s3_enabled" :size="14" />
+                                        <XCircle v-else :size="14" />
+                                        {{ infraConfig.s3_enabled ? $t('settings.infra.initialized') : $t('settings.infra.notInitialized') }}
+                                    </span>
+                                </span>
+                            </div>
+                        </div>
+
+                        <!-- Test S3 action -->
+                        <div class="infra-test-section">
+                            <button
+                                class="btn btn-primary btn-sm"
+                                :disabled="testingS3 || infraConfig.mode === 'legacy'"
+                                @click="testS3Connection"
+                            >
+                                <RefreshCw v-if="testingS3" :size="14" class="spin" />
+                                <Send v-else :size="14" />
+                                {{ $t('settings.infra.testS3') }}
+                            </button>
+                            <div v-if="s3TestResult" class="test-result" :class="{ success: s3TestResult.success, failure: !s3TestResult.success }">
+                                <CheckCircle2 v-if="s3TestResult.success" :size="16" />
+                                <XCircle v-else :size="16" />
+                                <span>{{ s3TestResult.message }}</span>
+                                <span v-if="s3TestResult.latency_ms !== undefined" class="latency">
+                                    {{ s3TestResult.latency_ms }}ms
+                                </span>
+                            </div>
+                        </div>
+
+                        <!-- Config groups (read-only) -->
+                        <div v-for="group in infraGroups" :key="group.title" class="infra-group">
+                            <div class="group-header">
+                                <component :is="group.icon" :size="16" />
+                                <span>{{ group.title }}</span>
+                            </div>
+                            <div class="group-fields">
+                                <div v-for="f in group.fields" :key="f.label" class="infra-field">
+                                    <div class="field-key">{{ f.label }}</div>
+                                    <div class="field-value" :class="{ 'is-secret': f.secret, 'is-empty': f.value === '—' || !f.value }">
+                                        <Shield v-if="f.secret" :size="12" class="secret-icon" />
+                                        {{ f.value }}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </template>
                 </div>
 
                 <!-- Generic Settings Context (General, Quota) -->
@@ -890,6 +1070,279 @@ onUnmounted(() => {
 
 @keyframes spin {
   to { transform: rotate(360deg); }
+}
+
+/* Infrastructure Tab */
+.infra-hint-banner {
+    display: flex;
+    gap: var(--spacing-3);
+    padding: var(--spacing-4) var(--spacing-5);
+    background: var(--warning-50, #fff7ed);
+    border: 1px solid var(--warning-200, #fed7aa);
+    border-radius: var(--radius-lg);
+    margin-bottom: var(--spacing-6);
+}
+
+.infra-hint-banner .hint-icon {
+    color: var(--warning-dark, #b45309);
+    flex-shrink: 0;
+    margin-top: 2px;
+}
+
+.hint-title {
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-bold);
+    color: var(--text-primary);
+    margin-bottom: 2px;
+}
+
+.hint-desc {
+    font-size: var(--font-size-xs);
+    color: var(--text-secondary);
+    line-height: 1.5;
+    white-space: pre-wrap;
+    font-family: var(--font-family-mono);
+}
+
+.infra-state-box {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-3);
+    padding: var(--spacing-6);
+    background: var(--bg-secondary);
+    border-radius: var(--radius-lg);
+    color: var(--text-secondary);
+    font-size: var(--font-size-sm);
+}
+
+.infra-state-box.error {
+    color: var(--danger-dark);
+    background: var(--danger-50, #fef2f2);
+}
+
+.infra-state-box .loading-spinner.sm {
+    width: 18px;
+    height: 18px;
+}
+
+.infra-mode-card {
+    padding: var(--spacing-6);
+    border-radius: var(--radius-xl);
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-light);
+    margin-bottom: var(--spacing-6);
+    transition: all 0.2s;
+}
+
+.infra-mode-card.mode-minio {
+    background: linear-gradient(135deg, var(--primary-50), var(--bg-secondary));
+    border-color: var(--primary-200, #bfdbfe);
+}
+
+.infra-mode-card.mode-external_s3 {
+    background: linear-gradient(135deg, var(--success-50, #ecfdf5), var(--bg-secondary));
+    border-color: var(--success-200, #bbf7d0);
+}
+
+.infra-mode-card.mode-legacy {
+    background: linear-gradient(135deg, var(--warning-50, #fff7ed), var(--bg-secondary));
+    border-color: var(--warning-200, #fed7aa);
+}
+
+.mode-header {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-3);
+    margin-bottom: var(--spacing-2);
+}
+
+.mode-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 12px;
+    border-radius: 999px;
+    background: var(--bg-primary);
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-bold);
+    color: var(--primary-color);
+    border: 1px solid var(--border-default);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.mode-badge .dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--primary-color);
+    animation: pulse 1.8s infinite;
+}
+
+.mode-minio .mode-badge .dot { background: var(--primary-color); }
+.mode-external_s3 .mode-badge .dot { background: var(--success-color); }
+.mode-legacy .mode-badge .dot { background: var(--warning-color); }
+
+@keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.4; }
+}
+
+.mode-title {
+    font-size: var(--font-size-xs);
+    color: var(--text-tertiary);
+    font-weight: var(--font-weight-bold);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.mode-desc {
+    margin: 0 0 var(--spacing-4);
+    font-size: var(--font-size-sm);
+    color: var(--text-secondary);
+    line-height: 1.6;
+}
+
+.mode-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--spacing-4);
+    font-size: var(--font-size-xs);
+}
+
+.meta-item {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--spacing-2);
+}
+
+.meta-label {
+    color: var(--text-tertiary);
+    font-weight: var(--font-weight-bold);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+.meta-value {
+    color: var(--text-primary);
+    font-weight: var(--font-weight-bold);
+    font-family: var(--font-family-mono);
+}
+
+.meta-value.ok {
+    color: var(--success-dark);
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.meta-value.nok {
+    color: var(--danger-dark);
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.infra-test-section {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-4);
+    padding: var(--spacing-4) 0;
+    margin-bottom: var(--spacing-2);
+    flex-wrap: wrap;
+}
+
+.test-result {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--spacing-2);
+    padding: 6px 12px;
+    border-radius: var(--radius-md);
+    font-size: var(--font-size-xs);
+    font-family: var(--font-family-mono);
+}
+
+.test-result.success {
+    background: var(--success-50, #ecfdf5);
+    color: var(--success-dark);
+}
+
+.test-result.failure {
+    background: var(--danger-50, #fef2f2);
+    color: var(--danger-dark);
+}
+
+.test-result .latency {
+    opacity: 0.7;
+    margin-left: 4px;
+}
+
+.infra-group {
+    margin-top: var(--spacing-6);
+    border: 1px solid var(--border-light);
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+}
+
+.group-header {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-2);
+    padding: var(--spacing-3) var(--spacing-4);
+    background: var(--bg-secondary);
+    border-bottom: 1px solid var(--border-light);
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-bold);
+    color: var(--text-primary);
+}
+
+.group-fields {
+    background: var(--bg-primary);
+}
+
+.infra-field {
+    display: grid;
+    grid-template-columns: 280px 1fr;
+    gap: var(--spacing-4);
+    padding: var(--spacing-3) var(--spacing-4);
+    border-bottom: 1px solid var(--border-light);
+    align-items: center;
+}
+
+.infra-field:last-child {
+    border-bottom: none;
+}
+
+.field-key {
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-bold);
+    color: var(--text-tertiary);
+    font-family: var(--font-family-mono);
+    letter-spacing: 0.02em;
+}
+
+.field-value {
+    font-size: var(--font-size-sm);
+    color: var(--text-primary);
+    font-family: var(--font-family-mono);
+    word-break: break-all;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.field-value.is-secret {
+    color: var(--text-secondary);
+    letter-spacing: 0.1em;
+}
+
+.field-value.is-empty {
+    color: var(--text-tertiary);
+    font-style: italic;
+}
+
+.secret-icon {
+    color: var(--text-tertiary);
 }
 
 /* Transitions */
