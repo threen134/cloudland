@@ -3,7 +3,7 @@
 cd $(dirname $0)
 source ../cloudrc
 
-[ $# -lt 12 ] && die "$0 <vm_ID> <image> <qa_enabled> <snapshot> <name> <cpu> <memory> <disk_size> <volume_id> <nested_enable> <boot_loader> <pool_ID> <instance_uuid> <image_volume_id>"
+[ $# -lt 12 ] && die "$0 <vm_ID> <image> <qa_enabled> <snapshot> <name> <cpu> <memory> <disk_size> <volume_id> <nested_enable> <boot_loader> <pool_ID> <instance_uuid> <image_volume_id> <image_download_url_b64>"
 
 ID=$1
 vm_ID=inst-$ID
@@ -20,6 +20,12 @@ boot_loader=${11}
 pool_ID=${12}
 instance_uuid=${13:-$ID}
 image_volume_id=${14}
+# ${15} 是 base64 编码的 S3 presigned GET URL；S3 未启用时 clapi 传空串
+image_download_url_b64=${15}
+image_download_url=""
+if [ -n "$image_download_url_b64" ]; then
+    image_download_url=$(echo "$image_download_url_b64" | base64 -d 2>/dev/null || echo "")
+fi
 state=error
 vm_vnc=""
 vol_state=error
@@ -111,13 +117,15 @@ if [ -z "$wds_address" ]; then
     # 优先从本地卷目录查找虚拟机磁盘
     if [ ! -f "$vm_img" ]; then
         vm_img=$image_dir/$vm_ID.disk
-        # 切换到镜像目录，检查镜像缓存有效性
-         #-s 用于判断文件是否存在且大小大于 0（非空文件）
-        if [ ! -s "$image_cache/$img_name" ]; then
+        # 本地缓存未命中则通过 clapi 下发的 presigned URL 从 S3/MinIO 拉取
+        # 并发安全：ensure_image_cached 内部通过 flock 串行化
+        if ! ensure_image_cached "$img_name" "$image_download_url"; then
             echo "Image is not available!"
             echo "|:-COMMAND-:| create_volume_local '$vol_ID' 'volume-${vol_ID}.disk' '$vol_state' 'image $img_name not available!'"
             exit -1
         fi
+        # 更新 mtime 标记为"最近使用"，供 GC 脚本 (find -mtime +30) 判断保留/清理
+        touch "$image_cache/$img_name"
         #镜像格式转换（转为 qcow2 格式）
         # 提取原镜像文件格式
         format=$(qemu-img info $image_cache/$img_name | grep 'file format' | cut -d' ' -f3)

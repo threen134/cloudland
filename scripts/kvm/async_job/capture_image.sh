@@ -3,13 +3,16 @@
 cd `dirname $0`
 source ../../cloudrc
 
-[ $# -lt 5 ] && echo "$0 <img_ID> <img_Prefix> <vm_ID> <boot_volume> <storage_ID>" && exit -1
+[ $# -lt 5 ] && echo "$0 <img_ID> <img_Prefix> <vm_ID> <boot_volume> <storage_ID> [<upload_url> <capture_token>]" && exit -1
 
 img_ID=$1
 prefix=$2
 vm_ID=inst-$3
 boot_volume=$4
 storage_ID=$5
+# S3/MinIO 上传参数（仅非 WDS + S3 启用时由 clapi 下发）
+upload_url=$6
+capture_token=$7
 image_name=image-$img_ID-$prefix
 state=error
 
@@ -22,8 +25,30 @@ if [ -z "$wds_address" ]; then
 
     format=$(qemu-img info $inst_img | grep 'file format' | cut -d' ' -f3)
     qemu-img convert -f $format -O qcow2 $inst_img $image
-    [ -s "$image" ] && state=available
-    sync_target /opt/cloudland/cache/image/
+    if [ -s "$image" ]; then
+        if [ -n "$upload_url" ] && [ -n "$capture_token" ]; then
+            # S3/MinIO 路径：POST 给 clapi /internal/images/:id/upload
+            # 不做 curl 层重试：N GB 文件重传代价高；且 clapi 返回 5xx 时重试会让 DB 状态在 error↔available 之间闪，
+            # 失败由用户重新发起 capture
+            http_code=$(curl -sS -o /dev/null -w "%{http_code}" --max-time 7200 \
+                -X POST \
+                -H "X-Capture-Token: $capture_token" \
+                -H "Content-Type: application/octet-stream" \
+                --data-binary "@$image" \
+                "$upload_url")
+            curl_rc=$?
+            [ $curl_rc -ne 0 ] && http_code="000"
+            if [ "$http_code" = "200" ]; then
+                state=available
+            else
+                log_debug $vm_ID "capture upload failed http=$http_code curl_rc=$curl_rc image=$image_name"
+            fi
+            rm -f "$image"
+        else
+            # legacy 单节点模式：不分发，由 FE 回调更新 DB
+            state=available
+        fi
+    fi
     volume_id=""
 else
     # clone the image from the boot volume on the remote storage WDS

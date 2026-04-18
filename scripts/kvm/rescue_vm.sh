@@ -3,7 +3,7 @@
 cd $(dirname $0)
 source ../cloudrc
 
-[ $# -lt 9 ] && die "$0 <vm_ID> <image> <name> <cpu> <memory> <disk_size> <disk_id> <boot_loader> <instance_uuid>"
+[ $# -lt 9 ] && die "$0 <vm_ID> <image> <name> <cpu> <memory> <disk_size> <disk_id> <boot_loader> <instance_uuid> <image_download_url_b64>"
 
 ID=$1
 vm_ID=inst-$ID
@@ -15,6 +15,12 @@ disk_size=$6
 disk_ID=$7
 boot_loader=$8
 instance_uuid=${9:-$ID}
+# ${10} 是 base64 编码的 S3 presigned GET URL；S3 未启用时 clapi 传空串
+image_download_url_b64=${10}
+image_download_url=""
+if [ -n "$image_download_url_b64" ]; then
+    image_download_url=$(echo "$image_download_url_b64" | base64 -d 2>/dev/null || echo "")
+fi
 state=error
 vm_vnc=""
 vol_state=error
@@ -36,11 +42,14 @@ if [ -z "$wds_address" ]; then
     vm_img=$volume_dir/$vm_rescue.disk
     if [ ! -f "$vm_img" ]; then
         vm_img=$image_dir/$vm_rescue.disk
-        if [ ! -s "$image_cache/$img_name" ]; then
+        # 本地缓存未命中则通过 clapi 下发的 presigned URL 从 S3/MinIO 拉取
+        if ! ensure_image_cached "$img_name" "$image_download_url"; then
             echo "Image is not available!"
             echo "|:-COMMAND-:| $(basename $0) '$ID' '$state' '$SCI_CLIENT_ID' 'failed'"
             exit -1
         fi
+        # 更新 mtime，供 GC 判断"最近使用"
+        touch "$image_cache/$img_name"
         format=$(qemu-img info $image_cache/$img_name | grep 'file format' | cut -d' ' -f3)
         cmd="qemu-img convert -f $format -O qcow2 $image_cache/$img_name $vm_img"
         result=$(eval "$cmd")

@@ -107,6 +107,10 @@ func Register() (r *gin.Engine) {
 	// Prometheus http_sd_configs endpoint (无需认证，供 Prometheus 自动发现)
 	v1.GET("/prometheus/sd/:exporter", prometheusSDAPI.GetTargets)
 
+	// capture 镜像上传 (compute → clapi → MinIO)
+	// 鉴权由 handler 内的 HMAC token 校验承担；compute 节点无 JWT，故不进 authGroup
+	v1.POST("/internal/images/:id/upload", imageAPI.UploadCapture)
+
 	authGroup := v1.Group("").Use(Authorize())
 	{
 		authGroup.GET("/zones", zoneAPI.List)

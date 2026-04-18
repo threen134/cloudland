@@ -12,9 +12,11 @@
 #   region-gateway - Region 边缘网关 (VNC WebSocket TLS 终端，多 Region 远程节点使用)
 #   full           - 中央控制面 (nginx + cpgateway)
 #   dev            - 本地容器化 PostgreSQL
+#   minio          - 内置 MinIO 镜像仓库 (不加则使用外部 S3，MinIO 容器不启动)
 #
 # 常用组合:
 #   COMPOSE_PROFILES=full,dev,region          → 全量单节点 (推荐)
+#   COMPOSE_PROFILES=full,dev,region,minio    → 全量 + 内置 MinIO (私有化部署)
 #   COMPOSE_PROFILES=full,dev                 → 仅中央控制面 + 本地 DB (多 Region 中央节点)
 #   COMPOSE_PROFILES=full,region              → 全量 + 外部 DB (HA 部署)
 #   COMPOSE_PROFILES=region,region-gateway    → 远程 Region 节点 (含 VNC 边缘网关)
@@ -140,6 +142,10 @@ services:
     restart: unless-stopped
     profiles:
       - region
+    # 指向宿主 dnsmasq（hyper-hosts 里有 images.cloudland.internal / clapi.cloudland.internal）
+    # 否则 clapi 自己 InitS3 时解析 S3_ENDPOINT 会走 Docker embedded resolver 落空
+    dns:
+      - ${INTERNAL_IP:-127.0.0.1}
     environment:
       # 用于生成发往前端的 VNC Console 代理地址，不控制本容器物理监听 IP
       PUBLIC_IP: ${PUBLIC_IP:-127.0.0.1}
@@ -160,6 +166,20 @@ services:
       # 留空时回退到请求的 Host，单节点模式开箱即用
       CONSOLE_HOST: ${CONSOLE_HOST:-}
       CONSOLE_PORT: "${CONSOLE_PORT:-}"
+      # S3 镜像仓库（为空则回退到 legacy 本地模式）
+      S3_ENDPOINT: ${S3_ENDPOINT:-}
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY:-}
+      S3_SECRET_KEY: ${S3_SECRET_KEY:-}
+      S3_BUCKET: ${S3_BUCKET:-images}
+      S3_REGION: ${S3_REGION:-}
+      S3_USE_SSL: ${S3_USE_SSL:-false}
+      S3_UPLOAD_TIMEOUT_MINUTES: ${S3_UPLOAD_TIMEOUT_MINUTES:-120}
+      # MinIO 内部域名（写入 dnsmasq hyper-hosts，clapi 启动时注册）
+      MINIO_HOSTNAME: ${MINIO_HOSTNAME:-images.cloudland.internal}
+      # compute → clapi → MinIO 转发配置（capture 上传路径用）
+      CLAPI_HOSTNAME: ${CLAPI_HOSTNAME:-clapi.cloudland.internal}
+      CLAPI_INTERNAL_URL: ${CLAPI_INTERNAL_URL:-}
+      SCI_SHARED_SECRET: ${SCI_SHARED_SECRET:-}
     volumes:
       - ./volumes/certs:/certs:ro
       - ./volumes/certs/cland/selfsigned.crt:/etc/ssl/certs/alarm_rules_manager.crt:ro
@@ -173,6 +193,11 @@ services:
     networks:
       cloudland:
         ipv4_address: 172.28.0.30
+    depends_on:
+      # 内置 MinIO 模式：等 minio healthy；外部 S3 模式：minio 容器不启动，required: false 自动忽略
+      minio:
+        condition: service_healthy
+        required: false
 
   # ---------- Console Proxy (VNC) ----------
   consoleproxy:
@@ -432,6 +457,56 @@ services:
       prometheus:
         condition: service_healthy
 
+  # ---------- MinIO 镜像仓库（内置模式，profile: minio）----------
+  # 外部 S3 模式不加 minio profile，容器不启动
+  minio:
+    image: minio/minio:latest
+    container_name: cloudland-minio
+    restart: unless-stopped
+    profiles:
+      - minio
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-cloudland}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?MINIO_ROOT_PASSWORD is required}
+    volumes:
+      - minio_data:/data
+    command: server /data --console-address ":9001"
+    ports:
+      - "${INTERNAL_IP:-127.0.0.1}:9000:9000"
+      - "${INTERNAL_IP:-127.0.0.1}:9001:9001"
+    networks:
+      cloudland:
+        ipv4_address: 172.28.0.95
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ---------- MinIO Bucket 初始化（一次性作业）----------
+  minio-init:
+    image: minio/mc:latest
+    container_name: cloudland-minio-init
+    profiles:
+      - minio
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-cloudland}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?MINIO_ROOT_PASSWORD is required}
+      S3_BUCKET: ${S3_BUCKET:-images}
+    entrypoint: >
+      /bin/sh -c "
+      until mc alias set cland http://minio:9000 $${MINIO_ROOT_USER} $${MINIO_ROOT_PASSWORD}; do sleep 2; done;
+      mc mb --ignore-existing cland/$${S3_BUCKET};
+      mc anonymous set none cland/$${S3_BUCKET};
+      echo 'Bucket initialized (private, access via presigned URL only).';
+      echo 'TIP: configure lifecycle rule to abort incomplete multipart uploads periodically (mc flag depends on version).';
+      "
+    networks:
+      cloudland:
+    depends_on:
+      minio:
+        condition: service_healthy
+
   # ---------- Region Gateway (VNC WebSocket 边缘入口) ----------
   # 多 Region 部署时，每个远程 Region 通过此 Nginx 在边缘终结 TLS，
   # 将 /websockify 转发给内部 consoleproxy。
@@ -483,3 +558,5 @@ volumes:
     name: cloudland-cpgateway-keys
   loki_data:
     name: cloudland-loki-data
+  minio_data:
+    name: cloudland-minio-data

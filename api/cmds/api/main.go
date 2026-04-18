@@ -69,6 +69,26 @@ func init() {
 	viper.BindEnv("console.host", "CONSOLE_HOST")
 	viper.BindEnv("console.port", "CONSOLE_PORT")
 
+	// S3 镜像仓库（MinIO 或外部 S3）配置绑定
+	viper.BindEnv("s3.endpoint", "S3_ENDPOINT")
+	viper.BindEnv("s3.access_key", "S3_ACCESS_KEY")
+	viper.BindEnv("s3.secret_key", "S3_SECRET_KEY")
+	viper.BindEnv("s3.bucket", "S3_BUCKET")
+	viper.BindEnv("s3.region", "S3_REGION")
+	viper.BindEnv("s3.use_ssl", "S3_USE_SSL")
+	viper.BindEnv("s3.upload_timeout_minutes", "S3_UPLOAD_TIMEOUT_MINUTES")
+
+	// DNS 注册域名（clapi 启动时写入 hyper-hosts）
+	viper.BindEnv("minio.hostname", "MINIO_HOSTNAME")
+	viper.BindEnv("clapi.hostname", "CLAPI_HOSTNAME")
+
+	// capture 上传链路：compute → clapi → MinIO
+	viper.BindEnv("clapi.internal_url", "CLAPI_INTERNAL_URL")
+	viper.BindEnv("sci.shared_secret", "SCI_SHARED_SECRET")
+
+	// management_vip 用于 DNS 注册（MinIO/clapi 域名指向控制节点 VIP）
+	viper.BindEnv("management_vip", "MANAGEMENT_VIP")
+
 	rlog.InitLogger("clapi.log")
 	fmt.Printf("Logger initialized, logs are being written to clapi.log\n")
 	
