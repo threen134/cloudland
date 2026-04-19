@@ -79,7 +79,7 @@ mkdir -p volumes/alertmanager
 chown -R 65534:65534 volumes/alertmanager
 
 # 定义需要注入的环境变量
-vars=("PUBLIC_IP" "INTERNAL_IP" "MANAGEMENT_VIP" "NETWORK_DEVICE" "DB_LISTEN_IP" "POSTGRES_USER" "POSTGRES_PASSWORD" "POSTGRES_DB" "ADMIN_PASSWORD" "ADMIN_EMAIL" "COMPOSE_PROFILES" "DB_HOST" "DB_PORT" "CPGATEWAY_SECRET_KEY" "NOTIFICATION_METHOD" "FEISHU_WEBHOOK_URL" "FEISHU_SECRET" "S3_ENDPOINT" "S3_ACCESS_KEY" "S3_SECRET_KEY" "S3_BUCKET" "S3_REGION" "S3_USE_SSL" "S3_UPLOAD_TIMEOUT_MINUTES" "MINIO_HOSTNAME" "CLAPI_HOSTNAME" "SCI_SHARED_SECRET" "GRAFANA_ADMIN_PASSWORD" "DNS_UPSTREAM")
+vars=("PUBLIC_IP" "INTERNAL_IP" "MANAGEMENT_VIP" "NETWORK_DEVICE" "DB_LISTEN_IP" "POSTGRES_USER" "POSTGRES_PASSWORD" "POSTGRES_DB" "ADMIN_PASSWORD" "ADMIN_EMAIL" "COMPOSE_PROFILES" "DB_HOST" "DB_PORT" "CPGATEWAY_SECRET_KEY" "NOTIFICATION_METHOD" "FEISHU_WEBHOOK_URL" "FEISHU_SECRET" "S3_ENDPOINT" "S3_ACCESS_KEY" "S3_SECRET_KEY" "S3_BUCKET" "S3_REGION" "S3_USE_SSL" "S3_UPLOAD_TIMEOUT_MINUTES" "MINIO_HOSTNAME" "CLAPI_HOSTNAME" "SCI_SHARED_SECRET" "GRAFANA_ADMIN_PASSWORD" "DNS_UPSTREAM" "MINIO_ROOT_USER" "MINIO_ROOT_PASSWORD")
 
 # 注入环境变量到 .env (如果当前 Shell 环境中有定义)
 for var in "${vars[@]}"; do
@@ -117,6 +117,23 @@ if [ ${#missing_vars[@]} -ne 0 ]; then
     echo "  PUBLIC_IP=x.x.x.x ADMIN_PASSWORD=xxxx curl -sSL ... | sudo -E bash"
     echo "或者手动编辑 $DEPLOY_DIR/.env 文件。"
     exit 1
+fi
+
+# 启用 minio profile 时，校验 MinIO 必填参数
+compose_profiles=$(grep "^COMPOSE_PROFILES=" .env | cut -d'=' -f2- || echo "")
+compose_profiles="${COMPOSE_PROFILES:-$compose_profiles}"
+if [[ "$compose_profiles" == *minio* ]]; then
+    minio_missing=()
+    for var in "MINIO_ROOT_PASSWORD" "S3_SECRET_KEY"; do
+        val_in_env=$(grep "^${var}=" .env | cut -d'=' -f2- || echo "")
+        if [[ -z "${!var:-}" && -z "$val_in_env" ]]; then
+            minio_missing+=("$var")
+        fi
+    done
+    if [ ${#minio_missing[@]} -ne 0 ]; then
+        warn "启用了 minio profile，但缺少必填参数: ${minio_missing[*]}"
+        exit 1
+    fi
 fi
 
 # 显示当前使用的关键配置摘要 (脱敏)
