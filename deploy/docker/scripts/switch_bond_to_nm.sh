@@ -51,8 +51,8 @@ preflight_check() {
 
     # 检查 bond 接口是否存在
     if ! ip link show "$bond" &>/dev/null; then
-        log_error "接口 $bond 不存在"
-        exit 1
+        log_info "接口 $bond 不存在，跳过迁移"
+        exit 0
     fi
 
     # 检查是否为 bond 类型

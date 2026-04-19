@@ -150,10 +150,13 @@ echo -e "-------------------\n"
 
 # ============ 2. 网络迁移 (可选/检查) ============
 log "2/5 - 迁移网络管理 (networkd -> NetworkManager)"
-if [ -f "scripts/switch_bond_to_nm.sh" ]; then
-    # 按计划迁移 bond0 和 bond1
+net_dev=$(grep "^NETWORK_DEVICE=" .env | cut -d'=' -f2- || echo "")
+net_dev="${NETWORK_DEVICE:-$net_dev}"
+if [ -f "scripts/switch_bond_to_nm.sh" ] && [[ "$net_dev" == bond* ]]; then
     bash scripts/switch_bond_to_nm.sh bond0 || warn "bond0 迁移跳过或已完成"
     bash scripts/switch_bond_to_nm.sh bond1 || warn "bond1 迁移跳过或已完成"
+else
+    log "网络设备为 $net_dev，非 bond 接口，跳过 bond 迁移"
 fi
 
 # ============ 3. 准备凭证 ============
@@ -188,6 +191,20 @@ bash scripts/init-certs.sh
 DNS_UPSTREAM_VAL=$(grep '^DNS_UPSTREAM=' .env | cut -d'=' -f2- || echo "")
 mkdir -p ../dns/hosts ../dns/conf.d
 [ -f ../dns/hosts/hyper-hosts ] || touch ../dns/hosts/hyper-hosts
+# 注册控制节点自身 hostname 到 dnsmasq
+# SCI frontend 初始化时需要通过 DNS 解析自身 hostname，否则会启动失败
+CTRL_HOSTNAME=$(hostname)
+INTERNAL_IP_VAL=$(grep '^INTERNAL_IP=' .env | cut -d'=' -f2-)
+if [ -n "$CTRL_HOSTNAME" ] && [ -n "$INTERNAL_IP_VAL" ]; then
+    for entry in "$CTRL_HOSTNAME" \
+                 "$(grep '^MINIO_HOSTNAME=' .env | cut -d'=' -f2-)" \
+                 "$(grep '^CLAPI_HOSTNAME=' .env | cut -d'=' -f2-)"; do
+        if [ -n "$entry" ] && ! grep -qw "$entry" ../dns/hosts/hyper-hosts 2>/dev/null; then
+            echo "$INTERNAL_IP_VAL $entry" >> ../dns/hosts/hyper-hosts
+            log "已注册 DNS: $INTERNAL_IP_VAL $entry"
+        fi
+    done
+fi
 # 支持逗号分隔的多个上游地址，每个一行 server= (对齐 clapi ApplyDnsUpstream 实现)
 # 这是 bootstrap 配置，clapi 启动后会根据 DB 中 DNS_UPSTREAM 设置覆写
 if [ ! -f ../dns/conf.d/upstream.conf ]; then

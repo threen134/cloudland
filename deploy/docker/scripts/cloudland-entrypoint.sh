@@ -11,27 +11,7 @@ echo "    SCI_LISTENER_PORT=$SCI_LISTENER_PORT"
 
 echo "==> API 注册模式：不使用 host.list，节点通过 API 动态注册"
 
-# 配置 SSH 密钥，供 SCI 外部启动器使用
-if [ -f /opt/cloudland/deploy/.ssh/cland.key ]; then
-    echo "==> 配置 SSH 密钥 (SCI 外部启动器)"
-    mkdir -p ~/.ssh
-    chmod 700 ~/.ssh
-    cat > ~/.ssh/config << 'EOF'
-Host *
-    StrictHostKeyChecking no
-    UserKnownHostsFile /dev/null
-    IdentityFile /opt/cloudland/deploy/.ssh/cland.key
-    LogLevel ERROR
-EOF
-    chmod 600 ~/.ssh/config
-else
-    echo "警告: /opt/cloudland/deploy/.ssh/cland.key 不存在，SCI SSH 启动器可能失败"
-fi
-echo "==> 配置 SSH 密钥 (Docker)"
-
 # 清理旧日志，避免新旧日志混在同一文件
 rm -f /opt/cloudland/log/*.log /opt/cloudland/log/*.log.* 2>/dev/null || true
 
-# 在容器中直接启动 cloudland，不使用 VIP 检查循环
-# （容器的生命周期由 Docker 管理）
 exec /opt/cloudland/bin/cloudland
