@@ -41,7 +41,7 @@ async def startup():
     from app.models import OrgResourceQuota, OrgResourceConsumption  # noqa: F401 — register all models
     from app.models.system_setting import SystemSetting, SystemConfigVersion  # noqa: F401
     from app.models.user import User, SystemRole, UserStatus
-    from app.models.org import Organization
+    from app.models.org import Organization, OrgStatus
     from app.models.member import Member
     from app.models.token_revocation import TokenRevocation
     from app.core.security import get_password_hash
@@ -96,6 +96,7 @@ async def startup():
                 name="Admin",
                 slug="admin",
                 org_type=2,  # SYSTEM type
+                status=OrgStatus.ACTIVE,
                 owner_user_id=root_user.id,
             )
             db.add(admin_org)
