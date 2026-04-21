@@ -129,6 +129,41 @@ func MigrateVM(ctx context.Context, args []string) (status string, err error) {
 		logger.Error("Invalid instance ID", err)
 		return
 	}
+	errHndl := ctx.Value("error")
+	if errHndl != nil {
+		reason := "Resource is not enough"
+		err = db.Model(instance).Updates(map[string]interface{}{
+			"status": "rollback",
+			"reason": reason}).Error
+		if err != nil {
+			logger.Error("Failed to update instance", err)
+		}
+		err = db.Model(migration).Update(map[string]interface{}{"status": "failed"}).Error
+		if err != nil {
+			logger.Error("Failed to update migration", err)
+		}
+		return
+	}
+
+	// Use defer to handle status updates, ensuring both migration and task status
+	// are set to "failed" if any error occurs during the function execution.
+	defer func() {
+		if status != "failed" {
+			taskStatus = "completed"
+		}
+		migration.Status = status
+		if err != nil {
+			taskStatus = "failed"
+			err = db.Model(&model.Task{}).Where("id = ?", taskID).Update(map[string]interface{}{"status": taskStatus, "message": err.Error()}).Error
+		} else {
+			err = db.Model(&model.Task{}).Where("id = ?", taskID).Update(map[string]interface{}{"status": taskStatus, "message": message}).Error
+		}
+		err = db.Model(migration).Update(map[string]interface{}{"status": status}).Error
+		if err != nil {
+			logger.Error("Failed to update migration", err)
+		}
+	}()
+
 	if status == "completed" {
 		err = db.Model(&model.Instance{Model: model.Model{ID: instID}}).Updates(map[string]interface{}{"status": model.InstanceStatusMigrated}).Error
 		if err != nil {
