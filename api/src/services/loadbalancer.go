@@ -24,60 +24,6 @@ var (
 
 type LoadBalancerAdmin struct{}
 
-func GetVrrpInterfaces(ctx context.Context, vrrpInstance *model.VrrpInstance) (vrrpIface1, vrrpIface2 *model.Interface, err error) {
-	logger.Infof("ENTER GetVrrpInterfaces: vrrpInstanceID=%d", vrrpInstance.ID)
-	defer func() {
-		if err != nil {
-			logger.Errorf("EXIT GetVrrpInterfaces: error=%v", err)
-		} else {
-			logger.Info("EXIT GetVrrpInterfaces: success")
-		}
-	}()
-	ctx, db := GetContextDB(ctx)
-	vrrpID := vrrpInstance.ID
-	vrrpIface1 = &model.Interface{}
-	vrrpIface2 = &model.Interface{}
-	err = db.Preload("Address").Where("type = 'vrrp' and name = 'MASTER' and device = ?", vrrpID).Take(vrrpIface1).Error
-	if err != nil {
-		logger.Error("Failed to query vrrp interface 1", err)
-		return
-	}
-	err = db.Preload("Address").Where("type = 'vrrp' and name = 'BACKUP' and device = ?", vrrpID).Take(vrrpIface2).Error
-	if err != nil {
-		logger.Error("Failed to query vrrp interface 2", err)
-		return
-	}
-	return
-}
-
-func GetVrrpHyperGroup(ctx context.Context, vrrpInstance *model.VrrpInstance) (hyperGroup string, vrrpIface1, vrrpIface2 *model.Interface, err error) {
-	logger.Infof("ENTER GetVrrpHyperGroup: vrrpInstanceID=%d", vrrpInstance.ID)
-	defer func() {
-		if err != nil {
-			logger.Errorf("EXIT GetVrrpHyperGroup: error=%v", err)
-		} else {
-			logger.Infof("EXIT GetVrrpHyperGroup: hyperGroup=%s", hyperGroup)
-		}
-	}()
-	hyperList := ""
-	vrrpIface1, vrrpIface2, err = GetVrrpInterfaces(ctx, vrrpInstance)
-	if err != nil {
-		return
-	}
-	if vrrpIface1.Hyper >= 0 {
-		hyperList = fmt.Sprintf("%d,", vrrpIface1.Hyper)
-	}
-	if vrrpIface2.Hyper >= 0 {
-		hyperList = fmt.Sprintf("%s%d", hyperList, vrrpIface2.Hyper)
-	}
-	if hyperList == "" {
-		err = fmt.Errorf("No valid hyper for vrrp interfaces")
-		return
-	}
-	hyperGroup = fmt.Sprintf("group-vrrp-%d:%s", vrrpInstance.ID, hyperList)
-	return
-}
-
 func GetLBFloatingIpJson(ctx context.Context, loadBalancer *model.LoadBalancer) (jsonData []byte, err error) {
 	logger.Infof("ENTER GetLBFloatingIpJson: lbID=%d", loadBalancer.ID)
 	defer func() {
@@ -524,6 +470,13 @@ func (a *LoadBalancerAdmin) Delete(ctx context.Context, loadBalancer *model.Load
 		err = NewCLError(ErrLoadBalancerDeleteFailed, "Failed to delete load balancer", err)
 		return
 	}
+	loadBalancer.Name = fmt.Sprintf("%s-%d", loadBalancer.Name, loadBalancer.CreatedAt.Unix())
+	err = db.Model(&model.LoadBalancer{}).Unscoped().Where("id = ?", loadBalancer.ID).Update("name", loadBalancer.Name).Error
+	if err != nil {
+		logger.Error("DB failed to update loadBalancer name", err)
+		err = NewCLError(ErrLoadBalancerUpdateFailed, "Failed to update loadBalancer name", err)
+		return
+	}
 	count := 0
 	err = db.Model(&model.LoadBalancer{}).Where("router_id = ?", loadBalancer.RouterID).Count(&count).Error
 	if err != nil {
@@ -534,8 +487,8 @@ func (a *LoadBalancerAdmin) Delete(ctx context.Context, loadBalancer *model.Load
 	if count == 0 {
 		err = subnetAdmin.Delete(ctx, loadBalancer.VrrpInstance.VrrpSubnet)
 		if err != nil {
-			logger.Error("Failed to list floating ips", err)
-			err = NewCLError(ErrFIPListFailed, "Failed to list floating ips", err)
+			logger.Error("Failed to delete vrrp subnet", err)
+			err = NewCLError(ErrSubnetDeleteFailed, "Failed to delete vrrp subnet", err)
 			return
 		}
 	}

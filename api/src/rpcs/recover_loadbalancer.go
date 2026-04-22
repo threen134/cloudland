@@ -15,7 +15,6 @@ import (
 
 	. "api/src/common"
 	"api/src/model"
-	"api/src/services"
 )
 
 func init() {
@@ -148,7 +147,7 @@ func RecoverLoadbalancer(ctx context.Context, args []string) (status string, err
 		logger.Debugf("LB %d - Floating IP config JSON: %s", loadBalancer.ID, string(jsonData))
 
 		// Get VRRP interfaces using common package function
-		vrrpIface1, vrrpIface2, err := services.GetVrrpInterfaces(ctx, loadBalancer.VrrpInstance)
+		vrrpIface1, vrrpIface2, err := GetVrrpInterfaces(ctx, loadBalancer.VrrpInstance.ID)
 		if err != nil {
 			logger.Errorf("LB %d - Failed to get VRRP interfaces: %v", loadBalancer.ID, err)
 			continue
@@ -246,7 +245,7 @@ func RecoverLoadbalancer(ctx context.Context, args []string) (status string, err
 		logger.Debugf("LB %d - Haproxy config JSON: %s", loadBalancer.ID, string(haproxyJsonData))
 
 		// Get hyper group for VRRP
-		hyperGroup, _, _, err := services.GetVrrpHyperGroup(ctx, loadBalancer.VrrpInstance)
+		hyperGroup, _, _, err := GetVrrpHyperGroup(ctx, loadBalancer.VrrpInstance)
 		if err != nil {
 			logger.Error("Failed to get vrrp hyper group", err)
 			continue

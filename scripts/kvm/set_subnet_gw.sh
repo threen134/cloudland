@@ -19,6 +19,13 @@ cat /proc/net/dev | grep -q "^\<ln-$vlan\>"
 if [ $? -ne 0 ]; then
     ./create_veth.sh $router ln-$vlan ns-$vlan
     apply_vnic -I ln-$vlan
+    mac_map=$(printf "%06x" $vlan)
+    hw_addr=52:$(echo $mac_map | cut -c 1-2):$(echo $mac_map | cut -c 3-4):$(echo $mac_map | cut -c 5-6)
+    hyper_map=$(printf "%04x" $(($SCI_CLIENT_ID & 0xffff)))
+    hw_addr=$hw_addr:$(echo $hyper_map | cut -c 1-2):$(echo $hyper_map | cut -c 3-4)
+    if [ $? -eq 0 ]; then
+        ip netns exec $router ip link set ns-$vlan address $hw_addr
+    fi
 fi
 # 将 ln-$vlan 接口添加到对应 VLAN 网桥（br$vlan）
 brctl addif br$vlan ln-$vlan
@@ -28,17 +35,6 @@ read -r network bcast hostmin hostmax < <(ipcalc $gateway | awk '/^Network:/ {n=
 ip netns exec $router ipset add nonat $network
  # 为路由器内 ns-$vlan 接口配置网关 IP + 广播地址
 ip netns exec $router ip addr add $gateway brd $bcast dev ns-$vlan
-# 基于 VLAN 生成 MAC 地址前 6 段
-mac_map=$(printf "%06x" $vlan)
-hw_addr=52:$(echo $mac_map | cut -c 1-2):$(echo $mac_map | cut -c 3-4):$(echo $mac_map | cut -c 5-6)
-# 结合 SCI_CLIENT_ID 补全 MAC 地址后 2 段
-hyper_map=$(printf "%04x" $(($SCI_CLIENT_ID & 0xffff)))
-hw_addr=$hw_addr:$(echo $hyper_map | cut -c 1-2):$(echo $hyper_map | cut -c 3-4)
-# 基于 VLAN 编号和 SCI_CLIENT_ID（云环境客户端 ID）生成唯一的 MAC 地址，避免冲突；
-# 将生成的 MAC 地址配置到路由器内的 ns-$vlan 接口
-if [ $? -eq 0 ]; then
-    ip netns exec $router ip link set ns-$vlan address $hw_addr
-fi
 # 路由表配置文件路径
 rt_file=/etc/iproute2/rt_tables
  # 筛选以 fip- 为前缀的路由表
