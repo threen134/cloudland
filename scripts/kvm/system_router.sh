@@ -24,7 +24,12 @@ ip netns exec $router ip link set lo up
 # 另一端 link-$ext_vlan 放入 router-0 命名空间，作为路由器的外网网卡；
  # 调用外部脚本创建一对veth虚拟网卡
 ./create_veth.sh $router ext-$ext_vlan link-$ext_vlan
- # 为命名空间内的网卡配置外部IP
+# 清理旧的 link 接口（非当前 ext_vlan 的）
+for dev in $(ip netns exec $router ip -o link show | awk -F': ' '{print $2}' | cut -d'@' -f1 | grep '^link-'); do
+    [ "$dev" != "link-$ext_vlan" ] && ip netns exec $router ip link del $dev
+done
+ # 刷新旧 IP 并为命名空间内的网卡配置外部IP
+ip netns exec $router ip addr flush dev link-$ext_vlan
 ip netns exec $router ip addr add $ext_ip dev link-$ext_vlan
 # 配置默认路由后，router-0 命名空间内的流量可通过网关访问外部网络。
   # 设置命名空间的默认路由（指向网关）
@@ -38,6 +43,9 @@ route_ip=${ext_ip%/*}
 # NAT 地址伪装：让命名空间内的设备通过路由器的外网 IP 访问外部网络（类似家用路由器的 NAT 功能）。
 # 禁用INPUT链（默认丢弃所有入站流量）
 ip netns exec $router iptables -P INPUT DROP
+# 允许网关 ICMP（健康检查）
+ip netns exec $router iptables -C INPUT -s $gateway -p icmp -j ACCEPT
+[ $? -ne 0 ] && ip netns exec $router iptables -I INPUT -s $gateway -p icmp -j ACCEPT
 # 封禁SMTP邮件相关端口（25/465/587）的转发流量，避免邮件滥用
 ip netns exec $router iptables -C FORWARD -p tcp --dport 25 -j DROP
 [ $? -ne 0 ] && ip netns exec $router iptables -I FORWARD -p tcp --dport 25 -j DROP

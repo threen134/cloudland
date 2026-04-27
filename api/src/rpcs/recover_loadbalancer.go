@@ -245,7 +245,7 @@ func RecoverLoadbalancer(ctx context.Context, args []string) (status string, err
 		logger.Debugf("LB %d - Haproxy config JSON: %s", loadBalancer.ID, string(haproxyJsonData))
 
 		// Get hyper group for VRRP
-		hyperGroup, _, _, err := GetVrrpHyperGroup(ctx, loadBalancer.VrrpInstance)
+		_, _, _, err = GetVrrpHyperGroup(ctx, loadBalancer.VrrpInstance)
 		if err != nil {
 			logger.Error("Failed to get vrrp hyper group", err)
 			continue

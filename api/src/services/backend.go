@@ -80,7 +80,7 @@ func (a *BackendAdmin) CreateHaproxyConf(ctx context.Context, updatedlistener *m
 	return
 }
 
-func (a *BackendAdmin) Create(ctx context.Context, name, backendAddr string, listener *model.Listener, loadBalancer *model.LoadBalancer) (backend *model.Backend, err error) {
+func (a *BackendAdmin) Create(ctx context.Context, name, backendAddr string, ssl bool, listener *model.Listener, loadBalancer *model.LoadBalancer) (backend *model.Backend, err error) {
 	logger.Infof("ENTER BackendAdmin.Create: name=%s, backendAddr=%s, listenerID=%d, loadBalancerID=%d", name, backendAddr, listener.ID, loadBalancer.ID)
 	defer func() {
 		if err != nil {
@@ -103,7 +103,7 @@ func (a *BackendAdmin) Create(ctx context.Context, name, backendAddr string, lis
 			EndTransaction(ctx, err)
 		}
 	}()
-	backend = &model.Backend{Model: model.Model{Creater: memberShip.UserID}, Owner: owner, ListenerID: listener.ID, Name: name, BackendAddr: backendAddr, Status: "available"}
+	backend = &model.Backend{Model: model.Model{Creater: memberShip.UserID}, Owner: owner, ListenerID: listener.ID, Name: name, BackendAddr: backendAddr, SSL: ssl, Status: "available"}
 	err = db.Create(backend).Error
 	if err != nil {
 		logger.Error("DB failed to create backend ", err)
