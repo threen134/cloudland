@@ -18,11 +18,17 @@
 # 安装 NTP 服务
 - name: install ntp service
   apt: name=ntp state=latest
+  when:
+    - ansible_facts['distribution'] == "Ubuntu"
+    - ansible_facts['distribution_version'] is version('26.04', '<')
   tags: [ntp]
 
 # 启动 NTP 服务
 - name: start ntp service
   service: name=ntp state=started enabled=yes
+  when:
+    - ansible_facts.distribution == "Ubuntu"
+    - ansible_facts.distribution_version is version('26.04', '<')
   tags: [ntp]
 
 # 删除 unattended-upgrade 服务

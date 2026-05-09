@@ -21,7 +21,7 @@
   with_items:
     - { src: "/opt/cloudland", dest: "/opt", owner: "cland" }
   tags: [sync]
-  when: inventory_hostname != ansible_hostname
+  when: inventory_hostname != ansible_facts['hostname']
 
 # 包含两组拷贝任务，分别处理sci二进制文件和cloudland相关二进制
 - name: copy sci binaries
@@ -30,7 +30,7 @@
     dest: /opt
     mode: preserve
   tags: [sci]
-  when: inventory_hostname != ansible_hostname
+  when: inventory_hostname != ansible_facts['hostname']
 
 # 创建目录
 - name: create directores
@@ -69,7 +69,7 @@
     - { src: "/opt/cloudland/scripts", dest: "/opt/cloudland", owner: "cland" }
     - { src: "/opt/sci", dest: "/opt", owner: "root" }
   tags: [fe_bin]
-  when: inventory_hostname != ansible_hostname
+  when: inventory_hostname != ansible_facts['hostname']
 
 # 生成/opt/cloudland/etc/hosts.list文件, 不是/etc/hosts
 - name: generate host file
@@ -103,4 +103,5 @@
     enabled: yes
     daemon_reload: yes
     state: started
+  when: not ansible_check_mode
   tags: [fe_srv]
