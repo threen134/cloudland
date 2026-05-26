@@ -238,6 +238,14 @@ func MigrateVM(ctx context.Context, args []string) (status string, err error) {
 		err = execSourceMigrate(ctx, instance, migration, task2.ID, "/opt/cloudland/scripts/backend/source_migration.sh", migration.Type)
 		if err != nil {
 			logger.Error("Failed to exec source migration", err)
+			if migration.Type == "cold" {
+				_, err = LaunchVM(ctx, []string{args[0], args[3], "migrated", args[4], "sync"})
+				if err != nil {
+					logger.Error("Failed to sync vm info", err)
+					return
+				}
+			}
+			err = db.Model(&model.Task{}).Where("id = ?", task2.ID).Update(map[string]interface{}{"status": "failed", "message": err.Error()}).Error
 			return
 		}
 	} else if status == "source_prepared" {

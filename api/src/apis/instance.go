@@ -39,7 +39,7 @@ type InstanceReinstallPayload struct {
 	Image     *BaseReference   `json:"image" binding:"omitempty"`
 	Flavor    string           `json:"flavor" binding:"omitempty"`
 	Keys      []*BaseReference `json:"keys" binding:"omitempty,gte=0,lte=16"`
-	Password  string           `json:"password" binging:"omitempty,min=8,max=64"`
+	Password  string           `json:"password" binding:"omitempty,min=8,max=64"`
 	LoginPort int              `json:"login_port" binding:"omitempty,min=1,max=65535"`
 }
 
@@ -50,7 +50,7 @@ type InstanceResizePayload struct {
 
 type InstanceRescuePayload struct {
 	RescueImage *BaseReference `json:"rescue_image" binding:"omitempty"`
-	Password    string         `json:"password" binging:"required,min=8,max=64"`
+	Password    string         `json:"password" binding:"required,min=8,max=64"`
 }
 
 type InstancePayload struct {
