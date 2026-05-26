@@ -335,6 +335,37 @@ func (a *InterfaceAdminService) changeAddresses(ctx context.Context, instance *m
 	if len(publicIps) > 0 {
 		primaryMac := iface.MacAddr
 		primaryUUID := iface.UUID
+		// Clean up old second addresses regardless of whether the first IP changed
+		for _, addr := range iface.SecondAddresses {
+			err = db.Model(&model.Address{}).Where("id = ?", addr.ID).Updates(map[string]interface{}{"second_interface": 0}).Error
+			if err != nil {
+				logger.Errorf("Failed to reset second_interface for address %d, %v", addr.ID, err)
+				err = NewCLError(ErrAddressUpdateFailed, "Failed to reset second_interface", err)
+				return
+			}
+			if addr.Interface > 0 {
+				addrIface := &model.Interface{Model: model.Model{ID: addr.Interface}}
+				if err = db.Model(addrIface).Take(addrIface).Error; err != nil {
+					logger.Errorf("Failed to query interface %d, %v", addr.Interface, err)
+					return
+				}
+				if addrIface.FloatingIp > 0 {
+					floatingIp := &model.FloatingIp{Model: model.Model{ID: addrIface.FloatingIp}}
+					err = db.Model(floatingIp).Updates(map[string]interface{}{
+						"instance_id": 0,
+						"router_id":   0,
+						"int_address": "",
+						"type":        string(PublicFloating),
+					}).Error
+					if err != nil {
+						logger.Errorf("Failed to convert floating ip %d to PublicFloating type, %v", addrIface.FloatingIp, err)
+						err = NewCLError(ErrFIPUpdateFailed, "Failed to convert floating ip type", err)
+						return
+					}
+				}
+			}
+		}
+
 		if iface.FloatingIp != publicIps[0].ID {
 			var floatingIp *model.FloatingIp
 			floatingIp, err = (&FloatingIpAdminService{}).Get(ctx, iface.FloatingIp)
@@ -363,6 +394,10 @@ func (a *InterfaceAdminService) changeAddresses(ctx context.Context, instance *m
 				return
 			}
 			iface = nil
+		}
+		// Clear in-memory InstanceID so DerivePublicInterface re-processes secondary IPs
+		for i := 1; i < len(publicIps); i++ {
+			publicIps[i].InstanceID = 0
 		}
 		iface, _, err = DerivePublicInterface(ctx, instance, iface, publicIps, primaryMac, primaryUUID)
 		if err != nil {

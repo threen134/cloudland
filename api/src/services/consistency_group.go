@@ -485,7 +485,7 @@ func (a *ConsistencyGroupAdmin) GetVolumes(ctx context.Context, id int64) (volum
 
 	// Permission check
 	// 权限检查
-	permit := memberShip.ValidateOwner(model.Reader, cg.Owner)
+	permit := memberShip.CheckResourceOrg(model.OrgReader, cg.Owner)
 	if !permit {
 		logger.Errorf("Not authorized to get volumes of consistency group ID %d", id)
 		err = NewCLError(ErrPermissionDenied, "Not authorized to get volumes of consistency group", nil)
