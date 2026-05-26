@@ -164,7 +164,7 @@ func (a *FloatingIpAdminService) createAndAllocateFloatingIps(ctx context.Contex
 				}
 			}
 		}
-		if err := db.Model(fip).Updates(fip).Error; err != nil {
+		if err := db.Model(&model.FloatingIp{}).Where("id = ?", fip.ID).Updates(map[string]interface{}{"fip_address": fip.FipAddress, "ip_address": fip.IPAddress, "subnet_id": fip.SubnetID, "type": fip.Type}).Error; err != nil {
 			logger.Error("DB failed to update floating ip", err)
 			return nil, NewCLError(ErrFIPUpdateFailed, "Failed to update floating ip", err)
 		}
@@ -373,7 +373,7 @@ func (a *FloatingIpAdminService) Attach(ctx context.Context, floatingIp *model.F
 	floatingIp.IntAddress = primaryIface.Address.Address
 	floatingIp.InstanceID = instance.ID
 	floatingIp.RouterID = instance.RouterID
-	err = db.Model(floatingIp).Updates(floatingIp).Error
+	err = db.Model(&model.FloatingIp{}).Where("id = ?", floatingIp.ID).Updates(map[string]interface{}{"int_address": floatingIp.IntAddress, "instance_id": floatingIp.InstanceID, "router_id": floatingIp.RouterID}).Error
 	if err != nil {
 		logger.Error("DB failed to update floating ip", err)
 		return NewCLError(ErrFIPUpdateFailed, "DB failed to update floating ip", err)
@@ -556,7 +556,7 @@ func (a *FloatingIpAdminService) Detach(ctx context.Context, floatingIp *model.F
 		updateFields["int_address"] = ""
 		updateFields["type"] = string(PublicFloating)
 
-		err = db.Model(floatingIp).Updates(updateFields).Error
+		err = db.Model(&model.FloatingIp{}).Where("id = ?", floatingIp.ID).Updates(updateFields).Error
 		if err != nil {
 			logger.Errorf("Failed to update public ip, %v", err)
 			return NewCLError(ErrUpdatePublicIPFailed, "Failed to update public ip", err)

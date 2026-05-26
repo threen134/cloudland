@@ -119,7 +119,7 @@ func (a *SecruleAdminService) Update(ctx context.Context, secrule *model.Securit
 			return
 		}
 	}
-	err = db.Model(secrule).Updates(secrule).Error
+	err = db.Model(&model.SecurityRule{}).Where("id = ?", secrule.ID).Updates(map[string]interface{}{"name": secrule.Name, "remote_ip": secrule.RemoteIp, "direction": secrule.Direction, "protocol": secrule.Protocol, "port_min": secrule.PortMin, "port_max": secrule.PortMax}).Error
 	if err != nil {
 		logger.Error("DB failed to save security rule ", err)
 		err = NewCLError(ErrSecurityRuleUpdateFailed, "Failed to update security rule", err)

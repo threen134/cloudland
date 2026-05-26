@@ -649,7 +649,7 @@ func (a *BackupAdmin) Update(ctx context.Context, id int64, name, path string, s
 	if status != "" && status != backup.Status {
 		backup.Status = status
 	}
-	if err = db.Model(backup).Updates(backup).Error; err != nil {
+	if err = db.Model(&model.VolumeBackup{}).Where("id = ?", backup.ID).Updates(map[string]interface{}{"name": backup.Name, "path": backup.Path, "status": backup.Status}).Error; err != nil {
 		logger.Error("DB: update backup failed", err)
 		err = NewCLError(ErrDatabaseError, "Failed to update backup", err)
 		return

@@ -637,7 +637,10 @@ func (a *ImageAdminService) Update(ctx context.Context, image *model.Image, osCo
 		return
 	}
 
-	err = db.Model(image).Updates(image).Error
+	err = db.Model(&model.Image{}).Where("id = ?", image.ID).Updates(map[string]interface{}{
+		"name": image.Name, "os_version": image.OsVersion, "user_name": image.UserName,
+		"uuid": image.UUID, "os_family": image.OsFamily, "visibility": image.Visibility,
+	}).Error
 	if err != nil {
 		logger.Error("Failed to save image", err)
 		return NewCLError(ErrImageUpdateFailed, "Failed to save image", err)
@@ -681,7 +684,7 @@ func (a *ImageAdminService) Update(ctx context.Context, image *model.Image, osCo
 			command = fmt.Sprintf("/opt/cloudland/scripts/backend/sync_image_info.sh '%d' '%s' '%s' '%d'", image.ID, prefix, storage.PoolID, storage.ID)
 		}
 		storage.Status = model.StorageStatusSyncing
-		if err = db.Model(storage).Updates(storage).Error; err != nil {
+		if err = db.Model(&model.ImageStorage{}).Where("id = ?", storage.ID).Updates(map[string]interface{}{"status": storage.Status}).Error; err != nil {
 			logger.Error("Failed to update image storage status", err)
 			return NewCLError(ErrImageStorageUpdateFailed, "Failed to update image storage status", err)
 		}

@@ -474,7 +474,7 @@ func (a *InstanceAdmin) Update(ctx context.Context, instance *model.Instance, ho
 	if instance.Hostname != hostname {
 		instance.Hostname = hostname
 	}
-	if err = db.Model(instance).Updates(instance).Error; err != nil {
+	if err = db.Model(&model.Instance{}).Where("id = ?", instance.ID).Updates(map[string]interface{}{"hostname": instance.Hostname}).Error; err != nil {
 		logger.Error("Failed to save instance", err)
 		return NewCLError(ErrInstanceUpdateFailed, "Failed to save instance", err)
 	}
@@ -1310,6 +1310,12 @@ func (a *InstanceAdmin) Delete(ctx context.Context, instance *model.Instance) (e
 	if instance.Hyper == -1 {
 		control = "toall="
 	}
+	instance.Status = model.InstanceStatusDeleting
+	err = db.Model(instance).Updates(map[string]interface{}{"status": model.InstanceStatusDeleting}).Error
+	if err != nil {
+		logger.Errorf("Failed to mark vm as deleting ", err)
+		return NewCLError(ErrInstanceUpdateFailed, "Failed to mark vm as deleting", err)
+	}
 	moreAddrsJson, err := json.Marshal(moreAddresses)
 	if err != nil {
 		logger.Errorf("Failed to marshal sites info, %v", err)
@@ -1320,12 +1326,6 @@ func (a *InstanceAdmin) Delete(ctx context.Context, instance *model.Instance) (e
 	if err != nil {
 		logger.Error("Delete vm command execution failed ", err)
 		return
-	}
-	instance.Status = model.InstanceStatusDeleting
-	err = db.Model(instance).Updates(instance).Error
-	if err != nil {
-		logger.Errorf("Failed to mark vm as deleting ", err)
-		return NewCLError(ErrInstanceUpdateFailed, "Failed to mark vm as deleting", err)
 	}
 	return
 }

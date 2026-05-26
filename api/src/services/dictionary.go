@@ -177,7 +177,7 @@ func (a *DictionaryAdminService) Update(ctx context.Context, dictionaries *model
 	if subtype3 != "" && dictionaries.SubType3 != subtype3 {
 		dictionaries.SubType3 = subtype3
 	}
-	err = db.Model(dictionaries).Updates(dictionaries).Error
+	err = db.Model(&model.Dictionary{}).Where("id = ?", dictionaries.ID).Updates(map[string]interface{}{"name": dictionaries.Name, "value": dictionaries.Value, "sub_type1": dictionaries.SubType1, "sub_type2": dictionaries.SubType2, "sub_type3": dictionaries.SubType3}).Error
 	if err != nil {
 		logger.Errorf("DictionaryAdmin.Update: save error, err=%v", err)
 		return nil, NewCLError(ErrDictionaryUpdateFailed, "Failed to update dictionary", err)

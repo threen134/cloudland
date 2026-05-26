@@ -120,7 +120,7 @@ func (a *SecgroupAdmin) Update(ctx context.Context, secgroup *model.SecurityGrou
 			a.Switch(ctx, secgroup, secgroup.Router)
 		}
 	}
-	err = db.Model(secgroup).Updates(secgroup).Error
+	err = db.Model(&model.SecurityGroup{}).Where("id = ?", secgroup.ID).Updates(map[string]interface{}{"name": secgroup.Name, "description": secgroup.Description, "is_default": secgroup.IsDefault}).Error
 	if err != nil {
 		logger.Error("Failed to save security group", err)
 		err = NewCLError(ErrSecurityGroupUpdateFailed, "Failed to update security group", err)

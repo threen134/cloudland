@@ -323,7 +323,7 @@ func (a *InterfaceAdminService) changeAddresses(ctx context.Context, instance *m
 	}()
 	ctx, db := GetContextDB(ctx)
 	for _, site := range iface.SiteSubnets {
-		err = db.Model(site).Updates(map[string]interface{}{"interface": 0}).Error
+		err = db.Model(&model.Subnet{}).Where("id = ?", site.ID).Updates(map[string]interface{}{"interface": 0}).Error
 		if err != nil {
 			logger.Error("Failed to update site subnets", err)
 			err = NewCLError(ErrSiteSubnetUpdateFailed, "Failed to update site subnets", err)
@@ -388,7 +388,7 @@ func (a *InterfaceAdminService) changeAddresses(ctx context.Context, instance *m
 				logger.Error("Failed to generate random Mac address, %v", err)
 				return
 			}
-			err = db.Model(iface).Update(map[string]interface{}{"instance": 0, "uuid": uuid.New().String(), "primary_if": false, "name": "fip", "inbound": 0, "outbound": 0, "allow_spoofing": false, "mac_addr": mac}).Error
+			err = db.Model(&model.Interface{}).Where("id = ?", iface.ID).Update(map[string]interface{}{"instance": 0, "uuid": uuid.New().String(), "primary_if": false, "name": "fip", "inbound": 0, "outbound": 0, "allow_spoofing": false, "mac_addr": mac}).Error
 			if err != nil {
 				logger.Error("Failed to Update addresses, %v", err)
 				return
