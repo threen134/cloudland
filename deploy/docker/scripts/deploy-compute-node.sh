@@ -410,7 +410,13 @@ EOF
 
 # 启动服务
 systemctl daemon-reload
-systemctl enable --now scid
+# 同机混部检测：如果容器内的 scidv1 已经在监听 6188，跳过宿主机 scid 服务
+if ss -tlnp 2>/dev/null | grep -q ':6188 '; then
+    log "检测到端口 6188 已被占用（容器内 scidv1），跳过宿主机 scid 服务"
+    systemctl disable scid 2>/dev/null || true
+else
+    systemctl enable --now scid
+fi
 systemctl enable --now cloudlet
 systemctl enable --now libvirtd
 systemctl enable --now NetworkManager
