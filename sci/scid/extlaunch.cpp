@@ -126,11 +126,13 @@ int ExtLauncher::verifyToken(bool suser)
             break;
         }
     } 
-    if (suser) {
-        ::setgid(pwd.pw_gid);
-        ::setuid(pwd.pw_uid);
+    if (::getuid() == 0) {
+        if (suser) {
+            ::setgid(pwd.pw_gid);
+            ::setuid(pwd.pw_uid);
+        }
+        ::seteuid(pwd.pw_uid);
     }
-    ::seteuid(pwd.pw_uid);
     rc = SSHFUNC->verify_id_token(pwd.pw_name, &usertok);
     delete []pwdBuf;
 

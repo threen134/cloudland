@@ -17,13 +17,13 @@ fi
 # 检查操作系统版本 (必须为 Ubuntu 22)
 if [ -f /etc/os-release ]; then
     . /etc/os-release
-    if [ "$ID" != "ubuntu" ] || [ "${VERSION_ID%%.*}" != "22" ]; then
-        echo "错误: 本脚本仅支持 Ubuntu 22 版本 (如 22.04)。"
+    if [ "$ID" != "ubuntu" ]; then
+        echo "错误: 本脚本仅支持 Ubuntu 系统。"
         echo "当前系统: ${NAME:-未知} ${VERSION_ID:-未知}"
         exit 1
     fi
 else
-    echo "错误: 无法识别操作系统。本脚本仅支持 Ubuntu 22 版本。"
+    echo "错误: 无法识别操作系统。本脚本仅支持 Ubuntu 系统。"
     exit 1
 fi
 
@@ -138,7 +138,7 @@ EOF
 # NTP 时间同步
 apt-get update -qq
 apt-get install -y ntp
-systemctl enable --now ntp
+systemctl enable --now ntp || systemctl enable --now ntpsec || true
 
 # 删除 unattended-upgrade
 apt-get remove -y unattended-upgrades 2>/dev/null || true
@@ -217,7 +217,7 @@ if ! command -v docker &>/dev/null; then
 fi
 systemctl enable --now docker
 
-pip3 install pyparsing
+# pyparsing 已不再需要（仅 backup/ 下废弃脚本使用），跳过安装
 
 # ============ 4. SSH 配置 ============
 log "4/16 - 配置 SSH 免密"
@@ -292,6 +292,9 @@ if [ ! -d "$CLOUDLAND_DIR/sci" ]; then
     rm -rf /tmp/cloudland
 fi
 
+# 编译前先停止正在运行的服务，避免覆盖二进制时 "Text file busy"
+systemctl stop cloudlet scid 2>/dev/null || true
+
 cd "$CLOUDLAND_DIR/sci"
 ./configure && make && make install
 
@@ -360,7 +363,8 @@ After=network.target
 
 [Service]
 Type=forking
-ExecStart=/bin/sh -c /opt/sci/sbin/scidv1
+User=cland
+ExecStart=/bin/sh -c "/opt/sci/sbin/scidv1 -e -l /opt/cloudland/log -p /opt/cloudland/run"
 ExecStop=/usr/bin/killall scidv1
 KillMode=process
 Restart=on-failure

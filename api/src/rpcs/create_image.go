@@ -61,6 +61,9 @@ func CreateImage(ctx context.Context, args []string) (status string, err error) 
 		logger.Error("Update image failed", err)
 		return
 	}
+	if argn < 7 {
+		return
+	}
 	storageID, err := strconv.ParseInt(args[6], 10, 64)
 	if err != nil {
 		logger.Error("Invalid storage ID", err)

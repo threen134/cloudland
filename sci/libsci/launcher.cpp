@@ -43,6 +43,7 @@
 #include "tools.hpp"
 #include "packer.hpp"
 #include "exception.hpp"
+#include <stdexcept>
 #include "sshfunc.hpp"
 #include "ipconverter.hpp"
 
@@ -319,6 +320,12 @@ int Launcher::launch()
         return SCI_ERR_LAUNCH_FAILED;
     } catch (ThreadException &e) {
         log_error("Launcher: thread exception %d", e.getErrCode());
+        return SCI_ERR_LAUNCH_FAILED;
+    } catch (Exception &e) {
+        log_error("Launcher: SCI Exception code=%d msg=%s", e.getErrCode(), e.getErrMsg());
+        return SCI_ERR_LAUNCH_FAILED;
+    } catch (std::exception &e) {
+        log_error("Launcher: std::exception: %s", e.what());
         return SCI_ERR_LAUNCH_FAILED;
     } catch (...) {
         log_error("Launcher: unknown exception");

@@ -188,10 +188,6 @@ int initService(int argc, char *argv[])
         printf("%s is already running...\n", p);
         return -1;
     }
-    if (getuid() != 0) {
-        printf("Must running as root\n");
-        return -1;
-    }
     daemonInit();
     writePidFile(pidFile);
 

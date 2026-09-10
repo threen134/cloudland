@@ -170,7 +170,7 @@ func (a *ImageAdminService) Create(ctx context.Context, osCode, name, osVersion,
 	}
 
 	// WDS 路径 / legacy 本地路径：保持原 shell 派发
-	control := "inter="
+	control := "select="
 	command := fmt.Sprintf("/opt/cloudland/scripts/backend/create_image.sh '%d' '%s' '%s' '%d'", image.ID, prefix, url, storageID)
 	if instID > 0 {
 		bootVolumeUUID := ""
