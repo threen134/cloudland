@@ -162,6 +162,7 @@ fi
 # ============ 3. 准备凭证 ============
 log "3/5 - 生成 SSH 密钥凭证"
 id cland &>/dev/null || useradd -m -s /bin/bash cland
+chown cland:cland /home/cland
 mkdir -p "$CLOUDLAND_DIR/deploy/.ssh"
 if [ ! -f "$CLOUDLAND_DIR/deploy/.ssh/cland.key" ]; then
     ssh-keygen -t rsa -f "$CLOUDLAND_DIR/deploy/.ssh/cland.key" -N ""

@@ -143,8 +143,9 @@ systemctl enable --now ntp || systemctl enable --now ntpsec || true
 # 删除 unattended-upgrade
 apt-get remove -y unattended-upgrades 2>/dev/null || true
 
-# 创建 cland 用户
+# 创建 cland 用户并确保 home 目录权限正确（SSH 公钥认证要求 home 目录属主为用户自己）
 id cland &>/dev/null || useradd -m -s /bin/bash cland
+chown cland:cland /home/cland
 echo 'cland ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/cland
 
 # 屏蔽 UFW
