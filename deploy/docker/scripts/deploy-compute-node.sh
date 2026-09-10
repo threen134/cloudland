@@ -145,7 +145,8 @@ apt-get remove -y unattended-upgrades 2>/dev/null || true
 
 # 创建 cland 用户并确保 home 目录权限正确（SSH 公钥认证要求 home 目录属主为用户自己）
 id cland &>/dev/null || useradd -m -s /bin/bash cland
-chown cland:cland /home/cland
+CLAND_HOME=$(getent passwd cland | cut -d: -f6)
+chown cland:cland "$CLAND_HOME"
 echo 'cland ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/cland
 
 # 屏蔽 UFW
@@ -223,8 +224,8 @@ systemctl enable --now docker
 # ============ 4. SSH 配置 ============
 log "4/16 - 配置 SSH 免密"
 
-mkdir -p /home/cland/.ssh /root/.ssh "$CLOUDLAND_DIR/deploy/.ssh"
-touch /home/cland/.ssh/authorized_keys /root/.ssh/authorized_keys
+mkdir -p $CLAND_HOME/.ssh /root/.ssh "$CLOUDLAND_DIR/deploy/.ssh"
+touch $CLAND_HOME/.ssh/authorized_keys /root/.ssh/authorized_keys
 
 SSH_KEYS_INSTALLED=""
 
@@ -236,8 +237,8 @@ SSH_KEYS_INSTALLED=""
 # 注意：这里只装公钥，不 set SSH_KEYS_INSTALLED — 私钥仍然走下面 /internal/node/add
 # 注册响应那条路径分发。
 if [ -n "${CLAND_PUBKEY:-}" ]; then
-    grep -qF "$CLAND_PUBKEY" /home/cland/.ssh/authorized_keys \
-        || printf '%s\n' "$CLAND_PUBKEY" >> /home/cland/.ssh/authorized_keys
+    grep -qF "$CLAND_PUBKEY" $CLAND_HOME/.ssh/authorized_keys \
+        || printf '%s\n' "$CLAND_PUBKEY" >> $CLAND_HOME/.ssh/authorized_keys
     grep -qF "$CLAND_PUBKEY" /root/.ssh/authorized_keys \
         || printf '%s\n' "$CLAND_PUBKEY" >> /root/.ssh/authorized_keys
     log "已通过 CLAND_PUBKEY env 安装控制面公钥到 authorized_keys"
@@ -254,8 +255,8 @@ for p in "${SEARCH_PATHS[@]}"; do
         fi
         # 公钥追加而非覆盖，避免清除管理员手动添加的公钥
         LOCAL_PUB=$(cat "$p/cland.key.pub")
-        grep -qF "$LOCAL_PUB" /home/cland/.ssh/authorized_keys 2>/dev/null \
-            || printf '%s\n' "$LOCAL_PUB" >> /home/cland/.ssh/authorized_keys
+        grep -qF "$LOCAL_PUB" $CLAND_HOME/.ssh/authorized_keys 2>/dev/null \
+            || printf '%s\n' "$LOCAL_PUB" >> $CLAND_HOME/.ssh/authorized_keys
         grep -qF "$LOCAL_PUB" /root/.ssh/authorized_keys 2>/dev/null \
             || printf '%s\n' "$LOCAL_PUB" >> /root/.ssh/authorized_keys
         # 私钥写入所有需要的位置 (如果是搜索到目标路径本身，则跳过拷贝操作，避免 cp 报错)
@@ -276,9 +277,9 @@ if [ -z "$SSH_KEYS_INSTALLED" ]; then
     log "本地未找到 SSH 密钥，将在节点注册时从控制节点获取"
 fi
 
-chown -R cland:cland /home/cland/.ssh "$CLOUDLAND_DIR/deploy/.ssh"
-chmod 700 /home/cland/.ssh /root/.ssh
-chmod 600 /home/cland/.ssh/authorized_keys 2>/dev/null || true
+chown -R cland:cland $CLAND_HOME/.ssh "$CLOUDLAND_DIR/deploy/.ssh"
+chmod 700 $CLAND_HOME/.ssh /root/.ssh
+chmod 600 $CLAND_HOME/.ssh/authorized_keys 2>/dev/null || true
 chmod 600 /root/.ssh/authorized_keys 2>/dev/null || true
 
 # ============ 5. 编译安装 SCI 和 CloudLand ============
@@ -658,9 +659,9 @@ if [ -z "${SSH_KEYS_INSTALLED:-}" ] && jq -e '.status == "ok"' "$REGISTER_RESP_F
         printf '%s\n' "$PRIV_KEY" > "$CLOUDLAND_DIR/deploy/.ssh/cland.key"
         printf '%s\n' "$PUB_KEY"  > "$CLOUDLAND_DIR/deploy/.ssh/cland.key.pub"
         cp "$CLOUDLAND_DIR/deploy/.ssh/cland.key" /root/.ssh/id_rsa
-        cp "$CLOUDLAND_DIR/deploy/.ssh/cland.key" /home/cland/.ssh/cland.key
-        chown -R cland:cland /home/cland/.ssh "$CLOUDLAND_DIR/deploy/.ssh"
-        chmod 600 /home/cland/.ssh/cland.key /root/.ssh/id_rsa \
+        cp "$CLOUDLAND_DIR/deploy/.ssh/cland.key" $CLAND_HOME/.ssh/cland.key
+        chown -R cland:cland $CLAND_HOME/.ssh "$CLOUDLAND_DIR/deploy/.ssh"
+        chmod 600 $CLAND_HOME/.ssh/cland.key /root/.ssh/id_rsa \
                   "$CLOUDLAND_DIR/deploy/.ssh/cland.key"
         log "从注册响应中同步获取 cland.key 私钥"
         SSH_KEYS_INSTALLED="api"
