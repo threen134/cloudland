@@ -10,6 +10,8 @@ import (
 	"context"
 
 	"api/src/model"
+
+	"gorm.io/gorm"
 )
 
 type MemberShip struct {
@@ -92,7 +94,12 @@ func (m *MemberShip) CheckResourceOrgByID(reqRole model.OrgRole, table string, i
 	}
 	var result Result
 	db := DB()
-	err := db.Table(table).Select("owner").Where("id = ?", id).Scan(&result).Error
+	res := db.Table(table).Select("owner").Where("id = ?", id).Scan(&result)
+	err := res.Error
+	if err == nil && res.RowsAffected == 0 {
+		// GORM v2 的 Scan 查不到记录时不返回 ErrRecordNotFound，这里保持“未找到即报错”
+		err = gorm.ErrRecordNotFound
+	}
 	if err != nil {
 		logger.Error("Failed to query resource owner", err)
 		return false, NewCLError(ErrOwnerNotFound, "Failed to query resource owner", err)

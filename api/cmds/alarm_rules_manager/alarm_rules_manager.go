@@ -7,6 +7,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"net/http"
@@ -19,11 +20,15 @@ import (
 
 	_ "api/docs/alarm_rules_manager"
 	rlog "api/src/utils/log"
+	"api/src/utils/tracing"
 
 	"github.com/gin-gonic/gin"
 	swaggerFiles "github.com/swaggo/files"
 	ginSwagger "github.com/swaggo/gin-swagger"
 )
+
+// Version is injected at build time via -ldflags "-X main.Version=..."
+var Version = "dev"
 
 // RuleFileRequest represents a request for rule file operations
 // @Description Request for rule file operations
@@ -443,12 +448,14 @@ func main() {
 	}
 
 	rlog.InitLogger("alarm_rules_mgr.log")
+	flushTracing := tracing.Init(context.Background(), "alarm-rules-manager", Version)
+	defer flushTracing()
 	server := NewAlarmRulesManager(port, certFile, keyFile)
 
 	router := gin.New()
 	router.SetTrustedProxies(nil)
 	router.Use(gin.Recovery())
-	router.Use(rlog.RequestID())
+	router.Use(tracing.GinMiddleware("alarm-rules-manager")...)
 	router.Use(rlog.Logger())
 
 	server.RegisterRoutes(router)

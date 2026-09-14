@@ -8,8 +8,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/jinzhu/gorm"
 	"github.com/spf13/viper"
+	"gorm.io/gorm"
 
 	"api/src/dbs"
 	"api/src/model"
@@ -76,34 +76,34 @@ func GetAdminPassword() (password string) {
 // CreateAdminContext creates admin context for webhook requests
 // This function solves the problem of webhook requests not passing through auth middleware
 func CreateAdminContext(ctx context.Context, userAdmin interface{}, orgAdmin interface{}, adminEmail func() string) (adminCtx context.Context, err error) {
-	logger.Info("ENTER CreateAdminContext")
+	logger.Ctx(ctx).Info("ENTER CreateAdminContext")
 	defer func() {
 		if err != nil {
-			logger.Errorf("EXIT CreateAdminContext: error=%v", err)
+			logger.Ctx(ctx).Errorf("EXIT CreateAdminContext: error=%v", err)
 		} else {
-			logger.Info("EXIT CreateAdminContext: success")
+			logger.Ctx(ctx).Info("EXIT CreateAdminContext: success")
 		}
 	}()
 	// Get admin password from config file
 
 	// Note: userAdmin.Validate and orgAdmin.GetOrgByName need to be called from routes layer
 	// This is a placeholder - actual implementation should receive user and org as parameters
-	
+
 	return ctx, fmt.Errorf("not implemented - should be called from routes layer")
 }
 
 // GetInstanceByUUIDWithAuth helper function to get instance with admin auth
 // This function is specifically for webhook calls
 func GetInstanceByUUIDWithAuth(ctx context.Context, instanceID string, instanceAdmin interface{}) (instance *model.Instance, err error) {
-	logger.Infof("ENTER GetInstanceByUUIDWithAuth: instanceID=%s", instanceID)
+	logger.Ctx(ctx).Infof("ENTER GetInstanceByUUIDWithAuth: instanceID=%s", instanceID)
 	defer func() {
 		if err != nil {
-			logger.Errorf("EXIT GetInstanceByUUIDWithAuth: error=%v", err)
+			logger.Ctx(ctx).Errorf("EXIT GetInstanceByUUIDWithAuth: error=%v", err)
 		} else {
-			logger.Infof("EXIT GetInstanceByUUIDWithAuth: success, instanceID=%d", instance.ID)
+			logger.Ctx(ctx).Infof("EXIT GetInstanceByUUIDWithAuth: success, instanceID=%d", instance.ID)
 		}
 	}()
-	
+
 	// Note: CreateAdminContext and instanceAdmin.GetInstanceByUUID need to be called from routes layer
 	return nil, fmt.Errorf("not implemented - should be called from routes layer")
 }
@@ -158,33 +158,33 @@ type ListAdjustRuleGroupsParams struct {
 
 // CreateAdjustRuleGroup creates resource adjustment rule group
 func (o *AdjustOperator) CreateAdjustRuleGroup(ctx context.Context, group *model.AdjustRuleGroup) (err error) {
-	logger.Infof("ENTER AdjustOperator.CreateAdjustRuleGroup: name=%s", group.Name)
+	logger.Ctx(ctx).Infof("ENTER AdjustOperator.CreateAdjustRuleGroup: name=%s", group.Name)
 	defer func() {
 		if err != nil {
-			logger.Errorf("EXIT AdjustOperator.CreateAdjustRuleGroup: error=%v", err)
+			logger.Ctx(ctx).Errorf("EXIT AdjustOperator.CreateAdjustRuleGroup: error=%v", err)
 		} else {
-			logger.Infof("EXIT AdjustOperator.CreateAdjustRuleGroup: success, uuid=%s", group.UUID)
+			logger.Ctx(ctx).Infof("EXIT AdjustOperator.CreateAdjustRuleGroup: success, uuid=%s", group.UUID)
 		}
 	}()
 	if group.UUID == "" {
 		group.UUID = uuid.New().String()
 	}
 
-	return dbs.DB().Create(group).Error
+	return dbs.DBContext(ctx).Create(group).Error
 }
 
 // GetAdjustRulesByGroupUUID gets resource adjustment rule group by UUID
 func (o *AdjustOperator) GetAdjustRulesByGroupUUID(ctx context.Context, uuid string) (group *model.AdjustRuleGroup, err error) {
-	logger.Infof("ENTER AdjustOperator.GetAdjustRulesByGroupUUID: uuid=%s", uuid)
+	logger.Ctx(ctx).Infof("ENTER AdjustOperator.GetAdjustRulesByGroupUUID: uuid=%s", uuid)
 	defer func() {
 		if err != nil {
-			logger.Errorf("EXIT AdjustOperator.GetAdjustRulesByGroupUUID: error=%v", err)
+			logger.Ctx(ctx).Errorf("EXIT AdjustOperator.GetAdjustRulesByGroupUUID: error=%v", err)
 		} else {
-			logger.Infof("EXIT AdjustOperator.GetAdjustRulesByGroupUUID: success, name=%s", group.Name)
+			logger.Ctx(ctx).Infof("EXIT AdjustOperator.GetAdjustRulesByGroupUUID: success, name=%s", group.Name)
 		}
 	}()
 	group = &model.AdjustRuleGroup{}
-	if err = dbs.DB().Where("uuid = ?", uuid).First(group).Error; err != nil {
+	if err = dbs.DBContext(ctx).Where("uuid = ?", uuid).First(group).Error; err != nil {
 		return nil, err
 	}
 	return group, nil
@@ -192,25 +192,25 @@ func (o *AdjustOperator) GetAdjustRulesByGroupUUID(ctx context.Context, uuid str
 
 // GetAdjustRulesByIdentifier gets resource adjustment rule group by identifier (supports rule_id and group_uuid)
 func (o *AdjustOperator) GetAdjustRulesByIdentifier(ctx context.Context, identifier string) (group *model.AdjustRuleGroup, err error) {
-	logger.Infof("ENTER AdjustOperator.GetAdjustRulesByIdentifier: identifier=%s", identifier)
+	logger.Ctx(ctx).Infof("ENTER AdjustOperator.GetAdjustRulesByIdentifier: identifier=%s", identifier)
 	defer func() {
 		if err != nil {
-			logger.Errorf("EXIT AdjustOperator.GetAdjustRulesByIdentifier: error=%v", err)
+			logger.Ctx(ctx).Errorf("EXIT AdjustOperator.GetAdjustRulesByIdentifier: error=%v", err)
 		} else {
-			logger.Infof("EXIT AdjustOperator.GetAdjustRulesByIdentifier: success, uuid=%s", group.UUID)
+			logger.Ctx(ctx).Infof("EXIT AdjustOperator.GetAdjustRulesByIdentifier: success, uuid=%s", group.UUID)
 		}
 	}()
 	group = &model.AdjustRuleGroup{}
 
 	// Try querying by rule_id first
-	err = dbs.DB().Where("rule_id = ?", identifier).First(group).Error
+	err = dbs.DBContext(ctx).Where("rule_id = ?", identifier).First(group).Error
 	if err == nil {
 		return group, nil
 	}
 
 	// If rule_id query fails, query by uuid (backward compatible)
 	if errors.Is(err, gorm.ErrRecordNotFound) {
-		err = dbs.DB().Where("uuid = ?", identifier).First(group).Error
+		err = dbs.DBContext(ctx).Where("uuid = ?", identifier).First(group).Error
 		if err != nil {
 			return nil, err
 		}
@@ -222,16 +222,16 @@ func (o *AdjustOperator) GetAdjustRulesByIdentifier(ctx context.Context, identif
 
 // ListAdjustRuleGroups lists resource adjustment rule groups
 func (o *AdjustOperator) ListAdjustRuleGroups(ctx context.Context, params ListAdjustRuleGroupsParams) (groups []model.AdjustRuleGroup, total int64, err error) {
-	logger.Infof("ENTER AdjustOperator.ListAdjustRuleGroups: params=%+v", params)
+	logger.Ctx(ctx).Infof("ENTER AdjustOperator.ListAdjustRuleGroups: params=%+v", params)
 	defer func() {
 		if err != nil {
-			logger.Errorf("EXIT AdjustOperator.ListAdjustRuleGroups: error=%v", err)
+			logger.Ctx(ctx).Errorf("EXIT AdjustOperator.ListAdjustRuleGroups: error=%v", err)
 		} else {
-			logger.Infof("EXIT AdjustOperator.ListAdjustRuleGroups: total=%d, count=%d", total, len(groups))
+			logger.Ctx(ctx).Infof("EXIT AdjustOperator.ListAdjustRuleGroups: total=%d, count=%d", total, len(groups))
 		}
 	}()
 
-	query := dbs.DB().Model(&model.AdjustRuleGroup{})
+	query := dbs.DBContext(ctx).Model(&model.AdjustRuleGroup{})
 
 	// Apply filter conditions
 	if params.RuleType != "" {
@@ -278,28 +278,28 @@ func (o *AdjustOperator) ListAdjustRuleGroups(ctx context.Context, params ListAd
 
 // CreateCPUAdjustRuleDetail creates CPU adjustment rule detail
 func (o *AdjustOperator) CreateCPUAdjustRuleDetail(ctx context.Context, detail *model.CPUAdjustRuleDetail) (err error) {
-	logger.Infof("ENTER AdjustOperator.CreateCPUAdjustRuleDetail: groupUUID=%s", detail.GroupUUID)
+	logger.Ctx(ctx).Infof("ENTER AdjustOperator.CreateCPUAdjustRuleDetail: groupUUID=%s", detail.GroupUUID)
 	defer func() {
 		if err != nil {
-			logger.Errorf("EXIT AdjustOperator.CreateCPUAdjustRuleDetail: error=%v", err)
+			logger.Ctx(ctx).Errorf("EXIT AdjustOperator.CreateCPUAdjustRuleDetail: error=%v", err)
 		} else {
-			logger.Info("EXIT AdjustOperator.CreateCPUAdjustRuleDetail: success")
+			logger.Ctx(ctx).Info("EXIT AdjustOperator.CreateCPUAdjustRuleDetail: success")
 		}
 	}()
-	return dbs.DB().Create(detail).Error
+	return dbs.DBContext(ctx).Create(detail).Error
 }
 
 // GetCPUAdjustRuleDetails gets CPU adjustment rule details
 func (o *AdjustOperator) GetCPUAdjustRuleDetails(ctx context.Context, groupUUID string) (details []model.CPUAdjustRuleDetail, err error) {
-	logger.Infof("ENTER AdjustOperator.GetCPUAdjustRuleDetails: groupUUID=%s", groupUUID)
+	logger.Ctx(ctx).Infof("ENTER AdjustOperator.GetCPUAdjustRuleDetails: groupUUID=%s", groupUUID)
 	defer func() {
 		if err != nil {
-			logger.Errorf("EXIT AdjustOperator.GetCPUAdjustRuleDetails: error=%v", err)
+			logger.Ctx(ctx).Errorf("EXIT AdjustOperator.GetCPUAdjustRuleDetails: error=%v", err)
 		} else {
-			logger.Infof("EXIT AdjustOperator.GetCPUAdjustRuleDetails: count=%d", len(details))
+			logger.Ctx(ctx).Infof("EXIT AdjustOperator.GetCPUAdjustRuleDetails: count=%d", len(details))
 		}
 	}()
-	if err = dbs.DB().Where("group_uuid = ?", groupUUID).Find(&details).Error; err != nil {
+	if err = dbs.DBContext(ctx).Where("group_uuid = ?", groupUUID).Find(&details).Error; err != nil {
 		return nil, err
 	}
 	return details, nil
@@ -307,31 +307,31 @@ func (o *AdjustOperator) GetCPUAdjustRuleDetails(ctx context.Context, groupUUID 
 
 // CreateBWAdjustRuleDetail creates bandwidth adjustment rule detail
 func (o *AdjustOperator) CreateBWAdjustRuleDetail(ctx context.Context, detail *model.BWAdjustRuleDetail) (err error) {
-	logger.Infof("ENTER AdjustOperator.CreateBWAdjustRuleDetail: groupUUID=%s", detail.GroupUUID)
+	logger.Ctx(ctx).Infof("ENTER AdjustOperator.CreateBWAdjustRuleDetail: groupUUID=%s", detail.GroupUUID)
 	defer func() {
 		if err != nil {
-			logger.Errorf("EXIT AdjustOperator.CreateBWAdjustRuleDetail: error=%v", err)
+			logger.Ctx(ctx).Errorf("EXIT AdjustOperator.CreateBWAdjustRuleDetail: error=%v", err)
 		} else {
-			logger.Infof("EXIT AdjustOperator.CreateBWAdjustRuleDetail: success, uuid=%s", detail.UUID)
+			logger.Ctx(ctx).Infof("EXIT AdjustOperator.CreateBWAdjustRuleDetail: success, uuid=%s", detail.UUID)
 		}
 	}()
 	if detail.UUID == "" {
 		detail.UUID = uuid.New().String()
 	}
-	return dbs.DB().Create(detail).Error
+	return dbs.DBContext(ctx).Create(detail).Error
 }
 
 // GetBWAdjustRuleDetails gets bandwidth adjustment rule details
 func (o *AdjustOperator) GetBWAdjustRuleDetails(ctx context.Context, groupUUID string) (details []model.BWAdjustRuleDetail, err error) {
-	logger.Infof("ENTER AdjustOperator.GetBWAdjustRuleDetails: groupUUID=%s", groupUUID)
+	logger.Ctx(ctx).Infof("ENTER AdjustOperator.GetBWAdjustRuleDetails: groupUUID=%s", groupUUID)
 	defer func() {
 		if err != nil {
-			logger.Errorf("EXIT AdjustOperator.GetBWAdjustRuleDetails: error=%v", err)
+			logger.Ctx(ctx).Errorf("EXIT AdjustOperator.GetBWAdjustRuleDetails: error=%v", err)
 		} else {
-			logger.Infof("EXIT AdjustOperator.GetBWAdjustRuleDetails: count=%d", len(details))
+			logger.Ctx(ctx).Infof("EXIT AdjustOperator.GetBWAdjustRuleDetails: count=%d", len(details))
 		}
 	}()
-	if err = dbs.DB().Where("group_uuid = ?", groupUUID).Find(&details).Error; err != nil {
+	if err = dbs.DBContext(ctx).Where("group_uuid = ?", groupUUID).Find(&details).Error; err != nil {
 		return nil, err
 	}
 	return details, nil
@@ -345,12 +345,12 @@ type CPUAdjustRuleGroupResult struct {
 
 // GetCPUAdjustRulesByGroupUUID retrieves complete CPU adjust rule (group + details) by group UUID
 func (o *AdjustOperator) GetCPUAdjustRulesByGroupUUID(ctx context.Context, groupUUID string, ruleType string) (result *CPUAdjustRuleGroupResult, err error) {
-	logger.Infof("ENTER AdjustOperator.GetCPUAdjustRulesByGroupUUID: groupUUID=%s, ruleType=%s", groupUUID, ruleType)
+	logger.Ctx(ctx).Infof("ENTER AdjustOperator.GetCPUAdjustRulesByGroupUUID: groupUUID=%s, ruleType=%s", groupUUID, ruleType)
 	defer func() {
 		if err != nil {
-			logger.Errorf("EXIT AdjustOperator.GetCPUAdjustRulesByGroupUUID: error=%v", err)
+			logger.Ctx(ctx).Errorf("EXIT AdjustOperator.GetCPUAdjustRulesByGroupUUID: error=%v", err)
 		} else {
-			logger.Info("EXIT AdjustOperator.GetCPUAdjustRulesByGroupUUID: success")
+			logger.Ctx(ctx).Info("EXIT AdjustOperator.GetCPUAdjustRulesByGroupUUID: success")
 		}
 	}()
 	groups, _, err := o.ListAdjustRuleGroups(ctx, ListAdjustRuleGroupsParams{
@@ -359,13 +359,13 @@ func (o *AdjustOperator) GetCPUAdjustRulesByGroupUUID(ctx context.Context, group
 		PageSize:  1,
 	})
 	if err != nil || len(groups) == 0 {
-		logger.Errorf("adjust rules query failed: groupID=%s, error=%v", groupUUID, err)
+		logger.Ctx(ctx).Errorf("adjust rules query failed: groupID=%s, error=%v", groupUUID, err)
 		return nil, fmt.Errorf("adjust rules query failed: %w", err)
 	}
 
 	details, err := o.GetCPUAdjustRuleDetails(ctx, groupUUID)
 	if err != nil {
-		logger.Errorf("CPU adjust detail rules query failed: groupID=%s, error=%v", groupUUID, err)
+		logger.Ctx(ctx).Errorf("CPU adjust detail rules query failed: groupID=%s, error=%v", groupUUID, err)
 		return nil, fmt.Errorf("CPU adjust detail rules query failed: %w", err)
 	}
 
@@ -383,12 +383,12 @@ type BWAdjustRuleGroupResult struct {
 
 // GetBWAdjustRulesByGroupUUID retrieves complete bandwidth adjust rule (group + details) by group UUID
 func (o *AdjustOperator) GetBWAdjustRulesByGroupUUID(ctx context.Context, groupUUID string, ruleType string) (result *BWAdjustRuleGroupResult, err error) {
-	logger.Infof("ENTER AdjustOperator.GetBWAdjustRulesByGroupUUID: groupUUID=%s, ruleType=%s", groupUUID, ruleType)
+	logger.Ctx(ctx).Infof("ENTER AdjustOperator.GetBWAdjustRulesByGroupUUID: groupUUID=%s, ruleType=%s", groupUUID, ruleType)
 	defer func() {
 		if err != nil {
-			logger.Errorf("EXIT AdjustOperator.GetBWAdjustRulesByGroupUUID: error=%v", err)
+			logger.Ctx(ctx).Errorf("EXIT AdjustOperator.GetBWAdjustRulesByGroupUUID: error=%v", err)
 		} else {
-			logger.Info("EXIT AdjustOperator.GetBWAdjustRulesByGroupUUID: success")
+			logger.Ctx(ctx).Info("EXIT AdjustOperator.GetBWAdjustRulesByGroupUUID: success")
 		}
 	}()
 	groups, _, err := o.ListAdjustRuleGroups(ctx, ListAdjustRuleGroupsParams{
@@ -397,13 +397,13 @@ func (o *AdjustOperator) GetBWAdjustRulesByGroupUUID(ctx context.Context, groupU
 		PageSize:  1,
 	})
 	if err != nil || len(groups) == 0 {
-		logger.Errorf("adjust rules query failed: groupID=%s, error=%v", groupUUID, err)
+		logger.Ctx(ctx).Errorf("adjust rules query failed: groupID=%s, error=%v", groupUUID, err)
 		return nil, fmt.Errorf("adjust rules query failed: %w", err)
 	}
 
 	details, err := o.GetBWAdjustRuleDetails(ctx, groupUUID)
 	if err != nil {
-		logger.Errorf("bandwidth adjust detail rules query failed: groupID=%s, error=%v", groupUUID, err)
+		logger.Ctx(ctx).Errorf("bandwidth adjust detail rules query failed: groupID=%s, error=%v", groupUUID, err)
 		return nil, fmt.Errorf("bandwidth adjust detail rules query failed: %w", err)
 	}
 
@@ -415,20 +415,20 @@ func (o *AdjustOperator) GetBWAdjustRulesByGroupUUID(ctx context.Context, groupU
 
 // UpdateAdjustRuleGroupStatus updates adjust rule group enabled status
 func (o *AdjustOperator) UpdateAdjustRuleGroupStatus(ctx context.Context, groupUUID string, enabled bool) (err error) {
-	logger.Infof("ENTER AdjustOperator.UpdateAdjustRuleGroupStatus: groupUUID=%s, enabled=%v", groupUUID, enabled)
+	logger.Ctx(ctx).Infof("ENTER AdjustOperator.UpdateAdjustRuleGroupStatus: groupUUID=%s, enabled=%v", groupUUID, enabled)
 	defer func() {
 		if err != nil {
-			logger.Errorf("EXIT AdjustOperator.UpdateAdjustRuleGroupStatus: error=%v", err)
+			logger.Ctx(ctx).Errorf("EXIT AdjustOperator.UpdateAdjustRuleGroupStatus: error=%v", err)
 		} else {
-			logger.Info("EXIT AdjustOperator.UpdateAdjustRuleGroupStatus: success")
+			logger.Ctx(ctx).Info("EXIT AdjustOperator.UpdateAdjustRuleGroupStatus: success")
 		}
 	}()
-	result := dbs.DB().Model(&model.AdjustRuleGroup{}).
+	result := dbs.DBContext(ctx).Model(&model.AdjustRuleGroup{}).
 		Where("uuid = ?", groupUUID).
 		Update("enabled", enabled)
 
 	if result.Error != nil {
-		logger.Errorf("update adjust rule group status failed groupUUID %s error %v", groupUUID, result.Error)
+		logger.Ctx(ctx).Errorf("update adjust rule group status failed groupUUID %s error %v", groupUUID, result.Error)
 		return fmt.Errorf("update adjust rule group status failed: %w", result.Error)
 	}
 
@@ -441,15 +441,15 @@ func (o *AdjustOperator) UpdateAdjustRuleGroupStatus(ctx context.Context, groupU
 
 // DeleteAdjustRuleGroupWithDependencies deletes resource adjustment rule group and its dependencies
 func (o *AdjustOperator) DeleteAdjustRuleGroupWithDependencies(ctx context.Context, groupUUID string) (err error) {
-	logger.Infof("ENTER AdjustOperator.DeleteAdjustRuleGroupWithDependencies: groupUUID=%s", groupUUID)
+	logger.Ctx(ctx).Infof("ENTER AdjustOperator.DeleteAdjustRuleGroupWithDependencies: groupUUID=%s", groupUUID)
 	defer func() {
 		if err != nil {
-			logger.Errorf("EXIT AdjustOperator.DeleteAdjustRuleGroupWithDependencies: error=%v", err)
+			logger.Ctx(ctx).Errorf("EXIT AdjustOperator.DeleteAdjustRuleGroupWithDependencies: error=%v", err)
 		} else {
-			logger.Info("EXIT AdjustOperator.DeleteAdjustRuleGroupWithDependencies: success")
+			logger.Ctx(ctx).Info("EXIT AdjustOperator.DeleteAdjustRuleGroupWithDependencies: success")
 		}
 	}()
-	tx := dbs.DB().Begin()
+	tx := dbs.DBContext(ctx).Begin()
 	defer func() {
 		if r := recover(); r != nil {
 			tx.Rollback()
@@ -491,30 +491,30 @@ func (o *AdjustOperator) DeleteAdjustRuleGroupWithDependencies(ctx context.Conte
 
 // RecordAdjustmentHistory records adjustment history
 func (o *AdjustOperator) RecordAdjustmentHistory(ctx context.Context, history *model.AdjustmentHistory) (err error) {
-	logger.Infof("ENTER AdjustOperator.RecordAdjustmentHistory: groupUUID=%s, domain=%s", history.GroupUUID, history.DomainName)
+	logger.Ctx(ctx).Infof("ENTER AdjustOperator.RecordAdjustmentHistory: groupUUID=%s, domain=%s", history.GroupUUID, history.DomainName)
 	defer func() {
 		if err != nil {
-			logger.Errorf("EXIT AdjustOperator.RecordAdjustmentHistory: error=%v", err)
+			logger.Ctx(ctx).Errorf("EXIT AdjustOperator.RecordAdjustmentHistory: error=%v", err)
 		} else {
-			logger.Info("EXIT AdjustOperator.RecordAdjustmentHistory: success")
+			logger.Ctx(ctx).Info("EXIT AdjustOperator.RecordAdjustmentHistory: success")
 		}
 	}()
 	history.AdjustTime = time.Now()
-	return dbs.DB().Create(history).Error
+	return dbs.DBContext(ctx).Create(history).Error
 }
 
 // IsInCooldown checks if in cooldown period
 func (o *AdjustOperator) IsInCooldown(ctx context.Context, domain, ruleID, actionType string, cooldownSeconds int) (inCooldown bool, err error) {
-	logger.Infof("ENTER AdjustOperator.IsInCooldown: domain=%s, ruleID=%s, action=%s, cooldown=%d", domain, ruleID, actionType, cooldownSeconds)
+	logger.Ctx(ctx).Infof("ENTER AdjustOperator.IsInCooldown: domain=%s, ruleID=%s, action=%s, cooldown=%d", domain, ruleID, actionType, cooldownSeconds)
 	defer func() {
 		if err != nil {
-			logger.Errorf("EXIT AdjustOperator.IsInCooldown: error=%v", err)
+			logger.Ctx(ctx).Errorf("EXIT AdjustOperator.IsInCooldown: error=%v", err)
 		} else {
-			logger.Infof("EXIT AdjustOperator.IsInCooldown: inCooldown=%v", inCooldown)
+			logger.Ctx(ctx).Infof("EXIT AdjustOperator.IsInCooldown: inCooldown=%v", inCooldown)
 		}
 	}()
 	var history model.AdjustmentHistory
-	err = dbs.DB().Where("domain_name = ? AND rule_id = ? AND action_type = ?", domain, ruleID, actionType).
+	err = dbs.DBContext(ctx).Where("domain_name = ? AND rule_id = ? AND action_type = ?", domain, ruleID, actionType).
 		Order("adjust_time desc").
 		First(&history).Error
 
@@ -534,16 +534,16 @@ func (o *AdjustOperator) IsInCooldown(ctx context.Context, domain, ruleID, actio
 
 // GetAdjustmentHistory gets adjustment history
 func (o *AdjustOperator) GetAdjustmentHistory(ctx context.Context, groupUUID string, limit int) (history []model.AdjustmentHistory, err error) {
-	logger.Infof("ENTER AdjustOperator.GetAdjustmentHistory: groupUUID=%s, limit=%d", groupUUID, limit)
+	logger.Ctx(ctx).Infof("ENTER AdjustOperator.GetAdjustmentHistory: groupUUID=%s, limit=%d", groupUUID, limit)
 	defer func() {
 		if err != nil {
-			logger.Errorf("EXIT AdjustOperator.GetAdjustmentHistory: error=%v", err)
+			logger.Ctx(ctx).Errorf("EXIT AdjustOperator.GetAdjustmentHistory: error=%v", err)
 		} else {
-			logger.Infof("EXIT AdjustOperator.GetAdjustmentHistory: count=%d", len(history))
+			logger.Ctx(ctx).Infof("EXIT AdjustOperator.GetAdjustmentHistory: count=%d", len(history))
 		}
 	}()
 	history = []model.AdjustmentHistory{}
-	query := dbs.DB().Where("group_uuid = ?", groupUUID).Order("adjust_time desc")
+	query := dbs.DBContext(ctx).Where("group_uuid = ?", groupUUID).Order("adjust_time desc")
 
 	if limit > 0 {
 		query = query.Limit(limit)
@@ -555,73 +555,76 @@ func (o *AdjustOperator) GetAdjustmentHistory(ctx context.Context, groupUUID str
 
 // SaveAdjustmentHistory saves adjustment history
 func (o *AdjustOperator) SaveAdjustmentHistory(ctx context.Context, history *model.AdjustmentHistory) (err error) {
-	logger.Infof("ENTER AdjustOperator.SaveAdjustmentHistory: groupUUID=%s, domain=%s", history.GroupUUID, history.DomainName)
+	logger.Ctx(ctx).Infof("ENTER AdjustOperator.SaveAdjustmentHistory: groupUUID=%s, domain=%s", history.GroupUUID, history.DomainName)
 	defer func() {
 		if err != nil {
-			logger.Errorf("EXIT AdjustOperator.SaveAdjustmentHistory: error=%v", err)
+			logger.Ctx(ctx).Errorf("EXIT AdjustOperator.SaveAdjustmentHistory: error=%v", err)
 		} else {
-			logger.Info("EXIT AdjustOperator.SaveAdjustmentHistory: success")
+			logger.Ctx(ctx).Info("EXIT AdjustOperator.SaveAdjustmentHistory: success")
 		}
 	}()
-	return dbs.DB().Create(history).Error
+	return dbs.DBContext(ctx).Create(history).Error
 }
 
 // UpdateVMBandwidthMetric updates VM bandwidth metrics
 func (o *AdjustOperator) UpdateVMBandwidthMetric(ctx context.Context, hyperID int, domain string, targetDevice string, inbound, outbound int) error {
-	logger.Errorf("UpdateVMBandwidthMetric not implemented")
+	logger.Ctx(ctx).Errorf("UpdateVMBandwidthMetric not implemented")
 	return fmt.Errorf("UpdateVMBandwidthMetric not implemented")
 }
 
 // UpdateAdjustRuleGroupBasicInfo updates basic info of adjust rule group
 func (o *AdjustOperator) UpdateAdjustRuleGroupBasicInfo(ctx context.Context, groupUUID string, updates map[string]interface{}) error {
-	logger.Errorf("UpdateAdjustRuleGroupBasicInfo not implemented")
+	logger.Ctx(ctx).Errorf("UpdateAdjustRuleGroupBasicInfo not implemented")
 	return fmt.Errorf("UpdateAdjustRuleGroupBasicInfo not implemented")
 }
 
 // UpdateCPUAdjustRuleDetails updates CPU adjust rule details
 func (o *AdjustOperator) UpdateCPUAdjustRuleDetails(ctx context.Context, groupUUID string, details []model.CPUAdjustRuleDetail) error {
-	logger.Errorf("UpdateCPUAdjustRuleDetails not implemented")
+	logger.Ctx(ctx).Errorf("UpdateCPUAdjustRuleDetails not implemented")
 	return fmt.Errorf("UpdateCPUAdjustRuleDetails not implemented")
 }
 
 // UpdateBWAdjustRuleDetails updates bandwidth adjust rule details
 func (o *AdjustOperator) UpdateBWAdjustRuleDetails(ctx context.Context, groupUUID string, details []model.BWAdjustRuleDetail) error {
-	logger.Errorf("UpdateBWAdjustRuleDetails not implemented")
+	logger.Ctx(ctx).Errorf("UpdateBWAdjustRuleDetails not implemented")
 	return fmt.Errorf("UpdateBWAdjustRuleDetails not implemented")
 }
 
 // SyncVMLinks syncs VM links for adjust rules
 func (o *AdjustOperator) SyncVMLinks(ctx context.Context, groupUUID string, vmUUIDs []string) (added, removed int, toAdd, toRemove []string, err error) {
-	logger.Errorf("SyncVMLinks not implemented")
+	logger.Ctx(ctx).Errorf("SyncVMLinks not implemented")
 	return 0, 0, nil, nil, fmt.Errorf("SyncVMLinks not implemented")
 }
 
 // SyncVMLinksWithDevice syncs VM links with device info
-func (o *AdjustOperator) SyncVMLinksWithDevice(ctx context.Context, groupUUID string, links []struct{InstanceID string; TargetDevice string}) (added, removed int, toAddByDevice, toRemoveByDevice map[string][]string, err error) {
-	logger.Errorf("SyncVMLinksWithDevice not implemented")
+func (o *AdjustOperator) SyncVMLinksWithDevice(ctx context.Context, groupUUID string, links []struct {
+	InstanceID   string
+	TargetDevice string
+}) (added, removed int, toAddByDevice, toRemoveByDevice map[string][]string, err error) {
+	logger.Ctx(ctx).Errorf("SyncVMLinksWithDevice not implemented")
 	return 0, 0, nil, nil, fmt.Errorf("SyncVMLinksWithDevice not implemented")
 }
 
 // AdjustCPUResource adjusts CPU resources for an instance
 func (o *AdjustOperator) AdjustCPUResource(ctx context.Context, record *AdjustmentRecord, domain string, isAdjust bool, link string) error {
-	logger.Errorf("AdjustCPUResource not implemented")
+	logger.Ctx(ctx).Errorf("AdjustCPUResource not implemented")
 	return fmt.Errorf("AdjustCPUResource not implemented")
 }
 
 // RestoreCPUResource restores CPU resources for an instance
 func (o *AdjustOperator) RestoreCPUResource(ctx context.Context, record *AdjustmentRecord, domain string, link string) error {
-	logger.Errorf("RestoreCPUResource not implemented")
+	logger.Ctx(ctx).Errorf("RestoreCPUResource not implemented")
 	return fmt.Errorf("RestoreCPUResource not implemented")
 }
 
 // AdjustBandwidthResource adjusts bandwidth resources for an instance
 func (o *AdjustOperator) AdjustBandwidthResource(ctx context.Context, record *AdjustmentRecord, domain string, targetDevice string, isAdjust bool, link string, inbound, outbound int) error {
-	logger.Errorf("AdjustBandwidthResource not implemented")
+	logger.Ctx(ctx).Errorf("AdjustBandwidthResource not implemented")
 	return fmt.Errorf("AdjustBandwidthResource not implemented")
 }
 
 // RestoreBandwidthResource restores bandwidth resources for an instance
 func (o *AdjustOperator) RestoreBandwidthResource(ctx context.Context, record *AdjustmentRecord, domain string, targetDevice string, link string) error {
-	logger.Errorf("RestoreBandwidthResource not implemented")
+	logger.Ctx(ctx).Errorf("RestoreBandwidthResource not implemented")
 	return fmt.Errorf("RestoreBandwidthResource not implemented")
 }

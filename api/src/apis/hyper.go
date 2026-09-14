@@ -57,15 +57,15 @@ type HyperPayload struct {
 }
 
 type HyperDeployPayload struct {
-	IP               string `json:"ip" binding:"required"`
-	Hostname         string `json:"hostname" binding:"required"`
-	NetworkDevice    string `json:"network_device"`
-	VlanDevice       string `json:"vlan_device"`
+	IP                string `json:"ip" binding:"required"`
+	Hostname          string `json:"hostname" binding:"required"`
+	NetworkDevice     string `json:"network_device"`
+	VlanDevice        string `json:"vlan_device"`
 	PrivateVlanDevice string `json:"private_vlan_device"`
-	DNSServer        string `json:"dns_server"`
-	Domain           string `json:"domain"`
-	ZoneName         string `json:"zone_name"`
-	VirtType         string `json:"virt_type"`
+	DNSServer         string `json:"dns_server"`
+	Domain            string `json:"domain"`
+	ZoneName          string `json:"zone_name"`
+	VirtType          string `json:"virt_type"`
 }
 
 type HyperMaintainPayload struct {
@@ -90,7 +90,7 @@ type HyperPatchPayload struct {
 // @Router /hypers/{uuid} [get]
 func (v *HyperAPI) Get(c *gin.Context) {
 	uuid := c.Param("uuid")
-	logger.Infof("API: Get hypervisor with uuid=%s", uuid)
+	logger.Ctx(c).Infof("API: Get hypervisor with uuid=%s", uuid)
 
 	hyper, err := hyperAdmin.GetHyperByUUID(c.Request.Context(), uuid)
 	if err != nil {
@@ -119,7 +119,7 @@ func (v *HyperAPI) List(c *gin.Context) {
 	limit := c.Query("limit")
 	order := c.Query("order")
 	query := c.Query("q")
-	logger.Infof("Listing hypervisors via API: offset=%s, limit=%s, order=%s, q=%s", offset, limit, order, query)
+	logger.Ctx(c).Infof("Listing hypervisors via API: offset=%s, limit=%s, order=%s, q=%s", offset, limit, order, query)
 
 	var offsetInt, limitInt int64
 	var err error
@@ -171,11 +171,11 @@ func (v *HyperAPI) Patch(c *gin.Context) {
 
 	var payload HyperPatchPayload
 	if err := c.ShouldBindJSON(&payload); err != nil {
-		logger.Errorf("Failed to bind JSON for Hyper PATCH: %+v", err)
+		logger.Ctx(c).Errorf("Failed to bind JSON for Hyper PATCH: %+v", err)
 		ErrorResponse(c, http.StatusBadRequest, "Invalid payload", err)
 		return
 	}
-	logger.Infof("Patching hypervisor %s with payload: %+v", uuid, payload)
+	logger.Ctx(c).Infof("Patching hypervisor %s with payload: %+v", uuid, payload)
 
 	// Get existing hypervisor
 	hyper, err := hyperAdmin.GetHyperByUUID(c.Request.Context(), uuid)
@@ -235,11 +235,11 @@ func (v *HyperAPI) Patch(c *gin.Context) {
 func (v *HyperAPI) Deploy(c *gin.Context) {
 	var payload HyperDeployPayload
 	if err := c.ShouldBindJSON(&payload); err != nil {
-		logger.Errorf("Failed to bind JSON for Hyper Deploy: %+v", err)
+		logger.Ctx(c).Errorf("Failed to bind JSON for Hyper Deploy: %+v", err)
 		ErrorResponse(c, http.StatusBadRequest, "Invalid payload", err)
 		return
 	}
-	logger.Infof("API: Deploy hypervisor with payload: %+v", payload)
+	logger.Ctx(c).Infof("API: Deploy hypervisor with payload: %+v", payload)
 	if payload.NetworkDevice == "" {
 		payload.NetworkDevice = "eth0"
 	}
@@ -290,11 +290,11 @@ func (v *HyperAPI) Maintain(c *gin.Context) {
 	uuid := c.Param("uuid")
 	var payload HyperMaintainPayload
 	if err := c.ShouldBindJSON(&payload); err != nil {
-		logger.Warningf("Failed to bind JSON for Hyper Maintain, using default (migrate=true): %+v", err)
+		logger.Ctx(c).Warningf("Failed to bind JSON for Hyper Maintain, using default (migrate=true): %+v", err)
 		payload.TargetHyper = -1
 		payload.Migrate = true
 	}
-	logger.Infof("Maintenance requested via API for hypervisor %s: migrate=%v, target=%d", uuid, payload.Migrate, payload.TargetHyper)
+	logger.Ctx(c).Infof("Maintenance requested via API for hypervisor %s: migrate=%v, target=%d", uuid, payload.Migrate, payload.TargetHyper)
 	hyper, err := hyperAdmin.GetHyperByUUID(c.Request.Context(), uuid)
 	if err != nil {
 		ErrorResponse(c, http.StatusNotFound, "Hypervisor not found", err)
@@ -321,7 +321,7 @@ func (v *HyperAPI) Maintain(c *gin.Context) {
 // @Router /hypers/{uuid} [delete]
 func (v *HyperAPI) Delete(c *gin.Context) {
 	uuid := c.Param("uuid")
-	logger.Infof("Deletion requested via API for hypervisor: uuid=%s", uuid)
+	logger.Ctx(c).Infof("Deletion requested via API for hypervisor: uuid=%s", uuid)
 	hyper, err := hyperAdmin.GetHyperByUUID(c.Request.Context(), uuid)
 	if err != nil {
 		ErrorResponse(c, http.StatusNotFound, "Hypervisor not found", err)

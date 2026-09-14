@@ -30,48 +30,48 @@ func AttachVolume(ctx context.Context, args []string) (status string, err error)
 	}()
 	argn := len(args)
 
-	logger.Debugf("AttachVolume called with args: %v, length: %d", args, argn)
+	logger.Ctx(ctx).Debugf("AttachVolume called with args: %v, length: %d", args, argn)
 
 	if argn < 4 {
 		volID, parseErr := strconv.ParseInt(args[2], 10, 64)
 		if parseErr != nil {
 			err = fmt.Errorf("Invalid volume ID: %w", parseErr)
-			logger.Error("Invalid volume ID", err)
+			logger.Ctx(ctx).Error("Invalid volume ID", err)
 			return
 		}
 		volume := &model.Volume{Model: model.Model{ID: volID}}
 		err = db.Where(volume).Take(volume).Error
 		if err != nil {
-			logger.Error("Failed to query volume", err)
+			logger.Ctx(ctx).Error("Failed to query volume", err)
 			return
 		}
 		err = db.Model(&model.Volume{}).Where("id = ?", volume.ID).Update("status", model.VolumeStatusAvailable).Error
 		if err != nil {
-			logger.Error("Update volume status failed", err)
+			logger.Ctx(ctx).Error("Update volume status failed", err)
 			return
 		}
 		return
 	}
 	instanceID, err := strconv.ParseInt(args[1], 10, 64)
 	if err != nil {
-		logger.Error("Invalid instance ID", err)
+		logger.Ctx(ctx).Error("Invalid instance ID", err)
 		return
 	}
 	volID, err := strconv.ParseInt(args[2], 10, 64)
 	if err != nil {
-		logger.Error("Invalid volume ID", err)
+		logger.Ctx(ctx).Error("Invalid volume ID", err)
 		return
 	}
 	target := args[3]
 	volume := &model.Volume{Model: model.Model{ID: volID}}
 	err = db.Where(volume).Take(volume).Error
 	if err != nil {
-		logger.Error("Failed to query volume", err)
+		logger.Ctx(ctx).Error("Failed to query volume", err)
 		return
 	}
 	err = db.Model(&model.Volume{}).Where("id = ?", volume.ID).Updates(map[string]interface{}{"instance_id": instanceID, "target": target, "status": model.VolumeStatusAttached}).Error
 	if err != nil {
-		logger.Error("Update volume status failed", err)
+		logger.Ctx(ctx).Error("Update volume status failed", err)
 		return
 	}
 	return

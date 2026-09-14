@@ -105,6 +105,11 @@ api/apitest/reinstall.sh
 api/apitest/user_post.sh
 api/bin/
 api/alarm_rules_manager
+api/api
+api/cland
+api/cland-go
+api/cloudlet
+api/cloudlet-go
 cpgateway/keys/
 
 # Sensitive local tools

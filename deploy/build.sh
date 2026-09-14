@@ -22,30 +22,31 @@ chown -R cland.cland $cland_root_dir
 # 初始化网络配置文件 netconf.yml（若不存在则从示例文件复制）；
 mkdir $cland_root_dir/{bin,deploy,etc,lib6,log,run,sci,scripts,src,web,cache} $cland_root_dir/cache/{image,instance,dnsmasq,meta,router,volume,xml} 2>/dev/null
 [ ! -s "$net_conf" ] && cp ${net_conf}.example $net_conf
+# clapi/cland-go/cloudlet-go 共用的 gRPC 令牌：为空时生成（重复执行沿用已有值）
+if ! grep -qE '^grpc_auth_token: *"?[0-9A-Za-z]' "$net_conf"; then
+    sed -i '/^grpc_auth_token:/d' "$net_conf"
+    echo "grpc_auth_token: \"$(openssl rand -hex 32)\"" >> "$net_conf"
+fi
+chmod 600 "$net_conf"
 
 # Install packages
 apt -y update
 apt install -y make g++ libssl-dev libjsoncpp-dev ansible jq wget mkisofs network-manager net-tools python3-pip qemu-system-x86 qemu-utils bridge-utils ipcalc ipset iputils-arping libvirt-daemon libvirt-daemon-system libvirt-daemon-system-systemd libvirt-clients dnsmasq-base keepalived dnsmasq-utils conntrack
-go version
-if [ $? -ne 0 ]; then
+# 安装 Go（未安装或低于 api/go.mod 要求的版本时）
+GO_VERSION="1.25.0"
+export PATH=/usr/local/go/bin:/root/go/bin:$PATH
+CURRENT_GO=$(go env GOVERSION 2>/dev/null | sed 's/^go//')
+if [ -z "$CURRENT_GO" ] || [ "$(printf '%s\n%s\n' "$GO_VERSION" "$CURRENT_GO" | sort -V | head -1)" != "$GO_VERSION" ]; then
     cd /tmp
-    wget https://go.dev/dl/go1.21.13.linux-amd64.tar.gz
-    tar -zxvf go1.21.13.linux-amd64.tar.gz
-    mv go /usr/local/go
-    export PATH=$PATH:/usr/local/go/bin:/root/go/bin
-    echo 'PATH=$PATH:/usr/local/go/bin:/root/go/bin' >> $HOME/.bashrc
+    wget -q "https://go.dev/dl/go${GO_VERSION}.linux-amd64.tar.gz" -O /tmp/go.tar.gz
+    rm -rf /usr/local/go
+    tar -C /usr/local -xzf /tmp/go.tar.gz
+    rm -f /tmp/go.tar.gz
+    grep -q '/usr/local/go/bin' $HOME/.bashrc || echo 'PATH=$PATH:/usr/local/go/bin:/root/go/bin' >> $HOME/.bashrc
     go install github.com/swaggo/swag/cmd/swag@latest
     cd -
 fi
 
-# Build SCI
-function build_sci() 
-{
-    cd $cland_root_dir/sci
-    ./configure
-    make
-    make install
-}
 
 # Build web
 function build_web()
@@ -54,13 +55,14 @@ function build_web()
     make all
 }
 
-# Build cloudland
+# Build cland-go / cloudlet-go（Go gRPC 版，取代 C++ cloudland + SCI）
 function build_cland()
 {
-    cd $cland_root_dir/src
-    make clean
-    make
-    make install
+    cd $cland_root_dir/api
+    make cland cloudlet
+    mkdir -p $cland_root_dir/bin
+    cp -f cland-go cloudlet-go $cland_root_dir/bin/
+    cd $cland_root_dir/deploy
 }
 
 # Build libvirt console proxy
@@ -95,8 +97,6 @@ function gen_hosts()
     hname=$(hostname -s)
     # 把本机的 host ip 对写入host 文件,尾部追加
     bash -c "echo '$myip $hname' >> /etc/hosts"
-    # 写入host.list文件
-    echo $hname > $cland_root_dir/etc/host.list
     mkdir -p $cland_root_dir/deploy/hosts
     virt_type=kvm-x86_64
     # 写入ansible hosts文件
@@ -120,12 +120,8 @@ EOF
 
 # 构建所有组件
 git config --global --add safe.directory /opt/cloudland
-#   构建SCI
-diff /opt/sci/lib64/libsci.so.0.0.0 $cland_root_dir/sci/libsci/.libs/libsci.so.0.0.0
-[ $? -ne 0 ] && build_sci
-#   构建cloudland
-diff $cland_root_dir/bin/cloudland $cland_root_dir/src/cloudland
-[ $? -ne 0 ] && build_cland
+#   构建 cland-go / cloudlet-go
+build_cland
 
 # 产生host file
 gen_hosts

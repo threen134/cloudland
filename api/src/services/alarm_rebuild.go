@@ -21,16 +21,16 @@ func RebuildAlarmRulesOnStartup() {
 	// 查询所有启用且未软删除的规则组
 	var groups []model.RuleGroupV2
 	if err := db.Where("enabled = ? AND deleted_at IS NULL", true).Find(&groups).Error; err != nil {
-		logger.Errorf("Failed to query enabled rule groups on startup: %v", err)
+		logger.Ctx(ctx).Errorf("Failed to query enabled rule groups on startup: %v", err)
 		return
 	}
 
 	if len(groups) == 0 {
-		logger.Info("No enabled alarm rules found, skipping rebuild")
+		logger.Ctx(ctx).Info("No enabled alarm rules found, skipping rebuild")
 		return
 	}
 
-	logger.Infof("Found %d enabled alarm rule groups, rebuilding...", len(groups))
+	logger.Ctx(ctx).Infof("Found %d enabled alarm rule groups, rebuilding...", len(groups))
 	rebuiltCount := 0
 
 	for _, group := range groups {
@@ -43,23 +43,23 @@ func RebuildAlarmRulesOnStartup() {
 		case RuleTypeBW:
 			err = rebuildBWRule(ctx, &group)
 		default:
-			logger.Warningf("Unknown rule type '%s' for group %s, skipping", group.Type, group.UUID)
+			logger.Ctx(ctx).Warningf("Unknown rule type '%s' for group %s, skipping", group.Type, group.UUID)
 			continue
 		}
 
 		if err != nil {
-			logger.Errorf("Failed to rebuild rule %s (type=%s): %v", group.UUID, group.Type, err)
+			logger.Ctx(ctx).Errorf("Failed to rebuild rule %s (type=%s): %v", group.UUID, group.Type, err)
 			continue
 		}
 		rebuiltCount++
 	}
 
-	logger.Infof("Alarm rules rebuild complete: %d/%d rules rebuilt", rebuiltCount, len(groups))
+	logger.Ctx(ctx).Infof("Alarm rules rebuild complete: %d/%d rules rebuilt", rebuiltCount, len(groups))
 
 	// 全部写完后调用一次 reload
 	if rebuiltCount > 0 {
-		if err := ReloadPrometheusViaHTTP(); err != nil {
-			logger.Errorf("Failed to reload Prometheus after rule rebuild: %v", err)
+		if err := ReloadPrometheusViaHTTP(ctx); err != nil {
+			logger.Ctx(ctx).Errorf("Failed to reload Prometheus after rule rebuild: %v", err)
 		}
 	}
 }
@@ -100,7 +100,7 @@ func rebuildCPURule(ctx context.Context, group *model.RuleGroupV2) error {
 
 		templateFile := "VM-cpu-rule.yml.j2"
 		outputFile := fmt.Sprintf("cpu-%s-%s-%d.yml", safeOwner, safeUUID, i)
-		if err := ProcessTemplate(templateFile, outputFile, ruleData); err != nil {
+		if err := ProcessTemplate(ctx, templateFile, outputFile, ruleData); err != nil {
 			return err
 		}
 	}
@@ -143,7 +143,7 @@ func rebuildMemoryRule(ctx context.Context, group *model.RuleGroupV2) error {
 
 		templateFile := "VM-memory-rule.yml.j2"
 		outputFile := fmt.Sprintf("memory-%s-%s-%d.yml", safeOwner, safeUUID, i)
-		if err := ProcessTemplate(templateFile, outputFile, ruleData); err != nil {
+		if err := ProcessTemplate(ctx, templateFile, outputFile, ruleData); err != nil {
 			return err
 		}
 	}
@@ -188,7 +188,7 @@ func rebuildBWRule(ctx context.Context, group *model.RuleGroupV2) error {
 			continue
 		}
 
-		if err := ProcessTemplate(templateFile, outputFile, data); err != nil {
+		if err := ProcessTemplate(ctx, templateFile, outputFile, data); err != nil {
 			return err
 		}
 	}

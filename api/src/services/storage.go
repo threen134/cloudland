@@ -43,7 +43,7 @@ func (a *ImageStorageAdmin) List(offset, limit int64, order string, image *model
 		err = NewCLError(ErrSQLSyntaxError, "Failed to count image storage(s)", err)
 		return
 	}
-	db = dbs.Sortby(db.Offset(offset).Limit(limit), order)
+	db = dbs.Sortby(db.Offset(int(offset)).Limit(int(limit)), order)
 	if err = db.Where("image_id = ?", image.ID).Where(query).Find(&storages).Error; err != nil {
 		err = NewCLError(ErrSQLSyntaxError, "Failed to query image storage(s)", err)
 		return
@@ -68,7 +68,7 @@ func (a *ImageStorageAdmin) InitStorages(ctx context.Context, image *model.Image
 		}
 		dictionary, err = (&DictionaryAdminService{}).Find(ctx, "storage_pool", poolID)
 		if err != nil {
-			logger.Errorf("Failed to find storage pool %s, %v", poolID, err)
+			logger.Ctx(ctx).Errorf("Failed to find storage pool %s, %v", poolID, err)
 			return
 		}
 		finalPools = append(finalPools, dictionary.Value)
@@ -82,7 +82,7 @@ func (a *ImageStorageAdmin) InitStorages(ctx context.Context, image *model.Image
 	// load exists image storage records
 	var storages []*model.ImageStorage
 	if err = db.Where("image_id = ?", image.ID).Find(&storages).Error; err != nil {
-		logger.Errorf("Failed to list image storage data, %v", err)
+		logger.Ctx(ctx).Errorf("Failed to list image storage data, %v", err)
 		err = NewCLError(ErrSQLSyntaxError, "Failed to list image storage data", err)
 		return
 	}
@@ -100,7 +100,7 @@ func (a *ImageStorageAdmin) InitStorages(ctx context.Context, image *model.Image
 					"status": storage.Status,
 				}).Error
 				if err != nil {
-					logger.Error("Update image storage failed", err)
+					logger.Ctx(ctx).Error("Update image storage failed", err)
 					err = NewCLError(ErrImageStorageCreateFailed, "Failed to Create image storage", err)
 					return
 				}
@@ -114,7 +114,7 @@ func (a *ImageStorageAdmin) InitStorages(ctx context.Context, image *model.Image
 				Status:  model.StorageStatusUnknown,
 			}
 			if err = db.Create(newStorage).Error; err != nil {
-				logger.Error("Create new image storage failed", err)
+				logger.Ctx(ctx).Error("Create new image storage failed", err)
 				err = NewCLError(ErrImageStorageCreateFailed, "Failed to Create image storage", err)
 				return
 			}

@@ -21,7 +21,7 @@ func GetImageOSCode(ctx context.Context, instance *model.Instance) string {
 		instance.Image = &model.Image{Model: model.Model{ID: instance.ImageID}}
 		err := db.Take(instance.Image).Error
 		if err != nil {
-			logger.Error("Invalid image ", instance.ImageID)
+			logger.Ctx(ctx).Error("Invalid image ", instance.ImageID)
 			return osCode
 		}
 	}
@@ -37,11 +37,11 @@ func GetHyperGroup(ctx context.Context, zoneID int64, skipHyper int32) (hyperGro
 		where = fmt.Sprintf("zone_id = %d and status = 1 and hostid >= 0 and hostid <> %d", zoneID, skipHyper)
 	}
 	if err = db.Where(where).Find(&hypers).Error; err != nil {
-		logger.Error("Hypers query failed", err)
+		logger.Ctx(ctx).Error("Hypers query failed", err)
 		return "", NewCLError(ErrSQLSyntaxError, "Failed to query hypervisors", err)
 	}
 	if len(hypers) == 0 {
-		logger.Error("No qualified hypervisor")
+		logger.Ctx(ctx).Error("No qualified hypervisor")
 		return "", NewCLError(ErrNoQualifiedHypervisor, "No qualified hypervisor found", nil)
 	}
 	hyperGroup = fmt.Sprintf("group-zone-%d", zoneID)

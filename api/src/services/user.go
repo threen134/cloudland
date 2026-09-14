@@ -32,17 +32,16 @@ var (
 
 type UserAdmin struct{}
 
-
 // Create creates a new user. Two modes:
 // 1. CPGateway call (scenario 2B): no system_role, creates Dormant user without Org
 // 2. SystemAdmin creating another SystemAdmin: creates Active user, adds to admin org
 func (a *UserAdmin) Create(ctx context.Context, email, password, uuid string, sysRole ...model.SystemRole) (user *model.User, err error) {
-	logger.Infof("ENTER UserAdmin.Create: email=%s, uuid=%s, sysRoleCount=%d", email, uuid, len(sysRole))
+	logger.Ctx(ctx).Infof("ENTER UserAdmin.Create: email=%s, uuid=%s, sysRoleCount=%d", email, uuid, len(sysRole))
 	defer func() {
 		if err != nil {
-			logger.Errorf("EXIT UserAdmin.Create: error=%v", err)
+			logger.Ctx(ctx).Errorf("EXIT UserAdmin.Create: error=%v", err)
 		} else {
-			logger.Infof("EXIT UserAdmin.Create: userID=%d", user.ID)
+			logger.Ctx(ctx).Infof("EXIT UserAdmin.Create: userID=%d", user.ID)
 		}
 	}()
 	memberShip := GetMemberShip(ctx)
@@ -86,7 +85,7 @@ func (a *UserAdmin) Create(ctx context.Context, email, password, uuid string, sy
 	}
 	err = db.Create(user).Error
 	if err != nil {
-		logger.Error("DB failed to create user, %v", err)
+		logger.Ctx(ctx).Error("DB failed to create user, %v", err)
 		err = NewCLError(ErrUserCreationFailed, "Failed to create user", err)
 		return
 	}
@@ -95,7 +94,7 @@ func (a *UserAdmin) Create(ctx context.Context, email, password, uuid string, sy
 	if targetSysRole == model.SystemAdmin {
 		adminOrg := &model.Organization{}
 		if err = db.Where("org_type = ?", model.OrgTypeSystem).Take(adminOrg).Error; err != nil {
-			logger.Error("Failed to find admin org", err)
+			logger.Ctx(ctx).Error("Failed to find admin org", err)
 			err = NewCLError(ErrOrgNotFound, "Admin org not found", err)
 			return
 		}
@@ -105,7 +104,7 @@ func (a *UserAdmin) Create(ctx context.Context, email, password, uuid string, sy
 			OrgRole: model.OrgAdmin,
 		}
 		if err = db.Create(member).Error; err != nil {
-			logger.Error("Failed to create admin member", err)
+			logger.Ctx(ctx).Error("Failed to create admin member", err)
 			err = NewCLError(ErrMemberCreationFailed, "Failed to create admin member", err)
 			return
 		}
@@ -115,12 +114,12 @@ func (a *UserAdmin) Create(ctx context.Context, email, password, uuid string, sy
 
 // CreateWithOrg creates a user with a new Org atomically (scenario 1: new user registration).
 func (a *UserAdmin) CreateWithOrg(ctx context.Context, email, password, orgName, slug string) (user *model.User, org *model.Organization, err error) {
-	logger.Infof("ENTER UserAdmin.CreateWithOrg: email=%s, orgName=%s, slug=%s", email, orgName, slug)
+	logger.Ctx(ctx).Infof("ENTER UserAdmin.CreateWithOrg: email=%s, orgName=%s, slug=%s", email, orgName, slug)
 	defer func() {
 		if err != nil {
-			logger.Errorf("EXIT UserAdmin.CreateWithOrg: error=%v", err)
+			logger.Ctx(ctx).Errorf("EXIT UserAdmin.CreateWithOrg: error=%v", err)
 		} else {
-			logger.Infof("EXIT UserAdmin.CreateWithOrg: userID=%d, orgID=%d", user.ID, org.ID)
+			logger.Ctx(ctx).Infof("EXIT UserAdmin.CreateWithOrg: userID=%d, orgID=%d", user.ID, org.ID)
 		}
 	}()
 	ctx, db, newTransaction := StartTransaction(ctx)
@@ -141,7 +140,7 @@ func (a *UserAdmin) CreateWithOrg(ctx context.Context, email, password, orgName,
 		Status:   model.UserActive,
 	}
 	if err = db.Create(user).Error; err != nil {
-		logger.Error("DB failed to create user, %v", err)
+		logger.Ctx(ctx).Error("DB failed to create user, %v", err)
 		err = NewCLError(ErrUserCreationFailed, "Failed to create user", err)
 		return
 	}
@@ -163,7 +162,7 @@ func (a *UserAdmin) CreateWithOrg(ctx context.Context, email, password, orgName,
 		OwnerUserID: user.ID,
 	}
 	if err = db.Create(org).Error; err != nil {
-		logger.Error("DB failed to create organization, %v", err)
+		logger.Ctx(ctx).Error("DB failed to create organization, %v", err)
 		err = NewCLError(ErrOrgCreationFailed, "Failed to create organization", err)
 		return
 	}
@@ -175,7 +174,7 @@ func (a *UserAdmin) CreateWithOrg(ctx context.Context, email, password, orgName,
 		OrgRole: model.OrgAdmin,
 	}
 	if err = db.Create(member).Error; err != nil {
-		logger.Error("DB failed to create member, %v", err)
+		logger.Ctx(ctx).Error("DB failed to create member, %v", err)
 		err = NewCLError(ErrMemberCreationFailed, "Failed to create organization member", err)
 		return
 	}
@@ -185,19 +184,19 @@ func (a *UserAdmin) CreateWithOrg(ctx context.Context, email, password, orgName,
 
 // Validate checks email+password for login.
 func (a *UserAdmin) Validate(ctx context.Context, email, password string) (user *model.User, err error) {
-	logger.Infof("ENTER UserAdmin.Validate: email=%s", email)
+	logger.Ctx(ctx).Infof("ENTER UserAdmin.Validate: email=%s", email)
 	defer func() {
 		if err != nil {
-			logger.Errorf("EXIT UserAdmin.Validate: error=%v", err)
+			logger.Ctx(ctx).Errorf("EXIT UserAdmin.Validate: error=%v", err)
 		} else {
-			logger.Infof("EXIT UserAdmin.Validate: userID=%d", user.ID)
+			logger.Ctx(ctx).Infof("EXIT UserAdmin.Validate: userID=%d", user.ID)
 		}
 	}()
 	ctx, db := GetContextDB(ctx)
 	user = &model.User{}
 	err = db.Take(user, "email = ?", email).Error
 	if err != nil {
-		logger.Error("DB failed to query user", err)
+		logger.Ctx(ctx).Error("DB failed to query user", err)
 		err = NewCLError(ErrUserNotFound, "User not found", err)
 		return
 	}
@@ -207,9 +206,9 @@ func (a *UserAdmin) Validate(ctx context.Context, email, password string) (user 
 
 // ValidateEmail checks if an email is already registered (public endpoint for middleware).
 func (a *UserAdmin) ValidateEmail(ctx context.Context, email string) (exists bool, userUUID string, err error) {
-	logger.Infof("ENTER UserAdmin.ValidateEmail: email=%s", email)
+	logger.Ctx(ctx).Infof("ENTER UserAdmin.ValidateEmail: email=%s", email)
 	defer func() {
-		logger.Infof("EXIT UserAdmin.ValidateEmail: exists=%v, userUUID=%s", exists, userUUID)
+		logger.Ctx(ctx).Infof("EXIT UserAdmin.ValidateEmail: exists=%v, userUUID=%s", exists, userUUID)
 	}()
 	db := DB()
 	user := &model.User{}
@@ -242,17 +241,17 @@ func (a *UserAdmin) GetUserByEmail(email string) (user *model.User, err error) {
 }
 
 func (a *UserAdmin) Get(ctx context.Context, id int64) (user *model.User, err error) {
-	logger.Infof("ENTER UserAdmin.Get: id=%d", id)
+	logger.Ctx(ctx).Infof("ENTER UserAdmin.Get: id=%d", id)
 	defer func() {
 		if err != nil {
-			logger.Errorf("EXIT UserAdmin.Get: error=%v", err)
+			logger.Ctx(ctx).Errorf("EXIT UserAdmin.Get: error=%v", err)
 		} else {
-			logger.Infof("EXIT UserAdmin.Get: userUUID=%s", user.UUID)
+			logger.Ctx(ctx).Infof("EXIT UserAdmin.Get: userUUID=%s", user.UUID)
 		}
 	}()
 	if id <= 0 {
 		err = fmt.Errorf("Invalid user ID: %d", id)
-		logger.Error("%v", err)
+		logger.Ctx(ctx).Error("%v", err)
 		return
 	}
 	ctx, db := GetContextDB(ctx)
@@ -260,7 +259,7 @@ func (a *UserAdmin) Get(ctx context.Context, id int64) (user *model.User, err er
 	user = &model.User{Model: model.Model{ID: id}}
 	err = db.Take(user).Error
 	if err != nil {
-		logger.Error("Failed to query user, %v", err)
+		logger.Ctx(ctx).Error("Failed to query user, %v", err)
 		err = NewCLError(ErrUserNotFound, "Failed to query user", err)
 		return
 	}
@@ -268,7 +267,7 @@ func (a *UserAdmin) Get(ctx context.Context, id int64) (user *model.User, err er
 	if !memberShip.IsSystemAdmin() {
 		permit, _ := memberShip.CheckUser(id)
 		if !permit {
-			logger.Error("Not authorized to read the user")
+			logger.Ctx(ctx).Error("Not authorized to read the user")
 			err = NewCLError(ErrPermissionDenied, "Not authorized to read the user", nil)
 			return
 		}
@@ -277,12 +276,12 @@ func (a *UserAdmin) Get(ctx context.Context, id int64) (user *model.User, err er
 }
 
 func (a *UserAdmin) GetUserByUUID(ctx context.Context, uuID string) (user *model.User, err error) {
-	logger.Infof("ENTER UserAdmin.GetUserByUUID: uuID=%s", uuID)
+	logger.Ctx(ctx).Infof("ENTER UserAdmin.GetUserByUUID: uuID=%s", uuID)
 	defer func() {
 		if err != nil {
-			logger.Errorf("EXIT UserAdmin.GetUserByUUID: error=%v", err)
+			logger.Ctx(ctx).Errorf("EXIT UserAdmin.GetUserByUUID: error=%v", err)
 		} else {
-			logger.Infof("EXIT UserAdmin.GetUserByUUID: userID=%d", user.ID)
+			logger.Ctx(ctx).Infof("EXIT UserAdmin.GetUserByUUID: userID=%d", user.ID)
 		}
 	}()
 	ctx, db := GetContextDB(ctx)
@@ -290,14 +289,14 @@ func (a *UserAdmin) GetUserByUUID(ctx context.Context, uuID string) (user *model
 	user = &model.User{}
 	err = db.Where("uuid = ?", uuID).Take(user).Error
 	if err != nil {
-		logger.Error("Failed to query user, %v", err)
+		logger.Ctx(ctx).Error("Failed to query user, %v", err)
 		err = NewCLError(ErrUserNotFound, "User not found", err)
 		return
 	}
 	if !memberShip.IsSystemAdmin() {
 		permit, _ := memberShip.CheckUser(user.ID)
 		if !permit {
-			logger.Error("Not authorized to read the user")
+			logger.Ctx(ctx).Error("Not authorized to read the user")
 			err = NewCLError(ErrPermissionDenied, "Not authorized to read the user", nil)
 			return
 		}
@@ -307,12 +306,12 @@ func (a *UserAdmin) GetUserByUUID(ctx context.Context, uuID string) (user *model
 
 // Delete deletes a user. Only SystemAdmin can delete users.
 func (a *UserAdmin) Delete(ctx context.Context, user *model.User) (err error) {
-	logger.Infof("ENTER UserAdmin.Delete: userID=%d, email=%s", user.ID, user.Email)
+	logger.Ctx(ctx).Infof("ENTER UserAdmin.Delete: userID=%d, email=%s", user.ID, user.Email)
 	defer func() {
 		if err != nil {
-			logger.Errorf("EXIT UserAdmin.Delete: error=%v", err)
+			logger.Ctx(ctx).Errorf("EXIT UserAdmin.Delete: error=%v", err)
 		} else {
-			logger.Info("EXIT UserAdmin.Delete: success")
+			logger.Ctx(ctx).Info("EXIT UserAdmin.Delete: success")
 		}
 	}()
 	memberShip := GetMemberShip(ctx)
@@ -381,27 +380,27 @@ func (a *UserAdmin) Delete(ctx context.Context, user *model.User) (err error) {
 
 	// Hard delete all member records to avoid unique index clashing
 	if err = db.Unscoped().Where("user_id = ?", user.ID).Delete(&model.Member{}).Error; err != nil {
-		logger.Error("DB failed to delete members", err)
+		logger.Ctx(ctx).Error("DB failed to delete members", err)
 		err = NewCLError(ErrMemberDeleteFailed, "Failed to delete organization members", err)
 		return
 	}
 	// Dissolve single-member owned orgs
 	for _, org := range ownedOrgs {
 		if err = db.Delete(org).Error; err != nil {
-			logger.Error("DB failed to delete org", err)
+			logger.Ctx(ctx).Error("DB failed to delete org", err)
 			err = NewCLError(ErrOrgDeleteFailed, "Failed to delete organization", err)
 			return
 		}
 	}
 	// Soft delete user first, then rename with Unscoped to avoid stale email on delete failure
 	if err = db.Delete(user).Error; err != nil {
-		logger.Error("DB failed to delete user", err)
+		logger.Ctx(ctx).Error("DB failed to delete user", err)
 		err = NewCLError(ErrUserDeleteFailed, "Failed to delete user", err)
 		return
 	}
 	user.Email = fmt.Sprintf("%s-deleted-%d", user.Email, user.CreatedAt.Unix())
 	if err = db.Model(&model.User{}).Unscoped().Where("id = ?", user.ID).Update("email", user.Email).Error; err != nil {
-		logger.Error("DB failed to update user email for deletion", err)
+		logger.Ctx(ctx).Error("DB failed to update user email for deletion", err)
 		err = NewCLError(ErrUserUpdateFailed, "Failed to update user email", err)
 		return
 	}
@@ -409,12 +408,12 @@ func (a *UserAdmin) Delete(ctx context.Context, user *model.User) (err error) {
 }
 
 func (a *UserAdmin) List(ctx context.Context, offset, limit int64, order, query string) (total int64, users []*model.User, err error) {
-	logger.Infof("ENTER UserAdmin.List: offset=%d, limit=%d, order=%s, query=%s", offset, limit, order, query)
+	logger.Ctx(ctx).Infof("ENTER UserAdmin.List: offset=%d, limit=%d, order=%s, query=%s", offset, limit, order, query)
 	defer func() {
 		if err != nil {
-			logger.Errorf("EXIT UserAdmin.List: error=%v", err)
+			logger.Ctx(ctx).Errorf("EXIT UserAdmin.List: error=%v", err)
 		} else {
-			logger.Infof("EXIT UserAdmin.List: total=%d, usersCount=%d", total, len(users))
+			logger.Ctx(ctx).Infof("EXIT UserAdmin.List: total=%d, usersCount=%d", total, len(users))
 		}
 	}()
 	memberShip := GetMemberShip(ctx)
@@ -434,8 +433,8 @@ func (a *UserAdmin) List(ctx context.Context, offset, limit int64, order, query 
 	}
 	if !memberShip.IsSystemAdmin() {
 		org := &model.Organization{Model: model.Model{ID: memberShip.OrgID}}
-		if err = db.Set("gorm:auto_preload", true).Take(org).Error; err != nil {
-			logger.Error("Failed to query organization", err)
+		if err = db.Preload("Members").Take(org).Error; err != nil {
+			logger.Ctx(ctx).Error("Failed to query organization", err)
 			err = NewCLError(ErrOrgNotFound, "Failed to query organization", err)
 			return
 		}
@@ -446,25 +445,25 @@ func (a *UserAdmin) List(ctx context.Context, offset, limit int64, order, query 
 			}
 		}
 		if err = db.Model(&model.User{}).Where("id IN (?)", userIDs).Where(emailFilter, emailArgs...).Count(&total).Error; err != nil {
-			logger.Error("DB failed to count users", err)
+			logger.Ctx(ctx).Error("DB failed to count users", err)
 			err = NewCLError(ErrDatabaseError, "Failed to count users", err)
 			return
 		}
-		db = dbs.Sortby(db.Offset(offset).Limit(limit), order)
+		db = dbs.Sortby(db.Offset(int(offset)).Limit(int(limit)), order)
 		if err = db.Where("id IN (?)", userIDs).Where(emailFilter, emailArgs...).Find(&users).Error; err != nil {
-			logger.Error("DB failed to get user list, %v", err)
+			logger.Ctx(ctx).Error("DB failed to get user list, %v", err)
 			err = NewCLError(ErrDatabaseError, "Failed to get user list", err)
 			return
 		}
 	} else {
 		if err = db.Model(&model.User{}).Where(emailFilter, emailArgs...).Count(&total).Error; err != nil {
-			logger.Error("DB failed to count users", err)
+			logger.Ctx(ctx).Error("DB failed to count users", err)
 			err = NewCLError(ErrDatabaseError, "Failed to count users", err)
 			return
 		}
-		db = dbs.Sortby(db.Offset(offset).Limit(limit), order)
+		db = dbs.Sortby(db.Offset(int(offset)).Limit(int(limit)), order)
 		if err = db.Where(emailFilter, emailArgs...).Find(&users).Error; err != nil {
-			logger.Error("DB failed to get user list, %v", err)
+			logger.Ctx(ctx).Error("DB failed to get user list, %v", err)
 			err = NewCLError(ErrDatabaseError, "Failed to get user list", err)
 			return
 		}
@@ -476,12 +475,12 @@ func (a *UserAdmin) List(ctx context.Context, offset, limit int64, order, query 
 // Deprecated: Token issuance is now handled by CPGateway. This function is kept
 // for web UI login compatibility during migration. Will be removed.
 func (a *UserAdmin) AccessToken(ctx context.Context, uid int64, orgID ...int64) (oid int64, sysRole model.SystemRole, orgRole model.OrgRole, status model.UserStatus, token string, issueAt, expiresAt int64, err error) {
-	logger.Infof("ENTER UserAdmin.AccessToken: uid=%d, orgIDCount=%d", uid, len(orgID))
+	logger.Ctx(ctx).Infof("ENTER UserAdmin.AccessToken: uid=%d, orgIDCount=%d", uid, len(orgID))
 	defer func() {
 		if err != nil {
-			logger.Errorf("EXIT UserAdmin.AccessToken: error=%v", err)
+			logger.Ctx(ctx).Errorf("EXIT UserAdmin.AccessToken: error=%v", err)
 		} else {
-			logger.Infof("EXIT UserAdmin.AccessToken: oid=%d, sysRole=%v, orgRole=%v", oid, sysRole, orgRole)
+			logger.Ctx(ctx).Infof("EXIT UserAdmin.AccessToken: oid=%d, sysRole=%v, orgRole=%v", oid, sysRole, orgRole)
 		}
 	}()
 	ctx, db := GetContextDB(ctx)
@@ -560,12 +559,12 @@ func (a *UserAdmin) AccessToken(ctx context.Context, uid int64, orgID ...int64) 
 // Deprecated: Org switching is now handled by CPGateway. This function is kept
 // for web UI compatibility during migration. Will be removed.
 func (a *UserAdmin) SwitchOrg(ctx context.Context, uid, targetOrgID int64) (token string, issueAt, expiresAt int64, err error) {
-	logger.Infof("ENTER UserAdmin.SwitchOrg: uid=%d, targetOrgID=%d", uid, targetOrgID)
+	logger.Ctx(ctx).Infof("ENTER UserAdmin.SwitchOrg: uid=%d, targetOrgID=%d", uid, targetOrgID)
 	defer func() {
 		if err != nil {
-			logger.Errorf("EXIT UserAdmin.SwitchOrg: error=%v", err)
+			logger.Ctx(ctx).Errorf("EXIT UserAdmin.SwitchOrg: error=%v", err)
 		} else {
-			logger.Info("EXIT UserAdmin.SwitchOrg: success")
+			logger.Ctx(ctx).Info("EXIT UserAdmin.SwitchOrg: success")
 		}
 	}()
 	db := DB()
@@ -619,12 +618,12 @@ func (a *UserAdmin) SwitchOrg(ctx context.Context, uid, targetOrgID int64) (toke
 
 // ChangePassword allows any logged-in user to change their own password, or a SystemAdmin to change any user's password.
 func (a *UserAdmin) ChangePassword(ctx context.Context, userID int64, oldPassword, newPassword string) (err error) {
-	logger.Infof("ENTER UserAdmin.ChangePassword: userID=%d", userID)
+	logger.Ctx(ctx).Infof("ENTER UserAdmin.ChangePassword: userID=%d", userID)
 	defer func() {
 		if err != nil {
-			logger.Errorf("EXIT UserAdmin.ChangePassword: error=%v", err)
+			logger.Ctx(ctx).Errorf("EXIT UserAdmin.ChangePassword: error=%v", err)
 		} else {
-			logger.Info("EXIT UserAdmin.ChangePassword: success")
+			logger.Ctx(ctx).Info("EXIT UserAdmin.ChangePassword: success")
 		}
 	}()
 	memberShip := GetMemberShip(ctx)
@@ -652,12 +651,12 @@ func (a *UserAdmin) ChangePassword(ctx context.Context, userID int64, oldPasswor
 
 // UpdateProfile allows users to update their own profile fields.
 func (a *UserAdmin) UpdateProfile(ctx context.Context, targetUserID int64, firstName, lastName, region, language, remark string) (err error) {
-	logger.Infof("ENTER UserAdmin.UpdateProfile: targetUserID=%d, name=%s %s", targetUserID, firstName, lastName)
+	logger.Ctx(ctx).Infof("ENTER UserAdmin.UpdateProfile: targetUserID=%d, name=%s %s", targetUserID, firstName, lastName)
 	defer func() {
 		if err != nil {
-			logger.Errorf("EXIT UserAdmin.UpdateProfile: error=%v", err)
+			logger.Ctx(ctx).Errorf("EXIT UserAdmin.UpdateProfile: error=%v", err)
 		} else {
-			logger.Info("EXIT UserAdmin.UpdateProfile: success")
+			logger.Ctx(ctx).Info("EXIT UserAdmin.UpdateProfile: success")
 		}
 	}()
 	memberShip := GetMemberShip(ctx)
@@ -702,12 +701,12 @@ func (a *UserAdmin) UpdateProfile(ctx context.Context, targetUserID int64, first
 
 // DemoteSystemAdmin demotes a SystemAdmin to SystemUser.
 func (a *UserAdmin) DemoteSystemAdmin(ctx context.Context, targetUserID int64) (err error) {
-	logger.Infof("ENTER UserAdmin.DemoteSystemAdmin: targetUserID=%d", targetUserID)
+	logger.Ctx(ctx).Infof("ENTER UserAdmin.DemoteSystemAdmin: targetUserID=%d", targetUserID)
 	defer func() {
 		if err != nil {
-			logger.Errorf("EXIT UserAdmin.DemoteSystemAdmin: error=%v", err)
+			logger.Ctx(ctx).Errorf("EXIT UserAdmin.DemoteSystemAdmin: error=%v", err)
 		} else {
-			logger.Info("EXIT UserAdmin.DemoteSystemAdmin: success")
+			logger.Ctx(ctx).Info("EXIT UserAdmin.DemoteSystemAdmin: success")
 		}
 	}()
 	memberShip := GetMemberShip(ctx)
@@ -751,12 +750,12 @@ func (a *UserAdmin) DemoteSystemAdmin(ctx context.Context, targetUserID int64) (
 
 // Enable re-enables a disabled user.
 func (a *UserAdmin) Enable(ctx context.Context, targetUserID int64) (err error) {
-	logger.Infof("ENTER UserAdmin.Enable: targetUserID=%d", targetUserID)
+	logger.Ctx(ctx).Infof("ENTER UserAdmin.Enable: targetUserID=%d", targetUserID)
 	defer func() {
 		if err != nil {
-			logger.Errorf("EXIT UserAdmin.Enable: error=%v", err)
+			logger.Ctx(ctx).Errorf("EXIT UserAdmin.Enable: error=%v", err)
 		} else {
-			logger.Info("EXIT UserAdmin.Enable: success")
+			logger.Ctx(ctx).Info("EXIT UserAdmin.Enable: success")
 		}
 	}()
 	memberShip := GetMemberShip(ctx)
@@ -779,12 +778,12 @@ func (a *UserAdmin) Enable(ctx context.Context, targetUserID int64) (err error) 
 
 // Disable disables a user (prevents login).
 func (a *UserAdmin) Disable(ctx context.Context, targetUserID int64) (err error) {
-	logger.Infof("ENTER UserAdmin.Disable: targetUserID=%d", targetUserID)
+	logger.Ctx(ctx).Infof("ENTER UserAdmin.Disable: targetUserID=%d", targetUserID)
 	defer func() {
 		if err != nil {
-			logger.Errorf("EXIT UserAdmin.Disable: error=%v", err)
+			logger.Ctx(ctx).Errorf("EXIT UserAdmin.Disable: error=%v", err)
 		} else {
-			logger.Info("EXIT UserAdmin.Disable: success")
+			logger.Ctx(ctx).Info("EXIT UserAdmin.Disable: success")
 		}
 	}()
 	memberShip := GetMemberShip(ctx)
@@ -836,4 +835,3 @@ func (a *UserAdmin) CompareHashAndPassword(hash, password string) (err error) {
 }
 
 // --- View layer (web UI) ---
-

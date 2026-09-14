@@ -9,6 +9,7 @@ package rpcs
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strconv"
 
@@ -16,7 +17,7 @@ import (
 	"api/src/model"
 	"api/src/services"
 
-	"github.com/jinzhu/gorm"
+	"gorm.io/gorm"
 )
 
 var floatingIpAdmin = services.FloatingIpAdmin
@@ -37,7 +38,7 @@ type FdbRule struct {
 
 func sendFdbRules(ctx context.Context, instance *model.Instance, vrrpInstance *model.VrrpInstance, instIface *model.Interface) (err error) {
 	if instance != nil && instance.RouterID == 0 {
-		logger.Error("No need to send fdb for classic")
+		logger.Ctx(ctx).Error("No need to send fdb for classic")
 		return
 	}
 	ctx, db := GetContextDB(ctx)
@@ -58,13 +59,13 @@ func sendFdbRules(ctx context.Context, instance *model.Instance, vrrpInstance *m
 		interfaces = []*model.Interface{instIface}
 	}
 	if hyperNode == -1 {
-		logger.Error("Invalid hyper node")
+		logger.Ctx(ctx).Error("Invalid hyper node")
 		return
 	}
 	hyper := &model.Hyper{}
 	err = db.Where("hostid = ?", hyperNode).Take(hyper).Error
 	if err != nil || hyper.Hostid < 0 {
-		logger.Error("Failed to query hypervisor")
+		logger.Ctx(ctx).Error("Failed to query hypervisor")
 		return
 	}
 	for _, iface := range interfaces {
@@ -77,7 +78,7 @@ func sendFdbRules(ctx context.Context, instance *model.Instance, vrrpInstance *m
 	hyperSet := make(map[int32]struct{})
 	err = db.Preload("Address").Preload("Address.Subnet").Preload("Address.Subnet.Router").Where("router_id = ? and type <> 'gateway' and hyper <> ?", routerID, hyperNode).Find(&allIfaces).Error
 	if err != nil {
-		logger.Error("Failed to query all interfaces", err)
+		logger.Ctx(ctx).Error("Failed to query all interfaces", err)
 		return
 	}
 	for _, iface := range allIfaces {
@@ -91,7 +92,7 @@ func sendFdbRules(ctx context.Context, instance *model.Instance, vrrpInstance *m
 		hyper := &model.Hyper{}
 		hyperErr := db.Where("hostid = ? and hostid != ?", iface.Hyper, hyperNode).Take(hyper).Error
 		if hyperErr != nil {
-			logger.Error("Failed to query hypervisor", hyperErr)
+			logger.Ctx(ctx).Error("Failed to query hypervisor", hyperErr)
 			continue
 		}
 		if iface.Hyper >= 0 {
@@ -115,7 +116,7 @@ func sendFdbRules(ctx context.Context, instance *model.Instance, vrrpInstance *m
 		command := fmt.Sprintf("/opt/cloudland/scripts/backend/add_fwrule.sh <<EOF\n%s\nEOF", fdbJson)
 		err = HyperExecute(ctx, control, command)
 		if err != nil {
-			logger.Error("Add_fwrule execution failed", err)
+			logger.Ctx(ctx).Error("Add_fwrule execution failed", err)
 			return
 		}
 	}
@@ -125,7 +126,7 @@ func sendFdbRules(ctx context.Context, instance *model.Instance, vrrpInstance *m
 		command := fmt.Sprintf("/opt/cloudland/scripts/backend/add_fwrule.sh <<EOF\n%s\nEOF", fdbJson)
 		err = HyperExecute(ctx, control, command)
 		if err != nil {
-			logger.Error("Add_fwrule execution failed", err)
+			logger.Ctx(ctx).Error("Add_fwrule execution failed", err)
 			return
 		}
 	}
@@ -143,12 +144,12 @@ func LaunchVM(ctx context.Context, args []string) (status string, err error) {
 	argn := len(args)
 	if argn < 4 {
 		err = fmt.Errorf("Wrong params")
-		logger.Error("Invalid args", err)
+		logger.Ctx(ctx).Error("Invalid args", err)
 		return
 	}
 	instID, err := strconv.ParseInt(args[1], 10, 64)
 	if err != nil {
-		logger.Error("Invalid instance ID", err)
+		logger.Ctx(ctx).Error("Invalid instance ID", err)
 		return
 	}
 	instance := &model.Instance{Model: model.Model{ID: instID}}
@@ -160,13 +161,13 @@ func LaunchVM(ctx context.Context, args []string) (status string, err error) {
 			"status": "error",
 			"reason": reason}).Error
 		if err != nil {
-			logger.Error("Failed to update instance", err)
+			logger.Ctx(ctx).Error("Failed to update instance", err)
 		}
 		return
 	}
 	err = db.Preload("Volumes").Take(instance).Error
 	if err != nil {
-		logger.Error("Invalid instance ID", err)
+		logger.Ctx(ctx).Error("Invalid instance ID", err)
 		reason = err.Error()
 		return
 	}
@@ -174,14 +175,14 @@ func LaunchVM(ctx context.Context, args []string) (status string, err error) {
 		return db.Order("addresses.updated_at")
 	}).Preload("SecondAddresses.Subnet").Where("instance = ?", instID).Find(&instance.Interfaces).Error
 	if err != nil {
-		logger.Error("Failed to get interfaces", err)
+		logger.Ctx(ctx).Error("Failed to get interfaces", err)
 		reason = err.Error()
 		return
 	}
 	serverStatus := args[2]
 	hyperID, err := strconv.Atoi(args[3])
 	if err != nil {
-		logger.Error("Invalid hyper ID", err)
+		logger.Ctx(ctx).Error("Invalid hyper ID", err)
 		reason = err.Error()
 		return
 	}
@@ -190,7 +191,7 @@ func LaunchVM(ctx context.Context, args []string) (status string, err error) {
 	hyper := &model.Hyper{}
 	err = db.Where("hostid = ?", hyperID).Take(hyper).Error
 	if err != nil {
-		logger.Error("Failed to query hypervisor", err)
+		logger.Ctx(ctx).Error("Failed to query hypervisor", err)
 		return
 	}
 	instance.ZoneID = hyper.ZoneID
@@ -201,28 +202,28 @@ func LaunchVM(ctx context.Context, args []string) (status string, err error) {
 			"zoneID": hyper.ZoneID,
 			"reason": reason}).Error
 		if err != nil {
-			logger.Error("Failed to update instance", err)
+			logger.Ctx(ctx).Error("Failed to update instance", err)
 			return
 		}
-		err = db.Model(&model.Interface{}).Where("instance = ?", instance.ID).Update(map[string]interface{}{"hyper": int32(hyperID)}).Error
+		err = db.Model(&model.Interface{}).Where("instance = ?", instance.ID).Updates(map[string]interface{}{"hyper": int32(hyperID)}).Error
 		if err != nil {
-			logger.Error("Failed to update interface", err)
+			logger.Ctx(ctx).Error("Failed to update interface", err)
 			return
 		}
 	}
 	if reason == "sync" {
 		err = syncMigration(ctx, instance)
 		if err != nil {
-			logger.Error("Failed to sync migration info", err)
+			logger.Ctx(ctx).Error("Failed to sync migration info", err)
 		}
 		err = syncNicInfo(ctx, instance)
 		if err != nil {
-			logger.Error("Failed to sync nic info", err)
+			logger.Ctx(ctx).Error("Failed to sync nic info", err)
 		}
 		if instance.RouterID > 0 {
 			err = syncFloatingIp(ctx, instance)
 			if err != nil {
-				logger.Error("Failed to sync floating ip", err)
+				logger.Ctx(ctx).Error("Failed to sync floating ip", err)
 			}
 		}
 	}
@@ -234,18 +235,18 @@ func syncMigration(ctx context.Context, instance *model.Instance) (err error) {
 	ctx, db := GetContextDB(ctx)
 	err = db.Preload("Phases", "name = 'Prepare_Source' and status != 'completed'").Where("instance_id = ? and source_hyper = ?", instance.ID, instance.Hyper).Last(migration).Error
 	if err != nil {
-		if gorm.IsRecordNotFoundError(err) {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
 			err = nil
 			return
 		}
-		logger.Error("Failed to get migrations", err)
+		logger.Ctx(ctx).Error("Failed to get migrations", err)
 		return
 	}
 	if len(migration.Phases) > 0 {
 		for _, task := range migration.Phases {
 			err = execSourceMigrate(ctx, instance, migration, task.ID, "/opt/cloudland/scripts/backend/source_migration.sh", "cold")
 			if err != nil {
-				logger.Error("Failed to exec source migration", err)
+				logger.Ctx(ctx).Error("Failed to exec source migration", err)
 				return
 			}
 		}
@@ -254,7 +255,7 @@ func syncMigration(ctx context.Context, instance *model.Instance) (err error) {
 	if instance.Status == "shutoff" {
 		err = db.Preload("Phases", "name = 'Prepare_Source' and status != 'completed'").Where("instance_id = ? and target_hyper = ? and status != 'completed'", instance.ID, instance.Hyper).Last(migration).Error
 		if err != nil {
-			logger.Error("Failed to exec source migration", err)
+			logger.Ctx(ctx).Error("Failed to exec source migration", err)
 			return
 		}
 	}
@@ -267,21 +268,21 @@ func syncNicInfo(ctx context.Context, instance *model.Instance) (err error) {
 		var vlanInfo *VlanInfo
 		vlanInfo, err = GetInterfaceInfo(ctx, instance, iface)
 		if err != nil {
-			logger.Error("Failed to get interface info", err)
+			logger.Ctx(ctx).Error("Failed to get interface info", err)
 			return
 		}
 		vlans = append(vlans, vlanInfo)
 	}
 	jsonData, err := json.Marshal(vlans)
 	if err != nil {
-		logger.Error("Failed to marshal instance json data", err)
+		logger.Ctx(ctx).Error("Failed to marshal instance json data", err)
 		return
 	}
 	control := fmt.Sprintf("inter=%d", instance.Hyper)
 	command := fmt.Sprintf("/opt/cloudland/scripts/backend/sync_nic_info.sh '%d' '%s' '%s' <<EOF\n%s\nEOF", instance.ID, instance.Hostname, GetImageOSCode(ctx, instance), jsonData)
 	err = HyperExecute(ctx, control, command)
 	if err != nil {
-		logger.Error("Execute floating ip failed", err)
+		logger.Ctx(ctx).Error("Execute floating ip failed", err)
 		return
 	}
 	return
@@ -300,13 +301,13 @@ func syncFloatingIp(ctx context.Context, instance *model.Instance) (err error) {
 		floatingIps := []*model.FloatingIp{}
 		err = db.Preload("Interface").Preload("Interface.Address").Preload("Interface.Address.Subnet").Where("instance_id = ? and type = ?", instance.ID, PublicFloating).Find(&floatingIps).Error
 		if err != nil {
-			logger.Error("Failed to get floating ip", err)
+			logger.Ctx(ctx).Error("Failed to get floating ip", err)
 			return
 		}
 		for _, floatingIp := range floatingIps {
 			err = floatingIpAdmin.EnsureSubnetID(ctx, floatingIp)
 			if err != nil {
-				logger.Error("Failed to ensure subnet_id", err)
+				logger.Ctx(ctx).Error("Failed to ensure subnet_id", err)
 				continue
 			}
 
@@ -315,7 +316,7 @@ func syncFloatingIp(ctx context.Context, instance *model.Instance) (err error) {
 			command := fmt.Sprintf("/opt/cloudland/scripts/backend/create_floating.sh '%d' '%s' '%s' '%d' '%s' '%d' '%d' '%d' '%d'", floatingIp.RouterID, floatingIp.FipAddress, pubSubnet.Gateway, pubSubnet.Vlan, primaryIface.Address.Address, primaryIface.Address.Subnet.Vlan, floatingIp.ID, floatingIp.Inbound, floatingIp.Outbound)
 			err = HyperExecute(ctx, control, command)
 			if err != nil {
-				logger.Error("Execute floating ip failed", err)
+				logger.Ctx(ctx).Error("Execute floating ip failed", err)
 				return
 			}
 		}

@@ -9,7 +9,7 @@ package model
 import (
 	"api/src/dbs"
 
-	"github.com/jinzhu/gorm"
+	"gorm.io/gorm"
 )
 
 const (
@@ -60,7 +60,7 @@ type Image struct {
 	UserName              string    `gorm:"type:varchar(128)"`
 	QAEnabled             bool      `gorm:"default:false"`
 	CaptureFromInstanceID int64     `gorm:"default:0"`
-	CaptureFromInstance   *Instance `gorm:"foreignkey:InstanceID"`
+	CaptureFromInstance   *Instance `gorm:"foreignKey:CaptureFromInstanceID"`
 	IsRescue              bool      `gorm:"default:false"`
 	RescueImage           int64     `gorm:"default:0"`
 	StorageType           string    `gorm:"type:varchar(36);"`

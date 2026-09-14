@@ -21,7 +21,11 @@ import (
 
 	. "api/src/common"
 	"api/src/model"
+	"api/src/utils/tracing"
 
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/net/context"
 	"gopkg.in/macaron.v1"
 )
@@ -36,7 +40,7 @@ func (fb *FrontbackService) CallbackAgent(ctx context.Context, control, command 
 	agent := &model.Hyper{}
 	values.Duration = int64(duration)
 	if err = agent.Updates(ctx, values); err != nil {
-		logger.Error("Update hyper value error: ", err)
+		logger.Ctx(ctx).Error("Update hyper value error: ", err)
 		return
 	}
 	ids = append(ids, agent.Hostid)
@@ -51,7 +55,7 @@ func (fb *FrontbackService) CallbackAgent(ctx context.Context, control, command 
 		v.Parentid = agent.Hostid
 		v.Duration = int64(duration)
 		if err = a.Updates(ctx, v); err != nil {
-			logger.Error("Update agent error: ", err)
+			logger.Ctx(ctx).Error("Update agent error: ", err)
 			return
 		}
 		ids = append(ids, v.Hostid)
@@ -70,7 +74,7 @@ func (fb *FrontbackService) doExecute(ctx context.Context, id, extra int32, comm
 		var ids []int32
 		ids, err = fb.CallbackAgent(ctx, control, command, 0)
 		if err != nil {
-			logger.Error("Call back agent error: ", err)
+			logger.Ctx(ctx).Error("Call back agent error: ", err)
 			return
 		}
 		ss := []string{}
@@ -105,7 +109,7 @@ func (fb *FrontbackService) Execute(c *macaron.Context) {
 	execReq := &ExecuteRequest{}
 	err := json.Unmarshal(request, execReq)
 	if err != nil {
-		logger.Error("Json unmarshal error:", err)
+		logger.Ctx(ctx).Error("Json unmarshal error:", err)
 		c.JSON(400, &ExecuteReply{Status: "Bad request"})
 	}
 	id := execReq.Id
@@ -116,7 +120,7 @@ func (fb *FrontbackService) Execute(c *macaron.Context) {
 	if control != "error" {
 		reply, err = fb.doExecute(ctx, id, extra, command, control)
 		if err != nil {
-			logger.Error("Json unmarshal error:", err)
+			logger.Ctx(ctx).Error("Json unmarshal error:", err)
 			c.JSON(400, &ExecuteReply{Status: "Bad request"})
 		}
 	}
@@ -126,16 +130,35 @@ func (fb *FrontbackService) Execute(c *macaron.Context) {
 
 func (fb *FrontbackService) dispatchExecute(ctx context.Context, cmd string, args []string) (status string, err error) {
 	if cmd != "report_rc" {
-		logger.Debugf("RPC callback: [%s] %+v", cmd, args)
+		logger.Ctx(ctx).Debugf("RPC callback: [%s] %+v", cmd, args)
 	}
 	if command := Get(cmd); command != nil {
+		var span trace.Span
+		ctx, span = startCallbackSpan(ctx, cmd)
 		status, err = command(ctx, args)
+		if span != nil {
+			if err != nil {
+				span.SetStatus(codes.Error, err.Error())
+			}
+			span.End()
+		}
 	} else {
 		err = fmt.Errorf("no command %s found", cmd)
-		logger.Error("Command dispatch error: ", err)
+		logger.Ctx(ctx).Error("Command dispatch error: ", err)
 	}
 	return
 
+}
+
+// startCallbackSpan 仅为携带上游 trace 上下文的回调创建 span；
+// 周期上报等无父上下文的回调返回 nil span，不产生 trace
+func startCallbackSpan(ctx context.Context, cmd string) (context.Context, trace.Span) {
+	if !trace.SpanContextFromContext(ctx).IsValid() {
+		return ctx, nil
+	}
+	return tracing.Tracer().Start(ctx, "callback "+cmd,
+		trace.WithSpanKind(trace.SpanKindServer),
+		trace.WithAttributes(attribute.String("cloudland.command", cmd)))
 }
 
 var (

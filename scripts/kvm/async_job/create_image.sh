@@ -51,7 +51,7 @@ else
         task_ret=$(wds_curl "PUT" "api/v2/sync/block/volumes/import" "{\"volname\": \"$image_name\", \"path\": \"${image}.raw\", \"ussid\": \"$uss_id\", \"start_blockid\": 0, \"volsize\": $image_size, \"poolid\": \"$wds_pool_id\", \"num_block\": 0, \"speed\": 8}")
         task_id=$(jq -r .task_id <<<$task_ret)
         state=uploading
-        echo $task_ret >>$log_dir/image_upload.log
+        echo "${TRACEPARENT:+trace=${TRACEPARENT:3:32} }$task_ret" >>$log_dir/image_upload.log
         [ -z "$task_id" -o "$task_id" = null ] && sleep 2 && continue
         for j in {1..1000}; do
             st=$(wds_curl GET "api/v2/sync/block/volumes/tasks/$task_id" | jq -r .task.state)

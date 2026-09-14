@@ -20,8 +20,11 @@ import (
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
 	"github.com/spf13/viper"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 
 	"api/src/model"
+	"api/src/utils/tracing"
 )
 
 var (
@@ -146,8 +149,10 @@ func GenerateDownloadURL(ctx context.Context, image *model.Image) (string, error
 }
 
 // S3PutObject 将 reader 写入 S3，size=-1 触发 multipart，上限 ~640GB
-func S3PutObject(ctx context.Context, objectName string, reader io.Reader) error {
-	_, err := s3Client.PutObject(ctx, s3Bucket, objectName, reader, -1, minio.PutObjectOptions{
+func S3PutObject(ctx context.Context, objectName string, reader io.Reader) (err error) {
+	ctx, span := startS3Span(ctx, "PutObject", objectName)
+	defer func() { tracing.EndSpan(span, err) }()
+	_, err = s3Client.PutObject(ctx, s3Bucket, objectName, reader, -1, minio.PutObjectOptions{
 		ContentType: "application/octet-stream",
 		PartSize:    64 * 1024 * 1024, // 64MB × 10000 part ≈ 640GB 上限
 	})
@@ -155,13 +160,27 @@ func S3PutObject(ctx context.Context, objectName string, reader io.Reader) error
 }
 
 // S3RemoveObject 删除 S3 中的对象；对不存在对象幂等
-func S3RemoveObject(ctx context.Context, objectName string) error {
+func S3RemoveObject(ctx context.Context, objectName string) (err error) {
+	ctx, span := startS3Span(ctx, "RemoveObject", objectName)
+	defer func() { tracing.EndSpan(span, err) }()
 	return s3Client.RemoveObject(ctx, s3Bucket, objectName, minio.RemoveObjectOptions{})
 }
 
 // S3DetectImage 只暴露给外部调用的封装，内部走 detectImageFormat
-func S3DetectImage(ctx context.Context, objectName string) (*ImageInfo, error) {
+func S3DetectImage(ctx context.Context, objectName string) (info *ImageInfo, err error) {
+	ctx, span := startS3Span(ctx, "GetObject", objectName)
+	defer func() { tracing.EndSpan(span, err) }()
 	return detectImageFormat(ctx, s3Bucket, objectName)
+}
+
+// startS3Span 为 S3 操作创建子 span（仅在 ctx 带上游 span 时）；不在 HTTP 层注入 trace 头，避免外发到第三方对象存储
+func startS3Span(ctx context.Context, op, objectName string) (context.Context, trace.Span) {
+	return tracing.StartChild(ctx, "s3."+op,
+		trace.WithSpanKind(trace.SpanKindClient),
+		trace.WithAttributes(
+			attribute.String("aws.s3.bucket", s3Bucket),
+			attribute.String("aws.s3.key", objectName),
+		))
 }
 
 // ---- capture 上传 HMAC token ----

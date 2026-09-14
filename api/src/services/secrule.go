@@ -21,34 +21,34 @@ var SecruleAdmin = &SecruleAdminService{}
 type SecruleAdminService struct{}
 
 func (a *SecruleAdminService) ApplySecgroup(ctx context.Context, secgroup *model.SecurityGroup) (err error) {
-	logger.Infof("ENTER SecruleAdmin.ApplySecgroup: secgroupID=%d", secgroup.ID)
+	logger.Ctx(ctx).Infof("ENTER SecruleAdmin.ApplySecgroup: secgroupID=%d", secgroup.ID)
 	defer func() {
 		if err != nil {
-			logger.Errorf("EXIT SecruleAdmin.ApplySecgroup: error=%v", err)
+			logger.Ctx(ctx).Errorf("EXIT SecruleAdmin.ApplySecgroup: error=%v", err)
 		} else {
-			logger.Info("EXIT SecruleAdmin.ApplySecgroup: success")
+			logger.Ctx(ctx).Info("EXIT SecruleAdmin.ApplySecgroup: success")
 		}
 	}()
 	ctx, db := GetContextDB(ctx)
 	err = secgroupAdmin.GetSecgroupInterfaces(ctx, secgroup)
 	if err != nil {
-		logger.Error("DB failed to get security group related interfaces", err)
+		logger.Ctx(ctx).Error("DB failed to get security group related interfaces", err)
 		return
 	}
 	for _, iface := range secgroup.Interfaces {
-		logger.Debugf("iface: %+v", iface)
+		logger.Ctx(ctx).Debugf("iface: %+v", iface)
 		if iface.Instance > 0 {
 			instance := &model.Instance{Model: model.Model{ID: iface.Instance}}
 			err = db.Take(instance).Error
 			if err != nil {
-				logger.Error("DB failed to get instance, %v", err)
+				logger.Ctx(ctx).Error("DB failed to get instance, %v", err)
 				err = nil
 				continue
 			}
 			if iface.Address != nil {
 				err = ApplyInterface(ctx, instance, iface, false)
 				if err != nil {
-					logger.Error("DB failed to apply interface, %v", err)
+					logger.Ctx(ctx).Error("DB failed to apply interface, %v", err)
 					err = nil
 					continue
 				}
@@ -59,18 +59,18 @@ func (a *SecruleAdminService) ApplySecgroup(ctx context.Context, secgroup *model
 }
 
 func (a *SecruleAdminService) Update(ctx context.Context, secrule *model.SecurityRule, secgroup *model.SecurityGroup, name, remoteIp, direction, protocol string, portMin, portMax int32) (err error) {
-	logger.Infof("ENTER SecruleAdmin.Update: id=%d, name=%s, remoteIp=%s, direction=%s, protocol=%s, portMin=%d, portMax=%d", secrule.ID, name, remoteIp, direction, protocol, portMin, portMax)
+	logger.Ctx(ctx).Infof("ENTER SecruleAdmin.Update: id=%d, name=%s, remoteIp=%s, direction=%s, protocol=%s, portMin=%d, portMax=%d", secrule.ID, name, remoteIp, direction, protocol, portMin, portMax)
 	defer func() {
 		if err != nil {
-			logger.Errorf("EXIT SecruleAdmin.Update: error=%v", err)
+			logger.Ctx(ctx).Errorf("EXIT SecruleAdmin.Update: error=%v", err)
 		} else {
-			logger.Info("EXIT SecruleAdmin.Update: success")
+			logger.Ctx(ctx).Info("EXIT SecruleAdmin.Update: success")
 		}
 	}()
 	memberShip := GetMemberShip(ctx)
 	permit := memberShip.CheckResourceOrg(model.OrgWriter, secrule.Owner)
 	if !permit {
-		logger.Error("Not authorized for this operation")
+		logger.Ctx(ctx).Error("Not authorized for this operation")
 		err = NewCLError(ErrPermissionDenied, "Not authorized for this operation", nil)
 		return
 	}
@@ -121,31 +121,31 @@ func (a *SecruleAdminService) Update(ctx context.Context, secrule *model.Securit
 	}
 	err = db.Model(&model.SecurityRule{}).Where("id = ?", secrule.ID).Updates(map[string]interface{}{"name": secrule.Name, "remote_ip": secrule.RemoteIp, "direction": secrule.Direction, "protocol": secrule.Protocol, "port_min": secrule.PortMin, "port_max": secrule.PortMax}).Error
 	if err != nil {
-		logger.Error("DB failed to save security rule ", err)
+		logger.Ctx(ctx).Error("DB failed to save security rule ", err)
 		err = NewCLError(ErrSecurityRuleUpdateFailed, "Failed to update security rule", err)
 		return
 	}
 	err = a.ApplySecgroup(ctx, secgroup)
 	if err != nil {
-		logger.Error("Failed to apply security group", err)
+		logger.Ctx(ctx).Error("Failed to apply security group", err)
 		return
 	}
 	return
 }
 
 func (a *SecruleAdminService) Create(ctx context.Context, name, remoteIp, direction, protocol string, portMin, portMax int32, secgroup *model.SecurityGroup) (secrule *model.SecurityRule, err error) {
-	logger.Infof("ENTER SecruleAdmin.Create: name=%s, remoteIp=%s, direction=%s, protocol=%s, portMin=%d, portMax=%d, secgroupID=%d", name, remoteIp, direction, protocol, portMin, portMax, secgroup.ID)
+	logger.Ctx(ctx).Infof("ENTER SecruleAdmin.Create: name=%s, remoteIp=%s, direction=%s, protocol=%s, portMin=%d, portMax=%d, secgroupID=%d", name, remoteIp, direction, protocol, portMin, portMax, secgroup.ID)
 	defer func() {
 		if err != nil {
-			logger.Errorf("EXIT SecruleAdmin.Create: error=%v", err)
+			logger.Ctx(ctx).Errorf("EXIT SecruleAdmin.Create: error=%v", err)
 		} else {
-			logger.Info("EXIT SecruleAdmin.Create: success")
+			logger.Ctx(ctx).Info("EXIT SecruleAdmin.Create: success")
 		}
 	}()
 	memberShip := GetMemberShip(ctx)
 	permit := memberShip.CheckResourceOrg(model.OrgWriter, secgroup.Owner)
 	if !permit {
-		logger.Error("Not authorized for this operation")
+		logger.Ctx(ctx).Error("Not authorized for this operation")
 		err = NewCLError(ErrPermissionDenied, "Not authorized for this operation", nil)
 		return
 	}
@@ -157,7 +157,7 @@ func (a *SecruleAdminService) Create(ctx context.Context, name, remoteIp, direct
 	}()
 	_, err = SecruleAdmin.GetRule(ctx, remoteIp, direction, protocol, portMin, portMax, secgroup)
 	if err == nil {
-		logger.Errorf("Existing rule %s %s %s %d %d %d for security group %d", remoteIp, direction, protocol, portMin, portMax, secgroup.ID)
+		logger.Ctx(ctx).Errorf("Existing rule %s %s %s %d %d %d for security group %d", remoteIp, direction, protocol, portMin, portMax, secgroup.ID)
 		return
 	}
 	if protocol == "icmp" {
@@ -178,31 +178,31 @@ func (a *SecruleAdminService) Create(ctx context.Context, name, remoteIp, direct
 	}
 	err = db.Create(secrule).Error
 	if err != nil {
-		logger.Error("DB failed to create security rule", err)
+		logger.Ctx(ctx).Error("DB failed to create security rule", err)
 		err = NewCLError(ErrSecurityRuleCreateFailed, "Failed to create security rule", err)
 		return
 	}
 	err = a.ApplySecgroup(ctx, secgroup)
 	if err != nil {
-		logger.Error("Failed to apply security rule", err)
+		logger.Ctx(ctx).Error("Failed to apply security rule", err)
 		return
 	}
 	return
 }
 
 func (a *SecruleAdminService) GetRule(ctx context.Context, remoteIp, direction, protocol string, portMin, portMax int32, secgroup *model.SecurityGroup) (secrule *model.SecurityRule, err error) {
-	logger.Infof("ENTER SecruleAdmin.GetRule: remoteIp=%s, direction=%s, protocol=%s, portMin=%d, portMax=%d, secgroupID=%d", remoteIp, direction, protocol, portMin, portMax, secgroup.ID)
+	logger.Ctx(ctx).Infof("ENTER SecruleAdmin.GetRule: remoteIp=%s, direction=%s, protocol=%s, portMin=%d, portMax=%d, secgroupID=%d", remoteIp, direction, protocol, portMin, portMax, secgroup.ID)
 	defer func() {
 		if err != nil {
-			logger.Errorf("EXIT SecruleAdmin.GetRule: error=%v", err)
+			logger.Ctx(ctx).Errorf("EXIT SecruleAdmin.GetRule: error=%v", err)
 		} else {
-			logger.Info("EXIT SecruleAdmin.GetRule: success")
+			logger.Ctx(ctx).Info("EXIT SecruleAdmin.GetRule: success")
 		}
 	}()
 	memberShip := GetMemberShip(ctx)
 	permit := memberShip.CheckResourceOrg(model.OrgReader, secgroup.Owner)
 	if !permit {
-		logger.Error("Not authorized for this operation")
+		logger.Ctx(ctx).Error("Not authorized for this operation")
 		err = NewCLError(ErrPermissionDenied, "Not authorized for this operation", nil)
 		return
 	}
@@ -223,7 +223,7 @@ func (a *SecruleAdminService) GetRule(ctx context.Context, remoteIp, direction, 
 	}
 	err = db.Where(secrule).Take(secrule).Error
 	if err != nil {
-		logger.Error("Failed to query secrule", err)
+		logger.Ctx(ctx).Error("Failed to query secrule", err)
 		err = NewCLError(ErrSecurityRuleNotFound, "Failed to find security rule", err)
 		return
 	}
@@ -231,12 +231,12 @@ func (a *SecruleAdminService) GetRule(ctx context.Context, remoteIp, direction, 
 }
 
 func (a *SecruleAdminService) Delete(ctx context.Context, secrule *model.SecurityRule, secgroup *model.SecurityGroup) (err error) {
-	logger.Infof("ENTER SecruleAdmin.Delete: secruleID=%d, secgroupID=%d", secrule.ID, secgroup.ID)
+	logger.Ctx(ctx).Infof("ENTER SecruleAdmin.Delete: secruleID=%d, secgroupID=%d", secrule.ID, secgroup.ID)
 	defer func() {
 		if err != nil {
-			logger.Errorf("EXIT SecruleAdmin.Delete: error=%v", err)
+			logger.Ctx(ctx).Errorf("EXIT SecruleAdmin.Delete: error=%v", err)
 		} else {
-			logger.Info("EXIT SecruleAdmin.Delete: success")
+			logger.Ctx(ctx).Info("EXIT SecruleAdmin.Delete: success")
 		}
 	}()
 	ctx, db, newTransaction := StartTransaction(ctx)
@@ -248,36 +248,36 @@ func (a *SecruleAdminService) Delete(ctx context.Context, secrule *model.Securit
 	memberShip := GetMemberShip(ctx)
 	permit := memberShip.CheckResourceOrg(model.OrgWriter, secrule.Owner)
 	if !permit {
-		logger.Error("Not authorized to delete the router")
+		logger.Ctx(ctx).Error("Not authorized to delete the router")
 		err = NewCLError(ErrPermissionDenied, "Not authorized for this operation", nil)
 		return
 	}
 	if err = db.Delete(secrule).Error; err != nil {
-		logger.Error("DB failed to delete security rule, %v", err)
+		logger.Ctx(ctx).Error("DB failed to delete security rule, %v", err)
 		err = NewCLError(ErrSecurityRuleDeleteFailed, "Failed to delete security rule", err)
 		return
 	}
 	err = a.ApplySecgroup(ctx, secgroup)
 	if err != nil {
-		logger.Error("Failed to apply security rule", err)
+		logger.Ctx(ctx).Error("Failed to apply security rule", err)
 		return
 	}
 	return
 }
 
 func (a *SecruleAdminService) List(ctx context.Context, offset, limit int64, order string, secgroup *model.SecurityGroup) (total int64, secrules []*model.SecurityRule, err error) {
-	logger.Infof("ENTER SecruleAdmin.List: offset=%d, limit=%d, order=%s, secgroupID=%d", offset, limit, order, secgroup.ID)
+	logger.Ctx(ctx).Infof("ENTER SecruleAdmin.List: offset=%d, limit=%d, order=%s, secgroupID=%d", offset, limit, order, secgroup.ID)
 	defer func() {
 		if err != nil {
-			logger.Errorf("EXIT SecruleAdmin.List: error=%v", err)
+			logger.Ctx(ctx).Errorf("EXIT SecruleAdmin.List: error=%v", err)
 		} else {
-			logger.Info("EXIT SecruleAdmin.List: success")
+			logger.Ctx(ctx).Info("EXIT SecruleAdmin.List: success")
 		}
 	}()
 	memberShip := GetMemberShip(ctx)
 	permit := memberShip.CheckResourceOrg(model.OrgReader, secgroup.Owner)
 	if !permit {
-		logger.Error("Not authorized for this operation")
+		logger.Ctx(ctx).Error("Not authorized for this operation")
 		err = NewCLError(ErrPermissionDenied, "Not authorized for this operation", nil)
 		return
 	}
@@ -293,13 +293,13 @@ func (a *SecruleAdminService) List(ctx context.Context, offset, limit int64, ord
 	query, args := memberShip.GetOrgFilter()
 	secrules = []*model.SecurityRule{}
 	if err = db.Model(&model.SecurityRule{}).Where("secgroup = ?", secgroup.ID).Where(query, args...).Count(&total).Error; err != nil {
-		logger.Error("DB failed to count security rule(s), %v", err)
+		logger.Ctx(ctx).Error("DB failed to count security rule(s), %v", err)
 		err = NewCLError(ErrSQLSyntaxError, "Failed to count security rule(s)", err)
 		return
 	}
-	db = dbs.Sortby(db.Offset(offset).Limit(limit), order)
+	db = dbs.Sortby(db.Offset(int(offset)).Limit(int(limit)), order)
 	if err = db.Where("secgroup = ?", secgroup.ID).Where(query, args...).Find(&secrules).Error; err != nil {
-		logger.Error("DB failed to query security rule(s), %v", err)
+		logger.Ctx(ctx).Error("DB failed to query security rule(s), %v", err)
 		err = NewCLError(ErrSQLSyntaxError, "Failed to query security rule(s)", err)
 		return
 	}
@@ -308,17 +308,17 @@ func (a *SecruleAdminService) List(ctx context.Context, offset, limit int64, ord
 }
 
 func (a *SecruleAdminService) Get(ctx context.Context, id int64, secgroup *model.SecurityGroup) (secrule *model.SecurityRule, err error) {
-	logger.Infof("ENTER SecruleAdmin.Get: id=%d, secgroupID=%d", id, secgroup.ID)
+	logger.Ctx(ctx).Infof("ENTER SecruleAdmin.Get: id=%d, secgroupID=%d", id, secgroup.ID)
 	defer func() {
 		if err != nil {
-			logger.Errorf("EXIT SecruleAdmin.Get: error=%v", err)
+			logger.Ctx(ctx).Errorf("EXIT SecruleAdmin.Get: error=%v", err)
 		} else {
-			logger.Info("EXIT SecruleAdmin.Get: success")
+			logger.Ctx(ctx).Info("EXIT SecruleAdmin.Get: success")
 		}
 	}()
 	if id <= 0 {
 		err = fmt.Errorf("Invalid security rule ID: %d", id)
-		logger.Error(err)
+		logger.Ctx(ctx).Error(err)
 		return
 	}
 	memberShip := GetMemberShip(ctx)
@@ -327,12 +327,12 @@ func (a *SecruleAdminService) Get(ctx context.Context, id int64, secgroup *model
 	secrule = &model.SecurityRule{Model: model.Model{ID: id}}
 	err = db.Where(query, args...).Take(secrule).Error
 	if err != nil {
-		logger.Error("Failed to query secrule", err)
+		logger.Ctx(ctx).Error("Failed to query secrule", err)
 		return
 	}
 	permit := memberShip.CheckResourceOrg(model.OrgReader, secrule.Owner)
 	if !permit {
-		logger.Error("Not authorized to get security group")
+		logger.Ctx(ctx).Error("Not authorized to get security group")
 		err = fmt.Errorf("Not authorized")
 		return
 	}
@@ -340,12 +340,12 @@ func (a *SecruleAdminService) Get(ctx context.Context, id int64, secgroup *model
 }
 
 func (a *SecruleAdminService) GetSecruleByUUID(ctx context.Context, uuID string, secgroup *model.SecurityGroup) (secrule *model.SecurityRule, err error) {
-	logger.Infof("ENTER SecruleAdmin.GetSecruleByUUID: uuID=%s, secgroupID=%d", uuID, secgroup.ID)
+	logger.Ctx(ctx).Infof("ENTER SecruleAdmin.GetSecruleByUUID: uuID=%s, secgroupID=%d", uuID, secgroup.ID)
 	defer func() {
 		if err != nil {
-			logger.Errorf("EXIT SecruleAdmin.GetSecruleByUUID: error=%v", err)
+			logger.Ctx(ctx).Errorf("EXIT SecruleAdmin.GetSecruleByUUID: error=%v", err)
 		} else {
-			logger.Info("EXIT SecruleAdmin.GetSecruleByUUID: success")
+			logger.Ctx(ctx).Info("EXIT SecruleAdmin.GetSecruleByUUID: success")
 		}
 	}()
 	memberShip := GetMemberShip(ctx)
@@ -354,12 +354,12 @@ func (a *SecruleAdminService) GetSecruleByUUID(ctx context.Context, uuID string,
 	secrule = &model.SecurityRule{}
 	err = db.Where(query, args...).Where("uuid = ? and secgroup = ?", uuID, secgroup.ID).Take(secrule).Error
 	if err != nil {
-		logger.Error("Failed to query secrule", err)
+		logger.Ctx(ctx).Error("Failed to query secrule", err)
 		return
 	}
 	permit := memberShip.CheckResourceOrg(model.OrgReader, secrule.Owner)
 	if !permit {
-		logger.Error("Not authorized to get security group")
+		logger.Ctx(ctx).Error("Not authorized to get security group")
 		err = fmt.Errorf("Not authorized")
 		return
 	}

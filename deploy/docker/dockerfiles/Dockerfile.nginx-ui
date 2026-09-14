@@ -34,7 +34,8 @@ RUN rm -f docs/public/api-v1.json && mv /tmp/api-v1.json docs/public/api-v1.json
 RUN cd docs && npm install && npm run docs:build
 
 # ---- Stage 3: Nginx + 静态文件 ----
-FROM nginx:1.25-alpine
+# 官方 -otel 镜像自带 ngx_otel_module，用于链路追踪
+FROM nginx:1.30.4-alpine-otel
 
 WORKDIR /usr/share/nginx/html
 

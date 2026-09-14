@@ -30,18 +30,18 @@ func ClearRouter(ctx context.Context, args []string) (status string, err error) 
 	argn := len(args)
 	if argn < 3 {
 		err = fmt.Errorf("Wrong params")
-		logger.Error("Invalid args", err)
+		logger.Ctx(ctx).Error("Invalid args", err)
 		return
 	}
 	routerID, err := strconv.ParseInt(args[1], 10, 64)
 	if err != nil {
-		logger.Error("Invalid gateway ID", err)
+		logger.Ctx(ctx).Error("Invalid gateway ID", err)
 		return
 	}
 	router := &model.Router{Model: model.Model{ID: routerID}}
 	err = db.Preload("Interfaces").Preload("Interfaces.Address").Preload("Interfaces.Address.Subnet").Where(router).Take(router).Error
 	if err != nil {
-		logger.Error("Invalid gateway ID", err)
+		logger.Ctx(ctx).Error("Invalid gateway ID", err)
 		return
 	}
 	return

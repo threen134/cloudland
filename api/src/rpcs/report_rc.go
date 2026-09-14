@@ -31,7 +31,7 @@ func ReportRC(ctx context.Context, args []string) (status string, err error) {
 	argn := len(args)
 	if argn < 4 {
 		err = fmt.Errorf("Wrong params")
-		logger.Error("Invalid args", err)
+		logger.Ctx(ctx).Error("Invalid args", err)
 		return
 	}
 	id := ctx.Value("hostid").(int32)
@@ -44,14 +44,14 @@ func ReportRC(ctx context.Context, args []string) (status string, err error) {
 	for _, arg := range args[1:] {
 		kv := strings.Split(arg, "=")
 		if len(kv) != 2 {
-			logger.Error("Invalid key value pair", arg)
+			logger.Ctx(ctx).Error("Invalid key value pair", arg)
 			return
 		}
 		key := kv[0]
 		value := kv[1]
 		vp := strings.Split(value, "/")
 		if len(vp) != 2 {
-			logger.Error("Invalid format of value pair", value)
+			logger.Ctx(ctx).Error("Invalid format of value pair", value)
 			return
 		}
 		if key == "cpu" {
@@ -64,10 +64,10 @@ func ReportRC(ctx context.Context, args []string) (status string, err error) {
 			disk, err = strconv.ParseInt(vp[0], 10, 64)
 			diskTotal, err = strconv.ParseInt(vp[1], 10, 64)
 		} else if key != "network" && key != "load" {
-			logger.Error("Undefined resource type")
+			logger.Ctx(ctx).Error("Undefined resource type")
 		}
 		if err != nil {
-			logger.Error("Failed to get value", err)
+			logger.Ctx(ctx).Error("Failed to get value", err)
 		}
 	}
 	resource := &model.Resource{
@@ -81,7 +81,7 @@ func ReportRC(ctx context.Context, args []string) (status string, err error) {
 	}
 	err = db.Where("hostid = ?", id).Assign(resource).FirstOrCreate(&model.Resource{}).Error
 	if err != nil {
-		logger.Error("Failed to create or update hyper resource", err)
+		logger.Ctx(ctx).Error("Failed to create or update hyper resource", err)
 		return
 	}
 	if cpu == 0 || memory == 0 || disk == 0 {
@@ -90,7 +90,7 @@ func ReportRC(ctx context.Context, args []string) (status string, err error) {
 			"memory": memory,
 			"disk":   disk}).Error
 		if err != nil {
-			logger.Error("Failed to update hypervisor resource", err)
+			logger.Ctx(ctx).Error("Failed to update hypervisor resource", err)
 		}
 	}
 	return

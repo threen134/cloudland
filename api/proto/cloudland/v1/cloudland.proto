@@ -1,0 +1,197 @@
+// Copyright <holder> All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0
+
+syntax = "proto3";
+package cloudland.v1;
+option go_package = "api/src/proto/cloudlandpb;cloudlandpb";
+
+// ====================================================================
+// ClandService: clapi → cland（控制面内部通信）
+// 替代当前 cland 的 3 个 HTTP 端点
+// ====================================================================
+service ClandService {
+  // 替代 POST /internal/execute
+  rpc Execute(ExecuteRequest) returns (ExecuteReply);
+
+  // 替代 POST /internal/node/add
+  rpc NodeAdd(NodeAddRequest) returns (NodeAddReply);
+
+  // 替代 POST /internal/node/remove
+  rpc NodeRemove(NodeRemoveRequest) returns (NodeRemoveReply);
+
+  // 文件传输（控制面 → 计算节点）
+  rpc TransmitFile(stream FileChunk) returns (TransmitAck);
+
+  // 分组管理
+  rpc ListGroups(ListGroupsRequest) returns (ListGroupsReply);
+}
+
+message ExecuteRequest {
+  int32  id       = 1;  // 消息 ID（通常 100）
+  int32  extra    = 2;  // 附加参数（节点 ID 或优先级）
+  string control  = 3;  // 路由指令，如 "inter=5", "select=zone0:1,2 cpu=4"
+  string command  = 4;  // Shell 命令
+  reserved 5;           // 原 trace_id，trace 上下文改由 gRPC metadata 传播
+  reserved "trace_id";
+}
+
+message ExecuteReply {
+  string status = 1;
+}
+
+message NodeAddRequest {
+  string hostname = 1;
+  int32  id       = 2;
+  int32  level    = 3;
+}
+
+message NodeAddReply {
+  string status      = 1;
+  int32  id          = 2;
+  string public_key  = 3;
+  string private_key = 4;
+}
+
+message NodeRemoveRequest {
+  int32 id = 1;
+}
+
+message NodeRemoveReply {
+  string status = 1;
+}
+
+message FileChunk {
+  int32  id       = 1;
+  string control  = 2;
+  string filepath = 3;
+  int64  filesize = 4;
+  int32  checksum = 5;
+  int64  fileseek = 6;
+  bytes  content  = 7;
+  int32  extra    = 8;
+}
+
+message TransmitAck {
+  string status = 1;
+}
+
+message ListGroupsRequest {}
+message ListGroupsReply {
+  repeated string groups = 1;
+}
+
+// ====================================================================
+// CloudletService: cloudlet → cland（agent 注册 + 命令流）
+// 替代整个 SCI 协议 + scidv1 握手
+// ====================================================================
+service CloudletService {
+  // 双向 stream：cland 下发命令，cloudlet 回传结果
+  rpc CommandStream(stream CloudletMessage) returns (stream ClandMessage);
+
+  // 健康上报（独立 RPC，不占用命令 stream）
+  rpc ReportHealth(HealthReport) returns (HealthReportAck);
+}
+
+// === cloudlet → cland 上行消息 ===
+message CloudletMessage {
+  oneof payload {
+    RegisterRequest register = 1;
+    CommandResult   result   = 2;
+    CallbackLine    callback = 3;
+    ErrorReport     error    = 4;
+  }
+}
+
+message RegisterRequest {
+  int32  node_id   = 1;  // SCI_CLIENT_ID
+  string hostname  = 2;
+}
+
+message CommandResult {
+  int32  msg_id   = 1;
+  int32  node_id  = 2;
+  string control  = 3;  // "callback"
+  string output   = 4;  // stdout 单行
+  reserved 5;
+  reserved "trace_id";
+  map<string, string> trace_context = 6;  // W3C trace 上下文（traceparent/tracestate）
+}
+
+message CallbackLine {
+  int32  msg_id   = 1;
+  int32  node_id  = 2;
+  string command  = 3;  // 从 |:-COMMAND-:| 解析出的命令
+  reserved 4;
+  reserved "trace_id";
+  map<string, string> trace_context = 5;  // W3C trace 上下文
+}
+
+message ErrorReport {
+  int32  msg_id    = 1;
+  int32  node_id   = 2;
+  string command   = 3;
+  int32  exit_code = 4;
+  reserved 5;
+  reserved "trace_id";
+  map<string, string> trace_context = 6;  // W3C trace 上下文
+}
+
+// === cland → cloudlet 下行消息 ===
+message ClandMessage {
+  oneof payload {
+    RegisterAck     register_ack = 1;
+    CommandRequest  command      = 2;
+    FileTransfer    file         = 3;
+    ShutdownRequest shutdown     = 4;
+  }
+}
+
+message ShutdownRequest {
+  string reason = 1;
+}
+
+message RegisterAck {
+  bool   success = 1;
+  string error   = 2;
+}
+
+message CommandRequest {
+  int32  msg_id   = 1;
+  int32  extra    = 2;
+  string control  = 3;
+  string command  = 4;
+  reserved 5;
+  reserved "trace_id";
+  map<string, string> trace_context = 6;  // W3C trace 上下文，cloudlet 据此创建子 span
+}
+
+message FileTransfer {
+  int32  msg_id   = 1;
+  string filepath = 2;
+  int64  filesize = 3;
+  int64  fileseek = 4;
+  bytes  content  = 5;
+  int32  checksum = 6;
+  map<string, string> trace_context = 7;  // W3C trace 上下文，cloudlet 据此创建子 span
+}
+
+message HealthReport {
+  int32  node_id            = 1;
+  string hostname           = 2;
+  int64  cpu_available      = 3;
+  int64  cpu_total          = 4;
+  int64  memory_available   = 5;
+  int64  memory_total       = 6;
+  int64  disk_available     = 7;
+  int64  disk_total         = 8;
+  int64  network_available  = 9;
+  int64  network_total      = 10;
+  int64  load_available     = 11;
+  int64  load_total         = 12;
+  string raw_report         = 13;  // report_rc.sh 第一行原始输出
+  repeated string callback_lines = 14;  // 后续行
+}
+
+message HealthReportAck {
+  bool accepted = 1;
+}

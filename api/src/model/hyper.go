@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"gorm.io/gorm"
 
 	"api/src/dbs"
 )
@@ -28,7 +29,7 @@ type Hyper struct {
 	CreatedAt    time.Time
 	UpdatedAt    time.Time
 	UUID         string `gorm:"type:varchar(64);index"`
-	Hostid       int32  `gorm:"unique_index"`
+	Hostid       int32  `gorm:"uniqueIndex"`
 	Hostname     string `gorm:"type:varchar(64)"`
 	Status       int32
 	Parentid     int32
@@ -43,11 +44,11 @@ type Hyper struct {
 	DiskOverRate float32 `gorm:"default:1.0"`
 	ZoneID       int64
 	Zone         *Zone     `gorm:"foreignkey:ZoneID"`
-	Resource     *Resource `gorm:"foreignkey:Hostid;AssociationForeignKey:Hostid"`
+	Resource     *Resource `gorm:"foreignKey:Hostid;references:Hostid"`
 	Remark       string    `gorm:"type:varchar(512);default:''"`
 }
 
-func (hyper *Hyper) BeforeCreate() (err error) {
+func (hyper *Hyper) BeforeCreate(tx *gorm.DB) (err error) {
 	if hyper.UUID == "" {
 		hyper.UUID = uuid.New().String()
 		logger.Debugf("Create a new hypervisor with uuid: %s", hyper.UUID)
@@ -162,18 +163,17 @@ func (hyper *Hyper) LoadCommand(command string) {
 }
 
 func (hyper *Hyper) Updates(ctx context.Context, values *Hyper) (err error) {
-	logger, ctx := startLogging(ctx, "Updates")
-	db := dbs.DB()
+	db := dbs.DBContext(ctx)
 	where := map[string]interface{}{
 		"hostid": values.Hostid,
 	}
 	if err = db.FirstOrCreate(hyper, where).Error; err != nil {
-		logger.Error(err)
+		logger.Ctx(ctx).Error(err)
 		return
 	}
 
 	if err = db.Model(hyper).Updates(values).Error; err != nil {
-		logger.Error(err)
+		logger.Ctx(ctx).Error(err)
 		return
 	}
 	return

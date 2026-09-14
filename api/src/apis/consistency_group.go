@@ -72,13 +72,13 @@ type ConsistencyGroupListResponse struct {
 func (a *ConsistencyGroupAPI) Get(c *gin.Context) {
 	ctx := c.Request.Context()
 	uuid := c.Param("id")
-	logger.Debugf("Get consistency group by UUID: %s", uuid)
+	logger.Ctx(ctx).Debugf("Get consistency group by UUID: %s", uuid)
 
 	// Retrieve consistency group by UUID
 	// 通过 UUID 获取一致性组
 	cg, err := consistencyGroupAdmin.GetByUUID(ctx, uuid)
 	if err != nil {
-		logger.Errorf("Failed to get consistency group by UUID %s: %+v", uuid, err)
+		logger.Ctx(ctx).Errorf("Failed to get consistency group by UUID %s: %+v", uuid, err)
 		ErrorResponse(c, http.StatusBadRequest, "Invalid consistency group query", err)
 		return
 	}
@@ -88,12 +88,12 @@ func (a *ConsistencyGroupAPI) Get(c *gin.Context) {
 
 	response, err := a.GetCGResponse(ctx, cg)
 	if err != nil {
-		logger.Errorf("Failed to get CG response for CG %s: %+v", cg.ID, err)
+		logger.Ctx(ctx).Errorf("Failed to get CG response for CG %s: %+v", cg.ID, err)
 		ErrorResponse(c, http.StatusInternalServerError, "Failed to get consistency group response", err)
 		return
 	}
 
-	logger.Debugf("Successfully retrieved consistency group %s", uuid)
+	logger.Ctx(ctx).Debugf("Successfully retrieved consistency group %s", uuid)
 	c.JSON(http.StatusOK, response)
 }
 
@@ -112,7 +112,7 @@ func (a *ConsistencyGroupAPI) Get(c *gin.Context) {
 // @Router /consistency_groups [get]
 func (a *ConsistencyGroupAPI) List(c *gin.Context) {
 	ctx := c.Request.Context()
-	logger.Debugf("List consistency groups")
+	logger.Ctx(ctx).Debugf("List consistency groups")
 
 	// Parse query parameters
 	// 解析查询参数
@@ -134,7 +134,7 @@ func (a *ConsistencyGroupAPI) List(c *gin.Context) {
 	// 列出一致性组
 	total, cgs, err := consistencyGroupAdmin.List(ctx, int64(offset), int64(limit), order, name)
 	if err != nil {
-		logger.Errorf("Failed to list consistency groups: %+v", err)
+		logger.Ctx(ctx).Errorf("Failed to list consistency groups: %+v", err)
 		ErrorResponse(c, http.StatusInternalServerError, "Failed to list consistency groups", err)
 		return
 	}
@@ -145,7 +145,7 @@ func (a *ConsistencyGroupAPI) List(c *gin.Context) {
 	for _, cg := range cgs {
 		response, err := a.GetCGResponse(ctx, cg)
 		if err != nil {
-			logger.Errorf("Failed to get CG response for CG %s: %+v", cg.ID, err)
+			logger.Ctx(ctx).Errorf("Failed to get CG response for CG %s: %+v", cg.ID, err)
 			continue
 		}
 		responses = append(responses, response)
@@ -158,7 +158,7 @@ func (a *ConsistencyGroupAPI) List(c *gin.Context) {
 		ConsistencyGroups: responses,
 	}
 
-	logger.Debugf("Successfully listed %d consistency groups (total: %d)", len(responses), total)
+	logger.Ctx(ctx).Debugf("Successfully listed %d consistency groups (total: %d)", len(responses), total)
 	c.JSON(http.StatusOK, result)
 }
 
@@ -174,24 +174,24 @@ func (a *ConsistencyGroupAPI) List(c *gin.Context) {
 // @Router /consistency_groups [post]
 func (a *ConsistencyGroupAPI) Create(c *gin.Context) {
 	ctx := c.Request.Context()
-	logger.Debugf("Create consistency group")
+	logger.Ctx(ctx).Debugf("Create consistency group")
 
 	// Parse request body
 	// 解析请求体
 	var payload ConsistencyGroupPayload
 	if err := c.ShouldBindJSON(&payload); err != nil {
-		logger.Errorf("Failed to parse request body: %+v", err)
+		logger.Ctx(ctx).Errorf("Failed to parse request body: %+v", err)
 		ErrorResponse(c, http.StatusBadRequest, "Invalid request payload", err)
 		return
 	}
 
-	logger.Debugf("Creating consistency group: name=%s, volumes=%v", payload.Name, payload.Volumes)
+	logger.Ctx(ctx).Debugf("Creating consistency group: name=%s, volumes=%v", payload.Name, payload.Volumes)
 
 	// Create consistency group
 	// 创建一致性组
 	cg, err := consistencyGroupAdmin.Create(ctx, payload.Name, payload.Description, payload.Volumes)
 	if err != nil {
-		logger.Errorf("Failed to create consistency group: %+v", err)
+		logger.Ctx(ctx).Errorf("Failed to create consistency group: %+v", err)
 		ErrorResponse(c, http.StatusBadRequest, "Failed to create consistency group", err)
 		return
 	}
@@ -199,12 +199,12 @@ func (a *ConsistencyGroupAPI) Create(c *gin.Context) {
 	// 构建响应
 	response, err := a.GetCGResponse(ctx, cg)
 	if err != nil {
-		logger.Errorf("Failed to get CG response for CG %s: %+v", cg.ID, err)
+		logger.Ctx(ctx).Errorf("Failed to get CG response for CG %s: %+v", cg.ID, err)
 		ErrorResponse(c, http.StatusInternalServerError, "Failed to get CG response", err)
 		return
 	}
 
-	logger.Debugf("Successfully created consistency group %s", cg.UUID)
+	logger.Ctx(ctx).Debugf("Successfully created consistency group %s", cg.UUID)
 	c.JSON(http.StatusOK, response)
 }
 
@@ -222,13 +222,13 @@ func (a *ConsistencyGroupAPI) Create(c *gin.Context) {
 func (a *ConsistencyGroupAPI) Patch(c *gin.Context) {
 	ctx := c.Request.Context()
 	uuid := c.Param("id")
-	logger.Debugf("Update consistency group: %s", uuid)
+	logger.Ctx(ctx).Debugf("Update consistency group: %s", uuid)
 
 	// Parse request body
 	// 解析请求体
 	var payload ConsistencyGroupPatchPayload
 	if err := c.ShouldBindJSON(&payload); err != nil {
-		logger.Errorf("Failed to parse request body: %+v", err)
+		logger.Ctx(ctx).Errorf("Failed to parse request body: %+v", err)
 		ErrorResponse(c, http.StatusBadRequest, "Invalid request payload", err)
 		return
 	}
@@ -237,7 +237,7 @@ func (a *ConsistencyGroupAPI) Patch(c *gin.Context) {
 	// 通过 UUID 获取 ID
 	cg, err := consistencyGroupAdmin.GetByUUID(ctx, uuid)
 	if err != nil {
-		logger.Errorf("Failed to get consistency group %s: %+v", uuid, err)
+		logger.Ctx(ctx).Errorf("Failed to get consistency group %s: %+v", uuid, err)
 		ErrorResponse(c, http.StatusBadRequest, "Consistency group not found", err)
 		return
 	}
@@ -246,7 +246,7 @@ func (a *ConsistencyGroupAPI) Patch(c *gin.Context) {
 	// 更新一致性组
 	cg, err = consistencyGroupAdmin.Update(ctx, cg.ID, payload.Name, payload.Description)
 	if err != nil {
-		logger.Errorf("Failed to update consistency group %s: %+v", uuid, err)
+		logger.Ctx(ctx).Errorf("Failed to update consistency group %s: %+v", uuid, err)
 		ErrorResponse(c, http.StatusBadRequest, "Failed to update consistency group", err)
 		return
 	}
@@ -255,12 +255,12 @@ func (a *ConsistencyGroupAPI) Patch(c *gin.Context) {
 	// 构建响应
 	response, err := a.GetCGResponse(ctx, cg)
 	if err != nil {
-		logger.Errorf("Failed to get CG response for CG %s: %+v", cg.ID, err)
+		logger.Ctx(ctx).Errorf("Failed to get CG response for CG %s: %+v", cg.ID, err)
 		ErrorResponse(c, http.StatusInternalServerError, "Failed to get CG response", err)
 		return
 	}
 
-	logger.Debugf("Successfully updated consistency group %s", uuid)
+	logger.Ctx(ctx).Debugf("Successfully updated consistency group %s", uuid)
 	c.JSON(http.StatusOK, response)
 }
 
@@ -277,13 +277,13 @@ func (a *ConsistencyGroupAPI) Patch(c *gin.Context) {
 func (a *ConsistencyGroupAPI) Delete(c *gin.Context) {
 	ctx := c.Request.Context()
 	uuid := c.Param("id")
-	logger.Debugf("Delete consistency group: %s", uuid)
+	logger.Ctx(ctx).Debugf("Delete consistency group: %s", uuid)
 
 	// Get CG by UUID to get ID
 	// 通过 UUID 获取 ID
 	cg, err := consistencyGroupAdmin.GetByUUID(ctx, uuid)
 	if err != nil {
-		logger.Errorf("Failed to get consistency group %s: %+v", uuid, err)
+		logger.Ctx(ctx).Errorf("Failed to get consistency group %s: %+v", uuid, err)
 		ErrorResponse(c, http.StatusBadRequest, "Consistency group not found", err)
 		return
 	}
@@ -292,12 +292,12 @@ func (a *ConsistencyGroupAPI) Delete(c *gin.Context) {
 	// 删除一致性组
 	err = consistencyGroupAdmin.Delete(ctx, cg.ID)
 	if err != nil {
-		logger.Errorf("Failed to delete consistency group %s: %+v", uuid, err)
+		logger.Ctx(ctx).Errorf("Failed to delete consistency group %s: %+v", uuid, err)
 		ErrorResponse(c, http.StatusBadRequest, "Failed to delete consistency group", err)
 		return
 	}
 
-	logger.Debugf("Successfully deleted consistency group %s", uuid)
+	logger.Ctx(ctx).Debugf("Successfully deleted consistency group %s", uuid)
 	c.Status(http.StatusNoContent)
 }
 
@@ -315,13 +315,13 @@ func (a *ConsistencyGroupAPI) Delete(c *gin.Context) {
 func (a *ConsistencyGroupAPI) AddVolumes(c *gin.Context) {
 	ctx := c.Request.Context()
 	uuid := c.Param("id")
-	logger.Debugf("Add volumes to consistency group: %s", uuid)
+	logger.Ctx(ctx).Debugf("Add volumes to consistency group: %s", uuid)
 
 	// Parse request body
 	// 解析请求体
 	var payload ConsistencyGroupVolumesPayload
 	if err := c.ShouldBindJSON(&payload); err != nil {
-		logger.Errorf("Failed to parse request body: %+v", err)
+		logger.Ctx(ctx).Errorf("Failed to parse request body: %+v", err)
 		ErrorResponse(c, http.StatusBadRequest, "Invalid request payload", err)
 		return
 	}
@@ -330,7 +330,7 @@ func (a *ConsistencyGroupAPI) AddVolumes(c *gin.Context) {
 	// 通过 UUID 获取 ID
 	cg, err := consistencyGroupAdmin.GetByUUID(ctx, uuid)
 	if err != nil {
-		logger.Errorf("Failed to get consistency group %s: %+v", uuid, err)
+		logger.Ctx(ctx).Errorf("Failed to get consistency group %s: %+v", uuid, err)
 		ErrorResponse(c, http.StatusBadRequest, "Consistency group not found", err)
 		return
 	}
@@ -339,7 +339,7 @@ func (a *ConsistencyGroupAPI) AddVolumes(c *gin.Context) {
 	// 向一致性组添加卷
 	cg, err = consistencyGroupAdmin.AddVolumes(ctx, cg.ID, payload.Volumes)
 	if err != nil {
-		logger.Errorf("Failed to add volumes to consistency group %s: %+v", uuid, err)
+		logger.Ctx(ctx).Errorf("Failed to add volumes to consistency group %s: %+v", uuid, err)
 		ErrorResponse(c, http.StatusBadRequest, "Failed to add volumes to consistency group", err)
 		return
 	}
@@ -348,12 +348,12 @@ func (a *ConsistencyGroupAPI) AddVolumes(c *gin.Context) {
 	// 构建响应
 	response, err := a.GetCGResponse(ctx, cg)
 	if err != nil {
-		logger.Errorf("Failed to get CG response for CG %s: %+v", cg.ID, err)
+		logger.Ctx(ctx).Errorf("Failed to get CG response for CG %s: %+v", cg.ID, err)
 		ErrorResponse(c, http.StatusInternalServerError, "Failed to get CG response", err)
 		return
 	}
 
-	logger.Debugf("Successfully added volumes to consistency group %s", uuid)
+	logger.Ctx(ctx).Debugf("Successfully added volumes to consistency group %s", uuid)
 	c.JSON(http.StatusOK, response)
 }
 
@@ -372,13 +372,13 @@ func (a *ConsistencyGroupAPI) RemoveVolume(c *gin.Context) {
 	ctx := c.Request.Context()
 	uuid := c.Param("id")
 	volumeUUID := c.Param("volume_id")
-	logger.Debugf("Remove volume %s from consistency group: %s", volumeUUID, uuid)
+	logger.Ctx(ctx).Debugf("Remove volume %s from consistency group: %s", volumeUUID, uuid)
 
 	// Get CG by UUID to get ID
 	// 通过 UUID 获取 ID
 	cg, err := consistencyGroupAdmin.GetByUUID(ctx, uuid)
 	if err != nil {
-		logger.Errorf("Failed to get consistency group %s: %+v", uuid, err)
+		logger.Ctx(ctx).Errorf("Failed to get consistency group %s: %+v", uuid, err)
 		ErrorResponse(c, http.StatusBadRequest, "Consistency group not found", err)
 		return
 	}
@@ -387,7 +387,7 @@ func (a *ConsistencyGroupAPI) RemoveVolume(c *gin.Context) {
 	// 从一致性组删除卷
 	cg, err = consistencyGroupAdmin.RemoveVolume(ctx, cg.ID, volumeUUID)
 	if err != nil {
-		logger.Errorf("Failed to remove volume from consistency group %s: %+v", uuid, err)
+		logger.Ctx(ctx).Errorf("Failed to remove volume from consistency group %s: %+v", uuid, err)
 		ErrorResponse(c, http.StatusBadRequest, "Failed to remove volume from consistency group", err)
 		return
 	}
@@ -396,12 +396,12 @@ func (a *ConsistencyGroupAPI) RemoveVolume(c *gin.Context) {
 	// 构建响应
 	response, err := a.GetCGResponse(ctx, cg)
 	if err != nil {
-		logger.Errorf("Failed to get CG response for CG %s: %+v", cg.ID, err)
+		logger.Ctx(ctx).Errorf("Failed to get CG response for CG %s: %+v", cg.ID, err)
 		ErrorResponse(c, http.StatusInternalServerError, "Failed to get CG response", err)
 		return
 	}
 
-	logger.Debugf("Successfully removed volume from consistency group %s", uuid)
+	logger.Ctx(ctx).Debugf("Successfully removed volume from consistency group %s", uuid)
 	c.JSON(http.StatusOK, response)
 }
 
@@ -452,13 +452,13 @@ type ConsistencyGroupRestoreResponse struct {
 func (a *ConsistencyGroupAPI) ListSnapshots(c *gin.Context) {
 	ctx := c.Request.Context()
 	cgUUID := c.Param("id")
-	logger.Debugf("List snapshots for consistency group: %s", cgUUID)
+	logger.Ctx(ctx).Debugf("List snapshots for consistency group: %s", cgUUID)
 
 	// Get CG by UUID to get ID
 	// 通过 UUID 获取 ID
 	cg, err := consistencyGroupAdmin.GetByUUID(ctx, cgUUID)
 	if err != nil {
-		logger.Errorf("Failed to get consistency group %s: %+v", cgUUID, err)
+		logger.Ctx(ctx).Errorf("Failed to get consistency group %s: %+v", cgUUID, err)
 		ErrorResponse(c, http.StatusBadRequest, "Consistency group not found", err)
 		return
 	}
@@ -482,7 +482,7 @@ func (a *ConsistencyGroupAPI) ListSnapshots(c *gin.Context) {
 	// 列出快照
 	total, snapshots, err := consistencyGroupAdmin.ListSnapshots(ctx, cg.ID, int64(offset), int64(limit), order)
 	if err != nil {
-		logger.Errorf("Failed to list snapshots for CG %s: %+v", cgUUID, err)
+		logger.Ctx(ctx).Errorf("Failed to list snapshots for CG %s: %+v", cgUUID, err)
 		ErrorResponse(c, http.StatusInternalServerError, "Failed to list snapshots", err)
 		return
 	}
@@ -493,7 +493,7 @@ func (a *ConsistencyGroupAPI) ListSnapshots(c *gin.Context) {
 	for _, snapshot := range snapshots {
 		response, err := a.GetCGSnapshotResponse(ctx, snapshot, cgUUID)
 		if err != nil {
-			logger.Errorf("Failed to get snapshot response for snapshot %s: %+v", snapshot.UUID, err)
+			logger.Ctx(ctx).Errorf("Failed to get snapshot response for snapshot %s: %+v", snapshot.UUID, err)
 			ErrorResponse(c, http.StatusInternalServerError, "Failed to get snapshot response", err)
 			return
 		}
@@ -507,7 +507,7 @@ func (a *ConsistencyGroupAPI) ListSnapshots(c *gin.Context) {
 		Snapshots: responses,
 	}
 
-	logger.Debugf("Successfully listed %d snapshots (total: %d)", len(responses), total)
+	logger.Ctx(ctx).Debugf("Successfully listed %d snapshots (total: %d)", len(responses), total)
 	c.JSON(http.StatusOK, result)
 }
 
@@ -526,13 +526,13 @@ func (a *ConsistencyGroupAPI) GetSnapshot(c *gin.Context) {
 	ctx := c.Request.Context()
 	cgUUID := c.Param("id")
 	snapUUID := c.Param("snap_id")
-	logger.Debugf("Get snapshot %s for consistency group %s", snapUUID, cgUUID)
+	logger.Ctx(ctx).Debugf("Get snapshot %s for consistency group %s", snapUUID, cgUUID)
 
 	// Get CG by UUID
 	// 通过 UUID 获取一致性组
 	cg, err := consistencyGroupAdmin.GetByUUID(ctx, cgUUID)
 	if err != nil {
-		logger.Errorf("Failed to get consistency group %s: %+v", cgUUID, err)
+		logger.Ctx(ctx).Errorf("Failed to get consistency group %s: %+v", cgUUID, err)
 		ErrorResponse(c, http.StatusBadRequest, "Consistency group not found", err)
 		return
 	}
@@ -541,7 +541,7 @@ func (a *ConsistencyGroupAPI) GetSnapshot(c *gin.Context) {
 	// 获取快照
 	snapshot, err := consistencyGroupAdmin.GetSnapshotByUUID(ctx, snapUUID)
 	if err != nil {
-		logger.Errorf("Failed to get snapshot %s: %+v", snapUUID, err)
+		logger.Ctx(ctx).Errorf("Failed to get snapshot %s: %+v", snapUUID, err)
 		ErrorResponse(c, http.StatusBadRequest, "Snapshot not found", err)
 		return
 	}
@@ -549,7 +549,7 @@ func (a *ConsistencyGroupAPI) GetSnapshot(c *gin.Context) {
 	// Verify snapshot belongs to the CG
 	// 验证快照属于该一致性组
 	if snapshot.CGID != cg.ID {
-		logger.Errorf("Snapshot %s does not belong to CG %s", snapUUID, cgUUID)
+		logger.Ctx(ctx).Errorf("Snapshot %s does not belong to CG %s", snapUUID, cgUUID)
 		ErrorResponse(c, http.StatusBadRequest, "Snapshot does not belong to this consistency group", nil)
 		return
 	}
@@ -558,12 +558,12 @@ func (a *ConsistencyGroupAPI) GetSnapshot(c *gin.Context) {
 	// 构建响应
 	response, err := a.GetCGSnapshotResponse(ctx, snapshot, cgUUID)
 	if err != nil {
-		logger.Errorf("Failed to get snapshot response for snapshot %s: %+v", snapUUID, err)
+		logger.Ctx(ctx).Errorf("Failed to get snapshot response for snapshot %s: %+v", snapUUID, err)
 		ErrorResponse(c, http.StatusInternalServerError, "Failed to get snapshot response", err)
 		return
 	}
 
-	logger.Debugf("Successfully retrieved snapshot %s", snapUUID)
+	logger.Ctx(ctx).Debugf("Successfully retrieved snapshot %s", snapUUID)
 	c.JSON(http.StatusOK, response)
 }
 
@@ -581,13 +581,13 @@ func (a *ConsistencyGroupAPI) GetSnapshot(c *gin.Context) {
 func (a *ConsistencyGroupAPI) CreateSnapshot(c *gin.Context) {
 	ctx := c.Request.Context()
 	cgUUID := c.Param("id")
-	logger.Debugf("Create snapshot for consistency group: %s", cgUUID)
+	logger.Ctx(ctx).Debugf("Create snapshot for consistency group: %s", cgUUID)
 
 	// Parse request body
 	// 解析请求体
 	var payload ConsistencyGroupSnapshotPayload
 	if err := c.ShouldBindJSON(&payload); err != nil {
-		logger.Errorf("Failed to parse request body: %+v", err)
+		logger.Ctx(ctx).Errorf("Failed to parse request body: %+v", err)
 		ErrorResponse(c, http.StatusBadRequest, "Invalid request payload", err)
 		return
 	}
@@ -596,7 +596,7 @@ func (a *ConsistencyGroupAPI) CreateSnapshot(c *gin.Context) {
 	// 创建快照
 	snapshot, err := consistencyGroupAdmin.CreateSnapshot(ctx, cgUUID, payload.Name, payload.Description)
 	if err != nil {
-		logger.Errorf("Failed to create snapshot for CG %s: %+v", cgUUID, err)
+		logger.Ctx(ctx).Errorf("Failed to create snapshot for CG %s: %+v", cgUUID, err)
 		ErrorResponse(c, http.StatusBadRequest, "Failed to create snapshot", err)
 		return
 	}
@@ -605,12 +605,12 @@ func (a *ConsistencyGroupAPI) CreateSnapshot(c *gin.Context) {
 	// 构建响应
 	response, err := a.GetCGSnapshotResponse(ctx, snapshot, cgUUID)
 	if err != nil {
-		logger.Errorf("Failed to get snapshot response for snapshot %s: %+v", snapshot.ID, err)
+		logger.Ctx(ctx).Errorf("Failed to get snapshot response for snapshot %s: %+v", snapshot.ID, err)
 		ErrorResponse(c, http.StatusInternalServerError, "Failed to get snapshot response", err)
 		return
 	}
 
-	logger.Debugf("Successfully created snapshot %s for CG %s", snapshot.UUID, cgUUID)
+	logger.Ctx(ctx).Debugf("Successfully created snapshot %s for CG %s", snapshot.UUID, cgUUID)
 	c.JSON(http.StatusOK, response)
 }
 
@@ -629,18 +629,18 @@ func (a *ConsistencyGroupAPI) DeleteSnapshot(c *gin.Context) {
 	ctx := c.Request.Context()
 	cgUUID := c.Param("id")
 	snapUUID := c.Param("snap_id")
-	logger.Debugf("Delete snapshot %s from consistency group %s", snapUUID, cgUUID)
+	logger.Ctx(ctx).Debugf("Delete snapshot %s from consistency group %s", snapUUID, cgUUID)
 
 	// Delete snapshot
 	// 删除快照
 	err := consistencyGroupAdmin.DeleteSnapshot(ctx, cgUUID, snapUUID)
 	if err != nil {
-		logger.Errorf("Failed to delete snapshot %s from CG %s: %+v", snapUUID, cgUUID, err)
+		logger.Ctx(ctx).Errorf("Failed to delete snapshot %s from CG %s: %+v", snapUUID, cgUUID, err)
 		ErrorResponse(c, http.StatusBadRequest, "Failed to delete snapshot", err)
 		return
 	}
 
-	logger.Debugf("Successfully initiated snapshot deletion for %s", snapUUID)
+	logger.Ctx(ctx).Debugf("Successfully initiated snapshot deletion for %s", snapUUID)
 	c.Status(http.StatusNoContent)
 }
 
@@ -659,13 +659,13 @@ func (a *ConsistencyGroupAPI) RestoreSnapshot(c *gin.Context) {
 	ctx := c.Request.Context()
 	cgUUID := c.Param("id")
 	snapUUID := c.Param("snap_id")
-	logger.Debugf("Restore consistency group %s from snapshot %s", cgUUID, snapUUID)
+	logger.Ctx(ctx).Debugf("Restore consistency group %s from snapshot %s", cgUUID, snapUUID)
 
 	// Restore from snapshot
 	// 从快照恢复
 	task, err := consistencyGroupAdmin.RestoreSnapshot(ctx, cgUUID, snapUUID)
 	if err != nil {
-		logger.Errorf("Failed to restore CG %s from snapshot %s: %+v", cgUUID, snapUUID, err)
+		logger.Ctx(ctx).Errorf("Failed to restore CG %s from snapshot %s: %+v", cgUUID, snapUUID, err)
 		ErrorResponse(c, http.StatusBadRequest, "Failed to restore from snapshot", err)
 		return
 	}
@@ -678,7 +678,7 @@ func (a *ConsistencyGroupAPI) RestoreSnapshot(c *gin.Context) {
 		Status:   string(task.Status),
 	}
 
-	logger.Debugf("Successfully initiated restore for CG %s from snapshot %s, task ID: %d", cgUUID, snapUUID, task.ID)
+	logger.Ctx(ctx).Debugf("Successfully initiated restore for CG %s from snapshot %s, task ID: %d", cgUUID, snapUUID, task.ID)
 	c.JSON(http.StatusOK, response)
 }
 
@@ -688,7 +688,7 @@ func (a *ConsistencyGroupAPI) GetCGResponse(ctx context.Context, cg *model.Consi
 	// volumes
 	vols, err := consistencyGroupAdmin.GetVolumes(ctx, cg.ID)
 	if err != nil {
-		logger.Errorf("Failed to get volumes for CG %s: %+v", cg.ID, err)
+		logger.Ctx(ctx).Errorf("Failed to get volumes for CG %s: %+v", cg.ID, err)
 		return nil, err
 	}
 	var volumes []*BaseReference

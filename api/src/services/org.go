@@ -21,6 +21,7 @@ import (
 	"api/src/dbs"
 	"api/src/model"
 
+	"gorm.io/gorm/clause"
 )
 
 var (
@@ -32,15 +33,14 @@ var slugRegex = regexp.MustCompile(`^[a-z][a-z0-9-]{2,63}$`)
 
 type OrgAdmin struct{}
 
-
 // Create creates a new Organization. Only SystemAdmin can call this.
 func (a *OrgAdmin) Create(ctx context.Context, name string, ownerUserID int64, slug string) (org *model.Organization, err error) {
-	logger.Infof("ENTER OrgAdmin.Create: name=%s, ownerUserID=%d, slug=%s", name, ownerUserID, slug)
+	logger.Ctx(ctx).Infof("ENTER OrgAdmin.Create: name=%s, ownerUserID=%d, slug=%s", name, ownerUserID, slug)
 	defer func() {
 		if err != nil {
-			logger.Errorf("EXIT OrgAdmin.Create: error=%v", err)
+			logger.Ctx(ctx).Errorf("EXIT OrgAdmin.Create: error=%v", err)
 		} else {
-			logger.Infof("EXIT OrgAdmin.Create: orgID=%d, slug=%s", org.ID, org.Slug)
+			logger.Ctx(ctx).Infof("EXIT OrgAdmin.Create: orgID=%d, slug=%s", org.ID, org.Slug)
 		}
 	}()
 	memberShip := GetMemberShip(ctx)
@@ -90,7 +90,7 @@ func (a *OrgAdmin) Create(ctx context.Context, name string, ownerUserID int64, s
 	}
 
 	if err = db.Create(org).Error; err != nil {
-		logger.Error("DB failed to create organization ", err)
+		logger.Ctx(ctx).Error("DB failed to create organization ", err)
 		err = NewCLError(ErrOrgCreationFailed, "Failed to create organization", err)
 		return
 	}
@@ -99,7 +99,7 @@ func (a *OrgAdmin) Create(ctx context.Context, name string, ownerUserID int64, s
 	if slug == "" {
 		org.Slug = fmt.Sprintf("org-%d", org.ID)
 		if err = db.Model(org).Update("slug", org.Slug).Error; err != nil {
-			logger.Error("DB failed to update org slug", err)
+			logger.Ctx(ctx).Error("DB failed to update org slug", err)
 			err = NewCLError(ErrOrgUpdateFailed, "Failed to update organization slug", err)
 			return
 		}
@@ -112,7 +112,7 @@ func (a *OrgAdmin) Create(ctx context.Context, name string, ownerUserID int64, s
 		OrgRole: model.OrgAdmin,
 	}
 	if err = db.Create(member).Error; err != nil {
-		logger.Error("DB failed to create organization member ", err)
+		logger.Ctx(ctx).Error("DB failed to create organization member ", err)
 		err = NewCLError(ErrMemberCreationFailed, "Failed to create organization member", err)
 		return
 	}
@@ -127,12 +127,12 @@ func (a *OrgAdmin) Create(ctx context.Context, name string, ownerUserID int64, s
 
 // AddMember adds a user to an Org.
 func (a *OrgAdmin) AddMember(ctx context.Context, orgID, userID int64, role model.OrgRole) (member *model.Member, err error) {
-	logger.Infof("ENTER OrgAdmin.AddMember: orgID=%d, userID=%d, role=%v", orgID, userID, role)
+	logger.Ctx(ctx).Infof("ENTER OrgAdmin.AddMember: orgID=%d, userID=%d, role=%v", orgID, userID, role)
 	defer func() {
 		if err != nil {
-			logger.Errorf("EXIT OrgAdmin.AddMember: error=%v", err)
+			logger.Ctx(ctx).Errorf("EXIT OrgAdmin.AddMember: error=%v", err)
 		} else {
-			logger.Info("EXIT OrgAdmin.AddMember: success")
+			logger.Ctx(ctx).Info("EXIT OrgAdmin.AddMember: success")
 		}
 	}()
 	memberShip := GetMemberShip(ctx)
@@ -166,7 +166,7 @@ func (a *OrgAdmin) AddMember(ctx context.Context, orgID, userID int64, role mode
 		OrgRole: role,
 	}
 	if err = db.Create(member).Error; err != nil {
-		logger.Error("DB failed to create member", err)
+		logger.Ctx(ctx).Error("DB failed to create member", err)
 		err = NewCLError(ErrMemberCreationFailed, "Failed to add member", err)
 		return
 	}
@@ -181,12 +181,12 @@ func (a *OrgAdmin) AddMember(ctx context.Context, orgID, userID int64, role mode
 
 // RemoveMember removes a user from an Org.
 func (a *OrgAdmin) RemoveMember(ctx context.Context, orgID, userID int64) (err error) {
-	logger.Infof("ENTER OrgAdmin.RemoveMember: orgID=%d, userID=%d", orgID, userID)
+	logger.Ctx(ctx).Infof("ENTER OrgAdmin.RemoveMember: orgID=%d, userID=%d", orgID, userID)
 	defer func() {
 		if err != nil {
-			logger.Errorf("EXIT OrgAdmin.RemoveMember: error=%v", err)
+			logger.Ctx(ctx).Errorf("EXIT OrgAdmin.RemoveMember: error=%v", err)
 		} else {
-			logger.Info("EXIT OrgAdmin.RemoveMember: success")
+			logger.Ctx(ctx).Info("EXIT OrgAdmin.RemoveMember: success")
 		}
 	}()
 	memberShip := GetMemberShip(ctx)
@@ -225,12 +225,12 @@ func (a *OrgAdmin) RemoveMember(ctx context.Context, orgID, userID int64) (err e
 
 // UpdateMemberRole updates a member's OrgRole.
 func (a *OrgAdmin) UpdateMemberRole(ctx context.Context, orgID, userID int64, newRole model.OrgRole) (err error) {
-	logger.Infof("ENTER OrgAdmin.UpdateMemberRole: orgID=%d, userID=%d, newRole=%v", orgID, userID, newRole)
+	logger.Ctx(ctx).Infof("ENTER OrgAdmin.UpdateMemberRole: orgID=%d, userID=%d, newRole=%v", orgID, userID, newRole)
 	defer func() {
 		if err != nil {
-			logger.Errorf("EXIT OrgAdmin.UpdateMemberRole: error=%v", err)
+			logger.Ctx(ctx).Errorf("EXIT OrgAdmin.UpdateMemberRole: error=%v", err)
 		} else {
-			logger.Info("EXIT OrgAdmin.UpdateMemberRole: success")
+			logger.Ctx(ctx).Info("EXIT OrgAdmin.UpdateMemberRole: success")
 		}
 	}()
 	// Validate newRole is in range 1-3 (OrgReader to OrgAdmin)
@@ -272,12 +272,12 @@ func (a *OrgAdmin) UpdateMemberRole(ctx context.Context, orgID, userID int64, ne
 
 // TransferOwner transfers org ownership. Only SystemAdmin can do this.
 func (a *OrgAdmin) TransferOwner(ctx context.Context, orgID, newOwnerUserID int64) (err error) {
-	logger.Infof("ENTER OrgAdmin.TransferOwner: orgID=%d, newOwner=%d", orgID, newOwnerUserID)
+	logger.Ctx(ctx).Infof("ENTER OrgAdmin.TransferOwner: orgID=%d, newOwner=%d", orgID, newOwnerUserID)
 	defer func() {
 		if err != nil {
-			logger.Errorf("EXIT OrgAdmin.TransferOwner: error=%v", err)
+			logger.Ctx(ctx).Errorf("EXIT OrgAdmin.TransferOwner: error=%v", err)
 		} else {
-			logger.Info("EXIT OrgAdmin.TransferOwner: success")
+			logger.Ctx(ctx).Info("EXIT OrgAdmin.TransferOwner: success")
 		}
 	}()
 	memberShip := GetMemberShip(ctx)
@@ -295,7 +295,7 @@ func (a *OrgAdmin) TransferOwner(ctx context.Context, orgID, newOwnerUserID int6
 
 	// Lock org record for update (prevent race with RemoveMember)
 	org := &model.Organization{}
-	if err = db.Set("gorm:query_option", "FOR UPDATE").Where("id = ?", orgID).Take(org).Error; err != nil {
+	if err = db.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ?", orgID).Take(org).Error; err != nil {
 		err = NewCLError(ErrOrgNotFound, "Organization not found", err)
 		return
 	}
@@ -316,12 +316,12 @@ func (a *OrgAdmin) TransferOwner(ctx context.Context, orgID, newOwnerUserID int6
 
 // RenameOrg renames an Org. OrgOwner/OrgAdmin/SystemAdmin can do this.
 func (a *OrgAdmin) RenameOrg(ctx context.Context, orgID int64, newName string) (err error) {
-	logger.Infof("ENTER OrgAdmin.RenameOrg: orgID=%d, newName=%s", orgID, newName)
+	logger.Ctx(ctx).Infof("ENTER OrgAdmin.RenameOrg: orgID=%d, newName=%s", orgID, newName)
 	defer func() {
 		if err != nil {
-			logger.Errorf("EXIT OrgAdmin.RenameOrg: error=%v", err)
+			logger.Ctx(ctx).Errorf("EXIT OrgAdmin.RenameOrg: error=%v", err)
 		} else {
-			logger.Info("EXIT OrgAdmin.RenameOrg: success")
+			logger.Ctx(ctx).Info("EXIT OrgAdmin.RenameOrg: success")
 		}
 	}()
 	memberShip := GetMemberShip(ctx)
@@ -348,24 +348,24 @@ func (a *OrgAdmin) RenameOrg(ctx context.Context, orgID int64, newName string) (
 }
 
 func (a *OrgAdmin) Get(ctx context.Context, id int64) (org *model.Organization, err error) {
-	logger.Infof("ENTER OrgAdmin.Get: id=%d", id)
+	logger.Ctx(ctx).Infof("ENTER OrgAdmin.Get: id=%d", id)
 	defer func() {
 		if err != nil {
-			logger.Errorf("EXIT OrgAdmin.Get: error=%v", err)
+			logger.Ctx(ctx).Errorf("EXIT OrgAdmin.Get: error=%v", err)
 		} else {
-			logger.Infof("EXIT OrgAdmin.Get: orgUUID=%s", org.UUID)
+			logger.Ctx(ctx).Infof("EXIT OrgAdmin.Get: orgUUID=%s", org.UUID)
 		}
 	}()
 	if id <= 0 {
 		err = NewCLError(ErrInvalidParameter, fmt.Sprintf("Invalid org ID: %d", id), nil)
-		logger.Error("%v", err)
+		logger.Ctx(ctx).Error("%v", err)
 		return
 	}
 	ctx, db := GetContextDB(ctx)
 	org = &model.Organization{Model: model.Model{ID: id}}
 	err = db.Take(org).Error
 	if err != nil {
-		logger.Error("Failed to query org, %v", err)
+		logger.Ctx(ctx).Error("Failed to query org, %v", err)
 		err = NewCLError(ErrOrgNotFound, "Failed to find organization", err)
 		return
 	}
@@ -373,19 +373,19 @@ func (a *OrgAdmin) Get(ctx context.Context, id int64) (org *model.Organization, 
 }
 
 func (a *OrgAdmin) GetOrgByUUID(ctx context.Context, uuID string) (org *model.Organization, err error) {
-	logger.Infof("ENTER OrgAdmin.GetOrgByUUID: uuID=%s", uuID)
+	logger.Ctx(ctx).Infof("ENTER OrgAdmin.GetOrgByUUID: uuID=%s", uuID)
 	defer func() {
 		if err != nil {
-			logger.Errorf("EXIT OrgAdmin.GetOrgByUUID: error=%v", err)
+			logger.Ctx(ctx).Errorf("EXIT OrgAdmin.GetOrgByUUID: error=%v", err)
 		} else {
-			logger.Infof("EXIT OrgAdmin.GetOrgByUUID: orgID=%d", org.ID)
+			logger.Ctx(ctx).Infof("EXIT OrgAdmin.GetOrgByUUID: orgID=%d", org.ID)
 		}
 	}()
 	ctx, db := GetContextDB(ctx)
 	org = &model.Organization{}
 	err = db.Preload("Members.User").Where("uuid = ?", uuID).Take(org).Error
 	if err != nil {
-		logger.Error("Failed to query org, %v", err)
+		logger.Ctx(ctx).Error("Failed to query org, %v", err)
 		err = NewCLError(ErrOrgNotFound, "Failed to find organization", err)
 		return
 	}
@@ -393,19 +393,19 @@ func (a *OrgAdmin) GetOrgByUUID(ctx context.Context, uuID string) (org *model.Or
 }
 
 func (a *OrgAdmin) GetOrgByName(ctx context.Context, name string) (org *model.Organization, err error) {
-	logger.Infof("ENTER OrgAdmin.GetOrgByName: name=%s", name)
+	logger.Ctx(ctx).Infof("ENTER OrgAdmin.GetOrgByName: name=%s", name)
 	defer func() {
 		if err != nil {
-			logger.Errorf("EXIT OrgAdmin.GetOrgByName: error=%v", err)
+			logger.Ctx(ctx).Errorf("EXIT OrgAdmin.GetOrgByName: error=%v", err)
 		} else {
-			logger.Infof("EXIT OrgAdmin.GetOrgByName: orgID=%d", org.ID)
+			logger.Ctx(ctx).Infof("EXIT OrgAdmin.GetOrgByName: orgID=%d", org.ID)
 		}
 	}()
 	org = &model.Organization{}
 	ctx, db := GetContextDB(ctx)
 	err = db.Where("name = ?", name).Take(org).Error
 	if err != nil {
-		logger.Error("Failed to query org, %v", err)
+		logger.Ctx(ctx).Error("Failed to query org, %v", err)
 		err = NewCLError(ErrOrgNotFound, "Failed to find organization", err)
 		return
 	}
@@ -413,15 +413,15 @@ func (a *OrgAdmin) GetOrgByName(ctx context.Context, name string) (org *model.Or
 }
 
 func (a *OrgAdmin) GetOrgName(ctx context.Context, id int64) (name string) {
-	logger.Infof("ENTER OrgAdmin.GetOrgName: id=%d", id)
+	logger.Ctx(ctx).Infof("ENTER OrgAdmin.GetOrgName: id=%d", id)
 	defer func() {
-		logger.Infof("EXIT OrgAdmin.GetOrgName: name=%s", name)
+		logger.Ctx(ctx).Infof("EXIT OrgAdmin.GetOrgName: name=%s", name)
 	}()
 	org := &model.Organization{Model: model.Model{ID: id}}
 	ctx, db := GetContextDB(ctx)
 	err := db.Take(org).Error
 	if err != nil {
-		logger.Error("DB failed to query org", err)
+		logger.Ctx(ctx).Error("DB failed to query org", err)
 		return
 	}
 	name = org.Name
@@ -430,12 +430,12 @@ func (a *OrgAdmin) GetOrgName(ctx context.Context, id int64) (name string) {
 
 // Delete deletes an Org. Only SystemAdmin can do this. OrgTypeSystem cannot be deleted.
 func (a *OrgAdmin) Delete(ctx context.Context, org *model.Organization) (err error) {
-	logger.Infof("ENTER OrgAdmin.Delete: orgID=%d, name=%s", org.ID, org.Name)
+	logger.Ctx(ctx).Infof("ENTER OrgAdmin.Delete: orgID=%d, name=%s", org.ID, org.Name)
 	defer func() {
 		if err != nil {
-			logger.Errorf("EXIT OrgAdmin.Delete: error=%v", err)
+			logger.Ctx(ctx).Errorf("EXIT OrgAdmin.Delete: error=%v", err)
 		} else {
-			logger.Info("EXIT OrgAdmin.Delete: success")
+			logger.Ctx(ctx).Info("EXIT OrgAdmin.Delete: success")
 		}
 	}()
 	memberShip := GetMemberShip(ctx)
@@ -474,7 +474,7 @@ func (a *OrgAdmin) Delete(ctx context.Context, org *model.Organization) (err err
 	for _, rc := range resourceChecks {
 		var resCount int64
 		if err = db.Model(rc.target).Where(rc.where, org.ID).Count(&resCount).Error; err != nil {
-			logger.Error("DB failed to query resources, %v", err)
+			logger.Ctx(ctx).Error("DB failed to query resources, %v", err)
 			return
 		}
 		if resCount > 0 {
@@ -493,7 +493,7 @@ func (a *OrgAdmin) Delete(ctx context.Context, org *model.Organization) (err err
 
 	// Hard delete all member records to avoid unique index clashing
 	if err = db.Unscoped().Where("org_id = ?", org.ID).Delete(&model.Member{}).Error; err != nil {
-		logger.Error("DB failed to delete members, %v", err)
+		logger.Ctx(ctx).Error("DB failed to delete members, %v", err)
 		err = NewCLError(ErrMemberDeleteFailed, "Failed to delete organization members", err)
 		return
 	}
@@ -503,7 +503,7 @@ func (a *OrgAdmin) Delete(ctx context.Context, org *model.Organization) (err err
 	if dbErr := db.Where("owner = ?", org.ID).Find(&keys).Error; dbErr == nil {
 		for _, key := range keys {
 			if keyErr := (&KeyAdminService{}).Delete(ctx, key); keyErr != nil {
-				logger.Error("Failed to delete key", keyErr)
+				logger.Ctx(ctx).Error("Failed to delete key", keyErr)
 			}
 		}
 	}
@@ -513,14 +513,14 @@ func (a *OrgAdmin) Delete(ctx context.Context, org *model.Organization) (err err
 	if dbErr := db.Where("owner = ?", org.ID).Find(&secgroups).Error; dbErr == nil {
 		for _, secgroup := range secgroups {
 			if sgErr := secgroupAdmin.Delete(ctx, secgroup); sgErr != nil {
-				logger.Error("Failed to delete security group", sgErr)
+				logger.Ctx(ctx).Error("Failed to delete security group", sgErr)
 			}
 		}
 	}
 
 	// Soft delete org first, then rename with Unscoped to avoid stale name on delete failure
 	if err = db.Delete(org).Error; err != nil {
-		logger.Error("DB failed to delete organization, %v", err)
+		logger.Ctx(ctx).Error("DB failed to delete organization, %v", err)
 		err = NewCLError(ErrOrgDeleteFailed, "Failed to delete organization", err)
 		return
 	}
@@ -528,7 +528,7 @@ func (a *OrgAdmin) Delete(ctx context.Context, org *model.Organization) (err err
 	org.Name = fmt.Sprintf("%s-deleted-%d", org.Name, timestamp)
 	org.Slug = fmt.Sprintf("%s-deleted-%d", org.Slug, timestamp)
 	if err = db.Model(&model.Organization{}).Unscoped().Where("id = ?", org.ID).Updates(map[string]interface{}{"name": org.Name, "slug": org.Slug}).Error; err != nil {
-		logger.Error("DB failed to update org name", err)
+		logger.Ctx(ctx).Error("DB failed to update org name", err)
 		err = NewCLError(ErrOrgUpdateFailed, "Failed to update organization name", err)
 		return
 	}
@@ -538,12 +538,12 @@ func (a *OrgAdmin) Delete(ctx context.Context, org *model.Organization) (err err
 	for _, uid := range affectedUserIDs {
 		var remainingCount int64
 		if cntErr := db.Model(&model.Member{}).Where("user_id = ? AND deleted_at IS NULL", uid).Count(&remainingCount).Error; cntErr != nil {
-			logger.Errorf("Failed to count remaining memberships for user %d: %v", uid, cntErr)
+			logger.Ctx(ctx).Errorf("Failed to count remaining memberships for user %d: %v", uid, cntErr)
 			continue
 		}
 		if remainingCount == 0 {
 			if updErr := db.Model(&model.User{Model: model.Model{ID: uid}}).Update("status", model.UserDormant).Error; updErr != nil {
-				logger.Errorf("Failed to set user %d to Dormant: %v", uid, updErr)
+				logger.Ctx(ctx).Errorf("Failed to set user %d to Dormant: %v", uid, updErr)
 			}
 		}
 	}
@@ -551,12 +551,12 @@ func (a *OrgAdmin) Delete(ctx context.Context, org *model.Organization) (err err
 }
 
 func (a *OrgAdmin) List(ctx context.Context, offset, limit int64, order, query string) (total int64, orgs []*model.Organization, err error) {
-	logger.Infof("ENTER OrgAdmin.List: offset=%d, limit=%d, order=%s, query=%s", offset, limit, order, query)
+	logger.Ctx(ctx).Infof("ENTER OrgAdmin.List: offset=%d, limit=%d, order=%s, query=%s", offset, limit, order, query)
 	defer func() {
 		if err != nil {
-			logger.Errorf("EXIT OrgAdmin.List: error=%v", err)
+			logger.Ctx(ctx).Errorf("EXIT OrgAdmin.List: error=%v", err)
 		} else {
-			logger.Infof("EXIT OrgAdmin.List: total=%d, orgsCount=%d", total, len(orgs))
+			logger.Ctx(ctx).Infof("EXIT OrgAdmin.List: total=%d, orgsCount=%d", total, len(orgs))
 		}
 	}()
 	memberShip := GetMemberShip(ctx)
@@ -585,14 +585,14 @@ func (a *OrgAdmin) List(ctx context.Context, offset, limit int64, order, query s
 	}
 	orgs = []*model.Organization{}
 	if err = db.Model(&orgs).Where(whereQuery, whereArgs...).Count(&total).Error; err != nil {
-		logger.Error("DB failed to count organizations, %v", err)
+		logger.Ctx(ctx).Error("DB failed to count organizations, %v", err)
 		err = NewCLError(ErrSQLSyntaxError, "Failed to count organizations", err)
 		return
 	}
-	db = dbs.Sortby(db.Offset(offset).Limit(limit), order)
+	db = dbs.Sortby(db.Offset(int(offset)).Limit(int(limit)), order)
 	err = db.Preload("Members.User").Where(whereQuery, whereArgs...).Find(&orgs).Error
 	if err != nil {
-		logger.Error("DB failed to query organizations, %v", err)
+		logger.Ctx(ctx).Error("DB failed to query organizations, %v", err)
 		err = NewCLError(ErrSQLSyntaxError, "Failed to query organizations", err)
 		return
 	}
@@ -604,7 +604,7 @@ func (a *OrgAdmin) List(ctx context.Context, offset, limit int64, order, query s
 // owner_user_id is always set to 1 (the local admin user); default_sg stays 0 and is
 // lazily created the first time the org creates a VM.
 func (a *OrgAdmin) UpsertOrgByID(ctx context.Context, id int64, name, slug string) error {
-	logger.Infof("ENTER OrgAdmin.UpsertOrgByID: id=%d name=%s slug=%s", id, name, slug)
+	logger.Ctx(ctx).Infof("ENTER OrgAdmin.UpsertOrgByID: id=%d name=%s slug=%s", id, name, slug)
 	_, db := GetContextDB(ctx)
 	err := db.Exec(`
 		INSERT INTO organizations (id, name, slug, org_type, owner_user_id, default_sg, created_at, updated_at)
@@ -612,12 +612,11 @@ func (a *OrgAdmin) UpsertOrgByID(ctx context.Context, id int64, name, slug strin
 		ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, slug = EXCLUDED.slug, updated_at = NOW()
 	`, id, name, slug).Error
 	if err != nil {
-		logger.Errorf("EXIT OrgAdmin.UpsertOrgByID: error=%v", err)
+		logger.Ctx(ctx).Errorf("EXIT OrgAdmin.UpsertOrgByID: error=%v", err)
 	} else {
-		logger.Infof("EXIT OrgAdmin.UpsertOrgByID: ok")
+		logger.Ctx(ctx).Infof("EXIT OrgAdmin.UpsertOrgByID: ok")
 	}
 	return err
 }
 
 // --- View layer ---
-

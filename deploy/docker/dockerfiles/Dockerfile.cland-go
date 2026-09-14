@@ -1,0 +1,54 @@
+# =============================================================================
+# CloudLand 主控服务 (Go gRPC 版)
+# 替代 Dockerfile.cloudland — 无需编译 SCI/C++
+# 构建: docker build -f dockerfiles/Dockerfile.cland-go -t cloudland-cland-go ../../
+# =============================================================================
+
+# ---- Stage 1: 编译 cland-go ----
+FROM golang:1.25-bookworm AS builder
+
+WORKDIR /build
+COPY api/ ./
+
+RUN cd cmds/cland && CGO_ENABLED=0 go build -o /cland-go -ldflags "-s -w"
+
+# ---- Stage 2: 运行时镜像 ----
+FROM ubuntu:22.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    iproute2 net-tools netbase \
+    ca-certificates \
+    openssh-client rsync curl \
+    && rm -rf /var/lib/apt/lists/* \
+    && useradd -m -s /bin/bash cland
+
+# 复制 Go 二进制（单个静态文件，无需 SCI 库）
+COPY --from=builder /cland-go /opt/cloudland/bin/cland-go
+
+# 复制脚本（仍需要 scripts/ 用于 callback 本地执行）
+COPY scripts/ /opt/cloudland/scripts/
+
+# 创建必要目录（RUN 使用 /bin/sh=dash，不支持花括号展开，须逐个列出）
+RUN mkdir -p /opt/cloudland/log /opt/cloudland/run /opt/cloudland/cache /opt/cloudland/etc \
+    /opt/cloudland/cache/image /opt/cloudland/cache/instance /opt/cloudland/cache/router \
+    /opt/cloudland/cache/meta /opt/cloudland/cache/volume /opt/cloudland/cache/dnsmasq \
+    /opt/cloudland/cache/xml \
+    && chown -R cland:cland /opt/cloudland
+
+# 环境变量
+ENV GRPC_LISTEN=0.0.0.0:5006 \
+    CLAPI_ENDPOINT=http://localhost:5005 \
+    CLOUDLAND_SSH_KEY_DIR=/opt/cloudland/deploy/.ssh
+
+# 启动脚本
+COPY deploy/docker/scripts/cland-go-entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
+EXPOSE 5006
+
+VOLUME ["/opt/cloudland/log", "/opt/cloudland/cache"]
+
+USER cland
+ENTRYPOINT ["/entrypoint.sh"]

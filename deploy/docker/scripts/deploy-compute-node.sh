@@ -57,12 +57,11 @@ VLAN_DEVICE="${VLAN_DEVICE:-$NETWORK_DEVICE}"                                   
 PRIVATE_VLAN_DEVICE="${PRIVATE_VLAN_DEVICE:-$VLAN_DEVICE}"                      # 物理网卡名 (跑 RFC 1918 私有 VLAN，可选)
 DOMAIN="${DOMAIN:?错误: 必须设置 DOMAIN}"                                         # 域名
 DNS_SERVER="${DNS_SERVER:?错误: 必须设置 DNS_SERVER}"                             # DNS
-SCI_CLIENT_ID="${SCI_CLIENT_ID:?错误: 必须设置 SCI_CLIENT_ID}"                    # 计算节点编号（唯一递增）
+NODE_ID="${NODE_ID:-${SCI_CLIENT_ID:?错误: 必须设置 NODE_ID (或 SCI_CLIENT_ID)}}" # 计算节点编号（唯一递增）
 ZONE_NAME="${ZONE_NAME:-zone0}"                       # 可用区名称
 VIRT_TYPE="${VIRT_TYPE:-kvm-x86_64}"                  # 虚拟化类型
 CLOUDLAND_DIR="${CLOUDLAND_DIR:-/opt/cloudland}"      # CloudLand 安装目录
 DEPLOY_DIR="$CLOUDLAND_DIR/deploy/docker"
-SCI_ENABLE_FAILOVER="${SCI_ENABLE_FAILOVER:-no}"      # HA 模式设为 yes
 
 # ============ 可选配置 ============
 WDS_ADDRESS="${WDS_ADDRESS:-}"                      # WDS 存储地址（留空则不使用）
@@ -81,6 +80,12 @@ OTHER_NODES=""
 log() { echo -e "\n\033[1;32m[$(date '+%H:%M:%S')] $1\033[0m"; }
 warn() { echo -e "\033[1;33m[WARN] $1\033[0m"; }
 
+# cland-go 共享令牌，由控制面生成的 deploy_command 传入；缺失时本节点无法向 cland-go 注册
+GRPC_AUTH_TOKEN="${GRPC_AUTH_TOKEN:-}"
+if [ -z "$GRPC_AUTH_TOKEN" ]; then
+    warn "未设置 GRPC_AUTH_TOKEN，cloudlet-go 将被 cland-go 拒绝；请使用控制面生成的 deploy_command，或在 compute.env 中配置与控制面 .env 相同的值"
+fi
+
 # ============ 1. base 角色：系统基础配置 ============
 log "1/16 - 系统基础配置 (base role)"
 
@@ -88,8 +93,7 @@ log "1/16 - 系统基础配置 (base role)"
 hostnamectl set-hostname "$HOSTNAME"
 
 # 生成 /etc/hosts
-# 本机 hostname 必须解析到本机 IP（SCI cloudlet 用 gethostname() 查找本地 scid）
-# 不能映射到控制节点 IP，否则 cloudlet 会连到控制节点的 scid 而非本机
+# 本机 hostname 必须解析到本机 IP（cloudlet-go 上报健康信息时使用）
 OWN_IP=$(ip addr show "$NETWORK_DEVICE" 2>/dev/null | grep 'inet ' | awk '{print $2}' | cut -d/ -f1 | head -1)
 if [ -z "$OWN_IP" ]; then
     OWN_IP=$(hostname -I | awk '{print $1}')
@@ -231,11 +235,9 @@ SSH_KEYS_INSTALLED=""
 
 # 优先从 deploy 命令传入的 CLAND_PUBKEY env 装公钥（解决鸡生蛋问题）
 # 控制面 clapi 的 POST /api/v1/hypers 会把 cland.key.pub 内容嵌入到 deploy_command
-# 里。第一次部署时本地肯定没有 cland.key/cland.key.pub，本地搜索会失败；如果不在
-# /internal/node/add 之前先把这把公钥写到 cland 的 authorized_keys 里，控制面通过
-# scidv1:6188 走 SCI_BE_add 时 libpsec 验签必然失败 (-2022 LAUNCH_FAILED)。
-# 注意：这里只装公钥，不 set SSH_KEYS_INSTALLED — 私钥仍然走下面 /internal/node/add
-# 注册响应那条路径分发。
+# 里。第一次部署时本地肯定没有 cland.key/cland.key.pub，本地搜索会失败；需要在
+# cloudlet-go 启动前把公钥写到 cland 用户的 authorized_keys 里，以便控制面通过
+# SSH 访问计算节点执行脚本操作。
 if [ -n "${CLAND_PUBKEY:-}" ]; then
     grep -qF "$CLAND_PUBKEY" $CLAND_HOME/.ssh/authorized_keys \
         || printf '%s\n' "$CLAND_PUBKEY" >> $CLAND_HOME/.ssh/authorized_keys
@@ -282,26 +284,36 @@ chmod 700 $CLAND_HOME/.ssh /root/.ssh
 chmod 600 $CLAND_HOME/.ssh/authorized_keys 2>/dev/null || true
 chmod 600 /root/.ssh/authorized_keys 2>/dev/null || true
 
-# ============ 5. 编译安装 SCI 和 CloudLand ============
-log "5/16 - 编译安装 SCI 和 CloudLand 二进制"
+# ============ 5. 编译安装 cloudlet-go ============
+log "5/16 - 编译安装 cloudlet-go 二进制"
 
-apt-get install -y build-essential autoconf automake libtool make g++ libssl-dev libjsoncpp-dev git
+# 安装 Go（未安装或低于 api/go.mod 要求的版本时）
+GO_VERSION="1.25.0"
+export PATH=/usr/local/go/bin:$PATH
+CURRENT_GO=$(go env GOVERSION 2>/dev/null | sed 's/^go//' || true)
+if [ -z "$CURRENT_GO" ] || [ "$(printf '%s\n%s\n' "$GO_VERSION" "$CURRENT_GO" | sort -V | head -1)" != "$GO_VERSION" ]; then
+    log "安装 Go $GO_VERSION（当前: ${CURRENT_GO:-未安装}）..."
+    wget -q "https://go.dev/dl/go${GO_VERSION}.linux-amd64.tar.gz" -O /tmp/go.tar.gz
+    rm -rf /usr/local/go
+    tar -C /usr/local -xzf /tmp/go.tar.gz
+    rm -f /tmp/go.tar.gz
+    echo 'export PATH=/usr/local/go/bin:$PATH' > /etc/profile.d/golang.sh
+fi
 
-if [ ! -d "$CLOUDLAND_DIR/sci" ]; then
-    log "未检测到完整的源码 (缺少 sci 目录)，开始自动拉取..."
+if [ ! -d "$CLOUDLAND_DIR/api" ]; then
+    log "未检测到源码 (缺少 api 目录)，开始自动拉取..."
     git clone https://github.com/threen134/cloudland.git /tmp/cloudland
     cp -r /tmp/cloudland/* "$CLOUDLAND_DIR/"
     rm -rf /tmp/cloudland
 fi
 
 # 编译前先停止正在运行的服务，避免覆盖二进制时 "Text file busy"
-systemctl stop cloudlet scid 2>/dev/null || true
+systemctl stop cloudlet-go 2>/dev/null || true
 
-cd "$CLOUDLAND_DIR/sci"
-./configure && make && make install
-
-cd "$CLOUDLAND_DIR/src"
-make clean && make && make install
+cd "$CLOUDLAND_DIR/api"
+make cloudlet
+mkdir -p "$CLOUDLAND_DIR/bin"
+cp -f cloudlet-go "$CLOUDLAND_DIR/bin/cloudlet-go"
 
 # ============ 6. 创建目录结构 ============
 log "6/16 - 创建目录结构"
@@ -353,73 +365,55 @@ options kvm-intel ept=1
 EOF
 
 # ============ 10. 配置并启动服务 ============
-log "10/16 - 配置并启动 scid/cloudlet/libvirtd/NetworkManager"
+log "10/16 - 配置并启动 cloudlet-go/libvirtd/NetworkManager"
 
 mkdir -p /etc/sysconfig
 
-# --- scid ---
-cat > /lib/systemd/system/scid.service <<EOF
-[Unit]
-Description=SCI daemon
-After=network.target
-
-[Service]
-Type=forking
-User=cland
-ExecStart=/bin/sh -c "/opt/sci/sbin/scidv1 -e -l /opt/cloudland/log -p /opt/cloudland/run"
-ExecStop=/usr/bin/killall scidv1
-KillMode=process
-Restart=on-failure
-
-[Install]
-WantedBy=multi-user.target
-EOF
-
-# --- cloudlet 环境变量（与 Ansible hyper/templates/cloudlet.j2 完全对齐）---
+# --- cloudlet-go 环境变量 ---
 cat > /etc/sysconfig/cloudlet <<EOF
-SCI_JOB_KEY=12345
-SCI_LIB_PATH=/opt/sci/lib64
-SCI_AGENT_PATH=/opt/sci/bin
-SCI_LOG_ENABLE=yes
-SCI_LOG_DIRECTORY=$CLOUDLAND_DIR/log
-SCI_ENABLE_LISTENER=yes
-SCI_USE_EXTLAUNCHER=yes
-SCI_ENABLE_FAILOVER=$SCI_ENABLE_FAILOVER
-SCI_SEGMENT_SIZE=1048576
-LD_LIBRARY_PATH=\$LD_LIBRARY_PATH:/opt/sci/lib64
-SCI_CLIENT_ID=$SCI_CLIENT_ID
+CLAND_ENDPOINT=${CONTROLLER_IP}:5006
+NODE_ID=$NODE_ID
+# 脚本通过 SCI_CLIENT_ID 在回调中标识本节点（cloudlet-go 执行脚本时也会注入）
+SCI_CLIENT_ID=$NODE_ID
 ZONE_NAME=$ZONE_NAME
 VIRT_TYPE=$VIRT_TYPE
+GRPC_AUTH_TOKEN=${GRPC_AUTH_TOKEN:-}
+# 本节点命令并发数，默认 1：与 C++ cloudlet 一样按到达顺序串行执行
+#CLOUDLET_CONCURRENCY=1
+# 链路追踪：导出到控制节点 OTel Collector（与 CLAND_ENDPOINT 同一地址）
+OTEL_EXPORTER_OTLP_ENDPOINT=http://${CONTROLLER_IP}:4317
+OTEL_RESOURCE_ATTRIBUTES=cloudland.node_id=$NODE_ID,cloudland.zone=$ZONE_NAME
 EOF
+chmod 600 /etc/sysconfig/cloudlet
 
-# --- cloudlet service ---
-cat > /lib/systemd/system/cloudlet.service <<EOF
+# --- cloudlet-go service ---
+cat > /lib/systemd/system/cloudlet-go.service <<EOF
 [Unit]
-Description=Cloudlet service
+Description=Cloudlet service (Go gRPC)
 After=network.target
 
 [Service]
 Type=simple
 User=cland
 EnvironmentFile=/etc/sysconfig/cloudlet
-ExecStart=$CLOUDLAND_DIR/bin/cloudlet
+ExecStart=$CLOUDLAND_DIR/bin/cloudlet-go
 KillMode=process
+# cloudlet-go 仅在节点被控制面删除时正常退出，此时不应被拉起
 Restart=on-failure
+RestartSec=5
+OOMScoreAdjust=-1000
 
 [Install]
 WantedBy=multi-user.target
 EOF
 
+# 停止旧版服务（如果存在）
+systemctl stop cloudlet scid 2>/dev/null || true
+systemctl disable cloudlet scid 2>/dev/null || true
+
 # 启动服务
 systemctl daemon-reload
-# 同机混部检测：如果容器内的 scidv1 已经在监听 6188，跳过宿主机 scid 服务
-if ss -tlnp 2>/dev/null | grep -q ':6188 '; then
-    log "检测到端口 6188 已被占用（容器内 scidv1），跳过宿主机 scid 服务"
-    systemctl disable scid 2>/dev/null || true
-else
-    systemctl enable --now scid
-fi
-systemctl enable --now cloudlet
+systemctl enable --now cloudlet-go
 systemctl enable --now libvirtd
 systemctl enable --now NetworkManager
 
@@ -633,70 +627,108 @@ else
     warn "generate_north_south_metrics.sh 不存在，跳过 north-south-metrics"
 fi
 
-# ============ 15. 通过 API 向控制面注册计算节点 ============
-log "15/16 - 通过 API 向控制面注册计算节点"
-RPC_SERVER_PORT="${RPC_SERVER_PORT:-5006}"
-REGISTER_RESP_FILE="$(mktemp)"
-HTTP_CODE=$(curl -s --max-time 90 -o "$REGISTER_RESP_FILE" -w "%{http_code}" \
-    -X POST "http://${CONTROLLER_IP}:${RPC_SERVER_PORT}/internal/node/add" \
-    -H "Content-Type: application/json" \
-    -d "{\"hostname\": \"${HOSTNAME}\", \"id\": ${SCI_CLIENT_ID}, \"level\": 1}" || echo "000")
+# ============ 15. 获取 cland 私钥并验证 cloudlet-go 连接 ============
+log "15/16 - 获取 cland 私钥并验证 cloudlet-go 与控制面连接"
 
-if [ "$HTTP_CODE" != "200" ]; then
-    echo -e "\033[1;31m[ERROR] 节点注册失败 (HTTP ${HTTP_CODE})\033[0m" >&2
-    [ -s "$REGISTER_RESP_FILE" ] && cat "$REGISTER_RESP_FILE" >&2
-    rm -f "$REGISTER_RESP_FILE"
-    exit 1
-fi
+# 首次部署本地没有 cland 私钥（create_portmap.sh、迁移的 qemu+ssh 需要）：
+# 通过 cloudlet-go node-add 调用 cland 的 NodeAdd，控制面向 clapi 校验 hostid 后返回密钥对
+if [ -z "${SSH_KEYS_INSTALLED:-}" ]; then
+    REGISTER_RESP_FILE=$(mktemp)
+    for i in 1 2 3 4 5; do
+        if CLAND_ENDPOINT="${CONTROLLER_IP}:5006" NODE_ID="$NODE_ID" HOSTNAME="$HOSTNAME" \
+            GRPC_AUTH_TOKEN="${GRPC_AUTH_TOKEN:-}" \
+            "$CLOUDLAND_DIR/bin/cloudlet-go" node-add > "$REGISTER_RESP_FILE"; then
+            break
+        fi
+        warn "node-add 第 $i 次失败，3 秒后重试"
+        : > "$REGISTER_RESP_FILE"
+        sleep 3
+    done
 
-log "节点注册成功"
-
-if [ -z "${SSH_KEYS_INSTALLED:-}" ] && jq -e '.status == "ok"' "$REGISTER_RESP_FILE" &>/dev/null; then
-    PRIV_KEY=$(jq -r '.private_key // empty' "$REGISTER_RESP_FILE")
-    PUB_KEY=$(jq -r '.public_key // empty' "$REGISTER_RESP_FILE")
-    if [ -n "$PRIV_KEY" ] && [ -n "$PUB_KEY" ]; then
-        mkdir -p "$CLOUDLAND_DIR/deploy/.ssh"
-        printf '%s\n' "$PRIV_KEY" > "$CLOUDLAND_DIR/deploy/.ssh/cland.key"
-        printf '%s\n' "$PUB_KEY"  > "$CLOUDLAND_DIR/deploy/.ssh/cland.key.pub"
-        cp "$CLOUDLAND_DIR/deploy/.ssh/cland.key" /root/.ssh/id_rsa
-        cp "$CLOUDLAND_DIR/deploy/.ssh/cland.key" $CLAND_HOME/.ssh/cland.key
-        chown -R cland:cland $CLAND_HOME/.ssh "$CLOUDLAND_DIR/deploy/.ssh"
-        chmod 600 $CLAND_HOME/.ssh/cland.key /root/.ssh/id_rsa \
-                  "$CLOUDLAND_DIR/deploy/.ssh/cland.key"
-        log "从注册响应中同步获取 cland.key 私钥"
-        SSH_KEYS_INSTALLED="api"
+    if jq -e '.status == "ok"' "$REGISTER_RESP_FILE" &>/dev/null; then
+        PRIV_KEY=$(jq -r '.private_key // empty' "$REGISTER_RESP_FILE")
+        PUB_KEY=$(jq -r '.public_key // empty' "$REGISTER_RESP_FILE")
+        if [ -n "$PRIV_KEY" ] && [ -n "$PUB_KEY" ]; then
+            printf '%s\n' "$PRIV_KEY" > "$CLOUDLAND_DIR/deploy/.ssh/cland.key"
+            printf '%s\n' "$PUB_KEY"  > "$CLOUDLAND_DIR/deploy/.ssh/cland.key.pub"
+            grep -qF "$PUB_KEY" $CLAND_HOME/.ssh/authorized_keys \
+                || printf '%s\n' "$PUB_KEY" >> $CLAND_HOME/.ssh/authorized_keys
+            grep -qF "$PUB_KEY" /root/.ssh/authorized_keys \
+                || printf '%s\n' "$PUB_KEY" >> /root/.ssh/authorized_keys
+            cp "$CLOUDLAND_DIR/deploy/.ssh/cland.key" /root/.ssh/id_rsa
+            cp "$CLOUDLAND_DIR/deploy/.ssh/cland.key" $CLAND_HOME/.ssh/cland.key
+            chown -R cland:cland $CLAND_HOME/.ssh "$CLOUDLAND_DIR/deploy/.ssh"
+            chmod 600 $CLAND_HOME/.ssh/cland.key /root/.ssh/id_rsa \
+                      "$CLOUDLAND_DIR/deploy/.ssh/cland.key"
+            log "已通过 node-add 从控制面获取 cland 密钥"
+            SSH_KEYS_INSTALLED="api"
+        fi
     fi
+    rm -f "$REGISTER_RESP_FILE"
 fi
 
-rm -f "$REGISTER_RESP_FILE"
+# cloudlet-go 启动后自动通过 gRPC 连接 cland-go 并注册
+# 等待 cloudlet-go 进程启动并检查日志确认连接成功
+RETRY=0
+MAX_RETRY=15
+while [ $RETRY -lt $MAX_RETRY ]; do
+    if systemctl is-active --quiet cloudlet-go; then
+        # 检查日志中是否有注册成功的信息
+        if journalctl -u cloudlet-go --no-pager -n 20 2>/dev/null | grep -q "Registered with cland successfully"; then
+            log "cloudlet-go 已成功连接到控制面"
+            break
+        fi
+    fi
+    RETRY=$((RETRY + 1))
+    if [ $RETRY -ge $MAX_RETRY ]; then
+        warn "cloudlet-go 尚未确认连接成功（可能需要等待控制面就绪），请手动检查: journalctl -u cloudlet-go -f"
+        break
+    fi
+    sleep 2
+done
 
 if [ -z "${SSH_KEYS_INSTALLED:-}" ]; then
-    log "cland 私钥未分发（公钥已通过 CLAND_PUBKEY bootstrap）"
+    warn "未能获取 cland 私钥，portmap 与虚拟机迁移不可用；控制面就绪后可重新执行本脚本"
 fi
 
 # ============ 16. 部署监控代理 Promtail (Trace 日志回传) ============
 log "16/16 - 部署 Promtail 日志回传代理"
 
+mkdir -p /var/lib/promtail
 cat > /opt/cloudland/promtail-client.yaml <<EOF
 server:
   http_listen_port: 9080
   grpc_listen_port: 0
 
 positions:
-  filename: /tmp/positions.yaml
+  filename: /var/lib/promtail/positions.yaml
 
 clients:
   - url: http://${CONTROLLER_IP}:3100/loki/api/v1/push
 
 scrape_configs:
+# 脚本日志（log_debug 等），带 trace=<trace_id>
 - job_name: cloudland-scripts
   static_configs:
   - targets:
       - localhost
     labels:
       job: local-compute-logs
-      host: ${HOSTNAME}
+      host: $(hostname)
+      node_id: "${NODE_ID}"
       __path__: /opt/cloudland/log/*.log
+# cloudlet-go 的 systemd 日志，带 [trace=<trace_id>] 前缀
+- job_name: cloudlet-journal
+  journal:
+    max_age: 12h
+    labels:
+      job: cloudlet
+      host: $(hostname)
+      node_id: "${NODE_ID}"
+  relabel_configs:
+    - source_labels: ['__journal__systemd_unit']
+      regex: 'cloudlet-go\\.service'
+      action: keep
 EOF
 
 if command -v docker &>/dev/null; then
@@ -705,6 +737,10 @@ if command -v docker &>/dev/null; then
       --network host \
       --restart always \
       -v /opt/cloudland/log:/opt/cloudland/log:ro \
+      -v /var/lib/promtail:/var/lib/promtail \
+      -v /var/log/journal:/var/log/journal:ro \
+      -v /run/log/journal:/run/log/journal:ro \
+      -v /etc/machine-id:/etc/machine-id:ro \
       -v /opt/cloudland/promtail-client.yaml:/etc/promtail/config.yml:ro \
       grafana/promtail:2.9.2 -config.file=/etc/promtail/config.yml
     log "Promtail 日志反向代理容器启动成功"

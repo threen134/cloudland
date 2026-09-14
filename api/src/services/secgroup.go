@@ -24,12 +24,12 @@ var (
 type SecgroupAdmin struct{}
 
 func (a *SecgroupAdmin) Switch(ctx context.Context, newSg *model.SecurityGroup, router *model.Router) (err error) {
-	logger.Infof("ENTER SecgroupAdmin.Switch: newSgID=%d, routerID=%v", newSg.ID, router)
+	logger.Ctx(ctx).Infof("ENTER SecgroupAdmin.Switch: newSgID=%d, routerID=%v", newSg.ID, router)
 	defer func() {
 		if err != nil {
-			logger.Errorf("EXIT SecgroupAdmin.Switch: error=%v", err)
+			logger.Ctx(ctx).Errorf("EXIT SecgroupAdmin.Switch: error=%v", err)
 		} else {
-			logger.Info("EXIT SecgroupAdmin.Switch: success")
+			logger.Ctx(ctx).Info("EXIT SecgroupAdmin.Switch: success")
 		}
 	}()
 	ctx, db := GetContextDB(ctx)
@@ -38,14 +38,14 @@ func (a *SecgroupAdmin) Switch(ctx context.Context, newSg *model.SecurityGroup, 
 		oldSg.ID = router.DefaultSG
 		err = db.Take(oldSg).Error
 		if err != nil {
-			logger.Error("Failed to query default security group", err)
+			logger.Ctx(ctx).Error("Failed to query default security group", err)
 			err = NewCLError(ErrSecurityGroupNotFound, "Failed to find default security group", err)
 			return
 		}
 		router.DefaultSG = newSg.ID
 		err = db.Model(router).Update("default_sg", router.DefaultSG).Error
 		if err != nil {
-			logger.Error("Failed to save router", err)
+			logger.Ctx(ctx).Error("Failed to save router", err)
 			err = NewCLError(ErrRouterUpdateFailed, "Failed to update router default security group", err)
 			return
 		}
@@ -54,7 +54,7 @@ func (a *SecgroupAdmin) Switch(ctx context.Context, newSg *model.SecurityGroup, 
 		var org *model.Organization
 		org, err = orgAdmin.Get(ctx, memberShip.OrgID)
 		if err != nil {
-			logger.Error("Failed to query organization ", err)
+			logger.Ctx(ctx).Error("Failed to query organization ", err)
 			err = NewCLError(ErrOrgNotFound, "Failed to find organization", err)
 			return
 		}
@@ -62,14 +62,14 @@ func (a *SecgroupAdmin) Switch(ctx context.Context, newSg *model.SecurityGroup, 
 			oldSg.ID = org.DefaultSG
 			err = db.Take(oldSg).Error
 			if err != nil {
-				logger.Error("Failed to query default security group", err)
+				logger.Ctx(ctx).Error("Failed to query default security group", err)
 				return
 			}
 		}
 		org.DefaultSG = newSg.ID
 		err = db.Model(org).Update("default_sg", org.DefaultSG).Error
 		if err != nil {
-			logger.Error("DB failed to update org default sg", err)
+			logger.Ctx(ctx).Error("DB failed to update org default sg", err)
 			err = NewCLError(ErrOrgUpdateFailed, "Failed to update organization default security group", err)
 			return
 		}
@@ -78,7 +78,7 @@ func (a *SecgroupAdmin) Switch(ctx context.Context, newSg *model.SecurityGroup, 
 		oldSg.IsDefault = false
 		err = db.Model(oldSg).Update("is_default", oldSg.IsDefault).Error
 		if err != nil {
-			logger.Error("Failed to save new security group", err)
+			logger.Ctx(ctx).Error("Failed to save new security group", err)
 			err = NewCLError(ErrSecurityGroupUpdateFailed, "Failed to update security group", err)
 			return
 		}
@@ -86,7 +86,7 @@ func (a *SecgroupAdmin) Switch(ctx context.Context, newSg *model.SecurityGroup, 
 	newSg.IsDefault = true
 	err = db.Model(newSg).Update("is_default", newSg.IsDefault).Error
 	if err != nil {
-		logger.Error("Failed to save new security group", err)
+		logger.Ctx(ctx).Error("Failed to save new security group", err)
 		err = NewCLError(ErrSecurityGroupUpdateFailed, "Failed to update security group", err)
 		return
 	}
@@ -94,12 +94,12 @@ func (a *SecgroupAdmin) Switch(ctx context.Context, newSg *model.SecurityGroup, 
 }
 
 func (a *SecgroupAdmin) Update(ctx context.Context, secgroup *model.SecurityGroup, name, description string, isDefault bool) (err error) {
-	logger.Infof("ENTER SecgroupAdmin.Update: secgroupID=%d, name=%s, description=%s, isDefault=%t", secgroup.ID, name, description, isDefault)
+	logger.Ctx(ctx).Infof("ENTER SecgroupAdmin.Update: secgroupID=%d, name=%s, description=%s, isDefault=%t", secgroup.ID, name, description, isDefault)
 	defer func() {
 		if err != nil {
-			logger.Errorf("EXIT SecgroupAdmin.Update: error=%v", err)
+			logger.Ctx(ctx).Errorf("EXIT SecgroupAdmin.Update: error=%v", err)
 		} else {
-			logger.Info("EXIT SecgroupAdmin.Update: success")
+			logger.Ctx(ctx).Info("EXIT SecgroupAdmin.Update: success")
 		}
 	}()
 	ctx, db, newTransaction := StartTransaction(ctx)
@@ -122,7 +122,7 @@ func (a *SecgroupAdmin) Update(ctx context.Context, secgroup *model.SecurityGrou
 	}
 	err = db.Model(&model.SecurityGroup{}).Where("id = ?", secgroup.ID).Updates(map[string]interface{}{"name": secgroup.Name, "description": secgroup.Description, "is_default": secgroup.IsDefault}).Error
 	if err != nil {
-		logger.Error("Failed to save security group", err)
+		logger.Ctx(ctx).Error("Failed to save security group", err)
 		err = NewCLError(ErrSecurityGroupUpdateFailed, "Failed to update security group", err)
 		return
 	}
@@ -130,12 +130,12 @@ func (a *SecgroupAdmin) Update(ctx context.Context, secgroup *model.SecurityGrou
 }
 
 func (a *SecgroupAdmin) Get(ctx context.Context, id int64) (secgroup *model.SecurityGroup, err error) {
-	logger.Infof("ENTER SecgroupAdmin.Get: id=%d", id)
+	logger.Ctx(ctx).Infof("ENTER SecgroupAdmin.Get: id=%d", id)
 	defer func() {
 		if err != nil {
-			logger.Errorf("EXIT SecgroupAdmin.Get: error=%v", err)
+			logger.Ctx(ctx).Errorf("EXIT SecgroupAdmin.Get: error=%v", err)
 		} else {
-			logger.Info("EXIT SecgroupAdmin.Get: success")
+			logger.Ctx(ctx).Info("EXIT SecgroupAdmin.Get: success")
 		}
 	}()
 	if id <= 0 {
@@ -147,7 +147,7 @@ func (a *SecgroupAdmin) Get(ctx context.Context, id int64) (secgroup *model.Secu
 	secgroup = &model.SecurityGroup{Model: model.Model{ID: id}}
 	err = db.Where(query, args...).Take(secgroup).Error
 	if err != nil {
-		logger.Error("DB failed to query secgroup ", err)
+		logger.Ctx(ctx).Error("DB failed to query secgroup ", err)
 		err = NewCLError(ErrSecurityGroupNotFound, "Failed to find security group", err)
 		return
 	}
@@ -155,7 +155,7 @@ func (a *SecgroupAdmin) Get(ctx context.Context, id int64) (secgroup *model.Secu
 		secgroup.Router = &model.Router{Model: model.Model{ID: secgroup.RouterID}}
 		err = db.Take(secgroup.Router).Error
 		if err != nil {
-			logger.Error("DB failed to query router", err)
+			logger.Ctx(ctx).Error("DB failed to query router", err)
 			err = NewCLError(ErrRouterNotFound, "Failed to find router", err)
 			return
 		}
@@ -163,7 +163,7 @@ func (a *SecgroupAdmin) Get(ctx context.Context, id int64) (secgroup *model.Secu
 	if secgroup.Name != "system-default" {
 		permit := memberShip.CheckResourceOrg(model.OrgReader, secgroup.Owner)
 		if !permit {
-			logger.Error("Not authorized to get security group")
+			logger.Ctx(ctx).Error("Not authorized to get security group")
 			err = NewCLError(ErrPermissionDenied, "Not authorized to get security group", nil)
 			return
 		}
@@ -172,12 +172,12 @@ func (a *SecgroupAdmin) Get(ctx context.Context, id int64) (secgroup *model.Secu
 }
 
 func (a *SecgroupAdmin) GetSecgroupByUUID(ctx context.Context, uuID string) (secgroup *model.SecurityGroup, err error) {
-	logger.Infof("ENTER SecgroupAdmin.GetSecgroupByUUID: uuID=%s", uuID)
+	logger.Ctx(ctx).Infof("ENTER SecgroupAdmin.GetSecgroupByUUID: uuID=%s", uuID)
 	defer func() {
 		if err != nil {
-			logger.Errorf("EXIT SecgroupAdmin.GetSecgroupByUUID: error=%v", err)
+			logger.Ctx(ctx).Errorf("EXIT SecgroupAdmin.GetSecgroupByUUID: error=%v", err)
 		} else {
-			logger.Info("EXIT SecgroupAdmin.GetSecgroupByUUID: success")
+			logger.Ctx(ctx).Info("EXIT SecgroupAdmin.GetSecgroupByUUID: success")
 		}
 	}()
 	ctx, db := GetContextDB(ctx)
@@ -186,7 +186,7 @@ func (a *SecgroupAdmin) GetSecgroupByUUID(ctx context.Context, uuID string) (sec
 	secgroup = &model.SecurityGroup{}
 	err = db.Where(query, args...).Where("uuid = ?", uuID).Take(secgroup).Error
 	if err != nil {
-		logger.Error("Failed to query secgroup ", err)
+		logger.Ctx(ctx).Error("Failed to query secgroup ", err)
 		err = NewCLError(ErrSecurityGroupNotFound, "Failed to find security group", err)
 		return
 	}
@@ -194,7 +194,7 @@ func (a *SecgroupAdmin) GetSecgroupByUUID(ctx context.Context, uuID string) (sec
 		secgroup.Router = &model.Router{Model: model.Model{ID: secgroup.RouterID}}
 		err = db.Take(secgroup.Router).Error
 		if err != nil {
-			logger.Error("DB failed to query router", err)
+			logger.Ctx(ctx).Error("DB failed to query router", err)
 			err = NewCLError(ErrRouterNotFound, "Failed to find router", err)
 			return
 		}
@@ -202,7 +202,7 @@ func (a *SecgroupAdmin) GetSecgroupByUUID(ctx context.Context, uuID string) (sec
 	if secgroup.Name != "system-default" {
 		permit := memberShip.CheckResourceOrg(model.OrgReader, secgroup.Owner)
 		if !permit {
-			logger.Error("Not authorized to get security group")
+			logger.Ctx(ctx).Error("Not authorized to get security group")
 			err = NewCLError(ErrPermissionDenied, "Not authorized to get security group", nil)
 			return
 		}
@@ -211,19 +211,19 @@ func (a *SecgroupAdmin) GetSecgroupByUUID(ctx context.Context, uuID string) (sec
 }
 
 func (a *SecgroupAdmin) GetDefaultSecgroup(ctx context.Context) (secgroup *model.SecurityGroup, err error) {
-	logger.Infof("ENTER SecgroupAdmin.GetDefaultSecgroup")
+	logger.Ctx(ctx).Infof("ENTER SecgroupAdmin.GetDefaultSecgroup")
 	defer func() {
 		if err != nil {
-			logger.Errorf("EXIT SecgroupAdmin.GetDefaultSecgroup: error=%v", err)
+			logger.Ctx(ctx).Errorf("EXIT SecgroupAdmin.GetDefaultSecgroup: error=%v", err)
 		} else {
-			logger.Info("EXIT SecgroupAdmin.GetDefaultSecgroup: success")
+			logger.Ctx(ctx).Info("EXIT SecgroupAdmin.GetDefaultSecgroup: success")
 		}
 	}()
 	ctx, db := GetContextDB(ctx)
 	memberShip := GetMemberShip(ctx)
 	org, err := orgAdmin.Get(ctx, memberShip.OrgID)
 	if err != nil {
-		logger.Error("Failed to query organization ", err)
+		logger.Ctx(ctx).Error("Failed to query organization ", err)
 		return
 	}
 	if org.DefaultSG == 0 {
@@ -231,13 +231,13 @@ func (a *SecgroupAdmin) GetDefaultSecgroup(ctx context.Context) (secgroup *model
 		secgroupName := fmt.Sprintf("default-%d", timestamp)
 		secgroup, err = a.Create(ctx, secgroupName, "", true, nil)
 		if err != nil {
-			logger.Error("Failed to create account secgroup ", err)
+			logger.Ctx(ctx).Error("Failed to create account secgroup ", err)
 			return
 		}
 		org.DefaultSG = secgroup.ID
 		err = db.Model(org).Update("default_sg", org.DefaultSG).Error
 		if err != nil {
-			logger.Error("DB failed to update org default sg", err)
+			logger.Ctx(ctx).Error("DB failed to update org default sg", err)
 			err = NewCLError(ErrOrgUpdateFailed, "Failed to update organization default security group", err)
 			return
 		}
@@ -245,7 +245,7 @@ func (a *SecgroupAdmin) GetDefaultSecgroup(ctx context.Context) (secgroup *model
 		secgroup = &model.SecurityGroup{Model: model.Model{ID: org.DefaultSG}}
 		err = db.Model(secgroup).Take(secgroup).Error
 		if err != nil {
-			logger.Error("Failed to query account secgroup ", err)
+			logger.Ctx(ctx).Error("Failed to query account secgroup ", err)
 			err = NewCLError(ErrSecurityGroupNotFound, "Failed to find security group", err)
 			return
 		}
@@ -254,12 +254,12 @@ func (a *SecgroupAdmin) GetDefaultSecgroup(ctx context.Context) (secgroup *model
 }
 
 func (a *SecgroupAdmin) GetSecgroupByName(ctx context.Context, name string) (secgroup *model.SecurityGroup, err error) {
-	logger.Infof("ENTER SecgroupAdmin.GetSecgroupByName: name=%s", name)
+	logger.Ctx(ctx).Infof("ENTER SecgroupAdmin.GetSecgroupByName: name=%s", name)
 	defer func() {
 		if err != nil {
-			logger.Errorf("EXIT SecgroupAdmin.GetSecgroupByName: error=%v", err)
+			logger.Ctx(ctx).Errorf("EXIT SecgroupAdmin.GetSecgroupByName: error=%v", err)
 		} else {
-			logger.Info("EXIT SecgroupAdmin.GetSecgroupByName: success")
+			logger.Ctx(ctx).Info("EXIT SecgroupAdmin.GetSecgroupByName: success")
 		}
 	}()
 	ctx, db := GetContextDB(ctx)
@@ -267,7 +267,7 @@ func (a *SecgroupAdmin) GetSecgroupByName(ctx context.Context, name string) (sec
 	secgroup = &model.SecurityGroup{}
 	err = db.Where("name = ?", name).Take(secgroup).Error
 	if err != nil {
-		logger.Error("Failed to query secgroup ", err)
+		logger.Ctx(ctx).Error("Failed to query secgroup ", err)
 		err = NewCLError(ErrSecurityGroupNotFound, "Failed to find security group", err)
 		return
 	}
@@ -275,7 +275,7 @@ func (a *SecgroupAdmin) GetSecgroupByName(ctx context.Context, name string) (sec
 		secgroup.Router = &model.Router{Model: model.Model{ID: secgroup.RouterID}}
 		err = db.Take(secgroup.Router).Error
 		if err != nil {
-			logger.Error("Failed to query router ", err)
+			logger.Ctx(ctx).Error("Failed to query router ", err)
 			err = NewCLError(ErrRouterNotFound, "Failed to find router", err)
 			return
 		}
@@ -283,7 +283,7 @@ func (a *SecgroupAdmin) GetSecgroupByName(ctx context.Context, name string) (sec
 	if secgroup.Name != "system-default" {
 		permit := memberShip.CheckResourceOrg(model.OrgReader, secgroup.Owner)
 		if !permit {
-			logger.Error("Not authorized to get security group")
+			logger.Ctx(ctx).Error("Not authorized to get security group")
 			err = NewCLError(ErrPermissionDenied, "Not authorized to get security group", nil)
 			return
 		}
@@ -292,12 +292,12 @@ func (a *SecgroupAdmin) GetSecgroupByName(ctx context.Context, name string) (sec
 }
 
 func (a *SecgroupAdmin) GetSecurityGroup(ctx context.Context, reference *BaseReference) (secgroup *model.SecurityGroup, err error) {
-	logger.Infof("ENTER SecgroupAdmin.GetSecurityGroup: reference=%+v", reference)
+	logger.Ctx(ctx).Infof("ENTER SecgroupAdmin.GetSecurityGroup: reference=%+v", reference)
 	defer func() {
 		if err != nil {
-			logger.Errorf("EXIT SecgroupAdmin.GetSecurityGroup: error=%v", err)
+			logger.Ctx(ctx).Errorf("EXIT SecgroupAdmin.GetSecurityGroup: error=%v", err)
 		} else {
-			logger.Info("EXIT SecgroupAdmin.GetSecurityGroup: success")
+			logger.Ctx(ctx).Info("EXIT SecgroupAdmin.GetSecurityGroup: success")
 		}
 	}()
 	if reference == nil || (reference.ID == "" && reference.Name == "") {
@@ -316,37 +316,55 @@ func (a *SecgroupAdmin) GetSecurityGroup(ctx context.Context, reference *BaseRef
 }
 
 func (a *SecgroupAdmin) GetSecgroupInterfaces(ctx context.Context, secgroup *model.SecurityGroup) (err error) {
-	logger.Infof("ENTER SecgroupAdmin.GetSecgroupInterfaces: secgroupID=%d", secgroup.ID)
+	logger.Ctx(ctx).Infof("ENTER SecgroupAdmin.GetSecgroupInterfaces: secgroupID=%d", secgroup.ID)
 	defer func() {
 		if err != nil {
-			logger.Errorf("EXIT SecgroupAdmin.GetSecgroupInterfaces: error=%v", err)
+			logger.Ctx(ctx).Errorf("EXIT SecgroupAdmin.GetSecgroupInterfaces: error=%v", err)
 		} else {
-			logger.Info("EXIT SecgroupAdmin.GetSecgroupInterfaces: success")
+			logger.Ctx(ctx).Info("EXIT SecgroupAdmin.GetSecgroupInterfaces: success")
 		}
 	}()
 	ctx, db := GetContextDB(ctx)
-	err = db.Model(secgroup).Preload("Address").Preload("Address.Subnet").Preload("SecondAddresses").Preload("SecondAddresses.Subnet").Preload("SiteSubnets").Where("instance > 0").Related(&secgroup.Interfaces, "Interfaces").Error
+	err = db.Model(secgroup).Association("Interfaces").Find(&secgroup.Interfaces)
 	if err != nil {
-		logger.Error("Failed to query secgroup, %v", err)
+		logger.Ctx(ctx).Error("Failed to query secgroup, %v", err)
 		err = NewCLError(ErrSecurityGroupNotFound, "Failed to find security group", err)
 		return
+	}
+	if len(secgroup.Interfaces) > 0 {
+		// Filter interfaces with instance > 0 and preload associations
+		var ifaceIDs []int64
+		for _, iface := range secgroup.Interfaces {
+			if iface.Instance > 0 {
+				ifaceIDs = append(ifaceIDs, iface.ID)
+			}
+		}
+		secgroup.Interfaces = nil
+		if len(ifaceIDs) > 0 {
+			err = db.Where("id IN ?", ifaceIDs).Preload("Address").Preload("Address.Subnet").Preload("SecondAddresses").Preload("SecondAddresses.Subnet").Preload("SiteSubnets").Find(&secgroup.Interfaces).Error
+			if err != nil {
+				logger.Ctx(ctx).Error("Failed to preload interfaces, %v", err)
+				err = NewCLError(ErrSecurityGroupNotFound, "Failed to preload interfaces", err)
+				return
+			}
+		}
 	}
 	return
 }
 
 func (a *SecgroupAdmin) GetInterfaceSecgroups(ctx context.Context, iface *model.Interface) (err error) {
-	logger.Infof("ENTER SecgroupAdmin.GetInterfaceSecgroups: ifaceID=%d", iface.ID)
+	logger.Ctx(ctx).Infof("ENTER SecgroupAdmin.GetInterfaceSecgroups: ifaceID=%d", iface.ID)
 	defer func() {
 		if err != nil {
-			logger.Errorf("EXIT SecgroupAdmin.GetInterfaceSecgroups: error=%v", err)
+			logger.Ctx(ctx).Errorf("EXIT SecgroupAdmin.GetInterfaceSecgroups: error=%v", err)
 		} else {
-			logger.Info("EXIT SecgroupAdmin.GetInterfaceSecgroups: success")
+			logger.Ctx(ctx).Info("EXIT SecgroupAdmin.GetInterfaceSecgroups: success")
 		}
 	}()
 	ctx, db := GetContextDB(ctx)
-	err = db.Model(iface).Related(&iface.SecurityGroups, "Security_Groups").Error
+	err = db.Model(iface).Association("SecurityGroups").Find(&iface.SecurityGroups)
 	if err != nil {
-		logger.Error("Failed to query interface, %v", err)
+		logger.Ctx(ctx).Error("Failed to query interface, %v", err)
 		err = NewCLError(ErrInterfaceNotFound, "Failed to find interface", err)
 		return
 	}
@@ -354,12 +372,12 @@ func (a *SecgroupAdmin) GetInterfaceSecgroups(ctx context.Context, iface *model.
 }
 
 func (a *SecgroupAdmin) AllowInstanceLoginPort(ctx context.Context, port int32, iface *model.Interface) (err error) {
-	logger.Infof("ENTER SecgroupAdmin.AllowInstanceLoginPort: port=%d, ifaceID=%d", port, iface.ID)
+	logger.Ctx(ctx).Infof("ENTER SecgroupAdmin.AllowInstanceLoginPort: port=%d, ifaceID=%d", port, iface.ID)
 	defer func() {
 		if err != nil {
-			logger.Errorf("EXIT SecgroupAdmin.AllowInstanceLoginPort: error=%v", err)
+			logger.Ctx(ctx).Errorf("EXIT SecgroupAdmin.AllowInstanceLoginPort: error=%v", err)
 		} else {
-			logger.Info("EXIT SecgroupAdmin.AllowInstanceLoginPort: success")
+			logger.Ctx(ctx).Info("EXIT SecgroupAdmin.AllowInstanceLoginPort: success")
 		}
 	}()
 	if port == 22 || port == 3389 || port <= 0 {
@@ -368,7 +386,7 @@ func (a *SecgroupAdmin) AllowInstanceLoginPort(ctx context.Context, port int32, 
 	for _, sg := range iface.SecurityGroups {
 		_, err = (&SecruleAdminService{}).Create(ctx, "", "0.0.0.0/0", "ingress", "tcp", port, port, sg)
 		if err != nil {
-			logger.Error("Failed to create security rule", err)
+			logger.Ctx(ctx).Error("Failed to create security rule", err)
 			return
 		}
 	}
@@ -376,44 +394,44 @@ func (a *SecgroupAdmin) AllowInstanceLoginPort(ctx context.Context, port int32, 
 }
 
 func (a *SecgroupAdmin) RemoveInstanceLoginPort(ctx context.Context, instance *model.Instance, iface *model.Interface) (err error) {
-	logger.Infof("ENTER SecgroupAdmin.RemoveInstanceLoginPort: instanceID=%d, ifaceID=%d", instance.ID, iface.ID)
+	logger.Ctx(ctx).Infof("ENTER SecgroupAdmin.RemoveInstanceLoginPort: instanceID=%d, ifaceID=%d", instance.ID, iface.ID)
 	defer func() {
 		if err != nil {
-			logger.Errorf("EXIT SecgroupAdmin.RemoveInstanceLoginPort: error=%v", err)
+			logger.Ctx(ctx).Errorf("EXIT SecgroupAdmin.RemoveInstanceLoginPort: error=%v", err)
 		} else {
-			logger.Info("EXIT SecgroupAdmin.RemoveInstanceLoginPort: success")
+			logger.Ctx(ctx).Info("EXIT SecgroupAdmin.RemoveInstanceLoginPort: success")
 		}
 	}()
 	port := instance.LoginPort
 	if port == 22 || port == 3389 || port <= 0 {
 		return
 	}
-	count := 0
+	var count int64
 	ctx, db := GetContextDB(ctx)
 	ms := GetMemberShip(ctx)
 	query, args := ms.GetOrgFilter()
 	err = db.Model(&model.Instance{}).Where(query, args...).Where("login_port = ? and router_id = ?", port, instance.RouterID).Count(&count).Error
 	if err != nil {
-		logger.Error("Failed to count instances of the login port", err)
+		logger.Ctx(ctx).Error("Failed to count instances of the login port", err)
 		err = NewCLError(ErrDatabaseError, "Failed to count instances of the login port", err)
 		return
 	}
 	if count > 1 {
-		logger.Infof("No need to remove security rule for port: %d", count)
+		logger.Ctx(ctx).Infof("No need to remove security rule for port: %d", count)
 		return
 	}
 	for _, sg := range iface.SecurityGroups {
 		var secrule *model.SecurityRule
 		secrule, err = (&SecruleAdminService{}).GetRule(ctx, "0.0.0.0/0", "ingress", "tcp", port, port, sg)
 		if err != nil {
-			logger.Error("Failed to remove security rule", err)
+			logger.Ctx(ctx).Error("Failed to remove security rule", err)
 			err = NewCLError(ErrSecurityRuleNotFound, "Failed to find security rule", err)
 			return
 		}
-		logger.Errorf("Security rule: %v", secrule)
+		logger.Ctx(ctx).Errorf("Security rule: %v", secrule)
 		err = (&SecruleAdminService{}).Delete(ctx, secrule, sg)
 		if err != nil {
-			logger.Error("Failed to create security rule", err)
+			logger.Ctx(ctx).Error("Failed to create security rule", err)
 			return
 		}
 	}
@@ -421,12 +439,12 @@ func (a *SecgroupAdmin) RemoveInstanceLoginPort(ctx context.Context, instance *m
 }
 
 func (a *SecgroupAdmin) Create(ctx context.Context, name, description string, isDefault bool, router *model.Router) (secgroup *model.SecurityGroup, err error) {
-	logger.Infof("ENTER SecgroupAdmin.Create: name=%s, description=%s, isDefault=%t, routerID=%v", name, description, isDefault, router)
+	logger.Ctx(ctx).Infof("ENTER SecgroupAdmin.Create: name=%s, description=%s, isDefault=%t, routerID=%v", name, description, isDefault, router)
 	defer func() {
 		if err != nil {
-			logger.Errorf("EXIT SecgroupAdmin.Create: error=%v", err)
+			logger.Ctx(ctx).Errorf("EXIT SecgroupAdmin.Create: error=%v", err)
 		} else {
-			logger.Info("EXIT SecgroupAdmin.Create: success")
+			logger.Ctx(ctx).Info("EXIT SecgroupAdmin.Create: success")
 		}
 	}()
 	memberShip := GetMemberShip(ctx)
@@ -435,7 +453,7 @@ func (a *SecgroupAdmin) Create(ctx context.Context, name, description string, is
 	if router != nil {
 		permit := memberShip.CheckResourceOrg(model.OrgWriter, router.Owner)
 		if !permit {
-			logger.Error("Not authorized for this operation")
+			logger.Ctx(ctx).Error("Not authorized for this operation")
 			err = NewCLError(ErrPermissionDenied, "Not authorized for this operation", nil)
 			return
 		}
@@ -443,7 +461,7 @@ func (a *SecgroupAdmin) Create(ctx context.Context, name, description string, is
 	} else {
 		permit := memberShip.CheckOrgPermission(model.OrgAdmin)
 		if !permit {
-			logger.Error("Not authorized for this operation")
+			logger.Ctx(ctx).Error("Not authorized for this operation")
 			err = NewCLError(ErrPermissionDenied, "Not authorized for this operation", nil)
 			return
 		}
@@ -457,62 +475,62 @@ func (a *SecgroupAdmin) Create(ctx context.Context, name, description string, is
 	secgroup = &model.SecurityGroup{Model: model.Model{Creater: memberShip.UserID}, Owner: owner, Name: name, Description: description, IsDefault: isDefault, RouterID: routerID}
 	err = db.Create(secgroup).Error
 	if err != nil {
-		logger.Errorf("DB failed to create security group %s, %v", name, err)
+		logger.Ctx(ctx).Errorf("DB failed to create security group %s, %v", name, err)
 		err = NewCLError(ErrSecurityGroupCreateFailed, "Failed to create security group", err)
 		return
 	}
 	_, err = (&SecruleAdminService{}).Create(ctx, "default-egress-tcp", "0.0.0.0/0", "egress", "tcp", 1, 65535, secgroup)
 	if err != nil {
-		logger.Error("Failed to create security rule", err)
+		logger.Ctx(ctx).Error("Failed to create security rule", err)
 		return
 	}
 	_, err = (&SecruleAdminService{}).Create(ctx, "default-egress-udp", "0.0.0.0/0", "egress", "udp", 1, 65535, secgroup)
 	if err != nil {
-		logger.Error("Failed to create security rule", err)
+		logger.Ctx(ctx).Error("Failed to create security rule", err)
 		return
 	}
 	_, err = (&SecruleAdminService{}).Create(ctx, "default-ingress-ssh", "0.0.0.0/0", "ingress", "tcp", 22, 22, secgroup)
 	if err != nil {
-		logger.Error("Failed to create security rule", err)
+		logger.Ctx(ctx).Error("Failed to create security rule", err)
 		return
 	}
 	_, err = (&SecruleAdminService{}).Create(ctx, "default-ingress-rdp", "0.0.0.0/0", "ingress", "tcp", 3389, 3389, secgroup)
 	if err != nil {
-		logger.Error("Failed to create security rule", err)
+		logger.Ctx(ctx).Error("Failed to create security rule", err)
 		return
 	}
 	_, err = (&SecruleAdminService{}).Create(ctx, "default-ingress-dhcp", "0.0.0.0/0", "ingress", "udp", 68, 68, secgroup)
 	if err != nil {
-		logger.Error("Failed to create security rule", err)
+		logger.Ctx(ctx).Error("Failed to create security rule", err)
 		return
 	}
 	_, err = (&SecruleAdminService{}).Create(ctx, "default-egress-icmp", "0.0.0.0/0", "egress", "icmp", -1, -1, secgroup)
 	if err != nil {
-		logger.Error("Failed to create security rule", err)
+		logger.Ctx(ctx).Error("Failed to create security rule", err)
 		return
 	}
 	_, err = (&SecruleAdminService{}).Create(ctx, "default-ingress-icmp", "0.0.0.0/0", "ingress", "icmp", -1, -1, secgroup)
 	if err != nil {
-		logger.Error("Failed to create security rule", err)
+		logger.Ctx(ctx).Error("Failed to create security rule", err)
 		return
 	}
 	if router != nil {
 		var subnets []*model.Subnet
 		err = db.Where("router_id = ?", router.ID).Find(&subnets).Error
 		if err != nil {
-			logger.Error("Failed to create security rule", err)
+			logger.Ctx(ctx).Error("Failed to create security rule", err)
 			err = NewCLError(ErrSubnetNotFound, "Failed to find subnets for the router", err)
 			return
 		}
 		for _, subnet := range subnets {
 			_, err = (&SecruleAdminService{}).Create(ctx, fmt.Sprintf("subnet-%s-ingress-tcp", strings.ReplaceAll(subnet.Network, "/", "-")), subnet.Network, "ingress", "tcp", 1, 65535, secgroup)
 			if err != nil {
-				logger.Error("Failed to create security rule", err)
+				logger.Ctx(ctx).Error("Failed to create security rule", err)
 				return
 			}
 			_, err = (&SecruleAdminService{}).Create(ctx, fmt.Sprintf("subnet-%s-ingress-udp", strings.ReplaceAll(subnet.Network, "/", "-")), subnet.Network, "ingress", "udp", 1, 65535, secgroup)
 			if err != nil {
-				logger.Error("Failed to create security rule", err)
+				logger.Ctx(ctx).Error("Failed to create security rule", err)
 				return
 			}
 		}
@@ -520,7 +538,7 @@ func (a *SecgroupAdmin) Create(ctx context.Context, name, description string, is
 	if isDefault {
 		err = a.Switch(ctx, secgroup, router)
 		if err != nil {
-			logger.Error("Failed to set default security group", err)
+			logger.Ctx(ctx).Error("Failed to set default security group", err)
 			return
 		}
 	}
@@ -528,12 +546,12 @@ func (a *SecgroupAdmin) Create(ctx context.Context, name, description string, is
 }
 
 func (a *SecgroupAdmin) Delete(ctx context.Context, secgroup *model.SecurityGroup) (err error) {
-	logger.Infof("ENTER SecgroupAdmin.Delete: secgroupID=%d, uuid=%s", secgroup.ID, secgroup.UUID)
+	logger.Ctx(ctx).Infof("ENTER SecgroupAdmin.Delete: secgroupID=%d, uuid=%s", secgroup.ID, secgroup.UUID)
 	defer func() {
 		if err != nil {
-			logger.Errorf("EXIT SecgroupAdmin.Delete: error=%v", err)
+			logger.Ctx(ctx).Errorf("EXIT SecgroupAdmin.Delete: error=%v", err)
 		} else {
-			logger.Info("EXIT SecgroupAdmin.Delete: success")
+			logger.Ctx(ctx).Info("EXIT SecgroupAdmin.Delete: success")
 		}
 	}()
 	ctx, db, newTransaction := StartTransaction(ctx)
@@ -545,7 +563,7 @@ func (a *SecgroupAdmin) Delete(ctx context.Context, secgroup *model.SecurityGrou
 	memberShip := GetMemberShip(ctx)
 	permit := memberShip.CheckResourceOrg(model.OrgWriter, secgroup.Owner)
 	if !permit {
-		logger.Error("Not authorized to delete the security group")
+		logger.Ctx(ctx).Error("Not authorized to delete the security group")
 		err = NewCLError(ErrPermissionDenied, "Not authorized to delete the security group", nil)
 		return
 	}
@@ -554,45 +572,45 @@ func (a *SecgroupAdmin) Delete(ctx context.Context, secgroup *model.SecurityGrou
 			router := &model.Router{Model: model.Model{ID: secgroup.RouterID}}
 			err = db.Where("default_sg = ?", secgroup.ID).Take(&router).Error
 			if err == nil {
-				logger.Error("Default security group can not be deleted", err)
+				logger.Ctx(ctx).Error("Default security group can not be deleted", err)
 				err = NewCLError(ErrCannotDeleteDefaultSG, "Default security group can not be deleted", err)
 				return
 			}
 		} else {
 			_, err = orgAdmin.Get(ctx, secgroup.Owner)
 			if err == nil {
-				logger.Error("Default security group can not be deleted", err)
+				logger.Ctx(ctx).Error("Default security group can not be deleted", err)
 				err = NewCLError(ErrCannotDeleteDefaultSG, "Default security group can not be deleted", err)
 				return
 			}
 		}
 	}
-	err = db.Model(secgroup).Related(&secgroup.Interfaces, "Interfaces").Error
+	err = db.Model(secgroup).Association("Interfaces").Find(&secgroup.Interfaces)
 	if err != nil {
-		logger.Error("Failed to count the number of interfaces using the security group", err)
+		logger.Ctx(ctx).Error("Failed to count the number of interfaces using the security group", err)
 		err = NewCLError(ErrDatabaseError, "Failed to count the number of interfaces using the security group", err)
 		return
 	}
 	if len(secgroup.Interfaces) > 0 {
-		logger.Error("Security group can not be deleted if there are associated interfaces")
+		logger.Ctx(ctx).Error("Security group can not be deleted if there are associated interfaces")
 		err = NewCLError(ErrSGHasInterfaces, "The security group can not be deleted if there are associated interfaces", err)
 		return
 	}
 	err = db.Where("secgroup = ?", secgroup.ID).Delete(&model.SecurityRule{}).Error
 	if err != nil {
-		logger.Error("DB failed to delete security group rules", err)
+		logger.Ctx(ctx).Error("DB failed to delete security group rules", err)
 		err = NewCLError(ErrSecurityRuleDeleteFailed, "Failed to delete security group rules", err)
 		return
 	}
 	if err = db.Delete(secgroup).Error; err != nil {
-		logger.Error("DB failed to delete security group", err)
+		logger.Ctx(ctx).Error("DB failed to delete security group", err)
 		err = NewCLError(ErrSecurityGroupDeleteFailed, "Failed to delete security group", err)
 		return
 	}
 	secgroup.Name = fmt.Sprintf("%s-%d", secgroup.Name, secgroup.CreatedAt.Unix())
 	err = db.Model(&model.SecurityGroup{}).Unscoped().Where("id = ?", secgroup.ID).Update("name", secgroup.Name).Error
 	if err != nil {
-		logger.Error("DB failed to update security group name", err)
+		logger.Ctx(ctx).Error("DB failed to update security group name", err)
 		err = NewCLError(ErrSecurityGroupUpdateFailed, "Failed to update security group name", err)
 		return
 	}
@@ -600,18 +618,18 @@ func (a *SecgroupAdmin) Delete(ctx context.Context, secgroup *model.SecurityGrou
 }
 
 func (a *SecgroupAdmin) List(ctx context.Context, offset, limit int64, order, query string) (total int64, secgroups []*model.SecurityGroup, err error) {
-	logger.Infof("ENTER SecgroupAdmin.List: offset=%d, limit=%d, order=%s, query=%s", offset, limit, order, query)
+	logger.Ctx(ctx).Infof("ENTER SecgroupAdmin.List: offset=%d, limit=%d, order=%s, query=%s", offset, limit, order, query)
 	defer func() {
 		if err != nil {
-			logger.Errorf("EXIT SecgroupAdmin.List: error=%v", err)
+			logger.Ctx(ctx).Errorf("EXIT SecgroupAdmin.List: error=%v", err)
 		} else {
-			logger.Info("EXIT SecgroupAdmin.List: success")
+			logger.Ctx(ctx).Info("EXIT SecgroupAdmin.List: success")
 		}
 	}()
 	memberShip := GetMemberShip(ctx)
 	permit := memberShip.CheckOrgPermission(model.OrgReader)
 	if !permit {
-		logger.Error("Not authorized for this operation")
+		logger.Ctx(ctx).Error("Not authorized for this operation")
 		err = NewCLError(ErrPermissionDenied, "Not authorized for this operation", nil)
 		return
 	}
@@ -623,18 +641,18 @@ func (a *SecgroupAdmin) List(ctx context.Context, offset, limit int64, order, qu
 	if order == "" {
 		order = "created_at"
 	}
-	logger.Debugf("The query in admin console is %s", query)
+	logger.Ctx(ctx).Debugf("The query in admin console is %s", query)
 
 	queryBuilder, args := memberShip.GetOrgFilter()
 	secgroups = []*model.SecurityGroup{}
 	if err = db.Model(&model.SecurityGroup{}).Where(queryBuilder, args...).Where(query).Count(&total).Error; err != nil {
-		logger.Error("DB failed to count security group(s), %v", err)
+		logger.Ctx(ctx).Error("DB failed to count security group(s), %v", err)
 		err = NewCLError(ErrSQLSyntaxError, "Failed to count security group(s)", err)
 		return
 	}
-	db = dbs.Sortby(db.Offset(offset).Limit(limit), order)
+	db = dbs.Sortby(db.Offset(int(offset)).Limit(int(limit)), order)
 	if err = db.Where(queryBuilder, args...).Where(query).Find(&secgroups).Error; err != nil {
-		logger.Error("DB failed to query security group(s), %v", err)
+		logger.Ctx(ctx).Error("DB failed to query security group(s), %v", err)
 		err = NewCLError(ErrSQLSyntaxError, "Failed to query security group(s)", err)
 		return
 	}
@@ -643,7 +661,7 @@ func (a *SecgroupAdmin) List(ctx context.Context, offset, limit int64, order, qu
 			secgroup.Router = &model.Router{Model: model.Model{ID: secgroup.RouterID}}
 			err = db.Take(secgroup.Router).Error
 			if err != nil {
-				logger.Error("DB failed to query router", err)
+				logger.Ctx(ctx).Error("DB failed to query router", err)
 				err = nil
 				continue
 			}
@@ -654,7 +672,7 @@ func (a *SecgroupAdmin) List(ctx context.Context, offset, limit int64, order, qu
 		for _, sg := range secgroups {
 			sg.OwnerInfo = &model.Organization{Model: model.Model{ID: sg.Owner}}
 			if err = db.Take(sg.OwnerInfo).Error; err != nil {
-				logger.Error("Failed to query owner info", err)
+				logger.Ctx(ctx).Error("Failed to query owner info", err)
 				err = nil
 				continue
 			}

@@ -17,6 +17,7 @@ import (
 	"api/src/rpcs"
 	"api/src/services"
 	rlog "api/src/utils/log"
+	"api/src/utils/tracing"
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
@@ -34,6 +35,9 @@ var (
 )
 
 func RunDaemon(cmd *cobra.Command, args []string) (err error) {
+	flushTracing := tracing.Init(context.Background(), "clapi", Version)
+	defer flushTracing()
+
 	g, _ := errgroup.WithContext(context.Background())
 	g.Go(apis.Run)
 	g.Go(rpcs.Run)
@@ -91,7 +95,7 @@ func init() {
 
 	rlog.InitLogger("clapi.log")
 	fmt.Printf("Logger initialized, logs are being written to clapi.log\n")
-	
+
 	// Initialize services (creates admin user, org, default security group)
 	services.Init()
 }

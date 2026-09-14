@@ -39,18 +39,18 @@ func RandomStr() (res string) {
 }
 
 func MakeToken(ctx context.Context, instance *model.Instance) (token string, err error) {
-	logger.Infof("ENTER MakeToken: instanceID=%d", instance.ID)
+	logger.Ctx(ctx).Infof("ENTER MakeToken: instanceID=%d", instance.ID)
 	defer func() {
 		if err != nil {
-			logger.Errorf("EXIT MakeToken: error=%v", err)
+			logger.Ctx(ctx).Errorf("EXIT MakeToken: error=%v", err)
 		} else {
-			logger.Infof("EXIT MakeToken: tokenGenerated")
+			logger.Ctx(ctx).Infof("EXIT MakeToken: tokenGenerated")
 		}
 	}()
 	memberShip := GetMemberShip(ctx)
 	permit := memberShip.CheckOrgPermission(model.OrgWriter)
 	if !permit {
-		logger.Error("Not authorized to create interface in public subnet")
+		logger.Ctx(ctx).Error("Not authorized to create interface in public subnet")
 		return "", NewCLError(ErrPermissionDenied, "Not authorized to create interface in public subnet", nil)
 	}
 	secret := RandomStr()
@@ -74,7 +74,7 @@ func MakeToken(ctx context.Context, instance *model.Instance) (token string, err
 	}
 	err = db.Where("instance = ?", instance.ID).Assign(console).FirstOrCreate(&model.Console{}).Error
 	if err != nil {
-		logger.Error("Failed to make console record ", err)
+		logger.Ctx(ctx).Error("Failed to make console record ", err)
 		return "", NewCLError(ErrConsoleCreateFailed, "Failed to make console record", err)
 	}
 	tokenClaim := jwt.NewWithClaims(jwt.SigningMethodHS256, tkClaim)
@@ -83,12 +83,12 @@ func MakeToken(ctx context.Context, instance *model.Instance) (token string, err
 }
 
 func ResolveToken(ctx context.Context, tokenString string) (instanceID int, memberShip *MemberShip, err error) {
-	logger.Infof("ENTER ResolveToken: tokenLength=%d", len(tokenString))
+	logger.Ctx(ctx).Infof("ENTER ResolveToken: tokenLength=%d", len(tokenString))
 	defer func() {
 		if err != nil {
-			logger.Errorf("EXIT ResolveToken: error=%v", err)
+			logger.Ctx(ctx).Errorf("EXIT ResolveToken: error=%v", err)
 		} else {
-			logger.Infof("EXIT ResolveToken: instanceID=%d", instanceID)
+			logger.Ctx(ctx).Infof("EXIT ResolveToken: instanceID=%d", instanceID)
 		}
 	}()
 	token, err := jwt.ParseWithClaims(tokenString, &TokenClaim{}, func(token *jwt.Token) (interface{}, error) {

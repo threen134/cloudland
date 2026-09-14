@@ -60,10 +60,10 @@ type VPCPatchPayload struct {
 func (v *VPCAPI) Get(c *gin.Context) {
 	ctx := c.Request.Context()
 	uuID := c.Param("id")
-	logger.Debugf("Get vpc by uuid: %s", uuID)
+	logger.Ctx(ctx).Debugf("Get vpc by uuid: %s", uuID)
 	router, err := routerAdmin.GetRouterByUUID(ctx, uuID)
 	if err != nil {
-		logger.Errorf("Failed to get vpc by uuid: %s, %+v", uuID, err)
+		logger.Ctx(ctx).Errorf("Failed to get vpc by uuid: %s, %+v", uuID, err)
 		ErrorResponse(c, http.StatusBadRequest, "Invalid vpc query", err)
 		return
 	}
@@ -72,7 +72,7 @@ func (v *VPCAPI) Get(c *gin.Context) {
 		ErrorResponse(c, http.StatusInternalServerError, "Internal error", err)
 		return
 	}
-	logger.Debugf("Get vpc by uuid: %s, %+v", uuID, vpcResp)
+	logger.Ctx(ctx).Debugf("Get vpc by uuid: %s, %+v", uuID, vpcResp)
 	c.JSON(http.StatusOK, vpcResp)
 }
 
@@ -92,20 +92,20 @@ func (v *VPCAPI) Patch(c *gin.Context) {
 	payload := &VPCPatchPayload{}
 	err := c.ShouldBindJSON(payload)
 	if err != nil {
-		logger.Errorf("Failed to bind json: %+v", err)
+		logger.Ctx(ctx).Errorf("Failed to bind json: %+v", err)
 		ErrorResponse(c, http.StatusBadRequest, "Invalid input JSON", err)
 		return
 	}
 	router, err := routerAdmin.GetRouterByUUID(ctx, uuID)
 	if err != nil {
-		logger.Errorf("Failed to get vpc by uuid: %s, %+v", uuID, err)
+		logger.Ctx(ctx).Errorf("Failed to get vpc by uuid: %s, %+v", uuID, err)
 		ErrorResponse(c, http.StatusBadRequest, "Invalid vpc query", err)
 		return
 	}
-	logger.Debugf("Patching vpc %s with %+v", uuID, payload)
+	logger.Ctx(ctx).Debugf("Patching vpc %s with %+v", uuID, payload)
 	router, err = routerAdmin.Update(ctx, router.ID, payload.Name, payload.Description, 0)
 	if err != nil {
-		logger.Errorf("Failed to update vpc %s, %+v", uuID, err)
+		logger.Ctx(ctx).Errorf("Failed to update vpc %s, %+v", uuID, err)
 		ErrorResponse(c, http.StatusBadRequest, "Failed to update vpc", err)
 		return
 	}
@@ -114,7 +114,7 @@ func (v *VPCAPI) Patch(c *gin.Context) {
 		ErrorResponse(c, http.StatusInternalServerError, "Internal error", err)
 		return
 	}
-	logger.Debugf("Patch vpc successfully, %s, %+v", uuID, vpcResp)
+	logger.Ctx(ctx).Debugf("Patch vpc successfully, %s, %+v", uuID, vpcResp)
 	c.JSON(http.StatusOK, vpcResp)
 }
 
@@ -130,20 +130,20 @@ func (v *VPCAPI) Patch(c *gin.Context) {
 func (v *VPCAPI) Delete(c *gin.Context) {
 	ctx := c.Request.Context()
 	uuID := c.Param("id")
-	logger.Debugf("Delete vpc by uuid: %s", uuID)
+	logger.Ctx(ctx).Debugf("Delete vpc by uuid: %s", uuID)
 	router, err := routerAdmin.GetRouterByUUID(ctx, uuID)
 	if err != nil {
-		logger.Errorf("Failed to get vpc by uuid: %s, %+v", uuID, err)
+		logger.Ctx(ctx).Errorf("Failed to get vpc by uuid: %s, %+v", uuID, err)
 		ErrorResponse(c, http.StatusBadRequest, "Invalid query", err)
 		return
 	}
 	err = routerAdmin.Delete(ctx, router)
 	if err != nil {
-		logger.Errorf("Failed to delete vpc by uuid: %s, %+v", uuID, err)
+		logger.Ctx(ctx).Errorf("Failed to delete vpc by uuid: %s, %+v", uuID, err)
 		ErrorResponse(c, http.StatusBadRequest, "Not able to delete", err)
 		return
 	}
-	logger.Debugf("Deleted vpc by uuid: %s", uuID)
+	logger.Ctx(ctx).Debugf("Deleted vpc by uuid: %s", uuID)
 	c.JSON(http.StatusNoContent, nil)
 }
 
@@ -162,14 +162,14 @@ func (v *VPCAPI) Create(c *gin.Context) {
 	payload := &VPCPayload{}
 	err := c.ShouldBindJSON(payload)
 	if err != nil {
-		logger.Errorf("Failed to bind json: %+v", err)
+		logger.Ctx(ctx).Errorf("Failed to bind json: %+v", err)
 		ErrorResponse(c, http.StatusBadRequest, "Invalid input JSON", err)
 		return
 	}
-	logger.Debugf("Creating vpc with %+v", payload)
+	logger.Ctx(ctx).Debugf("Creating vpc with %+v", payload)
 	router, err := routerAdmin.Create(ctx, payload.Name, payload.Description)
 	if err != nil {
-		logger.Errorf("Failed to create vpc: %+v", err)
+		logger.Ctx(ctx).Errorf("Failed to create vpc: %+v", err)
 		ErrorResponse(c, http.StatusBadRequest, "Failed to create vpc", err)
 		return
 	}
@@ -178,7 +178,7 @@ func (v *VPCAPI) Create(c *gin.Context) {
 		ErrorResponse(c, http.StatusInternalServerError, "Internal error", err)
 		return
 	}
-	logger.Debugf("Create vpc successfully, %+v", vpcResp)
+	logger.Ctx(ctx).Debugf("Create vpc successfully, %+v", vpcResp)
 	c.JSON(http.StatusOK, vpcResp)
 }
 
@@ -217,28 +217,28 @@ func (v *VPCAPI) List(c *gin.Context) {
 	offsetStr := c.DefaultQuery("offset", "0")
 	limitStr := c.DefaultQuery("limit", "50")
 	queryStr := c.DefaultQuery("query", "")
-	logger.Debugf("List vpcs, offset:%s, limit:%s, query:%s", offsetStr, limitStr, queryStr)
+	logger.Ctx(ctx).Debugf("List vpcs, offset:%s, limit:%s, query:%s", offsetStr, limitStr, queryStr)
 	offset, err := strconv.Atoi(offsetStr)
 	if err != nil {
-		logger.Errorf("Invalid query offset: %s, %+v", offsetStr, err)
+		logger.Ctx(ctx).Errorf("Invalid query offset: %s, %+v", offsetStr, err)
 		ErrorResponse(c, http.StatusBadRequest, "Invalid query offset: "+offsetStr, err)
 		return
 	}
 	limit, err := strconv.Atoi(limitStr)
 	if err != nil {
-		logger.Errorf("Invalid query limit: %s, %+v", err)
+		logger.Ctx(ctx).Errorf("Invalid query limit: %s, %+v", err)
 		ErrorResponse(c, http.StatusBadRequest, "Invalid query limit: "+limitStr, err)
 		return
 	}
 	if offset < 0 || limit < 0 {
 		errStr := "Invalid query offset or limit, cannot be negative"
-		logger.Errorf(errStr)
+		logger.Ctx(ctx).Errorf(errStr)
 		ErrorResponse(c, http.StatusBadRequest, "Invalid query offset or limit", errors.New(errStr))
 		return
 	}
 	total, routers, err := routerAdmin.List(ctx, int64(offset), int64(limit), "-created_at", queryStr)
 	if err != nil {
-		logger.Errorf("Failed to list vpcs, %+v", err)
+		logger.Ctx(ctx).Errorf("Failed to list vpcs, %+v", err)
 		ErrorResponse(c, http.StatusBadRequest, "Failed to list vpcs", err)
 		return
 	}
@@ -255,6 +255,6 @@ func (v *VPCAPI) List(c *gin.Context) {
 			return
 		}
 	}
-	logger.Debugf("List vpcs successfully, %+v", vpcListResp)
+	logger.Ctx(ctx).Debugf("List vpcs successfully, %+v", vpcListResp)
 	c.JSON(http.StatusOK, vpcListResp)
 }

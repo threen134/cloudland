@@ -65,7 +65,7 @@ const fetchUsers = async () => {
                 },
                 uuid: m.user_uuid,
                 member_uuid: m.uuid,
-                username: m.user_email?.split('@')[0] || m.user_uuid,
+                username: m.username || m.user_email?.split('@')[0] || m.user_uuid,
                 email: m.user_email || '',
                 role: m.is_owner ? 'owner' : m.org_role === 3 ? 'admin' : m.org_role === 2 ? 'writer' : m.org_role === 1 ? 'reader' : 'member',
                 is_superuser: !!m.is_superuser,
@@ -170,7 +170,7 @@ const handleEditUser = async () => {
         toast.success(t('messages.updateSuccess'))
     } catch (err: any) {
         console.error('Failed to update user:', err)
-        editError.value = err.response?.data?.error_message || err.message || t('messages.error')
+        editError.value = err.response?.data?.detail || err.message || t('messages.error')
     } finally {
         creatingResource.value = false
     }
@@ -213,7 +213,7 @@ const confirmDelete = async () => {
         toast.success(t('messages.deleteSuccess'))
     } catch (error: any) {
         console.error('Failed to delete user:', error)
-        deleteError.value = error.response?.data?.error_message || error.message || t('messages.error')
+        deleteError.value = error.response?.data?.detail || error.message || t('messages.error')
     } finally {
         deletingResource.value = false
     }

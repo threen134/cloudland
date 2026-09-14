@@ -7,11 +7,11 @@ SPDX-License-Identifier: Apache-2.0
 package rpcs
 
 import (
+	. "api/src/common"
+	"api/src/model"
 	"context"
 	"fmt"
 	"strconv"
-	. "api/src/common"
-	"api/src/model"
 )
 
 func init() {
@@ -20,7 +20,7 @@ func init() {
 
 func ResizeVolume(ctx context.Context, args []string) (status string, err error) {
 	//|:-COMMAND-:| resize_volume.sh 5 error
-	logger.Debug("ResizeVolumeLocal", args)
+	logger.Ctx(ctx).Debug("ResizeVolumeLocal", args)
 	ctx, db, newTransaction := StartTransaction(ctx)
 	defer func() {
 		if newTransaction {
@@ -30,18 +30,18 @@ func ResizeVolume(ctx context.Context, args []string) (status string, err error)
 	argn := len(args)
 	if argn < 3 {
 		err = fmt.Errorf("Wrong params")
-		logger.Error("Invalid args", err)
+		logger.Ctx(ctx).Error("Invalid args", err)
 		return
 	}
 	volID, err := strconv.ParseInt(args[1], 10, 64)
 	if err != nil {
-		logger.Error("Invalid volume ID", err)
+		logger.Ctx(ctx).Error("Invalid volume ID", err)
 		return
 	}
 	volume := &model.Volume{Model: model.Model{ID: volID}}
 	err = db.Where(volume).Take(volume).Error
 	if err != nil {
-		logger.Error("Invalid volume ID", err)
+		logger.Ctx(ctx).Error("Invalid volume ID", err)
 		return
 	}
 	status = args[2]
@@ -54,7 +54,7 @@ func ResizeVolume(ctx context.Context, args []string) (status string, err error)
 	}
 	err = db.Model(&volume).Updates(map[string]interface{}{"status": status}).Error
 	if err != nil {
-		logger.Error("Update volume status failed", err)
+		logger.Ctx(ctx).Error("Update volume status failed", err)
 		return
 	}
 	return

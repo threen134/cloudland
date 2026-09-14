@@ -12,7 +12,7 @@ import (
 	. "api/src/common"
 
 	"github.com/google/uuid"
-	"github.com/jinzhu/gorm"
+	"gorm.io/gorm"
 )
 
 // 通知渠道校验错误（sentinel errors，避免字符串比较）
@@ -387,4 +387,3 @@ func (n *NotificationAdmin) CleanupExpiredAlarmEvents(ctx context.Context, reten
 	})
 	return deleted, err
 }
-

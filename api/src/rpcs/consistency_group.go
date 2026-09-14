@@ -45,10 +45,10 @@ func joinRemainingArgs(args []string, index int) string {
 // 处理创建一致性组脚本的回调
 // |:-COMMAND-:| create_cg_wds.sh '<task_id>' '<cg_id>' '<status>' '<wds_cg_id>' 'message'
 func CreateCGWDS(ctx context.Context, args []string) (status string, err error) {
-	logger.Debug("CreateCGWDS", args)
+	logger.Ctx(ctx).Debug("CreateCGWDS", args)
 	// Minimum: basename + task_id + cg_id + status
 	if len(args) < 4 {
-		logger.Errorf("Invalid args for create_cg_wds: %v", args)
+		logger.Ctx(ctx).Errorf("Invalid args for create_cg_wds: %v", args)
 		err = fmt.Errorf("wrong params")
 		return
 	}
@@ -57,12 +57,12 @@ func CreateCGWDS(ctx context.Context, args []string) (status string, err error) 
 	// 解析参数
 	taskID, err := strconv.ParseInt(args[1], 10, 64)
 	if err != nil {
-		logger.Errorf("Invalid task ID: %v", args[1])
+		logger.Ctx(ctx).Errorf("Invalid task ID: %v", args[1])
 		return
 	}
 	cgID, err := strconv.ParseInt(args[2], 10, 64)
 	if err != nil {
-		logger.Errorf("Invalid CG ID: %v", args[2])
+		logger.Ctx(ctx).Errorf("Invalid CG ID: %v", args[2])
 		return
 	}
 	status = getArgSafe(args, 3, "error")
@@ -83,7 +83,7 @@ func CreateCGWDS(ctx context.Context, args []string) (status string, err error) 
 	cg := &model.ConsistencyGroup{Model: model.Model{ID: cgID}}
 	err = db.Where(cg).Take(cg).Error
 	if err != nil {
-		logger.Error("Invalid CG ID", err)
+		logger.Ctx(ctx).Error("Invalid CG ID", err)
 		return
 	}
 
@@ -100,10 +100,10 @@ func CreateCGWDS(ctx context.Context, args []string) (status string, err error) 
 		err = db.Model(&model.ConsistencyGroup{}).Where("id = ?", cgID).Updates(map[string]interface{}{
 			"status": model.CGStatusError,
 		}).Error
-		logger.Errorf("CG creation failed: %s", message)
+		logger.Ctx(ctx).Errorf("CG creation failed: %s", message)
 	}
 	if err != nil {
-		logger.Errorf("Failed to update consistency group %d: %v", cgID, err)
+		logger.Ctx(ctx).Errorf("Failed to update consistency group %d: %v", cgID, err)
 		return
 	}
 
@@ -118,11 +118,11 @@ func CreateCGWDS(ctx context.Context, args []string) (status string, err error) 
 				Updates(map[string]interface{}{"status": model.TaskStatusFailed, "message": message}).Error
 		}
 		if err != nil {
-			logger.Errorf("Failed to update task %d: %v", taskID, err)
+			logger.Ctx(ctx).Errorf("Failed to update task %d: %v", taskID, err)
 		}
 	}
 
-	logger.Debugf("Successfully updated consistency group %d to status %s", cgID, status)
+	logger.Ctx(ctx).Debugf("Successfully updated consistency group %d to status %s", cgID, status)
 	return
 }
 
@@ -130,10 +130,10 @@ func CreateCGWDS(ctx context.Context, args []string) (status string, err error) 
 // 处理删除一致性组脚本的回调
 // |:-COMMAND-:| delete_cg_wds.sh '<cg_id>' '<status>' 'message'
 func DeleteCGWDS(ctx context.Context, args []string) (status string, err error) {
-	logger.Debug("DeleteCGWDS", args)
+	logger.Ctx(ctx).Debug("DeleteCGWDS", args)
 	// Minimum: basename + cg_id + status
 	if len(args) < 3 {
-		logger.Errorf("Invalid args for delete_cg_wds: %v", args)
+		logger.Ctx(ctx).Errorf("Invalid args for delete_cg_wds: %v", args)
 		err = fmt.Errorf("wrong params")
 		return
 	}
@@ -142,7 +142,7 @@ func DeleteCGWDS(ctx context.Context, args []string) (status string, err error) 
 	// 解析参数
 	cgID, err := strconv.ParseInt(args[1], 10, 64)
 	if err != nil {
-		logger.Errorf("Invalid CG ID: %v", args[1])
+		logger.Ctx(ctx).Errorf("Invalid CG ID: %v", args[1])
 		return
 	}
 	status = getArgSafe(args, 2, "error")
@@ -164,7 +164,7 @@ func DeleteCGWDS(ctx context.Context, args []string) (status string, err error) 
 		// 删除卷关联
 		err = db.Where("cg_id = ?", cgID).Delete(&model.ConsistencyGroupVolume{}).Error
 		if err != nil {
-			logger.Errorf("Failed to delete CG volume associations: %v", err)
+			logger.Ctx(ctx).Errorf("Failed to delete CG volume associations: %v", err)
 			return
 		}
 
@@ -172,10 +172,10 @@ func DeleteCGWDS(ctx context.Context, args []string) (status string, err error) 
 		// 删除一致性组
 		err = db.Delete(cg).Error
 		if err != nil {
-			logger.Errorf("Failed to delete consistency group %d: %v", cgID, err)
+			logger.Ctx(ctx).Errorf("Failed to delete consistency group %d: %v", cgID, err)
 			return
 		}
-		logger.Debugf("Successfully deleted consistency group %d", cgID)
+		logger.Ctx(ctx).Debugf("Successfully deleted consistency group %d", cgID)
 	} else {
 		// Update status to error
 		// 更新状态为错误
@@ -183,10 +183,10 @@ func DeleteCGWDS(ctx context.Context, args []string) (status string, err error) 
 			"status": model.CGStatusError,
 		}).Error
 		if err != nil {
-			logger.Errorf("Failed to update consistency group %d: %v", cgID, err)
+			logger.Ctx(ctx).Errorf("Failed to update consistency group %d: %v", cgID, err)
 			return
 		}
-		logger.Errorf("CG deletion failed: %s", message)
+		logger.Ctx(ctx).Errorf("CG deletion failed: %s", message)
 	}
 
 	return
@@ -196,10 +196,10 @@ func DeleteCGWDS(ctx context.Context, args []string) (status string, err error) 
 // 处理向一致性组添加卷脚本的回调
 // |:-COMMAND-:| add_volumes_to_cg_wds.sh '<cg_id>' '<status>' 'message'
 func AddVolumesToCGWDS(ctx context.Context, args []string) (status string, err error) {
-	logger.Debug("AddVolumesToCGWDS", args)
+	logger.Ctx(ctx).Debug("AddVolumesToCGWDS", args)
 	// Minimum: basename + cg_id + status
 	if len(args) < 3 {
-		logger.Errorf("Invalid args for add_volumes_to_cg_wds: %v", args)
+		logger.Ctx(ctx).Errorf("Invalid args for add_volumes_to_cg_wds: %v", args)
 		err = fmt.Errorf("wrong params")
 		return
 	}
@@ -208,7 +208,7 @@ func AddVolumesToCGWDS(ctx context.Context, args []string) (status string, err e
 	// 解析参数
 	cgID, err := strconv.ParseInt(args[1], 10, 64)
 	if err != nil {
-		logger.Errorf("Invalid CG ID: %v", args[1])
+		logger.Ctx(ctx).Errorf("Invalid CG ID: %v", args[1])
 		return
 	}
 	status = getArgSafe(args, 2, "error")
@@ -228,7 +228,7 @@ func AddVolumesToCGWDS(ctx context.Context, args []string) (status string, err e
 	cg := &model.ConsistencyGroup{Model: model.Model{ID: cgID}}
 	err = db.Where(cg).Take(cg).Error
 	if err != nil {
-		logger.Error("Invalid CG ID", err)
+		logger.Ctx(ctx).Error("Invalid CG ID", err)
 		return
 	}
 
@@ -244,15 +244,15 @@ func AddVolumesToCGWDS(ctx context.Context, args []string) (status string, err e
 		err = db.Model(&model.ConsistencyGroup{}).Where("id = ?", cgID).Updates(map[string]interface{}{
 			"status": model.CGStatusError,
 		}).Error
-		logger.Errorf("Add volumes to CG failed: %s", message)
+		logger.Ctx(ctx).Errorf("Add volumes to CG failed: %s", message)
 	}
 
 	if err != nil {
-		logger.Errorf("Failed to update consistency group %d: %v", cgID, err)
+		logger.Ctx(ctx).Errorf("Failed to update consistency group %d: %v", cgID, err)
 		return
 	}
 
-	logger.Debugf("Successfully updated consistency group %d to status %s", cgID, status)
+	logger.Ctx(ctx).Debugf("Successfully updated consistency group %d to status %s", cgID, status)
 	return
 }
 
@@ -260,10 +260,10 @@ func AddVolumesToCGWDS(ctx context.Context, args []string) (status string, err e
 // 处理从一致性组删除卷脚本的回调
 // |:-COMMAND-:| remove_volumes_from_cg_wds.sh '<cg_id>' '<status>' 'message'
 func RemoveVolumesFromCGWDS(ctx context.Context, args []string) (status string, err error) {
-	logger.Debug("RemoveVolumesFromCGWDS", args)
+	logger.Ctx(ctx).Debug("RemoveVolumesFromCGWDS", args)
 	// Minimum: basename + cg_id + status
 	if len(args) < 3 {
-		logger.Errorf("Invalid args for remove_volumes_from_cg_wds: %v", args)
+		logger.Ctx(ctx).Errorf("Invalid args for remove_volumes_from_cg_wds: %v", args)
 		err = fmt.Errorf("wrong params")
 		return
 	}
@@ -272,7 +272,7 @@ func RemoveVolumesFromCGWDS(ctx context.Context, args []string) (status string, 
 	// 解析参数
 	cgID, err := strconv.ParseInt(args[1], 10, 64)
 	if err != nil {
-		logger.Errorf("Invalid CG ID: %v", args[1])
+		logger.Ctx(ctx).Errorf("Invalid CG ID: %v", args[1])
 		return
 	}
 	status = getArgSafe(args, 2, "error")
@@ -292,7 +292,7 @@ func RemoveVolumesFromCGWDS(ctx context.Context, args []string) (status string, 
 	cg := &model.ConsistencyGroup{Model: model.Model{ID: cgID}}
 	err = db.Where(cg).Take(cg).Error
 	if err != nil {
-		logger.Error("Invalid CG ID", err)
+		logger.Ctx(ctx).Error("Invalid CG ID", err)
 		return
 	}
 
@@ -308,15 +308,15 @@ func RemoveVolumesFromCGWDS(ctx context.Context, args []string) (status string, 
 		err = db.Model(&model.ConsistencyGroup{}).Where("id = ?", cgID).Updates(map[string]interface{}{
 			"status": model.CGStatusError,
 		}).Error
-		logger.Errorf("Remove volumes from CG failed: %s", message)
+		logger.Ctx(ctx).Errorf("Remove volumes from CG failed: %s", message)
 	}
 
 	if err != nil {
-		logger.Errorf("Failed to update consistency group %d: %v", cgID, err)
+		logger.Ctx(ctx).Errorf("Failed to update consistency group %d: %v", cgID, err)
 		return
 	}
 
-	logger.Debugf("Successfully updated consistency group %d to status %s", cgID, status)
+	logger.Ctx(ctx).Debugf("Successfully updated consistency group %d to status %s", cgID, status)
 	return
 }
 
@@ -324,10 +324,10 @@ func RemoveVolumesFromCGWDS(ctx context.Context, args []string) (status string, 
 // 处理创建一致性组快照脚本的回调
 // |:-COMMAND-:| create_cg_snapshot_wds.sh '<snapshot_ID>' '<status>' '<wds_snap_id>' '<size>' 'message'
 func CreateCGSnapshotWDS(ctx context.Context, args []string) (status string, err error) {
-	logger.Debug("CreateCGSnapshotWDS", args)
+	logger.Ctx(ctx).Debug("CreateCGSnapshotWDS", args)
 	// Minimum: basename + snapshot_ID + status
 	if len(args) < 3 {
-		logger.Errorf("Invalid args for create_cg_snapshot_wds: %v", args)
+		logger.Ctx(ctx).Errorf("Invalid args for create_cg_snapshot_wds: %v", args)
 		err = fmt.Errorf("wrong params")
 		return
 	}
@@ -336,7 +336,7 @@ func CreateCGSnapshotWDS(ctx context.Context, args []string) (status string, err
 	// 解析参数
 	snapshotID, err := strconv.ParseInt(args[1], 10, 64)
 	if err != nil {
-		logger.Errorf("Invalid snapshot ID: %v", args[1])
+		logger.Ctx(ctx).Errorf("Invalid snapshot ID: %v", args[1])
 		return
 	}
 	status = getArgSafe(args, 2, "error")
@@ -346,7 +346,7 @@ func CreateCGSnapshotWDS(ctx context.Context, args []string) (status string, err
 	sizeStr := getArgSafe(args, 4, "0")
 	size, err = strconv.ParseInt(sizeStr, 10, 64)
 	if err != nil {
-		logger.Errorf("Invalid snapshot size: %v, defaulting to 0", sizeStr)
+		logger.Ctx(ctx).Errorf("Invalid snapshot size: %v, defaulting to 0", sizeStr)
 		size = 0
 		err = nil
 	}
@@ -371,7 +371,7 @@ func CreateCGSnapshotWDS(ctx context.Context, args []string) (status string, err
 	snapshot := &model.ConsistencyGroupSnapshot{Model: model.Model{ID: snapshotID}}
 	err = db.Preload("CG").Where(snapshot).Take(snapshot).Error
 	if err != nil {
-		logger.Error("Invalid CG snapshot ID", err)
+		logger.Ctx(ctx).Error("Invalid CG snapshot ID", err)
 		return
 	}
 
@@ -389,11 +389,11 @@ func CreateCGSnapshotWDS(ctx context.Context, args []string) (status string, err
 		err = db.Model(&model.ConsistencyGroupSnapshot{}).Where("id = ?", snapshotID).Updates(map[string]interface{}{
 			"status": model.CGSnapshotStatusError,
 		}).Error
-		logger.Errorf("CG snapshot creation failed: %s", message)
+		logger.Ctx(ctx).Errorf("CG snapshot creation failed: %s", message)
 	}
 
 	if err != nil {
-		logger.Errorf("Failed to update CG snapshot %d: %v", snapshotID, err)
+		logger.Ctx(ctx).Errorf("Failed to update CG snapshot %d: %v", snapshotID, err)
 		return
 	}
 
@@ -408,7 +408,7 @@ func CreateCGSnapshotWDS(ctx context.Context, args []string) (status string, err
 				Updates(map[string]interface{}{"status": model.TaskStatusFailed, "message": message}).Error
 		}
 		if err != nil {
-			logger.Errorf("Failed to update task %d: %v", snapshot.TaskID, err)
+			logger.Ctx(ctx).Errorf("Failed to update task %d: %v", snapshot.TaskID, err)
 		}
 	}
 
@@ -417,7 +417,7 @@ func CreateCGSnapshotWDS(ctx context.Context, args []string) (status string, err
 	var cgVolumes []*model.ConsistencyGroupVolume
 	err = db.Preload("Volume").Where("cg_id = ?", snapshot.CGID).Find(&cgVolumes).Error
 	if err != nil {
-		logger.Errorf("Failed to get CG volumes: %v", err)
+		logger.Ctx(ctx).Errorf("Failed to get CG volumes: %v", err)
 		return
 	}
 
@@ -429,12 +429,12 @@ func CreateCGSnapshotWDS(ctx context.Context, args []string) (status string, err
 		err = db.Model(&model.Volume{}).Where("id = ?", cgv.VolumeID).
 			Update("status", volStatus).Error
 		if err != nil {
-			logger.Errorf("Failed to update volume %d status: %v", cgv.VolumeID, err)
+			logger.Ctx(ctx).Errorf("Failed to update volume %d status: %v", cgv.VolumeID, err)
 			return
 		}
 	}
 
-	logger.Debugf("Successfully updated CG snapshot %d to status %s", snapshotID, status)
+	logger.Ctx(ctx).Debugf("Successfully updated CG snapshot %d to status %s", snapshotID, status)
 	return
 }
 
@@ -442,10 +442,10 @@ func CreateCGSnapshotWDS(ctx context.Context, args []string) (status string, err
 // 处理删除一致性组快照脚本的回调
 // |:-COMMAND-:| delete_cg_snapshot_wds.sh '<snapshot_ID>' '<status>' 'message'
 func DeleteCGSnapshotWDS(ctx context.Context, args []string) (status string, err error) {
-	logger.Debug("DeleteCGSnapshotWDS", args)
+	logger.Ctx(ctx).Debug("DeleteCGSnapshotWDS", args)
 	// Minimum: basename + snapshot_ID + status
 	if len(args) < 3 {
-		logger.Errorf("Invalid args for delete_cg_snapshot_wds: %v", args)
+		logger.Ctx(ctx).Errorf("Invalid args for delete_cg_snapshot_wds: %v", args)
 		err = fmt.Errorf("wrong params")
 		return
 	}
@@ -454,7 +454,7 @@ func DeleteCGSnapshotWDS(ctx context.Context, args []string) (status string, err
 	// 解析参数
 	snapshotID, err := strconv.ParseInt(args[1], 10, 64)
 	if err != nil {
-		logger.Errorf("Invalid snapshot ID: %v", args[1])
+		logger.Ctx(ctx).Errorf("Invalid snapshot ID: %v", args[1])
 		return
 	}
 	status = getArgSafe(args, 2, "error")
@@ -474,7 +474,7 @@ func DeleteCGSnapshotWDS(ctx context.Context, args []string) (status string, err
 		// 删除前获取快照记录以获取任务 ID
 		snapshot := &model.ConsistencyGroupSnapshot{Model: model.Model{ID: snapshotID}}
 		if dbErr := db.Take(snapshot).Error; dbErr != nil {
-			logger.Errorf("Failed to get CG snapshot %d before deletion: %v", snapshotID, dbErr)
+			logger.Ctx(ctx).Errorf("Failed to get CG snapshot %d before deletion: %v", snapshotID, dbErr)
 		}
 		taskID := snapshot.TaskID
 
@@ -482,7 +482,7 @@ func DeleteCGSnapshotWDS(ctx context.Context, args []string) (status string, err
 		// 从数据库删除快照记录
 		err = db.Delete(&model.ConsistencyGroupSnapshot{}, snapshotID).Error
 		if err != nil {
-			logger.Errorf("Failed to delete CG snapshot %d: %v", snapshotID, err)
+			logger.Ctx(ctx).Errorf("Failed to delete CG snapshot %d: %v", snapshotID, err)
 			return
 		}
 
@@ -491,16 +491,16 @@ func DeleteCGSnapshotWDS(ctx context.Context, args []string) (status string, err
 		if taskID > 0 {
 			if taskErr := db.Model(&model.Task{}).Where("id = ?", taskID).
 				Updates(map[string]interface{}{"status": model.TaskStatusSuccess}).Error; taskErr != nil {
-				logger.Errorf("Failed to update task %d: %v", taskID, taskErr)
+				logger.Ctx(ctx).Errorf("Failed to update task %d: %v", taskID, taskErr)
 			}
 		}
-		logger.Debugf("Successfully deleted CG snapshot %d", snapshotID)
+		logger.Ctx(ctx).Debugf("Successfully deleted CG snapshot %d", snapshotID)
 	} else {
 		// Get snapshot to retrieve task ID
 		// 获取快照记录以获取任务 ID
 		snapshot := &model.ConsistencyGroupSnapshot{Model: model.Model{ID: snapshotID}}
 		if dbErr := db.Take(snapshot).Error; dbErr != nil {
-			logger.Errorf("Failed to get CG snapshot %d: %v", snapshotID, dbErr)
+			logger.Ctx(ctx).Errorf("Failed to get CG snapshot %d: %v", snapshotID, dbErr)
 		}
 		taskID := snapshot.TaskID
 
@@ -512,7 +512,7 @@ func DeleteCGSnapshotWDS(ctx context.Context, args []string) (status string, err
 				"status": model.CGSnapshotStatusError,
 			}).Error
 		if err != nil {
-			logger.Errorf("Failed to update CG snapshot %d: %v", snapshotID, err)
+			logger.Ctx(ctx).Errorf("Failed to update CG snapshot %d: %v", snapshotID, err)
 			return
 		}
 
@@ -521,10 +521,10 @@ func DeleteCGSnapshotWDS(ctx context.Context, args []string) (status string, err
 		if taskID > 0 {
 			if taskErr := db.Model(&model.Task{}).Where("id = ?", taskID).
 				Updates(map[string]interface{}{"status": model.TaskStatusFailed, "message": message}).Error; taskErr != nil {
-				logger.Errorf("Failed to update task %d: %v", taskID, taskErr)
+				logger.Ctx(ctx).Errorf("Failed to update task %d: %v", taskID, taskErr)
 			}
 		}
-		logger.Errorf("CG snapshot deletion failed: %s", message)
+		logger.Ctx(ctx).Errorf("CG snapshot deletion failed: %s", message)
 	}
 
 	return
@@ -534,10 +534,10 @@ func DeleteCGSnapshotWDS(ctx context.Context, args []string) (status string, err
 // 处理恢复一致性组快照脚本的回调
 // |:-COMMAND-:| restore_cg_snapshot_wds.sh '<snapshot_ID>' '<cg_ID>' '<status>' 'message'
 func RestoreCGSnapshotWDS(ctx context.Context, args []string) (status string, err error) {
-	logger.Debug("RestoreCGSnapshotWDS", args)
+	logger.Ctx(ctx).Debug("RestoreCGSnapshotWDS", args)
 	// Minimum: basename + snapshot_ID + cg_ID + status
 	if len(args) < 4 {
-		logger.Errorf("Invalid args for restore_cg_snapshot_wds: %v", args)
+		logger.Ctx(ctx).Errorf("Invalid args for restore_cg_snapshot_wds: %v", args)
 		err = fmt.Errorf("wrong params")
 		return
 	}
@@ -546,13 +546,13 @@ func RestoreCGSnapshotWDS(ctx context.Context, args []string) (status string, er
 	// 解析参数
 	snapshotID, err := strconv.ParseInt(args[1], 10, 64)
 	if err != nil {
-		logger.Errorf("Invalid snapshot ID: %v", args[1])
+		logger.Ctx(ctx).Errorf("Invalid snapshot ID: %v", args[1])
 		return
 	}
 
 	cgID, err := strconv.ParseInt(args[2], 10, 64)
 	if err != nil {
-		logger.Errorf("Invalid CG ID: %v", args[2])
+		logger.Ctx(ctx).Errorf("Invalid CG ID: %v", args[2])
 		return
 	}
 
@@ -573,7 +573,7 @@ func RestoreCGSnapshotWDS(ctx context.Context, args []string) (status string, er
 	snapshot := &model.ConsistencyGroupSnapshot{Model: model.Model{ID: snapshotID}}
 	err = db.Where(snapshot).Take(snapshot).Error
 	if err != nil {
-		logger.Error("Invalid CG snapshot ID", err)
+		logger.Ctx(ctx).Error("Invalid CG snapshot ID", err)
 		return
 	}
 
@@ -587,11 +587,11 @@ func RestoreCGSnapshotWDS(ctx context.Context, args []string) (status string, er
 		"status": model.CGSnapshotStatusAvailable,
 	}).Error
 	if status != "available" {
-		logger.Errorf("CG snapshot restore failed: %s", message)
+		logger.Ctx(ctx).Errorf("CG snapshot restore failed: %s", message)
 	}
 
 	if err != nil {
-		logger.Errorf("Failed to update CG snapshot %d: %v", snapshotID, err)
+		logger.Ctx(ctx).Errorf("Failed to update CG snapshot %d: %v", snapshotID, err)
 		return
 	}
 
@@ -606,7 +606,7 @@ func RestoreCGSnapshotWDS(ctx context.Context, args []string) (status string, er
 				Updates(map[string]interface{}{"status": model.TaskStatusFailed, "message": message}).Error
 		}
 		if err != nil {
-			logger.Errorf("Failed to update task %d: %v", taskID, err)
+			logger.Ctx(ctx).Errorf("Failed to update task %d: %v", taskID, err)
 		}
 	}
 
@@ -615,7 +615,7 @@ func RestoreCGSnapshotWDS(ctx context.Context, args []string) (status string, er
 	var cgVolumes []*model.ConsistencyGroupVolume
 	err = db.Preload("Volume").Where("cg_id = ?", cgID).Find(&cgVolumes).Error
 	if err != nil {
-		logger.Errorf("Failed to get CG volumes: %v", err)
+		logger.Ctx(ctx).Errorf("Failed to get CG volumes: %v", err)
 		return
 	}
 
@@ -627,11 +627,11 @@ func RestoreCGSnapshotWDS(ctx context.Context, args []string) (status string, er
 		err = db.Model(&model.Volume{}).Where("id = ?", cgv.VolumeID).
 			Update("status", volStatus).Error
 		if err != nil {
-			logger.Errorf("Failed to update volume %d status: %v", cgv.VolumeID, err)
+			logger.Ctx(ctx).Errorf("Failed to update volume %d status: %v", cgv.VolumeID, err)
 			return
 		}
 	}
 
-	logger.Debugf("Successfully restored CG %d from snapshot %d with status %s", cgID, snapshotID, status)
+	logger.Ctx(ctx).Debugf("Successfully restored CG %d from snapshot %d with status %s", cgID, snapshotID, status)
 	return
 }

@@ -62,9 +62,11 @@ COPY --from=cland-builder /opt/cloudland/lib64 /opt/cloudland/lib64
 # 复制脚本
 COPY scripts/ /opt/cloudland/scripts/
 
-# 创建必要目录
-RUN mkdir -p /opt/cloudland/{log,run,cache,etc} \
-    /opt/cloudland/cache/{image,instance,router,meta,volume,dnsmasq,xml} \
+# 创建必要目录（RUN 使用 /bin/sh=dash，不支持花括号展开，须逐个列出）
+RUN mkdir -p /opt/cloudland/log /opt/cloudland/run /opt/cloudland/cache /opt/cloudland/etc \
+    /opt/cloudland/cache/image /opt/cloudland/cache/instance /opt/cloudland/cache/router \
+    /opt/cloudland/cache/meta /opt/cloudland/cache/volume /opt/cloudland/cache/dnsmasq \
+    /opt/cloudland/cache/xml \
     && chown -R cland:cland /opt/cloudland
 
 # 环境变量

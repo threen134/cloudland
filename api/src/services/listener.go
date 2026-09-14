@@ -24,18 +24,18 @@ var (
 type ListenerAdmin struct{}
 
 func (a *ListenerAdmin) Create(ctx context.Context, name, mode, key, cert string, port int32, loadBalancer *model.LoadBalancer) (listener *model.Listener, err error) {
-	logger.Infof("ENTER ListenerAdmin.Create: name=%s, mode=%s, port=%d, lbID=%d", name, mode, port, loadBalancer.ID)
+	logger.Ctx(ctx).Infof("ENTER ListenerAdmin.Create: name=%s, mode=%s, port=%d, lbID=%d", name, mode, port, loadBalancer.ID)
 	defer func() {
 		if err != nil {
-			logger.Errorf("EXIT ListenerAdmin.Create: error=%v", err)
+			logger.Ctx(ctx).Errorf("EXIT ListenerAdmin.Create: error=%v", err)
 		} else {
-			logger.Infof("EXIT ListenerAdmin.Create: success, listenerID=%d", listener.ID)
+			logger.Ctx(ctx).Infof("EXIT ListenerAdmin.Create: success, listenerID=%d", listener.ID)
 		}
 	}()
 	memberShip := GetMemberShip(ctx)
 	permit := memberShip.CheckOrgPermission(model.OrgWriter)
 	if !permit {
-		logger.Error("Not authorized to create listener")
+		logger.Ctx(ctx).Error("Not authorized to create listener")
 		err = NewCLError(ErrPermissionDenied, "Not authorized to create listener", nil)
 		return
 	}
@@ -49,14 +49,14 @@ func (a *ListenerAdmin) Create(ctx context.Context, name, mode, key, cert string
 	listener = &model.Listener{Model: model.Model{Creater: memberShip.UserID}, Owner: owner, Name: name, Mode: mode, Key: base64.StdEncoding.EncodeToString([]byte(key)), Certificate: base64.StdEncoding.EncodeToString([]byte(cert)), Port: port, LoadBalancerID: loadBalancer.ID, Status: "available"}
 	err = db.Create(listener).Error
 	if err != nil {
-		logger.Error("DB failed to create listener ", err)
+		logger.Ctx(ctx).Error("DB failed to create listener ", err)
 		err = NewCLError(ErrListenerCreateFailed, "Failed to create listener", err)
 		return
 	}
 	loadBalancer.Listeners = append(loadBalancer.Listeners, listener)
 	err = CreateVrrpConf(ctx, loadBalancer)
 	if err != nil {
-		logger.Error("Recreate keepalived config failed", err)
+		logger.Ctx(ctx).Error("Recreate keepalived config failed", err)
 		err = NewCLError(ErrVrrpInstanceCreateFailed, "Recreate keepalived config failed", err)
 		return
 	}
@@ -64,16 +64,16 @@ func (a *ListenerAdmin) Create(ctx context.Context, name, mode, key, cert string
 }
 
 func (a *ListenerAdmin) Get(ctx context.Context, id int64, loadBalancer *model.LoadBalancer) (listener *model.Listener, err error) {
-	logger.Infof("ENTER ListenerAdmin.Get: id=%d, lbID=%d", id, loadBalancer.ID)
+	logger.Ctx(ctx).Infof("ENTER ListenerAdmin.Get: id=%d, lbID=%d", id, loadBalancer.ID)
 	defer func() {
 		if err != nil {
-			logger.Errorf("EXIT ListenerAdmin.Get: error=%v", err)
+			logger.Ctx(ctx).Errorf("EXIT ListenerAdmin.Get: error=%v", err)
 		} else {
-			logger.Info("EXIT ListenerAdmin.Get: success")
+			logger.Ctx(ctx).Info("EXIT ListenerAdmin.Get: success")
 		}
 	}()
 	if id <= 0 {
-		logger.Error("returning nil listener")
+		logger.Ctx(ctx).Error("returning nil listener")
 		return
 	}
 	ctx, db := GetContextDB(ctx)
@@ -81,12 +81,12 @@ func (a *ListenerAdmin) Get(ctx context.Context, id int64, loadBalancer *model.L
 	where, args := memberShip.GetOrgFilter()
 	listener = &model.Listener{Model: model.Model{ID: id}}
 	if err = db.Preload("Backends").Where(where, args...).Where("load_balancer_id = ?", loadBalancer.ID).Take(listener).Error; err != nil {
-		logger.Error("DB failed to query listener", err)
+		logger.Ctx(ctx).Error("DB failed to query listener", err)
 		return nil, NewCLError(ErrListenerNotFound, "Failed to find listener", err)
 	}
 	permit := memberShip.CheckResourceOrg(model.OrgReader, listener.Owner)
 	if !permit {
-		logger.Error("Not authorized to read the listener")
+		logger.Ctx(ctx).Error("Not authorized to read the listener")
 		err = NewCLError(ErrPermissionDenied, "Not authorized to read the listener", nil)
 		return
 	}
@@ -94,12 +94,12 @@ func (a *ListenerAdmin) Get(ctx context.Context, id int64, loadBalancer *model.L
 }
 
 func (a *ListenerAdmin) GetListenerByUUID(ctx context.Context, uuID string) (listener *model.Listener, err error) {
-	logger.Infof("ENTER ListenerAdmin.GetListenerByUUID: uuID=%s", uuID)
+	logger.Ctx(ctx).Infof("ENTER ListenerAdmin.GetListenerByUUID: uuID=%s", uuID)
 	defer func() {
 		if err != nil {
-			logger.Errorf("EXIT ListenerAdmin.GetListenerByUUID: error=%v", err)
+			logger.Ctx(ctx).Errorf("EXIT ListenerAdmin.GetListenerByUUID: error=%v", err)
 		} else {
-			logger.Infof("EXIT ListenerAdmin.GetListenerByUUID: success, listenerID=%d", listener.ID)
+			logger.Ctx(ctx).Infof("EXIT ListenerAdmin.GetListenerByUUID: success, listenerID=%d", listener.ID)
 		}
 	}()
 	ctx, db := GetContextDB(ctx)
@@ -107,12 +107,12 @@ func (a *ListenerAdmin) GetListenerByUUID(ctx context.Context, uuID string) (lis
 	where, args := memberShip.GetOrgFilter()
 	listener = &model.Listener{}
 	if err = db.Preload("Backends").Where(where, args...).Where("uuid = ?", uuID).Take(listener).Error; err != nil {
-		logger.Error("DB failed to query listener", err)
+		logger.Ctx(ctx).Error("DB failed to query listener", err)
 		return nil, NewCLError(ErrListenerNotFound, "Failed to find listener", err)
 	}
 	permit := memberShip.CheckResourceOrg(model.OrgReader, listener.Owner)
 	if !permit {
-		logger.Error("Not authorized to read the listener")
+		logger.Ctx(ctx).Error("Not authorized to read the listener")
 		err = NewCLError(ErrPermissionDenied, "Not authorized to read the listener", nil)
 		return
 	}
@@ -120,12 +120,12 @@ func (a *ListenerAdmin) GetListenerByUUID(ctx context.Context, uuID string) (lis
 }
 
 func (a *ListenerAdmin) GetListenerByName(ctx context.Context, name string) (listener *model.Listener, err error) {
-	logger.Infof("ENTER ListenerAdmin.GetListenerByName: name=%s", name)
+	logger.Ctx(ctx).Infof("ENTER ListenerAdmin.GetListenerByName: name=%s", name)
 	defer func() {
 		if err != nil {
-			logger.Errorf("EXIT ListenerAdmin.GetListenerByName: error=%v", err)
+			logger.Ctx(ctx).Errorf("EXIT ListenerAdmin.GetListenerByName: error=%v", err)
 		} else {
-			logger.Infof("EXIT ListenerAdmin.GetListenerByName: success, listenerID=%d", listener.ID)
+			logger.Ctx(ctx).Infof("EXIT ListenerAdmin.GetListenerByName: success, listenerID=%d", listener.ID)
 		}
 	}()
 	ctx, db := GetContextDB(ctx)
@@ -133,12 +133,12 @@ func (a *ListenerAdmin) GetListenerByName(ctx context.Context, name string) (lis
 	where, args := memberShip.GetOrgFilter()
 	listener = &model.Listener{}
 	if err = db.Preload("Backends").Where(where, args...).Where("name = ?", name).Take(listener).Error; err != nil {
-		logger.Error("DB failed to query listener", err)
+		logger.Ctx(ctx).Error("DB failed to query listener", err)
 		return nil, NewCLError(ErrListenerNotFound, "Failed to find listener", err)
 	}
 	permit := memberShip.CheckResourceOrg(model.OrgReader, listener.Owner)
 	if !permit {
-		logger.Error("Not authorized to read the listener")
+		logger.Ctx(ctx).Error("Not authorized to read the listener")
 		err = NewCLError(ErrPermissionDenied, "Not authorized to read the listener", nil)
 		return
 	}
@@ -146,12 +146,12 @@ func (a *ListenerAdmin) GetListenerByName(ctx context.Context, name string) (lis
 }
 
 func (a *ListenerAdmin) GetListener(ctx context.Context, reference *BaseReference) (listener *model.Listener, err error) {
-	logger.Infof("ENTER ListenerAdmin.GetListener: reference=%+v", reference)
+	logger.Ctx(ctx).Infof("ENTER ListenerAdmin.GetListener: reference=%+v", reference)
 	defer func() {
 		if err != nil {
-			logger.Errorf("EXIT ListenerAdmin.GetListener: error=%v", err)
+			logger.Ctx(ctx).Errorf("EXIT ListenerAdmin.GetListener: error=%v", err)
 		} else {
-			logger.Info("EXIT ListenerAdmin.GetListener: success")
+			logger.Ctx(ctx).Info("EXIT ListenerAdmin.GetListener: success")
 		}
 	}()
 	if reference == nil || (reference.ID == "" && reference.Name == "") {
@@ -170,19 +170,19 @@ func (a *ListenerAdmin) GetListener(ctx context.Context, reference *BaseReferenc
 }
 
 func (a *ListenerAdmin) Update(ctx context.Context, listener *model.Listener, name string) (lb *model.Listener, err error) {
-	logger.Infof("ENTER ListenerAdmin.Update: listenerID=%d, name=%s", listener.ID, name)
+	logger.Ctx(ctx).Infof("ENTER ListenerAdmin.Update: listenerID=%d, name=%s", listener.ID, name)
 	defer func() {
 		if err != nil {
-			logger.Errorf("EXIT ListenerAdmin.Update: error=%v", err)
+			logger.Ctx(ctx).Errorf("EXIT ListenerAdmin.Update: error=%v", err)
 		} else {
-			logger.Info("EXIT ListenerAdmin.Update: success")
+			logger.Ctx(ctx).Info("EXIT ListenerAdmin.Update: success")
 		}
 	}()
 	ctx, db := GetContextDB(ctx)
 	if listener.Name != name {
 		listener.Name = name
 		if err = db.Model(listener).Update("name", listener.Name).Error; err != nil {
-			logger.Error("Failed to save listener", err)
+			logger.Ctx(ctx).Error("Failed to save listener", err)
 			err = NewCLError(ErrRouterUpdateFailed, "Failed to update listener", err)
 			return
 		}
@@ -192,12 +192,12 @@ func (a *ListenerAdmin) Update(ctx context.Context, listener *model.Listener, na
 }
 
 func (a *ListenerAdmin) Delete(ctx context.Context, listener *model.Listener, loadBalancer *model.LoadBalancer) (err error) {
-	logger.Infof("ENTER ListenerAdmin.Delete: listenerID=%d, lbID=%d", listener.ID, loadBalancer.ID)
+	logger.Ctx(ctx).Infof("ENTER ListenerAdmin.Delete: listenerID=%d, lbID=%d", listener.ID, loadBalancer.ID)
 	defer func() {
 		if err != nil {
-			logger.Errorf("EXIT ListenerAdmin.Delete: error=%v", err)
+			logger.Ctx(ctx).Errorf("EXIT ListenerAdmin.Delete: error=%v", err)
 		} else {
-			logger.Info("EXIT ListenerAdmin.Delete: success")
+			logger.Ctx(ctx).Info("EXIT ListenerAdmin.Delete: success")
 		}
 	}()
 	ctx, db, newTransaction := StartTransaction(ctx)
@@ -209,46 +209,46 @@ func (a *ListenerAdmin) Delete(ctx context.Context, listener *model.Listener, lo
 	memberShip := GetMemberShip(ctx)
 	permit := memberShip.CheckResourceOrg(model.OrgReader, listener.Owner)
 	if !permit {
-		logger.Error("Not authorized to delete the listener")
+		logger.Ctx(ctx).Error("Not authorized to delete the listener")
 		err = NewCLError(ErrPermissionDenied, "Not authorized to delete the listener", nil)
 		return
 	}
 	_, backends, err := backendAdmin.List(ctx, 0, -1, "", listener)
 	if err != nil {
-		logger.Error("Failed to list backends", err)
+		logger.Ctx(ctx).Error("Failed to list backends", err)
 		err = NewCLError(ErrBackendListFailed, "Failed to list backends", err)
 		return
 	}
 	for _, backend := range backends {
 		err = backendAdmin.Delete(ctx, backend, listener, loadBalancer)
 		if err != nil {
-			logger.Error("Failed to delete backend", err)
+			logger.Ctx(ctx).Error("Failed to delete backend", err)
 			err = NewCLError(ErrBackendListFailed, "Failed to delete backend", err)
 			return
 		}
 	}
 	if err = db.Delete(listener).Error; err != nil {
-		logger.Error("DB failed to delete listener", err)
+		logger.Ctx(ctx).Error("DB failed to delete listener", err)
 		err = NewCLError(ErrListenerDeleteFailed, "Failed to delete listener", err)
 		return
 	}
 	listener.Name = fmt.Sprintf("%s-%d", listener.Name, listener.CreatedAt.Unix())
 	err = db.Model(&model.Listener{}).Unscoped().Where("id = ?", listener.ID).Update("name", listener.Name).Error
 	if err != nil {
-		logger.Error("DB failed to update listsner name", err)
+		logger.Ctx(ctx).Error("DB failed to update listsner name", err)
 		err = NewCLError(ErrListenerUpdateFailed, "DB failed to update listener name", err)
 		return
 	}
 	_, listeners, err := listenerAdmin.List(ctx, 0, -1, "", loadBalancer)
 	if err != nil {
-		logger.Error("DB failed to count listeners, %v", err)
+		logger.Ctx(ctx).Error("DB failed to count listeners, %v", err)
 		err = NewCLError(ErrSQLSyntaxError, "Failed to count listeners", err)
 		return
 	}
 	loadBalancer.Listeners = listeners
 	err = CreateVrrpConf(ctx, loadBalancer)
 	if err != nil {
-		logger.Error("Recreate keepalived config failed", err)
+		logger.Ctx(ctx).Error("Recreate keepalived config failed", err)
 		err = NewCLError(ErrVrrpInstanceCreateFailed, "Recreate keepalived config failed", err)
 		return
 	}
@@ -256,18 +256,18 @@ func (a *ListenerAdmin) Delete(ctx context.Context, listener *model.Listener, lo
 }
 
 func (a *ListenerAdmin) List(ctx context.Context, offset, limit int64, order string, loadBalancer *model.LoadBalancer) (total int64, listeners []*model.Listener, err error) {
-	logger.Infof("ENTER ListenerAdmin.List: lbID=%d, offset=%d, limit=%d, order=%s", loadBalancer.ID, offset, limit, order)
+	logger.Ctx(ctx).Infof("ENTER ListenerAdmin.List: lbID=%d, offset=%d, limit=%d, order=%s", loadBalancer.ID, offset, limit, order)
 	defer func() {
 		if err != nil {
-			logger.Errorf("EXIT ListenerAdmin.List: error=%v", err)
+			logger.Ctx(ctx).Errorf("EXIT ListenerAdmin.List: error=%v", err)
 		} else {
-			logger.Infof("EXIT ListenerAdmin.List: total=%d, count=%d", total, len(listeners))
+			logger.Ctx(ctx).Infof("EXIT ListenerAdmin.List: total=%d, count=%d", total, len(listeners))
 		}
 	}()
 	memberShip := GetMemberShip(ctx)
 	permit := memberShip.CheckOrgPermission(model.OrgReader)
 	if !permit {
-		logger.Error("Not authorized for this operation")
+		logger.Ctx(ctx).Error("Not authorized for this operation")
 		err = NewCLError(ErrPermissionDenied, "Not authorized for this operation", nil)
 		return
 	}
@@ -282,13 +282,13 @@ func (a *ListenerAdmin) List(ctx context.Context, offset, limit int64, order str
 	queryBuilder, args := memberShip.GetOrgFilter()
 	listeners = []*model.Listener{}
 	if err = db.Model(&model.Listener{}).Where(queryBuilder, args...).Where("load_balancer_id = ?", loadBalancer.ID).Count(&total).Error; err != nil {
-		logger.Error("DB failed to count load balancer, %v", err)
+		logger.Ctx(ctx).Error("DB failed to count load balancer, %v", err)
 		err = NewCLError(ErrSQLSyntaxError, "Failed to count load balancer", err)
 		return
 	}
-	db = dbs.Sortby(db.Offset(offset).Limit(limit), order)
+	db = dbs.Sortby(db.Offset(int(offset)).Limit(int(limit)), order)
 	if err = db.Preload("Backends").Where(queryBuilder, args...).Where("load_balancer_id = ?", loadBalancer.ID).Find(&listeners).Error; err != nil {
-		logger.Error("DB failed to query listeners, %v", err)
+		logger.Ctx(ctx).Error("DB failed to query listeners, %v", err)
 		err = NewCLError(ErrSQLSyntaxError, "Failed to query listeners", err)
 		return
 	}
@@ -298,7 +298,7 @@ func (a *ListenerAdmin) List(ctx context.Context, offset, limit int64, order str
 		for _, listener := range listeners {
 			listener.OwnerInfo = &model.Organization{Model: model.Model{ID: listener.Owner}}
 			if err = db.Take(listener.OwnerInfo).Error; err != nil {
-				logger.Error("Failed to query owner info", err)
+				logger.Ctx(ctx).Error("Failed to query owner info", err)
 				err = NewCLError(ErrOwnerNotFound, "Failed to query owner info", err)
 				return
 			}

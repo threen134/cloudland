@@ -40,7 +40,7 @@ type APIError struct {
 }
 
 func ErrorResponse(c *gin.Context, code int, errorMsg string, err error) {
-	logger.Errorf("%s, %v\n", errorMsg, err)
+	logger.Ctx(c).Errorf("%s, %v\n", errorMsg, err)
 	status := code
 	if err != nil {
 		var clErr *CLError

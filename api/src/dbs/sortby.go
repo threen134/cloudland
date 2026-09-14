@@ -16,7 +16,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/jinzhu/gorm"
+	"gorm.io/gorm"
 )
 
 // Sortby Sort by `s` defined at api handbook collections sorting

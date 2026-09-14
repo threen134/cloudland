@@ -1,8 +1,0 @@
-{
-  "flavor": {
-    "name": "tiny",
-    "raw": 1024,
-    "vcpus": 2,
-    "disk": 10
-  }
-}

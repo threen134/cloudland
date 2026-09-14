@@ -33,20 +33,20 @@ type ResourceData struct {
 
 type Dashboard struct{}
 
-func (a *Dashboard) GetSystemIpUsage(ctx context.Context, ntype string) (ipTotal, ipUsed int, err error) {
-	logger.Infof("ENTER GetSystemIpUsage: ntype=%s", ntype)
+func (a *Dashboard) GetSystemIpUsage(ctx context.Context, ntype string) (ipTotal, ipUsed int64, err error) {
+	logger.Ctx(ctx).Infof("ENTER GetSystemIpUsage: ntype=%s", ntype)
 	defer func() {
 		if err != nil {
-			logger.Errorf("EXIT GetSystemIpUsage: error=%v", err)
+			logger.Ctx(ctx).Errorf("EXIT GetSystemIpUsage: error=%v", err)
 		} else {
-			logger.Infof("EXIT GetSystemIpUsage: ipTotal=%d, ipUsed=%d", ipTotal, ipUsed)
+			logger.Ctx(ctx).Infof("EXIT GetSystemIpUsage: ipTotal=%d, ipUsed=%d", ipTotal, ipUsed)
 		}
 	}()
 	ctx, db := GetContextDB(ctx)
 	subnets := []*model.Subnet{}
 	err = db.Where("type = ?", ntype).Find(&subnets).Error
 	if err != nil {
-		logger.Error("Failed to query subnets")
+		logger.Ctx(ctx).Error("Failed to query subnets")
 		return
 	}
 	where := "subnet_id in ("
@@ -60,24 +60,24 @@ func (a *Dashboard) GetSystemIpUsage(ctx context.Context, ntype string) (ipTotal
 	where = where + ")"
 	err = db.Model(&model.Address{}).Where(where).Count(&ipTotal).Error
 	if err != nil {
-		logger.Error("Failed to count total public ips")
+		logger.Ctx(ctx).Error("Failed to count total public ips")
 		return
 	}
 	err = db.Model(&model.Address{}).Where(where).Where("allocated = ?", true).Count(&ipUsed).Error
 	if err != nil {
-		logger.Error("Failed to count used public ips")
+		logger.Ctx(ctx).Error("Failed to count used public ips")
 		return
 	}
 	return
 }
 
-func (a *Dashboard) GetOrgIpUsage(ctx context.Context, ntype string) (ipUsed int, err error) {
-	logger.Infof("ENTER GetOrgIpUsage: ntype=%s", ntype)
+func (a *Dashboard) GetOrgIpUsage(ctx context.Context, ntype string) (ipUsed int64, err error) {
+	logger.Ctx(ctx).Infof("ENTER GetOrgIpUsage: ntype=%s", ntype)
 	defer func() {
 		if err != nil {
-			logger.Errorf("EXIT GetOrgIpUsage: error=%v", err)
+			logger.Ctx(ctx).Errorf("EXIT GetOrgIpUsage: error=%v", err)
 		} else {
-			logger.Infof("EXIT GetOrgIpUsage: ipUsed=%d", ipUsed)
+			logger.Ctx(ctx).Infof("EXIT GetOrgIpUsage: ipUsed=%d", ipUsed)
 		}
 	}()
 	memberShip := GetMemberShip(ctx)
@@ -85,7 +85,7 @@ func (a *Dashboard) GetOrgIpUsage(ctx context.Context, ntype string) (ipUsed int
 	subnets := []*model.Subnet{}
 	err = db.Where("type = ?", ntype).Find(&subnets).Error
 	if err != nil {
-		logger.Error("Failed to query subnets")
+		logger.Ctx(ctx).Error("Failed to query subnets")
 		return
 	}
 	where := "subnet in ("
@@ -99,23 +99,23 @@ func (a *Dashboard) GetOrgIpUsage(ctx context.Context, ntype string) (ipUsed int
 	where = where + ")"
 	err = db.Model(&model.Interface{}).Where(where).Where("owner = ?", memberShip.OrgID).Count(&ipUsed).Error
 	if err != nil {
-		logger.Error("Failed to count used ips")
+		logger.Ctx(ctx).Error("Failed to count used ips")
 		return
 	}
 	return
 }
 
 func (a *Dashboard) GetOrgUsage(ctx context.Context, quota *model.Quota, instanceAdmin interface{}) (rcData *ResourceData, err error) {
-	logger.Infof("ENTER GetOrgUsage: quotaOrg=%d", quota.Owner)
+	logger.Ctx(ctx).Infof("ENTER GetOrgUsage: quotaOrg=%d", quota.Owner)
 	defer func() {
 		if err != nil {
-			logger.Errorf("EXIT GetOrgUsage: error=%v", err)
+			logger.Ctx(ctx).Errorf("EXIT GetOrgUsage: error=%v", err)
 		} else {
-			logger.Infof("EXIT GetOrgUsage: rcDataSummary=%s", rcData.Title)
+			logger.Ctx(ctx).Infof("EXIT GetOrgUsage: rcDataSummary=%s", rcData.Title)
 		}
 	}()
 	var cpu, memory, disk int32
-	
+
 	// Note: instanceAdmin.List needs to be called from routes layer
 	// This is a placeholder - actual implementation should receive instances as parameter
 	pubip, err := a.GetOrgIpUsage(ctx, "public")

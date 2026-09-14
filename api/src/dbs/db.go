@@ -13,18 +13,26 @@ History:
 package dbs
 
 import (
-	context "context"
+	"context"
 	"fmt"
+	"log"
 	"os"
 	"sort"
 	"strings"
 	"sync"
 	"time"
 
-	"github.com/jinzhu/gorm"
-	_ "github.com/jinzhu/gorm/dialects/postgres"
-	_ "github.com/jinzhu/gorm/dialects/sqlite"
+	rlog "api/src/utils/log"
+	"api/src/utils/tracing"
+
+	"gorm.io/driver/postgres"
+	"gorm.io/driver/sqlite"
+	"gorm.io/gorm"
+	gormlogger "gorm.io/gorm/logger"
+	"gorm.io/gorm/schema"
 )
+
+var logger = rlog.MustGetLogger("dbs")
 
 var (
 	locker          = sync.Mutex{}
@@ -52,31 +60,60 @@ func openDB() (db *gorm.DB) {
 		dbType = "sqlite3"
 		dbUrl = "cland.db"
 	}
+
+	// Configure GORM logger
+	logLevel := gormlogger.Silent
+	if testMode || dbDebug {
+		logLevel = gormlogger.Info
+	}
+	gormCfg := &gorm.Config{
+		// 与 GORM v1 一致不建外键：大量关联字段以 0 或 -1 表示“无关联”，外键约束会拒绝这些写入
+		DisableForeignKeyConstraintWhenMigrating: true,
+		Logger: gormlogger.New(
+			log.New(os.Stdout, "\r\n", log.LstdFlags),
+			gormlogger.Config{
+				SlowThreshold: 200 * time.Millisecond,
+				LogLevel:      logLevel,
+				Colorful:      false,
+			},
+		),
+	}
+
+	// Select dialector based on database type
+	var dialector gorm.Dialector
+	switch dbType {
+	case "postgres":
+		dialector = postgres.Open(dbUrl)
+	default:
+		dialector = sqlite.Open(dbUrl)
+	}
+
 	var err error
 	fmt.Printf("Attempting to open database: type=%s, url=%s\n", dbType, dbUrl)
-	if db, err = gorm.Open(dbType, dbUrl); err != nil {
+	if db, err = gorm.Open(dialector, gormCfg); err != nil {
 		fmt.Printf("FAILED to open database: %v\n", err)
 		panic(err)
 	}
 	fmt.Printf("Database connection established successfully\n")
 
-	if testMode || dbDebug {
-		db.LogMode(true)
+	// 链路追踪：请求 ctx 带上游 span 时为 SQL 创建子 span
+	if err = db.Use(tracing.GormPlugin{}); err != nil {
+		fmt.Printf("FAILED to register tracing plugin: %v\n", err)
 	}
 
-	// SetMaxIdleConns sets the maximum number of connections
-	// in the idle connection pool.
+	// Configure connection pool via underlying *sql.DB
+	sqlDB, err := db.DB()
+	if err != nil {
+		fmt.Printf("FAILED to get underlying sql.DB: %v\n", err)
+		panic(err)
+	}
 	idle := cfg.GetIdle()
-	db.DB().SetMaxIdleConns(idle)
-
-	// SetMaxOpenConns sets the maximum number of open connections
-	// to the database.
+	sqlDB.SetMaxIdleConns(idle)
 	open := cfg.GetOpen()
-	db.DB().SetMaxOpenConns(open)
-
-	// SetConnMaxLifetime set max connection lifetime(in minite)
+	sqlDB.SetMaxOpenConns(open)
 	lifetime := cfg.GetLifetime()
-	db.DB().SetConnMaxLifetime(time.Minute * time.Duration(lifetime))
+	sqlDB.SetConnMaxLifetime(time.Minute * time.Duration(lifetime))
+
 	return db
 }
 
@@ -99,15 +136,13 @@ func AutoMigrate(values ...interface{}) {
 }
 
 func doAutoMigrate(db *gorm.DB) {
-	logger, _ := startLogging(context.Background(), "doAutoMigrate")
-	defer logger.Finish()
 	if needToMigrate {
 		logger.Infof("Starting database auto-migration for %d objects", len(objects))
 		names := tableNames(db)
 		for i := 0; i < len(objects); i++ {
 			obj := objects[i]
 			name := names[i]
-			err := db.AutoMigrate(obj).Error
+			err := db.AutoMigrate(obj)
 			if err != nil {
 				logger.Error(err)
 				msg := err.Error()
@@ -131,14 +166,12 @@ func AutoUpgrade(name string, grade func(*gorm.DB) error) {
 }
 
 func doAutoUpgrade(db *gorm.DB) (err error) {
-	logger, _ := startLogging(context.Background(), "doAutoUpgrade")
-	defer logger.Finish()
 	if !needToUpgrade || len(grades) == 0 {
 		return
 	}
 	logger.Infof("Starting database auto-upgrade for %d tasks", len(grades))
 	names := []string{}
-	for name, _ := range grades {
+	for name := range grades {
 		names = append(names, name)
 	}
 	sort.Strings(names)
@@ -156,6 +189,11 @@ func doAutoUpgrade(db *gorm.DB) (err error) {
 	logger.Infof("Database auto-upgrade completed")
 	needToUpgrade = false
 	return
+}
+
+// DBContext 返回绑定请求 ctx 的 DB，使 SQL 挂到链路上；去掉取消信号，避免客户端断开时中断数据库操作
+func DBContext(ctx context.Context) *gorm.DB {
+	return DB().WithContext(context.WithoutCancel(ctx))
 }
 
 func DB() *gorm.DB {
@@ -195,9 +233,16 @@ func TableNames() (names []string) {
 }
 
 func tableNames(db *gorm.DB) (names []string) {
+	namer := schema.NamingStrategy{}
 	for i := 0; i < len(objects); i++ {
 		obj := objects[i]
-		names = append(names, db.NewScope(obj).TableName())
+		// Check if the model implements TableName() method (Tabler interface)
+		if tabler, ok := obj.(interface{ TableName() string }); ok {
+			names = append(names, tabler.TableName())
+		} else {
+			// Fall back to GORM's default naming convention
+			names = append(names, namer.TableName(fmt.Sprintf("%T", obj)))
+		}
 	}
 	return
 }

@@ -126,7 +126,7 @@ func (v *VolBackupAPI) List(c *gin.Context) {
 		ErrorResponse(c, http.StatusBadRequest, "Invalid query limit: "+limitStr, err)
 		return
 	}
-	logger.Debugf("Backup list url parameters: volume_id=%s, backup_type=%s, offset=%d, limit=%d", volumeUUID, backupType, offset, limit)
+	logger.Ctx(ctx).Debugf("Backup list url parameters: volume_id=%s, backup_type=%s, offset=%d, limit=%d", volumeUUID, backupType, offset, limit)
 	total, backups, err := volBackupAdmin.List(ctx, int64(offset), int64(limit), "-created_at", "", vol_id, backupType)
 	if err != nil {
 		ErrorResponse(c, http.StatusBadRequest, "Failed to list backups", err)

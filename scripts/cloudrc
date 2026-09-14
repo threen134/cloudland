@@ -27,10 +27,11 @@ debug_flag_file=/opt/cloudland/run/debug
 uefi_boot_loader=/usr/share/OVMF/OVMF_CODE_4M.fd
 nvram_template=/usr/share/OVMF/OVMF_VARS_4M.fd
 wds_bps_factor=1048576 # 1024 * 1024 
-#export JAEGER_SERVICE_NAME="SCI-Backend"
 function die()
 {
     echo $1
+    # 调试日志开启时同时记录失败原因，带上 cloudlet 注入的 trace id 便于与链路关联
+    log_debug "$(basename $0)" "die: $1"
     exit -1
 }
 
@@ -245,8 +246,8 @@ function log_debug()
     shift
     # check if debug file exists
     if [ -f $debug_flag_file ]; then
-        # write log and timestamp to debug log file
-        echo "[$(date -u +%Y%m%d%H%M%S)] $vm_ID $*" >> $debug_log_file
+        # write log and timestamp to debug log file; TRACEPARENT 由 cloudlet 注入，截取其中 32 位 trace id
+        echo "[$(date -u +%Y%m%d%H%M%S)] $vm_ID ${TRACEPARENT:+trace=${TRACEPARENT:3:32} }$*" >> $debug_log_file
     fi
 }
 

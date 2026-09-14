@@ -1,6 +1,6 @@
 export GO111MODULE=on
 
-all: api alarm_rules_manager
+all: api alarm_rules_manager cland cloudlet
 
 version:
 	git describe --always --tags > .version
@@ -24,6 +24,12 @@ docs: clapi_docs alarm_rules_manager_docs
 
 api: version
 	cd cmds/api && go build -o ../../clapi -ldflags "-X \"main.Version=`cat ../../.version`\""
+
+cland: version
+	cd cmds/cland && CGO_ENABLED=0 go build -o ../../cland-go -ldflags "-X \"main.Version=`cat ../../.version`\""
+
+cloudlet: version
+	cd cmds/cloudlet && CGO_ENABLED=0 go build -o ../../cloudlet-go -ldflags "-X \"main.Version=`cat ../../.version`\""
 
 alarm_rules_manager: version
 	cd cmds/alarm_rules_manager && CGO_ENABLED=0 go build -o ../../alarm_rules_manager -ldflags "-X \"main.Version=`cat ../../.version`\"" alarm_rules_manager.go

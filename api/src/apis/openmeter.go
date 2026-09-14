@@ -1,7 +1,10 @@
 package apis
 
 import (
+	"api/src/services"
+	"api/src/utils/tracing"
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -12,12 +15,13 @@ import (
 	"strconv"
 	"strings"
 	"time"
-	"api/src/services"
 
 	"sync"
 
 	"github.com/gin-gonic/gin"
 	"github.com/spf13/viper"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 	"gopkg.in/yaml.v3"
 )
 
@@ -181,12 +185,12 @@ func init() {
 }
 
 // getPrometheusConfig reads and parses the Prometheus configuration file
-func (o *OpenMeterAPI) getPrometheusConfig() (*PrometheusConfig, error) {
+func (o *OpenMeterAPI) getPrometheusConfig(ctx context.Context) (*PrometheusConfig, error) {
 	// Use the fixed path for Prometheus configuration
 	configPath := "/etc/prometheus/prometheus.yml"
 
 	// Use the ReadFile function from alarm.go to handle remote Prometheus servers
-	data, err := services.ReadFile(configPath)
+	data, err := services.ReadFile(ctx, configPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read prometheus config file: %v", err)
 	}
@@ -194,13 +198,13 @@ func (o *OpenMeterAPI) getPrometheusConfig() (*PrometheusConfig, error) {
 	if err := yaml.Unmarshal(data, &config); err != nil {
 		return nil, fmt.Errorf("failed to parse prometheus config: %v", err)
 	}
-	log.Printf("Prometheus config loaded: %v", config)
+	tracing.Logf(ctx, "Prometheus config loaded: %v", config)
 	return &config, nil
 }
 
 // getTargetsFromPrometheusConfig extracts targets from Prometheus configuration
-func (o *OpenMeterAPI) getTargetsFromPrometheusConfig(jobName string) ([]string, error) {
-	config, err := o.getPrometheusConfig()
+func (o *OpenMeterAPI) getTargetsFromPrometheusConfig(ctx context.Context, jobName string) ([]string, error) {
+	config, err := o.getPrometheusConfig(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -218,7 +222,7 @@ func (o *OpenMeterAPI) getTargetsFromPrometheusConfig(jobName string) ([]string,
 }
 
 // getPrometheusTargetFilter returns cached or fresh Prometheus target filter
-func (o *OpenMeterAPI) getPrometheusTargetFilter() (*PrometheusTargetFilter, error) {
+func (o *OpenMeterAPI) getPrometheusTargetFilter(ctx context.Context) (*PrometheusTargetFilter, error) {
 	targetFilterMutex.Lock()
 	defer targetFilterMutex.Unlock()
 
@@ -233,35 +237,35 @@ func (o *OpenMeterAPI) getPrometheusTargetFilter() (*PrometheusTargetFilter, err
 	var nodeTargets []string
 	nodeJobNames := []string{"prometheus_node_exporter"}
 	for _, jobName := range nodeJobNames {
-		if targets, err := o.getTargetsFromPrometheusConfig(jobName); err == nil && len(targets) > 0 {
+		if targets, err := o.getTargetsFromPrometheusConfig(ctx, jobName); err == nil && len(targets) > 0 {
 			nodeTargets = targets
-			log.Printf("Found node exporter targets under job '%s': %v", jobName, targets)
+			tracing.Logf(ctx, "Found node exporter targets under job '%s': %v", jobName, targets)
 			break
 		}
 	}
 	if len(nodeTargets) == 0 {
-		log.Printf("No node exporter targets found under any job name")
+		tracing.Logf(ctx, "No node exporter targets found under any job name")
 	}
 
 	// Try specific job names for libvirt exporter
 	var libvirtTargets []string
 	libvirtJobNames := []string{"prometheus_libvirt_exporter"}
 	for _, jobName := range libvirtJobNames {
-		if targets, err := o.getTargetsFromPrometheusConfig(jobName); err == nil && len(targets) > 0 {
+		if targets, err := o.getTargetsFromPrometheusConfig(ctx, jobName); err == nil && len(targets) > 0 {
 			libvirtTargets = targets
-			log.Printf("Found libvirt exporter targets under job '%s': %v", jobName, targets)
+			tracing.Logf(ctx, "Found libvirt exporter targets under job '%s': %v", jobName, targets)
 			break
 		}
 	}
 	if len(libvirtTargets) == 0 {
-		log.Printf("No libvirt exporter targets found under any job name")
+		tracing.Logf(ctx, "No libvirt exporter targets found under any job name")
 	}
 
 	targetFilterCache.NodeExporterTargets = nodeTargets
 	targetFilterCache.LibvirtExporterTargets = libvirtTargets
 	targetFilterCache.lastUpdated = now
 
-	log.Printf("Updated Prometheus target filter - Node targets: %d, Libvirt targets: %d",
+	tracing.Logf(ctx, "Updated Prometheus target filter - Node targets: %d, Libvirt targets: %d",
 		len(nodeTargets), len(libvirtTargets))
 
 	return targetFilterCache, nil
@@ -404,7 +408,7 @@ func (o *OpenMeterAPI) QueryOpenMeterMetrics(c *gin.Context) {
 		Limit:      100,
 	}
 
-	log.Printf("QueryOpenMeterMetrics - Request: InstanceID=%s, Subject=%s\n",
+	tracing.Logf(c, "QueryOpenMeterMetrics - Request: InstanceID=%s, Subject=%s\n",
 		req.InstanceID, req.Subject)
 
 	// Validate instance_id is required
@@ -461,12 +465,12 @@ func (o *OpenMeterAPI) QueryOpenMeterMetrics(c *gin.Context) {
 	meteringPort := viper.GetString("metering.port")
 
 	if meteringHost == "" || meteringPort == "" {
-		log.Printf("OpenMeter configuration not found, using default values")
+		tracing.Logf(c, "OpenMeter configuration not found, using default values")
 		meteringHost = "199.188.106.244"
 		meteringPort = "8123"
 	}
 
-	log.Printf(" ClickHouse connection - Host=%s, Port=%s\n", meteringHost, meteringPort)
+	tracing.Logf(c, " ClickHouse connection - Host=%s, Port=%s\n", meteringHost, meteringPort)
 
 	// Build ClickHouse query URL
 	clickHouseURL := fmt.Sprintf("http://%s:%s/", meteringHost, meteringPort)
@@ -474,22 +478,32 @@ func (o *OpenMeterAPI) QueryOpenMeterMetrics(c *gin.Context) {
 	// Build SQL query
 	sqlQuery := o.buildSQLQuery(req)
 
-	// Prepare query parameters
+	// Prepare query parameters：凭据通过 ClickHouse HTTP 头传递，避免密码出现在 URL、日志和链路数据中
 	params := url.Values{}
-	params.Add("user", req.User)
-	params.Add("password", req.Password)
 	params.Add("database", req.Database)
 
 	// Make HTTP request to ClickHouse
 	fullURL := fmt.Sprintf("%s?%s", clickHouseURL, params.Encode())
 
 	// Debug logging
-	log.Printf("OpenMeter Debug - SQL Query: %s", sqlQuery)
-	log.Printf("OpenMeter Debug - Full URL: %s", fullURL)
+	tracing.Logf(c, "OpenMeter Debug - SQL Query: %s", sqlQuery)
+	tracing.Logf(c, "OpenMeter Debug - URL: %s", fullURL)
 
-	resp, err := http.Post(fullURL, "text/plain", strings.NewReader(sqlQuery))
+	// ClickHouse 为外部服务：只建 span，不注入 trace 头
+	queryCtx, querySpan := tracing.StartChild(c.Request.Context(), "clickhouse.query",
+		trace.WithSpanKind(trace.SpanKindClient),
+		trace.WithAttributes(attribute.String("db.system", "clickhouse"), attribute.String("db.name", req.Database)))
+	var resp *http.Response
+	httpReq, err := http.NewRequestWithContext(queryCtx, http.MethodPost, fullURL, strings.NewReader(sqlQuery))
+	if err == nil {
+		httpReq.Header.Set("Content-Type", "text/plain")
+		httpReq.Header.Set("X-ClickHouse-User", req.User)
+		httpReq.Header.Set("X-ClickHouse-Key", req.Password)
+		resp, err = http.DefaultClient.Do(httpReq)
+	}
+	tracing.EndSpan(querySpan, err)
 	if err != nil {
-		log.Printf("Failed to query ClickHouse: %v", err)
+		tracing.Logf(c, "Failed to query ClickHouse: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"error": "failed to query metrics database",
 		})
@@ -499,7 +513,7 @@ func (o *OpenMeterAPI) QueryOpenMeterMetrics(c *gin.Context) {
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		log.Printf("Failed to read response body: %v", err)
+		tracing.Logf(c, "Failed to read response body: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"error": "failed to read metrics response",
 		})
@@ -507,7 +521,7 @@ func (o *OpenMeterAPI) QueryOpenMeterMetrics(c *gin.Context) {
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		log.Printf("ClickHouse query failed with status %d: %s", resp.StatusCode, string(body))
+		tracing.Logf(c, "ClickHouse query failed with status %d: %s", resp.StatusCode, string(body))
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"error":   "metrics query failed",
 			"details": string(body),
@@ -516,13 +530,13 @@ func (o *OpenMeterAPI) QueryOpenMeterMetrics(c *gin.Context) {
 	}
 
 	// Debug logging
-	log.Printf("ClickHouse response - status: %d, body length: %d", resp.StatusCode, len(body))
-	log.Printf("OpenMeter Debug - Raw Response Body: %s", string(body))
+	tracing.Logf(c, "ClickHouse response - status: %d, body length: %d", resp.StatusCode, len(body))
+	tracing.Logf(c, "OpenMeter Debug - Raw Response Body: %s", string(body))
 
 	// Parse raw events
 	events, err := o.parseJSONEachRowResponse(body)
 	if err != nil {
-		log.Printf("Failed to parse ClickHouse response: %v", err)
+		tracing.Logf(c, "Failed to parse ClickHouse response: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"error": "failed to parse metrics response",
 		})
@@ -530,10 +544,10 @@ func (o *OpenMeterAPI) QueryOpenMeterMetrics(c *gin.Context) {
 	}
 
 	// Debug logging
-	log.Printf("Parsed events count: %d\n", len(events))
+	tracing.Logf(c, "Parsed events count: %d\n", len(events))
 
 	if len(events) == 0 {
-		log.Printf("No data found for instance_id: %s, subject: %s", req.InstanceID, req.Subject)
+		tracing.Logf(c, "No data found for instance_id: %s, subject: %s", req.InstanceID, req.Subject)
 		c.JSON(http.StatusNotFound, gin.H{
 			"status":  "error",
 			"code":    "NO_DATA_FOUND",
@@ -551,9 +565,9 @@ func (o *OpenMeterAPI) QueryOpenMeterMetrics(c *gin.Context) {
 	// Apply Prometheus target filtering if enabled
 	filteredEvents := events
 	if c.Query("disable_prometheus_filter") != "true" {
-		targetFilter, err := o.getPrometheusTargetFilter()
+		targetFilter, err := o.getPrometheusTargetFilter(c.Request.Context())
 		if err != nil {
-			log.Printf("Failed to get Prometheus target Filter err: %v, targetFilter: %v", err, targetFilter)
+			tracing.Logf(c, "Failed to get Prometheus target Filter err: %v, targetFilter: %v", err, targetFilter)
 			// Continue without filtering rather than failing completely
 		} else {
 			filteredEvents, hasTargetMismatch := o.filterEventsByPrometheusTargets(events, targetFilter)
@@ -577,16 +591,16 @@ func (o *OpenMeterAPI) QueryOpenMeterMetrics(c *gin.Context) {
 				})
 				return
 			}
-			log.Printf("Prometheus filtering applied - filter: %v, events: %d -> %d", targetFilter, len(events), len(filteredEvents))
+			tracing.Logf(c, "Prometheus filtering applied - filter: %v, events: %d -> %d", targetFilter, len(events), len(filteredEvents))
 		}
 	} else {
-		log.Printf("Prometheus filtering disabled by request parameter")
+		tracing.Logf(c, "Prometheus filtering disabled by request parameter")
 	}
 
 	// Process metrics based on subject type
 	result, err := o.processMetricsBySubject(req.Subject, req.InstanceID, filteredEvents, req.Start, req.End)
 	if err != nil {
-		log.Printf("Failed to process metrics: %v", err)
+		tracing.Logf(c, "Failed to process metrics: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"error":   "failed to process metrics",
 			"details": err.Error(),
@@ -1832,7 +1846,7 @@ func (o *OpenMeterAPI) QueryInstanceMetricsBySubject(c *gin.Context) {
 	subject := c.Param("subject")
 
 	// Debug logging
-	log.Printf("QueryInstanceMetricsBySubject - InstanceID=%s, Subject=%s", instanceID, subject)
+	tracing.Logf(c, "QueryInstanceMetricsBySubject - InstanceID=%s, Subject=%s", instanceID, subject)
 
 	if instanceID == "" {
 		c.JSON(http.StatusBadRequest, gin.H{

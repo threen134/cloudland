@@ -45,7 +45,7 @@ fi
 mkdir -p volumes/alertmanager
 chown -R 65534:65534 volumes/alertmanager
 
-vars=("PUBLIC_IP" "INTERNAL_IP" "MANAGEMENT_VIP" "NETWORK_DEVICE" "DB_LISTEN_IP" "POSTGRES_USER" "POSTGRES_PASSWORD" "POSTGRES_DB" "ADMIN_PASSWORD" "HA_ROLE" "PEER_IP" "VRRP_INTERFACE" "DB_HOST" "DB_PORT")
+vars=("PUBLIC_IP" "INTERNAL_IP" "MANAGEMENT_VIP" "NETWORK_DEVICE" "DB_LISTEN_IP" "POSTGRES_USER" "POSTGRES_PASSWORD" "POSTGRES_DB" "ADMIN_PASSWORD" "HA_ROLE" "PEER_IP" "VRRP_INTERFACE" "DB_HOST" "DB_PORT" "GRPC_AUTH_TOKEN" "GRPC_LISTEN" "TELEMETRY_LISTEN_IP")
 
 for var in "${vars[@]}"; do
     val="${!var:-}"
@@ -111,15 +111,31 @@ log "4/6 - 处理证书和 SSH 密钥"
 mkdir -p "$CLOUDLAND_DIR/deploy/.ssh"
 mkdir -p "$DEPLOY_DIR/volumes/certs"
 
+# cland-go gRPC 共享令牌两台控制节点必须一致（计算节点 deploy_command 中只下发一份）：
+# MASTER 未提供时自动生成，BACKUP 始终以 MASTER 的值为准
 if [[ "$HA_ROLE" == "MASTER" ]]; then
     if [ ! -f "$CLOUDLAND_DIR/deploy/.ssh/cland.key" ]; then
         ssh-keygen -t rsa -f "$CLOUDLAND_DIR/deploy/.ssh/cland.key" -N ""
     fi
     bash scripts/init-certs.sh
+    if [ -z "$(grep '^GRPC_AUTH_TOKEN=' .env | cut -d'=' -f2- || true)" ]; then
+        sed -i '/^GRPC_AUTH_TOKEN=/d' .env
+        echo "GRPC_AUTH_TOKEN=$(openssl rand -hex 32)" >> .env
+        log "已生成 GRPC_AUTH_TOKEN 并写入 .env"
+    fi
 else
     log "正在从 MASTER ($PEER_IP) 同步证书和 SSH 密钥..."
     rsync -avz "$PEER_IP:$CLOUDLAND_DIR/deploy/.ssh/" "$CLOUDLAND_DIR/deploy/.ssh/"
     rsync -avz "$PEER_IP:$DEPLOY_DIR/volumes/certs/" "$DEPLOY_DIR/volumes/certs/"
+
+    log "正在从 MASTER ($PEER_IP) 同步 GRPC_AUTH_TOKEN..."
+    MASTER_TOKEN=$(ssh -o BatchMode=yes root@"$PEER_IP" "grep '^GRPC_AUTH_TOKEN=' $DEPLOY_DIR/.env | cut -d'=' -f2-" || true)
+    if [ -z "$MASTER_TOKEN" ]; then
+        warn "无法从 MASTER 读取 GRPC_AUTH_TOKEN，请先完成 MASTER 节点部署"
+        exit 1
+    fi
+    sed -i '/^GRPC_AUTH_TOKEN=/d' .env
+    echo "GRPC_AUTH_TOKEN=${MASTER_TOKEN}" >> .env
 fi
 
 # ============ 5. 检查 Docker 并启动服务 ============

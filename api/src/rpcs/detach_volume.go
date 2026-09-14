@@ -32,23 +32,23 @@ func DetachVolume(ctx context.Context, args []string) (status string, err error)
 	argn := len(args)
 	if argn < 4 {
 		err = fmt.Errorf("Wrong params")
-		logger.Error("Invalid args", err)
+		logger.Ctx(ctx).Error("Invalid args", err)
 		return
 	}
 	_, err = strconv.Atoi(args[1])
 	if err != nil {
-		logger.Error("Invalid instance ID", err)
+		logger.Ctx(ctx).Error("Invalid instance ID", err)
 		return
 	}
 	volID, err := strconv.ParseInt(args[2], 10, 64)
 	if err != nil {
-		logger.Error("Invalid volume ID", err)
+		logger.Ctx(ctx).Error("Invalid volume ID", err)
 		return
 	}
 	volume := &model.Volume{Model: model.Model{ID: volID}}
 	err = db.Where(volume).Take(volume).Error
 	if err != nil {
-		logger.Error("Failed to query volume", err)
+		logger.Ctx(ctx).Error("Failed to query volume", err)
 		return
 	}
 
@@ -63,7 +63,7 @@ func DetachVolume(ctx context.Context, args []string) (status string, err error)
 		"status":      volume.Status,
 	}).Error
 	if err != nil {
-		logger.Error("Update volume status failed", err)
+		logger.Ctx(ctx).Error("Update volume status failed", err)
 		return
 	}
 	return

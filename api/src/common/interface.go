@@ -17,7 +17,8 @@ import (
 	"api/src/model"
 	"api/src/utils/log"
 
-	"github.com/jinzhu/gorm"
+	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 var logger = log.MustGetLogger("common")
@@ -72,24 +73,23 @@ type VlanInfo struct {
 	MoreAddresses []string        `json:"more_addresses"`
 }
 
-
 func GetInterfaceInfo(ctx context.Context, instance *model.Instance, iface *model.Interface) (vlanInfo *VlanInfo, err error) {
 	ctx, db := GetContextDB(ctx)
-	err = db.Model(iface).Related(&iface.SecurityGroups, "SecurityGroups").Error
+	err = db.Model(iface).Association("SecurityGroups").Find(&iface.SecurityGroups)
 	if err != nil {
-		logger.Error("Get security groups for interface failed", err)
+		logger.Ctx(ctx).Error("Get security groups for interface failed", err)
 		return
 	}
 	var securityData []*SecurityData
 	securityData, err = GetSecurityData(ctx, iface.SecurityGroups)
 	if err != nil {
-		logger.Error("Get security data for interface failed", err)
+		logger.Ctx(ctx).Error("Get security data for interface failed", err)
 		return
 	}
 	var moreAddresses []string
 	_, moreAddresses, err = GetInstanceNetworks(ctx, instance, []*model.Interface{iface})
 	if err != nil {
-		logger.Errorf("Failed to get instance networks, %v", err)
+		logger.Ctx(ctx).Errorf("Failed to get instance networks, %v", err)
 		return
 	}
 	subnet := iface.Address.Subnet
@@ -113,19 +113,19 @@ func GetInterfaceInfo(ctx context.Context, instance *model.Instance, iface *mode
 func ApplyInterface(ctx context.Context, instance *model.Instance, iface *model.Interface, updateMeta bool) (err error) {
 	vlanInfo, err := GetInterfaceInfo(ctx, instance, iface)
 	if err != nil {
-		logger.Error("Failed to get interface info", err)
+		logger.Ctx(ctx).Error("Failed to get interface info", err)
 		return
 	}
 	jsonData, err := json.Marshal([]*VlanInfo{vlanInfo})
 	if err != nil {
-		logger.Error("Failed to marshal instance json data", err)
+		logger.Ctx(ctx).Error("Failed to marshal instance json data", err)
 		return
 	}
 	control := fmt.Sprintf("inter=%d", instance.Hyper)
 	command := fmt.Sprintf("/opt/cloudland/scripts/backend/sync_nic_info.sh '%d' '%s' '%s' '%t'<<EOF\n%s\nEOF", instance.ID, instance.Hostname, GetImageOSCode(ctx, instance), updateMeta, jsonData)
 	err = HyperExecute(ctx, control, command)
 	if err != nil {
-		logger.Error("Update vm nic command execution failed", err)
+		logger.Ctx(ctx).Error("Update vm nic command execution failed", err)
 		return
 	}
 	return
@@ -135,16 +135,16 @@ func AllocateAddress(ctx context.Context, subnet *model.Subnet, ifaceID int64, i
 	ctx, db := GetContextDB(ctx)
 	address = &model.Address{}
 	if ipaddr == "" {
-		err = db.Set("gorm:query_option", "FOR UPDATE").Where("subnet_id = ? and allocated = ? and reserved = ? and address != ?", subnet.ID, false, false, subnet.Gateway).Order("address::inet").Take(address).Error
+		err = db.Clauses(clause.Locking{Strength: "UPDATE"}).Where("subnet_id = ? and allocated = ? and reserved = ? and address != ?", subnet.ID, false, false, subnet.Gateway).Order("address::inet").Take(address).Error
 	} else {
 		if !strings.Contains(ipaddr, "/") {
 			preSize, _ := net.IPMask(net.ParseIP(subnet.Netmask).To4()).Size()
 			ipaddr = fmt.Sprintf("%s/%d", ipaddr, preSize)
 		}
-		err = db.Set("gorm:query_option", "FOR UPDATE").Where("subnet_id = ? and allocated = ? and reserved = ? and address = ?", subnet.ID, false, false, ipaddr).Order("address::inet").Take(address).Error
+		err = db.Clauses(clause.Locking{Strength: "UPDATE"}).Where("subnet_id = ? and allocated = ? and reserved = ? and address = ?", subnet.ID, false, false, ipaddr).Order("address::inet").Take(address).Error
 	}
 	if err != nil {
-		logger.Error("Failed to query address, %v", err)
+		logger.Ctx(ctx).Error("Failed to query address, %v", err)
 		return nil, err
 	}
 	address.Allocated = true
@@ -160,7 +160,7 @@ func AllocateAddress(ctx context.Context, subnet *model.Subnet, ifaceID int64, i
 		"second_interface": address.SecondInterface,
 		"interface":        address.Interface,
 	}).Error; err != nil {
-		logger.Error("Failed to Update address, %v", err)
+		logger.Ctx(ctx).Error("Failed to Update address, %v", err)
 		return nil, err
 	}
 	address.Subnet = subnet
@@ -177,8 +177,8 @@ func DeallocateAddress(ctx context.Context, ifaces []*model.Interface) (err erro
 			where = fmt.Sprintf("%s or interface='%d'", where, iface.ID)
 		}
 	}
-	if err = db.Model(&model.Address{}).Where(where).Update(map[string]interface{}{"allocated": false, "interface": 0}).Error; err != nil {
-		logger.Error("Failed to Update addresses, %v", err)
+	if err = db.Model(&model.Address{}).Where(where).Updates(map[string]interface{}{"allocated": false, "interface": 0}).Error; err != nil {
+		logger.Ctx(ctx).Error("Failed to Update addresses, %v", err)
 		return
 	}
 	return
@@ -232,7 +232,7 @@ func DerivePublicInterface(ctx context.Context, instance *model.Instance, iface 
 				"mac_addr":   primaryIface.MacAddr,
 				"uuid":       primaryIface.UUID}).Error
 			if err != nil {
-				logger.Errorf("Failed to update interface, %v", err)
+				logger.Ctx(ctx).Errorf("Failed to update interface, %v", err)
 				return
 			}
 			fip.InstanceID = instance.ID
@@ -245,7 +245,7 @@ func DerivePublicInterface(ctx context.Context, instance *model.Instance, iface 
 				"int_address": primaryIface.Address.Address,
 				"type":        string(PublicReserved)}).Error
 			if err != nil {
-				logger.Errorf("Failed to update public ip, %v", err)
+				logger.Ctx(ctx).Errorf("Failed to update public ip, %v", err)
 				return
 			}
 		} else {
@@ -257,7 +257,7 @@ func DerivePublicInterface(ctx context.Context, instance *model.Instance, iface 
 				"type":             "second",
 			}).Error
 			if err != nil {
-				logger.Errorf("Failed to update public ip, %v", err)
+				logger.Ctx(ctx).Errorf("Failed to update public ip, %v", err)
 				return
 			}
 			primaryIface.SecondAddresses = append(primaryIface.SecondAddresses, secondAddr)
@@ -272,7 +272,7 @@ func DerivePublicInterface(ctx context.Context, instance *model.Instance, iface 
 				"type":        string(PublicReserved),
 			}).Error
 			if err != nil {
-				logger.Errorf("Failed to update public ip, %v", err)
+				logger.Ctx(ctx).Errorf("Failed to update public ip, %v", err)
 				return
 			}
 		}
@@ -289,7 +289,7 @@ func CreateInterface(ctx context.Context, subnet *model.Subnet, ID, owner int64,
 	if mac == "" {
 		mac, err = GenerateMacaddr()
 		if err != nil {
-			logger.Error("Failed to generate random Mac address, %v", err)
+			logger.Ctx(ctx).Error("Failed to generate random Mac address, %v", err)
 			return
 		}
 	}
@@ -308,7 +308,7 @@ func CreateInterface(ctx context.Context, subnet *model.Subnet, ID, owner int64,
 		SecurityGroups: secgroups,
 		AllowSpoofing:  allowSpoofing,
 	}
-	logger.Debugf("Interface: %v", iface)
+	logger.Ctx(ctx).Debugf("Interface: %v", iface)
 	switch ifType {
 	case "instance":
 		iface.Instance = ID
@@ -325,15 +325,15 @@ func CreateInterface(ctx context.Context, subnet *model.Subnet, ID, owner int64,
 	}
 	err = db.Create(iface).Error
 	if err != nil {
-		logger.Error("Failed to create interface, ", err)
+		logger.Ctx(ctx).Error("Failed to create interface, ", err)
 		return
 	}
 	iface.Address, err = AllocateAddress(ctx, subnet, iface.ID, address, "native")
 	if err != nil {
-		logger.Error("Failed to allocate address", err)
+		logger.Ctx(ctx).Error("Failed to allocate address", err)
 		err2 := db.Delete(iface).Error
 		if err2 != nil {
-			logger.Error("Failed to delete interface, ", err)
+			logger.Ctx(ctx).Error("Failed to delete interface, ", err)
 		}
 		iface = nil
 		err = fmt.Errorf("Failed to allocate address, %v", err)
@@ -360,7 +360,7 @@ func DeleteInterfaces(ctx context.Context, masterID, subnetID int64, ifType stri
 		err = db.Where("device = ? and type like ?", masterID, "%gateway%").Where(where).Find(&ifaces).Error
 	}
 	if err != nil {
-		logger.Error("Failed to query interfaces, %v", err)
+		logger.Ctx(ctx).Error("Failed to query interfaces, %v", err)
 		return
 	}
 	if len(ifaces) > 0 {
@@ -376,12 +376,12 @@ func DeleteInterfaces(ctx context.Context, masterID, subnetID int64, ifType stri
 			err = db.Where("dhcp = ? and type = ?", masterID, "dhcp").Where(where).Delete(&model.Interface{}).Error
 		}
 		if err != nil {
-			logger.Error("Failed to delete interface, %v", err)
+			logger.Ctx(ctx).Error("Failed to delete interface, %v", err)
 			return
 		}
 		err = DeallocateAddress(ctx, ifaces)
 		if err != nil {
-			logger.Error("Failed to deallocate address, %v", err)
+			logger.Ctx(ctx).Error("Failed to deallocate address, %v", err)
 			return
 		}
 	}
@@ -394,21 +394,21 @@ func DeleteInterface(ctx context.Context, iface *model.Interface) (err error) {
 	// Delete interface first, then deallocate address (matching create path lock order: interface -> address)
 	err = db.Delete(iface).Error
 	if err != nil {
-		logger.Error("Failed to delete interface", err)
+		logger.Ctx(ctx).Error("Failed to delete interface", err)
 		return
 	}
-	if err = db.Model(&model.Address{}).Where("interface = ?", iface.ID).Update(map[string]interface{}{"allocated": false, "interface": 0}).Error; err != nil {
-		logger.Error("Failed to Update addresses, %v", err)
+	if err = db.Model(&model.Address{}).Where("interface = ?", iface.ID).Updates(map[string]interface{}{"allocated": false, "interface": 0}).Error; err != nil {
+		logger.Ctx(ctx).Error("Failed to Update addresses, %v", err)
 		return
 	}
 	// Release addresses that only have a second_interface reference to this iface
-	if err = db.Model(&model.Address{}).Where("second_interface = ? and interface = 0", iface.ID).Update(map[string]interface{}{"allocated": false, "second_interface": 0}).Error; err != nil {
-		logger.Error("Failed to Update second_addresses (no primary), %v", err)
+	if err = db.Model(&model.Address{}).Where("second_interface = ? and interface = 0", iface.ID).Updates(map[string]interface{}{"allocated": false, "second_interface": 0}).Error; err != nil {
+		logger.Ctx(ctx).Error("Failed to Update second_addresses (no primary), %v", err)
 		return
 	}
 	// Clear second_interface on addresses that still have a primary interface
-	if err = db.Model(&model.Address{}).Where("second_interface = ? and interface > 0", iface.ID).Update(map[string]interface{}{"second_interface": 0}).Error; err != nil {
-		logger.Error("Failed to Update second_addresses (has primary), %v", err)
+	if err = db.Model(&model.Address{}).Where("second_interface = ? and interface > 0", iface.ID).Updates(map[string]interface{}{"second_interface": 0}).Error; err != nil {
+		logger.Ctx(ctx).Error("Failed to Update second_addresses (has primary), %v", err)
 		return
 	}
 	return
@@ -421,10 +421,10 @@ func GetSecurityRules(ctx context.Context, secGroups []*model.SecurityGroup) (se
 		secrules := []*model.SecurityRule{}
 		err = db.Model(&model.SecurityRule{}).Where("secgroup = ?", sg.ID).Find(&secrules).Error
 		if err != nil {
-			logger.Error("DB failed to query security rules", err)
+			logger.Ctx(ctx).Error("DB failed to query security rules", err)
 			return
 		}
-		logger.Debug("Security rule: %v", secrules)
+		logger.Ctx(ctx).Debug("Security rule: %v", secrules)
 		securityRules = append(securityRules, secrules...)
 	}
 	return
@@ -433,7 +433,7 @@ func GetSecurityRules(ctx context.Context, secGroups []*model.SecurityGroup) (se
 func GetSecurityData(ctx context.Context, secgroups []*model.SecurityGroup) (securityData []*SecurityData, err error) {
 	secRules, err := GetSecurityRules(ctx, secgroups)
 	if err != nil {
-		logger.Error("Failed to get security rules", err)
+		logger.Ctx(ctx).Error("Failed to get security rules", err)
 		return
 	}
 	for _, rule := range secRules {
@@ -474,7 +474,7 @@ func GetInstanceNetworks(ctx context.Context, instance *model.Instance, ifaces [
 				iface.Name = "eth0"
 				err = db.Model(&model.Interface{}).Where("id = ?", iface.ID).Updates(map[string]interface{}{"name": iface.Name}).Error
 				if err != nil {
-					logger.Error("Update interface name ", err)
+					logger.Ctx(ctx).Error("Update interface name ", err)
 					return
 				}
 			}
@@ -501,7 +501,7 @@ func GetInstanceNetworks(ctx context.Context, instance *model.Instance, ifaces [
 					siteAddrs := []*model.Address{}
 					err = db.Where("subnet_id = ? and address != ?", site.ID, site.Gateway).Find(&siteAddrs).Error
 					if err != nil {
-						logger.Errorf("Failed to query site ip(s), %v", err)
+						logger.Ctx(ctx).Errorf("Failed to query site ip(s), %v", err)
 						return
 					}
 					for _, addr := range siteAddrs {
@@ -532,12 +532,12 @@ func GetVrrpInterfaces(ctx context.Context, vrrpID int64) (vrrpIface1, vrrpIface
 	vrrpIface2 = &model.Interface{}
 	err = db.Preload("Address").Where("type = 'vrrp' and name = 'MASTER' and device = ?", vrrpID).Take(vrrpIface1).Error
 	if err != nil {
-		logger.Error("Failed to query vrrp interface 1", err)
+		logger.Ctx(ctx).Error("Failed to query vrrp interface 1", err)
 		return
 	}
 	err = db.Preload("Address").Where("type = 'vrrp' and name = 'BACKUP' and device = ?", vrrpID).Take(vrrpIface2).Error
 	if err != nil {
-		logger.Error("Failed to query vrrp interface 2", err)
+		logger.Ctx(ctx).Error("Failed to query vrrp interface 2", err)
 		return
 	}
 	return

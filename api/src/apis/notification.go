@@ -398,7 +398,7 @@ func (a *NotificationAPI) ProcessAlertWebhookV2(c *gin.Context) {
 
 	for _, alert := range notification.Alerts {
 		if alert.Fingerprint == "" {
-			logger.Warningf("Alert missing fingerprint, skipping")
+			logger.Ctx(ctx).Warningf("Alert missing fingerprint, skipping")
 			continue
 		}
 
@@ -416,7 +416,7 @@ func (a *NotificationAPI) ProcessAlertWebhookV2(c *gin.Context) {
 			ctx, alert.Fingerprint, alertData, alert.Status, alert.StartsAt,
 		)
 		if err != nil {
-			logger.Errorf("Failed to upsert alarm event (fingerprint=%s): %v", alert.Fingerprint, err)
+			logger.Ctx(ctx).Errorf("Failed to upsert alarm event (fingerprint=%s): %v", alert.Fingerprint, err)
 			continue
 		}
 
@@ -437,7 +437,7 @@ func (a *NotificationAPI) ProcessAlertWebhookV2(c *gin.Context) {
 				"reason":     "Block IP for detect attack",
 				"comments":   alert.Annotations["summary"],
 			}
-			go alarmAPI.sendSwitchAPIRequest(reqBody)
+			go alarmAPI.sendSwitchAPIRequest(context.WithoutCancel(ctx), reqBody)
 		}
 	}
 
@@ -460,7 +460,7 @@ func (a *NotificationAPI) sendNotifications(event *model.AlarmEvent, notifyType 
 	ctx = SetContextDB(ctx, DB())
 	channels, err := a.admin.GetBoundChannels(ctx, event.RuleGroupUUID)
 	if err != nil {
-		logger.Errorf("Failed to get bound channels for rule %s: %v", event.RuleGroupUUID, err)
+		logger.Ctx(ctx).Errorf("Failed to get bound channels for rule %s: %v", event.RuleGroupUUID, err)
 		return
 	}
 	if len(channels) == 0 {
@@ -468,7 +468,7 @@ func (a *NotificationAPI) sendNotifications(event *model.AlarmEvent, notifyType 
 	}
 
 	for _, channel := range channels {
-		result := a.notifier.SendNotification(channel, event, notifyType)
+		result := a.notifier.SendNotification(ctx, channel, event, notifyType)
 
 		// 记录发送流水
 		deliveryLog := &model.AlarmDeliveryLog{
@@ -482,7 +482,7 @@ func (a *NotificationAPI) sendNotifications(event *model.AlarmEvent, notifyType 
 			SentAt:       time.Now(),
 		}
 		if err := a.admin.CreateDeliveryLog(ctx, deliveryLog); err != nil {
-			logger.Errorf("Failed to create delivery log: %v", err)
+			logger.Ctx(ctx).Errorf("Failed to create delivery log: %v", err)
 		}
 	}
 }

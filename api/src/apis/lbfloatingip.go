@@ -34,23 +34,23 @@ type LBFloatingIpAPI struct{}
 func (v *LBFloatingIpAPI) Get(c *gin.Context) {
 	ctx := c.Request.Context()
 	lbID := c.Param("id")
-	logger.Debugf("Get load balancer %s", lbID)
+	logger.Ctx(ctx).Debugf("Get load balancer %s", lbID)
 	loadBalancer, err := loadBalancerAdmin.GetLoadBalancerByUUID(ctx, lbID)
 	if err != nil {
-		logger.Errorf("Failed to get load balancer %s, %+v", lbID, err)
+		logger.Ctx(ctx).Errorf("Failed to get load balancer %s, %+v", lbID, err)
 		ErrorResponse(c, http.StatusBadRequest, "Invalid load balancer query", err)
 		return
 	}
 	fipID := c.Param("floating_ip_id")
-	logger.Debugf("Get floating ip %s", fipID)
+	logger.Ctx(ctx).Debugf("Get floating ip %s", fipID)
 	floatingIp, err := floatingIpAdmin.GetFloatingIpByUUID(ctx, fipID)
 	if err != nil {
-		logger.Errorf("Failed to get floating ip %+v", err)
+		logger.Ctx(ctx).Errorf("Failed to get floating ip %+v", err)
 		ErrorResponse(c, http.StatusBadRequest, "Invalid query", err)
 		return
 	}
 	if floatingIp.LoadBalancerID != loadBalancer.ID {
-		logger.Error("Invalid query for load balancer floating ip")
+		logger.Ctx(ctx).Error("Invalid query for load balancer floating ip")
 		ErrorResponse(c, http.StatusBadRequest, "Invalid query", NewCLError(ErrInvalidParameter, "Invalid query for load balancer floating ip", nil))
 		return
 	}
@@ -74,29 +74,29 @@ func (v *LBFloatingIpAPI) Get(c *gin.Context) {
 func (v *LBFloatingIpAPI) Delete(c *gin.Context) {
 	ctx := c.Request.Context()
 	lbID := c.Param("id")
-	logger.Debugf("Get load balancer %s", lbID)
+	logger.Ctx(ctx).Debugf("Get load balancer %s", lbID)
 	loadBalancer, err := loadBalancerAdmin.GetLoadBalancerByUUID(ctx, lbID)
 	if err != nil {
-		logger.Errorf("Failed to get load balancer %s, %+v", lbID, err)
+		logger.Ctx(ctx).Errorf("Failed to get load balancer %s, %+v", lbID, err)
 		ErrorResponse(c, http.StatusBadRequest, "Invalid load balancer query", err)
 		return
 	}
 	fipID := c.Param("floating_ip_id")
-	logger.Debugf("Delete floating ip %s", fipID)
+	logger.Ctx(ctx).Debugf("Delete floating ip %s", fipID)
 	floatingIp, err := floatingIpAdmin.GetFloatingIpByUUID(ctx, fipID)
 	if err != nil {
-		logger.Errorf("Failed to get floating ip %+v", err)
+		logger.Ctx(ctx).Errorf("Failed to get floating ip %+v", err)
 		ErrorResponse(c, http.StatusBadRequest, "Invalid query", err)
 		return
 	}
 	if floatingIp.LoadBalancerID != loadBalancer.ID {
-		logger.Error("Invalid delete for load balancer floating ip")
+		logger.Ctx(ctx).Error("Invalid delete for load balancer floating ip")
 		ErrorResponse(c, http.StatusBadRequest, "Invalid delete", NewCLError(ErrInvalidParameter, "Invalid delete for load balancer floating ip", nil))
 		return
 	}
 	err = floatingIpAdmin.Delete(ctx, floatingIp)
 	if err != nil {
-		logger.Errorf("Failed to delete floating ip %+v", err)
+		logger.Ctx(ctx).Errorf("Failed to delete floating ip %+v", err)
 		ErrorResponse(c, http.StatusBadRequest, "Not able to delete", err)
 		return
 	}
@@ -114,23 +114,23 @@ func (v *LBFloatingIpAPI) Delete(c *gin.Context) {
 // @Failure 401 {object} common.APIError "Not authorized"
 // @Router /load_balancers/{id}/floating_ips [post]
 func (v *LBFloatingIpAPI) Create(c *gin.Context) {
-	logger.Debugf("Creating floating ip")
+	logger.Ctx(c).Debugf("Creating floating ip")
 	ctx := c.Request.Context()
 	lbID := c.Param("id")
 	loadBalancer, err := loadBalancerAdmin.GetLoadBalancerByUUID(ctx, lbID)
 	if err != nil {
-		logger.Errorf("Failed to get load balancer %s, %+v", lbID, err)
+		logger.Ctx(ctx).Errorf("Failed to get load balancer %s, %+v", lbID, err)
 		ErrorResponse(c, http.StatusBadRequest, "Invalid load balancer query", err)
 		return
 	}
 	payload := &FloatingIpPayload{}
 	err = c.ShouldBindJSON(payload)
 	if err != nil {
-		logger.Errorf("Invalid input JSON %+v", err)
+		logger.Ctx(ctx).Errorf("Invalid input JSON %+v", err)
 		ErrorResponse(c, http.StatusBadRequest, "Invalid input JSON", err)
 		return
 	}
-	logger.Debugf("Creating floating ip with %+v", payload)
+	logger.Ctx(ctx).Debugf("Creating floating ip with %+v", payload)
 	activationCount := payload.ActivationCount
 
 	var publicSubnets []*model.Subnet
@@ -138,7 +138,7 @@ func (v *LBFloatingIpAPI) Create(c *gin.Context) {
 		for _, subnetRef := range payload.PublicSubnets {
 			subnet, err := subnetAdmin.GetSubnet(ctx, subnetRef)
 			if err != nil {
-				logger.Errorf("Failed to get public subnet %+v", err)
+				logger.Ctx(ctx).Errorf("Failed to get public subnet %+v", err)
 				ErrorResponse(c, http.StatusBadRequest, "Failed to get public subnet", err)
 				return
 			}
@@ -148,7 +148,7 @@ func (v *LBFloatingIpAPI) Create(c *gin.Context) {
 		if payload.PublicSubnet != nil {
 			subnet, err := subnetAdmin.GetSubnet(ctx, payload.PublicSubnet)
 			if err != nil {
-				logger.Errorf("Failed to get public subnet %+v", err)
+				logger.Ctx(ctx).Errorf("Failed to get public subnet %+v", err)
 				ErrorResponse(c, http.StatusBadRequest, "Failed to get public subnet", err)
 				return
 			}
@@ -162,16 +162,16 @@ func (v *LBFloatingIpAPI) Create(c *gin.Context) {
 	if payload.Group != nil {
 		group, err = ipGroupAdmin.GetIpGroupByUUID(ctx, payload.Group.ID)
 		if err != nil {
-			logger.Errorf("Failed to get ip group %+v", err)
+			logger.Ctx(ctx).Errorf("Failed to get ip group %+v", err)
 			ErrorResponse(c, http.StatusBadRequest, "Failed to get ip group", err)
 			return
 		}
 	}
 
-	logger.Debugf("publicSubnets: %v, publicIp: %s, name: %s, inbound: %d, outbound: %d, activationCount: %d, group: %v", publicSubnets, payload.PublicIp, payload.Name, payload.Inbound, payload.Outbound, activationCount, group)
+	logger.Ctx(ctx).Debugf("publicSubnets: %v, publicIp: %s, name: %s, inbound: %d, outbound: %d, activationCount: %d, group: %v", publicSubnets, payload.PublicIp, payload.Name, payload.Inbound, payload.Outbound, activationCount, group)
 	floatingIps, err := floatingIpAdmin.Create(ctx, nil, publicSubnets, payload.PublicIp, payload.Name, payload.Inbound, payload.Outbound, activationCount, nil, group, loadBalancer)
 	if err != nil {
-		logger.Errorf("Failed to create floating ip %+v", err)
+		logger.Ctx(ctx).Errorf("Failed to create floating ip %+v", err)
 		ErrorResponse(c, http.StatusBadRequest, "Failed to create floating ip", err)
 		return
 	}
@@ -184,7 +184,7 @@ func (v *LBFloatingIpAPI) Create(c *gin.Context) {
 		}
 		floatingIpResp = append(floatingIpResp, resp)
 	}
-	logger.Debugf("Created floating ips %+v", floatingIpResp)
+	logger.Ctx(ctx).Debugf("Created floating ips %+v", floatingIpResp)
 	c.JSON(http.StatusOK, floatingIpResp)
 }
 
@@ -201,35 +201,35 @@ func (v *LBFloatingIpAPI) List(c *gin.Context) {
 	lbID := c.Param("id")
 	loadBalancer, err := loadBalancerAdmin.GetLoadBalancerByUUID(ctx, lbID)
 	if err != nil {
-		logger.Errorf("Failed to get load balancer %s, %+v", lbID, err)
+		logger.Ctx(ctx).Errorf("Failed to get load balancer %s, %+v", lbID, err)
 		ErrorResponse(c, http.StatusBadRequest, "Invalid load balancer query", err)
 		return
 	}
 	offsetStr := c.DefaultQuery("offset", "0")
 	limitStr := c.DefaultQuery("limit", "50")
 	queryStr := c.DefaultQuery("query", "")
-	logger.Debugf("List floating ips with offset %s, limit %s, query %s", offsetStr, limitStr, queryStr)
+	logger.Ctx(ctx).Debugf("List floating ips with offset %s, limit %s, query %s", offsetStr, limitStr, queryStr)
 	offset, err := strconv.Atoi(offsetStr)
 	if err != nil {
-		logger.Errorf("Invalid query offset %+v", err)
+		logger.Ctx(ctx).Errorf("Invalid query offset %+v", err)
 		ErrorResponse(c, http.StatusBadRequest, "Invalid query offset: "+offsetStr, err)
 		return
 	}
 	limit, err := strconv.Atoi(limitStr)
 	if err != nil {
-		logger.Errorf("Invalid query limit %+v", err)
+		logger.Ctx(ctx).Errorf("Invalid query limit %+v", err)
 		ErrorResponse(c, http.StatusBadRequest, "Invalid query limit: "+limitStr, err)
 		return
 	}
 	if offset < 0 || limit < 0 {
-		logger.Errorf("Invalid query offset or limit %+v", err)
+		logger.Ctx(ctx).Errorf("Invalid query offset or limit %+v", err)
 		ErrorResponse(c, http.StatusBadRequest, "Invalid query offset or limit", err)
 		return
 	}
 	intQuery := fmt.Sprintf("load_balancer_id = %d", loadBalancer.ID)
 	total, floatingIps, err := floatingIpAdmin.List(ctx, int64(offset), int64(limit), "-created_at", queryStr, intQuery)
 	if err != nil {
-		logger.Errorf("Failed to list floatingIps %+v", err)
+		logger.Ctx(ctx).Errorf("Failed to list floatingIps %+v", err)
 		ErrorResponse(c, http.StatusBadRequest, "Failed to list floatingIps", err)
 		return
 	}

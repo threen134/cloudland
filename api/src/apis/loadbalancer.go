@@ -29,17 +29,17 @@ type LoadBalancerAPI struct{}
 
 type LoadBalancerResponse struct {
 	*ResourceReference
-	Description string               `json:"description,omitempty"`
-	FloatingIps []*FloatingIpInfo    `json:"floating_ips,omitempty"`
-	Listeners   []*ListenerResponse  `json:"listeners,omitempty"`
-	VPC         *ResourceReference   `json:"vpc,omitempty"`
-	Status      string               `json:"status"`
+	Description string              `json:"description,omitempty"`
+	FloatingIps []*FloatingIpInfo   `json:"floating_ips,omitempty"`
+	Listeners   []*ListenerResponse `json:"listeners,omitempty"`
+	VPC         *ResourceReference  `json:"vpc,omitempty"`
+	Status      string              `json:"status"`
 }
 
 type LoadBalancerListResponse struct {
-	Offset         int                      `json:"offset"`
-	Total          int                      `json:"total"`
-	Limit          int                      `json:"limit"`
+	Offset        int                     `json:"offset"`
+	Total         int                     `json:"total"`
+	Limit         int                     `json:"limit"`
 	LoadBalancers []*LoadBalancerResponse `json:"load_balancers"`
 }
 
@@ -68,10 +68,10 @@ type LoadBalancerPatchPayload struct {
 func (v *LoadBalancerAPI) Get(c *gin.Context) {
 	ctx := c.Request.Context()
 	uuID := c.Param("id")
-	logger.Debugf("Get loadBalancer %s", uuID)
+	logger.Ctx(ctx).Debugf("Get loadBalancer %s", uuID)
 	loadBalancer, err := loadBalancerAdmin.GetLoadBalancerByUUID(ctx, uuID)
 	if err != nil {
-		logger.Errorf("Failed to get loadBalancer %s, %+v", uuID, err)
+		logger.Ctx(ctx).Errorf("Failed to get loadBalancer %s, %+v", uuID, err)
 		ErrorResponse(c, http.StatusBadRequest, "Invalid load balancer query", err)
 		return
 	}
@@ -80,7 +80,7 @@ func (v *LoadBalancerAPI) Get(c *gin.Context) {
 		ErrorResponse(c, http.StatusInternalServerError, "Internal error", err)
 		return
 	}
-	logger.Debugf("Get loadBalancer successfully, %s, %+v", uuID, loadBalancerResp)
+	logger.Ctx(ctx).Debugf("Get loadBalancer successfully, %s, %+v", uuID, loadBalancerResp)
 	c.JSON(http.StatusOK, loadBalancerResp)
 }
 
@@ -97,24 +97,24 @@ func (v *LoadBalancerAPI) Get(c *gin.Context) {
 func (v *LoadBalancerAPI) Patch(c *gin.Context) {
 	ctx := c.Request.Context()
 	uuID := c.Param("id")
-	logger.Debugf("Patch loadBalancer %s", uuID)
+	logger.Ctx(ctx).Debugf("Patch loadBalancer %s", uuID)
 	loadBalancer, err := loadBalancerAdmin.GetLoadBalancerByUUID(ctx, uuID)
 	if err != nil {
-		logger.Errorf("Failed to get loadBalancer %s, %+v", uuID, err)
+		logger.Ctx(ctx).Errorf("Failed to get loadBalancer %s, %+v", uuID, err)
 		ErrorResponse(c, http.StatusBadRequest, "Invalid load balancer query", err)
 		return
 	}
 	payload := &LoadBalancerPatchPayload{}
 	err = c.ShouldBindJSON(payload)
 	if err != nil {
-		logger.Errorf("Failed to bind json, %+v", err)
+		logger.Ctx(ctx).Errorf("Failed to bind json, %+v", err)
 		ErrorResponse(c, http.StatusBadRequest, "Invalid input JSON", err)
 		return
 	}
-	logger.Debugf("Patching loadBalancer %s with %+v", uuID, payload)
+	logger.Ctx(ctx).Debugf("Patching loadBalancer %s with %+v", uuID, payload)
 	loadBalancer, err = loadBalancerAdmin.Update(ctx, loadBalancer, payload.Name, payload.Description)
 	if err != nil {
-		logger.Errorf("Failed to patch loadBalancer %s, %+v", uuID, err)
+		logger.Ctx(ctx).Errorf("Failed to patch loadBalancer %s, %+v", uuID, err)
 		ErrorResponse(c, http.StatusBadRequest, "Patch load balancer failed", err)
 		return
 	}
@@ -123,7 +123,7 @@ func (v *LoadBalancerAPI) Patch(c *gin.Context) {
 		ErrorResponse(c, http.StatusInternalServerError, "Internal error", err)
 		return
 	}
-	logger.Debugf("Patch loadBalancer successfully, %s, %+v", uuID, loadBalancerResp)
+	logger.Ctx(ctx).Debugf("Patch loadBalancer successfully, %s, %+v", uuID, loadBalancerResp)
 	c.JSON(http.StatusOK, loadBalancerResp)
 }
 
@@ -139,16 +139,16 @@ func (v *LoadBalancerAPI) Patch(c *gin.Context) {
 func (v *LoadBalancerAPI) Delete(c *gin.Context) {
 	ctx := c.Request.Context()
 	uuID := c.Param("id")
-	logger.Debugf("Delete loadBalancer %s", uuID)
+	logger.Ctx(ctx).Debugf("Delete loadBalancer %s", uuID)
 	loadBalancer, err := loadBalancerAdmin.GetLoadBalancerByUUID(ctx, uuID)
 	if err != nil {
-		logger.Errorf("Failed to get loadBalancer %s, %+v", uuID, err)
+		logger.Ctx(ctx).Errorf("Failed to get loadBalancer %s, %+v", uuID, err)
 		ErrorResponse(c, http.StatusBadRequest, "Invalid query", err)
 		return
 	}
 	err = loadBalancerAdmin.Delete(ctx, loadBalancer)
 	if err != nil {
-		logger.Errorf("Failed to delete loadBalancer %s, %+v", uuID, err)
+		logger.Ctx(ctx).Errorf("Failed to delete loadBalancer %s, %+v", uuID, err)
 		ErrorResponse(c, http.StatusBadRequest, "Not able to delete", err)
 		return
 	}
@@ -166,21 +166,21 @@ func (v *LoadBalancerAPI) Delete(c *gin.Context) {
 // @Failure 401 {object} common.APIError "Not authorized"
 // @Router /load_balancers [post]
 func (v *LoadBalancerAPI) Create(c *gin.Context) {
-	logger.Debugf("Create loadBalancer")
+	logger.Ctx(c).Debugf("Create loadBalancer")
 	ctx := c.Request.Context()
 	payload := &LoadBalancerPayload{}
 	err := c.ShouldBindJSON(payload)
 	if err != nil {
-		logger.Errorf("Failed to bind json, %+v", err)
+		logger.Ctx(ctx).Errorf("Failed to bind json, %+v", err)
 		ErrorResponse(c, http.StatusBadRequest, "Invalid input JSON", err)
 		return
 	}
-	logger.Debugf("Creating loadBalancer with %+v", payload)
+	logger.Ctx(ctx).Debugf("Creating loadBalancer with %+v", payload)
 	var router *model.Router
 	if payload.VPC != nil {
 		router, err = routerAdmin.GetRouter(ctx, payload.VPC)
 		if err != nil {
-			logger.Errorf("Failed to get vpc %+v, %+v", payload.VPC, err)
+			logger.Ctx(ctx).Errorf("Failed to get vpc %+v, %+v", payload.VPC, err)
 			ErrorResponse(c, http.StatusBadRequest, "Failed to get vpc", err)
 			return
 		}
@@ -189,14 +189,14 @@ func (v *LoadBalancerAPI) Create(c *gin.Context) {
 	if payload.Zone != "" {
 		zone, err = zoneAdmin.GetZoneByName(ctx, payload.Zone)
 		if err != nil {
-			logger.Errorf("Failed to get zone %+v, %+v", payload.Zone, err)
+			logger.Ctx(ctx).Errorf("Failed to get zone %+v, %+v", payload.Zone, err)
 			ErrorResponse(c, http.StatusBadRequest, "Invalid zone", err)
 			return
 		}
 	}
 	loadBalancer, err := loadBalancerAdmin.Create(ctx, payload.Name, payload.Description, router, zone)
 	if err != nil {
-		logger.Errorf("Failed to create loadBalancer %+v, %+v", payload, err)
+		logger.Ctx(ctx).Errorf("Failed to create loadBalancer %+v, %+v", payload, err)
 		ErrorResponse(c, http.StatusBadRequest, "Not able to create", err)
 		return
 	}
@@ -205,7 +205,7 @@ func (v *LoadBalancerAPI) Create(c *gin.Context) {
 		ErrorResponse(c, http.StatusInternalServerError, "Internal error", err)
 		return
 	}
-	logger.Debugf("Create loadBalancer successfully, %+v", loadBalancerResp)
+	logger.Ctx(ctx).Debugf("Create loadBalancer successfully, %+v", loadBalancerResp)
 	c.JSON(http.StatusOK, loadBalancerResp)
 }
 
@@ -232,7 +232,7 @@ func (v *LoadBalancerAPI) getLoadBalancerResponse(ctx context.Context, loadBalan
 	for i, listener := range loadBalancer.Listeners {
 		listeners[i], err = listenerAPI.getListenerResponse(ctx, listener)
 		if err != nil {
-			logger.Errorf("Failed to get listener response, %+v", err)
+			logger.Ctx(ctx).Errorf("Failed to get listener response, %+v", err)
 			return
 		}
 	}
@@ -265,44 +265,44 @@ func (v *LoadBalancerAPI) List(c *gin.Context) {
 	limitStr := c.DefaultQuery("limit", "50")
 	queryStr := c.DefaultQuery("query", "")
 	vpcID := strings.TrimSpace(c.DefaultQuery("vpc_id", ""))
-	logger.Debugf("List loadBalancers with offset %s, limit %s, query %s, vpc_id %s", offsetStr, limitStr, queryStr, vpcID)
+	logger.Ctx(ctx).Debugf("List loadBalancers with offset %s, limit %s, query %s, vpc_id %s", offsetStr, limitStr, queryStr, vpcID)
 
 	if vpcID != "" {
-		logger.Debugf("Filtering loadBalancers by VPC ID: %s", vpcID)
+		logger.Ctx(ctx).Debugf("Filtering loadBalancers by VPC ID: %s", vpcID)
 		var router *model.Router
 		router, err := routerAdmin.GetRouterByUUID(ctx, vpcID)
 		if err != nil {
-			logger.Errorf("Invalid query vpc_id: %s, %+v", vpcID, err)
+			logger.Ctx(ctx).Errorf("Invalid query vpc_id: %s, %+v", vpcID, err)
 			ErrorResponse(c, http.StatusBadRequest, "Invalid query router by vpc_id UUID: "+vpcID, err)
 			return
 		}
 
-		logger.Debugf("The router with vpc_id: %+v\n", router)
-		logger.Debugf("The router_id in vpc is: %d", router.ID)
+		logger.Ctx(ctx).Debugf("The router with vpc_id: %+v\n", router)
+		logger.Ctx(ctx).Debugf("The router_id in vpc is: %d", router.ID)
 		queryStr = fmt.Sprintf("router_id = %d", router.ID)
 	}
 
 	offset, err := strconv.Atoi(offsetStr)
 	if err != nil {
-		logger.Errorf("Invalid query offset: %s, %+v", offsetStr, err)
+		logger.Ctx(ctx).Errorf("Invalid query offset: %s, %+v", offsetStr, err)
 		ErrorResponse(c, http.StatusBadRequest, "Invalid query offset: "+offsetStr, err)
 		return
 	}
 	limit, err := strconv.Atoi(limitStr)
 	if err != nil {
-		logger.Errorf("Invalid query limit: %s, %+v", err)
+		logger.Ctx(ctx).Errorf("Invalid query limit: %s, %+v", err)
 		ErrorResponse(c, http.StatusBadRequest, "Invalid query limit: "+limitStr, err)
 		return
 	}
 	if offset < 0 || limit < 0 {
 		errStr := "Invalid query offset or limit, cannot be negative"
-		logger.Errorf(errStr)
+		logger.Ctx(ctx).Errorf(errStr)
 		ErrorResponse(c, http.StatusBadRequest, "Invalid query offset or limit", errors.New(errStr))
 		return
 	}
 	total, loadBalancers, err := loadBalancerAdmin.List(ctx, int64(offset), int64(limit), "-created_at", queryStr)
 	if err != nil {
-		logger.Errorf("Failed to list loadBalancers, %+v", err)
+		logger.Ctx(ctx).Errorf("Failed to list loadBalancers, %+v", err)
 		ErrorResponse(c, http.StatusBadRequest, "Failed to list loadBalancers", err)
 		return
 	}
@@ -319,6 +319,6 @@ func (v *LoadBalancerAPI) List(c *gin.Context) {
 			return
 		}
 	}
-	logger.Debugf("List loadBalancers successfully, %+v", loadBalancerListResp)
+	logger.Ctx(ctx).Debugf("List loadBalancers successfully, %+v", loadBalancerListResp)
 	c.JSON(http.StatusOK, loadBalancerListResp)
 }

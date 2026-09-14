@@ -68,20 +68,20 @@ type MigrationPayload struct {
 func (v *MigrationAPI) Get(c *gin.Context) {
 	ctx := c.Request.Context()
 	uuID := c.Param("id")
-	logger.Debugf("Get migration %s", uuID)
+	logger.Ctx(ctx).Debugf("Get migration %s", uuID)
 	migration, err := migrationAdmin.GetMigrationByUUID(ctx, uuID)
 	if err != nil {
-		logger.Errorf("Failed to get migration %s, %+v", uuID, err)
+		logger.Ctx(ctx).Errorf("Failed to get migration %s, %+v", uuID, err)
 		ErrorResponse(c, http.StatusBadRequest, "Invalid migration query", err)
 		return
 	}
 	migrationResp, err := v.getMigrationResponse(ctx, migration)
 	if err != nil {
-		logger.Errorf("Failed to create migration response %s, %+v", uuID, err)
+		logger.Ctx(ctx).Errorf("Failed to create migration response %s, %+v", uuID, err)
 		ErrorResponse(c, http.StatusInternalServerError, "Internal error", err)
 		return
 	}
-	logger.Debugf("Get migration %s success, response: %+v", uuID, migrationResp)
+	logger.Ctx(ctx).Debugf("Get migration %s success, response: %+v", uuID, migrationResp)
 	c.JSON(http.StatusOK, migrationResp)
 }
 
@@ -96,12 +96,12 @@ func (v *MigrationAPI) Get(c *gin.Context) {
 // @Failure 401 {object} common.APIError "Not authorized"
 // @Router /migrations [post]
 func (v *MigrationAPI) Create(c *gin.Context) {
-	logger.Debugf("Create migration")
+	logger.Ctx(c).Debugf("Create migration")
 	ctx := c.Request.Context()
 	payload := &MigrationPayload{}
 	err := c.ShouldBindJSON(payload)
 	if err != nil {
-		logger.Errorf("Invalid input JSON %+v", err)
+		logger.Ctx(ctx).Errorf("Invalid input JSON %+v", err)
 		ErrorResponse(c, http.StatusBadRequest, "Invalid input JSON", err)
 		return
 	}
@@ -110,7 +110,7 @@ func (v *MigrationAPI) Create(c *gin.Context) {
 		var instance *model.Instance
 		instance, err = instanceAdmin.GetInstanceByUUID(ctx, instRef.ID)
 		if err != nil {
-			logger.Errorf("Failed to get instance %s, %+v", instRef.ID, err)
+			logger.Ctx(ctx).Errorf("Failed to get instance %s, %+v", instRef.ID, err)
 			ErrorResponse(c, http.StatusBadRequest, "Invalid input, specified instance does not exist", err)
 			return
 		}
@@ -120,10 +120,10 @@ func (v *MigrationAPI) Create(c *gin.Context) {
 	if payload.TargetHyper != nil {
 		targetHyper = *payload.TargetHyper
 	}
-	logger.Debugf("Creating migration with payload %+v", payload)
+	logger.Ctx(ctx).Debugf("Creating migration with payload %+v", payload)
 	migrations, err := migrationAdmin.Create(ctx, payload.Name, instances, payload.Force, targetHyper)
 	if err != nil {
-		logger.Errorf("Not able to create migration %+v", err)
+		logger.Ctx(ctx).Errorf("Not able to create migration %+v", err)
 		ErrorResponse(c, http.StatusBadRequest, "Not able to create", err)
 		return
 	}
@@ -131,12 +131,12 @@ func (v *MigrationAPI) Create(c *gin.Context) {
 	for i, migration := range migrations {
 		migrationsResp[i], err = v.getMigrationResponse(ctx, migration)
 		if err != nil {
-			logger.Errorf("Failed to create migration response %+v", err)
+			logger.Ctx(ctx).Errorf("Failed to create migration response %+v", err)
 			ErrorResponse(c, http.StatusInternalServerError, "Internal error", err)
 			return
 		}
 	}
-	logger.Debugf("Create migration success, response: %+v", migrationsResp)
+	logger.Ctx(ctx).Debugf("Create migration success, response: %+v", migrationsResp)
 	c.JSON(http.StatusOK, migrationsResp)
 }
 
@@ -187,27 +187,27 @@ func (v *MigrationAPI) List(c *gin.Context) {
 	offsetStr := c.DefaultQuery("offset", "0")
 	limitStr := c.DefaultQuery("limit", "50")
 	queryStr := c.DefaultQuery("query", "")
-	logger.Debugf("List migrations with offset %s, limit %s, query %s", offsetStr, limitStr, queryStr)
+	logger.Ctx(ctx).Debugf("List migrations with offset %s, limit %s, query %s", offsetStr, limitStr, queryStr)
 	offset, err := strconv.Atoi(offsetStr)
 	if err != nil {
-		logger.Errorf("Invalid query offset %s, %+v", offsetStr, err)
+		logger.Ctx(ctx).Errorf("Invalid query offset %s, %+v", offsetStr, err)
 		ErrorResponse(c, http.StatusBadRequest, "Invalid query offset: "+offsetStr, err)
 		return
 	}
 	limit, err := strconv.Atoi(limitStr)
 	if err != nil {
-		logger.Errorf("Invalid query limit %s, %+v", limitStr, err)
+		logger.Ctx(ctx).Errorf("Invalid query limit %s, %+v", limitStr, err)
 		ErrorResponse(c, http.StatusBadRequest, "Invalid query limit: "+limitStr, err)
 		return
 	}
 	if offset < 0 || limit < 0 {
-		logger.Errorf("Invalid query offset or limit %d, %d", offset, limit)
+		logger.Ctx(ctx).Errorf("Invalid query offset or limit %d, %d", offset, limit)
 		ErrorResponse(c, http.StatusBadRequest, "Invalid query offset or limit", err)
 		return
 	}
 	total, migrations, err := migrationAdmin.List(ctx, int64(offset), int64(limit), "-created_at", queryStr)
 	if err != nil {
-		logger.Errorf("Failed to list migrations %+v", err)
+		logger.Ctx(ctx).Errorf("Failed to list migrations %+v", err)
 		ErrorResponse(c, http.StatusBadRequest, "Failed to list migrations", err)
 		return
 	}
@@ -220,11 +220,11 @@ func (v *MigrationAPI) List(c *gin.Context) {
 	for i, migration := range migrations {
 		migrationListResp.Migrations[i], err = v.getMigrationResponse(ctx, migration)
 		if err != nil {
-			logger.Errorf("Failed to create migration response %+v", err)
+			logger.Ctx(ctx).Errorf("Failed to create migration response %+v", err)
 			ErrorResponse(c, http.StatusInternalServerError, "Internal error", err)
 			return
 		}
 	}
-	logger.Debugf("List migrations success, response: %+v", migrationListResp)
+	logger.Ctx(ctx).Debugf("List migrations success, response: %+v", migrationListResp)
 	c.JSON(http.StatusOK, migrationListResp)
 }

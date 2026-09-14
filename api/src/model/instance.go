@@ -50,7 +50,7 @@ func IsValidUserDataType(userdataType string) bool {
 type Instance struct {
 	Model
 	Owner          int64          `gorm:"default:1"` /* The organization ID of the resource */
-	Hostname       string         `gorm:"unique_index:idx_router_instance;type:varchar(128)"`
+	Hostname       string         `gorm:"uniqueIndex:idx_router_instance;type:varchar(128)"`
 	Domain         string         `gorm:"type:varchar(128)"`
 	Status         InstanceStatus `gorm:"type:varchar(32)"`
 	Reason         string         `gorm:"type:text"`
@@ -77,7 +77,7 @@ type Instance struct {
 	Hyper          int32 `gorm:"default:-1"`
 	ZoneID         int64
 	Zone           *Zone `gorm:"foreignkey:ZoneID"`
-	RouterID       int64         `gorm:"unique_index:idx_router_instance"`
+	RouterID       int64         `gorm:"uniqueIndex:idx_router_instance"`
 	Router         *Router
 	OwnerInfo      *Organization `gorm:"-"` /* Transient: populated for SystemAdmin list view */
 }

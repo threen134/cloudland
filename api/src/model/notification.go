@@ -5,7 +5,7 @@ import (
 
 	"api/src/dbs"
 
-	"github.com/jinzhu/gorm"
+	"gorm.io/gorm"
 )
 
 func init() {
@@ -22,10 +22,21 @@ func init() {
 		if err := db.Exec(`DELETE FROM alarm_notification_bindings WHERE channel_uuid NOT IN (SELECT uuid FROM notification_channels)`).Error; err != nil {
 			return err
 		}
-		// 添加外键约束：删除渠道时级联清理绑定
-		return db.Model(&AlarmNotificationBinding{}).AddForeignKey(
-			"channel_uuid", "notification_channels(uuid)", "CASCADE", "CASCADE",
-		).Error
+		// 添加外键约束：删除渠道时级联清理绑定（GORM v2 不再提供 AddForeignKey，改用 raw SQL）
+		return db.Exec(`
+			DO $$ BEGIN
+				IF NOT EXISTS (
+					SELECT 1 FROM information_schema.table_constraints
+					WHERE constraint_name = 'fk_alarm_notification_bindings_channel'
+					AND table_name = 'alarm_notification_bindings'
+				) THEN
+					ALTER TABLE alarm_notification_bindings
+					ADD CONSTRAINT fk_alarm_notification_bindings_channel
+					FOREIGN KEY (channel_uuid) REFERENCES notification_channels(uuid)
+					ON DELETE CASCADE ON UPDATE CASCADE;
+				END IF;
+			END $$;
+		`).Error
 	})
 }
 

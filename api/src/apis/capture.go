@@ -49,7 +49,7 @@ func (v *ImageAPI) UploadCapture(c *gin.Context) {
 
 	image, err := services.ImageAdmin.GetImageByIDInternal(imageID)
 	if err != nil {
-		logger.Errorf("UploadCapture: image %d not found: %v", imageID, err)
+		logger.Ctx(c).Errorf("UploadCapture: image %d not found: %v", imageID, err)
 		c.AbortWithStatus(http.StatusNotFound)
 		return
 	}
@@ -58,7 +58,7 @@ func (v *ImageAPI) UploadCapture(c *gin.Context) {
 	objectName := services.S3ObjectNameFor(image)
 
 	if err := services.S3PutObject(ctx, objectName, c.Request.Body); err != nil {
-		logger.Errorf("UploadCapture: S3PutObject failed for image %d (%s): %v", imageID, objectName, err)
+		logger.Ctx(ctx).Errorf("UploadCapture: S3PutObject failed for image %d (%s): %v", imageID, objectName, err)
 		services.ImageAdmin.MarkImageError(imageID)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -66,7 +66,7 @@ func (v *ImageAPI) UploadCapture(c *gin.Context) {
 
 	info, err := services.S3DetectImage(ctx, objectName)
 	if err != nil || info == nil {
-		logger.Errorf("UploadCapture: detect format failed for image %d (%s): %v", imageID, objectName, err)
+		logger.Ctx(ctx).Errorf("UploadCapture: detect format failed for image %d (%s): %v", imageID, objectName, err)
 		services.ImageAdmin.MarkImageError(imageID)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "detect format failed"})
 		return

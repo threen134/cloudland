@@ -13,18 +13,27 @@ History:
 package common
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
-	"io/ioutil"
-	"net/http"
+	"fmt"
+	"log"
+	"os"
+	"strings"
+	"sync"
+	"time"
 
-	"github.com/google/uuid"
 	"github.com/spf13/viper"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
+
+	pb "api/src/proto/cloudlandpb"
+	"api/src/utils/grpcauth"
+	"api/src/utils/tracing"
 )
 
-const RequestIDKey = "X-Request-ID"
+// clandRPCTimeout bounds calls to cland so a stuck control plane cannot hang API requests.
+const clandRPCTimeout = 30 * time.Second
 
+// Legacy types kept for compatibility with frontback.go json.Unmarshal
 type ExecuteRequest struct {
 	Id      int32
 	Extra   int32
@@ -36,108 +45,88 @@ type ExecuteReply struct {
 	Status string
 }
 
-var remoteExecPath string
+var (
+	clandClient pb.ClandServiceClient
+	clandConn   *grpc.ClientConn
+	clientOnce  sync.Once
+)
 
-func NodeAdd(hostname string, hostID int32) (assignedID int32, err error) {
-	endpoint := viper.GetString("sci.endpoint") + "/internal/node/add"
-	reqBody := map[string]interface{}{"hostname": hostname, "id": hostID, "level": 1}
-	jsonReq, err := json.Marshal(reqBody)
-	if err != nil {
-		return -1, NewCLError(ErrExecuteOnHyperFailed, "Failed to marshal request", err)
+// clandEndpoint returns sci.endpoint as a gRPC host:port target. Configs written for the
+// C++ HTTP API carry an http:// URL, which the gRPC resolver rejects.
+func clandEndpoint() string {
+	endpoint := strings.TrimSpace(viper.GetString("sci.endpoint"))
+	endpoint = strings.TrimPrefix(endpoint, "http://")
+	endpoint = strings.TrimPrefix(endpoint, "https://")
+	endpoint = strings.TrimSuffix(endpoint, "/")
+	if endpoint == "" {
+		endpoint = "localhost:5006"
 	}
-	resp, err := http.Post(endpoint, "application/json", bytes.NewBuffer(jsonReq))
-	if err != nil {
-		return -1, NewCLError(ErrExecuteOnHyperFailed, "Failed to add node", err)
+	return endpoint
+}
+
+// ClandToken returns the shared gRPC token for cland; GRPC_AUTH_TOKEN overrides sci.token.
+func ClandToken() string {
+	if token := os.Getenv("GRPC_AUTH_TOKEN"); token != "" {
+		return token
 	}
-	defer resp.Body.Close()
-	body, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		return -1, NewCLError(ErrExecuteOnHyperFailed, "Failed to read response", err)
-	}
-	var result map[string]interface{}
-	if err = json.Unmarshal(body, &result); err != nil {
-		return -1, NewCLError(ErrExecuteOnHyperFailed, "Failed to parse response", err)
-	}
-	if resp.StatusCode != 200 {
-		return -1, NewCLError(ErrExecuteOnHyperFailed, "Node add failed: "+string(body), nil)
-	}
-	if id, ok := result["id"].(float64); ok {
-		assignedID = int32(id)
-	}
-	logger.Debugf("NodeAdd: hostname=%s, hostID=%d, assignedID=%d", hostname, hostID, assignedID)
-	return
+	return viper.GetString("sci.token")
+}
+
+func getClandClient() pb.ClandServiceClient {
+	clientOnce.Do(func() {
+		endpoint := clandEndpoint()
+		var err error
+		clandConn, err = grpc.NewClient(endpoint,
+			grpc.WithTransportCredentials(insecure.NewCredentials()),
+			grpcauth.DialOption(ClandToken()),
+			tracing.GRPCDialOption(),
+		)
+		if err != nil {
+			log.Fatalf("Failed to connect to cland at %s: %v", endpoint, err)
+		}
+		clandClient = pb.NewClandServiceClient(clandConn)
+		log.Printf("Connected to cland-go at %s via gRPC", endpoint)
+	})
+	return clandClient
 }
 
 func NodeRemove(hostID int32) error {
-	endpoint := viper.GetString("sci.endpoint") + "/internal/node/remove"
-	reqBody := map[string]interface{}{"id": hostID}
-	jsonReq, err := json.Marshal(reqBody)
+	ctx, cancel := context.WithTimeout(context.Background(), clandRPCTimeout)
+	defer cancel()
+	client := getClandClient()
+	_, err := client.NodeRemove(ctx, &pb.NodeRemoveRequest{
+		Id: hostID,
+	})
 	if err != nil {
-		return NewCLError(ErrExecuteOnHyperFailed, "Failed to marshal request", err)
+		return NewCLError(ErrExecuteOnHyperFailed, fmt.Sprintf("Failed to remove node %d via gRPC", hostID), err)
 	}
-	resp, err := http.Post(endpoint, "application/json", bytes.NewBuffer(jsonReq))
-	if err != nil {
-		return NewCLError(ErrExecuteOnHyperFailed, "Failed to remove node", err)
-	}
-	defer resp.Body.Close()
-	body, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		return NewCLError(ErrExecuteOnHyperFailed, "Failed to read response", err)
-	}
-	if resp.StatusCode != 200 {
-		return NewCLError(ErrExecuteOnHyperFailed, "Node remove failed: "+string(body), nil)
-	}
-	logger.Debugf("NodeRemove: hostID=%d", hostID)
+	logger.Ctx(ctx).Debugf("NodeRemove: hostID=%d", hostID)
 	return nil
 }
 
 func HyperExecute(ctx context.Context, control, command string) (err error) {
-	execReq := &ExecuteRequest{
+	client := getClandClient()
+
+	// trace 上下文由 otelgrpc 经 gRPC metadata 传播
+	logger.Ctx(ctx).Debugf("HyperExecute: control=%s", control)
+
+	// 不跟随调用方取消：API 已写库后，即使 HTTP 客户端断开也必须把命令下发出去（保留 trace/request id）
+	rpcCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), clandRPCTimeout)
+	defer cancel()
+
+	reply, err := client.Execute(rpcCtx, &pb.ExecuteRequest{
 		Id:      100,
 		Extra:   0,
 		Control: control,
 		Command: command,
-	}
-	jsonReq, err := json.Marshal(execReq)
-	payload := bytes.NewBufferString(string(jsonReq))
-	if remoteExecPath == "" {
-		remoteExecPath = viper.GetString("sci.endpoint") + "/internal/execute"
-	}
-	logger.Debugf("remotePath: %s, jsonPayload: %v", remoteExecPath, payload)
-
-	req, err := http.NewRequest("POST", remoteExecPath, payload)
+	})
 	if err != nil {
-		logger.Error("Error creating request:", err)
-		return NewCLError(ErrExecuteOnHyperFailed, "Error creating request", err)
+		logger.Ctx(ctx).Error("HyperExecute gRPC error:", err)
+		return NewCLError(ErrExecuteOnHyperFailed, "gRPC Execute failed", err)
 	}
-	req.Header.Set("Content-Type", "application/json")
-
-	// 从 context 中获取 RequestID，如果没有则生成新的
-	var requestID string
-	if val := ctx.Value(RequestIDKey); val != nil {
-		requestID = val.(string)
-	} else {
-		requestID = uuid.New().String()
+	// 与 C++ 版一致不视为失败（如节点离线），但记录下来便于排查
+	if reply.GetStatus() != "ok" {
+		logger.Ctx(ctx).Warningf("HyperExecute: cland replied %q for control=%s", reply.GetStatus(), control)
 	}
-
-	req.Header.Set("RequestID", requestID)
-	logger.Debugf("Requesting RPC remotePath: %s, RequestID: %s", remoteExecPath, requestID)
-
-	client := &http.Client{}
-	resp, err := client.Do(req)
-	if err != nil {
-		logger.Error("Error posting data:", err)
-		return NewCLError(ErrExecuteOnHyperFailed, "Error posting data", err)
-	}
-	defer resp.Body.Close()
-
-	body, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		logger.Error("Error reading response body:", err)
-		return NewCLError(ErrExecuteOnHyperFailed, "Error reading response body", err)
-	}
-
-	logger.Debug("Response Status:", resp.Status)
-	logger.Debug("Response Body:", string(body))
-	return
+	return nil
 }

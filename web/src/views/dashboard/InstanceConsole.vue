@@ -4,6 +4,7 @@ import { useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { instancesApi } from '../../api/instances'
 import RFB from '@novnc/novnc/lib/rfb'
+import { traceVncConnection } from '../../tracing'
 import { Terminal, Maximize, Minimize, RefreshCw, AlertTriangle, Monitor, ExternalLink } from 'lucide-vue-next'
 
 const route = useRoute()
@@ -74,6 +75,7 @@ const connectVnc = (url: string) => {
         rfb.value = new RFB(container.value, url, {
             credentials: { password: '' }
         })
+        traceVncConnection(rfb.value)
 
         rfb.value.addEventListener('connect', () => {
             status.value = 'connected'

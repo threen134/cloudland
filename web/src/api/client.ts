@@ -89,6 +89,21 @@ client.interceptors.request.use(
 const getErrorDetail = (error: AxiosError): string =>
     (error.response?.data as any)?.detail || 'unknown'
 
+// 后端响应头 X-Trace-ID：反馈问题时提供给运维，在 Grafana 中按 trace id 查询完整链路
+const traceHint = (error: AxiosError): string => {
+    const traceId = error.response?.headers?.['x-trace-id']
+    return traceId ? `(trace ${traceId})` : ''
+}
+
+// 最近一次 API 错误的 trace id，供错误提示展示（3 秒内有效，读取后清除）
+let lastErrorTrace: { id: string; at: number } | null = null
+
+export const consumeRecentTraceId = (): string | undefined => {
+    const recent = lastErrorTrace
+    lastErrorTrace = null
+    return recent && Date.now() - recent.at < 3000 ? recent.id : undefined
+}
+
 const forceLogout = (reason: string, url?: string) => {
     console.error(`[client] auth failure on ${url ?? '?'} — ${reason}. Clearing session and redirecting to login.`)
     clearAuthToken()
@@ -108,6 +123,10 @@ client.interceptors.response.use(
         // Handle common error cases
         if (error.response) {
             const status = error.response.status
+            const traceId = error.response.headers?.['x-trace-id']
+            if (traceId) {
+                lastErrorTrace = { id: String(traceId), at: Date.now() }
+            }
 
             switch (status) {
                 case 429: {
@@ -155,15 +174,15 @@ client.interceptors.response.use(
                     if (typeof detail403 === 'string' && detail403.toLowerCase().includes('credentials')) {
                         forceLogout(`403 detail: ${detail403}`, error.config?.url)
                     } else {
-                        console.error('Access forbidden:', detail403)
+                        console.error('Access forbidden:', detail403, traceHint(error))
                     }
                     break
                 }
                 case 404:
-                    console.error('Resource not found')
+                    console.error('Resource not found', traceHint(error))
                     break
                 case 500:
-                    console.error('Server error')
+                    console.error('Server error', traceHint(error))
                     break
             }
         } else if (error.request) {

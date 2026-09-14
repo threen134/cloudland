@@ -15,6 +15,7 @@ import (
 	. "api/src/common"
 	"api/src/services"
 	"api/src/utils/log"
+	"api/src/utils/tracing"
 
 	"github.com/gin-gonic/gin"
 	"github.com/spf13/viper"
@@ -46,11 +47,11 @@ func runAlarmEventCleanup(admin *services.NotificationAdmin) {
 	ctx = SetContextDB(ctx, DB())
 	deleted, err := admin.CleanupExpiredAlarmEvents(ctx, retentionDays)
 	if err != nil {
-		logger.Errorf("Failed to cleanup expired alarm events: %v", err)
+		logger.Ctx(ctx).Errorf("Failed to cleanup expired alarm events: %v", err)
 		return
 	}
 	if deleted > 0 {
-		logger.Infof("Cleaned up %d expired alarm events (older than %d days)", deleted, retentionDays)
+		logger.Ctx(ctx).Infof("Cleaned up %d expired alarm events (older than %d days)", deleted, retentionDays)
 	}
 }
 
@@ -95,7 +96,8 @@ func Register() (r *gin.Engine) {
 	r.SetTrustedProxies(nil)
 
 	r.Use(gin.Recovery())
-	r.Use(log.RequestID())
+	// 版本查询与 Prometheus 服务发现为周期轮询，不产生 trace
+	r.Use(tracing.GinMiddleware("clapi", "/api/v1/version", "/api/v1/prometheus/sd/")...)
 	r.Use(log.Logger())
 
 	apiV1 := "/api/v1"
