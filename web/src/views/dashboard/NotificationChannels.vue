@@ -4,9 +4,17 @@ import { useI18n } from 'vue-i18n'
 import { Plus, Trash2, Search, Bell, Pencil, ToggleLeft, ToggleRight, RefreshCw, X } from 'lucide-vue-next'
 import { useToast } from '../../composables/useToast'
 import { notificationsApi, type NotificationChannel, type CreateChannelPayload } from '../../api/notifications'
+import { useAuthStore } from '../../stores/auth'
+import { useTenantStore } from '../../stores/tenant'
 
 const { t } = useI18n()
 const toast = useToast()
+const authStore = useAuthStore()
+const tenantStore = useTenantStore()
+// Writes require org ADMIN or SystemAdmin (enforced by the gateway)
+const canManage = computed(() =>
+    authStore.user?.is_superuser === true || (tenantStore.currentOrg?.org_role ?? 0) >= 3
+)
 const channels = ref<NotificationChannel[]>([])
 const loading = ref(false)
 const searchQuery = ref('')
@@ -86,7 +94,7 @@ const submitForm = async () => {
         toast.success(editTarget.value ? t('messages.updateSuccess') : t('messages.createSuccess'))
     } catch (err: any) {
         console.error('Failed to save channel:', err)
-        toast.error(err.response?.data?.error || t('messages.error'))
+        toast.error(err.response?.data?.detail || err.response?.data?.error || t('messages.error'))
     }
 }
 
@@ -105,7 +113,7 @@ const executeDelete = async () => {
         toast.success(t('messages.deleteSuccess'))
     } catch (err: any) {
         console.error('Failed to delete channel:', err)
-        toast.error(err.response?.data?.error || t('messages.error'))
+        toast.error(err.response?.data?.detail || err.response?.data?.error || t('messages.error'))
     }
 }
 
@@ -116,7 +124,7 @@ const toggleEnabled = async (ch: NotificationChannel) => {
         toast.success(t('messages.updateSuccess'))
     } catch (err: any) {
         console.error('Failed to toggle channel:', err)
-        toast.error(err.response?.data?.error || t('messages.error'))
+        toast.error(err.response?.data?.detail || err.response?.data?.error || t('messages.error'))
     }
 }
 
@@ -136,7 +144,7 @@ onMounted(fetchChannels)
                 <button class="btn btn-secondary btn-sm btn-icon" @click="fetchChannels" :title="t('actions.refresh')">
                     <RefreshCw :size="14" :class="{ spinning: loading }" />
                 </button>
-                <button class="btn btn-primary btn-sm" @click="openCreate">
+                <button v-if="canManage" class="btn btn-primary btn-sm" @click="openCreate">
                     <Plus :size="14" />
                     <span>{{ t('actions.create') }}</span>
                 </button>
@@ -187,7 +195,7 @@ onMounted(fetchChannels)
                         </td>
                         <td>{{ new Date(ch.created_at).toLocaleString() }}</td>
                         <td>
-                            <div class="actions-cell">
+                            <div v-if="canManage" class="actions-cell">
                                 <button class="icon-btn-table" @click="toggleEnabled(ch)" :title="ch.enabled ? 'Disable' : 'Enable'">
                                     <component :is="ch.enabled ? ToggleRight : ToggleLeft" :size="16" />
                                 </button>

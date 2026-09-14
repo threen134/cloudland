@@ -1,6 +1,6 @@
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { orgsApi, ORG_ROLES, type Organization, type OrgMember, type OrgInvitation } from '../../api/orgs'
@@ -10,6 +10,7 @@ import {
     CheckCircle, AlertCircle, ShieldAlert, PauseCircle 
 } from 'lucide-vue-next'
 import { useAuthStore } from '../../stores/auth'
+import { useTenantStore } from '../../stores/tenant'
 import { useQuota } from '../../composables/useQuota'
 import { useToast } from '../../composables/useToast'
 
@@ -49,6 +50,11 @@ const {
     getUsageColor,
 } = useQuota()
 const isSuperuser = computed(() => authStore.user?.is_superuser === true)
+// Listing invitations requires org ADMIN or SystemAdmin (enforced by the gateway)
+const tenantStore = useTenantStore()
+const canManageInvitations = computed(() =>
+    isSuperuser.value || (tenantStore.organizations.find(o => o.id === orgId)?.org_role ?? 0) >= 3
+)
 
 const handleSaveQuota = async (regionUuid: string) => {
     try {
@@ -127,6 +133,10 @@ const fetchInvitations = async () => {
         invitationsLoading.value = false
     }
 }
+// The org list may load after this page mounts
+watch(canManageInvitations, (allowed) => {
+    if (allowed) fetchInvitations()
+}, { immediate: true })
 
 // --- Invite Member ---
 const openAddMember = () => {
@@ -253,7 +263,6 @@ const handleKeydown = (e: KeyboardEvent) => {
 onMounted(() => {
     fetchOrg()
     fetchMembers()
-    fetchInvitations()
     fetchQuota(orgId)
     document.addEventListener('keydown', handleKeydown)
 })

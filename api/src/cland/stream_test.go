@@ -28,8 +28,9 @@ const testToken = "test-token"
 
 // fakeClapi serves the clapi internal endpoints cland calls.
 type fakeClapi struct {
-	mu    sync.Mutex
-	nodes map[int32]validNode
+	mu       sync.Mutex
+	nodes    map[int32]validNode
+	onVerify func(id int32) // optional; runs before a verification is answered
 }
 
 func (f *fakeClapi) remove(id int32) {
@@ -50,6 +51,9 @@ func (f *fakeClapi) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewEncoder(w).Encode(list)
 	case "/internal/node/verify":
 		id, _ := strconv.Atoi(r.URL.Query().Get("id"))
+		if f.onVerify != nil {
+			f.onVerify(int32(id))
+		}
 		if _, ok := f.nodes[int32(id)]; !ok {
 			w.WriteHeader(http.StatusNotFound)
 		}
@@ -270,6 +274,104 @@ func TestNodeRemoveShutsDownStream(t *testing.T) {
 	}
 }
 
+// clapi answers the verification from its row, then the node is removed before cland
+// registers it: the registration must be refused.
+func TestCommandStreamRejectsNodeRemovedDuringVerify(t *testing.T) {
+	env := startTestEnv(t, testToken, 1)
+	env.clapi.mu.Lock()
+	env.clapi.onVerify = func(id int32) {
+		_, _ = env.server.NodeRemove(context.Background(), &pb.NodeRemoveRequest{Id: id})
+	}
+	env.clapi.mu.Unlock()
+
+	stream := env.openStream(t, 1)
+	if ack := recvWithin(t, stream).GetRegisterAck(); ack == nil || ack.Success {
+		t.Fatal("node removed during verification must be rejected")
+	}
+	if err := recvErrWithin(t, stream); status.Code(err) != codes.PermissionDenied {
+		t.Errorf("stream error = %v, want PermissionDenied", err)
+	}
+	if _, ok := env.server.Registry.Get(1); ok {
+		t.Error("removed node is registered")
+	}
+	if env.server.validNodes.Has(1) {
+		t.Error("removed node was cached as valid")
+	}
+}
+
+// NodeRemove may run at any point of a registration. Whatever the order, a removed node
+// must not stay registered or remain in the topology.
+func TestNodeRemoveRacesRegistration(t *testing.T) {
+	const nodes = 40
+	ids := make([]int32, nodes)
+	for i := range ids {
+		ids[i] = int32(i + 1)
+	}
+	env := startTestEnv(t, testToken, ids...)
+	if err := env.server.refreshValidNodes(); err != nil {
+		t.Fatal(err)
+	}
+	cloudletClient := pb.NewCloudletServiceClient(env.conn)
+	clandClient := pb.NewClandServiceClient(env.conn)
+
+	var wg sync.WaitGroup
+	for _, id := range ids {
+		id := id
+		wg.Add(2)
+		go func() {
+			defer wg.Done()
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			stream, err := cloudletClient.CommandStream(ctx)
+			if err == nil {
+				err = stream.Send(&pb.CloudletMessage{
+					Payload: &pb.CloudletMessage_Register{Register: &pb.RegisterRequest{NodeId: id, Hostname: "node"}},
+				})
+			}
+			// Once the ack arrives the registration has been either refused or completed.
+			if err == nil {
+				_, err = stream.Recv()
+			}
+			if err != nil {
+				t.Errorf("node %d registration: %v", id, err)
+			}
+		}()
+		go func() {
+			defer wg.Done()
+			time.Sleep(time.Duration(id%8) * 200 * time.Microsecond)
+			env.clapi.remove(id)
+			if _, err := clandClient.NodeRemove(context.Background(), &pb.NodeRemoveRequest{Id: id}); err != nil {
+				t.Errorf("NodeRemove %d: %v", id, err)
+			}
+		}()
+	}
+	wg.Wait()
+
+	for _, id := range ids {
+		if _, ok := env.server.Registry.Get(id); ok {
+			t.Errorf("node %d is registered after its removal", id)
+		}
+	}
+	if known := env.server.Registry.Known(); len(known) != 0 {
+		t.Errorf("Known() = %+v, want no removed node in the topology", known)
+	}
+}
+
+// A node whose hypers row survived NodeRemove is admitted again once clapi lists it.
+func TestRefreshValidNodesReadmitsRelistedNode(t *testing.T) {
+	env := startTestEnv(t, testToken, 1)
+	if _, err := pb.NewClandServiceClient(env.conn).NodeRemove(context.Background(), &pb.NodeRemoveRequest{Id: 1}); err != nil {
+		t.Fatalf("NodeRemove: %v", err)
+	}
+	if ack := recvWithin(t, env.openStream(t, 1)).GetRegisterAck(); ack == nil || ack.Success {
+		t.Fatal("removed node must not register before clapi lists it again")
+	}
+	if err := env.server.refreshValidNodes(); err != nil {
+		t.Fatal(err)
+	}
+	env.register(t, 1)
+}
+
 func TestReportHealthRequiresSession(t *testing.T) {
 	env := startTestEnv(t, testToken, 1)
 	_, session := env.register(t, 1)
@@ -359,6 +461,7 @@ func TestStatusReporterGraceForSeededNodes(t *testing.T) {
 	reporter.reportTopology(0, false)
 	expect("3,node3,1\n")
 
+	waitTopologyIdle(t, reporter)
 	reporter.startedAt = time.Now().Add(-startupGrace)
 	reporter.reportTopology(0, false)
 	expect("3,node3,10\n")
