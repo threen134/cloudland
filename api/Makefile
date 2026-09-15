@@ -2,8 +2,9 @@ export GO111MODULE=on
 
 all: api alarm_rules_manager cland cloudlet
 
+# git describe 失败时（无 .git、非属主执行、未装 git）保留已提交的 .version，不中断构建
 version:
-	git describe --always --tags > .version
+	git describe --always --tags > .version.tmp 2>/dev/null && mv -f .version.tmp .version || rm -f .version.tmp
 
 setup:
 	go install github.com/swaggo/swag/cmd/swag@latest

@@ -72,7 +72,8 @@ elif [ -d "$CLOUDLAND_DIR/.git" ]; then
     # 计算节点脚本会 chmod 脚本目录，忽略权限位变化，只把内容改动视为未提交修改
     git_repo=(git -c safe.directory="$CLOUDLAND_DIR" -c core.fileMode=false -C "$CLOUDLAND_DIR")
     if [ "$("${git_repo[@]}" branch --show-current)" != "$REPO_BRANCH" ]; then
-        if [ -n "$("${git_repo[@]}" status --porcelain --untracked-files=no)" ]; then
+        # api/.version 由 make 构建时重写，属编译产物，不算未提交改动
+        if [ -n "$("${git_repo[@]}" status --porcelain --untracked-files=no -- . ':!api/.version')" ]; then
             echo "错误: $CLOUDLAND_DIR 有未提交的改动，无法切换到分支 $REPO_BRANCH，请先提交或还原后重试。"
             exit 1
         fi

@@ -119,7 +119,6 @@ EOF
 }
 
 # 构建所有组件
-git config --global --add safe.directory /opt/cloudland
 #   构建 cland-go / cloudlet-go
 build_cland
 
