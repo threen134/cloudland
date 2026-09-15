@@ -133,12 +133,12 @@ func runReportScript(nodeID int32, hostname string) *pb.HealthReport {
 			parseResourceLine(line, report)
 			return
 		}
-		// Callback lines: strip the |:-COMMAND-:| marker like C++ frontHandler did
+		// Callback lines: strip the |:-COMMAND-:| marker like C++ frontHandler did.
+		// Anything else (stderr is merged in) is not a command clapi can handle; log it locally.
 		if command, isCallback := ParseCallbackLine(line); isCallback {
-			line = command
-		}
-		if strings.TrimSpace(line) != "" {
-			report.CallbackLines = append(report.CallbackLines, line)
+			report.CallbackLines = append(report.CallbackLines, command)
+		} else if strings.TrimSpace(line) != "" {
+			log.Printf("report: %s output: %s", reportCmd, line)
 		}
 	})
 

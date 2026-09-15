@@ -333,7 +333,7 @@ cp -f cloudlet-go "$CLOUDLAND_DIR/bin/cloudlet-go"
 # ============ 6. 创建目录结构 ============
 log "6/16 - 创建目录结构"
 
-mkdir -p "$CLOUDLAND_DIR"/{log,run,cache}
+mkdir -p "$CLOUDLAND_DIR"/{log,run,cache} "$CLOUDLAND_DIR/run/async_job"
 mkdir -p "$CLOUDLAND_DIR/cache"/{backup,image,instance,meta,router,volume,dnsmasq,xml,qemu_agent}
 chown -R cland:cland "$CLOUDLAND_DIR"
 

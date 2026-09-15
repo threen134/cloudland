@@ -140,6 +140,8 @@ function check_system_router()
     # 只看退出码：本脚本 stdout 除首行外都会作为回调命令发给 clapi，不能输出其他内容
     sudo ip netns exec router-0 ip r | grep -q default
     if [ $? -ne 0 ]; then
+        # 目录只由 cloudrc 的延迟日志按需创建，新节点上可能不存在；缺了它任务写不出去，router-0 永远不会重建
+        sudo mkdir -p $async_job_dir
         sudo -E bash -c "echo '|:-COMMAND-:|' system_router.sh \'$SCI_CLIENT_ID\' \'$HOSTNAME\' >$async_job_dir/system_router.done"
     fi
 }

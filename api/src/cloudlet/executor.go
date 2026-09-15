@@ -223,8 +223,10 @@ func scanLines(r io.Reader, fn func(line string)) {
 	}
 }
 
-// ExecuteCommand runs a command via sudo -E and streams stdout lines back
-// through the gRPC stream as CommandResult or CallbackLine messages.
+// ExecuteCommand runs a command via sudo -E and streams |:-COMMAND-:| callback
+// lines back through the gRPC stream as CallbackLine messages. Other output
+// (including stderr, which is merged like the C++ "2>&1") is only logged locally:
+// clapi cannot parse it and answered 400 for every such line.
 // Ported from cloudlet.cpp backHandler lines 103-162.
 func ExecuteCommand(sender *StreamSender, req *pb.CommandRequest, nodeID int32) {
 	if !ShouldExecute(req) {
@@ -276,18 +278,8 @@ func ExecuteCommand(sender *StreamSender, req *pb.CommandRequest, nodeID int32) 
 					},
 				},
 			})
-		} else {
-			send(&pb.CloudletMessage{
-				Payload: &pb.CloudletMessage_Result{
-					Result: &pb.CommandResult{
-						MsgId:        req.MsgId,
-						NodeId:       nodeID,
-						Control:      "callback",
-						Output:       line,
-						TraceContext: traceContext,
-					},
-				},
-			})
+		} else if strings.TrimSpace(line) != "" {
+			tracing.Logf(ctx, "executor: msg_id=%d output: %s", req.MsgId, line)
 		}
 	})
 
