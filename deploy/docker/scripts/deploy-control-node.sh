@@ -12,6 +12,15 @@ exec > >(tee -a "$DEPLOY_LOG") 2>&1
 CLOUDLAND_DIR="${CLOUDLAND_DIR:-/opt/cloudland}"
 REPO_URL="${REPO_URL:-https://github.com/threen134/cloudland.git}"
 DEPLOY_DIR="$CLOUDLAND_DIR/deploy/docker"
+# 部署分支优先级：显式指定 > 已部署 .env 中的值 > 已有仓库当前检出的分支 > staging，
+# 避免在旧 .env（无 REPO_BRANCH）的环境上重跑脚本时被悄悄切到默认分支
+if [ -z "${REPO_BRANCH:-}" ] && [ -f "$DEPLOY_DIR/.env" ]; then
+    REPO_BRANCH=$(grep '^REPO_BRANCH=' "$DEPLOY_DIR/.env" | cut -d'=' -f2- || true)
+fi
+if [ -z "${REPO_BRANCH:-}" ] && [ -d "$CLOUDLAND_DIR/.git" ]; then
+    REPO_BRANCH=$(git -c safe.directory="$CLOUDLAND_DIR" -C "$CLOUDLAND_DIR" branch --show-current 2>/dev/null || true)
+fi
+REPO_BRANCH="${REPO_BRANCH:-staging}"
 
 log() { echo -e "\n\033[1;32m[$(date '+%H:%M:%S')] $1\033[0m"; }
 warn() { echo -e "\033[1;33m[WARN] $1\033[0m"; }
@@ -21,7 +30,7 @@ if [[ $EUID -ne 0 ]]; then
    exit 1
 fi
 
-# 检查操作系统版本 (必须为 Ubuntu 22)
+# 检查操作系统版本（支持 Ubuntu 24.04 / 26.04）
 if [ -f /etc/os-release ]; then
     . /etc/os-release
     if [ "$ID" != "ubuntu" ]; then
@@ -29,6 +38,10 @@ if [ -f /etc/os-release ]; then
         echo "当前系统: ${NAME:-未知} ${VERSION_ID:-未知}"
         exit 1
     fi
+    case "$VERSION_ID" in
+        24.04|26.04) ;;
+        *) warn "未验证的 Ubuntu 版本 ${VERSION_ID:-未知}，仅支持 24.04 / 26.04，继续执行可能失败" ;;
+    esac
 else
     echo "错误: 无法识别操作系统。本脚本仅支持 Ubuntu 系统。"
     exit 1
@@ -52,8 +65,22 @@ if [ ! -d "$CLOUDLAND_DIR" ]; then
         warn "未检测到 git，尝试安装..."
         apt-get update && apt-get install -y git
     fi
-    log "正在克隆 CloudLand 仓库..."
-    git clone "$REPO_URL" "$CLOUDLAND_DIR"
+    log "正在克隆 CloudLand 仓库 (分支 $REPO_BRANCH)..."
+    git clone -b "$REPO_BRANCH" "$REPO_URL" "$CLOUDLAND_DIR"
+elif [ -d "$CLOUDLAND_DIR/.git" ]; then
+    # 同机部署计算节点后仓库属主为 cland，root 执行 git 需声明 safe.directory；
+    # 计算节点脚本会 chmod 脚本目录，忽略权限位变化，只把内容改动视为未提交修改
+    git_repo=(git -c safe.directory="$CLOUDLAND_DIR" -c core.fileMode=false -C "$CLOUDLAND_DIR")
+    if [ "$("${git_repo[@]}" branch --show-current)" != "$REPO_BRANCH" ]; then
+        if [ -n "$("${git_repo[@]}" status --porcelain --untracked-files=no)" ]; then
+            echo "错误: $CLOUDLAND_DIR 有未提交的改动，无法切换到分支 $REPO_BRANCH，请先提交或还原后重试。"
+            exit 1
+        fi
+        log "切换仓库分支到 $REPO_BRANCH..."
+        "${git_repo[@]}" fetch origin "+refs/heads/$REPO_BRANCH:refs/remotes/origin/$REPO_BRANCH"
+        # 以远端为准重置本地分支，避免沿用过期的同名本地分支
+        "${git_repo[@]}" checkout -B "$REPO_BRANCH" "origin/$REPO_BRANCH"
+    fi
 fi
 
 if [ ! -d "$DEPLOY_DIR" ]; then
@@ -79,7 +106,7 @@ mkdir -p volumes/alertmanager
 chown -R 65534:65534 volumes/alertmanager
 
 # 定义需要注入的环境变量
-vars=("PUBLIC_IP" "INTERNAL_IP" "MANAGEMENT_VIP" "NETWORK_DEVICE" "DB_LISTEN_IP" "POSTGRES_USER" "POSTGRES_PASSWORD" "POSTGRES_DB" "ADMIN_PASSWORD" "ADMIN_EMAIL" "COMPOSE_PROFILES" "DB_HOST" "DB_PORT" "CPGATEWAY_SECRET_KEY" "FEISHU_WEBHOOK_URL" "FEISHU_SECRET" "S3_ENDPOINT" "S3_ACCESS_KEY" "S3_SECRET_KEY" "S3_BUCKET" "S3_REGION" "S3_USE_SSL" "S3_UPLOAD_TIMEOUT_MINUTES" "MINIO_HOSTNAME" "CLAPI_HOSTNAME" "SCI_SHARED_SECRET" "GRAFANA_ADMIN_PASSWORD" "DNS_UPSTREAM" "MINIO_ROOT_USER" "MINIO_ROOT_PASSWORD" "GRPC_AUTH_TOKEN" "GRPC_LISTEN" "TELEMETRY_LISTEN_IP")
+vars=("PUBLIC_IP" "INTERNAL_IP" "MANAGEMENT_VIP" "NETWORK_DEVICE" "DB_LISTEN_IP" "POSTGRES_USER" "POSTGRES_PASSWORD" "POSTGRES_DB" "ADMIN_PASSWORD" "ADMIN_EMAIL" "COMPOSE_PROFILES" "DB_HOST" "DB_PORT" "CPGATEWAY_SECRET_KEY" "FEISHU_WEBHOOK_URL" "FEISHU_SECRET" "S3_ENDPOINT" "S3_ACCESS_KEY" "S3_SECRET_KEY" "S3_BUCKET" "S3_REGION" "S3_USE_SSL" "S3_UPLOAD_TIMEOUT_MINUTES" "MINIO_HOSTNAME" "CLAPI_HOSTNAME" "SCI_SHARED_SECRET" "GRAFANA_ADMIN_PASSWORD" "DNS_UPSTREAM" "MINIO_ROOT_USER" "MINIO_ROOT_PASSWORD" "GRPC_AUTH_TOKEN" "GRPC_LISTEN" "TELEMETRY_LISTEN_IP" "REPO_BRANCH" "DEPLOY_SCRIPT_URL")
 
 # 注入环境变量到 .env (如果当前 Shell 环境中有定义)
 for var in "${vars[@]}"; do
@@ -113,8 +140,9 @@ done
 
 if [ ${#missing_vars[@]} -ne 0 ]; then
     warn "缺少关键配置项: ${missing_vars[*]}"
-    echo "请在使用 curl | bash 部署时通过环境变量传入 (并确保使用 sudo -E)，例如："
-    echo "  PUBLIC_IP=x.x.x.x ADMIN_PASSWORD=xxxx curl -sSL ... | sudo -E bash"
+    echo "请以 root 身份导出环境变量后再执行（Ubuntu 26.04 默认的 sudo-rs 会忽略 sudo -E），例如："
+    echo "  sudo -i"
+    echo "  export PUBLIC_IP=x.x.x.x ADMIN_PASSWORD=xxxx; curl -sSL ... | bash"
     echo "或者手动编辑 $DEPLOY_DIR/.env 文件。"
     exit 1
 fi

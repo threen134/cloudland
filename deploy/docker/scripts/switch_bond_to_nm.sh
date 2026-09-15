@@ -210,15 +210,19 @@ backup_config() {
 # 安装 NetworkManager（如果未安装）
 ###############################################################################
 install_nm() {
-    if command -v nmcli &>/dev/null; then
-        log_info "NetworkManager 已安装"
+    # 清理 netplan 配置依赖 python3-yaml，精简安装的 Ubuntu 24.04/26.04 可能没有
+    local pkgs=()
+    command -v nmcli &>/dev/null || pkgs+=(network-manager)
+    python3 -c "import yaml" &>/dev/null || pkgs+=(python3-yaml)
+    if [[ ${#pkgs[@]} -eq 0 ]]; then
+        log_info "NetworkManager 与 python3-yaml 已安装"
         return
     fi
 
-    log_info "正在安装 NetworkManager ..."
+    log_info "正在安装 ${pkgs[*]} ..."
     apt-get update -qq
-    apt-get install -y -qq network-manager
-    log_info "NetworkManager 安装完成"
+    apt-get install -y -qq "${pkgs[@]}"
+    log_info "安装完成"
 }
 
 ###############################################################################
@@ -384,6 +388,9 @@ do_switch() {
 
     for yaml_file in /etc/netplan/*.yaml; do
         [[ -f "$yaml_file" ]] || continue
+        # NetworkManager 使用 netplan 后端时（Ubuntu 24.04+），连接配置就存放在 90-NM-<uuid>.yaml，
+        # 其中也包含刚创建的 bond 定义；删除它会让 bond 连接只剩内存态，重启后网络丢失
+        [[ "$(basename "$yaml_file")" == 90-NM-* ]] && continue
         python3 -c "
 import yaml, sys, os
 

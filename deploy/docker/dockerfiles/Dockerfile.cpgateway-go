@@ -17,7 +17,7 @@ RUN CGO_ENABLED=0 go build -o /cpgateway-go \
     -ldflags "-s -w -X main.Version=$(cat .version 2>/dev/null || echo dev)"
 
 # ---- Stage 2: 运行时镜像 ----
-FROM ubuntu:22.04
+FROM ubuntu:24.04
 
 ENV DEBIAN_FRONTEND=noninteractive \
     GIN_MODE=release

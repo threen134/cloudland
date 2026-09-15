@@ -24,7 +24,7 @@ order: 40
 请确保目标计算节点满足以下条件：
 
 - **CPU 支持硬件虚拟化**：`ls /dev/kvm` 应当有输出。
-- **操作系统**：Ubuntu 22.04 LTS。
+- **操作系统**：Ubuntu 24.04 LTS 或 Ubuntu 26.04 LTS。
 - **管理网络互通**：可访问控制节点的 `9988` (SCI) 端口。
 - **root 权限**：部署脚本需以 root 身份执行。
 
@@ -87,7 +87,7 @@ curl -sk -X POST https://<PUBLIC_IP>/api/v1/hypers \
   "hostname": "compute-01",
   "status": 4,
   "status_name": "deploying",
-  "deploy_command": "export CONTROLLER_IP=... HOSTNAME=compute-01 ... ; curl -sSL ... | sudo -E bash"
+  "deploy_command": "export CONTROLLER_IP=... HOSTNAME=compute-01 ... REPO_BRANCH=staging; curl -sSL ... | sudo --preserve-env=CONTROLLER_IP,...,REPO_BRANCH bash"
 }
 ```
 
@@ -99,10 +99,10 @@ SSH 登录到目标计算节点，粘贴并执行上一步获得的部署命令�
 
 ```bash
 # 示例（实际命令由系统自动生成，请勿手动拼接）
-export CONTROLLER_IP=10.0.0.100 HOSTNAME=compute-01 NETWORK_DEVICE=eth0 \
-  VLAN_DEVICE=eth0 PRIVATE_VLAN_DEVICE=eth0 DNS_SERVER=8.8.8.8 \
-  SCI_CLIENT_ID=1 DOMAIN=example.com ZONE_NAME=zone0 VIRT_TYPE=kvm-x86_64; \
-  curl -sSL https://raw.githubusercontent.com/threen134/cloudland/staging/deploy/docker/scripts/deploy-compute-node.sh | sudo -E bash
+export CLAND_PUBKEY='...' GRPC_AUTH_TOKEN='...' CONTROLLER_IP=10.0.0.100 HOSTNAME=compute-01 \
+  NETWORK_DEVICE=eth0 VLAN_DEVICE=eth0 PRIVATE_VLAN_DEVICE=eth0 DNS_SERVER=8.8.8.8 \
+  SCI_CLIENT_ID=1 DOMAIN=example.com ZONE_NAME=zone0 VIRT_TYPE=kvm-x86_64 REPO_BRANCH=staging; \
+  curl -sSL https://raw.githubusercontent.com/threen134/cloudland/staging/deploy/docker/scripts/deploy-compute-node.sh | sudo --preserve-env=CLAND_PUBKEY,GRPC_AUTH_TOKEN,CONTROLLER_IP,HOSTNAME,NETWORK_DEVICE,VLAN_DEVICE,PRIVATE_VLAN_DEVICE,DNS_SERVER,SCI_CLIENT_ID,DOMAIN,ZONE_NAME,VIRT_TYPE,REPO_BRANCH bash
 ```
 
 脚本将自动完成：

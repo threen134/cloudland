@@ -31,7 +31,9 @@ func (n *NotificationAdmin) UpsertChannel(ctx context.Context, ch *model.Notific
 	ctx, db := GetContextDB(ctx)
 
 	var existing model.NotificationChannel
-	err := db.Where("uuid = ?", ch.UUID).First(&existing).Error
+	// uuid 有唯一索引（告警绑定外键依赖），查找需包含软删除记录，重新下发时恢复原记录而非新建；
+	// 优先取未删除、最新的一行，避免恢复旧的软删除行
+	err := db.Unscoped().Where("uuid = ?", ch.UUID).Order("deleted_at IS NOT NULL, id DESC").Take(&existing).Error
 	if err == gorm.ErrRecordNotFound {
 		return db.Create(ch).Error
 	}
@@ -39,12 +41,13 @@ func (n *NotificationAdmin) UpsertChannel(ctx context.Context, ch *model.Notific
 		return err
 	}
 
-	return db.Model(&existing).Updates(map[string]interface{}{
-		"org_id":  ch.OrgID,
-		"name":    ch.Name,
-		"type":    ch.Type,
-		"config":  ch.Config,
-		"enabled": ch.Enabled,
+	return db.Unscoped().Model(&existing).Updates(map[string]interface{}{
+		"org_id":     ch.OrgID,
+		"name":       ch.Name,
+		"type":       ch.Type,
+		"config":     ch.Config,
+		"enabled":    ch.Enabled,
+		"deleted_at": nil,
 	}).Error
 }
 
@@ -73,7 +76,7 @@ func (n *NotificationAdmin) BulkSyncChannels(ctx context.Context, channels []mod
 			syncedUUIDs = append(syncedUUIDs, ch.UUID)
 
 			var existing model.NotificationChannel
-			err := tx.Where("uuid = ?", ch.UUID).First(&existing).Error
+			err := tx.Unscoped().Where("uuid = ?", ch.UUID).Order("deleted_at IS NOT NULL, id DESC").Take(&existing).Error
 			if err == gorm.ErrRecordNotFound {
 				if err := tx.Create(&ch).Error; err != nil {
 					return err
@@ -81,12 +84,13 @@ func (n *NotificationAdmin) BulkSyncChannels(ctx context.Context, channels []mod
 			} else if err != nil {
 				return err
 			} else {
-				if err := tx.Model(&existing).Updates(map[string]interface{}{
-					"org_id":  ch.OrgID,
-					"name":    ch.Name,
-					"type":    ch.Type,
-					"config":  ch.Config,
-					"enabled": ch.Enabled,
+				if err := tx.Unscoped().Model(&existing).Updates(map[string]interface{}{
+					"org_id":     ch.OrgID,
+					"name":       ch.Name,
+					"type":       ch.Type,
+					"config":     ch.Config,
+					"enabled":    ch.Enabled,
+					"deleted_at": nil,
 				}).Error; err != nil {
 					return err
 				}

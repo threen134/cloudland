@@ -171,14 +171,14 @@ User → nginx (Vue.js) → cpgateway (JWT 认证) → clapi → cloudland → �
 
 ### 控制节点
 
-- **OS**: Ubuntu 22.04+
+- **OS**: Ubuntu 24.04 LTS 或 Ubuntu 26.04 LTS
 - **引擎**: Docker Engine 24.0+ & Docker Compose v2.20+
 - **工具**: `gnutls-bin`, `openssl`, `curl`
 - **资源**: 至少 4GB 内存，20GB 磁盘
 
 ### 计算节点
 
-- **OS**: Ubuntu 22.04+
+- **OS**: Ubuntu 24.04 LTS 或 Ubuntu 26.04 LTS
 - **虚拟化**: 必须支持 KVM（`/dev/kvm` 存在）
 - **网络**: 与控制节点管理网互通
 
@@ -209,7 +209,7 @@ export CPGATEWAY_SECRET_KEY=your_secret_key_change_me  # 重要：生产环境�
 export COMPOSE_PROFILES=full,dev,region  # 完整模式 + 本地数据库 + 区域控制面
 
 # 执行一键部署
-curl -sSL https://raw.githubusercontent.com/threen134/cloudland/staging/deploy/docker/scripts/deploy-control-node.sh | sudo -E bash
+curl -sSL https://raw.githubusercontent.com/threen134/cloudland/staging/deploy/docker/scripts/deploy-control-node.sh | bash
 ```
 
 ### 方式二：区域控制面 + 本地数据库部署（无 UI）
@@ -219,12 +219,12 @@ curl -sSL https://raw.githubusercontent.com/threen134/cloudland/staging/deploy/d
 export COMPOSE_PROFILES=dev,region       # 区域控制面 + cpgateway + 本地数据库
 
 # 执行部署
-curl -sSL https://raw.githubusercontent.com/threen134/cloudland/staging/deploy/docker/scripts/deploy-control-node.sh | sudo -E bash
+curl -sSL https://raw.githubusercontent.com/threen134/cloudland/staging/deploy/docker/scripts/deploy-control-node.sh | bash
 ```
 
 > [!TIP]
 > - 脚本将自动完成：克隆代码、安装 Docker、配置网络、生成证书并启动容器。
-> - **必须使用 `sudo -E`** 以确保环境变量传递给脚本。
+> - **请以 root 身份执行**（例如先 `sudo -i`，再 export 环境变量并执行命令）；Ubuntu 26.04 默认的 sudo-rs 会忽略 `sudo -E`，导出的环境变量不会传入脚本。
 > - SSH 密钥会自动生成在 `deploy/.ssh/cland.key`。
 > - `GRPC_AUTH_TOKEN`（clapi、cland-go 与计算节点共用的 gRPC 令牌）未提供时自动生成并写入 `.env`；cland-go 未配置令牌会拒绝启动。
 
@@ -358,8 +358,11 @@ export VRRP_INTERFACE=eth0
 export DB_HOST=10.0.0.200                 # 外部数据库地址
 export ADMIN_PASSWORD=your_admin_password
 
-sudo -E bash deploy/docker/scripts/deploy-ha-node.sh
+bash deploy/docker/scripts/deploy-ha-node.sh
 ```
+
+> [!IMPORTANT]
+> 请以 root 身份执行（例如先 `sudo -i`，再 export 环境变量并执行命令）；Ubuntu 26.04 默认的 sudo-rs 会忽略 `sudo -E`，导出的环境变量不会传入脚本。
 
 #### 2. 部署 BACKUP 节点
 
@@ -374,11 +377,12 @@ export VRRP_INTERFACE=eth0
 export DB_HOST=10.0.0.200                 # 同一个外部数据库
 export ADMIN_PASSWORD=your_admin_password
 
-sudo -E bash deploy/docker/scripts/deploy-ha-node.sh
+bash deploy/docker/scripts/deploy-ha-node.sh
 ```
 
 > [!NOTE]
-> BACKUP 节点部署时会自动从 MASTER 同步 SSH 密钥、TLS 证书和 `GRPC_AUTH_TOKEN`，然后创建容器并停止，等待 Keepalived 切换时启动。因此必须先部署 MASTER。
+> - 同样请以 root 身份执行（例如先 `sudo -i`，再 export 环境变量并执行命令）；Ubuntu 26.04 默认的 sudo-rs 会忽略 `sudo -E`，导出的环境变量不会传入脚本。
+> - BACKUP 节点部署时会自动从 MASTER 同步 SSH 密钥、TLS 证书和 `GRPC_AUTH_TOKEN`，然后创建容器并停止，等待 Keepalived 切换时启动。因此必须先部署 MASTER。
 
 #### 3. 验证
 
@@ -437,7 +441,7 @@ sudo systemctl restart keepalived          # 在目标节点上执行
 
 ## 添加计算节点
 
-计算节点需裸机部署（Ubuntu 22.04+）。cland-go 只接受 clapi `hypers` 表中已存在的节点，因此**必须先在控制面创建节点记录，再在计算节点上执行部署命令**。
+计算节点需裸机部署（Ubuntu 24.04 LTS 或 Ubuntu 26.04 LTS）。cland-go 只接受 clapi `hypers` 表中已存在的节点，因此**必须先在控制面创建节点记录，再在计算节点上执行部署命令**。
 
 1. 在 Web UI「计算节点」页面添加节点（或调用 `POST /api/v1/hypers`），填写 IP、主机名、网卡、可用区等。控制面分配 hostid 并返回 `deploy_command`。
 2. 在计算节点上以 root 执行 `deploy_command`。命令已包含 `CONTROLLER_IP`、`SCI_CLIENT_ID`（即 hostid）、`CLAND_PUBKEY` 与 `GRPC_AUTH_TOKEN`，脚本会：

@@ -14,7 +14,7 @@ if [[ $EUID -ne 0 ]]; then
    exit 1
 fi
 
-# 检查操作系统版本 (必须为 Ubuntu 22)
+# 检查操作系统版本（支持 Ubuntu 24.04 / 26.04）
 if [ -f /etc/os-release ]; then
     . /etc/os-release
     if [ "$ID" != "ubuntu" ]; then
@@ -22,6 +22,10 @@ if [ -f /etc/os-release ]; then
         echo "当前系统: ${NAME:-未知} ${VERSION_ID:-未知}"
         exit 1
     fi
+    case "$VERSION_ID" in
+        24.04|26.04) ;;
+        *) echo -e "\033[1;33m[WARN] 未验证的 Ubuntu 版本 ${VERSION_ID:-未知}，仅支持 24.04 / 26.04，继续执行可能失败\033[0m" ;;
+    esac
 else
     echo "错误: 无法识别操作系统。本脚本仅支持 Ubuntu 系统。"
     exit 1
@@ -139,10 +143,10 @@ root      hard    nofile          112640
 *         hard    nofile          112640
 EOF
 
-# NTP 时间同步
+# NTP 时间同步（Ubuntu 24.04 的 ntp 只是指向 ntpsec 的过渡包，26.04 已移除 ntp，统一使用 ntpsec）
 apt-get update -qq
-apt-get install -y ntp
-systemctl enable --now ntp || systemctl enable --now ntpsec || true
+apt-get install -y ntpsec
+systemctl enable --now ntpsec || true
 
 # 删除 unattended-upgrade
 apt-get remove -y unattended-upgrades 2>/dev/null || true
@@ -152,6 +156,15 @@ id cland &>/dev/null || useradd -m -s /bin/bash cland
 CLAND_HOME=$(getent passwd cland | cut -d: -f6)
 chown cland:cland "$CLAND_HOME"
 echo 'cland ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/cland
+
+# Ubuntu 26.04 默认 sudo 为 sudo-rs，会忽略 sudo -E；cloudlet-go 与 scripts/kvm 依赖 -E 传递
+# SCI_CLIENT_ID/TRACEPARENT 等环境变量（丢失后回调主机 ID 为空，clapi 返回 400），切回经典 sudo
+if readlink -f /usr/bin/sudo | grep -q 'sudo-rs\|cargo'; then
+    # 精简镜像可能只装了 sudo-rs，经典 sudo 由 sudo 包提供（/usr/bin/sudo.ws）
+    [ -x /usr/bin/sudo.ws ] || apt-get install -y sudo
+    update-alternatives --set sudo /usr/bin/sudo.ws
+    log "已将 sudo 从 sudo-rs 切换为经典 sudo（sudo.ws）"
+fi
 
 # 屏蔽 UFW
 systemctl mask ufw 2>/dev/null || true
@@ -185,6 +198,8 @@ iptables-save -c > /etc/iptables.rules
 # 恢复 Docker 的专属网络转发链 (如 DOCKER-USER)
 if command -v docker &>/dev/null && systemctl is-active --quiet docker && docker ps --format '{{.Names}}' | grep -q 'cloudland-nginx'; then
     systemctl restart docker || true
+    # 重启 Docker 时秒退的容器（如 dnsmasq，exit 0）不会被 unless-stopped 策略拉起，显式恢复控制面容器
+    (cd "$DEPLOY_DIR" && docker compose up -d) || warn "控制面容器恢复失败，请手动执行: cd $DEPLOY_DIR && docker compose up -d"
 fi
 
 # 持久化 iptables
@@ -302,7 +317,7 @@ fi
 
 if [ ! -d "$CLOUDLAND_DIR/api" ]; then
     log "未检测到源码 (缺少 api 目录)，开始自动拉取..."
-    git clone https://github.com/threen134/cloudland.git /tmp/cloudland
+    git clone -b "${REPO_BRANCH:-staging}" "${REPO_URL:-https://github.com/threen134/cloudland.git}" /tmp/cloudland
     cp -r /tmp/cloudland/* "$CLOUDLAND_DIR/"
     rm -rf /tmp/cloudland
 fi

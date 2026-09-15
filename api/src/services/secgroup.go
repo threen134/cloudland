@@ -668,7 +668,7 @@ func (a *SecgroupAdmin) List(ctx context.Context, offset, limit int64, order, qu
 		}
 	}
 	if memberShip.IsSystemAdmin() {
-		db = db.Offset(0).Limit(-1)
+		_, db = GetContextDB(ctx) // 链式调用复用 Statement，取新会话查询 OwnerInfo
 		for _, sg := range secgroups {
 			sg.OwnerInfo = &model.Organization{Model: model.Model{ID: sg.Owner}}
 			if err = db.Take(sg.OwnerInfo).Error; err != nil {

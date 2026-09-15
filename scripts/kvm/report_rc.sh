@@ -61,7 +61,7 @@ function halfday_job()
         [[ "$last_halfday" == "$current_halfday" ]] && return
     fi
 
-    ./generate_vm_instance_map.sh full
+    ./generate_vm_instance_map.sh full >/dev/null
     echo "$current_halfday" > "$state_file"
 }
 
@@ -137,7 +137,8 @@ function check_system_router()
 {
     sudo systemctl status NetworkManager >/dev/null
     [ $? -ne 0 ] && sudo systemctl restart NetworkManager
-    sudo ip netns exec router-0 ip r | grep default
+    # 只看退出码：本脚本 stdout 除首行外都会作为回调命令发给 clapi，不能输出其他内容
+    sudo ip netns exec router-0 ip r | grep -q default
     if [ $? -ne 0 ]; then
         sudo -E bash -c "echo '|:-COMMAND-:|' system_router.sh \'$SCI_CLIENT_ID\' \'$HOSTNAME\' >$async_job_dir/system_router.done"
     fi
@@ -173,7 +174,7 @@ function sync_instance()
 {
     flag_file=$run_dir/need_to_sync
     boot_file=/proc/sys/kernel/random/boot_id
-    diff $flag_file $boot_file
+    diff $flag_file $boot_file >/dev/null 2>&1
     [ $? -eq 0 ] && return
     sudo iptables-restore </etc/iptables.rules
     bridges=$(cat /proc/net/dev | grep br | awk -F: '{print $1}')
@@ -188,11 +189,11 @@ function sync_instance()
     for inst in $insts; do
 	inst_id=${inst/inst-/}
         for i in {1..100}; do
-            ls /var/run/wds/instance-${inst_id}*
+            ls /var/run/wds/instance-${inst_id}* >/dev/null 2>&1
             [ $? -eq 0 ] && break
             sleep 2
         done
-        sudo virsh start inst-$inst_id
+        sudo virsh start inst-$inst_id >/dev/null
         echo "|:-COMMAND-:| launch_vm.sh '$inst_id' 'running' '$SCI_CLIENT_ID' 'sync'"
     done
     sudo cp $boot_file $flag_file

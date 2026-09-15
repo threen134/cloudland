@@ -81,7 +81,7 @@ func init() {
 	dbs.AutoUpgrade("image_visibility_default", func(db *gorm.DB) error {
 		// Set visibility to 'public' for system org images that have no visibility set yet
 		if err := db.Exec(
-			"UPDATE images SET visibility = ? WHERE (visibility = '' OR visibility IS NULL) AND owner IN (SELECT id FROM organizations WHERE type = ?)",
+			"UPDATE images SET visibility = ? WHERE (visibility = '' OR visibility IS NULL) AND owner IN (SELECT id FROM organizations WHERE org_type = ?)",
 			ImageVisibilityPublic, OrgTypeSystem,
 		).Error; err != nil {
 			return err

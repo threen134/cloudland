@@ -68,8 +68,11 @@ export DB_HOST=10.0.0.200                # 外部数据库地址
 export ADMIN_PASSWORD=your_admin_password
 
 # 执行 HA 部署脚本
-sudo -E bash scripts/deploy-ha-node.sh
+bash scripts/deploy-ha-node.sh
 ```
+
+> [!IMPORTANT]
+> 请以 root 身份执行（例如先 `sudo -i`，再 export 环境变量并执行命令）；Ubuntu 26.04 默认的 sudo-rs 会忽略 `sudo -E`，导出的环境变量不会传入脚本。
 
 ### 3. 部署 BACKUP 节点 (控制节点 B)
 ```bash
@@ -84,8 +87,11 @@ export DB_HOST=10.0.0.200                # 指向同一个外部数据库
 export ADMIN_PASSWORD=your_admin_password
 
 # 执行 HA 部署脚本
-sudo -E bash scripts/deploy-ha-node.sh
+bash scripts/deploy-ha-node.sh
 ```
+
+> [!IMPORTANT]
+> 请以 root 身份执行（例如先 `sudo -i`，再 export 环境变量并执行命令）；Ubuntu 26.04 默认的 sudo-rs 会忽略 `sudo -E`，导出的环境变量不会传入脚本。
 
 ---
 
@@ -169,8 +175,11 @@ HA 模式下，计算节点需开启 SCI 自动重连，以便主控切换后自
 ```bash
 export SCI_ENABLE_FAILOVER=yes
 # ... 其他计算节点环境变量 ...
-sudo -E bash deploy/docker/scripts/deploy-compute-node.sh
+bash deploy/docker/scripts/deploy-compute-node.sh
 ```
+
+> [!IMPORTANT]
+> 请以 root 身份执行（例如先 `sudo -i`，再 export 环境变量并执行命令）；Ubuntu 26.04 默认的 sudo-rs 会忽略 `sudo -E`，导出的环境变量不会传入脚本。
 
 ---
 

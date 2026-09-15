@@ -287,7 +287,7 @@ func (a *KeyAdminService) List(ctx context.Context, offset, limit int64, order, 
 	}
 	permit = memberShip.IsSystemAdmin()
 	if permit {
-		db = db.Offset(0).Limit(-1)
+		_, db = GetContextDB(ctx) // 链式调用复用 Statement，取新会话查询 OwnerInfo
 		for _, key := range keys {
 			key.OwnerInfo = &model.Organization{Model: model.Model{ID: key.Owner}}
 			if err = db.Take(key.OwnerInfo).Error; err != nil {

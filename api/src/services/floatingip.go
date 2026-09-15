@@ -769,7 +769,7 @@ func (a *FloatingIpAdminService) List(ctx context.Context, offset, limit int64, 
 		logger.Ctx(ctx).Error("DB failed to query floating ip(s), %v", err)
 		return 0, nil, NewCLError(ErrSQLSyntaxError, "Failed to query floating IPs", err)
 	}
-	db = db.Offset(0).Limit(-1)
+	_, db = GetContextDB(ctx) // 链式调用复用 Statement，取新会话查询 OwnerInfo
 	for _, fip := range floatingIps {
 		err = a.EnsureSubnetID(ctx, fip)
 		if err != nil {

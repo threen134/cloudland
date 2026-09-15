@@ -122,14 +122,18 @@ func HyperStatus(ctx context.Context, args []string) (status string, err error) 
 	// end PET-769
 	// PET-1218 fix hyper status
 	logger.Ctx(ctx).Debugf("Updating hypervisor %s status to %d", hyperName, hyperStatus)
-	err = db.Model(&model.Hyper{}).Where("hostid = ?", hyperID).Updates(map[string]interface{}{
+	updates := map[string]interface{}{
 		"hostname":  hyperName,
 		"status":    hyperStatus,
 		"cpu_model": cpuModel,
 		"virt_type": "kvm-x86_64",
-		"zone":      zone,
 		"host_ip":   hostIP,
-	}).Error
+	}
+	// map 更新不会处理 Zone 关联，需直接写外键列；未上报可用区时保留原值
+	if zoneName != "" {
+		updates["zone_id"] = zone.ID
+	}
+	err = db.Model(&model.Hyper{}).Where("hostid = ?", hyperID).Updates(updates).Error
 	if err != nil {
 		logger.Ctx(ctx).Error("Failed to update hyper", err)
 		return

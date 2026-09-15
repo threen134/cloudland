@@ -4,7 +4,7 @@
 # 构建: docker build -f dockerfiles/Dockerfile.sci -t cloudland-sci ../../
 # =============================================================================
 
-FROM ubuntu:22.04 AS sci-builder
+FROM ubuntu:24.04 AS sci-builder
 
 ENV DEBIAN_FRONTEND=noninteractive
 

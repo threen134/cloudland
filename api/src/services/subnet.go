@@ -784,7 +784,7 @@ func (a *SubnetAdmin) List(ctx context.Context, offset, limit int64, order, quer
 	}
 	permit = memberShip.CheckOrgPermission(model.OrgWriter)
 	if permit {
-		db = db.Offset(0).Limit(-1)
+		_, db = GetContextDB(ctx) // 链式调用复用 Statement，取新会话查询 OwnerInfo
 		for _, subnet := range subnets {
 			subnet.OwnerInfo = &model.Organization{Model: model.Model{ID: subnet.Owner}}
 			if err = db.Take(subnet.OwnerInfo).Error; err != nil {

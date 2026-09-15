@@ -186,6 +186,9 @@ services:
       SCI_SHARED_SECRET: ${SCI_SHARED_SECRET:-}
       # 访问 cland-go 的共享令牌，同时写入计算节点 deploy_command
       GRPC_AUTH_TOKEN: ${GRPC_AUTH_TOKEN:-}
+      # 计算节点 deploy_command 使用的代码分支与脚本地址（DEPLOY_SCRIPT_URL 为空时按 REPO_BRANCH 拼接）
+      REPO_BRANCH: ${REPO_BRANCH:-staging}
+      DEPLOY_SCRIPT_URL: ${DEPLOY_SCRIPT_URL:-}
       # 链路追踪：OTLP 导出到本 Region 的 OTel Collector
       OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
       TRACING_SAMPLE_RATIO: ${TRACING_SAMPLE_RATIO:-1}
@@ -547,7 +550,7 @@ services:
   # ---------- MinIO 镜像仓库（内置模式，profile: minio）----------
   # 外部 S3 模式不加 minio profile，容器不启动
   minio:
-    image: minio/minio:latest
+    image: quay.io/minio/minio:latest
     container_name: cloudland-minio
     restart: unless-stopped
     profiles:
@@ -572,7 +575,7 @@ services:
 
   # ---------- MinIO Bucket 初始化（一次性作业）----------
   minio-init:
-    image: minio/mc:latest
+    image: quay.io/minio/mc:latest
     container_name: cloudland-minio-init
     profiles:
       - minio

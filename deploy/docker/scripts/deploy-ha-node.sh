@@ -11,6 +11,15 @@ exec > >(tee -a "$DEPLOY_LOG") 2>&1
 CLOUDLAND_DIR="${CLOUDLAND_DIR:-/opt/cloudland}"
 REPO_URL="${REPO_URL:-https://github.com/threen134/cloudland.git}"
 DEPLOY_DIR="$CLOUDLAND_DIR/deploy/docker"
+# 部署分支优先级：显式指定 > 已部署 .env 中的值 > 已有仓库当前检出的分支 > staging，
+# 避免在旧 .env（无 REPO_BRANCH）的环境上重跑脚本时把 .env 与 deploy_command 改到默认分支
+if [ -z "${REPO_BRANCH:-}" ] && [ -f "$DEPLOY_DIR/.env" ]; then
+    REPO_BRANCH=$(grep '^REPO_BRANCH=' "$DEPLOY_DIR/.env" | cut -d'=' -f2- || true)
+fi
+if [ -z "${REPO_BRANCH:-}" ] && [ -d "$CLOUDLAND_DIR/.git" ]; then
+    REPO_BRANCH=$(git -c safe.directory="$CLOUDLAND_DIR" -C "$CLOUDLAND_DIR" branch --show-current 2>/dev/null || true)
+fi
+REPO_BRANCH="${REPO_BRANCH:-staging}"
 
 log() { echo -e "\n\033[1;32m[$(date '+%H:%M:%S')] $1\033[0m"; }
 warn() { echo -e "\033[1;33m[WARN] $1\033[0m"; }
@@ -30,7 +39,7 @@ if [ ! -d "$CLOUDLAND_DIR" ]; then
     if ! command -v git &>/dev/null; then
         apt-get update && apt-get install -y git
     fi
-    git clone "$REPO_URL" "$CLOUDLAND_DIR"
+    git clone -b "$REPO_BRANCH" "$REPO_URL" "$CLOUDLAND_DIR"
 fi
 
 cd "$DEPLOY_DIR"
@@ -45,7 +54,7 @@ fi
 mkdir -p volumes/alertmanager
 chown -R 65534:65534 volumes/alertmanager
 
-vars=("PUBLIC_IP" "INTERNAL_IP" "MANAGEMENT_VIP" "NETWORK_DEVICE" "DB_LISTEN_IP" "POSTGRES_USER" "POSTGRES_PASSWORD" "POSTGRES_DB" "ADMIN_PASSWORD" "HA_ROLE" "PEER_IP" "VRRP_INTERFACE" "DB_HOST" "DB_PORT" "GRPC_AUTH_TOKEN" "GRPC_LISTEN" "TELEMETRY_LISTEN_IP")
+vars=("PUBLIC_IP" "INTERNAL_IP" "MANAGEMENT_VIP" "NETWORK_DEVICE" "DB_LISTEN_IP" "POSTGRES_USER" "POSTGRES_PASSWORD" "POSTGRES_DB" "ADMIN_PASSWORD" "HA_ROLE" "PEER_IP" "VRRP_INTERFACE" "DB_HOST" "DB_PORT" "GRPC_AUTH_TOKEN" "GRPC_LISTEN" "TELEMETRY_LISTEN_IP" "REPO_BRANCH" "DEPLOY_SCRIPT_URL")
 
 for var in "${vars[@]}"; do
     val="${!var:-}"

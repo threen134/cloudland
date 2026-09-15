@@ -13,16 +13,18 @@ COPY api/ ./
 RUN cd cmds/cland && CGO_ENABLED=0 go build -o /cland-go -ldflags "-s -w"
 
 # ---- Stage 2: 运行时镜像 ----
-FROM ubuntu:22.04
+FROM ubuntu:24.04
 
 ENV DEBIAN_FRONTEND=noninteractive
 
+# ubuntu:24.04 自带 UID 1000 的 ubuntu 用户；cland 固定为 1000，与宿主机 cland、已有卷及只读挂载的 SSH 密钥属主一致
 RUN apt-get update && apt-get install -y --no-install-recommends \
     iproute2 net-tools netbase \
     ca-certificates \
     openssh-client rsync curl \
     && rm -rf /var/lib/apt/lists/* \
-    && useradd -m -s /bin/bash cland
+    && (userdel -r ubuntu 2>/dev/null || true) \
+    && useradd -m -u 1000 -s /bin/bash cland
 
 # 复制 Go 二进制（单个静态文件，无需 SCI 库）
 COPY --from=builder /cland-go /opt/cloudland/bin/cland-go

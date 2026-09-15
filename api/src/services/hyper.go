@@ -57,7 +57,8 @@ func (a *HyperAdmin) List(ctx context.Context, offset, limit int64, order, query
 	if err = db.Preload("Zone").Where("hostid >= 0").Where(query).Find(&hypers).Error; err != nil {
 		return 0, nil, NewCLError(ErrSQLSyntaxError, "Failed to retrieve hypervisors", err)
 	}
-	db = db.Offset(0).Limit(-1)
+	// GORM 链式调用复用同一 Statement，沿用 db 会带上 Preload 与过滤条件，取新会话再查关联记录
+	_, db = GetContextDB(ctx)
 	for _, hyper := range hypers {
 		hyper.Resource = &model.Resource{}
 		if lerr := db.Where("hostid = ?", hyper.Hostid).Take(hyper.Resource).Error; lerr != nil {
@@ -375,9 +376,17 @@ func (a *HyperAdmin) Deploy(ctx context.Context, ip, hostname, networkDevice, vl
 	if controllerIP == "" {
 		controllerIP = "127.0.0.1"
 	}
+	// 计算节点与控制面使用同一代码分支（REPO_BRANCH 由控制面部署脚本写入 .env）
+	repoBranch := os.Getenv("REPO_BRANCH")
+	if repoBranch == "" {
+		repoBranch = "staging"
+	} else if strings.ContainsAny(repoBranch, "'\"`$\\ \t\n\r;&|") {
+		logger.Ctx(ctx).Warningf("REPO_BRANCH %q contains unsafe characters; deploy_command falls back to staging", repoBranch)
+		repoBranch = "staging"
+	}
 	deployScriptURL := os.Getenv("DEPLOY_SCRIPT_URL")
 	if deployScriptURL == "" {
-		deployScriptURL = "https://raw.githubusercontent.com/threen134/cloudland/staging/deploy/docker/scripts/deploy-compute-node.sh"
+		deployScriptURL = fmt.Sprintf("https://raw.githubusercontent.com/threen134/cloudland/%s/deploy/docker/scripts/deploy-compute-node.sh", repoBranch)
 	}
 
 	// Embed cland.key.pub into the deploy command so the compute node trusts the
@@ -413,11 +422,14 @@ func (a *HyperAdmin) Deploy(ctx context.Context, ip, hostname, networkDevice, vl
 		}
 	}
 
+	// 用 --preserve-env 显式列出变量：Ubuntu 26.04 默认的 sudo-rs 会忽略 sudo -E；
+	// 变量经 export 传入而非放在命令参数里，令牌不会出现在进程列表中
+	deployEnvVars := "CLAND_PUBKEY,GRPC_AUTH_TOKEN,CONTROLLER_IP,HOSTNAME,NETWORK_DEVICE,VLAN_DEVICE,PRIVATE_VLAN_DEVICE,DNS_SERVER,SCI_CLIENT_ID,DOMAIN,ZONE_NAME,VIRT_TYPE,REPO_BRANCH"
 	deployCmd = fmt.Sprintf(
-		"export %s%sCONTROLLER_IP=%s HOSTNAME=%s NETWORK_DEVICE=%s VLAN_DEVICE=%s PRIVATE_VLAN_DEVICE=%s DNS_SERVER=%s SCI_CLIENT_ID=%d DOMAIN=%s ZONE_NAME=%s VIRT_TYPE=%s; "+
-			"curl -sSL %s | sudo -E bash",
-		pubKeyExport, tokenExport, controllerIP, hostname, networkDevice, vlanDevice, privateVlanDevice, dnsServer, hostID, domain, zoneName, virtType,
-		deployScriptURL,
+		"export %s%sCONTROLLER_IP=%s HOSTNAME=%s NETWORK_DEVICE=%s VLAN_DEVICE=%s PRIVATE_VLAN_DEVICE=%s DNS_SERVER=%s SCI_CLIENT_ID=%d DOMAIN=%s ZONE_NAME=%s VIRT_TYPE=%s REPO_BRANCH=%s; "+
+			"curl -sSL %s | sudo --preserve-env=%s bash",
+		pubKeyExport, tokenExport, controllerIP, hostname, networkDevice, vlanDevice, privateVlanDevice, dnsServer, hostID, domain, zoneName, virtType, repoBranch,
+		deployScriptURL, deployEnvVars,
 	)
 
 	return hyper, deployCmd, nil

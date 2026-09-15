@@ -294,7 +294,7 @@ func (a *ListenerAdmin) List(ctx context.Context, offset, limit int64, order str
 	}
 	permit = memberShip.IsSystemAdmin()
 	if permit {
-		db = db.Offset(0).Limit(-1)
+		_, db = GetContextDB(ctx) // 链式调用复用 Statement，取新会话查询 OwnerInfo
 		for _, listener := range listeners {
 			listener.OwnerInfo = &model.Organization{Model: model.Model{ID: listener.Owner}}
 			if err = db.Take(listener.OwnerInfo).Error; err != nil {
