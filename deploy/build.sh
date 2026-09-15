@@ -48,13 +48,6 @@ if [ -z "$CURRENT_GO" ] || [ "$(printf '%s\n%s\n' "$GO_VERSION" "$CURRENT_GO" | 
 fi
 
 
-# Build web
-function build_web()
-{
-    cd $cland_root_dir/web
-    make all
-}
-
 # Build cland-go / cloudlet-go（Go gRPC 版，取代 C++ cloudland + SCI）
 function build_cland()
 {
@@ -125,8 +118,6 @@ build_cland
 # 产生host file
 gen_hosts
 cd $cland_root_dir/deploy
-#   构建web
-build_web
 #   构建libvirt console proxy
 build_console_proxy
 chown -R cland.cland $cland_root_dir

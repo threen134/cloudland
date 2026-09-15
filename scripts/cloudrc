@@ -26,6 +26,24 @@ debug_log_file=/opt/cloudland/log/script.log
 debug_flag_file=/opt/cloudland/run/debug
 uefi_boot_loader=/usr/share/OVMF/OVMF_CODE_4M.fd
 nvram_template=/usr/share/OVMF/OVMF_VARS_4M.fd
+# 浮动 IP 策略路由表名（fip-<vlan>）登记在 rt_tables.d：Ubuntu 26.04 的 iproute2 默认配置移到 /usr/share/iproute2，
+# /etc/iproute2/rt_tables 不再存在；rt_tables.d/*.conf 在 24.04 与 26.04 上都会被 ip 命令读取
+rt_file=/etc/iproute2/rt_tables.d/cloudland.conf
+
+# 登记浮动 IP 策略路由表 fip-<vlan>：按表名判断是否已登记（ID 可能是之前探测得到的其他值），
+# 未登记时从 vlan%250+2 开始探测空闲 ID；浮动 IP 与 LB 浮动 IP 共用，保证同一 VLAN 只登记一次
+function ensure_fip_table()
+{
+    local table=fip-$1
+    local rtID=$(( $1 % 250 + 2 ))
+    mkdir -p $(dirname $rt_file) && touch $rt_file
+    grep -qE "^[0-9]+[[:space:]]+$table$" $rt_file && return 0
+    for i in {1..250}; do
+        grep -qE "^$rtID[[:space:]]" $rt_file || break
+        rtID=$(( ($rtID + 17) % 250 + 2 ))
+    done
+    echo "$rtID $table" >>$rt_file
+}
 wds_bps_factor=1048576 # 1024 * 1024 
 function die()
 {
@@ -255,10 +273,12 @@ function inet_access()
 {
     mkdir -p /etc/netns/router-0
     echo "nameserver $dns_server" >/etc/netns/router-0/resolv.conf
-    ip netns exec router-0 iptables -D INPUT -m state --state RELATED,ESTABLISHED -j ACCEPT
-    ip netns exec router-0 iptables -A INPUT -m state --state RELATED,ESTABLISHED -j ACCEPT
+    # router-0 的 INPUT 默认 DROP：放行本 netns 主动发起连接的回包。规则常驻、只加不删——
+    # 按调用增删时，并发调用（如同一节点同时导入多个镜像）会把别人还在用的规则删掉，导致下载卡住
+    ip netns exec router-0 iptables -C INPUT -m state --state RELATED,ESTABLISHED -j ACCEPT 2>/dev/null || \
+        ip netns exec router-0 iptables -A INPUT -m state --state RELATED,ESTABLISHED -j ACCEPT
+    # 最后一条命令即被执行的命令，函数返回它的退出码（如 curl 下载失败）
     ip netns exec router-0 $*
-    ip netns exec router-0 iptables -D INPUT -m state --state RELATED,ESTABLISHED -j ACCEPT
 }
 
 function get_uuid_prefix()

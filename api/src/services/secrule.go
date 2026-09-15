@@ -58,8 +58,118 @@ func (a *SecruleAdminService) ApplySecgroup(ctx context.Context, secgroup *model
 	return
 }
 
-func (a *SecruleAdminService) Update(ctx context.Context, secrule *model.SecurityRule, secgroup *model.SecurityGroup, name, remoteIp, direction, protocol string, portMin, portMax int32) (err error) {
-	logger.Ctx(ctx).Infof("ENTER SecruleAdmin.Update: id=%d, name=%s, remoteIp=%s, direction=%s, protocol=%s, portMin=%d, portMax=%d", secrule.ID, name, remoteIp, direction, protocol, portMin, portMax)
+// normalizeRulePorts 按协议校验并规范化端口字段：
+//   - tcp/udp：1-65535（都未指定时表示全部端口，只指定一个时为单端口）
+//   - icmp：port_min 为 ICMP type、port_max 为 ICMP code，-1 表示任意（apply_sg_rule.sh 据此生成 --icmp-type）
+//   - gre/ipv6：不区分端口，统一存 -1
+func normalizeRulePorts(protocol string, portMin, portMax int32) (int32, int32, error) {
+	if protocol == "icmp" {
+		return normalizeICMPTypeCode(portMin, portMax)
+	}
+	if protocol != "tcp" && protocol != "udp" {
+		return -1, -1, nil
+	}
+	if portMin <= 0 && portMax <= 0 {
+		return 1, 65535, nil
+	}
+	if portMin <= 0 {
+		portMin = portMax
+	}
+	if portMax <= 0 {
+		portMax = portMin
+	}
+	if portMin > 65535 || portMax > 65535 {
+		return 0, 0, NewCLError(ErrInvalidParameter, "Port out of range, must be 1-65535", nil)
+	}
+	if portMin > portMax {
+		return 0, 0, NewCLError(ErrInvalidParameter, "PortMax should be greater than or equal to PortMin", nil)
+	}
+	return portMin, portMax, nil
+}
+
+// normalizeICMPTypeCode 校验 ICMP type/code：-1 表示任意；type 取 0-254（iptables 把 255 当作任意 type），
+// code 取 0-255；只有指定了 type 才能指定 code（--icmp-type 的格式为 type[/code]）
+func normalizeICMPTypeCode(icmpType, icmpCode int32) (int32, int32, error) {
+	if icmpType < -1 || icmpType > 254 {
+		return 0, 0, NewCLError(ErrInvalidParameter, "ICMP type out of range, must be -1 (any) or 0-254", nil)
+	}
+	if icmpCode < -1 || icmpCode > 255 {
+		return 0, 0, NewCLError(ErrInvalidParameter, "ICMP code out of range, must be -1 (any) or 0-255", nil)
+	}
+	if icmpType == -1 && icmpCode != -1 {
+		return 0, 0, NewCLError(ErrInvalidParameter, "ICMP code requires ICMP type", nil)
+	}
+	return icmpType, icmpCode, nil
+}
+
+// isPortProtocol tcp/udp 的 port_min/port_max 是端口范围；icmp 复用为 type/code，gre/ipv6 不使用
+func isPortProtocol(protocol string) bool {
+	return protocol == "tcp" || protocol == "udp"
+}
+
+// checkPayloadPorts 请求中显式传入的 tcp/udp 端口必须在 1-65535（不传表示全部端口或沿用原值），
+// 避免 0/-1 被 normalizeRulePorts 当作“未指定”，悄悄变成单端口或全部端口
+func checkPayloadPorts(protocol string, portMin, portMax *int32) error {
+	if !isPortProtocol(protocol) {
+		return nil
+	}
+	for _, p := range []*int32{portMin, portMax} {
+		if p != nil && (*p < 1 || *p > 65535) {
+			return NewCLError(ErrInvalidParameter, "TCP/UDP port must be 1-65535", nil)
+		}
+	}
+	return nil
+}
+
+// RulePortsFromPayload 解析创建规则请求中的可选端口：未传的记为 -1
+// （tcp/udp 两个都未传表示全部端口，只传一个表示单端口；icmp 表示任意 type/code）
+func RulePortsFromPayload(protocol string, portMin, portMax *int32) (int32, int32, error) {
+	if err := checkPayloadPorts(protocol, portMin, portMax); err != nil {
+		return 0, 0, err
+	}
+	min, max := int32(-1), int32(-1)
+	if portMin != nil {
+		min = *portMin
+	}
+	if portMax != nil {
+		max = *portMax
+	}
+	return min, max, nil
+}
+
+// resolveRulePorts 合并更新请求中的端口：未传的沿用原值。
+// 端口字段含义随协议变化（tcp/udp 端口范围 ↔ icmp type/code）时原值不能沿用：
+// 改为 icmp/gre/ipv6 且未传时取 -1（任意）；改为 tcp/udp 时必须显式传端口，不默认放开全部端口
+func resolveRulePorts(oldProtocol, newProtocol string, oldMin, oldMax int32, portMin, portMax *int32) (int32, int32, error) {
+	if err := checkPayloadPorts(newProtocol, portMin, portMax); err != nil {
+		return 0, 0, err
+	}
+	min, max := oldMin, oldMax
+	if isPortProtocol(newProtocol) != isPortProtocol(oldProtocol) {
+		if isPortProtocol(newProtocol) && portMin == nil && portMax == nil {
+			return 0, 0, NewCLError(ErrInvalidParameter, "port_min/port_max are required when changing protocol to tcp/udp", nil)
+		}
+		min, max = -1, -1
+	}
+	if portMin != nil {
+		min = *portMin
+	}
+	if portMax != nil {
+		max = *portMax
+	}
+	return min, max, nil
+}
+
+// optionalPort 日志用：未传的端口显示为 nil
+func optionalPort(p *int32) string {
+	if p == nil {
+		return "nil"
+	}
+	return strconv.Itoa(int(*p))
+}
+
+func (a *SecruleAdminService) Update(ctx context.Context, secrule *model.SecurityRule, secgroup *model.SecurityGroup, name, remoteIp, direction, protocol string, portMin, portMax *int32) (err error) {
+	logger.Ctx(ctx).Infof("ENTER SecruleAdmin.Update: id=%d, name=%s, remoteIp=%s, direction=%s, protocol=%s, portMin=%s, portMax=%s", secrule.ID, name, remoteIp, direction, protocol, optionalPort(portMin), optionalPort(portMax))
 	defer func() {
 		if err != nil {
 			logger.Ctx(ctx).Errorf("EXIT SecruleAdmin.Update: error=%v", err)
@@ -91,33 +201,27 @@ func (a *SecruleAdminService) Update(ctx context.Context, secrule *model.Securit
 	if direction != "" {
 		secrule.Direction = direction
 	}
+	oldProtocol := secrule.Protocol
 	if protocol != "" {
 		secrule.Protocol = protocol
 	}
 	if name != "" {
 		secrule.Name = name
 	}
-	// Note: protocol field is already updated above, so secrule.Protocol reflects the new value
-	if secrule.Protocol == "icmp" {
-		secrule.PortMin = -1
-		secrule.PortMax = -1
-	} else {
-		if portMin > 0 && portMin <= 65535 {
-			secrule.PortMin = portMin
-		} else if portMin > 65535 {
-			err = NewCLError(ErrInvalidParameter, "PortMin out of range, must be 1-65535", nil)
-			return
-		}
-		if portMax > 0 && portMax <= 65535 {
-			secrule.PortMax = portMax
-		} else if portMax > 65535 {
-			err = NewCLError(ErrInvalidParameter, "PortMax out of range, must be 1-65535", nil)
-			return
-		}
-		if secrule.PortMin > secrule.PortMax {
-			err = NewCLError(ErrInvalidParameter, "PortMax should be greater than or equal to PortMin", nil)
-			return
-		}
+	// 未传的端口沿用原值（端口字段含义随协议变化时另行处理），再按新协议统一校验
+	newMin, newMax, err := resolveRulePorts(oldProtocol, secrule.Protocol, secrule.PortMin, secrule.PortMax, portMin, portMax)
+	if err != nil {
+		return
+	}
+	secrule.PortMin, secrule.PortMax, err = normalizeRulePorts(secrule.Protocol, newMin, newMax)
+	if err != nil {
+		return
+	}
+	// 修改后与同组另一条规则完全相同时拒绝（规则表有唯一索引兜底，这里给出明确提示）；map 条件避免跳过值为 0 的端口
+	duplicate := &model.SecurityRule{}
+	if db.Where(map[string]interface{}{"secgroup": secrule.Secgroup, "remote_ip": secrule.RemoteIp, "direction": secrule.Direction, "ip_version": secrule.IpVersion, "protocol": secrule.Protocol, "port_min": secrule.PortMin, "port_max": secrule.PortMax}).Where("id <> ?", secrule.ID).Take(duplicate).Error == nil {
+		err = NewCLError(ErrSecurityRuleUpdateFailed, "An identical security rule already exists in this security group", nil)
+		return
 	}
 	err = db.Model(&model.SecurityRule{}).Where("id = ?", secrule.ID).Updates(map[string]interface{}{"name": secrule.Name, "remote_ip": secrule.RemoteIp, "direction": secrule.Direction, "protocol": secrule.Protocol, "port_min": secrule.PortMin, "port_max": secrule.PortMax}).Error
 	if err != nil {
@@ -155,14 +259,17 @@ func (a *SecruleAdminService) Create(ctx context.Context, name, remoteIp, direct
 			EndTransaction(ctx, err)
 		}
 	}()
-	_, err = SecruleAdmin.GetRule(ctx, remoteIp, direction, protocol, portMin, portMax, secgroup)
-	if err == nil {
-		logger.Ctx(ctx).Errorf("Existing rule %s %s %s %d %d %d for security group %d", remoteIp, direction, protocol, portMin, portMax, secgroup.ID)
+	portMin, portMax, err = normalizeRulePorts(protocol, portMin, portMax)
+	if err != nil {
 		return
 	}
-	if protocol == "icmp" {
-		portMin = -1
-		portMax = -1
+	// 已有相同规则：返回已有记录（幂等）。默认规则等内部调用依赖“已存在即成功”，API 也需要规则对象组装响应。
+	// 必须用 map 条件：结构体条件会跳过零值字段，ICMP type/code 为 0 时会匹配到别的规则
+	existing := &model.SecurityRule{}
+	if db.Where(map[string]interface{}{"secgroup": secgroup.ID, "remote_ip": remoteIp, "direction": direction, "ip_version": "ipv4", "protocol": protocol, "port_min": portMin, "port_max": portMax}).Take(existing).Error == nil {
+		logger.Ctx(ctx).Infof("Existing rule %s %s %s %d %d for security group %d, reuse it", remoteIp, direction, protocol, portMin, portMax, secgroup.ID)
+		secrule = existing
+		return
 	}
 	secrule = &model.SecurityRule{
 		Model:     model.Model{Creater: memberShip.UserID},
@@ -185,46 +292,6 @@ func (a *SecruleAdminService) Create(ctx context.Context, name, remoteIp, direct
 	err = a.ApplySecgroup(ctx, secgroup)
 	if err != nil {
 		logger.Ctx(ctx).Error("Failed to apply security rule", err)
-		return
-	}
-	return
-}
-
-func (a *SecruleAdminService) GetRule(ctx context.Context, remoteIp, direction, protocol string, portMin, portMax int32, secgroup *model.SecurityGroup) (secrule *model.SecurityRule, err error) {
-	logger.Ctx(ctx).Infof("ENTER SecruleAdmin.GetRule: remoteIp=%s, direction=%s, protocol=%s, portMin=%d, portMax=%d, secgroupID=%d", remoteIp, direction, protocol, portMin, portMax, secgroup.ID)
-	defer func() {
-		if err != nil {
-			logger.Ctx(ctx).Errorf("EXIT SecruleAdmin.GetRule: error=%v", err)
-		} else {
-			logger.Ctx(ctx).Info("EXIT SecruleAdmin.GetRule: success")
-		}
-	}()
-	memberShip := GetMemberShip(ctx)
-	permit := memberShip.CheckResourceOrg(model.OrgReader, secgroup.Owner)
-	if !permit {
-		logger.Ctx(ctx).Error("Not authorized for this operation")
-		err = NewCLError(ErrPermissionDenied, "Not authorized for this operation", nil)
-		return
-	}
-	ctx, db, newTransaction := StartTransaction(ctx)
-	defer func() {
-		if newTransaction {
-			EndTransaction(ctx, err)
-		}
-	}()
-	secrule = &model.SecurityRule{
-		Secgroup:  secgroup.ID,
-		RemoteIp:  remoteIp,
-		Direction: direction,
-		IpVersion: "ipv4",
-		Protocol:  protocol,
-		PortMin:   portMin,
-		PortMax:   portMax,
-	}
-	err = db.Where(secrule).Take(secrule).Error
-	if err != nil {
-		logger.Ctx(ctx).Error("Failed to query secrule", err)
-		err = NewCLError(ErrSecurityRuleNotFound, "Failed to find security rule", err)
 		return
 	}
 	return

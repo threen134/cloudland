@@ -53,11 +53,11 @@ type Listener struct {
 
 type Backend struct {
 	Model
-	Owner       int64         `default:"1"` /* The organization ID of the resource */
-	Name        string        `gorm:"uniqueIndex:idx_listener_be;type:varchar(64)"`
-	ListenerID  int64         `gorm:"uniqueIndex:idx_listener_be"`
-	BackendAddr string        `gorm:"uniqueIndex:idx_listener_be;type:varchar(128)"`
-	Status      string        `gorm:"type:varchar(32)"`
+	Owner       int64  `default:"1"` /* The organization ID of the resource */
+	Name        string `gorm:"uniqueIndex:idx_listener_be;type:varchar(64)"`
+	ListenerID  int64  `gorm:"uniqueIndex:idx_listener_be"`
+	BackendAddr string `gorm:"uniqueIndex:idx_listener_be;type:varchar(128)"`
+	Status      string `gorm:"type:varchar(32)"`
 	SSL         bool
 	OwnerInfo   *Organization `gorm:"-"` /* Transient: populated for SystemAdmin list view */
 }

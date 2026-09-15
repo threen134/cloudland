@@ -49,17 +49,22 @@ type SecurityRulePayload struct {
 	RemoteCIDR string `json:"remote_cidr" binding:"cidrv4"`
 	Direction  string `json:"direction" binding:"required,oneof=ingress egress"`
 	Protocol   string `json:"protocol" binding:"required,oneof=tcp udp icmp gre ipv6"`
-	PortMin    int32  `json:"port_min" binding:"omitempty,gte=1,lte=65535"`
-	PortMax    int32  `json:"port_max" binding:"omitempty,gte=1,lte=65535"`
+	// 起始端口 / ICMP type。tcp/udp：1-65535，port_min、port_max 都不传表示全部端口；
+	// icmp：ICMP type 0-254，不传或 -1 表示任意；gre/ipv6：忽略。用指针区分“未传”与 0（ICMP type 可以为 0）
+	PortMin *int32 `json:"port_min" binding:"omitempty,gte=-1,lte=65535"`
+	// 结束端口 / ICMP code。tcp/udp：1-65535，只传一个端口时表示单端口；
+	// icmp：ICMP code 0-255，不传或 -1 表示任意，指定 code 时必须指定 type；gre/ipv6：忽略
+	PortMax *int32 `json:"port_max" binding:"omitempty,gte=-1,lte=65535"`
 }
 
 type SecrulePatchPayload struct {
 	Name       string `json:"name" binding:"omitempty,min=2,max=32"`
 	RemoteCIDR string `json:"remote_cidr" binding:"omitempty,cidrv4"`
 	Direction  string `json:"direction" binding:"omitempty,oneof=ingress egress"`
-	Protocol   string `json:"protocol" binding:"omitempty,oneof=tcp udp icmp"`
-	PortMin    int32  `json:"port_min" binding:"omitempty,gte=1,lte=65535"`
-	PortMax    int32  `json:"port_max" binding:"omitempty,gte=1,lte=65535"`
+	Protocol   string `json:"protocol" binding:"omitempty,oneof=tcp udp icmp gre ipv6"`
+	// 含义同 SecurityRulePayload；不传表示保持原值（协议变更时重置为新协议的默认值）
+	PortMin *int32 `json:"port_min" binding:"omitempty,gte=-1,lte=65535"`
+	PortMax *int32 `json:"port_max" binding:"omitempty,gte=-1,lte=65535"`
 }
 
 // @Summary get a secrule
@@ -206,7 +211,13 @@ func (v *SecruleAPI) Create(c *gin.Context) {
 		return
 	}
 	logger.Ctx(ctx).Debugf("Creating secrule with %+v", payload)
-	secrule, err := secruleAdmin.Create(ctx, payload.Name, payload.RemoteCIDR, payload.Direction, payload.Protocol, payload.PortMin, payload.PortMax, secgroup)
+	portMin, portMax, err := services.RulePortsFromPayload(payload.Protocol, payload.PortMin, payload.PortMax)
+	if err != nil {
+		logger.Ctx(ctx).Errorf("Invalid secrule ports, %+v", err)
+		ErrorResponse(c, http.StatusBadRequest, "Invalid port", err)
+		return
+	}
+	secrule, err := secruleAdmin.Create(ctx, payload.Name, payload.RemoteCIDR, payload.Direction, payload.Protocol, portMin, portMax, secgroup)
 	if err != nil {
 		logger.Ctx(ctx).Errorf("Failed to create secrule, %+v", err)
 		ErrorResponse(c, http.StatusBadRequest, "Not able to create", err)

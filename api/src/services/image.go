@@ -43,6 +43,13 @@ func (a *ImageAdminService) Create(ctx context.Context, osCode, name, osVersion,
 		}
 	}()
 	logger.Ctx(ctx).Debugf("Creating image %s %s %s %s %s %s %s %s %t %d %s %s", osCode, name, osVersion, virtType, userName, url, architecture, bootLoader, isRescue, instID, uuid, osFamily)
+	// 配置了 S3 但不可用（初始化中或配置错误）：直接报错，不能退回 legacy 本地路径，
+	// 否则镜像落到计算节点缓存，与 S3 模式的下载/删除流程对不上
+	if viper.GetString("volume.default_wds_pool_id") == "" {
+		if err = S3NotReadyError(ErrImageCreateFailed); err != nil {
+			return nil, err
+		}
+	}
 	memberShip := GetMemberShip(ctx)
 	ctx, db, newTransaction := StartTransaction(ctx)
 	defer func() {
@@ -313,18 +320,37 @@ func S3ObjectNameFor(image *model.Image) string {
 	return s3ObjectName(image)
 }
 
-// BuildImageDownloadURLParam 供 launch/rescue/reinstall dispatch 生成 base64 编码的 presigned URL 参数
-// S3 未启用或未就绪时返回空串
-func BuildImageDownloadURLParam(ctx context.Context, image *model.Image) string {
-	if !S3Enabled() || image == nil || image.Status != "available" {
-		return ""
+// S3NotReadyError 配置了 S3 但当前不可用时返回对外错误：初始化中提示稍后重试，配置错误给出原因（重试无意义）；
+// 未配置 S3 或已就绪时返回 nil。调用方负责先排除不走 S3 的镜像（WDS 等）
+func S3NotReadyError(code ErrCode) error {
+	if !S3Configured() || S3Enabled() {
+		return nil
+	}
+	if cfgErr := s3ConfigErr.Load(); cfgErr != nil {
+		return NewCLError(code, "Image store (S3) is misconfigured, check S3_ENDPOINT and restart clapi: "+(*cfgErr).Error(), *cfgErr)
+	}
+	return NewCLError(code, "Image store (S3) is not ready yet, please retry later", nil)
+}
+
+// BuildImageDownloadURLParam 供 launch/rescue/reinstall dispatch 生成 base64 编码的 presigned URL 参数。
+// 未配置 S3（legacy / WDS 模式）时返回空串；配置了 S3 但不可用、或签名失败时返回错误，
+// 让请求直接失败，而不是把空 URL 下发到计算节点、在节点上找不到镜像才报错
+func BuildImageDownloadURLParam(ctx context.Context, image *model.Image) (string, error) {
+	if image == nil || image.Status != "available" {
+		return "", nil
+	}
+	if !S3Enabled() {
+		if viper.GetString("volume.default_wds_pool_id") == "" {
+			return "", S3NotReadyError(ErrImageNotAvailable)
+		}
+		return "", nil
 	}
 	u, err := GenerateDownloadURL(ctx, image)
 	if err != nil {
 		logger.Ctx(ctx).Errorf("BuildImageDownloadURLParam: presign failed for image %d: %v", image.ID, err)
-		return ""
+		return "", NewCLError(ErrImageNotAvailable, "Failed to generate image download URL", err)
 	}
-	return base64.StdEncoding.EncodeToString([]byte(u))
+	return base64.StdEncoding.EncodeToString([]byte(u)), nil
 }
 
 func (a *ImageAdminService) GetImageByUUID(ctx context.Context, uuID string) (image *model.Image, err error) {
@@ -481,6 +507,14 @@ func (a *ImageAdminService) Delete(ctx context.Context, image *model.Image) (err
 	control := "inter=0"
 	total, storages, _ := imageStorageAdmin.List(0, -1, "", image, "")
 
+	// 非 WDS 镜像且配置了 S3 但不可用（初始化中或配置错误）：拒绝删除。
+	// 否则会跳过 S3 对象清理、删掉 DB 记录，镜像文件永久残留在 bucket 里
+	if total == 0 {
+		if err = S3NotReadyError(ErrImageDeleteFailed); err != nil {
+			return
+		}
+	}
+
 	// S3 对象清理不受 Status 门控：覆盖 creating/error 状态下已落盘对象的孤儿场景
 	// （uploadImageToS3 detect-fail、UploadCapture 检测失败、goroutine-delete 竞态等）
 	// RemoveObject 对不存在对象幂等，空跑无害
@@ -505,9 +539,9 @@ func (a *ImageAdminService) Delete(ctx context.Context, image *model.Image) (err
 					return
 				}
 			}
-		} else if !S3Enabled() {
-			// legacy 本地模式：走原 SCI + shell（S3 分支已在上面处理）
-			command := fmt.Sprintf("/opt/cloudland/scripts/backend/clear_image.sh '%d' '%s' '%s' %s'", image.ID, prefix, image.Format, "")
+		} else if !S3Configured() {
+			// legacy 本地模式（未配置 S3）：走原 SCI + shell（S3 分支已在上面处理，S3 未就绪时已在前面拒绝）
+			command := fmt.Sprintf("/opt/cloudland/scripts/backend/clear_image.sh '%d' '%s' '%s' '%s'", image.ID, prefix, image.Format, "")
 			err = HyperExecute(ctx, control, command)
 			if err != nil {
 				logger.Ctx(ctx).Error("Clear image command execution failed", err)

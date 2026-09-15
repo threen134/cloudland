@@ -7,7 +7,10 @@ SPDX-License-Identifier: Apache-2.0
 package services
 
 import (
+	"errors"
 	"strings"
+	"sync/atomic"
+	"time"
 
 	"github.com/spf13/viper"
 
@@ -15,6 +18,9 @@ import (
 )
 
 var logger = rlog.MustGetLogger("services")
+
+// s3ConfigErr 记录 S3 配置错误（重试无意义，需修改配置后重启 clapi），供镜像相关接口报出明确原因
+var s3ConfigErr atomic.Pointer[error]
 
 // Init initializes the services package, creating system admin user and org
 func Init() {
@@ -31,8 +37,30 @@ func Init() {
 		ApplyDnsUpstream()
 		registerS3ServiceDns()
 		// 到这里 images.cloudland.internal / clapi.cloudland.internal 已经可解析
-		InitS3()
+		initS3WithRetry()
 	}()
+}
+
+// initS3WithRetry 宿主机重启等场景下 MinIO/dnsmasq 可能晚于 clapi 就绪：失败后退避重试（上限 30s）直到成功。
+// 未就绪期间 S3Enabled() 为 false，镜像上传/捕获直接报错，而不是改走 legacy 本地路径；
+// 配置错误不重试，记录到 s3ConfigErr，接口据此提示检查配置而不是“稍后重试”
+func initS3WithRetry() {
+	const maxDelay = 30 * time.Second
+	delay := 5 * time.Second
+	for {
+		err := InitS3()
+		if err == nil {
+			return
+		}
+		if errors.Is(err, errS3Config) {
+			s3ConfigErr.Store(&err)
+			logger.Errorf("S3 image store misconfigured, fix S3_ENDPOINT and restart clapi: %v", err)
+			return
+		}
+		logger.Errorf("S3 image store not ready, retry in %s: %v", delay, err)
+		time.Sleep(delay)
+		delay = min(delay*2, maxDelay)
+	}
 }
 
 // registerS3ServiceDns 把 MinIO/clapi 的内部域名注册到 hyper-hosts，供 compute node 解析

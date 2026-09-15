@@ -38,7 +38,8 @@ type FdbRule struct {
 
 func sendFdbRules(ctx context.Context, instance *model.Instance, vrrpInstance *model.VrrpInstance, instIface *model.Interface) (err error) {
 	if instance != nil && instance.RouterID == 0 {
-		logger.Ctx(ctx).Error("No need to send fdb for classic")
+		// 经典网络（无 VPC 路由器）不需要下发 fdb，属于正常分支
+		logger.Ctx(ctx).Debug("No need to send fdb for classic")
 		return
 	}
 	ctx, db := GetContextDB(ctx)

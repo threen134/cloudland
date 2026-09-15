@@ -77,7 +77,7 @@ type Instance struct {
 	Hyper          int32 `gorm:"default:-1"`
 	ZoneID         int64
 	Zone           *Zone `gorm:"foreignkey:ZoneID"`
-	RouterID       int64         `gorm:"uniqueIndex:idx_router_instance"`
+	RouterID       int64 `gorm:"uniqueIndex:idx_router_instance"`
 	Router         *Router
 	OwnerInfo      *Organization `gorm:"-"` /* Transient: populated for SystemAdmin list view */
 }

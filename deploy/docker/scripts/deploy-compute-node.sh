@@ -202,24 +202,30 @@ if command -v docker &>/dev/null && systemctl is-active --quiet docker && docker
     (cd "$DEPLOY_DIR" && docker compose up -d) || warn "控制面容器恢复失败，请手动执行: cd $DEPLOY_DIR && docker compose up -d"
 fi
 
-# 持久化 iptables
-mkdir -p /etc/network/if-pre-up.d /etc/network/if-post-down.d
-cat > /etc/network/if-pre-up.d/iptablesload <<'SCRIPT'
-#!/bin/sh
-iptables-restore < /etc/iptables.rules
-exit 0
-SCRIPT
-chmod +x /etc/network/if-pre-up.d/iptablesload
+# 持久化 iptables：24.04/26.04 未安装 ifupdown，/etc/network/if-pre-up.d 钩子不会执行。
+# 改用 systemd 在网络、Docker、libvirt、cloudlet-go 启动前恢复基础规则，避免开机到 cloudlet 首次心跳
+# （report_rc.sh 的 sync_instance 会再次恢复并同步实例规则）之间主机防火墙处于未生效状态
+rm -f /etc/network/if-pre-up.d/iptablesload /etc/network/if-post-down.d/iptablessave
+cat > /etc/systemd/system/cloudland-iptables.service <<'UNIT'
+[Unit]
+Description=Restore CloudLand base iptables rules
+DefaultDependencies=no
+After=local-fs.target
+Before=network-pre.target docker.service libvirtd.service cloudlet-go.service shutdown.target
+Wants=network-pre.target
+Conflicts=shutdown.target
+ConditionFileNotEmpty=/etc/iptables.rules
 
-cat > /etc/network/if-post-down.d/iptablessave <<'SCRIPT'
-#!/bin/sh
-iptables-save -c > /etc/iptables.rules
-if [ -f /etc/iptables.downrules ]; then
-   iptables-restore < /etc/iptables.downrules
-fi
-exit 0
-SCRIPT
-chmod +x /etc/network/if-post-down.d/iptablessave
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/sbin/iptables-restore /etc/iptables.rules
+
+[Install]
+WantedBy=multi-user.target
+UNIT
+systemctl daemon-reload
+systemctl enable cloudland-iptables.service
 
 # ============ 3. 安装依赖包 ============
 log "3/16 - 安装依赖包"

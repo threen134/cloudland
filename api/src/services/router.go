@@ -95,7 +95,7 @@ func (a *RouterAdmin) Create(ctx context.Context, name, description string) (rou
 		err = NewCLError(ErrRouterCreateFailed, "Failed to create router", err)
 		return
 	}
-	secGroup, err := secgroupAdmin.Create(ctx, name+"-native", "Native security group for router "+name, true, router)
+	secGroup, err := secgroupAdmin.Create(ctx, name+"-native", "Native security group for router "+name, true, true, router)
 	if err != nil {
 		logger.Ctx(ctx).Error("Failed to create security group", err)
 		return

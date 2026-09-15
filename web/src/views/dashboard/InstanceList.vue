@@ -519,7 +519,8 @@ const newInstanceForm = ref({
     zone: 'default',
     keys: [] as string[],
     root_passwd: '',
-    login_port: 22,
+    // 留空时由后端按镜像类型决定（Linux 22、Windows 3389）
+    login_port: '' as number | '',
     count: 1,
     userdata_type: 'plain',
     userdata: '',
@@ -567,7 +568,7 @@ const openCreateModal = () => {
         zone: 'default',
         keys: [],
         root_passwd: '',
-        login_port: 22,
+        login_port: '',
         count: 1,
         userdata_type: 'plain',
         userdata: '',
@@ -934,7 +935,8 @@ const handleCreateInstance = async () => {
             nested_enable: form.nested_enable,
             userdata_type: form.userdata_type,
             userdata: form.userdata,
-            login_port: form.login_port,
+            // 留空不传，由后端按镜像类型决定（Linux 22、Windows 3389）
+            login_port: form.login_port || undefined,
             keys: form.keys.map(id => ({ id }))
         }
 
@@ -1622,6 +1624,7 @@ onUnmounted(() => {
                 <div class="form-group">
                     <label class="form-label">{{ t('dashboard.instanceDetail.loginPort') }}</label>
                     <input id="loginPort" name="loginPort" v-model.number="newInstanceForm.login_port" type="number" class="form-input" :placeholder="t('dashboard.instanceDetail.loginPortPlaceholder')" />
+                    <small class="form-hint">{{ t('dashboard.instanceDetail.loginPortHint') }}</small>
                 </div>
 
                 <div class="form-group">

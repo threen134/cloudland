@@ -7,6 +7,10 @@ import { useCopyId } from '../../composables/useCopyId'
 import { useSecurityGroup } from '../../composables/useSecurityGroup'
 import { securityGroupsApi, vpcsApi, type SecurityGroup, type SecurityRule, type VPC } from '../../api/networks'
 import { isValidName } from '../../utils/validation'
+import {
+    newSecurityRuleForm, securityRuleFormFromRule, securityRulePayloadFromForm, validateSecurityRuleForm,
+    formatIcmpRule, icmpTypeName, type SecurityRuleForm
+} from '../../utils/securityRule'
 
 import { Shield, Plus, Trash2, ChevronDown, ChevronRight, Search, X, RefreshCw, Edit, ArrowUpDown, ArrowUp, ArrowDown, Network, HelpCircle, Check, Copy } from 'lucide-vue-next'
 import { useRegionStore } from '../../stores/region'
@@ -197,7 +201,11 @@ const WELL_KNOWN_PORTS: Record<number, string> = {
 }
 
 const formatPort = (rule: SecurityRule) => {
-    if (rule.protocol === 'icmp' || (rule.port_min != null && rule.port_min < 0)) {
+    const icmp = formatIcmpRule(rule, t)
+    if (icmp !== null) {
+        return icmp
+    }
+    if (rule.port_min != null && rule.port_min < 0) {
         return '-'
     }
     if (rule.port_min === rule.port_max) {
@@ -210,7 +218,8 @@ const formatPort = (rule: SecurityRule) => {
 }
 
 const getServiceName = (rule: SecurityRule): string | null => {
-    if (rule.protocol === 'icmp' || rule.port_min == null || rule.port_min < 0) return null
+    if (rule.protocol === 'icmp') return icmpTypeName(rule)
+    if (rule.port_min == null || rule.port_min < 0) return null
     if (rule.port_min === rule.port_max && WELL_KNOWN_PORTS[rule.port_min]) {
         return WELL_KNOWN_PORTS[rule.port_min]
     }
@@ -227,25 +236,14 @@ const ruleModalGroupId = ref('')
 const editingRuleId = ref<string | null>(null)
 const addingRule = ref(false)
 const addRuleError = ref('')
-const newRule = ref({
-    name: '',
-    direction: 'ingress',
-    protocol: 'tcp',
-    port_min: 80,
-    port_max: 80,
-    remote_cidr: '0.0.0.0/0'
-})
-const portRangeInvalid = computed(() =>
-    newRule.value.protocol !== 'icmp' &&
-    newRule.value.port_min != null &&
-    newRule.value.port_max != null &&
-    newRule.value.port_min > newRule.value.port_max
-)
+const newRule = ref<SecurityRuleForm>(newSecurityRuleForm())
+// 表单实时校验结果（空串表示通过），用于内联提示和禁用保存；与提交时的校验是同一个函数
+const ruleFormError = computed(() => validateSecurityRuleForm(newRule.value, t))
 
 const openAddRuleModal = (groupId: string) => {
     ruleModalGroupId.value = groupId
     editingRuleId.value = null
-    newRule.value = { name: '', direction: 'ingress', protocol: 'tcp', port_min: 80, port_max: 80, remote_cidr: '0.0.0.0/0' }
+    newRule.value = newSecurityRuleForm()
     addRuleError.value = ''
     ruleModalVisible.value = true
 }
@@ -253,14 +251,7 @@ const openAddRuleModal = (groupId: string) => {
 const openEditRuleModal = (groupId: string, rule: SecurityRule) => {
     ruleModalGroupId.value = groupId
     editingRuleId.value = rule.id
-    newRule.value = {
-        name: rule.name || '',
-        direction: rule.direction,
-        protocol: rule.protocol,
-        port_min: rule.protocol === 'icmp' ? 1 : (rule.port_min || 1),
-        port_max: rule.protocol === 'icmp' ? 65535 : (rule.port_max || 65535),
-        remote_cidr: rule.remote_cidr || ''
-    }
+    newRule.value = securityRuleFormFromRule(rule)
     addRuleError.value = ''
     ruleModalVisible.value = true
 }
@@ -271,17 +262,17 @@ const closeRuleModal = () => {
 }
 
 const handleSaveRule = async () => {
-    addRuleError.value = ''
-    if (portRangeInvalid.value) {
-        addRuleError.value = t('dashboard.securityGroupDetail.portRangeError')
+    addRuleError.value = validateSecurityRuleForm(newRule.value, t)
+    if (addRuleError.value) {
         return
     }
     addingRule.value = true
     try {
+        const payload = securityRulePayloadFromForm(newRule.value)
         if (editingRuleId.value) {
-            await securityGroupsApi.patchRule(ruleModalGroupId.value, editingRuleId.value, newRule.value as any)
+            await securityGroupsApi.patchRule(ruleModalGroupId.value, editingRuleId.value, payload)
         } else {
-            await securityGroupsApi.addRule(ruleModalGroupId.value, newRule.value as any)
+            await securityGroupsApi.addRule(ruleModalGroupId.value, payload)
         }
         closeRuleModal()
         await fetchSecurityGroups()
@@ -684,15 +675,25 @@ watch(() => region.currentRegionId, (newId) => {
           <div v-if="newRule.protocol !== 'icmp'" class="form-row">
             <div class="form-group flex-1">
               <label class="form-label">{{ $t('dashboard.table.portMin') }}</label>
-              <input v-model.number="newRule.port_min" type="number" class="form-input" :class="{ 'input-error': portRangeInvalid }" min="1" max="65535">
+              <input v-model.number="newRule.port_min" type="number" class="form-input" :class="{ 'input-error': !!ruleFormError }" min="1" max="65535">
             </div>
             <div class="form-group flex-1">
               <label class="form-label">{{ $t('dashboard.table.portMax') }}</label>
-              <input v-model.number="newRule.port_max" type="number" class="form-input" :class="{ 'input-error': portRangeInvalid }" min="1" max="65535">
+              <input v-model.number="newRule.port_max" type="number" class="form-input" :class="{ 'input-error': !!ruleFormError }" min="1" max="65535">
             </div>
           </div>
-          <div v-if="portRangeInvalid" class="port-range-error">
-            {{ $t('dashboard.securityGroupDetail.portRangeError') }}
+          <div v-else class="form-row">
+            <div class="form-group flex-1">
+              <label class="form-label">{{ $t('dashboard.securityGroupDetail.icmpType') }}</label>
+              <input v-model.number="newRule.icmp_type" type="number" class="form-input" min="0" max="254" :placeholder="$t('dashboard.securityGroupDetail.icmpAnyPlaceholder')">
+            </div>
+            <div class="form-group flex-1">
+              <label class="form-label">{{ $t('dashboard.securityGroupDetail.icmpCode') }}</label>
+              <input v-model.number="newRule.icmp_code" type="number" class="form-input" min="0" max="255" :placeholder="$t('dashboard.securityGroupDetail.icmpAnyPlaceholder')">
+            </div>
+          </div>
+          <div v-if="!!ruleFormError" class="port-range-error">
+            {{ ruleFormError }}
           </div>
           <div class="form-group">
             <label class="form-label">{{ $t('dashboard.table.remoteCidr') }}</label>
@@ -704,7 +705,7 @@ watch(() => region.currentRegionId, (newId) => {
         </div>
         <div class="modal-footer">
           <button class="btn btn-secondary" @click="closeRuleModal" :disabled="addingRule">{{ $t('actions.cancel') }}</button>
-          <button class="btn btn-primary" @click="handleSaveRule" :disabled="addingRule || portRangeInvalid">
+          <button class="btn btn-primary" @click="handleSaveRule" :disabled="addingRule || !!ruleFormError">
             <span v-if="addingRule" class="loading-spinner" style="width: 16px; height: 16px; border-width: 2px;"></span>
             {{ addingRule ? (editingRuleId ? $t('messages.saving') : $t('messages.creating')) : (editingRuleId ? $t('actions.save') : $t('dashboard.buttons.addRule')) }}
           </button>
@@ -725,7 +726,7 @@ watch(() => region.currentRegionId, (newId) => {
             <p style="color:var(--text-secondary);margin:0 0 var(--spacing-4)">{{ $t('dashboard.securityGroupDetail.deleteRuleConfirm') }}</p>
             <div style="background:var(--bg-secondary);border:1px solid var(--border-light);border-radius:var(--radius-md);padding:var(--spacing-3) var(--spacing-4);text-align:left">
               <span style="font-size:var(--font-size-xs);color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.05em;display:block;margin-bottom:var(--spacing-1)">{{ $t('dashboard.deleteConfirm.resource') }}</span>
-              <span style="font-weight:var(--font-weight-semibold);display:block">{{ ruleToDelete?.rule.protocol?.toUpperCase() }} : {{ ruleToDelete?.rule.port_min }}-{{ ruleToDelete?.rule.port_max }}</span>
+              <span style="font-weight:var(--font-weight-semibold);display:block">{{ ruleToDelete?.rule.protocol?.toUpperCase() }} : {{ ruleToDelete ? formatPort(ruleToDelete.rule) : '' }}</span>
               <span style="font-size:var(--font-size-xs);color:var(--text-light);font-family:var(--font-family-mono);display:block;margin-top:2px">{{ ruleToDelete?.rule.id }}</span>
             </div>
             <div v-if="deleteError" class="text-error" style="margin-top:var(--spacing-4);font-size:var(--font-size-sm);background:var(--error-light);padding:var(--spacing-2);border-radius:var(--radius-sm)">

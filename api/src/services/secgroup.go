@@ -229,7 +229,7 @@ func (a *SecgroupAdmin) GetDefaultSecgroup(ctx context.Context) (secgroup *model
 	if org.DefaultSG == 0 {
 		timestamp := time.Now().UnixNano()
 		secgroupName := fmt.Sprintf("default-%d", timestamp)
-		secgroup, err = a.Create(ctx, secgroupName, "", true, nil)
+		secgroup, err = a.Create(ctx, secgroupName, "", true, true, nil)
 		if err != nil {
 			logger.Ctx(ctx).Error("Failed to create account secgroup ", err)
 			return
@@ -371,75 +371,11 @@ func (a *SecgroupAdmin) GetInterfaceSecgroups(ctx context.Context, iface *model.
 	return
 }
 
-func (a *SecgroupAdmin) AllowInstanceLoginPort(ctx context.Context, port int32, iface *model.Interface) (err error) {
-	logger.Ctx(ctx).Infof("ENTER SecgroupAdmin.AllowInstanceLoginPort: port=%d, ifaceID=%d", port, iface.ID)
-	defer func() {
-		if err != nil {
-			logger.Ctx(ctx).Errorf("EXIT SecgroupAdmin.AllowInstanceLoginPort: error=%v", err)
-		} else {
-			logger.Ctx(ctx).Info("EXIT SecgroupAdmin.AllowInstanceLoginPort: success")
-		}
-	}()
-	if port == 22 || port == 3389 || port <= 0 {
-		return
-	}
-	for _, sg := range iface.SecurityGroups {
-		_, err = (&SecruleAdminService{}).Create(ctx, "", "0.0.0.0/0", "ingress", "tcp", port, port, sg)
-		if err != nil {
-			logger.Ctx(ctx).Error("Failed to create security rule", err)
-			return
-		}
-	}
-	return
-}
-
-func (a *SecgroupAdmin) RemoveInstanceLoginPort(ctx context.Context, instance *model.Instance, iface *model.Interface) (err error) {
-	logger.Ctx(ctx).Infof("ENTER SecgroupAdmin.RemoveInstanceLoginPort: instanceID=%d, ifaceID=%d", instance.ID, iface.ID)
-	defer func() {
-		if err != nil {
-			logger.Ctx(ctx).Errorf("EXIT SecgroupAdmin.RemoveInstanceLoginPort: error=%v", err)
-		} else {
-			logger.Ctx(ctx).Info("EXIT SecgroupAdmin.RemoveInstanceLoginPort: success")
-		}
-	}()
-	port := instance.LoginPort
-	if port == 22 || port == 3389 || port <= 0 {
-		return
-	}
-	var count int64
-	ctx, db := GetContextDB(ctx)
-	ms := GetMemberShip(ctx)
-	query, args := ms.GetOrgFilter()
-	err = db.Model(&model.Instance{}).Where(query, args...).Where("login_port = ? and router_id = ?", port, instance.RouterID).Count(&count).Error
-	if err != nil {
-		logger.Ctx(ctx).Error("Failed to count instances of the login port", err)
-		err = NewCLError(ErrDatabaseError, "Failed to count instances of the login port", err)
-		return
-	}
-	if count > 1 {
-		logger.Ctx(ctx).Infof("No need to remove security rule for port: %d", count)
-		return
-	}
-	for _, sg := range iface.SecurityGroups {
-		var secrule *model.SecurityRule
-		secrule, err = (&SecruleAdminService{}).GetRule(ctx, "0.0.0.0/0", "ingress", "tcp", port, port, sg)
-		if err != nil {
-			logger.Ctx(ctx).Error("Failed to remove security rule", err)
-			err = NewCLError(ErrSecurityRuleNotFound, "Failed to find security rule", err)
-			return
-		}
-		logger.Ctx(ctx).Errorf("Security rule: %v", secrule)
-		err = (&SecruleAdminService{}).Delete(ctx, secrule, sg)
-		if err != nil {
-			logger.Ctx(ctx).Error("Failed to create security rule", err)
-			return
-		}
-	}
-	return
-}
-
-func (a *SecgroupAdmin) Create(ctx context.Context, name, description string, isDefault bool, router *model.Router) (secgroup *model.SecurityGroup, err error) {
-	logger.Ctx(ctx).Infof("ENTER SecgroupAdmin.Create: name=%s, description=%s, isDefault=%t, routerID=%v", name, description, isDefault, router)
+// Create 创建安全组并预置默认规则。withLoginRules 为 true 时额外预置对全网开放的 SSH/RDP，
+// 只用于系统自动创建的默认组（系统默认组、组织默认组、VPC native 组）；
+// 用户通过 API 创建的组无论 is_default 取值都传 false，避免勾选“默认”就对公网暴露登录端口
+func (a *SecgroupAdmin) Create(ctx context.Context, name, description string, isDefault, withLoginRules bool, router *model.Router) (secgroup *model.SecurityGroup, err error) {
+	logger.Ctx(ctx).Infof("ENTER SecgroupAdmin.Create: name=%s, description=%s, isDefault=%t, withLoginRules=%t, routerID=%v", name, description, isDefault, withLoginRules, router)
 	defer func() {
 		if err != nil {
 			logger.Ctx(ctx).Errorf("EXIT SecgroupAdmin.Create: error=%v", err)
@@ -489,15 +425,18 @@ func (a *SecgroupAdmin) Create(ctx context.Context, name, description string, is
 		logger.Ctx(ctx).Error("Failed to create security rule", err)
 		return
 	}
-	_, err = (&SecruleAdminService{}).Create(ctx, "default-ingress-ssh", "0.0.0.0/0", "ingress", "tcp", 22, 22, secgroup)
-	if err != nil {
-		logger.Ctx(ctx).Error("Failed to create security rule", err)
-		return
-	}
-	_, err = (&SecruleAdminService{}).Create(ctx, "default-ingress-rdp", "0.0.0.0/0", "ingress", "tcp", 3389, 3389, secgroup)
-	if err != nil {
-		logger.Ctx(ctx).Error("Failed to create security rule", err)
-		return
+	// 对全网开放 SSH/RDP 只预置在系统自动创建的默认组里方便登录（见函数注释）
+	if withLoginRules {
+		_, err = (&SecruleAdminService{}).Create(ctx, "default-ingress-ssh", "0.0.0.0/0", "ingress", "tcp", 22, 22, secgroup)
+		if err != nil {
+			logger.Ctx(ctx).Error("Failed to create security rule", err)
+			return
+		}
+		_, err = (&SecruleAdminService{}).Create(ctx, "default-ingress-rdp", "0.0.0.0/0", "ingress", "tcp", 3389, 3389, secgroup)
+		if err != nil {
+			logger.Ctx(ctx).Error("Failed to create security rule", err)
+			return
+		}
 	}
 	_, err = (&SecruleAdminService{}).Create(ctx, "default-ingress-dhcp", "0.0.0.0/0", "ingress", "udp", 68, 68, secgroup)
 	if err != nil {

@@ -109,63 +109,77 @@ EOF
     vendor_scripts+="echo 'PasswordAuthentication yes' >> /etc/ssh/sshd_config.d/allow_root.conf\n"
 fi
 
-# change qemu-guest-agent config
-if [ "${os_code}" = "linux" ]; then
-    cloud_config_txt+=$(cat <<EOF
-
-runcmd:
-  - |
-    if [ -f /etc/sysconfig/qemu-ga ]; then
-      sed -i 's/--allow-rpcs=/--allow-rpcs=guest-exec,/;/BLACKLIST_RPC/d' /etc/sysconfig/qemu-ga
-    elif [ -f /lib/systemd/system/qemu-guest-agent.service ]; then
-      sed -i "s#/usr/bin/qemu-ga#/usr/bin/qemu-ga -b ''#" /lib/systemd/system/qemu-guest-agent.service
-      sed -i "s#/usr/sbin/qemu-ga#/usr/sbin/qemu-ga -b ''#" /lib/systemd/system/qemu-guest-agent.service
-      systemctl daemon-reload
-    fi
-    systemctl restart qemu-guest-agent.service
-
-EOF
-    )
-    # we will redo this change in vendor scripts
-    vendor_scripts+=$(cat <<EOF
-
-# change qemu-guest-agent config
-if [ -f /etc/sysconfig/qemu-ga ]; then
-    sed -i 's/--allow-rpcs=/--allow-rpcs=guest-exec,/;/BLACKLIST_RPC/d' /etc/sysconfig/qemu-ga
-elif [ -f /lib/systemd/system/qemu-guest-agent.service ]; then
-    sed -i "s#/usr/bin/qemu-ga#/usr/bin/qemu-ga -b ''#" /lib/systemd/system/qemu-guest-agent.service
-    sed -i "s#/usr/sbin/qemu-ga#/usr/sbin/qemu-ga -b ''#" /lib/systemd/system/qemu-guest-agent.service
-    systemctl daemon-reload
-fi
-systemctl restart qemu-guest-agent.service
-
-EOF
-    )
-# use runcmd to change the port value of /etc/ssh/sshd_config
-# and restart the ssh service
-    if [ -n "${login_port}" ] && [ "${login_port}" != "22" ] && [ ${login_port} -gt 0 ]; then
-        cloud_config_txt+=$(cat <<EOF
-
-    sed -i 's/^#Port .*/Port ${login_port}/' /etc/ssh/sshd_config
-    sed -i 's/^Port .*/Port ${login_port}/' /etc/ssh/sshd_config
-    systemctl daemon-reload
-    systemctl restart ssh.socket
-    systemctl restart sshd || systemctl restart ssh
-EOF
-        )
-        # we will redo this change in vendor scripts    
-        vendor_scripts+=$(cat <<EOF
-
+# 自定义 SSH 登录端口：放在 qemu-guest-agent 处理之前，避免 sshd 端口修改被安装过程拖延
+login_port_script=""
+if [ "${os_code}" = "linux" ] && [ -n "${login_port}" ] && [ "${login_port}" != "22" ] && [ ${login_port} -gt 0 ]; then
+    login_port_script=$(cat <<EOF
 # change ssh port
 sed -i 's/^#Port .*/Port ${login_port}/' /etc/ssh/sshd_config
 sed -i 's/^Port .*/Port ${login_port}/' /etc/ssh/sshd_config
 systemctl daemon-reload
 systemctl restart ssh.socket
 systemctl restart sshd || systemctl restart ssh
+EOF
+    )
+fi
+
+# qemu-guest-agent：宿主机经 virsh qemu-agent-command 做密码重置、辅助 IP、Windows 网络配置等。
+# 镜像缺少时安装（限时；无外网或无软件源时放弃），再开启 guest-exec 并重启服务。
+# 安装可能耗时数分钟，写成脚本在后台执行，不阻塞 cloud-init；
+# vendor script 与 runcmd 都会执行（用户 user_data 可能覆盖 runcmd），用 /run 标记保证只启动一次。
+qga_script=$(cat <<'EOF'
+# setup qemu-guest-agent in background
+if [ ! -f /run/cloudland-qga-setup.started ]; then
+    touch /run/cloudland-qga-setup.started
+    cat > /run/cloudland-qga-setup.sh <<'QGA'
+if ! command -v qemu-ga >/dev/null 2>&1; then
+    if command -v apt-get >/dev/null 2>&1; then
+        export DEBIAN_FRONTEND=noninteractive
+        APT_OPTS="-q -o DPkg::Lock::Timeout=60 -o Acquire::Retries=0 -o Acquire::http::Timeout=10 -o Acquire::https::Timeout=10"
+        # 后台执行不阻塞开机，超时放宽：慢速镜像源上 update 要下载十几 MB 索引，120s 会被中途杀掉导致找不到包
+        timeout 600 apt-get $APT_OPTS update
+        timeout 600 apt-get $APT_OPTS -y install qemu-guest-agent
+    elif command -v dnf >/dev/null 2>&1; then
+        timeout 600 dnf -q -y install qemu-guest-agent
+    elif command -v yum >/dev/null 2>&1; then
+        timeout 600 yum -q -y install qemu-guest-agent
+    fi
+fi
+if [ -f /etc/sysconfig/qemu-ga ]; then
+    grep -q 'allow-rpcs=guest-exec' /etc/sysconfig/qemu-ga || sed -i 's/--allow-rpcs=/--allow-rpcs=guest-exec,/;/BLACKLIST_RPC/d' /etc/sysconfig/qemu-ga
+elif [ -f /lib/systemd/system/qemu-guest-agent.service ]; then
+    if ! grep -q "qemu-ga -b ''" /lib/systemd/system/qemu-guest-agent.service; then
+        sed -i "s#/usr/bin/qemu-ga#/usr/bin/qemu-ga -b ''#" /lib/systemd/system/qemu-guest-agent.service
+        sed -i "s#/usr/sbin/qemu-ga#/usr/sbin/qemu-ga -b ''#" /lib/systemd/system/qemu-guest-agent.service
+        systemctl daemon-reload
+    fi
+fi
+if systemctl cat qemu-guest-agent.service >/dev/null 2>&1; then
+    systemctl restart qemu-guest-agent.service || true
+fi
+QGA
+    systemd-run --no-block --unit=cloudland-qga-setup sh /run/cloudland-qga-setup.sh >/dev/null 2>&1 || nohup sh /run/cloudland-qga-setup.sh >/var/log/cloudland-qga-setup.log 2>&1 &
+fi
+EOF
+)
+if [ "${os_code}" = "linux" ]; then
+    runcmd_script=$qga_script
+    [ -n "$login_port_script" ] && runcmd_script=$(printf '%s\n%s' "$login_port_script" "$qga_script")
+    cloud_config_txt+=$(cat <<EOF
+
+runcmd:
+  - |
+$(sed 's/^/    /' <<<"$runcmd_script")
 
 EOF
-        )
-    fi
+    )
+    # we will redo this change in vendor scripts
+    vendor_scripts+=$(cat <<EOF
+
+$runcmd_script
+
+EOF
+    )
 fi
 
 write_mime_multipart_args=""

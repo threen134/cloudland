@@ -183,6 +183,11 @@ func (a *InstanceAdmin) Create(ctx context.Context, count int, prefix, userdata 
 		logger.Ctx(ctx).Debugf("Using volume driver %s with pool ID %s", driver, poolID)
 	}
 
+	// 镜像下载地址对本次创建的所有实例相同：在建实例/卷/网卡之前生成，S3 不可用时直接失败，避免白做一轮再回滚
+	imageDownloadURLB64, err := BuildImageDownloadURLParam(ctx, image)
+	if err != nil {
+		return nil, err
+	}
 	execCommands = []*ExecutionCommand{}
 	i := 0
 	hostname := prefix
@@ -273,7 +278,6 @@ func (a *InstanceAdmin) Create(ctx context.Context, count int, prefix, userdata 
 		if i == 0 && hyperID >= 0 {
 			control = fmt.Sprintf("inter=%d %s", hyperID, rcNeeded)
 		}
-		imageDownloadURLB64 := BuildImageDownloadURLParam(ctx, image)
 		command := fmt.Sprintf("/opt/cloudland/scripts/backend/launch_vm.sh '%d' '%s.%s' '%t' '%d' '%s' '%d' '%d' '%d' '%d' '%t' '%s' '%s' '%s' '%s' '%s'<<EOF\n%s\nEOF", instance.ID, imagePrefix, image.Format, image.QAEnabled, snapshot, hostname, instance.Cpu, instance.Memory, instance.Disk, bootVolume.ID, nestedEnable, image.BootLoader, poolID, instance.UUID, imageVolumeID, imageDownloadURLB64, base64.StdEncoding.EncodeToString([]byte(metadata)))
 		execCommands = append(execCommands, &ExecutionCommand{
 			Control: control,
@@ -339,8 +343,12 @@ func (a *InstanceAdmin) Rescue(ctx context.Context, instance *model.Instance, re
 		return
 	}
 	control := fmt.Sprintf("inter=%d", instance.Hyper)
-	imageDownloadURLB64 := BuildImageDownloadURLParam(ctx, rescueImage)
-	command := fmt.Sprintf("/opt/cloudland/scripts/backend/rescue_vm.sh '%d' '%s.%s' '%s' '%d' '%d' '%d' '%d' '%s' '%s' '%s' <<EOF\n%s\nEOF", instance.ID, imagePrefix, image.Format, instance.Hostname, instance.Cpu, instance.Memory, instance.Disk, bootVolume.ID, rescueImage.BootLoader, instance.UUID, imageDownloadURLB64, base64.StdEncoding.EncodeToString([]byte(metadata)))
+	var imageDownloadURLB64 string
+	imageDownloadURLB64, err = BuildImageDownloadURLParam(ctx, rescueImage)
+	if err != nil {
+		return
+	}
+	command := fmt.Sprintf("/opt/cloudland/scripts/backend/rescue_vm.sh '%d' '%s.%s' '%s' '%d' '%d' '%d' '%d' '%s' '%s' '%s' <<EOF\n%s\nEOF", instance.ID, imagePrefix, rescueImage.Format, instance.Hostname, instance.Cpu, instance.Memory, instance.Disk, bootVolume.ID, rescueImage.BootLoader, instance.UUID, imageDownloadURLB64, base64.StdEncoding.EncodeToString([]byte(metadata)))
 	err = HyperExecute(ctx, control, command)
 	if err != nil {
 		logger.Ctx(ctx).Error("Delete vm command execution failed", err)
@@ -652,22 +660,9 @@ func (a *InstanceAdmin) Reinstall(ctx context.Context, instance *model.Instance,
 			loginPort = int(instance.LoginPort)
 		}
 	}
+	// 登录端口只写入实例元数据（由 cloud-init / guest agent 修改 sshd、RDP 端口），
+	// 不再自动往安全组加 0.0.0.0/0 放行规则：安全组为多实例共享，由用户自行放行
 	logger.Ctx(ctx).Debugf("Login Port is: %d", loginPort)
-
-	// update security group rules
-	if loginPort != int(instance.LoginPort) {
-		for _, iface := range instance.Interfaces {
-			err = secgroupAdmin.RemoveInstanceLoginPort(ctx, instance, iface)
-			if err != nil {
-				logger.Ctx(ctx).Errorf("Failed to remove security rule", err)
-			}
-			err = secgroupAdmin.AllowInstanceLoginPort(ctx, int32(loginPort), iface)
-			if err != nil {
-				logger.Ctx(ctx).Errorf("Failed to create security rule", err)
-				return
-			}
-		}
-	}
 
 	if rootPasswd == "" {
 		rootPasswd, err = generateRandomPassword(16)
@@ -728,7 +723,11 @@ func (a *InstanceAdmin) Reinstall(ctx context.Context, instance *model.Instance,
 
 	snapshot := total/MaxmumSnapshot + 1 // Same snapshot reference can not be over 128, so use 96 here
 	control := fmt.Sprintf("inter=%d", instance.Hyper)
-	imageDownloadURLB64 := BuildImageDownloadURLParam(ctx, image)
+	var imageDownloadURLB64 string
+	imageDownloadURLB64, err = BuildImageDownloadURLParam(ctx, image)
+	if err != nil {
+		return
+	}
 	command := fmt.Sprintf("/opt/cloudland/scripts/backend/reinstall_vm.sh '%d' '%s.%s' '%d' '%d' '%s' '%s' '%d' '%d' '%d' '%s' '%s' '%s' '%s' '%s'<<EOF\n%s\nEOF", instance.ID, imagePrefix, image.Format, snapshot, bootVolume.ID, poolID, bootVolume.GetOriginVolumeID(), cpu, memory, disk, instance.Hostname, image.BootLoader, instance.UUID, imageVolumeID, imageDownloadURLB64, base64.StdEncoding.EncodeToString([]byte(metadata)))
 	err = HyperExecute(ctx, control, command)
 	if err != nil {
@@ -955,11 +954,6 @@ func (a *InstanceAdmin) buildMetadata(ctx context.Context, primaryIface *Interfa
 	vlan := iface.Address.Subnet.Vlan
 	interfaces = append(interfaces, iface)
 	instLinks = append(instLinks, &NetworkLink{MacAddr: iface.MacAddr, Mtu: uint(iface.Mtu), ID: iface.Name, Type: "phy"})
-	err = secgroupAdmin.AllowInstanceLoginPort(ctx, int32(loginPort), iface)
-	if err != nil {
-		logger.Ctx(ctx).Error("Failed to allow login port for interface security groups ", err)
-		return
-	}
 	securityData, err := GetSecurityData(ctx, iface.SecurityGroups)
 	if err != nil {
 		logger.Ctx(ctx).Error("Get security data for interface failed", err)
@@ -990,11 +984,6 @@ func (a *InstanceAdmin) buildMetadata(ctx context.Context, primaryIface *Interfa
 		}
 		interfaces = append(interfaces, iface)
 		instLinks = append(instLinks, &NetworkLink{MacAddr: iface.MacAddr, Mtu: uint(iface.Mtu), ID: iface.Name, Type: "phy"})
-		err = secgroupAdmin.AllowInstanceLoginPort(ctx, int32(loginPort), iface)
-		if err != nil {
-			logger.Ctx(ctx).Error("Failed to allow login port for interface security groups ", err)
-			return
-		}
 		securityData, err = GetSecurityData(ctx, iface.SecurityGroups)
 		if err != nil {
 			logger.Ctx(ctx).Error("Get security data for interface failed", err)
@@ -1233,10 +1222,6 @@ func (a *InstanceAdmin) Delete(ctx context.Context, instance *model.Instance) (e
 	}
 	var moreAddresses []string
 	for _, iface := range instance.Interfaces {
-		err = secgroupAdmin.RemoveInstanceLoginPort(ctx, instance, iface)
-		if err != nil {
-			logger.Ctx(ctx).Error("Ignore the failure of removing login port for interface security groups ", err)
-		}
 		if iface.PrimaryIf {
 			_, moreAddresses, err = GetInstanceNetworks(ctx, instance, []*model.Interface{iface})
 			if err != nil {

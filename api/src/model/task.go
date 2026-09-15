@@ -47,14 +47,14 @@ const (
 type Task struct {
 	Model
 	Mission   int64
-	Owner     int64      `gorm:"default:1;index"` /* The organization ID of the resource */
-	Source    TaskSource `gorm:"type:varchar(32);default:'migration';index"`
-	Name      string     `gorm:"type:varchar(128);index"`
-	Summary   string     `gorm:"type:text"`
-	Status    TaskStatus `gorm:"type:varchar(32)"`
-	Message   string     `gorm:"type:text"`
-	Cron      string     `gorm:"type:varchar(64)"`
-	Action    TaskAction `gorm:"type:varchar(32)"`
+	Owner     int64         `gorm:"default:1;index"` /* The organization ID of the resource */
+	Source    TaskSource    `gorm:"type:varchar(32);default:'migration';index"`
+	Name      string        `gorm:"type:varchar(128);index"`
+	Summary   string        `gorm:"type:text"`
+	Status    TaskStatus    `gorm:"type:varchar(32)"`
+	Message   string        `gorm:"type:text"`
+	Cron      string        `gorm:"type:varchar(64)"`
+	Action    TaskAction    `gorm:"type:varchar(32)"`
 	Resources string        `gorm:"type:text"` // JSON string array
 	OwnerInfo *Organization `gorm:"-"`         /* Transient: populated for SystemAdmin list view */
 }

@@ -190,7 +190,8 @@ func (v *SecgroupAPI) Create(c *gin.Context) {
 			return
 		}
 	}
-	secgroup, err := secgroupAdmin.Create(ctx, payload.Name, payload.Description, payload.IsDefault, router)
+	// 用户创建的安全组不预置对全网开放的 SSH/RDP（withLoginRules=false），即使勾选了默认
+	secgroup, err := secgroupAdmin.Create(ctx, payload.Name, payload.Description, payload.IsDefault, false, router)
 	if err != nil {
 		logger.Ctx(ctx).Errorf("Failed to create secgroup %+v, %+v", payload, err)
 		ErrorResponse(c, http.StatusBadRequest, "Not able to create", err)

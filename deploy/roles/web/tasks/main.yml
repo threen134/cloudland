@@ -70,7 +70,7 @@
   tags: [web_srv]
 
 # 配置 virt-console-proxy 服务 VNC  服务
-- name: copy sci binaries
+- name: copy libvirt-console-proxy
   copy:
     src: /opt/libvirt-console-proxy
     dest: /opt

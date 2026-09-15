@@ -163,6 +163,13 @@ if [[ "$compose_profiles" == *minio* ]]; then
         warn "启用了 minio profile，但缺少必填参数: ${minio_missing[*]}"
         exit 1
     fi
+    # 内置 MinIO：S3_ENDPOINT 未配置时指向 MinIO 内部域名（未启用 minio 时保持为空，即 legacy 本地镜像模式）
+    if [ -z "$(grep '^S3_ENDPOINT=' .env | cut -d'=' -f2- || true)" ]; then
+        minio_host=$(grep '^MINIO_HOSTNAME=' .env | cut -d'=' -f2- || true)
+        sed -i '/^S3_ENDPOINT=/d' .env
+        echo "S3_ENDPOINT=${minio_host:-images.cloudland.internal}:9000" >> .env
+        log "已按内置 MinIO 设置 S3_ENDPOINT=${minio_host:-images.cloudland.internal}:9000"
+    fi
 fi
 
 # cland-go 强制要求 gRPC 共享令牌：未提供时自动生成（重复部署沿用 .env 中已有的值）

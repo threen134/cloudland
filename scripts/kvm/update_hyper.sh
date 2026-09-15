@@ -57,7 +57,8 @@ fi
 # restart cloudlet service if needed
 if [ $restart_clet -eq 1 ]; then
     log_debug "$SCI_CLIENT_ID" "Restarting cloudlet service"
-    systemctl restart cloudlet
+    # 服务已改名为 cloudlet-go；本脚本由 cloudlet-go 执行，--no-block 让脚本先正常结束，重启在后台进行
+    systemctl restart --no-block cloudlet-go
 else
     log_debug "$SCI_CLIENT_ID" "No need to restart cloudlet service"
 fi

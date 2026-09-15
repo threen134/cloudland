@@ -80,13 +80,17 @@ services:
       - NET_ADMIN
     volumes:
       - ../dns/hosts:/etc/dnsmasq.hosts:ro   # hosts 专用目录，inotify 监听
-      - ../dns/conf.d:/etc/dnsmasq.conf.d:ro # 上游配置目录，SIGHUP 重载
+      - ../dns/conf.d:/etc/dnsmasq.conf.d:ro # upstream.conf 由 clapi 写入
+    # --conf-file=/dev/null：不加载镜像自带配置；上游用 --servers-file 加载，SIGHUP 时重读
+    # （conf-dir 里的 server= 只在启动时读取）。clapi 通过 docker exec kill -HUP 1 重载，
+    # 不能用 docker kill -s HUP：会把容器标记为手动停止，unless-stopped 在重启后不再拉起
     command: >
       --keep-in-foreground
+      --conf-file=/dev/null
       --no-resolv
       --no-hosts
       --hostsdir=/etc/dnsmasq.hosts
-      --conf-dir=/etc/dnsmasq.conf.d,*.conf
+      --servers-file=/etc/dnsmasq.conf.d/upstream.conf
       --listen-address=${INTERNAL_IP:-127.0.0.1}
       --bind-interfaces
       --port=53

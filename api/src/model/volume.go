@@ -7,8 +7,8 @@ SPDX-License-Identifier: Apache-2.0
 package model
 
 import (
-	"strings"
 	"api/src/dbs"
+	"strings"
 )
 
 type VolumeStatus string
@@ -139,12 +139,12 @@ func (v *Volume) GetOriginVolumeID() string {
 
 type VolumeBackup struct {
 	Model
-	Owner      int64         `gorm:"default:1;index"` /* The organization ID of the resource */
-	Name       string        `gorm:"type:varchar(128)"`
-	VolumeID   int64         `gorm:"index"`
-	Volume     *Volume       `gorm:"foreignkey:VolumeID"`
-	BackupType string        `gorm:"type:varchar(32);index"` // snapshot or backup
-	Status     BackupStatus  `gorm:"type:varchar(32)"`
+	Owner      int64        `gorm:"default:1;index"` /* The organization ID of the resource */
+	Name       string       `gorm:"type:varchar(128)"`
+	VolumeID   int64        `gorm:"index"`
+	Volume     *Volume      `gorm:"foreignkey:VolumeID"`
+	BackupType string       `gorm:"type:varchar(32);index"` // snapshot or backup
+	Status     BackupStatus `gorm:"type:varchar(32)"`
 	Size       int32
 	Path       string        `gorm:"type:varchar(256)"`
 	SnapshotID string        `gorm:"type:varchar(128)"` // for cross pool backup, the snapshot ID in the source pool

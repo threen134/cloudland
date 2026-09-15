@@ -5,6 +5,10 @@ import { useI18n } from 'vue-i18n'
 import { useToast } from '../../composables/useToast'
 import { useSecurityGroup } from '../../composables/useSecurityGroup'
 import { securityGroupsApi, type SecurityGroup, type SecurityRule } from '../../api/networks'
+import {
+    newSecurityRuleForm, securityRuleFormFromRule, securityRulePayloadFromForm, validateSecurityRuleForm,
+    formatIcmpRule, icmpTypeName, type SecurityRuleForm
+} from '../../utils/securityRule'
 import { ArrowLeft, Shield, Trash2, Plus, X, Edit, ArrowUpDown, ArrowUp, ArrowDown, Network, Server, ChevronDown, Search } from 'lucide-vue-next'
 
 const route = useRoute()
@@ -40,14 +44,7 @@ const toggleRuleFilter = () => {
     }
 }
 
-const newRule = ref({
-    name: '',
-    direction: 'ingress',
-    protocol: 'tcp',
-    port_min: 80,
-    port_max: 80,
-    remote_cidr: '0.0.0.0/0'
-})
+const newRule = ref<SecurityRuleForm>(newSecurityRuleForm())
 
 type SortKey = 'name' | 'direction' | 'protocol' | 'port' | 'remote_cidr'
 type SortOrder = 'asc' | 'desc'
@@ -139,42 +136,28 @@ const handleDeleteRule = async (ruleId: string) => {
 
 const openAddRuleModal = () => {
     editingRuleId.value = null
-    newRule.value = {
-        name: '',
-        direction: 'ingress',
-        protocol: 'tcp',
-        port_min: 80,
-        port_max: 80,
-        remote_cidr: '0.0.0.0/0'
-    }
+    newRule.value = newSecurityRuleForm()
     showAddRuleModal.value = true
 }
 
 const openEditRuleModal = (rule: SecurityRule) => {
     editingRuleId.value = rule.id
-    newRule.value = {
-        name: rule.name || '',
-        direction: rule.direction,
-        protocol: rule.protocol,
-        port_min: rule.protocol === 'icmp' ? 1 : (rule.port_min || 1),
-        port_max: rule.protocol === 'icmp' ? 65535 : (rule.port_max || 65535),
-        remote_cidr: rule.remote_cidr || ''
-    }
+    newRule.value = securityRuleFormFromRule(rule)
     showAddRuleModal.value = true
 }
 
 const handleAddRule = async () => {
-    addRuleError.value = ''
-    if (newRule.value.protocol !== 'icmp' && newRule.value.port_min > newRule.value.port_max) {
-        addRuleError.value = t('dashboard.securityGroupDetail.portRangeError')
+    addRuleError.value = validateSecurityRuleForm(newRule.value, t)
+    if (addRuleError.value) {
         return
     }
     addingRule.value = true
     try {
+        const payload = securityRulePayloadFromForm(newRule.value)
         if (editingRuleId.value) {
-            await securityGroupsApi.patchRule(groupId, editingRuleId.value, newRule.value as any)
+            await securityGroupsApi.patchRule(groupId, editingRuleId.value, payload)
         } else {
-            await securityGroupsApi.addRule(groupId, newRule.value as any)
+            await securityGroupsApi.addRule(groupId, payload)
         }
         showAddRuleModal.value = false
         await fetchGroup()
@@ -239,7 +222,11 @@ const WELL_KNOWN_PORTS: Record<number, string> = {
 }
 
 const formatPort = (rule: SecurityRule) => {
-    if (rule.protocol === 'icmp' || (rule.port_min != null && rule.port_min < 0)) {
+    const icmp = formatIcmpRule(rule, t)
+    if (icmp !== null) {
+        return icmp
+    }
+    if (rule.port_min != null && rule.port_min < 0) {
         return '-'
     }
     if (rule.port_min === rule.port_max) {
@@ -252,7 +239,8 @@ const formatPort = (rule: SecurityRule) => {
 }
 
 const getServiceName = (rule: SecurityRule): string | null => {
-    if (rule.protocol === 'icmp' || rule.port_min == null || rule.port_min < 0) return null
+    if (rule.protocol === 'icmp') return icmpTypeName(rule)
+    if (rule.port_min == null || rule.port_min < 0) return null
     if (rule.port_min === rule.port_max && WELL_KNOWN_PORTS[rule.port_min]) {
         return WELL_KNOWN_PORTS[rule.port_min]
     }
@@ -579,6 +567,16 @@ onMounted(fetchGroup)
                         <div class="form-group flex-1">
                              <label class="form-label">{{ $t('dashboard.table.portMax') }}</label>
                             <input v-model.number="newRule.port_max" type="number" class="form-input" min="1" max="65535">
+                        </div>
+                    </div>
+                    <div v-else class="form-row">
+                        <div class="form-group flex-1">
+                             <label class="form-label">{{ $t('dashboard.securityGroupDetail.icmpType') }}</label>
+                            <input v-model.number="newRule.icmp_type" type="number" class="form-input" min="0" max="254" :placeholder="$t('dashboard.securityGroupDetail.icmpAnyPlaceholder')">
+                        </div>
+                        <div class="form-group flex-1">
+                             <label class="form-label">{{ $t('dashboard.securityGroupDetail.icmpCode') }}</label>
+                            <input v-model.number="newRule.icmp_code" type="number" class="form-input" min="0" max="255" :placeholder="$t('dashboard.securityGroupDetail.icmpAnyPlaceholder')">
                         </div>
                     </div>
                     <div class="form-group">
