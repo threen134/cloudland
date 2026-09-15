@@ -23,7 +23,9 @@ cat /proc/net/dev | grep -q "\<$vm_br\>:"
 # ifname $vm_br：网桥设备名；
 # ipv4.method static：IPv4 为静态配置；
 # ipv4.addresses 169.254.169.254/32：配置链路本地地址（仅用于网桥自身标识，无路由功能）。
-nmcli connection add con-name $vm_br type bridge ifname $vm_br ipv4.method static ipv4.addresses 169.254.169.254/32
+# ipv4.dad-timeout 0：关闭地址冲突检测。每个计算节点的 br$vlan 都配置同一个地址，同 VLAN 上先建好网桥的节点会应答 ARP，
+# 后加入的节点 NM 判定地址冲突，激活失败后会删除网桥及 v-$vlan，system router 的外网口随之断开。
+nmcli connection add con-name $vm_br type bridge ifname $vm_br ipv4.method static ipv4.addresses 169.254.169.254/32 ipv4.dad-timeout 0
 # 修改网桥参数（优化桥接性能）：
 # bridge.stp no：关闭 STP（生成树协议，避免虚拟机网络不必要的拓扑检测）；
 # bridge.forward-delay 0：转发延迟设为 0（立即转发，减少网络延迟）。

@@ -385,8 +385,47 @@ options kvm-intel enable_apicv=1
 options kvm-intel ept=1
 EOF
 
-# ============ 10. 配置并启动服务 ============
-log "10/16 - 配置并启动 cloudlet-go/libvirtd/NetworkManager"
+# ============ 10. 网络管理切换到 NetworkManager ============
+# 必须在启动 cloudlet-go 之前完成：cloudlet-go 注册后控制面会立即下发 system router、br<vlan>/v-<vlan> 的创建，
+# v-<vlan> 建在 bond 上，之后再切换 bond 会与网桥创建竞争并可能丢失已建好的 VLAN 接口
+log "10/16 - 切换 bond 到 NetworkManager，netplan 渲染器改为 NetworkManager 并屏蔽 networkd"
+
+# 与控制节点一致：把承载 VXLAN/VLAN 的 bond 从 systemd-networkd 迁移为 NM 连接（bondX-nm，存为 /etc/netplan/90-NM-*.yaml）；
+# 激活连接时 bond 会短暂中断，通过该 bond 的 SSH 登录执行本脚本时建议用 systemd-run/nohup 后台运行
+SWITCH_BOND_SCRIPT="$DEPLOY_DIR/scripts/switch_bond_to_nm.sh"
+for dev in $(printf '%s\n' "$NETWORK_DEVICE" "$VLAN_DEVICE" "$PRIVATE_VLAN_DEVICE" | awk '!seen[$0]++'); do
+    [[ "$dev" == bond* ]] || continue
+    if [ -f "$SWITCH_BOND_SCRIPT" ]; then
+        bash "$SWITCH_BOND_SCRIPT" "$dev" || warn "$dev 切换到 NetworkManager 失败，请检查（回滚: bash $SWITCH_BOND_SCRIPT --rollback $dev）"
+    else
+        warn "未找到 $SWITCH_BOND_SCRIPT，跳过 $dev 切换"
+    fi
+done
+
+# 下载 yq 工具
+YQ=/tmp/yq
+if [ ! -f "$YQ" ]; then
+    wget -q https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64 -O "$YQ"
+    chmod +x "$YQ"
+fi
+
+# 检查并切换 netplan 渲染器（未迁移的接口重启后也由 NM 接管）
+for f in /etc/netplan/*.yaml; do
+    if [ -f "$f" ]; then
+        renderer=$("$YQ" '.network.renderer' "$f")
+        if [ "$renderer" != "NetworkManager" ]; then
+            "$YQ" '.network.renderer = "NetworkManager"' -i "$f"
+            warn "已修改 $f 的渲染器为 NetworkManager，可能需要重启！"
+        fi
+    fi
+done
+
+# 停止并屏蔽 systemd-networkd
+systemctl stop systemd-networkd 2>/dev/null || true
+systemctl mask systemd-networkd
+
+# ============ 11. 配置并启动服务 ============
+log "11/16 - 配置并启动 cloudlet-go/libvirtd/NetworkManager"
 
 mkdir -p /etc/sysconfig
 
@@ -441,31 +480,6 @@ systemctl enable --now NetworkManager
 # 删除默认 libvirt 网络
 virsh net-destroy default 2>/dev/null || true
 virsh net-undefine default 2>/dev/null || true
-
-# ============ 11. Netplan + networkd 配置 ============
-log "11/16 - 切换 netplan 渲染器为 NetworkManager 并屏蔽 networkd"
-
-# 下载 yq 工具
-YQ=/tmp/yq
-if [ ! -f "$YQ" ]; then
-    wget -q https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64 -O "$YQ"
-    chmod +x "$YQ"
-fi
-
-# 检查并切换 netplan 渲染器
-for f in /etc/netplan/*.yaml; do
-    if [ -f "$f" ]; then
-        renderer=$("$YQ" '.network.renderer' "$f")
-        if [ "$renderer" != "NetworkManager" ]; then
-            "$YQ" '.network.renderer = "NetworkManager"' -i "$f"
-            warn "已修改 $f 的渲染器为 NetworkManager，可能需要重启！"
-        fi
-    fi
-done
-
-# 停止并屏蔽 systemd-networkd
-systemctl stop systemd-networkd 2>/dev/null || true
-systemctl mask systemd-networkd
 
 # ============ 12. 内核参数 ============
 log "12/16 - 配置内核参数"

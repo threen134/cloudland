@@ -445,6 +445,7 @@ sudo systemctl restart keepalived          # 在目标节点上执行
 
 1. 在 Web UI「计算节点」页面添加节点（或调用 `POST /api/v1/hypers`），填写 IP、主机名、网卡、可用区等。控制面分配 hostid 并返回 `deploy_command`。
 2. 在计算节点上以 root 执行 `deploy_command`。命令已包含 `CONTROLLER_IP`、`SCI_CLIENT_ID`（即 hostid）、`CLAND_PUBKEY` 与 `GRPC_AUTH_TOKEN`，脚本会：
+   - 在启动 cloudlet-go 之前，把 `NETWORK_DEVICE`/`VLAN_DEVICE`/`PRIVATE_VLAN_DEVICE` 中的 bond 用 `switch_bond_to_nm.sh` 从 systemd-networkd 迁移到 NetworkManager（与控制节点一致），并屏蔽 networkd。激活 NM 连接时 bond 会短暂中断，经该 bond 的 SSH 执行时建议用 `systemd-run --setenv=HOME=/root` 或 `nohup` 后台运行
    - 编译 cloudlet-go 并以 systemd 服务 `cloudlet-go` 启动，主动连接 `CONTROLLER_IP:5006`
    - 通过 `cloudlet-go node-add` 从控制面获取 cland SSH 密钥（portmap、虚拟机迁移需要）
 
