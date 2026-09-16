@@ -10,7 +10,7 @@ import { useCopyId } from '../../composables/useCopyId'
 import { useI18n } from 'vue-i18n'
 import { useRegionStore } from '../../stores/region'
 
-const { t } = useI18n()
+const { t, te } = useI18n()
 const region = useRegionStore()
 const toast = useToast()
 const migrationList = ref<Migration[]>([])
@@ -74,6 +74,21 @@ const getStatusClass = (status: string) => {
     if (s === 'error' || s === 'failed' || s === 'not_supported' || s === 'timeout' || s === 'rollback') return 'status-error'
     if (s === 'running' || s === 'migrating' || s === 'in_progress' || s.endsWith('_prepared') || s === 'source_rollback') return 'status-pending'
     return ''
+}
+
+// 缺键时 t() 返回键路径本身，必须用 te() 判断后再回退到原始状态串
+const getStatusText = (status: string) => {
+    const s = (status || '').toLowerCase()
+    if (!s) return '-'
+    const key = `dashboard.migrationStatus.${s}`
+    return te(key) ? t(key) : status
+}
+
+const getTypeText = (type: string) => {
+    const s = (type || '').toLowerCase()
+    if (!s) return ''
+    const key = `dashboard.migrationTypeValue.${s}`
+    return te(key) ? t(key) : type
 }
 
 // Create Modal Logic
@@ -245,13 +260,13 @@ watch(() => region.currentRegionId, (newId) => {
                 </button>
               </div>
             </td>
-            <td>{{ m.type || $t('messages.unnamed') }}</td>
+            <td>{{ getTypeText(m.type) || $t('messages.unnamed') }}</td>
             <td>{{ m.source_hyper ?? '-' }}</td>
             <td>{{ m.target_hyper ?? '-' }}</td>
             <td>
               <span class="status-pill" :class="getStatusClass(m.status)">
                 <span class="status-dot"></span>
-                {{ m.status }}
+                {{ getStatusText(m.status) }}
               </span>
             </td>
             <td>

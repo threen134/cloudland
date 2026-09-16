@@ -5,7 +5,7 @@ import { migrationsApi, MIGRATION_ACTIVE_STATUSES, type Migration } from '../../
 import { ArrowLeft, ArrowRightLeft, Copy, Check } from 'lucide-vue-next'
 import { useI18n } from 'vue-i18n'
 
-const { t } = useI18n()
+const { t, te } = useI18n()
 const route = useRoute()
 const router = useRouter()
 const migration = ref<Migration | null>(null)
@@ -60,6 +60,27 @@ const getStatusClass = (status: string) => {
     if (s === 'error' || s === 'failed' || s === 'not_supported' || s === 'timeout' || s === 'rollback') return 'status-error'
     if (s === 'running' || s === 'migrating' || s === 'in_progress' || s.endsWith('_prepared') || s === 'source_rollback') return 'status-pending'
     return ''
+}
+
+// 缺键时 t() 返回键路径本身，必须用 te() 判断后再回退到原始值
+const getStatusText = (status: string) => {
+    const s = (status || '').toLowerCase()
+    if (!s) return '-'
+    const key = `dashboard.migrationStatus.${s}`
+    return te(key) ? t(key) : status
+}
+
+const getPhaseName = (name: string) => {
+    if (!name) return '-'
+    const key = `dashboard.migrationPhase.${name}`
+    return te(key) ? t(key) : name
+}
+
+const getTypeText = (type: string) => {
+    const s = (type || '').toLowerCase()
+    if (!s) return ''
+    const key = `dashboard.migrationTypeValue.${s}`
+    return te(key) ? t(key) : type
 }
 
 const goBack = () => {
@@ -118,7 +139,7 @@ onUnmounted(() => {
         </div>
         <div class="title-actions">
           <span :class="['badge', 'badge-lg', getStatusClass(migration.status)]" :style="!getStatusClass(migration.status) ? 'background: var(--gray-100); color: var(--gray-700);' : ''">
-            {{ migration.status }}
+            {{ getStatusText(migration.status) }}
           </span>
         </div>
       </div>
@@ -135,7 +156,7 @@ onUnmounted(() => {
             </div>
             <div class="info-row">
               <span class="info-label">{{ $t('dashboard.migrationDetail.type') }}</span>
-              <span class="info-value">{{ migration.type || $t('messages.unnamed') }}</span>
+              <span class="info-value">{{ getTypeText(migration.type) || $t('messages.unnamed') }}</span>
             </div>
             <div class="info-row">
               <span class="info-label">{{ $t('dashboard.migrationDetail.createdAt') }}</span>
@@ -180,9 +201,9 @@ onUnmounted(() => {
           </div>
           <div class="phase-list">
             <div v-for="(p, idx) in migration.phases || []" :key="idx" class="phase-row">
-              <span :class="['badge', getStatusClass(p.status)]" :style="!getStatusClass(p.status) ? 'background: var(--gray-100); color: var(--gray-700);' : ''">{{ p.status }}</span>
+              <span :class="['badge', getStatusClass(p.status)]" :style="!getStatusClass(p.status) ? 'background: var(--gray-100); color: var(--gray-700);' : ''">{{ getStatusText(p.status) }}</span>
               <div class="phase-info">
-                <div class="phase-name">{{ p.name }}</div>
+                <div class="phase-name">{{ getPhaseName(p.name) }}</div>
                 <div class="phase-summary">{{ p.summary }}</div>
                 <div v-if="p.message" class="phase-message">{{ p.message }}</div>
               </div>

@@ -432,7 +432,15 @@ const getStatusClass = (status: string) => {
         'starting': 'status-pending',
         'stopping': 'status-pending',
         'deleting': 'status-pending',
-        'error': 'status-error'
+        'error': 'status-error',
+        'migrating': 'status-pending',
+        'migrated': 'status-running',
+        'rollback': 'status-error',
+        'unknown': 'status-error',
+        'reinstalling': 'status-pending',
+        'resizing': 'status-pending',
+        'rescuing': 'status-pending',
+        'deleted': 'status-stopped'
     }
     return statusMap[status?.toLowerCase()] || 'status-pending'
 }

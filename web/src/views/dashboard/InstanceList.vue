@@ -61,7 +61,7 @@ const hideIfaceHelp = () => {
 }
 
 const router = useRouter()
-const { t } = useI18n()
+const { t, te } = useI18n()
 const toast = useToast()
 
 
@@ -165,7 +165,15 @@ const getStatusClass = (status: string) => {
         'starting': 'status-pending',
         'stopping': 'status-pending',
         'deleting': 'status-pending',
-        'error': 'status-error'
+        'error': 'status-error',
+        'migrating': 'status-pending',
+        'migrated': 'status-running',
+        'rollback': 'status-error',
+        'unknown': 'status-error',
+        'reinstalling': 'status-pending',
+        'resizing': 'status-pending',
+        'rescuing': 'status-pending',
+        'deleted': 'status-stopped'
     }
     return statusMap[status?.toLowerCase()] || 'status-pending'
 }
@@ -173,8 +181,10 @@ const getStatusClass = (status: string) => {
 const getStatusText = (status: string) => {
     const s = status?.toLowerCase()
     if (!s) return '-'
-    // Note: status keys are defined in dashboard.instanceStatus
-    return t(`dashboard.instanceStatus.${s}`) || status
+    // 状态键定义在 dashboard.instanceStatus；缺键时 t() 会返回键路径本身，
+    // 所以必须用 te() 判断，否则界面上会直接显示 dashboard.instanceStatus.xxx
+    const key = `dashboard.instanceStatus.${s}`
+    return te(key) ? t(key) : status
 }
 
 const formatMemory = (mb: number) => {
