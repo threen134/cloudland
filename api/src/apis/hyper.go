@@ -71,8 +71,10 @@ type HyperDeployPayload struct {
 }
 
 type HyperMaintainPayload struct {
-	TargetHyper int32 `json:"target_hyper"`
-	Migrate     bool  `json:"migrate"`
+	// 用指针而非值类型：值类型时客户端漏传 target_hyper 会得到零值 0，而 0 不是合法 hostid，
+	// 会被当作"迁往 hostid 0"从而报 HypervisorNotFound。约定 nil / -1 表示由调度器自选
+	TargetHyper *int32 `json:"target_hyper" binding:"omitempty,gte=-1,lte=65535"`
+	Migrate     bool   `json:"migrate"`
 }
 
 type HyperPatchPayload struct {
@@ -293,16 +295,20 @@ func (v *HyperAPI) Maintain(c *gin.Context) {
 	var payload HyperMaintainPayload
 	if err := c.ShouldBindJSON(&payload); err != nil {
 		logger.Ctx(c).Warningf("Failed to bind JSON for Hyper Maintain, using default (migrate=true): %+v", err)
-		payload.TargetHyper = -1
+		payload.TargetHyper = nil
 		payload.Migrate = true
 	}
-	logger.Ctx(c).Infof("Maintenance requested via API for hypervisor %s: migrate=%v, target=%d", uuid, payload.Migrate, payload.TargetHyper)
+	targetHyper := int32(-1) // -1：由调度器自选目标节点
+	if payload.TargetHyper != nil {
+		targetHyper = *payload.TargetHyper
+	}
+	logger.Ctx(c).Infof("Maintenance requested via API for hypervisor %s: migrate=%v, target=%d", uuid, payload.Migrate, targetHyper)
 	hyper, err := hyperAdmin.GetHyperByUUID(c.Request.Context(), uuid)
 	if err != nil {
 		ErrorResponse(c, http.StatusNotFound, "Hypervisor not found", err)
 		return
 	}
-	if err := hyperAdmin.Maintain(c.Request.Context(), hyper.Hostid, payload.Migrate, payload.TargetHyper); err != nil {
+	if err := hyperAdmin.Maintain(c.Request.Context(), hyper.Hostid, payload.Migrate, targetHyper); err != nil {
 		ErrorResponse(c, http.StatusInternalServerError, "Failed to maintain hypervisor", err)
 		return
 	}
