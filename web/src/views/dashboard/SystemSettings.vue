@@ -26,6 +26,11 @@ const getFieldLabel = (key: string): string => {
     return te(translationKey) ? t(translationKey) : key
 }
 
+// 需要限定取值范围的整数设置，须与 cpgateway 的 settingIntRanges 一致（后端同样校验）
+const numberRanges: Record<string, { min: number; max: number }> = {
+    AUDIT_LOG_RETENTION_DAYS: { min: 90, max: 3650 },
+}
+
 const getFieldDesc = (setting: SystemSetting): string => {
     const descKey = `settings.fields.${setting.key}_desc`
     return te(descKey) ? t(descKey) : (setting.description || '')
@@ -113,6 +118,12 @@ const saveSettings = async () => {
                     return
                 }
             } else if (s.value_type === 'number') {
+                const range = numberRanges[s.key]
+                if (range && (!Number.isInteger(Number(raw)) || Number(raw) < range.min || Number(raw) > range.max)) {
+                    toast.error(t('settings.rangeError', { label: getFieldLabel(s.key), min: range.min, max: range.max }))
+                    saving.value = false
+                    return
+                }
                 payload[s.key] = Number(raw)
             } else if (s.value_type === 'boolean') {
                 payload[s.key] = Boolean(raw)
@@ -124,7 +135,9 @@ const saveSettings = async () => {
         await fetchSettings() // Fetch latest data FIRST to ensure UI is perfectly synced
         toast.success(t('settings.saveSuccess'))
     } catch (err) {
-        toast.error(t('messages.error'))
+        // 后端校验失败（如取值越界）时显示具体原因
+        const detail = (err as { response?: { data?: { detail?: unknown } } })?.response?.data?.detail
+        toast.error(typeof detail === 'string' ? detail : t('messages.error'))
     } finally {
         saving.value = false
     }
@@ -521,7 +534,7 @@ onUnmounted(() => {
                                     <span class="bool-status-text">{{ !!editValues[setting.key] ? $t('common.on') : $t('common.off') }}</span>
                                 </div>
                                 <div v-else-if="setting.value_type === 'number'" class="input-wrap">
-                                    <input :id="setting.key" :name="setting.key" type="number" class="form-input" v-model.number="editValues[setting.key]" />
+                                    <input :id="setting.key" :name="setting.key" type="number" class="form-input" :min="numberRanges[setting.key]?.min" :max="numberRanges[setting.key]?.max" :step="numberRanges[setting.key] ? 1 : undefined" v-model.number="editValues[setting.key]" />
                                 </div>
                                 <div v-else-if="setting.value_type === 'secret'" class="input-wrap">
                                     <input :id="setting.key" :name="setting.key" type="password" class="form-input" v-model="editValues[setting.key]" :placeholder="$t('settings.secretPlaceholder')" autocomplete="new-password" />

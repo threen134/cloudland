@@ -48,6 +48,10 @@ func UpdateSystemSettings(c *gin.Context) {
 	keys := make([]string, 0, len(payload))
 	for k, v := range payload {
 		if _, ok := services.FindSettingMeta(k); ok {
+			if err := services.ValidateSetting(k, v); err != nil {
+				common.AbortWithDetail(c, http.StatusBadRequest, err.Error())
+				return
+			}
 			valid[k] = v
 			keys = append(keys, k)
 		}

@@ -1,5 +1,34 @@
 basePath: /api/v1
 definitions:
+  apis.ActivityListResponse:
+    properties:
+      activities:
+        items:
+          $ref: '#/definitions/apis.ActivityResponse'
+        type: array
+      next_cursor:
+        description: NextCursor 非空表示还有更早的记录，作为下一页的 cursor 参数传回
+        type: string
+    type: object
+  apis.ActivityResponse:
+    properties:
+      action:
+        type: string
+      actor:
+        type: string
+      created_at:
+        type: string
+      id:
+        type: string
+      resource_id:
+        type: string
+      resource_name:
+        type: string
+      resource_type:
+        type: string
+      success:
+        type: boolean
+    type: object
   apis.AddressInfo:
     properties:
       ip_address:
@@ -71,6 +100,50 @@ definitions:
         type: boolean
     required:
     - addresses
+    type: object
+  apis.AuditLogListResponse:
+    properties:
+      limit:
+        type: integer
+      logs:
+        items:
+          $ref: '#/definitions/apis.AuditLogResponse'
+        type: array
+      offset:
+        type: integer
+      total:
+        type: integer
+    type: object
+  apis.AuditLogResponse:
+    properties:
+      action:
+        type: string
+      actor:
+        type: string
+      actor_uuid:
+        type: string
+      created_at:
+        type: string
+      detail:
+        type: string
+      id:
+        type: string
+      latency_ms:
+        type: integer
+      method:
+        type: string
+      path:
+        type: string
+      resource_id:
+        type: string
+      resource_name:
+        type: string
+      resource_type:
+        type: string
+      status:
+        type: integer
+      trace_id:
+        type: string
     type: object
   apis.BackendListResponse:
     properties:
@@ -650,6 +723,11 @@ definitions:
       migrate:
         type: boolean
       target_hyper:
+        description: |-
+          用指针而非值类型：值类型时客户端漏传 target_hyper 会得到零值 0，而 0 不是合法 hostid，
+          会被当作"迁往 hostid 0"从而报 HypervisorNotFound。约定 nil / -1 表示由调度器自选
+        maximum: 65535
+        minimum: -1
         type: integer
     type: object
   apis.HyperResponse:
@@ -672,8 +750,13 @@ definitions:
         type: integer
       host_ip:
         type: string
+      hostid:
+        description: 节点编号：迁移接口的 target_hyper、实例的 hyper 字段用的都是它
+        type: integer
       hostname:
         type: string
+      instance_count:
+        type: integer
       mem_over_rate:
         type: number
       memory:
@@ -1532,6 +1615,11 @@ definitions:
     properties:
       created_at:
         type: string
+      creater_name:
+        description: 发起迁移的用户名，创建时快照下来
+        type: string
+      creater_uuid:
+        type: string
       force:
         type: boolean
       id:
@@ -1546,11 +1634,23 @@ definitions:
         items:
           $ref: '#/definitions/apis.TaskResponse'
         type: array
+      progress:
+        description: 迁移进度：百分比与已传输 / 总字节数（内存 + 本地磁盘合计），由源节点上报
+        type: integer
       source_hyper:
         type: integer
+      source_hyper_name:
+        description: 节点名称，便于界面直接展示；目标节点由调度器自选（-1）时为空
+        type: string
       status:
         type: string
       target_hyper:
+        type: integer
+      target_hyper_name:
+        type: string
+      total:
+        type: integer
+      transferred:
         type: integer
       type:
         type: string
@@ -1950,6 +2050,8 @@ definitions:
     type: object
   apis.TaskResponse:
     properties:
+      message:
+        type: string
       name:
         type: string
       source:
@@ -2344,6 +2446,54 @@ info:
   title: CloudLand API
   version: "1.0"
 paths:
+  /activities:
+    get:
+      consumes:
+      - application/json
+      description: 当前组织在本区域的操作动态，按时间倒序、游标分页，组织内所有成员可见
+      parameters:
+      - description: default 20, max 100
+        in: query
+        name: limit
+        type: integer
+      - description: next_cursor from previous page
+        in: query
+        name: cursor
+        type: string
+      - description: RFC3339, inclusive; default 7 days before end
+        in: query
+        name: start
+        type: string
+      - description: RFC3339, exclusive; default now; range must not exceed 90 days
+        in: query
+        name: end
+        type: string
+      - description: resource type, such as instance
+        in: query
+        name: resource_type
+        type: string
+      - description: resource uuid
+        in: query
+        name: resource_uuid
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.ActivityListResponse'
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: list activities of current organization
+      tags:
+      - Activity
   /addresses/{uuid}:
     get:
       consumes:
@@ -2652,6 +2802,66 @@ paths:
       summary: Process resource adjustment webhook
       tags:
       - Auto Scaling
+  /audit_logs:
+    get:
+      consumes:
+      - application/json
+      description: 按时间倒序返回改动型操作的审计记录，仅系统管理员可见
+      parameters:
+      - description: offset
+        in: query
+        name: offset
+        type: integer
+      - description: limit, default 50
+        in: query
+        name: limit
+        type: integer
+      - description: username
+        in: query
+        name: actor
+        type: string
+      - description: user uuid
+        in: query
+        name: actor_uuid
+        type: string
+      - description: request path contains
+        in: query
+        name: path
+        type: string
+      - description: resource type, such as instance
+        in: query
+        name: resource_type
+        type: string
+      - description: resource uuid
+        in: query
+        name: resource_uuid
+        type: string
+      - description: RFC3339, inclusive
+        in: query
+        name: start
+        type: string
+      - description: RFC3339, exclusive; range must not exceed 90 days
+        in: query
+        name: end
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.AuditLogListResponse'
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: list audit logs
+      tags:
+      - Administration
   /backups:
     get:
       consumes:

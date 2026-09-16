@@ -58,6 +58,7 @@ var SettingsMetadata = []SettingMeta{
 	{"PROJECT_NAME", "string", "general", "项目名称", false, cfgString("project_name", "Cloudland Control Plane Gateway")},
 	{"FRONTEND_URL", "string", "general", "前端访问地址", false, cfgString("frontend.url", "")},
 	{"ALARM_EVENT_RETENTION_DAYS", "number", "general", "VM 告警事件保留天数", false, constant(30)},
+	{"AUDIT_LOG_RETENTION_DAYS", "number", "general", "操作审计日志保留天数", false, constant(DefaultAuditLogRetentionDays)},
 	{"DNS_UPSTREAM", "string", "general", "内部 DNS 上游转发地址（计算节点 hostname 未匹配时转发至此）", false, cfgString("dns.upstream", "8.8.8.8")},
 	{"DEFAULT_CPU_CORES", "number", "quota", "默认 CPU 配额（核）", false, cfgNumber("quota.defaults.cpu_cores", 4.0)},
 	{"DEFAULT_RAM_GB", "number", "quota", "默认内存配额（GB）", false, cfgNumber("quota.defaults.ram_gb", 8.0)},
@@ -83,6 +84,30 @@ var SettingsMetadata = []SettingMeta{
 	{"CUSTOM_WEBHOOK_URL", "string", "notification", "自定义 Webhook 地址", false, constant("")},
 	{"CUSTOM_WEBHOOK_METHOD", "string", "notification", "自定义 Webhook HTTP 方法", false, constant("POST")},
 	{"CUSTOM_WEBHOOK_HEADERS", "json", "notification", "自定义 Webhook Headers（含鉴权）", true, constant(map[string]interface{}{})},
+}
+
+const DefaultAuditLogRetentionDays = 365
+
+// settingIntRanges 为需要限定取值范围的整数设置（闭区间）。审计日志设下限，防止误把审计记录清空；
+// 各区域 clapi 读取时同样按此范围兜底
+var settingIntRanges = map[string][2]int{
+	"AUDIT_LOG_RETENTION_DAYS": {90, 3650},
+}
+
+// ValidateSetting 校验单个设置值，目前只检查带范围约束的整数设置
+func ValidateSetting(key string, value interface{}) error {
+	bounds, ok := settingIntRanges[key]
+	if !ok {
+		return nil
+	}
+	n, isNum := value.(float64)
+	if !isNum || n != float64(int64(n)) {
+		return fmt.Errorf("%s must be an integer", key)
+	}
+	if int(n) < bounds[0] || int(n) > bounds[1] {
+		return fmt.Errorf("%s must be between %d and %d", key, bounds[0], bounds[1])
+	}
+	return nil
 }
 
 func FindSettingMeta(key string) (*SettingMeta, bool) {

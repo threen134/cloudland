@@ -39,6 +39,14 @@ type AuditLog struct {
 	TraceID string `gorm:"type:varchar(64);index"`
 	// Detail 失败时记录响应体片段，成功时为空
 	Detail string `gorm:"type:varchar(1024)"`
+	// Action 为语义化的动作名（如 instance.stop），由路由模板映射得出，个别接口按请求体细化。
+	// 原始的 Method + Path 区分不了开机和关机（同是 PATCH /instances/:id），也无法直接展示给用户；
+	// 为空表示该接口不属于用户可见的操作（如打开控制台），不出现在动态里
+	Action       string `gorm:"type:varchar(64);not null;default:''"`
+	ResourceType string `gorm:"type:varchar(32);not null;default:''"`
+	ResourceUUID string `gorm:"type:varchar(64);not null;default:''"`
+	// ResourceName 为操作当时的名称快照：资源删除后会被改名或不可查，事后无法补回
+	ResourceName string `gorm:"type:varchar(255);not null;default:''"`
 }
 
 func init() {
@@ -46,5 +54,13 @@ func init() {
 	dbs.AutoUpgrade("001_audit_log_created_at", func(db *gorm.DB) error {
 		// 审计查询基本都是"按时间倒序看最近的操作"
 		return db.Exec(`CREATE INDEX IF NOT EXISTS idx_audit_logs_created_at ON audit_logs (created_at DESC)`).Error
+	})
+	dbs.AutoUpgrade("002_audit_log_org_activity", func(db *gorm.DB) error {
+		// 组织动态：按组织、时间倒序分页，只含有语义动作的记录
+		return db.Exec(`CREATE INDEX IF NOT EXISTS idx_audit_logs_org_activity ON audit_logs (org_id, created_at DESC, id DESC) WHERE action <> ''`).Error
+	})
+	dbs.AutoUpgrade("003_audit_log_resource", func(db *gorm.DB) error {
+		// 资源详情页的操作记录
+		return db.Exec(`CREATE INDEX IF NOT EXISTS idx_audit_logs_resource ON audit_logs (resource_uuid, created_at DESC) WHERE resource_uuid <> ''`).Error
 	})
 }

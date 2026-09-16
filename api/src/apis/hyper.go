@@ -189,6 +189,14 @@ func (v *HyperAPI) Patch(c *gin.Context) {
 		return
 	}
 	logger.Ctx(c).Infof("Patching hypervisor %s with payload: %+v", uuid, payload)
+	if payload.Status != nil {
+		// 启用（含退出维护）与禁用是需要单独呈现的节点状态变化，其余字段归为修改配置
+		if *payload.Status == 1 {
+			SetAuditAction(c, "hyper.enable")
+		} else {
+			SetAuditAction(c, "hyper.disable")
+		}
+	}
 
 	// Get existing hypervisor
 	hyper, err := hyperAdmin.GetHyperByUUID(c.Request.Context(), uuid)

@@ -161,6 +161,12 @@ func (v *InstanceAPI) Patch(c *gin.Context) {
 		ErrorResponse(c, http.StatusBadRequest, "Invalid input JSON", err)
 		return
 	}
+	// 同一个 PATCH 承载开关机与改名，审计动作按请求体区分
+	if payload.PowerAction != "" {
+		SetAuditAction(c, "instance."+string(payload.PowerAction))
+	} else if payload.Hostname != "" && payload.Hostname != instance.Hostname {
+		SetAuditAction(c, "instance.rename")
+	}
 	hostname := instance.Hostname
 	if payload.Hostname != "" {
 		hostname = payload.Hostname

@@ -12,6 +12,79 @@
     },
     "basePath": "/api/v1",
     "paths": {
+        "/activities": {
+            "get": {
+                "description": "当前组织在本区域的操作动态，按时间倒序、游标分页，组织内所有成员可见",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Activity"
+                ],
+                "summary": "list activities of current organization",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "default 20, max 100",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "next_cursor from previous page",
+                        "name": "cursor",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "RFC3339, inclusive; default 7 days before end",
+                        "name": "start",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "RFC3339, exclusive; default now; range must not exceed 90 days",
+                        "name": "end",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "resource type, such as instance",
+                        "name": "resource_type",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "resource uuid",
+                        "name": "resource_uuid",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apis.ActivityListResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            }
+        },
         "/addresses/remark": {
             "patch": {
                 "description": "batch patch addresses with unified remark",
@@ -455,6 +528,97 @@
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/audit_logs": {
+            "get": {
+                "description": "按时间倒序返回改动型操作的审计记录，仅系统管理员可见",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Administration"
+                ],
+                "summary": "list audit logs",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "offset",
+                        "name": "offset",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "limit, default 50",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "username",
+                        "name": "actor",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "user uuid",
+                        "name": "actor_uuid",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "request path contains",
+                        "name": "path",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "resource type, such as instance",
+                        "name": "resource_type",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "resource uuid",
+                        "name": "resource_uuid",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "RFC3339, inclusive",
+                        "name": "start",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "RFC3339, exclusive; range must not exceed 90 days",
+                        "name": "end",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apis.AuditLogListResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
                         }
                     }
                 }
@@ -7360,6 +7524,50 @@
         }
     },
     "definitions": {
+        "apis.ActivityListResponse": {
+            "type": "object",
+            "properties": {
+                "activities": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/apis.ActivityResponse"
+                    }
+                },
+                "next_cursor": {
+                    "description": "NextCursor 非空表示还有更早的记录，作为下一页的 cursor 参数传回",
+                    "type": "string"
+                }
+            }
+        },
+        "apis.ActivityResponse": {
+            "type": "object",
+            "properties": {
+                "action": {
+                    "type": "string"
+                },
+                "actor": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "resource_id": {
+                    "type": "string"
+                },
+                "resource_name": {
+                    "type": "string"
+                },
+                "resource_type": {
+                    "type": "string"
+                },
+                "success": {
+                    "type": "boolean"
+                }
+            }
+        },
         "apis.AddressInfo": {
             "type": "object",
             "properties": {
@@ -7466,6 +7674,73 @@
                 },
                 "lock": {
                     "type": "boolean"
+                }
+            }
+        },
+        "apis.AuditLogListResponse": {
+            "type": "object",
+            "properties": {
+                "limit": {
+                    "type": "integer"
+                },
+                "logs": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/apis.AuditLogResponse"
+                    }
+                },
+                "offset": {
+                    "type": "integer"
+                },
+                "total": {
+                    "type": "integer"
+                }
+            }
+        },
+        "apis.AuditLogResponse": {
+            "type": "object",
+            "properties": {
+                "action": {
+                    "type": "string"
+                },
+                "actor": {
+                    "type": "string"
+                },
+                "actor_uuid": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "detail": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "latency_ms": {
+                    "type": "integer"
+                },
+                "method": {
+                    "type": "string"
+                },
+                "path": {
+                    "type": "string"
+                },
+                "resource_id": {
+                    "type": "string"
+                },
+                "resource_name": {
+                    "type": "string"
+                },
+                "resource_type": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "integer"
+                },
+                "trace_id": {
+                    "type": "string"
                 }
             }
         },
@@ -8324,7 +8599,10 @@
                     "type": "boolean"
                 },
                 "target_hyper": {
-                    "type": "integer"
+                    "description": "用指针而非值类型：值类型时客户端漏传 target_hyper 会得到零值 0，而 0 不是合法 hostid，\n会被当作\"迁往 hostid 0\"从而报 HypervisorNotFound。约定 nil / -1 表示由调度器自选",
+                    "type": "integer",
+                    "maximum": 65535,
+                    "minimum": -1
                 }
             }
         },
@@ -8358,8 +8636,15 @@
                 "host_ip": {
                     "type": "string"
                 },
+                "hostid": {
+                    "description": "节点编号：迁移接口的 target_hyper、实例的 hyper 字段用的都是它",
+                    "type": "integer"
+                },
                 "hostname": {
                     "type": "string"
+                },
+                "instance_count": {
+                    "type": "integer"
                 },
                 "mem_over_rate": {
                     "type": "number"
@@ -9602,6 +9887,13 @@
                 "created_at": {
                     "type": "string"
                 },
+                "creater_name": {
+                    "description": "发起迁移的用户名，创建时快照下来",
+                    "type": "string"
+                },
+                "creater_uuid": {
+                    "type": "string"
+                },
                 "force": {
                     "type": "boolean"
                 },
@@ -9623,13 +9915,30 @@
                         "$ref": "#/definitions/apis.TaskResponse"
                     }
                 },
+                "progress": {
+                    "description": "迁移进度：百分比与已传输 / 总字节数（内存 + 本地磁盘合计），由源节点上报",
+                    "type": "integer"
+                },
                 "source_hyper": {
                     "type": "integer"
+                },
+                "source_hyper_name": {
+                    "description": "节点名称，便于界面直接展示；目标节点由调度器自选（-1）时为空",
+                    "type": "string"
                 },
                 "status": {
                     "type": "string"
                 },
                 "target_hyper": {
+                    "type": "integer"
+                },
+                "target_hyper_name": {
+                    "type": "string"
+                },
+                "total": {
+                    "type": "integer"
+                },
+                "transferred": {
                     "type": "integer"
                 },
                 "type": {
@@ -10210,6 +10519,9 @@
         "apis.TaskResponse": {
             "type": "object",
             "properties": {
+                "message": {
+                    "type": "string"
+                },
                 "name": {
                     "type": "string"
                 },

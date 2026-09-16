@@ -1,11 +1,12 @@
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, type Component } from 'vue'
 import { useAuthStore } from '../../stores/auth'
 import { useRegionStore } from '../../stores/region'
 import { useI18n } from 'vue-i18n'
-import { Server, HardDrive, Cpu, Layers, Disc, GitFork, Activity, Globe } from 'lucide-vue-next'
+import { Server, HardDrive, Cpu, Layers, Disc, GitFork, Activity, Globe, Shield, Key, ArrowRightLeft, Network, Archive, MapPin, Box } from 'lucide-vue-next'
 
 import { instancesApi, type Instance } from '../../api/instances'
+import { activitiesApi, type Activity as ActivityItem } from '../../api/activities'
 import { volumesApi } from '../../api/volumes'
 import { imagesApi, type Image } from '../../api/images'
 import { vpcsApi, floatingIpsApi } from '../../api/networks'
@@ -13,7 +14,7 @@ import { quotaApi } from '../../api/quota'
 
 const auth = useAuthStore()
 const regionStore = useRegionStore()
-const { t } = useI18n()
+const { t, te } = useI18n()
 const displayName = computed(() => auth.user?.username || auth.user?.name || 'User')
 
 interface ResourceUsage {
@@ -110,6 +111,101 @@ onMounted(async () => {
         loading.value = false
     }
 })
+
+// ---- 最近动态：当前组织在当前区域的操作记录 ----
+const ACTIVITY_LIMIT = 8
+const activities = ref<ActivityItem[]>([])
+const activitiesLoading = ref(true)
+const activitiesError = ref(false)
+
+// 动态与资源统计相互独立：动态接口慢或失败不应拖住整个概览
+const loadActivities = async () => {
+    activitiesLoading.value = true
+    activitiesError.value = false
+    try {
+        const res = await activitiesApi.list({ limit: ACTIVITY_LIMIT })
+        activities.value = res.activities || []
+    } catch (err) {
+        console.warn('Activities fetch failed:', err)
+        activitiesError.value = true
+    } finally {
+        activitiesLoading.value = false
+    }
+}
+onMounted(loadActivities)
+
+const activityIcons: Record<string, Component> = {
+    instance: Server,
+    volume: HardDrive,
+    backup: Archive,
+    consistency_group: HardDrive,
+    vpc: Layers,
+    subnet: GitFork,
+    security_group: Shield,
+    floating_ip: Globe,
+    load_balancer: Network,
+    image: Disc,
+    key: Key,
+    flavor: Box,
+    hyper: Cpu,
+    zone: MapPin,
+    migration: ArrowRightLeft,
+}
+const activityIconClass: Record<string, string> = {
+    instance: 'bg-blue-light text-blue',
+    volume: 'bg-teal-light text-teal',
+    backup: 'bg-teal-light text-teal',
+    consistency_group: 'bg-teal-light text-teal',
+    vpc: 'bg-purple-light text-purple',
+    subnet: 'bg-purple-light text-purple',
+    security_group: 'bg-rose-light text-rose',
+    floating_ip: 'bg-blue-light text-blue',
+    load_balancer: 'bg-purple-light text-purple',
+    image: 'bg-rose-light text-rose',
+}
+
+// 资源类型 -> 详情页路由；没有详情页的类型（密钥、规格）只显示名称
+const activityRoutes: Record<string, string> = {
+    instance: 'instance-detail',
+    volume: 'volume-detail',
+    vpc: 'vpc-detail',
+    subnet: 'subnet-detail',
+    security_group: 'security-group-detail',
+    floating_ip: 'floating-ip-detail',
+    load_balancer: 'load-balancer-detail',
+    image: 'image-detail',
+    hyper: 'hypervisor-detail',
+    migration: 'migration-detail',
+}
+
+// 文案里的 {name} 由模板插槽渲染为资源名（带链接）；后端新增了前端未翻译的动作时退回通用文案
+const activityKey = (a: ActivityItem) => {
+    const key = `dashboard.overview.activityActions.${a.action}`
+    return te(key) ? key : 'dashboard.overview.activityActionUnknown'
+}
+
+const activityResourceLabel = (a: ActivityItem) => a.resource_name || (a.resource_id ? a.resource_id.slice(0, 8) : '')
+
+// 已删除或失败的操作，资源详情页大概率不存在，不给链接
+const activityLink = (a: ActivityItem) => {
+    if (!a.success || a.action.endsWith('.delete')) return null
+    if (a.resource_type === 'zone' && a.resource_name) {
+        return { name: 'zone-detail', params: { name: a.resource_name } }
+    }
+    const routeName = activityRoutes[a.resource_type]
+    if (!routeName || !a.resource_id) return null
+    return { name: routeName, params: { id: a.resource_id } }
+}
+
+const relativeTime = (iso: string) => {
+    const diff = Date.now() - new Date(iso).getTime()
+    const mins = Math.floor(diff / 60000)
+    if (mins < 1) return t('dashboard.overview.justNow')
+    if (mins < 60) return t('dashboard.overview.minsAgo', { n: mins })
+    const hours = Math.floor(mins / 60)
+    if (hours < 24) return t('dashboard.overview.hoursAgo', { n: hours })
+    return t('dashboard.overview.daysAgo', { n: Math.floor(hours / 24) })
+}
 
 const getPercentColor = (percent: number) => {
     if (percent > 90) return 'var(--error-color)'
@@ -253,39 +349,37 @@ const getPercentColor = (percent: number) => {
         </div>
       </div>
 
-      <!-- Recent Activity (Mock) -->
+      <!-- Recent Activity：当前组织在当前区域的操作记录 -->
       <div class="card activity-card">
         <div class="card-header">
           <h3>{{ $t('dashboard.overview.recentActivity') }}</h3>
         </div>
         <div class="card-body">
-          <ul class="activity-list">
-            <li class="activity-item">
-              <div class="activity-icon bg-blue-light"><Server :size="16" class="text-blue"/></div>
-              <div class="activity-details">
-                <span class="activity-text">{{ $t('dashboard.overview.activity.instanceStarted', { name: 'web-server-01' }) }}</span>
-                <span class="activity-time">{{ $t('dashboard.overview.minsAgo', { n: 10 }) }}</span>
+          <div v-if="activitiesLoading" class="activity-empty">{{ $t('dashboard.overview.activityLoading') }}</div>
+          <div v-else-if="activitiesError" class="activity-empty">
+            {{ $t('dashboard.overview.activityLoadFailed') }}
+            <button class="activity-retry" @click="loadActivities">{{ $t('dashboard.overview.activityRetry') }}</button>
+          </div>
+          <div v-else-if="activities.length === 0" class="activity-empty">{{ $t('dashboard.overview.activityEmpty') }}</div>
+          <ul v-else class="activity-list">
+            <li v-for="a in activities" :key="a.id" class="activity-item">
+              <div class="activity-icon" :class="activityIconClass[a.resource_type] || 'bg-gray-light text-gray'">
+                <component :is="activityIcons[a.resource_type] || Activity" :size="16" />
               </div>
-            </li>
-             <li class="activity-item">
-              <div class="activity-icon bg-teal-light"><HardDrive :size="16" class="text-teal"/></div>
               <div class="activity-details">
-                <span class="activity-text">{{ $t('dashboard.overview.activity.volumeAttached', { name: 'data-vol-01' }) }}</span>
-                <span class="activity-time">{{ $t('dashboard.overview.hoursAgo', { n: 1 }) }}</span>
-              </div>
-            </li>
-             <li class="activity-item">
-              <div class="activity-icon bg-purple-light"><Layers :size="16" class="text-purple"/></div>
-              <div class="activity-details">
-                <span class="activity-text">{{ $t('dashboard.overview.activity.vpcCreated', { name: 'dev-env' }) }}</span>
-                <span class="activity-time">{{ $t('dashboard.overview.hoursAgo', { n: 3 }) }}</span>
-              </div>
-            </li>
-             <li class="activity-item">
-              <div class="activity-icon bg-rose-light"><Activity :size="16" class="text-rose"/></div>
-              <div class="activity-details">
-                <span class="activity-text">{{ $t('dashboard.overview.activity.sgRuleUpdated') }}</span>
-                <span class="activity-time">{{ $t('dashboard.overview.hoursAgo', { n: 5 }) }}</span>
+                <span class="activity-text">
+                  <strong>{{ a.actor || $t('dashboard.overview.activityUnknownActor') }}</strong>
+                  {{ ' ' }}
+                  <i18n-t :keypath="activityKey(a)" tag="span">
+                    <template #action>{{ a.action }}</template>
+                    <template #name>
+                      <router-link v-if="activityLink(a)" :to="activityLink(a)!" class="activity-resource">{{ activityResourceLabel(a) }}</router-link>
+                      <span v-else class="activity-resource plain">{{ activityResourceLabel(a) }}</span>
+                    </template>
+                  </i18n-t>
+                  <span v-if="!a.success" class="activity-failed">{{ $t('dashboard.overview.activityFailed') }}</span>
+                </span>
+                <span class="activity-time" :title="new Date(a.created_at).toLocaleString()">{{ relativeTime(a.created_at) }}</span>
               </div>
             </li>
           </ul>
@@ -544,6 +638,59 @@ const getPercentColor = (percent: number) => {
 .activity-time {
   font-size: 0.75rem;
   color: var(--gray-400);
+}
+
+.bg-gray-light { background-color: var(--gray-100); }
+.text-gray { color: var(--gray-500); }
+
+.activity-details {
+  min-width: 0;
+}
+
+.activity-text {
+  overflow-wrap: anywhere;
+}
+
+.activity-resource {
+  font-weight: 500;
+  color: var(--primary-600);
+  text-decoration: none;
+}
+
+.activity-resource:hover {
+  text-decoration: underline;
+}
+
+.activity-resource.plain {
+  color: var(--gray-900);
+}
+
+.activity-failed {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 0 6px;
+  font-size: 0.75rem;
+  line-height: 1.25rem;
+  border-radius: 999px;
+  color: var(--error-color);
+  background-color: color-mix(in srgb, var(--error-color) 12%, transparent);
+}
+
+.activity-empty {
+  padding: 24px 0;
+  text-align: center;
+  font-size: 0.875rem;
+  color: var(--gray-400);
+}
+
+.activity-retry {
+  margin-left: 8px;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--primary-600);
+  cursor: pointer;
+  font-size: inherit;
 }
 
 .loading-container {

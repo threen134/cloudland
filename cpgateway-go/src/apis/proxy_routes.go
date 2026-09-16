@@ -131,6 +131,8 @@ var proxyRoutes = []proxyRoute{
 	// administration.py
 	// 审计日志：记录改动型操作的发起人与结果，仅系统管理员可查
 	{"GET", "/audit_logs", "/audit_logs", true},
+	// 组织操作动态：同一份审计数据的精简视图，范围由 clapi 限定为当前组织，所有成员可见
+	{"GET", "/activities", "/activities", false},
 
 	{"GET", "/hypers", "/hypers", true},
 	{"GET", "/hypers/:hostid", "/hypers/{hostid}", true},

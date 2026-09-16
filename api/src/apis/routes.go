@@ -55,9 +55,34 @@ func runAlarmEventCleanup(admin *services.NotificationAdmin) {
 	}
 }
 
+func startAuditLogCleanup() {
+	ticker := time.NewTicker(24 * time.Hour)
+	go func() {
+		time.Sleep(30 * time.Second)
+		runAuditLogCleanup()
+		for range ticker.C {
+			runAuditLogCleanup()
+		}
+	}()
+}
+
+func runAuditLogCleanup() {
+	retentionDays := services.AuditLogRetentionDays()
+	ctx := SetContextDB(context.Background(), DB())
+	deleted, err := services.CleanupExpiredAuditLogs(ctx, retentionDays)
+	if err != nil {
+		logger.Ctx(ctx).Errorf("Failed to cleanup expired audit logs (deleted %d before failure): %v", deleted, err)
+		return
+	}
+	if deleted > 0 {
+		logger.Ctx(ctx).Infof("Cleaned up %d expired audit logs (older than %d days)", deleted, retentionDays)
+	}
+}
+
 func Run() (err error) {
 	logger.Info("Starting cloudland api daemon...")
 	startAlarmEventCleanup()
+	startAuditLogCleanup()
 	r := Register()
 	cert := viper.GetString("rest.cert")
 	key := viper.GetString("rest.key")
@@ -117,6 +142,7 @@ func Register() (r *gin.Engine) {
 	authGroup := v1.Group("").Use(Authorize(), Audit())
 	{
 		authGroup.GET("/audit_logs", auditAPI.List)
+		authGroup.GET("/activities", auditAPI.Activities)
 
 		authGroup.GET("/zones", zoneAPI.List)
 		authGroup.POST("/zones", zoneAPI.Create)
