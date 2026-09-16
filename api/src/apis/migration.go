@@ -38,12 +38,14 @@ type MigrationResponse struct {
 	SourceHyper int32         `json:"source_hyper"`
 	TargetHyper int32         `json:"target_hyper"`
 	// 节点名称，便于界面直接展示；目标节点由调度器自选（-1）时为空
-	SourceHyperName string          `json:"source_hyper_name"`
-	TargetHyperName string          `json:"target_hyper_name"`
-	Force           bool            `json:"force"`
-	Type            string          `json:"type"`
-	Phases          []*TaskResponse `json:"phases"`
-	Status          string          `json:"status"`
+	SourceHyperName string `json:"source_hyper_name"`
+	TargetHyperName string `json:"target_hyper_name"`
+	// 发起迁移的用户名，创建时快照下来
+	CreaterName string          `json:"creater_name"`
+	Force       bool            `json:"force"`
+	Type        string          `json:"type"`
+	Phases      []*TaskResponse `json:"phases"`
+	Status      string          `json:"status"`
 	// 迁移进度：百分比与已传输 / 总字节数（内存 + 本地磁盘合计），由源节点上报
 	Progress    int32 `json:"progress"`
 	Transferred int64 `json:"transferred"`
@@ -170,6 +172,7 @@ func (v *MigrationAPI) getMigrationResponse(_ context.Context, migration *model.
 		},
 		Force:       migration.Force,
 		Type:        migration.Type,
+		CreaterName: migration.CreaterName,
 		SourceHyper: migration.SourceHyper,
 		TargetHyper: migration.TargetHyper,
 		Status:      migration.Status,

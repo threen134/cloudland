@@ -173,6 +173,10 @@ onUnmounted(() => {
               <span class="info-value">{{ getTypeText(migration.type) || $t('messages.unnamed') }}</span>
             </div>
             <div class="info-row">
+              <span class="info-label">{{ $t('dashboard.table.creator') }}</span>
+              <span class="info-value">{{ migration.creater_name || '-' }}</span>
+            </div>
+            <div class="info-row">
               <span class="info-label">{{ $t('dashboard.migrationDetail.createdAt') }}</span>
               <span class="info-value mono">{{ new Date(migration.created_at).toLocaleString() }}</span>
             </div>

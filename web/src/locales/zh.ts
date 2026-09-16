@@ -768,6 +768,7 @@ export default {
         },
         table: {
             instanceCount: '虚拟机',
+            creator: '创建者',
             instancesOnHyper: '节点上的虚拟机',
             name: '名称',
             nameId: '名称 / ID',

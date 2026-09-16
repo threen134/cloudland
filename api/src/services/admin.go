@@ -155,7 +155,6 @@ func AdminInit() {
 	if err != nil {
 		memberShip := &MemberShip{
 			UserID:     adminUser.ID,
-			UserEmail:  adminUser.Email,
 			SystemRole: model.SystemAdmin,
 			OrgID:      adminOrg.ID,
 			OrgName:    adminOrg.Name,

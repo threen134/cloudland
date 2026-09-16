@@ -261,17 +261,18 @@ watch(() => region.currentRegionId, (newId) => {
             <th>{{ $t('dashboard.table.destNode') }}</th>
             <th>{{ $t('dashboard.table.status') }}</th>
             <th>{{ $t('dashboard.migrationDetail.progressShort') }}</th>
+            <th>{{ $t('dashboard.table.creator') }}</th>
             <th>{{ $t('dashboard.table.createdAt') }}</th>
           </tr>
         </thead>
         <tbody>
           <tr v-if="loading">
-            <td colspan="8" class="text-center">
+            <td colspan="9" class="text-center">
               <div class="loading-spinner" style="margin: 20px auto;"></div>
             </td>
           </tr>
           <tr v-else-if="filteredMigrations.length === 0">
-            <td colspan="8" class="text-center text-secondary" style="padding: 48px;">
+            <td colspan="9" class="text-center text-secondary" style="padding: 48px;">
                <div v-if="searchQuery">
                   <SearchIcon :size="48" style="opacity: 0.3; margin-bottom: 16px;" />
                   <p>{{ $t('messages.noResults') }}</p>
@@ -327,6 +328,7 @@ watch(() => region.currentRegionId, (newId) => {
               </div>
               <span v-else class="text-secondary">-</span>
             </td>
+            <td>{{ m.creater_name || '-' }}</td>
             <td><span class="mono-value">{{ new Date(m.created_at).toLocaleString() }}</span></td>
           </tr>
         </tbody>

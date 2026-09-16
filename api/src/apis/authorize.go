@@ -85,7 +85,7 @@ func Authorize() gin.HandlerFunc {
 		}
 
 		isOwner := c.Request.Header.Get("X-Is-Owner") == "true"
-		userEmail := c.Request.Header.Get("X-User-Email")
+		userName := c.Request.Header.Get("X-User-Name")
 		orgName := c.Request.Header.Get("X-Org-Name")
 		if c.Query("all_orgs") == "true" && systemRole != model.SystemAdmin {
 			ErrorResponse(c, http.StatusForbidden, "all_orgs is only available to system admins", nil)
@@ -97,7 +97,7 @@ func Authorize() gin.HandlerFunc {
 		// 3. Build MemberShip from headers (no DB query)
 		memberShip := &MemberShip{
 			UserID:     uid,
-			UserEmail:  userEmail,
+			UserName:   userName,
 			SystemRole: systemRole,
 			OrgID:      oid,
 			OrgName:    orgName,

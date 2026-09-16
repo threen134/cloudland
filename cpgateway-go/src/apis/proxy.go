@@ -88,8 +88,10 @@ func forwardToRegion(c *gin.Context, template string, body []byte) {
 	}
 
 	forwarded := map[string]string{
-		"X-User-ID":          strconv.FormatInt(user.ID, 10),
-		"X-User-Email":       claims.Email,
+		"X-User-ID": strconv.FormatInt(user.ID, 10),
+		// 只传用户名，不传邮箱：用户名创建后不可更改、注销后不可复用，是跨服务引用账号最稳的标识；
+		// 邮箱可改、注销后还能被本人复用，作为标识不可靠，clapi 侧也没有任何地方需要它
+		"X-User-Name":        user.Username,
 		"X-Org-ID":           strconv.FormatInt(orgID, 10),
 		"X-Org-Name":         claims.OrgName,
 		"X-Org-Role":         strconv.Itoa(claims.OR),

@@ -769,6 +769,7 @@ export default {
         },
         table: {
             instanceCount: 'Instances',
+            creator: 'Created By',
             instancesOnHyper: 'Instances on This Node',
             name: 'Name',
             nameId: 'Name / ID',
