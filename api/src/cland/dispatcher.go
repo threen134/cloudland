@@ -56,6 +56,9 @@ var replyOK = &pb.ExecuteReply{Status: "ok"}
 // clapi 收到该状态会让 HyperExecute 返回错误，而不是当作已下发继续往下走
 const statusNoTargetNode = "error: no target node"
 
+// statusNoCandidateNode：select= / group= 的候选描述符解析不出任何节点
+const statusNoCandidateNode = "error: no candidate node"
+
 // Dispatch parses the control string and routes the command to the correct node(s).
 // Directive precedence follows rpcworker.cpp Execute() (lines 123-255). As with strstr
 // there, a directive matches when its key is present, even if its value is empty.
@@ -89,10 +92,20 @@ func (d *Dispatcher) Dispatch(ctx context.Context, req *pb.ExecuteRequest) (*pb.
 	}
 	if val, found := controlValue(control, "group="); found {
 		// group= goes through the C++ scheduler filter: one member is picked, not all.
-		return d.handleSchedule(ctx, d.resolveTargets(val), control, command, msgID, msg)
+		targets, ok := d.resolveScheduleTargets(val)
+		if !ok {
+			tracing.Logf(ctx, "dispatcher: group=%s resolved to no candidate node, dropped", val)
+			return &pb.ExecuteReply{Status: statusNoCandidateNode}, nil
+		}
+		return d.handleSchedule(ctx, targets, control, command, msgID, msg)
 	}
 	if val, found := controlValue(control, "select="); found {
-		return d.handleSchedule(ctx, d.resolveTargets(val), control, command, msgID, msg)
+		targets, ok := d.resolveScheduleTargets(val)
+		if !ok {
+			tracing.Logf(ctx, "dispatcher: select=%s resolved to no candidate node, dropped", val)
+			return &pb.ExecuteReply{Status: statusNoCandidateNode}, nil
+		}
+		return d.handleSchedule(ctx, targets, control, command, msgID, msg)
 	}
 	if val, found := controlValue(control, "toall="); found {
 		return d.handleToAll(val, msgID, msg), nil
@@ -210,6 +223,23 @@ func (d *Dispatcher) handleToAll(target string, msgID int32, msg *pb.ClandMessag
 // resolveTargets resolves a group description like NetLayer::createGroup/sendMessage:
 // "name:ids" selects its members, a bare name looks up a group created by mkgrp=, and an
 // empty member list or an unknown (including empty) name means SCI_GROUP_ALL.
+// resolveScheduleTargets 解析 select= / group= 的候选节点，与 resolveTargets 的区别是
+// 解析不出成员时不回退到「所有节点」：这两个控制串的语义是「在这些节点里挑一个」，
+// 描述符写错时静默扩大到全部节点，会让调用方算好的过滤条件（可用区、活动状态、
+// 排除源节点）失效——曾因控制串少一个空格，导致虚拟机被迁到源节点自己
+func (d *Dispatcher) resolveScheduleTargets(desc string) (members []int32, ok bool) {
+	// 空描述符沿用既有语义：不限定候选，在所有已连接节点中调度（services/image.go 依赖）
+	if desc == "" {
+		return d.registry.AllNodeIDs(), true
+	}
+	if strings.Contains(desc, ":") {
+		_, members = ParseDescriptor(desc)
+	} else {
+		members, _ = d.groupMgr.GetMembers(desc)
+	}
+	return members, len(members) > 0
+}
+
 func (d *Dispatcher) resolveTargets(desc string) []int32 {
 	var members []int32
 	if strings.Contains(desc, ":") {

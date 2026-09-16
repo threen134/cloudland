@@ -15,6 +15,15 @@ vm_ID=inst-$ID
 kill $(cat $run_dir/${vm_ID}-$migrate_ID 2>/dev/null) 2>/dev/null
 rm -f $run_dir/${vm_ID}-$migrate_ID
 dom_state=$(virsh domstate $vm_ID 2>/dev/null)
+# 回滚时虚拟机仍留在源节点运行，真正的目标节点上该域要么不存在、要么只是预定义未启动。
+# 若本节点上的域正在运行，说明本节点其实就是虚拟机当前所在的节点（例如目标被错算成了源节点），
+# 再往下走会 destroy + undefine 并删除磁盘，把正在运行的虚拟机连数据一起毁掉
+if [ "$dom_state" = "running" ]; then
+    log_debug $ID "clear_target_migration.sh: $vm_ID is running on this node, refusing target cleanup"
+    echo "|:-COMMAND-:| migrate_vm.sh '$migrate_ID' '$task_ID' '$ID' '$SCI_CLIENT_ID' 'rollback' 'cleanup skipped: instance is running here'"
+    sync_vm $ID
+    exit 0
+fi
 if [ -n "$dom_state" ]; then
     virsh shutdown $vm_ID >/dev/null 2>&1
     sleep 5

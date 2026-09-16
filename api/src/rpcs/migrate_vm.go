@@ -386,6 +386,21 @@ func MigrateVM(ctx context.Context, args []string) (status string, err error) {
 			return
 		}
 	} else if status == "target_prepared" {
+		// 目标节点等于源节点时必须立即中止：继续下去 source_migration.sh 会把虚拟机迁往
+		// 它已经所在的那台机器，libvirt 拒绝后触发回滚，而回滚会在"目标节点"执行
+		// clear_target_migration.sh —— 那正是虚拟机正在运行的节点，destroy + undefine + 删盘
+		// 会把活虚拟机连数据一起销毁。调度候选集算错时确实发生过（见 services/migration.go
+		// 拼接 select= 控制串的注释）
+		if int32(hyperID) == migration.SourceHyper {
+			logger.Ctx(ctx).Errorf("Target hypervisor %d equals source hypervisor for migration %d, aborting", hyperID, migration.ID)
+			if uerr := db.Model(&model.Instance{Model: model.Model{ID: instID}}).Updates(map[string]interface{}{
+				"status": model.InstanceStatusRollback}).Error; uerr != nil {
+				logger.Ctx(ctx).Error("Failed to update instance status to rollback", uerr)
+			}
+			status = "failed"
+			err = fmt.Errorf("target hypervisor %d is the same as source", hyperID)
+			return
+		}
 		// 目标节点由调度器选出时（创建迁移未指定目标，target_hyper 存的是 -1），实际节点只有这个回调知道，必须落库：
 		// 后续 complete_migration.sh、clear_target_migration.sh 都用它作 inter= 下发，-1 会被 cland 当作无目标节点丢弃，
 		// 迁移会永远停在 source_prepared（虚拟机已在目标节点跑起来，但账本不收尾）

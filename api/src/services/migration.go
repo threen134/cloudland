@@ -156,7 +156,11 @@ func (a *MigrationAdmin) Create(ctx context.Context, name string, instances []*m
 				continue
 			}
 			rcNeeded := fmt.Sprintf("cpu=%d memory=%d disk=%d network=%d", instance.Cpu, instance.Memory*1024, int64(instance.Disk)*1024*1024, 0)
-			control = "select=" + hyperGroup + rcNeeded
+			// hyperGroup 与资源条件之间必须有空格分隔：cland 的 controlValue 取 select= 之后
+			// 到第一个空白为止的内容作为候选描述符，少了空格就变成 "group-zone-1:4cpu=2"，
+			// 成员解析失败后调度器会回退到「所有节点」，本函数精心过滤出的候选集（同可用区、
+			// 活动状态、排除源节点）被整个丢弃，虚拟机可能被迁到源节点自己或维护中的节点
+			control = "select=" + hyperGroup + " " + rcNeeded
 		}
 		err = db.Model(instance).Update("status", model.InstanceStatusMigrating).Error
 		if err != nil {

@@ -120,6 +120,20 @@ func TestDispatchEmptySelectSchedulesAmongAllNodes(t *testing.T) {
 	}
 }
 
+// 候选描述符写错时必须报错，不能回退到「所有节点」：clapi 曾因拼接 select= 控制串
+// 漏了一个空格，descriptor 变成 "group-zone-1:4cpu=2"，成员解析为空后调度器在全部节点里
+// 乱挑，把虚拟机迁到了源节点自己，回滚时几乎销毁了正在运行的虚拟机
+func TestDispatchMalformedSelectIsRejected(t *testing.T) {
+	d, streams := newTestDispatcher(t, 1, 2)
+	d.scheduler.UpdateResource(2, &Resource{CPU: 8, Memory: 8192, Disk: 102400})
+	if status := dispatch(t, d, "select=group-zone-1:4cpu=2"); status != "error: no candidate node" {
+		t.Fatalf("status = %q, want error: no candidate node", status)
+	}
+	if got := totalSent(streams); got != 0 {
+		t.Errorf("sent %d messages, want 0", got)
+	}
+}
+
 func TestDispatchGroupSchedulesOneMember(t *testing.T) {
 	d, streams := newTestDispatcher(t, 1, 2, 3)
 	for _, id := range []int32{1, 2, 3} {
