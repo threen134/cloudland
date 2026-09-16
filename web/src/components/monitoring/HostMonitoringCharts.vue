@@ -220,7 +220,7 @@ watch(() => props.hostname, fetchData)
     background: var(--bg-secondary);
     padding: 2px;
     border-radius: var(--radius-md);
-    border: 1px solid var(--border-color);
+    border: 1px solid var(--border-default);
 }
 
 .range-selector .btn {
@@ -264,7 +264,23 @@ watch(() => props.hostname, fetchData)
     height: 32px;
     padding: 0 8px;
     font-size: 0.85rem;
+    color: var(--text-primary);
     background: var(--bg-primary);
+    /* .form-select 没有全局定义，这里若不显式指定边框，datetime-local 会退回浏览器
+       默认的深灰边框（Chrome 约 #767676），在浅色和深色主题下都突兀 */
+    border: 1px solid var(--border-light);
+    border-radius: var(--radius-sm);
+    transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
+}
+
+.filter-group .form-select:hover {
+    border-color: var(--border-default);
+}
+
+.filter-group .form-select:focus {
+    outline: none;
+    border-color: var(--primary-color);
+    box-shadow: 0 0 0 3px var(--primary-100);
 }
 
 .charts-grid {
@@ -275,7 +291,7 @@ watch(() => props.hostname, fetchData)
 
 .chart-box {
     background: var(--bg-primary);
-    border: 1px solid var(--border-color);
+    border: 1px solid var(--border-default);
     border-radius: var(--radius-lg);
     padding: var(--spacing-4);
     display: flex;

@@ -81,6 +81,10 @@ const instanceStatusText = (status: string) => {
     return te(key) ? t(key) : status
 }
 
+// created_at 形如 "2026-09-16 00:36:12.343038"，不带时区标记；直接截到分钟展示，
+// 交给 Date 解析在不同浏览器和时区下会出现偏移
+const formatInstanceTime = (value?: string) => (value ? String(value).slice(0, 16) : '-')
+
 const instanceStatusClass = (status: string) => {
     const s = (status || '').toLowerCase()
     if (s === 'running' || s === 'active' || s === 'migrated') return 'status-active'
@@ -390,11 +394,15 @@ onMounted(fetchHypervisorDetail)
               :to="{ name: 'instance-detail', params: { id: inst.id } }"
               class="hyper-vm-item"
             >
-              <span class="hyper-vm-name">{{ inst.hostname }}</span>
-              <span class="hyper-vm-meta">
-                <span class="hyper-vm-spec">{{ inst.cpu }}C / {{ inst.memory }}MB</span>
-                <span :class="['badge', 'badge-sm', instanceStatusClass(inst.status)]">{{ instanceStatusText(inst.status) }}</span>
+              <span class="hyper-vm-info">
+                <span class="hyper-vm-name">{{ inst.hostname }}</span>
+                <span class="hyper-vm-sub">
+                  <span v-if="inst.image?.name" class="hyper-vm-os">{{ inst.image.name }}</span>
+                  <span>{{ inst.cpu }}C / {{ formatMemory(inst.memory) }} / {{ formatDisk(inst.disk) }}</span>
+                  <span v-if="inst.created_at">{{ t('dashboard.table.createdAt') }} {{ formatInstanceTime(inst.created_at) }}</span>
+                </span>
               </span>
+              <span :class="['badge', 'badge-sm', instanceStatusClass(inst.status)]">{{ instanceStatusText(inst.status) }}</span>
             </router-link>
           </div>
         </div>
@@ -732,21 +740,37 @@ onMounted(fetchHypervisorDetail)
     background: var(--gray-50, #f9fafb);
 }
 
+.hyper-vm-info {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+}
+
 .hyper-vm-name {
     font-size: 0.875rem;
     color: var(--primary-600, #4f46e5);
     font-weight: 500;
 }
 
-.hyper-vm-meta {
+/* 摘要行：镜像 / 规格 / 创建时间，用间隔点分隔，窄屏下自动换行 */
+.hyper-vm-sub {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
-    gap: 10px;
-}
-
-.hyper-vm-spec {
+    gap: 4px 8px;
     font-size: 0.75rem;
     color: var(--text-secondary, #6b7280);
+}
+
+.hyper-vm-sub > span + span::before {
+    content: '·';
+    margin-right: 8px;
+    color: var(--border-dark, #cbd5e1);
+}
+
+.hyper-vm-os {
+    color: var(--text-primary, #111827);
 }
 
 .card-section-title {
@@ -830,7 +854,7 @@ onMounted(fetchHypervisorDetail)
   display: flex;
   gap: var(--spacing-4);
   margin-bottom: var(--spacing-6);
-  border-bottom: 1px solid var(--border-color);
+  border-bottom: 1px solid var(--border-default);
   padding: 0 var(--spacing-2);
 }
 
