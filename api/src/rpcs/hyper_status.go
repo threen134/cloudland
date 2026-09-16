@@ -124,10 +124,18 @@ func HyperStatus(ctx context.Context, args []string) (status string, err error) 
 	logger.Ctx(ctx).Debugf("Updating hypervisor %s status to %d", hyperName, hyperStatus)
 	updates := map[string]interface{}{
 		"hostname":  hyperName,
-		"status":    hyperStatus,
 		"cpu_model": cpuModel,
 		"virt_type": "kvm-x86_64",
 		"host_ip":   hostIP,
+	}
+	// 心跳只反映节点自身的运行状态，不能覆盖管理员置位的状态：disabled(0) 与 maintaining(2)
+	// 是控制面单方面设置的，计算节点并不知情，每次心跳都上报 active(1)。这里若无条件写回
+	// （map 更新不会跳过任何键），节点进入维护模式后几十秒就会被心跳改回 active 而自动退出
+	if hyper.Status != model.HyperStatusNames[model.HYPER_DISABLED] &&
+		hyper.Status != model.HyperStatusNames[model.HYPER_MAINTAINING] {
+		updates["status"] = hyperStatus
+	} else {
+		logger.Ctx(ctx).Debugf("Hypervisor %d kept in administrative status %d (reported %d)", hyperID, hyper.Status, hyperStatus)
 	}
 	// map 更新不会处理 Zone 关联，需直接写外键列；未上报可用区时保留原值
 	if zoneName != "" {
