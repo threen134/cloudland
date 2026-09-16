@@ -115,7 +115,12 @@ func Register(ctx context.Context, in *RegisterInput) (*model.User, *common.HTTP
 			return fail(res.Error)
 		}
 		emailHit := res.RowsAffected > 0
-		if res = tx.Where("username = ?", in.Username).Limit(1).Find(&byName); res.Error != nil {
+		// Unscoped：用户名不可复用，已注销用户仍占着这个名字，必须把软删除的行也算进来，
+		// 否则这里放行、随后数据库唯一索引再报冲突，用户看到的是 500 而不是明确提示
+		// Session(&gorm.Session{})：从同一事务派生独立 Statement 再加 Unscoped，
+		// 否则 Unscoped 会沿用到该事务后续的查询上（GORM 链式调用复用 Statement），
+		// 让本该忽略软删除行的查询也看到它们
+		if res = tx.Session(&gorm.Session{}).Unscoped().Where("username = ?", in.Username).Limit(1).Find(&byName); res.Error != nil {
 			return fail(res.Error)
 		}
 		if res.RowsAffected > 0 && (!emailHit || byName.ID != byEmail.ID) {

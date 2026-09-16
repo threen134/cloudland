@@ -191,7 +191,9 @@ func AcceptInvitation(token string, username, password *string) (map[string]inte
 			return nil, badRequest("Username and password are required for new users")
 		}
 		var taken int64
-		db.Model(&model.User{}).Where("username = ? AND id <> ?", name, user.ID).Count(&taken)
+		// Unscoped：用户名不可复用，已注销用户仍占着这个名字。
+		// 派生独立 Session，避免 Unscoped 污染后续查询（GORM 链式调用复用 Statement）
+		db.Session(&gorm.Session{}).Unscoped().Model(&model.User{}).Where("username = ? AND id <> ?", name, user.ID).Count(&taken)
 		if taken > 0 {
 			return nil, badRequest("Username already taken")
 		}

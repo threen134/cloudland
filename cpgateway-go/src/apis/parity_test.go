@@ -233,13 +233,15 @@ func TestPythonParityFlows(t *testing.T) {
 	if membership.OrgRole != model.OrgRoleAdmin {
 		t.Fatalf("org role should be admin, got %d", membership.OrgRole)
 	}
-	c.expect("PUT", userPath, userTok, map[string]interface{}{"username": "renamed"}, 403)
+	// 用户名创建后不可更改，对任何角色都一样：它是账号的永久标识，审计记录以它指代这个人
+	c.expect("PUT", userPath, userTok, map[string]interface{}{"username": "renamed"}, 400)
 	c.expect("PUT", "/api/v1/users/"+user["uuid"].(string), userTok, map[string]interface{}{"role": "owner"}, 200)
 	c.expect("PUT", userPath, adminTok, map[string]interface{}{"username": "u1"}, 400)
-	c.expect("PUT", userPath, adminTok, map[string]interface{}{"username": "invitee2", "email": "inv2@example.com"}, 200)
+	// 邮箱仍可由系统管理员修改；用户名传原值表示不变，不触发拒绝
+	c.expect("PUT", userPath, adminTok, map[string]interface{}{"username": "invitee", "email": "inv2@example.com"}, 200)
 	var renamed model.User
 	db.Where("id = ?", invitee.ID).First(&renamed)
-	if renamed.Username != "invitee2" || renamed.Email != "inv2@example.com" {
+	if renamed.Username != "invitee" || renamed.Email != "inv2@example.com" {
 		t.Fatalf("admin update not applied: %s %s", renamed.Username, renamed.Email)
 	}
 

@@ -143,8 +143,9 @@ func DeleteUser(c *gin.Context) {
 		return tx.Model(user).Updates(map[string]interface{}{
 			"is_active": false,
 			"status":    model.UserDisabled,
-			"email":     fmt.Sprintf("del%d+%s", ts, user.Email),
-			"username":  fmt.Sprintf("%s_del%d", user.Username, ts),
+			// 用户名保持原值：它全局唯一且不可复用，注销后不允许被他人重新注册。
+			// 邮箱仍改名释放，便于本人日后用同一邮箱重新注册
+			"email": fmt.Sprintf("del%d+%s", ts, user.Email),
 		}).Error
 	})
 	if err != nil {
@@ -256,12 +257,11 @@ func UpdateUser(c *gin.Context) {
 	db := dbs.DBContext(c.Request.Context())
 
 	var accountUpdates [][2]string
+	// 用户名创建后不可更改：它是账号的永久标识，审计记录与历史数据都以它指代这个人，
+	// 改名会让既有记录指向错误的对象
 	if in.Username != nil && *in.Username != user.Username {
-		if *in.Username == "" {
-			common.AbortWithDetail(c, http.StatusBadRequest, "Username cannot be empty")
-			return
-		}
-		accountUpdates = append(accountUpdates, [2]string{"username", *in.Username})
+		common.AbortWithDetail(c, http.StatusBadRequest, "Username cannot be changed")
+		return
 	}
 	if in.Email != nil && *in.Email != user.Email {
 		accountUpdates = append(accountUpdates, [2]string{"email", *in.Email})

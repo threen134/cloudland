@@ -80,4 +80,15 @@ func init() {
 			WHERE deleted_at IS NULL
 		`).Error
 	})
+	dbs.AutoUpgrade("003_user_username_global_unique", func(db *gorm.DB) error {
+		// 用户名全局唯一且不可复用：索引改为覆盖软删除的行，注销后该用户名不会被他人占用。
+		// 邮箱仍只约束未删除的行——账号注销后允许本人用同一邮箱重新注册
+		if err := db.Exec(`DROP INDEX IF EXISTS uq_user_username_active`).Error; err != nil {
+			return err
+		}
+		return db.Exec(`
+			CREATE UNIQUE INDEX IF NOT EXISTS uq_user_username
+			ON users (username)
+		`).Error
+	})
 }
