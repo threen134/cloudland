@@ -16,6 +16,8 @@ export interface Hypervisor {
     disk_over_rate: number
     zone_name: string
     remark: string
+    // 该节点上的虚拟机数量，由后端一次分组统计得出
+    instance_count: number
     cpu: number
     cpu_total: number
     memory: number

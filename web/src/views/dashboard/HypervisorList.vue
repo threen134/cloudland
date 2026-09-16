@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted, computed, watch } from 'vue'
 import { hypervisorsApi, type Hypervisor, type HyperDeployPayload } from '../../api/hypervisors'
+import { instancesApi } from '../../api/instances'
 import { zonesApi } from '../../api/zones'
 import { useRegionStore } from '../../stores/region'
 
@@ -24,9 +25,39 @@ const vClickOutside = {
   }
 }
 
-const { t } = useI18n()
+const { t, te } = useI18n()
 const toast = useToast()
 const hypervisorList = ref<Hypervisor[]>([])
+
+// 虚拟机数量列的悬浮列表：按 host id 缓存，避免同一节点反复请求
+const hoveredHyperId = ref<string | null>(null)
+const hyperInstances = ref<Record<number, any[]>>({})
+const hyperInstancesLoading = ref<Record<number, boolean>>({})
+
+const loadHyperInstances = async (h: Hypervisor) => {
+    hoveredHyperId.value = h.uuid
+    if (!h.instance_count || hyperInstances.value[h.hostid] || hyperInstancesLoading.value[h.hostid]) return
+    hyperInstancesLoading.value[h.hostid] = true
+    try {
+        // limit 取较大值：悬浮是为了看清都有哪些虚拟机，分页会让列表看起来缺失
+        const resp = await instancesApi.fetchInstances({ hyper: h.hostid, limit: 200 })
+        const data = resp.data as any
+        hyperInstances.value[h.hostid] = Array.isArray(data) ? data : (data.instances || [])
+    } catch (err) {
+        console.error('Failed to load instances of hypervisor:', err)
+        hyperInstances.value[h.hostid] = []
+    } finally {
+        hyperInstancesLoading.value[h.hostid] = false
+    }
+}
+
+// 缺键时 t() 返回键路径本身，必须用 te() 判断后再回退到原始状态串
+const instanceStatusText = (status: string) => {
+    const s = (status || '').toLowerCase()
+    if (!s) return '-'
+    const key = `dashboard.instanceStatus.${s}`
+    return te(key) ? t(key) : status
+}
 const loading = ref(false)
 const searchQuery = ref('')
 
@@ -365,6 +396,7 @@ onMounted(() => {
             <th>{{ t('dashboard.table.nameId') }}</th>
             <th>{{ t('dashboard.table.hostIp') }}</th>
             <th>{{ t('dashboard.table.status') }}</th>
+            <th>{{ t('dashboard.table.instanceCount') }}</th>
             <th>{{ t('dashboard.table.vcpus') }} ({{ t('dashboard.table.available') }})</th>
             <th>{{ t('dashboard.table.memory') }} ({{ t('dashboard.table.available') }})</th>
             <th>{{ t('dashboard.table.disk') }} ({{ t('dashboard.table.available') }})</th>
@@ -374,12 +406,12 @@ onMounted(() => {
         </thead>
         <tbody>
           <tr v-if="loading">
-            <td colspan="8" class="text-center">
+            <td colspan="9" class="text-center">
               <div class="loading-spinner" style="margin: 20px auto;"></div>
             </td>
           </tr>
           <tr v-else-if="hypervisorList.length === 0">
-            <td colspan="8" class="text-center text-secondary" style="padding: 48px;">
+            <td colspan="9" class="text-center text-secondary" style="padding: 48px;">
                <div v-if="searchQuery">
                   <SearchIcon :size="48" style="opacity: 0.3; margin-bottom: 16px;" />
                    <p>{{ t('messages.noResults') }}</p>
@@ -415,6 +447,21 @@ onMounted(() => {
               <span class="status-pill" :class="getStatusInfo(h.status).class">
                 <span class="status-dot"></span>
                 {{ getStatusLabel(h.status, h.status_name) }}
+              </span>
+            </td>
+            <td>
+              <span class="vm-count-cell" @mouseenter="loadHyperInstances(h)" @mouseleave="hoveredHyperId = null">
+                <span class="vm-count-badge" :class="{ 'vm-count-zero': !h.instance_count }">{{ h.instance_count || 0 }}</span>
+                <div v-if="hoveredHyperId === h.uuid && h.instance_count" class="vm-tooltip">
+                  <div v-if="hyperInstancesLoading[h.hostid]" class="vm-tooltip-empty">{{ t('messages.loading') }}</div>
+                  <template v-else>
+                    <div v-for="inst in hyperInstances[h.hostid] || []" :key="inst.id" class="vm-tooltip-row">
+                      <span class="vm-tooltip-name">{{ inst.hostname }}</span>
+                      <span class="vm-tooltip-status">{{ instanceStatusText(inst.status) }}</span>
+                    </div>
+                    <div v-if="!(hyperInstances[h.hostid] || []).length" class="vm-tooltip-empty">{{ t('messages.noData') }}</div>
+                  </template>
+                </div>
               </span>
             </td>
             <td>
@@ -789,6 +836,72 @@ onMounted(() => {
   font-family: var(--font-family-mono);
   font-size: var(--font-size-xs);
   color: var(--text-primary);
+}
+
+/* 虚拟机数量列与悬浮列表 */
+.vm-count-cell {
+    position: relative;
+    display: inline-block;
+    cursor: default;
+}
+
+.vm-count-badge {
+    display: inline-block;
+    min-width: 28px;
+    padding: 2px 8px;
+    text-align: center;
+    border-radius: 10px;
+    background: var(--primary-50, #eef2ff);
+    color: var(--primary-600, #4f46e5);
+    font-size: 0.8125rem;
+    font-weight: 600;
+}
+
+.vm-count-badge.vm-count-zero {
+    background: var(--gray-100, #f3f4f6);
+    color: var(--text-light, #9ca3af);
+    font-weight: 400;
+}
+
+.vm-tooltip {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    z-index: 30;
+    margin-top: 6px;
+    min-width: 200px;
+    max-height: 260px;
+    overflow-y: auto;
+    padding: 6px 0;
+    background: var(--bg-card, #fff);
+    border: 1px solid var(--border-color, #e5e7eb);
+    border-radius: 6px;
+    box-shadow: 0 6px 16px rgba(0, 0, 0, 0.12);
+}
+
+.vm-tooltip-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 4px 12px;
+    font-size: 0.8125rem;
+    white-space: nowrap;
+}
+
+.vm-tooltip-name {
+    color: var(--text-primary, #111827);
+}
+
+.vm-tooltip-status {
+    color: var(--text-secondary, #6b7280);
+    font-size: 0.75rem;
+}
+
+.vm-tooltip-empty {
+    padding: 6px 12px;
+    font-size: 0.8125rem;
+    color: var(--text-secondary, #6b7280);
 }
 
 .usage-cell {

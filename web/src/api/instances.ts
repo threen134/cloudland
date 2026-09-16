@@ -91,8 +91,9 @@ export interface CreateInstancePayload {
 
 export const instancesApi = {
     // List instances
-    fetchInstances() {
-        return client.get('/instances')
+    // hyper：按所在计算节点过滤（host id）；不传表示不过滤
+    fetchInstances(params?: { offset?: number; limit?: number; query?: string; hyper?: number }) {
+        return client.get('/instances', { params })
     },
 
     // Get single instance

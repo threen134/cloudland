@@ -1504,7 +1504,8 @@ func GetDomainByInstanceUUID(ctx context.Context, uuid string) (domain string, e
 	return domain, nil
 }
 
-func (a *InstanceAdmin) List(ctx context.Context, offset, limit int64, order, query string) (total int64, instances []*model.Instance, err error) {
+// hyperID >= 0 时只返回该节点上的虚拟机；传 -1 表示不按节点过滤
+func (a *InstanceAdmin) List(ctx context.Context, offset, limit int64, order, query string, hyperID int32) (total int64, instances []*model.Instance, err error) {
 	logger.Ctx(ctx).Infof("ENTER InstanceAdmin.List: offset=%d, limit=%d, order=%s, query=%s", offset, limit, order, query)
 	defer func() {
 		if err != nil {
@@ -1532,6 +1533,9 @@ func (a *InstanceAdmin) List(ctx context.Context, offset, limit int64, order, qu
 	if query != "" {
 		baseQuery = baseQuery.Where("hostname LIKE ?", "%"+query+"%")
 	}
+	if hyperID >= 0 {
+		baseQuery = baseQuery.Where("hyper = ?", hyperID)
+	}
 
 	// Count total
 	instances = []*model.Instance{}
@@ -1544,6 +1548,9 @@ func (a *InstanceAdmin) List(ctx context.Context, offset, limit int64, order, qu
 	listQuery := dbs.Sortby(DB().Where(where, args...).Offset(int(offset)).Limit(int(limit)), order)
 	if query != "" {
 		listQuery = listQuery.Where("hostname LIKE ?", "%"+query+"%")
+	}
+	if hyperID >= 0 {
+		listQuery = listQuery.Where("hyper = ?", hyperID)
 	}
 	listQuery = listQuery.Preload("Volumes").Preload("Image").Preload("Zone").Preload("Flavor").Preload("Keys")
 	if err = listQuery.Find(&instances).Error; err != nil {

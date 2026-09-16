@@ -2,13 +2,14 @@
 import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { hypervisorsApi, type Hypervisor } from '../../api/hypervisors'
+import { instancesApi } from '../../api/instances'
 import { zonesApi } from '../../api/zones'
 import { ArrowLeft, Server, Cpu, Copy, Check, Edit, Save, X, Wrench, Loader2, ChevronDown, Pencil, Settings, Info, Activity } from 'lucide-vue-next'
 import HostMonitoringCharts from '../../components/monitoring/HostMonitoringCharts.vue'
 import { useI18n } from 'vue-i18n'
 import { useToast } from '../../composables/useToast'
 
-const { t } = useI18n()
+const { t, te } = useI18n()
 const toast = useToast()
 const route = useRoute()
 const router = useRouter()
@@ -54,6 +55,40 @@ const tabs = [
     { id: 'monitor', label: 'dashboard.instanceDetail.resourceMonitoring', icon: Activity }
 ]
 
+// 该节点上的虚拟机列表（概览卡片），按 host id 过滤
+const hyperInstances = ref<any[]>([])
+const hyperInstancesLoading = ref(false)
+
+const fetchHyperInstances = async (hostid: number) => {
+    hyperInstancesLoading.value = true
+    try {
+        const resp = await instancesApi.fetchInstances({ hyper: hostid, limit: 200 })
+        const data = resp.data as any
+        hyperInstances.value = Array.isArray(data) ? data : (data.instances || [])
+    } catch (err) {
+        console.error('Failed to load instances of hypervisor:', err)
+        hyperInstances.value = []
+    } finally {
+        hyperInstancesLoading.value = false
+    }
+}
+
+// 缺键时 t() 返回键路径本身，必须用 te() 判断后再回退到原始状态串
+const instanceStatusText = (status: string) => {
+    const s = (status || '').toLowerCase()
+    if (!s) return '-'
+    const key = `dashboard.instanceStatus.${s}`
+    return te(key) ? t(key) : status
+}
+
+const instanceStatusClass = (status: string) => {
+    const s = (status || '').toLowerCase()
+    if (s === 'running' || s === 'active' || s === 'migrated') return 'status-active'
+    if (s === 'error' || s === 'unknown' || s === 'rollback') return 'status-error'
+    if (s === 'shut_off' || s === 'shutoff' || s === 'stopped' || s === 'deleted') return 'status-disabled'
+    return 'status-warning'
+}
+
 const fetchHypervisorDetail = async () => {
     loading.value = true
     error.value = null
@@ -62,6 +97,10 @@ const fetchHypervisorDetail = async () => {
         const response = await hypervisorsApi.getHypervisor(uuid)
         hypervisor.value = response.data as any
         syncForm()
+        // 详情返回后才知道 host id，虚拟机列表随后单独拉取
+        if (hypervisor.value?.hostid !== undefined) {
+            await fetchHyperInstances(hypervisor.value.hostid)
+        }
     } catch (err: any) {
         console.error('Failed to fetch hypervisor detail:', err)
         error.value = err.message || t('dashboard.hypervisorDetail.loadError')
@@ -333,6 +372,30 @@ onMounted(fetchHypervisorDetail)
                 </span>
               </div>
             </div>
+          </div>
+        </div>
+
+        <!-- 该节点上的虚拟机 -->
+        <div class="info-card card" style="margin-bottom: var(--spacing-5);">
+          <h3 class="card-section-title">
+            {{ t('dashboard.table.instancesOnHyper') }}
+            <span class="hyper-vm-count">{{ hyperInstances.length }}</span>
+          </h3>
+          <div v-if="hyperInstancesLoading" class="text-secondary" style="font-size: 0.875rem;">{{ t('messages.loading') }}</div>
+          <div v-else-if="!hyperInstances.length" class="text-secondary" style="font-size: 0.875rem;">{{ t('messages.noData') }}</div>
+          <div v-else class="hyper-vm-list">
+            <router-link
+              v-for="inst in hyperInstances"
+              :key="inst.id"
+              :to="{ name: 'instance-detail', params: { id: inst.id } }"
+              class="hyper-vm-item"
+            >
+              <span class="hyper-vm-name">{{ inst.hostname }}</span>
+              <span class="hyper-vm-meta">
+                <span class="hyper-vm-spec">{{ inst.cpu }}C / {{ inst.memory }}MB</span>
+                <span :class="['badge', 'badge-sm', instanceStatusClass(inst.status)]">{{ instanceStatusText(inst.status) }}</span>
+              </span>
+            </router-link>
           </div>
         </div>
 
@@ -635,6 +698,56 @@ onMounted(fetchHypervisorDetail)
 }
 
 .info-card { padding: var(--spacing-5); }
+
+/* 节点上的虚拟机列表 */
+.hyper-vm-count {
+    margin-left: 8px;
+    padding: 1px 8px;
+    border-radius: 10px;
+    background: var(--primary-50, #eef2ff);
+    color: var(--primary-600, #4f46e5);
+    font-size: 0.75rem;
+    font-weight: 600;
+}
+
+.hyper-vm-list {
+    display: flex;
+    flex-direction: column;
+}
+
+.hyper-vm-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 8px 4px;
+    border-bottom: 1px solid var(--border-color, #e5e7eb);
+    text-decoration: none;
+    color: inherit;
+}
+
+.hyper-vm-item:last-child { border-bottom: none; }
+
+.hyper-vm-item:hover {
+    background: var(--gray-50, #f9fafb);
+}
+
+.hyper-vm-name {
+    font-size: 0.875rem;
+    color: var(--primary-600, #4f46e5);
+    font-weight: 500;
+}
+
+.hyper-vm-meta {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.hyper-vm-spec {
+    font-size: 0.75rem;
+    color: var(--text-secondary, #6b7280);
+}
 
 .card-section-title {
   margin: 0 0 var(--spacing-4) 0;

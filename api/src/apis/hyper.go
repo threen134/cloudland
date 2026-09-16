@@ -39,6 +39,7 @@ type HyperResponse struct {
 	DiskOverRate  float32 `json:"disk_over_rate"`
 	ZoneName      string  `json:"zone_name"`
 	Remark        string  `json:"remark"`
+	InstanceCount int64   `json:"instance_count"`
 	Cpu           int64   `json:"cpu"`
 	CpuTotal      int64   `json:"cpu_total"`
 	Memory        int64   `json:"memory"`
@@ -150,9 +151,17 @@ func (v *HyperAPI) List(c *gin.Context) {
 		return
 	}
 
+	// 每个节点上的虚拟机数量：一次分组统计，避免按节点逐个查询
+	instanceCounts, cErr := hyperAdmin.GetInstanceCounts(c.Request.Context())
+	if cErr != nil {
+		// 统计失败不影响节点列表本身，数量按 0 返回并记录
+		logger.Ctx(c).Errorf("Failed to count instances per hypervisor: %+v", cErr)
+		instanceCounts = map[int32]int64{}
+	}
 	hyperResponses := make([]*HyperResponse, len(hypers))
 	for i, hyper := range hypers {
 		hyperResponses[i] = convertHyperToResponse(hyper)
+		hyperResponses[i].InstanceCount = instanceCounts[hyper.Hostid]
 	}
 
 	hyperListResp := &HyperListResponse{

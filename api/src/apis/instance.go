@@ -754,7 +754,17 @@ func (v *InstanceAPI) List(c *gin.Context) {
 		ErrorResponse(c, http.StatusBadRequest, "Invalid query offset or limit", err)
 		return
 	}
-	total, instances, err := instanceAdmin.List(ctx, int64(offset), int64(limit), "-created_at", queryStr)
+	// hyper：按所在计算节点过滤，缺省 -1 表示不过滤
+	hyperID := -1
+	if hyperStr := strings.TrimSpace(c.DefaultQuery("hyper", "")); hyperStr != "" {
+		hyperID, err = strconv.Atoi(hyperStr)
+		if err != nil {
+			logger.Ctx(ctx).Errorf("Invalid query hyper: %s, %+v", hyperStr, err)
+			ErrorResponse(c, http.StatusBadRequest, "Invalid query hyper: "+hyperStr, err)
+			return
+		}
+	}
+	total, instances, err := instanceAdmin.List(ctx, int64(offset), int64(limit), "-created_at", queryStr, int32(hyperID))
 	if err != nil {
 		logger.Ctx(ctx).Errorf("Failed to list instances, %+v", err)
 		ErrorResponse(c, http.StatusBadRequest, "Failed to list instances", err)

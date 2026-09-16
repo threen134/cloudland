@@ -768,6 +768,8 @@ export default {
             }
         },
         table: {
+            instanceCount: 'Instances',
+            instancesOnHyper: 'Instances on This Node',
             name: 'Name',
             nameId: 'Name / ID',
             status: 'Status',

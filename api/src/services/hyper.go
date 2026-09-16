@@ -28,6 +28,26 @@ var (
 
 type HyperAdmin struct{}
 
+// GetInstanceCounts 统计每个节点上的虚拟机数量（已软删除的不计），一次分组查询返回
+// hostid -> 数量，供节点列表展示，避免前端拉全量实例再分组（实例接口默认分页 50 条会漏数）
+func (a *HyperAdmin) GetInstanceCounts(ctx context.Context) (counts map[int32]int64, err error) {
+	ctx, db := GetContextDB(ctx)
+	rows := []struct {
+		Hyper int32
+		Count int64
+	}{}
+	if err = db.Model(&model.Instance{}).Select("hyper, count(*) as count").
+		Where("hyper >= 0").Group("hyper").Scan(&rows).Error; err != nil {
+		logger.Ctx(ctx).Errorf("Failed to count instances per hypervisor: %v", err)
+		return nil, NewCLError(ErrSQLSyntaxError, "Failed to count instances per hypervisor", err)
+	}
+	counts = make(map[int32]int64, len(rows))
+	for _, r := range rows {
+		counts[r.Hyper] = r.Count
+	}
+	return counts, nil
+}
+
 func (a *HyperAdmin) List(ctx context.Context, offset, limit int64, order, query string) (total int64, hypers []*model.Hyper, err error) {
 	logger.Ctx(ctx).Infof("ENTER HyperAdmin.List: offset=%d, limit=%d, order=%s, query=%s", offset, limit, order, query)
 	defer func() {
