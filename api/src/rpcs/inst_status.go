@@ -76,6 +76,14 @@ func InstanceStatus(ctx context.Context, args []string) (status string, err erro
 			continue
 		}
 		if instance.Status == model.InstanceStatusMigrating {
+			// 迁移进行中（本地存储热迁移复制磁盘可能很久，期间目标节点也会上报该虚拟机）：不改状态和所在节点。
+			// 判据是迁移记录 10 分钟内有更新：source_migration.sh 每 3 秒上报一次进度，正常迁移无论多久都算活跃；
+			// 迁移记录已结束、或真的卡死不再上报时，退回 6 分钟兜底由心跳纠正
+			var active int64
+			if cerr := db.Model(&model.Migration{}).Where("instance_id = ? and status in ? and updated_at > ?", instance.ID,
+				[]string{"in_progress", "target_prepared", "source_prepared"}, time.Now().Add(-10*time.Minute)).Count(&active).Error; cerr == nil && active > 0 {
+				continue
+			}
 			if time.Since(instance.UpdatedAt) < 6*time.Minute {
 				continue
 			}

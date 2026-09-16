@@ -21,6 +21,10 @@ type Migration struct {
 	TargetHyper int32
 	Phases      []*Task `gorm:"foreignkey:Mission"`
 	Status      string  `gorm:"type:varchar(32)"`
+	// 迁移进度：source_migration.sh 迁移期间每几秒上报一次 virsh domjobinfo（内存 + 本地磁盘合计）
+	Progress    int32
+	Transferred int64
+	Total       int64
 }
 
 func init() {

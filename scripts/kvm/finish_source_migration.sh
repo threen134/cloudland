@@ -15,9 +15,24 @@ migration_type=$6
 state=failed
 
 vm_xml=$(cat $xml_dir/$vm_ID/$vm_ID.xml)
+# 迁移成功后本节点不应再有该虚拟机（--undefinesource 已移除）。本地存储下若它还在，说明回滚已把它重新定义并启动，
+# 此时绝不能销毁它、更不能删磁盘（本节点是唯一一份）；判断必须在 destroy/undefine 之前做
+if [ -z "$wds_address" ] && virsh domstate $vm_ID >/dev/null 2>&1; then
+    log_debug $ID "finish_source_migration.sh: vm still defined on source, skip cleanup"
+    exit 0
+fi
 virsh destroy $vm_ID
 virsh undefine --nvram $vm_ID
-./clear_hyper_vhost.sh $ID
+if [ -n "$wds_address" ]; then
+    ./clear_hyper_vhost.sh $ID
+else
+    # 本地存储：磁盘已随迁移复制到目标节点，删除源节点上的磁盘文件（只删 cache 目录下的）
+    for disk in $(echo $vm_xml | xmllint --xpath "/domain/devices/disk[@device='disk']/source/@file" - 2>/dev/null | sed 's/file="\([^"]*\)"/\1/g'); do
+        case "$disk" in
+            $volume_dir/*|$image_dir/*) rm -f "$disk" ;;
+        esac
+    done
+fi
 
 count=$(echo $vm_xml | xmllint --xpath 'count(/domain/devices/interface)' -)
 for (( i=1; i <= $count; i++ )); do

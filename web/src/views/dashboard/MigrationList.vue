@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { ref, onMounted, computed, watch } from 'vue'
+import { ref, onMounted, onUnmounted, computed, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { migrationsApi, type Migration } from '../../api/migrations'
+import { migrationsApi, MIGRATION_ACTIVE_STATUSES, type Migration } from '../../api/migrations'
 import { instancesApi, type Instance } from '../../api/instances'
 import { hypervisorsApi, type Hypervisor } from '../../api/hypervisors'
 import { Search as SearchIcon, ArrowRightLeft, Plus, X, RefreshCw, Check, Copy } from 'lucide-vue-next'
@@ -29,40 +29,50 @@ const availableHypervisors = ref<Hypervisor[]>([])
 
 const newMigrationForm = ref({
     instance_id: '',
-    dest_node: '',
+    target_hyper: '' as number | '',
     migration_type: 'live'
 })
 
-const fetchMigrations = async () => {
-    loading.value = true
+// 有迁移进行中时每 5 秒自动刷新，展示进度
+let refreshTimer: ReturnType<typeof setTimeout> | null = null
+const hasActiveMigration = computed(() =>
+    migrationList.value.some(m => MIGRATION_ACTIVE_STATUSES.includes((m.status || '').toLowerCase()))
+)
+
+const fetchMigrations = async (silent = false) => {
+    if (!silent) loading.value = true
     try {
         const response = await migrationsApi.fetchMigrations()
         const data = response.data as any
         migrationList.value = Array.isArray(data) ? data : (data.migrations || [])
     } catch (error) {
         console.error('API fetch failed:', error)
-        migrationList.value = []
+        if (!silent) migrationList.value = []
     } finally {
         loading.value = false
+        if (refreshTimer) clearTimeout(refreshTimer)
+        if (hasActiveMigration.value) refreshTimer = setTimeout(() => fetchMigrations(true), 5000)
     }
 }
 
 const filteredMigrations = computed(() => {
     if (!searchQuery.value) return migrationList.value
     const query = searchQuery.value.toLowerCase()
-    return migrationList.value.filter(m => 
-        (m.instance_id && m.instance_id.toLowerCase().includes(query)) || 
+    return migrationList.value.filter(m =>
+        (m.instance?.id && m.instance.id.toLowerCase().includes(query)) ||
+        (m.instance?.hostname && m.instance.hostname.toLowerCase().includes(query)) ||
         (m.id && m.id.toString().includes(query)) ||
-        (m.source_node && m.source_node.toLowerCase().includes(query)) ||
-        (m.dest_node && m.dest_node.toLowerCase().includes(query))
+        (m.name && m.name.toLowerCase().includes(query)) ||
+        String(m.source_hyper).includes(query) ||
+        String(m.target_hyper).includes(query)
     )
 })
 
 const getStatusClass = (status: string) => {
     const s = (status || '').toLowerCase()
     if (s === 'completed' || s === 'done') return 'status-active'
-    if (s === 'error' || s === 'failed') return 'status-error'
-    if (s === 'running' || s === 'migrating') return 'status-pending'
+    if (s === 'error' || s === 'failed' || s === 'not_supported' || s === 'timeout' || s === 'rollback') return 'status-error'
+    if (s === 'running' || s === 'migrating' || s === 'in_progress' || s.endsWith('_prepared') || s === 'source_rollback') return 'status-pending'
     return ''
 }
 
@@ -70,7 +80,7 @@ const getStatusClass = (status: string) => {
 const openCreateModal = () => {
     newMigrationForm.value = {
         instance_id: '',
-        dest_node: '',
+        target_hyper: '',
         migration_type: 'live'
     }
     createModalVisible.value = true
@@ -109,14 +119,15 @@ const handleCreateMigration = async () => {
 
     creatingMigration.value = true
     try {
+        // 接口要求 name 与 instances 数组；目标节点用 hostid，冷迁移是 force=true
+        const inst = availableInstances.value.find(i => i.id === newMigrationForm.value.instance_id)
         const payload: any = {
-            instance_id: newMigrationForm.value.instance_id
+            name: `ui-${(inst?.hostname || 'migration').slice(0, 20)}-${Date.now().toString().slice(-6)}`,
+            instances: [{ id: newMigrationForm.value.instance_id }],
+            force: newMigrationForm.value.migration_type === 'cold'
         }
-        if (newMigrationForm.value.dest_node) {
-            payload.dest_node = newMigrationForm.value.dest_node
-        }
-        if (newMigrationForm.value.migration_type) {
-            payload.migration_type = newMigrationForm.value.migration_type
+        if (newMigrationForm.value.target_hyper !== '') {
+            payload.target_hyper = Number(newMigrationForm.value.target_hyper)
         }
 
         await migrationsApi.createMigration(payload)
@@ -135,6 +146,10 @@ onMounted(() => {
     if (region.currentRegionId) {
         fetchMigrations()
     }
+})
+
+onUnmounted(() => {
+    if (refreshTimer) clearTimeout(refreshTimer)
 })
 
 // Re-fetch when region changes
@@ -179,17 +194,18 @@ watch(() => region.currentRegionId, (newId) => {
             <th>{{ $t('dashboard.table.sourceNode') }}</th>
             <th>{{ $t('dashboard.table.destNode') }}</th>
             <th>{{ $t('dashboard.table.status') }}</th>
+            <th>{{ $t('dashboard.migrationDetail.progressShort') }}</th>
             <th>{{ $t('dashboard.table.createdAt') }}</th>
           </tr>
         </thead>
         <tbody>
           <tr v-if="loading">
-            <td colspan="7" class="text-center">
+            <td colspan="8" class="text-center">
               <div class="loading-spinner" style="margin: 20px auto;"></div>
             </td>
           </tr>
           <tr v-else-if="filteredMigrations.length === 0">
-            <td colspan="7" class="text-center text-secondary" style="padding: 48px;">
+            <td colspan="8" class="text-center text-secondary" style="padding: 48px;">
                <div v-if="searchQuery">
                   <SearchIcon :size="48" style="opacity: 0.3; margin-bottom: 16px;" />
                   <p>{{ $t('messages.noResults') }}</p>
@@ -222,21 +238,28 @@ watch(() => region.currentRegionId, (newId) => {
             </td>
             <td>
               <div class="resource-id-row">
-                <span class="resource-id" :title="m.instance_id">{{ m.instance_id.slice(0, 8) }}...</span>
-                <button class="copy-btn-mini" @click.stop.prevent="copyId(m.instance_id)" :title="t('actions.copy')" :aria-label="t('actions.copy')">
-                  <Check v-if="copiedId === m.instance_id" :size="10" style="color: #10b981;" />
+                <span class="resource-id" :title="m.instance?.id">{{ m.instance?.hostname || (m.instance?.id || '').slice(0, 8) || '-' }}</span>
+                <button v-if="m.instance?.id" class="copy-btn-mini" @click.stop.prevent="copyId(m.instance!.id)" :title="t('actions.copy')" :aria-label="t('actions.copy')">
+                  <Check v-if="copiedId === m.instance?.id" :size="10" style="color: #10b981;" />
                   <Copy v-else :size="10" />
                 </button>
               </div>
             </td>
-            <td>{{ m.migration_type || $t('messages.unnamed') }}</td>
-            <td>{{ m.source_node || '-' }}</td>
-            <td>{{ m.dest_node || '-' }}</td>
+            <td>{{ m.type || $t('messages.unnamed') }}</td>
+            <td>{{ m.source_hyper ?? '-' }}</td>
+            <td>{{ m.target_hyper ?? '-' }}</td>
             <td>
               <span class="status-pill" :class="getStatusClass(m.status)">
                 <span class="status-dot"></span>
                 {{ m.status }}
               </span>
+            </td>
+            <td>
+              <div v-if="m.total" class="progress-cell">
+                <div class="progress-track"><div class="progress-fill" :style="{ width: (m.progress || 0) + '%' }"></div></div>
+                <span class="progress-value">{{ m.progress || 0 }}%</span>
+              </div>
+              <span v-else class="text-secondary">-</span>
             </td>
             <td><span class="mono-value">{{ new Date(m.created_at).toLocaleString() }}</span></td>
           </tr>
@@ -271,10 +294,10 @@ watch(() => region.currentRegionId, (newId) => {
 
           <div class="form-group row-gap">
                <label class="form-label">{{ $t('dashboard.migrationForm.destinationNode') }}</label>
-              <select v-model="newMigrationForm.dest_node" class="form-select full-width">
+              <select v-model="newMigrationForm.target_hyper" class="form-select full-width">
                    <option value="">{{ $t('dashboard.migrationForm.autoSelect') }}</option>
-                  <option v-for="hyp in availableHypervisors" :key="hyp.hostname" :value="hyp.hostname">
-                      {{ hyp.hostname }} ({{ hyp.hypervisor_type }})
+                  <option v-for="hyp in availableHypervisors" :key="hyp.uuid" :value="hyp.hostid">
+                      {{ hyp.hostname }} ({{ hyp.hostid }})
                   </option>
               </select>
               <small class="text-secondary" style="display: block; margin-top: 4px;">{{ $t('messages.placementRouteHint') }}</small>

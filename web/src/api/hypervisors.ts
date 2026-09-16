@@ -2,6 +2,8 @@ import client from './client'
 
 export interface Hypervisor {
     uuid: string
+    // 节点编号，迁移接口的 target_hyper 用它
+    hostid: number
     hostname: string
     status: number
     status_name: string

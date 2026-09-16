@@ -69,7 +69,18 @@ func AttachVolume(ctx context.Context, args []string) (status string, err error)
 		logger.Ctx(ctx).Error("Failed to query volume", err)
 		return
 	}
-	err = db.Model(&model.Volume{}).Where("id = ?", volume.ID).Updates(map[string]interface{}{"instance_id": instanceID, "target": target, "status": model.VolumeStatusAttached}).Error
+	instance := &model.Instance{Model: model.Model{ID: instanceID}}
+	err = db.Take(instance).Error
+	if err != nil {
+		logger.Ctx(ctx).Error("Failed to query instance", err)
+		return
+	}
+	updates := map[string]interface{}{"instance_id": instanceID, "target": target, "status": model.VolumeStatusAttached}
+	// 本地卷文件在虚拟机所在节点上（首次挂载时由 attach_volume_local.sh 创建）
+	if instance.Hyper > 0 {
+		updates["hyper"] = instance.Hyper
+	}
+	err = db.Model(&model.Volume{}).Where("id = ?", volume.ID).Updates(updates).Error
 	if err != nil {
 		logger.Ctx(ctx).Error("Update volume status failed", err)
 		return

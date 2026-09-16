@@ -24,7 +24,9 @@ var hyperAdmin = &services.HyperAdmin{}
 type HyperAPI struct{}
 
 type HyperResponse struct {
-	UUID          string  `json:"uuid"`
+	UUID string `json:"uuid"`
+	// 节点编号：迁移接口的 target_hyper、实例的 hyper 字段用的都是它
+	Hostid        int32   `json:"hostid"`
 	Hostname      string  `json:"hostname"`
 	Status        int32   `json:"status"`
 	StatusName    string  `json:"status_name"`
@@ -338,6 +340,7 @@ func (v *HyperAPI) Delete(c *gin.Context) {
 func convertHyperToResponse(hyper *model.Hyper) *HyperResponse {
 	resp := &HyperResponse{
 		UUID:         hyper.UUID,
+		Hostid:       hyper.Hostid,
 		Hostname:     hyper.Hostname,
 		Status:       hyper.Status,
 		StatusName:   hyper.GetStatus(),

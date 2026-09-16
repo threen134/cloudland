@@ -52,6 +52,25 @@ func (a *MigrationAdmin) Create(ctx context.Context, name string, instances []*m
 			return
 		}
 	}
+	// 本地存储的磁盘只在源节点上：只能在源节点在线时热迁移（磁盘随 virsh migrate 复制），不支持强制/冷迁移
+	if GetVolumeDriver() == "local" {
+		if force {
+			err = NewCLError(ErrOperationNotSupported, "Force migration is not supported with local storage", nil)
+			return
+		}
+		for _, instance := range instances {
+			sourceHyper := &model.Hyper{}
+			err = db.Where("hostid = ?", instance.Hyper).Take(sourceHyper).Error
+			if err != nil {
+				err = NewCLError(ErrHypervisorNotFound, "Failed to query source hypervisor", err)
+				return
+			}
+			if sourceHyper.Status == 10 {
+				err = NewCLError(ErrOperationNotSupported, fmt.Sprintf("Source hypervisor of instance %s is offline, instances with local storage can not be migrated", instance.Hostname), nil)
+				return
+			}
+		}
+	}
 	for _, instance := range instances {
 		if instance.Status != model.InstanceStatusShutoff && instance.Status != model.InstanceStatusRunning && instance.Status != model.InstanceStatusPaused {
 			continue

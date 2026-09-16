@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { migrationsApi, type Migration } from '../../api/migrations'
+import { migrationsApi, MIGRATION_ACTIVE_STATUSES, type Migration } from '../../api/migrations'
 import { ArrowLeft, ArrowRightLeft, Copy, Check } from 'lucide-vue-next'
 import { useI18n } from 'vue-i18n'
 
@@ -13,8 +13,12 @@ const loading = ref(true)
 const error = ref<string | null>(null)
 const copiedField = ref<string | null>(null)
 
-const fetchMigrationDetail = async () => {
-    loading.value = true
+// 迁移进行中时每 3 秒自动刷新，展示阶段与进度
+const inProgress = computed(() => MIGRATION_ACTIVE_STATUSES.includes((migration.value?.status || '').toLowerCase()))
+let refreshTimer: ReturnType<typeof setTimeout> | null = null
+
+const fetchMigrationDetail = async (silent = false) => {
+    if (!silent) loading.value = true
     error.value = null
     try {
         const id = route.params.id as string
@@ -23,10 +27,24 @@ const fetchMigrationDetail = async () => {
         migration.value = data.migration || data
     } catch (err: any) {
         console.error('Failed to fetch migration detail:', err)
-        error.value = err.message || t('dashboard.migrationDetail.loadError')
+        if (!silent) error.value = err.message || t('dashboard.migrationDetail.loadError')
     } finally {
         loading.value = false
+        if (refreshTimer) clearTimeout(refreshTimer)
+        if (inProgress.value) refreshTimer = setTimeout(() => fetchMigrationDetail(true), 3000)
     }
+}
+
+const formatBytes = (bytes?: number) => {
+    if (!bytes || bytes <= 0) return '-'
+    const units = ['B', 'KiB', 'MiB', 'GiB', 'TiB']
+    let value = bytes
+    let i = 0
+    while (value >= 1024 && i < units.length - 1) {
+        value /= 1024
+        i++
+    }
+    return `${value.toFixed(i === 0 ? 0 : 1)} ${units[i]}`
 }
 
 const copyToClipboard = (text: string, field: string) => {
@@ -39,8 +57,8 @@ const copyToClipboard = (text: string, field: string) => {
 const getStatusClass = (status: string) => {
     const s = (status || '').toLowerCase()
     if (s === 'completed' || s === 'done') return 'status-active'
-    if (s === 'error' || s === 'failed') return 'status-error'
-    if (s === 'running' || s === 'migrating') return 'status-pending'
+    if (s === 'error' || s === 'failed' || s === 'not_supported' || s === 'timeout' || s === 'rollback') return 'status-error'
+    if (s === 'running' || s === 'migrating' || s === 'in_progress' || s.endsWith('_prepared') || s === 'source_rollback') return 'status-pending'
     return ''
 }
 
@@ -48,7 +66,10 @@ const goBack = () => {
     router.push({ name: 'migrations' })
 }
 
-onMounted(fetchMigrationDetail)
+onMounted(() => fetchMigrationDetail())
+onUnmounted(() => {
+    if (refreshTimer) clearTimeout(refreshTimer)
+})
 </script>
 
 <template>
@@ -110,11 +131,11 @@ onMounted(fetchMigrationDetail)
           <div class="info-rows">
             <div class="info-row">
               <span class="info-label">{{ $t('dashboard.migrationDetail.instanceId') }}</span>
-              <span class="info-value mono">{{ migration.instance_id }}</span>
+              <span class="info-value mono">{{ migration.instance?.hostname || migration.instance?.id || '-' }}</span>
             </div>
             <div class="info-row">
               <span class="info-label">{{ $t('dashboard.migrationDetail.type') }}</span>
-              <span class="info-value">{{ migration.migration_type || $t('messages.unnamed') }}</span>
+              <span class="info-value">{{ migration.type || $t('messages.unnamed') }}</span>
             </div>
             <div class="info-row">
               <span class="info-label">{{ $t('dashboard.migrationDetail.createdAt') }}</span>
@@ -133,16 +154,40 @@ onMounted(fetchMigrationDetail)
           <div class="info-rows">
             <div class="info-row">
               <span class="info-label">{{ $t('dashboard.migrationDetail.sourceNode') }}</span>
-              <span class="info-value">{{ migration.source_node || '-' }}</span>
+              <span class="info-value">{{ migration.source_hyper ?? '-' }}</span>
             </div>
             <div class="info-row">
               <span class="info-label">{{ $t('dashboard.migrationDetail.destinationNode') }}</span>
-              <span class="info-value">{{ migration.dest_node || '-' }}</span>
+              <span class="info-value">{{ migration.target_hyper ?? '-' }}</span>
             </div>
-            <div class="info-row" v-if="migration.dest_compute && migration.dest_compute !== migration.dest_node">
-              <span class="info-label">{{ $t('dashboard.migrationDetail.finalDestCompute') }}</span>
-              <span class="info-value">{{ migration.dest_compute }}</span>
+          </div>
+        </div>
+
+        <!-- Progress & Phases -->
+        <div class="info-card card phases-card">
+          <h3 class="card-section-title">
+            {{ $t('dashboard.migrationDetail.progress') }}
+            <span v-if="inProgress" class="auto-refresh">{{ $t('dashboard.migrationDetail.autoRefresh') }}</span>
+          </h3>
+          <div v-if="migration.total" class="progress-block">
+            <div class="progress-track">
+              <div class="progress-fill" :style="{ width: (migration.progress || 0) + '%' }"></div>
             </div>
+            <div class="progress-text">
+              <span>{{ migration.progress || 0 }}%</span>
+              <span class="mono">{{ formatBytes(migration.transferred) }} / {{ formatBytes(migration.total) }}</span>
+            </div>
+          </div>
+          <div class="phase-list">
+            <div v-for="(p, idx) in migration.phases || []" :key="idx" class="phase-row">
+              <span :class="['badge', getStatusClass(p.status)]" :style="!getStatusClass(p.status) ? 'background: var(--gray-100); color: var(--gray-700);' : ''">{{ p.status }}</span>
+              <div class="phase-info">
+                <div class="phase-name">{{ p.name }}</div>
+                <div class="phase-summary">{{ p.summary }}</div>
+                <div v-if="p.message" class="phase-message">{{ p.message }}</div>
+              </div>
+            </div>
+            <p v-if="!(migration.phases || []).length" class="text-secondary" style="margin: 0;">-</p>
           </div>
         </div>
       </div>
@@ -151,6 +196,69 @@ onMounted(fetchMigrationDetail)
 </template>
 
 <style scoped>
+.phases-card {
+  grid-column: 1 / -1;
+}
+
+.auto-refresh {
+  margin-left: 8px;
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--gray-500);
+}
+
+.progress-block {
+  margin-bottom: var(--spacing-4);
+}
+
+.progress-track {
+  height: 8px;
+  border-radius: 4px;
+  background: var(--gray-100);
+  overflow: hidden;
+}
+
+.progress-fill {
+  height: 100%;
+  background: var(--primary-500, #3b82f6);
+  transition: width 0.4s ease;
+}
+
+.progress-text {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 6px;
+  font-size: 13px;
+  color: var(--gray-600);
+}
+
+.phase-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.phase-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.phase-name {
+  font-weight: 500;
+}
+
+.phase-summary,
+.phase-message {
+  font-size: 12px;
+  color: var(--gray-500);
+  word-break: break-word;
+}
+
+.phase-message {
+  color: var(--danger-600, #dc2626);
+}
+
 .vpc-detail {
   max-width: 1100px;
 }

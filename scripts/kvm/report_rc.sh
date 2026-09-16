@@ -182,8 +182,10 @@ function sync_instance()
     bridges=$(cat /proc/net/dev | grep br | awk -F: '{print $1}')
     sudo iptables -N secgroup-chain && sudo iptables -A secgroup-chain -j ACCEPT
     for bridge in $bridges; do
+	# 追加到链尾：网桥内部放行必须排在安全组跳转之后（apply_fw 把安全组跳转插在 FORWARD 第 3 条），
+	# 插在前面会让该网桥上所有虚拟机的安全组失效；下面会把兜底 REJECT 重新挪到最后
 	sudo iptables -C FORWARD -i $bridge -o $bridge -j ACCEPT
-	[ $? -ne 0 ] && sudo iptables -I FORWARD 2 -i $bridge -o $bridge -j ACCEPT
+	[ $? -ne 0 ] && sudo iptables -A FORWARD -i $bridge -o $bridge -j ACCEPT
     done
     sudo iptables -D FORWARD -j REJECT --reject-with icmp-host-prohibited
     sudo iptables -A FORWARD -j REJECT --reject-with icmp-host-prohibited

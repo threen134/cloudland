@@ -1086,6 +1086,19 @@ func (a *InstanceAdmin) GetMetadata(ctx context.Context, instance *model.Instanc
 			dns = subnet.NameServer
 		}
 		instLinks = append(instLinks, &NetworkLink{MacAddr: iface.MacAddr, Mtu: uint(iface.Mtu), ID: iface.Name, Type: "phy"})
+		// 迁移时目标节点按这份 vlans 预建网卡与安全组（target_migration.sh -> sync_nic_info.sh），
+		// 缺少 SecRules 时只建出拒绝一切新连接的骨架规则，切换后网络要等 completed 重建安全组才通
+		_, sgDB := GetContextDB(ctx)
+		if err = sgDB.Model(iface).Association("SecurityGroups").Find(&iface.SecurityGroups); err != nil {
+			logger.Ctx(ctx).Error("Get security groups for interface failed", err)
+			return
+		}
+		var securityData []*SecurityData
+		securityData, err = GetSecurityData(ctx, iface.SecurityGroups)
+		if err != nil {
+			logger.Ctx(ctx).Error("Get security data for interface failed", err)
+			return
+		}
 		vlans = append(vlans, &VlanInfo{
 			Device:        iface.Name,
 			IsPrivate:     subnet.Type == "private",
@@ -1097,6 +1110,7 @@ func (a *InstanceAdmin) GetMetadata(ctx context.Context, instance *model.Instanc
 			Router:        subnet.RouterID,
 			IpAddr:        iface.Address.Address,
 			MacAddr:       iface.MacAddr,
+			SecRules:      securityData,
 			MoreAddresses: moreAddresses,
 		})
 	}

@@ -190,6 +190,17 @@ func (a *VolumeAdmin) Create(ctx context.Context, name string, size int32,
 		return
 	}
 
+	if GetVolumeDriver() == "local" {
+		// 本地卷创建时还不知道会挂到哪个节点的虚拟机上，不落盘；首次挂载时在虚拟机所在节点创建（attach_volume_local.sh）
+		_, vdb := GetContextDB(ctx)
+		volume.Path = fmt.Sprintf("volume-%d.disk", volume.ID)
+		volume.Status = model.VolumeStatusAvailable
+		if err = vdb.Model(&model.Volume{}).Where("id = ?", volume.ID).Updates(map[string]interface{}{"path": volume.Path, "status": volume.Status}).Error; err != nil {
+			logger.Ctx(ctx).Error("DB update volume failed", err)
+			err = NewCLError(ErrVolumeUpdateFailed, "Failed to update volume", err)
+		}
+		return
+	}
 	control := "inter="
 	// RN-156: append the volume UUID to the command
 	command := fmt.Sprintf("/opt/cloudland/scripts/backend/create_volume_%s.sh '%d' '%d' '%s' '%d' '%d' '%d' '%d' '%s'",
@@ -415,6 +426,14 @@ func (a *VolumeAdmin) Update(ctx context.Context, id int64, name string, instID 
 		control := fmt.Sprintf("inter=%d", instance.Hyper)
 		// RN-156: append the volume UUID to the command
 		command := fmt.Sprintf("/opt/cloudland/scripts/backend/attach_volume_%s.sh '%d' '%d' '%s' '%s'", vol_driver, instance.ID, volume.ID, volume.GetVolumePath(), uuid)
+		if vol_driver == "local" {
+			// 本地卷文件只在一个节点上：已落盘的卷只能挂给同节点的虚拟机；未落盘的卷按大小在虚拟机所在节点创建
+			if volume.Hyper > 0 && volume.Hyper != instance.Hyper {
+				err = NewCLError(ErrVolumeInvalidState, fmt.Sprintf("Local volume %s is on hypervisor %d, can not be attached to an instance on hypervisor %d", volume.UUID, volume.Hyper, instance.Hyper), nil)
+				return
+			}
+			command += fmt.Sprintf(" '%d'", volume.Size)
+		}
 		err = HyperExecute(ctx, control, command)
 		if err != nil {
 			logger.Ctx(ctx).Error("Create volume execution failed", err)
@@ -491,6 +510,12 @@ func (a *VolumeAdmin) Delete(ctx context.Context, volume *model.Volume) (err err
 	uuid := volume.UUID
 	if vol_driver != "local" {
 		uuid = volume.GetOriginVolumeID()
+	} else {
+		if volume.Hyper <= 0 {
+			// 从未挂载过的本地卷没有落盘
+			return
+		}
+		control = fmt.Sprintf("inter=%d", volume.Hyper)
 	}
 	logger.Ctx(ctx).Debug("Delete volume", vol_driver, volume.ID, uuid, volume.GetVolumePath())
 	command := fmt.Sprintf("/opt/cloudland/scripts/backend/clear_volume_%s.sh '%d' '%s' '%s'", vol_driver, volume.ID, uuid, volume.GetVolumePath())
@@ -604,6 +629,13 @@ func (a *VolumeAdmin) Resize(ctx context.Context, volume *model.Volume, size int
 	}
 	if volume.InstanceID != 0 {
 		control = fmt.Sprintf("inter=%d", volume.Instance.Hyper)
+	} else if volDriver == "local" {
+		if volume.Hyper <= 0 {
+			// 未落盘的本地卷只改记录，首次挂载时按新大小创建
+			err = db.Model(&model.Volume{}).Where("id = ?", volume.ID).Update("status", model.VolumeStatusAvailable).Error
+			return
+		}
+		control = fmt.Sprintf("inter=%d", volume.Hyper)
 	}
 	command := fmt.Sprintf("/opt/cloudland/scripts/backend/resize_volume_%s.sh '%d' '%s' '%d' '%t' '%d'", volDriver, volume.ID, uuid, size, volume.Booting, volume.InstanceID)
 	err = HyperExecute(ctx, control, command)

@@ -76,8 +76,10 @@ type Volume struct {
 	IopsBurst  int32
 	BpsLimit   int32
 	BpsBurst   int32
-	PoolID     string        `gorm:"type:varchar(128)"`
-	OwnerInfo  *Organization `gorm:"-"` /* Transient: populated for SystemAdmin list view */
+	PoolID     string `gorm:"type:varchar(128)"`
+	// 本地存储：卷文件所在节点的 hostid；0 表示尚未落盘（首次挂载时在虚拟机所在节点创建）
+	Hyper     int32
+	OwnerInfo *Organization `gorm:"-"` /* Transient: populated for SystemAdmin list view */
 }
 
 func (v *Volume) IsBusy() bool {

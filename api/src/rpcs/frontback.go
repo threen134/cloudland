@@ -95,7 +95,8 @@ func (fb *FrontbackService) doExecute(ctx context.Context, id, extra int32, comm
 	} else {
 		cmd, args := DecodeCommand(command)
 		if cmd != "" {
-			ctx2 := context.WithValue(ctx, "hostid", id)
+			// cland 转发回调时 Id 是消息 ID，执行节点的 hostid 在 Extra（cland/callback.go Forward）
+			ctx2 := context.WithValue(ctx, "hostid", extra)
 			reply.Status, err = fb.dispatchExecute(ctx2, cmd, args)
 		}
 	}

@@ -117,7 +117,18 @@ function apply_bridge()
 {
     action=$1
     mybr=$2
-    apply_fw $action FORWARD -i $mybr -o $mybr -j ACCEPT
+    if [ "$action" = '-I' -o "$action" = '-A' ]; then
+        # 网桥内部放行必须排在安全组跳转之后（apply_fw 把安全组跳转插在 FORWARD 第 3 条），
+        # 排在前面会让该网桥上所有虚拟机的安全组失效；追加到链尾并把兜底 REJECT 重新挪到最后
+        iptables -C FORWARD -i $mybr -o $mybr -j ACCEPT 2>/dev/null && return
+        iptables -A FORWARD -i $mybr -o $mybr -j ACCEPT
+        if iptables -C FORWARD -j REJECT --reject-with icmp-host-prohibited 2>/dev/null; then
+            iptables -D FORWARD -j REJECT --reject-with icmp-host-prohibited
+            iptables -A FORWARD -j REJECT --reject-with icmp-host-prohibited
+        fi
+        return
+    fi
+    iptables $action FORWARD -i $mybr -o $mybr -j ACCEPT 2>/dev/null || true
 }
 
 function sync_target()

@@ -29,6 +29,7 @@ type TaskResponse struct {
 	Name    string `json:"name"`
 	Summary string `json:"summary"`
 	Status  string `json:"status"`
+	Message string `json:"message"`
 }
 
 type MigrationResponse struct {
@@ -40,6 +41,10 @@ type MigrationResponse struct {
 	Type        string          `json:"type"`
 	Phases      []*TaskResponse `json:"phases"`
 	Status      string          `json:"status"`
+	// 迁移进度：百分比与已传输 / 总字节数（内存 + 本地磁盘合计），由源节点上报
+	Progress    int32 `json:"progress"`
+	Transferred int64 `json:"transferred"`
+	Total       int64 `json:"total"`
 }
 
 type MigrationListResponse struct {
@@ -153,6 +158,9 @@ func (v *MigrationAPI) getMigrationResponse(_ context.Context, migration *model.
 		SourceHyper: migration.SourceHyper,
 		TargetHyper: migration.TargetHyper,
 		Status:      migration.Status,
+		Progress:    migration.Progress,
+		Transferred: migration.Transferred,
+		Total:       migration.Total,
 	}
 	if migration.Instance != nil {
 		migrationResp.Instance = &InstanceInfo{
@@ -169,6 +177,7 @@ func (v *MigrationAPI) getMigrationResponse(_ context.Context, migration *model.
 			Name:    task.Name,
 			Summary: task.Summary,
 			Status:  string(task.Status),
+			Message: task.Message,
 		}
 	}
 	return
