@@ -34,13 +34,16 @@ type TaskResponse struct {
 
 type MigrationResponse struct {
 	*ResourceReference
-	Instance    *InstanceInfo   `json:"instance"`
-	SourceHyper int32           `json:"source_hyper"`
-	TargetHyper int32           `json:"target_hyper"`
-	Force       bool            `json:"force"`
-	Type        string          `json:"type"`
-	Phases      []*TaskResponse `json:"phases"`
-	Status      string          `json:"status"`
+	Instance    *InstanceInfo `json:"instance"`
+	SourceHyper int32         `json:"source_hyper"`
+	TargetHyper int32         `json:"target_hyper"`
+	// 节点名称，便于界面直接展示；目标节点由调度器自选（-1）时为空
+	SourceHyperName string          `json:"source_hyper_name"`
+	TargetHyperName string          `json:"target_hyper_name"`
+	Force           bool            `json:"force"`
+	Type            string          `json:"type"`
+	Phases          []*TaskResponse `json:"phases"`
+	Status          string          `json:"status"`
 	// 迁移进度：百分比与已传输 / 总字节数（内存 + 本地磁盘合计），由源节点上报
 	Progress    int32 `json:"progress"`
 	Transferred int64 `json:"transferred"`
@@ -80,7 +83,13 @@ func (v *MigrationAPI) Get(c *gin.Context) {
 		ErrorResponse(c, http.StatusBadRequest, "Invalid migration query", err)
 		return
 	}
-	migrationResp, err := v.getMigrationResponse(ctx, migration)
+	hyperNames, nErr := hyperAdmin.GetHyperNames(ctx)
+	if nErr != nil {
+		// 取不到节点名不影响迁移信息本身，名字留空即可
+		logger.Ctx(ctx).Errorf("Failed to get hypervisor names: %+v", nErr)
+		hyperNames = map[int32]string{}
+	}
+	migrationResp, err := v.getMigrationResponse(ctx, migration, hyperNames)
 	if err != nil {
 		logger.Ctx(ctx).Errorf("Failed to create migration response %s, %+v", uuID, err)
 		ErrorResponse(c, http.StatusInternalServerError, "Internal error", err)
@@ -132,9 +141,14 @@ func (v *MigrationAPI) Create(c *gin.Context) {
 		ErrorResponse(c, http.StatusBadRequest, "Not able to create", err)
 		return
 	}
+	hyperNames, nErr := hyperAdmin.GetHyperNames(ctx)
+	if nErr != nil {
+		logger.Ctx(ctx).Errorf("Failed to get hypervisor names: %+v", nErr)
+		hyperNames = map[int32]string{}
+	}
 	migrationsResp := make([]*MigrationResponse, len(migrations))
 	for i, migration := range migrations {
-		migrationsResp[i], err = v.getMigrationResponse(ctx, migration)
+		migrationsResp[i], err = v.getMigrationResponse(ctx, migration, hyperNames)
 		if err != nil {
 			logger.Ctx(ctx).Errorf("Failed to create migration response %+v", err)
 			ErrorResponse(c, http.StatusInternalServerError, "Internal error", err)
@@ -145,7 +159,8 @@ func (v *MigrationAPI) Create(c *gin.Context) {
 	c.JSON(http.StatusOK, migrationsResp)
 }
 
-func (v *MigrationAPI) getMigrationResponse(_ context.Context, migration *model.Migration) (migrationResp *MigrationResponse, err error) {
+// hyperNames 为 hostid -> hostname 映射，由调用方一次查出后复用，避免逐条迁移查询节点表
+func (v *MigrationAPI) getMigrationResponse(_ context.Context, migration *model.Migration, hyperNames map[int32]string) (migrationResp *MigrationResponse, err error) {
 	migrationResp = &MigrationResponse{
 		ResourceReference: &ResourceReference{
 			ID:        migration.UUID,
@@ -162,6 +177,9 @@ func (v *MigrationAPI) getMigrationResponse(_ context.Context, migration *model.
 		Transferred: migration.Transferred,
 		Total:       migration.Total,
 	}
+	// 目标节点为 -1 表示尚未由调度器选出，此时没有名字可填
+	migrationResp.SourceHyperName = hyperNames[migration.SourceHyper]
+	migrationResp.TargetHyperName = hyperNames[migration.TargetHyper]
 	if migration.Instance != nil {
 		migrationResp.Instance = &InstanceInfo{
 			ResourceReference: &ResourceReference{
@@ -225,9 +243,14 @@ func (v *MigrationAPI) List(c *gin.Context) {
 		Offset: offset,
 		Limit:  len(migrations),
 	}
+	hyperNames, nErr := hyperAdmin.GetHyperNames(ctx)
+	if nErr != nil {
+		logger.Ctx(ctx).Errorf("Failed to get hypervisor names: %+v", nErr)
+		hyperNames = map[int32]string{}
+	}
 	migrationListResp.Migrations = make([]*MigrationResponse, migrationListResp.Limit)
 	for i, migration := range migrations {
-		migrationListResp.Migrations[i], err = v.getMigrationResponse(ctx, migration)
+		migrationListResp.Migrations[i], err = v.getMigrationResponse(ctx, migration, hyperNames)
 		if err != nil {
 			logger.Ctx(ctx).Errorf("Failed to create migration response %+v", err)
 			ErrorResponse(c, http.StatusInternalServerError, "Internal error", err)

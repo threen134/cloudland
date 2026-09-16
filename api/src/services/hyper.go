@@ -28,6 +28,22 @@ var (
 
 type HyperAdmin struct{}
 
+// GetHyperNames 返回 hostid -> hostname 映射。节点表很小，一次取回即可，
+// 供需要把节点编号显示成名字的接口使用（如迁移列表的源/目标节点）
+func (a *HyperAdmin) GetHyperNames(ctx context.Context) (names map[int32]string, err error) {
+	ctx, db := GetContextDB(ctx)
+	hypers := []*model.Hyper{}
+	if err = db.Where("hostid >= 0").Find(&hypers).Error; err != nil {
+		logger.Ctx(ctx).Errorf("Failed to query hypervisors: %v", err)
+		return nil, NewCLError(ErrSQLSyntaxError, "Failed to query hypervisors", err)
+	}
+	names = make(map[int32]string, len(hypers))
+	for _, h := range hypers {
+		names[h.Hostid] = h.Hostname
+	}
+	return names, nil
+}
+
 // GetInstanceCounts 统计每个节点上的虚拟机数量（已软删除的不计），一次分组查询返回
 // hostid -> 数量，供节点列表展示，避免前端拉全量实例再分组（实例接口默认分页 50 条会漏数）
 func (a *HyperAdmin) GetInstanceCounts(ctx context.Context) (counts map[int32]int64, err error) {

@@ -20,6 +20,9 @@ export interface Migration {
     instance?: MigrationInstance
     source_hyper: number
     target_hyper: number
+    // 节点名称；目标节点由调度器自选（target_hyper 为 -1）时为空
+    source_hyper_name?: string
+    target_hyper_name?: string
     force: boolean
     type: string
     status: string

@@ -81,6 +81,15 @@ const getPhaseName = (name: string) => {
     return te(key) ? t(key) : name
 }
 
+// 节点显示成名字而不是编号；名字取不到时回退到编号。
+// target_hyper 为 -1 表示尚未由调度器选出目标节点
+const hyperLabel = (id?: number, name?: string) => {
+    if (name) return name
+    if (id === undefined || id === null) return '-'
+    if (id < 0) return t('dashboard.migrationForm.autoSelect')
+    return String(id)
+}
+
 const getTypeText = (type: string) => {
     const s = (type || '').toLowerCase()
     if (!s) return ''
@@ -180,11 +189,11 @@ onUnmounted(() => {
           <div class="info-rows">
             <div class="info-row">
               <span class="info-label">{{ $t('dashboard.migrationDetail.sourceNode') }}</span>
-              <span class="info-value">{{ migration.source_hyper ?? '-' }}</span>
+              <span class="info-value">{{ hyperLabel(migration.source_hyper, migration.source_hyper_name) }}</span>
             </div>
             <div class="info-row">
               <span class="info-label">{{ $t('dashboard.migrationDetail.destinationNode') }}</span>
-              <span class="info-value">{{ migration.target_hyper ?? '-' }}</span>
+              <span class="info-value">{{ hyperLabel(migration.target_hyper, migration.target_hyper_name) }}</span>
             </div>
           </div>
         </div>

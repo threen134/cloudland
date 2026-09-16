@@ -96,7 +96,9 @@ const filteredMigrations = computed(() => {
         (m.id && m.id.toString().includes(query)) ||
         (m.name && m.name.toLowerCase().includes(query)) ||
         String(m.source_hyper).includes(query) ||
-        String(m.target_hyper).includes(query)
+        String(m.target_hyper).includes(query) ||
+        (m.source_hyper_name || '').toLowerCase().includes(query) ||
+        (m.target_hyper_name || '').toLowerCase().includes(query)
     )
 })
 
@@ -119,6 +121,15 @@ const getStatusText = (status: string, progress?: number) => {
     if (s === 'source_prepared') return t('dashboard.migrationStatus.finalizing')
     const key = `dashboard.migrationStatus.${s}`
     return te(key) ? t(key) : status
+}
+
+// 节点显示成名字而不是编号；名字取不到时回退到编号。
+// target_hyper 为 -1 表示尚未由调度器选出目标节点，此时没有节点可显示
+const hyperLabel = (id?: number, name?: string) => {
+    if (name) return name
+    if (id === undefined || id === null) return '-'
+    if (id < 0) return t('dashboard.migrationForm.autoSelect')
+    return String(id)
 }
 
 const getTypeText = (type: string) => {
@@ -301,8 +312,8 @@ watch(() => region.currentRegionId, (newId) => {
               </div>
             </td>
             <td>{{ getTypeText(m.type) || $t('messages.unnamed') }}</td>
-            <td>{{ m.source_hyper ?? '-' }}</td>
-            <td>{{ m.target_hyper ?? '-' }}</td>
+            <td>{{ hyperLabel(m.source_hyper, m.source_hyper_name) }}</td>
+            <td>{{ hyperLabel(m.target_hyper, m.target_hyper_name) }}</td>
             <td>
               <span class="status-pill" :class="getStatusClass(m.status)">
                 <span class="status-dot"></span>
