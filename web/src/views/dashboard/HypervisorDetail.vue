@@ -388,21 +388,24 @@ onMounted(fetchHypervisorDetail)
           <div v-if="hyperInstancesLoading" class="text-secondary" style="font-size: 0.875rem;">{{ t('messages.loading') }}</div>
           <div v-else-if="!hyperInstances.length" class="text-secondary" style="font-size: 0.875rem;">{{ t('messages.noData') }}</div>
           <div v-else class="hyper-vm-list">
+            <div class="hyper-vm-head">
+              <span class="hyper-vm-name">{{ t('dashboard.table.hostname') }}</span>
+              <span class="hyper-vm-os">{{ t('dashboard.table.image') }}</span>
+              <span class="hyper-vm-spec">{{ t('dashboard.table.flavor') }}</span>
+              <span class="hyper-vm-time">{{ t('dashboard.table.createdAt') }}</span>
+              <span class="hyper-vm-badge">{{ t('dashboard.table.status') }}</span>
+            </div>
             <router-link
               v-for="inst in hyperInstances"
               :key="inst.id"
               :to="{ name: 'instance-detail', params: { id: inst.id } }"
               class="hyper-vm-item"
             >
-              <span class="hyper-vm-info">
-                <span class="hyper-vm-name">{{ inst.hostname }}</span>
-                <span class="hyper-vm-sub">
-                  <span v-if="inst.image?.name" class="hyper-vm-os">{{ inst.image.name }}</span>
-                  <span>{{ inst.cpu }}C / {{ formatMemory(inst.memory) }} / {{ formatDisk(inst.disk) }}</span>
-                  <span v-if="inst.created_at">{{ t('dashboard.table.createdAt') }} {{ formatInstanceTime(inst.created_at) }}</span>
-                </span>
-              </span>
-              <span :class="['badge', 'badge-sm', instanceStatusClass(inst.status)]">{{ instanceStatusText(inst.status) }}</span>
+              <span class="hyper-vm-name" :title="inst.hostname">{{ inst.hostname }}</span>
+              <span class="hyper-vm-os" :title="inst.image?.name">{{ inst.image?.name || '-' }}</span>
+              <span class="hyper-vm-spec">{{ inst.cpu }}C / {{ formatMemory(inst.memory) }} / {{ formatDisk(inst.disk) }}</span>
+              <span class="hyper-vm-time">{{ formatInstanceTime(inst.created_at) }}</span>
+              <span :class="['badge', 'badge-sm', 'hyper-vm-badge', instanceStatusClass(inst.status)]">{{ instanceStatusText(inst.status) }}</span>
             </router-link>
           </div>
         </div>
@@ -723,15 +726,29 @@ onMounted(fetchHypervisorDetail)
     flex-direction: column;
 }
 
+/* 单行表格式布局：各列定宽对齐，状态列靠右；内容过长用省略号而不是换行 */
+.hyper-vm-head,
 .hyper-vm-item {
     display: flex;
     align-items: center;
-    justify-content: space-between;
-    gap: 12px;
-    padding: 8px 4px;
-    border-bottom: 1px solid var(--border-color, #e5e7eb);
+    gap: var(--spacing-4);
+    padding: 10px 8px;
+    white-space: nowrap;
+}
+
+.hyper-vm-head {
+    font-size: 0.75rem;
+    color: var(--text-light, #9ca3af);
+    border-bottom: 1px solid var(--border-default);
+    padding-bottom: 6px;
+}
+
+.hyper-vm-item {
+    border-bottom: 1px solid var(--border-light);
+    border-radius: var(--radius-sm);
     text-decoration: none;
     color: inherit;
+    transition: background var(--transition-fast);
 }
 
 .hyper-vm-item:last-child { border-bottom: none; }
@@ -740,37 +757,67 @@ onMounted(fetchHypervisorDetail)
     background: var(--gray-50, #f9fafb);
 }
 
-.hyper-vm-info {
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-    min-width: 0;
-}
-
+/* 各列宽度：名称与镜像可伸缩并溢出省略，规格和时间定宽以便逐行对齐 */
 .hyper-vm-name {
+    flex: 1 1 130px;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
     font-size: 0.875rem;
-    color: var(--primary-600, #4f46e5);
     font-weight: 500;
 }
 
-/* 摘要行：镜像 / 规格 / 创建时间，用间隔点分隔，窄屏下自动换行 */
-.hyper-vm-sub {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 4px 8px;
-    font-size: 0.75rem;
-    color: var(--text-secondary, #6b7280);
-}
-
-.hyper-vm-sub > span + span::before {
-    content: '·';
-    margin-right: 8px;
-    color: var(--border-dark, #cbd5e1);
+.hyper-vm-item .hyper-vm-name {
+    color: var(--primary-color);
 }
 
 .hyper-vm-os {
-    color: var(--text-primary, #111827);
+    flex: 1 1 160px;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    font-size: 0.8125rem;
+    color: var(--text-primary);
+}
+
+.hyper-vm-spec {
+    flex: 0 0 150px;
+    font-size: 0.8125rem;
+    color: var(--text-secondary);
+}
+
+.hyper-vm-time {
+    flex: 0 0 125px;
+    font-size: 0.8125rem;
+    color: var(--text-secondary);
+}
+
+.hyper-vm-badge {
+    flex: 0 0 auto;
+    margin-left: auto;
+}
+
+/* 窄屏放弃列对齐，改为自动换行，避免出现横向滚动 */
+@media (max-width: 720px) {
+    .hyper-vm-head {
+        display: none;
+    }
+
+    .hyper-vm-item {
+        flex-wrap: wrap;
+        white-space: normal;
+        gap: 4px var(--spacing-3);
+    }
+
+    .hyper-vm-name {
+        flex: 1 0 100%;
+    }
+
+    .hyper-vm-os,
+    .hyper-vm-spec,
+    .hyper-vm-time {
+        flex: 0 0 auto;
+    }
 }
 
 .card-section-title {
