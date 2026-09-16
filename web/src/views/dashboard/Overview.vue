@@ -58,7 +58,7 @@ onMounted(async () => {
 
         const [instRes, volRes, imgRes, vpcRes, fipRes, quotaRes] = await Promise.all([
             instancesApi.fetchInstances().catch(err => { console.warn('Instances fetch failed:', err); return { data: [] } }),
-            volumesApi.list({ limit: 100 }).catch(err => { console.warn('Volumes fetch failed:', err); return { volumes: [] } }),
+            volumesApi.list({ limit: 100, type: 'all' }).catch(err => { console.warn('Volumes fetch failed:', err); return { volumes: [] } }),
             imagesApi.fetchImages().catch(err => { console.warn('Images fetch failed:', err); return { data: [] } }),
             vpcsApi.list({ limit: 100 }).catch(err => { console.warn('VPCs fetch failed:', err); return { vpcs: [] } }),
             floatingIpsApi.list({ limit: 100 }).catch(err => { console.warn('FIPs fetch failed:', err); return { floating_ips: [] } }),
@@ -179,9 +179,12 @@ const activityRoutes: Record<string, string> = {
 }
 
 // 文案里的 {name} 由模板插槽渲染为资源名（带链接）；后端新增了前端未翻译的动作时退回通用文案
+// 失败的操作用单独的文案：成功文案是「删除了…」这类已完成的说法，接上「失败」会自相矛盾
 const activityKey = (a: ActivityItem) => {
-    const key = `dashboard.overview.activityActions.${a.action}`
-    return te(key) ? key : 'dashboard.overview.activityActionUnknown'
+    const group = a.success ? 'activityActions' : 'activityActionsFailed'
+    const key = `dashboard.overview.${group}.${a.action}`
+    if (te(key)) return key
+    return a.success ? 'dashboard.overview.activityActionUnknown' : 'dashboard.overview.activityActionUnknownFailed'
 }
 
 const activityResourceLabel = (a: ActivityItem) => a.resource_name || (a.resource_id ? a.resource_id.slice(0, 8) : '')
@@ -373,8 +376,8 @@ const getPercentColor = (percent: number) => {
                   <i18n-t :keypath="activityKey(a)" tag="span">
                     <template #action>{{ a.action }}</template>
                     <template #name>
-                      <router-link v-if="activityLink(a)" :to="activityLink(a)!" class="activity-resource">{{ activityResourceLabel(a) }}</router-link>
-                      <span v-else class="activity-resource plain">{{ activityResourceLabel(a) }}</span>
+                      <router-link v-if="activityLink(a)" :to="activityLink(a)!" class="activity-resource" :title="activityResourceLabel(a)">{{ activityResourceLabel(a) }}</router-link>
+                      <span v-else class="activity-resource plain" :title="activityResourceLabel(a)">{{ activityResourceLabel(a) }}</span>
                     </template>
                   </i18n-t>
                   <span v-if="!a.success" class="activity-failed">{{ $t('dashboard.overview.activityFailed') }}</span>
@@ -651,7 +654,14 @@ const getPercentColor = (percent: number) => {
   overflow-wrap: anywhere;
 }
 
+/* 资源名可能很长（名称上限由各资源自行决定，审计列最长 255 字符），单行截断，悬停看全名 */
 .activity-resource {
+  display: inline-block;
+  max-width: min(16em, 100%);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: bottom;
   font-weight: 500;
   color: var(--primary-600);
   text-decoration: none;
@@ -667,6 +677,7 @@ const getPercentColor = (percent: number) => {
 
 .activity-failed {
   display: inline-block;
+  vertical-align: bottom;
   margin-left: 6px;
   padding: 0 6px;
   font-size: 0.75rem;
