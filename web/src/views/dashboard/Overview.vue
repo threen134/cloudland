@@ -266,7 +266,7 @@ const getPercentColor = (percent: number) => {
           <!-- Storage -->
           <div class="usage-item">
             <div class="usage-header">
-              <span class="usage-label">{{ $t('dashboard.overview.disk') }} {{ $t('dashboard.overview.usage') }}</span>
+              <span class="usage-label">{{ $t('dashboard.overview.diskTotal') }} {{ $t('dashboard.overview.usage') }}</span>
               <span class="usage-value">{{ stats.disk.percentage }}%</span>
             </div>
             <div class="progress-bg">
