@@ -724,6 +724,30 @@ export default {
             ruleCreatedButLinkFailed: '告警规则已创建，但虚拟机绑定失败。',
             targetDeviceRequired: '请为所有已选虚拟机填写网卡名称（如 eth0）。',
         },
+        // Activity page: all operations of the current organization in the current region
+        activityPage: {
+            title: '操作动态',
+            timeRange: '时间范围',
+            ranges: { today: '今天', last7d: '最近 7 天', last30d: '最近 30 天', last90d: '最近 90 天', custom: '自定义' },
+            start: '开始时间',
+            end: '结束时间',
+            apply: '应用',
+            resourceType: '资源类型',
+            result: '结果',
+            all: '全部',
+            succeeded: '成功',
+            failed: '失败',
+            resourceTypes: { instance: '云服务器', volume: '云硬盘', backup: '备份', consistency_group: '一致性组', image: '镜像', key: '密钥', flavor: '规格', vpc: 'VPC', subnet: '子网', security_group: '安全组', floating_ip: '弹性 IP', load_balancer: '负载均衡', zone: '可用区', hyper: '计算节点', migration: '迁移' },
+            empty: '该时间范围内没有操作记录',
+            emptyFiltered: '没有符合筛选条件的操作记录',
+            loadFailed: '操作动态加载失败',
+            loadMore: '加载更多',
+            loadingMore: '正在加载...',
+            noMore: '已显示全部 {n} 条',
+            rangeRequired: '请选择开始时间和结束时间',
+            rangeOrder: '开始时间必须早于结束时间',
+            rangeTooLong: '时间范围不能超过 {days} 天',
+        },
         overview: {
             title: '概览',
             subtitle: '概览：云服务器 · 云硬盘 · 镜像 · 弹性 IP',
@@ -765,11 +789,12 @@ export default {
             activityLoadFailed: '动态加载失败',
             activityRetry: '重试',
             activityEmpty: '最近 7 天没有操作记录',
+            activityViewAll: '查看全部',
             activityFailed: '失败',
             activityUnknownActor: '未知用户',
             activityActionUnknown: '执行了 {action} {name}',
             activityActionUnknownFailed: '执行 {action} {name}',
-            // 键为接口返回的 action（资源类型.动作）；{name} 处渲染资源名（带详情页链接）
+            // Keyed by the action returned by the API (resource_type.verb); {name} renders the resource name (linked to its detail page)
             activityActions: {
                 instance: {
                     create: '创建了云服务器 {name}',
@@ -880,7 +905,7 @@ export default {
                     create: '发起了迁移 {name}',
                 },
             },
-            // 失败的操作：不能用表示已完成的说法（如「删除了」），单独一套文案
+            // Failed actions: completed-form wording ("deleted ...") would contradict the failure, so they have their own set
             activityActionsFailed: {
                 instance: {
                     create: '创建云服务器 {name}',

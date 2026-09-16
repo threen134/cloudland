@@ -68,6 +68,13 @@ const router = createRouter({
                     component: () => import('../views/dashboard/Overview.vue')
                 },
                 {
+                    // Activity page: operations of the current organization in the current region, visible to all members
+                    // (entry point: the Recent Activity card on the overview page).
+                    path: 'activities',
+                    name: 'activities',
+                    component: () => import('../views/dashboard/ActivityList.vue')
+                },
+                {
                     path: 'marketplace',
                     name: 'dashboard-marketplace',
                     component: () => import('../views/marketplace/Marketplace.vue')

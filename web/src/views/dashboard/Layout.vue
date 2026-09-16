@@ -139,6 +139,7 @@ watch([() => tenant.currentOrgId, () => region.currentRegionId], () => {
 const pageTitle = computed(() => {
     const titles: Record<string, string> = {
         'dashboard': t('dashboard.overview.title'),
+        'activities': t('dashboard.activityPage.title'),
         'instances': t('dashboard.instances'),
         'instance-detail': t('dashboard.instances'),
         'volumes': t('dashboard.volumes'),

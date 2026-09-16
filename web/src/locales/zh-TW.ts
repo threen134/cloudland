@@ -724,6 +724,30 @@ export default {
             ruleCreatedButLinkFailed: '告警規則已建立，但虛擬機器繫結失敗。',
             targetDeviceRequired: '請為所有已選虛擬機器填寫網路卡名稱（如 eth0）。',
         },
+        // Activity page: all operations of the current organization in the current region
+        activityPage: {
+            title: '操作動態',
+            timeRange: '時間範圍',
+            ranges: { today: '今天', last7d: '最近 7 天', last30d: '最近 30 天', last90d: '最近 90 天', custom: '自訂' },
+            start: '開始時間',
+            end: '結束時間',
+            apply: '套用',
+            resourceType: '資源類型',
+            result: '結果',
+            all: '全部',
+            succeeded: '成功',
+            failed: '失敗',
+            resourceTypes: { instance: '雲伺服器', volume: '雲硬碟', backup: '備份', consistency_group: '一致性組', image: '映像', key: '金鑰', flavor: '規格', vpc: 'VPC', subnet: '子網', security_group: '安全組', floating_ip: '彈性 IP', load_balancer: '負載均衡', zone: '可用區', hyper: '計算節點', migration: '遷移' },
+            empty: '該時間範圍內沒有操作記錄',
+            emptyFiltered: '沒有符合篩選條件的操作記錄',
+            loadFailed: '操作動態載入失敗',
+            loadMore: '載入更多',
+            loadingMore: '正在載入...',
+            noMore: '已顯示全部 {n} 筆',
+            rangeRequired: '請選擇開始時間和結束時間',
+            rangeOrder: '開始時間必須早於結束時間',
+            rangeTooLong: '時間範圍不能超過 {days} 天',
+        },
         overview: {
             title: '概覽',
             subtitle: '概覽：雲伺服器 · 雲硬碟 · 映像 · 彈性 IP',
@@ -765,11 +789,12 @@ export default {
             activityLoadFailed: '動態載入失敗',
             activityRetry: '重試',
             activityEmpty: '最近 7 天沒有操作記錄',
+            activityViewAll: '查看全部',
             activityFailed: '失敗',
             activityUnknownActor: '未知使用者',
             activityActionUnknown: '執行了 {action} {name}',
             activityActionUnknownFailed: '執行 {action} {name}',
-            // 鍵為介面返回的 action（資源類型.動作）；{name} 處渲染資源名（帶詳情頁連結）
+            // Keyed by the action returned by the API (resource_type.verb); {name} renders the resource name (linked to its detail page)
             activityActions: {
                 instance: {
                     create: '建立了雲伺服器 {name}',
@@ -880,7 +905,7 @@ export default {
                     create: '發起了遷移 {name}',
                 },
             },
-            // 失败的操作：不能用表示已完成的说法（如「删除了」），单独一套文案
+            // Failed actions: completed-form wording ("deleted ...") would contradict the failure, so they have their own set
             activityActionsFailed: {
                 instance: {
                     create: '建立雲伺服器 {name}',

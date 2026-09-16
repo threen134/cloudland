@@ -355,6 +355,7 @@ func decodeActivityCursor(cursor string) (createdAt time.Time, id int64, err err
 // @Param   end            query  string  false  "RFC3339, exclusive; default now; range must not exceed 90 days"
 // @Param   resource_type  query  string  false  "resource type, such as instance"
 // @Param   resource_uuid  query  string  false  "resource uuid"
+// @Param   success        query  bool    false  "true: only succeeded, false: only failed"
 // @Success 200 {object} ActivityListResponse
 // @Failure 400 {object} common.APIError "Bad request"
 // @Failure 401 {object} common.APIError "Not authorized"
@@ -383,6 +384,16 @@ func (v *AuditAPI) Activities(c *gin.Context) {
 	}
 	if resourceUUID := c.Query("resource_uuid"); resourceUUID != "" {
 		query = query.Where("resource_uuid = ?", resourceUUID)
+	}
+	switch c.Query("success") {
+	case "":
+	case "true":
+		query = query.Where("status < 400")
+	case "false":
+		query = query.Where("status >= 400")
+	default:
+		ErrorResponse(c, http.StatusBadRequest, "Invalid success, must be true or false", nil)
+		return
 	}
 	if cursor := c.Query("cursor"); cursor != "" {
 		createdAt, id, cErr := decodeActivityCursor(cursor)

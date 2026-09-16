@@ -725,6 +725,30 @@ export default {
             ruleCreatedButLinkFailed: 'Alarm rule created, but VM binding failed.',
             targetDeviceRequired: 'Please fill in the network interface name (e.g. eth0) for all selected VMs.',
         },
+        // Activity page: all operations of the current organization in the current region
+        activityPage: {
+            title: 'Activity',
+            timeRange: 'Time range',
+            ranges: { today: 'Today', last7d: 'Last 7 days', last30d: 'Last 30 days', last90d: 'Last 90 days', custom: 'Custom' },
+            start: 'Start',
+            end: 'End',
+            apply: 'Apply',
+            resourceType: 'Resource type',
+            result: 'Result',
+            all: 'All',
+            succeeded: 'Succeeded',
+            failed: 'Failed',
+            resourceTypes: { instance: 'Instance', volume: 'Volume', backup: 'Backup', consistency_group: 'Consistency group', image: 'Image', key: 'Key', flavor: 'Flavor', vpc: 'VPC', subnet: 'Subnet', security_group: 'Security group', floating_ip: 'Floating IP', load_balancer: 'Load balancer', zone: 'Zone', hyper: 'Hypervisor', migration: 'Migration' },
+            empty: 'No activity in this time range',
+            emptyFiltered: 'No activity matches the filters',
+            loadFailed: 'Failed to load activity',
+            loadMore: 'Load more',
+            loadingMore: 'Loading...',
+            noMore: 'Showing all {n} entries',
+            rangeRequired: 'Please select both start and end time',
+            rangeOrder: 'Start time must be earlier than end time',
+            rangeTooLong: 'Time range must not exceed {days} days',
+        },
         overview: {
             title: 'Dashboard',
             subtitle: 'Overview: Instances · Volumes · Images · Floating IPs',
@@ -766,6 +790,7 @@ export default {
             activityLoadFailed: 'Failed to load activity',
             activityRetry: 'Retry',
             activityEmpty: 'No activity in the last 7 days',
+            activityViewAll: 'View all',
             activityFailed: 'Failed',
             activityUnknownActor: 'Unknown user',
             activityActionUnknown: 'performed {action} {name}',
@@ -881,7 +906,7 @@ export default {
                     create: 'started migration {name}',
                 },
             },
-            // 失败的操作：不能用表示已完成的说法（如「删除了」），单独一套文案
+            // Failed actions: completed-form wording ("deleted ...") would contradict the failure, so they have their own set
             activityActionsFailed: {
                 instance: {
                     create: 'failed to create instance {name}',

@@ -1,14 +1,14 @@
 import client from './client'
 
-// 组织操作动态：来自 clapi 审计日志的精简视图，范围为当前组织、当前区域
+// Organization activity: a trimmed view of clapi audit logs, scoped to the current organization and region.
 export interface Activity {
     id: string
     actor: string
-    // 语义动作名，如 instance.create、instance.stop、hyper.maintain
+    // Semantic action name, e.g. instance.create, instance.stop, hyper.maintain
     action: string
     resource_type: string
     resource_id: string
-    // 操作当时的资源名快照
+    // Snapshot of the resource name at the time of the operation
     resource_name: string
     success: boolean
     // RFC3339
@@ -17,18 +17,20 @@ export interface Activity {
 
 export interface ActivityListResponse {
     activities: Activity[]
-    // 非空表示还有更早的记录
+    // Non-empty when older entries exist
     next_cursor: string
 }
 
 export interface ActivityQuery {
     limit?: number
     cursor?: string
-    // RFC3339；不传时默认最近 7 天，跨度上限 90 天
+    // RFC3339. Defaults to the last 7 days; the span must not exceed 90 days.
     start?: string
     end?: string
     resource_type?: string
     resource_uuid?: string
+    // true: succeeded only, false: failed only, omitted: all
+    success?: boolean
 }
 
 export const activitiesApi = {

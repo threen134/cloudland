@@ -68,6 +68,12 @@ const docTemplatev1 = `{
                         "description": "resource uuid",
                         "name": "resource_uuid",
                         "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "true: only succeeded, false: only failed",
+                        "name": "success",
+                        "in": "query"
                     }
                 ],
                 "responses": {

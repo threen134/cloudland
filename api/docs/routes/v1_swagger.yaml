@@ -2476,6 +2476,10 @@ paths:
         in: query
         name: resource_uuid
         type: string
+      - description: 'true: only succeeded, false: only failed'
+        in: query
+        name: success
+        type: boolean
       produces:
       - application/json
       responses:
