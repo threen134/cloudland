@@ -138,25 +138,31 @@ func toRegionAdmin(r *model.Region) regionAdminOut {
 }
 
 type quotaFields struct {
-	MaxCPUCores  float64 `json:"max_cpu_cores"`
-	MaxRAMGB     float64 `json:"max_ram_gb"`
-	MaxPublicIPs int     `json:"max_public_ips"`
-	MaxDiskGB    float64 `json:"max_disk_gb"`
+	MaxCPUCores      float64 `json:"max_cpu_cores"`
+	MaxRAMGB         float64 `json:"max_ram_gb"`
+	MaxPublicIPs     int     `json:"max_public_ips"`
+	MaxDiskGB        float64 `json:"max_disk_gb"`
+	MaxVPCs          int     `json:"max_vpcs"`
+	MaxLoadBalancers int     `json:"max_load_balancers"`
+	MaxImages        int     `json:"max_images"`
 }
 
 type consumptionFields struct {
-	CPUCores  float64 `json:"cpu_cores"`
-	RAMGB     float64 `json:"ram_gb"`
-	PublicIPs int     `json:"public_ips"`
-	DiskGB    float64 `json:"disk_gb"`
+	CPUCores      float64 `json:"cpu_cores"`
+	RAMGB         float64 `json:"ram_gb"`
+	PublicIPs     int     `json:"public_ips"`
+	DiskGB        float64 `json:"disk_gb"`
+	VPCs          int     `json:"vpcs"`
+	LoadBalancers int     `json:"load_balancers"`
+	Images        int     `json:"images"`
 }
 
 func toQuotaFields(q *model.OrgResourceQuota) quotaFields {
-	return quotaFields{q.MaxCPUCores, q.MaxRAMGB, q.MaxPublicIPs, q.MaxDiskGB}
+	return quotaFields{q.MaxCPUCores, q.MaxRAMGB, q.MaxPublicIPs, q.MaxDiskGB, q.MaxVPCs, q.MaxLoadBalancers, q.MaxImages}
 }
 
 func toConsumptionFields(c *model.OrgResourceConsumption) consumptionFields {
-	return consumptionFields{c.CPUCores, c.RAMGB, c.PublicIPs, c.DiskGB}
+	return consumptionFields{c.CPUCores, c.RAMGB, c.PublicIPs, c.DiskGB, c.VPCs, c.LoadBalancers, c.Images}
 }
 
 type quotaOut struct {

@@ -9,6 +9,7 @@ import { isValidName } from '../../utils/validation'
 
 import { Layers, Plus, Trash2, Network, Search as SearchIcon, X, RefreshCw, Pencil, Check, Copy, ChevronDown, HelpCircle } from 'lucide-vue-next'
 import DeleteModal from '../../components/modals/DeleteModal.vue'
+import { quotaErrorMessage } from '../../utils/quotaError'
 
 const region = useRegionStore()
 
@@ -24,7 +25,7 @@ const newVPCForm = ref({
     description: ''
 })
 
-const { t } = useI18n()
+const { t, te } = useI18n()
 const toast = useToast()
 const isNameValid = computed(() => isValidName(newVPCForm.value.name))
 
@@ -91,7 +92,7 @@ const handleCreateVPC = async () => {
         toast.success(t('messages.createSuccess'))
     } catch (err: any) {
         console.error('Failed to create VPC:', err)
-        createError.value = err.response?.data?.error_message || err.message || t('messages.error')
+        createError.value = quotaErrorMessage(err, t, te) || err.response?.data?.error_message || err.message || t('messages.error')
     } finally {
         creating.value = false
     }

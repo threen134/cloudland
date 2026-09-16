@@ -38,6 +38,9 @@ backend_api_suffix = "/api/v1"
 cpu_cores = 4.0
 ram_gb = 8.0
 public_ips = 2
+vpcs = 5
+load_balancers = 5
+images = 10
 disk_gb = 50.0
 traffic_gb = 100.0
 

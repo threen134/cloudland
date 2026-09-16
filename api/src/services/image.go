@@ -558,7 +558,7 @@ func (a *ImageAdminService) Delete(ctx context.Context, image *model.Image) (err
 	return
 }
 
-func (a *ImageAdminService) List(ctx context.Context, offset, limit int64, order, query, visibility string) (total int64, images []*model.Image, err error) {
+func (a *ImageAdminService) List(ctx context.Context, offset, limit int64, order, query, visibility string, owned bool) (total int64, images []*model.Image, err error) {
 	logger.Ctx(ctx).Infof("ENTER ImageAdmin.List: offset=%d, limit=%d, order=%s, query=%s, visibility=%s", offset, limit, order, query, visibility)
 	defer func() {
 		if err != nil {
@@ -584,7 +584,14 @@ func (a *ImageAdminService) List(ctx context.Context, offset, limit int64, order
 	}
 
 	// Apply owner/visibility filtering
-	if !memberShip.IsSystemAdmin() {
+	if owned {
+		// Only the current org's images, optionally narrowed by visibility; cpgateway counts the private ones
+		// against the org image quota (public platform images are not charged to any org)
+		baseQuery = baseQuery.Where("owner = ?", memberShip.OrgID)
+		if visibility == model.ImageVisibilityPublic || visibility == model.ImageVisibilityPrivate {
+			baseQuery = baseQuery.Where("visibility = ?", visibility)
+		}
+	} else if !memberShip.IsSystemAdmin() {
 		// Normal user: see own org images + public images, with optional visibility filter
 		switch visibility {
 		case model.ImageVisibilityPublic:

@@ -18,30 +18,61 @@ import (
 	"cpgateway-go/src/model"
 )
 
-// ResourceAmount maps consumption fields (cpu_cores, ram_gb, public_ips, disk_gb) to amounts.
-// Key presence matters, mirroring the Python dicts.
+// ResourceAmount maps consumption fields (cpu_cores, ram_gb, disk_gb, public_ips, vpcs,
+// load_balancers, images) to amounts. Key presence matters, mirroring the Python dicts.
 type ResourceAmount map[string]float64
 
-// quotaRules maps "METHOD route-template" (proxy_routes.go templates without the leading slash) to
-// the quota action. Matching whole templates keeps sub-resource operations (e.g. deleting an
-// instance interface) from releasing the parent's quota.
-var quotaRules = map[string]string{
-	"POST instances":             "consume",
-	"POST volumes":               "consume",
-	"POST floating_ips":          "consume",
-	"DELETE instances/{id}":      "release",
-	"DELETE volumes/{id}":        "release",
-	"DELETE floating_ips/{id}":   "release",
-	"POST instances/{id}/resize": "resize",
-	"POST volumes/{id}/resize":   "resize",
+// quotaRule is the quota action for a proxy route and the kind of resource it acts on.
+type quotaRule struct {
+	Action   string // consume, release or resize
+	Resource string // instance, volume, floating_ip, lb_floating_ip, vpc, load_balancer or image
 }
 
-// Order used when checking/reserving, matching the Python dict insertion order.
-var resourceFieldOrder = []string{"cpu_cores", "ram_gb", "disk_gb", "public_ips"}
+// quotaRules maps "METHOD route-template" (proxy_routes.go templates without the leading slash) to the
+// quota rule. Matching whole templates keeps sub-resource operations (e.g. deleting an instance interface)
+// from releasing the parent's quota, and states the resource explicitly instead of guessing it from the path.
+var quotaRules = map[string]quotaRule{
+	"POST instances":                        {"consume", "instance"},
+	"POST volumes":                          {"consume", "volume"},
+	"POST floating_ips":                     {"consume", "floating_ip"},
+	"POST load_balancers/{id}/floating_ips": {"consume", "lb_floating_ip"},
+	"POST vpcs":                             {"consume", "vpc"},
+	"POST load_balancers":                   {"consume", "load_balancer"},
+	"POST images":                           {"consume", "image"},
+	"DELETE instances/{id}":                 {"release", "instance"},
+	"DELETE volumes/{id}":                   {"release", "volume"},
+	"DELETE floating_ips/{id}":              {"release", "floating_ip"},
+	"DELETE load_balancers/{id}/floating_ips/{floating_ip_id}": {"release", "lb_floating_ip"},
+	"DELETE vpcs/{id}":           {"release", "vpc"},
+	"DELETE load_balancers/{id}": {"release", "load_balancer"},
+	"DELETE images/{id}":         {"release", "image"},
+	"POST instances/{id}/resize": {"resize", "instance"},
+	"POST volumes/{id}/resize":   {"resize", "volume"},
+}
 
-// MatchQuotaRule matches a proxy route template (e.g. "/instances/{id}/resize") against the quota rules.
+// QuotaResourceFields lists the consumption fields in check order; the quota column of each is "max_" + field.
+var QuotaResourceFields = []string{"cpu_cores", "ram_gb", "disk_gb", "public_ips", "vpcs", "load_balancers", "images"}
+
+// integerQuotaFields are counted per object and stored as integers.
+var integerQuotaFields = map[string]bool{"public_ips": true, "vpcs": true, "load_balancers": true, "images": true}
+
+// IsIntegerQuotaField reports whether a consumption field is an integer count.
+func IsIntegerQuotaField(field string) bool {
+	return integerQuotaFields[field]
+}
+
+// systemAdminRole is the X-System-Role header value of a system admin.
+const systemAdminRole = "1"
+
+func lookupQuotaRule(method, proxyTemplate string) (quotaRule, bool) {
+	rule, ok := quotaRules[method+" "+strings.Trim(proxyTemplate, "/")]
+	return rule, ok
+}
+
+// MatchQuotaRule returns the quota action for a proxy route template (e.g. "/instances/{id}/resize"), or "".
 func MatchQuotaRule(method, proxyTemplate string) string {
-	return quotaRules[method+" "+strings.Trim(proxyTemplate, "/")]
+	rule, _ := lookupQuotaRule(method, proxyTemplate)
+	return rule.Action
 }
 
 // ExtractResourceID returns the second path segment: instances/abc-123[/resize] → abc-123.
@@ -60,20 +91,31 @@ func settingFloat(db *gorm.DB, key string, def float64) float64 {
 	return def
 }
 
+// Built-in default quotas, used when neither the system setting nor the config file sets a value.
+// Keep in sync with conf/config.toml [quota.defaults] and the DEFAULT_* system settings.
+const (
+	DefaultQuotaVPCs          = 5
+	DefaultQuotaLoadBalancers = 5
+	DefaultQuotaImages        = 10
+)
+
 // DefaultQuotaValues reads default quotas from system settings (DB → config → hardcoded).
-func DefaultQuotaValues(db *gorm.DB) (cpu, ram float64, ips int, disk float64) {
-	cpu = settingFloat(db, "DEFAULT_CPU_CORES", configFloat("quota.defaults.cpu_cores", 4.0))
-	ram = settingFloat(db, "DEFAULT_RAM_GB", configFloat("quota.defaults.ram_gb", 8.0))
-	ips = int(settingFloat(db, "DEFAULT_PUBLIC_IPS", configFloat("quota.defaults.public_ips", 2)))
-	disk = settingFloat(db, "DEFAULT_DISK_GB", configFloat("quota.defaults.disk_gb", 50.0))
-	return
+func DefaultQuotaValues(db *gorm.DB) model.OrgResourceQuota {
+	return model.OrgResourceQuota{
+		MaxCPUCores:      settingFloat(db, "DEFAULT_CPU_CORES", configFloat("quota.defaults.cpu_cores", 4.0)),
+		MaxRAMGB:         settingFloat(db, "DEFAULT_RAM_GB", configFloat("quota.defaults.ram_gb", 8.0)),
+		MaxPublicIPs:     int(settingFloat(db, "DEFAULT_PUBLIC_IPS", configFloat("quota.defaults.public_ips", 2))),
+		MaxDiskGB:        settingFloat(db, "DEFAULT_DISK_GB", configFloat("quota.defaults.disk_gb", 50.0)),
+		MaxVPCs:          int(settingFloat(db, "DEFAULT_VPCS", configFloat("quota.defaults.vpcs", DefaultQuotaVPCs))),
+		MaxLoadBalancers: int(settingFloat(db, "DEFAULT_LOAD_BALANCERS", configFloat("quota.defaults.load_balancers", DefaultQuotaLoadBalancers))),
+		MaxImages:        int(settingFloat(db, "DEFAULT_IMAGES", configFloat("quota.defaults.images", DefaultQuotaImages))),
+	}
 }
 
-func createQuotaPair(tx *gorm.DB, orgID, regionID int64, cpu, ram float64, ips int, disk float64) error {
-	if err := tx.Create(&model.OrgResourceQuota{
-		OrgID: orgID, RegionID: regionID,
-		MaxCPUCores: cpu, MaxRAMGB: ram, MaxPublicIPs: ips, MaxDiskGB: disk,
-	}).Error; err != nil {
+func createQuotaPair(tx *gorm.DB, orgID, regionID int64, defaults model.OrgResourceQuota) error {
+	quota := defaults
+	quota.ID, quota.OrgID, quota.RegionID = 0, orgID, regionID
+	if err := tx.Create(&quota).Error; err != nil {
 		return err
 	}
 	return tx.Create(&model.OrgResourceConsumption{OrgID: orgID, RegionID: regionID}).Error
@@ -81,13 +123,13 @@ func createQuotaPair(tx *gorm.DB, orgID, regionID int64, cpu, ram float64, ips i
 
 // InitializeOrgQuotas creates quota + consumption rows for a new org in every region.
 func InitializeOrgQuotas(tx *gorm.DB, orgID int64) error {
-	cpu, ram, ips, disk := DefaultQuotaValues(tx)
+	defaults := DefaultQuotaValues(tx)
 	var regions []model.Region
 	if err := tx.Find(&regions).Error; err != nil {
 		return err
 	}
 	for _, r := range regions {
-		if err := createQuotaPair(tx, orgID, r.ID, cpu, ram, ips, disk); err != nil {
+		if err := createQuotaPair(tx, orgID, r.ID, defaults); err != nil {
 			return err
 		}
 	}
@@ -96,22 +138,22 @@ func InitializeOrgQuotas(tx *gorm.DB, orgID int64) error {
 
 // InitializeRegionQuotas creates quota + consumption rows for a new region for every org.
 func InitializeRegionQuotas(tx *gorm.DB, regionID int64) error {
-	cpu, ram, ips, disk := DefaultQuotaValues(tx)
+	defaults := DefaultQuotaValues(tx)
 	var orgs []model.Organization
 	if err := tx.Find(&orgs).Error; err != nil {
 		return err
 	}
 	for _, o := range orgs {
-		if err := createQuotaPair(tx, o.ID, regionID, cpu, ram, ips, disk); err != nil {
+		if err := createQuotaPair(tx, o.ID, regionID, defaults); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-// pyNum formats like Python str(): ints for public_ips, floats always with a decimal point.
+// pyNum formats like Python str(): ints for count fields, floats always with a decimal point.
 func pyNum(field string, v float64) string {
-	if field == "public_ips" {
+	if IsIntegerQuotaField(field) {
 		return strconv.Itoa(int(v))
 	}
 	s := strconv.FormatFloat(v, 'f', -1, 64)
@@ -136,11 +178,21 @@ func quotaExceeded(resource string, requested, available, limit float64, region 
 }
 
 func consumptionValues(c *model.OrgResourceConsumption) map[string]float64 {
-	return map[string]float64{"cpu_cores": c.CPUCores, "ram_gb": c.RAMGB, "public_ips": float64(c.PublicIPs), "disk_gb": c.DiskGB}
+	return map[string]float64{
+		"cpu_cores": c.CPUCores, "ram_gb": c.RAMGB, "public_ips": float64(c.PublicIPs), "disk_gb": c.DiskGB,
+		"vpcs": float64(c.VPCs), "load_balancers": float64(c.LoadBalancers), "images": float64(c.Images),
+	}
+}
+
+func quotaLimits(q *model.OrgResourceQuota) map[string]float64 {
+	return map[string]float64{
+		"cpu_cores": q.MaxCPUCores, "ram_gb": q.MaxRAMGB, "public_ips": float64(q.MaxPublicIPs), "disk_gb": q.MaxDiskGB,
+		"vpcs": float64(q.MaxVPCs), "load_balancers": float64(q.MaxLoadBalancers), "images": float64(q.MaxImages),
+	}
 }
 
 func consumptionUpdate(field string, v float64) interface{} {
-	if field == "public_ips" {
+	if IsIntegerQuotaField(field) {
 		return int(v)
 	}
 	return v
@@ -170,12 +222,9 @@ func CheckAndReserve(orgID, regionID int64, amount ResourceAmount) *common.HTTPE
 	}
 
 	current := consumptionValues(&consumption)
-	limits := map[string]float64{
-		"cpu_cores": quota.MaxCPUCores, "ram_gb": quota.MaxRAMGB,
-		"public_ips": float64(quota.MaxPublicIPs), "disk_gb": quota.MaxDiskGB,
-	}
+	limits := quotaLimits(&quota)
 	updates := map[string]interface{}{}
-	for _, field := range resourceFieldOrder {
+	for _, field := range QuotaResourceFields {
 		req, ok := amount[field]
 		if !ok || req <= 0 {
 			continue
@@ -214,7 +263,7 @@ func Release(orgID, regionID int64, amount ResourceAmount) {
 	}
 	current := consumptionValues(&consumption)
 	updates := map[string]interface{}{}
-	for _, field := range resourceFieldOrder {
+	for _, field := range QuotaResourceFields {
 		v, ok := amount[field]
 		if !ok || v <= 0 {
 			continue
@@ -260,32 +309,20 @@ func floatOrZero(v interface{}) float64 {
 	return f
 }
 
-// QueryResourceAmount fetches a resource's current size before DELETE/RESIZE.
-func QueryResourceAmount(ctx context.Context, region *model.Region, proxyPath, resourceID string, headers map[string]string) (ResourceAmount, *common.HTTPError) {
-	var apiPath string
-	switch {
-	case strings.Contains(proxyPath, "/instances"):
-		apiPath = "instances/" + resourceID
-	case strings.Contains(proxyPath, "/volumes"):
-		apiPath = "volumes/" + resourceID
-	case strings.Contains(proxyPath, "/floating_ips"):
-		return ResourceAmount{"public_ips": 1}, nil
-	default:
-		return ResourceAmount{}, nil
-	}
-
+// fetchResource GETs a resource from the region backend with the caller's headers.
+func fetchResource(ctx context.Context, region *model.Region, apiPath string, headers map[string]string) (map[string]interface{}, *common.HTTPError) {
 	url := BuildBackendURL(region.InternalEndpoint, apiPath)
 	data, status, err := getBackendJSON(ctx, url, headers)
 	if err != nil {
 		log.WithContext(ctx).Errorf("Failed to query resource amount: %s: %v", url, err)
 		return nil, common.NewHTTPError(http.StatusBadGateway,
-			fmt.Sprintf("Failed to query resource %s for quota tracking: %v", resourceID, err))
+			fmt.Sprintf("Failed to query resource %s for quota tracking: %v", apiPath, err))
 	}
-	// 4xx 是请求本身的问题（资源不存在、ID 非法、无权访问），原样转给客户端；
-	// 此前一律报 502，删除一个不存在的虚拟机会被当成网关故障
+	// A 4xx is a problem with the request itself (missing resource, invalid ID, no access): pass it through.
+	// Reporting 502 would make deleting a nonexistent instance look like a gateway failure.
 	if status >= 400 && status < 500 {
 		log.WithContext(ctx).Infof("Resource query for quota tracking rejected by backend: %s -> %d", url, status)
-		detail := fmt.Sprintf("Resource %s is not available (status=%d)", resourceID, status)
+		detail := fmt.Sprintf("Resource %s is not available (status=%d)", apiPath, status)
 		if msg, ok := data["error_message"].(string); ok && msg != "" {
 			detail = msg
 		}
@@ -294,18 +331,54 @@ func QueryResourceAmount(ctx context.Context, region *model.Region, proxyPath, r
 	if status != http.StatusOK {
 		log.WithContext(ctx).Errorf("Failed to query resource amount: %s -> %d", url, status)
 		return nil, common.NewHTTPError(http.StatusBadGateway,
-			fmt.Sprintf("Failed to query resource %s for quota tracking (status=%d)", resourceID, status))
+			fmt.Sprintf("Failed to query resource %s for quota tracking (status=%d)", apiPath, status))
+	}
+	return data, nil
+}
+
+// QueryResourceAmount fetches a resource (apiPath such as "vpcs/{uuid}") before DELETE/RESIZE and returns the
+// quota it holds for the caller's org. It returns an empty amount when the resource belongs to another org:
+// a system admin can delete any org's resource, but the quota is the owner's, not the caller's. That org's
+// next consumption sync corrects its usage.
+func QueryResourceAmount(ctx context.Context, region *model.Region, resource, apiPath string, headers map[string]string) (ResourceAmount, *common.HTTPError) {
+	data, herr := fetchResource(ctx, region, apiPath, headers)
+	if herr != nil {
+		return nil, herr
+	}
+	if owner, _ := data["owner_uuid"].(string); owner != "" && owner != headers["X-Org-UUID"] {
+		log.WithContext(ctx).Infof("Resource %s is owned by org %s, not the caller's org: quota not released", apiPath, owner)
+		return ResourceAmount{}, nil
 	}
 
-	if strings.Contains(proxyPath, "/instances") {
+	switch resource {
+	case "instance":
 		cpu, memory, disk := floatOrZero(data["cpu"]), floatOrZero(data["memory"]), floatOrZero(data["disk"])
 		if cpu != 0 || memory != 0 || disk != 0 {
 			return ResourceAmount{"cpu_cores": cpu, "ram_gb": memory / 1024.0, "disk_gb": disk}, nil
 		}
-		log.WithContext(ctx).Warnf("Instance %s has no cpu/memory/disk data, skipping quota tracking", resourceID)
+		log.WithContext(ctx).Warnf("Instance %s has no cpu/memory/disk data, skipping quota tracking", apiPath)
 		return ResourceAmount{}, nil
+	case "volume":
+		return ResourceAmount{"disk_gb": floatOrZero(data["size"])}, nil
+	case "floating_ip", "lb_floating_ip":
+		return ResourceAmount{"public_ips": 1}, nil
+	case "vpc":
+		return ResourceAmount{"vpcs": 1}, nil
+	case "load_balancer":
+		// Deleting a load balancer also deletes its floating IPs
+		amount := ResourceAmount{"load_balancers": 1}
+		if fips, ok := data["floating_ips"].([]interface{}); ok && len(fips) > 0 {
+			amount["public_ips"] = float64(len(fips))
+		}
+		return amount, nil
+	case "image":
+		// Only private images count against the org quota; public platform images are not charged
+		if public, _ := data["public"].(bool); public {
+			return ResourceAmount{}, nil
+		}
+		return ResourceAmount{"images": 1}, nil
 	}
-	return ResourceAmount{"disk_gb": floatOrZero(data["size"])}, nil
+	return ResourceAmount{}, nil
 }
 
 func firstPresent(data map[string]interface{}, keys ...string) interface{} {
@@ -343,7 +416,8 @@ type QuotaPlan struct {
 	Reserved bool
 	Amount   ResourceAmount
 	Shrink   ResourceAmount
-	// Multi-instance create: Amount = Unit × Count.
+	// Creates that may produce several objects (instances, floating IPs): Amount = Unit × Count, and the
+	// reservation for objects the backend did not create is given back.
 	Unit  ResourceAmount
 	Count int
 }
@@ -357,6 +431,22 @@ func instanceCount(body map[string]interface{}) int {
 	return int(n)
 }
 
+// floatingIPCount is an upper bound of the floating IPs one create request produces. clapi allocates
+// activation_count addresses (0 counts as 1 without site subnets) plus one per site subnet.
+func floatingIPCount(body map[string]interface{}) int {
+	n := 0
+	if f, ok := ToFloat(body["activation_count"]); ok && f > 0 {
+		n = int(f)
+	}
+	if sites, ok := body["site_subnets"].([]interface{}); ok {
+		n += len(sites)
+	}
+	if n < 1 {
+		n = 1
+	}
+	return n
+}
+
 func scaleAmount(amount ResourceAmount, n int) ResourceAmount {
 	out := make(ResourceAmount, len(amount))
 	for k, v := range amount {
@@ -365,12 +455,14 @@ func scaleAmount(amount ResourceAmount, n int) ResourceAmount {
 	return out
 }
 
-func parseBodyObject(raw []byte) (map[string]interface{}, *common.HTTPError) {
+// parseBodyObject returns the request body as a JSON object, or nil when it is not one. Such a request
+// is rejected by clapi with 400 anyway, so nothing needs to be reserved for it.
+func parseBodyObject(raw []byte) map[string]interface{} {
 	body := map[string]interface{}{}
 	if err := json.Unmarshal(raw, &body); err != nil {
-		return nil, common.NewHTTPError(http.StatusInternalServerError, "Internal Server Error")
+		return nil
 	}
-	return body, nil
+	return body
 }
 
 func explicitInstanceSpec(body map[string]interface{}) (ResourceAmount, bool) {
@@ -390,20 +482,22 @@ func explicitInstanceSpec(body map[string]interface{}) (ResourceAmount, bool) {
 
 // PrepareQuota runs the pre-forward quota step: reserve for create/expand, measure for delete.
 func PrepareQuota(ctx context.Context, orgID int64, region *model.Region, method, proxyTemplate, resolvedPath string, rawBody []byte, headers map[string]string) (*QuotaPlan, *common.HTTPError) {
-	plan := &QuotaPlan{Action: MatchQuotaRule(method, proxyTemplate)}
+	rule, _ := lookupQuotaRule(method, proxyTemplate)
+	plan := &QuotaPlan{Action: rule.Action}
 
-	switch plan.Action {
+	switch rule.Action {
 	case "consume":
-		body, herr := parseBodyObject(rawBody)
-		if herr != nil {
-			return nil, herr
+		body := parseBodyObject(rawBody)
+		if body == nil {
+			break
 		}
 		amount := ResourceAmount{}
-		switch {
-		case strings.Contains(proxyTemplate, "instances"):
+		switch rule.Resource {
+		case "instance":
 			if spec, ok := explicitInstanceSpec(body); ok {
 				amount = spec
 			} else if Truthy(body["flavor"]) {
+				var herr *common.HTTPError
 				if amount, herr = QueryFlavorAmount(ctx, region, body["flavor"], headers); herr != nil {
 					return nil, herr
 				}
@@ -412,12 +506,22 @@ func PrepareQuota(ctx context.Context, orgID int64, region *model.Region, method
 				plan.Unit, plan.Count = amount, instanceCount(body)
 				amount = scaleAmount(amount, plan.Count)
 			}
-		case strings.Contains(proxyTemplate, "volumes"):
+		case "volume":
 			if body["size"] != nil {
 				amount = ResourceAmount{"disk_gb": floatOrZero(body["size"])}
 			}
-		case strings.Contains(proxyTemplate, "floating_ips"):
-			amount = ResourceAmount{"public_ips": 1}
+		case "floating_ip", "lb_floating_ip":
+			plan.Unit, plan.Count = ResourceAmount{"public_ips": 1}, floatingIPCount(body)
+			amount = scaleAmount(plan.Unit, plan.Count)
+		case "vpc":
+			amount = ResourceAmount{"vpcs": 1}
+		case "load_balancer":
+			amount = ResourceAmount{"load_balancers": 1}
+		case "image":
+			// clapi makes every image a system admin creates public; public platform images are not charged
+			if headers["X-System-Role"] != systemAdminRole {
+				amount = ResourceAmount{"images": 1}
+			}
 		}
 		if len(amount) > 0 {
 			if herr := CheckAndReserve(orgID, region.ID, amount); herr != nil {
@@ -427,33 +531,33 @@ func PrepareQuota(ctx context.Context, orgID int64, region *model.Region, method
 		}
 
 	case "release":
-		amount, herr := QueryResourceAmount(ctx, region, resolvedPath, ExtractResourceID(resolvedPath), headers)
+		amount, herr := QueryResourceAmount(ctx, region, rule.Resource, strings.Trim(resolvedPath, "/"), headers)
 		if herr != nil {
 			return nil, herr
 		}
 		plan.Amount = amount
 
 	case "resize":
-		body, herr := parseBodyObject(rawBody)
-		if herr != nil {
-			return nil, herr
+		body := parseBodyObject(rawBody)
+		if body == nil {
+			break
 		}
-		resourceID := ExtractResourceID(resolvedPath)
+		apiPath := strings.TrimSuffix(strings.Trim(resolvedPath, "/"), "/resize")
 		diff := ResourceAmount{}
-		switch {
-		case strings.Contains(proxyTemplate, "instances"):
+		switch rule.Resource {
+		case "instance":
 			// clapi InstanceResizePayload: cpu (cores) and memory (MB), each optional; an omitted
 			// value keeps the current size and the disk is never resized.
 			cpu, memory := floatOrZero(body["cpu"]), floatOrZero(body["memory"])
 			if cpu <= 0 && memory <= 0 {
 				break
 			}
-			oldAmount, herr := QueryResourceAmount(ctx, region, resolvedPath, resourceID, headers)
+			oldAmount, herr := QueryResourceAmount(ctx, region, rule.Resource, apiPath, headers)
 			if herr != nil {
 				return nil, herr
 			}
 			if len(oldAmount) == 0 {
-				break // legacy instance without cpu/memory data: not tracked
+				break // legacy instance without cpu/memory data, or another org's instance: not tracked
 			}
 			if cpu > 0 {
 				diff["cpu_cores"] = cpu - oldAmount["cpu_cores"]
@@ -461,15 +565,18 @@ func PrepareQuota(ctx context.Context, orgID int64, region *model.Region, method
 			if memory > 0 {
 				diff["ram_gb"] = memory/1024.0 - oldAmount["ram_gb"]
 			}
-		case strings.Contains(proxyTemplate, "volumes"):
+		case "volume":
 			// clapi VolumeResizePayload: size (GB), required.
 			size := floatOrZero(body["size"])
 			if size <= 0 {
 				break
 			}
-			oldAmount, herr := QueryResourceAmount(ctx, region, resolvedPath, resourceID, headers)
+			oldAmount, herr := QueryResourceAmount(ctx, region, rule.Resource, apiPath, headers)
 			if herr != nil {
 				return nil, herr
+			}
+			if len(oldAmount) == 0 {
+				break // another org's volume: not tracked
 			}
 			diff["disk_gb"] = size - oldAmount["disk_gb"]
 		}
@@ -505,8 +612,8 @@ func FinishQuota(orgID, regionID int64, plan *QuotaPlan, status int, respBody []
 			Release(orgID, regionID, plan.Amount)
 		case plan.Action == "resize" && len(plan.Shrink) > 0:
 			Release(orgID, regionID, plan.Shrink)
-		case plan.Action == "consume" && plan.Reserved && plan.Count > 1:
-			// clapi returns the created instances; give back the reservation of any that were not created.
+		case plan.Action == "consume" && plan.Reserved && len(plan.Unit) > 0:
+			// clapi returns the created objects as an array; give back the reservation of any that were not created.
 			var created []json.RawMessage
 			if respBody != nil && json.Unmarshal(respBody, &created) == nil && len(created) < plan.Count {
 				Release(orgID, regionID, scaleAmount(plan.Unit, plan.Count-len(created)))

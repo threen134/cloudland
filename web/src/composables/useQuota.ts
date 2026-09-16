@@ -21,6 +21,9 @@ export function useQuota() {
                     max_ram_gb: region.quota.max_ram_gb,
                     max_public_ips: region.quota.max_public_ips,
                     max_disk_gb: region.quota.max_disk_gb,
+                    max_vpcs: region.quota.max_vpcs,
+                    max_load_balancers: region.quota.max_load_balancers,
+                    max_images: region.quota.max_images,
                 }
             }
         } catch (err: any) {
@@ -44,7 +47,8 @@ export function useQuota() {
     }
 
     const getUsagePercent = (used: number, limit: number) => {
-        if (limit <= 0) return 0
+        // A limit of 0 disables the resource: any usage is over quota
+        if (limit <= 0) return used > 0 ? 100 : 0
         return Math.min(100, Math.round((used / limit) * 100))
     }
 

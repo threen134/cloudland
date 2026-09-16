@@ -2,7 +2,7 @@
 import { ref, onMounted, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { orgsApi, type Organization } from '../../api/orgs'
-import { type OrgResourceQuotaUpdate } from '../../api/quota'
+import { QUOTA_ROWS, type OrgResourceQuotaUpdate } from '../../api/quota'
 import { useAuthStore } from '../../stores/auth'
 import { useQuota } from '../../composables/useQuota'
 import { useToast } from '../../composables/useToast'
@@ -469,13 +469,8 @@ onMounted(fetchOrgs)
                   </tr>
                 </thead>
                 <tbody>
-                  <tr v-for="res in [
-                    { key: 'cpu_cores', qkey: 'max_cpu_cores', label: $t('quota.cpuCores') },
-                    { key: 'ram_gb', qkey: 'max_ram_gb', label: $t('quota.ramGb') },
-                    { key: 'disk_gb', qkey: 'max_disk_gb', label: $t('quota.diskGb') },
-                    { key: 'public_ips', qkey: 'max_public_ips', label: $t('quota.publicIps') },
-                  ]" :key="res.key">
-                    <td>{{ res.label }}</td>
+                  <tr v-for="res in QUOTA_ROWS" :key="res.key">
+                    <td>{{ $t(res.label) }}</td>
                     <td>
                       <input
                         v-if="isSuperuser"

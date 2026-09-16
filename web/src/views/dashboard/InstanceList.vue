@@ -18,6 +18,7 @@ import { isValidName } from '../../utils/validation'
 import DeleteModal from '../../components/modals/DeleteModal.vue'
 import { useRegionStore } from '../../stores/region'
 import { useAuthStore } from '../../stores/auth'
+import { quotaErrorMessage } from '../../utils/quotaError'
 
 const region = useRegionStore()
 const authStore = useAuthStore()
@@ -970,17 +971,8 @@ const handleCreateInstance = async () => {
     } catch (err: any) {
         console.error('Failed to create instance:', err)
         const detail = err.response?.data?.detail
-        if (detail?.error === 'quota_exceeded') {
-            createError.value = t('dashboard.instanceDetail.quotaExceeded', {
-                resource: detail.resource,
-                region: detail.region,
-                requested: detail.requested,
-                available: detail.available,
-                limit: detail.limit
-            })
-        } else {
-            createError.value = err.response?.data?.error_message || detail?.message || err.message || t('dashboard.floatingIPDetail.loadError')
-        }
+        createError.value = quotaErrorMessage(err, t, te)
+            || err.response?.data?.error_message || detail?.message || err.message || t('dashboard.floatingIPDetail.loadError')
     } finally {
         creatingInstance.value = false
     }

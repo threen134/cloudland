@@ -4,7 +4,7 @@ import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { orgsApi, ORG_ROLES, type Organization, type OrgMember, type OrgInvitation } from '../../api/orgs'
-import { type OrgResourceQuotaUpdate } from '../../api/quota'
+import { QUOTA_ROWS, type OrgResourceQuotaUpdate } from '../../api/quota'
 import { 
     ArrowLeft, Building2, Users, Trash2, Shield, Crown, X, Mail, Clock, XCircle, Gauge, ChevronDown,
     CheckCircle, AlertCircle, ShieldAlert, PauseCircle 
@@ -400,13 +400,8 @@ onUnmounted(() => {
                 </tr>
               </thead>
               <tbody>
-                <tr v-for="res in [
-                  { key: 'cpu_cores', qkey: 'max_cpu_cores', label: $t('quota.cpuCores') },
-                  { key: 'ram_gb', qkey: 'max_ram_gb', label: $t('quota.ramGb') },
-                  { key: 'disk_gb', qkey: 'max_disk_gb', label: $t('quota.diskGb') },
-                  { key: 'public_ips', qkey: 'max_public_ips', label: $t('quota.publicIps') },
-                ]" :key="res.key">
-                  <td>{{ res.label }}</td>
+                <tr v-for="res in QUOTA_ROWS" :key="res.key">
+                  <td>{{ $t(res.label) }}</td>
                   <td>{{ (region.quota as any)[res.qkey] }}</td>
                   <td>{{ (region.consumption as any)[res.key] }}</td>
                   <td>
@@ -547,13 +542,8 @@ onUnmounted(() => {
                   </tr>
                 </thead>
                 <tbody>
-                  <tr v-for="res in [
-                    { key: 'cpu_cores', qkey: 'max_cpu_cores', label: $t('quota.cpuCores') },
-                    { key: 'ram_gb', qkey: 'max_ram_gb', label: $t('quota.ramGb') },
-                    { key: 'disk_gb', qkey: 'max_disk_gb', label: $t('quota.diskGb') },
-                    { key: 'public_ips', qkey: 'max_public_ips', label: $t('quota.publicIps') },
-                  ]" :key="res.key">
-                    <td>{{ res.label }}</td>
+                  <tr v-for="res in QUOTA_ROWS" :key="res.key">
+                    <td>{{ $t(res.label) }}</td>
                     <td>
                       <input
                         v-if="isSuperuser"

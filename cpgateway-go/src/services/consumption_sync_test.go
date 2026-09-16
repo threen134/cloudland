@@ -24,7 +24,7 @@ func TestFetchAllResourcesPaginates(t *testing.T) {
 			}
 			json.NewEncoder(w).Encode(map[string]interface{}{"offset": offset, "total": total, "limit": len(items), "instances": items})
 		case "/volumes":
-			// 额外查询参数要带上
+			// Extra query parameters must be passed through
 			if r.URL.Query().Get("type") != "all" {
 				w.WriteHeader(http.StatusBadRequest)
 				return
@@ -35,7 +35,7 @@ func TestFetchAllResourcesPaginates(t *testing.T) {
 		case "/nototal":
 			w.Write([]byte(`{"floating_ips":[{},{}]}`))
 		case "/liar":
-			// total 大于实际能取到的条数：取到空页即停止，不能死循环
+			// total larger than what can be fetched: stop at the first empty page instead of looping forever
 			w.Write([]byte(`{"total":1000,"items":[]}`))
 		default:
 			w.WriteHeader(http.StatusForbidden)
@@ -65,7 +65,7 @@ func TestFetchAllResourcesPaginates(t *testing.T) {
 	if items, err = fetchAllResources(ctx, client, backend.URL+"/liar", "", nil); err != nil || len(items) != 0 {
 		t.Fatalf("empty page should stop: got %d, err %v", len(items), err)
 	}
-	// 后端报错时必须返回错误，不能当作空列表（否则会把用量覆盖成 0）
+	// A backend error must surface as an error, not an empty list (which would overwrite usage with 0)
 	if _, err = fetchAllResources(ctx, client, backend.URL+"/forbidden", "", nil); err == nil {
 		t.Fatalf("expected error on non-200 response")
 	}

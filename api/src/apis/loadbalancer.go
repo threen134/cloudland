@@ -216,6 +216,7 @@ func (v *LoadBalancerAPI) getLoadBalancerResponse(ctx context.Context, loadBalan
 			ID:        loadBalancer.UUID,
 			Name:      loadBalancer.Name,
 			Owner:     owner,
+			OwnerUUID: orgAdmin.GetOrgUUID(ctx, loadBalancer.Owner),
 			CreatedAt: loadBalancer.CreatedAt.Format(TimeStringForMat),
 			UpdatedAt: loadBalancer.UpdatedAt.Format(TimeStringForMat),
 		},

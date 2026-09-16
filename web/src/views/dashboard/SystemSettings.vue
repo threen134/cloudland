@@ -26,9 +26,17 @@ const getFieldLabel = (key: string): string => {
     return te(translationKey) ? t(translationKey) : key
 }
 
-// 需要限定取值范围的整数设置，须与 cpgateway 的 settingIntRanges 一致（后端同样校验）
-const numberRanges: Record<string, { min: number; max: number }> = {
-    AUDIT_LOG_RETENTION_DAYS: { min: 90, max: 3650 },
+// Numeric settings with an allowed range; keep in sync with settingRanges in cpgateway (the backend validates too)
+const numberRanges: Record<string, { min: number; max: number; integer: boolean }> = {
+    AUDIT_LOG_RETENTION_DAYS: { min: 90, max: 3650, integer: true },
+    DEFAULT_CPU_CORES: { min: 0, max: 1e6, integer: false },
+    DEFAULT_RAM_GB: { min: 0, max: 1e7, integer: false },
+    DEFAULT_DISK_GB: { min: 0, max: 1e9, integer: false },
+    DEFAULT_TRAFFIC_GB: { min: 0, max: 1e9, integer: false },
+    DEFAULT_PUBLIC_IPS: { min: 0, max: 1e5, integer: true },
+    DEFAULT_VPCS: { min: 0, max: 1e5, integer: true },
+    DEFAULT_LOAD_BALANCERS: { min: 0, max: 1e5, integer: true },
+    DEFAULT_IMAGES: { min: 0, max: 1e5, integer: true },
 }
 
 const getFieldDesc = (setting: SystemSetting): string => {
@@ -119,8 +127,9 @@ const saveSettings = async () => {
                 }
             } else if (s.value_type === 'number') {
                 const range = numberRanges[s.key]
-                if (range && (!Number.isInteger(Number(raw)) || Number(raw) < range.min || Number(raw) > range.max)) {
-                    toast.error(t('settings.rangeError', { label: getFieldLabel(s.key), min: range.min, max: range.max }))
+                const num = Number(raw)
+                if (range && (Number.isNaN(num) || (range.integer && !Number.isInteger(num)) || num < range.min || num > range.max)) {
+                    toast.error(t(range.integer ? 'settings.rangeError' : 'settings.rangeErrorNumber', { label: getFieldLabel(s.key), min: range.min, max: range.max }))
                     saving.value = false
                     return
                 }
@@ -135,7 +144,7 @@ const saveSettings = async () => {
         await fetchSettings() // Fetch latest data FIRST to ensure UI is perfectly synced
         toast.success(t('settings.saveSuccess'))
     } catch (err) {
-        // 后端校验失败（如取值越界）时显示具体原因
+        // Show the backend reason when validation fails (e.g. a value out of range)
         const detail = (err as { response?: { data?: { detail?: unknown } } })?.response?.data?.detail
         toast.error(typeof detail === 'string' ? detail : t('messages.error'))
     } finally {
@@ -534,7 +543,7 @@ onUnmounted(() => {
                                     <span class="bool-status-text">{{ !!editValues[setting.key] ? $t('common.on') : $t('common.off') }}</span>
                                 </div>
                                 <div v-else-if="setting.value_type === 'number'" class="input-wrap">
-                                    <input :id="setting.key" :name="setting.key" type="number" class="form-input" :min="numberRanges[setting.key]?.min" :max="numberRanges[setting.key]?.max" :step="numberRanges[setting.key] ? 1 : undefined" v-model.number="editValues[setting.key]" />
+                                    <input :id="setting.key" :name="setting.key" type="number" class="form-input" :min="numberRanges[setting.key]?.min" :max="numberRanges[setting.key]?.max" :step="numberRanges[setting.key]?.integer ? 1 : undefined" v-model.number="editValues[setting.key]" />
                                 </div>
                                 <div v-else-if="setting.value_type === 'secret'" class="input-wrap">
                                     <input :id="setting.key" :name="setting.key" type="password" class="form-input" v-model="editValues[setting.key]" :placeholder="$t('settings.secretPlaceholder')" autocomplete="new-password" />

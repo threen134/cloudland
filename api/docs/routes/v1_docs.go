@@ -2340,6 +2340,20 @@ const docTemplatev1 = `{
                     "Image"
                 ],
                 "summary": "list images",
+                "parameters": [
+                    {
+                        "type": "boolean",
+                        "description": "true: only images owned by the current org, regardless of system role",
+                        "name": "owned",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "public or private",
+                        "name": "visibility",
+                        "in": "query"
+                    }
+                ],
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -7655,6 +7669,10 @@ const docTemplatev1 = `{
                 "owner": {
                     "type": "string"
                 },
+                "owner_uuid": {
+                    "description": "OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to\nrelease quota only when the caller's org actually owns the deleted resource",
+                    "type": "string"
+                },
                 "remark": {
                     "type": "string"
                 },
@@ -7842,6 +7860,10 @@ const docTemplatev1 = `{
                 "owner": {
                     "type": "string"
                 },
+                "owner_uuid": {
+                    "description": "OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to\nrelease quota only when the caller's org actually owns the deleted resource",
+                    "type": "string"
+                },
                 "status": {
                     "type": "string"
                 },
@@ -7909,6 +7931,10 @@ const docTemplatev1 = `{
                     "type": "string"
                 },
                 "owner": {
+                    "type": "string"
+                },
+                "owner_uuid": {
+                    "description": "OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to\nrelease quota only when the caller's org actually owns the deleted resource",
                     "type": "string"
                 },
                 "resources": {
@@ -8000,6 +8026,10 @@ const docTemplatev1 = `{
                 "owner": {
                     "type": "string"
                 },
+                "owner_uuid": {
+                    "description": "OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to\nrelease quota only when the caller's org actually owns the deleted resource",
+                    "type": "string"
+                },
                 "status": {
                     "type": "string"
                 },
@@ -8084,6 +8114,10 @@ const docTemplatev1 = `{
                     "type": "string"
                 },
                 "owner": {
+                    "type": "string"
+                },
+                "owner_uuid": {
+                    "description": "OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to\nrelease quota only when the caller's org actually owns the deleted resource",
                     "type": "string"
                 },
                 "size": {
@@ -8221,6 +8255,10 @@ const docTemplatev1 = `{
                 "owner": {
                     "type": "string"
                 },
+                "owner_uuid": {
+                    "description": "OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to\nrelease quota only when the caller's org actually owns the deleted resource",
+                    "type": "string"
+                },
                 "shortname": {
                     "type": "string"
                 },
@@ -8350,6 +8388,10 @@ const docTemplatev1 = `{
                     "type": "string"
                 },
                 "owner": {
+                    "type": "string"
+                },
+                "owner_uuid": {
+                    "description": "OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to\nrelease quota only when the caller's org actually owns the deleted resource",
                     "type": "string"
                 },
                 "type": {
@@ -8484,6 +8526,10 @@ const docTemplatev1 = `{
                     "type": "integer"
                 },
                 "owner": {
+                    "type": "string"
+                },
+                "owner_uuid": {
+                    "description": "OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to\nrelease quota only when the caller's org actually owns the deleted resource",
                     "type": "string"
                 },
                 "public_ip": {
@@ -8849,6 +8895,10 @@ const docTemplatev1 = `{
                 "owner": {
                     "type": "string"
                 },
+                "owner_uuid": {
+                    "description": "OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to\nrelease quota only when the caller's org actually owns the deleted resource",
+                    "type": "string"
+                },
                 "public": {
                     "type": "boolean"
                 },
@@ -8881,6 +8931,10 @@ const docTemplatev1 = `{
                 "owner": {
                     "type": "string"
                 },
+                "owner_uuid": {
+                    "description": "OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to\nrelease quota only when the caller's org actually owns the deleted resource",
+                    "type": "string"
+                },
                 "pool_id": {
                     "type": "string"
                 },
@@ -8911,6 +8965,10 @@ const docTemplatev1 = `{
                     "type": "string"
                 },
                 "owner": {
+                    "type": "string"
+                },
+                "owner_uuid": {
+                    "description": "OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to\nrelease quota only when the caller's org actually owns the deleted resource",
                     "type": "string"
                 },
                 "updated_at": {
@@ -9177,6 +9235,10 @@ const docTemplatev1 = `{
                     "type": "string"
                 },
                 "owner": {
+                    "type": "string"
+                },
+                "owner_uuid": {
+                    "description": "OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to\nrelease quota only when the caller's org actually owns the deleted resource",
                     "type": "string"
                 },
                 "passwd_login": {
@@ -9492,6 +9554,10 @@ const docTemplatev1 = `{
                 "owner": {
                     "type": "string"
                 },
+                "owner_uuid": {
+                    "description": "OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to\nrelease quota only when the caller's org actually owns the deleted resource",
+                    "type": "string"
+                },
                 "subnet_names": {
                     "type": "string"
                 },
@@ -9567,6 +9633,10 @@ const docTemplatev1 = `{
                     "type": "string"
                 },
                 "owner": {
+                    "type": "string"
+                },
+                "owner_uuid": {
+                    "description": "OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to\nrelease quota only when the caller's org actually owns the deleted resource",
                     "type": "string"
                 },
                 "public_key": {
@@ -9672,6 +9742,10 @@ const docTemplatev1 = `{
                     "type": "string"
                 },
                 "owner": {
+                    "type": "string"
+                },
+                "owner_uuid": {
+                    "description": "OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to\nrelease quota only when the caller's org actually owns the deleted resource",
                     "type": "string"
                 },
                 "port": {
@@ -9783,6 +9857,10 @@ const docTemplatev1 = `{
                     "type": "string"
                 },
                 "owner": {
+                    "type": "string"
+                },
+                "owner_uuid": {
+                    "description": "OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to\nrelease quota only when the caller's org actually owns the deleted resource",
                     "type": "string"
                 },
                 "status": {
@@ -9922,6 +10000,10 @@ const docTemplatev1 = `{
                 "owner": {
                     "type": "string"
                 },
+                "owner_uuid": {
+                    "description": "OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to\nrelease quota only when the caller's org actually owns the deleted resource",
+                    "type": "string"
+                },
                 "phases": {
                     "type": "array",
                     "items": {
@@ -10044,6 +10126,10 @@ const docTemplatev1 = `{
                 "owner": {
                     "type": "string"
                 },
+                "owner_uuid": {
+                    "description": "OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to\nrelease quota only when the caller's org actually owns the deleted resource",
+                    "type": "string"
+                },
                 "port_max": {
                     "type": "integer"
                 },
@@ -10146,6 +10232,10 @@ const docTemplatev1 = `{
                     "type": "string"
                 },
                 "owner": {
+                    "type": "string"
+                },
+                "owner_uuid": {
+                    "description": "OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to\nrelease quota only when the caller's org actually owns the deleted resource",
                     "type": "string"
                 },
                 "security_rules": {
@@ -10277,6 +10367,10 @@ const docTemplatev1 = `{
                     "type": "string"
                 },
                 "owner": {
+                    "type": "string"
+                },
+                "owner_uuid": {
+                    "description": "OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to\nrelease quota only when the caller's org actually owns the deleted resource",
                     "type": "string"
                 },
                 "start": {
@@ -10443,6 +10537,10 @@ const docTemplatev1 = `{
                 "owner": {
                     "type": "string"
                 },
+                "owner_uuid": {
+                    "description": "OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to\nrelease quota only when the caller's org actually owns the deleted resource",
+                    "type": "string"
+                },
                 "priority": {
                     "type": "integer"
                 },
@@ -10522,6 +10620,10 @@ const docTemplatev1 = `{
                     "type": "string"
                 },
                 "owner": {
+                    "type": "string"
+                },
+                "owner_uuid": {
+                    "description": "OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to\nrelease quota only when the caller's org actually owns the deleted resource",
                     "type": "string"
                 },
                 "updated_at": {
@@ -10621,6 +10723,10 @@ const docTemplatev1 = `{
                 "owner": {
                     "type": "string"
                 },
+                "owner_uuid": {
+                    "description": "OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to\nrelease quota only when the caller's org actually owns the deleted resource",
+                    "type": "string"
+                },
                 "subnets": {
                     "type": "array",
                     "items": {
@@ -10701,6 +10807,10 @@ const docTemplatev1 = `{
                 "owner": {
                     "type": "string"
                 },
+                "owner_uuid": {
+                    "description": "OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to\nrelease quota only when the caller's org actually owns the deleted resource",
+                    "type": "string"
+                },
                 "path": {
                     "type": "string"
                 },
@@ -10737,6 +10847,10 @@ const docTemplatev1 = `{
                     "type": "string"
                 },
                 "owner": {
+                    "type": "string"
+                },
+                "owner_uuid": {
+                    "description": "OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to\nrelease quota only when the caller's org actually owns the deleted resource",
                     "type": "string"
                 },
                 "target": {
@@ -10890,6 +11004,10 @@ const docTemplatev1 = `{
                 "owner": {
                     "type": "string"
                 },
+                "owner_uuid": {
+                    "description": "OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to\nrelease quota only when the caller's org actually owns the deleted resource",
+                    "type": "string"
+                },
                 "path": {
                     "type": "string"
                 },
@@ -10977,6 +11095,10 @@ const docTemplatev1 = `{
                 "owner": {
                     "type": "string"
                 },
+                "owner_uuid": {
+                    "description": "OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to\nrelease quota only when the caller's org actually owns the deleted resource",
+                    "type": "string"
+                },
                 "remark": {
                     "type": "string"
                 },
@@ -11057,6 +11179,10 @@ const docTemplatev1 = `{
                     "type": "string"
                 },
                 "owner": {
+                    "type": "string"
+                },
+                "owner_uuid": {
+                    "description": "OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to\nrelease quota only when the caller's org actually owns the deleted resource",
                     "type": "string"
                 },
                 "updated_at": {

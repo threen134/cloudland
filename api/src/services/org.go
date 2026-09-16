@@ -429,6 +429,21 @@ func (a *OrgAdmin) GetOrgName(ctx context.Context, id int64) (name string) {
 	return
 }
 
+// GetOrgUUID returns the UUID of a local org ID (empty when not found). The mapping never changes once an
+// org exists, so results are cached like GetOrgIDByUUID.
+func (a *OrgAdmin) GetOrgUUID(ctx context.Context, id int64) string {
+	if cached, ok := orgUUIDByID.Load(id); ok {
+		return cached.(string)
+	}
+	org := &model.Organization{Model: model.Model{ID: id}}
+	_, db := GetContextDB(ctx)
+	if err := db.Select("uuid").Take(org).Error; err != nil || org.UUID == "" {
+		return ""
+	}
+	orgUUIDByID.Store(id, org.UUID)
+	return org.UUID
+}
+
 // Delete deletes an Org. Only SystemAdmin can do this. OrgTypeSystem cannot be deleted.
 func (a *OrgAdmin) Delete(ctx context.Context, org *model.Organization) (err error) {
 	logger.Ctx(ctx).Infof("ENTER OrgAdmin.Delete: orgID=%d, name=%s", org.ID, org.Name)
@@ -607,6 +622,9 @@ func (a *OrgAdmin) List(ctx context.Context, offset, limit int64, order, query s
 // orgIDByUUID 缓存组织 UUID 到本区域组织 ID 的映射。该对应关系一旦建立就不再变化，
 // 无需失效策略；目的是保持 authorize 每请求不查库的特性
 var orgIDByUUID sync.Map
+
+// orgUUIDByID caches the reverse mapping (local org ID -> UUID) for resource responses
+var orgUUIDByID sync.Map
 
 // GetOrgIDByUUID 把 cpgateway 传来的组织 UUID 解析成本区域的组织 ID。
 // 两侧组织表的自增主键各自独立，UUID 才是跨服务契约，不能直接拿对方的 ID 当本地 ID 用

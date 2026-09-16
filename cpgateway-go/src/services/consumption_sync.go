@@ -46,7 +46,7 @@ func TriggerConsumptionSync(orgID int64, orgUUID string, regionID int64, interna
 	consumptionSyncMu.Unlock()
 
 	go func() {
-		// 登录触发的后台对账：独立 trace（按 TRACING_BACKGROUND_SAMPLE_RATIO 采样）
+		// Login-triggered background reconciliation: its own trace (sampled by TRACING_BACKGROUND_SAMPLE_RATIO)
 		ctx, span := tracing.StartBackground(context.Background(), "consumption.sync",
 			trace.WithAttributes(attribute.Int64("cloudland.org_id", orgID), attribute.Int64("cloudland.region_id", regionID)))
 		err := doConsumptionSync(ctx, orgID, orgUUID, regionID, internalEndpoint, internalSecret)
@@ -65,12 +65,12 @@ func TriggerConsumptionSync(orgID int64, orgUUID string, regionID int64, interna
 
 const (
 	consumptionSyncPageSize = 100
-	// 翻页上限：防止后端 total 异常时无限循环（100 × 1000 = 10 万条，远超单组织单区域的资源量）
+	// Page limit guards against an endless loop on a bogus total (100 x 1000 = 100k items, far beyond one org in one region)
 	consumptionSyncMaxPages = 1000
 )
 
-// fetchAllResources 按 offset 翻页取完整列表。clapi 列表接口默认每页 50 条，只取一页时
-// 资源超过 50 个的组织会被少算，而对账结果会覆盖逐次记账的用量，导致配额限制失效
+// fetchAllResources pages through the full list by offset. clapi lists return 50 items per page by default; reading only
+// one page undercounts orgs with more resources, and the sync result overwrites the tracked usage, breaking quota limits
 func fetchAllResources(ctx context.Context, client *http.Client, url, query string, headers map[string]string) ([]interface{}, error) {
 	all := []interface{}{}
 	for page := 0; page < consumptionSyncMaxPages; page++ {
@@ -78,7 +78,7 @@ func fetchAllResources(ctx context.Context, client *http.Client, url, query stri
 		if query != "" {
 			pageURL += "&" + query
 		}
-		items, total, err := fetchResourcePage(ctx, client, pageURL, headers)
+		items, total, _, err := fetchResourcePage(ctx, client, pageURL, headers)
 		if err != nil {
 			return nil, err
 		}
@@ -90,11 +90,12 @@ func fetchAllResources(ctx context.Context, client *http.Client, url, query stri
 	return nil, fmt.Errorf("GET %s: exceeded %d pages", url, consumptionSyncMaxPages)
 }
 
-// fetchResourcePage 返回一页列表及其 total。响应为对象时取其中的列表字段；没有 total 时视为只有这一页
-func fetchResourcePage(ctx context.Context, client *http.Client, url string, headers map[string]string) ([]interface{}, int, error) {
+// fetchResourcePage returns one page, its total and whether the response carried a total. For an object response
+// it takes the list field; without a total the page is treated as the whole list
+func fetchResourcePage(ctx context.Context, client *http.Client, url string, headers map[string]string) (items []interface{}, total int, hasTotal bool, err error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
-		return nil, 0, err
+		return nil, 0, false, err
 	}
 	for k, v := range headers {
 		req.Header.Set(k, v)
@@ -102,39 +103,55 @@ func fetchResourcePage(ctx context.Context, client *http.Client, url string, hea
 	resp, err := client.Do(req)
 	if err != nil {
 		log.WithContext(ctx).Warnf("ConsumptionSync: GET %s error: %v", url, err)
-		return nil, 0, err
+		return nil, 0, false, err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		log.WithContext(ctx).Warnf("ConsumptionSync: GET %s -> %d", url, resp.StatusCode)
-		return nil, 0, fmt.Errorf("GET %s -> %d", url, resp.StatusCode)
+		return nil, 0, false, fmt.Errorf("GET %s -> %d", url, resp.StatusCode)
 	}
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, 0, err
+		return nil, 0, false, err
 	}
 	var data interface{}
-	if err := json.Unmarshal(body, &data); err != nil {
-		return nil, 0, err
+	if err = json.Unmarshal(body, &data); err != nil {
+		return nil, 0, false, err
 	}
 	switch v := data.(type) {
 	case []interface{}:
-		return v, len(v), nil
+		return v, len(v), false, nil
 	case map[string]interface{}:
-		var items []interface{}
 		for _, item := range v {
 			if list, ok := item.([]interface{}); ok {
 				items = list
 				break
 			}
 		}
-		total := len(items)
 		if t, ok := ToFloat(v["total"]); ok {
-			total = int(t)
+			return items, int(t), true, nil
 		}
-		return items, total, nil
+		return items, len(items), false, nil
 	}
-	return []interface{}{}, 0, nil
+	return []interface{}{}, 0, false, nil
+}
+
+// fetchResourceCount returns the size of a list from its total while requesting a single item. A list
+// without a total falls back to paging through every item.
+func fetchResourceCount(ctx context.Context, client *http.Client, url, query string, headers map[string]string) (int, error) {
+	pageURL := url + "?limit=1&offset=0"
+	if query != "" {
+		pageURL += "&" + query
+	}
+	_, total, hasTotal, err := fetchResourcePage(ctx, client, pageURL, headers)
+	if err != nil {
+		return 0, err
+	}
+	if hasTotal {
+		return total, nil
+	}
+	all, err := fetchAllResources(ctx, client, url, query, headers)
+	return len(all), err
 }
 
 func fieldFloat(item interface{}, key string) float64 {
@@ -147,8 +164,8 @@ func fieldFloat(item interface{}, key string) float64 {
 }
 
 func doConsumptionSync(ctx context.Context, orgID int64, orgUUID string, regionID int64, internalEndpoint, internalSecret string) error {
-	// clapi 只按 X-Org-UUID 解析组织（两侧自增 ID 各自独立）。缺了它 clapi 会把请求当作
-	// 不属于任何组织，列表全部为空，下面就会把用量覆盖成 0，配额限制随之失效
+	// clapi resolves the org only from X-Org-UUID (auto-increment IDs differ between the services). Without it clapi treats
+	// the request as belonging to no org, every list is empty, usage is overwritten with 0 and quota limits stop working
 	if orgUUID == "" {
 		return fmt.Errorf("missing org uuid for org=%d", orgID)
 	}
@@ -178,9 +195,25 @@ func doConsumptionSync(ctx context.Context, orgID int64, orgUUID string, regionI
 		disk += fieldFloat(vol, "size")
 	}
 
-	fips, err := fetchAllResources(ctx, client, base+"/floating_ips", "", headers)
+	// Count-only resources read just the list total instead of paging through full objects (clapi builds
+	// nested subnets, listeners and backends for each), which also keeps the sync short
+	fips, err := fetchResourceCount(ctx, client, base+"/floating_ips", "", headers)
 	if err != nil {
-		return fmt.Errorf("failed to fetch floating_ips for org=%d", orgID)
+		return fmt.Errorf("failed to count floating_ips for org=%d", orgID)
+	}
+	vpcs, err := fetchResourceCount(ctx, client, base+"/vpcs", "", headers)
+	if err != nil {
+		return fmt.Errorf("failed to count vpcs for org=%d", orgID)
+	}
+	lbs, err := fetchResourceCount(ctx, client, base+"/load_balancers", "", headers)
+	if err != nil {
+		return fmt.Errorf("failed to count load_balancers for org=%d", orgID)
+	}
+	// Private images owned by the org. The plain list also returns other orgs' public images (and every org's
+	// images for a system admin, the role used here); public platform images are not charged to any org.
+	images, err := fetchResourceCount(ctx, client, base+"/images", "owned=true&visibility=private", headers)
+	if err != nil {
+		return fmt.Errorf("failed to count images for org=%d", orgID)
 	}
 
 	tx := dbs.DBContext(ctx).Begin()
@@ -190,10 +223,13 @@ func doConsumptionSync(ctx context.Context, orgID int64, orgUUID string, regionI
 		return fmt.Errorf("no consumption record for org=%d, region=%d", orgID, regionID)
 	}
 	if err := tx.Model(&consumption).Updates(map[string]interface{}{
-		"cpu_cores":  cpu,
-		"ram_gb":     ram,
-		"disk_gb":    disk,
-		"public_ips": len(fips),
+		"cpu_cores":      cpu,
+		"ram_gb":         ram,
+		"disk_gb":        disk,
+		"public_ips":     fips,
+		"vpcs":           vpcs,
+		"load_balancers": lbs,
+		"images":         images,
 	}).Error; err != nil {
 		tx.Rollback()
 		return err
@@ -202,7 +238,7 @@ func doConsumptionSync(ctx context.Context, orgID int64, orgUUID string, regionI
 		return err
 	}
 
-	log.WithContext(ctx).Infof("ConsumptionSync: org=%d, region=%d -> cpu=%v, ram=%.2fGB, disk=%vGB, public_ips=%d",
-		orgID, regionID, cpu, ram, disk, len(fips))
+	log.WithContext(ctx).Infof("ConsumptionSync: org=%d, region=%d -> cpu=%v, ram=%.2fGB, disk=%vGB, public_ips=%d, vpcs=%d, load_balancers=%d, images=%d",
+		orgID, regionID, cpu, ram, disk, fips, vpcs, lbs, images)
 	return nil
 }

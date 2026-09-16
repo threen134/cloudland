@@ -64,6 +64,9 @@ var SettingsMetadata = []SettingMeta{
 	{"DEFAULT_RAM_GB", "number", "quota", "默认内存配额（GB）", false, cfgNumber("quota.defaults.ram_gb", 8.0)},
 	{"DEFAULT_DISK_GB", "number", "quota", "默认磁盘配额（GB）", false, cfgNumber("quota.defaults.disk_gb", 50.0)},
 	{"DEFAULT_PUBLIC_IPS", "number", "quota", "默认公网 IP 配额", false, cfgInt("quota.defaults.public_ips", 2)},
+	{"DEFAULT_VPCS", "number", "quota", "默认 VPC 配额（个）", false, cfgInt("quota.defaults.vpcs", DefaultQuotaVPCs)},
+	{"DEFAULT_LOAD_BALANCERS", "number", "quota", "默认负载均衡配额（个）", false, cfgInt("quota.defaults.load_balancers", DefaultQuotaLoadBalancers)},
+	{"DEFAULT_IMAGES", "number", "quota", "默认镜像配额（个）", false, cfgInt("quota.defaults.images", DefaultQuotaImages)},
 	{"DEFAULT_TRAFFIC_GB", "number", "quota", "默认流量配额（GB）", false, cfgNumber("quota.defaults.traffic_gb", 100.0)},
 	{"NOTIFICATION_CHANNELS", "json", "notification", "启用的通知渠道列表", false, constant([]interface{}{"email"})},
 	{"SMTP_HOST", "string", "notification", "SMTP 主机", false, cfgString("smtp.host", "")},
@@ -88,24 +91,43 @@ var SettingsMetadata = []SettingMeta{
 
 const DefaultAuditLogRetentionDays = 365
 
-// settingIntRanges 为需要限定取值范围的整数设置（闭区间）。审计日志设下限，防止误把审计记录清空；
-// 各区域 clapi 读取时同样按此范围兜底
-var settingIntRanges = map[string][2]int{
-	"AUDIT_LOG_RETENTION_DAYS": {90, 3650},
+// settingRange is the allowed value range (inclusive) of a numeric setting.
+type settingRange struct {
+	Min, Max float64
+	Integer  bool
 }
 
-// ValidateSetting 校验单个设置值，目前只检查带范围约束的整数设置
+// settingRanges lists numeric settings with an allowed range. Audit log retention has a lower bound so the audit
+// trail cannot be wiped by mistake (clapi applies the same range when reading it). Default quotas must be
+// non-negative, and count quotas whole numbers, matching the per-org quota update API.
+var settingRanges = map[string]settingRange{
+	"AUDIT_LOG_RETENTION_DAYS": {90, 3650, true},
+	"DEFAULT_CPU_CORES":        {0, 1e6, false},
+	"DEFAULT_RAM_GB":           {0, 1e7, false},
+	"DEFAULT_DISK_GB":          {0, 1e9, false},
+	"DEFAULT_TRAFFIC_GB":       {0, 1e9, false},
+	"DEFAULT_PUBLIC_IPS":       {0, 1e5, true},
+	"DEFAULT_VPCS":             {0, 1e5, true},
+	"DEFAULT_LOAD_BALANCERS":   {0, 1e5, true},
+	"DEFAULT_IMAGES":           {0, 1e5, true},
+}
+
+// ValidateSetting validates a single setting value; only numeric settings with a range are checked
 func ValidateSetting(key string, value interface{}) error {
-	bounds, ok := settingIntRanges[key]
+	r, ok := settingRanges[key]
 	if !ok {
 		return nil
 	}
 	n, isNum := value.(float64)
-	if !isNum || n != float64(int64(n)) {
+	if !isNum {
+		return fmt.Errorf("%s must be a number", key)
+	}
+	if r.Integer && n != float64(int64(n)) {
 		return fmt.Errorf("%s must be an integer", key)
 	}
-	if int(n) < bounds[0] || int(n) > bounds[1] {
-		return fmt.Errorf("%s must be between %d and %d", key, bounds[0], bounds[1])
+	if n < r.Min || n > r.Max {
+		return fmt.Errorf("%s must be between %s and %s", key,
+			strconv.FormatFloat(r.Min, 'f', -1, 64), strconv.FormatFloat(r.Max, 'f', -1, 64))
 	}
 	return nil
 }

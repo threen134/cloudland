@@ -11,7 +11,7 @@ import ActivityEntry from '../../components/activity/ActivityEntry.vue'
 import { volumesApi } from '../../api/volumes'
 import { imagesApi, type Image } from '../../api/images'
 import { vpcsApi, floatingIpsApi } from '../../api/networks'
-import { quotaApi } from '../../api/quota'
+import { quotaApi, type QuotaFields } from '../../api/quota'
 
 const auth = useAuthStore()
 const regionStore = useRegionStore()
@@ -25,10 +25,8 @@ interface ResourceUsage {
     percentage: number
 }
 
+// Figures for the summary cards; quota usage is shown by usageBars
 interface SystemStats {
-    cpu: ResourceUsage
-    memory: ResourceUsage
-    disk: ResourceUsage
     instances: ResourceUsage
     volume: ResourceUsage
     images: ResourceUsage
@@ -39,11 +37,47 @@ interface SystemStats {
 const loading = ref(true)
 const stats = ref<SystemStats | null>(null)
 
+// One progress bar per quota: usage against the org quota in the current region (not live utilization)
+interface UsageBar {
+    key: string
+    labelKey: string
+    used: number
+    // null when no quota data is available; 0 is a real quota (the resource is disabled)
+    total: number | null
+    percentage: number
+    // Translated unit (unitKey) or a literal unit such as GB
+    unitKey?: string
+    unit?: string
+}
+const usageBars = ref<UsageBar[]>([])
+
+const usagePercent = (used: number, total: number | null) => {
+    if (total === null) return 0
+    if (total <= 0) return used > 0 ? 100 : 0
+    return Math.min(Math.round((used / total) * 100), 100)
+}
+
+const buildUsageBars = (u: {
+    cpu: number, memGB: number, diskGB: number, publicIps: number, vpcs: number, loadBalancers: number, images: number
+}, quota?: Partial<QuotaFields> | null): UsageBar[] => {
+    const bar = (key: string, labelKey: string, used: number, total: number | undefined, unit: { unitKey?: string, unit?: string }): UsageBar => {
+        const limit = total ?? null
+        return { key, labelKey, used, total: limit, percentage: usagePercent(used, limit), ...unit }
+    }
+    const count = { unitKey: 'dashboard.overview.countUnit' }
+    return [
+        bar('cpu', 'dashboard.overview.cpu', u.cpu, quota?.max_cpu_cores, { unitKey: 'dashboard.overview.cpuUnit' }),
+        bar('memory', 'dashboard.overview.memory', Math.round(u.memGB), quota?.max_ram_gb, { unit: 'GB' }),
+        bar('disk', 'dashboard.overview.diskTotal', u.diskGB, quota?.max_disk_gb, { unit: 'GB' }),
+        bar('public_ips', 'dashboard.overview.publicIp', u.publicIps, quota?.max_public_ips, count),
+        bar('vpcs', 'dashboard.overview.vpc', u.vpcs, quota?.max_vpcs, count),
+        bar('load_balancers', 'dashboard.overview.loadBalancer', u.loadBalancers, quota?.max_load_balancers, count),
+        bar('images', 'dashboard.overview.images', u.images, quota?.max_images, count),
+    ]
+}
+
 // Default empty data pattern (as fallback)
 const emptyStats: SystemStats = {
-    cpu: { used: 0, total: 0, percentage: 0 },
-    memory: { used: 0, total: 0, unit: 'GB', percentage: 0 },
-    disk: { used: 0, total: 0, unit: 'GB', percentage: 0 },
     instances: { used: 0, total: 0, percentage: 0 },
     volume: { used: 0, total: 0, unit: 'GB', percentage: 0 },
     images: { used: 0, total: 0, percentage: 0 },
@@ -84,30 +118,26 @@ onMounted(async () => {
         const usedDiskGB = consumption?.disk_gb ?? (Array.isArray(volumes) ? volumes.reduce((acc: number, vol: any) => acc + (vol.size || 0), 0) : 0)
         const usedPublicIps = consumption?.public_ips ?? (Array.isArray(fips) ? fips.length : 0)
 
-        const totalCpu = quota?.max_cpu_cores ?? 64
-        const totalMemGB = quota?.max_ram_gb ?? 128
-        const totalDiskGB = quota?.max_disk_gb ?? 2000
-        const totalPublicIps = quota?.max_public_ips ?? 20
-
         const instanceCount = Array.isArray(instances) ? instances.length : 0
         const imageCount = Array.isArray(images) ? images.length : 0
         const vpcCount = Array.isArray(vpcs) ? vpcs.length : 0
 
-        const safePercent = (used: number, total: number) => total > 0 ? Math.min(Math.round((used / total) * 100), 100) : 0
-
         stats.value = {
-            cpu: { used: usedCpu, total: totalCpu, percentage: safePercent(usedCpu, totalCpu) },
-            memory: { used: Math.round(usedMemGB), total: totalMemGB, unit: 'GB', percentage: safePercent(usedMemGB, totalMemGB) },
-            disk: { used: usedDiskGB, total: totalDiskGB, unit: 'GB', percentage: safePercent(usedDiskGB, totalDiskGB) },
             instances: { used: instanceCount, total: 0, percentage: 0 },
-            volume: { used: usedDiskGB, total: totalDiskGB, unit: 'GB', percentage: safePercent(usedDiskGB, totalDiskGB) },
+            volume: { used: usedDiskGB, total: 0, unit: 'GB', percentage: 0 },
             images: { used: imageCount, total: 0, percentage: 0 },
-            public_ip: { used: usedPublicIps, total: totalPublicIps, percentage: safePercent(usedPublicIps, totalPublicIps) },
+            public_ip: { used: usedPublicIps, total: 0, percentage: 0 },
             private_ip: { used: vpcCount, total: 0, percentage: 0 }
         }
+        // Without quota data the limits stay null and each bar shows "used / -"
+        usageBars.value = buildUsageBars({
+            cpu: usedCpu, memGB: usedMemGB, diskGB: usedDiskGB, publicIps: usedPublicIps,
+            vpcs: consumption?.vpcs ?? vpcCount, loadBalancers: consumption?.load_balancers ?? 0, images: consumption?.images ?? 0,
+        }, quota)
     } catch (error) {
         console.error('Failed to fetch actual stats:', error)
         stats.value = emptyStats
+        usageBars.value = buildUsageBars({ cpu: 0, memGB: 0, diskGB: 0, publicIps: 0, vpcs: 0, loadBalancers: 0, images: 0 }, null)
     } finally {
         loading.value = false
     }
@@ -134,6 +164,9 @@ const loadActivities = async () => {
     }
 }
 onMounted(loadActivities)
+
+// Over quota (a lowered limit, a quota of 0, or usage recorded before enforcement) is always red
+const getBarColor = (bar: UsageBar) => bar.total !== null && bar.used > bar.total ? 'var(--error-color)' : getPercentColor(bar.percentage)
 
 const getPercentColor = (percent: number) => {
     if (percent > 90) return 'var(--error-color)'
@@ -239,40 +272,15 @@ const getPercentColor = (percent: number) => {
           <h3>{{ $t('dashboard.overview.resourceUsage') }}</h3>
         </div>
         <div class="card-body">
-          <!-- CPU -->
-          <div class="usage-item">
+          <div v-for="bar in usageBars" :key="bar.key" class="usage-item">
             <div class="usage-header">
-              <span class="usage-label">{{ $t('dashboard.overview.cpu') }} {{ $t('dashboard.overview.usage') }}</span>
-              <span class="usage-value">{{ stats.cpu.percentage }}%</span>
+              <span class="usage-label">{{ $t(bar.labelKey) }} {{ $t('dashboard.overview.usage') }}</span>
+              <span class="usage-value">{{ bar.total !== null ? bar.percentage + '%' : '-' }}</span>
             </div>
             <div class="progress-bg">
-              <div class="progress-fill" :style="{ width: stats.cpu.percentage + '%', backgroundColor: getPercentColor(stats.cpu.percentage) }"></div>
+              <div class="progress-fill" :style="{ width: bar.percentage + '%', backgroundColor: getBarColor(bar) }"></div>
             </div>
-            <div class="usage-meta">{{ stats.cpu.used }} / {{ stats.cpu.total }} {{ $t('dashboard.overview.cpuUnit') }}</div>
-          </div>
-
-          <!-- Memory -->
-          <div class="usage-item">
-            <div class="usage-header">
-              <span class="usage-label">{{ $t('dashboard.overview.memory') }} {{ $t('dashboard.overview.usage') }}</span>
-              <span class="usage-value">{{ stats.memory.percentage }}%</span>
-            </div>
-            <div class="progress-bg">
-              <div class="progress-fill" :style="{ width: stats.memory.percentage + '%', backgroundColor: getPercentColor(stats.memory.percentage) }"></div>
-            </div>
-            <div class="usage-meta">{{ stats.memory.used }} / {{ stats.memory.total }} {{ stats.memory.unit }}</div>
-          </div>
-
-          <!-- Storage -->
-          <div class="usage-item">
-            <div class="usage-header">
-              <span class="usage-label">{{ $t('dashboard.overview.diskTotal') }} {{ $t('dashboard.overview.usage') }}</span>
-              <span class="usage-value">{{ stats.disk.percentage }}%</span>
-            </div>
-            <div class="progress-bg">
-              <div class="progress-fill" :style="{ width: stats.disk.percentage + '%', backgroundColor: getPercentColor(stats.disk.percentage) }"></div>
-            </div>
-            <div class="usage-meta">{{ stats.disk.used }} / {{ stats.disk.total }} {{ stats.disk.unit }}</div>
+            <div class="usage-meta">{{ bar.used }} / {{ bar.total !== null ? bar.total : '-' }} {{ bar.unitKey ? $t(bar.unitKey) : bar.unit }}</div>
           </div>
         </div>
       </div>

@@ -357,6 +357,7 @@ func (v *VolumeAPI) getVolumeResponse(ctx context.Context, volume *model.Volume)
 			ID:        volume.UUID,
 			Name:      volume.Name,
 			Owner:     owner,
+			OwnerUUID: orgAdmin.GetOrgUUID(ctx, volume.Owner),
 			CreatedAt: volume.CreatedAt.Format(TimeStringForMat),
 			UpdatedAt: volume.UpdatedAt.Format(TimeStringForMat),
 		},

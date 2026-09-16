@@ -10,6 +10,7 @@ import (
 	"cpgateway-go/src/common"
 	"cpgateway-go/src/dbs"
 	"cpgateway-go/src/model"
+	"cpgateway-go/src/services"
 )
 
 // resolveResourceOrg loads the org and checks the caller is a SystemAdmin or a member.
@@ -89,7 +90,8 @@ func UpdateOrgRegionQuota(c *gin.Context) {
 		return
 	}
 	updates := map[string]interface{}{}
-	for _, field := range []string{"max_cpu_cores", "max_ram_gb", "max_public_ips", "max_disk_gb"} {
+	for _, resource := range services.QuotaResourceFields {
+		field := "max_" + resource
 		v, set := raw[field]
 		if !set || string(v) == "null" {
 			continue
@@ -103,7 +105,7 @@ func UpdateOrgRegionQuota(c *gin.Context) {
 			common.AbortValidation(c, "body", fmt.Errorf("%s: Input should be greater than or equal to 0", field))
 			return
 		}
-		if field == "max_public_ips" {
+		if services.IsIntegerQuotaField(resource) {
 			if n != float64(int(n)) {
 				common.AbortValidation(c, "body", fmt.Errorf("%s must be an integer", field))
 				return

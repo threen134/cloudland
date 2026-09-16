@@ -189,6 +189,7 @@ func (v *VPCAPI) getVPCResponse(ctx context.Context, router *model.Router) (vpcR
 			ID:        router.UUID,
 			Name:      router.Name,
 			Owner:     owner,
+			OwnerUUID: orgAdmin.GetOrgUUID(ctx, router.Owner),
 			CreatedAt: router.CreatedAt.Format(TimeStringForMat),
 			UpdatedAt: router.UpdatedAt.Format(TimeStringForMat),
 		},

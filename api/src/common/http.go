@@ -22,9 +22,12 @@ type BaseReference struct {
 }
 
 type ResourceReference struct {
-	ID        string `json:"id,omitempty"`
-	Name      string `json:"name,omitempty"`
-	Owner     string `json:"owner,omitempty"`
+	ID    string `json:"id,omitempty"`
+	Name  string `json:"name,omitempty"`
+	Owner string `json:"owner,omitempty"`
+	// OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to
+	// release quota only when the caller's org actually owns the deleted resource
+	OwnerUUID string `json:"owner_uuid,omitempty"`
 	CreatedAt string `json:"created_at,omitempty"`
 	UpdatedAt string `json:"updated_at,omitempty"`
 }

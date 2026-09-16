@@ -2333,6 +2333,20 @@
                     "Image"
                 ],
                 "summary": "list images",
+                "parameters": [
+                    {
+                        "type": "boolean",
+                        "description": "true: only images owned by the current org, regardless of system role",
+                        "name": "owned",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "public or private",
+                        "name": "visibility",
+                        "in": "query"
+                    }
+                ],
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -7648,6 +7662,10 @@
                 "owner": {
                     "type": "string"
                 },
+                "owner_uuid": {
+                    "description": "OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to\nrelease quota only when the caller's org actually owns the deleted resource",
+                    "type": "string"
+                },
                 "remark": {
                     "type": "string"
                 },
@@ -7835,6 +7853,10 @@
                 "owner": {
                     "type": "string"
                 },
+                "owner_uuid": {
+                    "description": "OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to\nrelease quota only when the caller's org actually owns the deleted resource",
+                    "type": "string"
+                },
                 "status": {
                     "type": "string"
                 },
@@ -7902,6 +7924,10 @@
                     "type": "string"
                 },
                 "owner": {
+                    "type": "string"
+                },
+                "owner_uuid": {
+                    "description": "OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to\nrelease quota only when the caller's org actually owns the deleted resource",
                     "type": "string"
                 },
                 "resources": {
@@ -7993,6 +8019,10 @@
                 "owner": {
                     "type": "string"
                 },
+                "owner_uuid": {
+                    "description": "OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to\nrelease quota only when the caller's org actually owns the deleted resource",
+                    "type": "string"
+                },
                 "status": {
                     "type": "string"
                 },
@@ -8077,6 +8107,10 @@
                     "type": "string"
                 },
                 "owner": {
+                    "type": "string"
+                },
+                "owner_uuid": {
+                    "description": "OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to\nrelease quota only when the caller's org actually owns the deleted resource",
                     "type": "string"
                 },
                 "size": {
@@ -8214,6 +8248,10 @@
                 "owner": {
                     "type": "string"
                 },
+                "owner_uuid": {
+                    "description": "OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to\nrelease quota only when the caller's org actually owns the deleted resource",
+                    "type": "string"
+                },
                 "shortname": {
                     "type": "string"
                 },
@@ -8343,6 +8381,10 @@
                     "type": "string"
                 },
                 "owner": {
+                    "type": "string"
+                },
+                "owner_uuid": {
+                    "description": "OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to\nrelease quota only when the caller's org actually owns the deleted resource",
                     "type": "string"
                 },
                 "type": {
@@ -8477,6 +8519,10 @@
                     "type": "integer"
                 },
                 "owner": {
+                    "type": "string"
+                },
+                "owner_uuid": {
+                    "description": "OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to\nrelease quota only when the caller's org actually owns the deleted resource",
                     "type": "string"
                 },
                 "public_ip": {
@@ -8842,6 +8888,10 @@
                 "owner": {
                     "type": "string"
                 },
+                "owner_uuid": {
+                    "description": "OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to\nrelease quota only when the caller's org actually owns the deleted resource",
+                    "type": "string"
+                },
                 "public": {
                     "type": "boolean"
                 },
@@ -8874,6 +8924,10 @@
                 "owner": {
                     "type": "string"
                 },
+                "owner_uuid": {
+                    "description": "OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to\nrelease quota only when the caller's org actually owns the deleted resource",
+                    "type": "string"
+                },
                 "pool_id": {
                     "type": "string"
                 },
@@ -8904,6 +8958,10 @@
                     "type": "string"
                 },
                 "owner": {
+                    "type": "string"
+                },
+                "owner_uuid": {
+                    "description": "OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to\nrelease quota only when the caller's org actually owns the deleted resource",
                     "type": "string"
                 },
                 "updated_at": {
@@ -9170,6 +9228,10 @@
                     "type": "string"
                 },
                 "owner": {
+                    "type": "string"
+                },
+                "owner_uuid": {
+                    "description": "OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to\nrelease quota only when the caller's org actually owns the deleted resource",
                     "type": "string"
                 },
                 "passwd_login": {
@@ -9485,6 +9547,10 @@
                 "owner": {
                     "type": "string"
                 },
+                "owner_uuid": {
+                    "description": "OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to\nrelease quota only when the caller's org actually owns the deleted resource",
+                    "type": "string"
+                },
                 "subnet_names": {
                     "type": "string"
                 },
@@ -9560,6 +9626,10 @@
                     "type": "string"
                 },
                 "owner": {
+                    "type": "string"
+                },
+                "owner_uuid": {
+                    "description": "OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to\nrelease quota only when the caller's org actually owns the deleted resource",
                     "type": "string"
                 },
                 "public_key": {
@@ -9665,6 +9735,10 @@
                     "type": "string"
                 },
                 "owner": {
+                    "type": "string"
+                },
+                "owner_uuid": {
+                    "description": "OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to\nrelease quota only when the caller's org actually owns the deleted resource",
                     "type": "string"
                 },
                 "port": {
@@ -9776,6 +9850,10 @@
                     "type": "string"
                 },
                 "owner": {
+                    "type": "string"
+                },
+                "owner_uuid": {
+                    "description": "OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to\nrelease quota only when the caller's org actually owns the deleted resource",
                     "type": "string"
                 },
                 "status": {
@@ -9915,6 +9993,10 @@
                 "owner": {
                     "type": "string"
                 },
+                "owner_uuid": {
+                    "description": "OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to\nrelease quota only when the caller's org actually owns the deleted resource",
+                    "type": "string"
+                },
                 "phases": {
                     "type": "array",
                     "items": {
@@ -10037,6 +10119,10 @@
                 "owner": {
                     "type": "string"
                 },
+                "owner_uuid": {
+                    "description": "OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to\nrelease quota only when the caller's org actually owns the deleted resource",
+                    "type": "string"
+                },
                 "port_max": {
                     "type": "integer"
                 },
@@ -10139,6 +10225,10 @@
                     "type": "string"
                 },
                 "owner": {
+                    "type": "string"
+                },
+                "owner_uuid": {
+                    "description": "OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to\nrelease quota only when the caller's org actually owns the deleted resource",
                     "type": "string"
                 },
                 "security_rules": {
@@ -10270,6 +10360,10 @@
                     "type": "string"
                 },
                 "owner": {
+                    "type": "string"
+                },
+                "owner_uuid": {
+                    "description": "OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to\nrelease quota only when the caller's org actually owns the deleted resource",
                     "type": "string"
                 },
                 "start": {
@@ -10436,6 +10530,10 @@
                 "owner": {
                     "type": "string"
                 },
+                "owner_uuid": {
+                    "description": "OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to\nrelease quota only when the caller's org actually owns the deleted resource",
+                    "type": "string"
+                },
                 "priority": {
                     "type": "integer"
                 },
@@ -10515,6 +10613,10 @@
                     "type": "string"
                 },
                 "owner": {
+                    "type": "string"
+                },
+                "owner_uuid": {
+                    "description": "OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to\nrelease quota only when the caller's org actually owns the deleted resource",
                     "type": "string"
                 },
                 "updated_at": {
@@ -10614,6 +10716,10 @@
                 "owner": {
                     "type": "string"
                 },
+                "owner_uuid": {
+                    "description": "OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to\nrelease quota only when the caller's org actually owns the deleted resource",
+                    "type": "string"
+                },
                 "subnets": {
                     "type": "array",
                     "items": {
@@ -10694,6 +10800,10 @@
                 "owner": {
                     "type": "string"
                 },
+                "owner_uuid": {
+                    "description": "OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to\nrelease quota only when the caller's org actually owns the deleted resource",
+                    "type": "string"
+                },
                 "path": {
                     "type": "string"
                 },
@@ -10730,6 +10840,10 @@
                     "type": "string"
                 },
                 "owner": {
+                    "type": "string"
+                },
+                "owner_uuid": {
+                    "description": "OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to\nrelease quota only when the caller's org actually owns the deleted resource",
                     "type": "string"
                 },
                 "target": {
@@ -10883,6 +10997,10 @@
                 "owner": {
                     "type": "string"
                 },
+                "owner_uuid": {
+                    "description": "OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to\nrelease quota only when the caller's org actually owns the deleted resource",
+                    "type": "string"
+                },
                 "path": {
                     "type": "string"
                 },
@@ -10970,6 +11088,10 @@
                 "owner": {
                     "type": "string"
                 },
+                "owner_uuid": {
+                    "description": "OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to\nrelease quota only when the caller's org actually owns the deleted resource",
+                    "type": "string"
+                },
                 "remark": {
                     "type": "string"
                 },
@@ -11050,6 +11172,10 @@
                     "type": "string"
                 },
                 "owner": {
+                    "type": "string"
+                },
+                "owner_uuid": {
+                    "description": "OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to\nrelease quota only when the caller's org actually owns the deleted resource",
                     "type": "string"
                 },
                 "updated_at": {

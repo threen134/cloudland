@@ -13,6 +13,7 @@ import { useRegionStore } from '../../stores/region'
 const region = useRegionStore()
 
 import { Disc, Search, Monitor, Server, Trash2, Plus, X, Globe, Cpu, User, Eye, EyeOff, Check, Copy, RefreshCw } from 'lucide-vue-next'
+import { quotaErrorMessage } from '../../utils/quotaError'
 
 const images = ref<Image[]>([])
 const loading = ref(false)
@@ -42,7 +43,7 @@ const newImageForm = ref<ImagePayload>({
     user: 'admin'
 })
 
-const { t } = useI18n()
+const { t, te } = useI18n()
 const isNameValid = computed(() => isValidName(newImageForm.value.name))
 
 
@@ -107,7 +108,7 @@ const handleCreateImage = async () => {
         toast.success(t('messages.createSuccess'))
     } catch (err: any) {
         console.error('Failed to create image:', err)
-        createError.value = err.response?.data?.error_message || err.message || t('messages.error')
+        createError.value = quotaErrorMessage(err, t, te) || err.response?.data?.error_message || err.message || t('messages.error')
     } finally {
         creating.value = false
     }

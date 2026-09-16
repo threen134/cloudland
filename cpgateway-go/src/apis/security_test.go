@@ -88,7 +88,8 @@ func (e *secEnv) user(prefix string) *model.User {
 	return &u
 }
 
-// org creates an active org owned by owner (ADMIN member) with quota cpu=8, ram=16, ips=4, disk=100 in the test region.
+// org creates an active org owned by owner (ADMIN member) with quota cpu=8, ram=16, ips=4, disk=100,
+// vpcs=1, load_balancers=1, images=1 in the test region.
 func (e *secEnv) org(prefix string, owner *model.User) *model.Organization {
 	e.t.Helper()
 	db := dbs.DB()
@@ -97,7 +98,8 @@ func (e *secEnv) org(prefix string, owner *model.User) *model.Organization {
 		e.t.Fatalf("create org: %v", err)
 	}
 	if err := db.Create(&model.OrgResourceQuota{OrgID: o.ID, RegionID: e.region.ID,
-		MaxCPUCores: 8, MaxRAMGB: 16, MaxPublicIPs: 4, MaxDiskGB: 100}).Error; err != nil {
+		MaxCPUCores: 8, MaxRAMGB: 16, MaxPublicIPs: 4, MaxDiskGB: 100,
+		MaxVPCs: 1, MaxLoadBalancers: 1, MaxImages: 1}).Error; err != nil {
 		e.t.Fatalf("create quota: %v", err)
 	}
 	if err := db.Create(&model.OrgResourceConsumption{OrgID: o.ID, RegionID: e.region.ID}).Error; err != nil {
@@ -253,6 +255,17 @@ func TestProxyResizeQuota(t *testing.T) {
 		{"DELETE", "/instances/{id}", "release"},
 		{"POST", "/instances", "consume"},
 		{"POST", "/floating_ips/batch_attach", ""},
+		{"POST", "/vpcs", "consume"},
+		{"DELETE", "/vpcs/{id}", "release"},
+		{"POST", "/load_balancers", "consume"},
+		{"DELETE", "/load_balancers/{id}", "release"},
+		{"POST", "/images", "consume"},
+		{"DELETE", "/images/{id}", "release"},
+		// Load balancer floating IPs count as public IPs, not as load balancers
+		{"POST", "/load_balancers/{id}/floating_ips", "consume"},
+		{"DELETE", "/load_balancers/{id}/floating_ips/{floating_ip_id}", "release"},
+		{"GET", "/load_balancers/{id}/floating_ips", ""},
+		{"PATCH", "/vpcs/{id}", ""},
 	} {
 		if got := services.MatchQuotaRule(tc.method, tc.template); got != tc.want {
 			t.Fatalf("MatchQuotaRule(%s %s) = %q, want %q", tc.method, tc.template, got, tc.want)
@@ -358,6 +371,98 @@ func TestProxyCreateInstanceCountQuota(t *testing.T) {
 	e.expectConsumption("only 2 of 3 created", org, 7, 7, 35)
 	create("fail", 1, 400)
 	e.expectConsumption("backend rejected create", org, 7, 7, 35)
+}
+
+// Count quotas: each VPC, load balancer and private image consumes 1 on create and releases 1 on a successful
+// delete of a resource owned by the caller's org; load balancer floating IPs count as public IPs.
+func TestProxyCountQuotas(t *testing.T) {
+	var ownerUUID string
+	e := newSecEnv(t, func(w http.ResponseWriter, r *http.Request) {
+		p := r.URL.Path
+		switch {
+		case r.Method == http.MethodPost && strings.HasSuffix(p, "/floating_ips"):
+			// Asked for 3 floating IPs, the backend created 2
+			w.Write([]byte(`[{"id":"f1"},{"id":"f2"}]`))
+		case r.Method == http.MethodPost:
+			w.Write([]byte(`{"id":"r1"}`))
+		case r.Method == http.MethodGet && strings.HasSuffix(p, "/missing"):
+			w.WriteHeader(http.StatusBadRequest)
+			w.Write([]byte(`{"error_message":"not found"}`))
+		case r.Method == http.MethodGet && strings.HasSuffix(p, "/foreign"):
+			w.Write([]byte(`{"id":"foreign","owner_uuid":"another-org"}`))
+		case r.Method == http.MethodGet && strings.HasPrefix(p, "/api/v1/load_balancers/"):
+			w.Write([]byte(`{"id":"r1","owner_uuid":"` + ownerUUID + `","floating_ips":[{"id":"f1"},{"id":"f2"}]}`))
+		case r.Method == http.MethodGet:
+			w.Write([]byte(`{"id":"r1","owner_uuid":"` + ownerUUID + `","public":false}`))
+		case r.Method == http.MethodDelete:
+			w.WriteHeader(http.StatusNoContent)
+		default:
+			w.WriteHeader(http.StatusInternalServerError)
+		}
+	})
+	owner := e.user("owner")
+	org := e.org("org", owner)
+	ownerUUID = org.UUID
+	tok := e.token(owner, org, model.OrgRoleAdmin)
+
+	counts := func() [4]int {
+		c := e.consumption(org)
+		return [4]int{c.VPCs, c.LoadBalancers, c.Images, c.PublicIPs}
+	}
+	expect := func(step string, want [4]int) {
+		t.Helper()
+		if got := counts(); got != want {
+			t.Fatalf("%s: expected vpcs/load_balancers/images/public_ips=%v, got %v", step, want, got)
+		}
+	}
+
+	for i, collection := range []string{"vpcs", "load_balancers", "images"} {
+		one := [4]int{}
+		one[i] = 1
+		if code, out := e.c.do("POST", "/api/v1/"+collection, tok, map[string]interface{}{"name": "a"}); code != 200 {
+			t.Fatalf("create %s: expected 200, got %d %v", collection, code, out)
+		}
+		expect("create "+collection, one)
+
+		// Quota of 1 is used up: the second create is rejected before reaching the backend
+		code, out := e.c.do("POST", "/api/v1/"+collection, tok, map[string]interface{}{"name": "b"})
+		detail, _ := out.(map[string]interface{})["detail"].(map[string]interface{})
+		if code != http.StatusTooManyRequests || detail["resource"] != collection {
+			t.Fatalf("second %s create: expected 429 for %s, got %d %v", collection, collection, code, out)
+		}
+		expect("rejected "+collection, one)
+
+		// A resource the backend cannot find is rejected before the delete and releases nothing
+		if code, _ := e.c.do("DELETE", "/api/v1/"+collection+"/missing", tok, nil); code != http.StatusBadRequest {
+			t.Fatalf("delete missing %s: expected 400, got %d", collection, code)
+		}
+		expect("missing "+collection, one)
+
+		// Another org's resource (deleted by a system admin): the delete goes through, the caller's org keeps its count
+		if code, _ := e.c.do("DELETE", "/api/v1/"+collection+"/foreign", tok, nil); code != http.StatusNoContent {
+			t.Fatalf("delete foreign %s: expected 204, got %d", collection, code)
+		}
+		expect("foreign "+collection, one)
+
+		if collection == "load_balancers" {
+			// 3 floating IPs requested, 2 created: the reservation for the missing one is given back
+			if code, out := e.c.do("POST", "/api/v1/load_balancers/r1/floating_ips", tok, map[string]interface{}{"activation_count": 3}); code != 200 {
+				t.Fatalf("create lb floating ips: expected 200, got %d %v", code, out)
+			}
+			expect("lb floating ips", [4]int{0, 1, 0, 2})
+			// Deleting the load balancer frees the load balancer and both of its floating IPs
+			if code, _ := e.c.do("DELETE", "/api/v1/load_balancers/r1", tok, nil); code != http.StatusNoContent {
+				t.Fatalf("delete load balancer: expected 204, got %d", code)
+			}
+			expect("delete load balancer", [4]int{})
+			continue
+		}
+
+		if code, _ := e.c.do("DELETE", "/api/v1/"+collection+"/r1", tok, nil); code != http.StatusNoContent {
+			t.Fatalf("delete %s: expected 204, got %d", collection, code)
+		}
+		expect("delete "+collection, [4]int{})
+	}
 }
 
 // Issue 4: pending/expired/cancelled invitation rows never count as memberships.

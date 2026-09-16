@@ -263,6 +263,7 @@ func (v *ImageAPI) getImageResponse(ctx context.Context, image *model.Image) (im
 			ID:        image.UUID,
 			Name:      image.Name,
 			Owner:     ownerName,
+			OwnerUUID: orgAdmin.GetOrgUUID(ctx, image.Owner),
 			CreatedAt: image.CreatedAt.Format(TimeStringForMat),
 			UpdatedAt: image.UpdatedAt.Format(TimeStringForMat),
 		},
@@ -285,6 +286,8 @@ func (v *ImageAPI) getImageResponse(ctx context.Context, image *model.Image) (im
 // @tags Image
 // @Accept  json
 // @Produce json
+// @Param   owned       query  bool    false  "true: only images owned by the current org, regardless of system role"
+// @Param   visibility  query  string  false  "public or private"
 // @Success 200 {object} ImageListResponse
 // @Failure 401 {object} common.APIError "Not authorized"
 // @Router /images [get]
@@ -312,7 +315,10 @@ func (v *ImageAPI) List(c *gin.Context) {
 		return
 	}
 	visibilityStr := c.DefaultQuery("visibility", "")
-	total, images, err := imageAdmin.List(ctx, int64(offset), int64(limit), "-created_at", queryStr, visibilityStr)
+	// owned=true lists only images owned by the current org regardless of system role (combine with visibility);
+	// cpgateway counts these against the org image quota
+	owned := c.Query("owned") == "true"
+	total, images, err := imageAdmin.List(ctx, int64(offset), int64(limit), "-created_at", queryStr, visibilityStr, owned)
 	if err != nil {
 		logger.Ctx(ctx).Errorf("Failed to list images %+v", err)
 		ErrorResponse(c, http.StatusBadRequest, "Failed to list images", err)

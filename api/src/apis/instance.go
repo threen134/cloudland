@@ -644,6 +644,7 @@ func (v *InstanceAPI) getInstanceResponse(ctx context.Context, instance *model.I
 		ResourceReference: &ResourceReference{
 			ID:        instance.UUID,
 			Owner:     owner,
+			OwnerUUID: orgAdmin.GetOrgUUID(ctx, instance.Owner),
 			CreatedAt: instance.CreatedAt.Format(TimeStringForMat),
 			UpdatedAt: instance.UpdatedAt.Format(TimeStringForMat),
 		},

@@ -10,10 +10,11 @@ import { Globe2, Plus, Link, Unlink, Trash2, Search, X, RefreshCw, Check, Copy, 
 import { useFloatingIP } from '../../composables/useFloatingIP'
 import DeleteModal from '../../components/modals/DeleteModal.vue'
 import { useRegionStore } from '../../stores/region'
+import { quotaErrorMessage } from '../../utils/quotaError'
 
 const region = useRegionStore()
 
-const { t } = useI18n()
+const { t, te } = useI18n()
 const toast = useToast()
 const { getTypeBadgeClass, getTypeLabel } = useFloatingIP()
 const router = useRouter()
@@ -165,7 +166,7 @@ const handleCreateIP = async () => {
         toast.success(t('messages.createSuccess'))
     } catch (err: any) {
         console.error('Failed to create floating IP:', err)
-        createError.value = err.response?.data?.error_message || err.message || t('messages.error')
+        createError.value = quotaErrorMessage(err, t, te) || err.response?.data?.error_message || err.message || t('messages.error')
     } finally {
         creating.value = false
     }

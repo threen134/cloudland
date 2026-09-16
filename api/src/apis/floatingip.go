@@ -364,6 +364,7 @@ func (v *FloatingIpAPI) getFloatingIpResponse(ctx context.Context, floatingIp *m
 			ID:        floatingIp.UUID,
 			Name:      floatingIp.Name,
 			Owner:     owner,
+			OwnerUUID: orgAdmin.GetOrgUUID(ctx, floatingIp.Owner),
 			CreatedAt: floatingIp.CreatedAt.Format(TimeStringForMat),
 			UpdatedAt: floatingIp.UpdatedAt.Format(TimeStringForMat),
 		},

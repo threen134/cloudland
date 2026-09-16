@@ -7,6 +7,9 @@ export interface QuotaFields {
     max_ram_gb: number
     max_public_ips: number
     max_disk_gb: number
+    max_vpcs: number
+    max_load_balancers: number
+    max_images: number
 }
 
 export interface ConsumptionFields {
@@ -14,13 +17,31 @@ export interface ConsumptionFields {
     ram_gb: number
     public_ips: number
     disk_gb: number
+    vpcs: number
+    load_balancers: number
+    images: number
 }
+
+// Quota rows shown in the org quota views: consumption field, quota field and i18n label key.
+// Keep in sync with the cpgateway quota fields.
+export const QUOTA_ROWS: { key: keyof ConsumptionFields; qkey: keyof QuotaFields; label: string }[] = [
+    { key: 'cpu_cores', qkey: 'max_cpu_cores', label: 'quota.cpuCores' },
+    { key: 'ram_gb', qkey: 'max_ram_gb', label: 'quota.ramGb' },
+    { key: 'disk_gb', qkey: 'max_disk_gb', label: 'quota.diskGb' },
+    { key: 'public_ips', qkey: 'max_public_ips', label: 'quota.publicIps' },
+    { key: 'vpcs', qkey: 'max_vpcs', label: 'quota.vpcs' },
+    { key: 'load_balancers', qkey: 'max_load_balancers', label: 'quota.loadBalancers' },
+    { key: 'images', qkey: 'max_images', label: 'quota.images' },
+]
 
 export interface OrgResourceQuotaUpdate {
     max_cpu_cores?: number
     max_ram_gb?: number
     max_public_ips?: number
     max_disk_gb?: number
+    max_vpcs?: number
+    max_load_balancers?: number
+    max_images?: number
 }
 
 // === 独立返回用 ===

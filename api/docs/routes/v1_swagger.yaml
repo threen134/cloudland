@@ -78,6 +78,11 @@ definitions:
         type: string
       owner:
         type: string
+      owner_uuid:
+        description: |-
+          OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to
+          release quota only when the caller's org actually owns the deleted resource
+        type: string
       remark:
         type: string
       reserved:
@@ -204,6 +209,11 @@ definitions:
         type: string
       owner:
         type: string
+      owner_uuid:
+        description: |-
+          OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to
+          release quota only when the caller's org actually owns the deleted resource
+        type: string
       status:
         type: string
       updated_at:
@@ -248,6 +258,11 @@ definitions:
       name:
         type: string
       owner:
+        type: string
+      owner_uuid:
+        description: |-
+          OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to
+          release quota only when the caller's org actually owns the deleted resource
         type: string
       resources:
         type: string
@@ -308,6 +323,11 @@ definitions:
         type: string
       owner:
         type: string
+      owner_uuid:
+        description: |-
+          OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to
+          release quota only when the caller's org actually owns the deleted resource
+        type: string
       status:
         type: string
       updated_at:
@@ -363,6 +383,11 @@ definitions:
       name:
         type: string
       owner:
+        type: string
+      owner_uuid:
+        description: |-
+          OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to
+          release quota only when the caller's org actually owns the deleted resource
         type: string
       size:
         type: integer
@@ -458,6 +483,11 @@ definitions:
         type: string
       owner:
         type: string
+      owner_uuid:
+        description: |-
+          OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to
+          release quota only when the caller's org actually owns the deleted resource
+        type: string
       shortname:
         type: string
       subtype1:
@@ -546,6 +576,11 @@ definitions:
       name:
         type: string
       owner:
+        type: string
+      owner_uuid:
+        description: |-
+          OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to
+          release quota only when the caller's org actually owns the deleted resource
         type: string
       type:
         type: string
@@ -638,6 +673,11 @@ definitions:
       outbound:
         type: integer
       owner:
+        type: string
+      owner_uuid:
+        description: |-
+          OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to
+          release quota only when the caller's org actually owns the deleted resource
         type: string
       public_ip:
         type: string
@@ -890,6 +930,11 @@ definitions:
         type: string
       owner:
         type: string
+      owner_uuid:
+        description: |-
+          OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to
+          release quota only when the caller's org actually owns the deleted resource
+        type: string
       public:
         type: boolean
       size:
@@ -911,6 +956,11 @@ definitions:
         type: string
       owner:
         type: string
+      owner_uuid:
+        description: |-
+          OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to
+          release quota only when the caller's org actually owns the deleted resource
+        type: string
       pool_id:
         type: string
       status:
@@ -931,6 +981,11 @@ definitions:
       name:
         type: string
       owner:
+        type: string
+      owner_uuid:
+        description: |-
+          OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to
+          release quota only when the caller's org actually owns the deleted resource
         type: string
       updated_at:
         type: string
@@ -1118,6 +1173,11 @@ definitions:
       name:
         type: string
       owner:
+        type: string
+      owner_uuid:
+        description: |-
+          OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to
+          release quota only when the caller's org actually owns the deleted resource
         type: string
       passwd_login:
         type: boolean
@@ -1337,6 +1397,11 @@ definitions:
         type: string
       owner:
         type: string
+      owner_uuid:
+        description: |-
+          OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to
+          release quota only when the caller's org actually owns the deleted resource
+        type: string
       subnet_names:
         type: string
       subnets:
@@ -1388,6 +1453,11 @@ definitions:
       name:
         type: string
       owner:
+        type: string
+      owner_uuid:
+        description: |-
+          OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to
+          release quota only when the caller's org actually owns the deleted resource
         type: string
       public_key:
         type: string
@@ -1460,6 +1530,11 @@ definitions:
       name:
         type: string
       owner:
+        type: string
+      owner_uuid:
+        description: |-
+          OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to
+          release quota only when the caller's org actually owns the deleted resource
         type: string
       port:
         type: integer
@@ -1536,6 +1611,11 @@ definitions:
       name:
         type: string
       owner:
+        type: string
+      owner_uuid:
+        description: |-
+          OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to
+          release quota only when the caller's org actually owns the deleted resource
         type: string
       status:
         type: string
@@ -1630,6 +1710,11 @@ definitions:
         type: string
       owner:
         type: string
+      owner_uuid:
+        description: |-
+          OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to
+          release quota only when the caller's org actually owns the deleted resource
+        type: string
       phases:
         items:
           $ref: '#/definitions/apis.TaskResponse'
@@ -1715,6 +1800,11 @@ definitions:
         type: string
       owner:
         type: string
+      owner_uuid:
+        description: |-
+          OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to
+          release quota only when the caller's org actually owns the deleted resource
+        type: string
       port_max:
         type: integer
       port_min:
@@ -1784,6 +1874,11 @@ definitions:
       name:
         type: string
       owner:
+        type: string
+      owner_uuid:
+        description: |-
+          OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to
+          release quota only when the caller's org actually owns the deleted resource
         type: string
       security_rules:
         items:
@@ -1879,6 +1974,11 @@ definitions:
       network:
         type: string
       owner:
+        type: string
+      owner_uuid:
+        description: |-
+          OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to
+          release quota only when the caller's org actually owns the deleted resource
         type: string
       start:
         type: string
@@ -1991,6 +2091,11 @@ definitions:
         type: string
       owner:
         type: string
+      owner_uuid:
+        description: |-
+          OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to
+          release quota only when the caller's org actually owns the deleted resource
+        type: string
       priority:
         type: integer
       reserved_count:
@@ -2044,6 +2149,11 @@ definitions:
       name:
         type: string
       owner:
+        type: string
+      owner_uuid:
+        description: |-
+          OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to
+          release quota only when the caller's org actually owns the deleted resource
         type: string
       updated_at:
         type: string
@@ -2110,6 +2220,11 @@ definitions:
         type: string
       owner:
         type: string
+      owner_uuid:
+        description: |-
+          OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to
+          release quota only when the caller's org actually owns the deleted resource
+        type: string
       subnets:
         items:
           $ref: '#/definitions/apis.SubnetResponse'
@@ -2163,6 +2278,11 @@ definitions:
         type: string
       owner:
         type: string
+      owner_uuid:
+        description: |-
+          OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to
+          release quota only when the caller's org actually owns the deleted resource
+        type: string
       path:
         type: string
       size:
@@ -2187,6 +2307,11 @@ definitions:
       name:
         type: string
       owner:
+        type: string
+      owner_uuid:
+        description: |-
+          OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to
+          release quota only when the caller's org actually owns the deleted resource
         type: string
       target:
         type: string
@@ -2292,6 +2417,11 @@ definitions:
         type: string
       owner:
         type: string
+      owner_uuid:
+        description: |-
+          OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to
+          release quota only when the caller's org actually owns the deleted resource
+        type: string
       path:
         type: string
       size:
@@ -2350,6 +2480,11 @@ definitions:
         type: string
       owner:
         type: string
+      owner_uuid:
+        description: |-
+          OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to
+          release quota only when the caller's org actually owns the deleted resource
+        type: string
       remark:
         type: string
       updated_at:
@@ -2407,6 +2542,11 @@ definitions:
       name:
         type: string
       owner:
+        type: string
+      owner_uuid:
+        description: |-
+          OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to
+          release quota only when the caller's org actually owns the deleted resource
         type: string
       updated_at:
         type: string
@@ -3993,6 +4133,16 @@ paths:
       consumes:
       - application/json
       description: list images
+      parameters:
+      - description: 'true: only images owned by the current org, regardless of system
+          role'
+        in: query
+        name: owned
+        type: boolean
+      - description: public or private
+        in: query
+        name: visibility
+        type: string
       produces:
       - application/json
       responses:

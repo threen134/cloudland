@@ -9,6 +9,7 @@ import { loadBalancersApi, vpcsApi, type LoadBalancer, type VPC, type LoadBalanc
 import { isValidName } from '../../utils/validation'
 
 import { GitFork, Plus, Trash2, Search, Edit, X, RefreshCw, Check, Copy } from 'lucide-vue-next'
+import { quotaErrorMessage } from '../../utils/quotaError'
 
 const loadBalancers = ref<LoadBalancer[]>([])
 const loading = ref(false)
@@ -23,7 +24,7 @@ const newLBForm = ref({
     zone: ''
 })
 
-const { t } = useI18n()
+const { t, te } = useI18n()
 const toast = useToast()
 
 const { copiedId, copyId } = useCopyId()
@@ -127,7 +128,7 @@ const handleCreateLB = async () => {
         toast.success(t('messages.createSuccess'))
     } catch (err: any) {
         console.error('Failed to create load balancer:', err)
-        createError.value = err.response?.data?.error_message || err.message || t('messages.error')
+        createError.value = quotaErrorMessage(err, t, te) || err.response?.data?.error_message || err.message || t('messages.error')
     } finally {
         creating.value = false
     }
