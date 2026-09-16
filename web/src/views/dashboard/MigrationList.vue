@@ -3,7 +3,7 @@ import { ref, onMounted, onUnmounted, computed, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { migrationsApi, MIGRATION_ACTIVE_STATUSES, type Migration } from '../../api/migrations'
 import { instancesApi, type Instance } from '../../api/instances'
-import { hypervisorsApi, type Hypervisor } from '../../api/hypervisors'
+import { hypervisorsApi, type Hypervisor, type HyperListResponse } from '../../api/hypervisors'
 import { Search as SearchIcon, ArrowRightLeft, Plus, X, RefreshCw, Check, Copy } from 'lucide-vue-next'
 import { useToast } from '../../composables/useToast'
 import { useCopyId } from '../../composables/useCopyId'
@@ -117,8 +117,10 @@ const fetchResources = async () => {
         const instData = instRes.data as any
         availableInstances.value = Array.isArray(instData) ? instData : (instData.instances || [])
         
-        const hypData = hypRes.data as any
-        availableHypervisors.value = Array.isArray(hypData) ? hypData : (hypData.hypervisors || [])
+        // 接口返回的字段是 hypers，不是 hypervisors。这里原先写成 as any，字段名拼错也能编译通过，
+        // 结果目标节点下拉框永远取到 undefined 而回退成空数组；改用真实类型让同类错误在编译期暴露
+        const hypData = hypRes.data as HyperListResponse | Hypervisor[]
+        availableHypervisors.value = Array.isArray(hypData) ? hypData : (hypData.hypers || [])
     } catch (err) {
         console.error('Error fetching resources for migration:', err)
     } finally {
