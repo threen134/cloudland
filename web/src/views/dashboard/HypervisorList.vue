@@ -288,6 +288,12 @@ const handleEditSave = async () => {
     }
 }
 
+// 维护模式可选的目标节点：排除正在进入维护的节点本身（迁到自己没有意义，后端会直接跳过），
+// 只列活动状态的节点（维护中 / 已禁用 / 部署失败的节点不能接收虚拟机）
+const maintainTargetOptions = computed(() =>
+    hypervisorList.value.filter(h => h.status === 1 && h.hostid !== maintainingHyper.value?.hostid)
+)
+
 // Maintain logic
 const openMaintainModal = (h: Hypervisor) => {
     maintainingHyper.value = h
@@ -667,7 +673,12 @@ onMounted(() => {
             </div>
             <div v-if="maintainForm.migrate" class="form-group">
               <label class="form-label">{{ t('dashboard.hypervisorActions.targetHyper') }}</label>
-              <input type="number" v-model="maintainForm.target_hyper" class="form-input" />
+              <select v-model="maintainForm.target_hyper" class="form-select" style="width: 100%;">
+                <option :value="-1">{{ t('dashboard.migrationForm.autoSelect') }}</option>
+                <option v-for="hyp in maintainTargetOptions" :key="hyp.uuid" :value="hyp.hostid">
+                  {{ hyp.hostname }} ({{ hyp.hostid }})
+                </option>
+              </select>
               <span style="font-size: 0.75rem; color: var(--text-light); margin-top: 4px;">{{ t('dashboard.hypervisorActions.targetHyperHint') }}</span>
             </div>
           </div>

@@ -157,11 +157,26 @@ const handleSave = async () => {
     }
 }
 
+// 维护模式可选的目标节点：本页只持有当前节点，打开对话框时按需拉取列表；
+// 排除当前节点本身（迁到自己后端会直接跳过），只列活动状态的节点
+const maintainTargetOptions = ref<any[]>([])
+
 // Maintain
-const openMaintainModal = () => {
+const openMaintainModal = async () => {
     closeActionMenu()
     maintainForm.value = { migrate: true, target_hyper: -1 }
     showMaintainModal.value = true
+    try {
+        const resp = await hypervisorsApi.fetchHypervisors()
+        const data = resp.data as any
+        const list = Array.isArray(data) ? data : (data.hypers || [])
+        maintainTargetOptions.value = list.filter(
+            (h: any) => h.status === 1 && h.hostid !== hypervisor.value?.hostid
+        )
+    } catch (err) {
+        console.error('Failed to load hypervisors for maintenance target:', err)
+        maintainTargetOptions.value = []
+    }
 }
 
 const handleMaintain = async () => {
@@ -425,7 +440,12 @@ onMounted(fetchHypervisorDetail)
             </div>
             <div v-if="maintainForm.migrate" class="form-group">
               <label class="form-label">{{ t('dashboard.hypervisorActions.targetHyper') }}</label>
-              <input type="number" v-model="maintainForm.target_hyper" class="form-select" />
+              <select v-model="maintainForm.target_hyper" class="form-select" style="width: 100%;">
+                <option :value="-1">{{ t('dashboard.migrationForm.autoSelect') }}</option>
+                <option v-for="hyp in maintainTargetOptions" :key="hyp.uuid" :value="hyp.hostid">
+                  {{ hyp.hostname }} ({{ hyp.hostid }})
+                </option>
+              </select>
               <span style="font-size: 0.75rem; color: var(--text-light); margin-top: 4px;">{{ t('dashboard.hypervisorActions.targetHyperHint') }}</span>
             </div>
           </div>
