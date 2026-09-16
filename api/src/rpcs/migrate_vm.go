@@ -416,6 +416,19 @@ func MigrateVM(ctx context.Context, args []string) (status string, err error) {
 			logger.Ctx(ctx).Error("Failed to query hyper", err)
 			return
 		}
+		// 迁移发起之后目标节点可能被置为维护/禁用：自动选目标时，候选集是在那之前算出的，
+		// 创建迁移时的目标校验和「有虚拟机迁入就拒绝进入维护」的检查都覆盖不到这个窗口。
+		// 此刻虚拟机还没切换过去，中止的代价远小于让它落到一台即将断电的节点上
+		if targetHyper.Status != 1 {
+			logger.Ctx(ctx).Errorf("Target hypervisor %d is in status %d, aborting migration %d", hyperID, targetHyper.Status, migration.ID)
+			if uerr := db.Model(&model.Instance{Model: model.Model{ID: instID}}).Updates(map[string]interface{}{
+				"status": model.InstanceStatusRollback}).Error; uerr != nil {
+				logger.Ctx(ctx).Error("Failed to update instance status to rollback", uerr)
+			}
+			status = "failed"
+			err = fmt.Errorf("target hypervisor %d is not active (status %d)", hyperID, targetHyper.Status)
+			return
+		}
 		task2 := &model.Task{
 			Name:    "Prepare_Source",
 			Mission: migration.ID,

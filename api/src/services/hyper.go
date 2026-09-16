@@ -495,6 +495,21 @@ func (a *HyperAdmin) Maintain(ctx context.Context, hostID int32, migrate bool, t
 		return NewCLError(ErrHypervisorInvalidState, "Hypervisor must be active or disabled to maintain", nil)
 	}
 
+	// 有虚拟机正在迁入时拒绝进入维护：这些虚拟机此刻的 instances.hyper 仍指向源节点，
+	// 不会出现在下面的腾空快照里，等迁移完成就会落到一台已处于维护中的节点上并留在那儿
+	// （腾空是一次性快照，不会持续收敛）。宁可让运维等迁移结束再重试，也不要中止迁移——
+	// 大磁盘的迁移动辄数分钟，废掉代价太大
+	var incoming int64
+	if err = db.Model(&model.Migration{}).Where("target_hyper = ? and status in ?", hostID,
+		[]string{"in_progress", "target_prepared", "source_prepared"}).Count(&incoming).Error; err != nil {
+		return NewCLError(ErrSQLSyntaxError, "Failed to count incoming migrations", err)
+	}
+	if incoming > 0 {
+		logger.Ctx(ctx).Errorf("Hypervisor %d has %d incoming migration(s), refusing maintenance", hostID, incoming)
+		return NewCLError(ErrHypervisorInvalidState,
+			fmt.Sprintf("%d instance(s) are migrating to this hypervisor, please retry after they finish", incoming), nil)
+	}
+
 	originalStatus := hyper.Status
 	// Set status to maintaining
 	if err = db.Model(hyper).Update("status", 2).Error; err != nil {

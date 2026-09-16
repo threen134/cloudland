@@ -46,9 +46,12 @@ func (a *MigrationAdmin) Create(ctx context.Context, name string, instances []*m
 			err = NewCLError(ErrHypervisorNotFound, "Failed to find target hypervisor", err)
 			return
 		}
-		if targetHyper.Status == 10 {
-			err = NewCLError(ErrHypervisorInvalidState, "Target hypervisor is in wrong state", nil)
-			logger.Ctx(ctx).Error("Target hypervisor is in wrong state")
+		// 只接受活动状态的目标节点。此前只挡住离线(10)，维护中(2)、已禁用(0)、部署中(4)
+		// 都能通过——往一台即将断电维护的节点上迁虚拟机等于埋雷
+		if targetHyper.Status != 1 {
+			err = NewCLError(ErrHypervisorInvalidState,
+				fmt.Sprintf("Target hypervisor %s is not active (status %d)", targetHyper.Hostname, targetHyper.Status), nil)
+			logger.Ctx(ctx).Errorf("Target hypervisor %d is in status %d, not accepting instances", tgtHyper, targetHyper.Status)
 			return
 		}
 	}
