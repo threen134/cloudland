@@ -5,7 +5,7 @@ import { useAuthStore } from '../../stores/auth'
 import { useTenantStore } from '../../stores/tenant'
 import { useRegionStore } from '../../stores/region'
 import { useI18n } from 'vue-i18n'
-import { setLanguage, getCurrentLanguage } from '../../locales'
+import { setLanguage, getCurrentLanguage, SUPPORTED_LANGUAGES, LANGUAGE_LABEL_KEYS, type Language } from '../../locales'
 import { alarmEventsApi } from '../../api/alarmEvents'
 import { authApi } from '../../api/auth'
 import { setAuthToken, beginTokenSwitch } from '../../api/client'
@@ -80,11 +80,6 @@ watch(isSidebarCollapsed, (collapsed) => {
 
 const currentLang = computed(() => getCurrentLanguage())
 
-const toggleLanguage = () => {
-    const nextLang = currentLang.value === 'en' ? 'zh' : 'en'
-    setLanguage(nextLang)
-}
-
 // Collapsible menu sections
 const expandedSections = ref<string[]>(['auth', 'compute', 'network', 'alerting', 'admin'])
 const activeDropdown = ref<string | null>(null)
@@ -100,8 +95,8 @@ const toggleSection = (section: string) => {
 
 const isExpanded = (section: string) => expandedSections.value.includes(section)
 
-const handleSwitchLanguage = (lang: string) => {
-    setLanguage(lang as 'en' | 'zh')
+const handleSwitchLanguage = (lang: Language) => {
+    setLanguage(lang)
     activeDropdown.value = null
 }
 
@@ -448,15 +443,12 @@ onUnmounted(() => {
           <div class="header-dropdown" @mouseenter="activeDropdown = 'lang'" @mouseleave="activeDropdown = null">
             <button class="lang-toggle-btn">
               <Globe :size="16" />
-              <span>{{ $t('languages.' + currentLang) }}</span>
+              <span>{{ $t(LANGUAGE_LABEL_KEYS[currentLang]) }}</span>
               <ChevronDown :size="14" />
             </button>
             <div class="dropdown-menu-portal" v-show="activeDropdown === 'lang'">
-              <div class="dropdown-item-portal" :class="{ active: currentLang === 'en' }" @click="handleSwitchLanguage('en')">
-                English
-              </div>
-              <div class="dropdown-item-portal" :class="{ active: currentLang === 'zh' }" @click="handleSwitchLanguage('zh')">
-                {{ $t('languages.zh_hans') }}
+              <div v-for="lang in SUPPORTED_LANGUAGES" :key="lang" class="dropdown-item-portal" :class="{ active: currentLang === lang }" @click="handleSwitchLanguage(lang)">
+                {{ $t(LANGUAGE_LABEL_KEYS[lang]) }}
               </div>
             </div>
           </div>

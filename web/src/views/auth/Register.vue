@@ -4,6 +4,7 @@ import { useRouter, RouterLink } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { Cloud, User, Mail, Lock, ArrowRight, ShieldCheck, Check, Building2, XCircle, Eye, EyeOff } from 'lucide-vue-next'
 import { authApi } from '../../api/auth'
+import { isChinese } from '../../locales'
 
 const { t, locale } = useI18n()
 const router = useRouter()
@@ -61,7 +62,8 @@ const handleSubmit = async () => {
             email: form.email,
             username: form.username,
             password: form.password,
-            language: locale.value === 'zh' ? 'zh' : 'en',
+            // 邮件模板只有中英文，繁体用户收中文邮件（language 列为 varchar(5)）
+            language: isChinese(locale.value) ? 'zh' : 'en',
             org_name: form.orgName,
             org_slug: form.orgSlug
         })

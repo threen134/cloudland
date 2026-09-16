@@ -4,10 +4,10 @@ import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { useAuthStore } from '../../stores/auth'
 import { Cloud, User, Lock, ArrowRight, XCircle, AlertTriangle, Eye, EyeOff, Languages } from 'lucide-vue-next'
-import { setLanguage, getCurrentLanguage } from '../../locales'
+import { setLanguage, getCurrentLanguage, SUPPORTED_LANGUAGES, LANGUAGE_LABEL_KEYS } from '../../locales'
 import SecurityVerify from '../../components/auth/SecurityVerify.vue'
 
-const { t, locale } = useI18n()
+const { t } = useI18n()
 const router = useRouter()
 const auth = useAuthStore()
 
@@ -23,8 +23,10 @@ const handleVerify = () => {
   isVerified.value = true
 }
 
+// 依次切换 English → 简体中文 → 繁體中文
 const toggleLang = () => {
-  const newLang = currentLang.value === 'zh' ? 'en' : 'zh'
+  const idx = SUPPORTED_LANGUAGES.indexOf(currentLang.value)
+  const newLang = SUPPORTED_LANGUAGES[(idx + 1) % SUPPORTED_LANGUAGES.length]
   setLanguage(newLang)
   currentLang.value = newLang
 }
@@ -59,7 +61,7 @@ const handleSubmit = async () => {
       <div class="pl-nav-actions">
         <button class="pl-lang-btn" @click="toggleLang" :title="t('nav.switchLang')">
           <Languages :size="16" />
-          <span>{{ locale === 'zh' ? 'EN' : '中文' }}</span>
+          <span>{{ t(LANGUAGE_LABEL_KEYS[currentLang]) }}</span>
         </button>
       </div>
     </header>

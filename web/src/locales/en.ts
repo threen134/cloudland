@@ -1619,7 +1619,8 @@ export default {
     languages: {
         en: 'English',
         zh: '中文',
-        zh_hans: '简体中文'
+        zh_hans: '简体中文',
+        zh_hant: '繁體中文'
     },
     common: {
         save: 'Save',
