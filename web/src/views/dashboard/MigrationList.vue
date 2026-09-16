@@ -108,10 +108,15 @@ const getStatusClass = (status: string) => {
     return ''
 }
 
-// 缺键时 t() 返回键路径本身，必须用 te() 判断后再回退到原始状态串
-const getStatusText = (status: string) => {
+// 缺键时 t() 返回键路径本身，必须用 te() 判断后再回退到原始状态串。
+// progress 可选：只有迁移记录自身的状态需要按进度细分，阶段任务状态（in_progress/completed）不传
+const getStatusText = (status: string, progress?: number) => {
     const s = (status || '').toLowerCase()
     if (!s) return '-'
+    // 复制磁盘和内存的整个过程状态都停在 target_prepared，而它描述的是"已经准备好"这件过去的事，
+    // 和还在推进的进度条对不上，看起来像卡住了；这里按进度显示当前真正在做的事
+    if (s === 'target_prepared' && (progress ?? 0) > 0) return t('dashboard.migrationStatus.copying')
+    if (s === 'source_prepared') return t('dashboard.migrationStatus.finalizing')
     const key = `dashboard.migrationStatus.${s}`
     return te(key) ? t(key) : status
 }
@@ -301,7 +306,7 @@ watch(() => region.currentRegionId, (newId) => {
             <td>
               <span class="status-pill" :class="getStatusClass(m.status)">
                 <span class="status-dot"></span>
-                {{ getStatusText(m.status) }}
+                {{ getStatusText(m.status, m.progress) }}
               </span>
             </td>
             <td>

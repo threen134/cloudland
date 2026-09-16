@@ -905,6 +905,8 @@ export default {
             in_progress: 'In Progress',
             target_prepared: 'Target Prepared',
             source_prepared: 'Source Prepared',
+            copying: 'Copying Data',
+            finalizing: 'Finalizing',
             completed: 'Completed',
             failed: 'Failed',
             not_supported: 'Not Supported',

@@ -904,6 +904,8 @@ export default {
             in_progress: '进行中',
             target_prepared: '目标节点就绪',
             source_prepared: '源节点就绪',
+            copying: '数据复制中',
+            finalizing: '收尾中',
             completed: '已完成',
             failed: '失败',
             not_supported: '不支持',
