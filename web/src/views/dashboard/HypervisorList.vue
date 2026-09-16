@@ -146,9 +146,11 @@ const getStatusInfo = (status: number) => {
     return STATUS_MAP[status] || { labelKey: 'unknown', class: '' }
 }
 
-const getStatusLabel = (status: number) => {
+// statusName 是后端返回的英文原文（active / maintaining …），只在该状态没有对应翻译时兜底。
+// 此前模板写成 `status_name || getStatusLabel(...)`，英文原文非空就短路了，翻译永远不生效
+const getStatusLabel = (status: number, statusName?: string) => {
     const info = getStatusInfo(status)
-    if (info.labelKey === 'unknown') return t('dashboard.hypervisorStatus.unknown', { status })
+    if (info.labelKey === 'unknown') return statusName || t('dashboard.hypervisorStatus.unknown', { status })
     return t('dashboard.hypervisorStatus.' + info.labelKey)
 }
 
@@ -309,6 +311,20 @@ const handleMaintain = async () => {
     }
 }
 
+// 退出维护模式：把状态改回活动。维护状态由控制面单方面置位、心跳不会再覆盖它
+// （见 rpcs/hyper_status.go），所以必须提供出口，否则节点进了维护模式就只能去编辑对话框里改
+const exitMaintain = async (h: Hypervisor) => {
+    closeActionMenu()
+    if (!window.confirm(t('dashboard.hypervisorActions.exitMaintainConfirm', { hostname: h.hostname }))) return
+    try {
+        await hypervisorsApi.updateHypervisor(h.uuid, { status: 1 })
+        toast.success(t('messages.success'))
+        await fetchHypervisors()
+    } catch (err: any) {
+        toast.error(err.response?.data?.error || t('messages.error'))
+    }
+}
+
 onMounted(() => {
     if (region.currentRegionId) {
         fetchHypervisors()
@@ -392,7 +408,7 @@ onMounted(() => {
             <td>
               <span class="status-pill" :class="getStatusInfo(h.status).class">
                 <span class="status-dot"></span>
-                {{ h.status_name || getStatusLabel(h.status) }}
+                {{ getStatusLabel(h.status, h.status_name) }}
               </span>
             </td>
             <td>
@@ -426,6 +442,9 @@ onMounted(() => {
                     </button>
                     <button v-if="h.status === 1" class="dropdown-item" @click="openMaintainModal(h)">
                         <Wrench :size="14" /> {{ t('dashboard.hypervisorActions.maintain') }}
+                    </button>
+                    <button v-if="h.status === 2" class="dropdown-item" @click="exitMaintain(h)">
+                        <Wrench :size="14" /> {{ t('dashboard.hypervisorActions.exitMaintain') }}
                     </button>
                     <div class="dropdown-divider"></div>
                     <button class="dropdown-item text-error" @click="confirmDelete(h)">

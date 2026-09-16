@@ -1181,6 +1181,8 @@ export default {
         hypervisorActions: {
             deploy: 'Deploy Node',
             maintain: 'Maintain',
+            exitMaintain: 'Exit Maintenance',
+            exitMaintainConfirm: 'Bring hypervisor "{hostname}" out of maintenance and back to active?',
             maintainTitle: 'Enter Maintenance Mode',
             maintainDesc: 'Put hypervisor {hostname} into maintenance mode. All running instances can be optionally migrated.',
             migrateInstances: 'Migrate all instances before maintenance',

@@ -109,6 +109,13 @@ const getStatusInfo = (status: number) => {
     return STATUS_MAP[status] || { label: `Unknown(${status})`, class: '' }
 }
 
+// statusName 是后端返回的英文原文（active / maintaining …），只在该状态没有对应翻译时兜底。
+// 此前模板写成 `status_name || t(...)`，英文原文非空就短路了，翻译永远不生效
+const getStatusLabel = (status: number, statusName?: string) => {
+    const info = STATUS_MAP[status]
+    return info ? t(info.label) : (statusName || `Unknown(${status})`)
+}
+
 const goBack = () => { router.push({ name: 'hypervisors' }) }
 
 const toggleEdit = async () => {
@@ -210,7 +217,7 @@ onMounted(fetchHypervisorDetail)
           <div>
             <h2 class="resource-title">
               {{ hypervisor.hostname }}
-              <span :class="['badge', getStatusInfo(hypervisor.status).class]">{{ hypervisor.status_name || t(getStatusInfo(hypervisor.status).label) }}</span>
+              <span :class="['badge', getStatusInfo(hypervisor.status).class]">{{ getStatusLabel(hypervisor.status, hypervisor.status_name) }}</span>
             </h2>
             <div class="resource-id-row">
               <span class="resource-id-text">{{ hypervisor.uuid }}</span>

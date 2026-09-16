@@ -1182,6 +1182,8 @@ export default {
         hypervisorActions: {
             deploy: '部署节点',
             maintain: '维护',
+            exitMaintain: '退出维护',
+            exitMaintainConfirm: '确定让计算节点 "{hostname}" 退出维护模式并恢复为活动状态吗？',
             maintainTitle: '进入维护模式',
             maintainDesc: '将计算节点 {hostname} 置为维护模式。可选择将所有运行中的实例迁移至其他节点。',
             migrateInstances: '维护前迁移所有实例',
