@@ -16,6 +16,7 @@ import (
 	"context"
 	"fmt"
 	"regexp"
+	"sync"
 
 	. "api/src/common"
 	"api/src/dbs"
@@ -603,6 +604,54 @@ func (a *OrgAdmin) List(ctx context.Context, offset, limit int64, order, query s
 // Uses PostgreSQL INSERT ... ON CONFLICT (id) DO UPDATE so it is safe to call multiple times.
 // owner_user_id is always set to 1 (the local admin user); default_sg stays 0 and is
 // lazily created the first time the org creates a VM.
+// orgIDByUUID 缓存组织 UUID 到本区域组织 ID 的映射。该对应关系一旦建立就不再变化，
+// 无需失效策略；目的是保持 authorize 每请求不查库的特性
+var orgIDByUUID sync.Map
+
+// GetOrgIDByUUID 把 cpgateway 传来的组织 UUID 解析成本区域的组织 ID。
+// 两侧组织表的自增主键各自独立，UUID 才是跨服务契约，不能直接拿对方的 ID 当本地 ID 用
+func (a *OrgAdmin) GetOrgIDByUUID(ctx context.Context, uuID string) (int64, error) {
+	if v, ok := orgIDByUUID.Load(uuID); ok {
+		return v.(int64), nil
+	}
+	_, db := GetContextDB(ctx)
+	org := &model.Organization{}
+	if err := db.Where("uuid = ?", uuID).Take(org).Error; err != nil {
+		return 0, NewCLError(ErrOrgNotFound, "Organization not found for uuid "+uuID, err)
+	}
+	orgIDByUUID.Store(uuID, org.ID)
+	return org.ID, nil
+}
+
+// UpsertOrgByUUID 按 UUID 同步组织，本地 ID 由本区域自行分配。
+// 迁移期的衔接：早先的同步不带 UUID，本地已有同名 slug 的组织（其 UUID 是本区域自己生成的，
+// 与控制面不同）——这种行上补写控制面的 UUID，避免新建一条导致存量资源的 owner 指向旧组织
+func (a *OrgAdmin) UpsertOrgByUUID(ctx context.Context, uuID, name, slug string) error {
+	logger.Ctx(ctx).Infof("ENTER OrgAdmin.UpsertOrgByUUID: uuid=%s name=%s slug=%s", uuID, name, slug)
+	_, db := GetContextDB(ctx)
+	org := &model.Organization{}
+	err := db.Where("uuid = ?", uuID).Take(org).Error
+	if err == nil {
+		err = db.Model(org).Updates(map[string]interface{}{"name": name, "slug": slug}).Error
+	} else if slug != "" && db.Where("slug = ?", slug).Take(org).Error == nil {
+		err = db.Model(org).Updates(map[string]interface{}{"uuid": uuID, "name": name}).Error
+		if err == nil {
+			logger.Ctx(ctx).Infof("Adopted existing org id=%d (slug=%s) with control-plane uuid=%s", org.ID, slug, uuID)
+		}
+	} else {
+		err = db.Create(&model.Organization{
+			Model: model.Model{UUID: uuID}, Name: name, Slug: slug, OrgType: 1, OwnerUserID: 1,
+		}).Error
+	}
+	if err != nil {
+		logger.Ctx(ctx).Errorf("EXIT OrgAdmin.UpsertOrgByUUID: error=%v", err)
+		return err
+	}
+	orgIDByUUID.Store(uuID, org.ID)
+	logger.Ctx(ctx).Infof("EXIT OrgAdmin.UpsertOrgByUUID: ok id=%d", org.ID)
+	return nil
+}
+
 func (a *OrgAdmin) UpsertOrgByID(ctx context.Context, id int64, name, slug string) error {
 	logger.Ctx(ctx).Infof("ENTER OrgAdmin.UpsertOrgByID: id=%d name=%s slug=%s", id, name, slug)
 	_, db := GetContextDB(ctx)

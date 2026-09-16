@@ -24,20 +24,22 @@ func forEachRegion(regions []model.Region, fn func(r *model.Region)) {
 	wg.Wait()
 }
 
-func orgSyncPayload(id int64, name, slug string) map[string]interface{} {
-	return map[string]interface{}{"id": id, "name": name, "slug": slug}
+// 同步载荷以 UUID 为准：两侧组织表的自增主键各自独立，跨服务只能用全局唯一标识对应。
+// 此前传的是自增 ID，区域侧强行拿它当主键插入，两边靠"都先建了一个 admin 组织"碰巧对齐
+func orgSyncPayload(uuID string, name, slug string) map[string]interface{} {
+	return map[string]interface{}{"uuid": uuID, "name": name, "slug": slug}
 }
 
 // SyncOrgToAllRegions pushes one org ({id, name, slug}) to all sync target regions.
-func SyncOrgToAllRegions(ctx context.Context, orgID int64, name, slug string) {
+func SyncOrgToAllRegions(ctx context.Context, orgUUID string, name, slug string) {
 	regions := SyncTargetRegions(dbs.DBContext(ctx))
 	if len(regions) == 0 {
 		return
 	}
-	payload := orgSyncPayload(orgID, name, slug)
+	payload := orgSyncPayload(orgUUID, name, slug)
 	forEachRegion(regions, func(r *model.Region) {
 		if err := pushToRegion(ctx, r, "/internal/orgs/sync", payload); err != nil {
-			log.WithContext(ctx).Errorf("Failed to sync org '%s' (id=%d) to region '%s': %v", name, orgID, r.Name, err)
+			log.WithContext(ctx).Errorf("Failed to sync org '%s' (uuid=%s) to region '%s': %v", name, orgUUID, r.Name, err)
 		}
 	})
 }
@@ -58,7 +60,7 @@ func SyncAllOrgsToRegion(ctx context.Context, db *gorm.DB, region *model.Region)
 		wg.Add(1)
 		go func(o *model.Organization) {
 			defer wg.Done()
-			if err := pushToRegion(ctx, region, "/internal/orgs/sync", orgSyncPayload(o.ID, o.Name, o.Slug)); err != nil {
+			if err := pushToRegion(ctx, region, "/internal/orgs/sync", orgSyncPayload(o.UUID, o.Name, o.Slug)); err != nil {
 				log.WithContext(ctx).Errorf("Failed to sync org '%s' (id=%d) to new region '%s': %v", o.Name, o.ID, region.Name, err)
 			}
 		}(&orgs[i])

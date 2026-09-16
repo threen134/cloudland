@@ -76,6 +76,7 @@ func forwardToRegion(c *gin.Context, template string, body []byte) {
 
 	var org *model.Organization
 	var orgID int64
+	var orgUUID string
 	if claims.OrgID != "" {
 		// Orgs are soft-deleted: a token issued before deletion finds nothing and is rejected
 		// instead of being forwarded without org identity and quota tracking.
@@ -84,15 +85,17 @@ func forwardToRegion(c *gin.Context, template string, body []byte) {
 			common.AbortWithDetail(c, http.StatusForbidden, "Organization is not accessible")
 			return
 		}
-		org, orgID = &o, o.ID
+		org, orgID, orgUUID = &o, o.ID, o.UUID
 	}
 
 	forwarded := map[string]string{
 		"X-User-ID": strconv.FormatInt(user.ID, 10),
 		// 只传用户名，不传邮箱：用户名创建后不可更改、注销后不可复用，是跨服务引用账号最稳的标识；
 		// 邮箱可改、注销后还能被本人复用，作为标识不可靠，clapi 侧也没有任何地方需要它
-		"X-User-Name":        user.Username,
-		"X-Org-ID":           strconv.FormatInt(orgID, 10),
+		"X-User-Name": user.Username,
+		// 传 UUID 而非自增主键：两侧组织表的 ID 各自独立，此前靠同步时强行用同一个 ID
+		// 作主键来维持一致，一旦错位，资源会静默挂到别的组织名下且毫无报错
+		"X-Org-UUID":         orgUUID,
 		"X-Org-Name":         claims.OrgName,
 		"X-Org-Role":         strconv.Itoa(claims.OR),
 		"X-Is-Owner":         strconv.FormatBool(claims.IsOwner),

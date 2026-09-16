@@ -120,7 +120,7 @@ func CreateOrg(c *gin.Context) {
 		return
 	}
 
-	go services.SyncOrgToAllRegions(context.WithoutCancel(c.Request.Context()), org.ID, org.Name, org.Slug)
+	go services.SyncOrgToAllRegions(context.WithoutCancel(c.Request.Context()), org.UUID, org.Name, org.Slug)
 	c.JSON(http.StatusCreated, toOrgOut(&org, me))
 }
 

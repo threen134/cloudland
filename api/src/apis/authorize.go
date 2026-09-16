@@ -54,13 +54,16 @@ func Authorize() gin.HandlerFunc {
 			}
 		}
 
-		orgIDStr := c.Request.Header.Get("X-Org-ID")
+		// 组织以 UUID 传入，再解析成本区域的组织 ID：两侧组织表的自增主键各自独立，
+		// 此前直接把控制面的 ID 当本地 ID 用，靠"同步时强行用同一个 ID 作主键"维持一致，
+		// 一旦错位，资源会静默挂到别的组织名下。解析结果有内存缓存，不是每请求都查库
+		orgUUID := c.Request.Header.Get("X-Org-UUID")
 		var oid int64
-		if orgIDStr != "" {
+		if orgUUID != "" {
 			var err error
-			oid, err = strconv.ParseInt(orgIDStr, 10, 64)
+			oid, err = orgAdmin.GetOrgIDByUUID(SetContextDB(c.Request.Context(), DB()), orgUUID)
 			if err != nil {
-				ErrorResponse(c, http.StatusBadRequest, "Invalid X-Org-ID value", err)
+				ErrorResponse(c, http.StatusForbidden, "Organization is not available in this region", err)
 				c.Abort()
 				return
 			}
