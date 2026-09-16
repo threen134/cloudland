@@ -33,6 +33,38 @@ const newMigrationForm = ref({
     migration_type: 'live'
 })
 
+// 选中实例当前所在节点的主机名（接口返回的 hypervisor 就是 hostname）。
+// 目标节点下拉框据此标注并禁选该节点：迁到同一节点后端会直接跳过，
+// 用户却以为任务已提交
+const selectedInstanceHyper = computed(() => {
+    const inst = availableInstances.value.find(i => i.id === newMigrationForm.value.instance_id)
+    return inst?.hypervisor || ''
+})
+
+// 换实例后，原先选中的目标节点可能正是新实例所在节点，这里清掉避免提交到无效目标
+watch(() => newMigrationForm.value.instance_id, () => {
+    const current = availableHypervisors.value.find(h => h.hostname === selectedInstanceHyper.value)
+    if (current && newMigrationForm.value.target_hyper === current.hostid) {
+        newMigrationForm.value.target_hyper = ''
+    }
+})
+
+// 按所在节点筛选待迁移的云服务器（节点多、虚拟机多时便于定位）
+const instanceHyperFilter = ref('')
+const filteredInstances = computed(() =>
+    instanceHyperFilter.value
+        ? availableInstances.value.filter(i => i.hypervisor === instanceHyperFilter.value)
+        : availableInstances.value
+)
+
+// 筛选后已选实例可能不在列表里，清掉以免提交一个界面上看不见的实例
+watch(instanceHyperFilter, () => {
+    if (newMigrationForm.value.instance_id &&
+        !filteredInstances.value.some(i => i.id === newMigrationForm.value.instance_id)) {
+        newMigrationForm.value.instance_id = ''
+    }
+})
+
 // 有迁移进行中时每 5 秒自动刷新，展示进度
 let refreshTimer: ReturnType<typeof setTimeout> | null = null
 const hasActiveMigration = computed(() =>
@@ -98,6 +130,7 @@ const openCreateModal = () => {
         target_hyper: '',
         migration_type: 'live'
     }
+    instanceHyperFilter.value = ''
     createModalVisible.value = true
     fetchResources()
 }
@@ -300,11 +333,22 @@ watch(() => region.currentRegionId, (newId) => {
 
         <div class="modal-body" v-else>
           <div class="form-group row-gap">
+               <label class="form-label">{{ $t('dashboard.migrationForm.filterByNode') }}</label>
+              <select v-model="instanceHyperFilter" class="form-select full-width">
+                   <option value="">{{ $t('dashboard.migrationForm.allNodes') }}</option>
+                  <option v-for="hyp in availableHypervisors" :key="hyp.uuid" :value="hyp.hostname">
+                      {{ hyp.hostname }} ({{ hyp.hostid }})
+                  </option>
+              </select>
+          </div>
+
+          <div class="form-group row-gap">
                <label class="form-label">{{ $t('dashboard.migrationForm.instanceToMigrate') }} <span class="text-error">*</span></label>
               <select v-model="newMigrationForm.instance_id" class="form-select full-width">
                    <option value="" disabled>{{ $t('dashboard.forms.placeholder.none') }}</option>
-                  <option v-for="inst in availableInstances" :key="inst.id" :value="inst.id">
-                      {{ inst.hostname || inst.name }} ({{ inst.id }})
+                   <option v-if="!filteredInstances.length" value="" disabled>{{ $t('dashboard.migrationForm.noInstanceOnNode') }}</option>
+                  <option v-for="inst in filteredInstances" :key="inst.id" :value="inst.id">
+                      {{ inst.hostname || inst.name }}<template v-if="inst.hypervisor"> · {{ inst.hypervisor }}</template> ({{ inst.id }})
                   </option>
               </select>
           </div>
@@ -313,8 +357,13 @@ watch(() => region.currentRegionId, (newId) => {
                <label class="form-label">{{ $t('dashboard.migrationForm.destinationNode') }}</label>
               <select v-model="newMigrationForm.target_hyper" class="form-select full-width">
                    <option value="">{{ $t('dashboard.migrationForm.autoSelect') }}</option>
-                  <option v-for="hyp in availableHypervisors" :key="hyp.uuid" :value="hyp.hostid">
-                      {{ hyp.hostname }} ({{ hyp.hostid }})
+                  <option
+                    v-for="hyp in availableHypervisors"
+                    :key="hyp.uuid"
+                    :value="hyp.hostid"
+                    :disabled="!!selectedInstanceHyper && hyp.hostname === selectedInstanceHyper"
+                  >
+                      {{ hyp.hostname }} ({{ hyp.hostid }})<template v-if="hyp.hostname === selectedInstanceHyper"> — {{ $t('dashboard.migrationForm.currentNode') }}</template>
                   </option>
               </select>
               <small class="text-secondary" style="display: block; margin-top: 4px;">{{ $t('messages.placementRouteHint') }}</small>
