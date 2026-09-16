@@ -147,8 +147,8 @@ func TestDispatchSelectWithoutResourcesFails(t *testing.T) {
 
 func TestDispatchNegativeInterDoesNotSendCommand(t *testing.T) {
 	d, streams := newTestDispatcher(t, 1)
-	if status := dispatch(t, d, "inter=-1"); status != "ok" {
-		t.Fatalf("status = %q", status)
+	if status := dispatch(t, d, "inter=-1"); status != "error: no target node" {
+		t.Fatalf("status = %q, want error: no target node", status)
 	}
 	if got := totalSent(streams); got != 0 {
 		t.Errorf("sent %d messages, want 0", got)

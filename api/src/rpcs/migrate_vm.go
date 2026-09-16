@@ -386,7 +386,15 @@ func MigrateVM(ctx context.Context, args []string) (status string, err error) {
 			return
 		}
 	} else if status == "target_prepared" {
+		// 目标节点由调度器选出时（创建迁移未指定目标，target_hyper 存的是 -1），实际节点只有这个回调知道，必须落库：
+		// 后续 complete_migration.sh、clear_target_migration.sh 都用它作 inter= 下发，-1 会被 cland 当作无目标节点丢弃，
+		// 迁移会永远停在 source_prepared（虚拟机已在目标节点跑起来，但账本不收尾）
 		migration.TargetHyper = int32(hyperID)
+		err = db.Model(migration).Updates(map[string]interface{}{"target_hyper": int32(hyperID)}).Error
+		if err != nil {
+			logger.Ctx(ctx).Error("Failed to update migration target hyper", err)
+			return
+		}
 		targetHyper := &model.Hyper{}
 		err = db.Where("hostid = ?", hyperID).Take(targetHyper).Error
 		if err != nil {
@@ -411,6 +419,9 @@ func MigrateVM(ctx context.Context, args []string) (status string, err error) {
 		err = execSourceMigrate(ctx, instance, migration, task2.ID, "/opt/cloudland/scripts/backend/source_migration.sh", migration.Type)
 		if err != nil {
 			logger.Ctx(ctx).Error("Failed to exec source migration", err)
+			// 先留存原始失败原因：冷迁移分支的 LaunchVM 会覆盖 err，成功时 err 为 nil，
+			// 再调 err.Error() 会让整个回调 handler panic
+			migrateErr := err
 			if migration.Type == "cold" {
 				_, err = LaunchVM(ctx, []string{args[0], args[3], "migrated", args[4], "sync"})
 				if err != nil {
@@ -418,7 +429,7 @@ func MigrateVM(ctx context.Context, args []string) (status string, err error) {
 					return
 				}
 			}
-			err = db.Model(&model.Task{}).Where("id = ?", task2.ID).Updates(map[string]interface{}{"status": "failed", "message": err.Error()}).Error
+			err = db.Model(&model.Task{}).Where("id = ?", task2.ID).Updates(map[string]interface{}{"status": "failed", "message": migrateErr.Error()}).Error
 			return
 		}
 	} else if status == "source_prepared" {

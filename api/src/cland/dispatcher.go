@@ -52,6 +52,10 @@ func (d *Dispatcher) IsRunning() bool {
 
 var replyOK = &pb.ExecuteReply{Status: "ok"}
 
+// statusNoTargetNode 与 clapi 侧（api/src/common/clients.go 的 statusNoTargetNode）保持一致：
+// clapi 收到该状态会让 HyperExecute 返回错误，而不是当作已下发继续往下走
+const statusNoTargetNode = "error: no target node"
+
 // Dispatch parses the control string and routes the command to the correct node(s).
 // Directive precedence follows rpcworker.cpp Execute() (lines 123-255). As with strstr
 // there, a directive matches when its key is present, even if its value is empty.
@@ -151,10 +155,11 @@ func (d *Dispatcher) handleInter(ctx context.Context, val string, msgID int32, m
 	if nodeID < 0 {
 		if nodeID == -1 && d.status != nil {
 			d.status.ReportTopology(msgID)
-		} else {
-			tracing.Logf(ctx, "dispatcher: inter=%d has no target node, dropped", nodeID)
 		}
-		return replyOK, nil
+		// 命令没有目标节点，一定没送出去：必须回错误。静默回 ok 会让 clapi 以为下发成功，
+		// 调用方（如 target_hyper 未落库的迁移）就此卡死，任务表里还显示各阶段全部完成
+		tracing.Logf(ctx, "dispatcher: inter=%d has no target node, command dropped", nodeID)
+		return &pb.ExecuteReply{Status: statusNoTargetNode}, nil
 	}
 
 	trace.SpanFromContext(ctx).SetAttributes(attribute.Int("cloudland.target_node", nodeID))

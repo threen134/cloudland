@@ -104,6 +104,10 @@ func NodeRemove(hostID int32) error {
 	return nil
 }
 
+// statusNoTargetNode 与 cland 分发器（api/src/cland/dispatcher.go）返回的状态串保持一致：
+// 控制串里没有有效目标节点，命令没有下发到任何节点
+const statusNoTargetNode = "error: no target node"
+
 func HyperExecute(ctx context.Context, control, command string) (err error) {
 	client := getClandClient()
 
@@ -125,8 +129,13 @@ func HyperExecute(ctx context.Context, control, command string) (err error) {
 		return NewCLError(ErrExecuteOnHyperFailed, "gRPC Execute failed", err)
 	}
 	// 与 C++ 版一致不视为失败（如节点离线），但记录下来便于排查
-	if reply.GetStatus() != "ok" {
-		logger.Ctx(ctx).Warningf("HyperExecute: cland replied %q for control=%s", reply.GetStatus(), control)
+	if status := reply.GetStatus(); status != "ok" {
+		logger.Ctx(ctx).Warningf("HyperExecute: cland replied %q for control=%s", status, control)
+		// 控制串里没有有效目标节点属于调用方的 bug（如 inter=-1、空 inter=），命令一定没下发，
+		// 不能当成功返回，否则调用方会按"已下发"继续推进流程
+		if status == statusNoTargetNode {
+			return NewCLError(ErrExecuteOnHyperFailed, "no target node for control "+control, nil)
+		}
 	}
 	return nil
 }
