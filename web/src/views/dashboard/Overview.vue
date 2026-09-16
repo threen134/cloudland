@@ -1,21 +1,19 @@
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, type Component } from 'vue'
 import { useAuthStore } from '../../stores/auth'
 import { useRegionStore } from '../../stores/region'
-import { useI18n } from 'vue-i18n'
-import { Server, HardDrive, Layers, Disc, Globe, ChevronRight } from 'lucide-vue-next'
+import { Server, HardDrive, Layers, Disc, Globe, Network, ChevronRight } from 'lucide-vue-next'
 
 import { instancesApi, type Instance } from '../../api/instances'
 import { activitiesApi, type Activity as ActivityItem } from '../../api/activities'
 import ActivityEntry from '../../components/activity/ActivityEntry.vue'
 import { volumesApi } from '../../api/volumes'
 import { imagesApi, type Image } from '../../api/images'
-import { vpcsApi, floatingIpsApi } from '../../api/networks'
+import { vpcsApi, floatingIpsApi, loadBalancersApi } from '../../api/networks'
 import { quotaApi, type QuotaFields } from '../../api/quota'
 
 const auth = useAuthStore()
 const regionStore = useRegionStore()
-const { t } = useI18n()
 const displayName = computed(() => auth.user?.username || auth.user?.name || 'User')
 
 interface ResourceUsage {
@@ -31,6 +29,7 @@ interface SystemStats {
     volume: ResourceUsage
     images: ResourceUsage
     public_ip: ResourceUsage
+    load_balancer: ResourceUsage
     private_ip: ResourceUsage
 }
 
@@ -82,6 +81,7 @@ const emptyStats: SystemStats = {
     volume: { used: 0, total: 0, unit: 'GB', percentage: 0 },
     images: { used: 0, total: 0, percentage: 0 },
     public_ip: { used: 0, total: 0, percentage: 0 },
+    load_balancer: { used: 0, total: 0, percentage: 0 },
     private_ip: { used: 0, total: 0, percentage: 0 }
 }
 
@@ -91,12 +91,14 @@ onMounted(async () => {
         const orgUuid = auth.user?.current_org_uuid || ''
         const regionUuid = regionStore.currentRegionId || ''
 
-        const [instRes, volRes, imgRes, vpcRes, fipRes, quotaRes] = await Promise.all([
+        const [instRes, volRes, imgRes, vpcRes, fipRes, lbRes, quotaRes] = await Promise.all([
             instancesApi.fetchInstances().catch(err => { console.warn('Instances fetch failed:', err); return { data: [] } }),
             volumesApi.list({ limit: 100, type: 'all' }).catch(err => { console.warn('Volumes fetch failed:', err); return { volumes: [] } }),
             imagesApi.fetchImages().catch(err => { console.warn('Images fetch failed:', err); return { data: [] } }),
             vpcsApi.list({ limit: 100 }).catch(err => { console.warn('VPCs fetch failed:', err); return { vpcs: [] } }),
             floatingIpsApi.list({ limit: 100 }).catch(err => { console.warn('FIPs fetch failed:', err); return { floating_ips: [] } }),
+            // Only the total is needed for the load balancer card
+            loadBalancersApi.list({ limit: 1 }).catch(err => { console.warn('Load balancers fetch failed:', err); return null }),
             (orgUuid && regionUuid)
                 ? quotaApi.getOrgRegionResourceInfo(orgUuid, regionUuid).catch(err => { console.warn('Quota fetch failed:', err); return null })
                 : Promise.resolve(null),
@@ -127,12 +129,13 @@ onMounted(async () => {
             volume: { used: usedDiskGB, total: 0, unit: 'GB', percentage: 0 },
             images: { used: imageCount, total: 0, percentage: 0 },
             public_ip: { used: usedPublicIps, total: 0, percentage: 0 },
+            load_balancer: { used: consumption?.load_balancers ?? lbRes?.total ?? 0, total: 0, percentage: 0 },
             private_ip: { used: vpcCount, total: 0, percentage: 0 }
         }
         // Without quota data the limits stay null and each bar shows "used / -"
         usageBars.value = buildUsageBars({
             cpu: usedCpu, memGB: usedMemGB, diskGB: usedDiskGB, publicIps: usedPublicIps,
-            vpcs: consumption?.vpcs ?? vpcCount, loadBalancers: consumption?.load_balancers ?? 0, images: consumption?.images ?? 0,
+            vpcs: consumption?.vpcs ?? vpcCount, loadBalancers: consumption?.load_balancers ?? lbRes?.total ?? 0, images: consumption?.images ?? 0,
         }, quota)
     } catch (error) {
         console.error('Failed to fetch actual stats:', error)
@@ -141,6 +144,31 @@ onMounted(async () => {
     } finally {
         loading.value = false
     }
+})
+
+// Summary cards; each links to the list page of its resource
+interface SummaryCard {
+    key: string
+    route: string
+    labelKey: string
+    icon: Component
+    bgClass: string
+    textClass: string
+    value: number
+    suffixKey?: string
+    suffix?: string
+}
+const summaryCards = computed<SummaryCard[]>(() => {
+    const s = stats.value
+    if (!s) return []
+    return [
+        { key: 'instances', route: 'instances', labelKey: 'dashboard.instances', icon: Server, bgClass: 'bg-blue-light', textClass: 'text-blue', value: s.instances.used, suffixKey: 'dashboard.overview.activeCount' },
+        { key: 'volumes', route: 'volumes', labelKey: 'dashboard.volumes', icon: HardDrive, bgClass: 'bg-teal-light', textClass: 'text-teal', value: s.volume.used, suffix: s.volume.unit },
+        { key: 'floating-ips', route: 'floating-ips', labelKey: 'dashboard.floatingIPs', icon: Globe, bgClass: 'bg-blue-light', textClass: 'text-blue', value: s.public_ip.used, suffixKey: 'dashboard.overview.activeCount' },
+        { key: 'vpcs', route: 'vpcs', labelKey: 'dashboard.vpcs', icon: Layers, bgClass: 'bg-purple-light', textClass: 'text-purple', value: s.private_ip.used, suffixKey: 'dashboard.overview.activeCount' },
+        { key: 'load-balancers', route: 'load-balancers', labelKey: 'dashboard.loadBalancers', icon: Network, bgClass: 'bg-teal-light', textClass: 'text-teal', value: s.load_balancer.used, suffixKey: 'dashboard.overview.activeCount' },
+        { key: 'images', route: 'images', labelKey: 'dashboard.images', icon: Disc, bgClass: 'bg-rose-light', textClass: 'text-rose', value: s.images.used, suffixKey: 'dashboard.overview.imageCount' },
+    ]
 })
 
 // ---- Recent activity: operations of the current organization in the current region ----
@@ -190,77 +218,20 @@ const getPercentColor = (percent: number) => {
       </p>
     </div>
 
-    <!-- Summary Cards -->
+    <!-- Summary Cards: each links to the resource's list page -->
     <div class="summary-grid">
-      <!-- Instances -->
-      <div class="stat-card">
-        <div class="stat-icon-wrapper bg-blue-light">
-          <Server class="stat-icon text-blue" :size="24" />
+      <router-link v-for="card in summaryCards" :key="card.key" :to="{ name: card.route }" class="stat-card">
+        <div class="stat-icon-wrapper" :class="card.bgClass">
+          <component :is="card.icon" class="stat-icon" :class="card.textClass" :size="24" />
         </div>
         <div class="stat-content">
-          <span class="stat-label">{{ $t('dashboard.instances') }}</span>
+          <span class="stat-label">{{ $t(card.labelKey) }}</span>
           <div class="stat-value-group">
-            <span class="stat-value">{{ stats.instances.used }}</span>
-            <span class="stat-total">{{ $t('dashboard.overview.activeCount') }}</span>
+            <span class="stat-value">{{ card.value }}</span>
+            <span class="stat-total">{{ card.suffixKey ? $t(card.suffixKey) : card.suffix }}</span>
           </div>
         </div>
-      </div>
-
-      <!-- Volumes -->
-      <div class="stat-card">
-        <div class="stat-icon-wrapper bg-teal-light">
-          <HardDrive class="stat-icon text-teal" :size="24" />
-        </div>
-        <div class="stat-content">
-          <span class="stat-label">{{ $t('dashboard.volumes') }}</span>
-          <div class="stat-value-group">
-            <span class="stat-value">{{ stats.volume.used }}</span>
-            <span class="stat-unit">{{ stats.volume.unit }}</span>
-          </div>
-        </div>
-      </div>
-
-      <!-- Floating IPs (Public IP) -->
-      <div class="stat-card">
-        <div class="stat-icon-wrapper bg-blue-light">
-          <Globe class="stat-icon text-blue" :size="24" />
-        </div>
-        <div class="stat-content">
-          <span class="stat-label">{{ $t('dashboard.floatingIPs') }}</span>
-          <div class="stat-value-group">
-            <span class="stat-value">{{ stats.public_ip.used }}</span>
-            <span class="stat-total">{{ $t('dashboard.overview.activeCount') }}</span>
-          </div>
-        </div>
-      </div>
-
-      <!-- VPCs -->
-      <div class="stat-card">
-        <div class="stat-icon-wrapper bg-purple-light">
-          <Layers class="stat-icon text-purple" :size="24" />
-        </div>
-        <div class="stat-content">
-          <span class="stat-label">{{ $t('dashboard.vpcs') }}</span>
-          <div class="stat-value-group">
-            <span class="stat-value">{{ stats.private_ip.used }}</span>
-            <span class="stat-total">{{ $t('dashboard.overview.activeCount') }}</span>
-          </div>
-        </div>
-      </div>
-
-      <!-- Images -->
-      <div class="stat-card">
-        <div class="stat-icon-wrapper bg-rose-light">
-          <Disc class="stat-icon text-rose" :size="24" />
-        </div>
-        <div class="stat-content">
-          <span class="stat-label">{{ $t('dashboard.images') }}</span>
-          <div class="stat-value-group">
-            <span class="stat-value">{{ stats.images.used }}</span>
-            <span class="stat-total">{{ $t('dashboard.overview.imageCount') }}</span>
-          </div>
-        </div>
-      </div>
+      </router-link>
     </div>
 
     <!-- Main Content Grid -->
@@ -347,7 +318,8 @@ const getPercentColor = (percent: number) => {
 /* Summary Grid */
 .summary-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  /* six cards fit on one row on a typical desktop width */
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
   gap: 24px;
   margin-bottom: 32px;
 }
@@ -367,6 +339,18 @@ const getPercentColor = (percent: number) => {
 .stat-card:hover {
   transform: translateY(-2px);
   box-shadow: var(--shadow-card-hover);
+}
+
+/* Cards are links to the resource list pages */
+a.stat-card {
+  color: inherit;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+a.stat-card:focus-visible {
+  outline: 2px solid var(--primary-color);
+  outline-offset: 2px;
 }
 
 .stat-icon-wrapper {
