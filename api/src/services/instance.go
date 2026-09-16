@@ -1504,8 +1504,8 @@ func GetDomainByInstanceUUID(ctx context.Context, uuid string) (domain string, e
 	return domain, nil
 }
 
-// hyperID >= 0 时只返回该节点上的虚拟机；传 -1 表示不按节点过滤
-func (a *InstanceAdmin) List(ctx context.Context, offset, limit int64, order, query string, hyperID int32) (total int64, instances []*model.Instance, err error) {
+// hyperID >= 0 时只返回该节点上的虚拟机（传 -1 不过滤）；routerID > 0 时只返回该 VPC 路由器下的虚拟机（传 0 不过滤）
+func (a *InstanceAdmin) List(ctx context.Context, offset, limit int64, order, query string, hyperID int32, routerID int64) (total int64, instances []*model.Instance, err error) {
 	logger.Ctx(ctx).Infof("ENTER InstanceAdmin.List: offset=%d, limit=%d, order=%s, query=%s", offset, limit, order, query)
 	defer func() {
 		if err != nil {
@@ -1536,6 +1536,9 @@ func (a *InstanceAdmin) List(ctx context.Context, offset, limit int64, order, qu
 	if hyperID >= 0 {
 		baseQuery = baseQuery.Where("hyper = ?", hyperID)
 	}
+	if routerID > 0 {
+		baseQuery = baseQuery.Where("router_id = ?", routerID)
+	}
 
 	// Count total
 	instances = []*model.Instance{}
@@ -1551,6 +1554,9 @@ func (a *InstanceAdmin) List(ctx context.Context, offset, limit int64, order, qu
 	}
 	if hyperID >= 0 {
 		listQuery = listQuery.Where("hyper = ?", hyperID)
+	}
+	if routerID > 0 {
+		listQuery = listQuery.Where("router_id = ?", routerID)
 	}
 	listQuery = listQuery.Preload("Volumes").Preload("Image").Preload("Zone").Preload("Flavor").Preload("Keys")
 	if err = listQuery.Find(&instances).Error; err != nil {

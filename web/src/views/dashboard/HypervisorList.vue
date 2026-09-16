@@ -459,7 +459,7 @@ onMounted(() => {
                 <span class="status-dot"></span>
                 {{ getStatusLabel(h.status, h.status_name) }}
               </span>
-              <span v-if="h.status === 2" class="drain-hint">{{ getDrainHint(h) }}</span>
+              <span v-if="h.status === 2" :class="['drain-hint', h.instance_count ? 'drain-hint-warn' : 'drain-hint-done']">{{ getDrainHint(h) }}</span>
             </td>
             <td>
               <span class="vm-count-cell" @mouseenter="loadHyperInstances(h)" @mouseleave="hoveredHyperId = null">
@@ -850,13 +850,26 @@ onMounted(() => {
   color: var(--text-primary);
 }
 
-/* 维护模式的腾空进度提示 */
+/* 维护模式的腾空进度提示：还有虚拟机时是「别断电」的警告，必须显眼 */
 .drain-hint {
-    display: block;
-    margin-top: 2px;
+    display: inline-block;
+    margin-top: 4px;
+    padding: 1px 8px;
+    border-radius: 10px;
     font-size: 0.6875rem;
-    color: var(--text-light);
+    font-weight: 600;
     white-space: nowrap;
+}
+
+.drain-hint-warn {
+    background: var(--warning-light);
+    color: var(--warning-dark);
+    border: 1px solid var(--warning-color);
+}
+
+.drain-hint-done {
+    background: var(--success-light);
+    color: var(--success-dark);
 }
 
 /* 虚拟机数量列与悬浮列表 */

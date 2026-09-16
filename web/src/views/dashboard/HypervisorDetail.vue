@@ -287,7 +287,7 @@ onMounted(fetchHypervisorDetail)
             <h2 class="resource-title">
               {{ hypervisor.hostname }}
               <span :class="['badge', getStatusInfo(hypervisor.status).class]">{{ getStatusLabel(hypervisor.status, hypervisor.status_name) }}</span>
-              <span v-if="hypervisor.status === 2" class="drain-hint">{{ drainHint }}</span>
+              <span v-if="hypervisor.status === 2" :class="['drain-hint', hyperInstances.length ? 'drain-hint-warn' : 'drain-hint-done']">{{ drainHint }}</span>
             </h2>
             <div class="resource-id-row">
               <span class="resource-id-text">{{ hypervisor.uuid }}</span>
@@ -722,12 +722,25 @@ onMounted(fetchHypervisorDetail)
 
 .info-card { padding: var(--spacing-5); }
 
-/* 维护模式的腾空进度提示 */
+/* 维护模式的腾空进度提示：还有虚拟机时是「别断电」的警告，必须显眼 */
 .drain-hint {
     margin-left: var(--spacing-2);
+    padding: 2px 10px;
+    border-radius: 10px;
     font-size: 0.75rem;
-    color: var(--text-light);
+    font-weight: 600;
     white-space: nowrap;
+}
+
+.drain-hint-warn {
+    background: var(--warning-light);
+    color: var(--warning-dark);
+    border: 1px solid var(--warning-color);
+}
+
+.drain-hint-done {
+    background: var(--success-light);
+    color: var(--success-dark);
 }
 
 /* 节点上的虚拟机列表 */

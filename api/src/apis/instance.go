@@ -12,7 +12,6 @@ import (
 	"api/src/model"
 	"api/src/services"
 	"context"
-	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -723,6 +722,10 @@ func (v *InstanceAPI) List(c *gin.Context) {
 	vpcID := strings.TrimSpace(c.DefaultQuery("vpc_id", "")) // Retrieve vpc_id from query params
 	logger.Ctx(ctx).Debugf("List instances with offset %s, limit %s, query %s, vpc_id %s", offsetStr, limitStr, queryStr, vpcID)
 
+	// vpc_id 过滤必须单独传参：此前把 "router_id = N" 塞进 queryStr，而服务层是拿 query
+	// 做 hostname 的模糊匹配（hostname LIKE '%router_id = N%'），条件永远匹配不到，
+	// 按 VPC 过滤实例实际上是失效的
+	routerID := int64(0)
 	if vpcID != "" {
 		logger.Ctx(ctx).Debugf("Filtering instances by VPC ID: %s", vpcID)
 		var router *model.Router
@@ -732,10 +735,8 @@ func (v *InstanceAPI) List(c *gin.Context) {
 			ErrorResponse(c, http.StatusBadRequest, "Invalid query router by vpc_id UUID: "+vpcID, err)
 			return
 		}
-
-		logger.Ctx(ctx).Debugf("The router with vpc_id: %+v\n", router)
 		logger.Ctx(ctx).Debugf("The router_id in vpc is: %d", router.ID)
-		queryStr = fmt.Sprintf("router_id = %d", router.ID)
+		routerID = router.ID
 	}
 	offset, err := strconv.Atoi(offsetStr)
 	if err != nil {
@@ -764,7 +765,7 @@ func (v *InstanceAPI) List(c *gin.Context) {
 			return
 		}
 	}
-	total, instances, err := instanceAdmin.List(ctx, int64(offset), int64(limit), "-created_at", queryStr, int32(hyperID))
+	total, instances, err := instanceAdmin.List(ctx, int64(offset), int64(limit), "-created_at", queryStr, int32(hyperID), routerID)
 	if err != nil {
 		logger.Ctx(ctx).Errorf("Failed to list instances, %+v", err)
 		ErrorResponse(c, http.StatusBadRequest, "Failed to list instances", err)
