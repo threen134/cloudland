@@ -81,6 +81,17 @@ const instanceStatusText = (status: string) => {
     return te(key) ? t(key) : status
 }
 
+// 进入维护模式只是「开始腾空」，虚拟机迁移是异步的；仅凭「维护中」看不出能否断电。
+// 这里用本页已经拉取的虚拟机列表长度判断（详情接口不返回 instance_count），
+// 且用剩余虚拟机数而非进行中的迁移数——迁移失败时虚拟机会留在原地
+const drainHint = computed(() => {
+    if (hypervisor.value?.status !== 2) return ''
+    const left = hyperInstances.value.length
+    return left > 0
+        ? t('dashboard.hypervisorStatus.draining', { count: left })
+        : t('dashboard.hypervisorStatus.drained')
+})
+
 // created_at 形如 "2026-09-16 00:36:12.343038"，不带时区标记；直接截到分钟展示，
 // 交给 Date 解析在不同浏览器和时区下会出现偏移
 const formatInstanceTime = (value?: string) => (value ? String(value).slice(0, 16) : '-')
@@ -276,6 +287,7 @@ onMounted(fetchHypervisorDetail)
             <h2 class="resource-title">
               {{ hypervisor.hostname }}
               <span :class="['badge', getStatusInfo(hypervisor.status).class]">{{ getStatusLabel(hypervisor.status, hypervisor.status_name) }}</span>
+              <span v-if="hypervisor.status === 2" class="drain-hint">{{ drainHint }}</span>
             </h2>
             <div class="resource-id-row">
               <span class="resource-id-text">{{ hypervisor.uuid }}</span>
@@ -709,6 +721,14 @@ onMounted(fetchHypervisorDetail)
 }
 
 .info-card { padding: var(--spacing-5); }
+
+/* 维护模式的腾空进度提示 */
+.drain-hint {
+    margin-left: var(--spacing-2);
+    font-size: 0.75rem;
+    color: var(--text-light);
+    white-space: nowrap;
+}
 
 /* 节点上的虚拟机列表 */
 .hyper-vm-count {

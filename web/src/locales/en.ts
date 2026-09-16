@@ -1173,6 +1173,8 @@ export default {
             disabled: 'Disabled',
             active: 'Active',
             maintaining: 'Maintaining',
+            draining: 'Draining · {count} left',
+            drained: 'Drained',
             deploying: 'Deploying',
             deployFailed: 'Deploy Failed',
             unknown: 'Unknown({status})',

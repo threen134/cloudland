@@ -1174,6 +1174,8 @@ export default {
             disabled: '已禁用',
             active: '活跃',
             maintaining: '维护中',
+            draining: '腾空中 · 剩 {count} 台',
+            drained: '已腾空',
             deploying: '部署中',
             deployFailed: '部署失败',
             unknown: '未知({status})',

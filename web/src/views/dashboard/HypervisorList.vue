@@ -185,6 +185,17 @@ const getStatusLabel = (status: number, statusName?: string) => {
     return t('dashboard.hypervisorStatus.' + info.labelKey)
 }
 
+// 进入维护模式只是「开始腾空」：虚拟机迁移是异步的，状态置位时可能一台都还没迁走。
+// 光看「维护中」会让人以为可以断电了，这里用节点上剩余的虚拟机数量把两者区分开。
+// 用剩余虚拟机数而不是进行中的迁移数：迁移失败时虚拟机会留在原地，按迁移数会错报「已腾空」
+const getDrainHint = (h: Hypervisor) => {
+    if (h.status !== 2) return ''
+    const left = h.instance_count || 0
+    return left > 0
+        ? t('dashboard.hypervisorStatus.draining', { count: left })
+        : t('dashboard.hypervisorStatus.drained')
+}
+
 const formatMemory = (mb: number) => {
     if (mb >= 1024) return `${(mb / 1024).toFixed(1)} ${t('specs.gb')}`
     return `${mb} ${t('specs.mb')}`
@@ -448,6 +459,7 @@ onMounted(() => {
                 <span class="status-dot"></span>
                 {{ getStatusLabel(h.status, h.status_name) }}
               </span>
+              <span v-if="h.status === 2" class="drain-hint">{{ getDrainHint(h) }}</span>
             </td>
             <td>
               <span class="vm-count-cell" @mouseenter="loadHyperInstances(h)" @mouseleave="hoveredHyperId = null">
@@ -836,6 +848,15 @@ onMounted(() => {
   font-family: var(--font-family-mono);
   font-size: var(--font-size-xs);
   color: var(--text-primary);
+}
+
+/* 维护模式的腾空进度提示 */
+.drain-hint {
+    display: block;
+    margin-top: 2px;
+    font-size: 0.6875rem;
+    color: var(--text-light);
+    white-space: nowrap;
 }
 
 /* 虚拟机数量列与悬浮列表 */
