@@ -728,7 +728,12 @@ func (a *VolumeAdmin) ListVolume(ctx context.Context, offset, limit int64, order
 		}
 	}
 	db = dbs.Sortby(db.Offset(int(offset)).Limit(int(limit)), order)
-	if err = db.Preload("Instance").Where(queryBuilder, args...).Where(query).Find(&volumes).Error; err != nil {
+	listQuery := db.Preload("Instance").Where(queryBuilder, args...).Where(query)
+	// 类型条件必须同时作用于计数和取数：此前只加在计数上，type=data 返回 total=0 却列出全部系统盘
+	if booting_where != "" {
+		listQuery = listQuery.Where(booting_where)
+	}
+	if err = listQuery.Find(&volumes).Error; err != nil {
 		err = NewCLError(ErrSQLSyntaxError, "Failed to query volumes", err)
 		return
 	}

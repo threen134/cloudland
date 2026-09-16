@@ -281,6 +281,16 @@ func QueryResourceAmount(ctx context.Context, region *model.Region, proxyPath, r
 		return nil, common.NewHTTPError(http.StatusBadGateway,
 			fmt.Sprintf("Failed to query resource %s for quota tracking: %v", resourceID, err))
 	}
+	// 4xx 是请求本身的问题（资源不存在、ID 非法、无权访问），原样转给客户端；
+	// 此前一律报 502，删除一个不存在的虚拟机会被当成网关故障
+	if status >= 400 && status < 500 {
+		log.WithContext(ctx).Infof("Resource query for quota tracking rejected by backend: %s -> %d", url, status)
+		detail := fmt.Sprintf("Resource %s is not available (status=%d)", resourceID, status)
+		if msg, ok := data["error_message"].(string); ok && msg != "" {
+			detail = msg
+		}
+		return nil, common.NewHTTPError(status, detail)
+	}
 	if status != http.StatusOK {
 		log.WithContext(ctx).Errorf("Failed to query resource amount: %s -> %d", url, status)
 		return nil, common.NewHTTPError(http.StatusBadGateway,

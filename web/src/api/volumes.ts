@@ -74,6 +74,8 @@ export const volumesApi = {
         limit?: number
         name?: string
         status?: string
+        // 后端默认 data（只含数据盘）；要同时列出系统盘须传 all
+        type?: 'data' | 'boot' | 'all'
     }): Promise<VolumeListResponse> => {
         const response = await client.get('/volumes', { params })
         return response.data

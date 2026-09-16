@@ -93,6 +93,12 @@ func Audit() gin.HandlerFunc {
 			c.Next()
 			return
 		}
+		// /internal/* 是 cpgateway 的系统间同步（组织、系统设置、通知渠道等），没有操作人，
+		// 用户发起的修改已在 cpgateway 侧发生，记下来只会是大量无主记录
+		if strings.HasPrefix(c.FullPath(), "/api/v1/internal/") {
+			c.Next()
+			return
+		}
 		start := time.Now()
 		route, known := lookupAuditRoute(c)
 		resourceUUID, resourceName := "", ""

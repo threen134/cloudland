@@ -356,7 +356,7 @@ func Login(username, password, orgUUID, region string) (*TokenWithContext, *comm
 	log.Infof("Login: user=%s, org=%s, region=%s", user.Username, orgLog, targetRegion)
 
 	if org != nil && regionObj != nil {
-		TriggerConsumptionSync(org.ID, regionObj.ID, regionObj.InternalEndpoint, regionObj.InternalSecret)
+		TriggerConsumptionSync(org.ID, org.UUID, regionObj.ID, regionObj.InternalEndpoint, regionObj.InternalSecret)
 	}
 	return newTokenResponse(token, orgUUIDOut, orgNameOut, targetRegion), nil
 }

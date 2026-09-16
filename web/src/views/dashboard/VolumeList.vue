@@ -36,7 +36,8 @@ const fetchVolumes = async () => {
     loading.value = true
     error.value = null
     try {
-        const response = await volumesApi.list()
+        // 列表页有「启动盘」一列，系统盘与数据盘都要显示
+        const response = await volumesApi.list({ type: 'all' })
         volumes.value = response.volumes || (Array.isArray(response) ? response : [])
     } catch (err: any) {
         console.error('Failed to fetch volumes:', err)
