@@ -91,6 +91,20 @@ func (a *MigrationAdmin) Create(ctx context.Context, name string, instances []*m
 			logger.Ctx(ctx).Error("No need to migrate if source and target hypervisors are the same")
 			continue
 		}
+		// 引导卷校验放在创建迁移记录之前：放在之后的话，校验失败会留下一条永远停在
+		// in_progress 的空记录（既占着界面，又让该实例的心跳状态更新被跳过 10 分钟）
+		var bootVolume *model.Volume
+		for _, volume := range instance.Volumes {
+			if volume.Booting {
+				bootVolume = volume
+				break
+			}
+		}
+		if bootVolume == nil {
+			logger.Ctx(ctx).Error("Instance has no boot volume")
+			err = NewCLError(ErrBootVolumeNotFound, "Instance has no boot volume", nil)
+			return
+		}
 		task1 := &model.Task{
 			Name:    "Prepare_Target",
 			Summary: "Prepare resources on target hypervisor",
@@ -119,18 +133,6 @@ func (a *MigrationAdmin) Create(ctx context.Context, name string, instances []*m
 		metadata, err = instanceAdmin.GetMetadata(ctx, instance, "")
 		if err != nil {
 			logger.Ctx(ctx).Error("Failed to get metadata")
-			return
-		}
-		var bootVolume *model.Volume
-		for _, volume := range instance.Volumes {
-			if volume.Booting {
-				bootVolume = volume
-				break
-			}
-		}
-		if bootVolume == nil {
-			logger.Ctx(ctx).Error("Instance has no boot volume")
-			err = NewCLError(ErrBootVolumeNotFound, "Instance has no boot volume", nil)
 			return
 		}
 		poolID := bootVolume.GetVolumePoolID()

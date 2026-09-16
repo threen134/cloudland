@@ -459,15 +459,27 @@ func (a *HyperAdmin) Maintain(ctx context.Context, hostID int32, migrate bool, t
 		return NewCLError(ErrHypervisorInvalidState, "Hypervisor must be active or disabled to maintain", nil)
 	}
 
+	originalStatus := hyper.Status
 	// Set status to maintaining
 	if err = db.Model(hyper).Update("status", 2).Error; err != nil {
 		return NewCLError(ErrSQLSyntaxError, "Failed to update hypervisor status", err)
 	}
+	// 后续失败时把节点状态改回去，否则节点停在"维护中"。心跳上报恰好会把它覆盖回来，
+	// 但那是巧合，不能依赖
+	defer func() {
+		if err != nil {
+			if rerr := db.Model(hyper).Update("status", originalStatus).Error; rerr != nil {
+				logger.Ctx(ctx).Errorf("Failed to restore hypervisor status after maintenance failure: %v", rerr)
+			}
+		}
+	}()
 
 	if migrate {
 		// Find instances on this hyper
+		// 必须预加载 Volumes：迁移要用引导卷判断存储类型，不加载则 migrationAdmin.Create
+		// 一律报 "Instance has no boot volume"，维护模式的自动迁移对任何实例都无法成功
 		instances := []*model.Instance{}
-		if err = db.Where("hyper = ?", hostID).Find(&instances).Error; err != nil {
+		if err = db.Preload("Volumes").Where("hyper = ?", hostID).Find(&instances).Error; err != nil {
 			return NewCLError(ErrSQLSyntaxError, "Failed to query instances", err)
 		}
 
