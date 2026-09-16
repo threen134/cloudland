@@ -129,6 +129,9 @@ var proxyRoutes = []proxyRoute{
 	{"DELETE", "/zones/:name", "/zones/{name}", false},
 	{"PATCH", "/zones/:name", "/zones/{name}", false},
 	// administration.py
+	// 审计日志：记录改动型操作的发起人与结果，仅系统管理员可查
+	{"GET", "/audit_logs", "/audit_logs", true},
+
 	{"GET", "/hypers", "/hypers", true},
 	{"GET", "/hypers/:hostid", "/hypers/{hostid}", true},
 	{"PATCH", "/hypers/:hostid", "/hypers/{hostid}", true},

@@ -113,8 +113,11 @@ func Register() (r *gin.Engine) {
 	// 鉴权由 handler 内的 HMAC token 校验承担；compute 节点无 JWT，故不进 authGroup
 	v1.POST("/internal/images/:id/upload", imageAPI.UploadCapture)
 
-	authGroup := v1.Group("").Use(Authorize())
+	// Audit 必须排在 Authorize 之后：操作者身份取自 MemberShip
+	authGroup := v1.Group("").Use(Authorize(), Audit())
 	{
+		authGroup.GET("/audit_logs", auditAPI.List)
+
 		authGroup.GET("/zones", zoneAPI.List)
 		authGroup.POST("/zones", zoneAPI.Create)
 		authGroup.GET("/zones/:name", zoneAPI.Get)
