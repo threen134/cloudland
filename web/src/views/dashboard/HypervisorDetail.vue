@@ -726,12 +726,19 @@ onMounted(fetchHypervisorDetail)
     flex-direction: column;
 }
 
-/* 单行表格式布局：各列定宽对齐，状态列靠右；内容过长用省略号而不是换行 */
+/* 单行表格式布局。用 grid 而非 flex：flex 的剩余空间会被设了 grow 的列全部吸走，
+   导致前几列过宽、后几列挤在一起；grid 按比例给每一列分配，各行也天然对齐 */
 .hyper-vm-head,
 .hyper-vm-item {
-    display: flex;
+    display: grid;
+    grid-template-columns:
+        minmax(110px, 1.1fr)
+        minmax(150px, 1.5fr)
+        minmax(150px, 1.4fr)
+        minmax(120px, 1.1fr)
+        minmax(64px, auto);
     align-items: center;
-    gap: var(--spacing-4);
+    gap: var(--spacing-3);
     padding: 10px 8px;
     white-space: nowrap;
 }
@@ -757,12 +764,15 @@ onMounted(fetchHypervisorDetail)
     background: var(--gray-50, #f9fafb);
 }
 
-/* 各列宽度：名称与镜像可伸缩并溢出省略，规格和时间定宽以便逐行对齐 */
-.hyper-vm-name {
-    flex: 1 1 130px;
+/* 每个单元格都要能收缩并省略，否则长内容会把整列撑开、破坏对齐 */
+.hyper-vm-head > span,
+.hyper-vm-item > span {
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
+}
+
+.hyper-vm-name {
     font-size: 0.875rem;
     font-weight: 500;
 }
@@ -772,38 +782,28 @@ onMounted(fetchHypervisorDetail)
 }
 
 .hyper-vm-os {
-    flex: 1 1 160px;
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
     font-size: 0.8125rem;
     color: var(--text-primary);
 }
 
-.hyper-vm-spec {
-    flex: 0 0 150px;
-    font-size: 0.8125rem;
-    color: var(--text-secondary);
-}
-
+.hyper-vm-spec,
 .hyper-vm-time {
-    flex: 0 0 125px;
     font-size: 0.8125rem;
     color: var(--text-secondary);
 }
 
 .hyper-vm-badge {
-    flex: 0 0 auto;
-    margin-left: auto;
+    justify-self: end;
 }
 
-/* 窄屏放弃列对齐，改为自动换行，避免出现横向滚动 */
+/* 窄屏放弃列对齐，改为自动换行，避免横向滚动；表头失去意义故隐藏 */
 @media (max-width: 720px) {
     .hyper-vm-head {
         display: none;
     }
 
     .hyper-vm-item {
+        display: flex;
         flex-wrap: wrap;
         white-space: normal;
         gap: 4px var(--spacing-3);
@@ -813,10 +813,8 @@ onMounted(fetchHypervisorDetail)
         flex: 1 0 100%;
     }
 
-    .hyper-vm-os,
-    .hyper-vm-spec,
-    .hyper-vm-time {
-        flex: 0 0 auto;
+    .hyper-vm-badge {
+        margin-left: auto;
     }
 }
 
