@@ -27,6 +27,7 @@ type AuditAPI struct{}
 type AuditLogResponse struct {
 	ID        string `json:"id"`
 	Actor     string `json:"actor"`
+	ActorUUID string `json:"actor_uuid"`
 	Method    string `json:"method"`
 	Path      string `json:"path"`
 	Status    int    `json:"status"`
@@ -65,14 +66,15 @@ func Audit() gin.HandlerFunc {
 
 		memberShip := GetMemberShip(c.Request.Context())
 		entry := &model.AuditLog{
-			Actor:   memberShip.UserName,
-			ActorID: memberShip.UserID,
-			OrgID:   memberShip.OrgID,
-			Method:  c.Request.Method,
-			Path:    c.Request.URL.Path,
-			Status:  c.Writer.Status(),
-			Latency: time.Since(start).Milliseconds(),
-			TraceID: c.Writer.Header().Get(tracing.TraceIDHeader),
+			Actor:     memberShip.UserName,
+			ActorUUID: memberShip.UserUUID,
+			ActorID:   memberShip.UserID,
+			OrgID:     memberShip.OrgID,
+			Method:    c.Request.Method,
+			Path:      c.Request.URL.Path,
+			Status:    c.Writer.Status(),
+			Latency:   time.Since(start).Milliseconds(),
+			TraceID:   c.Writer.Header().Get(tracing.TraceIDHeader),
 		}
 		// 只在失败时留响应体：成功的响应往往很大（整个资源），而且没有排查价值
 		if entry.Status >= 400 {
@@ -142,6 +144,9 @@ func (v *AuditAPI) List(c *gin.Context) {
 	if actor := c.Query("actor"); actor != "" {
 		query = query.Where("actor = ?", actor)
 	}
+	if actorUUID := c.Query("actor_uuid"); actorUUID != "" {
+		query = query.Where("actor_uuid = ?", actorUUID)
+	}
 	if path := c.Query("path"); path != "" {
 		query = query.Where("path LIKE ?", "%"+path+"%")
 	}
@@ -159,7 +164,7 @@ func (v *AuditAPI) List(c *gin.Context) {
 	resp.Logs = make([]*AuditLogResponse, len(logs))
 	for i, l := range logs {
 		resp.Logs[i] = &AuditLogResponse{
-			ID: l.UUID, Actor: l.Actor, Method: l.Method, Path: l.Path,
+			ID: l.UUID, Actor: l.Actor, ActorUUID: l.ActorUUID, Method: l.Method, Path: l.Path,
 			Status: l.Status, Latency: l.Latency, TraceID: l.TraceID, Detail: l.Detail,
 			CreatedAt: l.CreatedAt.Format(TimeStringForMat),
 		}

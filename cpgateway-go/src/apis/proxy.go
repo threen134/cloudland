@@ -93,6 +93,9 @@ func forwardToRegion(c *gin.Context, template string, body []byte) {
 		// 只传用户名，不传邮箱：用户名创建后不可更改、注销后不可复用，是跨服务引用账号最稳的标识；
 		// 邮箱可改、注销后还能被本人复用，作为标识不可靠，clapi 侧也没有任何地方需要它
 		"X-User-Name": user.Username,
+		// 用户 UUID：与组织一致，跨服务标识统一用全局唯一 ID。X-User-ID 是本服务的自增主键，
+		// 到了区域侧无法解析，仅作为各资源 creater 列的历史字段保留
+		"X-User-UUID": user.UUID,
 		// 传 UUID 而非自增主键：两侧组织表的 ID 各自独立，此前靠同步时强行用同一个 ID
 		// 作主键来维持一致，一旦错位，资源会静默挂到别的组织名下且毫无报错
 		"X-Org-UUID":         orgUUID,

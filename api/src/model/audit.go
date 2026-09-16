@@ -22,8 +22,11 @@ import (
 type AuditLog struct {
 	Model
 	// Actor 发起操作的用户名，来自 cpgateway 的 X-User-Name
-	Actor   string `gorm:"type:varchar(255);index"`
-	ActorID int64
+	Actor string `gorm:"type:varchar(255);index"`
+	// ActorUUID 是账号的全局唯一标识，与用户名快照互补：快照保证历史显示不失真，
+	// UUID 为将来按身份精确查询或对接用户同步留路
+	ActorUUID string `gorm:"type:varchar(64);index"`
+	ActorID   int64
 	// OrgID 本区域的组织 ID（已由 X-Org-UUID 解析）
 	OrgID int64 `gorm:"index"`
 	// Method / Path 为原始请求，Path 已包含路径参数，足以定位操作对象

@@ -86,8 +86,7 @@ func CreateAdminContext(ctx context.Context, userAdmin interface{}, orgAdmin int
 	}()
 	// Get admin password from config file
 
-	// Note: userAdmin.Validate and orgAdmin.GetOrgByName need to be called from routes layer
-	// This is a placeholder - actual implementation should receive user and org as parameters
+	// 占位实现：本服务不做用户认证（已交由 cpgateway），身份由请求头构造的 MemberShip 提供
 
 	return ctx, fmt.Errorf("not implemented - should be called from routes layer")
 }

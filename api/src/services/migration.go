@@ -120,6 +120,7 @@ func (a *MigrationAdmin) Create(ctx context.Context, name string, instances []*m
 			Type:        migrationType,
 			Force:       force,
 			CreaterName: memberShip.UserName,
+			CreaterUUID: memberShip.UserUUID,
 			SourceHyper: instance.Hyper,
 			TargetHyper: tgtHyper,
 			Phases:      []*model.Task{task1},

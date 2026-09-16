@@ -22,8 +22,19 @@ import (
 	"api/src/model"
 
 	"github.com/spf13/viper"
+	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
 )
+
+// hashPassword 仅用于引导管理员账号。本服务不再做用户认证（已交由 cpgateway），
+// 原先整套 UserAdmin（创建用户、签发 JWT、校验密码等）已随之删除，只留下这一处
+func hashPassword(password string) (string, error) {
+	b, err := bcrypt.GenerateFromPassword([]byte(password), 8)
+	if err != nil {
+		return "", NewCLError(ErrPasswordHashFailed, "Failed to generate password hash", err)
+	}
+	return string(b), nil
+}
 
 func adminPassword() (password string) {
 	logger.Infof("ENTER adminPassword")
@@ -81,7 +92,7 @@ func AdminInit() {
 
 			password := adminPassword()
 			email := adminEmail()
-			hash, hashErr := (&UserAdmin{}).GenerateFromPassword(password)
+			hash, hashErr := hashPassword(password)
 			if hashErr != nil {
 				return hashErr
 			}

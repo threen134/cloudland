@@ -42,6 +42,7 @@ type MigrationResponse struct {
 	TargetHyperName string `json:"target_hyper_name"`
 	// 发起迁移的用户名，创建时快照下来
 	CreaterName string          `json:"creater_name"`
+	CreaterUUID string          `json:"creater_uuid"`
 	Force       bool            `json:"force"`
 	Type        string          `json:"type"`
 	Phases      []*TaskResponse `json:"phases"`
@@ -173,6 +174,7 @@ func (v *MigrationAPI) getMigrationResponse(_ context.Context, migration *model.
 		Force:       migration.Force,
 		Type:        migration.Type,
 		CreaterName: migration.CreaterName,
+		CreaterUUID: migration.CreaterUUID,
 		SourceHyper: migration.SourceHyper,
 		TargetHyper: migration.TargetHyper,
 		Status:      migration.Status,

@@ -89,6 +89,7 @@ func Authorize() gin.HandlerFunc {
 
 		isOwner := c.Request.Header.Get("X-Is-Owner") == "true"
 		userName := c.Request.Header.Get("X-User-Name")
+		userUUID := c.Request.Header.Get("X-User-UUID")
 		orgName := c.Request.Header.Get("X-Org-Name")
 		if c.Query("all_orgs") == "true" && systemRole != model.SystemAdmin {
 			ErrorResponse(c, http.StatusForbidden, "all_orgs is only available to system admins", nil)
@@ -101,6 +102,7 @@ func Authorize() gin.HandlerFunc {
 		memberShip := &MemberShip{
 			UserID:     uid,
 			UserName:   userName,
+			UserUUID:   userUUID,
 			SystemRole: systemRole,
 			OrgID:      oid,
 			OrgName:    orgName,
