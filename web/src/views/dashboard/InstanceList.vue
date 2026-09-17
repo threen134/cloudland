@@ -997,7 +997,7 @@ onUnmounted(() => {
             name="searchQuery"
             type="text" 
             v-model="searchQuery"
-            :placeholder="t('marketplace.searchPlaceholder')" 
+            :placeholder="t('actions.search') + '...'"
             class="search-input"
           />
         </label>

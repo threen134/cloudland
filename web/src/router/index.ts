@@ -313,4 +313,29 @@ router.beforeEach((to, _from, next) => {
     next()
 })
 
+// A deploy replaces the hashed chunks, so a tab opened before it cannot load the pages it has not visited yet.
+// Load the target URL once from the server to pick up the new build; the flag stops a reload loop when the
+// chunk is really broken.
+const CHUNK_RELOAD_KEY = 'cloudland_chunk_reload'
+const CHUNK_LOAD_ERROR = /dynamically imported module|Importing a module script failed|Unable to preload CSS/i
+
+router.onError((error, to) => {
+    if (!CHUNK_LOAD_ERROR.test(String((error as Error)?.message ?? error))) return
+    try {
+        if (sessionStorage.getItem(CHUNK_RELOAD_KEY) === to.fullPath) return
+        sessionStorage.setItem(CHUNK_RELOAD_KEY, to.fullPath)
+    } catch {
+        return
+    }
+    window.location.assign(to.fullPath)
+})
+
+router.afterEach(() => {
+    try {
+        sessionStorage.removeItem(CHUNK_RELOAD_KEY)
+    } catch {
+        // storage unavailable: nothing to clear
+    }
+})
+
 export default router
