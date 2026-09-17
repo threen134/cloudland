@@ -141,11 +141,7 @@ func CreateVrrpInstance(ctx context.Context, name string, router *model.Router, 
 		}
 	}
 	memberShip := GetMemberShip(ctx)
-	zoneID := int64(0)
-	if zone != nil {
-		zoneID = zone.ID
-	}
-	vrrpInstance = &model.VrrpInstance{Model: model.Model{Creater: memberShip.UserID}, Owner: memberShip.OrgID, VrrpSubnetID: vrrpSubnet.ID, ZoneID: zoneID, RouterID: router.ID}
+	vrrpInstance = &model.VrrpInstance{Model: model.Model{Creater: memberShip.UserID}, Owner: memberShip.OrgID, VrrpSubnetID: vrrpSubnet.ID, ZoneID: zone.ID, RouterID: router.ID}
 	err = db.Create(vrrpInstance).Error
 	if err != nil {
 		logger.Ctx(ctx).Error("DB failed to create vrrp instance ", err)
@@ -161,16 +157,12 @@ func CreateVrrpInstance(ctx context.Context, name string, router *model.Router, 
 		logger.Ctx(ctx).Error("Failed to create vrrp interface 1", err)
 		return
 	}
-	control := "inter="
-	hyperGroup := ""
-	if zone != nil {
-		hyperGroup, err = GetHyperGroup(ctx, zone.ID, -1)
-		if err != nil {
-			logger.Ctx(ctx).Error("Failed to get hyper group", err)
-			return
-		}
-		control = "select=" + hyperGroup
+	hyperGroup, err := GetHyperGroup(ctx, zone.ID, -1)
+	if err != nil {
+		logger.Ctx(ctx).Error("Failed to get hyper group", err)
+		return
 	}
+	control := "select=" + hyperGroup
 	command := fmt.Sprintf("/opt/cloudland/scripts/backend/set_vrrp_ip.sh '%d' '%d' '%d' '%s' '%s' '%s' '%s' 'MASTER' 'true'", router.ID, vrrpInstance.ID, vrrpSubnet.Vlan, vrrpIface1.MacAddr, vrrpIface1.Address.Address, vrrpIface2.MacAddr, vrrpIface2.Address.Address)
 	err = HyperExecute(ctx, control, command)
 	if err != nil {

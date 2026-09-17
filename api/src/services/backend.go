@@ -231,8 +231,8 @@ func (a *BackendAdmin) GetBackend(ctx context.Context, reference *BaseReference)
 	return
 }
 
-func (a *BackendAdmin) Update(ctx context.Context, backend *model.Backend, backendAddr string) (lb *model.Backend, err error) {
-	logger.Ctx(ctx).Infof("ENTER BackendAdmin.Update: backendID=%d, backendAddr=%s", backend.ID, backendAddr)
+func (a *BackendAdmin) Update(ctx context.Context, backend *model.Backend, name, backendAddr string, listener *model.Listener, loadBalancer *model.LoadBalancer) (lb *model.Backend, err error) {
+	logger.Ctx(ctx).Infof("ENTER BackendAdmin.Update: backendID=%d, name=%s, backendAddr=%s", backend.ID, name, backendAddr)
 	defer func() {
 		if err != nil {
 			logger.Ctx(ctx).Errorf("EXIT BackendAdmin.Update: error=%v", err)
@@ -240,12 +240,47 @@ func (a *BackendAdmin) Update(ctx context.Context, backend *model.Backend, backe
 			logger.Ctx(ctx).Info("EXIT BackendAdmin.Update: success")
 		}
 	}()
-	ctx, db := GetContextDB(ctx)
-	if backend.BackendAddr != backendAddr {
+	memberShip := GetMemberShip(ctx)
+	permit := memberShip.CheckResourceOrg(model.OrgWriter, backend.Owner)
+	if !permit {
+		logger.Ctx(ctx).Error("Not authorized to update the backend")
+		err = NewCLError(ErrPermissionDenied, "Not authorized to update the backend", nil)
+		return
+	}
+	ctx, db, newTransaction := StartTransaction(ctx)
+	defer func() {
+		if newTransaction {
+			EndTransaction(ctx, err)
+		}
+	}()
+	updates := map[string]interface{}{}
+	if backend.Name != name {
+		backend.Name = name
+		updates["name"] = name
+	}
+	addrChanged := backendAddr != "" && backend.BackendAddr != backendAddr
+	if addrChanged {
 		backend.BackendAddr = backendAddr
-		if err = db.Model(backend).Update("backend_addr", backend.BackendAddr).Error; err != nil {
+		updates["backend_addr"] = backendAddr
+	}
+	if len(updates) > 0 {
+		if err = db.Model(backend).Updates(updates).Error; err != nil {
 			logger.Ctx(ctx).Error("Failed to save backend", err)
-			err = NewCLError(ErrRouterUpdateFailed, "Failed to update backend", err)
+			err = NewCLError(ErrBackendUpdateFailed, "Failed to update backend", err)
+			return
+		}
+	}
+	// 名称只存在数据库里；地址变化要重新下发 haproxy 配置
+	if addrChanged {
+		_, listener.Backends, err = a.List(ctx, 0, -1, "", listener)
+		if err != nil {
+			logger.Ctx(ctx).Error("Failed to list backends", err)
+			return
+		}
+		err = a.CreateHaproxyConf(ctx, listener, loadBalancer)
+		if err != nil {
+			logger.Ctx(ctx).Error("Failed to create haproxy conf ", err)
+			err = NewCLError(ErrBackendUpdateFailed, "Failed to create haproxy conf", err)
 			return
 		}
 	}

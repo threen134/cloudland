@@ -4120,67 +4120,6 @@ const docTemplatev1 = `{
                 }
             }
         },
-        "/load_balancers/{id}/listeners/:listener_id/backends": {
-            "get": {
-                "description": "list backends",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Load Balancer"
-                ],
-                "summary": "list backends",
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/apis.BackendListResponse"
-                        }
-                    },
-                    "401": {
-                        "description": "Not authorized",
-                        "schema": {
-                            "$ref": "#/definitions/common.APIError"
-                        }
-                    }
-                }
-            }
-        },
-        "/load_balancers/{id}/listeners/:listener_id/backends/{backend_id}": {
-            "delete": {
-                "description": "delete a backend",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Load Balancer"
-                ],
-                "summary": "delete a backend",
-                "responses": {
-                    "204": {
-                        "description": "No Content"
-                    },
-                    "400": {
-                        "description": "Bad request",
-                        "schema": {
-                            "$ref": "#/definitions/common.APIError"
-                        }
-                    },
-                    "401": {
-                        "description": "Not authorized",
-                        "schema": {
-                            "$ref": "#/definitions/common.APIError"
-                        }
-                    }
-                }
-            }
-        },
         "/load_balancers/{id}/listeners/{listener_id}": {
             "get": {
                 "description": "get a listener",
@@ -4291,6 +4230,33 @@ const docTemplatev1 = `{
             }
         },
         "/load_balancers/{id}/listeners/{listener_id}/backends": {
+            "get": {
+                "description": "list backends",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Load Balancer"
+                ],
+                "summary": "list backends",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apis.BackendListResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            },
             "post": {
                 "description": "create a backend",
                 "consumes": [
@@ -4355,6 +4321,36 @@ const docTemplatev1 = `{
                         "schema": {
                             "$ref": "#/definitions/apis.BackendResponse"
                         }
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "description": "delete a backend",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Load Balancer"
+                ],
+                "summary": "delete a backend",
+                "responses": {
+                    "204": {
+                        "description": "No Content"
                     },
                     "400": {
                         "description": "Bad request",
@@ -7801,13 +7797,6 @@ const docTemplatev1 = `{
                 "name"
             ],
             "properties": {
-                "action": {
-                    "type": "string",
-                    "enum": [
-                        "enable",
-                        "disable"
-                    ]
-                },
                 "endpoint": {
                     "type": "string",
                     "maxLength": 128,
@@ -9673,13 +9662,6 @@ const docTemplatev1 = `{
                 "name"
             ],
             "properties": {
-                "action": {
-                    "type": "string",
-                    "enum": [
-                        "enable",
-                        "disable"
-                    ]
-                },
                 "name": {
                     "type": "string",
                     "maxLength": 32,

@@ -65,8 +65,10 @@ var auditRoutes = map[string]auditRoute{
 	"DELETE /load_balancers/:id/floating_ips/:floating_ip_id":                {"load_balancer", "load_balancer.fip_detach", "id", false},
 	"POST /load_balancers/:id/listeners":                                     {"load_balancer", "load_balancer.listener_create", "id", false},
 	"DELETE /load_balancers/:id/listeners/:listener_id":                      {"load_balancer", "load_balancer.listener_delete", "id", false},
+	"PATCH /load_balancers/:id/listeners/:listener_id":                       {"load_balancer", "load_balancer.listener_update", "id", false},
 	"POST /load_balancers/:id/listeners/:listener_id/backends":               {"load_balancer", "load_balancer.backend_create", "id", false},
 	"DELETE /load_balancers/:id/listeners/:listener_id/backends/:backend_id": {"load_balancer", "load_balancer.backend_delete", "id", false},
+	"PATCH /load_balancers/:id/listeners/:listener_id/backends/:backend_id":  {"load_balancer", "load_balancer.backend_update", "id", false},
 
 	"POST /floating_ips":             {"floating_ip", "floating_ip.create", "", false},
 	"DELETE /floating_ips/:id":       {"floating_ip", "floating_ip.delete", "id", false},

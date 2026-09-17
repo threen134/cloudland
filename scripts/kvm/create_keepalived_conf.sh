@@ -21,9 +21,13 @@ content=$(cat)
 vips=$(jq -r .floating_ips <<< $content)
 nvip=$(jq length <<< $vips)
 if [ $nvip -eq 0 ]; then
-    keepalived_pid=$(cat $vrrp_dir/keepalived.pid)
-    [ $keepalived_pid -gt 0 ] && ip netns exec $router kill $keepalived_pid
-    rm -rf $vrrp_dir
+    # 持锁删除：避免 check_lb_process.sh 在停进程与删目录之间把进程拉起，留下没有配置目录、一直持有浮动 IP 的孤儿进程
+    (
+        flock 9
+        lb_proc_alive $vrrp_dir/keepalived.pid $vrrp_dir/keepalived.conf && keepalived_pid=$(cat $vrrp_dir/keepalived.pid)
+        rm -rf $vrrp_dir
+        [ -n "$keepalived_pid" ] && ip netns exec $router kill $keepalived_pid
+    ) 9>$lb_lock_file
     exit 0
 fi
 ports=$(jq -r .ports <<< $content)
@@ -45,16 +49,20 @@ while [ $i -lt $nvip ]; do
     let i=$i+1
 done
 
-ip netns exec $router ip addr show ns-$vrrp_vlan | grep $local_ip
+ip netns exec $router ip addr show ns-$vrrp_vlan | grep -q $local_ip
 [ $? -ne 0 ] && ./set_vrrp_ip.sh $@
 
+# 两端都以 BACKUP 启动、用优先级决定首次选主：nopreempt 只对初始状态为 BACKUP 的实例生效。
+# 若按角色写 state MASTER，该节点 keepalived 重启（进程守护拉起、节点重启恢复）时会抢回主，浮动 IP 多切换一次
+priority=100
+[ "$role" = "MASTER" ] && priority=110
 [ ! -d "$vrrp_dir" ] && mkdir -p $vrrp_dir
-cat >$vrrp_dir/keepalived.conf <<EOF
+cat >$vrrp_dir/keepalived.conf.new <<EOF
 vrrp_instance load_balancer_${vrrp_ID} {
-    state $role
+    state BACKUP
     interface ns-$vrrp_vlan
     virtual_router_id ${vrrp_ID}
-    priority 10
+    priority $priority
     advert_int 1
     nopreempt
 
@@ -80,18 +88,25 @@ while [ $i -lt $nvip ]; do
     ext_dev=te-$suffix
     ./create_veth.sh $router ext-$suffix te-$suffix
     ./create_lb_floating.sh $ID $virtual_ip $ext_gw $ext_vlan $mark_id $inbound $outbound
-    cat >>$vrrp_dir/keepalived.conf <<EOF
+    cat >>$vrrp_dir/keepalived.conf.new <<EOF
         $virtual_ip dev $ext_dev
 EOF
     let i=$i+1
 done
-cat >>$vrrp_dir/keepalived.conf <<EOF
+cat >>$vrrp_dir/keepalived.conf.new <<EOF
     }
     notify_master $PWD/set_route_table.sh
 }
 EOF
-
-keepalived_pid=$(cat $vrrp_dir/keepalived.pid)
-[ $keepalived_pid -gt 0 ] && kill -HUP $keepalived_pid
-[ $? -ne 0 ] && ip netns exec $router keepalived -p $vrrp_dir/keepalived.pid -r $vrrp_dir/vrrp.pid -f $vrrp_dir/keepalived.conf
+# 替换配置与启动/重载在锁内完成，与 check_lb_process.sh 互斥（见 cloudrc 的 lb_lock_file）；
+# 写完再整体替换，check_lb_process.sh 不会读到写了一半的文件
+(
+    flock 9
+    mv -f $vrrp_dir/keepalived.conf.new $vrrp_dir/keepalived.conf
+    if lb_proc_alive $vrrp_dir/keepalived.pid $vrrp_dir/keepalived.conf; then
+        kill -HUP $(cat $vrrp_dir/keepalived.pid)
+    else
+        start_keepalived $router $vrrp_dir
+    fi
+) 9>$lb_lock_file
 exit 0

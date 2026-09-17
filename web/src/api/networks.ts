@@ -412,7 +412,7 @@ export const loadBalancersApi = {
     deleteBackend: async (lbId: string, listenerId: string, backendId: string): Promise<void> => {
         await client.delete(`/load_balancers/${lbId}/listeners/${listenerId}/backends/${backendId}`)
     },
-    addFloatingIp: async (lbId: string, payload: { name: string; public_subnet?: { id: string }; inbound?: number; outbound?: number }): Promise<FloatingIP> => {
+    addFloatingIp: async (lbId: string, payload: { name: string; public_subnet?: { id: string }; inbound?: number; outbound?: number }): Promise<FloatingIP[]> => {
         const response = await client.post(`/load_balancers/${lbId}/floating_ips`, payload)
         return response.data
     },

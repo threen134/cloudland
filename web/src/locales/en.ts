@@ -884,6 +884,8 @@ export default {
                     listener_delete: 'deleted a listener from load balancer {name}',
                     backend_create: 'added a backend to load balancer {name}',
                     backend_delete: 'deleted a backend from load balancer {name}',
+                    listener_update: 'renamed a listener of load balancer {name}',
+                    backend_update: 'modified a backend of load balancer {name}',
                 },
                 image: {
                     create: 'created image {name}',
@@ -995,6 +997,8 @@ export default {
                     listener_delete: 'failed to delete a listener from load balancer {name}',
                     backend_create: 'failed to add a backend to load balancer {name}',
                     backend_delete: 'failed to delete a backend from load balancer {name}',
+                    listener_update: 'failed to rename a listener of load balancer {name}',
+                    backend_update: 'failed to modify a backend of load balancer {name}',
                 },
                 image: {
                     create: 'failed to create image {name}',

@@ -165,11 +165,6 @@ definitions:
     type: object
   apis.BackendPatchPayload:
     properties:
-      action:
-        enum:
-        - enable
-        - disable
-        type: string
       endpoint:
         maxLength: 128
         minLength: 8
@@ -1479,11 +1474,6 @@ definitions:
     type: object
   apis.ListenerPatchPayload:
     properties:
-      action:
-        enum:
-        - enable
-        - disable
-        type: string
       name:
         maxLength: 32
         minLength: 2
@@ -5317,46 +5307,6 @@ paths:
       summary: create a listener
       tags:
       - Load Balancer
-  /load_balancers/{id}/listeners/:listener_id/backends:
-    get:
-      consumes:
-      - application/json
-      description: list backends
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/apis.BackendListResponse'
-        "401":
-          description: Not authorized
-          schema:
-            $ref: '#/definitions/common.APIError'
-      summary: list backends
-      tags:
-      - Load Balancer
-  /load_balancers/{id}/listeners/:listener_id/backends/{backend_id}:
-    delete:
-      consumes:
-      - application/json
-      description: delete a backend
-      produces:
-      - application/json
-      responses:
-        "204":
-          description: No Content
-        "400":
-          description: Bad request
-          schema:
-            $ref: '#/definitions/common.APIError'
-        "401":
-          description: Not authorized
-          schema:
-            $ref: '#/definitions/common.APIError'
-      summary: delete a backend
-      tags:
-      - Load Balancer
   /load_balancers/{id}/listeners/{listener_id}:
     delete:
       consumes:
@@ -5430,6 +5380,24 @@ paths:
       tags:
       - Load Balancer
   /load_balancers/{id}/listeners/{listener_id}/backends:
+    get:
+      consumes:
+      - application/json
+      description: list backends
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.BackendListResponse'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: list backends
+      tags:
+      - Load Balancer
     post:
       consumes:
       - application/json
@@ -5460,6 +5428,26 @@ paths:
       tags:
       - Load Balancer
   /load_balancers/{id}/listeners/{listener_id}/backends/{backend_id}:
+    delete:
+      consumes:
+      - application/json
+      description: delete a backend
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: delete a backend
+      tags:
+      - Load Balancer
     get:
       consumes:
       - application/json

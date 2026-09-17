@@ -132,6 +132,9 @@ func (v *LBFloatingIpAPI) Create(c *gin.Context) {
 	}
 	logger.Ctx(ctx).Debugf("Creating floating ip with %+v", payload)
 	activationCount := payload.ActivationCount
+	if activationCount == 0 {
+		activationCount = 1
+	}
 
 	var publicSubnets []*model.Subnet
 	if payload.PublicSubnets != nil {

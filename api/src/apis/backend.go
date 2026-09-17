@@ -47,7 +47,6 @@ type BackendPayload struct {
 type BackendPatchPayload struct {
 	Name     string `json:"name" binding:"required,min=2,max=32"`
 	Endpoint string `json:"endpoint" binding:"omitempty,min=8,max=128"`
-	Action   string `json:"action" binding:"omitempty,oneof=enable disable"`
 }
 
 // @Summary get a backend
@@ -158,14 +157,12 @@ func (v *BackendAPI) Patch(c *gin.Context) {
 		return
 	}
 	logger.Ctx(ctx).Debugf("Patching backend %s with %+v", backendID, payload)
-	/*
-		err = backendAdmin.Update(ctx, backend, payload.Name, payload.IsDefault)
-		if err != nil {
-			logger.Ctx(ctx).Errorf("Failed to patch backend %s, %+v", backendID, err)
-			ErrorResponse(c, http.StatusBadRequest, "Patch security group failed", err)
-			return
-		}
-	*/
+	backend, err = backendAdmin.Update(ctx, backend, payload.Name, payload.Endpoint, listener, loadBalancer)
+	if err != nil {
+		logger.Ctx(ctx).Errorf("Failed to patch backend %s, %+v", backendID, err)
+		ErrorResponse(c, http.StatusBadRequest, "Patch backend failed", err)
+		return
+	}
 	backendResp, err := v.getBackendResponse(ctx, backend)
 	if err != nil {
 		ErrorResponse(c, http.StatusInternalServerError, "Internal error", err)
@@ -183,7 +180,7 @@ func (v *BackendAPI) Patch(c *gin.Context) {
 // @Success 204
 // @Failure 400 {object} common.APIError "Bad request"
 // @Failure 401 {object} common.APIError "Not authorized"
-// @Router /load_balancers/{id}/listeners/:listener_id/backends/{backend_id} [delete]
+// @Router /load_balancers/{id}/listeners/{listener_id}/backends/{backend_id} [delete]
 func (v *BackendAPI) Delete(c *gin.Context) {
 	ctx := c.Request.Context()
 	lbID := c.Param("id")
@@ -309,7 +306,7 @@ func (v *BackendAPI) getBackendResponse(ctx context.Context, backend *model.Back
 // @Produce json
 // @Success 200 {object} BackendListResponse
 // @Failure 401 {object} common.APIError "Not authorized"
-// @Router /load_balancers/{id}/listeners/:listener_id/backends [get]
+// @Router /load_balancers/{id}/listeners/{listener_id}/backends [get]
 func (v *BackendAPI) List(c *gin.Context) {
 	ctx := c.Request.Context()
 	lbID := c.Param("id")

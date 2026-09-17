@@ -185,14 +185,17 @@ func (v *LoadBalancerAPI) Create(c *gin.Context) {
 			return
 		}
 	}
+	// VRRP 主备节点按 zone 调度（select=），不指定时落到默认 zone
 	var zone *model.Zone
 	if payload.Zone != "" {
 		zone, err = zoneAdmin.GetZoneByName(ctx, payload.Zone)
-		if err != nil {
-			logger.Ctx(ctx).Errorf("Failed to get zone %+v, %+v", payload.Zone, err)
-			ErrorResponse(c, http.StatusBadRequest, "Invalid zone", err)
-			return
-		}
+	} else {
+		zone, err = zoneAdmin.GetDefaultZone(ctx)
+	}
+	if err != nil {
+		logger.Ctx(ctx).Errorf("Failed to get zone %+v, %+v", payload.Zone, err)
+		ErrorResponse(c, http.StatusBadRequest, "Invalid zone", err)
+		return
 	}
 	loadBalancer, err := loadBalancerAdmin.Create(ctx, payload.Name, payload.Description, router, zone)
 	if err != nil {

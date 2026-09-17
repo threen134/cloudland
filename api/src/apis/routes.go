@@ -212,11 +212,13 @@ func Register() (r *gin.Engine) {
 		authGroup.POST("/load_balancers/:id/listeners", listenerAPI.Create)
 		authGroup.GET("/load_balancers/:id/listeners/:listener_id", listenerAPI.Get)
 		authGroup.DELETE("/load_balancers/:id/listeners/:listener_id", listenerAPI.Delete)
+		authGroup.PATCH("/load_balancers/:id/listeners/:listener_id", listenerAPI.Patch)
 
 		authGroup.GET("/load_balancers/:id/listeners/:listener_id/backends", backendAPI.List)
 		authGroup.POST("/load_balancers/:id/listeners/:listener_id/backends", backendAPI.Create)
 		authGroup.GET("/load_balancers/:id/listeners/:listener_id/backends/:backend_id", backendAPI.Get)
 		authGroup.DELETE("/load_balancers/:id/listeners/:listener_id/backends/:backend_id", backendAPI.Delete)
+		authGroup.PATCH("/load_balancers/:id/listeners/:listener_id/backends/:backend_id", backendAPI.Patch)
 
 		authGroup.GET("/floating_ips", floatingIpAPI.List)
 		authGroup.POST("/floating_ips", floatingIpAPI.Create)

@@ -166,10 +166,19 @@ function check_conntrack()
 
 function recover_loadbalancer()
 {
+    # 与 sync_instance 一样按 boot_id 判断：run_dir 在磁盘上，原先只 touch 标记文件，
+    # 节点重启后标记仍在，负载均衡从不重建（只在节点首次部署时触发过一次）
     lb_flag_file=$run_dir/need_to_sync_lb
-    [ -f "$lb_flag_file" ] && return
+    boot_file=/proc/sys/kernel/random/boot_id
+    diff $lb_flag_file $boot_file >/dev/null 2>&1 && return
     echo "|:-COMMAND-:| recover_loadbalancer.sh '$SCI_CLIENT_ID'"
-    touch $lb_flag_file
+    sudo cp $boot_file $lb_flag_file
+}
+
+function check_lb_process()
+{
+    # 运行中异常退出的 keepalived / haproxy 由心跳拉起；输出不能进 stdout（会被当作回调）
+    sudo bash $base_dir/check_lb_process.sh >/dev/null 2>&1
 }
 
 function sync_instance()
@@ -192,11 +201,15 @@ function sync_instance()
     insts=$(ls $xml_dir)
     for inst in $insts; do
 	inst_id=${inst/inst-/}
-        for i in {1..100}; do
-            ls /var/run/wds/instance-${inst_id}* >/dev/null 2>&1
-            [ $? -eq 0 ] && break
-            sleep 2
-        done
+        # 只有 WDS 存储需要等卷设备就绪；本地存储永远等不到该文件，原先每台虚拟机空等 200 秒，
+        # 节点重启后首次心跳被阻塞（实测 2 台虚拟机时节点离线约 7 分钟，虚拟机与负载均衡恢复都随之推迟）
+        if [ -n "$wds_address" ]; then
+            for i in {1..100}; do
+                ls /var/run/wds/instance-${inst_id}* >/dev/null 2>&1
+                [ $? -eq 0 ] && break
+                sleep 2
+            done
+        fi
         sudo virsh start inst-$inst_id >/dev/null
         echo "|:-COMMAND-:| launch_vm.sh '$inst_id' 'running' '$SCI_CLIENT_ID' 'sync'"
     done
@@ -293,6 +306,7 @@ function calc_resource()
 calc_resource
 sync_instance
 recover_loadbalancer
+check_lb_process
 sync_delayed_job
 check_system_router
 #probe_arp >/dev/null 2>&1

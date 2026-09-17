@@ -24,6 +24,7 @@
         "ipcalc",
         "ipset",
         "keepalived",
+        "haproxy",
         "iputils-arping",
         "libvirt-daemon",
         "libvirt-daemon-system",

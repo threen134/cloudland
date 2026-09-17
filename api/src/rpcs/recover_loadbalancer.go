@@ -21,6 +21,19 @@ func init() {
 	Add("recover_loadbalancer", RecoverLoadbalancer)
 }
 
+// resyncVrrpFdb 重新下发 VRRP 网卡相关的 VXLAN 转发条目与邻居表项。
+// 节点重启后这些条目全部丢失，haproxy 访问其他节点上的后端、VRRP 单播心跳（ARP 靠静态邻居表项应答，VXLAN 不泛洪）都依赖它们；
+// 排在 set_vrrp_ip.sh 之后：add_fwrule.sh 发现 VRRP 子网网关口不存在时会按网关规则建网卡。其他路径（如 launch_vm sync）
+// 仍可能先把它建出来，由 set_vrrp_ip.sh 识别网关规则生成的 MAC 并改回数据库记录的 VRRP MAC
+func resyncVrrpFdb(ctx context.Context, vrrpInstance *model.VrrpInstance, ifaceID int64) error {
+	_, db := GetContextDB(ctx)
+	iface := &model.Interface{}
+	if err := db.Preload("Address").Preload("Address.Subnet").Where("id = ?", ifaceID).Take(iface).Error; err != nil {
+		return err
+	}
+	return sendFdbRules(ctx, nil, vrrpInstance, iface)
+}
+
 func RecoverLoadbalancer(ctx context.Context, args []string) (status string, err error) {
 	//|:-COMMAND-:| recover_loadbalancer.sh '0' '5'
 	logger.Ctx(ctx).Infof("Starting RecoverLoadbalancer with args: %v", args)
@@ -84,9 +97,10 @@ func RecoverLoadbalancer(ctx context.Context, args []string) (status string, err
 		}
 		logger.Ctx(ctx).Infof("Extracted %d VRRP instance IDs: %v", len(vrrpIDs), vrrpIDs)
 
+		// 心跳在每次节点启动后都会触发恢复，节点上没有负载均衡是常态，不算错误
 		if len(vrrpIDs) == 0 {
-			err = fmt.Errorf("No vrrp instances found for hypervisor %d", hyperID)
-			logger.Ctx(ctx).Error(err.Error())
+			logger.Ctx(ctx).Infof("No vrrp instances found for hypervisor %d", hyperID)
+			status = "No load balancers to recover"
 			return
 		}
 
@@ -167,6 +181,9 @@ func RecoverLoadbalancer(ctx context.Context, args []string) (status string, err
 				continue
 			}
 			logger.Ctx(ctx).Infof("LB %d - Successfully set VRRP IP for MASTER on hyper %d", loadBalancer.ID, hyperID)
+			if fdbErr := resyncVrrpFdb(ctx, loadBalancer.VrrpInstance, vrrpIface1.ID); fdbErr != nil {
+				logger.Ctx(ctx).Errorf("LB %d - Failed to resync fdb rules for MASTER: %v", loadBalancer.ID, fdbErr)
+			}
 			logger.Ctx(ctx).Infof("LB %d - Creating MASTER keepalived config on hyper %d", loadBalancer.ID, hyperID)
 			control = fmt.Sprintf("inter=%d", vrrpIface1.Hyper)
 			command = fmt.Sprintf("/opt/cloudland/scripts/backend/create_keepalived_conf.sh '%d' '%d' '%d' '%s' '%s' '%s' '%s' 'MASTER'<<EOF\n%s\nEOF",
@@ -192,6 +209,9 @@ func RecoverLoadbalancer(ctx context.Context, args []string) (status string, err
 				continue
 			}
 			logger.Ctx(ctx).Infof("LB %d - Successfully set VRRP IP for BACKUP on hyper %d", loadBalancer.ID, hyperID)
+			if fdbErr := resyncVrrpFdb(ctx, loadBalancer.VrrpInstance, vrrpIface2.ID); fdbErr != nil {
+				logger.Ctx(ctx).Errorf("LB %d - Failed to resync fdb rules for BACKUP: %v", loadBalancer.ID, fdbErr)
+			}
 			logger.Ctx(ctx).Infof("LB %d - Creating BACKUP keepalived config on hyper %d", loadBalancer.ID, hyperID)
 			control = fmt.Sprintf("inter=%d", vrrpIface2.Hyper)
 			command = fmt.Sprintf("/opt/cloudland/scripts/backend/create_keepalived_conf.sh '%d' '%d' '%d' '%s' '%s' '%s' '%s' 'BACKUP'<<EOF\n%s\nEOF",

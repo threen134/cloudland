@@ -19,13 +19,7 @@ cat /proc/net/dev | grep -q "^\<ln-$vlan\>"
 if [ $? -ne 0 ]; then
     ./create_veth.sh $router ln-$vlan ns-$vlan
     apply_vnic -I ln-$vlan
-    mac_map=$(printf "%06x" $vlan)
-    hw_addr=52:$(echo $mac_map | cut -c 1-2):$(echo $mac_map | cut -c 3-4):$(echo $mac_map | cut -c 5-6)
-    hyper_map=$(printf "%04x" $(($SCI_CLIENT_ID & 0xffff)))
-    hw_addr=$hw_addr:$(echo $hyper_map | cut -c 1-2):$(echo $hyper_map | cut -c 3-4)
-    if [ $? -eq 0 ]; then
-        ip netns exec $router ip link set ns-$vlan address $hw_addr
-    fi
+    ip netns exec $router ip link set ns-$vlan address $(subnet_gw_mac $vlan)
 fi
 # 将 ln-$vlan 接口添加到对应 VLAN 网桥（br$vlan）；已在网桥上时跳过，避免 brctl 报 already a member
 ip link show ln-$vlan 2>/dev/null | grep -q "master br$vlan " || brctl addif br$vlan ln-$vlan

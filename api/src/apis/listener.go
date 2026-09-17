@@ -50,8 +50,7 @@ type ListenerPayload struct {
 }
 
 type ListenerPatchPayload struct {
-	Name   string `json:"name" binding:"required,min=2,max=32"`
-	Action string `json:"action" binding:"omitempty,oneof=enable disable"`
+	Name string `json:"name" binding:"required,min=2,max=32"`
 }
 
 // @Summary get a listener
@@ -136,14 +135,12 @@ func (v *ListenerAPI) Patch(c *gin.Context) {
 		return
 	}
 	logger.Ctx(ctx).Debugf("Patching listener %s with %+v", listenerID, payload)
-	/*
-		err = listenerAdmin.Update(ctx, listener, payload.Name, payload.IsDefault)
-		if err != nil {
-			logger.Ctx(ctx).Errorf("Failed to patch listener %s, %+v", listenerID, err)
-			ErrorResponse(c, http.StatusBadRequest, "Patch listener failed", err)
-			return
-		}
-	*/
+	listener, err = listenerAdmin.Update(ctx, listener, payload.Name)
+	if err != nil {
+		logger.Ctx(ctx).Errorf("Failed to patch listener %s, %+v", listenerID, err)
+		ErrorResponse(c, http.StatusBadRequest, "Patch listener failed", err)
+		return
+	}
 	listenerResp, err := v.getListenerResponse(ctx, listener)
 	if err != nil {
 		ErrorResponse(c, http.StatusInternalServerError, "Internal error", err)

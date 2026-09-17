@@ -883,6 +883,8 @@ export default {
                     listener_delete: '为负载均衡 {name} 删除了监听器',
                     backend_create: '为负载均衡 {name} 添加了后端',
                     backend_delete: '为负载均衡 {name} 删除了后端',
+                    listener_update: '修改了负载均衡 {name} 的监听器',
+                    backend_update: '修改了负载均衡 {name} 的后端',
                 },
                 image: {
                     create: '创建了镜像 {name}',
@@ -994,6 +996,8 @@ export default {
                     listener_delete: '为负载均衡 {name} 删除监听器',
                     backend_create: '为负载均衡 {name} 添加后端',
                     backend_delete: '为负载均衡 {name} 删除后端',
+                    listener_update: '修改负载均衡 {name} 的监听器',
+                    backend_update: '修改负载均衡 {name} 的后端',
                 },
                 image: {
                     create: '创建镜像 {name}',

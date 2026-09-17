@@ -178,12 +178,20 @@ func (a *ListenerAdmin) Update(ctx context.Context, listener *model.Listener, na
 			logger.Ctx(ctx).Info("EXIT ListenerAdmin.Update: success")
 		}
 	}()
+	memberShip := GetMemberShip(ctx)
+	permit := memberShip.CheckResourceOrg(model.OrgWriter, listener.Owner)
+	if !permit {
+		logger.Ctx(ctx).Error("Not authorized to update the listener")
+		err = NewCLError(ErrPermissionDenied, "Not authorized to update the listener", nil)
+		return
+	}
+	// 名称只存在数据库里（haproxy 配置按 lb-<id>-lsn-<id> 命名），不需要重新下发
 	ctx, db := GetContextDB(ctx)
 	if listener.Name != name {
 		listener.Name = name
 		if err = db.Model(listener).Update("name", listener.Name).Error; err != nil {
 			logger.Ctx(ctx).Error("Failed to save listener", err)
-			err = NewCLError(ErrRouterUpdateFailed, "Failed to update listener", err)
+			err = NewCLError(ErrListenerUpdateFailed, "Failed to update listener", err)
 			return
 		}
 	}

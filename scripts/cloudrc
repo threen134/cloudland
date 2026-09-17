@@ -267,6 +267,38 @@ function async_exec()
     exec 3<&-
 }
 
+# 子网网关口（路由器 netns 内 ns-<vlan>）的 MAC：52:<vlan>:<hostid 低 16 位>，由 set_subnet_gw.sh 按此生成；
+# set_vrrp_ip.sh 据此识别“只被当作普通网关口建出来、还不是 VRRP 网卡”的设备
+function subnet_gw_mac()
+{
+    local mac_map=$(printf "%06x" $1)
+    local hyper_map=$(printf "%04x" $(($SCI_CLIENT_ID & 0xffff)))
+    echo 52:${mac_map:0:2}:${mac_map:2:2}:${mac_map:4:2}:${hyper_map:0:2}:${hyper_map:2:2}
+}
+
+# 负载均衡进程的锁：配置脚本（create_keepalived_conf.sh / create_haproxy_conf.sh）与心跳里的 check_lb_process.sh
+# 并发执行，“判断进程是否存活 → 替换配置 → 启动/重载”必须互斥，否则两边会各起一个进程。
+# 持锁时启动的守护进程会继承锁的文件描述符并一直占着锁，启动命令必须带 9>&- 关闭它
+lb_lock_file=$run_dir/lb_process.lock
+
+# 负载均衡进程是否在运行：<pid 文件> <配置文件路径>
+# pid 文件在进程异常退出、节点重启后会残留，按 cmdline 核对配置路径，避免把信号发给复用了该 pid 的无关进程
+function lb_proc_alive()
+{
+    local pid=$(cat $1 2>/dev/null)
+    [ -n "$pid" ] && [ -r /proc/$pid/cmdline ] && tr '\0' ' ' </proc/$pid/cmdline | grep -qF "$2"
+}
+
+# 在路由器 netns 内启动负载均衡的 keepalived：<router> <vrrp 目录>
+# notify_master（set_route_table.sh）依赖 ROUTES_FILE / KEEPALIVE_CONF 恢复 fip 路由表，必须随进程传入
+function start_keepalived()
+{
+    local router=$1 vrrp_dir=$2
+    rm -f $vrrp_dir/keepalived.pid $vrrp_dir/vrrp.pid
+    ROUTES_FILE=$vrrp_dir/routes KEEPALIVE_CONF=$vrrp_dir/keepalived.conf \
+        ip netns exec $router keepalived -p $vrrp_dir/keepalived.pid -r $vrrp_dir/vrrp.pid -f $vrrp_dir/keepalived.conf 9>&-
+}
+
 function log_debug()
 {
     # check if parameter count less than 2
