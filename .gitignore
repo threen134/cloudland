@@ -61,15 +61,6 @@ cloudland.sum
 cloudland.tgz
 ipcalc
 cloudrc.local
-/sci/Makefile
-/sci/*.log
-/sci/config.h
-/sci/libtool
-/sci/scia/scia64
-/sci/stamp-h1
-/sci/usecase
-/sci/autom4te.cache
-/src/remotexec/remotexec*.pb.*
 .vscode
 /commitID
 **/.DS_Store
@@ -110,7 +101,7 @@ api/cland
 api/cland-go
 api/cloudlet
 api/cloudlet-go
-cpgateway/keys/
+cpgateway-go/keys/
 
 # Sensitive local tools
 get_metrics.sh
