@@ -101,7 +101,7 @@ api/cland
 api/cland-go
 api/cloudlet
 api/cloudlet-go
-cpgateway-go/keys/
+cpgateway/keys/
 
 # Sensitive local tools
 get_metrics.sh

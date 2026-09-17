@@ -241,15 +241,15 @@ services:
   cpgateway:
     build:
       context: ../../
-      dockerfile: deploy/docker/dockerfiles/Dockerfile.cpgateway-go
-    image: cloudland-cpgateway-go:latest
+      dockerfile: deploy/docker/dockerfiles/Dockerfile.cpgateway
+    image: cloudland-cpgateway:latest
     container_name: cloudland-cpgateway
     restart: unless-stopped
     profiles:
       - dev
       - full
     environment:
-      # 环境变量覆盖 cpgateway-go/conf/config.toml 中的键: db.uri → DB_URI, auth.secret_key → AUTH_SECRET_KEY
+      # 环境变量覆盖 cpgateway/conf/config.toml 中的键: db.uri → DB_URI, auth.secret_key → AUTH_SECRET_KEY
       # SMTP_* / FEISHU_* / FRONTEND_URL / DNS_UPSTREAM 仅作兜底，系统设置页面保存的值优先
       DB_TYPE: postgres
       DB_URI: "postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-d6Passwd}@${DB_HOST:-postgres}:${DB_PORT:-5432}/${CPGATEWAY_DB:-cloudland_cpgateway}"

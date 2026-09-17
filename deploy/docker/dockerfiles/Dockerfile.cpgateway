@@ -1,0 +1,45 @@
+# =============================================================================
+# CloudLand Control Plane Gateway 控制平面网关 (Go 版)
+# 表结构由启动时 GORM AutoMigrate 创建
+# 构建: docker build -f dockerfiles/Dockerfile.cpgateway -t cloudland-cpgateway ../../
+# =============================================================================
+
+# ---- Stage 1: 编译 cpgateway ----
+FROM golang:1.25-bookworm AS builder
+
+WORKDIR /build
+COPY cpgateway/go.mod cpgateway/go.sum ./
+RUN go mod download
+COPY cpgateway/ ./
+
+# 生产只使用 PostgreSQL；CGO_ENABLED=0 下 SQLite 驱动不可用，不影响运行
+RUN CGO_ENABLED=0 go build -o /cpgateway \
+    -ldflags "-s -w -X main.Version=$(cat .version 2>/dev/null || echo dev)"
+
+# ---- Stage 2: 运行时镜像 ----
+FROM ubuntu:24.04
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    GIN_MODE=release
+
+# openssl: 生成 JWT 密钥对; postgresql-client: pg_isready 等待数据库; curl: 健康检查
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates openssl postgresql-client curl \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+COPY --from=builder /cpgateway /app/cpgateway
+COPY cpgateway/conf/config.toml /app/conf/config.toml
+RUN mkdir -p /app/keys
+
+COPY deploy/docker/scripts/cpgateway-entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
+EXPOSE 8000
+
+HEALTHCHECK --interval=15s --timeout=5s --retries=5 --start-period=30s \
+    CMD curl -fsS http://localhost:8000/health || exit 1
+
+ENTRYPOINT ["/entrypoint.sh"]
+CMD ["/app/cpgateway"]

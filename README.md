@@ -24,7 +24,7 @@ graph TB
 
     subgraph central["中央控制面（full profile）"]
         NGINX["Nginx + Web UI (Vue 3)"]
-        CPGW["cpgateway-go<br/>认证 / 组织 / Region 代理"]
+        CPGW["cpgateway<br/>认证 / 组织 / Region 代理"]
         PG["PostgreSQL"]
     end
 
@@ -57,7 +57,7 @@ graph TB
 | 目录 | 说明 |
 | :--- | :--- |
 | `api/` | Go 实现的 REST API (`clapi`)、Go 版 `cland` / `cloudlet`、告警规则管理服务 |
-| `cpgateway-go/` | Go 重写的中央网关：认证、组织管理、多 Region 代理 |
+| `cpgateway/` | Go 实现的中央网关：认证、组织管理、多 Region 代理 |
 | `web/` | Vue 3 + TypeScript 管理控制台 |
 | `docs/` | VitePress 文档站（指南 / 架构 / 部署 / API） |
 | `deploy/` | Docker Compose 与 Ansible 部署编排、一键部署脚本 |
@@ -108,7 +108,7 @@ curl -sSL https://raw.githubusercontent.com/threen134/cloudland/staging/deploy/d
 cd api && make setup && make
 
 # 中央网关
-cd cpgateway-go && make
+cd cpgateway && make
 
 # 管理控制台
 cd web && npm install && npm run dev
@@ -121,7 +121,7 @@ cd docs && npm install && npm run docs:dev
 
 ```bash
 cd api && make test
-cd cpgateway-go && make test
+cd cpgateway && make test
 ```
 
 ## 文档
