@@ -25,6 +25,7 @@
         "ipset",
         "keepalived",
         "haproxy",
+        "socat",
         "iputils-arping",
         "libvirt-daemon",
         "libvirt-daemon-system",

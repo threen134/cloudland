@@ -235,7 +235,7 @@ apt-get install -y jq wget mkisofs network-manager net-tools python3-pip
 apt-get install -y qemu-system-x86 qemu-utils bridge-utils ipcalc ipset \
     keepalived haproxy iputils-arping libvirt-daemon libvirt-daemon-system \
     libvirt-daemon-system-systemd libvirt-clients dnsmasq-base dnsmasq-utils \
-    conntrack cloud-utils
+    conntrack cloud-utils socat
 # 负载均衡的 haproxy 由 create_haproxy_conf.sh 在路由器 netns 内按实例启动，不需要系统自带的服务
 systemctl disable --now haproxy 2>/dev/null || true
 

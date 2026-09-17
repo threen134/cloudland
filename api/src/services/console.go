@@ -38,8 +38,8 @@ func RandomStr() (res string) {
 	return string(result)
 }
 
-func MakeToken(ctx context.Context, instance *model.Instance) (token string, err error) {
-	logger.Ctx(ctx).Infof("ENTER MakeToken: instanceID=%d", instance.ID)
+func MakeToken(ctx context.Context, instance *model.Instance, consoleType string) (token string, err error) {
+	logger.Ctx(ctx).Infof("ENTER MakeToken: instanceID=%d, type=%s", instance.ID, consoleType)
 	defer func() {
 		if err != nil {
 			logger.Ctx(ctx).Errorf("EXIT MakeToken: error=%v", err)
@@ -55,10 +55,11 @@ func MakeToken(ctx context.Context, instance *model.Instance) (token string, err
 	}
 	secret := RandomStr()
 	tkClaim := TokenClaim{
-		OrgID:      memberShip.OrgID,
-		OrgRole:    memberShip.OrgRole,
-		InstanceID: int(instance.ID),
-		Secret:     secret,
+		OrgID:       memberShip.OrgID,
+		OrgRole:     memberShip.OrgRole,
+		InstanceID:  int(instance.ID),
+		Secret:      secret,
+		ConsoleType: consoleType,
 	}
 	tkClaim.RegisteredClaims.ExpiresAt = jwt.NewNumericDate(time.Now().Add(TokenExpireDuration))
 	tokenHash := make([]byte, 32)
@@ -69,10 +70,11 @@ func MakeToken(ctx context.Context, instance *model.Instance) (token string, err
 	ctx, db := GetContextDB(ctx)
 	console := &model.Console{
 		Instance:   instance.ID,
-		Type:       "vnc",
+		Type:       consoleType,
 		HashSecret: hashSecret,
 	}
-	err = db.Where("instance = ?", instance.ID).Assign(console).FirstOrCreate(&model.Console{}).Error
+	// One record per instance and console type: opening a serial console does not invalidate a pending VNC token
+	err = db.Where("instance = ? AND type = ?", instance.ID, consoleType).Assign(console).FirstOrCreate(&model.Console{}).Error
 	if err != nil {
 		logger.Ctx(ctx).Error("Failed to make console record ", err)
 		return "", NewCLError(ErrConsoleCreateFailed, "Failed to make console record", err)
@@ -103,8 +105,8 @@ func ResolveToken(ctx context.Context, tokenString string) (instanceID int, memb
 	}
 	ctx, db := GetContextDB(ctx)
 	instanceID = claims.InstanceID
-	console := &model.Console{Instance: int64(instanceID)}
-	err = db.Where(console).Take(console).Error
+	console := &model.Console{}
+	err = db.Where("instance = ? AND type = ?", instanceID, claims.Type()).Take(console).Error
 	if err != nil {
 		return 0, nil, NewCLError(ErrConsoleNotFound, "Failed to retrieve console record", err)
 	}

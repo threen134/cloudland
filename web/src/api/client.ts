@@ -153,8 +153,11 @@ client.interceptors.response.use(
                     // likely means the request used a stale/revoked token.
                     // Retry once with the current (fresh) token instead of
                     // nuking the session.
-                    if (isTokenSwitchRecent()) {
-                        const freshToken = getToken()
+                    // The same applies when another window switched the token and this window has
+                    // received the new one after sending the request.
+                    const freshToken = getToken()
+                    const usedToken = String(error.config?.headers?.Authorization || '').replace(/^Bearer /, '')
+                    if (isTokenSwitchRecent() || (freshToken && usedToken && freshToken !== usedToken)) {
                         const originalConfig = error.config
                         if (freshToken && originalConfig && !(originalConfig as any).__retried) {
                             (originalConfig as any).__retried = true
@@ -202,6 +205,44 @@ const getStorage = (): Storage => {
     return localStorage.getItem('cloudland_remember') === '1' ? localStorage : sessionStorage
 }
 
+// Reads the claims of a JWT without verifying it: the server verifies tokens, the browser only needs
+// to know whose token it is (sub) and which org / region it is scoped to (org_id, region)
+export const decodeTokenClaims = (token: string | null): Record<string, any> | null => {
+    const payload = token?.split('.')[1]
+    if (!payload) return null
+    try {
+        const base64 = payload.replace(/-/g, '+').replace(/_/g, '/')
+        const json = decodeURIComponent(Array.from(atob(base64), c => '%' + c.charCodeAt(0).toString(16).padStart(2, '0')).join(''))
+        return JSON.parse(json)
+    } catch {
+        return null
+    }
+}
+
+const storeToken = (token: string) => {
+    const storage = getStorage()
+    sessionStorage.removeItem('cloudland_token')
+    localStorage.removeItem('cloudland_token')
+    storage.setItem('cloudland_token', token)
+}
+
+// cpgateway revokes the previous token whenever it issues a new one (login, org or region switch), while
+// without "remember me" every window keeps its own copy in sessionStorage. New tokens are therefore passed to
+// the other windows of the same user (console windows, other tabs), which would otherwise be logged out on
+// their next request.
+const authChannel = typeof BroadcastChannel !== 'undefined' ? new BroadcastChannel('cloudland-auth') : null
+
+authChannel?.addEventListener('message', (event: MessageEvent) => {
+    const { type, token } = event.data || {}
+    if (type !== 'token' || typeof token !== 'string') return
+    const current = getToken()
+    // A logged-out window stays logged out, and a window of another user keeps its own session
+    if (!current || current === token) return
+    const sub = decodeTokenClaims(current)?.sub
+    if (!sub || sub !== decodeTokenClaims(token)?.sub) return
+    storeToken(token)
+})
+
 // Helper function to set auth token
 export const setAuthToken = (token: string, remember?: boolean) => {
     if (remember !== undefined) {
@@ -211,10 +252,8 @@ export const setAuthToken = (token: string, remember?: boolean) => {
             localStorage.removeItem('cloudland_remember')
         }
     }
-    const storage = getStorage()
-    sessionStorage.removeItem('cloudland_token')
-    localStorage.removeItem('cloudland_token')
-    storage.setItem('cloudland_token', token)
+    storeToken(token)
+    authChannel?.postMessage({ type: 'token', token })
 }
 
 // Helper function to clear auth token

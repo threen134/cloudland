@@ -144,8 +144,9 @@ export const instancesApi = {
         return client.post(`/instances/${id}/resize`, { cpu, memory })
     },
 
-    getConsole(id: string) {
-        return client.post(`/instances/${id}/console`)
+    // type: vnc (graphical, default) or serial (text console)
+    getConsole(id: string, type?: 'vnc' | 'serial') {
+        return client.post(`/instances/${id}/console`, type ? { type } : undefined)
     },
 
     setUserPassword(id: string, user_name: string, password: string) {

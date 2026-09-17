@@ -2731,7 +2731,7 @@
         },
         "/instances/:id/console": {
             "post": {
-                "description": "create a console",
+                "description": "create a console access token; type vnc (graphical, default) or serial (text)",
                 "consumes": [
                     "application/json"
                 ],
@@ -2749,6 +2749,14 @@
                         "name": "id",
                         "in": "path",
                         "required": true
+                    },
+                    {
+                        "description": "Console type",
+                        "name": "message",
+                        "in": "body",
+                        "schema": {
+                            "$ref": "#/definitions/apis.ConsolePayload"
+                        }
                     }
                 ],
                 "responses": {
@@ -8139,6 +8147,19 @@
                     "items": {
                         "type": "string"
                     }
+                }
+            }
+        },
+        "apis.ConsolePayload": {
+            "type": "object",
+            "properties": {
+                "type": {
+                    "description": "vnc (graphical, default) or serial (text console on the first serial port)",
+                    "type": "string",
+                    "enum": [
+                        "vnc",
+                        "serial"
+                    ]
                 }
             }
         },

@@ -7,7 +7,7 @@ import { instancesApi, type Instance } from '../../api/instances'
 import { securityGroupsApi, type SecurityGroup } from '../../api/networks'
 import MonitoringCharts from '../../components/monitoring/MonitoringCharts.vue'
 import { vmAlarmRulesApi, VM_RULE_TYPES, type VMAlarmRuleGroup, type VMRuleType } from '../../api/vmAlarmRules'
-import { ArrowLeft, Play, Square, RotateCw, Trash2, Server, Monitor, Cpu, HardDrive, MemoryStick, Network, Key, ExternalLink, Copy, Check, ShieldAlert, Link, Unlink, Eye, EyeOff, ChevronDown, KeyRound, RefreshCw, Maximize2, Pencil, Shuffle, Shield, Activity } from 'lucide-vue-next'
+import { ArrowLeft, Play, Square, RotateCw, Trash2, Server, Monitor, Cpu, HardDrive, MemoryStick, Network, Key, ExternalLink, Copy, Check, ShieldAlert, Link, Unlink, Eye, EyeOff, ChevronDown, KeyRound, RefreshCw, Maximize2, Pencil, Shuffle, Shield, Activity, SquareTerminal } from 'lucide-vue-next'
 import DeleteModal from '../../components/modals/DeleteModal.vue'
 
 const route = useRoute()
@@ -142,29 +142,13 @@ const handleAction = async (action: 'start' | 'stop' | 'restart' | 'hard_stop' |
     }
 }
 
-const openConsole = async () => {
-    // Open window immediately to avoid popup blockers
-    const consoleWindow = window.open('about:blank', '_blank')
-    if (!consoleWindow) {
+// The console page embeds the bundled noVNC client and requests the console token itself.
+// Opened without noopener so the new window inherits sessionStorage (login session).
+const openConsole = (type: 'vnc' | 'serial' = 'vnc') => {
+    const name = type === 'serial' ? 'instance-serial-console' : 'instance-console'
+    const url = router.resolve({ name, params: { id: instanceId } }).href
+    if (!window.open(url, '_blank')) {
         alert(t('dashboard.instanceDetail.popupBlocked'))
-        return
-    }
-
-    try {
-        const response = await instancesApi.getConsole(instanceId)
-        const { console_host, console_port, console_path, token } = response.data
-
-        const host = console_host
-        const port = console_port || 443
-        const path = console_path || 'websockify'
-        const encrypt = port === 443
-
-        const externalUrl = `https://novnc.com/noVNC/vnc.html?host=${host}&port=${port}&autoconnect=true&encrypt=${encrypt}&path=${path}?token=${token}`
-        consoleWindow.location.href = externalUrl
-    } catch (error: any) {
-        console.error('Failed to get console info:', error)
-        consoleWindow.close()
-        alert(t('dashboard.instanceDetail.consoleError') + (error.response?.data?.error_message || error.message))
     }
 }
 
@@ -667,8 +651,11 @@ onMounted(() => {
                                     {{ actionLoading === 'resume' ? $t('dashboard.instanceDetail.resuming') : $t('dashboard.instanceDetail.resume') }}
                                 </button>
                                 <div class="dropdown-divider"></div>
-                                <button class="dropdown-item" @click="openConsole">
+                                <button class="dropdown-item" @click="openConsole()">
                                     <img src="/images/vnc.svg" alt="VNC" width="14" height="14" /> {{ $t('actions.console') }}
+                                </button>
+                                <button class="dropdown-item" data-console="serial" @click="openConsole('serial')">
+                                    <SquareTerminal :size="14" /> {{ $t('dashboard.console.serial.title') }}
                                 </button>
                                 <div class="dropdown-divider"></div>
                                 <button class="dropdown-item" @click="openRenameModal">

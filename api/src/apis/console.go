@@ -31,12 +31,18 @@ type ConsoleResponse struct {
 	ConsolePath string             `json:"console_path"`
 }
 
+type ConsolePayload struct {
+	// vnc (graphical, default) or serial (text console on the first serial port)
+	Type string `json:"type" binding:"omitempty,oneof=vnc serial"`
+}
+
 // @Summary create a console
-// @Description create a console
+// @Description create a console access token; type vnc (graphical, default) or serial (text)
 // @tags Console
 // @Accept  json
 // @Produce json
 // @Param   id  path  int  true  "Instance ID"
+// @Param   message	body   ConsolePayload  false   "Console type"
 // @Success 200 {object} ConsoleResponse
 // @Failure 400 {object} common.APIError "Bad request"
 // @Failure 401 {object} common.APIError "Not authorized"
@@ -51,7 +57,19 @@ func (v *ConsoleAPI) Create(c *gin.Context) {
 		ErrorResponse(c, http.StatusBadRequest, "Invalid instance query", err)
 		return
 	}
-	token, err := services.MakeToken(ctx, instance)
+	payload := &ConsolePayload{}
+	// The body is optional: no body means a VNC console
+	if c.Request.ContentLength > 0 {
+		if err = c.ShouldBindJSON(payload); err != nil {
+			ErrorResponse(c, http.StatusBadRequest, "Invalid input JSON", err)
+			return
+		}
+	}
+	consoleType := payload.Type
+	if consoleType == "" {
+		consoleType = ConsoleTypeVNC
+	}
+	token, err := services.MakeToken(ctx, instance, consoleType)
 	if err != nil {
 		logger.Ctx(ctx).Errorf("Not able to create token for instance %s", uuID)
 		ErrorResponse(c, http.StatusBadRequest, "Not able to create", err)

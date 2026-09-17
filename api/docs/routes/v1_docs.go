@@ -2738,7 +2738,7 @@ const docTemplatev1 = `{
         },
         "/instances/:id/console": {
             "post": {
-                "description": "create a console",
+                "description": "create a console access token; type vnc (graphical, default) or serial (text)",
                 "consumes": [
                     "application/json"
                 ],
@@ -2756,6 +2756,14 @@ const docTemplatev1 = `{
                         "name": "id",
                         "in": "path",
                         "required": true
+                    },
+                    {
+                        "description": "Console type",
+                        "name": "message",
+                        "in": "body",
+                        "schema": {
+                            "$ref": "#/definitions/apis.ConsolePayload"
+                        }
                     }
                 ],
                 "responses": {
@@ -8146,6 +8154,19 @@ const docTemplatev1 = `{
                     "items": {
                         "type": "string"
                     }
+                }
+            }
+        },
+        "apis.ConsolePayload": {
+            "type": "object",
+            "properties": {
+                "type": {
+                    "description": "vnc (graphical, default) or serial (text console on the first serial port)",
+                    "type": "string",
+                    "enum": [
+                        "vnc",
+                        "serial"
+                    ]
                 }
             }
         },

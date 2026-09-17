@@ -16,6 +16,12 @@ const router = createRouter({
             meta: { requiresAuth: true }
         },
         {
+            path: '/serial-console/:id',
+            name: 'instance-serial-console',
+            component: () => import('../views/dashboard/SerialConsole.vue'),
+            meta: { requiresAuth: true }
+        },
+        {
             path: '/login',
             name: 'login',
             component: () => import('../views/auth/Login.vue')

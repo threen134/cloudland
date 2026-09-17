@@ -158,6 +158,9 @@ services:
       # 用于生成发往前端的 VNC Console 代理地址，不控制本容器物理监听 IP
       PUBLIC_IP: ${PUBLIC_IP:-127.0.0.1}
       MANAGEMENT_VIP: ${MANAGEMENT_VIP:-127.0.0.1}
+      # Address of this host: compute nodes allow serial console connections from it, since the console
+      # proxy on this host connects from here (in an HA control plane that is not MANAGEMENT_VIP)
+      INTERNAL_IP: ${INTERNAL_IP:-127.0.0.1}
       DB_HOST: ${DB_HOST:-postgres}
       DB_PORT: "${DB_PORT:-5432}"
       DB_USER: ${POSTGRES_USER:-postgres}

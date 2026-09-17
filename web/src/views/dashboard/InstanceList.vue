@@ -410,29 +410,13 @@ const confirmResize = async () => {
     }
 }
 
-const openConsole = async (instance: Instance) => {
-    // Open window immediately to avoid popup blockers
-    const consoleWindow = window.open('about:blank', '_blank')
-    if (!consoleWindow) {
+// The console page embeds the bundled noVNC client and requests the console token itself.
+// Opened without noopener so the new window inherits sessionStorage (login session).
+const openConsole = (instance: Instance, type: 'vnc' | 'serial' = 'vnc') => {
+    const name = type === 'serial' ? 'instance-serial-console' : 'instance-console'
+    const url = router.resolve({ name, params: { id: instance.id } }).href
+    if (!window.open(url, '_blank')) {
         toast.error(t('dashboard.instanceDetail.popupBlocked'))
-        return
-    }
-
-    try {
-        const response = await instancesApi.getConsole(instance.id)
-        const { console_host, console_port, console_path, token } = response.data
-        
-        const host = console_host
-        const port = console_port || 443
-        const path = console_path || 'websockify'
-        const encrypt = port === 443
-        
-        const externalUrl = `https://novnc.com/noVNC/vnc.html?host=${host}&port=${port}&autoconnect=true&encrypt=${encrypt}&path=${path}?token=${token}`
-        consoleWindow.location.href = externalUrl
-    } catch (error: any) {
-        console.error('Failed to get console info:', error)
-        consoleWindow.close()
-        toast.error(t('dashboard.instanceDetail.consoleError', { error: error.response?.data?.error_message || error.message }))
     }
 }
 
@@ -1199,6 +1183,9 @@ onUnmounted(() => {
                             
                             <button class="dropdown-item" @click="openConsole(instance)">
                                 <Terminal :size="14" /> {{ t('dashboard.instanceDetail.console') }}
+                            </button>
+                            <button class="dropdown-item" @click="openConsole(instance, 'serial')">
+                                <Terminal :size="14" /> {{ t('dashboard.console.serial.title') }}
                             </button>
 
                             <div class="dropdown-divider"></div>
