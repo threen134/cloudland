@@ -603,6 +603,9 @@ func (a *SecgroupAdmin) List(ctx context.Context, offset, limit int64, order, na
 		err = NewCLError(ErrSQLSyntaxError, "Failed to query security group(s)", err)
 		return
 	}
+	// db still carries the list statement (security_groups, offset, limit): reusing it filled Router with
+	// another security group row, so the VPC shown in the list was a security group's name and UUID
+	_, db = GetContextDB(ctx)
 	for _, secgroup := range secgroups {
 		if secgroup.RouterID > 0 {
 			secgroup.Router = &model.Router{Model: model.Model{ID: secgroup.RouterID}}

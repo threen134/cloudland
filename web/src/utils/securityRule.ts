@@ -117,3 +117,64 @@ export const icmpTypeName = (rule: SecurityRule): string | null => {
     if (rule.protocol !== 'icmp' || rule.port_min == null || rule.port_min < 0) return null
     return ICMP_TYPE_NAMES[rule.port_min] ?? null
 }
+
+const WELL_KNOWN_PORTS: Record<number, string> = {
+    20: 'FTP-Data', 21: 'FTP', 22: 'SSH', 23: 'Telnet', 25: 'SMTP',
+    53: 'DNS', 67: 'DHCP', 68: 'DHCP', 80: 'HTTP', 110: 'POP3',
+    119: 'NNTP', 123: 'NTP', 143: 'IMAP', 161: 'SNMP', 162: 'SNMP-Trap',
+    389: 'LDAP', 443: 'HTTPS', 445: 'SMB', 465: 'SMTPS',
+    514: 'Syslog', 587: 'SMTP', 636: 'LDAPS', 993: 'IMAPS', 995: 'POP3S',
+    1433: 'MSSQL', 1521: 'Oracle', 2049: 'NFS', 3306: 'MySQL',
+    3389: 'RDP', 5432: 'PostgreSQL', 5672: 'AMQP', 5900: 'VNC',
+    6379: 'Redis', 8080: 'HTTP-Alt', 8443: 'HTTPS-Alt',
+    9090: 'Prometheus', 9200: 'Elasticsearch', 27017: 'MongoDB',
+}
+
+/** Port column text: port range for tcp/udp, type/code for icmp */
+export const formatRulePort = (rule: SecurityRule, t: Translate): string => {
+    const icmp = formatIcmpRule(rule, t)
+    if (icmp !== null) return icmp
+    if (rule.port_min != null && rule.port_min < 0) return '-'
+    if (rule.port_min === rule.port_max) {
+        return rule.port_min?.toString() || t('dashboard.forms.placeholder.all')
+    }
+    if (rule.port_min === 1 && rule.port_max === 65535) return t('dashboard.forms.placeholder.all')
+    return `${rule.port_min}-${rule.port_max}`
+}
+
+/** Service label shown next to the port (SSH, HTTP, Echo Request...), null when unknown */
+export const ruleServiceName = (rule: SecurityRule): string | null => {
+    if (rule.protocol === 'icmp') return icmpTypeName(rule)
+    if (rule.port_min == null || rule.port_min < 0) return null
+    if (rule.port_min === rule.port_max && WELL_KNOWN_PORTS[rule.port_min]) {
+        return WELL_KNOWN_PORTS[rule.port_min]
+    }
+    return null
+}
+
+export type RuleSortKey = 'name' | 'direction' | 'protocol' | 'port' | 'remote_cidr'
+export interface RuleFilter { direction: string; protocol: string; keyword: string }
+
+export const filterAndSortRules = (
+    rules: SecurityRule[], filter: RuleFilter, sortKey: RuleSortKey, sortOrder: 'asc' | 'desc'
+): SecurityRule[] => {
+    const kw = filter.keyword.trim().toLowerCase()
+    const filtered = rules.filter(r => {
+        if (filter.direction && r.direction !== filter.direction) return false
+        if (filter.protocol && r.protocol !== filter.protocol) return false
+        if (kw && ![r.name, r.remote_cidr, r.protocol, r.direction]
+            .filter(Boolean).some(v => v!.toLowerCase().includes(kw))) return false
+        return true
+    })
+    const dir = sortOrder === 'asc' ? 1 : -1
+    return filtered.sort((a, b) => {
+        switch (sortKey) {
+            case 'name': return dir * (a.name || '').localeCompare(b.name || '')
+            case 'direction': return dir * a.direction.localeCompare(b.direction)
+            case 'protocol': return dir * a.protocol.localeCompare(b.protocol)
+            case 'port': return dir * ((a.port_min ?? -1) - (b.port_min ?? -1))
+            case 'remote_cidr': return dir * (a.remote_cidr || '').localeCompare(b.remote_cidr || '')
+            default: return 0
+        }
+    })
+}

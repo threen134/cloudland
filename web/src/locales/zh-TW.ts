@@ -1305,6 +1305,7 @@ export default {
             instance: '虛擬機器',
             systemDefaultDescription: '系統預設安全組',
             nativeForRouterDescription: '路由器 {name} 的原生安全組',
+            defaultNotDeletable: '預設安全組不能刪除',
             portRangeError: '起始埠不能大於結束埠',
             portValueError: '埠範圍為 1-65535',
             icmpType: 'ICMP 類型',
