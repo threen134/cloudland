@@ -93,8 +93,8 @@ const onVpcFilterChange = () => {
     fetchSecurityGroups()
 }
 
-// The API returns "2006-01-02 15:04:05.999999": fractional seconds are noise in a list
-const formatCreatedAt = (value?: string) => value ? value.replace(/\.\d+$/, '') : '-'
+// The API returns "2006-01-02 15:04:05.999999": minutes are precise enough for a list
+const formatCreatedAt = (value?: string) => value ? value.slice(0, 16) : '-'
 
 const ruleCount = (group: SecurityGroup, direction: 'ingress' | 'egress') =>
     (group.security_rules || []).filter(r => r.direction === direction).length
@@ -275,21 +275,22 @@ watch(() => region.currentRegionId, (newId) => {
           <thead>
             <tr>
               <th>{{ $t('dashboard.table.nameId') }}</th>
+              <th class="col-desc">{{ $t('dashboard.table.description') }}</th>
               <th>{{ $t('dashboard.table.vpc') }}</th>
               <th>{{ $t('dashboard.table.securityRules') }}</th>
-              <th>{{ $t('dashboard.securityGroupDetail.associatedInterfaces') }}</th>
+              <th class="col-center">{{ $t('dashboard.securityGroupDetail.associatedInterfaces') }}</th>
               <th>{{ $t('dashboard.table.createdAt') }}</th>
-              <th>{{ $t('dashboard.table.actions') }}</th>
+              <th class="col-actions">{{ $t('dashboard.table.actions') }}</th>
             </tr>
           </thead>
           <tbody>
             <tr v-if="loading && securityGroups.length === 0">
-              <td colspan="6" class="text-center">
+              <td colspan="7" class="text-center">
                 <div class="loading-spinner" style="margin: 20px auto;"></div>
               </td>
             </tr>
             <tr v-else-if="securityGroups.length === 0">
-              <td colspan="6" class="text-center text-secondary" style="padding: 48px;">
+              <td colspan="7" class="text-center text-secondary" style="padding: 48px;">
                 <div v-if="searchQuery || vpcFilter">
                   <Search :size="48" style="opacity: 0.3; margin-bottom: 16px;" />
                   <p>{{ $t('messages.noResults') }}</p>
@@ -319,12 +320,15 @@ watch(() => region.currentRegionId, (newId) => {
                           <Copy v-else :size="10" />
                         </button>
                       </div>
-                      <div v-if="group.description" class="resource-desc">{{ translateDescription(group.description) }}</div>
                     </div>
                   </div>
                 </router-link>
               </td>
-              <td>
+              <td class="col-desc">
+                <div v-if="group.description" class="desc-text" :title="translateDescription(group.description)">{{ translateDescription(group.description) }}</div>
+                <span v-else class="text-light">-</span>
+              </td>
+              <td class="nowrap">
                 <router-link v-if="group.vpc" :to="{ name: 'vpc-detail', params: { id: group.vpc.id } }" class="text-link">
                   {{ group.vpc.name }}
                 </router-link>
@@ -334,9 +338,9 @@ watch(() => region.currentRegionId, (newId) => {
                 <span class="direction-badge ingress">{{ $t('dashboard.table.ingress') }} {{ ruleCount(group, 'ingress') }}</span>
                 <span class="direction-badge egress">{{ $t('dashboard.table.egress') }} {{ ruleCount(group, 'egress') }}</span>
               </td>
-              <td>{{ group.target_interfaces?.length || 0 }}</td>
-              <td class="text-secondary text-sm nowrap">{{ formatCreatedAt(group.created_at) }}</td>
-              <td>
+              <td class="col-center">{{ group.target_interfaces?.length || 0 }}</td>
+              <td class="text-secondary text-sm nowrap" :title="group.created_at">{{ formatCreatedAt(group.created_at) }}</td>
+              <td class="col-actions">
                 <div class="actions">
                   <button class="btn btn-ghost btn-sm" :title="$t('actions.edit')" @click="handleEditClick(group)">
                     <Edit :size="14" />
@@ -656,14 +660,72 @@ watch(() => region.currentRegionId, (newId) => {
 
 /* .resource-info etc. are global from index.css */
 
+/* Compact rows: the columns size to their content and the description column takes the remaining width */
+.data-table th,
+.data-table td {
+  padding: var(--spacing-3);
+  white-space: nowrap;
+  vertical-align: middle;
+}
+
+.data-table th:first-child,
+.data-table td:first-child {
+  padding-left: var(--spacing-5);
+}
+
+.data-table th:last-child,
+.data-table td:last-child {
+  padding-right: var(--spacing-5);
+}
+
+/* Not enough room for the description next to the other columns: it stays available on the detail page */
+@media (max-width: 1279px) {
+  .data-table .col-desc {
+    display: none;
+  }
+}
+
+.data-table td.col-desc {
+  width: 100%;
+  min-width: 160px;
+  max-width: 1px;
+}
+
+.desc-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--text-secondary);
+}
+
+.text-light {
+  color: var(--text-light);
+}
+
+.col-center {
+  text-align: center;
+}
+
+.col-actions {
+  text-align: right;
+}
+
 .resource-link {
   text-decoration: none;
-  display: block;
-  padding: 4px 0;
+  display: inline-block;
+  padding: 0;
   border-radius: var(--radius-sm);
   transition: all 0.15s;
   color: var(--primary-600);
   cursor: pointer;
+}
+
+.resource-link .resource-info {
+  gap: var(--spacing-3);
+}
+
+.resource-link .resource-icon {
+  width: 28px;
+  height: 28px;
 }
 
 .resource-link:hover .resource-name {
@@ -675,12 +737,6 @@ watch(() => region.currentRegionId, (newId) => {
   display: flex;
   align-items: center;
   gap: var(--spacing-2);
-}
-
-.resource-desc {
-  font-size: var(--font-size-xs);
-  color: var(--text-tertiary);
-  margin-top: 2px;
 }
 
 .text-link { color: var(--primary-600); text-decoration: none; }
@@ -707,7 +763,13 @@ watch(() => region.currentRegionId, (newId) => {
 
 .actions {
   display: flex;
-  gap: var(--spacing-2);
+  justify-content: flex-end;
+  gap: 2px;
+}
+
+.actions .btn {
+  padding-left: 6px;
+  padding-right: 6px;
 }
 
 .text-error {
