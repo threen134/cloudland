@@ -25,7 +25,7 @@ const (
 	startupGrace = 90 * time.Second
 
 	topologyStatusOnline  = 1
-	topologyStatusOffline = 10 // SCI recovery state; clapi marks the hyper unavailable
+	topologyStatusOffline = 10 // node disconnected; clapi marks the hyper unavailable
 )
 
 type StatusReporter struct {
@@ -77,9 +77,8 @@ func (r *StatusReporter) ReportTopology(msgID int32) {
 // reportTopology sends control "callback=agent" with one "hostid,hostname,status" line
 // per known node. A node is reported with status 10 when it disconnected, or when clapi
 // lists it as active but it has not connected within startupGrace.
-// Like C++ report_topology, which reported every round while SCI had nodes in recovery,
-// the topology is repeated while any node is offline; otherwise it is only reported when
-// forced or changed. A report that clapi did not receive is repeated on the next round.
+// The topology is repeated while any node is offline, since it may reconnect at any time;
+// otherwise it is only reported when forced or changed. A report that clapi did not receive is repeated on the next round.
 // Reports are sent one at a time so that a delayed retry cannot overwrite a newer topology.
 func (r *StatusReporter) reportTopology(msgID int32, force bool) {
 	nodes := r.registry.Known()

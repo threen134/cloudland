@@ -66,8 +66,7 @@ order: 10
 | :--- | :--- | :--- | :--- | :--- |
 | **Nginx** | 80, 443 | TCP | 全网/堡垒机 | Web 管理及 API 入口 |
 | **ConsoleProxy** | 9443 | TCP | 全网 | VNC 远程控制台代理 |
-| **CloudLand** | 9988 | TCP/UDP | 管理网 | SCI 南向核心控制通信 |
-| **CLand (API)** | 5006 | TCP | 管理网 | clapi 向主控下发指令 |
+| **CLand (gRPC)** | 5006 | TCP | 管理网 | 计算节点 cloudlet-go 接入主控、clapi 向主控下发指令（`GRPC_AUTH_TOKEN` 鉴权） |
 | **Prometheus** | 9090 | TCP | 管理网 | 监控指标查询 |
 | **Grafana** | 3000 | TCP | 管理网 | 监控看板展示 |
 

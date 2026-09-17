@@ -20,7 +20,7 @@ dom_state=$(virsh domstate $vm_ID 2>/dev/null)
 # 再往下走会 destroy + undefine 并删除磁盘，把正在运行的虚拟机连数据一起毁掉
 if [ "$dom_state" = "running" ]; then
     log_debug $ID "clear_target_migration.sh: $vm_ID is running on this node, refusing target cleanup"
-    echo "|:-COMMAND-:| migrate_vm.sh '$migrate_ID' '$task_ID' '$ID' '$SCI_CLIENT_ID' 'rollback' 'cleanup skipped: instance is running here'"
+    echo "|:-COMMAND-:| migrate_vm.sh '$migrate_ID' '$task_ID' '$ID' '$NODE_ID' 'rollback' 'cleanup skipped: instance is running here'"
     sync_vm $ID
     exit 0
 fi
@@ -52,5 +52,5 @@ if ! virsh domstate $vm_ID >/dev/null 2>&1; then
 fi
 rm -rf $xml_dir/$vm_ID
 state=rollback
-echo "|:-COMMAND-:| migrate_vm.sh '$migrate_ID' '$task_ID' '$ID' '$SCI_CLIENT_ID' '$state' 'target hyper clear'"
+echo "|:-COMMAND-:| migrate_vm.sh '$migrate_ID' '$task_ID' '$ID' '$NODE_ID' '$state' 'target hyper clear'"
 sync_vm $ID

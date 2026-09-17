@@ -20,7 +20,7 @@ log_debug $ID "source_migration.sh: Starting migration_ID=$migration_ID, task_ID
 
 function report()
 {
-    echo "|:-COMMAND-:| migrate_vm.sh '$migration_ID' '$task_ID' '$ID' '$SCI_CLIENT_ID' '$1' '$2'"
+    echo "|:-COMMAND-:| migrate_vm.sh '$migration_ID' '$task_ID' '$ID' '$NODE_ID' '$1' '$2'"
 }
 
 # 本地存储迁移失败时删除本次在目标节点创建的磁盘文件（域已在目标节点定义时不删）

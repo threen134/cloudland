@@ -1,8 +1,7 @@
 # cloudlet-go 环境变量（参考 deploy/docker/scripts/deploy-compute-node.sh）
 CLAND_ENDPOINT={{ cland_endpoint }}
+# 计算节点编号（控制面分配的 hostid）；cloudlet-go 执行脚本时注入，脚本在回调中用它标识本节点
 NODE_ID={{ client_id }}
-# 脚本通过 SCI_CLIENT_ID 在回调中标识本节点（cloudlet-go 执行脚本时也会注入）
-SCI_CLIENT_ID={{ client_id }}
 ZONE_NAME={{ zone_name }}
 VIRT_TYPE={{ virt_type }}
 GRPC_AUTH_TOKEN={{ grpc_auth_token }}

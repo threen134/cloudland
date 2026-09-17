@@ -4,7 +4,7 @@ Copyright <holder> All Rights Reserved.
 SPDX-License-Identifier: Apache-2.0
 
 CloudletService implementation — handles cloudlet → cland gRPC streams.
-Replaces C++ handler.cpp frontHandler + SCI backend management.
+Tracks connected agents and routes commands and results between them and clapi.
 */
 
 package cland

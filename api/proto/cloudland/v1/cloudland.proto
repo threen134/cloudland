@@ -82,7 +82,7 @@ message ListGroupsReply {
 
 // ====================================================================
 // CloudletService: cloudlet → cland（agent 注册 + 命令流）
-// 替代整个 SCI 协议 + scidv1 握手
+// The agent connects to cland, registers, then receives commands and returns results on one stream
 // ====================================================================
 service CloudletService {
   // 双向 stream：cland 下发命令，cloudlet 回传结果
@@ -103,7 +103,7 @@ message CloudletMessage {
 }
 
 message RegisterRequest {
-  int32  node_id   = 1;  // SCI_CLIENT_ID
+  int32  node_id   = 1;  // NODE_ID
   string hostname  = 2;
 }
 

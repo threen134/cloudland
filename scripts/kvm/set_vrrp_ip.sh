@@ -46,5 +46,5 @@ read -d'\n' -r gateway < <(ipcalc -nb $local_ip | awk '/HostMin/ {print $2}')
 ./set_subnet_gw.sh $router $vrrp_vlan $gateway/$prefix
 
 if [ "$reply" = "true" ]; then
-    echo "|:-COMMAND-:| $(basename $0) '$vrrp_ID' '$SCI_CLIENT_ID' '$role' '$local_mac'"
+    echo "|:-COMMAND-:| $(basename $0) '$vrrp_ID' '$NODE_ID' '$role' '$local_mac'"
 fi

@@ -220,9 +220,9 @@ func (d *Dispatcher) handleToAll(target string, msgID int32, msg *pb.ClandMessag
 	return replyOK
 }
 
-// resolveTargets resolves a group description like NetLayer::createGroup/sendMessage:
+// resolveTargets resolves a group description:
 // "name:ids" selects its members, a bare name looks up a group created by mkgrp=, and an
-// empty member list or an unknown (including empty) name means SCI_GROUP_ALL.
+// empty member list or an unknown (including empty) name means all nodes.
 // resolveScheduleTargets 解析 select= / group= 的候选节点，与 resolveTargets 的区别是
 // 解析不出成员时不回退到「所有节点」：这两个控制串的语义是「在这些节点里挑一个」，
 // 描述符写错时静默扩大到全部节点，会让调用方算好的过滤条件（可用区、活动状态、

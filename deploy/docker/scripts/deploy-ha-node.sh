@@ -69,8 +69,6 @@ for var in "${vars[@]}"; do
 done
 
 # Force HA vars in .env
-sed -i '/^SCI_ENABLE_FAILOVER=/d' .env
-echo "SCI_ENABLE_FAILOVER=yes" >> .env
 sed -i '/^COMPOSE_PROFILES=/d' .env
 echo "COMPOSE_PROFILES=full,region" >> .env # 全量 + 区域控制面，使用外部 DB（不启用 dev）
 

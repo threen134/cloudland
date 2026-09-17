@@ -457,9 +457,9 @@ func (a *HyperAdmin) Deploy(ctx context.Context, ip, hostname, networkDevice, vl
 
 	// 用 --preserve-env 显式列出变量：Ubuntu 26.04 默认的 sudo-rs 会忽略 sudo -E；
 	// 变量经 export 传入而非放在命令参数里，令牌不会出现在进程列表中
-	deployEnvVars := "CLAND_PUBKEY,GRPC_AUTH_TOKEN,CONTROLLER_IP,HOSTNAME,NETWORK_DEVICE,VLAN_DEVICE,PRIVATE_VLAN_DEVICE,DNS_SERVER,SCI_CLIENT_ID,DOMAIN,ZONE_NAME,VIRT_TYPE,REPO_BRANCH"
+	deployEnvVars := "CLAND_PUBKEY,GRPC_AUTH_TOKEN,CONTROLLER_IP,HOSTNAME,NETWORK_DEVICE,VLAN_DEVICE,PRIVATE_VLAN_DEVICE,DNS_SERVER,NODE_ID,DOMAIN,ZONE_NAME,VIRT_TYPE,REPO_BRANCH"
 	deployCmd = fmt.Sprintf(
-		"export %s%sCONTROLLER_IP=%s HOSTNAME=%s NETWORK_DEVICE=%s VLAN_DEVICE=%s PRIVATE_VLAN_DEVICE=%s DNS_SERVER=%s SCI_CLIENT_ID=%d DOMAIN=%s ZONE_NAME=%s VIRT_TYPE=%s REPO_BRANCH=%s; "+
+		"export %s%sCONTROLLER_IP=%s HOSTNAME=%s NETWORK_DEVICE=%s VLAN_DEVICE=%s PRIVATE_VLAN_DEVICE=%s DNS_SERVER=%s NODE_ID=%d DOMAIN=%s ZONE_NAME=%s VIRT_TYPE=%s REPO_BRANCH=%s; "+
 			"curl -sSL %s | sudo --preserve-env=%s bash",
 		pubKeyExport, tokenExport, controllerIP, hostname, networkDevice, vlanDevice, privateVlanDevice, dnsServer, hostID, domain, zoneName, virtType, repoBranch,
 		deployScriptURL, deployEnvVars,

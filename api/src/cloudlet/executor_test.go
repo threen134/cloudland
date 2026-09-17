@@ -131,15 +131,15 @@ func TestScanLinesDrainsOverlongLine(t *testing.T) {
 	}
 }
 
-func TestCommandEnvSetsSCIClientID(t *testing.T) {
+func TestCommandEnvSetsNodeID(t *testing.T) {
 	env := CommandEnv(12, "TRACEPARENT=x")
 	var found bool
 	for _, kv := range env {
-		if kv == "SCI_CLIENT_ID=12" {
+		if kv == "NODE_ID=12" {
 			found = true
 		}
 	}
 	if !found || env[len(env)-1] != "TRACEPARENT=x" {
-		t.Errorf("env missing SCI_CLIENT_ID or extra vars: %v", env[len(env)-2:])
+		t.Errorf("env missing NODE_ID or extra vars: %v", env[len(env)-2:])
 	}
 }

@@ -35,4 +35,4 @@ virsh define $vm_xml
 virsh autostart $vm_ID
 virsh start $vm_ID
 [ $? -eq 0 ] && state=running
-echo "|:-COMMAND-:| inst_status.sh '$SCI_CLIENT_ID' '$ID $state'"
+echo "|:-COMMAND-:| inst_status.sh '$NODE_ID' '$ID $state'"

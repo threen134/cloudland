@@ -300,7 +300,7 @@ const (
 //
 // ====================================================================
 // CloudletService: cloudlet → cland（agent 注册 + 命令流）
-// 替代整个 SCI 协议 + scidv1 握手
+// The agent connects to cland, registers, then receives commands and returns results on one stream
 // ====================================================================
 type CloudletServiceClient interface {
 	// 双向 stream：cland 下发命令，cloudlet 回传结果
@@ -346,7 +346,7 @@ func (c *cloudletServiceClient) ReportHealth(ctx context.Context, in *HealthRepo
 //
 // ====================================================================
 // CloudletService: cloudlet → cland（agent 注册 + 命令流）
-// 替代整个 SCI 协议 + scidv1 握手
+// The agent connects to cland, registers, then receives commands and returns results on one stream
 // ====================================================================
 type CloudletServiceServer interface {
 	// 双向 stream：cland 下发命令，cloudlet 回传结果

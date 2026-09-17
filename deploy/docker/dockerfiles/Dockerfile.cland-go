@@ -1,6 +1,6 @@
 # =============================================================================
 # CloudLand 主控服务 (Go gRPC 版)
-# 替代 Dockerfile.cloudland — 无需编译 SCI/C++
+# Builds the cland-go static binary
 # 构建: docker build -f dockerfiles/Dockerfile.cland-go -t cloudland-cland-go ../../
 # =============================================================================
 
@@ -26,7 +26,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && (userdel -r ubuntu 2>/dev/null || true) \
     && useradd -m -u 1000 -s /bin/bash cland
 
-# 复制 Go 二进制（单个静态文件，无需 SCI 库）
+# Single static Go binary
 COPY --from=builder /cland-go /opt/cloudland/bin/cland-go
 
 # 复制脚本（仍需要 scripts/ 用于 callback 本地执行）

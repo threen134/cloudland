@@ -45,7 +45,7 @@ cert = "/certs/cland/selfsigned.crt"
 [internal]
 listen = "0.0.0.0:5005"
 
-[sci]
+[cland]
 # cland-go gRPC 地址（host:port，不带 http://）
 endpoint = "${CLOUDLAND_HOST}:5006"
 token = "${GRPC_AUTH_TOKEN:-}"

@@ -89,14 +89,14 @@ function inst_status()
         if [ $n -eq 10 ]; then
             n=0
             inst_list=$(echo $inst_list)
-            echo "|:-COMMAND-:| inst_status.sh '$SCI_CLIENT_ID' '$inst_list'"
+            echo "|:-COMMAND-:| inst_status.sh '$NODE_ID' '$inst_list'"
             inst_list=""
         fi
         let n=$n+1
     done <<<$all_inst_list
     echo "$all_inst_list" >$inst_list_file
     inst_list=$(echo $inst_list)
-    [ -n "$inst_list" ] && echo "|:-COMMAND-:| inst_status.sh '$SCI_CLIENT_ID' '$inst_list'"
+    [ -n "$inst_list" ] && echo "|:-COMMAND-:| inst_status.sh '$NODE_ID' '$inst_list'"
 }
 
 function vlan_status()
@@ -118,7 +118,7 @@ function vlan_status()
         vlan_status_list="$vlan_status_list $var:$status:$first:$second"
     done
     vlan_status_list=$(echo $vlan_status_list | sed -e 's/^[ ]*//g')
-    [ -n "$vlan_status_list" ] && echo "|:-COMMAND-:| vlan_status.sh '$SCI_CLIENT_ID' '$vlan_status_list'"
+    [ -n "$vlan_status_list" ] && echo "|:-COMMAND-:| vlan_status.sh '$NODE_ID' '$vlan_status_list'"
     echo "$vlan_list" >old_vlan_list
 }
 
@@ -129,7 +129,7 @@ function router_status()
     router_list=$(ls router* 2>/dev/null)
     router_list=$(echo "$router_list $(sudo ip netns list | grep router | cut -d' ' -f1)" | xargs | sed 's/router-//g')
     [ "$router_list" = "$old_router_list" ] && return
-    [ -n "$router_list" ] && echo "|:-COMMAND-:| router_status.sh '$SCI_CLIENT_ID' '$router_list'"
+    [ -n "$router_list" ] && echo "|:-COMMAND-:| router_status.sh '$NODE_ID' '$router_list'"
     echo "$router_list" >old_router_list
 }
 
@@ -142,7 +142,7 @@ function check_system_router()
     if [ $? -ne 0 ]; then
         # 目录只由 cloudrc 的延迟日志按需创建，新节点上可能不存在；缺了它任务写不出去，router-0 永远不会重建
         sudo mkdir -p $async_job_dir
-        sudo -E bash -c "echo '|:-COMMAND-:|' system_router.sh \'$SCI_CLIENT_ID\' \'$HOSTNAME\' >$async_job_dir/system_router.done"
+        sudo -E bash -c "echo '|:-COMMAND-:|' system_router.sh \'$NODE_ID\' \'$HOSTNAME\' >$async_job_dir/system_router.done"
     fi
 }
 
@@ -171,7 +171,7 @@ function recover_loadbalancer()
     lb_flag_file=$run_dir/need_to_sync_lb
     boot_file=/proc/sys/kernel/random/boot_id
     diff $lb_flag_file $boot_file >/dev/null 2>&1 && return
-    echo "|:-COMMAND-:| recover_loadbalancer.sh '$SCI_CLIENT_ID'"
+    echo "|:-COMMAND-:| recover_loadbalancer.sh '$NODE_ID'"
     sudo cp $boot_file $lb_flag_file
 }
 
@@ -217,7 +217,7 @@ function sync_instance()
             done
         fi
         sudo virsh start inst-$inst_id >/dev/null
-        echo "|:-COMMAND-:| launch_vm.sh '$inst_id' 'running' '$SCI_CLIENT_ID' 'sync'"
+        echo "|:-COMMAND-:| launch_vm.sh '$inst_id' 'running' '$NODE_ID' 'sync'"
     done
     sudo cp $boot_file $flag_file
 }
@@ -306,7 +306,7 @@ function calc_resource()
     echo "'$cpu' '$total_cpu' '$memory' '$total_memory' '$disk' '$total_disk' '$state'" >/opt/cloudland/run/old_resource_list
     [ "$resource_list" = "$old_resource_list" ] && return
     cpu_model=$(lscpu | grep 'Model name:' | cut -d: -f2 | xargs)
-    echo "|:-COMMAND-:| hyper_status.sh '$SCI_CLIENT_ID' '$HOSTNAME' '$cpu' '$total_cpu' '$memory' '$total_memory' '$disk' '$total_disk' '$state' '$vtep_ip' '$ZONE_NAME' '$cpu_over_ratio' '$mem_over_ratio' '$disk_over_ratio' '$cpu_model'"
+    echo "|:-COMMAND-:| hyper_status.sh '$NODE_ID' '$HOSTNAME' '$cpu' '$total_cpu' '$memory' '$total_memory' '$disk' '$total_disk' '$state' '$vtep_ip' '$ZONE_NAME' '$cpu_over_ratio' '$mem_over_ratio' '$disk_over_ratio' '$cpu_model'"
 }
 
 calc_resource

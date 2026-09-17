@@ -42,7 +42,7 @@ for i in {1..1800}; do
 
         # 带上虚拟机实际状态：迁移期间心跳已上报过该虚拟机（clapi 因 migrating 跳过），之后状态不变就不会再上报
         vm_state=$(virsh domstate $vm_ID 2>/dev/null | head -1 | sed 's/shut off/shut_off/')
-        echo "|:-COMMAND-:| migrate_vm.sh '$migrate_ID' '$task_ID' '$ID' '$SCI_CLIENT_ID' '$state' 'vm_state=$vm_state'"
+        echo "|:-COMMAND-:| migrate_vm.sh '$migrate_ID' '$task_ID' '$ID' '$NODE_ID' '$state' 'vm_state=$vm_state'"
         exit 0
     fi
 done
@@ -56,5 +56,5 @@ virsh undefine --nvram $vm_ID
 rm -f ${cache_dir}/meta/${vm_ID}.iso
 rm -rf $xml_dir/$vm_ID
 rm -f $run_dir/${vm_ID}-$migrate_ID
-echo "|:-COMMAND-:| migrate_vm.sh '$migrate_ID' '$task_ID' '$ID' '$SCI_CLIENT_ID' '$state' 'cleanup target'"
+echo "|:-COMMAND-:| migrate_vm.sh '$migrate_ID' '$task_ID' '$ID' '$NODE_ID' '$state' 'cleanup target'"
 sync_vm $ID

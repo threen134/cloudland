@@ -21,7 +21,7 @@ func init() {
 }
 
 func HyperStatus(ctx context.Context, args []string) (status string, err error) {
-	//"|:-COMMAND-:| hyper_status.sh '$SCI_CLIENT_ID' '$HOSTNAME' '$cpu' '$total_cpu' '$memory' '$total_memory' '$disk' '$total_disk' '$state' '$vtep_ip' '$ZONE_NAME' '$cpu_over_rate' '$mem_over_rate' '$disk_over_rate' '$cpu_model'"
+	//"|:-COMMAND-:| hyper_status.sh '$NODE_ID' '$HOSTNAME' '$cpu' '$total_cpu' '$memory' '$total_memory' '$disk' '$total_disk' '$state' '$vtep_ip' '$ZONE_NAME' '$cpu_over_rate' '$mem_over_rate' '$disk_over_rate' '$cpu_model'"
 	logger.Ctx(ctx).Debugf("HyperStatus updates %+v", args)
 	ctx, db, newTransaction := StartTransaction(ctx)
 	defer func() {

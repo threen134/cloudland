@@ -211,7 +211,7 @@ virsh define $vm_xml
 virsh autostart $vm_ID --disable
 virsh start $vm_ID
 [ $? -eq 0 ] && state=running
-echo "|:-COMMAND-:| launch_vm.sh '$ID' '$state' '$SCI_CLIENT_ID' 'sync'"
+echo "|:-COMMAND-:| launch_vm.sh '$ID' '$state' '$NODE_ID' 'sync'"
 
 # check if the vm is windows and whether to change the rdp port
 os_code=$(jq -r '.os_code' <<< $metadata)

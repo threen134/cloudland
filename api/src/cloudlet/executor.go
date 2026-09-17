@@ -146,8 +146,8 @@ func (s *StreamSender) Send(msg *pb.CloudletMessage) error {
 	}
 }
 
-// CommandQueue runs jobs in arrival order. With one worker it matches the C++ cloudlet,
-// whose SCI handler thread executed one command at a time.
+// CommandQueue runs jobs in arrival order. With one worker (the default) a node runs one
+// command at a time.
 type CommandQueue struct {
 	jobs chan func()
 }
@@ -202,10 +202,10 @@ func ShouldExecute(req *pb.CommandRequest) bool {
 	return true
 }
 
-// CommandEnv returns the environment for scripts run on this node. SCI set SCI_CLIENT_ID
-// for the C++ cloudlet, and scripts still use it to name this hypervisor in callbacks.
+// CommandEnv returns the environment for scripts run on this node. Scripts name this
+// hypervisor in their callbacks with NODE_ID, so it is always set to the registered ID.
 func CommandEnv(nodeID int32, extra ...string) []string {
-	env := append(os.Environ(), "SCI_CLIENT_ID="+strconv.Itoa(int(nodeID)))
+	env := append(os.Environ(), "NODE_ID="+strconv.Itoa(int(nodeID)))
 	return append(env, extra...)
 }
 

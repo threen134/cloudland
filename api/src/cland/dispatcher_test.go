@@ -340,7 +340,7 @@ func TestStatusReporterTopology(t *testing.T) {
 		t.Fatal("topology report not delivered")
 	}
 
-	// Like C++ during SCI recovery, the topology is repeated while a node is offline.
+	// The topology is repeated while a node is offline.
 	waitTopologyIdle(t, reporter)
 	reporter.reportTopology(0, false)
 	expectTopology(t, requests, "1,n1,1\n2,n2,10\n")

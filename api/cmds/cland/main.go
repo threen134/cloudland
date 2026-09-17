@@ -3,7 +3,7 @@ Copyright <holder> All Rights Reserved.
 
 SPDX-License-Identifier: Apache-2.0
 
-cland-go: gRPC-based cland daemon replacing C++ cloudland + scidv1.
+cland-go: the control plane daemon that dispatches commands to cloudlet-go agents over gRPC.
 */
 
 package main

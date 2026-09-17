@@ -5,7 +5,7 @@
 # 一、脚本初始化与参数校验
 # 切换到脚本所在目录
 cd $(dirname $0) 
-# 加载外部环境变量/配置文件（如 SCI_CLIENT_ID、HOSTNAME 等）
+# 加载外部环境变量/配置文件（如 NODE_ID、HOSTNAME 等）
 source ../cloudrc 
 
 # 校验参数：必须传入至少1个参数（router名称）
@@ -37,7 +37,7 @@ suffix=${router/router-/}
 # 检查默认路由器router-0的默认路由：若不存在，调用system_router.sh重建
 def_route=$(ip netns exec router-0 ip route | grep default)
 if [ -z "$def_route" ]; then
-    echo "|:-COMMAND-:| system_router.sh '$SCI_CLIENT_ID' '$HOSTNAME'"
+    echo "|:-COMMAND-:| system_router.sh '$NODE_ID' '$HOSTNAME'"
 fi
 
 # 网络命名空间（netns）：Linux 内核特性，每个 netns 有独立的网卡、IP、路由表、iptables 规则，实现网络隔离（类似 “独立的网络环境”）。

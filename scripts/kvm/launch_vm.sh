@@ -297,7 +297,7 @@ jq .vlans <<< $metadata | ./sync_nic_info.sh "$ID" "$vm_name" "$os_code"
 virsh start $vm_ID
 #判断上一条命令（virsh start $vm_ID）的执行结果，若启动成功则将虚拟机状态变量state设为running
 [ $? -eq 0 ] && state=running
-echo "|:-COMMAND-:| $(basename $0) '$ID' '$state' '$SCI_CLIENT_ID' 'init'"
+echo "|:-COMMAND-:| $(basename $0) '$ID' '$state' '$NODE_ID' 'init'"
 
 # check if the vm is windows and whether to change the rdp port
 #判断目标虚拟机（VM）是否为 Windows 系统，若是则尝试读取指定的 RDP 端口号，

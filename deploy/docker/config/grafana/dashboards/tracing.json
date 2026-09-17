@@ -305,7 +305,7 @@
       "id": 14,
       "type": "timeseries",
       "title": "计算节点脚本执行 P95",
-      "description": "cloudlet 执行 SCI 下发脚本的耗时（span 名 execute <script>），只包含被采样的请求链路",
+      "description": "cloudlet 执行主控下发脚本的耗时（span 名 execute <script>），只包含被采样的请求链路",
       "gridPos": { "x": 0, "y": 50, "w": 24, "h": 8 },
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "fieldConfig": { "defaults": { "unit": "ms" }, "overrides": [] },

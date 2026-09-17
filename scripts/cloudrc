@@ -272,7 +272,7 @@ function async_exec()
 function subnet_gw_mac()
 {
     local mac_map=$(printf "%06x" $1)
-    local hyper_map=$(printf "%04x" $(($SCI_CLIENT_ID & 0xffff)))
+    local hyper_map=$(printf "%04x" $(($NODE_ID & 0xffff)))
     echo 52:${mac_map:0:2}:${mac_map:2:2}:${mac_map:4:2}:${hyper_map:0:2}:${hyper_map:2:2}
 }
 

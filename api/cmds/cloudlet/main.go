@@ -3,7 +3,7 @@ Copyright <holder> All Rights Reserved.
 
 SPDX-License-Identifier: Apache-2.0
 
-cloudlet-go: gRPC-based cloudlet agent replacing C++ cloudlet + scidv1 dependency.
+cloudlet-go: the compute node agent that connects to cland-go over gRPC and runs its commands.
 Runs on each compute node as a systemd service.
 
 Usage:
@@ -49,12 +49,9 @@ func main() {
 		clandAddr = "localhost:5006"
 	}
 	nodeIDStr := os.Getenv("NODE_ID")
-	if nodeIDStr == "" {
-		nodeIDStr = os.Getenv("SCI_CLIENT_ID") // backward compat
-	}
 	parsedID, err := strconv.ParseInt(nodeIDStr, 10, 32)
 	if err != nil || parsedID < 0 {
-		log.Fatalf("Invalid NODE_ID (or SCI_CLIENT_ID): %s", nodeIDStr)
+		log.Fatalf("Invalid NODE_ID: %q", nodeIDStr)
 	}
 	nodeID := int32(parsedID)
 	hostname, _ := os.Hostname()

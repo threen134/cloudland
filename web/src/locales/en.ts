@@ -1512,7 +1512,7 @@ export default {
             vlanDevice: 'VLAN Device',
             privateVlanDevice: 'Private VLAN Device',
             tooltips: {
-                networkDevice: 'Carries VXLAN tunnel and SCI management communication (required)',
+                networkDevice: 'Physical NIC carrying the VXLAN tunnel and management traffic (required)',
                 vlanDevice: 'Carries north-south 802.1Q VLAN traffic, default same as Network Device',
                 privateVlanDevice: 'Carries east-west RFC 1918 private VLAN traffic, default same as VLAN Device',
             },

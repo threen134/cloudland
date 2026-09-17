@@ -20,7 +20,7 @@ echo 'cland ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/cland
 # 改变 cland 用户的密码
 chown -R cland.cland $cland_root_dir
 # 初始化网络配置文件 netconf.yml（若不存在则从示例文件复制）；
-mkdir $cland_root_dir/{bin,deploy,etc,lib6,log,run,sci,scripts,src,web,cache} $cland_root_dir/cache/{image,instance,dnsmasq,meta,router,volume,xml} 2>/dev/null
+mkdir $cland_root_dir/{bin,deploy,etc,log,run,scripts,web,cache} $cland_root_dir/cache/{image,instance,dnsmasq,meta,router,volume,xml} 2>/dev/null
 [ ! -s "$net_conf" ] && cp ${net_conf}.example $net_conf
 # clapi/cland-go/cloudlet-go 共用的 gRPC 令牌：为空时生成（重复执行沿用已有值）
 if ! grep -qE '^grpc_auth_token: *"?[0-9A-Za-z]' "$net_conf"; then
@@ -48,7 +48,7 @@ if [ -z "$CURRENT_GO" ] || [ "$(printf '%s\n%s\n' "$GO_VERSION" "$CURRENT_GO" | 
 fi
 
 
-# Build cland-go / cloudlet-go（Go gRPC 版，取代 C++ cloudland + SCI）
+# Build cland-go / cloudlet-go
 function build_cland()
 {
     cd $cland_root_dir/api

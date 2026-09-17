@@ -1,6 +1,6 @@
 #!/bin/bash
 # CloudLand 主控容器启动脚本 (Go gRPC 版)
-# 替代 cloudland-entrypoint.sh — 无需启动 scidv1
+# Prepares the container and starts cland-go
 
 set -e
 

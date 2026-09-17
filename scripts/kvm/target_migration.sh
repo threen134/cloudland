@@ -29,7 +29,7 @@ if [ -z "$wds_address" ]; then
     # 目标节点只准备 config drive、UEFI NVRAM 和网卡，域定义随迁移从源节点带过来
     if [ "$migration_type" != "warm" ]; then
         rmdir $xml_dir/$vm_ID 2>/dev/null
-        echo "|:-COMMAND-:| migrate_vm.sh '$migrate_ID' '$task_ID' '$ID' '$SCI_CLIENT_ID' 'not_supported' 'cold migration requires shared storage'"
+        echo "|:-COMMAND-:| migrate_vm.sh '$migrate_ID' '$task_ID' '$ID' '$NODE_ID' 'not_supported' 'cold migration requires shared storage'"
         exit 0
     fi
     ./build_meta.sh "$vm_ID" "$vm_name" <<< $md >/dev/null 2>&1
@@ -41,7 +41,7 @@ if [ -z "$wds_address" ]; then
     # completed 后 LaunchVM sync 会再执行一次并正常回调
     jq .vlans <<< $metadata | ./sync_nic_info.sh "$ID" "$vm_name" "$os_code" >/dev/null
     ./generate_vm_instance_map.sh add $vm_ID >/dev/null 2>&1
-    echo "|:-COMMAND-:| migrate_vm.sh '$migrate_ID' '$task_ID' '$ID' '$SCI_CLIENT_ID' 'target_prepared' ''"
+    echo "|:-COMMAND-:| migrate_vm.sh '$migrate_ID' '$task_ID' '$ID' '$NODE_ID' 'target_prepared' ''"
     exit 0
 fi
 vhost_queue_num=1
@@ -57,7 +57,7 @@ volumes=$(jq -r .volumes <<< $metadata)
 if [ "$migration_type" = "cold" ]; then
     ./blacklist_hyper_vhost.sh $ID $source_hyper <<< $volumes
     if [ $? -ne 0 ]; then
-        echo "|:-COMMAND-:| migrate_vm.sh '$migrate_ID' '$task_ID' '$ID' '$SCI_CLIENT_ID' '$state' 'failed to put vhost into blacklist'"
+        echo "|:-COMMAND-:| migrate_vm.sh '$migrate_ID' '$task_ID' '$ID' '$NODE_ID' '$state' 'failed to put vhost into blacklist'"
         exit 1
     fi
 fi
@@ -77,7 +77,7 @@ while [ $i -lt $nvolume ]; do
     uss_ret=$(wds_curl PUT "api/v2/sync/block/vhost/bind_uss" "{\"vhost_id\": \"$vhost_id\", \"uss_gw_id\": \"$uss_id\", \"lun_id\": \"$volume_id\", \"is_snapshot\": false}")
     ret_code=$(echo $uss_ret | jq -r .ret_code)
     if [ "$ret_code" != "0" ]; then
-        echo "|:-COMMAND-:| migrate_vm.sh '$migrate_ID' '$task_ID' '$ID' '$SCI_CLIENT_ID' '$state' 'failed to bind uss for vhost'"
+        echo "|:-COMMAND-:| migrate_vm.sh '$migrate_ID' '$task_ID' '$ID' '$NODE_ID' '$state' 'failed to bind uss for vhost'"
 	exit 1
     fi
     if [ "$booting" = "true" ]; then
@@ -169,4 +169,4 @@ if [ "$state" != "failed" ]; then
     ./generate_vm_instance_map.sh add $vm_ID
 fi
 
-echo "|:-COMMAND-:| migrate_vm.sh '$migrate_ID' '$task_ID' '$ID' '$SCI_CLIENT_ID' '$state' ''"
+echo "|:-COMMAND-:| migrate_vm.sh '$migrate_ID' '$task_ID' '$ID' '$NODE_ID' '$state' ''"

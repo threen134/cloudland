@@ -246,7 +246,7 @@ DNS_UPSTREAM_VAL=$(grep '^DNS_UPSTREAM=' .env | cut -d'=' -f2- || echo "")
 mkdir -p ../dns/hosts ../dns/conf.d
 [ -f ../dns/hosts/hyper-hosts ] || touch ../dns/hosts/hyper-hosts
 # 注册控制节点自身 hostname 到 dnsmasq
-# SCI frontend 初始化时需要通过 DNS 解析自身 hostname，否则会启动失败
+# 同时注册 MinIO、clapi 的内部域名，计算节点经本机 dnsmasq 解析
 CTRL_HOSTNAME=$(hostname)
 INTERNAL_IP_VAL=$(grep '^INTERNAL_IP=' .env | cut -d'=' -f2-)
 if [ -n "$CTRL_HOSTNAME" ] && [ -n "$INTERNAL_IP_VAL" ]; then

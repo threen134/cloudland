@@ -3,7 +3,7 @@
 > 轻量级 IaaS 云平台 —— 高性能、可自愈、极简运维
 > Moved from https://github.com/IBM/cloudland
 
-CloudLand 是一个轻量级的 **基础设施即服务 (IaaS)** 框架，用于管理虚拟机实例、软件定义网络 (SDN)、存储卷等云基础设施资源。得益于 HPC 领域的 SCI 通信框架，单集群可支持超过 **10,000 个 Hypervisor 节点**，适合作为大规模公有云的底座。
+CloudLand 是一个轻量级的 **基础设施即服务 (IaaS)** 框架，用于管理虚拟机实例、软件定义网络 (SDN)、存储卷等云基础设施资源。
 
 除内置的多租户能力外，CloudLand 也支持与第三方认证/授权系统对接，同样适用于私有云与超融合 (HCI) 场景。
 
@@ -11,8 +11,7 @@ CloudLand 是一个轻量级的 **基础设施即服务 (IaaS)** 框架，用于
 
 - **轻量架构** — 组件精简，控制面容器化交付，计算面裸机部署保留原生 IO 性能。
 - **低学习门槛** — 开发与运维都能快速上手，部署仅需一条命令。
-- **高性能消息** — 基于 SCI 的树形消息总线，内部消息投递快速可靠。
-- **HPC 级扩展** — Hypervisor 按树形层级组织，agent 按需拉起，横向扩展能力强。
+- **可靠的节点通信** — 计算节点 agent 主动连接控制面，基于 gRPC 双向流下发命令、回传结果，断线自动重连。
 - **自愈稳定** — 自动故障恢复，支持 VRRP 主备高可用。
 - **可观测性** — 内置 Prometheus / Grafana / Loki / Tempo 与 OpenTelemetry 全链路追踪。
 - **高度可定制** — 易于扩展，便于实现自定义特性。
@@ -45,9 +44,9 @@ graph TB
     USER --> NGINX --> CPGW --> CLAPI
     CPGW --> PG
     CLAPI --> CLAND
-    CLAND -->|SCI / gRPC| CL1
-    CLAND -->|SCI / gRPC| CL2
-    CLAND -->|SCI / gRPC| CLN
+    CL1 -->|gRPC| CLAND
+    CL2 -->|gRPC| CLAND
+    CLN -->|gRPC| CLAND
     CL1 --> KVM["KVM / QEMU · Open vSwitch"]
 ```
 
@@ -58,8 +57,6 @@ graph TB
 | 目录 | 说明 |
 | :--- | :--- |
 | `api/` | Go 实现的 REST API (`clapi`)、Go 版 `cland` / `cloudlet`、告警规则管理服务 |
-| `src/` | C++ 实现的控制面 `cloudland` 与计算节点代理 `cloudlet` |
-| `sci/` | SCI 通信框架（HPC 消息总线），控制面与计算节点之间的传输层 |
 | `cpgateway-go/` | Go 重写的中央网关：认证、组织管理、多 Region 代理 |
 | `web/` | Vue 3 + TypeScript 管理控制台 |
 | `docs/` | VitePress 文档站（指南 / 架构 / 部署 / API） |
@@ -112,10 +109,6 @@ cd api && make setup && make
 
 # 中央网关
 cd cpgateway-go && make
-
-# C++ 控制面与计算节点代理（依赖已安装的 SCI）
-cd sci && ./configure && make && sudo make install
-cd src && make
 
 # 管理控制台
 cd web && npm install && npm run dev

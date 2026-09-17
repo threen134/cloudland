@@ -51,10 +51,10 @@ var (
 	clientOnce  sync.Once
 )
 
-// clandEndpoint returns sci.endpoint as a gRPC host:port target. Configs written for the
-// C++ HTTP API carry an http:// URL, which the gRPC resolver rejects.
+// clandEndpoint returns cland.endpoint as a gRPC host:port target. A URL with a scheme or
+// trailing slash is accepted too and trimmed, since the gRPC resolver rejects it.
 func clandEndpoint() string {
-	endpoint := strings.TrimSpace(viper.GetString("sci.endpoint"))
+	endpoint := strings.TrimSpace(viper.GetString("cland.endpoint"))
 	endpoint = strings.TrimPrefix(endpoint, "http://")
 	endpoint = strings.TrimPrefix(endpoint, "https://")
 	endpoint = strings.TrimSuffix(endpoint, "/")
@@ -64,12 +64,12 @@ func clandEndpoint() string {
 	return endpoint
 }
 
-// ClandToken returns the shared gRPC token for cland; GRPC_AUTH_TOKEN overrides sci.token.
+// ClandToken returns the shared gRPC token for cland; GRPC_AUTH_TOKEN overrides cland.token.
 func ClandToken() string {
 	if token := os.Getenv("GRPC_AUTH_TOKEN"); token != "" {
 		return token
 	}
-	return viper.GetString("sci.token")
+	return viper.GetString("cland.token")
 }
 
 func getClandClient() pb.ClandServiceClient {

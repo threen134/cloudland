@@ -25,7 +25,7 @@
 #
 # 服务清单:
 #   postgres        - PostgreSQL 数据库 (profile: dev)
-#   cloudland       - 主控服务 (SCI 通信) (profile: region)
+#   cloudland       - 主控服务 cland-go (gRPC :5006，计算节点接入) (profile: region)
 #   clapi           - REST API (统一 API 服务) (profile: region)
 #   consoleproxy    - VNC 控制台代理 (profile: region)
 #   cpgateway       - 控制平面网关 (认证/代理/Region管理) (profile: dev, full)

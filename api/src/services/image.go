@@ -137,7 +137,7 @@ func (a *ImageAdminService) Create(ctx context.Context, osCode, name, osVersion,
 	// create with default pool id
 	prefix := strings.Split(image.UUID, "-")[0]
 
-	// 非 WDS 且 S3 已启用：非 capture 走 Go 直传 MinIO；capture 仍经 SCI 但附带上传 URL
+	// Non-WDS with S3 enabled: uploads go straight to MinIO from clapi; a capture runs on the node and uploads back through clapi
 	// WDS 路径（defaultPool != ""）保持原 shell 行为
 	if defaultPool == "" && S3Enabled() {
 		if instID == 0 {
@@ -527,7 +527,7 @@ func (a *ImageAdminService) Delete(ctx context.Context, image *model.Image) (err
 
 	if image.Status == "available" {
 		if total > 0 {
-			// WDS 路径：通过 SCI 派发 clear_image.sh 清理各 storage pool 的卷
+			// WDS: clear_image.sh removes the volume from every storage pool
 			for _, storage := range storages {
 				if storage.Status != model.StorageStatusSynced {
 					continue
@@ -540,7 +540,7 @@ func (a *ImageAdminService) Delete(ctx context.Context, image *model.Image) (err
 				}
 			}
 		} else if !S3Configured() {
-			// legacy 本地模式（未配置 S3）：走原 SCI + shell（S3 分支已在上面处理，S3 未就绪时已在前面拒绝）
+			// Legacy local mode (S3 not configured): clear_image.sh removes the node-local copies
 			command := fmt.Sprintf("/opt/cloudland/scripts/backend/clear_image.sh '%d' '%s' '%s' '%s'", image.ID, ShellEscape(prefix), ShellEscape(image.Format), ShellEscape(""))
 			err = HyperExecute(ctx, control, command)
 			if err != nil {

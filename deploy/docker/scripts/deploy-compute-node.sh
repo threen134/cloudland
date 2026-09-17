@@ -61,7 +61,7 @@ VLAN_DEVICE="${VLAN_DEVICE:-$NETWORK_DEVICE}"                                   
 PRIVATE_VLAN_DEVICE="${PRIVATE_VLAN_DEVICE:-$VLAN_DEVICE}"                      # 物理网卡名 (跑 RFC 1918 私有 VLAN，可选)
 DOMAIN="${DOMAIN:?错误: 必须设置 DOMAIN}"                                         # 域名
 DNS_SERVER="${DNS_SERVER:?错误: 必须设置 DNS_SERVER}"                             # DNS
-NODE_ID="${NODE_ID:-${SCI_CLIENT_ID:?错误: 必须设置 NODE_ID (或 SCI_CLIENT_ID)}}" # 计算节点编号（唯一递增）
+NODE_ID="${NODE_ID:?错误: 必须设置 NODE_ID}"                                   # 计算节点编号（即控制面分配的 hostid）
 ZONE_NAME="${ZONE_NAME:-zone0}"                       # 可用区名称
 VIRT_TYPE="${VIRT_TYPE:-kvm-x86_64}"                  # 虚拟化类型
 CLOUDLAND_DIR="${CLOUDLAND_DIR:-/opt/cloudland}"      # CloudLand 安装目录
@@ -158,7 +158,7 @@ chown cland:cland "$CLAND_HOME"
 echo 'cland ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/cland
 
 # Ubuntu 26.04 默认 sudo 为 sudo-rs，会忽略 sudo -E；cloudlet-go 与 scripts/kvm 依赖 -E 传递
-# SCI_CLIENT_ID/TRACEPARENT 等环境变量（丢失后回调主机 ID 为空，clapi 返回 400），切回经典 sudo
+# NODE_ID/TRACEPARENT 等环境变量（丢失后回调主机 ID 为空，clapi 返回 400），切回经典 sudo
 if readlink -f /usr/bin/sudo | grep -q 'sudo-rs\|cargo'; then
     # 精简镜像可能只装了 sudo-rs，经典 sudo 由 sudo 包提供（/usr/bin/sudo.ws）
     [ -x /usr/bin/sudo.ws ] || apt-get install -y sudo
@@ -434,9 +434,8 @@ mkdir -p /etc/sysconfig
 # --- cloudlet-go 环境变量 ---
 cat > /etc/sysconfig/cloudlet <<EOF
 CLAND_ENDPOINT=${CONTROLLER_IP}:5006
+# 计算节点编号（控制面分配的 hostid）；cloudlet-go 执行脚本时注入，脚本在回调中用它标识本节点
 NODE_ID=$NODE_ID
-# 脚本通过 SCI_CLIENT_ID 在回调中标识本节点（cloudlet-go 执行脚本时也会注入）
-SCI_CLIENT_ID=$NODE_ID
 ZONE_NAME=$ZONE_NAME
 VIRT_TYPE=$VIRT_TYPE
 GRPC_AUTH_TOKEN=${GRPC_AUTH_TOKEN:-}
