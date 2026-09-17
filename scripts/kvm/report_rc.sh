@@ -181,6 +181,12 @@ function check_lb_process()
     sudo bash $base_dir/check_lb_process.sh >/dev/null 2>&1
 }
 
+function report_lb_health()
+{
+    # Backend health check results of the load balancers this node is master of; prints callback lines only
+    sudo bash $base_dir/report_lb_health.sh 2>/dev/null
+}
+
 function sync_instance()
 {
     flag_file=$run_dir/need_to_sync
@@ -307,6 +313,7 @@ calc_resource
 sync_instance
 recover_loadbalancer
 check_lb_process
+report_lb_health
 sync_delayed_job
 check_system_router
 #probe_arp >/dev/null 2>&1

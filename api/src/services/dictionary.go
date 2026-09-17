@@ -12,6 +12,8 @@ import (
 	"api/src/model"
 	"context"
 	"fmt"
+
+	"gorm.io/gorm"
 )
 
 var DictionaryAdmin = &DictionaryAdminService{}
@@ -76,8 +78,18 @@ func (a *DictionaryAdminService) Get(ctx context.Context, id int64) (dictionary 
 	return
 }
 
-func (a *DictionaryAdminService) List(ctx context.Context, offset, limit int64, order string, query string) (total int64, dictionaries []*model.Dictionary, err error) {
-	logger.Ctx(ctx).Infof("ENTER DictionaryAdmin.List: offset=%d, limit=%d, order=%s, query=%s", offset, limit, order, query)
+// DictionaryFilter holds the list filters: Name matches as a substring, the others exactly; empty fields are ignored
+type DictionaryFilter struct {
+	Name     string
+	Value    string
+	Category string
+	Subtype1 string
+	Subtype2 string
+	Subtype3 string
+}
+
+func (a *DictionaryAdminService) List(ctx context.Context, offset, limit int64, order string, filter DictionaryFilter) (total int64, dictionaries []*model.Dictionary, err error) {
+	logger.Ctx(ctx).Infof("ENTER DictionaryAdmin.List: offset=%d, limit=%d, order=%s, filter=%+v", offset, limit, order, filter)
 	defer func() {
 		if err != nil {
 			logger.Ctx(ctx).Errorf("EXIT DictionaryAdmin.List: error=%v", err)
@@ -97,16 +109,28 @@ func (a *DictionaryAdminService) List(ctx context.Context, offset, limit int64, 
 	}
 
 	dictionaries = []*model.Dictionary{}
-	q := query
-	if q != "" {
-		q = fmt.Sprintf("name like '%%%s%%'", q)
+	// Filters are bound as parameters: they come straight from the request
+	scope := func(tx *gorm.DB) *gorm.DB {
+		tx = dbs.Contains(filter.Name, "name")(tx.Where(orgQuery, orgArgs...))
+		for _, cond := range [][2]string{
+			{"value", filter.Value},
+			{"category", filter.Category},
+			{"subtype1", filter.Subtype1},
+			{"subtype2", filter.Subtype2},
+			{"subtype3", filter.Subtype3},
+		} {
+			if cond[1] != "" {
+				tx = tx.Where(cond[0]+" = ?", cond[1])
+			}
+		}
+		return tx
 	}
-	if err = db.Model(&model.Dictionary{}).Where(orgQuery, orgArgs...).Where(q).Count(&total).Error; err != nil {
+	if err = db.Model(&model.Dictionary{}).Scopes(scope).Count(&total).Error; err != nil {
 		logger.Ctx(ctx).Errorf("DictionaryAdmin.List: count error, err=%v", err)
 		return 0, nil, NewCLError(ErrSQLSyntaxError, "Failed to count dictionaries", err)
 	}
 	db = dbs.Sortby(db.Offset(int(offset)).Limit(int(limit)), order)
-	if err = db.Where(orgQuery, orgArgs...).Where(q).Find(&dictionaries).Error; err != nil {
+	if err = db.Scopes(scope).Find(&dictionaries).Error; err != nil {
 		logger.Ctx(ctx).Errorf("DictionaryAdmin.List: find error, err=%v", err)
 		return 0, nil, NewCLError(ErrSQLSyntaxError, "Failed to find dictionaries", err)
 	}

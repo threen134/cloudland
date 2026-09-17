@@ -81,16 +81,13 @@ func (a *HyperAdmin) List(ctx context.Context, offset, limit int64, order, query
 	if order == "" {
 		order = "hostid"
 	}
-	if query != "" {
-		query = fmt.Sprintf("hostname like '%%%s%%'", query)
-	}
 
 	hypers = []*model.Hyper{}
-	if err = db.Model(&model.Hyper{}).Where("hostid >= 0").Where(query).Count(&total).Error; err != nil {
+	if err = db.Model(&model.Hyper{}).Where("hostid >= 0").Scopes(dbs.Contains(query, "hostname")).Count(&total).Error; err != nil {
 		return 0, nil, NewCLError(ErrSQLSyntaxError, "Failed to count hypervisors", err)
 	}
 	db = dbs.Sortby(db.Offset(int(offset)).Limit(int(limit)), order)
-	if err = db.Preload("Zone").Where("hostid >= 0").Where(query).Find(&hypers).Error; err != nil {
+	if err = db.Preload("Zone").Where("hostid >= 0").Scopes(dbs.Contains(query, "hostname")).Find(&hypers).Error; err != nil {
 		return 0, nil, NewCLError(ErrSQLSyntaxError, "Failed to retrieve hypervisors", err)
 	}
 	// GORM 链式调用复用同一 Statement，沿用 db 会带上 Preload 与过滤条件，取新会话再查关联记录
@@ -222,7 +219,7 @@ func (a *HyperAdmin) Update(ctx context.Context, hyper *model.Hyper) (err error)
 		// Call the script to update hypervisor status
 		control := fmt.Sprintf("inter=%d", hyperInDB.Hostid)
 		command := fmt.Sprintf("/opt/cloudland/scripts/backend/update_hyper.sh '%d' '%s' '%d' '%f' '%f' '%f'",
-			hyperInDB.Status, hyperInDB.Zone.Name, restartCloudlet, hyperInDB.CpuOverRate, hyperInDB.MemOverRate, hyperInDB.DiskOverRate)
+			hyperInDB.Status, ShellEscape(hyperInDB.Zone.Name), restartCloudlet, hyperInDB.CpuOverRate, hyperInDB.MemOverRate, hyperInDB.DiskOverRate)
 		err = HyperExecute(ctx, control, command)
 		if err != nil {
 			logger.Ctx(ctx).Errorf("Failed to call script update hyper %+v", err)

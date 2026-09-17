@@ -15,7 +15,7 @@ mkdir -p $image_cache
 image=$image_cache/$image_name
 # -f：HTTP 4xx/5xx 视为失败；-L：跟随跳转（镜像站常返回 302）。不限总时长（大镜像可能下载数小时）：
 # 连续 5 分钟低于 1KB/s 视为卡住并中止；只对开始后 5 分钟内的快速失败（DNS、连接、5xx）重试，避免从头重下大文件
-inet_access curl -fsSL -k --connect-timeout 30 --speed-time 300 --speed-limit 1024 --retry 2 --retry-max-time 300 $url -o $image
+inet_access curl -fsSL -k --connect-timeout 30 --speed-time 300 --speed-limit 1024 --retry 2 --retry-max-time 300 "$url" -o "$image"
 curl_rc=$?
 
 if [ $curl_rc -ne 0 ] || [ ! -s "$image" ]; then

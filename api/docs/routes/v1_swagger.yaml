@@ -173,6 +173,8 @@ definitions:
         maxLength: 32
         minLength: 2
         type: string
+      ssl:
+        type: boolean
     required:
     - name
     type: object
@@ -198,6 +200,10 @@ definitions:
         type: string
       endpoint:
         type: string
+      health:
+        description: 'Health check result from the master haproxy: up, down, or unknown
+          when not reported yet'
+        type: string
       id:
         type: string
       name:
@@ -209,6 +215,8 @@ definitions:
           OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to
           release quota only when the caller's org actually owns the deleted resource
         type: string
+      ssl:
+        type: boolean
       status:
         type: string
       updated_at:
@@ -1548,11 +1556,6 @@ definitions:
     type: object
   apis.LoadBalancerPatchPayload:
     properties:
-      action:
-        enum:
-        - enable
-        - disable
-        type: string
       description:
         maxLength: 255
         type: string

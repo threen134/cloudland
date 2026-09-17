@@ -216,6 +216,10 @@ func (v *InstanceAPI) SetUserPassword(c *gin.Context) {
 		ErrorResponse(c, http.StatusBadRequest, "Invalid input JSON", err)
 		return
 	}
+	if err = validateGuestCredentials(payload.UserName, payload.Password); err != nil {
+		ErrorResponse(c, http.StatusBadRequest, "Invalid user name or password", NewCLError(ErrInvalidParameter, err.Error(), nil))
+		return
+	}
 	err = instanceAdmin.SetUserPassword(ctx, instance.ID, payload.UserName, payload.Password)
 	if err != nil {
 		logger.Ctx(ctx).Errorf("Set user password failed, %+v", err)

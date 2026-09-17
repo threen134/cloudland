@@ -59,7 +59,8 @@ type Backend struct {
 	BackendAddr string `gorm:"uniqueIndex:idx_listener_be;type:varchar(128)"`
 	Status      string `gorm:"type:varchar(32)"`
 	SSL         bool
-	OwnerInfo   *Organization `gorm:"-"` /* Transient: populated for SystemAdmin list view */
+	Health      string        `gorm:"type:varchar(16)"` /* Health check result reported by the master haproxy: up, down, or empty when unknown */
+	OwnerInfo   *Organization `gorm:"-"`                /* Transient: populated for SystemAdmin list view */
 }
 
 func init() {

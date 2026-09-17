@@ -275,7 +275,7 @@ func (a *ConsistencyGroupAdmin) Create(ctx context.Context, name, description st
 	cgName := fmt.Sprintf("cg_%s", cg.UUID)
 	control := "inter="
 	command := fmt.Sprintf("/opt/cloudland/scripts/backend/create_cg_wds.sh '%d' '%d' '%s' '%s'",
-		task.ID, cg.ID, cgName, volumeWDSIDJSON)
+		task.ID, cg.ID, ShellEscape(cgName), ShellEscape(volumeWDSIDJSON))
 	err = HyperExecute(ctx, control, command)
 	if err != nil {
 		logger.Ctx(ctx).Errorf("Failed to execute create CG script: %+v", err)
@@ -456,7 +456,7 @@ func (a *ConsistencyGroupAdmin) Delete(ctx context.Context, id int64) (err error
 	// 执行 WDS 脚本删除一致性组
 	control := "inter="
 	command := fmt.Sprintf("/opt/cloudland/scripts/backend/delete_cg_wds.sh '%d' '%s'",
-		cg.ID, cg.WdsCgID)
+		cg.ID, ShellEscape(cg.WdsCgID))
 	err = HyperExecute(ctx, control, command)
 	if err != nil {
 		logger.Ctx(ctx).Errorf("Failed to execute delete CG script: %+v", err)
@@ -674,7 +674,7 @@ func (a *ConsistencyGroupAdmin) AddVolumes(ctx context.Context, id int64, volume
 	// 执行 WDS 脚本向一致性组添加卷
 	control := "inter="
 	command := fmt.Sprintf("/opt/cloudland/scripts/backend/add_volumes_to_cg_wds.sh '%d' '%s' '%s'",
-		cg.ID, cg.WdsCgID, volumeWDSIDJSON)
+		cg.ID, ShellEscape(cg.WdsCgID), ShellEscape(volumeWDSIDJSON))
 	err = HyperExecute(ctx, control, command)
 	if err != nil {
 		logger.Ctx(ctx).Errorf("Failed to execute add volumes to CG script: %+v", err)
@@ -796,7 +796,7 @@ func (a *ConsistencyGroupAdmin) RemoveVolume(ctx context.Context, id int64, volu
 	volumeWDSIDJSON := string(volumeWDSIDJSONBytes)
 	control := "inter="
 	command := fmt.Sprintf("/opt/cloudland/scripts/backend/remove_volumes_from_cg_wds.sh '%d' '%s' '%s'",
-		cg.ID, cg.WdsCgID, volumeWDSIDJSON)
+		cg.ID, ShellEscape(cg.WdsCgID), ShellEscape(volumeWDSIDJSON))
 	err = HyperExecute(ctx, control, command)
 	if err != nil {
 		logger.Ctx(ctx).Errorf("Failed to execute remove volume from CG script: %+v", err)
@@ -997,7 +997,7 @@ func (a *ConsistencyGroupAdmin) CreateSnapshot(ctx context.Context, cgUUID strin
 	cg_snapshot_Name := fmt.Sprintf("cg_snap_%s", snapshot.UUID)
 	control := "inter="
 	command := fmt.Sprintf("/opt/cloudland/scripts/backend/create_cg_snapshot_wds.sh '%d' '%d' '%s' '%s'",
-		cg.ID, snapshot.ID, cg_snapshot_Name, cg.WdsCgID)
+		cg.ID, snapshot.ID, ShellEscape(cg_snapshot_Name), ShellEscape(cg.WdsCgID))
 	err = HyperExecute(ctx, control, command)
 	if err != nil {
 		logger.Ctx(ctx).Errorf("Failed to execute create CG snapshot script: %v", err)
@@ -1098,7 +1098,7 @@ func (a *ConsistencyGroupAdmin) DeleteSnapshot(ctx context.Context, cgUUID, snap
 	// Parameters: cg_snapshot_ID, wds_snap_id
 	control := "inter="
 	command := fmt.Sprintf("/opt/cloudland/scripts/backend/delete_cg_snapshot_wds.sh '%d' '%s'",
-		snapshot.ID, snapshot.WdsSnapID)
+		snapshot.ID, ShellEscape(snapshot.WdsSnapID))
 	err = HyperExecute(ctx, control, command)
 	if err != nil {
 		logger.Ctx(ctx).Errorf("Failed to execute delete CG snapshot script: %v", err)
@@ -1281,7 +1281,7 @@ func (a *ConsistencyGroupAdmin) RestoreSnapshot(ctx context.Context, cgUUID, sna
 	// Parameters: cg_snapshot_ID, cg_ID, wds_cg_id, wds_snap_id, volumes_json
 	control := "inter="
 	command := fmt.Sprintf("/opt/cloudland/scripts/backend/restore_cg_snapshot_wds.sh '%d' '%d' '%s' '%s' '%s'",
-		snapshot.ID, cg.ID, cg.WdsCgID, snapshot.WdsSnapID, string(volumesJSON))
+		snapshot.ID, cg.ID, ShellEscape(cg.WdsCgID), ShellEscape(snapshot.WdsSnapID), ShellEscape(string(volumesJSON)))
 	err = HyperExecute(ctx, control, command)
 	if err != nil {
 		logger.Ctx(ctx).Errorf("Failed to execute restore CG snapshot script: %v", err)

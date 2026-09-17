@@ -9,7 +9,6 @@ package apis
 
 import (
 	"context"
-	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -420,10 +419,8 @@ func (v *IpGroupAPI) List(c *gin.Context) {
 		ErrorResponse(c, http.StatusBadRequest, "Invalid query offset or limit", err)
 		return
 	}
-	if queryStr != "" {
-		logger.Ctx(ctx).Debugf("IpGroupAPI.List: filter by name like %%s%%", queryStr)
-		queryStr = fmt.Sprintf("name like '%%%s%%'", queryStr)
-	}
+	var typeID int64
+	groupTypes := []string{}
 	if dicID != "" {
 		logger.Ctx(ctx).Debugf("IpGroupAPI.List: filter by dic_id=%s", dicID)
 		var dictionary *model.Dictionary
@@ -435,16 +432,13 @@ func (v *IpGroupAPI) List(c *gin.Context) {
 		}
 		logger.Ctx(ctx).Debugf("IpGroupAPI.List: dictionary found, %+v", dictionary)
 		logger.Ctx(ctx).Debugf("IpGroupAPI.List: dic_id in dictionary is %d", dictionary.ID)
-		queryStr = fmt.Sprintf("type_id = %d AND type = '%s'", dictionary.ID, SystemIpGroupType)
+		typeID = dictionary.ID
+		groupTypes = append(groupTypes, string(SystemIpGroupType))
 	}
 	// Add type filter if provided (compatible: no type param means query all)
 	if typeFilter != "" {
 		if typeFilter == "system" || typeFilter == "resource" {
-			if queryStr != "" {
-				queryStr = fmt.Sprintf("%s AND type = '%s'", queryStr, typeFilter)
-			} else {
-				queryStr = fmt.Sprintf("type = '%s'", typeFilter)
-			}
+			groupTypes = append(groupTypes, typeFilter)
 			logger.Ctx(ctx).Debugf("IpGroupAPI.List: filter by type=%s", typeFilter)
 		} else {
 			logger.Ctx(ctx).Errorf("IpGroupAPI.List: invalid type filter, type=%s", typeFilter)
@@ -452,7 +446,7 @@ func (v *IpGroupAPI) List(c *gin.Context) {
 			return
 		}
 	}
-	total, ipGroups, err := ipGroupAdmin.List(ctx, int64(offset), int64(limit), "-created_at", queryStr)
+	total, ipGroups, err := ipGroupAdmin.List(ctx, int64(offset), int64(limit), "-created_at", queryStr, typeID, groupTypes...)
 	if err != nil {
 		logger.Ctx(ctx).Errorf("IpGroupAPI.List: list error, err=%v", err)
 		ErrorResponse(c, http.StatusBadRequest, "Failed to list ipGroups", err)

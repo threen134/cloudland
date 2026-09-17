@@ -13,6 +13,8 @@ import (
 	. "api/src/common"
 	"api/src/dbs"
 	"api/src/model"
+
+	"gorm.io/gorm"
 )
 
 var TaskAdmin = &TaskAdminService{}
@@ -98,34 +100,27 @@ func (a *TaskAdminService) List(ctx context.Context, offset, limit int64, order 
 		order = "created_at"
 	}
 
-	if query != "" {
-		query = fmt.Sprintf("name like '%%%s%%'", query)
-	}
 	queryBuilder, args := memberShip.GetOrgFilter()
-	source_where := ""
-	if source == string(model.TaskSourceManual) {
-		source_where = fmt.Sprintf("source='%s'", source)
-	} else if source == string(model.TaskSourceScheduler) {
-		source_where = fmt.Sprintf("source='%s'", source)
-	} else if source == string(model.TaskSourceMigration) {
-		source_where = fmt.Sprintf("source='%s'", source)
+	sourceFilter := func(tx *gorm.DB) *gorm.DB { return tx }
+	if source == string(model.TaskSourceManual) || source == string(model.TaskSourceScheduler) || source == string(model.TaskSourceMigration) {
+		sourceFilter = func(tx *gorm.DB) *gorm.DB { return tx.Where("source = ?", source) }
 	} else if source == "not_migration" || source == "" { // show all tasks except migration tasks
-		source_where = fmt.Sprintf("source!='%s'", string(model.TaskSourceMigration))
+		sourceFilter = func(tx *gorm.DB) *gorm.DB { return tx.Where("source != ?", string(model.TaskSourceMigration)) }
 	} else if source == "all" {
-		source_where = ""
+		// No source condition
 	} else {
 		err = NewCLError(ErrInvalidParameter, fmt.Sprintf("Invalid task source %s", source), nil)
 		return
 	}
 
 	tasks = []*model.Task{}
-	if err = db.Model(&model.Task{}).Where(queryBuilder, args...).Where(query).Where(source_where).Count(&total).Error; err != nil {
+	if err = db.Model(&model.Task{}).Where(queryBuilder, args...).Scopes(dbs.Contains(query, "name"), sourceFilter).Count(&total).Error; err != nil {
 		logger.Ctx(ctx).Error("DB: count tasks failed", err)
 		err = NewCLError(ErrSQLSyntaxError, "Failed to count tasks", err)
 		return
 	}
 	db = dbs.Sortby(db.Offset(int(offset)).Limit(int(limit)), order)
-	if err = db.Where(source_where).Where(queryBuilder, args...).Where(query).Find(&tasks).Error; err != nil {
+	if err = db.Where(queryBuilder, args...).Scopes(dbs.Contains(query, "name"), sourceFilter).Find(&tasks).Error; err != nil {
 		logger.Ctx(ctx).Error("DB: query tasks failed", err)
 		err = NewCLError(ErrSQLSyntaxError, "Failed to query tasks", err)
 		return

@@ -149,7 +149,7 @@ func (a *InterfaceAdminService) Delete(ctx context.Context, instance *model.Inst
 		return
 	}
 	control := fmt.Sprintf("inter=%d", instance.Hyper)
-	command := fmt.Sprintf("/opt/cloudland/scripts/backend/detach_vm_nic.sh '%d' '%d' '%d' '%s' '%s'", instance.ID, iface.ID, iface.Address.Subnet.Vlan, iface.Address.Address, iface.MacAddr)
+	command := fmt.Sprintf("/opt/cloudland/scripts/backend/detach_vm_nic.sh '%d' '%d' '%d' '%s' '%s'", instance.ID, iface.ID, iface.Address.Subnet.Vlan, ShellEscape(iface.Address.Address), ShellEscape(iface.MacAddr))
 	err = HyperExecute(ctx, control, command)
 	if err != nil {
 		logger.Ctx(ctx).Error("Detach vm nic command execution failed", err)
@@ -692,7 +692,7 @@ func (a *InterfaceAdminService) Update(ctx context.Context, instance *model.Inst
 			osCode := GetImageOSCode(ctx, instance)
 			if osCode == "windows" {
 				control := fmt.Sprintf("inter=%d", instance.Hyper)
-				command := fmt.Sprintf("/opt/cloudland/scripts/backend/clear_second_ips.sh '%d' '%s' '%s'<<EOF\n%s\nEOF", instance.ID, iface.MacAddr, GetImageOSCode(ctx, instance), oldAddrsJson)
+				command := fmt.Sprintf("/opt/cloudland/scripts/backend/clear_second_ips.sh '%d' '%s' '%s'<<'EOF'\n%s\nEOF", instance.ID, ShellEscape(iface.MacAddr), ShellEscape(GetImageOSCode(ctx, instance)), oldAddrsJson)
 				err = HyperExecute(ctx, control, command)
 				if err != nil {
 					logger.Ctx(ctx).Error("clear_second_ips command execution failed", err)

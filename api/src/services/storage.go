@@ -16,6 +16,7 @@ import (
 	"api/src/model"
 
 	"github.com/spf13/viper"
+	"gorm.io/gorm"
 )
 
 var (
@@ -34,17 +35,20 @@ func (a *ImageStorageAdmin) List(offset, limit int64, order string, image *model
 		order = "created_at"
 	}
 
-	if query != "" {
-		query = fmt.Sprintf("pool_id = '%s'", query)
+	poolFilter := func(tx *gorm.DB) *gorm.DB {
+		if query != "" {
+			return tx.Where("pool_id = ?", query)
+		}
+		return tx
 	}
 
 	storages = []*model.ImageStorage{}
-	if err = db.Model(&model.ImageStorage{}).Where("image_id = ?", image.ID).Where(query).Count(&total).Error; err != nil {
+	if err = db.Model(&model.ImageStorage{}).Where("image_id = ?", image.ID).Scopes(poolFilter).Count(&total).Error; err != nil {
 		err = NewCLError(ErrSQLSyntaxError, "Failed to count image storage(s)", err)
 		return
 	}
 	db = dbs.Sortby(db.Offset(int(offset)).Limit(int(limit)), order)
-	if err = db.Where("image_id = ?", image.ID).Where(query).Find(&storages).Error; err != nil {
+	if err = db.Where("image_id = ?", image.ID).Scopes(poolFilter).Find(&storages).Error; err != nil {
 		err = NewCLError(ErrSQLSyntaxError, "Failed to query image storage(s)", err)
 		return
 	}

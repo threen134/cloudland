@@ -42,8 +42,10 @@ func (a *BackendAdmin) CreateHaproxyConf(ctx context.Context, updatedlistener *m
 			backendCfgs := []*BackendConfig{}
 			for _, backend := range listener.Backends {
 				backendCfgs = append(backendCfgs, &BackendConfig{
+					ID:         backend.ID,
 					BackendURL: backend.BackendAddr,
 					Status:     backend.Status,
+					SSL:        backend.SSL,
 				})
 			}
 			listenerCfgs = append(listenerCfgs, &ListenerConfig{
@@ -71,7 +73,7 @@ func (a *BackendAdmin) CreateHaproxyConf(ctx context.Context, updatedlistener *m
 		return
 	}
 	control := "toall=" + hyperGroup
-	command := fmt.Sprintf("/opt/cloudland/scripts/backend/create_haproxy_conf.sh '%d' '%d' '%d'<<EOF\n%s\nEOF", loadBalancer.RouterID, loadBalancer.ID, loadBalancer.VrrpInstance.ID, jsonData)
+	command := fmt.Sprintf("/opt/cloudland/scripts/backend/create_haproxy_conf.sh '%d' '%d' '%d'<<'EOF'\n%s\nEOF", loadBalancer.RouterID, loadBalancer.ID, loadBalancer.VrrpInstance.ID, jsonData)
 	err = HyperExecute(ctx, control, command)
 	if err != nil {
 		logger.Ctx(ctx).Error("create haproxy conf execution failed", err)
@@ -231,8 +233,8 @@ func (a *BackendAdmin) GetBackend(ctx context.Context, reference *BaseReference)
 	return
 }
 
-func (a *BackendAdmin) Update(ctx context.Context, backend *model.Backend, name, backendAddr string, listener *model.Listener, loadBalancer *model.LoadBalancer) (lb *model.Backend, err error) {
-	logger.Ctx(ctx).Infof("ENTER BackendAdmin.Update: backendID=%d, name=%s, backendAddr=%s", backend.ID, name, backendAddr)
+func (a *BackendAdmin) Update(ctx context.Context, backend *model.Backend, name, backendAddr string, ssl *bool, listener *model.Listener, loadBalancer *model.LoadBalancer) (lb *model.Backend, err error) {
+	logger.Ctx(ctx).Infof("ENTER BackendAdmin.Update: backendID=%d, name=%s, backendAddr=%s, ssl=%v", backend.ID, name, backendAddr, ssl)
 	defer func() {
 		if err != nil {
 			logger.Ctx(ctx).Errorf("EXIT BackendAdmin.Update: error=%v", err)
@@ -258,10 +260,19 @@ func (a *BackendAdmin) Update(ctx context.Context, backend *model.Backend, name,
 		backend.Name = name
 		updates["name"] = name
 	}
-	addrChanged := backendAddr != "" && backend.BackendAddr != backendAddr
-	if addrChanged {
+	confChanged := false
+	if backendAddr != "" && backend.BackendAddr != backendAddr {
 		backend.BackendAddr = backendAddr
 		updates["backend_addr"] = backendAddr
+		// The previous health result belongs to the old address
+		backend.Health = ""
+		updates["health"] = ""
+		confChanged = true
+	}
+	if ssl != nil && backend.SSL != *ssl {
+		backend.SSL = *ssl
+		updates["ssl"] = *ssl
+		confChanged = true
 	}
 	if len(updates) > 0 {
 		if err = db.Model(backend).Updates(updates).Error; err != nil {
@@ -270,8 +281,8 @@ func (a *BackendAdmin) Update(ctx context.Context, backend *model.Backend, name,
 			return
 		}
 	}
-	// 名称只存在数据库里；地址变化要重新下发 haproxy 配置
-	if addrChanged {
+	// The name lives only in the database; address or SSL changes need a new haproxy config
+	if confChanged {
 		_, listener.Backends, err = a.List(ctx, 0, -1, "", listener)
 		if err != nil {
 			logger.Ctx(ctx).Error("Failed to list backends", err)

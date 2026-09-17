@@ -1876,7 +1876,7 @@ func (a *AdjustAPI) cleanupVMMetrics(ctx context.Context, vmUUID, ruleGroupUUID 
 	case model.RuleTypeAdjustCPU:
 		// Clean up CPU adjustment metrics
 		command := fmt.Sprintf("/opt/cloudland/scripts/kvm/update_vm_cpu_adjustment_status.sh --domain '%s' --rule-id '%s' --status 0",
-			domain, fmt.Sprintf("%s-%s", domain, ruleGroupUUID))
+			common.ShellEscape(domain), common.ShellEscape(fmt.Sprintf("%s-%s", domain, ruleGroupUUID)))
 
 		err = common.HyperExecute(ctx, control, command)
 		if err != nil {
@@ -1892,7 +1892,7 @@ func (a *AdjustAPI) cleanupVMMetrics(ctx context.Context, vmUUID, ruleGroupUUID 
 
 		ruleID := fmt.Sprintf("adjust-bw-%s-%s", domain, ruleGroupUUID)
 		command := fmt.Sprintf("/opt/cloudland/scripts/kvm/update_vm_bandwidth_adjustment_status.sh --domain '%s' --rule-id '%s' --type '%s' --status 0 --target-device '%s'",
-			domain, ruleID, bwType, "unknown")
+			common.ShellEscape(domain), common.ShellEscape(ruleID), common.ShellEscape(bwType), common.ShellEscape("unknown"))
 
 		tracing.Logf(ctx, "[BW-STATUS-CLEANUP] Calling update script: domain=%s, rule_id=%s, type=%s, status=0, target_device=unknown",
 			domain, ruleID, bwType)
@@ -2066,7 +2066,7 @@ func (a *AdjustAPI) cleanupRuleMetricsOnNodes(ctx context.Context, ruleGroupUUID
 		tracing.Logf(ctx, "[ADJUST-INFO] Cleaning up %s metrics on compute node %d for rule %s", ruleType, hyperID, ruleGroupUUID)
 
 		command := fmt.Sprintf("/opt/cloudland/scripts/kvm/cleanup_rule_metrics.sh --rule-id '%s' --type '%s'",
-			ruleGroupUUID, ruleType)
+			common.ShellEscape(ruleGroupUUID), common.ShellEscape(ruleType))
 		tracing.Logf(ctx, "wngzhe[ADJUST-INFO] Cleaning up %s comamnd is  %s", ruleType, command)
 		err := common.HyperExecute(ctx, fmt.Sprintf("inter=%d", hyperID), command)
 		if err != nil {

@@ -8,7 +8,6 @@ SPDX-License-Identifier: Apache-2.0
 package apis
 
 import (
-	"fmt"
 	"net/http"
 	"strconv"
 
@@ -229,8 +228,7 @@ func (v *LBFloatingIpAPI) List(c *gin.Context) {
 		ErrorResponse(c, http.StatusBadRequest, "Invalid query offset or limit", err)
 		return
 	}
-	intQuery := fmt.Sprintf("load_balancer_id = %d", loadBalancer.ID)
-	total, floatingIps, err := floatingIpAdmin.List(ctx, int64(offset), int64(limit), "-created_at", queryStr, intQuery)
+	total, floatingIps, err := floatingIpAdmin.List(ctx, int64(offset), int64(limit), "-created_at", queryStr, "load_balancer_id = ?", loadBalancer.ID)
 	if err != nil {
 		logger.Ctx(ctx).Errorf("Failed to list floatingIps %+v", err)
 		ErrorResponse(c, http.StatusBadRequest, "Failed to list floatingIps", err)

@@ -261,7 +261,7 @@ function async_exec()
         delayed_log=$async_job_dir/$(date +%s.%N)
         exec 0<&3
         exec >${delayed_log}.in_progress 2>&1
-        $*
+        "$@"
         mv ${delayed_log}.in_progress ${delayed_log}.done
     ) &
     exec 3<&-

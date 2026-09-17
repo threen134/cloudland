@@ -278,7 +278,7 @@ func (a *InstanceAdmin) Create(ctx context.Context, count int, prefix, userdata 
 		if i == 0 && hyperID >= 0 {
 			control = fmt.Sprintf("inter=%d %s", hyperID, rcNeeded)
 		}
-		command := fmt.Sprintf("/opt/cloudland/scripts/backend/launch_vm.sh '%d' '%s.%s' '%t' '%d' '%s' '%d' '%d' '%d' '%d' '%t' '%s' '%s' '%s' '%s' '%s'<<EOF\n%s\nEOF", instance.ID, imagePrefix, image.Format, image.QAEnabled, snapshot, hostname, instance.Cpu, instance.Memory, instance.Disk, bootVolume.ID, nestedEnable, image.BootLoader, poolID, instance.UUID, imageVolumeID, imageDownloadURLB64, base64.StdEncoding.EncodeToString([]byte(metadata)))
+		command := fmt.Sprintf("/opt/cloudland/scripts/backend/launch_vm.sh '%d' '%s.%s' '%t' '%d' '%s' '%d' '%d' '%d' '%d' '%t' '%s' '%s' '%s' '%s' '%s'<<'EOF'\n%s\nEOF", instance.ID, ShellEscape(imagePrefix), ShellEscape(image.Format), image.QAEnabled, snapshot, ShellEscape(hostname), instance.Cpu, instance.Memory, instance.Disk, bootVolume.ID, nestedEnable, ShellEscape(image.BootLoader), ShellEscape(poolID), ShellEscape(instance.UUID), ShellEscape(imageVolumeID), ShellEscape(imageDownloadURLB64), base64.StdEncoding.EncodeToString([]byte(metadata)))
 		execCommands = append(execCommands, &ExecutionCommand{
 			Control: control,
 			Command: command,
@@ -348,7 +348,7 @@ func (a *InstanceAdmin) Rescue(ctx context.Context, instance *model.Instance, re
 	if err != nil {
 		return
 	}
-	command := fmt.Sprintf("/opt/cloudland/scripts/backend/rescue_vm.sh '%d' '%s.%s' '%s' '%d' '%d' '%d' '%d' '%s' '%s' '%s' <<EOF\n%s\nEOF", instance.ID, imagePrefix, rescueImage.Format, instance.Hostname, instance.Cpu, instance.Memory, instance.Disk, bootVolume.ID, rescueImage.BootLoader, instance.UUID, imageDownloadURLB64, base64.StdEncoding.EncodeToString([]byte(metadata)))
+	command := fmt.Sprintf("/opt/cloudland/scripts/backend/rescue_vm.sh '%d' '%s.%s' '%s' '%d' '%d' '%d' '%d' '%s' '%s' '%s' <<'EOF'\n%s\nEOF", instance.ID, ShellEscape(imagePrefix), ShellEscape(rescueImage.Format), ShellEscape(instance.Hostname), instance.Cpu, instance.Memory, instance.Disk, bootVolume.ID, ShellEscape(rescueImage.BootLoader), ShellEscape(instance.UUID), ShellEscape(imageDownloadURLB64), base64.StdEncoding.EncodeToString([]byte(metadata)))
 	err = HyperExecute(ctx, control, command)
 	if err != nil {
 		logger.Ctx(ctx).Error("Delete vm command execution failed", err)
@@ -434,7 +434,7 @@ func (a *InstanceAdmin) ChangeInstanceStatus(ctx context.Context, instance *mode
 		}
 	}()
 	control := fmt.Sprintf("inter=%d", instance.Hyper)
-	command := fmt.Sprintf("/opt/cloudland/scripts/backend/action_vm.sh '%d' '%s'", instance.ID, action)
+	command := fmt.Sprintf("/opt/cloudland/scripts/backend/action_vm.sh '%d' '%s'", instance.ID, ShellEscape(action))
 	err = HyperExecute(ctx, control, command)
 	if err != nil {
 		logger.Ctx(ctx).Error("Delete vm command execution failed", err)
@@ -728,7 +728,7 @@ func (a *InstanceAdmin) Reinstall(ctx context.Context, instance *model.Instance,
 	if err != nil {
 		return
 	}
-	command := fmt.Sprintf("/opt/cloudland/scripts/backend/reinstall_vm.sh '%d' '%s.%s' '%d' '%d' '%s' '%s' '%d' '%d' '%d' '%s' '%s' '%s' '%s' '%s'<<EOF\n%s\nEOF", instance.ID, imagePrefix, image.Format, snapshot, bootVolume.ID, poolID, bootVolume.GetOriginVolumeID(), cpu, memory, disk, instance.Hostname, image.BootLoader, instance.UUID, imageVolumeID, imageDownloadURLB64, base64.StdEncoding.EncodeToString([]byte(metadata)))
+	command := fmt.Sprintf("/opt/cloudland/scripts/backend/reinstall_vm.sh '%d' '%s.%s' '%d' '%d' '%s' '%s' '%d' '%d' '%d' '%s' '%s' '%s' '%s' '%s'<<'EOF'\n%s\nEOF", instance.ID, ShellEscape(imagePrefix), ShellEscape(image.Format), snapshot, bootVolume.ID, ShellEscape(poolID), ShellEscape(bootVolume.GetOriginVolumeID()), cpu, memory, disk, ShellEscape(instance.Hostname), ShellEscape(image.BootLoader), ShellEscape(instance.UUID), ShellEscape(imageVolumeID), ShellEscape(imageDownloadURLB64), base64.StdEncoding.EncodeToString([]byte(metadata)))
 	err = HyperExecute(ctx, control, command)
 	if err != nil {
 		logger.Ctx(ctx).Error("Reinstall remote exec failed", err)
@@ -770,7 +770,7 @@ func (a *InstanceAdmin) SetUserPassword(ctx context.Context, id int64, user, pas
 		return
 	}
 	control := fmt.Sprintf("inter=%d", instance.Hyper)
-	command := fmt.Sprintf("/opt/cloudland/scripts/backend/set_user_passwd.sh '%d' '%s' '%s'", instance.ID, user, password)
+	command := fmt.Sprintf("/opt/cloudland/scripts/backend/set_user_passwd.sh '%d' '%s' '%s'", instance.ID, ShellEscape(user), ShellEscape(password))
 	err = HyperExecute(ctx, control, command)
 	if err != nil {
 		logger.Ctx(ctx).Error("Set password command execution failed", err)
@@ -828,7 +828,7 @@ func (a *InstanceAdmin) deleteInterface(ctx context.Context, iface *model.Interf
 	}
 	vlan := iface.Address.Subnet.Vlan
 	control := ""
-	command := fmt.Sprintf("/opt/cloudland/scripts/backend/del_host.sh '%d' '%s' '%s'", vlan, iface.MacAddr, iface.Address.Address)
+	command := fmt.Sprintf("/opt/cloudland/scripts/backend/del_host.sh '%d' '%s' '%s'", vlan, ShellEscape(iface.MacAddr), ShellEscape(iface.Address.Address))
 	err = HyperExecute(ctx, control, command)
 	if err != nil {
 		logger.Ctx(ctx).Error("Delete interface failed")
@@ -1326,7 +1326,7 @@ func (a *InstanceAdmin) Delete(ctx context.Context, instance *model.Instance) (e
 		logger.Ctx(ctx).Errorf("Failed to marshal sites info, %v", err)
 		return NewCLError(ErrJSONMarshalFailed, "Failed to marshal sites info", err)
 	}
-	command := fmt.Sprintf("/opt/cloudland/scripts/backend/clear_vm.sh '%d' '%d' '%s' '%s'<<EOF\n%s\nEOF", instance.ID, instance.RouterID, bootVolumeUUID, imagePrefix, moreAddrsJson)
+	command := fmt.Sprintf("/opt/cloudland/scripts/backend/clear_vm.sh '%d' '%d' '%s' '%s'<<'EOF'\n%s\nEOF", instance.ID, instance.RouterID, ShellEscape(bootVolumeUUID), ShellEscape(imagePrefix), moreAddrsJson)
 	err = HyperExecute(ctx, control, command)
 	if err != nil {
 		logger.Ctx(ctx).Error("Delete vm command execution failed ", err)

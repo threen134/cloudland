@@ -95,7 +95,7 @@ func SystemRouter(ctx context.Context, args []string) (status string, err error)
 	}
 	subnet := sysIface.Address.Subnet
 	control := fmt.Sprintf("inter=%d", hyperID)
-	command := fmt.Sprintf("/opt/cloudland/scripts/backend/system_router.sh '%d' '%s' '%s'", subnet.Vlan, sysIface.Address.Address, subnet.Gateway)
+	command := fmt.Sprintf("/opt/cloudland/scripts/backend/system_router.sh '%d' '%s' '%s'", subnet.Vlan, ShellEscape(sysIface.Address.Address), ShellEscape(subnet.Gateway))
 	err = HyperExecute(ctx, control, command)
 	if err != nil {
 		logger.Ctx(ctx).Error("Add_fwrule execution failed", err)

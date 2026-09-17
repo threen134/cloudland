@@ -117,7 +117,7 @@ func (a *ConsoleAdmin) ConsoleResolve(c *macaron.Context) {
 		logger.Ctx(ctx).Error("VNC record deletion failed", err)
 	}
 	control := fmt.Sprintf("inter=%d", instance.Hyper)
-	command := fmt.Sprintf("/opt/cloudland/scripts/backend/set_vnc_passwd.sh '%d' '%s'", instance.ID, accessPass)
+	command := fmt.Sprintf("/opt/cloudland/scripts/backend/set_vnc_passwd.sh '%d' '%s'", instance.ID, ShellEscape(accessPass))
 	err = HyperExecute(ctx, control, command)
 	if err != nil {
 		logger.Ctx(ctx).Error("Set vnc password execution failed", err)

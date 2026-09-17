@@ -13,6 +13,8 @@ import (
 	. "api/src/common"
 	"api/src/dbs"
 	"api/src/model"
+
+	"gorm.io/gorm"
 )
 
 var (
@@ -132,7 +134,7 @@ func (a *BackupAdmin) createBackup(ctx context.Context, volume *model.Volume, po
 		wdsOriginPoolID := volume.GetVolumePoolID()
 		if poolID != "" && poolID != wdsOriginPoolID {
 			logger.Ctx(ctx).Debugf("Backup volume %s from pool %s to pool %s", volume.UUID, wdsOriginPoolID, poolID)
-			command := fmt.Sprintf("/opt/cloudland/scripts/backend/create_snapshot_%s.sh '%d' '%d' '%s' '%s' '%d' '%s' '%s' '%s'", vol_driver, task.ID, backup.ID, backup.UUID, backup.Name, volume.ID, wdsUUID, wdsOriginPoolID, poolID)
+			command := fmt.Sprintf("/opt/cloudland/scripts/backend/create_snapshot_%s.sh '%d' '%d' '%s' '%s' '%d' '%s' '%s' '%s'", vol_driver, task.ID, backup.ID, ShellEscape(backup.UUID), ShellEscape(backup.Name), volume.ID, ShellEscape(wdsUUID), ShellEscape(wdsOriginPoolID), ShellEscape(poolID))
 			err = HyperExecute(ctx, control, command)
 			if err != nil {
 				logger.Ctx(ctx).Error("Backup volume execution failed", err)
@@ -141,7 +143,7 @@ func (a *BackupAdmin) createBackup(ctx context.Context, volume *model.Volume, po
 			return
 		} else {
 			logger.Ctx(ctx).Debugf("Backup volume %s to same pool %s, use snapshot", volume.UUID, poolID)
-			command := fmt.Sprintf("/opt/cloudland/scripts/backend/create_snapshot_%s.sh '%d' '%d' '%s' '%s' '%d' '%s' '%s'", vol_driver, task.ID, backup.ID, backup.UUID, backup.Name, volume.ID, wdsUUID, wdsOriginPoolID)
+			command := fmt.Sprintf("/opt/cloudland/scripts/backend/create_snapshot_%s.sh '%d' '%d' '%s' '%s' '%d' '%s' '%s'", vol_driver, task.ID, backup.ID, ShellEscape(backup.UUID), ShellEscape(backup.Name), volume.ID, ShellEscape(wdsUUID), ShellEscape(wdsOriginPoolID))
 			err = HyperExecute(ctx, control, command)
 			if err != nil {
 				logger.Ctx(ctx).Error("Backup volume execution failed", err)
@@ -231,7 +233,7 @@ func (a *BackupAdmin) createSnapshot(ctx context.Context, name string, volume *m
 	if vol_driver != "local" {
 		wdsUUID := volume.GetOriginVolumeID()
 		wdsOriginPoolID := volume.GetVolumePoolID()
-		command := fmt.Sprintf("/opt/cloudland/scripts/backend/create_snapshot_%s.sh '%d' '%d' '%s' '%s' '%d' '%s' '%s'", vol_driver, task.ID, snapshot.ID, snapshot.UUID, snapshot.Name, volume.ID, wdsUUID, wdsOriginPoolID)
+		command := fmt.Sprintf("/opt/cloudland/scripts/backend/create_snapshot_%s.sh '%d' '%d' '%s' '%s' '%d' '%s' '%s'", vol_driver, task.ID, snapshot.ID, ShellEscape(snapshot.UUID), ShellEscape(snapshot.Name), volume.ID, ShellEscape(wdsUUID), ShellEscape(wdsOriginPoolID))
 		err = HyperExecute(ctx, control, command)
 		if err != nil {
 			logger.Ctx(ctx).Error("Backup volume execution failed", err)
@@ -398,7 +400,7 @@ func (a *BackupAdmin) Delete(ctx context.Context, backup *model.VolumeBackup) (e
 	control := "inter="
 	wdsUUID := backup.GetOriginBackupID()
 	if wdsUUID != "" {
-		command := fmt.Sprintf("/opt/cloudland/scripts/backend/delete_snapshot_%s.sh '%s'", vol_driver, wdsUUID)
+		command := fmt.Sprintf("/opt/cloudland/scripts/backend/delete_snapshot_%s.sh '%s'", vol_driver, ShellEscape(wdsUUID))
 		err = HyperExecute(ctx, control, command)
 		if err != nil {
 			logger.Ctx(ctx).Error("Delete snapshot execution failed", err)
@@ -530,7 +532,7 @@ func (a *BackupAdmin) Restore(ctx context.Context, backupID int64) (backup *mode
 			snapshot_wds_uuid = backup.SnapshotID
 		}
 		// <task_id> <backup_id> <volume_id> <instance_id> <volume_wds_uuid> <snapshot_wds_uuid> <volume_pool_id>
-		command := fmt.Sprintf("/opt/cloudland/scripts/backend/restore_snapshot_%s.sh '%d' '%d' '%d' '%d' '%s' '%s' '%s'", vol_driver, task.ID, backupID, volume.ID, volume.InstanceID, volume_wds_uuid, snapshot_wds_uuid, volume_pool_id)
+		command := fmt.Sprintf("/opt/cloudland/scripts/backend/restore_snapshot_%s.sh '%d' '%d' '%d' '%d' '%s' '%s' '%s'", vol_driver, task.ID, backupID, volume.ID, volume.InstanceID, ShellEscape(volume_wds_uuid), ShellEscape(snapshot_wds_uuid), ShellEscape(volume_pool_id))
 		err = HyperExecute(ctx, control, command)
 		if err != nil {
 			logger.Ctx(ctx).Error("Restore volume execution failed", err)
@@ -564,43 +566,25 @@ func (a *BackupAdmin) List(ctx context.Context, offset, limit int64, order, quer
 	if order == "" {
 		order = "created_at"
 	}
-	if query != "" {
-		query = fmt.Sprintf("name like '%%%s%%'", query)
-	}
-	query, args := memberShip.GetOrgFilter()
-	whereSQL := ""
-	if volumeID > 0 {
-		whereSQL = fmt.Sprintf("volume_id = %d", volumeID)
-	}
-	if backupType != "" {
-		if whereSQL != "" {
-			whereSQL = fmt.Sprintf("%s and backup_type = '%s'", whereSQL, backupType)
-		} else {
-			whereSQL = fmt.Sprintf("backup_type = '%s'", backupType)
+	queryBuilder, args := memberShip.GetOrgFilter()
+	// All filters are bound as parameters
+	filter := func(tx *gorm.DB) *gorm.DB {
+		tx = dbs.Contains(query, "name")(tx.Where(queryBuilder, args...))
+		if volumeID > 0 {
+			tx = tx.Where("volume_id = ?", volumeID)
 		}
+		if backupType != "" {
+			tx = tx.Where("backup_type = ?", backupType)
+		}
+		return tx
 	}
-	if query != "" {
-		if whereSQL != "" {
-			whereSQL = fmt.Sprintf("%s and %s", whereSQL, query)
-		} else {
-			whereSQL = query
-		}
-	}
-	if whereSQL != "" {
-		if err = db.Model(&model.VolumeBackup{}).Where(query, args...).Where(whereSQL).Count(&total).Error; err != nil {
-			logger.Ctx(ctx).Error("DB: query backup count failed", err)
-			err = NewCLError(ErrSQLSyntaxError, "Failed to query backup count", err)
-			return
-		}
-	} else {
-		if err = db.Model(&model.VolumeBackup{}).Where(query, args...).Count(&total).Error; err != nil {
-			logger.Ctx(ctx).Error("DB: query backup count failed", err)
-			err = NewCLError(ErrSQLSyntaxError, "Failed to query backup count", err)
-			return
-		}
+	if err = db.Model(&model.VolumeBackup{}).Scopes(filter).Count(&total).Error; err != nil {
+		logger.Ctx(ctx).Error("DB: query backup count failed", err)
+		err = NewCLError(ErrSQLSyntaxError, "Failed to query backup count", err)
+		return
 	}
 	db = dbs.Sortby(db.Offset(int(offset)).Limit(int(limit)), order)
-	if err = db.Preload("Volume").Preload("Task").Where(query, args...).Where(whereSQL).Find(&backups).Error; err != nil {
+	if err = db.Preload("Volume").Preload("Task").Scopes(filter).Find(&backups).Error; err != nil {
 		logger.Ctx(ctx).Error("DB: query backup failed", err)
 		err = NewCLError(ErrSQLSyntaxError, "Failed to query backup", err)
 		return

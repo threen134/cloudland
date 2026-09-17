@@ -387,7 +387,7 @@ func (a *FloatingIpAdminService) Attach(ctx context.Context, floatingIp *model.F
 
 	pubSubnet := floatingIp.Interface.Address.Subnet
 	control := fmt.Sprintf("inter=%d", instance.Hyper)
-	command := fmt.Sprintf("/opt/cloudland/scripts/backend/create_floating.sh '%d' '%s' '%s' '%d' '%s' '%d' '%d' '%d' '%d'", router.ID, floatingIp.FipAddress, pubSubnet.Gateway, pubSubnet.Vlan, primaryIface.Address.Address, primaryIface.Address.Subnet.Vlan, floatingIp.ID, floatingIp.Inbound, floatingIp.Outbound)
+	command := fmt.Sprintf("/opt/cloudland/scripts/backend/create_floating.sh '%d' '%s' '%s' '%d' '%s' '%d' '%d' '%d' '%d'", router.ID, ShellEscape(floatingIp.FipAddress), ShellEscape(pubSubnet.Gateway), pubSubnet.Vlan, ShellEscape(primaryIface.Address.Address), primaryIface.Address.Subnet.Vlan, floatingIp.ID, floatingIp.Inbound, floatingIp.Outbound)
 	err = HyperExecute(ctx, control, command)
 	if err != nil {
 		logger.Ctx(ctx).Error("Execute floating ip failed", err)
@@ -574,7 +574,7 @@ func (a *FloatingIpAdminService) Detach(ctx context.Context, floatingIp *model.F
 			}
 		}
 		control := fmt.Sprintf("inter=%d", floatingIp.Instance.Hyper)
-		command := fmt.Sprintf("/opt/cloudland/scripts/backend/clear_floating.sh '%d' '%s' '%s' '%d' '%d'", floatingIp.RouterID, floatingIp.FipAddress, floatingIp.IntAddress, primaryIface.Address.Subnet.Vlan, floatingIp.ID)
+		command := fmt.Sprintf("/opt/cloudland/scripts/backend/clear_floating.sh '%d' '%s' '%s' '%d' '%d'", floatingIp.RouterID, ShellEscape(floatingIp.FipAddress), ShellEscape(floatingIp.IntAddress), primaryIface.Address.Subnet.Vlan, floatingIp.ID)
 		err = HyperExecute(ctx, control, command)
 		if err != nil {
 			logger.Ctx(ctx).Error("Detach floating ip failed", err)
@@ -588,7 +588,7 @@ func (a *FloatingIpAdminService) Detach(ctx context.Context, floatingIp *model.F
 			return
 		}
 		control := "toall=" + hyperGroup
-		command := fmt.Sprintf("/opt/cloudland/scripts/backend/clear_lb_floating.sh '%d' '%s' '%d' '%d'", floatingIp.RouterID, floatingIp.FipAddress, floatingIp.Subnet.Vlan, floatingIp.ID)
+		command := fmt.Sprintf("/opt/cloudland/scripts/backend/clear_lb_floating.sh '%d' '%s' '%d' '%d'", floatingIp.RouterID, ShellEscape(floatingIp.FipAddress), floatingIp.Subnet.Vlan, floatingIp.ID)
 		err = HyperExecute(ctx, control, command)
 		if err != nil {
 			logger.Ctx(ctx).Error("Clear lb floating ip execution failed ", err)
@@ -735,7 +735,7 @@ func (a *FloatingIpAdminService) Delete(ctx context.Context, floatingIp *model.F
 	return
 }
 
-func (a *FloatingIpAdminService) List(ctx context.Context, offset, limit int64, order, query string, intQuery string) (total int64, floatingIps []*model.FloatingIp, err error) {
+func (a *FloatingIpAdminService) List(ctx context.Context, offset, limit int64, order, query string, intQuery string, intArgs ...interface{}) (total int64, floatingIps []*model.FloatingIp, err error) {
 	logger.Ctx(ctx).Infof("ENTER FloatingIpAdmin.List: offset=%d, limit=%d, order=%s, query=%s", offset, limit, order, query)
 	defer func() {
 		if err != nil {
@@ -753,19 +753,16 @@ func (a *FloatingIpAdminService) List(ctx context.Context, offset, limit int64, 
 	if order == "" {
 		order = "created_at"
 	}
-	if query != "" {
-		query = fmt.Sprintf("fip_address like '%%%s%%' or int_address like '%%%s%%' or name like '%%%s%%'", query, query, query)
-	}
 
 	_, db := GetContextDB(ctx)
 	where, args := memberShip.GetOrgFilter()
 	floatingIps = []*model.FloatingIp{}
-	if err = db.Model(&model.FloatingIp{}).Where(where, args...).Where(query).Where(intQuery).Count(&total).Error; err != nil {
+	if err = db.Model(&model.FloatingIp{}).Where(where, args...).Scopes(dbs.Contains(query, "fip_address", "int_address", "name")).Where(intQuery, intArgs...).Count(&total).Error; err != nil {
 		err = NewCLError(ErrSQLSyntaxError, "Failed to count floatingIps", err)
 		return
 	}
 	db = dbs.Sortby(db.Offset(int(offset)).Limit(int(limit)), order)
-	if err = db.Preload("Group").Preload("Interface").Preload("Interface.Address").Preload("Interface.Address.Subnet").Preload("Subnet").Where(where, args...).Where(query).Where(intQuery).Find(&floatingIps).Error; err != nil {
+	if err = db.Preload("Group").Preload("Interface").Preload("Interface.Address").Preload("Interface.Address.Subnet").Preload("Subnet").Where(where, args...).Scopes(dbs.Contains(query, "fip_address", "int_address", "name")).Where(intQuery, intArgs...).Find(&floatingIps).Error; err != nil {
 		logger.Ctx(ctx).Error("DB failed to query floating ip(s), %v", err)
 		return 0, nil, NewCLError(ErrSQLSyntaxError, "Failed to query floating IPs", err)
 	}

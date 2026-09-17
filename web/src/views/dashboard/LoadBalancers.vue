@@ -73,22 +73,59 @@ const confirmEdit = async () => {
 const vpcs = ref<VPC[]>([])
 const router = useRouter()
 
+// Pagination and name search are done by the server
+const currentPage = ref(1)
+const pageSize = 20
+const totalCount = ref(0)
+const totalPages = computed(() => Math.max(1, Math.ceil(totalCount.value / pageSize)))
+// Drops responses of superseded requests (fast typing, page switches)
+let fetchGeneration = 0
+
 const fetchLoadBalancers = async () => {
+    const generation = ++fetchGeneration
     loading.value = true
     try {
         const [lbResponse, vpcsResponse] = await Promise.all([
-            loadBalancersApi.list(),
+            loadBalancersApi.list({
+                offset: (currentPage.value - 1) * pageSize,
+                limit: pageSize,
+                query: searchQuery.value.trim() || undefined
+            }),
             vpcsApi.list()
         ])
+        if (generation !== fetchGeneration) return
         loadBalancers.value = lbResponse.load_balancers || []
+        totalCount.value = lbResponse.total || 0
         vpcs.value = vpcsResponse.vpcs || []
+        // The current page became empty (e.g. its last item was deleted): step back
+        if (loadBalancers.value.length === 0 && currentPage.value > 1) {
+            currentPage.value = totalPages.value
+            await fetchLoadBalancers()
+        }
     } catch (err) {
+        if (generation !== fetchGeneration) return
         console.error('API fetch failed:', err)
         loadBalancers.value = []
+        totalCount.value = 0
         vpcs.value = []
     } finally {
-        loading.value = false
+        if (generation === fetchGeneration) loading.value = false
     }
+}
+
+const goToPage = (page: number) => {
+    if (page < 1 || page > totalPages.value || page === currentPage.value) return
+    currentPage.value = page
+    fetchLoadBalancers()
+}
+
+let searchTimer: ReturnType<typeof setTimeout> | null = null
+const onSearchInput = () => {
+    if (searchTimer) clearTimeout(searchTimer)
+    searchTimer = setTimeout(() => {
+        currentPage.value = 1
+        fetchLoadBalancers()
+    }, 400)
 }
 
 const openCreateModal = () => {
@@ -119,11 +156,11 @@ const handleCreateLB = async () => {
         if (newLBForm.value.description) payload.description = newLBForm.value.description
         if (newLBForm.value.zone) payload.zone = newLBForm.value.zone
         await loadBalancersApi.create(payload)
-        
-        // Refresh list
-        const response = await loadBalancersApi.list()
-        loadBalancers.value = response.load_balancers || []
-        
+
+        // The list is sorted newest first: show the first page
+        currentPage.value = 1
+        await fetchLoadBalancers()
+
         closeCreateModal()
         toast.success(t('messages.createSuccess'))
     } catch (err: any) {
@@ -133,15 +170,6 @@ const handleCreateLB = async () => {
         creating.value = false
     }
 }
-
-const filteredLoadBalancers = computed(() => {
-    if (!searchQuery.value) return loadBalancers.value
-    const query = searchQuery.value.toLowerCase()
-    return loadBalancers.value.filter(lb => 
-        lb.name.toLowerCase().includes(query) || 
-        lb.id.toLowerCase().includes(query)
-    )
-})
 
 const getStatusClass = (status: string) => {
     const map: Record<string, string> = {
@@ -220,6 +248,7 @@ watch(() => region.currentRegionId, (newId) => {
           <input 
             type="text" 
             v-model="searchQuery"
+            @input="onSearchInput"
             :placeholder="$t('actions.search') + '...'" 
             class="search-input"
           />
@@ -253,7 +282,7 @@ watch(() => region.currentRegionId, (newId) => {
               <div class="loading-spinner" style="margin: 20px auto;"></div>
             </td>
           </tr>
-          <tr v-else-if="filteredLoadBalancers.length === 0">
+          <tr v-else-if="loadBalancers.length === 0">
              <td colspan="6" class="text-center text-secondary" style="padding: 48px;">
                <div v-if="searchQuery">
                   <Search :size="48" style="opacity: 0.3; margin-bottom: 16px;" />
@@ -265,7 +294,7 @@ watch(() => region.currentRegionId, (newId) => {
                </div>
             </td>
           </tr>
-          <tr v-else v-for="lb in filteredLoadBalancers" :key="lb.id">
+          <tr v-else v-for="lb in loadBalancers" :key="lb.id">
             <td>
               <router-link :to="{ name: 'load-balancer-detail', params: { id: lb.id } }" class="resource-link">
                 <div class="resource-info">
@@ -309,6 +338,17 @@ watch(() => region.currentRegionId, (newId) => {
           </tr>
         </tbody>
       </table>
+      <div v-if="totalPages > 1" class="pagination-bar">
+        <span class="pagination-info">{{ t('dashboard.pagination.showing', { from: (currentPage - 1) * pageSize + 1, to: Math.min(currentPage * pageSize, totalCount), total: totalCount }) }}</span>
+        <div class="pagination-controls">
+          <button class="page-btn" :disabled="currentPage <= 1" @click="goToPage(currentPage - 1)">&lsaquo;</button>
+          <template v-for="p in totalPages" :key="p">
+            <button v-if="p === 1 || p === totalPages || (p >= currentPage - 1 && p <= currentPage + 1)" class="page-btn" :class="{ active: p === currentPage }" @click="goToPage(p)">{{ p }}</button>
+            <span v-else-if="p === currentPage - 2 || p === currentPage + 2" class="page-ellipsis">...</span>
+          </template>
+          <button class="page-btn" :disabled="currentPage >= totalPages" @click="goToPage(currentPage + 1)">&rsaquo;</button>
+        </div>
+      </div>
     </div>
     <!-- Create LB Modal -->
     <div v-if="createModalVisible" class="modal-overlay" @click.self="closeCreateModal">
@@ -512,6 +552,60 @@ watch(() => region.currentRegionId, (newId) => {
 .table-card {
   padding: 0;
   overflow: hidden;
+}
+
+/* Pagination */
+.pagination-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 24px;
+  border-top: 1px solid var(--border-light);
+  font-size: var(--font-size-xs);
+}
+
+.pagination-info { color: var(--text-secondary); }
+
+.pagination-controls {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.page-btn {
+  min-width: 32px;
+  height: 32px;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-sm);
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  cursor: pointer;
+  font-size: var(--font-size-xs);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s;
+}
+
+.page-btn:hover:not(:disabled):not(.active) {
+  background: var(--bg-tertiary);
+  border-color: var(--primary-300);
+}
+
+.page-btn.active {
+  background: var(--primary-color);
+  color: #fff;
+  border-color: var(--primary-color);
+}
+
+.page-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.page-ellipsis {
+  padding: 0 4px;
+  color: var(--text-light);
 }
 
 /* .resource-info etc. are global from index.css */

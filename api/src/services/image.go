@@ -170,7 +170,7 @@ func (a *ImageAdminService) Create(ctx context.Context, osCode, name, osVersion,
 		}
 		control := fmt.Sprintf("inter=%d", instance.Hyper)
 		command := fmt.Sprintf("/opt/cloudland/scripts/backend/capture_image.sh '%d' '%s' '%d' '%s' '%d' '%s' '%s'",
-			image.ID, prefix, instance.ID, bootVolumeUUID, storageID, uploadURL, token)
+			image.ID, ShellEscape(prefix), instance.ID, ShellEscape(bootVolumeUUID), storageID, ShellEscape(uploadURL), ShellEscape(token))
 		err = HyperExecute(ctx, control, command)
 		if err != nil {
 			logger.Ctx(ctx).Error("Capture image command execution failed", err)
@@ -181,7 +181,7 @@ func (a *ImageAdminService) Create(ctx context.Context, osCode, name, osVersion,
 
 	// WDS 路径 / legacy 本地路径：保持原 shell 派发
 	control := "select="
-	command := fmt.Sprintf("/opt/cloudland/scripts/backend/create_image.sh '%d' '%s' '%s' '%d'", image.ID, prefix, url, storageID)
+	command := fmt.Sprintf("/opt/cloudland/scripts/backend/create_image.sh '%d' '%s' '%s' '%d'", image.ID, ShellEscape(prefix), ShellEscape(url), storageID)
 	if instID > 0 {
 		bootVolumeUUID := ""
 		if instance.Volumes != nil {
@@ -193,7 +193,7 @@ func (a *ImageAdminService) Create(ctx context.Context, osCode, name, osVersion,
 			}
 		}
 		control = fmt.Sprintf("inter=%d", instance.Hyper)
-		command = fmt.Sprintf("/opt/cloudland/scripts/backend/capture_image.sh '%d' '%s' '%d' '%s' '%d'", image.ID, prefix, instance.ID, bootVolumeUUID, storageID)
+		command = fmt.Sprintf("/opt/cloudland/scripts/backend/capture_image.sh '%d' '%s' '%d' '%s' '%d'", image.ID, ShellEscape(prefix), instance.ID, ShellEscape(bootVolumeUUID), storageID)
 	}
 	err = HyperExecute(ctx, control, command)
 	if err != nil {
@@ -532,7 +532,7 @@ func (a *ImageAdminService) Delete(ctx context.Context, image *model.Image) (err
 				if storage.Status != model.StorageStatusSynced {
 					continue
 				}
-				command := fmt.Sprintf("/opt/cloudland/scripts/backend/clear_image.sh '%d' '%s' '%s' '%s'", image.ID, prefix, image.Format, storage.VolumeID)
+				command := fmt.Sprintf("/opt/cloudland/scripts/backend/clear_image.sh '%d' '%s' '%s' '%s'", image.ID, ShellEscape(prefix), ShellEscape(image.Format), ShellEscape(storage.VolumeID))
 				err = HyperExecute(ctx, control, command)
 				if err != nil {
 					logger.Ctx(ctx).Error("Clear image storage command execution failed", err)
@@ -541,7 +541,7 @@ func (a *ImageAdminService) Delete(ctx context.Context, image *model.Image) (err
 			}
 		} else if !S3Configured() {
 			// legacy 本地模式（未配置 S3）：走原 SCI + shell（S3 分支已在上面处理，S3 未就绪时已在前面拒绝）
-			command := fmt.Sprintf("/opt/cloudland/scripts/backend/clear_image.sh '%d' '%s' '%s' '%s'", image.ID, prefix, image.Format, "")
+			command := fmt.Sprintf("/opt/cloudland/scripts/backend/clear_image.sh '%d' '%s' '%s' '%s'", image.ID, ShellEscape(prefix), ShellEscape(image.Format), ShellEscape(""))
 			err = HyperExecute(ctx, control, command)
 			if err != nil {
 				logger.Ctx(ctx).Error("Clear image command execution failed", err)
@@ -728,9 +728,9 @@ func (a *ImageAdminService) Update(ctx context.Context, image *model.Image, osCo
 		}
 		prefix := strings.Split(image.UUID, "-")[0]
 		control := "inter="
-		command := fmt.Sprintf("/opt/cloudland/scripts/backend/clone_image.sh '%d' '%s' '%s' '%d' '%s'", image.ID, prefix, storage.PoolID, storage.ID, sourceVolumeID)
+		command := fmt.Sprintf("/opt/cloudland/scripts/backend/clone_image.sh '%d' '%s' '%s' '%d' '%s'", image.ID, ShellEscape(prefix), ShellEscape(storage.PoolID), storage.ID, ShellEscape(sourceVolumeID))
 		if storage.PoolID == defaultPoolID {
-			command = fmt.Sprintf("/opt/cloudland/scripts/backend/sync_image_info.sh '%d' '%s' '%s' '%d'", image.ID, prefix, storage.PoolID, storage.ID)
+			command = fmt.Sprintf("/opt/cloudland/scripts/backend/sync_image_info.sh '%d' '%s' '%s' '%d'", image.ID, ShellEscape(prefix), ShellEscape(storage.PoolID), storage.ID)
 		}
 		storage.Status = model.StorageStatusSyncing
 		if err = db.Model(&model.ImageStorage{}).Where("id = ?", storage.ID).Updates(map[string]interface{}{"status": storage.Status}).Error; err != nil {

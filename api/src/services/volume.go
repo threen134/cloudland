@@ -204,7 +204,7 @@ func (a *VolumeAdmin) Create(ctx context.Context, name string, size int32,
 	control := "inter="
 	// RN-156: append the volume UUID to the command
 	command := fmt.Sprintf("/opt/cloudland/scripts/backend/create_volume_%s.sh '%d' '%d' '%s' '%d' '%d' '%d' '%d' '%s'",
-		GetVolumeDriver(), volume.ID, volume.Size, volume.UUID, iopsLimit, iopsBurst, bpsLimit, bpsBurst, poolID)
+		GetVolumeDriver(), volume.ID, volume.Size, ShellEscape(volume.UUID), iopsLimit, iopsBurst, bpsLimit, bpsBurst, ShellEscape(poolID))
 	err = HyperExecute(ctx, control, command)
 	if err != nil {
 		logger.Ctx(ctx).Error("Create volume execution failed", err)
@@ -312,7 +312,7 @@ func (a *VolumeAdmin) UpdateQos(ctx context.Context, id int64, iopsLimit int32, 
 		volume.IopsLimit = iopsLimit
 		volume.BpsLimit = bpsLimit
 		control := "inter="
-		command := fmt.Sprintf("/opt/cloudland/scripts/backend/update_volume_%s.sh '%d' '%s' '%d' '%d'", vol_driver, volume.ID, volume.GetOriginVolumeID(), iopsLimit, bpsLimit)
+		command := fmt.Sprintf("/opt/cloudland/scripts/backend/update_volume_%s.sh '%d' '%s' '%d' '%d'", vol_driver, volume.ID, ShellEscape(volume.GetOriginVolumeID()), iopsLimit, bpsLimit)
 		err = HyperExecute(ctx, control, command)
 		if err != nil {
 			logger.Ctx(ctx).Error("Create volume execution failed", err)
@@ -400,7 +400,7 @@ func (a *VolumeAdmin) Update(ctx context.Context, id int64, name string, instID 
 			return
 		}
 		control := fmt.Sprintf("inter=%d", volume.Instance.Hyper)
-		command := fmt.Sprintf("/opt/cloudland/scripts/backend/detach_volume_%s.sh '%d' '%d' '%s'", vol_driver, volume.Instance.ID, volume.ID, uuid)
+		command := fmt.Sprintf("/opt/cloudland/scripts/backend/detach_volume_%s.sh '%d' '%d' '%s'", vol_driver, volume.Instance.ID, volume.ID, ShellEscape(uuid))
 		err = HyperExecute(ctx, control, command)
 		if err != nil {
 			logger.Ctx(ctx).Error("Detach volume execution failed", err)
@@ -425,7 +425,7 @@ func (a *VolumeAdmin) Update(ctx context.Context, id int64, name string, instID 
 		}
 		control := fmt.Sprintf("inter=%d", instance.Hyper)
 		// RN-156: append the volume UUID to the command
-		command := fmt.Sprintf("/opt/cloudland/scripts/backend/attach_volume_%s.sh '%d' '%d' '%s' '%s'", vol_driver, instance.ID, volume.ID, volume.GetVolumePath(), uuid)
+		command := fmt.Sprintf("/opt/cloudland/scripts/backend/attach_volume_%s.sh '%d' '%d' '%s' '%s'", vol_driver, instance.ID, volume.ID, ShellEscape(volume.GetVolumePath()), ShellEscape(uuid))
 		if vol_driver == "local" {
 			// 本地卷文件只在一个节点上：已落盘的卷只能挂给同节点的虚拟机；未落盘的卷按大小在虚拟机所在节点创建
 			if volume.Hyper > 0 && volume.Hyper != instance.Hyper {
@@ -518,7 +518,7 @@ func (a *VolumeAdmin) Delete(ctx context.Context, volume *model.Volume) (err err
 		control = fmt.Sprintf("inter=%d", volume.Hyper)
 	}
 	logger.Ctx(ctx).Debug("Delete volume", vol_driver, volume.ID, uuid, volume.GetVolumePath())
-	command := fmt.Sprintf("/opt/cloudland/scripts/backend/clear_volume_%s.sh '%d' '%s' '%s'", vol_driver, volume.ID, uuid, volume.GetVolumePath())
+	command := fmt.Sprintf("/opt/cloudland/scripts/backend/clear_volume_%s.sh '%d' '%s' '%s'", vol_driver, volume.ID, ShellEscape(uuid), ShellEscape(volume.GetVolumePath()))
 	err = HyperExecute(ctx, control, command)
 	if err != nil {
 		logger.Ctx(ctx).Error("Delete volume execution failed", err)
@@ -637,7 +637,7 @@ func (a *VolumeAdmin) Resize(ctx context.Context, volume *model.Volume, size int
 		}
 		control = fmt.Sprintf("inter=%d", volume.Hyper)
 	}
-	command := fmt.Sprintf("/opt/cloudland/scripts/backend/resize_volume_%s.sh '%d' '%s' '%d' '%t' '%d'", volDriver, volume.ID, uuid, size, volume.Booting, volume.InstanceID)
+	command := fmt.Sprintf("/opt/cloudland/scripts/backend/resize_volume_%s.sh '%d' '%s' '%d' '%t' '%d'", volDriver, volume.ID, ShellEscape(uuid), size, volume.Booting, volume.InstanceID)
 	err = HyperExecute(ctx, control, command)
 	if err != nil {
 		logger.Ctx(ctx).Error("Resize remote exec failed", err)
@@ -699,9 +699,6 @@ func (a *VolumeAdmin) ListVolume(ctx context.Context, offset, limit int64, order
 		order = "created_at"
 	}
 
-	if query != "" {
-		query = fmt.Sprintf("name like '%%%s%%'", query)
-	}
 	queryBuilder, args := memberShip.GetOrgFilter()
 	booting_where := ""
 	switch volume_type {
@@ -717,18 +714,18 @@ func (a *VolumeAdmin) ListVolume(ctx context.Context, offset, limit int64, order
 	}
 	volumes = []*model.Volume{}
 	if booting_where != "" {
-		if err = db.Model(&model.Volume{}).Where(queryBuilder, args...).Where(query).Where(booting_where).Count(&total).Error; err != nil {
+		if err = db.Model(&model.Volume{}).Where(queryBuilder, args...).Scopes(dbs.Contains(query, "name")).Where(booting_where).Count(&total).Error; err != nil {
 			err = NewCLError(ErrSQLSyntaxError, "Failed to count volumes", err)
 			return
 		}
 	} else {
-		if err = db.Model(&model.Volume{}).Where(queryBuilder, args...).Where(query).Count(&total).Error; err != nil {
+		if err = db.Model(&model.Volume{}).Where(queryBuilder, args...).Scopes(dbs.Contains(query, "name")).Count(&total).Error; err != nil {
 			err = NewCLError(ErrSQLSyntaxError, "Failed to count volumes", err)
 			return
 		}
 	}
 	db = dbs.Sortby(db.Offset(int(offset)).Limit(int(limit)), order)
-	listQuery := db.Preload("Instance").Where(queryBuilder, args...).Where(query)
+	listQuery := db.Preload("Instance").Where(queryBuilder, args...).Scopes(dbs.Contains(query, "name"))
 	// 类型条件必须同时作用于计数和取数：此前只加在计数上，type=data 返回 total=0 却列出全部系统盘
 	if booting_where != "" {
 		listQuery = listQuery.Where(booting_where)

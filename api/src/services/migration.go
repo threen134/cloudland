@@ -186,7 +186,7 @@ func (a *MigrationAdmin) Create(ctx context.Context, name string, instances []*m
 		if instance.Image != nil {
 			bootLoader = instance.Image.BootLoader
 		}
-		command := fmt.Sprintf("/opt/cloudland/scripts/backend/target_migration.sh '%d' '%d' '%d' '%s' '%d' '%d' '%d' '%s' '%s' '%s' '%s' '%s'<<EOF\n%s\nEOF", migration.ID, task1.ID, instance.ID, instance.Hostname, cpu, memory, disk, sourceHyper.Hostname, migrationType, bootLoader, poolID, instance.UUID, base64.StdEncoding.EncodeToString([]byte(metadata)))
+		command := fmt.Sprintf("/opt/cloudland/scripts/backend/target_migration.sh '%d' '%d' '%d' '%s' '%d' '%d' '%d' '%s' '%s' '%s' '%s' '%s'<<'EOF'\n%s\nEOF", migration.ID, task1.ID, instance.ID, ShellEscape(instance.Hostname), cpu, memory, disk, ShellEscape(sourceHyper.Hostname), ShellEscape(migrationType), ShellEscape(bootLoader), ShellEscape(poolID), ShellEscape(instance.UUID), base64.StdEncoding.EncodeToString([]byte(metadata)))
 		err = HyperExecute(ctx, control, command)
 		if err != nil {
 			logger.Ctx(ctx).Error("Target migration command execution failed", err)
@@ -285,16 +285,13 @@ func (a *MigrationAdmin) List(ctx context.Context, offset, limit int64, order, q
 		order = "created_at"
 	}
 
-	if query != "" {
-		query = fmt.Sprintf("name like '%%%s%%'", query)
-	}
 	migrations = []*model.Migration{}
-	if err = db.Model(&model.Migration{}).Where(query).Count(&total).Error; err != nil {
+	if err = db.Model(&model.Migration{}).Scopes(dbs.Contains(query, "name")).Count(&total).Error; err != nil {
 		err = NewCLError(ErrSQLSyntaxError, "Failed to count migrations", err)
 		return
 	}
 	db = dbs.Sortby(db.Offset(int(offset)).Limit(int(limit)), order)
-	if err = db.Preload("Instance").Preload("Phases").Where(query).Find(&migrations).Error; err != nil {
+	if err = db.Preload("Instance").Preload("Phases").Scopes(dbs.Contains(query, "name")).Find(&migrations).Error; err != nil {
 		err = NewCLError(ErrSQLSyntaxError, "Failed to query migrations", err)
 		return
 	}

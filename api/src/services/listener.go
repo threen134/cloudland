@@ -80,7 +80,7 @@ func (a *ListenerAdmin) Get(ctx context.Context, id int64, loadBalancer *model.L
 	memberShip := GetMemberShip(ctx)
 	where, args := memberShip.GetOrgFilter()
 	listener = &model.Listener{Model: model.Model{ID: id}}
-	if err = db.Preload("Backends").Where(where, args...).Where("load_balancer_id = ?", loadBalancer.ID).Take(listener).Error; err != nil {
+	if err = db.Preload("Backends", dbs.OrderByID).Where(where, args...).Where("load_balancer_id = ?", loadBalancer.ID).Take(listener).Error; err != nil {
 		logger.Ctx(ctx).Error("DB failed to query listener", err)
 		return nil, NewCLError(ErrListenerNotFound, "Failed to find listener", err)
 	}
@@ -106,7 +106,7 @@ func (a *ListenerAdmin) GetListenerByUUID(ctx context.Context, uuID string) (lis
 	memberShip := GetMemberShip(ctx)
 	where, args := memberShip.GetOrgFilter()
 	listener = &model.Listener{}
-	if err = db.Preload("Backends").Where(where, args...).Where("uuid = ?", uuID).Take(listener).Error; err != nil {
+	if err = db.Preload("Backends", dbs.OrderByID).Where(where, args...).Where("uuid = ?", uuID).Take(listener).Error; err != nil {
 		logger.Ctx(ctx).Error("DB failed to query listener", err)
 		return nil, NewCLError(ErrListenerNotFound, "Failed to find listener", err)
 	}
@@ -132,7 +132,7 @@ func (a *ListenerAdmin) GetListenerByName(ctx context.Context, name string) (lis
 	memberShip := GetMemberShip(ctx)
 	where, args := memberShip.GetOrgFilter()
 	listener = &model.Listener{}
-	if err = db.Preload("Backends").Where(where, args...).Where("name = ?", name).Take(listener).Error; err != nil {
+	if err = db.Preload("Backends", dbs.OrderByID).Where(where, args...).Where("name = ?", name).Take(listener).Error; err != nil {
 		logger.Ctx(ctx).Error("DB failed to query listener", err)
 		return nil, NewCLError(ErrListenerNotFound, "Failed to find listener", err)
 	}
@@ -295,7 +295,7 @@ func (a *ListenerAdmin) List(ctx context.Context, offset, limit int64, order str
 		return
 	}
 	db = dbs.Sortby(db.Offset(int(offset)).Limit(int(limit)), order)
-	if err = db.Preload("Backends").Where(queryBuilder, args...).Where("load_balancer_id = ?", loadBalancer.ID).Find(&listeners).Error; err != nil {
+	if err = db.Preload("Backends", dbs.OrderByID).Where(queryBuilder, args...).Where("load_balancer_id = ?", loadBalancer.ID).Find(&listeners).Error; err != nil {
 		logger.Ctx(ctx).Error("DB failed to query listeners, %v", err)
 		err = NewCLError(ErrSQLSyntaxError, "Failed to query listeners", err)
 		return

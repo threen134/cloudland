@@ -207,6 +207,10 @@ func (v *ImageAPI) Create(c *gin.Context) {
 		ErrorResponse(c, http.StatusBadRequest, "Invalid input JSON", err)
 		return
 	}
+	if err = validateDownloadURL(payload.DownloadURL); err != nil {
+		ErrorResponse(c, http.StatusBadRequest, "Invalid download_url", NewCLError(ErrInvalidParameter, err.Error(), nil))
+		return
+	}
 	instanceID := int64(0)
 	if payload.InstanceUUID != "" {
 		instance := &model.Instance{}

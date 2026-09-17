@@ -247,8 +247,9 @@ func (a *IpGroupAdmin) Update(ctx context.Context, ipGroup *model.IpGroup, name 
 	return ipGroup, nil
 }
 
-func (a *IpGroupAdmin) List(ctx context.Context, offset, limit int64, order, query string) (total int64, ipGroups []*model.IpGroup, err error) {
-	logger.Ctx(ctx).Infof("ENTER IpGroupAdmin.List: offset=%d, limit=%d, order=%s, query=%s", offset, limit, order, query)
+// List lists ip groups whose name contains name; typeID > 0 filters by dictionary type, each of groupTypes adds a type condition
+func (a *IpGroupAdmin) List(ctx context.Context, offset, limit int64, order, name string, typeID int64, groupTypes ...string) (total int64, ipGroups []*model.IpGroup, err error) {
+	logger.Ctx(ctx).Infof("ENTER IpGroupAdmin.List: offset=%d, limit=%d, order=%s, name=%s, typeID=%d, groupTypes=%v", offset, limit, order, name, typeID, groupTypes)
 	defer func() {
 		if err != nil {
 			logger.Ctx(ctx).Errorf("EXIT IpGroupAdmin.List: error=%v", err)
@@ -258,7 +259,18 @@ func (a *IpGroupAdmin) List(ctx context.Context, offset, limit int64, order, que
 	}()
 	ctx, db := GetContextDB(ctx)
 	memberShip := GetMemberShip(ctx)
-	query, args := memberShip.GetOrgFilter()
+	queryBuilder, args := memberShip.GetOrgFilter()
+	// Filters are bound as parameters: the name comes straight from the request
+	filter := func(tx *gorm.DB) *gorm.DB {
+		tx = dbs.Contains(name, "name")(tx.Where(queryBuilder, args...))
+		if typeID > 0 {
+			tx = tx.Where("type_id = ?", typeID)
+		}
+		for _, groupType := range groupTypes {
+			tx = tx.Where("type = ?", groupType)
+		}
+		return tx
+	}
 	if limit == 0 {
 		limit = 16
 	}
@@ -266,7 +278,7 @@ func (a *IpGroupAdmin) List(ctx context.Context, offset, limit int64, order, que
 		order = "created_at"
 	}
 	ipGroups = []*model.IpGroup{}
-	if err = db.Model(&model.IpGroup{}).Where(query, args...).Where(query).Count(&total).Error; err != nil {
+	if err = db.Model(&model.IpGroup{}).Scopes(filter).Count(&total).Error; err != nil {
 		logger.Ctx(ctx).Errorf("IpGroupAdmin.List: count error, err=%v", err)
 		err = NewCLError(ErrSQLSyntaxError, "Failed to count ip groups", err)
 		return
@@ -274,7 +286,7 @@ func (a *IpGroupAdmin) List(ctx context.Context, offset, limit int64, order, que
 	db = dbs.Sortby(db.Offset(int(offset)).Limit(int(limit)), order)
 	if err = db.Preload("Subnets").Preload("DictionaryType").Preload("FloatingIPs", func(db *gorm.DB) *gorm.DB {
 		return db.Order("floating_ips.updated_at")
-	}).Preload("FloatingIPs.Subnet").Preload("FloatingIPs.Subnet.Group").Preload("FloatingIPs.Subnet.Group.DictionaryType").Preload("FloatingIPs.Group").Preload("FloatingIPs.Group.DictionaryType").Where(query, args...).Where(query).Find(&ipGroups).Error; err != nil {
+	}).Preload("FloatingIPs.Subnet").Preload("FloatingIPs.Subnet.Group").Preload("FloatingIPs.Subnet.Group.DictionaryType").Preload("FloatingIPs.Group").Preload("FloatingIPs.Group.DictionaryType").Scopes(filter).Find(&ipGroups).Error; err != nil {
 		logger.Ctx(ctx).Errorf("IpGroupAdmin.List: find error, err=%v", err)
 		err = NewCLError(ErrSQLSyntaxError, "Failed to find ip groups", err)
 		return

@@ -308,7 +308,7 @@ func (v *InterfaceAPI) Patch(c *gin.Context) {
 	if iface.FloatingIp > 0 {
 		ifaceVlan := iface.Address.Subnet.Vlan
 		if payload.PublicAddresses == nil {
-			_, publicIps, err = floatingIpAdmin.List(ctx, 0, -1, "", "", fmt.Sprintf("instance_id = %d", iface.Instance))
+			_, publicIps, err = floatingIpAdmin.List(ctx, 0, -1, "", "", "instance_id = ?", iface.Instance)
 			if err != nil {
 				logger.Ctx(ctx).Errorf("Failed to get public ips")
 				ErrorResponse(c, http.StatusBadRequest, "Failed to get public ip", err)

@@ -2,7 +2,7 @@
 import { ref, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
-import { loadBalancersApi, subnetsApi, type LoadBalancer, type Subnet, type ListenerPayload } from '../../api/networks'
+import { loadBalancersApi, subnetsApi, type LoadBalancer, type Subnet, type ListenerPayload, type Listener, type Backend } from '../../api/networks'
 import { useToast } from '../../composables/useToast'
 import { ArrowLeft, GitFork, Trash2, Plus, ChevronDown, ChevronRight, X, Pencil } from 'lucide-vue-next'
 import DeleteModal from '../../components/modals/DeleteModal.vue'
@@ -120,24 +120,47 @@ const getStatusClass = (status: string) => {
     return map[(status || '').toLowerCase()] || 'status-pending'
 }
 
+// Backend health comes from the haproxy health checks of the master node, refreshed by heartbeats
+const getHealthClass = (health?: string) => {
+    if (health === 'up') return 'status-running'
+    if (health === 'down') return 'status-error'
+    return 'status-pending'
+}
+const getHealthLabel = (health?: string) => {
+    if (health === 'up') return t('dashboard.loadBalancerDetail.healthUp')
+    if (health === 'down') return t('dashboard.loadBalancerDetail.healthDown')
+    return t('dashboard.loadBalancerDetail.healthUnknown')
+}
+const countHealthy = (listener: Listener) => (listener.backends || []).filter(b => b.health === 'up').length
+
 // ─── Floating IP ────────────────────────────────────────────────────────────
 
 const showFipModal = ref(false)
 const publicSubnets = ref<Subnet[]>([])
 const loadingSubnets = ref(false)
-const fipForm = ref({ name: '', subnet_id: '' })
+const fipForm = ref({ name: '', subnet_id: '', inbound: null as number | null, outbound: null as number | null })
 const addingFip = ref(false)
 const fipError = ref('')
 
 const openFipModal = () => {
-    fipForm.value = { name: '', subnet_id: publicSubnets.value[0]?.id || '' }
+    fipForm.value = { name: '', subnet_id: publicSubnets.value[0]?.id || '', inbound: null, outbound: null }
     fipError.value = ''
     showFipModal.value = true
 }
 
+// Empty means no bandwidth limit
+const isValidBandwidth = (v: number | null) => v === null || (Number.isInteger(v) && v >= 1 && v <= 20000)
+
 const handleAddFip = async () => {
     if (!fipForm.value.name || !fipForm.value.subnet_id) {
         fipError.value = t('messages.fillRequired')
+        return
+    }
+    // v-model.number yields '' after the input is cleared
+    const inbound = (fipForm.value.inbound as unknown) === '' ? null : fipForm.value.inbound
+    const outbound = (fipForm.value.outbound as unknown) === '' ? null : fipForm.value.outbound
+    if (!isValidBandwidth(inbound) || !isValidBandwidth(outbound)) {
+        fipError.value = t('dashboard.loadBalancerDetail.invalidBandwidth')
         return
     }
     addingFip.value = true
@@ -145,7 +168,9 @@ const handleAddFip = async () => {
     try {
         await loadBalancersApi.addFloatingIp(lbId, {
             name: fipForm.value.name,
-            public_subnet: { id: fipForm.value.subnet_id }
+            public_subnet: { id: fipForm.value.subnet_id },
+            ...(inbound !== null ? { inbound } : {}),
+            ...(outbound !== null ? { outbound } : {})
         })
         showFipModal.value = false
         toast.success(t('messages.createSuccess'))
@@ -215,22 +240,70 @@ const handleDeleteListener = (listenerId: string, listenerName: string) => {
     })
 }
 
+const showListenerEditModal = ref(false)
+const listenerEditForm = ref({ id: '', name: '' })
+const savingListener = ref(false)
+const listenerEditError = ref('')
+
+const openListenerEditModal = (listener: Listener) => {
+    listenerEditForm.value = { id: listener.id, name: listener.name }
+    listenerEditError.value = ''
+    showListenerEditModal.value = true
+}
+
+const handleEditListener = async () => {
+    if (!listenerEditForm.value.name) {
+        listenerEditError.value = t('messages.fillRequired')
+        return
+    }
+    savingListener.value = true
+    listenerEditError.value = ''
+    try {
+        await loadBalancersApi.patchListener(lbId, listenerEditForm.value.id, { name: listenerEditForm.value.name })
+        showListenerEditModal.value = false
+        toast.success(t('messages.success'))
+        await fetchLB()
+    } catch (err: any) {
+        listenerEditError.value = err.response?.data?.error_message || err.message || t('messages.error')
+    } finally {
+        savingListener.value = false
+    }
+}
+
 // ─── Backend ─────────────────────────────────────────────────────────────────
 
 const showBackendModal = ref(false)
 const currentListenerId = ref('')
-const backendForm = ref({ name: '', address: '', port: '' })
+// Empty when adding, the backend ID when editing
+const editingBackendId = ref('')
+const backendForm = ref({ name: '', address: '', port: '', ssl: false })
 const addingBackend = ref(false)
 const backendError = ref('')
 
 const openBackendModal = (listenerId: string) => {
     currentListenerId.value = listenerId
-    backendForm.value = { name: '', address: '', port: '' }
+    editingBackendId.value = ''
+    backendForm.value = { name: '', address: '', port: '', ssl: false }
     backendError.value = ''
     showBackendModal.value = true
 }
 
-const handleAddBackend = async () => {
+const openBackendEditModal = (listenerId: string, backend: Backend) => {
+    currentListenerId.value = listenerId
+    editingBackendId.value = backend.id
+    // Endpoint is IP:port
+    const sep = backend.endpoint.lastIndexOf(':')
+    backendForm.value = {
+        name: backend.name || '',
+        address: sep > 0 ? backend.endpoint.slice(0, sep) : backend.endpoint,
+        port: sep > 0 ? backend.endpoint.slice(sep + 1) : '',
+        ssl: !!backend.ssl
+    }
+    backendError.value = ''
+    showBackendModal.value = true
+}
+
+const handleSaveBackend = async () => {
     if (!backendForm.value.name || !backendForm.value.address || !backendForm.value.port) {
         backendError.value = t('messages.fillRequired')
         return
@@ -243,12 +316,19 @@ const handleAddBackend = async () => {
     addingBackend.value = true
     backendError.value = ''
     try {
-        await loadBalancersApi.addBackend(lbId, currentListenerId.value, {
+        const payload = {
             name: backendForm.value.name,
-            endpoint: `${backendForm.value.address}:${backendForm.value.port}`
-        })
+            endpoint: `${backendForm.value.address}:${portNum}`,
+            ssl: backendForm.value.ssl
+        }
+        if (editingBackendId.value) {
+            await loadBalancersApi.patchBackend(lbId, currentListenerId.value, editingBackendId.value, payload)
+            toast.success(t('messages.success'))
+        } else {
+            await loadBalancersApi.addBackend(lbId, currentListenerId.value, payload)
+            toast.success(t('messages.createSuccess'))
+        }
         showBackendModal.value = false
-        toast.success(t('messages.createSuccess'))
         await fetchLB()
     } catch (err: any) {
         backendError.value = err.response?.data?.error_message || err.message || t('messages.error')
@@ -424,11 +504,21 @@ onMounted(async () => {
                                     </td>
                                     <td>{{ listener.name }}</td>
                                     <td><code class="mono">{{ listener.mode.toUpperCase() }}:{{ listener.port }}</code></td>
-                                    <td>{{ listener.status || 'active' }}</td>
+                                    <td>
+                                        <span :class="['badge', getStatusClass(listener.status || '')]">{{ listener.status || '-' }}</span>
+                                    </td>
                                     <td class="text-secondary text-sm">
                                         {{ listener.backends?.length || 0 }} {{ $t('dashboard.loadBalancerDetail.backends') }}
+                                        <span v-if="listener.backends?.length">{{ $t('dashboard.loadBalancerDetail.healthyCount', { count: countHealthy(listener) }) }}</span>
                                     </td>
                                     <td @click.stop>
+                                        <button
+                                            class="btn btn-ghost btn-sm"
+                                            :title="$t('actions.edit')"
+                                            @click="openListenerEditModal(listener)"
+                                        >
+                                            <Pencil :size="14" />
+                                        </button>
                                         <button
                                             class="btn btn-ghost btn-sm text-error"
                                             @click="handleDeleteListener(listener.id, listener.name)"
@@ -455,7 +545,8 @@ onMounted(async () => {
                                                     <tr>
                                                         <th>{{ $t('dashboard.table.name') }}</th>
                                                         <th>{{ $t('dashboard.loadBalancerDetail.endpoint') }}</th>
-                                                        <th>{{ $t('dashboard.table.status') }}</th>
+                                                        <th>{{ $t('dashboard.loadBalancerDetail.backendSsl') }}</th>
+                                                        <th>{{ $t('dashboard.loadBalancerDetail.health') }}</th>
                                                         <th></th>
                                                     </tr>
                                                 </thead>
@@ -463,8 +554,18 @@ onMounted(async () => {
                                                     <tr v-for="backend in listener.backends" :key="backend.id">
                                                         <td>{{ backend.name || '-' }}</td>
                                                         <td><code class="mono">{{ backend.endpoint }}</code></td>
-                                                        <td>{{ backend.status || 'active' }}</td>
+                                                        <td>{{ backend.ssl ? $t('dashboard.loadBalancerDetail.sslOn') : $t('dashboard.loadBalancerDetail.sslOff') }}</td>
                                                         <td>
+                                                            <span :class="['badge', getHealthClass(backend.health)]">{{ getHealthLabel(backend.health) }}</span>
+                                                        </td>
+                                                        <td class="backend-actions">
+                                                            <button
+                                                                class="btn btn-ghost btn-sm"
+                                                                :title="$t('actions.edit')"
+                                                                @click="openBackendEditModal(listener.id, backend)"
+                                                            >
+                                                                <Pencil :size="13" />
+                                                            </button>
                                                             <button
                                                                 class="btn btn-ghost btn-sm text-error"
                                                                 @click="handleDeleteBackend(listener.id, backend.id, backend.name || backend.endpoint)"
@@ -509,6 +610,23 @@ onMounted(async () => {
                             </select>
                         </div>
                     </div>
+                    <div class="form-row">
+                        <div class="form-group form-group-grow">
+                            <label class="form-label">{{ $t('dashboard.floatingIPDetail.inbound') }}</label>
+                            <div class="input-with-suffix">
+                                <input v-model.number="fipForm.inbound" type="number" min="1" max="20000" class="form-input" :placeholder="$t('dashboard.floatingIPDetail.inboundPlaceholder')" />
+                                <span class="input-suffix">{{ $t('dashboard.floatingIPDetail.mbps') }}</span>
+                            </div>
+                        </div>
+                        <div class="form-group form-group-grow">
+                            <label class="form-label">{{ $t('dashboard.floatingIPDetail.outbound') }}</label>
+                            <div class="input-with-suffix">
+                                <input v-model.number="fipForm.outbound" type="number" min="1" max="20000" class="form-input" :placeholder="$t('dashboard.floatingIPDetail.outboundPlaceholder')" />
+                                <span class="input-suffix">{{ $t('dashboard.floatingIPDetail.mbps') }}</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="form-hint">{{ $t('dashboard.loadBalancerDetail.bandwidthHint') }}</div>
                 </div>
                 <div v-if="fipError" class="modal-error">{{ fipError }}</div>
                 <div class="modal-footer">
@@ -568,11 +686,35 @@ onMounted(async () => {
             </div>
         </div>
 
-        <!-- Add Backend Modal -->
+        <!-- Edit Listener Modal -->
+        <div v-if="showListenerEditModal" class="modal-overlay" @click.self="showListenerEditModal = false">
+            <div class="modal-content card" style="max-width:460px">
+                <div class="modal-header">
+                    <h3>{{ $t('dashboard.loadBalancerDetail.editListener') }}</h3>
+                    <button class="btn btn-ghost btn-sm icon-btn" @click="showListenerEditModal = false"><X :size="20" /></button>
+                </div>
+                <div class="modal-body">
+                    <div class="form-group">
+                        <label class="form-label">{{ $t('dashboard.forms.name') }} *</label>
+                        <input v-model="listenerEditForm.name" type="text" class="form-input" @keyup.enter="handleEditListener" />
+                    </div>
+                </div>
+                <div v-if="listenerEditError" class="modal-error">{{ listenerEditError }}</div>
+                <div class="modal-footer">
+                    <button class="btn btn-secondary" @click="showListenerEditModal = false" :disabled="savingListener">{{ $t('actions.cancel') }}</button>
+                    <button class="btn btn-primary" @click="handleEditListener" :disabled="savingListener || !listenerEditForm.name">
+                        <span v-if="savingListener" class="loading-spinner" style="width:16px;height:16px;border-width:2px"></span>
+                        {{ savingListener ? $t('messages.saving') : $t('actions.save') }}
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Add / Edit Backend Modal -->
         <div v-if="showBackendModal" class="modal-overlay" @click.self="showBackendModal = false">
             <div class="modal-content card">
                 <div class="modal-header">
-                    <h3>{{ $t('dashboard.loadBalancerDetail.addBackend') }}</h3>
+                    <h3>{{ editingBackendId ? $t('dashboard.loadBalancerDetail.editBackend') : $t('dashboard.loadBalancerDetail.addBackend') }}</h3>
                     <button class="btn btn-ghost btn-sm icon-btn" @click="showBackendModal = false"><X :size="20" /></button>
                 </div>
                 <div class="modal-body">
@@ -590,13 +732,21 @@ onMounted(async () => {
                             <input v-model="backendForm.port" type="number" class="form-input" placeholder="8080" min="1" max="65535" />
                         </div>
                     </div>
+                    <div class="form-group">
+                        <label class="checkbox-label">
+                            <input v-model="backendForm.ssl" type="checkbox" />
+                            {{ $t('dashboard.loadBalancerDetail.backendSslLabel') }}
+                        </label>
+                        <div class="form-hint">{{ $t('dashboard.loadBalancerDetail.backendSslHint') }}</div>
+                    </div>
                 </div>
                 <div v-if="backendError" class="modal-error">{{ backendError }}</div>
                 <div class="modal-footer">
                     <button class="btn btn-secondary" @click="showBackendModal = false" :disabled="addingBackend">{{ $t('actions.cancel') }}</button>
-                    <button class="btn btn-primary" @click="handleAddBackend" :disabled="addingBackend">
+                    <button class="btn btn-primary" @click="handleSaveBackend" :disabled="addingBackend">
                         <span v-if="addingBackend" class="loading-spinner" style="width:16px;height:16px;border-width:2px"></span>
-                        {{ addingBackend ? $t('dashboard.loadBalancerDetail.addingBackend') : $t('dashboard.loadBalancerDetail.addBackend') }}
+                        <template v-if="editingBackendId">{{ addingBackend ? $t('messages.saving') : $t('actions.save') }}</template>
+                        <template v-else>{{ addingBackend ? $t('dashboard.loadBalancerDetail.addingBackend') : $t('dashboard.loadBalancerDetail.addBackend') }}</template>
                     </button>
                 </div>
             </div>
@@ -825,6 +975,28 @@ onMounted(async () => {
     color: var(--text-tertiary);
     margin-top: 4px;
 }
+.checkbox-label {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--spacing-2);
+    font-size: var(--font-size-sm);
+    color: var(--text-primary);
+    cursor: pointer;
+}
+.input-with-suffix {
+    position: relative;
+    display: flex;
+    align-items: center;
+}
+.input-with-suffix .form-input { padding-right: 52px; }
+.input-suffix {
+    position: absolute;
+    right: 12px;
+    font-size: var(--font-size-xs);
+    color: var(--text-tertiary);
+    pointer-events: none;
+}
+.backend-actions { white-space: nowrap; text-align: right; }
 
 /* Action Dropdown */
 .action-dropdown { position: relative; }

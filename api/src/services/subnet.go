@@ -21,6 +21,7 @@ import (
 	"api/src/model"
 
 	"github.com/apparentlymart/go-cidr/cidr"
+	"gorm.io/gorm"
 )
 
 var (
@@ -336,7 +337,7 @@ func clearRouting(ctx context.Context, routerID int64, subnet *model.Subnet) (er
 		if router.Hyper == router.Peer {
 			control = fmt.Sprintf("inter=%d", router.Hyper)
 		}
-		command := fmt.Sprintf("/opt/cloudland/scripts/backend/clear_gateway.sh '%d' '%s' '%d'", router.ID, subnet.Gateway, subnet.Vlan)
+		command := fmt.Sprintf("/opt/cloudland/scripts/backend/clear_gateway.sh '%d' '%s' '%d'", router.ID, ShellEscape(subnet.Gateway), subnet.Vlan)
 		err = HyperExecute(ctx, control, command)
 		if err != nil {
 			logger.Ctx(ctx).Error("Set gateway failed")
@@ -735,8 +736,8 @@ func (a *SubnetAdmin) CountAddressStatistics(ctx context.Context, subnet *model.
 	return
 }
 
-func (a *SubnetAdmin) List(ctx context.Context, offset, limit int64, order, query, intQuery string) (total int64, subnets []*model.Subnet, err error) {
-	logger.Ctx(ctx).Infof("ENTER SubnetAdmin.List: offset=%d, limit=%d, order=%s, query=%s, intQuery=%s", offset, limit, order, query, intQuery)
+func (a *SubnetAdmin) List(ctx context.Context, offset, limit int64, order, name string, groupID int64, ipGroupType string) (total int64, subnets []*model.Subnet, err error) {
+	logger.Ctx(ctx).Infof("ENTER SubnetAdmin.List: offset=%d, limit=%d, order=%s, name=%s, groupID=%d, ipGroupType=%s", offset, limit, order, name, groupID, ipGroupType)
 	defer func() {
 		if err != nil {
 			logger.Ctx(ctx).Errorf("EXIT SubnetAdmin.List: error=%v", err)
@@ -772,13 +773,24 @@ func (a *SubnetAdmin) List(ctx context.Context, offset, limit int64, order, quer
 		ownerFilter = "owner = ? OR type IN ('public', 'private')"
 		ownerArgs = []interface{}{memberShip.OrgID}
 	}
+	// Filters are bound as parameters: the name comes straight from the request
+	filter := func(tx *gorm.DB) *gorm.DB {
+		tx = dbs.Contains(name, "name")(tx.Where(ownerFilter, ownerArgs...))
+		if groupID > 0 {
+			tx = tx.Where("group_id = ?", groupID)
+		}
+		if ipGroupType != "" {
+			tx = tx.Where("group_id IN (SELECT id FROM ip_groups WHERE type = ?)", ipGroupType)
+		}
+		return tx
+	}
 	subnets = []*model.Subnet{}
-	if err = db.Model(&model.Subnet{}).Where(ownerFilter, ownerArgs...).Where(query).Where(intQuery).Count(&total).Error; err != nil {
+	if err = db.Model(&model.Subnet{}).Scopes(filter).Count(&total).Error; err != nil {
 		err = NewCLError(ErrSQLSyntaxError, "Failed to count subnets", err)
 		return
 	}
 	db = dbs.Sortby(db.Offset(int(offset)).Limit(int(limit)), order)
-	if err = db.Preload("Group").Preload("Router").Where(ownerFilter, ownerArgs...).Where(query).Where(intQuery).Find(&subnets).Error; err != nil {
+	if err = db.Preload("Group").Preload("Router").Scopes(filter).Find(&subnets).Error; err != nil {
 		err = NewCLError(ErrSQLSyntaxError, "Database failed to query subnets", err)
 		return
 	}

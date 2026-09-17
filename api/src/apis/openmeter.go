@@ -481,6 +481,9 @@ func (o *OpenMeterAPI) QueryOpenMeterMetrics(c *gin.Context) {
 	// Prepare query parameters：凭据通过 ClickHouse HTTP 头传递，避免密码出现在 URL、日志和链路数据中
 	params := url.Values{}
 	params.Add("database", req.Database)
+	// Request values are passed as ClickHouse query parameters ({name:Type} in the SQL) instead of being quoted into it
+	params.Add("param_subject", req.Subject)
+	params.Add("param_instance_id", req.InstanceID)
 
 	// Make HTTP request to ClickHouse
 	fullURL := fmt.Sprintf("%s?%s", clickHouseURL, params.Encode())
@@ -677,18 +680,18 @@ SELECT
   ingested_at,
   stored_at
 FROM om_events
-WHERE subject = '%s'
+WHERE subject = {subject:String}
   AND JSONExtractString(toString(JSONExtract(data, 'labels', 'JSON')), 'domain') = (
     SELECT any(JSONExtractString(toString(JSONExtract(data, 'labels', 'JSON')), 'domain'))
     FROM om_events
     WHERE subject = 'vm_instance_map'
-      AND JSONExtractString(toString(JSONExtract(data, 'labels', 'JSON')), 'instance_id') = '%s'
+      AND JSONExtractString(toString(JSONExtract(data, 'labels', 'JSON')), 'instance_id') = {instance_id:String}
   )
   %s
 ORDER BY time ASC
 LIMIT %d
 FORMAT JSONEachRow
-`, req.Subject, req.InstanceID, timeFilter, req.Limit)
+`, timeFilter, req.Limit)
 
 	return strings.TrimSpace(query)
 }
@@ -709,7 +712,7 @@ WITH
       arrayElement(splitByChar(':', JSON_VALUE(data, '$.labels.instance')), 2) AS compute_ip
     FROM openmeter.om_events
     WHERE subject = 'vm_instance_map'
-      AND JSON_VALUE(data, '$.labels.instance_id') = '%s'
+      AND JSON_VALUE(data, '$.labels.instance_id') = {instance_id:String}
       %s
     GROUP BY domain, compute_ip
   ),
@@ -721,7 +724,7 @@ WITH
       coalesce(JSON_VALUE(data, '$.labels.interface'), JSON_VALUE(data, '$.labels.device'), 'default') AS interface_id,
       arrayElement(splitByChar(':', JSON_VALUE(data, '$.labels.instance')), 2) AS compute_ip
     FROM openmeter.om_events
-    WHERE subject = '%s'
+    WHERE subject = {subject:String}
       %s
       AND JSON_VALUE(data, '$.labels.domain') IN (SELECT domain FROM vm_locations)
   ),
@@ -781,7 +784,7 @@ WITH
     FROM interface_with_increments
   )
 SELECT
-  '%s' as instance_id,
+  {instance_id:String} as instance_id,
   s1.total_time_points,
   s2.total_domains,
   s2.total_interfaces,
@@ -791,7 +794,7 @@ SELECT
   CAST(s1.total_resets AS UInt64) AS total_resets,
   s1.max_concurrent_interfaces,
   s1.max_concurrent_domains,
-  '%s' as subject,
+  {subject:String} as subject,
   %d as start_time,
   %d as end_time
 FROM s1
@@ -802,7 +805,7 @@ SETTINGS
   output_format_json_quote_64bit_integers = 0,
   output_format_json_validate_utf8 = 0,
   output_format_write_statistics = 0
-`, req.InstanceID, timeFilter, req.Subject, timeFilter, req.InstanceID, req.Subject, req.Start, req.End)
+`, timeFilter, timeFilter, req.Start, req.End)
 
 	return strings.TrimSpace(query)
 }

@@ -8,5 +8,5 @@ source ../cloudrc
 if [ "$4" = "warm" ] && virsh dominfo inst-$3 2>/dev/null | grep -qE "^Persistent:\s+yes"; then
     ./async_job/$(basename $0) $*
 else
-    async_exec ./async_job/$(basename $0) $*
+    async_exec ./async_job/$(basename $0) "$@"
 fi

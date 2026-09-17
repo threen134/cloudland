@@ -16,6 +16,8 @@ import (
 	. "api/src/common"
 	"api/src/dbs"
 	"api/src/model"
+
+	"gorm.io/gorm"
 )
 
 var (
@@ -90,7 +92,7 @@ func CreateVrrpConf(ctx context.Context, loadBalancer *model.LoadBalancer) (err 
 	}
 	if vrrpIface1.Hyper >= 0 {
 		control := fmt.Sprintf("inter=%d", vrrpIface1.Hyper)
-		command := fmt.Sprintf("/opt/cloudland/scripts/backend/create_keepalived_conf.sh '%d' '%d' '%d' '%s' '%s' '%s' '%s' 'MASTER'<<EOF\n%s\nEOF", routerID, vrrpID, vrrpVlan, vrrpIface1.Address.Address, vrrpIface1.MacAddr, vrrpIface2.Address.Address, vrrpIface2.MacAddr, jsonData)
+		command := fmt.Sprintf("/opt/cloudland/scripts/backend/create_keepalived_conf.sh '%d' '%d' '%d' '%s' '%s' '%s' '%s' 'MASTER'<<'EOF'\n%s\nEOF", routerID, vrrpID, vrrpVlan, ShellEscape(vrrpIface1.Address.Address), ShellEscape(vrrpIface1.MacAddr), ShellEscape(vrrpIface2.Address.Address), ShellEscape(vrrpIface2.MacAddr), jsonData)
 		err = HyperExecute(ctx, control, command)
 		if err != nil {
 			logger.Ctx(ctx).Error("Execute MASTER keepalived conf failed", err)
@@ -99,7 +101,7 @@ func CreateVrrpConf(ctx context.Context, loadBalancer *model.LoadBalancer) (err 
 	}
 	if vrrpIface2.Hyper >= 0 {
 		control := fmt.Sprintf("inter=%d", vrrpIface2.Hyper)
-		command := fmt.Sprintf("/opt/cloudland/scripts/backend/create_keepalived_conf.sh '%d' '%d' '%d' '%s' '%s' '%s' '%s' 'BACKUP'<<EOF\n%s\nEOF", routerID, vrrpID, vrrpVlan, vrrpIface2.Address.Address, vrrpIface2.MacAddr, vrrpIface1.Address.Address, vrrpIface1.MacAddr, jsonData)
+		command := fmt.Sprintf("/opt/cloudland/scripts/backend/create_keepalived_conf.sh '%d' '%d' '%d' '%s' '%s' '%s' '%s' 'BACKUP'<<'EOF'\n%s\nEOF", routerID, vrrpID, vrrpVlan, ShellEscape(vrrpIface2.Address.Address), ShellEscape(vrrpIface2.MacAddr), ShellEscape(vrrpIface1.Address.Address), ShellEscape(vrrpIface1.MacAddr), jsonData)
 		err = HyperExecute(ctx, control, command)
 		if err != nil {
 			logger.Ctx(ctx).Error("Execute BACKUP create keepalived conf failed", err)
@@ -163,7 +165,7 @@ func CreateVrrpInstance(ctx context.Context, name string, router *model.Router, 
 		return
 	}
 	control := "select=" + hyperGroup
-	command := fmt.Sprintf("/opt/cloudland/scripts/backend/set_vrrp_ip.sh '%d' '%d' '%d' '%s' '%s' '%s' '%s' 'MASTER' 'true'", router.ID, vrrpInstance.ID, vrrpSubnet.Vlan, vrrpIface1.MacAddr, vrrpIface1.Address.Address, vrrpIface2.MacAddr, vrrpIface2.Address.Address)
+	command := fmt.Sprintf("/opt/cloudland/scripts/backend/set_vrrp_ip.sh '%d' '%d' '%d' '%s' '%s' '%s' '%s' 'MASTER' 'true'", router.ID, vrrpInstance.ID, vrrpSubnet.Vlan, ShellEscape(vrrpIface1.MacAddr), ShellEscape(vrrpIface1.Address.Address), ShellEscape(vrrpIface2.MacAddr), ShellEscape(vrrpIface2.Address.Address))
 	err = HyperExecute(ctx, control, command)
 	if err != nil {
 		logger.Ctx(ctx).Error("Set vrrp ip command execution failed ", err)
@@ -228,7 +230,7 @@ func (a *LoadBalancerAdmin) Get(ctx context.Context, id int64) (loadBalancer *mo
 	memberShip := GetMemberShip(ctx)
 	where, args := memberShip.GetOrgFilter()
 	loadBalancer = &model.LoadBalancer{Model: model.Model{ID: id}}
-	err = db.Preload("FloatingIps").Preload("Router").Preload("VrrpInstance").Preload("VrrpInstance.VrrpSubnet").Preload("Listeners").Preload("Listeners.Backends").Where(where, args...).Take(loadBalancer).Error
+	err = db.Preload("FloatingIps").Preload("Router").Preload("VrrpInstance").Preload("VrrpInstance.VrrpSubnet").Preload("Listeners", dbs.OrderByID).Preload("Listeners.Backends", dbs.OrderByID).Where(where, args...).Take(loadBalancer).Error
 	if err != nil {
 		logger.Ctx(ctx).Error("Failed to query load balancer", err)
 		err = NewCLError(ErrLoadBalancerNotFound, "Failed to find load balancer", err)
@@ -256,7 +258,7 @@ func (a *LoadBalancerAdmin) GetLoadBalancerByUUID(ctx context.Context, uuID stri
 	memberShip := GetMemberShip(ctx)
 	where, args := memberShip.GetOrgFilter()
 	loadBalancer = &model.LoadBalancer{}
-	err = db.Preload("FloatingIps").Preload("Router").Preload("VrrpInstance").Preload("VrrpInstance.VrrpSubnet").Preload("Listeners").Preload("Listeners.Backends").Where(where, args...).Where("uuid = ?", uuID).Take(loadBalancer).Error
+	err = db.Preload("FloatingIps").Preload("Router").Preload("VrrpInstance").Preload("VrrpInstance.VrrpSubnet").Preload("Listeners", dbs.OrderByID).Preload("Listeners.Backends", dbs.OrderByID).Where(where, args...).Where("uuid = ?", uuID).Take(loadBalancer).Error
 	if err != nil {
 		logger.Ctx(ctx).Error("Failed to query load balancer, %v", err)
 		err = NewCLError(ErrRouterNotFound, "Failed to find load balancer", err)
@@ -417,7 +419,7 @@ func (a *LoadBalancerAdmin) Delete(ctx context.Context, loadBalancer *model.Load
 	}
 	if vrrpIface1.Hyper >= 0 {
 		control := fmt.Sprintf("inter=%d", vrrpIface1.Hyper)
-		command := fmt.Sprintf("/opt/cloudland/scripts/backend/clear_vrrp_ip.sh '%d' '%d' '%d' '%s' '%s' '%s' '%s'", routerID, vrrpInstance.ID, vrrpSubnet.Vlan, vrrpIface1.Address.Address, vrrpIface1.MacAddr, vrrpIface2.Address.Address, vrrpIface2.MacAddr)
+		command := fmt.Sprintf("/opt/cloudland/scripts/backend/clear_vrrp_ip.sh '%d' '%d' '%d' '%s' '%s' '%s' '%s'", routerID, vrrpInstance.ID, vrrpSubnet.Vlan, ShellEscape(vrrpIface1.Address.Address), ShellEscape(vrrpIface1.MacAddr), ShellEscape(vrrpIface2.Address.Address), ShellEscape(vrrpIface2.MacAddr))
 		err = HyperExecute(ctx, control, command)
 		if err != nil {
 			logger.Ctx(ctx).Error("Set vrrp ip command execution failed ", err)
@@ -426,7 +428,7 @@ func (a *LoadBalancerAdmin) Delete(ctx context.Context, loadBalancer *model.Load
 	}
 	if vrrpIface2.Hyper >= 0 {
 		control := fmt.Sprintf("inter=%d", vrrpIface2.Hyper)
-		command := fmt.Sprintf("/opt/cloudland/scripts/backend/clear_vrrp_ip.sh '%d' '%d' '%d' '%s' '%s' '%s' '%s'", routerID, vrrpInstance.ID, vrrpSubnet.Vlan, vrrpIface2.Address.Address, vrrpIface2.MacAddr, vrrpIface1.Address.Address, vrrpIface1.MacAddr)
+		command := fmt.Sprintf("/opt/cloudland/scripts/backend/clear_vrrp_ip.sh '%d' '%d' '%d' '%s' '%s' '%s' '%s'", routerID, vrrpInstance.ID, vrrpSubnet.Vlan, ShellEscape(vrrpIface2.Address.Address), ShellEscape(vrrpIface2.MacAddr), ShellEscape(vrrpIface1.Address.Address), ShellEscape(vrrpIface1.MacAddr))
 		err = HyperExecute(ctx, control, command)
 		if err != nil {
 			logger.Ctx(ctx).Error("Set vrrp ip command execution failed ", err)
@@ -480,8 +482,8 @@ func (a *LoadBalancerAdmin) Delete(ctx context.Context, loadBalancer *model.Load
 	return
 }
 
-func (a *LoadBalancerAdmin) List(ctx context.Context, offset, limit int64, order, query string) (total int64, loadBalancers []*model.LoadBalancer, err error) {
-	logger.Ctx(ctx).Infof("ENTER LoadBalancerAdmin.List: offset=%d, limit=%d, order=%s, query=%s", offset, limit, order, query)
+func (a *LoadBalancerAdmin) List(ctx context.Context, offset, limit int64, order, name string, routerID int64) (total int64, loadBalancers []*model.LoadBalancer, err error) {
+	logger.Ctx(ctx).Infof("ENTER LoadBalancerAdmin.List: offset=%d, limit=%d, order=%s, name=%s, routerID=%d", offset, limit, order, name, routerID)
 	defer func() {
 		if err != nil {
 			logger.Ctx(ctx).Errorf("EXIT LoadBalancerAdmin.List: error=%v", err)
@@ -505,18 +507,26 @@ func (a *LoadBalancerAdmin) List(ctx context.Context, offset, limit int64, order
 		order = "created_at"
 	}
 
-	if query != "" {
-		query = fmt.Sprintf("name like '%%%s%%'", query)
-	}
 	queryBuilder, args := memberShip.GetOrgFilter()
+	// Filters are bound as parameters: the name comes straight from the request
+	filter := func(tx *gorm.DB) *gorm.DB {
+		tx = tx.Where(queryBuilder, args...)
+		if name != "" {
+			tx = tx.Where("name like ?", "%"+name+"%")
+		}
+		if routerID > 0 {
+			tx = tx.Where("router_id = ?", routerID)
+		}
+		return tx
+	}
 	loadBalancers = []*model.LoadBalancer{}
-	if err = db.Model(&model.LoadBalancer{}).Where(queryBuilder, args...).Where(query).Count(&total).Error; err != nil {
+	if err = db.Model(&model.LoadBalancer{}).Scopes(filter).Count(&total).Error; err != nil {
 		logger.Ctx(ctx).Error("DB failed to count load balancer, %v", err)
 		err = NewCLError(ErrSQLSyntaxError, "Failed to count load balancer", err)
 		return
 	}
 	db = dbs.Sortby(db.Offset(int(offset)).Limit(int(limit)), order)
-	if err = db.Preload("FloatingIps").Preload("VrrpInstance").Preload("VrrpInstance.VrrpSubnet").Preload("Listeners").Preload("Listeners.Backends").Preload("Router").Where(queryBuilder, args...).Where(query).Find(&loadBalancers).Error; err != nil {
+	if err = db.Preload("FloatingIps").Preload("VrrpInstance").Preload("VrrpInstance.VrrpSubnet").Preload("Listeners", dbs.OrderByID).Preload("Listeners.Backends", dbs.OrderByID).Preload("Router").Scopes(filter).Find(&loadBalancers).Error; err != nil {
 		logger.Ctx(ctx).Error("DB failed to query load balancers, %v", err)
 		err = NewCLError(ErrSQLSyntaxError, "Failed to query load balancers", err)
 		return

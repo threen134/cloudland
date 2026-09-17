@@ -158,16 +158,13 @@ func (a *FlavorAdmin) List(ctx context.Context, offset, limit int64, order, quer
 	if order == "" {
 		order = "created_at"
 	}
-	if query != "" {
-		query = fmt.Sprintf("name like '%%%s%%'", query)
-	}
 
 	flavors = []*model.Flavor{}
-	if err = db.Model(&model.Flavor{}).Where(query).Count(&total).Error; err != nil {
+	if err = db.Model(&model.Flavor{}).Scopes(dbs.Contains(query, "name")).Count(&total).Error; err != nil {
 		return 0, nil, NewCLError(ErrSQLSyntaxError, "Failed to count flavors", err)
 	}
 	db = dbs.Sortby(db.Offset(int(offset)).Limit(int(limit)), order)
-	if err = db.Where(query).Find(&flavors).Error; err != nil {
+	if err = db.Scopes(dbs.Contains(query, "name")).Find(&flavors).Error; err != nil {
 		return 0, nil, NewCLError(ErrSQLSyntaxError, "Failed to list flavors", err)
 	}
 

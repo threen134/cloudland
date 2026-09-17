@@ -114,7 +114,7 @@ func sendFdbRules(ctx context.Context, instance *model.Instance, vrrpInstance *m
 		}
 		fdbJson, _ := json.Marshal(spreadRules)
 		control := "toall=" + hyperList
-		command := fmt.Sprintf("/opt/cloudland/scripts/backend/add_fwrule.sh <<EOF\n%s\nEOF", fdbJson)
+		command := fmt.Sprintf("/opt/cloudland/scripts/backend/add_fwrule.sh <<'EOF'\n%s\nEOF", fdbJson)
 		err = HyperExecute(ctx, control, command)
 		if err != nil {
 			logger.Ctx(ctx).Error("Add_fwrule execution failed", err)
@@ -124,7 +124,7 @@ func sendFdbRules(ctx context.Context, instance *model.Instance, vrrpInstance *m
 	if len(localRules) > 0 {
 		fdbJson, _ := json.Marshal(localRules)
 		control := fmt.Sprintf("inter=%d", hyperNode)
-		command := fmt.Sprintf("/opt/cloudland/scripts/backend/add_fwrule.sh <<EOF\n%s\nEOF", fdbJson)
+		command := fmt.Sprintf("/opt/cloudland/scripts/backend/add_fwrule.sh <<'EOF'\n%s\nEOF", fdbJson)
 		err = HyperExecute(ctx, control, command)
 		if err != nil {
 			logger.Ctx(ctx).Error("Add_fwrule execution failed", err)
@@ -280,7 +280,7 @@ func syncNicInfo(ctx context.Context, instance *model.Instance) (err error) {
 		return
 	}
 	control := fmt.Sprintf("inter=%d", instance.Hyper)
-	command := fmt.Sprintf("/opt/cloudland/scripts/backend/sync_nic_info.sh '%d' '%s' '%s' <<EOF\n%s\nEOF", instance.ID, instance.Hostname, GetImageOSCode(ctx, instance), jsonData)
+	command := fmt.Sprintf("/opt/cloudland/scripts/backend/sync_nic_info.sh '%d' '%s' '%s' <<'EOF'\n%s\nEOF", instance.ID, ShellEscape(instance.Hostname), ShellEscape(GetImageOSCode(ctx, instance)), jsonData)
 	err = HyperExecute(ctx, control, command)
 	if err != nil {
 		logger.Ctx(ctx).Error("Execute floating ip failed", err)
@@ -314,7 +314,7 @@ func syncFloatingIp(ctx context.Context, instance *model.Instance) (err error) {
 
 			pubSubnet := floatingIp.Interface.Address.Subnet
 			control := fmt.Sprintf("inter=%d", instance.Hyper)
-			command := fmt.Sprintf("/opt/cloudland/scripts/backend/create_floating.sh '%d' '%s' '%s' '%d' '%s' '%d' '%d' '%d' '%d'", floatingIp.RouterID, floatingIp.FipAddress, pubSubnet.Gateway, pubSubnet.Vlan, primaryIface.Address.Address, primaryIface.Address.Subnet.Vlan, floatingIp.ID, floatingIp.Inbound, floatingIp.Outbound)
+			command := fmt.Sprintf("/opt/cloudland/scripts/backend/create_floating.sh '%d' '%s' '%s' '%d' '%s' '%d' '%d' '%d' '%d'", floatingIp.RouterID, ShellEscape(floatingIp.FipAddress), ShellEscape(pubSubnet.Gateway), pubSubnet.Vlan, ShellEscape(primaryIface.Address.Address), primaryIface.Address.Subnet.Vlan, floatingIp.ID, floatingIp.Inbound, floatingIp.Outbound)
 			err = HyperExecute(ctx, control, command)
 			if err != nil {
 				logger.Ctx(ctx).Error("Execute floating ip failed", err)

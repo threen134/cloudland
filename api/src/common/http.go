@@ -12,6 +12,7 @@ import (
 	"fmt"
 
 	"github.com/gin-gonic/gin"
+	"github.com/jackc/pgx/v5/pgconn"
 )
 
 // type JSONTime time.Time
@@ -42,6 +43,13 @@ type APIError struct {
 	ErrorMessage string `json:"error_message"`
 }
 
+// isDatabaseError reports whether err wraps a database server error. Its text can carry SQL fragments and
+// column values (error-based SQL injection reads data through it), so it only goes to the log
+func isDatabaseError(err error) bool {
+	var pgErr *pgconn.PgError
+	return errors.As(err, &pgErr)
+}
+
 func ErrorResponse(c *gin.Context, code int, errorMsg string, err error) {
 	logger.Ctx(c).Errorf("%s, %v\n", errorMsg, err)
 	status := code
@@ -52,14 +60,20 @@ func ErrorResponse(c *gin.Context, code int, errorMsg string, err error) {
 			if businessStatus := clErr.Code.ToHTTPStatus(); businessStatus != 500 {
 				status = businessStatus
 			}
+			message := clErr.Error()
+			if isDatabaseError(err) {
+				message = fmt.Sprintf("Code %d: %s", clErr.Code, clErr.Message)
+			}
 			c.JSON(status, &APIError{
 				ErrorCode:    int(clErr.Code),
 				ErrorCodeStr: clErr.Code.String(),
-				ErrorMessage: clErr.Error(),
+				ErrorMessage: message,
 			})
 			return
 		}
-		errorMsg = errorMsg + ": " + err.Error()
+		if !isDatabaseError(err) {
+			errorMsg = errorMsg + ": " + err.Error()
+		}
 	}
 	c.JSON(status, &APIError{
 		ErrorCode:    status,

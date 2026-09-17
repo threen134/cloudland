@@ -10,7 +10,6 @@ package apis
 import (
 	"context"
 	"errors"
-	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -285,6 +284,7 @@ func (v *SecgroupAPI) List(c *gin.Context) {
 	limitStr := c.DefaultQuery("limit", "50")
 	queryStr := c.DefaultQuery("query", "")
 	vpcID := strings.TrimSpace(c.DefaultQuery("vpc_id", ""))
+	var routerID int64
 	logger.Ctx(ctx).Debugf("List secgroups with offset %s, limit %s, query %s, vpc_id %s", offsetStr, limitStr, queryStr, vpcID)
 
 	if vpcID != "" {
@@ -299,7 +299,7 @@ func (v *SecgroupAPI) List(c *gin.Context) {
 
 		logger.Ctx(ctx).Debugf("The router with vpc_id: %+v\n", router)
 		logger.Ctx(ctx).Debugf("The router_id in vpc is: %d", router.ID)
-		queryStr = fmt.Sprintf("router_id = %d", router.ID)
+		routerID = router.ID
 	}
 
 	offset, err := strconv.Atoi(offsetStr)
@@ -320,7 +320,7 @@ func (v *SecgroupAPI) List(c *gin.Context) {
 		ErrorResponse(c, http.StatusBadRequest, "Invalid query offset or limit", errors.New(errStr))
 		return
 	}
-	total, secgroups, err := secgroupAdmin.List(ctx, int64(offset), int64(limit), "-created_at", queryStr)
+	total, secgroups, err := secgroupAdmin.List(ctx, int64(offset), int64(limit), "-created_at", queryStr, routerID)
 	if err != nil {
 		logger.Ctx(ctx).Errorf("Failed to list secgroups, %+v", err)
 		ErrorResponse(c, http.StatusBadRequest, "Failed to list secgroups", err)

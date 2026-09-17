@@ -93,7 +93,7 @@ func SetVrrpIp(ctx context.Context, args []string) (status string, err error) {
 			return
 		}
 		control := fmt.Sprintf("inter=%d", vrrpIface.Hyper)
-		command := fmt.Sprintf("/opt/cloudland/scripts/backend/clear_vrrp_ip.sh '%d' '%d' '%d' '%s' '%s' '%s' '%s'", vrrpInstance.RouterID, vrrpInstance.ID, vrrpInstance.VrrpSubnet.Vlan, vrrpIface.Address.Address, vrrpIface.MacAddr, vrrpIface2.Address.Address, vrrpIface2.MacAddr)
+		command := fmt.Sprintf("/opt/cloudland/scripts/backend/clear_vrrp_ip.sh '%d' '%d' '%d' '%s' '%s' '%s' '%s'", vrrpInstance.RouterID, vrrpInstance.ID, vrrpInstance.VrrpSubnet.Vlan, ShellEscape(vrrpIface.Address.Address), ShellEscape(vrrpIface.MacAddr), ShellEscape(vrrpIface2.Address.Address), ShellEscape(vrrpIface2.MacAddr))
 		err = HyperExecute(ctx, control, command)
 		if err != nil {
 			logger.Ctx(ctx).Error("Set vrrp ip command execution failed ", err)
@@ -130,7 +130,7 @@ func SetVrrpIp(ctx context.Context, args []string) (status string, err error) {
 			return
 		}
 		control := "select=" + hyperGroup
-		command := fmt.Sprintf("/opt/cloudland/scripts/backend/set_vrrp_ip.sh '%d' '%d' '%d' '%s' '%s' '%s' '%s' 'BACKUP' 'true'", vrrpInstance.RouterID, vrrpInstance.ID, vrrpInstance.VrrpSubnet.Vlan, vrrpIface2.MacAddr, vrrpIface2.Address.Address, vrrpIface.MacAddr, vrrpIface.Address.Address)
+		command := fmt.Sprintf("/opt/cloudland/scripts/backend/set_vrrp_ip.sh '%d' '%d' '%d' '%s' '%s' '%s' '%s' 'BACKUP' 'true'", vrrpInstance.RouterID, vrrpInstance.ID, vrrpInstance.VrrpSubnet.Vlan, ShellEscape(vrrpIface2.MacAddr), ShellEscape(vrrpIface2.Address.Address), ShellEscape(vrrpIface.MacAddr), ShellEscape(vrrpIface.Address.Address))
 		err = HyperExecute(ctx, control, command)
 		if err != nil {
 			logger.Ctx(ctx).Error("set vrrp ip execution failed", err)

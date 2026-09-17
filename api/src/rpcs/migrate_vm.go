@@ -71,7 +71,7 @@ func execSourceMigrate(ctx context.Context, instance *model.Instance, migration 
 			targetAddr = targetHyper.HostIP
 		}
 		control := fmt.Sprintf("inter=%d", migration.SourceHyper)
-		command := fmt.Sprintf("%s '%d' '%d' '%d' '%d' '%s' '%s' <<EOF\n%s\nEOF", migrationScript, migration.ID, taskID, instance.ID, instance.RouterID, targetAddr, migrationType, volumesJson)
+		command := fmt.Sprintf("%s '%d' '%d' '%d' '%d' '%s' '%s' <<'EOF'\n%s\nEOF", migrationScript, migration.ID, taskID, instance.ID, instance.RouterID, ShellEscape(targetAddr), ShellEscape(migrationType), volumesJson)
 		err = HyperExecute(ctx, control, command)
 		if err != nil {
 			logger.Ctx(ctx).Error("Source migration command execution failed", err)
@@ -123,7 +123,7 @@ func prewarmTargetFdb(ctx context.Context, instance *model.Instance, targetHyper
 		return
 	}
 	fdbJson, _ := json.Marshal(rules)
-	command := fmt.Sprintf("/opt/cloudland/scripts/backend/add_fwrule.sh <<EOF\n%s\nEOF", fdbJson)
+	command := fmt.Sprintf("/opt/cloudland/scripts/backend/add_fwrule.sh <<'EOF'\n%s\nEOF", fdbJson)
 	err = HyperExecute(ctx, fmt.Sprintf("inter=%d", targetHyper.Hostid), command)
 	if err != nil {
 		logger.Ctx(ctx).Error("Prewarm target fdb execution failed", err)
@@ -157,7 +157,7 @@ func clearSourceAddresses(ctx context.Context, instance *model.Instance, migrati
 	control := fmt.Sprintf("inter=%d", migration.SourceHyper)
 	if instance.RouterID > 0 {
 		for _, fip := range instance.FloatingIps {
-			command := fmt.Sprintf("/opt/cloudland/scripts/backend/clear_floating.sh '%d' '%s' '%s' '%d' '%d'", fip.RouterID, fip.FipAddress, fip.IntAddress, primaryIface.Address.Subnet.Vlan, fip.ID)
+			command := fmt.Sprintf("/opt/cloudland/scripts/backend/clear_floating.sh '%d' '%s' '%s' '%d' '%d'", fip.RouterID, ShellEscape(fip.FipAddress), ShellEscape(fip.IntAddress), primaryIface.Address.Subnet.Vlan, fip.ID)
 			err = HyperExecute(ctx, control, command)
 			if err != nil {
 				logger.Ctx(ctx).Error("Execute clear floating ip failed", err)
@@ -178,7 +178,7 @@ func clearSourceAddresses(ctx context.Context, instance *model.Instance, migrati
 			logger.Ctx(ctx).Errorf("Failed to marshal second addresses json data, %v", err)
 			return
 		}
-		command := fmt.Sprintf("/opt/cloudland/scripts/backend/clear_second_ips.sh '%d' '%s' '%s'<<EOF\n%s\nEOF", instance.ID, primaryIface.MacAddr, GetImageOSCode(ctx, instance), oldAddrsJson)
+		command := fmt.Sprintf("/opt/cloudland/scripts/backend/clear_second_ips.sh '%d' '%s' '%s'<<'EOF'\n%s\nEOF", instance.ID, ShellEscape(primaryIface.MacAddr), ShellEscape(GetImageOSCode(ctx, instance)), oldAddrsJson)
 		err = HyperExecute(ctx, control, command)
 		if err != nil {
 			logger.Ctx(ctx).Error("Execute clear second ips failed", err)
@@ -366,7 +366,7 @@ func MigrateVM(ctx context.Context, args []string) (status string, err error) {
 			macs = append(macs, iface.MacAddr)
 		}
 		control := fmt.Sprintf("inter=%d", migration.TargetHyper)
-		command := fmt.Sprintf("/opt/cloudland/scripts/backend/clear_target_migration.sh '%d' '%d' '%d' '%d' '%s'", migration.ID, task3.ID, instance.ID, instance.RouterID, strings.Join(macs, " "))
+		command := fmt.Sprintf("/opt/cloudland/scripts/backend/clear_target_migration.sh '%d' '%d' '%d' '%d' '%s'", migration.ID, task3.ID, instance.ID, instance.RouterID, ShellEscape(strings.Join(macs, " ")))
 		err = HyperExecute(ctx, control, command)
 		if err != nil {
 			logger.Ctx(ctx).Error("Execute clear target failed", err)
@@ -463,7 +463,7 @@ func MigrateVM(ctx context.Context, args []string) (status string, err error) {
 	} else if status == "source_prepared" {
 		// 源节点上的浮动 IP、辅助 IP 保留到 completed：目标节点重建之前仍由源节点路由器转发
 		control := fmt.Sprintf("inter=%d", migration.TargetHyper)
-		command := fmt.Sprintf("/opt/cloudland/scripts/backend/complete_migration.sh '%d' '%d' '%d' '%s'", migration.ID, taskID, instance.ID, migration.Type)
+		command := fmt.Sprintf("/opt/cloudland/scripts/backend/complete_migration.sh '%d' '%d' '%d' '%s'", migration.ID, taskID, instance.ID, ShellEscape(migration.Type))
 		err = HyperExecute(ctx, control, command)
 		if err != nil {
 			logger.Ctx(ctx).Error("Execute clear target failed", err)

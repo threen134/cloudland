@@ -15,6 +15,8 @@ import (
 	. "api/src/common"
 	"api/src/dbs"
 	"api/src/model"
+
+	"gorm.io/gorm"
 )
 
 var (
@@ -556,8 +558,8 @@ func (a *SecgroupAdmin) Delete(ctx context.Context, secgroup *model.SecurityGrou
 	return
 }
 
-func (a *SecgroupAdmin) List(ctx context.Context, offset, limit int64, order, query string) (total int64, secgroups []*model.SecurityGroup, err error) {
-	logger.Ctx(ctx).Infof("ENTER SecgroupAdmin.List: offset=%d, limit=%d, order=%s, query=%s", offset, limit, order, query)
+func (a *SecgroupAdmin) List(ctx context.Context, offset, limit int64, order, name string, routerID int64) (total int64, secgroups []*model.SecurityGroup, err error) {
+	logger.Ctx(ctx).Infof("ENTER SecgroupAdmin.List: offset=%d, limit=%d, order=%s, name=%s, routerID=%d", offset, limit, order, name, routerID)
 	defer func() {
 		if err != nil {
 			logger.Ctx(ctx).Errorf("EXIT SecgroupAdmin.List: error=%v", err)
@@ -580,17 +582,23 @@ func (a *SecgroupAdmin) List(ctx context.Context, offset, limit int64, order, qu
 	if order == "" {
 		order = "created_at"
 	}
-	logger.Ctx(ctx).Debugf("The query in admin console is %s", query)
-
 	queryBuilder, args := memberShip.GetOrgFilter()
+	// Filters are bound as parameters: the name comes straight from the request
+	filter := func(tx *gorm.DB) *gorm.DB {
+		tx = dbs.Contains(name, "name")(tx.Where(queryBuilder, args...))
+		if routerID > 0 {
+			tx = tx.Where("router_id = ?", routerID)
+		}
+		return tx
+	}
 	secgroups = []*model.SecurityGroup{}
-	if err = db.Model(&model.SecurityGroup{}).Where(queryBuilder, args...).Where(query).Count(&total).Error; err != nil {
+	if err = db.Model(&model.SecurityGroup{}).Scopes(filter).Count(&total).Error; err != nil {
 		logger.Ctx(ctx).Error("DB failed to count security group(s), %v", err)
 		err = NewCLError(ErrSQLSyntaxError, "Failed to count security group(s)", err)
 		return
 	}
 	db = dbs.Sortby(db.Offset(int(offset)).Limit(int(limit)), order)
-	if err = db.Where(queryBuilder, args...).Where(query).Find(&secgroups).Error; err != nil {
+	if err = db.Scopes(filter).Find(&secgroups).Error; err != nil {
 		logger.Ctx(ctx).Error("DB failed to query security group(s), %v", err)
 		err = NewCLError(ErrSQLSyntaxError, "Failed to query security group(s)", err)
 		return

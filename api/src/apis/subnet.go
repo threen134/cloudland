@@ -9,7 +9,6 @@ package apis
 
 import (
 	"context"
-	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -361,9 +360,7 @@ func (v *SubnetAPI) List(c *gin.Context) {
 		return
 	}
 
-	if queryStr != "" {
-		queryStr = fmt.Sprintf("name like '%%%s%%'", queryStr)
-	}
+	var groupDBID int64
 	if groupID != "" {
 		logger.Ctx(ctx).Debugf("Filtering subnets by group_id: %s", groupID)
 		var ipGroup *model.IpGroup
@@ -376,16 +373,11 @@ func (v *SubnetAPI) List(c *gin.Context) {
 
 		logger.Ctx(ctx).Debugf("The ipGroup with group_id: %+v\n", ipGroup)
 		logger.Ctx(ctx).Debugf("The group_id in ipGroup is: %d", ipGroup.ID)
-		queryStr = fmt.Sprintf("group_id = %d", ipGroup.ID)
+		groupDBID = ipGroup.ID
 	}
 	// Filter by ipgroup type (system or resource)
 	if ipGroupType != "" {
 		if ipGroupType == "system" || ipGroupType == "resource" {
-			if queryStr != "" {
-				queryStr = fmt.Sprintf("%s AND group_id IN (SELECT id FROM ip_groups WHERE type = '%s')", queryStr, ipGroupType)
-			} else {
-				queryStr = fmt.Sprintf("group_id IN (SELECT id FROM ip_groups WHERE type = '%s')", ipGroupType)
-			}
 			logger.Ctx(ctx).Debugf("Filtering subnets by ipgroup_type: %s", ipGroupType)
 		} else {
 			logger.Ctx(ctx).Errorf("Invalid ipgroup_type: %s", ipGroupType)
@@ -393,7 +385,7 @@ func (v *SubnetAPI) List(c *gin.Context) {
 			return
 		}
 	}
-	total, subnets, err := subnetAdmin.List(ctx, int64(offset), int64(limit), "-created_at", queryStr, "")
+	total, subnets, err := subnetAdmin.List(ctx, int64(offset), int64(limit), "-created_at", queryStr, groupDBID, ipGroupType)
 	if err != nil {
 		ErrorResponse(c, http.StatusBadRequest, "Failed to list subnets", err)
 		return

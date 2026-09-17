@@ -14,6 +14,7 @@ import (
 	"strings"
 
 	. "api/src/common"
+	"api/src/dbs"
 	"api/src/model"
 )
 
@@ -70,7 +71,7 @@ func RecoverLoadbalancer(ctx context.Context, args []string) (status string, err
 			}
 			logger.Ctx(ctx).Debugf("Querying load balancer ID: %d", lbID)
 			lb := &model.LoadBalancer{}
-			err = db.Preload("VrrpInstance").Preload("VrrpInstance.VrrpSubnet").Preload("Listeners").Preload("Listeners.Backends").Preload("FloatingIps").Where("id = ?", lbID).Take(lb).Error
+			err = db.Preload("VrrpInstance").Preload("VrrpInstance.VrrpSubnet").Preload("Listeners", dbs.OrderByID).Preload("Listeners.Backends", dbs.OrderByID).Preload("FloatingIps").Where("id = ?", lbID).Take(lb).Error
 			if err != nil {
 				logger.Ctx(ctx).Errorf("Failed to query load balancer %d: %v", lbID, err)
 				continue
@@ -105,7 +106,7 @@ func RecoverLoadbalancer(ctx context.Context, args []string) (status string, err
 		}
 
 		lbs := []*model.LoadBalancer{}
-		err = db.Preload("VrrpInstance").Preload("VrrpInstance.VrrpSubnet").Preload("Listeners").Preload("Listeners.Backends").Preload("FloatingIps").Preload("FloatingIps.Subnet").Where("vrrp_instance_id in (?)", vrrpIDs).Find(&lbs).Error
+		err = db.Preload("VrrpInstance").Preload("VrrpInstance.VrrpSubnet").Preload("Listeners", dbs.OrderByID).Preload("Listeners.Backends", dbs.OrderByID).Preload("FloatingIps").Preload("FloatingIps.Subnet").Where("vrrp_instance_id in (?)", vrrpIDs).Find(&lbs).Error
 		if err != nil {
 			logger.Ctx(ctx).Errorf("Failed to query load balancers for VRRP IDs %v: %v", vrrpIDs, err)
 			return
@@ -173,8 +174,8 @@ func RecoverLoadbalancer(ctx context.Context, args []string) (status string, err
 			logger.Ctx(ctx).Infof("LB %d - Setting VRRP IP for MASTER on hyper %d", loadBalancer.ID, hyperID)
 			control := fmt.Sprintf("inter=%d", vrrpIface1.Hyper)
 			command := fmt.Sprintf("/opt/cloudland/scripts/backend/set_vrrp_ip.sh '%d' '%d' '%d' '%s' '%s' '%s' '%s' 'MASTER'",
-				routerID, vrrpID, vrrpVlan, vrrpIface1.MacAddr, vrrpIface1.Address.Address,
-				vrrpIface2.MacAddr, vrrpIface2.Address.Address)
+				routerID, vrrpID, vrrpVlan, ShellEscape(vrrpIface1.MacAddr), ShellEscape(vrrpIface1.Address.Address),
+				ShellEscape(vrrpIface2.MacAddr), ShellEscape(vrrpIface2.Address.Address))
 			err = HyperExecute(ctx, control, command)
 			if err != nil {
 				logger.Ctx(ctx).Errorf("LB %d - Set VRRP IP for MASTER failed: %v", loadBalancer.ID, err)
@@ -186,9 +187,9 @@ func RecoverLoadbalancer(ctx context.Context, args []string) (status string, err
 			}
 			logger.Ctx(ctx).Infof("LB %d - Creating MASTER keepalived config on hyper %d", loadBalancer.ID, hyperID)
 			control = fmt.Sprintf("inter=%d", vrrpIface1.Hyper)
-			command = fmt.Sprintf("/opt/cloudland/scripts/backend/create_keepalived_conf.sh '%d' '%d' '%d' '%s' '%s' '%s' '%s' 'MASTER'<<EOF\n%s\nEOF",
-				routerID, vrrpID, vrrpVlan, vrrpIface1.Address.Address, vrrpIface1.MacAddr,
-				vrrpIface2.Address.Address, vrrpIface2.MacAddr, jsonData)
+			command = fmt.Sprintf("/opt/cloudland/scripts/backend/create_keepalived_conf.sh '%d' '%d' '%d' '%s' '%s' '%s' '%s' 'MASTER'<<'EOF'\n%s\nEOF",
+				routerID, vrrpID, vrrpVlan, ShellEscape(vrrpIface1.Address.Address), ShellEscape(vrrpIface1.MacAddr),
+				ShellEscape(vrrpIface2.Address.Address), ShellEscape(vrrpIface2.MacAddr), jsonData)
 			err = HyperExecute(ctx, control, command)
 			if err != nil {
 				logger.Ctx(ctx).Errorf("LB %d - Execute MASTER keepalived conf failed: %v", loadBalancer.ID, err)
@@ -201,8 +202,8 @@ func RecoverLoadbalancer(ctx context.Context, args []string) (status string, err
 			logger.Ctx(ctx).Infof("LB %d - Setting VRRP IP for BACKUP on hyper %d", loadBalancer.ID, hyperID)
 			control := fmt.Sprintf("inter=%d", vrrpIface2.Hyper)
 			command := fmt.Sprintf("/opt/cloudland/scripts/backend/set_vrrp_ip.sh '%d' '%d' '%d' '%s' '%s' '%s' '%s' 'BACKUP'",
-				routerID, vrrpID, vrrpVlan, vrrpIface2.MacAddr, vrrpIface2.Address.Address,
-				vrrpIface1.MacAddr, vrrpIface1.Address.Address)
+				routerID, vrrpID, vrrpVlan, ShellEscape(vrrpIface2.MacAddr), ShellEscape(vrrpIface2.Address.Address),
+				ShellEscape(vrrpIface1.MacAddr), ShellEscape(vrrpIface1.Address.Address))
 			err = HyperExecute(ctx, control, command)
 			if err != nil {
 				logger.Ctx(ctx).Errorf("LB %d - Set VRRP IP for BACKUP failed: %v", loadBalancer.ID, err)
@@ -214,9 +215,9 @@ func RecoverLoadbalancer(ctx context.Context, args []string) (status string, err
 			}
 			logger.Ctx(ctx).Infof("LB %d - Creating BACKUP keepalived config on hyper %d", loadBalancer.ID, hyperID)
 			control = fmt.Sprintf("inter=%d", vrrpIface2.Hyper)
-			command = fmt.Sprintf("/opt/cloudland/scripts/backend/create_keepalived_conf.sh '%d' '%d' '%d' '%s' '%s' '%s' '%s' 'BACKUP'<<EOF\n%s\nEOF",
-				routerID, vrrpID, vrrpVlan, vrrpIface2.Address.Address, vrrpIface2.MacAddr,
-				vrrpIface1.Address.Address, vrrpIface1.MacAddr, jsonData)
+			command = fmt.Sprintf("/opt/cloudland/scripts/backend/create_keepalived_conf.sh '%d' '%d' '%d' '%s' '%s' '%s' '%s' 'BACKUP'<<'EOF'\n%s\nEOF",
+				routerID, vrrpID, vrrpVlan, ShellEscape(vrrpIface2.Address.Address), ShellEscape(vrrpIface2.MacAddr),
+				ShellEscape(vrrpIface1.Address.Address), ShellEscape(vrrpIface1.MacAddr), jsonData)
 			err = HyperExecute(ctx, control, command)
 			if err != nil {
 				logger.Ctx(ctx).Errorf("LB %d - Execute BACKUP keepalived conf failed: %v", loadBalancer.ID, err)
@@ -235,8 +236,10 @@ func RecoverLoadbalancer(ctx context.Context, args []string) (status string, err
 				for _, backend := range listener.Backends {
 					logger.Ctx(ctx).Debugf("LB %d - Backend %d: %s, status: %s", loadBalancer.ID, backend.ID, backend.BackendAddr, backend.Status)
 					backendCfgs = append(backendCfgs, &BackendConfig{
+						ID:         backend.ID,
 						BackendURL: backend.BackendAddr,
 						Status:     backend.Status,
+						SSL:        backend.SSL,
 					})
 				}
 				listenerCfgs = append(listenerCfgs, &ListenerConfig{
@@ -274,7 +277,7 @@ func RecoverLoadbalancer(ctx context.Context, args []string) (status string, err
 		// Execute haproxy config creation on the hypervisor
 		logger.Ctx(ctx).Infof("LB %d - Executing haproxy config creation on hyper %d", loadBalancer.ID, hyperID)
 		control := fmt.Sprintf("inter=%d", hyperID)
-		command := fmt.Sprintf("/opt/cloudland/scripts/backend/create_haproxy_conf.sh '%d' '%d' '%d'<<EOF\n%s\nEOF",
+		command := fmt.Sprintf("/opt/cloudland/scripts/backend/create_haproxy_conf.sh '%d' '%d' '%d'<<'EOF'\n%s\nEOF",
 			loadBalancer.RouterID, loadBalancer.ID, loadBalancer.VrrpInstance.ID, haproxyJsonData)
 		err = HyperExecute(ctx, control, command)
 		if err != nil {
@@ -288,7 +291,7 @@ func RecoverLoadbalancer(ctx context.Context, args []string) (status string, err
 		for _, fip := range floatingIps {
 			logger.Ctx(ctx).Infof("LB %d - Recovering floating IP %d (%s) on hyper %d", loadBalancer.ID, fip.ID, fip.FipAddress, hyperID)
 			command := fmt.Sprintf("/opt/cloudland/scripts/backend/create_lb_floating.sh '%d' '%s' '%s' '%d' '%d' '%d' '%d'",
-				loadBalancer.RouterID, fip.FipAddress, fip.Subnet.Gateway, fip.Subnet.Vlan, fip.ID, fip.Inbound, fip.Outbound)
+				loadBalancer.RouterID, ShellEscape(fip.FipAddress), ShellEscape(fip.Subnet.Gateway), fip.Subnet.Vlan, fip.ID, fip.Inbound, fip.Outbound)
 			err = HyperExecute(ctx, control, command)
 			if err != nil {
 				logger.Ctx(ctx).Errorf("LB %d - Execute create_lb_floating.sh failed for floating IP %d: %v", loadBalancer.ID, fip.ID, err)

@@ -269,18 +269,15 @@ func (a *KeyAdminService) List(ctx context.Context, offset, limit int64, order, 
 		order = "created_at"
 	}
 
-	if query != "" {
-		query = fmt.Sprintf("name like '%%%s%%'", query)
-	}
 	queryBuilder, args := memberShip.GetOrgFilter()
 	keys = []*model.Key{}
-	if err = db.Model(&model.Key{}).Where(queryBuilder, args...).Where(query).Count(&total).Error; err != nil {
+	if err = db.Model(&model.Key{}).Where(queryBuilder, args...).Scopes(dbs.Contains(query, "name")).Count(&total).Error; err != nil {
 		logger.Ctx(ctx).Error("DB failed to count keys, %v", err)
 		err = NewCLError(ErrSQLSyntaxError, "Failed to count keys", err)
 		return
 	}
 	db = dbs.Sortby(db.Offset(int(offset)).Limit(int(limit)), order)
-	if err = db.Where(queryBuilder, args...).Where(query).Find(&keys).Error; err != nil {
+	if err = db.Where(queryBuilder, args...).Scopes(dbs.Contains(query, "name")).Find(&keys).Error; err != nil {
 		logger.Ctx(ctx).Error("DB failed to query keys, %v", err)
 		err = NewCLError(ErrSQLSyntaxError, "Failed to query keys", err)
 		return

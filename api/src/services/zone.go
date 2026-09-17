@@ -9,7 +9,6 @@ package services
 
 import (
 	"context"
-	"fmt"
 
 	. "api/src/common"
 	"api/src/dbs"
@@ -39,17 +38,14 @@ func (a *ZoneAdmin) List(ctx context.Context, offset, limit int64, order, query 
 	if order == "" {
 		order = "name"
 	}
-	if query != "" {
-		query = fmt.Sprintf("name like '%%%s%%'", query)
-	}
 
 	zones = []*model.Zone{}
-	if err = db.Model(&model.Zone{}).Where(query).Count(&total).Error; err != nil {
+	if err = db.Model(&model.Zone{}).Scopes(dbs.Contains(query, "name")).Count(&total).Error; err != nil {
 		err = NewCLError(ErrSQLSyntaxError, "Failed to count zones", err)
 		return
 	}
 	db = dbs.Sortby(db.Offset(int(offset)).Limit(int(limit)), order)
-	if err = db.Model(&model.Zone{}).Where(query).Find(&zones).Error; err != nil {
+	if err = db.Model(&model.Zone{}).Scopes(dbs.Contains(query, "name")).Find(&zones).Error; err != nil {
 		err = NewCLError(ErrSQLSyntaxError, "Failed to query zones", err)
 		return
 	}

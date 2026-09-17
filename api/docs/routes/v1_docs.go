@@ -7806,6 +7806,9 @@ const docTemplatev1 = `{
                     "type": "string",
                     "maxLength": 32,
                     "minLength": 2
+                },
+                "ssl": {
+                    "type": "boolean"
                 }
             }
         },
@@ -7840,6 +7843,10 @@ const docTemplatev1 = `{
                 "endpoint": {
                     "type": "string"
                 },
+                "health": {
+                    "description": "Health check result from the master haproxy: up, down, or unknown when not reported yet",
+                    "type": "string"
+                },
                 "id": {
                     "type": "string"
                 },
@@ -7852,6 +7859,9 @@ const docTemplatev1 = `{
                 "owner_uuid": {
                     "description": "OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to\nrelease quota only when the caller's org actually owns the deleted resource",
                     "type": "string"
+                },
+                "ssl": {
+                    "type": "boolean"
                 },
                 "status": {
                     "type": "string"
@@ -9767,13 +9777,6 @@ const docTemplatev1 = `{
                 "name"
             ],
             "properties": {
-                "action": {
-                    "type": "string",
-                    "enum": [
-                        "enable",
-                        "disable"
-                    ]
-                },
                 "description": {
                     "type": "string",
                     "maxLength": 255

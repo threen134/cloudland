@@ -393,18 +393,15 @@ func (a *RouterAdmin) List(ctx context.Context, offset, limit int64, order, quer
 		order = "created_at"
 	}
 
-	if query != "" {
-		query = fmt.Sprintf("name like '%%%s%%'", query)
-	}
 	queryBuilder, args := memberShip.GetOrgFilter()
 	routers = []*model.Router{}
-	if err = db.Model(&model.Router{}).Where(queryBuilder, args...).Where(query).Count(&total).Error; err != nil {
+	if err = db.Model(&model.Router{}).Where(queryBuilder, args...).Scopes(dbs.Contains(query, "name")).Count(&total).Error; err != nil {
 		logger.Ctx(ctx).Error("DB failed to count router(s), %v", err)
 		err = NewCLError(ErrSQLSyntaxError, "Failed to count router(s)", err)
 		return
 	}
 	db = dbs.Sortby(db.Offset(int(offset)).Limit(int(limit)), order)
-	if err = db.Preload("Subnets").Where(queryBuilder, args...).Where(query).Find(&routers).Error; err != nil {
+	if err = db.Preload("Subnets").Where(queryBuilder, args...).Scopes(dbs.Contains(query, "name")).Find(&routers).Error; err != nil {
 		logger.Ctx(ctx).Error("DB failed to query routers, %v", err)
 		err = NewCLError(ErrSQLSyntaxError, "Failed to query routers", err)
 		return

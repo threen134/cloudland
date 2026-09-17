@@ -2,7 +2,6 @@ package apis
 
 import (
 	"context"
-	"fmt"
 	"net/http"
 	"strconv"
 
@@ -80,48 +79,14 @@ func (v *DictionaryAPI) List(c *gin.Context) {
 		ErrorResponse(c, http.StatusBadRequest, "Invalid query offset or limit", err)
 		return
 	}
-	if queryStr != "" {
-		logger.Ctx(ctx).Debugf("DictionaryAPI.List: filter by name like %%s%%", queryStr)
-		queryStr = fmt.Sprintf("name like '%%%s%%'", queryStr)
-	}
-	if valueStr != "" {
-		logger.Ctx(ctx).Debugf("DictionaryAPI.List: filter by value = %s", valueStr)
-		queryStr = fmt.Sprintf("value = '%s'", valueStr)
-	}
-	if category != "" {
-		logger.Ctx(ctx).Debugf("DictionaryAPI.List: filter by category = %s", category)
-		if queryStr != "" {
-			queryStr = fmt.Sprintf("%s AND category = '%s'", queryStr, category)
-		} else {
-			queryStr = fmt.Sprintf("category = '%s'", category)
-		}
-	}
-	if subtype1 != "" {
-		logger.Ctx(ctx).Debugf("DictionaryAPI.List: filter by subtype1 = %s", subtype1)
-		if queryStr != "" {
-			queryStr = fmt.Sprintf("%s AND subtype1 = '%s'", queryStr, subtype1)
-		} else {
-			queryStr = fmt.Sprintf("subtype1 = '%s'", subtype1)
-		}
-	}
-	if subtype2 != "" {
-		logger.Ctx(ctx).Debugf("DictionaryAPI.List: filter by subtype2 = %s", subtype2)
-		if queryStr != "" {
-			queryStr = fmt.Sprintf("%s AND subtype2 = '%s'", queryStr, subtype2)
-		} else {
-			queryStr = fmt.Sprintf("subtype2 = '%s'", subtype2)
-		}
-	}
-	if subtype3 != "" {
-		logger.Ctx(ctx).Debugf("DictionaryAPI.List: filter by subtype3 = %s", subtype3)
-		if queryStr != "" {
-			queryStr = fmt.Sprintf("%s AND subtype3 = '%s'", queryStr, subtype3)
-		} else {
-			queryStr = fmt.Sprintf("subtype3 = '%s'", subtype3)
-		}
-	}
-	logger.Ctx(ctx).Debugf("DictionaryAPI.List: final query string: %s", queryStr)
-	total, dictionaries, err := dictionaryAdmin.List(ctx, int64(offset), int64(limit), "-created_at", queryStr)
+	total, dictionaries, err := dictionaryAdmin.List(ctx, int64(offset), int64(limit), "-created_at", services.DictionaryFilter{
+		Name:     queryStr,
+		Value:    valueStr,
+		Category: category,
+		Subtype1: subtype1,
+		Subtype2: subtype2,
+		Subtype3: subtype3,
+	})
 	if err != nil {
 		logger.Ctx(ctx).Errorf("DictionaryAPI.List: list error, err=%v", err)
 		ErrorResponse(c, http.StatusBadRequest, "Failed to list dictionaries", err)

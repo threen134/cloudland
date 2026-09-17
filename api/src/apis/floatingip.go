@@ -530,7 +530,7 @@ func (v *FloatingIpAPI) SiteAttach(c *gin.Context) {
 		logger.Ctx(ctx).Debugf("Processing site subnet: %s (ID: %d)", subnet.Name, subnet.ID)
 
 		// Find floating IPs associated with this site subnet that are not attached to any instance
-		_, floatingIps, err := floatingIpAdmin.List(ctx, 0, -1, "", "", fmt.Sprintf("type = '%s' AND instance_id = 0", PublicSite))
+		_, floatingIps, err := floatingIpAdmin.List(ctx, 0, -1, "", "", "type = ? AND instance_id = 0", string(PublicSite))
 		if err != nil {
 			logger.Ctx(ctx).Errorf("Failed to list floating ips %+v", err)
 			ErrorResponse(c, http.StatusBadRequest, "Failed to list floating ips", err)
@@ -691,14 +691,12 @@ func (v *FloatingIpAPI) SiteDetach(c *gin.Context) {
 		logger.Ctx(ctx).Debugf("Processing site subnet: %s (ID: %d)", subnet.Name, subnet.ID)
 
 		// Find floating IPs associated with this subnet and instance
-		var queryCondition string
+		queryCondition, queryArgs := "type = ?", []interface{}{string(PublicSite)}
 		if payload.Instance != nil && instance != nil {
-			queryCondition = fmt.Sprintf("instance_id = %d AND type = '%s'", instance.ID, PublicSite)
-		} else {
-			queryCondition = fmt.Sprintf("type = '%s'", PublicSite)
+			queryCondition, queryArgs = "instance_id = ? AND type = ?", []interface{}{instance.ID, string(PublicSite)}
 		}
 
-		_, floatingIps, err := floatingIpAdmin.List(ctx, 0, -1, "", "", queryCondition)
+		_, floatingIps, err := floatingIpAdmin.List(ctx, 0, -1, "", "", queryCondition, queryArgs...)
 		if err != nil {
 			logger.Ctx(ctx).Errorf("Failed to list floating ips %+v", err)
 			ErrorResponse(c, http.StatusBadRequest, "Failed to list floating ips", err)

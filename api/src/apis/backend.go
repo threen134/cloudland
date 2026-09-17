@@ -29,6 +29,9 @@ type BackendResponse struct {
 	*ResourceReference
 	Endpoint string `json:"endpoint,omitempty"`
 	Status   string `json:"status"`
+	SSL      bool   `json:"ssl"`
+	// Health check result from the master haproxy: up, down, or unknown when not reported yet
+	Health string `json:"health"`
 }
 
 type BackendListResponse struct {
@@ -47,6 +50,7 @@ type BackendPayload struct {
 type BackendPatchPayload struct {
 	Name     string `json:"name" binding:"required,min=2,max=32"`
 	Endpoint string `json:"endpoint" binding:"omitempty,min=8,max=128"`
+	SSL      *bool  `json:"ssl"`
 }
 
 // @Summary get a backend
@@ -156,8 +160,14 @@ func (v *BackendAPI) Patch(c *gin.Context) {
 		ErrorResponse(c, http.StatusBadRequest, "Invalid input JSON", err)
 		return
 	}
+	if payload.Endpoint != "" {
+		if err = validateBackendEndpoint(payload.Endpoint); err != nil {
+			ErrorResponse(c, http.StatusBadRequest, "Invalid endpoint", NewCLError(ErrInvalidParameter, err.Error(), nil))
+			return
+		}
+	}
 	logger.Ctx(ctx).Debugf("Patching backend %s with %+v", backendID, payload)
-	backend, err = backendAdmin.Update(ctx, backend, payload.Name, payload.Endpoint, listener, loadBalancer)
+	backend, err = backendAdmin.Update(ctx, backend, payload.Name, payload.Endpoint, payload.SSL, listener, loadBalancer)
 	if err != nil {
 		logger.Ctx(ctx).Errorf("Failed to patch backend %s, %+v", backendID, err)
 		ErrorResponse(c, http.StatusBadRequest, "Patch backend failed", err)
@@ -267,6 +277,10 @@ func (v *BackendAPI) Create(c *gin.Context) {
 		ErrorResponse(c, http.StatusBadRequest, "Invalid input JSON", err)
 		return
 	}
+	if err = validateBackendEndpoint(payload.Endpoint); err != nil {
+		ErrorResponse(c, http.StatusBadRequest, "Invalid endpoint", NewCLError(ErrInvalidParameter, err.Error(), nil))
+		return
+	}
 	logger.Ctx(ctx).Debugf("Creating backend with %+v", payload)
 	backend, err := backendAdmin.Create(ctx, payload.Name, payload.Endpoint, payload.SSL, listener, loadBalancer)
 	if err != nil {
@@ -295,6 +309,11 @@ func (v *BackendAPI) getBackendResponse(ctx context.Context, backend *model.Back
 		},
 		Endpoint: backend.BackendAddr,
 		Status:   backend.Status,
+		SSL:      backend.SSL,
+		Health:   backend.Health,
+	}
+	if backendResp.Health == "" {
+		backendResp.Health = "unknown"
 	}
 	return
 }
