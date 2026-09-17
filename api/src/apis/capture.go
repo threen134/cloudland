@@ -17,7 +17,7 @@ import (
 // UploadCapture 接收 compute 节点 capture_image.sh 流式上传的镜像数据，转发到 S3/MinIO
 //
 // Route:   POST /api/v1/internal/images/:id/upload
-// Header:  X-Capture-Token: hex(HMAC-SHA256(SCI_SHARED_SECRET, "<image_id>|<expiry>"))
+// Header:  X-Capture-Token: hex(HMAC-SHA256(CAPTURE_UPLOAD_SECRET, "<image_id>|<expiry>"))
 // Query:   expiry=<unix_ts>
 // Body:    application/octet-stream 镜像字节流（clapi 用 minio-go multipart，上限 ~640GB）
 //

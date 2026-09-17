@@ -55,7 +55,6 @@ func constant(v interface{}) func() interface{} {
 }
 
 var SettingsMetadata = []SettingMeta{
-	{"PROJECT_NAME", "string", "general", "项目名称", false, cfgString("project_name", "Cloudland Control Plane Gateway")},
 	{"FRONTEND_URL", "string", "general", "前端访问地址", false, cfgString("frontend.url", "")},
 	{"ALARM_EVENT_RETENTION_DAYS", "number", "general", "VM 告警事件保留天数", false, constant(30)},
 	{"AUDIT_LOG_RETENTION_DAYS", "number", "general", "操作审计日志保留天数", false, constant(DefaultAuditLogRetentionDays)},
@@ -67,7 +66,6 @@ var SettingsMetadata = []SettingMeta{
 	{"DEFAULT_VPCS", "number", "quota", "默认 VPC 配额（个）", false, cfgInt("quota.defaults.vpcs", DefaultQuotaVPCs)},
 	{"DEFAULT_LOAD_BALANCERS", "number", "quota", "默认负载均衡配额（个）", false, cfgInt("quota.defaults.load_balancers", DefaultQuotaLoadBalancers)},
 	{"DEFAULT_IMAGES", "number", "quota", "默认镜像配额（个）", false, cfgInt("quota.defaults.images", DefaultQuotaImages)},
-	{"DEFAULT_TRAFFIC_GB", "number", "quota", "默认流量配额（GB）", false, cfgNumber("quota.defaults.traffic_gb", 100.0)},
 	{"NOTIFICATION_CHANNELS", "json", "notification", "启用的通知渠道列表", false, constant([]interface{}{"email"})},
 	{"SMTP_HOST", "string", "notification", "SMTP 主机", false, cfgString("smtp.host", "")},
 	{"SMTP_PORT", "number", "notification", "SMTP 端口", false, cfgInt("smtp.port", 587)},
@@ -83,10 +81,6 @@ var SettingsMetadata = []SettingMeta{
 	{"SMTP_FROM_NAME", "string", "notification", "发件人名称", false, cfgString("smtp.from_name", "CloudLand")},
 	{"FEISHU_WEBHOOK_URL", "string", "notification", "飞书 Webhook 地址", false, cfgString("feishu.webhook_url", "")},
 	{"FEISHU_SECRET", "secret", "notification", "飞书签名密钥", true, cfgString("feishu.secret", "")},
-	{"SLACK_WEBHOOK_URL", "string", "notification", "Slack Incoming Webhook URL", false, constant("")},
-	{"CUSTOM_WEBHOOK_URL", "string", "notification", "自定义 Webhook 地址", false, constant("")},
-	{"CUSTOM_WEBHOOK_METHOD", "string", "notification", "自定义 Webhook HTTP 方法", false, constant("POST")},
-	{"CUSTOM_WEBHOOK_HEADERS", "json", "notification", "自定义 Webhook Headers（含鉴权）", true, constant(map[string]interface{}{})},
 }
 
 const DefaultAuditLogRetentionDays = 365
@@ -105,7 +99,6 @@ var settingRanges = map[string]settingRange{
 	"DEFAULT_CPU_CORES":        {0, 1e6, false},
 	"DEFAULT_RAM_GB":           {0, 1e7, false},
 	"DEFAULT_DISK_GB":          {0, 1e9, false},
-	"DEFAULT_TRAFFIC_GB":       {0, 1e9, false},
 	"DEFAULT_PUBLIC_IPS":       {0, 1e5, true},
 	"DEFAULT_VPCS":             {0, 1e5, true},
 	"DEFAULT_LOAD_BALANCERS":   {0, 1e5, true},

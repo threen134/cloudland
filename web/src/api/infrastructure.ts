@@ -18,8 +18,8 @@ export interface InfrastructureConfig {
     minio_hostname: string
     clapi_hostname: string
     clapi_internal_url: string
-    sci_shared_secret: string     // always masked
-    sci_shared_secret_set: boolean
+    capture_upload_secret: string     // always masked
+    capture_upload_secret_set: boolean
 }
 
 export interface TestS3Response {

@@ -88,7 +88,7 @@ func init() {
 
 	// capture 上传链路：compute → clapi → MinIO
 	viper.BindEnv("clapi.internal_url", "CLAPI_INTERNAL_URL")
-	viper.BindEnv("sci.shared_secret", "SCI_SHARED_SECRET")
+	viper.BindEnv("capture.upload_secret", "CAPTURE_UPLOAD_SECRET")
 
 	// management_vip 用于 DNS 注册（MinIO/clapi 域名指向控制节点 VIP）
 	viper.BindEnv("management_vip", "MANAGEMENT_VIP")

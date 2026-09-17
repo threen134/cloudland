@@ -15,7 +15,7 @@ export interface SystemSettingsResponse {
 }
 
 export interface TestNotificationRequest {
-    channel: 'email' | 'feishu' | 'slack' | 'webhook'
+    channel: 'email' | 'feishu'
 }
 
 export interface TestNotificationResponse {

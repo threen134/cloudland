@@ -8,7 +8,6 @@ import (
 	"io"
 	"net/http"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -88,10 +87,6 @@ func TestNotification(c *gin.Context) {
 		success, message = testEmailChannel(c.Request.Context(), db)
 	case "feishu":
 		success, message = testFeishuChannel(c.Request.Context(), db)
-	case "slack":
-		success, message = testSlackChannel(c.Request.Context(), db)
-	case "webhook":
-		success, message = testWebhookChannel(c.Request.Context(), db)
 	default:
 		common.AbortWithDetail(c, http.StatusBadRequest, fmt.Sprintf("Unsupported channel: %s", in.Channel))
 		return
@@ -179,58 +174,4 @@ func testFeishuChannel(ctx context.Context, db *gorm.DB) (bool, string) {
 		}
 	}
 	return false, fmt.Sprintf("Feishu returned: %v", data)
-}
-
-func testSlackChannel(ctx context.Context, db *gorm.DB) (bool, string) {
-	webhookURL := services.GetSettingString(db, "SLACK_WEBHOOK_URL", "")
-	if webhookURL == "" {
-		return false, "SLACK_WEBHOOK_URL not configured"
-	}
-	payload := map[string]string{"text": "[CloudLand] Test notification — Slack channel connectivity test successful"}
-	status, body, err := postJSON(ctx, http.MethodPost, webhookURL, payload, nil)
-	if err != nil {
-		return false, err.Error()
-	}
-	if status == http.StatusOK {
-		return true, "Slack webhook OK"
-	}
-	return false, fmt.Sprintf("HTTP %d: %s", status, truncate(string(body), 200))
-}
-
-func testWebhookChannel(ctx context.Context, db *gorm.DB) (bool, string) {
-	webhookURL := services.GetSettingString(db, "CUSTOM_WEBHOOK_URL", "")
-	method := strings.ToUpper(services.GetSettingString(db, "CUSTOM_WEBHOOK_METHOD", "POST"))
-
-	headers := map[string]string{}
-	rawHeaders := services.GetSetting(db, "CUSTOM_WEBHOOK_HEADERS")
-	if s, ok := rawHeaders.(string); ok {
-		var parsed interface{}
-		if json.Unmarshal([]byte(s), &parsed) == nil {
-			rawHeaders = parsed
-		}
-	}
-	if m, ok := rawHeaders.(map[string]interface{}); ok {
-		for k, v := range m {
-			headers[k] = fmt.Sprint(v)
-		}
-	}
-
-	if webhookURL == "" {
-		return false, "CUSTOM_WEBHOOK_URL not configured"
-	}
-	switch method {
-	case http.MethodGet, http.MethodPost, http.MethodPut, http.MethodPatch:
-	default:
-		return false, fmt.Sprintf("Unsupported HTTP method: %s", method)
-	}
-
-	payload := map[string]string{"event": "test", "message": "CloudLand webhook connectivity test"}
-	status, body, err := postJSON(ctx, method, webhookURL, payload, headers)
-	if err != nil {
-		return false, err.Error()
-	}
-	if status < 300 {
-		return true, fmt.Sprintf("Webhook OK (HTTP %d)", status)
-	}
-	return false, fmt.Sprintf("HTTP %d: %s", status, truncate(string(body), 200))
 }

@@ -165,18 +165,10 @@ func (n *AlarmNotifier) sendWebhook(
 		return fmt.Errorf("parse webhook config: %w", err)
 	}
 	if config.URL == "" {
-		// fallback 到系统设置镜像中的全局 Webhook 配置
-		config.URL = GetMirrorSetting("CUSTOM_WEBHOOK_URL")
-	}
-	if config.URL == "" {
-		return fmt.Errorf("webhook url is empty (not configured in channel or system settings)")
+		return fmt.Errorf("webhook url is empty in the notification channel config")
 	}
 	if config.Method == "" {
-		// 优先使用 channel 配置中的 Method，其次从镜像读取，最后默认 POST
-		config.Method = GetMirrorSetting("CUSTOM_WEBHOOK_METHOD")
-		if config.Method == "" {
-			config.Method = "POST"
-		}
+		config.Method = "POST"
 	}
 
 	payload := map[string]interface{}{
@@ -297,12 +289,8 @@ func (n *AlarmNotifier) sendSlack(
 	if err := json.Unmarshal([]byte(channel.Config), &config); err != nil {
 		return fmt.Errorf("parse slack config: %w", err)
 	}
-	// channel.Config 为空时，从系统设置镜像中读取全局 Slack Webhook URL
 	if config.WebhookURL == "" {
-		config.WebhookURL = GetMirrorSetting("SLACK_WEBHOOK_URL")
-	}
-	if config.WebhookURL == "" {
-		return fmt.Errorf("slack webhook_url is empty (not configured in channel or system settings)")
+		return fmt.Errorf("slack webhook_url is empty in the notification channel config")
 	}
 
 	title := n.buildTitle(event, notifyType)

@@ -240,7 +240,7 @@ func startS3Span(ctx context.Context, op, objectName string) (context.Context, t
 // GenerateCaptureToken 派发 capture_image.sh 时调用，返回 token 和过期 unix 时间戳
 func GenerateCaptureToken(imageID int64) (token string, expiry int64) {
 	expiry = time.Now().Add(2 * time.Hour).Unix()
-	mac := hmac.New(sha256.New, []byte(viper.GetString("sci.shared_secret")))
+	mac := hmac.New(sha256.New, []byte(viper.GetString("capture.upload_secret")))
 	fmt.Fprintf(mac, "%d|%d", imageID, expiry)
 	token = hex.EncodeToString(mac.Sum(nil))
 	return
@@ -251,7 +251,7 @@ func VerifyCaptureToken(token string, imageID, expiry int64) bool {
 	if time.Now().Unix() > expiry {
 		return false
 	}
-	secret := viper.GetString("sci.shared_secret")
+	secret := viper.GetString("capture.upload_secret")
 	if secret == "" {
 		return false
 	}

@@ -16,7 +16,7 @@ func TestValidateSettingAuditLogRetention(t *testing.T) {
 		}
 	}
 	// Settings without a range are not checked
-	if err := ValidateSetting("PROJECT_NAME", "anything"); err != nil {
+	if err := ValidateSetting("FRONTEND_URL", "anything"); err != nil {
 		t.Errorf("unconstrained setting should pass: %v", err)
 	}
 }
@@ -36,7 +36,7 @@ func TestValidateSettingDefaultQuotas(t *testing.T) {
 		}
 	}
 	// Size quotas: non-negative, fractions allowed
-	for _, key := range []string{"DEFAULT_CPU_CORES", "DEFAULT_RAM_GB", "DEFAULT_DISK_GB", "DEFAULT_TRAFFIC_GB"} {
+	for _, key := range []string{"DEFAULT_CPU_CORES", "DEFAULT_RAM_GB", "DEFAULT_DISK_GB"} {
 		if err := ValidateSetting(key, 0.5); err != nil {
 			t.Errorf("%s=0.5 should be accepted: %v", key, err)
 		}

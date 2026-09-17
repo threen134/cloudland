@@ -190,7 +190,7 @@ services:
       # compute → clapi → MinIO 转发配置（capture 上传路径用）
       CLAPI_HOSTNAME: ${CLAPI_HOSTNAME:-clapi.cloudland.internal}
       CLAPI_INTERNAL_URL: ${CLAPI_INTERNAL_URL:-}
-      SCI_SHARED_SECRET: ${SCI_SHARED_SECRET:-}
+      CAPTURE_UPLOAD_SECRET: ${CAPTURE_UPLOAD_SECRET:-}
       # 访问 cland-go 的共享令牌，同时写入计算节点 deploy_command
       GRPC_AUTH_TOKEN: ${GRPC_AUTH_TOKEN:-}
       # 计算节点 deploy_command 使用的代码分支与脚本地址（DEPLOY_SCRIPT_URL 为空时按 REPO_BRANCH 拼接）
