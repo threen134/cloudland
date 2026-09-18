@@ -1896,6 +1896,12 @@ export default {
         notificationHint: 'Used for system notifications such as account activation and member invitations. VM alarm recipients are configured in',
         notificationHintLink: 'Alarm Notification Channels',
         notificationHintSuffix: '.',
+        passwordPrompt: {
+            title: 'Confirm your identity',
+            descEnable: 'Once enabled, opening a host terminal asks for the password of the current account every time. Enter your password to confirm this change.',
+            descDisable: 'Once disabled, anyone with a system admin session can open a root terminal on a node without a password. Enter your password to confirm this change.',
+            placeholder: 'Password of the current account',
+        },
         units: {
             cores: 'cores',
             gb: 'GB',
@@ -1932,6 +1938,8 @@ export default {
             DNS_UPSTREAM_desc: 'Upstream DNS server for queries not matching internal node hostnames. Supports comma-separated multiple addresses, e.g. 8.8.8.8,8.8.4.4.',
             HOST_CONSOLE_ENABLED: 'Enable host terminal',
             HOST_CONSOLE_ENABLED_desc: 'When disabled nobody can open a new host terminal; open sessions are not affected.',
+            HOST_CONSOLE_REQUIRE_PASSWORD: 'Ask for the password',
+            HOST_CONSOLE_REQUIRE_PASSWORD_desc: 'Ask for the password of the current account before opening a host terminal, so a logged-in window alone cannot give away root on a node. Changing this setting asks for the password as well.',
             HOST_CONSOLE_IDLE_MINUTES: 'Idle timeout',
             HOST_CONSOLE_IDLE_MINUTES_desc: 'A terminal without any input or output for this long is closed. Range 5-240, default 15 minutes.',
         },

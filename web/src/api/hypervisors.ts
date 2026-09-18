@@ -91,9 +91,10 @@ export const hypervisorsApi = {
         return client.delete(`/hypers/${uuid}`)
     },
 
-    // Root shell on the hypervisor (system admins, when enabled in system settings). The gateway checks the password
-    // again; rows and cols are the terminal size the shell starts with
-    openConsole(uuid: string, payload: { password: string; rows?: number; cols?: number }) {
+    // Root shell on the hypervisor (system admins, when enabled in system settings). The gateway checks the
+    // password again while HOST_CONSOLE_REQUIRE_PASSWORD is on, and answers 400 when it is missing;
+    // rows and cols are the terminal size the shell starts with
+    openConsole(uuid: string, payload: { password?: string; rows?: number; cols?: number }) {
         return client.post<HostConsoleResponse>(`/hypers/${uuid}/console`, payload)
     },
 

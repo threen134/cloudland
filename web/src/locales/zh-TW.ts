@@ -1896,6 +1896,12 @@ export default {
         notificationHint: '用於帳號啟用、成員邀請等系統通知。虛擬機器告警的接收方請在',
         notificationHintLink: '告警通知渠道',
         notificationHintSuffix: '中配置。',
+        passwordPrompt: {
+            title: '驗證身分',
+            descEnable: '開啟後，每次開啟節點終端都要輸入目前帳號的登入密碼。請輸入密碼確認這項修改。',
+            descDisable: '關閉後，任何擁有系統管理員工作階段的人都能直接開啟節點的 root 終端，不再需要密碼。請輸入密碼確認這項修改。',
+            placeholder: '目前帳號的登入密碼',
+        },
         units: {
             cores: '核',
             gb: 'GB',
@@ -1932,6 +1938,8 @@ export default {
             DNS_UPSTREAM_desc: '內部 dnsmasq 未能匹配節點 hostname 時，將 DNS 查詢轉發到此地址。支援逗號分隔多個地址，如 8.8.8.8,8.8.4.4。',
             HOST_CONSOLE_ENABLED: '啟用節點終端',
             HOST_CONSOLE_ENABLED_desc: '關閉後所有使用者都無法開啟新的節點終端，已開啟的工作階段不受影響。',
+            HOST_CONSOLE_REQUIRE_PASSWORD: '開啟終端需要密碼',
+            HOST_CONSOLE_REQUIRE_PASSWORD_desc: '開啟節點終端前要求再次輸入目前帳號的登入密碼，避免有人用已登入的視窗直接取得節點 root 權限。修改這一項本身也需要輸入密碼。',
             HOST_CONSOLE_IDLE_MINUTES: '閒置中斷時間',
             HOST_CONSOLE_IDLE_MINUTES_desc: '終端在該時間內沒有任何輸入輸出時自動中斷。取值 5–240，預設 15 分鐘。',
         },

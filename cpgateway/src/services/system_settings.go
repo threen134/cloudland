@@ -60,6 +60,7 @@ var SettingsMetadata = []SettingMeta{
 	{"AUDIT_LOG_RETENTION_DAYS", "number", "general", "操作审计日志保留天数", false, constant(DefaultAuditLogRetentionDays)},
 	{"DNS_UPSTREAM", "string", "general", "内部 DNS 上游转发地址（计算节点 hostname 未匹配时转发至此）", false, cfgString("dns.upstream", "8.8.8.8")},
 	{"HOST_CONSOLE_ENABLED", "boolean", "general", "允许系统管理员从 Web 打开计算节点的 root 终端", false, constant(false)},
+	{"HOST_CONSOLE_REQUIRE_PASSWORD", "boolean", "general", "打开计算节点终端前要求再次输入登录密码", false, constant(true)},
 	{"HOST_CONSOLE_IDLE_MINUTES", "number", "general", "计算节点终端空闲断开时间（分钟）", false, constant(DefaultHostConsoleIdleMinutes)},
 	{"DEFAULT_CPU_CORES", "number", "quota", "默认 CPU 配额（核）", false, cfgNumber("quota.defaults.cpu_cores", 4.0)},
 	{"DEFAULT_RAM_GB", "number", "quota", "默认内存配额（GB）", false, cfgNumber("quota.defaults.ram_gb", 8.0)},

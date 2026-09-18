@@ -43,6 +43,10 @@ func UpdateSystemSettings(c *gin.Context) {
 		common.AbortValidation(c, "body", err)
 		return
 	}
+	// Turning the host console password prompt on or off asks for the password itself
+	if !verifyHostConsoleSettingPassword(c, payload) {
+		return
+	}
 	valid := map[string]interface{}{}
 	keys := make([]string, 0, len(payload))
 	for k, v := range payload {

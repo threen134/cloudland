@@ -1896,6 +1896,12 @@ export default {
         notificationHint: '用于账号激活、成员邀请等系统通知。虚拟机告警的接收方请在',
         notificationHintLink: '告警通知渠道',
         notificationHintSuffix: '中配置。',
+        passwordPrompt: {
+            title: '验证身份',
+            descEnable: '开启后，每次打开节点终端都要输入当前账号的登录密码。请输入密码确认这项修改。',
+            descDisable: '关闭后，任何拥有系统管理员会话的人都能直接打开节点的 root 终端，不再需要密码。请输入密码确认这项修改。',
+            placeholder: '当前账号的登录密码',
+        },
         units: {
             cores: '核',
             gb: 'GB',
@@ -1932,6 +1938,8 @@ export default {
             DNS_UPSTREAM_desc: '内部 dnsmasq 未能匹配节点 hostname 时，将 DNS 查询转发到此地址。支持逗号分隔多个地址，如 8.8.8.8,8.8.4.4。',
             HOST_CONSOLE_ENABLED: '启用节点终端',
             HOST_CONSOLE_ENABLED_desc: '关闭后所有用户都无法打开新的节点终端，已打开的会话不受影响。',
+            HOST_CONSOLE_REQUIRE_PASSWORD: '打开终端需要密码',
+            HOST_CONSOLE_REQUIRE_PASSWORD_desc: '打开节点终端前要求再次输入当前账号的登录密码，防止有人用已登录的窗口直接取得节点 root 权限。修改这一项本身也需要输入密码。',
             HOST_CONSOLE_IDLE_MINUTES: '空闲断开时间',
             HOST_CONSOLE_IDLE_MINUTES_desc: '终端在该时间内没有任何输入输出时自动断开。取值 5–240，默认 15 分钟。',
         },

@@ -20,7 +20,8 @@ const instanceId = route.params.id as string
 const isHost = route.name === 'host-console'
 
 const container = ref<HTMLElement | null>(null)
-const status = ref(isHost ? 'auth' : 'connecting') // auth (host only), connecting, connected, disconnected, error
+// auth (host only, once the gateway asks for the password), connecting, connected, disconnected, error
+const status = ref('connecting')
 const errorMessage = ref('')
 const instanceName = ref('')
 const notice = ref('')
@@ -193,18 +194,23 @@ const connectSerial = async () => {
     }
 }
 
-// A host console asks for the password before every connection
-const requestPassword = async () => {
+// Asking for the password is a system setting: the console is opened without one first, and the form is shown
+// only when the gateway asks for it
+const requestPassword = async (message = '') => {
     detachSocket()
     password.value = ''
-    authError.value = ''
+    authError.value = message
     status.value = 'auth'
     await nextTick()
     passwordInput.value?.focus()
 }
 
+// Whether a host console request is on its way, so a second click does not start another one
+let hostBusy = false
+
 const connectHost = async () => {
-    if (!password.value || status.value === 'connecting') return
+    if (hostBusy || (status.value === 'auth' && !password.value)) return
+    hostBusy = true
     status.value = 'connecting'
     errorMessage.value = ''
     authError.value = ''
@@ -214,7 +220,7 @@ const connectHost = async () => {
     fitAddon?.fit()
     try {
         const { data } = await hypervisorsApi.openConsole(instanceId, {
-            password: password.value,
+            password: password.value || undefined,
             rows: term?.rows,
             cols: term?.cols,
         })
@@ -225,23 +231,34 @@ const connectHost = async () => {
         term?.reset()
         openSocket(data.console_url)
     } catch (err: any) {
+        const status400 = err.response?.status === 400
+        const detail = String(err.response?.data?.detail ?? '')
+        // The setting asks for the password: show the form without calling it a failure
+        if (status400 && detail.includes('Password is required')) {
+            await requestPassword()
+            return
+        }
         // A wrong password (403) or too many attempts (429) keep the password form open. A refusal from clapi
         // (the feature was turned off, or the account is not a system admin) is a 403 as well but carries an
         // error code: retyping the password would not help, so it is shown as an error
         if (!err.response?.data?.error_code && (err.response?.status === 403 || err.response?.status === 429)) {
-            status.value = 'auth'
-            authError.value = apiError(err)
-            password.value = ''
-            await nextTick()
-            passwordInput.value?.focus()
+            await requestPassword(apiError(err))
             return
         }
         status.value = 'error'
         errorMessage.value = apiError(err)
+    } finally {
+        hostBusy = false
     }
 }
 
-const connect = () => (isHost ? requestPassword() : connectSerial())
+// Every attempt starts without a password: a console that does not ask for one connects right away
+const connectHostFromStart = () => {
+    password.value = ''
+    return connectHost()
+}
+
+const connect = () => (isHost ? connectHostFromStart() : connectSerial())
 
 const switchToGraphical = () => {
     router.replace({ name: 'instance-console', params: { id: instanceId } })
@@ -256,7 +273,7 @@ onMounted(() => {
     hypervisorsApi.getHypervisor(instanceId).then(res => {
         if (res.data.hostname) instanceName.value = res.data.hostname
     }).catch(() => {})
-    requestPassword()
+    connectHostFromStart()
 })
 
 onUnmounted(() => {

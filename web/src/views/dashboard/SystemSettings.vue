@@ -5,7 +5,7 @@ import { onBeforeRouteLeave } from 'vue-router'
 import {
     Save, Send, RefreshCw,
     Settings2, Bell, Layers, Server,
-    Mail, MessageSquare, CheckCircle2, XCircle, Shield
+    Mail, MessageSquare, CheckCircle2, XCircle, Shield, X
 } from 'lucide-vue-next'
 import { useToast } from '../../composables/useToast'
 import { systemSettingsApi, type SystemSetting } from '../../api/systemSettings'
@@ -34,7 +34,7 @@ const sectionLayout: Record<'general' | 'quota', Array<{ key: string; fields: st
         { key: 'access', fields: ['FRONTEND_URL'] },
         { key: 'retention', fields: ['ALARM_EVENT_RETENTION_DAYS', 'AUDIT_LOG_RETENTION_DAYS'] },
         { key: 'network', fields: ['DNS_UPSTREAM'] },
-        { key: 'hostConsole', fields: ['HOST_CONSOLE_ENABLED', 'HOST_CONSOLE_IDLE_MINUTES'] },
+        { key: 'hostConsole', fields: ['HOST_CONSOLE_ENABLED', 'HOST_CONSOLE_REQUIRE_PASSWORD', 'HOST_CONSOLE_IDLE_MINUTES'] },
     ],
     quota: [
         { key: 'quotaCompute', fields: ['DEFAULT_CPU_CORES', 'DEFAULT_RAM_GB', 'DEFAULT_DISK_GB'] },
@@ -150,9 +150,53 @@ const fetchSettings = async () => {
     }
 }
 
-const saveSettings = async () => {
+// Turning the host console password prompt on or off asks for the password itself, so that setting is saved
+// through a password dialog
+const PASSWORD_GUARDED_KEY = 'HOST_CONSOLE_REQUIRE_PASSWORD'
+const showPasswordPrompt = ref(false)
+const confirmPassword = ref('')
+const passwordError = ref('')
+
+// Set while the dialog belongs to the toggle itself: confirming saves only that setting, cancelling puts the
+// switch back. Empty when the dialog was opened by the save button.
+const promptFromToggle = ref(false)
+
+const askPassword = async (fromToggle = false) => {
+    confirmPassword.value = ''
+    passwordError.value = ''
+    promptFromToggle.value = fromToggle
+    showPasswordPrompt.value = true
+}
+
+const cancelPasswordPrompt = () => {
+    // The switch was flipped before the dialog opened: put it back
+    if (promptFromToggle.value) {
+        editValues.value[PASSWORD_GUARDED_KEY] = savedValues.value[PASSWORD_GUARDED_KEY] === 'true'
+    }
+    showPasswordPrompt.value = false
+    promptFromToggle.value = false
+    confirmPassword.value = ''
+    passwordError.value = ''
+}
+
+// Flipping the host console password switch asks for the password right away, instead of waiting for the save
+const onToggle = (key: string, checked: boolean) => {
+    editValues.value[key] = checked
+    if (key === PASSWORD_GUARDED_KEY) askPassword(true)
+}
+
+const saveSettings = async (password?: string) => {
+    if (!password && dirtyKeys.value.has(PASSWORD_GUARDED_KEY)) {
+        await askPassword()
+        return
+    }
+    // The dialog opened by the switch saves that one setting, leaving other pending edits alone
+    const pending = promptFromToggle.value
+        ? dirtySettings.value.filter(s => s.key === PASSWORD_GUARDED_KEY)
+        : dirtySettings.value
     const payload: Record<string, unknown> = {}
-    for (const s of dirtySettings.value) {
+    if (password) payload.password = password
+    for (const s of pending) {
         const raw = editValues.value[s.key]
         if (s.value_type === 'number') {
             const range = numberRanges[s.key]
@@ -173,15 +217,33 @@ const saveSettings = async () => {
     }
     if (Object.keys(payload).length === 0) return
 
+    // Saving just the switch must not drop edits of other fields, which the reloaded values would overwrite
+    const otherEdits = promptFromToggle.value
+        ? Object.fromEntries(dirtySettings.value
+            .filter(s => s.key !== PASSWORD_GUARDED_KEY)
+            .map(s => [s.key, editValues.value[s.key]]))
+        : null
+
     saving.value = true
     try {
         const res = await systemSettingsApi.update(payload)
         loadValues(res.data.settings || [])
+        if (otherEdits) Object.assign(editValues.value, otherEdits)
+        promptFromToggle.value = false
+        cancelPasswordPrompt()
         toast.success(t('settings.saveSuccess'))
     } catch (err) {
         // Show the backend reason when validation fails (e.g. a value out of range)
-        const detail = (err as { response?: { data?: { detail?: unknown } } })?.response?.data?.detail
-        toast.error(typeof detail === 'string' ? detail : t('messages.error'))
+        const response = (err as { response?: { status?: number; data?: { detail?: unknown } } })?.response
+        const detail = response?.data?.detail
+        const message = typeof detail === 'string' ? detail : t('messages.error')
+        // A wrong password keeps the dialog open with the reason next to the input
+        if (password && (response?.status === 403 || response?.status === 429)) {
+            passwordError.value = message
+            confirmPassword.value = ''
+            return
+        }
+        toast.error(message)
     } finally {
         saving.value = false
     }
@@ -400,7 +462,7 @@ onBeforeUnmount(() => {
             type="button"
             class="btn btn-primary btn-sm"
             :disabled="saving || loading || !dirtySettings.length"
-            @click="saveSettings"
+            @click="saveSettings()"
           >
             <RefreshCw v-if="saving" :size="14" class="spinning" />
             <Save v-else :size="14" />
@@ -447,7 +509,7 @@ onBeforeUnmount(() => {
                     :id="setting.key"
                     type="checkbox"
                     :checked="!!editValues[setting.key]"
-                    @change="editValues[setting.key] = ($event.target as HTMLInputElement).checked"
+                    @change="onToggle(setting.key, ($event.target as HTMLInputElement).checked)"
                   />
                   <span class="toggle-slider"></span>
                 </span>
@@ -547,7 +609,7 @@ onBeforeUnmount(() => {
                     :id="setting.key"
                     type="checkbox"
                     :checked="!!editValues[setting.key]"
-                    @change="editValues[setting.key] = ($event.target as HTMLInputElement).checked"
+                    @change="onToggle(setting.key, ($event.target as HTMLInputElement).checked)"
                   />
                   <span class="toggle-slider"></span>
                 </span>
@@ -640,6 +702,40 @@ onBeforeUnmount(() => {
         </div>
       </template>
     </template>
+
+    <!-- Turning the host console password prompt on or off asks for the password itself -->
+    <div v-if="showPasswordPrompt" class="modal-overlay" @click.self="cancelPasswordPrompt">
+      <form class="modal-content" style="max-width: 440px;" @submit.prevent="saveSettings(confirmPassword)">
+        <div class="modal-header">
+          <h3>{{ $t('settings.passwordPrompt.title') }}</h3>
+          <button type="button" class="btn btn-ghost btn-icon" @click="cancelPasswordPrompt"><X :size="18" /></button>
+        </div>
+        <div class="modal-body">
+          <p class="card-desc">
+            {{ editValues[PASSWORD_GUARDED_KEY]
+              ? $t('settings.passwordPrompt.descEnable')
+              : $t('settings.passwordPrompt.descDisable') }}
+          </p>
+          <input type="text" autocomplete="username" class="visually-hidden" tabindex="-1" aria-hidden="true" />
+          <input
+            v-model="confirmPassword"
+            type="password"
+            class="form-input"
+            style="width: 100%;"
+            autocomplete="current-password"
+            :placeholder="$t('settings.passwordPrompt.placeholder')"
+          />
+          <p v-if="passwordError" class="password-error">{{ passwordError }}</p>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" @click="cancelPasswordPrompt">{{ $t('actions.cancel') }}</button>
+          <button type="submit" class="btn btn-primary" :disabled="saving || !confirmPassword">
+            <RefreshCw v-if="saving" :size="14" class="spinning" />
+            {{ saving ? $t('common.saving') : $t('common.save') }}
+          </button>
+        </div>
+      </form>
+    </div>
   </div>
 </template>
 
@@ -1039,5 +1135,20 @@ onBeforeUnmount(() => {
   .kv-item .value {
     text-align: left;
   }
+}
+
+.password-error {
+  margin: var(--spacing-2) 0 0;
+  font-size: var(--font-size-xs);
+  color: var(--error, #ef4444);
+}
+
+/* Lets password managers fill in the password of the current account */
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
 }
 </style>
