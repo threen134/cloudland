@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { useRoute } from 'vue-router'
 import { hypervisorsApi, type Hypervisor } from '../../api/hypervisors'
 import { instancesApi } from '../../api/instances'
 import { zonesApi } from '../../api/zones'
@@ -13,15 +13,19 @@ import { formatMemory, formatDisk } from '../../utils/format'
 import type { StatusVariant } from '../../utils/status'
 import BaseModal from '../../components/modals/BaseModal.vue'
 import StatusBadge from '../../components/base/StatusBadge.vue'
+import InfoRow from '../../components/base/InfoRow.vue'
+import DetailTabs from '../../components/base/DetailTabs.vue'
+import { useCopyId } from '../../composables/useCopyId'
+import { useGoBack } from '../../composables/useGoBack'
 
 const { t, te } = useI18n()
 const toast = useToast()
 const route = useRoute()
-const router = useRouter()
+const { copiedId: copiedField, copyId: copyToClipboard } = useCopyId()
+const goBack = useGoBack('hypervisors')
 const hypervisor = ref<Hypervisor | null>(null)
 const loading = ref(true)
 const error = ref<string | null>(null)
-const copiedField = ref<string | null>(null)
 const saving = ref(false)
 const editMode = ref(false)
 const zoneList = ref<any[]>([])
@@ -56,10 +60,10 @@ const maintainForm = ref({
 })
 
 const activeTab = ref('overview')
-const tabs = [
-    { id: 'overview', label: 'dashboard.table.overview', icon: Info },
-    { id: 'monitor', label: 'dashboard.instanceDetail.resourceMonitoring', icon: Activity }
-]
+const tabs = computed(() => [
+    { id: 'overview', label: t('dashboard.table.overview'), icon: Info },
+    { id: 'monitor', label: t('dashboard.instanceDetail.resourceMonitoring'), icon: Activity }
+])
 
 // 该节点上的虚拟机列表（概览卡片），按 host id 过滤
 const hyperInstances = ref<any[]>([])
@@ -148,15 +152,6 @@ const syncForm = () => {
     }
 }
 
-const copyToClipboard = (text: string, field: string) => {
-    navigator.clipboard.writeText(text).then(() => {
-        copiedField.value = field
-        setTimeout(() => { copiedField.value = null }, 2000)
-    })
-}
-
-
-
 const getStatusVariant = (status: number): StatusVariant => STATUS_MAP[status]?.variant ?? 'neutral'
 
 // statusName 是后端返回的英文原文（active / maintaining …），只在该状态没有对应翻译时兜底。
@@ -165,8 +160,6 @@ const getStatusLabel = (status: number, statusName?: string) => {
     const info = STATUS_MAP[status]
     return info ? t(info.label) : (statusName || `Unknown(${status})`)
 }
-
-const goBack = () => { router.push({ name: 'hypervisors' }) }
 
 const toggleEdit = async () => {
     closeActionMenu()
@@ -323,18 +316,7 @@ onMounted(fetchHypervisorDetail)
       </div>
 
       <!-- Tabs -->
-      <div class="detail-tabs">
-        <button 
-          v-for="tab in tabs" 
-          :key="tab.id"
-          class="tab-btn" 
-          :class="{ active: activeTab === tab.id }"
-          @click="activeTab = tab.id"
-        >
-          <component :is="tab.icon" :size="16" />
-          {{ t(tab.label) }}
-        </button>
-      </div>
+      <DetailTabs v-model="activeTab" :tabs="tabs" />
 
       <!-- Info Sections -->
       <div v-if="activeTab === 'overview'">
@@ -343,26 +325,11 @@ onMounted(fetchHypervisorDetail)
           <div class="info-card card">
             <h3 class="card-section-title">{{ t('dashboard.table.overview') }}</h3>
             <div class="info-rows">
-              <div class="info-row">
-                <span class="info-label">{{ t('dashboard.table.hostname') }}</span>
-                <span class="info-value">{{ hypervisor.hostname }}</span>
-              </div>
-              <div class="info-row">
-                <span class="info-label">{{ t('dashboard.table.hostIp') }}</span>
-                <span class="info-value mono">{{ hypervisor.host_ip }}</span>
-              </div>
-              <div class="info-row">
-                <span class="info-label">{{ t('dashboard.table.routeIp') || 'Route IP' }}</span>
-                <span class="info-value mono">{{ hypervisor.route_ip || '-' }}</span>
-              </div>
-              <div class="info-row">
-                <span class="info-label">{{ t('dashboard.hypervisorDeploy.virtType') }}</span>
-                <span class="info-value">{{ hypervisor.virt_type }}</span>
-              </div>
-              <div class="info-row">
-                <span class="info-label">{{ t('dashboard.table.zone') }}</span>
-                <span class="info-value">{{ hypervisor.zone_name || '-' }}</span>
-              </div>
+              <InfoRow :label="t('dashboard.table.hostname')">{{ hypervisor.hostname }}</InfoRow>
+              <InfoRow :label="t('dashboard.table.hostIp')" mono>{{ hypervisor.host_ip }}</InfoRow>
+              <InfoRow :label="t('dashboard.table.routeIp') || 'Route IP'" mono>{{ hypervisor.route_ip || '-' }}</InfoRow>
+              <InfoRow :label="t('dashboard.hypervisorDeploy.virtType')">{{ hypervisor.virt_type }}</InfoRow>
+              <InfoRow :label="t('dashboard.table.zone')">{{ hypervisor.zone_name || '-' }}</InfoRow>
             </div>
           </div>
 
@@ -370,27 +337,24 @@ onMounted(fetchHypervisorDetail)
           <div class="info-card card">
             <h3 class="card-section-title">{{ t('dashboard.table.resourcesCapacity') }}</h3>
             <div class="info-rows">
-              <div class="info-row">
-                <span class="info-label">{{ t('dashboard.table.vcpus') }}</span>
-                <span class="info-value">
-                  {{ hypervisor.cpu }} / {{ hypervisor.cpu_total }} {{ t('specs.cores_plain') || 'cores' }} 
+              <InfoRow :label="t('dashboard.table.vcpus')">
+                <span>
+                  {{ hypervisor.cpu }} / {{ hypervisor.cpu_total }} {{ t('specs.cores_plain') || 'cores' }}
                   <span class="avail-badge">{{ t('dashboard.table.available') }}</span>
                 </span>
-              </div>
-              <div class="info-row">
-                <span class="info-label">{{ t('dashboard.table.memory') }}</span>
-                <span class="info-value">
-                  {{ formatMemory(hypervisor.memory) }} / {{ formatMemory(hypervisor.memory_total) }} 
+              </InfoRow>
+              <InfoRow :label="t('dashboard.table.memory')">
+                <span>
+                  {{ formatMemory(hypervisor.memory) }} / {{ formatMemory(hypervisor.memory_total) }}
                   <span class="avail-badge">{{ t('dashboard.table.available') }}</span>
                 </span>
-              </div>
-              <div class="info-row">
-                <span class="info-label">{{ t('dashboard.table.disk') }}</span>
-                <span class="info-value">
-                  {{ formatDisk(hypervisor.disk) }} / {{ formatDisk(hypervisor.disk_total) }} 
+              </InfoRow>
+              <InfoRow :label="t('dashboard.table.disk')">
+                <span>
+                  {{ formatDisk(hypervisor.disk) }} / {{ formatDisk(hypervisor.disk_total) }}
                   <span class="avail-badge">{{ t('dashboard.table.available') }}</span>
                 </span>
-              </div>
+              </InfoRow>
             </div>
           </div>
         </div>
@@ -431,22 +395,10 @@ onMounted(fetchHypervisorDetail)
           <h3 class="card-section-title">{{ t('dashboard.table.overcommit') }}</h3>
           
           <div class="info-rows">
-            <div class="info-row">
-               <span class="info-label">{{ t('dashboard.table.cpuOverCommit') }}</span>
-              <span class="info-value">{{ hypervisor.cpu_over_rate }}x</span>
-            </div>
-            <div class="info-row">
-               <span class="info-label">{{ t('dashboard.table.memOverCommit') }}</span>
-              <span class="info-value">{{ hypervisor.mem_over_rate }}x</span>
-            </div>
-            <div class="info-row">
-               <span class="info-label">{{ t('dashboard.table.diskOverCommit') }}</span>
-              <span class="info-value">{{ hypervisor.disk_over_rate }}x</span>
-            </div>
-            <div class="info-row" v-if="hypervisor.remark">
-               <span class="info-label">{{ t('dashboard.table.remark') }}</span>
-              <span class="info-value">{{ hypervisor.remark }}</span>
-            </div>
+            <InfoRow :label="t('dashboard.table.cpuOverCommit')">{{ hypervisor.cpu_over_rate }}x</InfoRow>
+            <InfoRow :label="t('dashboard.table.memOverCommit')">{{ hypervisor.mem_over_rate }}x</InfoRow>
+            <InfoRow :label="t('dashboard.table.diskOverCommit')">{{ hypervisor.disk_over_rate }}x</InfoRow>
+            <InfoRow v-if="hypervisor.remark" :label="t('dashboard.table.remark')">{{ hypervisor.remark }}</InfoRow>
           </div>
         </div>
       </div>
@@ -857,26 +809,6 @@ onMounted(fetchHypervisorDetail)
 
 .info-rows { display: flex; flex-direction: column; gap: var(--spacing-3); }
 
-.info-row {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: var(--spacing-1) 0;
-  min-height: 24px;
-}
-
-.info-label { font-size: var(--font-size-sm); color: var(--text-secondary); flex-shrink: 0; }
-
-.info-value {
-  font-size: var(--font-size-sm);
-  color: var(--text-primary);
-  font-weight: var(--font-weight-medium);
-  text-align: right;
-  word-break: break-all;
-}
-
-.info-value.mono { font-family: var(--font-family-mono); font-size: var(--font-size-xs); }
-
 .avail-badge {
   font-family: var(--font-family);
   background: rgba(16, 185, 129, 0.1);
@@ -920,48 +852,6 @@ onMounted(fetchHypervisorDetail)
 
 .spinning { animation: spin 1s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
-
-.detail-tabs {
-  display: flex;
-  gap: var(--spacing-4);
-  margin-bottom: var(--spacing-6);
-  border-bottom: 1px solid var(--border-default);
-  padding: 0 var(--spacing-2);
-}
-
-.tab-btn {
-  display: flex;
-  align-items: center;
-  gap: var(--spacing-2);
-  padding: var(--spacing-3) var(--spacing-4);
-  background: none;
-  border: none;
-  border-bottom: 2px solid transparent;
-  color: var(--text-secondary);
-  font-size: 0.95rem;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 0.2s;
-  margin-bottom: -1px;
-}
-
-.tab-btn:hover {
-  color: var(--text-primary);
-}
-
-.tab-btn.active {
-  color: var(--text-primary);
-  border-bottom-color: var(--primary-color);
-}
-
-.tab-btn svg {
-  opacity: 0.7;
-}
-
-.tab-btn.active svg {
-  opacity: 1;
-  color: var(--primary-color);
-}
 
 .monitor-section {
   animation: fadeIn 0.3s ease-out;

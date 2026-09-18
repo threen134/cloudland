@@ -6,6 +6,9 @@ import { ArrowLeft, AlertTriangle, Copy, Check, Trash2 } from 'lucide-vue-next'
 import { useI18n } from 'vue-i18n'
 import { useToast } from '../../composables/useToast'
 import DeleteModal from '../../components/modals/DeleteModal.vue'
+import InfoRow from '../../components/base/InfoRow.vue'
+import { useCopyId } from '../../composables/useCopyId'
+import { useGoBack } from '../../composables/useGoBack'
 
 const { t } = useI18n()
 const toast = useToast()
@@ -14,7 +17,7 @@ const router = useRouter()
 const alarm = ref<NodeAlarmRule | null>(null)
 const loading = ref(true)
 const error = ref<string | null>(null)
-const copiedField = ref<string | null>(null)
+const { copiedId: copiedField, copyId: copyToClipboard } = useCopyId()
 
 // Delete
 const showDeleteConfirm = ref(false)
@@ -40,19 +43,12 @@ const fetchAlarmDetail = async () => {
     }
 }
 
-const copyToClipboard = (text: string, field: string) => {
-    navigator.clipboard.writeText(text).then(() => {
-        copiedField.value = field
-        setTimeout(() => { copiedField.value = null }, 2000)
-    })
-}
-
 const getRuleTypeLabel = (type: string) => {
     const found = RULE_TYPES.find(r => r.value === type)
     return found ? found.label : type
 }
 
-const goBack = () => { router.push({ name: 'alarms' }) }
+const goBack = useGoBack('alarms')
 
 const handleDelete = async () => {
     if (!alarm.value) return
@@ -132,24 +128,12 @@ onMounted(fetchAlarmDetail)
         <div class="info-card card">
           <h3 class="card-section-title">{{ t('dashboard.table.overview') }}</h3>
           <div class="info-rows">
-            <div class="info-row">
-              <span class="info-label">{{ t('dashboard.table.name') }}</span>
-              <span class="info-value">{{ alarm.name }}</span>
-            </div>
-            <div class="info-row">
-              <span class="info-label">{{ t('dashboard.alarmActions.ruleType') }}</span>
-              <span class="info-value">
-                <span class="rule-type-badge">{{ getRuleTypeLabel(alarm.rule_type) }}</span>
-              </span>
-            </div>
-            <div class="info-row">
-              <span class="info-label">{{ t('dashboard.alarmActions.owner') }}</span>
-              <span class="info-value">{{ alarm.owner || '-' }}</span>
-            </div>
-            <div class="info-row" v-if="alarm.description">
-              <span class="info-label">{{ t('dashboard.table.description') }}</span>
-              <span class="info-value">{{ alarm.description }}</span>
-            </div>
+            <InfoRow :label="t('dashboard.table.name')">{{ alarm.name }}</InfoRow>
+            <InfoRow :label="t('dashboard.alarmActions.ruleType')">
+              <span class="rule-type-badge">{{ getRuleTypeLabel(alarm.rule_type) }}</span>
+            </InfoRow>
+            <InfoRow :label="t('dashboard.alarmActions.owner')">{{ alarm.owner || '-' }}</InfoRow>
+            <InfoRow v-if="alarm.description" :label="t('dashboard.table.description')">{{ alarm.description }}</InfoRow>
           </div>
         </div>
 
@@ -259,18 +243,6 @@ onMounted(fetchAlarmDetail)
 }
 
 .info-rows { display: flex; flex-direction: column; gap: var(--spacing-3); }
-
-.info-row {
-  display: flex; justify-content: space-between; align-items: center;
-  padding: var(--spacing-1) 0; min-height: 24px;
-}
-
-.info-label { font-size: var(--font-size-sm); color: var(--text-secondary); flex-shrink: 0; }
-
-.info-value {
-  font-size: var(--font-size-sm); color: var(--text-primary);
-  font-weight: var(--font-weight-medium); text-align: right; word-break: break-all;
-}
 
 .config-display {
   background: var(--bg-tertiary); border-radius: var(--radius-md);

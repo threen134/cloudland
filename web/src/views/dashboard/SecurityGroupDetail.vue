@@ -12,6 +12,9 @@ import {
 import SecurityRuleModal from '../../components/securityGroup/SecurityRuleModal.vue'
 import BaseModal from '../../components/modals/BaseModal.vue'
 import DeleteModal from '../../components/modals/DeleteModal.vue'
+import InfoRow from '../../components/base/InfoRow.vue'
+import DetailTabs from '../../components/base/DetailTabs.vue'
+import { useGoBack } from '../../composables/useGoBack'
 import { ArrowLeft, Shield, Trash2, Plus, X, Edit, ArrowUpDown, ArrowUp, ArrowDown, Network, Server, ChevronDown, Search } from 'lucide-vue-next'
 
 const route = useRoute()
@@ -19,6 +22,7 @@ const router = useRouter()
 const { t } = useI18n()
 const toast = useToast()
 const { translateDescription } = useSecurityGroup()
+const goBack = useGoBack('security-groups')
 const groupId = route.params.id as string
 
 const group = ref<SecurityGroup | null>(null)
@@ -26,7 +30,17 @@ const loading = ref(true)
 const error = ref('')
 
 const showActionMenu = ref(false)
-const activeTab = ref<'rules' | 'interfaces'>('rules')
+const activeTab = ref('rules')
+
+// 标签页文案里带数量（原先是文案后面的小徽标，DetailTabs 只接受文本）
+const tabs = computed(() => [
+    { id: 'rules', label: t('dashboard.table.securityRules'), count: group.value?.security_rules?.length || 0 },
+    {
+        id: 'interfaces',
+        label: t('dashboard.securityGroupDetail.associatedInterfaces'),
+        count: group.value?.target_interfaces?.length || 0,
+    },
+])
 
 // --- Rules filter and sort ---
 const showRuleFilter = ref(false)
@@ -219,8 +233,6 @@ const saveInfo = async () => {
     }
 }
 
-const goBack = () => { router.back() }
-
 onMounted(fetchGroup)
 </script>
 
@@ -285,27 +297,19 @@ onMounted(fetchGroup)
                 <div class="card info-card">
                     <h3>{{ $t('dashboard.table.generalInformation') }}</h3>
                     <div class="key-value-list">
-                        <div class="kv-item">
-                            <span class="label">{{ $t('dashboard.table.name') }}</span>
-                            <span class="value">{{ group.name }}</span>
-                        </div>
-                        <div class="kv-item">
-                            <span class="label">{{ $t('dashboard.table.description') }}</span>
-                            <span class="value">{{ translateDescription(group.description || '') || '-' }}</span>
-                        </div>
-                        <div class="kv-item">
-                            <span class="label">{{ $t('dashboard.table.vpc') }}</span>
-                            <span class="value" v-if="group.vpc">
-                                <router-link :to="{ name: 'vpc-detail', params: { id: group.vpc.id } }" class="text-link">
-                                    {{ group.vpc.name }}
-                                </router-link>
-                            </span>
-                            <span class="value" v-else>-</span>
-                        </div>
-                        <div class="kv-item">
-                            <span class="label">{{ $t('dashboard.table.createdAt') }}</span>
-                            <span class="value">{{ group.created_at ? group.created_at.replace(/\.\d+$/, '') : '-' }}</span>
-                        </div>
+                        <InfoRow :label="$t('dashboard.table.name')">{{ group.name }}</InfoRow>
+                        <InfoRow :label="$t('dashboard.table.description')">
+                            {{ translateDescription(group.description || '') || '-' }}
+                        </InfoRow>
+                        <InfoRow :label="$t('dashboard.table.vpc')">
+                            <router-link v-if="group.vpc" :to="{ name: 'vpc-detail', params: { id: group.vpc.id } }" class="text-link">
+                                {{ group.vpc.name }}
+                            </router-link>
+                            <span v-else>-</span>
+                        </InfoRow>
+                        <InfoRow :label="$t('dashboard.table.createdAt')">
+                            {{ group.created_at ? group.created_at.replace(/\.\d+$/, '') : '-' }}
+                        </InfoRow>
                     </div>
                 </div>
             </div>
@@ -313,16 +317,7 @@ onMounted(fetchGroup)
             <!-- Tabbed Section -->
             <div class="card tab-card">
                 <div class="tab-header">
-                    <div class="tab-nav">
-                        <button :class="['tab-btn', { active: activeTab === 'rules' }]" @click="activeTab = 'rules'">
-                            {{ $t('dashboard.table.securityRules') }}
-                            <span class="tab-count">{{ group.security_rules?.length || 0 }}</span>
-                        </button>
-                        <button :class="['tab-btn', { active: activeTab === 'interfaces' }]" @click="activeTab = 'interfaces'">
-                            {{ $t('dashboard.securityGroupDetail.associatedInterfaces') }}
-                            <span class="tab-count">{{ group.target_interfaces?.length || 0 }}</span>
-                        </button>
-                    </div>
+                    <DetailTabs v-model="activeTab" :tabs="tabs" />
                     <div v-if="activeTab === 'rules'" class="tab-header-actions">
                         <button :class="['btn btn-ghost btn-sm', { 'btn-filter-active': showRuleFilter }]" :title="$t('actions.filter')" @click="toggleRuleFilter">
                             <Search :size="14" />
@@ -679,24 +674,6 @@ onMounted(fetchGroup)
     gap: var(--spacing-3);
 }
 
-.kv-item {
-    display: flex;
-    justify-content: space-between;
-    gap: var(--spacing-4);
-    font-size: var(--font-size-sm);
-}
-
-.kv-item .label {
-    color: var(--text-secondary);
-    flex-shrink: 0;
-}
-
-.kv-item .value {
-    color: var(--text-primary);
-    font-weight: 500;
-    text-align: right;
-}
-
 .text-link { color: var(--primary-600); text-decoration: none; }
 .text-link:hover { text-decoration: underline; }
 
@@ -715,52 +692,10 @@ onMounted(fetchGroup)
     border-bottom: 1px solid var(--border-light);
 }
 
-.tab-nav {
-    display: flex;
-}
-
-.tab-btn {
-    display: flex;
-    align-items: center;
-    gap: var(--spacing-2);
-    padding: var(--spacing-4);
-    background: none;
-    border: none;
-    border-bottom: 2px solid transparent;
-    font-size: var(--font-size-sm);
-    font-weight: 500;
-    color: var(--text-secondary);
-    cursor: pointer;
-    transition: color 0.15s, border-color 0.15s;
-    margin-bottom: -1px;
-}
-
-.tab-btn:hover {
-    color: var(--text-primary);
-}
-
-.tab-btn.active {
-    color: var(--primary-color);
-    border-bottom-color: var(--primary-color);
-}
-
-.tab-count {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    min-width: 20px;
-    height: 18px;
-    padding: 0 5px;
-    background: var(--bg-tertiary);
-    border-radius: 9px;
-    font-size: 11px;
-    font-weight: 600;
-    color: var(--text-secondary);
-}
-
-.tab-btn.active .tab-count {
-    background: var(--primary-50);
-    color: var(--primary-700);
+/* 分隔线由 .tab-header 统一提供，去掉 DetailTabs 自带的下边线与下边距 */
+.tab-header .detail-tabs {
+    border-bottom: none;
+    margin-bottom: 0;
 }
 
 .tab-header-actions {

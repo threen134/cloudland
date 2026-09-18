@@ -8,11 +8,14 @@ import { ArrowLeft, GitFork, Trash2, Plus, ChevronDown, ChevronRight, Pencil } f
 import DeleteModal from '../../components/modals/DeleteModal.vue'
 import BaseModal from '../../components/modals/BaseModal.vue'
 import StatusBadge from '../../components/base/StatusBadge.vue'
+import InfoRow from '../../components/base/InfoRow.vue'
+import { useGoBack } from '../../composables/useGoBack'
 
 const { t } = useI18n()
 const toast = useToast()
 const route = useRoute()
 const router = useRouter()
+const goBack = useGoBack('load-balancers')
 const lbId = route.params.id as string
 
 const lb = ref<LoadBalancer | null>(null)
@@ -351,7 +354,7 @@ onMounted(async () => {
 <template>
     <div class="detail-page">
         <div class="detail-header">
-            <button class="btn btn-ghost btn-sm" @click="router.back()">
+            <button class="btn btn-ghost btn-sm" @click="goBack">
                 <ArrowLeft :size="16" /> {{ $t('actions.back') }}
             </button>
         </div>
@@ -405,27 +408,15 @@ onMounted(async () => {
                 <div class="card info-card">
                     <h3>{{ $t('dashboard.loadBalancerDetail.generalInfo') }}</h3>
                     <div class="key-value-list">
-                        <div class="kv-item">
-                            <span class="label">{{ $t('dashboard.loadBalancerDetail.name') }}</span>
-                            <span class="value">{{ lb.name }}</span>
-                        </div>
-                        <div class="kv-item" v-if="lb.description">
-                            <span class="label">{{ $t('dashboard.forms.description') }}</span>
-                            <span class="value">{{ lb.description }}</span>
-                        </div>
-                        <div class="kv-item">
-                            <span class="label">{{ $t('dashboard.loadBalancerDetail.vpc') }}</span>
-                            <span class="value" v-if="lb.vpc">
-                                <router-link :to="{ name: 'vpc-detail', params: { id: lb.vpc.id } }" class="text-link">
-                                    {{ lb.vpc.name }}
-                                </router-link>
-                            </span>
-                            <span class="value" v-else>-</span>
-                        </div>
-                        <div class="kv-item">
-                            <span class="label">{{ $t('dashboard.loadBalancerDetail.createdAt') }}</span>
-                            <span class="value">{{ lb.created_at || '-' }}</span>
-                        </div>
+                        <InfoRow :label="$t('dashboard.loadBalancerDetail.name')">{{ lb.name }}</InfoRow>
+                        <InfoRow v-if="lb.description" :label="$t('dashboard.forms.description')">{{ lb.description }}</InfoRow>
+                        <InfoRow :label="$t('dashboard.loadBalancerDetail.vpc')">
+                            <router-link v-if="lb.vpc" :to="{ name: 'vpc-detail', params: { id: lb.vpc.id } }" class="text-link">
+                                {{ lb.vpc.name }}
+                            </router-link>
+                            <span v-else>-</span>
+                        </InfoRow>
+                        <InfoRow :label="$t('dashboard.loadBalancerDetail.createdAt')">{{ lb.created_at || '-' }}</InfoRow>
                     </div>
                 </div>
 
@@ -868,13 +859,6 @@ onMounted(async () => {
     flex-direction: column;
     gap: var(--spacing-3);
 }
-.kv-item {
-    display: flex;
-    justify-content: space-between;
-    font-size: var(--font-size-sm);
-}
-.kv-item .label { color: var(--text-secondary); }
-.kv-item .value { color: var(--text-primary); font-weight: 500; }
 .text-link {
     color: var(--primary-600);
     text-decoration: none;

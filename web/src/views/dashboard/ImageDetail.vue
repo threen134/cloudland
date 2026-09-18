@@ -10,6 +10,9 @@ import { ArrowLeft, Trash2, Server, Disc, Copy, Check, CalendarDays, Eye, EyeOff
 import { formatBytes } from '../../utils/format'
 import DeleteModal from '../../components/modals/DeleteModal.vue'
 import StatusBadge from '../../components/base/StatusBadge.vue'
+import InfoRow from '../../components/base/InfoRow.vue'
+import { useCopyId } from '../../composables/useCopyId'
+import { useGoBack } from '../../composables/useGoBack'
 
 const route = useRoute()
 const router = useRouter()
@@ -18,6 +21,7 @@ const toast = useToast()
 const imageId = route.params.id as string
 const auth = useAuthStore()
 const tenant = useTenantStore()
+const { copiedId: copiedField, copyId: copyToClipboard } = useCopyId()
 const isSuperuser = computed(() => auth.user?.is_superuser === true)
 const currentOrgName = computed(() => tenant.currentOrg?.name || '')
 
@@ -26,7 +30,6 @@ const loading = ref(true)
 const error = ref('')
 const deleting = ref(false)
 const togglingVisibility = ref(false)
-const copiedField = ref<string | null>(null)
 const showActionMenu = ref(false)
 
 const toggleActionMenu = () => {
@@ -42,13 +45,6 @@ const canDelete = computed(() => {
     if (isSuperuser.value) return true
     return image.value.owner === currentOrgName.value
 })
-
-const copyToClipboard = (text: string, field: string) => {
-    navigator.clipboard.writeText(text).then(() => {
-        copiedField.value = field
-        setTimeout(() => { copiedField.value = null }, 2000)
-    })
-}
 
 const fetchImage = async () => {
     loading.value = true
@@ -103,9 +99,7 @@ const toggleVisibility = async () => {
     }
 }
 
-const goBack = () => {
-    router.back()
-}
+const goBack = useGoBack('images')
 
 
 const getStatusText = (status: string | undefined) => {
@@ -190,14 +184,14 @@ onMounted(fetchImage)
                     <div class="card info-card">
                         <h3>{{ $t('dashboard.table.generalInformation') }}</h3>
                         <div class="key-value-list">
-                            <div class="kv-item">
-                                <span class="label"><Server :size="14" /> {{ $t('dashboard.table.status') }}</span>
-                                <span class="value">{{ getStatusText(image.status) }}</span>
-                            </div>
-                            <div class="kv-item">
-                                <span class="label"><CalendarDays :size="14" /> {{ $t('dashboard.table.createdAt') }}</span>
-                                <span class="value">{{ image.created_at || '-' }}</span>
-                            </div>
+                            <InfoRow :label="$t('dashboard.table.status')">
+                                <template #label><Server :size="14" /> {{ $t('dashboard.table.status') }}</template>
+                                {{ getStatusText(image.status) }}
+                            </InfoRow>
+                            <InfoRow :label="$t('dashboard.table.createdAt')">
+                                <template #label><CalendarDays :size="14" /> {{ $t('dashboard.table.createdAt') }}</template>
+                                {{ image.created_at || '-' }}
+                            </InfoRow>
                         </div>
                     </div>
 
@@ -205,22 +199,10 @@ onMounted(fetchImage)
                     <div class="card info-card">
                         <h3>{{ $t('dashboard.table.osKernel') }}</h3>
                         <div class="key-value-list">
-                            <div class="kv-item">
-                                <span class="label">{{ $t('dashboard.table.osFamily') }}</span>
-                                <span class="value">{{ image.os_family || '-' }}</span>
-                            </div>
-                            <div class="kv-item">
-                                <span class="label">{{ $t('dashboard.table.osVersion') }}</span>
-                                <span class="value">{{ image.os_version || '-' }}</span>
-                            </div>
-                            <div class="kv-item">
-                                <span class="label">{{ $t('dashboard.table.architecture') }}</span>
-                                <span class="value mono">{{ image.architecture || 'x86_64' }}</span>
-                            </div>
-                            <div class="kv-item">
-                                <span class="label">{{ $t('dashboard.table.bootLoader') }}</span>
-                                <span class="value">{{ image.boot_loader || 'BIOS' }}</span>
-                            </div>
+                            <InfoRow :label="$t('dashboard.table.osFamily')">{{ image.os_family || '-' }}</InfoRow>
+                            <InfoRow :label="$t('dashboard.table.osVersion')">{{ image.os_version || '-' }}</InfoRow>
+                            <InfoRow :label="$t('dashboard.table.architecture')" mono>{{ image.architecture || 'x86_64' }}</InfoRow>
+                            <InfoRow :label="$t('dashboard.table.bootLoader')">{{ image.boot_loader || 'BIOS' }}</InfoRow>
                         </div>
                     </div>
                 </div>
@@ -230,18 +212,11 @@ onMounted(fetchImage)
                     <div class="card info-card">
                         <h3>{{ $t('dashboard.table.fileDetails') }}</h3>
                         <div class="key-value-list">
-                            <div class="kv-item">
-                                <span class="label">{{ $t('dashboard.table.format') }}</span>
-                                <span class="value uppercase">{{ image.format || 'qcow2' }}</span>
-                            </div>
-                            <div class="kv-item">
-                                <span class="label">{{ $t('dashboard.table.size') }}</span>
-                                <span class="value">{{ formatBytes(image.size) }}</span>
-                            </div>
-                            <div class="kv-item">
-                                <span class="label">{{ $t('dashboard.table.defaultUser') }}</span>
-                                <span class="value mono">{{ image.user || 'root' }}</span>
-                            </div>
+                            <InfoRow :label="$t('dashboard.table.format')">
+                                <span class="uppercase">{{ image.format || 'qcow2' }}</span>
+                            </InfoRow>
+                            <InfoRow :label="$t('dashboard.table.size')">{{ formatBytes(image.size) }}</InfoRow>
+                            <InfoRow :label="$t('dashboard.table.defaultUser')" mono>{{ image.user || 'root' }}</InfoRow>
                         </div>
                     </div>
                 </div>
@@ -480,30 +455,7 @@ onMounted(fetchImage)
     gap: var(--spacing-3);
 }
 
-.kv-item {
-    display: flex;
-    justify-content: space-between;
-    font-size: var(--font-size-sm);
-}
-
-.kv-item .label {
-    color: var(--text-secondary);
-    display: flex;
-    align-items: center;
-    gap: 6px;
-}
-
-.kv-item .value {
-    color: var(--text-primary);
-    font-weight: 500;
-    text-align: right;
-}
-
-.value.mono, .mono {
-    font-family: var(--font-family-mono);
-}
-
-.value.uppercase {
+.uppercase {
     text-transform: uppercase;
 }
 

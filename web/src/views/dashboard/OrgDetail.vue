@@ -1,7 +1,7 @@
 
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { orgsApi, ORG_ROLES, type Organization, type OrgMember, type OrgInvitation } from '../../api/orgs'
 import { QUOTA_ROWS, type OrgResourceQuotaUpdate } from '../../api/quota'
@@ -10,6 +10,9 @@ import {
     CheckCircle, AlertCircle, ShieldAlert, PauseCircle
 } from 'lucide-vue-next'
 import BaseModal from '../../components/modals/BaseModal.vue'
+import InfoRow from '../../components/base/InfoRow.vue'
+import DetailTabs from '../../components/base/DetailTabs.vue'
+import { useGoBack } from '../../composables/useGoBack'
 import { useAuthStore } from '../../stores/auth'
 import { useTenantStore } from '../../stores/tenant'
 import { useQuota } from '../../composables/useQuota'
@@ -20,7 +23,7 @@ const { t } = useI18n()
 const toast = useToast()
 const authStore = useAuthStore()
 const route = useRoute()
-const router = useRouter()
+const goBack = useGoBack('orgs')
 const orgId = route.params.id as string
 
 const org = ref<Organization | null>(null)
@@ -30,7 +33,11 @@ const membersLoading = ref(false)
 const error = ref('')
 
 // Tabs
-const activeTab = ref<'members' | 'quota'>('members')
+const activeTab = ref<string>('members')
+const tabs = computed(() => [
+    { id: 'members', label: t('dashboard.org.members'), icon: Users },
+    { id: 'quota', label: t('quota.limit'), icon: Gauge },
+])
 
 // Quota modal
 const quotaModalVisible = ref(false)
@@ -278,7 +285,7 @@ onUnmounted(() => {
   <div>
     <!-- Back button -->
     <div class="page-header">
-      <button class="btn btn-ghost btn-sm" @click="router.push({ name: 'orgs' })">
+      <button class="btn btn-ghost btn-sm" @click="goBack">
         <ArrowLeft :size="16" /> {{ $t('actions.back') }}
       </button>
     </div>
@@ -333,27 +340,17 @@ onUnmounted(() => {
         </div>
 
         <div class="detail-grid">
-          <div class="detail-item">
-            <span class="detail-label">{{ $t('dashboard.table.description') }}</span>
-            <span class="detail-value">{{ org.description || '-' }}</span>
-          </div>
-          <div class="detail-item">
-            <span class="detail-label">{{ $t('dashboard.table.owner') }}</span>
-            <span class="detail-value">{{ org.owner_email || org.owner_uuid || '-' }}</span>
-          </div>
-          <div class="detail-item">
-            <span class="detail-label">{{ $t('dashboard.org.memberCount') }}</span>
-            <span class="detail-value">{{ org.member_count ?? members.length }}</span>
-          </div>
-          <div class="detail-item">
-            <span class="detail-label">{{ $t('dashboard.table.status') }}</span>
+          <InfoRow :label="$t('dashboard.table.description')">{{ org.description || '-' }}</InfoRow>
+          <InfoRow :label="$t('dashboard.table.owner')">{{ org.owner_email || org.owner_uuid || '-' }}</InfoRow>
+          <InfoRow :label="$t('dashboard.org.memberCount')">{{ org.member_count ?? members.length }}</InfoRow>
+          <InfoRow :label="$t('dashboard.table.status')">
             <div class="status-cell" :class="'status-' + (org.status || 0)">
                 <CheckCircle v-if="org.status === 1" :size="14" />
                 <PauseCircle v-else-if="org.status === 2" :size="14" />
                 <ShieldAlert v-else-if="org.status === 3" :size="14" />
                 <AlertCircle v-else :size="14" />
                 <span>
-                  {{ 
+                  {{
                     org.status === 0 ? $t('dashboard.org.status.pending') :
                     org.status === 1 ? $t('dashboard.org.status.active') :
                     org.status === 2 ? $t('dashboard.org.status.suspended') :
@@ -362,23 +359,13 @@ onUnmounted(() => {
                   }}
                 </span>
             </div>
-          </div>
-          <div class="detail-item">
-            <span class="detail-label">{{ $t('dashboard.table.created') }}</span>
-            <span class="detail-value">{{ org.created_at || '-' }}</span>
-          </div>
+          </InfoRow>
+          <InfoRow :label="$t('dashboard.table.created')">{{ org.created_at || '-' }}</InfoRow>
         </div>
       </div>
 
       <!-- Tabs -->
-      <div class="tab-bar">
-        <button class="tab-btn" :class="{ active: activeTab === 'members' }" @click="activeTab = 'members'">
-          <Users :size="16" /> {{ $t('dashboard.org.members') }}
-        </button>
-        <button class="tab-btn" :class="{ active: activeTab === 'quota' }" @click="activeTab = 'quota'">
-          <Gauge :size="16" /> {{ $t('quota.limit') }}
-        </button>
-      </div>
+      <DetailTabs v-model="activeTab" :tabs="tabs" />
 
       <!-- Quota Tab (read-only) -->
       <div v-if="activeTab === 'quota'" class="card">
@@ -784,26 +771,6 @@ onUnmounted(() => {
   gap: var(--spacing-5);
 }
 
-.detail-item {
-  display: flex;
-  flex-direction: column;
-  gap: var(--spacing-1);
-}
-
-.detail-label {
-  font-size: var(--font-size-xs);
-  color: var(--text-tertiary);
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  font-weight: var(--font-weight-semibold);
-}
-
-.detail-value {
-  font-size: var(--font-size-sm);
-  color: var(--text-primary);
-  font-weight: var(--font-weight-medium);
-}
-
 .card-header-row {
   display: flex;
   justify-content: space-between;
@@ -1005,40 +972,6 @@ onUnmounted(() => {
 }
 .btn-danger:hover { background: var(--error-dark); }
 .btn-danger:disabled { opacity: 0.5; cursor: not-allowed; }
-
-/* Tabs */
-.tab-bar {
-  display: flex;
-  gap: var(--spacing-1);
-  margin-bottom: var(--spacing-4);
-  border-bottom: 1px solid var(--border-light);
-  padding-bottom: 0;
-}
-
-.tab-btn {
-  display: flex;
-  align-items: center;
-  gap: var(--spacing-2);
-  padding: var(--spacing-3) var(--spacing-4);
-  border: none;
-  background: none;
-  color: var(--text-secondary);
-  font-size: var(--font-size-sm);
-  font-weight: var(--font-weight-medium);
-  cursor: pointer;
-  border-bottom: 2px solid transparent;
-  margin-bottom: -1px;
-  transition: all var(--transition-base);
-}
-
-.tab-btn:hover {
-  color: var(--text-primary);
-}
-
-.tab-btn.active {
-  color: var(--primary-600);
-  border-bottom-color: var(--primary-600);
-}
 
 /* Quota */
 .quota-region-card {

@@ -1,19 +1,21 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { useRoute } from 'vue-router'
 import { migrationsApi, MIGRATION_ACTIVE_STATUSES, type Migration } from '../../api/migrations'
 import { ArrowLeft, ArrowRightLeft, Copy, Check } from 'lucide-vue-next'
 import { useI18n } from 'vue-i18n'
 import { formatBytes, formatDateTime } from '../../utils/format'
 import StatusBadge from '../../components/base/StatusBadge.vue'
+import InfoRow from '../../components/base/InfoRow.vue'
+import { useCopyId } from '../../composables/useCopyId'
+import { useGoBack } from '../../composables/useGoBack'
 
 const { t, te } = useI18n()
 const route = useRoute()
-const router = useRouter()
 const migration = ref<Migration | null>(null)
 const loading = ref(true)
 const error = ref<string | null>(null)
-const copiedField = ref<string | null>(null)
+const { copiedId: copiedField, copyId: copyToClipboard } = useCopyId()
 
 // 迁移进行中时每 3 秒自动刷新，展示阶段与进度
 const inProgress = computed(() => MIGRATION_ACTIVE_STATUSES.includes((migration.value?.status || '').toLowerCase()))
@@ -34,14 +36,6 @@ const fetchMigrationDetail = async (silent = false) => {
         if (refreshTimer) clearTimeout(refreshTimer)
         if (inProgress.value) refreshTimer = setTimeout(() => fetchMigrationDetail(true), 3000)
     }
-}
-
-
-const copyToClipboard = (text: string, field: string) => {
-    navigator.clipboard.writeText(text).then(() => {
-        copiedField.value = field
-        setTimeout(() => { copiedField.value = null }, 2000)
-    })
 }
 
 // 缺键时 t() 返回键路径本身，必须用 te() 判断后再回退到原始值。
@@ -79,9 +73,7 @@ const getTypeText = (type: string) => {
     return te(key) ? t(key) : type
 }
 
-const goBack = () => {
-    router.push({ name: 'migrations' })
-}
+const goBack = useGoBack('migrations')
 
 onMounted(() => fetchMigrationDetail())
 onUnmounted(() => {
@@ -144,26 +136,11 @@ onUnmounted(() => {
         <div class="info-card card">
           <h3 class="card-section-title">{{ $t('dashboard.migrationDetail.overview') }}</h3>
           <div class="info-rows">
-            <div class="info-row">
-              <span class="info-label">{{ $t('dashboard.migrationDetail.instanceId') }}</span>
-              <span class="info-value mono">{{ migration.instance?.hostname || migration.instance?.id || '-' }}</span>
-            </div>
-            <div class="info-row">
-              <span class="info-label">{{ $t('dashboard.migrationDetail.type') }}</span>
-              <span class="info-value">{{ getTypeText(migration.type) || $t('messages.unnamed') }}</span>
-            </div>
-            <div class="info-row">
-              <span class="info-label">{{ $t('dashboard.table.creator') }}</span>
-              <span class="info-value">{{ migration.creater_name || '-' }}</span>
-            </div>
-            <div class="info-row">
-              <span class="info-label">{{ $t('dashboard.migrationDetail.createdAt') }}</span>
-              <span class="info-value mono">{{ formatDateTime(migration.created_at) }}</span>
-            </div>
-            <div class="info-row">
-              <span class="info-label">{{ $t('dashboard.migrationDetail.updatedAt') }}</span>
-              <span class="info-value mono">{{ formatDateTime(migration.updated_at) }}</span>
-            </div>
+            <InfoRow :label="$t('dashboard.migrationDetail.instanceId')" mono>{{ migration.instance?.hostname || migration.instance?.id || '-' }}</InfoRow>
+            <InfoRow :label="$t('dashboard.migrationDetail.type')">{{ getTypeText(migration.type) || $t('messages.unnamed') }}</InfoRow>
+            <InfoRow :label="$t('dashboard.table.creator')">{{ migration.creater_name || '-' }}</InfoRow>
+            <InfoRow :label="$t('dashboard.migrationDetail.createdAt')" mono>{{ formatDateTime(migration.created_at) }}</InfoRow>
+            <InfoRow :label="$t('dashboard.migrationDetail.updatedAt')" mono>{{ formatDateTime(migration.updated_at) }}</InfoRow>
           </div>
         </div>
 
@@ -171,14 +148,8 @@ onUnmounted(() => {
         <div class="info-card card">
           <h3 class="card-section-title">{{ $t('dashboard.migrationDetail.placementRoute') }}</h3>
           <div class="info-rows">
-            <div class="info-row">
-              <span class="info-label">{{ $t('dashboard.migrationDetail.sourceNode') }}</span>
-              <span class="info-value">{{ hyperLabel(migration.source_hyper, migration.source_hyper_name) }}</span>
-            </div>
-            <div class="info-row">
-              <span class="info-label">{{ $t('dashboard.migrationDetail.destinationNode') }}</span>
-              <span class="info-value">{{ hyperLabel(migration.target_hyper, migration.target_hyper_name) }}</span>
-            </div>
+            <InfoRow :label="$t('dashboard.migrationDetail.sourceNode')">{{ hyperLabel(migration.source_hyper, migration.source_hyper_name) }}</InfoRow>
+            <InfoRow :label="$t('dashboard.migrationDetail.destinationNode')">{{ hyperLabel(migration.target_hyper, migration.target_hyper_name) }}</InfoRow>
           </div>
         </div>
 
@@ -427,33 +398,6 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
   gap: var(--spacing-3);
-}
-
-.info-row {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: var(--spacing-1) 0;
-  min-height: 24px;
-}
-
-.info-label {
-  font-size: var(--font-size-sm);
-  color: var(--text-secondary);
-  flex-shrink: 0;
-}
-
-.info-value {
-  font-size: var(--font-size-sm);
-  color: var(--text-primary);
-  font-weight: var(--font-weight-medium);
-  text-align: right;
-  word-break: break-all;
-}
-
-.info-value.mono {
-  font-family: var(--font-family-mono);
-  font-size: var(--font-size-xs);
 }
 
 @media (max-width: 768px) {

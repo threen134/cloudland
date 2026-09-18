@@ -6,15 +6,18 @@ import { ArrowLeft, Network, Trash2, Copy, Check, ChevronDown } from 'lucide-vue
 import { useI18n } from 'vue-i18n'
 import { useToast } from '../../composables/useToast'
 import DeleteModal from '../../components/modals/DeleteModal.vue'
+import InfoRow from '../../components/base/InfoRow.vue'
+import { useCopyId } from '../../composables/useCopyId'
+import { useGoBack } from '../../composables/useGoBack'
 
 const route = useRoute()
 const router = useRouter()
 const subnetId = route.params.id as string
+const { copiedId: copiedField, copyId: copyToClipboard } = useCopyId()
 
 const subnet = ref<Subnet | null>(null)
 const loading = ref(true)
 const error = ref('')
-const copiedField = ref<string | null>(null)
 const showActionMenu = ref(false)
 const { t } = useI18n()
 const toast = useToast()
@@ -63,16 +66,7 @@ const fetchSubnet = async () => {
     }
 }
 
-const goBack = () => {
-    router.back()
-}
-
-const copyToClipboard = (text: string, field: string) => {
-    navigator.clipboard.writeText(text).then(() => {
-        copiedField.value = field
-        setTimeout(() => { copiedField.value = null }, 2000)
-    })
-}
+const goBack = useGoBack('subnets')
 
 const getTypeBadgeClass = (type: string) => {
     const map: Record<string, string> = {
@@ -157,14 +151,8 @@ onMounted(fetchSubnet)
                     <div class="card info-card">
                         <h3>{{ $t('dashboard.table.generalInformation') }}</h3>
                         <div class="key-value-list">
-                            <div class="kv-item">
-                                <span class="label">{{ $t('dashboard.table.name') }}</span>
-                                <span class="value">{{ subnet.name }}</span>
-                            </div>
-                            <div class="kv-item">
-                                <span class="label">{{ $t('dashboard.table.createdAt') }}</span>
-                                <span class="value">{{ subnet.created_at || '-' }}</span>
-                            </div>
+                            <InfoRow :label="$t('dashboard.table.name')">{{ subnet.name }}</InfoRow>
+                            <InfoRow :label="$t('dashboard.table.createdAt')">{{ subnet.created_at || '-' }}</InfoRow>
                         </div>
                     </div>
 
@@ -172,22 +160,14 @@ onMounted(fetchSubnet)
                     <div class="card info-card">
                         <h3>{{ $t('dashboard.table.ipUsageStats') }}</h3>
                         <div class="key-value-list">
-                            <div class="kv-item">
-                                <span class="label">{{ $t('dashboard.table.totalIps') }}</span>
-                                <span class="value">{{ subnet.total_count }}</span>
-                            </div>
-                            <div class="kv-item">
-                                <span class="label">{{ $t('dashboard.table.allocated') }}</span>
-                                <span class="value text-blue">{{ subnet.allocated_count }}</span>
-                            </div>
-                            <div class="kv-item">
-                                <span class="label">{{ $t('dashboard.table.available') }}</span>
-                                <span class="value text-green">{{ subnet.available_count }}</span>
-                            </div>
-                            <div class="kv-item">
-                                <span class="label">{{ $t('dashboard.table.idleReserved') }}</span>
-                                <span class="value">{{ subnet.idle_count }} / {{ subnet.reserved_count }}</span>
-                            </div>
+                            <InfoRow :label="$t('dashboard.table.totalIps')">{{ subnet.total_count }}</InfoRow>
+                            <InfoRow :label="$t('dashboard.table.allocated')">
+                                <span class="text-blue">{{ subnet.allocated_count }}</span>
+                            </InfoRow>
+                            <InfoRow :label="$t('dashboard.table.available')">
+                                <span class="text-green">{{ subnet.available_count }}</span>
+                            </InfoRow>
+                            <InfoRow :label="$t('dashboard.table.idleReserved')">{{ subnet.idle_count }} / {{ subnet.reserved_count }}</InfoRow>
                         </div>
                     </div>
                 </div>
@@ -197,46 +177,22 @@ onMounted(fetchSubnet)
                     <div class="card info-card">
                         <h3>{{ $t('dashboard.table.networkDetails') }}</h3>
                         <div class="key-value-list">
-                            <div class="kv-item" v-if="subnet.vpc">
-                                <span class="label">{{ $t('dashboard.table.vpc') }}</span>
-                                <span class="value">
-                                    <router-link :to="{name: 'vpc-detail', params: {id: subnet.vpc.id}}" class="text-link">
-                                        {{ subnet.vpc.name }}
-                                    </router-link>
+                            <InfoRow v-if="subnet.vpc" :label="$t('dashboard.table.vpc')">
+                                <router-link :to="{name: 'vpc-detail', params: {id: subnet.vpc.id}}" class="text-link">
+                                    {{ subnet.vpc.name }}
+                                </router-link>
+                            </InfoRow>
+                            <InfoRow :label="$t('dashboard.table.subnetType')">
+                                <span :class="['type-badge', getTypeBadgeClass(subnet.type || 'internal')]" style="padding: 2px 10px; font-size: 11px;">
+                                    {{ $t('dashboard.subnetTypes.' + (subnet.type || 'internal')) }}
                                 </span>
-                            </div>
-                            <div class="kv-item">
-                                <span class="label">{{ $t('dashboard.table.subnetType') }}</span>
-                                <span class="value">
-                                    <span :class="['type-badge', getTypeBadgeClass(subnet.type || 'internal')]" style="padding: 2px 10px; font-size: 11px;">
-                                        {{ $t('dashboard.subnetTypes.' + (subnet.type || 'internal')) }}
-                                    </span>
-                                </span>
-                            </div>
-                            <div class="kv-item">
-                                 <span class="label">{{ $t('dashboard.table.cidr') }}</span>
-                                 <span class="value mono">{{ subnet.network || subnet.network_cidr }}</span>
-                            </div>
-                            <div class="kv-item">
-                                <span class="label">{{ $t('dashboard.table.networkRange') }}</span>
-                                <span class="value mono">{{ subnet.start }} - {{ subnet.end }}</span>
-                            </div>
-                            <div class="kv-item">
-                                <span class="label">{{ $t('dashboard.table.gateway') }}</span>
-                                <span class="value mono">{{ subnet.gateway || '-' }}</span>
-                            </div>
-                            <div class="kv-item" v-if="subnet.vlan">
-                                <span class="label">{{ (subnet.vlan > 4094) ? $t('dashboard.table.vxlan') : $t('dashboard.table.vlan') }}</span>
-                                <span class="value mono">{{ subnet.vlan }}</span>
-                            </div>
-                            <div class="kv-item">
-                                <span class="label">{{ $t('dashboard.table.dhcp') }}</span>
-                                <span class="value">{{ subnet.dhcp ? $t('dashboard.alarm.enabled') : $t('dashboard.alarm.disabled') }}</span>
-                            </div>
-                            <div class="kv-item">
-                                <span class="label">{{ $t('dashboard.table.dns') }}</span>
-                                <span class="value mono">{{ subnet.dns || '-' }}</span>
-                            </div>
+                            </InfoRow>
+                            <InfoRow :label="$t('dashboard.table.cidr')" mono>{{ subnet.network || subnet.network_cidr }}</InfoRow>
+                            <InfoRow :label="$t('dashboard.table.networkRange')" mono>{{ subnet.start }} - {{ subnet.end }}</InfoRow>
+                            <InfoRow :label="$t('dashboard.table.gateway')" mono>{{ subnet.gateway || '-' }}</InfoRow>
+                            <InfoRow v-if="subnet.vlan" :label="(subnet.vlan > 4094) ? $t('dashboard.table.vxlan') : $t('dashboard.table.vlan')" mono>{{ subnet.vlan }}</InfoRow>
+                            <InfoRow :label="$t('dashboard.table.dhcp')">{{ subnet.dhcp ? $t('dashboard.alarm.enabled') : $t('dashboard.alarm.disabled') }}</InfoRow>
+                            <InfoRow :label="$t('dashboard.table.dns')" mono>{{ subnet.dns || '-' }}</InfoRow>
                         </div>
                     </div>
                 </div>
@@ -447,29 +403,6 @@ onMounted(fetchSubnet)
     display: flex;
     flex-direction: column;
     gap: var(--spacing-3);
-}
-
-.kv-item {
-    display: flex;
-    justify-content: space-between;
-    font-size: var(--font-size-sm);
-}
-
-.kv-item .label {
-    color: var(--text-secondary);
-    display: flex;
-    align-items: center;
-    gap: 6px;
-}
-
-.kv-item .value {
-    color: var(--text-primary);
-    font-weight: 500;
-    text-align: right;
-}
-
-.value.mono {
-    font-family: var(--font-family-mono);
 }
 
 .text-link {

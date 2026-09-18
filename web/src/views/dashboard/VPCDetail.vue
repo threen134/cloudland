@@ -10,17 +10,21 @@ import { useToast } from '../../composables/useToast'
 import DeleteModal from '../../components/modals/DeleteModal.vue'
 import BaseModal from '../../components/modals/BaseModal.vue'
 import StatusBadge from '../../components/base/StatusBadge.vue'
+import InfoRow from '../../components/base/InfoRow.vue'
 import { formatDateTime } from '../../utils/format'
+import { useCopyId } from '../../composables/useCopyId'
+import { useGoBack } from '../../composables/useGoBack'
 
 const route = useRoute()
 const router = useRouter()
 const region = useRegionStore()
 const { t } = useI18n()
+const { copiedId: copiedField, copyId: copyToClipboard } = useCopyId()
+const goBack = useGoBack('vpcs')
 
 const vpc = ref<VPC | null>(null)
 const loading = ref(false)
 const error = ref<string | null>(null)
-const copiedField = ref<string | null>(null)
 const showActionMenu = ref(false)
 
 const toast = useToast()
@@ -211,22 +215,10 @@ const closeActionMenu = () => {
     showActionMenu.value = false
 }
 
-const goBack = () => {
-    router.back()
-}
-
 const getStatusText = (status?: string) => {
     if (!status) return t('dashboard.vpcStatus.active')
     const key = status.toLowerCase()
     return t(`dashboard.vpcStatus.${key}`)
-}
-
-
-const copyToClipboard = (text: string, field: string) => {
-    navigator.clipboard.writeText(text).then(() => {
-        copiedField.value = field
-        setTimeout(() => { copiedField.value = null }, 2000)
-    })
 }
 
 onMounted(() => {
@@ -316,20 +308,11 @@ onMounted(() => {
           <div class="card info-card">
             <h3>{{ $t('dashboard.table.generalInformation') }}</h3>
             <div class="key-value-list">
-              <div class="kv-item">
-                <span class="label">{{ $t('dashboard.table.name') }}</span>
-                <span class="value">{{ vpc.name }}</span>
-              </div>
-              <div class="kv-item">
-                <span class="label">{{ $t('dashboard.table.status') }}</span>
-                <span class="value">
-                  <StatusBadge :status="vpc.status || 'active'" :label="getStatusText(vpc.status)" />
-                </span>
-              </div>
-              <div class="kv-item">
-                <span class="label">{{ $t('dashboard.table.description') }}</span>
-                <span class="value">{{ vpc.description || '-' }}</span>
-              </div>
+              <InfoRow :label="$t('dashboard.table.name')">{{ vpc.name }}</InfoRow>
+              <InfoRow :label="$t('dashboard.table.status')">
+                <StatusBadge :status="vpc.status || 'active'" :label="getStatusText(vpc.status)" />
+              </InfoRow>
+              <InfoRow :label="$t('dashboard.table.description')">{{ vpc.description || '-' }}</InfoRow>
             </div>
           </div>
         </div>
@@ -339,22 +322,16 @@ onMounted(() => {
           <div class="card info-card">
             <h3>{{ t('dashboard.table.metadata') }}</h3>
             <div class="key-value-list">
-              <div class="kv-item">
-                <span class="label">{{ t('dashboard.subnets') }}</span>
-                <span class="value">{{ vpc.subnets?.length || 0 }}</span>
-              </div>
-              <div class="kv-item">
-                <span class="label">{{ $t('dashboard.table.owner') }}</span>
-                <span class="value">{{ vpc.owner || '-' }}</span>
-              </div>
-              <div class="kv-item">
-                <span class="label"><CalendarDays :size="14" /> {{ $t('dashboard.table.created') }}</span>
-                <span class="value">{{ formatDateTime(vpc.created_at) }}</span>
-              </div>
-              <div class="kv-item">
-                <span class="label"><CalendarDays :size="14" /> {{ $t('dashboard.table.updatedAt') }}</span>
-                <span class="value">{{ formatDateTime(vpc.updated_at) }}</span>
-              </div>
+              <InfoRow :label="t('dashboard.subnets')">{{ vpc.subnets?.length || 0 }}</InfoRow>
+              <InfoRow :label="$t('dashboard.table.owner')">{{ vpc.owner || '-' }}</InfoRow>
+              <InfoRow :label="$t('dashboard.table.created')">
+                <template #label><CalendarDays :size="14" /> {{ $t('dashboard.table.created') }}</template>
+                {{ formatDateTime(vpc.created_at) }}
+              </InfoRow>
+              <InfoRow :label="$t('dashboard.table.updatedAt')">
+                <template #label><CalendarDays :size="14" /> {{ $t('dashboard.table.updatedAt') }}</template>
+                {{ formatDateTime(vpc.updated_at) }}
+              </InfoRow>
             </div>
           </div>
         </div>
@@ -801,26 +778,6 @@ onMounted(() => {
   display: flex;
   flex-direction: column;
   gap: var(--spacing-3);
-}
-
-.kv-item {
-  display: flex;
-  justify-content: space-between;
-  font-size: var(--font-size-sm);
-}
-
-.kv-item .label {
-  color: var(--text-secondary);
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.kv-item .value {
-  color: var(--text-primary);
-  font-weight: 500;
-  text-align: right;
-  word-break: break-all;
 }
 
 /* Subnets Section */

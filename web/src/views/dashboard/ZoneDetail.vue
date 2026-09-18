@@ -8,16 +8,20 @@ import { ArrowLeft, MapPin, Copy, Check, Settings2, Trash2, Loader2, Server } fr
 import { useToast } from '../../composables/useToast'
 import BaseModal from '../../components/modals/BaseModal.vue'
 import DeleteModal from '../../components/modals/DeleteModal.vue'
+import InfoRow from '../../components/base/InfoRow.vue'
+import { useCopyId } from '../../composables/useCopyId'
+import { useGoBack } from '../../composables/useGoBack'
 
 const route = useRoute()
 const router = useRouter()
 const { t } = useI18n()
 const toast = useToast()
+const { copiedId: copiedField, copyId: copyToClipboard } = useCopyId()
+const goBack = useGoBack('zones')
 
 const zone = ref<Zone | null>(null)
 const loading = ref(true)
 const error = ref<string | null>(null)
-const copiedField = ref<string | null>(null)
 
 // Associated hypervisors
 const hypervisors = ref<Hypervisor[]>([])
@@ -68,17 +72,6 @@ const fetchAssociatedHypervisors = async () => {
     } finally {
         loadingHypers.value = false
     }
-}
-
-const copyToClipboard = (text: string, field: string) => {
-    navigator.clipboard.writeText(text).then(() => {
-        copiedField.value = field
-        setTimeout(() => { copiedField.value = null }, 2000)
-    })
-}
-
-const goBack = () => {
-    router.push({ name: 'zones' })
 }
 
 // Edit
@@ -195,26 +188,14 @@ onMounted(async () => {
         <div class="info-card card">
           <h3 class="card-section-title">{{ t('dashboard.table.overview') }}</h3>
           <div class="info-rows">
-            <div class="info-row">
-              <span class="info-label">{{ t('dashboard.table.name') }}</span>
-              <span class="info-value">{{ zone.name }}</span>
-            </div>
-            <div class="info-row">
-              <span class="info-label">{{ t('dashboard.table.id') }}</span>
-              <span class="info-value mono">{{ zone.id || '-' }}</span>
-            </div>
-            <div class="info-row">
-              <span class="info-label">{{ t('dashboard.zoneActions.default') }}</span>
-              <span class="info-value">
-                <span class="badge" :class="zone.default ? 'badge-primary' : 'badge-secondary'">
-                  {{ zone.default ? 'Yes' : 'No' }}
-                </span>
+            <InfoRow :label="t('dashboard.table.name')">{{ zone.name }}</InfoRow>
+            <InfoRow :label="t('dashboard.table.id')" mono>{{ zone.id || '-' }}</InfoRow>
+            <InfoRow :label="t('dashboard.zoneActions.default')">
+              <span class="badge" :class="zone.default ? 'badge-primary' : 'badge-secondary'">
+                {{ zone.default ? 'Yes' : 'No' }}
               </span>
-            </div>
-            <div class="info-row">
-              <span class="info-label">{{ t('dashboard.zoneActions.remark') }}</span>
-              <span class="info-value">{{ zone.remark || '-' }}</span>
-            </div>
+            </InfoRow>
+            <InfoRow :label="t('dashboard.zoneActions.remark')">{{ zone.remark || '-' }}</InfoRow>
           </div>
         </div>
 
@@ -376,10 +357,6 @@ onMounted(async () => {
   padding-bottom: var(--spacing-3); border-bottom: 1px solid var(--border-light);
 }
 .info-rows { display: flex; flex-direction: column; gap: var(--spacing-3); }
-.info-row { display: flex; justify-content: space-between; align-items: center; padding: var(--spacing-1) 0; }
-.info-label { font-size: var(--font-size-sm); color: var(--text-secondary); flex-shrink: 0; }
-.info-value { font-size: var(--font-size-sm); color: var(--text-primary); font-weight: var(--font-weight-medium); text-align: right; }
-.info-value.mono { font-family: var(--font-family-mono); font-size: var(--font-size-xs); }
 
 /* Hypervisors list */
 .loading-small { display: flex; justify-content: center; padding: 24px 0; }

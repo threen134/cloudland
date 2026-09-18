@@ -7,6 +7,8 @@ import { usersApi, type User } from '../../api/users'
 import { ArrowLeft, User as UserIcon, Trash2, Mail, Shield } from 'lucide-vue-next'
 import DeleteModal from '../../components/modals/DeleteModal.vue'
 import StatusBadge from '../../components/base/StatusBadge.vue'
+import InfoRow from '../../components/base/InfoRow.vue'
+import { useGoBack } from '../../composables/useGoBack'
 
 const { t } = useI18n()
 const toast = useToast()
@@ -61,9 +63,7 @@ const confirmDelete = async () => {
     }
 }
 
-const goBack = () => {
-    router.back()
-}
+const goBack = useGoBack('users')
 
 onMounted(fetchUser)
 </script>
@@ -111,22 +111,16 @@ onMounted(fetchUser)
                 <div class="card info-card">
                     <h3>{{ $t('dashboard.userDetail.generalInfo') }}</h3>
                     <div class="key-value-list">
-                        <div class="kv-item">
-                            <span class="label">{{ $t('dashboard.userDetail.username') }}</span>
-                            <span class="value">{{ user.username || user.name }}</span>
-                        </div>
-                        <div class="kv-item">
-                            <span class="label"><Mail :size="14" /> {{ $t('dashboard.userDetail.email') }}</span>
-                            <span class="value">{{ user.email || '-' }}</span>
-                        </div>
-                        <div class="kv-item">
-                            <span class="label"><Shield :size="14" /> {{ $t('dashboard.userDetail.role') }}</span>
-                            <span class="value">{{ user.role || 'Member' }}</span>
-                        </div>
-                        <div class="kv-item">
-                            <span class="label">{{ $t('dashboard.userDetail.createdAt') }}</span>
-                            <span class="value">{{ user.created_at || '-' }}</span>
-                        </div>
+                        <InfoRow :label="$t('dashboard.userDetail.username')">{{ user.username || user.name }}</InfoRow>
+                        <InfoRow :label="$t('dashboard.userDetail.email')">
+                            <template #label><Mail :size="14" /> {{ $t('dashboard.userDetail.email') }}</template>
+                            {{ user.email || '-' }}
+                        </InfoRow>
+                        <InfoRow :label="$t('dashboard.userDetail.role')">
+                            <template #label><Shield :size="14" /> {{ $t('dashboard.userDetail.role') }}</template>
+                            {{ user.role || 'Member' }}
+                        </InfoRow>
+                        <InfoRow :label="$t('dashboard.userDetail.createdAt')">{{ user.created_at || '-' }}</InfoRow>
                     </div>
                 </div>
 
@@ -134,14 +128,8 @@ onMounted(fetchUser)
                  <div class="card info-card">
                     <h3>{{ $t('dashboard.userDetail.organization') }}</h3>
                      <div class="key-value-list">
-                        <div class="kv-item">
-                            <span class="label">{{ $t('dashboard.userDetail.orgUuid') }}</span>
-                            <span class="value mono">{{ user.org?.uuid || '-' }}</span>
-                        </div>
-                         <div class="kv-item">
-                            <span class="label">{{ $t('dashboard.userDetail.orgName') }}</span>
-                            <span class="value">{{ user.org?.name || '-' }}</span>
-                        </div>
+                        <InfoRow :label="$t('dashboard.userDetail.orgUuid')" mono>{{ user.org?.uuid || '-' }}</InfoRow>
+                        <InfoRow :label="$t('dashboard.userDetail.orgName')">{{ user.org?.name || '-' }}</InfoRow>
                     </div>
                 </div>
             </div>
@@ -246,28 +234,6 @@ onMounted(fetchUser)
     display: flex;
     flex-direction: column;
     gap: var(--spacing-3);
-}
-
-.kv-item {
-    display: flex;
-    justify-content: space-between;
-    font-size: var(--font-size-sm);
-}
-
-.kv-item .label {
-    color: var(--text-secondary);
-    display: flex;
-    align-items: center;
-    gap: 8px;
-}
-
-.kv-item .value {
-    color: var(--text-primary);
-    font-weight: 500;
-}
-
-.value.mono {
-    font-family: var(--font-family-mono);
 }
 
 .btn-danger {
