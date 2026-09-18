@@ -98,6 +98,9 @@ export function useListQuery<T>(
     // 新页码会被当成 load 的 silent 参数
     watch(page, () => load())
 
+    // 改每页条数后当前页码通常已经越界，回到第一页
+    watch(pageSize, () => reload())
+
     watch(search, () => {
         if (searchTimer) clearTimeout(searchTimer)
         searchTimer = setTimeout(() => {

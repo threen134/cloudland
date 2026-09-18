@@ -306,7 +306,13 @@ onUnmounted(() => {
       <template #cell-createdAt="{ row: m }"><span class="mono-value">{{ formatDateTime(m.created_at) }}</span></template>
 
       <template #footer>
-        <PaginationBar :page="page" :page-size="pageSize" :total="total" @update:page="page = $event" />
+        <PaginationBar
+          :page="page"
+          :page-size="pageSize"
+          :total="total"
+          @update:page="page = $event"
+          @update:page-size="pageSize = $event"
+        />
       </template>
     </DataTable>
 

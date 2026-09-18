@@ -1558,6 +1558,7 @@ export default {
         configuration: 'Configuration',
         pagination: {
             showing: 'Showing {from}-{to} of {total}',
+            perPage: 'Per page',
             prev: 'Prev',
             next: 'Next',
         },

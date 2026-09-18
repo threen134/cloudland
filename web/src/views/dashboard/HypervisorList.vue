@@ -552,7 +552,13 @@ onUnmounted(() => {
       </template>
 
       <template #footer>
-        <PaginationBar :page="currentPage" :page-size="pageSize" :total="totalCount" @update:page="goToPage" />
+        <PaginationBar
+          :page="currentPage"
+          :page-size="pageSize"
+          :total="totalCount"
+          @update:page="goToPage"
+          @update:page-size="size => { pageSize = size; currentPage = 1; fetchHypervisors() }"
+        />
       </template>
     </DataTable>
 

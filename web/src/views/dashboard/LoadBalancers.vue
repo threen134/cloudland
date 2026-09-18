@@ -80,9 +80,9 @@ const vpcs = ref<VPC[]>([])
 
 // Pagination and name search are done by the server
 const currentPage = ref(1)
-const pageSize = 20
+const pageSize = ref(20)
 const totalCount = ref(0)
-const totalPages = computed(() => Math.max(1, Math.ceil(totalCount.value / pageSize)))
+const totalPages = computed(() => Math.max(1, Math.ceil(totalCount.value / pageSize.value)))
 // Drops responses of superseded requests (fast typing, page switches)
 let fetchGeneration = 0
 
@@ -103,8 +103,8 @@ const fetchLoadBalancers = async () => {
     try {
         const [lbResponse, vpcsResponse] = await Promise.all([
             loadBalancersApi.list({
-                offset: (currentPage.value - 1) * pageSize,
-                limit: pageSize,
+                offset: (currentPage.value - 1) * pageSize.value,
+                limit: pageSize.value,
                 query: searchQuery.value.trim() || undefined
             }),
             vpcsApi.list()
@@ -327,7 +327,13 @@ onUnmounted(() => {
       </template>
 
       <template #footer>
-        <PaginationBar :page="currentPage" :page-size="pageSize" :total="totalCount" @update:page="goToPage" />
+        <PaginationBar
+          :page="currentPage"
+          :page-size="pageSize"
+          :total="totalCount"
+          @update:page="goToPage"
+          @update:page-size="size => { pageSize = size; currentPage = 1; fetchLoadBalancers() }"
+        />
       </template>
     </DataTable>
     <!-- Create LB Modal -->

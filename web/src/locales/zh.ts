@@ -1558,6 +1558,7 @@ export default {
         configuration: '配置',
         pagination: {
             showing: '第 {from}-{to} 条，共 {total} 条',
+            perPage: '每页',
             prev: '上一页',
             next: '下一页',
         },

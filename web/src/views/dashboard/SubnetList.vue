@@ -330,7 +330,13 @@ onMounted(() => {
       </template>
 
       <template #footer>
-        <PaginationBar :page="page" :page-size="pageSize" :total="total" @update:page="page = $event" />
+        <PaginationBar
+          :page="page"
+          :page-size="pageSize"
+          :total="total"
+          @update:page="page = $event"
+          @update:page-size="pageSize = $event"
+        />
       </template>
     </DataTable>
 

@@ -28,9 +28,9 @@ const vpcFilter = ref('')
 
 // Pagination, name search and the VPC filter are done by the server
 const currentPage = ref(1)
-const pageSize = 20
+const pageSize = ref(20)
 const totalCount = ref(0)
-const totalPages = computed(() => Math.max(1, Math.ceil(totalCount.value / pageSize)))
+const totalPages = computed(() => Math.max(1, Math.ceil(totalCount.value / pageSize.value)))
 // Drops responses of superseded requests (fast typing, page switches)
 let fetchGeneration = 0
 
@@ -51,8 +51,8 @@ const fetchSecurityGroups = async () => {
     loadError.value = ''
     try {
         const response = await securityGroupsApi.list({
-            offset: (currentPage.value - 1) * pageSize,
-            limit: pageSize,
+            offset: (currentPage.value - 1) * pageSize.value,
+            limit: pageSize.value,
             query: searchQuery.value.trim() || undefined,
             vpc_id: vpcFilter.value || undefined
         })
@@ -362,7 +362,13 @@ onUnmounted(() => {
       </template>
 
       <template #footer>
-        <PaginationBar :page="currentPage" :page-size="pageSize" :total="totalCount" @update:page="goToPage" />
+        <PaginationBar
+          :page="currentPage"
+          :page-size="pageSize"
+          :total="totalCount"
+          @update:page="goToPage"
+          @update:page-size="size => { pageSize = size; currentPage = 1; fetchSecurityGroups() }"
+        />
       </template>
     </DataTable>
 
