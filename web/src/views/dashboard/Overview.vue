@@ -119,8 +119,8 @@ onMounted(async () => {
         const consumption = quotaRes?.consumption
 
         // Use server-side consumption when available, otherwise compute from list data
-        const usedCpu = consumption?.cpu_cores ?? (Array.isArray(instances) ? instances.reduce((acc: number, inst: Instance) => acc + (inst.flavor?.cpu || 0), 0) : 0)
-        const usedMemGB = consumption?.ram_gb ?? (Array.isArray(instances) ? instances.reduce((acc: number, inst: Instance) => acc + (inst.flavor?.memory || 0), 0) / 1024 : 0)
+        const usedCpu = consumption?.cpu_cores ?? (Array.isArray(instances) ? instances.reduce((acc: number, inst: Instance) => acc + (inst.cpu || 0), 0) : 0)
+        const usedMemGB = consumption?.ram_gb ?? (Array.isArray(instances) ? instances.reduce((acc: number, inst: Instance) => acc + (inst.memory || 0), 0) / 1024 : 0)
         const usedDiskGB = consumption?.disk_gb ?? (Array.isArray(volumes) ? volumes.reduce((acc: number, vol: any) => acc + (vol.size || 0), 0) : 0)
         const usedPublicIps = consumption?.public_ips ?? (Array.isArray(fips) ? fips.length : 0)
 

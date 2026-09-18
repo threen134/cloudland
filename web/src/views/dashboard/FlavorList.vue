@@ -37,12 +37,12 @@ const { t } = useI18n()
 const isNameValid = computed(() => isValidName(newFlavorForm.value.name))
 
 
-// 列定义。CPU / 内存这两列在不同接口版本里字段名不一致（vcpus 或 cpu、ram 或
-// memory），所以排序取值单独给，不能直接按 key 取
+// 列定义。接口返回的字段是 cpu / memory，与列名（cpu / ram）对不上，
+// 所以排序取值要单独给，不能直接按 key 取
 const columns = computed<Column[]>(() => [
     { key: 'name', label: t('dashboard.table.nameId'), sortable: true },
-    { key: 'cpu', label: t('specs.cpu'), sortable: true, sortValue: (f) => f.vcpus || f.cpu || 0 },
-    { key: 'ram', label: t('specs.ram'), sortable: true, sortValue: (f) => f.ram || f.memory || 0 },
+    { key: 'cpu', label: t('specs.cpu'), sortable: true, sortValue: (f) => f.cpu || 0 },
+    { key: 'ram', label: t('specs.ram'), sortable: true, sortValue: (f) => f.memory || 0 },
     { key: 'disk', label: t('specs.storage'), sortable: true, sortValue: (f) => f.disk || 0 },
     { key: 'actions', label: t('dashboard.table.actions'), align: 'center' },
 ])
@@ -52,7 +52,7 @@ const fetchFlavors = async () => {
     loadError.value = ''
     try {
         const response = await flavorsApi.fetchFlavors()
-        flavors.value = (response as any).flavors || []
+        flavors.value = response.flavors || []
     } catch (err) {
         // 原先失败只打日志、把列表清空，用户看到的是"没有数据"
         console.error('API fetch failed:', err)
@@ -227,14 +227,14 @@ onMounted(() => {
       <template #cell-cpu="{ row: flavor }">
         <div class="spec-cell">
           <Cpu :size="14" class="text-secondary" />
-          <span>{{ flavor.vcpus || flavor.cpu || '-' }}</span>
+          <span>{{ flavor.cpu || '-' }}</span>
         </div>
       </template>
 
       <template #cell-ram="{ row: flavor }">
         <div class="spec-cell">
           <MemoryStick :size="14" class="text-secondary" />
-          <span>{{ formatRam(flavor.ram || flavor.memory) }}</span>
+          <span>{{ formatRam(flavor.memory) }}</span>
         </div>
       </template>
 

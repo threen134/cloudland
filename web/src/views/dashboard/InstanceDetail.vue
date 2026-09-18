@@ -719,11 +719,11 @@ onUnmounted(() => {
                             <div v-if="!instance.volumes?.length" class="text-secondary empty-hint">
                                 {{ $t('messages.noVolumesAttached') }}
                             </div>
-                            <InfoRow v-else v-for="volume in instance.volumes" :key="volume.id" :label="volume.target || volume.device || $t('dashboard.instanceDetail.volume')">
+                            <InfoRow v-else v-for="volume in instance.volumes" :key="volume.id" :label="volume.target || $t('dashboard.instanceDetail.volume')">
                                 <template #label>
                                     <HardDrive :size="14" />
-                                    {{ volume.target || volume.device || $t('dashboard.instanceDetail.volume') }}
-                                    <span v-if="volume.booting || volume.boot_index === 0" class="status-badge status-success mini-badge">{{ $t('dashboard.instanceDetail.boot') }}</span>
+                                    {{ volume.target || $t('dashboard.instanceDetail.volume') }}
+                                    <span v-if="volume.booting" class="status-badge status-success mini-badge">{{ $t('dashboard.instanceDetail.boot') }}</span>
                                 </template>
                                 <span v-if="volume.size" class="mono volume-size">{{ volume.size }} {{ t('specs.gb') }}</span>
                                 <a href="#" @click.prevent="navigateToVolume(volume.id)" class="resource-link">

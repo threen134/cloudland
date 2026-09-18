@@ -1,5 +1,7 @@
 import client from './client'
 
+// 以下类型对应控制面网关 cpgateway/src/apis/schemas.go 与 resource_mgmt.go 的实际响应
+
 // === 嵌套用（不含 org_uuid/region_name） ===
 
 export interface QuotaFields {
@@ -76,25 +78,25 @@ export interface OrgResourceSummary {
 
 export const quotaApi = {
     // 获取 org 在所有 region 的配额+消费汇总
-    async getOrgResourceSummary(orgUuid: string) {
+    async getOrgResourceSummary(orgUuid: string): Promise<OrgResourceSummary> {
         const response = await client.get<OrgResourceSummary>(`/resources/info/${orgUuid}`)
         return response.data
     },
 
     // 获取 org 在特定 region 的配额+消费
-    async getOrgRegionResourceInfo(orgUuid: string, regionUuid: string) {
+    async getOrgRegionResourceInfo(orgUuid: string, regionUuid: string): Promise<OrgResourceInfo> {
         const response = await client.get<OrgResourceInfo>(`/resources/info/${orgUuid}/${regionUuid}`)
         return response.data
     },
 
     // 获取 org 在特定 region 的配额
-    async getOrgQuota(orgUuid: string, regionUuid: string) {
+    async getOrgQuota(orgUuid: string, regionUuid: string): Promise<OrgResourceQuota> {
         const response = await client.get<OrgResourceQuota>(`/resources/quota/${orgUuid}/${regionUuid}`)
         return response.data
     },
 
     // 更新 org 在特定 region 的配额 (superuser only)
-    async updateOrgQuota(orgUuid: string, regionUuid: string, payload: OrgResourceQuotaUpdate) {
+    async updateOrgQuota(orgUuid: string, regionUuid: string, payload: OrgResourceQuotaUpdate): Promise<OrgResourceQuota> {
         const response = await client.put<OrgResourceQuota>(`/resources/quota/${orgUuid}/${regionUuid}`, payload)
         return response.data
     },

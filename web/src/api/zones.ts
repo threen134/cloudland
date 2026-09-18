@@ -1,12 +1,15 @@
 import client from './client'
 
+// 对应 api/src/apis/zone.go 的 ZoneResponse（内嵌 common.ResourceReference）
 export interface Zone {
     id: string
     name: string
+    owner?: string
+    owner_uuid?: string
+    created_at?: string
+    updated_at?: string
     default: boolean
     remark: string
-    createdAt?: string
-    updatedAt?: string
 }
 
 export interface ZoneListResponse {
@@ -28,28 +31,28 @@ export interface UpdateZonePayload {
 }
 
 export const zonesApi = {
-    async fetchZones() {
-        const response = await client.get('/zones')
+    async fetchZones(): Promise<ZoneListResponse> {
+        const response = await client.get<ZoneListResponse>('/zones')
         return response.data
     },
 
-    async getZone(name: string) {
-        const response = await client.get(`/zones/${name}`)
+    async getZone(name: string): Promise<Zone> {
+        const response = await client.get<Zone>(`/zones/${name}`)
         return response.data
     },
 
-    async createZone(payload: CreateZonePayload) {
-        const response = await client.post('/zones', payload)
+    async createZone(payload: CreateZonePayload): Promise<Zone> {
+        const response = await client.post<Zone>('/zones', payload)
         return response.data
     },
 
-    async updateZone(name: string, payload: UpdateZonePayload) {
-        const response = await client.patch(`/zones/${name}`, payload)
+    async updateZone(name: string, payload: UpdateZonePayload): Promise<Zone> {
+        const response = await client.patch<Zone>(`/zones/${name}`, payload)
         return response.data
     },
 
-    async deleteZone(name: string) {
-        const response = await client.delete(`/zones/${name}`)
+    async deleteZone(name: string): Promise<void> {
+        const response = await client.delete<void>(`/zones/${name}`)
         return response.data
     }
 }

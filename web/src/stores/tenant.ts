@@ -40,8 +40,8 @@ export const useTenantStore = defineStore('tenant', () => {
         error.value = null
 
         try {
-            const response = await authApi.getMyOrgs()
-            const raw = Array.isArray(response) ? response : (response?.orgs || [])
+            // GET /auth/me/orgs 直接返回数组（cpgateway 的 GetMyOrgs）
+            const raw = await authApi.getMyOrgs()
             // Backend returns uuid as the identifier
             organizations.value = raw.map((o: any) => ({
                 ...o,

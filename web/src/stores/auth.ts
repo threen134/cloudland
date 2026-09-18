@@ -23,9 +23,9 @@ export const useAuthStore = defineStore('auth', () => {
 
     const refreshUser = async () => {
         try {
-            const res = await authApi.getUserInfo()
-            // API returns { message, user: {...} } — extract the nested user object
-            const userData = res?.user || res
+            // GET /auth/me 返回的是扁平的用户对象（cpgateway 的 GetMe），
+            // 不是 { message, user } 包装——后者是注册接口的形状
+            const userData = await authApi.getUserInfo()
             user.value = userData
             const userStorage = localStorage.getItem('cloudland_remember') === '1' ? localStorage : sessionStorage
             userStorage.setItem('cloudland_user', JSON.stringify(user.value))
@@ -75,9 +75,7 @@ export const useAuthStore = defineStore('auth', () => {
             setAuthToken(token, rememberMe)
 
             // Fetch user info from /auth/me
-            const userInfoRes = await authApi.getUserInfo()
-            // API returns { message, user: {...} } — extract the nested user object
-            const userData = userInfoRes?.user || userInfoRes
+            const userData = await authApi.getUserInfo()
             user.value = userData
             const userStorage = rememberMe ? localStorage : sessionStorage
             userStorage.setItem('cloudland_user', JSON.stringify(user.value))
