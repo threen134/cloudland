@@ -64,7 +64,6 @@ cloudrc.local
 .vscode
 /commitID
 **/.DS_Store
-.github/
 CLAUDE.md
 GEMINI.md
 refs
