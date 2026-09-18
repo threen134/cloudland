@@ -13,9 +13,11 @@ import { Plus, SquareStack, MemoryStick, Search, Trash2, Cpu, HardDrive, Check, 
 import BaseModal from '../../components/modals/BaseModal.vue'
 import DeleteModal from '../../components/modals/DeleteModal.vue'
 import PageToolbar from '../../components/base/PageToolbar.vue'
+import DataTable, { type Column } from '../../components/base/DataTable.vue'
 
 const flavors = ref<Flavor[]>([])
 const loading = ref(false)
+const loadError = ref('')
 const searchQuery = ref('')
 const toast = useToast()
 
@@ -35,14 +37,27 @@ const { t } = useI18n()
 const isNameValid = computed(() => isValidName(newFlavorForm.value.name))
 
 
+// 列定义。CPU / 内存这两列在不同接口版本里字段名不一致（vcpus 或 cpu、ram 或
+// memory），所以排序取值单独给，不能直接按 key 取
+const columns = computed<Column[]>(() => [
+    { key: 'name', label: t('dashboard.table.nameId'), sortable: true },
+    { key: 'cpu', label: t('specs.cpu'), sortable: true, sortValue: (f) => f.vcpus || f.cpu || 0 },
+    { key: 'ram', label: t('specs.ram'), sortable: true, sortValue: (f) => f.ram || f.memory || 0 },
+    { key: 'disk', label: t('specs.storage'), sortable: true, sortValue: (f) => f.disk || 0 },
+    { key: 'actions', label: t('dashboard.table.actions') },
+])
+
 const fetchFlavors = async () => {
     loading.value = true
+    loadError.value = ''
     try {
         const response = await flavorsApi.fetchFlavors()
         flavors.value = (response as any).flavors || []
     } catch (err) {
+        // 原先失败只打日志、把列表清空，用户看到的是"没有数据"
         console.error('API fetch failed:', err)
         flavors.value = []
+        loadError.value = t('messages.error')
     } finally {
         loading.value = false
     }
@@ -170,85 +185,74 @@ onMounted(() => {
       </template>
     </PageToolbar>
 
-    <div class="card table-card">
-      <table class="data-table">
-        <thead>
-          <tr>
-            <th>{{ $t('dashboard.table.nameId') }}</th>
-            <th>{{ $t('specs.cpu') }}</th>
-            <th>{{ $t('specs.ram') }}</th>
-            <th>{{ $t('specs.storage') }}</th>
-            <th>{{ $t('dashboard.table.actions') }}</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-if="loading">
-            <td colspan="5" class="text-center">
-              <div class="loading-spinner" style="margin: 20px auto;"></div>
-            </td>
-          </tr>
-          <tr v-else-if="filteredFlavors.length === 0">
-             <td colspan="5" class="text-center text-secondary" style="padding: 48px;">
-               <div v-if="searchQuery">
-                  <Search :size="48" style="opacity: 0.3; margin-bottom: 16px;" />
-                  <p>{{ $t('messages.noResults') }}</p>
-               </div>
-               <div v-else>
-                  <SquareStack :size="48" style="opacity: 0.3; margin-bottom: 16px;" />
-                  <p class="text-secondary">{{ $t('messages.noData') }}</p>
-               </div>
-            </td>
-          </tr>
-          <tr v-else v-for="flavor in filteredFlavors" :key="flavor.uuid || flavor.name">
-            <td>
-              <div class="resource-link-static">
-                <div class="resource-info">
-                  <div class="resource-icon">
-                    <SquareStack :size="16" />
-                  </div>
-                  <div>
-                    <div class="resource-name">{{ flavor.name }}</div>
-                    <div class="resource-id-row">
-                      <span class="resource-id" :title="flavor.uuid">{{ (flavor.uuid || '').slice(0, 8) }}...</span>
-                      <button class="copy-btn-mini" @click.stop.prevent="flavor.uuid && copyId(flavor.uuid)" :title="t('actions.copy')" :aria-label="t('actions.copy')">
-                        <Check v-if="copiedId === flavor.uuid" :size="10" style="color: #10b981;" />
-                        <Copy v-else :size="10" />
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </td>
-            <td>
-              <div class="spec-cell">
-                <Cpu :size="14" class="text-secondary" />
-                <span>{{ flavor.vcpus || flavor.cpu || '-' }}</span>
-              </div>
-            </td>
-            <td>
-              <div class="spec-cell">
-                <MemoryStick :size="14" class="text-secondary" />
-                <span>{{ formatRam(flavor.ram || flavor.memory) }}</span>
-              </div>
-            </td>
-            <td>
-              <div class="spec-cell">
-                <HardDrive :size="14" class="text-secondary" />
-                <span>{{ flavor.disk }} {{ $t('specs.gb') }}</span>
-              </div>
-            </td>
-            <td>
-              <div class="actions">
+    <DataTable
+      :columns="columns"
+      :rows="filteredFlavors"
+      :row-key="(flavor: any) => flavor.uuid || flavor.name"
+      :loading="loading"
+      :error="loadError"
+      @retry="fetchFlavors"
+    >
+      <template #empty>
+        <div v-if="searchQuery">
+          <Search :size="48" style="opacity: 0.3; margin-bottom: 16px;" />
+          <p>{{ $t('messages.noResults') }}</p>
+        </div>
+        <div v-else>
+          <SquareStack :size="48" style="opacity: 0.3; margin-bottom: 16px;" />
+          <p class="text-secondary">{{ $t('messages.noData') }}</p>
+        </div>
+      </template>
 
-                <button class="btn btn-ghost btn-sm text-error" :title="$t('actions.delete')" @click="handleDeleteClick(flavor)">
-                  <Trash2 :size="14" />
+      <template #cell-name="{ row: flavor }">
+        <div class="resource-link-static">
+          <div class="resource-info">
+            <div class="resource-icon">
+              <SquareStack :size="16" />
+            </div>
+            <div>
+              <div class="resource-name">{{ flavor.name }}</div>
+              <div class="resource-id-row">
+                <span class="resource-id" :title="flavor.uuid">{{ (flavor.uuid || '').slice(0, 8) }}...</span>
+                <button class="copy-btn-mini" @click.stop.prevent="flavor.uuid && copyId(flavor.uuid)" :title="t('actions.copy')" :aria-label="t('actions.copy')">
+                  <Check v-if="copiedId === flavor.uuid" :size="10" style="color: #10b981;" />
+                  <Copy v-else :size="10" />
                 </button>
               </div>
-            </td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
+            </div>
+          </div>
+        </div>
+      </template>
+
+      <template #cell-cpu="{ row: flavor }">
+        <div class="spec-cell">
+          <Cpu :size="14" class="text-secondary" />
+          <span>{{ flavor.vcpus || flavor.cpu || '-' }}</span>
+        </div>
+      </template>
+
+      <template #cell-ram="{ row: flavor }">
+        <div class="spec-cell">
+          <MemoryStick :size="14" class="text-secondary" />
+          <span>{{ formatRam(flavor.ram || flavor.memory) }}</span>
+        </div>
+      </template>
+
+      <template #cell-disk="{ row: flavor }">
+        <div class="spec-cell">
+          <HardDrive :size="14" class="text-secondary" />
+          <span>{{ flavor.disk }} {{ $t('specs.gb') }}</span>
+        </div>
+      </template>
+
+      <template #cell-actions="{ row: flavor }">
+        <div class="actions">
+          <button class="btn btn-ghost btn-sm text-error" :title="$t('actions.delete')" @click="handleDeleteClick(flavor)">
+            <Trash2 :size="14" />
+          </button>
+        </div>
+      </template>
+    </DataTable>
 
     <!-- Create Flavor Modal -->
     <BaseModal
@@ -345,10 +349,6 @@ onMounted(() => {
 </template>
 
 <style scoped>
-.table-card {
-  padding: 0;
-  overflow: hidden;
-}
 
 /* .resource-info etc. are global from index.css */
 

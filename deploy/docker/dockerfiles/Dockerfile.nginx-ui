@@ -8,14 +8,14 @@ FROM node:20-alpine AS builder
 
 WORKDIR /build
 
-# 安装依赖
+# 安装依赖。scripts/ 要先拷进来：postinstall 会跑 scripts/patch-novnc.mjs
+# （给 @novnc/novnc 去掉顶层 await，否则 Rollup 打包报错），缺文件会让 npm ci 失败
 COPY web/package.json web/package-lock.json* ./
+COPY web/scripts ./scripts
 RUN npm ci
 
 # 复制源码并构建
 COPY web/ ./
-# Fix @novnc/novnc top-level await incompatibility with Rollup
-RUN sed -i 's/= await _checkWebCodecsH264DecodeSupport();/= false;/' node_modules/@novnc/novnc/lib/util/browser.js
 RUN npm run build
 
 # ---- Stage 2: 编译 Docs ----

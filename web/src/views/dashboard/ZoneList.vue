@@ -9,6 +9,7 @@ import { useRegionStore } from '../../stores/region'
 import BaseModal from '../../components/modals/BaseModal.vue'
 import DeleteModal from '../../components/modals/DeleteModal.vue'
 import PageToolbar from '../../components/base/PageToolbar.vue'
+import DataTable, { type Column } from '../../components/base/DataTable.vue'
 
 const region = useRegionStore()
 
@@ -16,6 +17,7 @@ const { t } = useI18n()
 const toast = useToast()
 const zoneList = ref<Zone[]>([])
 const loading = ref(false)
+const loadError = ref('')
 
 const { copiedId, copyId } = useCopyId()
 const searchQuery = ref('')
@@ -36,15 +38,25 @@ const showDeleteModal = ref(false)
 const deleting = ref(false)
 const deletingZone = ref<Zone | null>(null)
 
+const columns = computed<Column[]>(() => [
+    { key: 'name', label: t('dashboard.table.nameId'), sortable: true },
+    { key: 'remark', label: t('dashboard.zoneActions.remark'), sortable: true },
+    { key: 'type', label: t('dashboard.table.type'), sortable: true, sortValue: (z) => (z.default ? 0 : 1) },
+    { key: 'actions', label: t('dashboard.table.actions') },
+])
+
 const fetchZones = async () => {
     loading.value = true
+    loadError.value = ''
     try {
         const response = await zonesApi.fetchZones()
         const data = response as any
         zoneList.value = Array.isArray(data) ? data : (data.zones || [])
     } catch (error) {
+        // 原先失败只打日志、把列表清空，用户看到的是"没有数据"
         console.error('API fetch failed:', error)
         zoneList.value = []
+        loadError.value = t('messages.error')
     } finally {
         loading.value = false
     }
@@ -153,77 +165,69 @@ onMounted(() => {
       </template>
     </PageToolbar>
 
-    <div class="card table-card">
-      <table class="data-table">
-        <thead>
-          <tr>
-            <th>{{ t('dashboard.table.nameId') }}</th>
-            <th>{{ t('dashboard.zoneActions.remark') }}</th>
-            <th>{{ t('dashboard.table.type') }}</th>
-            <th>{{ t('dashboard.table.actions') }}</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-if="loading">
-            <td colspan="4" class="text-center">
-              <div class="loading-spinner" style="margin: 20px auto;"></div>
-            </td>
-          </tr>
-          <tr v-else-if="filteredZones.length === 0">
-            <td colspan="4" class="text-center text-secondary" style="padding: 48px;">
-               <div v-if="searchQuery">
-                  <SearchIcon :size="48" style="opacity: 0.3; margin-bottom: 16px;" />
-                  <p>{{ t('messages.noResults') }}</p>
-               </div>
-               <div v-else class="empty-state">
-                  <MapPin :size="48" style="opacity: 0.2; margin-bottom: 16px;" />
-                  <p>{{ t('messages.noData') }}</p>
-               </div>
-            </td>
-          </tr>
-          <tr v-else v-for="zone in filteredZones" :key="zone.name">
-            <td>
-              <router-link :to="{ name: 'zone-detail', params: { name: zone.name } }" class="resource-link">
-                <div class="resource-info">
-                  <div class="resource-icon">
-                    <MapPin :size="16" />
-                  </div>
-                  <div>
-                    <div class="resource-name">{{ zone.name }}</div>
-                    <div class="resource-id-row">
-                      <span class="resource-id" :title="zone.id || '-'">
-                        {{ (zone.id || '-').slice(0, 8) }}{{ (zone.id || '').length > 8 ? '...' : '' }}
-                      </span>
-                      <button v-if="zone.id" class="copy-btn-mini" @click.stop.prevent="copyId(zone.id)" :title="t('actions.copy')" :aria-label="t('actions.copy')">
-                        <Check v-if="copiedId === zone.id" :size="10" style="color: #10b981;" />
-                        <Copy v-else :size="10" />
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              </router-link>
-            </td>
-            <td class="remark-cell">{{ zone.remark || '-' }}</td>
-            <td>
-              <span class="badge" :class="zone.default ? 'badge-primary' : 'badge-secondary'">
-                <Check v-if="zone.default" :size="12" />
-                {{ zone.default ? t('dashboard.zoneActions.default') : 'Zone' }}
-              </span>
-            </td>
-            <td>
-              <div class="table-actions">
-                <button class="icon-btn-table" @click.prevent="openEditModal(zone)" :title="t('actions.edit')">
-                  <Settings2 :size="16" />
-                </button>
-                <button class="icon-btn-table text-error" @click.prevent="confirmDelete(zone)" :title="t('actions.delete')">
-                  <Trash2 :size="16" />
+    <DataTable
+      :columns="columns"
+      :rows="filteredZones"
+      row-key="name"
+      :loading="loading"
+      :error="loadError"
+      @retry="fetchZones"
+    >
+      <template #empty>
+        <div v-if="searchQuery">
+          <SearchIcon :size="48" style="opacity: 0.3; margin-bottom: 16px;" />
+          <p>{{ t('messages.noResults') }}</p>
+        </div>
+        <div v-else class="empty-state">
+          <MapPin :size="48" style="opacity: 0.2; margin-bottom: 16px;" />
+          <p>{{ t('messages.noData') }}</p>
+        </div>
+      </template>
+
+      <template #cell-name="{ row: zone }">
+        <router-link :to="{ name: 'zone-detail', params: { name: zone.name } }" class="resource-link">
+          <div class="resource-info">
+            <div class="resource-icon">
+              <MapPin :size="16" />
+            </div>
+            <div>
+              <div class="resource-name">{{ zone.name }}</div>
+              <div class="resource-id-row">
+                <span class="resource-id" :title="zone.id || '-'">
+                  {{ (zone.id || '-').slice(0, 8) }}{{ (zone.id || '').length > 8 ? '...' : '' }}
+                </span>
+                <button v-if="zone.id" class="copy-btn-mini" @click.stop.prevent="copyId(zone.id)" :title="t('actions.copy')" :aria-label="t('actions.copy')">
+                  <Check v-if="copiedId === zone.id" :size="10" style="color: #10b981;" />
+                  <Copy v-else :size="10" />
                 </button>
               </div>
-            </td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
+            </div>
+          </div>
+        </router-link>
+      </template>
+
+      <template #cell-remark="{ row: zone }">
+        <span class="remark-cell">{{ zone.remark || '-' }}</span>
+      </template>
+
+      <template #cell-type="{ row: zone }">
+        <span class="badge" :class="zone.default ? 'badge-primary' : 'badge-secondary'">
+          <Check v-if="zone.default" :size="12" />
+          {{ zone.default ? t('dashboard.zoneActions.default') : 'Zone' }}
+        </span>
+      </template>
+
+      <template #cell-actions="{ row: zone }">
+        <div class="table-actions">
+          <button class="icon-btn-table" @click.prevent="openEditModal(zone)" :title="t('actions.edit')">
+            <Settings2 :size="16" />
+          </button>
+          <button class="icon-btn-table text-error" @click.prevent="confirmDelete(zone)" :title="t('actions.delete')">
+            <Trash2 :size="16" />
+          </button>
+        </div>
+      </template>
+    </DataTable>
 
     <!-- Create Modal -->
     <BaseModal
@@ -304,7 +308,6 @@ onMounted(() => {
 </template>
 
 <style scoped>
-.table-card { padding: 0; overflow: hidden; }
 
 /* Standardized resource-info is global from index.css */
 

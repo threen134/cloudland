@@ -17,23 +17,32 @@ export interface Column {
     sortable?: boolean
     align?: 'left' | 'center' | 'right'
     width?: string
+    /**
+     * 排序取值。字段名和显示值不一致时用它，例如规格的 CPU 在不同接口里
+     * 可能叫 vcpus 也可能叫 cpu，直接按 key 取会排错
+     */
+    sortValue?: (row: Record<string, any>) => string | number | null | undefined
 }
 
 const props = withDefaults(
     defineProps<{
         columns: Column[]
         rows: Record<string, any>[]
-        rowKey?: string
+        /** 行的唯一标识：字段名，或从行数据算出 key 的函数 */
+        rowKey?: string | ((row: Record<string, any>) => string)
         loading?: boolean
         /** 加载失败时的提示文案，传了就显示错误态和重试按钮 */
         error?: string
-        /** 空态文案，默认用通用的"没有数据" */
+        /** 空态文案，默认用通用的"没有数据"；需要图标等更丰富的空态用 #empty 插槽 */
         emptyText?: string
     }>(),
     {
         rowKey: 'id',
     }
 )
+
+const keyOf = (row: Record<string, any>) =>
+    typeof props.rowKey === 'function' ? props.rowKey(row) : String(row[props.rowKey])
 
 defineEmits<{ retry: [] }>()
 
@@ -53,11 +62,12 @@ const toggleSort = (column: Column) => {
 // 排序在前端做：这些列表页的数据本来就是整页加载的
 const sortedRows = computed(() => {
     if (!sortKey.value) return props.rows
-    const key = sortKey.value
+    const column = props.columns.find((c) => c.key === sortKey.value)
+    const valueOf = column?.sortValue ?? ((row: Record<string, any>) => row[sortKey.value as string])
     const dir = sortDir.value === 'asc' ? 1 : -1
     return [...props.rows].sort((a, b) => {
-        const av = a[key]
-        const bv = b[key]
+        const av = valueOf(a)
+        const bv = valueOf(b)
         if (av === bv) return 0
         if (av === null || av === undefined) return 1
         if (bv === null || bv === undefined) return -1
@@ -106,12 +116,14 @@ const sortedRows = computed(() => {
                 </tr>
                 <tr v-else-if="rows.length === 0">
                     <td :colspan="columns.length" class="table-state">
-                        <p class="table-state-text">{{ emptyText ?? $t('messages.noData') }}</p>
+                        <slot name="empty">
+                            <p class="table-state-text">{{ emptyText ?? $t('messages.noData') }}</p>
+                        </slot>
                     </td>
                 </tr>
                 <!-- v-for 与 v-else 不能写在同一个元素上，这里用 template 包一层 -->
                 <template v-else>
-                    <tr v-for="row in sortedRows" :key="String(row[rowKey])">
+                    <tr v-for="row in sortedRows" :key="keyOf(row)">
                         <td
                             v-for="column in columns"
                             :key="column.key"
