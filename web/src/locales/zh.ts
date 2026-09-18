@@ -1537,6 +1537,7 @@ export default {
             created: '计算节点记录创建成功！',
             runCommand: '请在目标机器上执行以下命令以完成部署：',
         },
+        configuration: '配置',
         pagination: {
             showing: '第 {from}-{to} 条，共 {total} 条',
             prev: '上一页',
@@ -1771,6 +1772,8 @@ export default {
         deleteSuccess: '删除成功。',
         deleteFailed: '删除失败。',
         updateSuccess: '更新成功。',
+        attachSuccess: '绑定成功。',
+        detachSuccess: '解绑成功。',
         copied: '已复制',
         yes: '是',
         no: '否',

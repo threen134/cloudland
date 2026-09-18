@@ -1537,6 +1537,7 @@ export default {
             created: 'Hypervisor record created successfully!',
             runCommand: 'Run the following command on the target machine to complete deployment:',
         },
+        configuration: 'Configuration',
         pagination: {
             showing: 'Showing {from}-{to} of {total}',
             prev: 'Prev',
@@ -1769,6 +1770,8 @@ export default {
         deleteSuccess: 'Deleted successfully.',
         deleteFailed: 'Deletion failed.',
         updateSuccess: 'Updated successfully.',
+        attachSuccess: 'Bound successfully.',
+        detachSuccess: 'Unbound successfully.',
         copied: 'Copied!',
         yes: 'Yes',
         no: 'No',
