@@ -42,7 +42,7 @@ const columns = computed<Column[]>(() => [
     { key: 'rules', label: t('dashboard.table.securityRules') },
     { key: 'interfaces', label: t('dashboard.securityGroupDetail.associatedInterfaces'), align: 'center' },
     { key: 'created', label: t('dashboard.table.createdAt') },
-    { key: 'actions', label: t('dashboard.table.actions'), align: 'right' },
+    { key: 'actions', label: t('dashboard.table.actions') },
 ])
 
 const fetchSecurityGroups = async () => {
@@ -564,7 +564,6 @@ onUnmounted(() => {
 
 .actions {
   display: flex;
-  justify-content: flex-end;
   gap: 2px;
 }
 

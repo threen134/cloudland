@@ -515,7 +515,6 @@ onMounted(async () => {
 
 .actions {
   display: flex;
-  justify-content: center;
   gap: var(--spacing-2);
 }
 

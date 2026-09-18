@@ -163,6 +163,21 @@ const sortedRows = computed(() => {
     position: relative;
 }
 
+/* 全局 index.css 里的 `.data-table th { text-align: left }` 优先级高于 .text-right
+   这类工具类，不加这几条的话列的 align 对表头完全不生效，会出现
+   "表头在左、单元格内容在右" 的错位 */
+.data-table th.text-left {
+    text-align: left;
+}
+
+.data-table th.text-center {
+    text-align: center;
+}
+
+.data-table th.text-right {
+    text-align: right;
+}
+
 th.sortable {
     cursor: pointer;
     user-select: none;
