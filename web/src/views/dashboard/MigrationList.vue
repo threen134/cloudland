@@ -1,14 +1,17 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, computed, watch } from 'vue'
-import { useRouter } from 'vue-router'
 import { migrationsApi, MIGRATION_ACTIVE_STATUSES, type Migration } from '../../api/migrations'
 import { instancesApi, type Instance } from '../../api/instances'
 import { hypervisorsApi, type Hypervisor, type HyperListResponse } from '../../api/hypervisors'
-import { Search as SearchIcon, ArrowRightLeft, Plus, X, RefreshCw, Check, Copy } from 'lucide-vue-next'
+import { Search as SearchIcon, ArrowRightLeft, Plus, RefreshCw, Check, Copy } from 'lucide-vue-next'
 import { useToast } from '../../composables/useToast'
 import { useCopyId } from '../../composables/useCopyId'
 import { useI18n } from 'vue-i18n'
 import { useRegionStore } from '../../stores/region'
+import { formatDateTime } from '../../utils/format'
+import BaseModal from '../../components/modals/BaseModal.vue'
+import PageToolbar from '../../components/base/PageToolbar.vue'
+import StatusBadge from '../../components/base/StatusBadge.vue'
 
 const { t, te } = useI18n()
 const region = useRegionStore()
@@ -18,7 +21,6 @@ const loading = ref(false)
 
 const { copiedId, copyId } = useCopyId()
 const searchQuery = ref('')
-const router = useRouter()
 
 // Create Migration State
 const createModalVisible = ref(false)
@@ -101,14 +103,6 @@ const filteredMigrations = computed(() => {
         (m.target_hyper_name || '').toLowerCase().includes(query)
     )
 })
-
-const getStatusClass = (status: string) => {
-    const s = (status || '').toLowerCase()
-    if (s === 'completed' || s === 'done') return 'status-active'
-    if (s === 'error' || s === 'failed' || s === 'not_supported' || s === 'timeout' || s === 'rollback') return 'status-error'
-    if (s === 'running' || s === 'migrating' || s === 'in_progress' || s.endsWith('_prepared') || s === 'source_rollback') return 'status-pending'
-    return ''
-}
 
 // 缺键时 t() 返回键路径本身，必须用 te() 判断后再回退到原始状态串。
 // progress 可选：只有迁移记录自身的状态需要按进度细分，阶段任务状态（in_progress/completed）不传
@@ -228,27 +222,16 @@ watch(() => region.currentRegionId, (newId) => {
 
 <template>
   <div class="vpc-list-container">
-    <div class="page-header">
-      <div class="search-wrapper">
-        <div class="search-box">
-          <SearchIcon :size="16" class="search-icon" />
-          <input 
-            type="text" 
-            v-model="searchQuery"
-            :placeholder="$t('actions.search') + '...'" 
-            class="search-input"
-          />
-        </div>
-      </div>
-      <div class="header-actions">
+    <PageToolbar v-model:search="searchQuery">
+      <template #actions>
         <button class="btn btn-secondary btn-sm btn-icon" @click="fetchMigrations" :title="$t('actions.refresh')">
           <RefreshCw :size="14" :class="{ spinning: loading }" />
         </button>
         <button class="btn btn-primary btn-sm" @click="openCreateModal">
           <Plus :size="14" /> {{ $t('dashboard.buttons.startMigration') }}
         </button>
-      </div>
-    </div>
+      </template>
+    </PageToolbar>
 
     <div class="card table-card">
       <table class="data-table">
@@ -316,10 +299,7 @@ watch(() => region.currentRegionId, (newId) => {
             <td>{{ hyperLabel(m.source_hyper, m.source_hyper_name) }}</td>
             <td>{{ hyperLabel(m.target_hyper, m.target_hyper_name) }}</td>
             <td>
-              <span class="status-pill" :class="getStatusClass(m.status)">
-                <span class="status-dot"></span>
-                {{ getStatusText(m.status, m.progress) }}
-              </span>
+              <StatusBadge :status="m.status" :label="getStatusText(m.status, m.progress)" />
             </td>
             <td>
               <div v-if="m.total" class="progress-cell">
@@ -329,27 +309,26 @@ watch(() => region.currentRegionId, (newId) => {
               <span v-else class="text-secondary">-</span>
             </td>
             <td>{{ m.creater_name || '-' }}</td>
-            <td><span class="mono-value">{{ new Date(m.created_at).toLocaleString() }}</span></td>
+            <td><span class="mono-value">{{ formatDateTime(m.created_at) }}</span></td>
           </tr>
         </tbody>
       </table>
     </div>
 
     <!-- Create Migration Modal -->
-    <div v-if="createModalVisible" class="modal-overlay" @click.self="closeCreateModal">
-      <div class="modal-content card" style="max-width: 500px;">
-        <div class="modal-header">
-           <h3>{{ $t('dashboard.migrationForm.title') }}</h3>
-          <button class="btn btn-ghost btn-sm icon-btn" @click="closeCreateModal">
-            <X :size="20" />
-          </button>
-        </div>
-        
-        <div class="modal-body" v-if="resourcesLoading">
+    <BaseModal
+      :show="createModalVisible"
+      :title="$t('dashboard.migrationForm.title')"
+      :loading="creatingMigration"
+      form
+      @close="closeCreateModal"
+      @submit="handleCreateMigration"
+    >
+        <div v-if="resourcesLoading">
             <div class="loading-spinner" style="margin: 40px auto;"></div>
         </div>
 
-        <div class="modal-body" v-else>
+        <div v-else>
           <div class="form-group row-gap">
                <label class="form-label">{{ $t('dashboard.migrationForm.filterByNode') }}</label>
               <select v-model="instanceHyperFilter" class="form-select full-width">
@@ -396,66 +375,20 @@ watch(() => region.currentRegionId, (newId) => {
           </div>
         </div>
 
-        <div class="modal-footer" v-if="!resourcesLoading">
-           <button class="btn btn-secondary" @click="closeCreateModal" :disabled="creatingMigration">{{ $t('actions.cancel') }}</button>
-          <button class="btn btn-primary" @click="handleCreateMigration" :disabled="creatingMigration">
+      <template #footer>
+        <template v-if="!resourcesLoading">
+          <button type="button" class="btn btn-secondary" @click="closeCreateModal" :disabled="creatingMigration">{{ $t('actions.cancel') }}</button>
+          <button type="submit" class="btn btn-primary" :disabled="creatingMigration">
             <span v-if="creatingMigration" class="loading-spinner" style="width: 16px; height: 16px; border-width: 2px;"></span>
              {{ creatingMigration ? $t('dashboard.migrationForm.starting') : $t('dashboard.buttons.startMigration') }}
           </button>
-        </div>
-      </div>
-    </div>
+        </template>
+      </template>
+    </BaseModal>
   </div>
 </template>
 
 <style scoped>
-.page-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 0;
-  padding-right: 20px;
-}
-
-.search-wrapper {
-  flex: 1;
-  max-width: 400px;
-}
-
-.search-box {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  background: var(--bg-secondary);
-  padding: 0 12px;
-  height: 40px;
-  border-radius: var(--radius-md);
-  border: 1px solid var(--border-light);
-  transition: all 0.2s;
-}
-
-.search-box:focus-within {
-  border-color: var(--primary-300);
-  box-shadow: 0 0 0 2px var(--primary-100);
-}
-
-.search-icon {
-  color: var(--gray-400);
-}
-
-.search-input {
-  border: none;
-  background: transparent;
-  width: 100%;
-  height: 100%;
-  font-size: 0.875rem;
-  color: var(--text-primary);
-}
-
-.search-input:focus {
-  outline: none;
-}
-
 .table-card {
   padding: 0;
   overflow: hidden;
@@ -474,40 +407,6 @@ watch(() => region.currentRegionId, (newId) => {
 .resource-link:hover .resource-name {
   color: var(--primary-600);
   text-decoration: underline;
-}
-
-.status-pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 4px 10px;
-  border-radius: var(--radius-full);
-  font-size: var(--font-size-xs);
-  font-weight: var(--font-weight-medium);
-  background: var(--gray-100);
-  color: var(--gray-700);
-}
-
-.status-active {
-  background: rgba(16, 185, 129, 0.1);
-  color: #10b981;
-}
-
-.status-error {
-  background: rgba(239, 68, 68, 0.1);
-  color: #ef4444;
-}
-
-.status-pending {
-  background: rgba(245, 158, 11, 0.1);
-  color: #f59e0b;
-}
-
-.status-dot {
-  width: 6px;
-  height: 6px;
-  background: currentColor;
-  border-radius: 50%;
 }
 
 .mono-value {
@@ -536,7 +435,6 @@ watch(() => region.currentRegionId, (newId) => {
     color: var(--text-primary);
 }
 
-.header-actions { display: flex; gap: 8px; align-items: center; }
 .spinning { animation: spin 1s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 </style>

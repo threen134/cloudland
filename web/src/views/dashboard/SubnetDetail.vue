@@ -2,7 +2,7 @@
 import { ref, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { subnetsApi, type Subnet } from '../../api/networks'
-import { ArrowLeft, Network, Trash2, Globe, Lock, Activity, Copy, Check, ChevronDown, Pencil } from 'lucide-vue-next'
+import { ArrowLeft, Network, Trash2, Copy, Check, ChevronDown } from 'lucide-vue-next'
 import { useI18n } from 'vue-i18n'
 import { useToast } from '../../composables/useToast'
 import DeleteModal from '../../components/modals/DeleteModal.vue'
@@ -435,7 +435,7 @@ onMounted(fetchSubnet)
 }
 
 .info-card h3 {
-    font-size: var(--font-size-md);
+    font-size: var(--font-size-base);
     font-weight: 600;
     margin: 0 0 var(--spacing-4) 0;
     color: var(--text-primary);

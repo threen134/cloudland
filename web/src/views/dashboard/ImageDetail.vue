@@ -6,7 +6,10 @@ import { useToast } from '../../composables/useToast'
 import { imagesApi, type Image } from '../../api/images'
 import { useAuthStore } from '../../stores/auth'
 import { useTenantStore } from '../../stores/tenant'
-import { ArrowLeft, HardDrive, Trash2, Server, Monitor, Disc, Copy, Check, Tag, CalendarDays, Eye, EyeOff, ChevronDown } from 'lucide-vue-next'
+import { ArrowLeft, Trash2, Server, Disc, Copy, Check, CalendarDays, Eye, EyeOff, ChevronDown } from 'lucide-vue-next'
+import { formatBytes } from '../../utils/format'
+import DeleteModal from '../../components/modals/DeleteModal.vue'
+import StatusBadge from '../../components/base/StatusBadge.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -62,13 +65,22 @@ const fetchImage = async () => {
     }
 }
 
+const deleteModalVisible = ref(false)
+
+const openDeleteModal = () => {
+    deleteModalVisible.value = true
+}
+
+const closeDeleteModal = () => {
+    if (!deleting.value) deleteModalVisible.value = false
+}
+
 const handleDelete = async () => {
-    if (!confirm('Are you sure you want to delete this image? This action cannot be undone.')) return
-    
     deleting.value = true
     try {
         await imagesApi.deleteImage(imageId)
         toast.success(t('messages.deleteSuccess'))
+        deleteModalVisible.value = false
         router.push({ name: 'images' })
     } catch (err) {
         console.error('Failed to delete image:', err)
@@ -95,28 +107,12 @@ const goBack = () => {
     router.back()
 }
 
-const formatSize = (bytes?: number) => {
-    if (!bytes) return '-'
-    const k = 1024
-    const units = ['B', 'KB', 'MB', 'GB', 'TB']
-    const i = Math.floor(Math.log(bytes) / Math.log(k))
-    return `${(bytes / Math.pow(k, i)).toFixed(1)} ${units[i]}`
-}
 
 const getStatusText = (status: string | undefined) => {
     if (!status) return t('dashboard.imageStatus.active')
     const key = status.toLowerCase()
     const translated = t(`dashboard.imageStatus.${key}`)
     return translated === `dashboard.imageStatus.${key}` ? status : translated
-}
-
-const getStatusClass = (status: string | undefined) => {
-    if (!status) return 'status-running'
-    const s = status.toLowerCase()
-    if (s === 'active' || s === 'available') return 'status-running'
-    if (s === 'error' || s === 'failed') return 'status-error'
-    if (s === 'deleting' || s === 'pending') return 'status-pending'
-    return 'status-stopped'
 }
 
 onMounted(fetchImage)
@@ -149,9 +145,7 @@ onMounted(fetchImage)
                     <div>
                         <h2 class="image-title">
                             {{ image.name }}
-                            <span :class="['badge', getStatusClass(image.status)]">
-                                {{ getStatusText(image.status) }}
-                            </span>
+                            <StatusBadge :status="image.status" :label="getStatusText(image.status)" />
                             <span :class="['badge', image.public ? 'status-running' : 'status-stopped']">
                                 {{ image.public ? $t('dashboard.table.public') : $t('dashboard.table.private') }}
                             </span>
@@ -178,7 +172,7 @@ onMounted(fetchImage)
                                     {{ image.public ? $t('dashboard.table.setPrivate') : $t('dashboard.table.setPublic') }}
                                 </button>
                                 <div v-if="isSuperuser && canDelete" class="dropdown-divider"></div>
-                                <button v-if="canDelete" class="dropdown-item dropdown-item-danger" @click="handleDelete" :disabled="deleting">
+                                <button v-if="canDelete" class="dropdown-item dropdown-item-danger" @click="openDeleteModal" :disabled="deleting">
                                     <Trash2 :size="14" /> {{ $t('actions.delete') }}
                                 </button>
                             </div>
@@ -242,7 +236,7 @@ onMounted(fetchImage)
                             </div>
                             <div class="kv-item">
                                 <span class="label">{{ $t('dashboard.table.size') }}</span>
-                                <span class="value">{{ formatSize(image.size) }}</span>
+                                <span class="value">{{ formatBytes(image.size) }}</span>
                             </div>
                             <div class="kv-item">
                                 <span class="label">{{ $t('dashboard.table.defaultUser') }}</span>
@@ -253,6 +247,15 @@ onMounted(fetchImage)
                 </div>
             </div>
         </div>
+
+        <DeleteModal
+            :show="deleteModalVisible"
+            :resource-name="image?.name"
+            :resource-id="image?.id"
+            :loading="deleting"
+            @close="closeDeleteModal"
+            @confirm="handleDelete"
+        />
     </div>
 </template>
 
@@ -463,7 +466,7 @@ onMounted(fetchImage)
 }
 
 .info-card h3 {
-    font-size: var(--font-size-md);
+    font-size: var(--font-size-base);
     font-weight: 600;
     margin: 0 0 var(--spacing-4) 0;
     color: var(--text-primary);

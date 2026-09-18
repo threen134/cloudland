@@ -4,10 +4,13 @@ import { useRoute, useRouter } from 'vue-router'
 import { vpcsApi, subnetsApi, type VPC, type SubnetPayload } from '../../api/networks'
 import { isValidName } from '../../utils/validation'
 import { useRegionStore } from '../../stores/region'
-import { ArrowLeft, Layers, Network, Trash2, Plus, Copy, Check, Pencil, ChevronDown, CalendarDays, ShieldAlert, X, HelpCircle } from 'lucide-vue-next'
+import { ArrowLeft, Layers, Network, Trash2, Plus, Copy, Check, Pencil, ChevronDown, CalendarDays, HelpCircle } from 'lucide-vue-next'
 import { useI18n } from 'vue-i18n'
 import { useToast } from '../../composables/useToast'
 import DeleteModal from '../../components/modals/DeleteModal.vue'
+import BaseModal from '../../components/modals/BaseModal.vue'
+import StatusBadge from '../../components/base/StatusBadge.vue'
+import { formatDateTime } from '../../utils/format'
 
 const route = useRoute()
 const router = useRouter()
@@ -212,28 +215,12 @@ const goBack = () => {
     router.back()
 }
 
-const getStatusClass = (status?: string) => {
-    const statusMap: Record<string, string> = {
-        'active': 'status-running',
-        'available': 'status-running',
-        'creating': 'status-pending',
-        'deleting': 'status-pending',
-        'error': 'status-error'
-    }
-    return statusMap[status || ''] || 'status-running'
-}
-
 const getStatusText = (status?: string) => {
     if (!status) return t('dashboard.vpcStatus.active')
     const key = status.toLowerCase()
     return t(`dashboard.vpcStatus.${key}`)
 }
 
-const formatDate = (dateStr?: string) => {
-    if (!dateStr) return '-'
-    const d = new Date(dateStr)
-    return d.toLocaleString()
-}
 
 const copyToClipboard = (text: string, field: string) => {
     navigator.clipboard.writeText(text).then(() => {
@@ -287,7 +274,7 @@ onMounted(() => {
           <div>
             <h2 class="resource-title">
               {{ vpc.name }}
-              <span :class="['badge', getStatusClass(vpc.status)]">{{ getStatusText(vpc.status) }}</span>
+              <StatusBadge :status="vpc.status || 'active'" :label="getStatusText(vpc.status)" />
             </h2>
             <div class="resource-id-row">
               <span class="resource-id-text">{{ vpc.id }}</span>
@@ -336,7 +323,7 @@ onMounted(() => {
               <div class="kv-item">
                 <span class="label">{{ $t('dashboard.table.status') }}</span>
                 <span class="value">
-                  <span :class="['status-badge', getStatusClass(vpc.status)]">{{ getStatusText(vpc.status) }}</span>
+                  <StatusBadge :status="vpc.status || 'active'" :label="getStatusText(vpc.status)" />
                 </span>
               </div>
               <div class="kv-item">
@@ -362,11 +349,11 @@ onMounted(() => {
               </div>
               <div class="kv-item">
                 <span class="label"><CalendarDays :size="14" /> {{ $t('dashboard.table.created') }}</span>
-                <span class="value">{{ formatDate(vpc.created_at) }}</span>
+                <span class="value">{{ formatDateTime(vpc.created_at) }}</span>
               </div>
               <div class="kv-item">
                 <span class="label"><CalendarDays :size="14" /> {{ $t('dashboard.table.updatedAt') }}</span>
-                <span class="value">{{ formatDate(vpc.updated_at) }}</span>
+                <span class="value">{{ formatDateTime(vpc.updated_at) }}</span>
               </div>
             </div>
           </div>
@@ -435,44 +422,43 @@ onMounted(() => {
       />
 
       <!-- Edit Modal -->
-      <div v-if="showEditModal" class="modal-backdrop">
-        <div class="modal-content card shadow-lg">
-          <div class="modal-header">
-            <h3>{{ t('actions.edit') }}</h3>
-            <button class="btn-close" @click="showEditModal = false">&times;</button>
-          </div>
-          <div class="modal-body">
-            <div class="form-group">
-              <label>{{ t('dashboard.table.name') }}</label>
-              <input v-model="editForm.name" type="text" class="form-input" :placeholder="t('dashboard.table.name')" />
-            </div>
-            <div class="form-group">
-              <label>{{ t('dashboard.table.description') }}</label>
-              <textarea v-model="editForm.description" class="form-input" rows="3" :placeholder="t('dashboard.table.description')"></textarea>
-            </div>
-            <p v-if="editError" class="text-error small">{{ editError }}</p>
-          </div>
-          <div class="modal-footer">
-            <button class="btn btn-ghost" @click="showEditModal = false" :disabled="editLoading">{{ t('actions.cancel') }}</button>
-            <button class="btn btn-primary" @click="confirmEdit" :disabled="editLoading">
-              <span v-if="editLoading" class="loading-spinner small"></span>
-              {{ t('actions.confirm') }}
-            </button>
-          </div>
+      <BaseModal
+        :show="showEditModal"
+        :title="t('actions.edit')"
+        :loading="editLoading"
+        form
+        @close="showEditModal = false"
+        @submit="confirmEdit"
+      >
+        <div class="form-group">
+          <label>{{ t('dashboard.table.name') }}</label>
+          <input v-model="editForm.name" type="text" class="form-input" :placeholder="t('dashboard.table.name')" />
         </div>
-      </div>
+        <div class="form-group">
+          <label>{{ t('dashboard.table.description') }}</label>
+          <textarea v-model="editForm.description" class="form-input" rows="3" :placeholder="t('dashboard.table.description')"></textarea>
+        </div>
+        <p v-if="editError" class="text-error small">{{ editError }}</p>
+
+        <template #footer>
+          <button type="button" class="btn btn-ghost" @click="showEditModal = false" :disabled="editLoading">{{ t('actions.cancel') }}</button>
+          <button type="submit" class="btn btn-primary" :disabled="editLoading">
+            <span v-if="editLoading" class="loading-spinner small"></span>
+            {{ t('actions.confirm') }}
+          </button>
+        </template>
+      </BaseModal>
 
       <!-- Create Subnet Modal -->
-      <div v-if="createSubnetVisible" class="modal-backdrop" @click.self="closeCreateSubnetModal">
-        <div class="modal-content card shadow-lg" style="max-width: 600px;">
-          <div class="modal-header">
-            <h3>{{ $t('dashboard.buttons.createSubnet') }}</h3>
-            <button class="btn btn-ghost btn-sm icon-btn" @click="closeCreateSubnetModal">
-              <X :size="20" />
-            </button>
-          </div>
-
-          <div class="modal-body">
+      <BaseModal
+        :show="createSubnetVisible"
+        :title="$t('dashboard.buttons.createSubnet')"
+        size="lg"
+        :loading="creatingSubnet"
+        form
+        @close="closeCreateSubnetModal"
+        @submit="handleCreateSubnet"
+      >
             <!-- Network Configuration -->
             <div class="form-group">
               <label class="form-label">{{ $t('dashboard.table.name') }} *</label>
@@ -587,21 +573,19 @@ onMounted(() => {
                 </div>
               </div>
             </div>
-          </div>
 
-          <div v-if="createSubnetError" class="text-error" style="margin: 0 var(--spacing-6) var(--spacing-4); font-size:var(--font-size-sm);background:var(--error-light);padding:var(--spacing-2);border-radius:var(--radius-sm)">
-            {{ createSubnetError }}
-          </div>
+            <div v-if="createSubnetError" class="text-error" style="margin-top:var(--spacing-4);font-size:var(--font-size-sm);background:var(--error-light);padding:var(--spacing-2);border-radius:var(--radius-sm)">
+              {{ createSubnetError }}
+            </div>
 
-          <div class="modal-footer">
-            <button class="btn btn-ghost" @click="closeCreateSubnetModal" :disabled="creatingSubnet">{{ $t('actions.cancel') }}</button>
-            <button class="btn btn-primary" @click="handleCreateSubnet" :disabled="creatingSubnet">
-              <span v-if="creatingSubnet" class="loading-spinner" style="width: 16px; height: 16px; border-width: 2px;"></span>
-              {{ creatingSubnet ? $t('messages.creating') : $t('dashboard.buttons.createSubnet') }}
-            </button>
-          </div>
-        </div>
-      </div>
+        <template #footer>
+          <button type="button" class="btn btn-ghost" @click="closeCreateSubnetModal" :disabled="creatingSubnet">{{ $t('actions.cancel') }}</button>
+          <button type="submit" class="btn btn-primary" :disabled="creatingSubnet">
+            <span v-if="creatingSubnet" class="loading-spinner" style="width: 16px; height: 16px; border-width: 2px;"></span>
+            {{ creatingSubnet ? $t('messages.creating') : $t('dashboard.buttons.createSubnet') }}
+          </button>
+        </template>
+      </BaseModal>
 
     </div>
   </div>
@@ -805,7 +789,7 @@ onMounted(() => {
 }
 
 .info-card h3 {
-  font-size: var(--font-size-md);
+  font-size: var(--font-size-base);
   font-weight: 600;
   margin: 0 0 var(--spacing-4) 0;
   color: var(--text-primary);
@@ -852,7 +836,7 @@ onMounted(() => {
 
 .subnets-header h3 {
     margin: 0;
-    font-size: var(--font-size-md);
+    font-size: var(--font-size-base);
     font-weight: 600;
 }
 
@@ -884,15 +868,6 @@ onMounted(() => {
   text-align: center;
 }
 
-/* Status Badges */
-.status-badge {
-    display: inline-flex;
-    padding: 2px 10px;
-    border-radius: 12px;
-    font-size: var(--font-size-xs);
-    font-weight: 500;
-}
-
 /* Toast */
 .toast {
     position: fixed;
@@ -910,49 +885,13 @@ onMounted(() => {
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
 }
 
-.toast-success { background: var(--success-600); }
-.toast-error { background: var(--error-600); }
+.toast-success { background: var(--success-color); }
+.toast-error { background: var(--error-color); }
 
 .toast-enter-active, .toast-leave-active { transition: all 0.3s ease; }
 .toast-enter-from, .toast-leave-to { opacity: 0; transform: translate(-50%, -20px); }
 
-/* Modal */
-.modal-backdrop {
-  position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.5);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 100;
-}
-
-.modal-content {
-  width: 100%;
-  max-width: 500px;
-  background: var(--bg-primary);
-}
-
-.modal-header {
-  padding: var(--spacing-4) var(--spacing-5);
-  border-bottom: 1px solid var(--border-light);
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.modal-body {
-  padding: var(--spacing-5);
-}
-
-.modal-footer {
-  padding: var(--spacing-4) var(--spacing-5);
-  border-top: 1px solid var(--border-light);
-  display: flex;
-  justify-content: flex-end;
-  gap: var(--spacing-3);
-}
-
+/* Modal content */
 .form-group {
   margin-bottom: var(--spacing-4);
 }
@@ -970,14 +909,6 @@ onMounted(() => {
   border: 1px solid var(--border-light);
   border-radius: var(--radius-md);
   font-size: var(--font-size-sm);
-}
-
-.btn-close {
-  background: none;
-  border: none;
-  font-size: 24px;
-  cursor: pointer;
-  color: var(--text-light);
 }
 
 /* Form elements for create subnet modal */
@@ -1131,15 +1062,9 @@ onMounted(() => {
   display: block;
 }
 
-.icon-btn {
-  padding: 4px;
-}
-
 /* Badge colors */
-.status-running { background: var(--success-50); color: var(--success-700); }
+.status-running { background: var(--success-light); color: var(--success-dark); }
 .status-stopped { background: var(--gray-100); color: var(--gray-700); }
-.status-pending { background: var(--warning-50); color: var(--warning-700); }
-.status-error { background: var(--error-50); color: var(--error-700); }
 
 /* Responsive */
 @media (max-width: 768px) {

@@ -4,6 +4,8 @@ import { useRoute, useRouter } from 'vue-router'
 import { migrationsApi, MIGRATION_ACTIVE_STATUSES, type Migration } from '../../api/migrations'
 import { ArrowLeft, ArrowRightLeft, Copy, Check } from 'lucide-vue-next'
 import { useI18n } from 'vue-i18n'
+import { formatBytes, formatDateTime } from '../../utils/format'
+import StatusBadge from '../../components/base/StatusBadge.vue'
 
 const { t, te } = useI18n()
 const route = useRoute()
@@ -35,31 +37,12 @@ const fetchMigrationDetail = async (silent = false) => {
     }
 }
 
-const formatBytes = (bytes?: number) => {
-    if (!bytes || bytes <= 0) return '-'
-    const units = ['B', 'KiB', 'MiB', 'GiB', 'TiB']
-    let value = bytes
-    let i = 0
-    while (value >= 1024 && i < units.length - 1) {
-        value /= 1024
-        i++
-    }
-    return `${value.toFixed(i === 0 ? 0 : 1)} ${units[i]}`
-}
 
 const copyToClipboard = (text: string, field: string) => {
     navigator.clipboard.writeText(text).then(() => {
         copiedField.value = field
         setTimeout(() => { copiedField.value = null }, 2000)
     })
-}
-
-const getStatusClass = (status: string) => {
-    const s = (status || '').toLowerCase()
-    if (s === 'completed' || s === 'done') return 'status-active'
-    if (s === 'error' || s === 'failed' || s === 'not_supported' || s === 'timeout' || s === 'rollback') return 'status-error'
-    if (s === 'running' || s === 'migrating' || s === 'in_progress' || s.endsWith('_prepared') || s === 'source_rollback') return 'status-pending'
-    return ''
 }
 
 // 缺键时 t() 返回键路径本身，必须用 te() 判断后再回退到原始值。
@@ -152,9 +135,7 @@ onUnmounted(() => {
           </div>
         </div>
         <div class="title-actions">
-          <span :class="['badge', 'badge-lg', getStatusClass(migration.status)]" :style="!getStatusClass(migration.status) ? 'background: var(--gray-100); color: var(--gray-700);' : ''">
-            {{ getStatusText(migration.status, migration.progress) }}
-          </span>
+          <StatusBadge :status="migration.status" :label="getStatusText(migration.status, migration.progress)" />
         </div>
       </div>
 
@@ -178,11 +159,11 @@ onUnmounted(() => {
             </div>
             <div class="info-row">
               <span class="info-label">{{ $t('dashboard.migrationDetail.createdAt') }}</span>
-              <span class="info-value mono">{{ new Date(migration.created_at).toLocaleString() }}</span>
+              <span class="info-value mono">{{ formatDateTime(migration.created_at) }}</span>
             </div>
             <div class="info-row">
               <span class="info-label">{{ $t('dashboard.migrationDetail.updatedAt') }}</span>
-              <span class="info-value mono">{{ new Date(migration.updated_at).toLocaleString() }}</span>
+              <span class="info-value mono">{{ formatDateTime(migration.updated_at) }}</span>
             </div>
           </div>
         </div>
@@ -219,7 +200,7 @@ onUnmounted(() => {
           </div>
           <div class="phase-list">
             <div v-for="(p, idx) in migration.phases || []" :key="idx" class="phase-row">
-              <span :class="['badge', getStatusClass(p.status)]" :style="!getStatusClass(p.status) ? 'background: var(--gray-100); color: var(--gray-700);' : ''">{{ getStatusText(p.status) }}</span>
+              <StatusBadge :status="p.status" :label="getStatusText(p.status)" />
               <div class="phase-info">
                 <div class="phase-name">{{ getPhaseName(p.name) }}</div>
                 <div class="phase-summary">{{ p.summary }}</div>
@@ -418,26 +399,6 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   gap: var(--spacing-3);
-}
-
-.badge-lg {
-  font-size: var(--font-size-sm);
-  padding: 6px 14px;
-}
-
-.badge.status-active {
-  background: rgba(16, 185, 129, 0.1);
-  color: #10b981;
-}
-
-.badge.status-error {
-  background: rgba(239, 68, 68, 0.1);
-  color: #ef4444;
-}
-
-.badge.status-pending {
-  background: rgba(245, 158, 11, 0.1);
-  color: #f59e0b;
 }
 
 /* Info Grid */

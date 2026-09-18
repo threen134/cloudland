@@ -9,7 +9,10 @@ import { isValidName } from '../../utils/validation'
 
 const region = useRegionStore()
 
-import { Plus, SquareStack, MemoryStick, Search, Trash2, Cpu, HardDrive, X, Check, Copy, RefreshCw } from 'lucide-vue-next'
+import { Plus, SquareStack, MemoryStick, Search, Trash2, Cpu, HardDrive, Check, Copy, RefreshCw } from 'lucide-vue-next'
+import BaseModal from '../../components/modals/BaseModal.vue'
+import DeleteModal from '../../components/modals/DeleteModal.vue'
+import PageToolbar from '../../components/base/PageToolbar.vue'
 
 const flavors = ref<Flavor[]>([])
 const loading = ref(false)
@@ -156,27 +159,16 @@ onMounted(() => {
 
 <template>
   <div>
-    <div class="page-header">
-      <div class="search-wrapper">
-        <div class="search-box">
-          <Search :size="16" class="search-icon" />
-          <input 
-            type="text" 
-            v-model="searchQuery"
-            :placeholder="$t('actions.search') + '...'" 
-            class="search-input"
-          />
-        </div>
-      </div>
-      <div class="header-actions">
+    <PageToolbar v-model:search="searchQuery">
+      <template #actions>
         <button class="btn btn-secondary btn-sm btn-icon" @click="fetchFlavors" :title="$t('actions.refresh')">
           <RefreshCw :size="14" :class="{ spinning: loading }" />
         </button>
         <button class="btn btn-primary btn-sm" @click="openCreateModal">
           <Plus :size="14" /> {{ $t('dashboard.buttons.createFlavor') }}
         </button>
-      </div>
-    </div>
+      </template>
+    </PageToolbar>
 
     <div class="card table-card">
       <table class="data-table">
@@ -259,169 +251,100 @@ onMounted(() => {
     </div>
 
     <!-- Create Flavor Modal -->
-    <div v-if="createModalVisible" class="modal-overlay" @click.self="closeCreateModal">
-      <div class="modal-content card">
-        <div class="modal-header">
-          <h3>{{ $t('dashboard.buttons.createFlavor') }}</h3>
-          <button class="btn btn-ghost btn-sm icon-btn" @click="closeCreateModal">
-            <X :size="20" />
-          </button>
+    <BaseModal
+      :show="createModalVisible"
+      :title="$t('dashboard.buttons.createFlavor')"
+      form
+      :loading="creating"
+      @close="closeCreateModal"
+      @submit="handleCreateFlavor"
+    >
+      <div class="form-grid">
+        <div class="form-group">
+          <label class="form-label">{{ $t('dashboard.table.name') }}</label>
+          <input
+            v-model="newFlavorForm.name"
+            type="text"
+            :class="['form-input', { 'input-error': !isNameValid }]"
+            :placeholder="$t('dashboard.forms.placeholder.flavorNameExample')"
+          />
+          <div v-if="!isNameValid" class="text-error text-xs mt-1">
+            {{ $t('messages.invalidHostname') }}
+          </div>
+
         </div>
-        
-        <div class="modal-body">
-          <div class="form-grid">
-            <div class="form-group">
-              <label class="form-label">{{ $t('dashboard.table.name') }}</label>
-              <input 
-                v-model="newFlavorForm.name" 
-                type="text" 
-                :class="['form-input', { 'input-error': !isNameValid }]" 
-                :placeholder="$t('dashboard.forms.placeholder.flavorNameExample')" 
+
+        <div class="form-row">
+          <div class="form-group flex-1">
+            <label class="form-label">{{ $t('dashboard.table.vcpus') }}</label>
+            <div class="input-with-unit">
+              <input
+                v-model.number="newFlavorForm.cpu"
+                type="number"
+                class="form-input"
+                min="1"
               />
-              <div v-if="!isNameValid" class="text-error text-xs mt-1">
-                {{ $t('messages.invalidHostname') }}
-              </div>
-
+              <span class="unit">{{ $t('specs.cores').replace('{n}', '') }}</span>
             </div>
-            
-            <div class="form-row">
-              <div class="form-group flex-1">
-                <label class="form-label">{{ $t('dashboard.table.vcpus') }}</label>
-                <div class="input-with-unit">
-                  <input 
-                    v-model.number="newFlavorForm.cpu" 
-                    type="number" 
-                    class="form-input" 
-                    min="1"
-                  />
-                  <span class="unit">{{ $t('specs.cores').replace('{n}', '') }}</span>
-                </div>
-              </div>
-              <div class="form-group flex-1">
-                <label class="form-label">{{ $t('specs.ram') }}</label>
-                <div class="input-with-unit">
-                  <input 
-                    v-model.number="newFlavorForm.memory" 
-                    type="number" 
-                    class="form-input" 
-                    min="16"
-                  />
-                  <span class="unit">{{ $t('specs.mb') }}</span>
-                </div>
-              </div>
-            </div>
-
-            <div class="form-group">
-              <label class="form-label">{{ $t('dashboard.overview.disk') }}</label>
-              <div class="input-with-unit">
-                <input 
-                  v-model.number="newFlavorForm.disk" 
-                  type="number" 
-                  class="form-input" 
-                  min="1"
-                />
-                <span class="unit">{{ $t('specs.gb') }}</span>
-              </div>
+          </div>
+          <div class="form-group flex-1">
+            <label class="form-label">{{ $t('specs.ram') }}</label>
+            <div class="input-with-unit">
+              <input
+                v-model.number="newFlavorForm.memory"
+                type="number"
+                class="form-input"
+                min="16"
+              />
+              <span class="unit">{{ $t('specs.mb') }}</span>
             </div>
           </div>
         </div>
-        <div class="modal-footer" style="flex-direction: column; align-items: stretch; gap: var(--spacing-2);">
+
+        <div class="form-group">
+          <label class="form-label">{{ $t('dashboard.overview.disk') }}</label>
+          <div class="input-with-unit">
+            <input
+              v-model.number="newFlavorForm.disk"
+              type="number"
+              class="form-input"
+              min="1"
+            />
+            <span class="unit">{{ $t('specs.gb') }}</span>
+          </div>
+        </div>
+      </div>
+
+      <template #footer>
+        <div class="modal-footer-stack">
           <div v-if="createError" class="text-error" style="font-size:var(--font-size-sm);background:var(--error-light);padding:var(--spacing-2);border-radius:var(--radius-sm)">
             {{ createError }}
           </div>
           <div style="display: flex; justify-content: flex-end; gap: var(--spacing-2);">
-            <button class="btn btn-secondary" @click="closeCreateModal" :disabled="creating">{{ $t('actions.cancel') }}</button>
-            <button class="btn btn-primary" @click="handleCreateFlavor" :disabled="creating">
+            <button type="button" class="btn btn-secondary" @click="closeCreateModal" :disabled="creating">{{ $t('actions.cancel') }}</button>
+            <button type="submit" class="btn btn-primary" :disabled="creating">
               <span v-if="creating" class="loading-spinner" style="width: 16px; height: 16px; border-width: 2px;"></span>
               {{ creating ? $t('messages.loading') : $t('dashboard.buttons.createFlavor') }}
             </button>
           </div>
         </div>
-      </div>
-    </div>
+      </template>
+    </BaseModal>
 
     <!-- Delete Confirmation Modal -->
-    <div v-if="deleteModalVisible" class="modal-overlay" @click.self="closeDeleteModal">
-      <div class="modal-content card" style="max-width: 460px;">
-        <div class="modal-header">
-          <h3>{{ $t('actions.delete') }}</h3>
-          <button class="btn btn-ghost btn-sm icon-btn" @click="closeDeleteModal"><X :size="20" /></button>
-        </div>
-        <div class="modal-body">
-          <div style="text-align:center;padding:var(--spacing-4) 0">
-            <div style="width:64px;height:64px;border-radius:50%;background:var(--error-light);display:flex;align-items:center;justify-content:center;margin:0 auto var(--spacing-4);color:var(--error-color)"><Trash2 :size="32" /></div>
-            <p style="color:var(--text-secondary);margin:0 0 var(--spacing-4)">{{ $t('dashboard.deleteConfirm.message') }}</p>
-            <div style="background:var(--bg-secondary);border:1px solid var(--border-light);border-radius:var(--radius-md);padding:var(--spacing-3) var(--spacing-4);text-align:left">
-              <span style="font-size:var(--font-size-xs);color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.05em;display:block;margin-bottom:var(--spacing-1)">{{ $t('dashboard.deleteConfirm.resource') }}</span>
-              <span style="font-weight:var(--font-weight-semibold);display:block">{{ resourceToDelete?.name }}</span>
-              <span style="font-size:var(--font-size-xs);color:var(--text-light);font-family:var(--font-family-mono);display:block;margin-top:2px">{{ resourceToDelete?.uuid }}</span>
-            </div>
-            <div v-if="deleteError" class="text-error" style="margin-top:var(--spacing-4);font-size:var(--font-size-sm);background:var(--error-light);padding:var(--spacing-2);border-radius:var(--radius-sm)">
-              {{ deleteError }}
-            </div>
-          </div>
-        </div>
-        <div class="modal-footer">
-          <button class="btn btn-secondary" @click="closeDeleteModal" :disabled="deletingResource">{{ $t('actions.cancel') }}</button>
-          <button class="btn btn-danger" @click="confirmDelete" :disabled="deletingResource">
-            <span v-if="deletingResource" class="loading-spinner" style="width:16px;height:16px;border-width:2px"></span>
-            <Trash2 v-else :size="14" />
-            {{ deletingResource ? $t('dashboard.deleteConfirm.deleting') : $t('actions.delete') }}
-          </button>
-        </div>
-      </div>
-    </div>
+    <DeleteModal
+      :show="deleteModalVisible"
+      :resource-name="resourceToDelete?.name"
+      :resource-id="resourceToDelete?.uuid"
+      :loading="deletingResource"
+      :error="deleteError"
+      @close="closeDeleteModal"
+      @confirm="confirmDelete"
+    />
   </div>
 </template>
 
 <style scoped>
-.page-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 0;
-  padding-right: 20px;
-}
-
-.search-wrapper {
-  flex: 1;
-  max-width: 400px;
-}
-
-.search-box {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  background: var(--bg-secondary);
-  padding: 0 12px;
-  height: 40px;
-  border-radius: var(--radius-md);
-  border: 1px solid var(--border-light);
-  transition: all 0.2s;
-}
-
-.search-box:focus-within {
-  border-color: var(--primary-300);
-  box-shadow: 0 0 0 2px var(--primary-100);
-}
-
-.search-icon {
-  color: var(--gray-400);
-}
-
-.search-input {
-  border: none;
-  background: transparent;
-  width: 100%;
-  height: 100%;
-  font-size: 0.875rem;
-  color: var(--text-primary);
-}
-
-.search-input:focus {
-  outline: none;
-}
-
 .table-card {
   padding: 0;
   overflow: hidden;
@@ -512,24 +435,15 @@ onMounted(() => {
   pointer-events: none;
 }
 
-.btn-danger {
-    background: var(--error-color);
-    color: white;
-    border: none;
-    padding: 8px 20px;
-    border-radius: var(--radius-md);
-    font-size: var(--font-size-sm);
-    font-weight: var(--font-weight-medium);
-    cursor: pointer;
-    display: inline-flex;
-    align-items: center;
-    gap: var(--spacing-2);
-    transition: background var(--transition-base);
+/* 底部按钮区需要纵向堆叠（错误提示在按钮上方），.modal-footer 属于 BaseModal，这里用一层包裹元素 */
+.modal-footer-stack {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--spacing-2);
+  width: 100%;
 }
-.btn-danger:hover { background: var(--error-dark); }
-.btn-danger:disabled { opacity: 0.5; cursor: not-allowed; }
 
-.header-actions { display: flex; gap: 8px; align-items: center; }
 .spinning { animation: spin 1s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 </style>

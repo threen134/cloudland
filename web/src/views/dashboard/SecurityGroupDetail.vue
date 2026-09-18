@@ -10,6 +10,8 @@ import {
     formatRulePort, ruleServiceName, filterAndSortRules, type RuleSortKey, type RuleFilter
 } from '../../utils/securityRule'
 import SecurityRuleModal from '../../components/securityGroup/SecurityRuleModal.vue'
+import BaseModal from '../../components/modals/BaseModal.vue'
+import DeleteModal from '../../components/modals/DeleteModal.vue'
 import { ArrowLeft, Shield, Trash2, Plus, X, Edit, ArrowUpDown, ArrowUp, ArrowDown, Network, Server, ChevronDown, Search } from 'lucide-vue-next'
 
 const route = useRoute()
@@ -104,6 +106,14 @@ const handleDeleteRule = (rule: SecurityRule) => {
     ruleToDelete.value = rule
     deleteRuleError.value = ''
 }
+
+// 删除确认框里展示的规则描述（方向 + 协议 + 端口 + 来源）
+const ruleToDeleteName = computed(() => {
+    const rule = ruleToDelete.value
+    if (!rule) return ''
+    const direction = rule.direction === 'ingress' ? t('dashboard.table.ingress') : t('dashboard.table.egress')
+    return `${direction} ${rule.protocol.toUpperCase()} ${formatRulePort(rule, t)} ${rule.remote_cidr || ''}`.trim()
+})
 
 const closeDeleteRuleModal = () => {
     if (deletingRule.value) return
@@ -448,97 +458,57 @@ onMounted(fetchGroup)
         />
 
         <!-- Edit Security Group Modal -->
-        <div v-if="showEditModal" class="modal-overlay" @click.self="showEditModal = false">
-            <div class="modal-content card" style="max-width: 460px;">
-                <div class="modal-header">
-                    <h3>{{ $t('actions.edit') }}</h3>
-                    <button class="btn btn-ghost btn-sm icon-btn" @click="showEditModal = false"><X :size="20" /></button>
-                </div>
-                <div class="modal-body">
-                    <div class="form-group">
-                        <label class="form-label">{{ $t('dashboard.table.name') }}</label>
-                        <input v-model="editForm.name" type="text" :class="['form-input', { 'input-error': !isEditValid }]" @keyup.enter="saveInfo" />
-                        <div v-if="!isEditValid" class="text-error text-xs mt-1">{{ $t('messages.invalidHostname') }}</div>
-                    </div>
-                    <div class="form-group">
-                        <label class="form-label">{{ $t('dashboard.table.description') }}</label>
-                        <input v-model="editForm.description" type="text" class="form-input" :placeholder="$t('messages.placeholderDescription')" @keyup.enter="saveInfo" />
-                    </div>
-                    <div v-if="editError" class="error-box">{{ editError }}</div>
-                </div>
-                <div class="modal-footer">
-                    <button class="btn btn-secondary" @click="showEditModal = false" :disabled="savingInfo">{{ $t('actions.cancel') }}</button>
-                    <button class="btn btn-primary" @click="saveInfo" :disabled="savingInfo || !isEditValid">
-                        <span v-if="savingInfo" class="loading-spinner" style="width:16px;height:16px;border-width:2px;"></span>
-                        {{ savingInfo ? $t('messages.saving') : $t('actions.save') }}
-                    </button>
-                </div>
+        <BaseModal
+            :show="showEditModal"
+            :title="$t('actions.edit')"
+            :loading="savingInfo"
+            form
+            @close="showEditModal = false"
+            @submit="saveInfo"
+        >
+            <div class="form-group">
+                <label class="form-label">{{ $t('dashboard.table.name') }}</label>
+                <input v-model="editForm.name" type="text" :class="['form-input', { 'input-error': !isEditValid }]" />
+                <div v-if="!isEditValid" class="text-error text-xs mt-1">{{ $t('messages.invalidHostname') }}</div>
             </div>
-        </div>
+            <div class="form-group">
+                <label class="form-label">{{ $t('dashboard.table.description') }}</label>
+                <input v-model="editForm.description" type="text" class="form-input" :placeholder="$t('messages.placeholderDescription')" />
+            </div>
+            <div v-if="editError" class="error-box">{{ editError }}</div>
+
+            <template #footer>
+                <button type="button" class="btn btn-secondary" @click="showEditModal = false" :disabled="savingInfo">{{ $t('actions.cancel') }}</button>
+                <button type="submit" class="btn btn-primary" :disabled="savingInfo || !isEditValid">
+                    <span v-if="savingInfo" class="loading-spinner" style="width:16px;height:16px;border-width:2px;"></span>
+                    {{ savingInfo ? $t('messages.saving') : $t('actions.save') }}
+                </button>
+            </template>
+        </BaseModal>
 
         <!-- Delete Rule Modal -->
-        <div v-if="ruleToDelete" class="modal-overlay" @click.self="closeDeleteRuleModal">
-            <div class="modal-content card" style="max-width: 460px;">
-                <div class="modal-header">
-                    <h3>{{ $t('actions.delete') }}</h3>
-                    <button class="btn btn-ghost btn-sm icon-btn" @click="closeDeleteRuleModal"><X :size="20" /></button>
-                </div>
-                <div class="modal-body">
-                    <div class="delete-warning">
-                        <div class="delete-warning-icon"><Trash2 :size="32" /></div>
-                        <p class="delete-warning-text">{{ $t('dashboard.securityGroupDetail.deleteRuleConfirm') }}</p>
-                        <div class="delete-resource">
-                            <span class="delete-resource-label">{{ $t('dashboard.deleteConfirm.resource') }}</span>
-                            <span class="delete-resource-name">
-                                {{ ruleToDelete.direction === 'ingress' ? $t('dashboard.table.ingress') : $t('dashboard.table.egress') }}
-                                {{ ruleToDelete.protocol.toUpperCase() }} {{ formatRulePort(ruleToDelete, t) }}
-                                {{ ruleToDelete.remote_cidr || '' }}
-                            </span>
-                            <span class="delete-resource-id">{{ ruleToDelete.id }}</span>
-                        </div>
-                        <div v-if="deleteRuleError" class="error-box" style="margin-top: var(--spacing-4);">{{ deleteRuleError }}</div>
-                    </div>
-                </div>
-                <div class="modal-footer">
-                    <button class="btn btn-secondary" @click="closeDeleteRuleModal" :disabled="deletingRule">{{ $t('actions.cancel') }}</button>
-                    <button class="btn btn-danger" @click="confirmDeleteRule" :disabled="deletingRule">
-                        <span v-if="deletingRule" class="loading-spinner" style="width:16px;height:16px;border-width:2px"></span>
-                        <Trash2 v-else :size="14" />
-                        {{ deletingRule ? $t('dashboard.deleteConfirm.deleting') : $t('actions.delete') }}
-                    </button>
-                </div>
-            </div>
-        </div>
+        <DeleteModal
+            :show="!!ruleToDelete"
+            :message="$t('dashboard.securityGroupDetail.deleteRuleConfirm')"
+            :resource-name="ruleToDeleteName"
+            :resource-id="ruleToDelete?.id"
+            :loading="deletingRule"
+            :error="deleteRuleError"
+            @close="closeDeleteRuleModal"
+            @confirm="confirmDeleteRule"
+        />
 
         <!-- Delete Security Group Modal -->
-        <div v-if="deleteGroupModalVisible && group" class="modal-overlay" @click.self="closeDeleteGroupModal">
-            <div class="modal-content card" style="max-width: 460px;">
-                <div class="modal-header">
-                    <h3>{{ $t('actions.delete') }}</h3>
-                    <button class="btn btn-ghost btn-sm icon-btn" @click="closeDeleteGroupModal"><X :size="20" /></button>
-                </div>
-                <div class="modal-body">
-                    <div class="delete-warning">
-                        <div class="delete-warning-icon"><Shield :size="32" /></div>
-                        <p class="delete-warning-text">{{ $t('dashboard.securityGroupDetail.deleteConfirm') }}</p>
-                        <div class="delete-resource">
-                            <span class="delete-resource-label">{{ $t('dashboard.deleteConfirm.resource') }}</span>
-                            <span class="delete-resource-name">{{ group.name }}</span>
-                            <span class="delete-resource-id">{{ group.id }}</span>
-                        </div>
-                        <div v-if="deleteGroupError" class="error-box" style="margin-top: var(--spacing-4);">{{ deleteGroupError }}</div>
-                    </div>
-                </div>
-                <div class="modal-footer">
-                    <button class="btn btn-secondary" @click="closeDeleteGroupModal" :disabled="deletingGroup">{{ $t('actions.cancel') }}</button>
-                    <button class="btn btn-danger" @click="confirmDeleteGroup" :disabled="deletingGroup">
-                        <span v-if="deletingGroup" class="loading-spinner" style="width:16px;height:16px;border-width:2px"></span>
-                        <Trash2 v-else :size="14" />
-                        {{ deletingGroup ? $t('dashboard.deleteConfirm.deleting') : $t('actions.delete') }}
-                    </button>
-                </div>
-            </div>
-        </div>
+        <DeleteModal
+            :show="deleteGroupModalVisible && !!group"
+            :message="$t('dashboard.securityGroupDetail.deleteConfirm')"
+            :resource-name="group?.name"
+            :resource-id="group?.id"
+            :loading="deletingGroup"
+            :error="deleteGroupError"
+            @close="closeDeleteGroupModal"
+            @confirm="confirmDeleteGroup"
+        />
     </div>
 </template>
 
@@ -695,7 +665,7 @@ onMounted(fetchGroup)
 }
 
 .info-card h3 {
-    font-size: var(--font-size-md);
+    font-size: var(--font-size-base);
     font-weight: 600;
     margin: 0 0 var(--spacing-4) 0;
     color: var(--text-primary);
@@ -910,7 +880,7 @@ onMounted(fetchGroup)
     border-radius: 4px;
     font-size: 10px;
     font-weight: 600;
-    font-family: var(--font-family-base);
+    font-family: var(--font-family);
     background: var(--primary-50);
     color: var(--primary-700);
     margin-left: 6px;
@@ -941,73 +911,4 @@ onMounted(fetchGroup)
     text-align: left;
 }
 
-/* Delete confirmation */
-.delete-warning {
-    text-align: center;
-    padding: var(--spacing-4) 0;
-}
-
-.delete-warning-icon {
-    width: 64px;
-    height: 64px;
-    border-radius: 50%;
-    background: var(--error-light);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    margin: 0 auto var(--spacing-4);
-    color: var(--error-color);
-}
-
-.delete-warning-text {
-    color: var(--text-secondary);
-    margin: 0 0 var(--spacing-4);
-}
-
-.delete-resource {
-    background: var(--bg-secondary);
-    border: 1px solid var(--border-light);
-    border-radius: var(--radius-md);
-    padding: var(--spacing-3) var(--spacing-4);
-    text-align: left;
-}
-
-.delete-resource-label {
-    font-size: var(--font-size-xs);
-    color: var(--text-tertiary);
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    display: block;
-    margin-bottom: var(--spacing-1);
-}
-
-.delete-resource-name {
-    font-weight: var(--font-weight-semibold);
-    display: block;
-}
-
-.delete-resource-id {
-    font-size: var(--font-size-xs);
-    color: var(--text-light);
-    font-family: var(--font-family-mono);
-    display: block;
-    margin-top: 2px;
-}
-
-.btn-danger {
-    background: var(--error-color);
-    color: white;
-    border: none;
-    padding: 8px 20px;
-    border-radius: var(--radius-md);
-    font-size: var(--font-size-sm);
-    font-weight: var(--font-weight-medium);
-    cursor: pointer;
-    display: inline-flex;
-    align-items: center;
-    gap: var(--spacing-2);
-    transition: background var(--transition-base);
-}
-.btn-danger:hover { background: var(--error-dark); }
-.btn-danger:disabled { opacity: 0.5; cursor: not-allowed; }
 </style>

@@ -10,6 +10,8 @@ import { activitiesApi, type Activity, type ActivityQuery } from '../../api/acti
 import { useRegionStore } from '../../stores/region'
 import ActivityText from '../../components/activity/ActivityText.vue'
 import { useActivityTime } from '../../components/activity/activityTime'
+import PageToolbar from '../../components/base/PageToolbar.vue'
+import StatusBadge from '../../components/base/StatusBadge.vue'
 
 const { t } = useI18n()
 const router = useRouter()
@@ -190,8 +192,8 @@ const emptyText = computed(() => {
       </button>
     </div>
 
-    <div class="page-header">
-      <div class="filter-wrapper">
+    <PageToolbar :searchable="false">
+      <template #filters>
         <select v-model="rangePreset" class="filter-select" :aria-label="$t('dashboard.activityPage.timeRange')">
           <option value="today">{{ $t('dashboard.activityPage.ranges.today') }}</option>
           <option value="7d">{{ $t('dashboard.activityPage.ranges.last7d') }}</option>
@@ -214,13 +216,13 @@ const emptyText = computed(() => {
           <option value="success">{{ $t('dashboard.activityPage.succeeded') }}</option>
           <option value="failed">{{ $t('dashboard.activityPage.failed') }}</option>
         </select>
-      </div>
-      <div class="header-actions">
+      </template>
+      <template #actions>
         <button class="btn btn-secondary btn-sm btn-icon" :title="$t('actions.refresh')" :aria-label="$t('actions.refresh')" @click="reload">
           <RefreshCw :size="14" :class="{ spinning: loading }" />
         </button>
-      </div>
-    </div>
+      </template>
+    </PageToolbar>
 
     <div v-if="rangeError || errorMessage" class="error-banner">{{ rangeError || errorMessage }}</div>
 
@@ -257,9 +259,10 @@ const emptyText = computed(() => {
             <td class="col-actor">{{ a.actor || $t('dashboard.overview.activityUnknownActor') }}</td>
             <td class="col-action"><ActivityText :activity="a" /></td>
             <td class="col-result">
-              <span :class="['badge', a.success ? 'badge-success' : 'badge-error']">
-                {{ a.success ? $t('dashboard.activityPage.succeeded') : $t('dashboard.activityPage.failed') }}
-              </span>
+              <StatusBadge
+                :variant="a.success ? 'success' : 'error'"
+                :label="a.success ? $t('dashboard.activityPage.succeeded') : $t('dashboard.activityPage.failed')"
+              />
             </td>
           </tr>
         </tbody>
@@ -294,29 +297,6 @@ const emptyText = computed(() => {
 .back-btn:hover {
   color: var(--primary-color);
   background: var(--primary-50);
-}
-
-.page-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 12px;
-  margin-bottom: 16px;
-  padding-right: 20px;
-}
-
-.filter-wrapper {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-  flex: 1;
-}
-
-.header-actions {
-  display: flex;
-  gap: 8px;
-  align-items: center;
 }
 
 .filter-select {

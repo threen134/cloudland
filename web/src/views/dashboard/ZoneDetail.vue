@@ -4,8 +4,10 @@ import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { zonesApi, type Zone } from '../../api/zones'
 import { hypervisorsApi, type Hypervisor } from '../../api/hypervisors'
-import { ArrowLeft, MapPin, Copy, Check, Settings2, Trash2, X, Loader2, Server } from 'lucide-vue-next'
+import { ArrowLeft, MapPin, Copy, Check, Settings2, Trash2, Loader2, Server } from 'lucide-vue-next'
 import { useToast } from '../../composables/useToast'
+import BaseModal from '../../components/modals/BaseModal.vue'
+import DeleteModal from '../../components/modals/DeleteModal.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -253,59 +255,45 @@ onMounted(async () => {
     </div>
 
     <!-- Edit Modal -->
-    <Teleport to="body">
-      <div v-if="showEditModal" class="modal-overlay" @click.self="showEditModal = false">
-        <div class="modal-content" style="max-width: 480px;">
-          <div class="modal-header">
-            <h3>{{ t('dashboard.zoneActions.editTitle') }} - {{ zone?.name }}</h3>
-            <button class="btn btn-ghost btn-icon" @click="showEditModal = false"><X :size="18" /></button>
-          </div>
-          <div class="modal-body">
-            <div class="form-stack">
-              <div class="form-group">
-                <label class="form-label">{{ t('dashboard.zoneActions.remark') }}</label>
-                <input type="text" v-model="editForm.remark" class="form-input" />
-              </div>
-              <div class="form-group">
-                <label class="form-label" style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
-                  <input type="checkbox" v-model="editForm.default" />
-                  {{ t('dashboard.zoneActions.default') }}
-                </label>
-              </div>
-            </div>
-          </div>
-          <div class="modal-footer">
-            <button class="btn btn-secondary" @click="showEditModal = false">{{ t('actions.cancel') }}</button>
-            <button class="btn btn-primary" @click="handleEdit" :disabled="editing">
-              <Loader2 v-if="editing" :size="14" class="spinning" />
-              {{ editing ? t('messages.saving') : t('actions.save') }}
-            </button>
-          </div>
+    <BaseModal
+      :show="showEditModal"
+      :title="`${t('dashboard.zoneActions.editTitle')} - ${zone?.name ?? ''}`"
+      :loading="editing"
+      form
+      @close="showEditModal = false"
+      @submit="handleEdit"
+    >
+      <div class="form-stack">
+        <div class="form-group">
+          <label class="form-label">{{ t('dashboard.zoneActions.remark') }}</label>
+          <input type="text" v-model="editForm.remark" class="form-input" />
+        </div>
+        <div class="form-group">
+          <label class="form-label" style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+            <input type="checkbox" v-model="editForm.default" />
+            {{ t('dashboard.zoneActions.default') }}
+          </label>
         </div>
       </div>
-    </Teleport>
+
+      <template #footer>
+        <button type="button" class="btn btn-secondary" @click="showEditModal = false">{{ t('actions.cancel') }}</button>
+        <button type="submit" class="btn btn-primary" :disabled="editing">
+          <Loader2 v-if="editing" :size="14" class="spinning" />
+          {{ editing ? t('messages.saving') : t('actions.save') }}
+        </button>
+      </template>
+    </BaseModal>
 
     <!-- Delete Modal -->
-    <Teleport to="body">
-      <div v-if="showDeleteModal" class="modal-overlay" @click.self="showDeleteModal = false">
-        <div class="modal-content" style="max-width: 440px;">
-          <div class="modal-header">
-            <h3>{{ t('dashboard.zoneActions.deleteTitle') }}</h3>
-            <button class="btn btn-ghost btn-icon" @click="showDeleteModal = false"><X :size="18" /></button>
-          </div>
-          <div class="modal-body">
-            <p>{{ t('dashboard.zoneActions.deleteConfirm', { name: zone?.name }) }}</p>
-          </div>
-          <div class="modal-footer">
-            <button class="btn btn-secondary" @click="showDeleteModal = false">{{ t('actions.cancel') }}</button>
-            <button class="btn btn-danger" @click="handleDelete" :disabled="deleting">
-              <Loader2 v-if="deleting" :size="14" class="spinning" />
-              {{ deleting ? t('messages.deleting') : t('actions.delete') }}
-            </button>
-          </div>
-        </div>
-      </div>
-    </Teleport>
+    <DeleteModal
+      :show="showDeleteModal"
+      :title="t('dashboard.zoneActions.deleteTitle')"
+      :message="t('dashboard.zoneActions.deleteConfirm', { name: zone?.name })"
+      :loading="deleting"
+      @close="showDeleteModal = false"
+      @confirm="handleDelete"
+    />
   </div>
 </template>
 
@@ -422,7 +410,7 @@ onMounted(async () => {
   display: flex; align-items: center; gap: 4px;
 }
 .avail-badge {
-  font-family: var(--font-family-sans);
+  font-family: var(--font-family);
   background: rgba(16, 185, 129, 0.1);
   color: #10b981;
   padding: 0 4px; border-radius: 4px; font-size: 0.65rem;
@@ -448,13 +436,6 @@ onMounted(async () => {
   font-size: 0.875rem; background: var(--bg-primary); color: var(--text-primary);
 }
 .form-input:focus { outline: none; border-color: var(--primary-300); box-shadow: 0 0 0 2px var(--primary-100); }
-
-.btn-danger {
-  background: #ef4444; color: white; border: none;
-  padding: 8px 16px; border-radius: var(--radius-md); cursor: pointer; font-weight: 500;
-}
-.btn-danger:hover { background: #dc2626; }
-.btn-danger:disabled { opacity: 0.5; cursor: not-allowed; }
 
 .spinning { animation: spin 1s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }

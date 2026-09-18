@@ -5,8 +5,9 @@ import { onBeforeRouteLeave } from 'vue-router'
 import {
     Save, Send, RefreshCw,
     Settings2, Bell, Layers, Server,
-    Mail, MessageSquare, CheckCircle2, XCircle, Shield, X
+    Mail, MessageSquare, CheckCircle2, XCircle, Shield
 } from 'lucide-vue-next'
+import BaseModal from '../../components/modals/BaseModal.vue'
 import { useToast } from '../../composables/useToast'
 import { systemSettingsApi, type SystemSetting } from '../../api/systemSettings'
 import { infrastructureApi, type InfrastructureConfig, type TestS3Response } from '../../api/infrastructure'
@@ -704,38 +705,38 @@ onBeforeUnmount(() => {
     </template>
 
     <!-- Turning the host console password prompt on or off asks for the password itself -->
-    <div v-if="showPasswordPrompt" class="modal-overlay" @click.self="cancelPasswordPrompt">
-      <form class="modal-content" style="max-width: 440px;" @submit.prevent="saveSettings(confirmPassword)">
-        <div class="modal-header">
-          <h3>{{ $t('settings.passwordPrompt.title') }}</h3>
-          <button type="button" class="btn btn-ghost btn-icon" @click="cancelPasswordPrompt"><X :size="18" /></button>
-        </div>
-        <div class="modal-body">
-          <p class="card-desc">
-            {{ editValues[PASSWORD_GUARDED_KEY]
-              ? $t('settings.passwordPrompt.descEnable')
-              : $t('settings.passwordPrompt.descDisable') }}
-          </p>
-          <input type="text" autocomplete="username" class="visually-hidden" tabindex="-1" aria-hidden="true" />
-          <input
-            v-model="confirmPassword"
-            type="password"
-            class="form-input"
-            style="width: 100%;"
-            autocomplete="current-password"
-            :placeholder="$t('settings.passwordPrompt.placeholder')"
-          />
-          <p v-if="passwordError" class="password-error">{{ passwordError }}</p>
-        </div>
-        <div class="modal-footer">
-          <button type="button" class="btn btn-secondary" @click="cancelPasswordPrompt">{{ $t('actions.cancel') }}</button>
-          <button type="submit" class="btn btn-primary" :disabled="saving || !confirmPassword">
-            <RefreshCw v-if="saving" :size="14" class="spinning" />
-            {{ saving ? $t('common.saving') : $t('common.save') }}
-          </button>
-        </div>
-      </form>
-    </div>
+    <BaseModal
+      :show="showPasswordPrompt"
+      :title="$t('settings.passwordPrompt.title')"
+      :loading="saving"
+      form
+      @close="cancelPasswordPrompt"
+      @submit="saveSettings(confirmPassword)"
+    >
+      <p class="card-desc">
+        {{ editValues[PASSWORD_GUARDED_KEY]
+          ? $t('settings.passwordPrompt.descEnable')
+          : $t('settings.passwordPrompt.descDisable') }}
+      </p>
+      <input type="text" autocomplete="username" class="visually-hidden" tabindex="-1" aria-hidden="true" />
+      <input
+        v-model="confirmPassword"
+        type="password"
+        class="form-input"
+        style="width: 100%;"
+        autocomplete="current-password"
+        :placeholder="$t('settings.passwordPrompt.placeholder')"
+      />
+      <p v-if="passwordError" class="password-error">{{ passwordError }}</p>
+
+      <template #footer>
+        <button type="button" class="btn btn-secondary" @click="cancelPasswordPrompt">{{ $t('actions.cancel') }}</button>
+        <button type="submit" class="btn btn-primary" :disabled="saving || !confirmPassword">
+          <RefreshCw v-if="saving" :size="14" class="spinning" />
+          {{ saving ? $t('common.saving') : $t('common.save') }}
+        </button>
+      </template>
+    </BaseModal>
   </div>
 </template>
 
@@ -859,7 +860,7 @@ onBeforeUnmount(() => {
 }
 
 .info-card h3 {
-  font-size: var(--font-size-md);
+  font-size: var(--font-size-base);
   font-weight: 600;
   margin: 0 0 var(--spacing-4) 0;
   color: var(--text-primary);

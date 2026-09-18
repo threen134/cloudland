@@ -2,7 +2,7 @@
 import { ref, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { floatingIpsApi, type FloatingIP } from '../../api/networks'
-import { ArrowLeft, Globe, Trash2, Server, Network, Copy, Check, ChevronDown, Pencil } from 'lucide-vue-next'
+import { ArrowLeft, Globe, Trash2, Server, Network, Copy, Check, ChevronDown } from 'lucide-vue-next'
 import { useI18n } from 'vue-i18n'
 import { useToast } from '../../composables/useToast'
 import { useFloatingIP } from '../../composables/useFloatingIP'
@@ -462,7 +462,7 @@ onMounted(fetchFip)
 }
 
 .info-card h3 {
-    font-size: var(--font-size-md);
+    font-size: var(--font-size-base);
     font-weight: 600;
     margin: 0 0 var(--spacing-4) 0;
     color: var(--text-primary);

@@ -1,9 +1,12 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { AlertTriangle, Search, ChevronDown, ChevronRight, CheckCircle, XCircle, RefreshCw, Check, Copy } from 'lucide-vue-next'
+import { AlertTriangle, ChevronDown, ChevronRight, CheckCircle, XCircle, RefreshCw, Check, Copy } from 'lucide-vue-next'
 import { alarmEventsApi, type AlarmEvent, type AlarmDeliveryLog } from '../../api/alarmEvents'
 import { useCopyId } from '../../composables/useCopyId'
+import { formatDateTime } from '../../utils/format'
+import PageToolbar from '../../components/base/PageToolbar.vue'
+import StatusBadge from '../../components/base/StatusBadge.vue'
 
 const { t } = useI18n()
 const events = ref<AlarmEvent[]>([])
@@ -71,10 +74,6 @@ const totalPages = computed(() => Math.ceil(total.value / pageSize.value))
 const prevPage = () => { if (page.value > 1) page.value-- }
 const nextPage = () => { if (page.value < totalPages.value) page.value++ }
 
-const formatTime = (ts: string | null) => {
-    if (!ts) return '-'
-    return new Date(ts).toLocaleString()
-}
 
 const severityClass = (severity: string) => {
     switch (severity) {
@@ -90,24 +89,20 @@ onMounted(fetchEvents)
 
 <template>
     <div class="vpc-list-container">
-        <div class="page-header">
-            <div class="search-wrapper">
-                <div class="search-box">
-                    <Search :size="16" class="search-icon" />
-                    <input v-model="searchQuery" :placeholder="t('actions.search') + '...'" class="search-input" />
-                </div>
+        <PageToolbar v-model:search="searchQuery">
+            <template #filters>
                 <select v-model="statusFilter" @change="fetchEvents" class="filter-select">
                     <option value="">{{ t('dashboard.alarmFilterAll') }}</option>
                     <option value="firing">{{ t('dashboard.alarmStatusFiring') }}</option>
                     <option value="resolved">{{ t('dashboard.alarmStatusResolved') }}</option>
                 </select>
-            </div>
-            <div class="header-actions">
+            </template>
+            <template #actions>
                 <button class="btn btn-secondary btn-sm btn-icon" @click="fetchEvents" :title="t('actions.refresh')">
                     <RefreshCw :size="14" :class="{ spinning: loading }" />
                 </button>
-            </div>
-        </div>
+            </template>
+        </PageToolbar>
 
         <div v-if="errorMsg" class="error-banner" @click="errorMsg = ''">{{ errorMsg }}</div>
 
@@ -155,13 +150,14 @@ onMounted(fetchEvents)
                                 </span>
                             </td>
                             <td>
-                                <span class="badge" :class="event.status === 'firing' ? 'badge-firing' : 'badge-resolved'">
-                                    {{ event.status === 'firing' ? t('dashboard.alarmStatusFiring') : t('dashboard.alarmStatusResolved') }}
-                                </span>
+                                <StatusBadge
+                                    :status="event.status"
+                                    :label="event.status === 'firing' ? t('dashboard.alarmStatusFiring') : t('dashboard.alarmStatusResolved')"
+                                />
                             </td>
-                            <td>{{ formatTime(event.fired_at) }}</td>
-                            <td>{{ formatTime(event.last_fired_at) }}</td>
-                            <td>{{ formatTime(event.resolved_at) }}</td>
+                            <td>{{ formatDateTime(event.fired_at) }}</td>
+                            <td>{{ formatDateTime(event.last_fired_at) }}</td>
+                            <td>{{ formatDateTime(event.resolved_at) }}</td>
                         </tr>
                         <!-- Expanded: Delivery Logs -->
                         <tr v-if="expandedEvent === event.uuid" class="expanded-row">
@@ -197,7 +193,7 @@ onMounted(fetchEvents)
                                                     <XCircle v-else :size="16" class="text-danger" />
                                                     <span style="vertical-align: middle; margin-left: 4px;">{{ log.status === 'sent' ? t('messages.success') : t('messages.error') }}</span>
                                                 </td>
-                                                <td>{{ formatTime(log.sent_at) }}</td>
+                                                <td>{{ formatDateTime(log.sent_at) }}</td>
                                                 <td class="error-cell">{{ log.error_message || '-' }}</td>
                                             </tr>
                                         </tbody>
@@ -229,58 +225,6 @@ onMounted(fetchEvents)
 </template>
 
 <style scoped>
-.page-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 0;
-    padding-right: 20px;
-}
-
-.search-wrapper {
-    display: flex;
-    gap: 8px;
-    flex: 1;
-    max-width: 560px;
-}
-
-.header-actions {
-    display: flex;
-    gap: 8px;
-    align-items: center;
-}
-
-.search-box {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    background: var(--bg-secondary);
-    padding: 0 12px;
-    height: 40px;
-    border-radius: var(--radius-md);
-    border: 1px solid var(--border-light);
-    transition: all 0.2s;
-    flex: 1;
-}
-
-.search-box:focus-within {
-    border-color: var(--primary-300);
-    box-shadow: 0 0 0 2px var(--primary-100);
-}
-
-.search-icon { color: var(--gray-400); }
-
-.search-input {
-    border: none;
-    background: transparent;
-    width: 100%;
-    height: 100%;
-    font-size: 0.875rem;
-    color: var(--text-primary);
-}
-
-.search-input:focus { outline: none; }
-
 .filter-select {
     height: 40px;
     padding: 0 12px;
@@ -305,7 +249,6 @@ onMounted(fetchEvents)
 .pagination { display: flex; align-items: center; justify-content: center; gap: 12px; padding: 16px 0; }
 .page-info { font-size: 13px; color: #6b7280; }
 
-.badge-firing { background: #ef4444; color: white; }
 .badge-resolved { background: #22c55e; color: white; }
 .badge-critical { background: #dc2626; color: white; }
 .badge-warning { background: #f59e0b; color: white; }

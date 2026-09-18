@@ -1,4 +1,5 @@
 import { useI18n } from 'vue-i18n'
+import { formatDateTime } from '../../utils/format'
 
 // Relative ("5 mins ago") and absolute (locale string) time for activity entries.
 export function useActivityTime() {
@@ -13,7 +14,7 @@ export function useActivityTime() {
         return t('dashboard.overview.daysAgo', { n: Math.floor(hours / 24) })
     }
 
-    const absoluteTime = (iso: string) => new Date(iso).toLocaleString()
+    const absoluteTime = (iso: string) => formatDateTime(iso)
 
     return { relativeTime, absoluteTime }
 }

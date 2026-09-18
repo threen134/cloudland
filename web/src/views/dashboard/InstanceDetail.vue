@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { useToast } from '../../composables/useToast'
@@ -9,6 +9,9 @@ import MonitoringCharts from '../../components/monitoring/MonitoringCharts.vue'
 import { vmAlarmRulesApi, VM_RULE_TYPES, type VMAlarmRuleGroup, type VMRuleType } from '../../api/vmAlarmRules'
 import { ArrowLeft, Play, Square, RotateCw, Trash2, Server, Monitor, Cpu, HardDrive, MemoryStick, Network, Key, ExternalLink, Copy, Check, ShieldAlert, Link, Unlink, Eye, EyeOff, ChevronDown, KeyRound, RefreshCw, Maximize2, Pencil, Shuffle, Shield, Activity, SquareTerminal } from 'lucide-vue-next'
 import DeleteModal from '../../components/modals/DeleteModal.vue'
+import BaseModal from '../../components/modals/BaseModal.vue'
+import StatusBadge from '../../components/base/StatusBadge.vue'
+import { formatMemory } from '../../utils/format'
 
 const route = useRoute()
 const router = useRouter()
@@ -23,6 +26,10 @@ const copiedField = ref<string | null>(null)
 const showPassword = ref(false)
 const showActionMenu = ref(false)
 const activeTab = ref<'info' | 'monitoring' | 'alerts'>('info')
+
+// 电源操作后的状态轮询：定时器与卸载标记，供 onUnmounted 停止
+let statusPollTimer: ReturnType<typeof setTimeout> | null = null
+let unmounted = false
 
 const toast = useToast()
 
@@ -120,6 +127,7 @@ const handleAction = async (action: 'start' | 'stop' | 'restart' | 'hard_stop' |
         const checkStatus = async () => {
             attempts++
             await fetchInstance(false)
+            if (unmounted) return
             const currentStatus = instance.value?.status?.toLowerCase() || ''
             if (targetStableStates.includes(currentStatus) || attempts >= 15) {
                 actionLoading.value = null
@@ -129,12 +137,12 @@ const handleAction = async (action: 'start' | 'stop' | 'restart' | 'hard_stop' |
                     toast.success(t('dashboard.instanceDetail.actionSuccess', { action }))
                 }
             } else {
-                setTimeout(checkStatus, 3000)
+                statusPollTimer = setTimeout(checkStatus, 3000)
             }
         }
 
         // Start polling after 2 seconds
-        setTimeout(checkStatus, 2000)
+        statusPollTimer = setTimeout(checkStatus, 2000)
     } catch (err: any) {
         console.error(`Failed to ${action} instance:`, err)
         actionLoading.value = null
@@ -210,7 +218,7 @@ const fetchLinkedRules = async () => {
                     .catch(() => ({ type: rt.value, label: rt.label, data: [] as VMAlarmRuleGroup[] }))
             )
         )
-        for (const { type, label, data } of results) {
+        for (const { type, data } of results) {
             for (const rule of data) {
                 if (rule.linkedvms?.includes(instanceId)) {
                     linked.push({
@@ -245,7 +253,7 @@ const openLinkModal = async () => {
                     .catch(() => ({ type: rt.value, label: rt.label, data: [] as VMAlarmRuleGroup[] }))
             )
         )
-        for (const { type, label, data } of results) {
+        for (const { type, data } of results) {
             for (const rule of data) {
                 if (!rule.linkedvms?.includes(instanceId)) {
                     available.push({
@@ -404,44 +412,12 @@ const confirmRename = async () => {
     }
 }
 
-const getStatusClass = (status: string) => {
-    const statusMap: Record<string, string> = {
-        'running': 'status-running',
-        'active': 'status-running',
-        'stopped': 'status-stopped',
-        'shutoff': 'status-stopped',
-        'shut_off': 'status-stopped',
-        'paused': 'status-paused',
-        'provisioning': 'status-pending',
-        'starting': 'status-pending',
-        'stopping': 'status-pending',
-        'deleting': 'status-pending',
-        'error': 'status-error',
-        'migrating': 'status-pending',
-        'migrated': 'status-running',
-        'rollback': 'status-error',
-        'unknown': 'status-error',
-        'reinstalling': 'status-pending',
-        'resizing': 'status-pending',
-        'rescuing': 'status-pending',
-        'deleted': 'status-stopped'
-    }
-    return statusMap[status?.toLowerCase()] || 'status-pending'
-}
-
 const getStatusText = (status: string) => {
     const key = status?.toLowerCase().replace(/ /g, '_')
     const translated = t(`dashboard.instanceStatus.${key}`)
     return translated === `dashboard.instanceStatus.${key}` ? status : translated
 }
 
-const formatMemory = (mb?: number) => {
-    if (!mb) return '-'
-    if (mb >= 1024) {
-        return `${(mb / 1024).toFixed(0)} ${t('specs.gb')}`
-    }
-    return `${mb} ${t('specs.mb')}`
-}
 
 const navigateToVolume = (volumeId: string) => {
     router.push({ name: 'volume-detail', params: { id: volumeId } })
@@ -532,6 +508,13 @@ onMounted(() => {
     fetchInstance()
     fetchLinkedRules()
 })
+
+// 电源操作后的状态轮询最长会持续 45 秒，离开页面必须停掉，
+// 否则会继续请求，并在用户已经打开的其他页面上弹出本页的提示
+onUnmounted(() => {
+    unmounted = true
+    if (statusPollTimer) clearTimeout(statusPollTimer)
+})
 </script>
 
 <template>
@@ -564,7 +547,7 @@ onMounted(() => {
                     <div>
                         <h2 class="instance-title">
                             {{ instance.hostname }}
-                            <span :class="['badge', getStatusClass(instance.status)]">{{ getStatusText(instance.status) }}</span>
+                            <StatusBadge :status="instance.status" :label="getStatusText(instance.status)" />
                         </h2>
                         <div class="instance-id-row">
                             <span class="instance-id">{{ instance.id }}</span>
@@ -968,12 +951,11 @@ onMounted(() => {
             </div>
 
             <!-- Link Rule Modal -->
-            <div v-if="showLinkModal" class="modal-overlay" @click.self="showLinkModal = false">
-                <div class="modal-content">
-                    <div class="modal-header">
-                        <h3>{{ t('dashboard.instanceDetail.linkRule') }}</h3>
-                    </div>
-                    <div class="modal-body">
+            <BaseModal
+                :show="showLinkModal"
+                :title="t('dashboard.instanceDetail.linkRule')"
+                @close="showLinkModal = false"
+            >
                         <div v-if="linkLoading" class="text-secondary" style="padding: 12px 0;">{{ $t('messages.loading') }}</div>
                         <div v-else-if="availableRules.length === 0" class="text-secondary" style="padding: 12px 0;">
                             {{ t('dashboard.instanceDetail.noAvailableRules') }}
@@ -987,12 +969,11 @@ onMounted(() => {
                                 <Link :size="14" class="rule-pick-icon" />
                             </div>
                         </div>
-                    </div>
-                    <div class="modal-footer">
-                        <button class="btn btn-secondary btn-sm" @click="showLinkModal = false">{{ t('actions.cancel') }}</button>
-                    </div>
-                </div>
-            </div>
+
+                <template #footer>
+                    <button class="btn btn-secondary btn-sm" @click="showLinkModal = false">{{ t('actions.cancel') }}</button>
+                </template>
+            </BaseModal>
         </div>
 
         <DeleteModal
@@ -1006,12 +987,14 @@ onMounted(() => {
         />
 
         <!-- Edit Security Groups Modal -->
-        <div v-if="showEditSgModal" class="modal-overlay" @click.self="showEditSgModal = false">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h3><Shield :size="16" /> {{ $t('dashboard.instanceDetail.editSecurityGroupsTitle', { name: editingSgIface?.name || editingSgIface?.id?.substring(0, 8) }) }}</h3>
-                </div>
-                <div class="modal-body">
+        <BaseModal
+            :show="showEditSgModal"
+            @close="showEditSgModal = false"
+        >
+            <template #header>
+                <h3><Shield :size="16" /> {{ $t('dashboard.instanceDetail.editSecurityGroupsTitle', { name: editingSgIface?.name || editingSgIface?.id?.substring(0, 8) }) }}</h3>
+            </template>
+
                     <div v-if="editSgError" class="modal-error">{{ editSgError }}</div>
                     <div v-if="sgListTruncated" class="modal-warning">{{ $t('dashboard.instanceDetail.sgListTruncated') }}</div>
                     <div v-if="editSgLoading && availableSecgroups.length === 0" class="text-secondary empty-hint">{{ $t('messages.loading') }}</div>
@@ -1024,23 +1007,24 @@ onMounted(() => {
                         </label>
                     </div>
                     <div v-if="selectedSgIds.size === 0 && !editSgLoading" class="sg-empty-hint">{{ $t('dashboard.instanceDetail.sgEmptyWillUseDefault') }}</div>
-                </div>
-                <div class="modal-footer">
-                    <button class="btn btn-ghost" @click="showEditSgModal = false">{{ $t('actions.cancel') }}</button>
-                    <button class="btn btn-primary" @click="confirmEditSg" :disabled="editSgLoading">
-                        {{ editSgLoading ? $t('messages.loading') : $t('actions.save') }}
-                    </button>
-                </div>
-            </div>
-        </div>
+
+            <template #footer>
+                <button class="btn btn-ghost" @click="showEditSgModal = false">{{ $t('actions.cancel') }}</button>
+                <button class="btn btn-primary" @click="confirmEditSg" :disabled="editSgLoading">
+                    {{ editSgLoading ? $t('messages.loading') : $t('actions.save') }}
+                </button>
+            </template>
+        </BaseModal>
 
         <!-- Reset Password Modal -->
-        <div v-if="showResetPasswordModal" class="modal-overlay" @click.self="showResetPasswordModal = false">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h3>{{ $t('dashboard.instanceDetail.resetPassword') }}</h3>
-                </div>
-                <div class="modal-body">
+        <BaseModal
+            :show="showResetPasswordModal"
+            :title="$t('dashboard.instanceDetail.resetPassword')"
+            :loading="resetPasswordLoading"
+            form
+            @close="showResetPasswordModal = false"
+            @submit="confirmResetPassword"
+        >
                     <div v-if="resetPasswordError" class="modal-error">{{ resetPasswordError }}</div>
                     <div class="form-group">
                         <label>{{ $t('dashboard.instanceDetail.userName') }}</label>
@@ -1069,24 +1053,25 @@ onMounted(() => {
                     <button class="btn btn-ghost btn-sm" type="button" @click="generateRandomPassword" style="margin-top: 4px;">
                         <Shuffle :size="14" /> {{ $t('dashboard.instanceDetail.generatePassword') }}
                     </button>
-                </div>
-                <div class="modal-footer">
-                    <button class="btn btn-secondary btn-sm" @click="showResetPasswordModal = false">{{ $t('actions.cancel') }}</button>
-                    <button class="btn btn-primary btn-sm" @click="confirmResetPassword" :disabled="resetPasswordLoading">
-                        <span v-if="resetPasswordLoading" class="loading-spinner small"></span>
-                        {{ $t('actions.confirm') }}
-                    </button>
-                </div>
-            </div>
-        </div>
+
+            <template #footer>
+                <button type="button" class="btn btn-secondary btn-sm" @click="showResetPasswordModal = false">{{ $t('actions.cancel') }}</button>
+                <button type="submit" class="btn btn-primary btn-sm" :disabled="resetPasswordLoading">
+                    <span v-if="resetPasswordLoading" class="loading-spinner small"></span>
+                    {{ $t('actions.confirm') }}
+                </button>
+            </template>
+        </BaseModal>
 
         <!-- Resize Modal -->
-        <div v-if="showResizeModal" class="modal-overlay" @click.self="showResizeModal = false">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h3>{{ $t('actions.resize') }}</h3>
-                </div>
-                <div class="modal-body">
+        <BaseModal
+            :show="showResizeModal"
+            :title="$t('actions.resize')"
+            :loading="resizeLoading"
+            form
+            @close="showResizeModal = false"
+            @submit="confirmResize"
+        >
                     <div v-if="resizeError" class="modal-error">{{ resizeError }}</div>
                     <div class="form-group">
                         <label>{{ $t('dashboard.instanceDetail.cpuLabel') }}</label>
@@ -1096,39 +1081,39 @@ onMounted(() => {
                         <label>{{ $t('dashboard.instanceDetail.ramLabel') }}</label>
                         <input v-model.number="resizeForm.memory" type="number" min="1" class="form-input" />
                     </div>
-                </div>
-                <div class="modal-footer">
-                    <button class="btn btn-secondary btn-sm" @click="showResizeModal = false">{{ $t('actions.cancel') }}</button>
-                    <button class="btn btn-primary btn-sm" @click="confirmResize" :disabled="resizeLoading">
-                        <span v-if="resizeLoading" class="loading-spinner small"></span>
-                        {{ $t('actions.confirm') }}
-                    </button>
-                </div>
-            </div>
-        </div>
+
+            <template #footer>
+                <button type="button" class="btn btn-secondary btn-sm" @click="showResizeModal = false">{{ $t('actions.cancel') }}</button>
+                <button type="submit" class="btn btn-primary btn-sm" :disabled="resizeLoading">
+                    <span v-if="resizeLoading" class="loading-spinner small"></span>
+                    {{ $t('actions.confirm') }}
+                </button>
+            </template>
+        </BaseModal>
 
         <!-- Rename Modal -->
-        <div v-if="showRenameModal" class="modal-overlay" @click.self="showRenameModal = false">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h3>{{ $t('dashboard.instanceDetail.rename') }}</h3>
-                </div>
-                <div class="modal-body">
+        <BaseModal
+            :show="showRenameModal"
+            :title="$t('dashboard.instanceDetail.rename')"
+            :loading="renameLoading"
+            form
+            @close="showRenameModal = false"
+            @submit="confirmRename"
+        >
                     <div v-if="renameError" class="modal-error">{{ renameError }}</div>
                     <div class="form-group">
                         <label>{{ $t('dashboard.instanceDetail.hostname') }}</label>
                         <input v-model="renameForm.hostname" type="text" class="form-input" />
                     </div>
-                </div>
-                <div class="modal-footer">
-                    <button class="btn btn-secondary btn-sm" @click="showRenameModal = false">{{ $t('actions.cancel') }}</button>
-                    <button class="btn btn-primary btn-sm" @click="confirmRename" :disabled="renameLoading">
-                        <span v-if="renameLoading" class="loading-spinner small"></span>
-                        {{ $t('actions.confirm') }}
-                    </button>
-                </div>
-            </div>
-        </div>
+
+            <template #footer>
+                <button type="button" class="btn btn-secondary btn-sm" @click="showRenameModal = false">{{ $t('actions.cancel') }}</button>
+                <button type="submit" class="btn btn-primary btn-sm" :disabled="renameLoading">
+                    <span v-if="renameLoading" class="loading-spinner small"></span>
+                    {{ $t('actions.confirm') }}
+                </button>
+            </template>
+        </BaseModal>
     </div>
 </template>
 
@@ -1319,7 +1304,7 @@ onMounted(() => {
 }
 
 .info-card h3 {
-    font-size: var(--font-size-md);
+    font-size: var(--font-size-base);
     font-weight: 600;
     margin: 0 0 var(--spacing-4) 0;
     color: var(--text-primary);
@@ -1518,7 +1503,7 @@ onMounted(() => {
 }
 
 .alarm-card-header h3 {
-    font-size: var(--font-size-md);
+    font-size: var(--font-size-base);
     font-weight: 600;
     margin: 0;
     color: var(--text-primary);

@@ -1,11 +1,15 @@
 <script setup lang="ts">
 import { ref, onMounted, computed, watch } from 'vue'
 import { alarmsApi, RULE_TYPES, type NodeAlarmRule, type CreateNodeAlarmRulePayload } from '../../api/alarms'
-import { Search as SearchIcon, AlertTriangle, Plus, Trash2, RefreshCw, X, Loader2, RefreshCcw } from 'lucide-vue-next'
+import { Search as SearchIcon, AlertTriangle, Plus, Trash2, RefreshCw, Loader2, RefreshCcw, Check, Copy } from 'lucide-vue-next'
 import { useI18n } from 'vue-i18n'
 import { useToast } from '../../composables/useToast'
 import { useCopyId } from '../../composables/useCopyId'
 import { useRegionStore } from '../../stores/region'
+import BaseModal from '../../components/modals/BaseModal.vue'
+import DeleteModal from '../../components/modals/DeleteModal.vue'
+import PageToolbar from '../../components/base/PageToolbar.vue'
+import StatusBadge from '../../components/base/StatusBadge.vue'
 
 const { t } = useI18n()
 const toast = useToast()
@@ -185,18 +189,14 @@ watch(() => region.currentRegionId, (newId) => {
 
 <template>
   <div class="vpc-list-container">
-    <div class="page-header">
-      <div class="search-wrapper">
-        <div class="search-box">
-          <SearchIcon :size="16" class="search-icon" />
-          <input type="text" v-model="searchQuery" :placeholder="t('actions.search') + '...'" class="search-input" />
-        </div>
+    <PageToolbar v-model:search="searchQuery">
+      <template #filters>
         <select v-model="filterRuleType" @change="fetchAlarms" class="filter-select">
           <option value="">{{ t('dashboard.alarmActions.allTypes') }}</option>
           <option v-for="rt in RULE_TYPES" :key="rt.value" :value="rt.value">{{ rt.label }}</option>
         </select>
-      </div>
-      <div class="header-actions">
+      </template>
+      <template #actions>
         <button class="btn btn-secondary btn-sm" @click="handleSync" :disabled="syncing" :title="t('dashboard.alarmActions.syncMappings')">
           <Loader2 v-if="syncing" :size="14" class="spinning" />
           <RefreshCcw v-else :size="14" />
@@ -209,8 +209,8 @@ watch(() => region.currentRegionId, (newId) => {
           <Plus :size="14" />
           <span>{{ t('actions.create') }}</span>
         </button>
-      </div>
-    </div>
+      </template>
+    </PageToolbar>
 
     <div class="card table-card">
       <table class="data-table">
@@ -267,10 +267,10 @@ watch(() => region.currentRegionId, (newId) => {
               </span>
             </td>
             <td>
-              <span class="status-pill" :class="a.enabled ? 'status-active' : 'status-disabled'">
-                <span class="status-dot"></span>
-                {{ a.enabled ? t('dashboard.alarmActions.enabled') : t('dashboard.alarmActions.disabled') }}
-              </span>
+              <StatusBadge
+                :variant="a.enabled ? 'success' : 'neutral'"
+                :label="a.enabled ? t('dashboard.alarmActions.enabled') : t('dashboard.alarmActions.disabled')"
+              />
             </td>
             <td class="desc-cell">{{ a.description || '-' }}</td>
             <td>
@@ -284,132 +284,67 @@ watch(() => region.currentRegionId, (newId) => {
     </div>
 
     <!-- Create Modal -->
-    <Teleport to="body">
-      <div v-if="showCreateModal" class="modal-overlay" @click.self="showCreateModal = false">
-        <div class="modal-content card" style="max-width: 560px;">
-          <div class="modal-header">
-            <h3>{{ t('dashboard.alarmActions.createTitle') }}</h3>
-            <button class="btn btn-ghost btn-icon" @click="showCreateModal = false"><X :size="18" /></button>
-          </div>
-          <div class="modal-body">
-            <div class="form-stack">
-              <div class="form-group">
-                <label class="form-label">{{ t('dashboard.alarmActions.ruleType') }} *</label>
-                <select v-model="createForm.rule_type" @change="onRuleTypeChange" class="form-input">
-                  <option value="" disabled>{{ t('dashboard.alarmActions.selectRuleType') }}</option>
-                  <option v-for="rt in RULE_TYPES" :key="rt.value" :value="rt.value">{{ rt.label }}</option>
-                </select>
-              </div>
-              <div class="form-group">
-                <label class="form-label">{{ t('dashboard.table.name') }} *</label>
-                <input type="text" v-model="createForm.name" class="form-input" :placeholder="t('dashboard.forms.placeholder.alarmNameExample')" />
-              </div>
-              <div class="form-group">
-                <label class="form-label">{{ t('dashboard.table.description') }}</label>
-                <input type="text" v-model="createForm.description" class="form-input" />
-              </div>
-              <div class="form-group">
-                <label class="form-label">Config (JSON) *</label>
-                <textarea v-model="configJsonStr" class="form-input config-textarea" rows="6" @blur="validateConfig" placeholder='{"threshold": 80, "duration": "5m"}'></textarea>
-                <span v-if="configError" class="form-error">{{ configError }}</span>
-                <span v-else-if="createForm.rule_type" class="form-hint">{{ t('dashboard.alarmActions.configHint') }}</span>
-              </div>
-              <div class="form-group">
-                <label class="form-label" style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
-                  <input type="checkbox" v-model="createForm.enabled" />
-                  {{ t('dashboard.alarmActions.enabled') }}
-                </label>
-              </div>
-            </div>
-          </div>
-          <div class="modal-footer">
-            <button class="btn btn-secondary" @click="showCreateModal = false">{{ t('actions.cancel') }}</button>
-            <button class="btn btn-primary" @click="handleCreate" :disabled="creating || !createForm.rule_type || !createForm.name">
-              <Loader2 v-if="creating" :size="14" class="spinning" />
-              {{ creating ? t('messages.creating') : t('actions.create') }}
-            </button>
-          </div>
+    <BaseModal
+      :show="showCreateModal"
+      :title="t('dashboard.alarmActions.createTitle')"
+      size="lg"
+      form
+      :loading="creating"
+      @close="showCreateModal = false"
+      @submit="handleCreate"
+    >
+      <div class="form-stack">
+        <div class="form-group">
+          <label class="form-label">{{ t('dashboard.alarmActions.ruleType') }} *</label>
+          <select v-model="createForm.rule_type" @change="onRuleTypeChange" class="form-input">
+            <option value="" disabled>{{ t('dashboard.alarmActions.selectRuleType') }}</option>
+            <option v-for="rt in RULE_TYPES" :key="rt.value" :value="rt.value">{{ rt.label }}</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">{{ t('dashboard.table.name') }} *</label>
+          <input type="text" v-model="createForm.name" class="form-input" :placeholder="t('dashboard.forms.placeholder.alarmNameExample')" />
+        </div>
+        <div class="form-group">
+          <label class="form-label">{{ t('dashboard.table.description') }}</label>
+          <input type="text" v-model="createForm.description" class="form-input" />
+        </div>
+        <div class="form-group">
+          <label class="form-label">Config (JSON) *</label>
+          <textarea v-model="configJsonStr" class="form-input config-textarea" rows="6" @blur="validateConfig" placeholder='{"threshold": 80, "duration": "5m"}'></textarea>
+          <span v-if="configError" class="form-error">{{ configError }}</span>
+          <span v-else-if="createForm.rule_type" class="form-hint">{{ t('dashboard.alarmActions.configHint') }}</span>
+        </div>
+        <div class="form-group">
+          <label class="form-label" style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+            <input type="checkbox" v-model="createForm.enabled" />
+            {{ t('dashboard.alarmActions.enabled') }}
+          </label>
         </div>
       </div>
-    </Teleport>
+
+      <template #footer>
+        <button type="button" class="btn btn-secondary" @click="showCreateModal = false">{{ t('actions.cancel') }}</button>
+        <button type="submit" class="btn btn-primary" :disabled="creating || !createForm.rule_type || !createForm.name">
+          <Loader2 v-if="creating" :size="14" class="spinning" />
+          {{ creating ? t('messages.creating') : t('actions.create') }}
+        </button>
+      </template>
+    </BaseModal>
 
     <!-- Delete Confirm Modal -->
-    <Teleport to="body">
-      <div v-if="showDeleteConfirm" class="modal-overlay" @click.self="showDeleteConfirm = false">
-        <div class="modal-content card" style="max-width: 440px;">
-          <div class="modal-header">
-            <h3>{{ t('dashboard.alarmActions.deleteTitle') }}</h3>
-            <button class="btn btn-ghost btn-icon" @click="showDeleteConfirm = false"><X :size="18" /></button>
-          </div>
-          <div class="modal-body">
-            <p>{{ t('dashboard.alarmActions.deleteConfirm', { name: deletingRule?.name }) }}</p>
-          </div>
-          <div class="modal-footer">
-            <button class="btn btn-secondary" @click="showDeleteConfirm = false">{{ t('actions.cancel') }}</button>
-            <button class="btn btn-danger" @click="handleDelete" :disabled="deleting">
-              <Loader2 v-if="deleting" :size="14" class="spinning" />
-              {{ deleting ? t('messages.deleting') : t('actions.delete') }}
-            </button>
-          </div>
-        </div>
-      </div>
-    </Teleport>
+    <DeleteModal
+      :show="showDeleteConfirm"
+      :title="t('dashboard.alarmActions.deleteTitle')"
+      :message="t('dashboard.alarmActions.deleteConfirm', { name: deletingRule?.name })"
+      :loading="deleting"
+      @close="showDeleteConfirm = false"
+      @confirm="handleDelete"
+    />
   </div>
 </template>
 
 <style scoped>
-.page-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 0;
-  padding-right: 20px;
-}
-
-.search-wrapper {
-  display: flex;
-  gap: 8px;
-  flex: 1;
-  max-width: 560px;
-}
-
-.header-actions {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-}
-
-.search-box {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  background: var(--bg-secondary);
-  padding: 0 12px;
-  height: 40px;
-  border-radius: var(--radius-md);
-  border: 1px solid var(--border-light);
-  transition: all 0.2s;
-  flex: 1;
-}
-
-.search-box:focus-within {
-  border-color: var(--primary-300);
-  box-shadow: 0 0 0 2px var(--primary-100);
-}
-
-.search-icon { color: var(--gray-400); }
-
-.search-input {
-  border: none;
-  background: transparent;
-  width: 100%;
-  height: 100%;
-  font-size: 0.875rem;
-  color: var(--text-primary);
-}
-
-.search-input:focus { outline: none; }
-
 .filter-select {
   height: 40px;
   padding: 0 12px;
@@ -426,21 +361,11 @@ watch(() => region.currentRegionId, (newId) => {
 
 .resource-link:hover .resource-name { color: var(--primary-600); text-decoration: underline; }
 
-.status-pill {
-  display: inline-flex; align-items: center; gap: 6px;
-  padding: 4px 10px; border-radius: var(--radius-full);
-  font-size: var(--font-size-xs); font-weight: var(--font-weight-medium);
-}
-
-.status-active { background: rgba(16, 185, 129, 0.1); color: #10b981; }
-.status-disabled { background: var(--gray-100); color: var(--gray-500); }
-.status-dot { width: 6px; height: 6px; background: currentColor; border-radius: 50%; }
-
 .rule-type-badge {
   display: inline-flex; align-items: center;
   padding: 2px 8px; border-radius: var(--radius-sm);
   font-size: var(--font-size-xs); font-weight: 500;
-  border: 1px solid var(--border-subtle);
+  border: 1px solid var(--border-light);
 }
 
 .rt-critical { background: rgba(239, 68, 68, 0.1); color: #ef4444; border-color: rgba(239, 68, 68, 0.2); }
@@ -486,14 +411,6 @@ watch(() => region.currentRegionId, (newId) => {
 
 .form-error { color: #ef4444; font-size: 0.75rem; margin-top: 4px; }
 .form-hint { color: var(--text-light); font-size: 0.75rem; margin-top: 4px; }
-
-.btn-danger {
-  background: #ef4444; color: white; border: none;
-  padding: 8px 16px; border-radius: var(--radius-md); cursor: pointer; font-weight: 500;
-}
-
-.btn-danger:hover { background: #dc2626; }
-.btn-danger:disabled { opacity: 0.5; cursor: not-allowed; }
 
 .spinning { animation: spin 1s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }

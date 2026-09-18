@@ -7,8 +7,11 @@ import { vpcsApi, subnetsApi, type VPC, type SubnetPayload } from '../../api/net
 import { useRegionStore } from '../../stores/region'
 import { isValidName } from '../../utils/validation'
 
-import { Layers, Plus, Trash2, Network, Search as SearchIcon, X, RefreshCw, Pencil, Check, Copy, ChevronDown, HelpCircle } from 'lucide-vue-next'
+import { Layers, Plus, Trash2, Network, Search as SearchIcon, RefreshCw, Pencil, Check, Copy, ChevronDown, HelpCircle } from 'lucide-vue-next'
 import DeleteModal from '../../components/modals/DeleteModal.vue'
+import BaseModal from '../../components/modals/BaseModal.vue'
+import PageToolbar from '../../components/base/PageToolbar.vue'
+import StatusBadge from '../../components/base/StatusBadge.vue'
 import { quotaErrorMessage } from '../../utils/quotaError'
 
 const region = useRegionStore()
@@ -278,30 +281,17 @@ onMounted(() => {
 
 <template>
   <div class="vpc-list-container">
-    <div class="page-header">
-      <div class="search-wrapper">
-        <label class="search-box">
-          <SearchIcon :size="16" class="search-icon" />
-          <input 
-            id="searchQuery"
-            name="searchQuery"
-            type="text" 
-            v-model="searchQuery"
-            :placeholder="$t('actions.search') + '...'" 
-            class="search-input"
-          />
-        </label>
-      </div>
-      <div class="header-actions">
+    <PageToolbar v-model:search="searchQuery">
+      <template #actions>
         <button class="btn btn-secondary btn-sm btn-icon" @click="fetchVPCs" :title="$t('actions.refresh')">
           <RefreshCw :size="14" :class="{ spinning: loading }" />
         </button>
         <button class="btn btn-primary btn-sm" @click="openCreateModal">
           <Plus :size="14" /> {{ $t('dashboard.buttons.createVpc') }}
         </button>
-      </div>
-    </div>
-    
+      </template>
+    </PageToolbar>
+
     <div class="card table-card">
       <table class="data-table">
         <thead>
@@ -351,10 +341,7 @@ onMounted(() => {
               </router-link>
             </td>
             <td>
-              <span class="status-pill status-active">
-                <span class="status-dot"></span>
-                {{ getStatusText(vpc.status) }}
-              </span>
+              <StatusBadge :status="vpc.status || 'active'" :label="getStatusText(vpc.status)" />
             </td>
             <td>
               <div class="subnets-column-wrapper" v-if="vpc.subnets && vpc.subnets.length > 0">
@@ -420,16 +407,14 @@ onMounted(() => {
     </div>
 
     <!-- Create VPC Modal -->
-    <div v-if="createModalVisible" class="modal-overlay" @click.self="closeCreateModal">
-      <div class="modal-content card">
-        <div class="modal-header">
-          <h3>{{ $t('dashboard.buttons.createVpc') }}</h3>
-          <button class="btn btn-ghost btn-sm icon-btn" @click="closeCreateModal">
-            <X :size="20" />
-          </button>
-        </div>
-        
-        <div class="modal-body">
+    <BaseModal
+      :show="createModalVisible"
+      :title="$t('dashboard.buttons.createVpc')"
+      :loading="creating"
+      form
+      @close="closeCreateModal"
+      @submit="handleCreateVPC"
+    >
           <div class="form-group">
              <label class="form-label" for="vpc_name">{{ $t('dashboard.table.name') }}</label>
             <input 
@@ -456,21 +441,19 @@ onMounted(() => {
               :placeholder="$t('messages.placeholderDescription')"
             ></textarea>
           </div>
-        </div>
-        <div class="modal-footer" style="flex-direction: column; align-items: stretch; gap: var(--spacing-2);">
-          <div v-if="createError" class="text-error" style="font-size:var(--font-size-sm);background:var(--error-light);padding:var(--spacing-2);border-radius:var(--radius-sm)">
+
+          <div v-if="createError" class="text-error" style="margin-top:var(--spacing-4);font-size:var(--font-size-sm);background:var(--error-light);padding:var(--spacing-2);border-radius:var(--radius-sm)">
             {{ createError }}
           </div>
-          <div style="display: flex; justify-content: flex-end; gap: var(--spacing-2);">
-            <button class="btn btn-secondary" @click="closeCreateModal" :disabled="creating">{{ $t('actions.cancel') }}</button>
-            <button class="btn btn-primary" @click="handleCreateVPC" :disabled="creating">
-              <span v-if="creating" class="loading-spinner" style="width: 16px; height: 16px; border-width: 2px;"></span>
-              {{ creating ? $t('messages.creating') : $t('dashboard.buttons.createVpc') }}
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
+
+      <template #footer>
+        <button type="button" class="btn btn-secondary" @click="closeCreateModal" :disabled="creating">{{ $t('actions.cancel') }}</button>
+        <button type="submit" class="btn btn-primary" :disabled="creating">
+          <span v-if="creating" class="loading-spinner" style="width: 16px; height: 16px; border-width: 2px;"></span>
+          {{ creating ? $t('messages.creating') : $t('dashboard.buttons.createVpc') }}
+        </button>
+      </template>
+    </BaseModal>
 
     <DeleteModal
       :show="deleteModalVisible"
@@ -483,15 +466,14 @@ onMounted(() => {
     />
 
     <!-- Edit VPC Modal -->
-    <div v-if="editModalVisible" class="modal-overlay" @click.self="closeEditModal">
-      <div class="modal-content card">
-        <div class="modal-header">
-          <h3>{{ $t('actions.edit') }} - {{ editTarget?.name }}</h3>
-          <button class="btn btn-ghost btn-sm icon-btn" @click="closeEditModal">
-            <X :size="20" />
-          </button>
-        </div>
-        <div class="modal-body">
+    <BaseModal
+      :show="editModalVisible"
+      :title="`${$t('actions.edit')} - ${editTarget?.name ?? ''}`"
+      :loading="editingVPC"
+      form
+      @close="closeEditModal"
+      @submit="handleEditVPC"
+    >
           <div class="form-group">
             <label class="form-label" for="edit_vpc_name">{{ $t('dashboard.table.name') }}</label>
             <input
@@ -517,30 +499,30 @@ onMounted(() => {
               :placeholder="$t('messages.placeholderDescription')"
             ></textarea>
           </div>
-        </div>
-        <div v-if="editError" class="text-error" style="margin: 0 var(--spacing-6) var(--spacing-4); font-size:var(--font-size-sm);background:var(--error-light);padding:var(--spacing-2);border-radius:var(--radius-sm)">
-          {{ editError }}
-        </div>
-        <div class="modal-footer">
-          <button class="btn btn-secondary" @click="closeEditModal" :disabled="editingVPC">{{ $t('actions.cancel') }}</button>
-          <button class="btn btn-primary" @click="handleEditVPC" :disabled="editingVPC">
-            <span v-if="editingVPC" class="loading-spinner" style="width: 16px; height: 16px; border-width: 2px;"></span>
-            {{ $t('actions.confirm') }}
-          </button>
-        </div>
-      </div>
-    </div>
+
+          <div v-if="editError" class="text-error" style="margin-top:var(--spacing-4);font-size:var(--font-size-sm);background:var(--error-light);padding:var(--spacing-2);border-radius:var(--radius-sm)">
+            {{ editError }}
+          </div>
+
+      <template #footer>
+        <button type="button" class="btn btn-secondary" @click="closeEditModal" :disabled="editingVPC">{{ $t('actions.cancel') }}</button>
+        <button type="submit" class="btn btn-primary" :disabled="editingVPC">
+          <span v-if="editingVPC" class="loading-spinner" style="width: 16px; height: 16px; border-width: 2px;"></span>
+          {{ $t('actions.confirm') }}
+        </button>
+      </template>
+    </BaseModal>
 
     <!-- Create Subnet Modal -->
-    <div v-if="createSubnetVisible" class="modal-overlay" @click.self="closeCreateSubnetModal">
-      <div class="modal-content card" style="max-width: 600px;">
-        <div class="modal-header">
-          <h3>{{ $t('dashboard.buttons.createSubnet') }} - {{ subnetTargetVPC?.name }}</h3>
-          <button class="btn btn-ghost btn-sm icon-btn" @click="closeCreateSubnetModal">
-            <X :size="20" />
-          </button>
-        </div>
-        <div class="modal-body">
+    <BaseModal
+      :show="createSubnetVisible"
+      :title="`${$t('dashboard.buttons.createSubnet')} - ${subnetTargetVPC?.name ?? ''}`"
+      size="lg"
+      :loading="creatingSubnet"
+      form
+      @close="closeCreateSubnetModal"
+      @submit="handleCreateSubnet"
+    >
           <div class="form-group">
             <label class="form-label" for="subnet_name">{{ $t('dashboard.table.name') }} *</label>
             <input
@@ -670,72 +652,23 @@ onMounted(() => {
               </div>
             </div>
           </div>
-        </div>
 
-        <div v-if="createSubnetError" class="text-error" style="margin: 0 var(--spacing-6) var(--spacing-4); font-size:var(--font-size-sm);background:var(--error-light);padding:var(--spacing-2);border-radius:var(--radius-sm)">
-          {{ createSubnetError }}
-        </div>
+          <div v-if="createSubnetError" class="text-error" style="margin-top:var(--spacing-4);font-size:var(--font-size-sm);background:var(--error-light);padding:var(--spacing-2);border-radius:var(--radius-sm)">
+            {{ createSubnetError }}
+          </div>
 
-        <div class="modal-footer">
-          <button class="btn btn-secondary" @click="closeCreateSubnetModal" :disabled="creatingSubnet">{{ $t('actions.cancel') }}</button>
-          <button class="btn btn-primary" @click="handleCreateSubnet" :disabled="creatingSubnet">
-            <span v-if="creatingSubnet" class="loading-spinner" style="width: 16px; height: 16px; border-width: 2px;"></span>
-            {{ creatingSubnet ? $t('messages.creating') : $t('dashboard.buttons.createSubnet') }}
-          </button>
-        </div>
-      </div>
-    </div>
+      <template #footer>
+        <button type="button" class="btn btn-secondary" @click="closeCreateSubnetModal" :disabled="creatingSubnet">{{ $t('actions.cancel') }}</button>
+        <button type="submit" class="btn btn-primary" :disabled="creatingSubnet">
+          <span v-if="creatingSubnet" class="loading-spinner" style="width: 16px; height: 16px; border-width: 2px;"></span>
+          {{ creatingSubnet ? $t('messages.creating') : $t('dashboard.buttons.createSubnet') }}
+        </button>
+      </template>
+    </BaseModal>
   </div>
 </template>
 
 <style scoped>
-.page-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 0;
-  padding-right: 20px;
-}
-
-.search-wrapper {
-  flex: 1;
-  max-width: 400px;
-}
-
-.search-box {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  background: var(--bg-secondary);
-  padding: 0 12px;
-  height: 40px;
-  border-radius: var(--radius-md);
-  border: 1px solid var(--border-light);
-  transition: all 0.2s;
-}
-
-.search-box:focus-within {
-  border-color: var(--primary-300);
-  box-shadow: 0 0 0 2px var(--primary-100);
-}
-
-.search-icon {
-  color: var(--gray-400);
-}
-
-.search-input {
-  border: none;
-  background: transparent;
-  width: 100%;
-  height: 100%;
-  font-size: 0.875rem;
-  color: var(--text-primary);
-}
-
-.search-input:focus {
-  outline: none;
-}
-
 .table-card {
   padding: 0;
   overflow: visible;
@@ -759,25 +692,6 @@ onMounted(() => {
 .resource-link:hover .resource-name {
   color: var(--primary-600);
   text-decoration: underline;
-}
-
-.status-pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 4px 10px;
-  border-radius: var(--radius-full);
-  font-size: var(--font-size-xs);
-  font-weight: var(--font-weight-medium);
-  background: rgba(16, 185, 129, 0.1);
-  color: #10b981;
-}
-
-.status-dot {
-  width: 6px;
-  height: 6px;
-  background: currentColor;
-  border-radius: 50%;
 }
 
 .subnet-list-vertical {
@@ -818,7 +732,7 @@ onMounted(() => {
   gap: 4px;
   padding: 4px 8px;
   background: var(--bg-tertiary);
-  border: 1px solid var(--border-subtle);
+  border: 1px solid var(--border-light);
   border-radius: var(--radius-sm);
   font-size: var(--font-size-xs);
   color: var(--primary-600);
@@ -872,7 +786,7 @@ onMounted(() => {
   font-size: var(--font-size-xs);
   font-weight: var(--font-weight-semibold);
   color: var(--text-light);
-  border-bottom: 1px solid var(--border-subtle);
+  border-bottom: 1px solid var(--border-light);
   margin-bottom: 4px;
 }
 
@@ -909,7 +823,7 @@ onMounted(() => {
 
 .actions {
   display: flex;
-  gap: var(--spacing-02);
+  gap: var(--spacing-2);
 }
 
 .text-error {
@@ -927,10 +841,6 @@ onMounted(() => {
   justify-content: center;
 }
 
-.btn-danger:hover { background: var(--error-dark); }
-.btn-danger:disabled { opacity: 0.5; cursor: not-allowed; }
-
-.header-actions { display: flex; gap: 8px; align-items: center; }
 .spinning { animation: spin 1s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 

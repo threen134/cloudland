@@ -1,16 +1,22 @@
 <script setup lang="ts">
-import { ref, onMounted, computed, watch } from 'vue'
+import { ref, onMounted, onUnmounted, computed, watch } from 'vue'
 import { hypervisorsApi, type Hypervisor, type HyperDeployPayload } from '../../api/hypervisors'
 import { instancesApi } from '../../api/instances'
 import { zonesApi } from '../../api/zones'
 import { useRegionStore } from '../../stores/region'
 
 const region = useRegionStore()
-import { Search as SearchIcon, Server, Plus, Trash2, RefreshCw, Copy, Check, X, Loader2, HelpCircle, Pencil, Wrench, MoreVertical, ChevronDown, SquareTerminal } from 'lucide-vue-next'
+import { Search as SearchIcon, Server, Plus, Trash2, RefreshCw, Copy, Check, Loader2, HelpCircle, Pencil, Wrench, MoreVertical, SquareTerminal } from 'lucide-vue-next'
 import { useI18n } from 'vue-i18n'
 import { useToast } from '../../composables/useToast'
 import { useCopyId } from '../../composables/useCopyId'
 import { useHostConsole } from '../../composables/useHostConsole'
+import { formatMemory, formatDisk } from '../../utils/format'
+import type { StatusVariant } from '../../utils/status'
+import BaseModal from '../../components/modals/BaseModal.vue'
+import DeleteModal from '../../components/modals/DeleteModal.vue'
+import PageToolbar from '../../components/base/PageToolbar.vue'
+import StatusBadge from '../../components/base/StatusBadge.vue'
 
 const vClickOutside = {
   mounted(el: any, binding: any) {
@@ -123,12 +129,12 @@ const closeActionMenu = () => {
 const { copiedId, copyId } = useCopyId()
 const { disabledReason: consoleDisabledReason, openHostConsole } = useHostConsole()
 
-const STATUS_MAP: Record<number, { labelKey: string; class: string }> = {
-    0: { labelKey: 'disabled', class: 'status-disabled' },
-    1: { labelKey: 'active', class: 'status-active' },
-    2: { labelKey: 'maintaining', class: 'status-warning' },
-    4: { labelKey: 'deploying', class: 'status-info' },
-    5: { labelKey: 'deployFailed', class: 'status-error' }
+const STATUS_MAP: Record<number, { labelKey: string; variant: StatusVariant }> = {
+    0: { labelKey: 'disabled', variant: 'neutral' },
+    1: { labelKey: 'active', variant: 'success' },
+    2: { labelKey: 'maintaining', variant: 'warning' },
+    4: { labelKey: 'deploying', variant: 'pending' },
+    5: { labelKey: 'deployFailed', variant: 'error' }
 }
 
 const fetchHypervisors = async () => {
@@ -175,8 +181,8 @@ const onSearchInput = () => {
     }, 400)
 }
 
-const getStatusInfo = (status: number) => {
-    return STATUS_MAP[status] || { labelKey: 'unknown', class: '' }
+const getStatusInfo = (status: number): { labelKey: string; variant: StatusVariant } => {
+    return STATUS_MAP[status] || { labelKey: 'unknown', variant: 'neutral' }
 }
 
 // statusName 是后端返回的英文原文（active / maintaining …），只在该状态没有对应翻译时兜底。
@@ -198,15 +204,7 @@ const getDrainHint = (h: Hypervisor) => {
         : t('dashboard.hypervisorStatus.drained')
 }
 
-const formatMemory = (mb: number) => {
-    if (mb >= 1024) return `${(mb / 1024).toFixed(1)} ${t('specs.gb')}`
-    return `${mb} ${t('specs.mb')}`
-}
 
-const formatDisk = (gb: number) => {
-    if (gb >= 1024) return `${(gb / 1024).toFixed(1)} ${t('specs.tb')}`
-    return `${gb} ${t('specs.gb')}`
-}
 
 const usagePercent = (used: number, total: number) => {
     if (total <= 0) return 0
@@ -380,18 +378,17 @@ onMounted(() => {
         fetchHypervisors()
     }
 })
+
+// 搜索防抖定时器：组件卸载后不应再触发请求
+onUnmounted(() => {
+    if (searchTimer) clearTimeout(searchTimer)
+})
 </script>
 
 <template>
   <div class="vpc-list-container">
-    <div class="page-header">
-      <div class="search-wrapper">
-        <div class="search-box">
-          <SearchIcon :size="16" class="search-icon" />
-          <input type="text" v-model="searchQuery" @input="onSearchInput" :placeholder="t('actions.search') + '...'" class="search-input" />
-        </div>
-      </div>
-      <div class="header-actions">
+    <PageToolbar :search="searchQuery" @update:search="v => { searchQuery = v; onSearchInput() }">
+      <template #actions>
         <button class="btn btn-secondary btn-sm btn-icon" @click="fetchHypervisors" :title="t('actions.refresh')">
           <RefreshCw :size="14" :class="{ spinning: loading }" />
         </button>
@@ -399,8 +396,8 @@ onMounted(() => {
           <Plus :size="14" />
           <span>{{ t('dashboard.hypervisorActions.deploy') }}</span>
         </button>
-      </div>
-    </div>
+      </template>
+    </PageToolbar>
 
     <div class="card table-card">
       <table class="data-table">
@@ -457,10 +454,7 @@ onMounted(() => {
               </td>
             <td><code class="mono-value">{{ h.host_ip }}</code></td>
             <td>
-              <span class="status-pill" :class="getStatusInfo(h.status).class">
-                <span class="status-dot"></span>
-                {{ getStatusLabel(h.status, h.status_name) }}
-              </span>
+              <StatusBadge :variant="getStatusInfo(h.status).variant" :label="getStatusLabel(h.status, h.status_name)" />
               <span v-if="h.status === 2" :class="['drain-hint', h.instance_count ? 'drain-hint-warn' : 'drain-hint-done']">{{ getDrainHint(h) }}</span>
             </td>
             <td>
@@ -548,272 +542,206 @@ onMounted(() => {
     </div>
 
     <!-- Deploy Modal -->
-    <Teleport to="body">
-      <div v-if="showDeployModal" class="modal-overlay" @click.self="closeDeployModal">
-        <div class="modal-content card" style="max-width: 560px;">
-          <div class="modal-header">
-            <h3>{{ t('dashboard.hypervisorActions.deploy') }}</h3>
-            <button class="btn btn-ghost btn-icon" @click="closeDeployModal"><X :size="18" /></button>
+    <BaseModal
+      :show="showDeployModal"
+      :title="t('dashboard.hypervisorActions.deploy')"
+      size="lg"
+      :form="!deployResult"
+      @close="closeDeployModal"
+      @submit="handleDeploy"
+    >
+      <!-- Deploy Form -->
+      <div v-if="!deployResult">
+        <div class="form-grid">
+          <div class="form-group">
+            <label class="form-label">IP *</label>
+            <input type="text" v-model="deployForm.ip" class="form-input" :placeholder="t('dashboard.forms.placeholder.ipExample')" />
           </div>
-
-          <!-- Deploy Form -->
-          <div v-if="!deployResult" class="modal-body">
-            <div class="form-grid">
-              <div class="form-group">
-                <label class="form-label">IP *</label>
-                <input type="text" v-model="deployForm.ip" class="form-input" :placeholder="t('dashboard.forms.placeholder.ipExample')" />
-              </div>
-              <div class="form-group">
-                <label class="form-label">{{ t('dashboard.table.hostname') }} *</label>
-                <input type="text" v-model="deployForm.hostname" class="form-input" :placeholder="t('dashboard.forms.placeholder.hostnameExample')" />
-              </div>
-              <div class="form-group">
-                <label class="form-label">
-                  {{ t('dashboard.hypervisorDeploy.networkDevice') }} *
-                  <span class="tooltip-wrapper">
-                    <HelpCircle :size="14" class="help-icon" />
-                    <span class="tooltip-text">{{ t('dashboard.hypervisorDeploy.tooltips.networkDevice') }}</span>
-                  </span>
-                </label>
-                <input type="text" v-model="deployForm.network_device" class="form-input" :placeholder="t('dashboard.forms.placeholder.netDeviceExample')" />
-              </div>
-              <div class="form-group">
-                <label class="form-label">
-                  {{ t('dashboard.hypervisorDeploy.vlanDevice') }}
-                  <span class="tooltip-wrapper">
-                    <HelpCircle :size="14" class="help-icon" />
-                    <span class="tooltip-text">{{ t('dashboard.hypervisorDeploy.tooltips.vlanDevice') }}</span>
-                  </span>
-                </label>
-                <input type="text" v-model="deployForm.vlan_device" class="form-input" :placeholder="deployForm.network_device || t('dashboard.forms.placeholder.netDeviceExample')" />
-              </div>
-              <div class="form-group">
-                <label class="form-label">
-                  {{ t('dashboard.hypervisorDeploy.privateVlanDevice') }}
-                  <span class="tooltip-wrapper">
-                    <HelpCircle :size="14" class="help-icon" />
-                    <span class="tooltip-text">{{ t('dashboard.hypervisorDeploy.tooltips.privateVlanDevice') }}</span>
-                  </span>
-                </label>
-                <input type="text" v-model="deployForm.private_vlan_device" class="form-input" :placeholder="deployForm.vlan_device || deployForm.network_device || t('dashboard.forms.placeholder.netDeviceExample')" />
-              </div>
-              <div class="form-group">
-                <label class="form-label">{{ t('dashboard.hypervisorDeploy.dnsServer') }}</label>
-                <input type="text" v-model="deployForm.dns_server" class="form-input" :placeholder="t('dashboard.forms.placeholder.dnsExample')" />
-              </div>
-              <div class="form-group">
-                <label class="form-label">{{ t('dashboard.hypervisorDeploy.domain') }}</label>
-                <input type="text" v-model="deployForm.domain" class="form-input" :placeholder="t('dashboard.forms.placeholder.domainExample')" />
-              </div>
-              <div class="form-group">
-                <label class="form-label">{{ t('dashboard.table.zone') }}</label>
-                <select v-model="deployForm.zone_name" class="form-input">
-                  <option value="">{{ t('dashboard.hypervisorDeploy.autoZone') }}</option>
-                  <option v-for="z in zoneList" :key="z.name" :value="z.name">{{ z.name }}</option>
-                </select>
-              </div>
-              <div class="form-group">
-                <label class="form-label">{{ t('dashboard.hypervisorDeploy.virtType') }}</label>
-                <select v-model="deployForm.virt_type" class="form-input">
-                  <option value="kvm-x86_64">kvm-x86_64</option>
-                  <option value="kvm-aarch64">kvm-aarch64</option>
-                </select>
-              </div>
-            </div>
+          <div class="form-group">
+            <label class="form-label">{{ t('dashboard.table.hostname') }} *</label>
+            <input type="text" v-model="deployForm.hostname" class="form-input" :placeholder="t('dashboard.forms.placeholder.hostnameExample')" />
           </div>
-
-          <!-- Deploy Result -->
-          <div v-else class="modal-body">
-            <div class="deploy-success">
-              <Check :size="32" style="color: #10b981; margin-bottom: 12px;" />
-              <p style="font-weight: 600; margin-bottom: 16px;">{{ t('dashboard.hypervisorDeploy.created') }}</p>
-              <p style="font-size: 0.8125rem; color: var(--text-secondary); margin-bottom: 16px;">{{ t('dashboard.hypervisorDeploy.runCommand') }}</p>
-              <div class="deploy-cmd-box">
-                <pre>{{ deployResult.deploy_command }}</pre>
-                <button class="copy-cmd-btn" @click="copyDeployCommand">
-                  <Check v-if="copiedCmd" :size="14" style="color: #10b981;" />
-                  <Copy v-else :size="14" />
-                </button>
-              </div>
-            </div>
+          <div class="form-group">
+            <label class="form-label">
+              {{ t('dashboard.hypervisorDeploy.networkDevice') }} *
+              <span class="tooltip-wrapper">
+                <HelpCircle :size="14" class="help-icon" />
+                <span class="tooltip-text">{{ t('dashboard.hypervisorDeploy.tooltips.networkDevice') }}</span>
+              </span>
+            </label>
+            <input type="text" v-model="deployForm.network_device" class="form-input" :placeholder="t('dashboard.forms.placeholder.netDeviceExample')" />
           </div>
+          <div class="form-group">
+            <label class="form-label">
+              {{ t('dashboard.hypervisorDeploy.vlanDevice') }}
+              <span class="tooltip-wrapper">
+                <HelpCircle :size="14" class="help-icon" />
+                <span class="tooltip-text">{{ t('dashboard.hypervisorDeploy.tooltips.vlanDevice') }}</span>
+              </span>
+            </label>
+            <input type="text" v-model="deployForm.vlan_device" class="form-input" :placeholder="deployForm.network_device || t('dashboard.forms.placeholder.netDeviceExample')" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">
+              {{ t('dashboard.hypervisorDeploy.privateVlanDevice') }}
+              <span class="tooltip-wrapper">
+                <HelpCircle :size="14" class="help-icon" />
+                <span class="tooltip-text">{{ t('dashboard.hypervisorDeploy.tooltips.privateVlanDevice') }}</span>
+              </span>
+            </label>
+            <input type="text" v-model="deployForm.private_vlan_device" class="form-input" :placeholder="deployForm.vlan_device || deployForm.network_device || t('dashboard.forms.placeholder.netDeviceExample')" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">{{ t('dashboard.hypervisorDeploy.dnsServer') }}</label>
+            <input type="text" v-model="deployForm.dns_server" class="form-input" :placeholder="t('dashboard.forms.placeholder.dnsExample')" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">{{ t('dashboard.hypervisorDeploy.domain') }}</label>
+            <input type="text" v-model="deployForm.domain" class="form-input" :placeholder="t('dashboard.forms.placeholder.domainExample')" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">{{ t('dashboard.table.zone') }}</label>
+            <select v-model="deployForm.zone_name" class="form-input">
+              <option value="">{{ t('dashboard.hypervisorDeploy.autoZone') }}</option>
+              <option v-for="z in zoneList" :key="z.name" :value="z.name">{{ z.name }}</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">{{ t('dashboard.hypervisorDeploy.virtType') }}</label>
+            <select v-model="deployForm.virt_type" class="form-input">
+              <option value="kvm-x86_64">kvm-x86_64</option>
+              <option value="kvm-aarch64">kvm-aarch64</option>
+            </select>
+          </div>
+        </div>
+      </div>
 
-          <div class="modal-footer">
-            <button class="btn btn-secondary" @click="closeDeployModal">{{ deployResult ? t('actions.close') : t('actions.cancel') }}</button>
-            <button v-if="!deployResult" class="btn btn-primary" @click="handleDeploy" :disabled="deploying || !deployForm.ip || !deployForm.hostname || !deployForm.network_device">
-              {{ deploying ? t('messages.loading') : t('dashboard.hypervisorActions.deploy') }}
+      <!-- Deploy Result -->
+      <div v-else>
+        <div class="deploy-success">
+          <Check :size="32" style="color: #10b981; margin-bottom: 12px;" />
+          <p style="font-weight: 600; margin-bottom: 16px;">{{ t('dashboard.hypervisorDeploy.created') }}</p>
+          <p style="font-size: 0.8125rem; color: var(--text-secondary); margin-bottom: 16px;">{{ t('dashboard.hypervisorDeploy.runCommand') }}</p>
+          <div class="deploy-cmd-box">
+            <pre>{{ deployResult.deploy_command }}</pre>
+            <button type="button" class="copy-cmd-btn" @click="copyDeployCommand">
+              <Check v-if="copiedCmd" :size="14" style="color: #10b981;" />
+              <Copy v-else :size="14" />
             </button>
           </div>
         </div>
       </div>
-    </Teleport>
+
+      <template #footer>
+        <button type="button" class="btn btn-secondary" @click="closeDeployModal">{{ deployResult ? t('actions.close') : t('actions.cancel') }}</button>
+        <button v-if="!deployResult" type="submit" class="btn btn-primary" :disabled="deploying || !deployForm.ip || !deployForm.hostname || !deployForm.network_device">
+          {{ deploying ? t('messages.loading') : t('dashboard.hypervisorActions.deploy') }}
+        </button>
+      </template>
+    </BaseModal>
 
     <!-- Delete Confirm Modal -->
-    <Teleport to="body">
-      <div v-if="showDeleteConfirm" class="modal-overlay" @click.self="showDeleteConfirm = false">
-        <div class="modal-content card" style="max-width: 440px;">
-          <div class="modal-header">
-            <h3>{{ t('dashboard.hypervisorActions.deleteTitle') }}</h3>
-            <button class="btn btn-ghost btn-icon" @click="showDeleteConfirm = false"><X :size="18" /></button>
-          </div>
-          <div class="modal-body">
-            <p>{{ t('dashboard.hypervisorActions.deleteConfirm', { hostname: deletingHyper?.hostname }) }}</p>
-          </div>
-          <div class="modal-footer">
-            <button class="btn btn-secondary" @click="showDeleteConfirm = false">{{ t('actions.cancel') }}</button>
-            <button class="btn btn-danger" @click="handleDelete" :disabled="deleting">
-              <Loader2 v-if="deleting" :size="14" class="spinning" />
-              {{ deleting ? t('dashboard.deleteConfirm.deleting') : t('actions.delete') }}
-            </button>
-          </div>
-        </div>
-      </div>
-    </Teleport>
+    <DeleteModal
+      :show="showDeleteConfirm"
+      :title="t('dashboard.hypervisorActions.deleteTitle')"
+      :message="t('dashboard.hypervisorActions.deleteConfirm', { hostname: deletingHyper?.hostname })"
+      :loading="deleting"
+      @close="showDeleteConfirm = false"
+      @confirm="handleDelete"
+    />
+
     <!-- Edit Modal -->
-    <Teleport to="body">
-      <div v-if="showEditModal" class="modal-overlay" @click.self="showEditModal = false">
-        <div class="modal-content card" style="max-width: 500px;">
-          <div class="modal-header">
-            <h3>{{ t('actions.edit') }} - {{ editingHyper?.hostname }}</h3>
-            <button class="btn btn-ghost btn-icon" @click="showEditModal = false"><X :size="18" /></button>
-          </div>
-          <div class="modal-body">
-            <div class="form-grid" style="grid-template-columns: 1fr 1fr; gap: 16px;">
-              <div class="form-group">
-                <label class="form-label">{{ t('dashboard.table.status') }}</label>
-                <select v-model="editForm.status" class="form-input">
-                  <option :value="0">{{ t('dashboard.hypervisorStatus.disabled') }}</option>
-                  <option :value="1">{{ t('dashboard.hypervisorStatus.active') }}</option>
-                </select>
-              </div>
-              <div class="form-group">
-                <label class="form-label">{{ t('dashboard.table.zone') }}</label>
-                <select v-model="editForm.zone_id" class="form-input">
-                  <option :value="0">-</option>
-                  <option v-for="z in zoneList" :key="z.id" :value="z.id">{{ z.name }}</option>
-                </select>
-              </div>
-              <div class="form-group">
-                <label class="form-label">{{ t('dashboard.table.cpuOverCommit') }}</label>
-                <input type="number" step="0.1" min="1" v-model="editForm.cpu_over_rate" class="form-input" />
-              </div>
-              <div class="form-group">
-                <label class="form-label">{{ t('dashboard.table.memOverCommit') }}</label>
-                <input type="number" step="0.1" min="1" v-model="editForm.mem_over_rate" class="form-input" />
-              </div>
-              <div class="form-group">
-                <label class="form-label">{{ t('dashboard.table.diskOverCommit') }}</label>
-                <input type="number" step="0.1" min="1" v-model="editForm.disk_over_rate" class="form-input" />
-              </div>
-              <div class="form-group" style="grid-column: span 2;">
-                <label class="form-label">{{ t('dashboard.table.remark') }}</label>
-                <input type="text" v-model="editForm.remark" class="form-input" :placeholder="t('dashboard.table.remark')" />
-              </div>
-            </div>
-          </div>
-          <div class="modal-footer">
-            <button class="btn btn-secondary" @click="showEditModal = false" :disabled="saving">{{ t('actions.cancel') }}</button>
-            <button class="btn btn-primary" @click="handleEditSave" :disabled="saving">
-              <Loader2 v-if="saving" :size="14" class="spinning" />
-              {{ saving ? t('messages.saving') : t('actions.save') }}
-            </button>
-          </div>
+    <BaseModal
+      :show="showEditModal"
+      :title="t('actions.edit') + ' - ' + (editingHyper?.hostname || '')"
+      form
+      :loading="saving"
+      @close="showEditModal = false"
+      @submit="handleEditSave"
+    >
+      <div class="form-grid" style="grid-template-columns: 1fr 1fr; gap: 16px;">
+        <div class="form-group">
+          <label class="form-label">{{ t('dashboard.table.status') }}</label>
+          <select v-model="editForm.status" class="form-input">
+            <option :value="0">{{ t('dashboard.hypervisorStatus.disabled') }}</option>
+            <option :value="1">{{ t('dashboard.hypervisorStatus.active') }}</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">{{ t('dashboard.table.zone') }}</label>
+          <select v-model="editForm.zone_id" class="form-input">
+            <option :value="0">-</option>
+            <option v-for="z in zoneList" :key="z.id" :value="z.id">{{ z.name }}</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">{{ t('dashboard.table.cpuOverCommit') }}</label>
+          <input type="number" step="0.1" min="1" v-model="editForm.cpu_over_rate" class="form-input" />
+        </div>
+        <div class="form-group">
+          <label class="form-label">{{ t('dashboard.table.memOverCommit') }}</label>
+          <input type="number" step="0.1" min="1" v-model="editForm.mem_over_rate" class="form-input" />
+        </div>
+        <div class="form-group">
+          <label class="form-label">{{ t('dashboard.table.diskOverCommit') }}</label>
+          <input type="number" step="0.1" min="1" v-model="editForm.disk_over_rate" class="form-input" />
+        </div>
+        <div class="form-group" style="grid-column: span 2;">
+          <label class="form-label">{{ t('dashboard.table.remark') }}</label>
+          <input type="text" v-model="editForm.remark" class="form-input" :placeholder="t('dashboard.table.remark')" />
         </div>
       </div>
-    </Teleport>
+
+      <template #footer>
+        <button type="button" class="btn btn-secondary" @click="showEditModal = false" :disabled="saving">{{ t('actions.cancel') }}</button>
+        <button type="submit" class="btn btn-primary" :disabled="saving">
+          <Loader2 v-if="saving" :size="14" class="spinning" />
+          {{ saving ? t('messages.saving') : t('actions.save') }}
+        </button>
+      </template>
+    </BaseModal>
 
     <!-- Maintain Modal -->
-    <Teleport to="body">
-      <div v-if="showMaintainModal" class="modal-overlay" @click.self="showMaintainModal = false">
-        <div class="modal-content card" style="max-width: 460px;">
-          <div class="modal-header">
-            <h3>{{ t('dashboard.hypervisorActions.maintainTitle') }}</h3>
-            <button class="btn btn-ghost btn-icon" @click="showMaintainModal = false"><X :size="18" /></button>
-          </div>
-          <div class="modal-body">
-            <p style="margin-bottom: 16px; color: var(--text-secondary); font-size: 0.875rem;">
-              {{ t('dashboard.hypervisorActions.maintainDesc', { hostname: maintainingHyper?.hostname }) }}
-            </p>
-            <div class="form-group" style="margin-bottom: 16px;">
-              <label class="form-label" style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
-                <input type="checkbox" v-model="maintainForm.migrate" />
-                {{ t('dashboard.hypervisorActions.migrateInstances') }}
-              </label>
-            </div>
-            <div v-if="maintainForm.migrate" class="form-group">
-              <label class="form-label">{{ t('dashboard.hypervisorActions.targetHyper') }}</label>
-              <select v-model="maintainForm.target_hyper" class="form-select" style="width: 100%;">
-                <option :value="-1">{{ t('dashboard.migrationForm.autoSelect') }}</option>
-                <option v-for="hyp in maintainTargetOptions" :key="hyp.uuid" :value="hyp.hostid">
-                  {{ hyp.hostname }} ({{ hyp.hostid }})
-                </option>
-              </select>
-              <span style="font-size: 0.75rem; color: var(--text-light); margin-top: 4px;">{{ t('dashboard.hypervisorActions.targetHyperHint') }}</span>
-            </div>
-          </div>
-          <div class="modal-footer">
-            <button class="btn btn-secondary" @click="showMaintainModal = false">{{ t('actions.cancel') }}</button>
-            <button class="btn btn-warning" @click="handleMaintain" :disabled="maintaining">
-              <Loader2 v-if="maintaining" :size="14" class="spinning" />
-              {{ maintaining ? t('messages.loading') : t('dashboard.hypervisorActions.maintain') }}
-            </button>
-          </div>
-        </div>
+    <BaseModal
+      :show="showMaintainModal"
+      :title="t('dashboard.hypervisorActions.maintainTitle')"
+      form
+      :loading="maintaining"
+      @close="showMaintainModal = false"
+      @submit="handleMaintain"
+    >
+      <p style="margin-bottom: 16px; color: var(--text-secondary); font-size: 0.875rem;">
+        {{ t('dashboard.hypervisorActions.maintainDesc', { hostname: maintainingHyper?.hostname }) }}
+      </p>
+      <div class="form-group" style="margin-bottom: 16px;">
+        <label class="form-label" style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+          <input type="checkbox" v-model="maintainForm.migrate" />
+          {{ t('dashboard.hypervisorActions.migrateInstances') }}
+        </label>
       </div>
-    </Teleport>
+      <div v-if="maintainForm.migrate" class="form-group">
+        <label class="form-label">{{ t('dashboard.hypervisorActions.targetHyper') }}</label>
+        <select v-model="maintainForm.target_hyper" class="form-select" style="width: 100%;">
+          <option :value="-1">{{ t('dashboard.migrationForm.autoSelect') }}</option>
+          <option v-for="hyp in maintainTargetOptions" :key="hyp.uuid" :value="hyp.hostid">
+            {{ hyp.hostname }} ({{ hyp.hostid }})
+          </option>
+        </select>
+        <span style="font-size: 0.75rem; color: var(--text-light); margin-top: 4px;">{{ t('dashboard.hypervisorActions.targetHyperHint') }}</span>
+      </div>
+
+      <template #footer>
+        <button type="button" class="btn btn-secondary" @click="showMaintainModal = false">{{ t('actions.cancel') }}</button>
+        <button type="submit" class="btn btn-warning" :disabled="maintaining">
+          <Loader2 v-if="maintaining" :size="14" class="spinning" />
+          {{ maintaining ? t('messages.loading') : t('dashboard.hypervisorActions.maintain') }}
+        </button>
+      </template>
+    </BaseModal>
   </div>
 </template>
 
 <style scoped>
-.page-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 0;
-  padding-right: 20px;
-}
-
-.search-wrapper {
-  flex: 1;
-  max-width: 400px;
-}
-
-.header-actions {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-}
-
-.search-box {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  background: var(--bg-secondary);
-  padding: 0 12px;
-  height: 40px;
-  border-radius: var(--radius-md);
-  border: 1px solid var(--border-light);
-  transition: all 0.2s;
-}
-
-.search-box:focus-within {
-  border-color: var(--primary-300);
-  box-shadow: 0 0 0 2px var(--primary-100);
-}
-
-.search-icon { color: var(--gray-400); }
-
-.search-input {
-  border: none;
-  background: transparent;
-  width: 100%;
-  height: 100%;
-  font-size: 0.875rem;
-  color: var(--text-primary);
-}
-
-.search-input:focus { outline: none; }
-
 .table-card { padding: 0; overflow: visible; }
 
 .resource-link {
@@ -827,31 +755,6 @@ onMounted(() => {
 .resource-link:hover .resource-name {
   color: var(--primary-600);
   text-decoration: underline;
-}
-
-.status-pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 4px 10px;
-  border-radius: var(--radius-full);
-  font-size: var(--font-size-xs);
-  font-weight: var(--font-weight-medium);
-  background: var(--gray-100);
-  color: var(--gray-700);
-}
-
-.status-active { background: rgba(16, 185, 129, 0.1); color: #10b981; }
-.status-error { background: rgba(239, 68, 68, 0.1); color: #ef4444; }
-.status-warning { background: rgba(245, 158, 11, 0.1); color: #f59e0b; }
-.status-info { background: rgba(59, 130, 246, 0.1); color: #3b82f6; }
-.status-disabled { background: var(--gray-100); color: var(--gray-500); }
-
-.status-dot {
-  width: 6px;
-  height: 6px;
-  background: currentColor;
-  border-radius: 50%;
 }
 
 .mono-value {
@@ -1170,19 +1073,6 @@ onMounted(() => {
   width: 80px;
   text-align: center;
 }
-
-.btn-danger {
-  background: #ef4444;
-  color: white;
-  border: none;
-  padding: 8px 16px;
-  border-radius: var(--radius-md);
-  cursor: pointer;
-  font-weight: 500;
-}
-
-.btn-danger:hover { background: #dc2626; }
-.btn-danger:disabled { opacity: 0.5; cursor: not-allowed; }
 
 .deploy-success {
   display: flex;

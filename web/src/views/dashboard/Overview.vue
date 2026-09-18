@@ -8,10 +8,14 @@ import { instancesApi, type Instance } from '../../api/instances'
 import { activitiesApi, type Activity as ActivityItem } from '../../api/activities'
 import ActivityEntry from '../../components/activity/ActivityEntry.vue'
 import { volumesApi } from '../../api/volumes'
-import { imagesApi, type Image } from '../../api/images'
+import { imagesApi } from '../../api/images'
 import { vpcsApi, floatingIpsApi, loadBalancersApi } from '../../api/networks'
 import { quotaApi, type QuotaFields } from '../../api/quota'
+import { useToast } from '../../composables/useToast'
+import { useI18n } from 'vue-i18n'
 
+const { t } = useI18n()
+const toast = useToast()
 const auth = useAuthStore()
 const regionStore = useRegionStore()
 const displayName = computed(() => auth.user?.username || auth.user?.name || 'User')
@@ -138,7 +142,9 @@ onMounted(async () => {
             vpcs: consumption?.vpcs ?? vpcCount, loadBalancers: consumption?.load_balancers ?? lbRes?.total ?? 0, images: consumption?.images ?? 0,
         }, quota)
     } catch (error) {
+        // 静默清零会让用户把"加载失败"看成"用量真的是 0"，必须明确提示
         console.error('Failed to fetch actual stats:', error)
+        toast.error(t('messages.error'))
         stats.value = emptyStats
         usageBars.value = buildUsageBars({ cpu: 0, memGB: 0, diskGB: 0, publicIps: 0, vpcs: 0, loadBalancers: 0, images: 0 }, null)
     } finally {

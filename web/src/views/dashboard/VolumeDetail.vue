@@ -6,6 +6,9 @@ import { useToast } from '../../composables/useToast'
 import { volumesApi, type Volume } from '../../api/volumes'
 import { useRegionStore } from '../../stores/region'
 import { ArrowLeft, HardDrive, Paperclip, Maximize, Trash2, Copy, Check, Server, Play, ChevronDown, CalendarDays } from 'lucide-vue-next'
+import { formatDisk, formatDateTime } from '../../utils/format'
+import DeleteModal from '../../components/modals/DeleteModal.vue'
+import StatusBadge from '../../components/base/StatusBadge.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -58,12 +61,6 @@ const navigateToInstance = (id: string) => {
     router.push({ name: 'instance-detail', params: { id } })
 }
 
-const formatSize = (size: number) => {
-    if (size >= 1000) {
-        return `${(size / 1000).toFixed(1)} TB`
-    }
-    return `${size} GB`
-}
 
 const getStatusText = (status: string | undefined) => {
     if (!status) return '-'
@@ -72,37 +69,32 @@ const getStatusText = (status: string | undefined) => {
     return translated === `dashboard.volumeStatus.${key}` ? status : translated
 }
 
-const getStatusClass = (status: string | undefined) => {
-    if (!status) return 'status-pending'
-    const statusMap: Record<string, string> = {
-        'available': 'status-running',
-        'attached': 'status-success',
-        'in-use': 'status-success',
-        'creating': 'status-pending',
-        'deleting': 'status-pending',
-        'detaching': 'status-pending',
-        'attaching': 'status-pending',
-        'error': 'status-error'
-    }
-    return statusMap[status] || 'status-pending'
+// --- Delete Confirmation Modal ---
+const deleteModalVisible = ref(false)
+const deletingResource = ref(false)
+const deleteError = ref('')
+
+const handleDeleteClick = () => {
+    deleteModalVisible.value = true
 }
 
-const formatDate = (dateStr?: string) => {
-    if (!dateStr) return '-'
-    const d = new Date(dateStr)
-    return d.toLocaleString()
+const closeDeleteModal = () => {
+    deleteModalVisible.value = false
+    deleteError.value = ''
 }
 
-const handleDelete = async () => {
-    if (!confirm('Are you sure you want to delete this volume? This action cannot be undone.')) return
-    
+const confirmDelete = async () => {
+    deletingResource.value = true
+    deleteError.value = ''
     try {
         await volumesApi.delete(route.params.id as string)
         toast.success(t('messages.deleteSuccess'))
         router.push({ name: 'volumes' })
-    } catch (err) {
+    } catch (err: any) {
         console.error('Failed to delete volume:', err)
-        alert('Failed to delete volume.')
+        deleteError.value = err.response?.data?.error_message || err.message || t('messages.error')
+    } finally {
+        deletingResource.value = false
     }
 }
 
@@ -156,9 +148,7 @@ onMounted(() => {
           <div>
             <h2 class="volume-title">
                 {{ volume.name }}
-                <span :class="['badge', getStatusClass(volume.status)]">
-                    {{ getStatusText(volume.status) }}
-                </span>
+                <StatusBadge :status="volume.status" :label="getStatusText(volume.status)" />
             </h2>
             <div class="volume-id-row">
               <span class="volume-id">{{ volume.id }}</span>
@@ -183,7 +173,7 @@ onMounted(() => {
                             <Maximize :size="14" /> {{ $t('actions.resize') }}
                         </button>
                         <div class="dropdown-divider"></div>
-                        <button class="dropdown-item dropdown-item-danger" @click.stop="handleDelete">
+                        <button class="dropdown-item dropdown-item-danger" @click.stop="handleDeleteClick">
                             <Trash2 :size="14" /> {{ $t('actions.delete') }}
                         </button>
                     </div>
@@ -202,7 +192,7 @@ onMounted(() => {
             <div class="key-value-list">
               <div class="kv-item">
                 <span class="label"><HardDrive :size="14" /> {{ $t('dashboard.table.size') }}</span>
-                <span class="value">{{ formatSize(volume.size) }}</span>
+                <span class="value">{{ formatDisk(volume.size) }}</span>
               </div>
               <div class="kv-item">
                 <span class="label"><Maximize :size="14" /> {{ $t('dashboard.table.format') }}</span>
@@ -233,11 +223,11 @@ onMounted(() => {
               </div>
               <div class="kv-item">
                 <span class="label"><CalendarDays :size="14" /> {{ $t('dashboard.table.created') }}</span>
-                <span class="value">{{ formatDate(volume.created_at) }}</span>
+                <span class="value">{{ formatDateTime(volume.created_at) }}</span>
               </div>
               <div class="kv-item">
                 <span class="label"><CalendarDays :size="14" /> {{ $t('dashboard.table.updatedAt') }}</span>
-                <span class="value">{{ formatDate(volume.updated_at) }}</span>
+                <span class="value">{{ formatDateTime(volume.updated_at) }}</span>
               </div>
             </div>
           </div>
@@ -287,6 +277,16 @@ onMounted(() => {
         </div>
       </div>
     </div>
+
+    <DeleteModal
+      :show="deleteModalVisible"
+      :resource-name="volume?.name"
+      :resource-id="volume?.id"
+      :loading="deletingResource"
+      :error="deleteError"
+      @close="closeDeleteModal"
+      @confirm="confirmDelete"
+    />
   </div>
 </template>
 
@@ -348,11 +348,6 @@ onMounted(() => {
   display: flex;
   align-items: center;
   gap: var(--spacing-3);
-}
-
-.volume-title .badge {
-  font-size: var(--font-size-xs);
-  font-weight: 500;
 }
 
 .volume-id-row {
@@ -481,7 +476,7 @@ onMounted(() => {
 }
 
 .info-card h3 {
-  font-size: var(--font-size-md);
+  font-size: var(--font-size-base);
   font-weight: 600;
   margin: 0 0 var(--spacing-4) 0;
   color: var(--text-primary);
@@ -544,7 +539,7 @@ onMounted(() => {
     font-size: var(--font-size-xs);
     font-weight: 500;
 }
-.status-success { background: var(--success-50); color: var(--success-700); }
+.status-success { background: var(--success-light); color: var(--success-dark); }
 .status-default { background: var(--gray-100); color: var(--gray-700); }
 
 /* Responsive */

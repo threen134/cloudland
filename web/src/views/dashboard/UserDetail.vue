@@ -4,7 +4,9 @@ import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { useToast } from '../../composables/useToast'
 import { usersApi, type User } from '../../api/users'
-import { ArrowLeft, User as UserIcon, Trash2, Mail, Shield, AlertTriangle } from 'lucide-vue-next'
+import { ArrowLeft, User as UserIcon, Trash2, Mail, Shield } from 'lucide-vue-next'
+import DeleteModal from '../../components/modals/DeleteModal.vue'
+import StatusBadge from '../../components/base/StatusBadge.vue'
 
 const { t } = useI18n()
 const toast = useToast()
@@ -31,29 +33,36 @@ const fetchUser = async () => {
     }
 }
 
-const handleDelete = async () => {
-    if (!confirm(t('dashboard.userDetail.deleteConfirm'))) return
-    
+// --- Delete Confirmation Modal ---
+const deleteModalVisible = ref(false)
+const deleteError = ref('')
+
+const handleDeleteClick = () => {
+    deleteModalVisible.value = true
+}
+
+const closeDeleteModal = () => {
+    deleteModalVisible.value = false
+    deleteError.value = ''
+}
+
+const confirmDelete = async () => {
     deleting.value = true
+    deleteError.value = ''
     try {
         await usersApi.deleteUser(userId)
         toast.success(t('messages.deleteSuccess'))
         router.push({ name: 'users' })
     } catch (err) {
         console.error('Failed to delete user:', err)
-        alert(t('dashboard.userDetail.deleteFailed'))
+        deleteError.value = t('dashboard.userDetail.deleteFailed')
+    } finally {
         deleting.value = false
     }
 }
 
 const goBack = () => {
     router.back()
-}
-
-const getStatusClass = (status: string) => {
-    if (status === 'active') return 'status-success'
-    if (status === 'disabled') return 'status-danger'
-    return 'status-warning'
 }
 
 onMounted(fetchUser)
@@ -86,13 +95,11 @@ onMounted(fetchUser)
                     <h1>{{ user.username || user.name || $t('dashboard.userDetail.unknownUser') }}</h1>
                     <div class="subtitle">
                         <span class="id-text">{{ user.uuid }}</span>
-                        <span :class="['status-badge', getStatusClass(user.status || 'active')]">
-                            {{ $t('userStatus.' + (user.status || 'active')) }}
-                        </span>
+                        <StatusBadge :status="user.status || 'active'" :label="$t('userStatus.' + (user.status || 'active'))" />
                     </div>
                 </div>
                 <div class="title-actions">
-                    <button class="btn btn-danger" @click="handleDelete" :disabled="deleting">
+                    <button class="btn btn-danger" @click="handleDeleteClick" :disabled="deleting">
                         <Trash2 :size="16" /> {{ deleting ? $t('dashboard.userDetail.deleting') : $t('dashboard.userDetail.deleteUser') }}
                     </button>
                 </div>
@@ -139,6 +146,17 @@ onMounted(fetchUser)
                 </div>
             </div>
         </div>
+
+        <DeleteModal
+            :show="deleteModalVisible"
+            :message="$t('dashboard.userDetail.deleteConfirm')"
+            :resource-name="user?.username || user?.name"
+            :resource-id="user?.uuid"
+            :loading="deleting"
+            :error="deleteError"
+            @close="closeDeleteModal"
+            @confirm="confirmDelete"
+        />
     </div>
 </template>
 
@@ -203,18 +221,6 @@ onMounted(fetchUser)
     color: var(--text-secondary);
 }
 
-.status-badge {
-    display: inline-flex;
-    padding: 2px 8px;
-    border-radius: 12px;
-    font-size: 11px;
-    font-weight: 600;
-    text-transform: uppercase;
-}
-
-.status-success { background: var(--success-50); color: var(--success-700); }
-.status-warning { background: var(--warning-50); color: var(--warning-700); }
-
 /* Info Grid */
 .info-grid {
     display: grid;
@@ -228,7 +234,7 @@ onMounted(fetchUser)
 }
 
 .info-card h3 {
-    font-size: var(--font-size-md);
+    font-size: var(--font-size-base);
     font-weight: 600;
     margin: 0 0 var(--spacing-4) 0;
     color: var(--text-primary);

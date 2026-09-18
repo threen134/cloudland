@@ -7,7 +7,12 @@ import { volumesApi, type Volume } from '../../api/volumes'
 import { useRegionStore } from '../../stores/region'
 import { isValidName } from '../../utils/validation'
 
-import { HardDrive, Plus, MoreVertical, Paperclip, Trash2, Maximize, Search, X, Check, Copy, RefreshCw } from 'lucide-vue-next'
+import { HardDrive, Plus, Paperclip, Trash2, Maximize, Search, Check, Copy, RefreshCw } from 'lucide-vue-next'
+import { formatDisk } from '../../utils/format'
+import BaseModal from '../../components/modals/BaseModal.vue'
+import DeleteModal from '../../components/modals/DeleteModal.vue'
+import PageToolbar from '../../components/base/PageToolbar.vue'
+import StatusBadge from '../../components/base/StatusBadge.vue'
 
 const region = useRegionStore()
 
@@ -72,26 +77,6 @@ const getStatusText = (status: string) => {
     return translated === `dashboard.volumeStatus.${key}` ? status : translated
 }
 
-const formatSize = (size: number) => {
-    if (size >= 1000) {
-        return `${(size / 1000).toFixed(1)} ${t('specs.tb')}`
-    }
-    return `${size} ${t('specs.gb')}`
-}
-
-const getStatusClass = (status: string) => {
-    const statusMap: Record<string, string> = {
-        'available': 'status-active',
-        'attached': 'status-running',
-        'in-use': 'status-running',
-        'creating': 'status-pending',
-        'deleting': 'status-pending',
-        'detaching': 'status-pending',
-        'attaching': 'status-pending',
-        'error': 'status-error'
-    }
-    return statusMap[status] || 'status-pending'
-}
 
 const openCreateModal = () => {
     newVolumeForm.value = { name: '', size: 10, format: 'qcow2', bootable: false }
@@ -172,27 +157,16 @@ onMounted(() => {
 
 <template>
   <div>
-    <div class="page-header">
-      <div class="search-wrapper">
-        <div class="search-box">
-          <Search :size="16" class="search-icon" />
-          <input 
-            type="text" 
-            v-model="searchQuery"
-            :placeholder="$t('actions.search') + '...'" 
-            class="search-input"
-          />
-        </div>
-      </div>
-      <div class="header-actions">
+    <PageToolbar v-model:search="searchQuery">
+      <template #actions>
         <button class="btn btn-secondary btn-sm btn-icon" @click="fetchVolumes" :title="$t('actions.refresh')">
           <RefreshCw :size="14" :class="{ spinning: loading }" />
         </button>
         <button class="btn btn-primary btn-sm" @click="openCreateModal">
           <Plus :size="14" /> {{ $t('dashboard.buttons.createVolume') }}
         </button>
-      </div>
-    </div>
+      </template>
+    </PageToolbar>
 
     <div class="card table-card">
       <table class="data-table">
@@ -246,11 +220,9 @@ onMounted(() => {
               </router-link>
             </td>
             <td>
-              <span :class="['badge', getStatusClass(volume.status)]">
-                {{ getStatusText(volume.status) }}
-              </span>
+              <StatusBadge :status="volume.status" :label="getStatusText(volume.status)" />
             </td>
-            <td>{{ formatSize(volume.size) }}</td>
+            <td>{{ formatDisk(volume.size) }}</td>
             <td>
               <span :class="['badge', volume.booting ? 'status-running' : 'status-pending']">
                 {{ volume.booting ? $t('messages.yes') : $t('messages.no') }}
@@ -282,16 +254,14 @@ onMounted(() => {
     </div>
 
     <!-- Create Volume Modal -->
-    <div v-if="createModalVisible" class="modal-overlay" @click.self="closeCreateModal">
-      <div class="modal-content card">
-        <div class="modal-header">
-          <h3>{{ $t('dashboard.buttons.createVolume') }}</h3>
-          <button class="btn btn-ghost btn-sm icon-btn" @click="closeCreateModal">
-            <X :size="20" />
-          </button>
-        </div>
-        
-        <div class="modal-body">
+    <BaseModal
+      :show="createModalVisible"
+      :title="$t('dashboard.buttons.createVolume')"
+      :loading="creating"
+      form
+      @close="closeCreateModal"
+      @submit="handleCreateVolume"
+    >
           <div class="form-group">
             <label class="form-label">{{ $t('dashboard.forms.name') }}</label>
             <input 
@@ -334,104 +304,33 @@ onMounted(() => {
               <span>{{ $t('dashboard.forms.bootable') }}</span>
             </label>
           </div>
-        </div>
-        <div class="modal-footer" style="flex-direction: column; align-items: stretch; gap: var(--spacing-2);">
+
           <div v-if="createError" class="text-error" style="font-size:var(--font-size-sm);background:var(--error-light);padding:var(--spacing-2);border-radius:var(--radius-sm)">
             {{ createError }}
           </div>
-          <div style="display: flex; justify-content: flex-end; gap: var(--spacing-2);">
-            <button class="btn btn-secondary" @click="closeCreateModal" :disabled="creating">{{ $t('actions.cancel') }}</button>
-            <button class="btn btn-primary" @click="handleCreateVolume" :disabled="creating">
-              <span v-if="creating" class="loading-spinner" style="width: 16px; height: 16px; border-width: 2px;"></span>
-              {{ creating ? $t('messages.creating') : $t('dashboard.buttons.createVolume') }}
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
 
-    <!-- Delete Confirmation Modal -->
-    <div v-if="deleteModalVisible" class="modal-overlay" @click.self="closeDeleteModal">
-      <div class="modal-content card" style="max-width: 460px;">
-        <div class="modal-header">
-          <h3>{{ $t('actions.delete') }}</h3>
-          <button class="btn btn-ghost btn-sm icon-btn" @click="closeDeleteModal"><X :size="20" /></button>
-        </div>
-        <div class="modal-body">
-          <div style="text-align:center;padding:var(--spacing-4) 0">
-            <div style="width:64px;height:64px;border-radius:50%;background:var(--error-light);display:flex;align-items:center;justify-content:center;margin:0 auto var(--spacing-4);color:var(--error-color)"><Trash2 :size="32" /></div>
-            <p style="color:var(--text-secondary);margin:0 0 var(--spacing-4)">{{ $t('dashboard.deleteConfirm.message') }}</p>
-            <div style="background:var(--bg-secondary);border:1px solid var(--border-light);border-radius:var(--radius-md);padding:var(--spacing-3) var(--spacing-4);text-align:left">
-              <span style="font-size:var(--font-size-xs);color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.05em;display:block;margin-bottom:var(--spacing-1)">{{ $t('dashboard.deleteConfirm.resource') }}</span>
-              <span style="font-weight:var(--font-weight-semibold);display:block">{{ resourceToDelete?.name }}</span>
-              <span style="font-size:var(--font-size-xs);color:var(--text-light);font-family:var(--font-family-mono);display:block;margin-top:2px">{{ resourceToDelete?.id }}</span>
-            </div>
-            <div v-if="deleteError" class="text-error" style="margin-top:var(--spacing-4);font-size:var(--font-size-sm);background:var(--error-light);padding:var(--spacing-2);border-radius:var(--radius-sm)">
-              {{ deleteError }}
-            </div>
-          </div>
-        </div>
-        <div class="modal-footer">
-          <button class="btn btn-secondary" @click="closeDeleteModal" :disabled="deletingResource">{{ $t('actions.cancel') }}</button>
-          <button class="btn btn-danger" @click="confirmDelete" :disabled="deletingResource">
-            <span v-if="deletingResource" class="loading-spinner" style="width:16px;height:16px;border-width:2px"></span>
-            <Trash2 v-else :size="14" />
-            {{ deletingResource ? $t('dashboard.deleteConfirm.deleting') : $t('actions.delete') }}
-          </button>
-        </div>
-      </div>
-    </div>
+      <template #footer>
+        <button type="button" class="btn btn-secondary" @click="closeCreateModal" :disabled="creating">{{ $t('actions.cancel') }}</button>
+        <button type="submit" class="btn btn-primary" :disabled="creating">
+          <span v-if="creating" class="loading-spinner" style="width: 16px; height: 16px; border-width: 2px;"></span>
+          {{ creating ? $t('messages.creating') : $t('dashboard.buttons.createVolume') }}
+        </button>
+      </template>
+    </BaseModal>
+
+    <DeleteModal
+      :show="deleteModalVisible"
+      :resource-name="resourceToDelete?.name"
+      :resource-id="resourceToDelete?.id"
+      :loading="deletingResource"
+      :error="deleteError"
+      @close="closeDeleteModal"
+      @confirm="confirmDelete"
+    />
   </div>
 </template>
 
 <style scoped>
-.page-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 0px;
-  padding-right: 20px;
-}
-
-.search-wrapper {
-  flex: 1;
-  max-width: 400px;
-}
-
-.search-box {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  background: var(--bg-secondary);
-  padding: 0 12px;
-  height: 40px;
-  border-radius: var(--radius-md);
-  border: 1px solid var(--border-light);
-  transition: all 0.2s;
-}
-
-.search-box:focus-within {
-  border-color: var(--primary-300);
-  box-shadow: 0 0 0 2px var(--primary-100);
-}
-
-.search-icon {
-  color: var(--gray-400);
-}
-
-.search-input {
-  border: none;
-  background: transparent;
-  width: 100%;
-  height: 100%;
-  font-size: 0.875rem;
-  color: var(--text-primary);
-}
-
-.search-input:focus {
-  outline: none;
-}
-
 .table-card {
   padding: 0;
   overflow: visible;
@@ -454,7 +353,7 @@ onMounted(() => {
 
 .actions {
   display: flex;
-  gap: var(--spacing-02);
+  gap: var(--spacing-2);
 }
 
 .text-error {
@@ -470,24 +369,6 @@ onMounted(() => {
     cursor: pointer;
 }
 
-.btn-danger {
-    background: var(--error-color);
-    color: white;
-    border: none;
-    padding: 8px 20px;
-    border-radius: var(--radius-md);
-    font-size: var(--font-size-sm);
-    font-weight: var(--font-weight-medium);
-    cursor: pointer;
-    display: inline-flex;
-    align-items: center;
-    gap: var(--spacing-2);
-    transition: background var(--transition-base);
-}
-.btn-danger:hover { background: var(--error-dark); }
-.btn-danger:disabled { opacity: 0.5; cursor: not-allowed; }
-
-.header-actions { display: flex; gap: 8px; align-items: center; }
 .spinning { animation: spin 1s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 </style>

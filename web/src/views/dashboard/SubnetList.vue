@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted, computed, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { useRouter } from 'vue-router'
 import { useToast } from '../../composables/useToast'
 import { useCopyId } from '../../composables/useCopyId'
 import { subnetsApi, vpcsApi, type Subnet, type SubnetPayload, type VPC } from '../../api/networks'
@@ -11,14 +10,15 @@ import { useRegionStore } from '../../stores/region'
 
 const region = useRegionStore()
 
-import { Network, Plus, Trash2, Edit, Search, X, Globe, Cpu, Zap, RefreshCw, Check, Copy, ChevronDown, HelpCircle } from 'lucide-vue-next'
+import { Network, Plus, Trash2, Edit, Search, RefreshCw, Check, Copy, ChevronDown, HelpCircle } from 'lucide-vue-next'
 import DeleteModal from '../../components/modals/DeleteModal.vue'
+import BaseModal from '../../components/modals/BaseModal.vue'
+import PageToolbar from '../../components/base/PageToolbar.vue'
 
 const subnets = ref<Subnet[]>([])
 const vpcs = ref<VPC[]>([])
 const loading = ref(false)
 const searchQuery = ref('')
-const router = useRouter()
 
 const createModalVisible = ref(false)
 const creating = ref(false)
@@ -178,9 +178,6 @@ const getTypeClass = (type: string) => {
     return map[type] || 'badge-gray'
 }
 
-const navigateToDetail = (subnet: Subnet) => {
-    router.push({ name: 'subnet-detail', params: { id: subnet.id } })
-}
 
 // --- Delete Confirmation Modal ---
 const deleteModalVisible = ref(false)
@@ -224,27 +221,16 @@ onMounted(() => {
 
 <template>
   <div>
-    <div class="page-header">
-      <div class="search-wrapper">
-        <div class="search-box">
-          <Search :size="16" class="search-icon" />
-          <input 
-            type="text" 
-            v-model="searchQuery"
-            :placeholder="$t('actions.search') + '...'" 
-            class="search-input"
-          />
-        </div>
-      </div>
-      <div class="header-actions">
+    <PageToolbar v-model:search="searchQuery">
+      <template #actions>
         <button class="btn btn-secondary btn-sm btn-icon" @click="fetchSubnets" :title="$t('actions.refresh')">
           <RefreshCw :size="14" :class="{ spinning: loading }" />
         </button>
         <button class="btn btn-primary btn-sm" @click="openCreateModal">
           <Plus :size="14" /> {{ $t('dashboard.buttons.createSubnet') }}
         </button>
-      </div>
-    </div>
+      </template>
+    </PageToolbar>
 
     <div class="card table-card">
       <table class="data-table">
@@ -353,16 +339,15 @@ onMounted(() => {
     </div>
 
     <!-- Create Subnet Modal -->
-    <div v-if="createModalVisible" class="modal-overlay" @click.self="closeCreateModal">
-      <div class="modal-content card" style="max-width: 600px;">
-        <div class="modal-header">
-          <h3>{{ $t('dashboard.buttons.createSubnet') }}</h3>
-          <button class="btn btn-ghost btn-sm icon-btn" @click="closeCreateModal">
-            <X :size="20" />
-          </button>
-        </div>
-
-        <div class="modal-body">
+    <BaseModal
+      :show="createModalVisible"
+      :title="$t('dashboard.buttons.createSubnet')"
+      size="lg"
+      :loading="creating"
+      form
+      @close="closeCreateModal"
+      @submit="handleCreateSubnet"
+    >
           <!-- Section 1 & 2: Network Configuration -->
           <div class="form-section">
             <div class="form-section-title form-section-toggle" @click="showNetworkConfig = !showNetworkConfig">
@@ -535,22 +520,19 @@ onMounted(() => {
               </div>
             </div>
           </div>
-        </div>
 
-        <div class="modal-footer" style="flex-direction: column; align-items: stretch; gap: var(--spacing-2);">
-          <div v-if="createError" class="text-error" style="font-size:var(--font-size-sm);background:var(--error-light);padding:var(--spacing-2);border-radius:var(--radius-sm)">
+          <div v-if="createError" class="text-error" style="margin-top:var(--spacing-4);font-size:var(--font-size-sm);background:var(--error-light);padding:var(--spacing-2);border-radius:var(--radius-sm)">
             {{ createError }}
           </div>
-          <div style="display: flex; justify-content: flex-end; gap: var(--spacing-2);">
-            <button class="btn btn-secondary" @click="closeCreateModal" :disabled="creating">{{ $t('actions.cancel') }}</button>
-            <button class="btn btn-primary" @click="handleCreateSubnet" :disabled="creating">
-              <span v-if="creating" class="loading-spinner" style="width: 16px; height: 16px; border-width: 2px;"></span>
-              {{ creating ? $t('messages.creating') : $t('dashboard.buttons.createSubnet') }}
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
+
+      <template #footer>
+        <button type="button" class="btn btn-secondary" @click="closeCreateModal" :disabled="creating">{{ $t('actions.cancel') }}</button>
+        <button type="submit" class="btn btn-primary" :disabled="creating">
+          <span v-if="creating" class="loading-spinner" style="width: 16px; height: 16px; border-width: 2px;"></span>
+          {{ creating ? $t('messages.creating') : $t('dashboard.buttons.createSubnet') }}
+        </button>
+      </template>
+    </BaseModal>
 
     <DeleteModal
       :show="deleteModalVisible"
@@ -565,53 +547,6 @@ onMounted(() => {
 </template>
 
 <style scoped>
-.page-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: var(--spacing-06);
-  padding-right: 20px;
-}
-
-.search-wrapper {
-  flex: 1;
-  max-width: 400px;
-}
-
-.search-box {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  background: var(--bg-secondary);
-  padding: 0 12px;
-  height: 40px;
-  border-radius: var(--radius-md);
-  border: 1px solid var(--border-light);
-  transition: all 0.2s;
-}
-
-.search-box:focus-within {
-  border-color: var(--primary-300);
-  box-shadow: 0 0 0 2px var(--primary-100);
-}
-
-.search-icon {
-  color: var(--gray-400);
-}
-
-.search-input {
-  border: none;
-  background: transparent;
-  width: 100%;
-  height: 100%;
-  font-size: 0.875rem;
-  color: var(--text-primary);
-}
-
-.search-input:focus {
-  outline: none;
-}
-
 .table-card {
   padding: 0;
   overflow: hidden;
@@ -648,7 +583,7 @@ onMounted(() => {
 
 .actions {
   display: flex;
-  gap: var(--spacing-02);
+  gap: var(--spacing-2);
 }
 
 .cidr-group {
@@ -685,10 +620,6 @@ onMounted(() => {
   color: var(--error-color);
 }
 
-.btn-danger:hover { background: var(--error-dark); }
-.btn-danger:disabled { opacity: 0.5; cursor: not-allowed; }
-
-.header-actions { display: flex; gap: 8px; align-items: center; }
 .spinning { animation: spin 1s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 

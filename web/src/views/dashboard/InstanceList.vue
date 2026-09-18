@@ -5,7 +5,7 @@ import { useI18n } from 'vue-i18n'
 import { useToast } from '../../composables/useToast'
 import { useCopyId } from '../../composables/useCopyId'
 import { instancesApi, type Instance } from '../../api/instances'
-import { Play, Square, RotateCw, Trash2, Plus, Terminal, MoreVertical, Search, X, Check, Copy, Monitor, ChevronDown, ChevronUp, PlusCircle, MinusCircle, RefreshCw, Cpu, HardDrive, Eye, EyeOff, Shuffle, Pencil, KeyRound, Maximize2, Server, Activity, Network, Globe, HelpCircle } from 'lucide-vue-next'
+import { Play, Square, RotateCw, Trash2, Plus, Terminal, MoreVertical, Search, Check, Copy, Monitor, ChevronDown, ChevronUp, PlusCircle, MinusCircle, RefreshCw, Eye, EyeOff, Shuffle, Pencil, KeyRound, Maximize2, Server, Activity, Network, Globe, HelpCircle } from 'lucide-vue-next'
 
 import { imagesApi, type Image } from '../../api/images'
 import { vpcsApi, subnetsApi, securityGroupsApi, floatingIpsApi, type VPC, type Subnet, type SecurityGroup, type FloatingIP } from '../../api/networks'
@@ -16,9 +16,13 @@ import { zonesApi, type Zone } from '../../api/zones'
 import { hypervisorsApi, type Hypervisor } from '../../api/hypervisors'
 import { isValidName } from '../../utils/validation'
 import DeleteModal from '../../components/modals/DeleteModal.vue'
+import BaseModal from '../../components/modals/BaseModal.vue'
+import PageToolbar from '../../components/base/PageToolbar.vue'
+import StatusBadge from '../../components/base/StatusBadge.vue'
 import { useRegionStore } from '../../stores/region'
 import { useAuthStore } from '../../stores/auth'
 import { quotaErrorMessage } from '../../utils/quotaError'
+import { formatMemory } from '../../utils/format'
 
 const region = useRegionStore()
 const authStore = useAuthStore()
@@ -67,7 +71,10 @@ const toast = useToast()
 
 
 const instanceMetrics = ref<Record<string, { cpu: number, memory: number }>>({})
-let metricsTimer: any = null
+let metricsTimer: ReturnType<typeof setInterval> | null = null
+// 电源操作后的状态轮询：可能同时有多台，统一在 onUnmounted 停止
+const statusPollTimers = new Set<ReturnType<typeof setTimeout>>()
+let unmounted = false
 
 const fetchUsageMetrics = async () => {
     const ids = filteredInstances.value
@@ -150,34 +157,6 @@ const filteredInstances = computed(() => {
     })
 })
 
-const navigateToDetail = (instance: Instance) => {
-    router.push({ name: 'instance-detail', params: { id: instance.id } })
-}
-
-const getStatusClass = (status: string) => {
-    const statusMap: Record<string, string> = {
-        'running': 'status-running',
-        'active': 'status-running',
-        'stopped': 'status-stopped',
-        'shutoff': 'status-stopped',
-        'shut_off': 'status-stopped',
-        'paused': 'status-paused',
-        'provisioning': 'status-pending',
-        'starting': 'status-pending',
-        'stopping': 'status-pending',
-        'deleting': 'status-pending',
-        'error': 'status-error',
-        'migrating': 'status-pending',
-        'migrated': 'status-running',
-        'rollback': 'status-error',
-        'unknown': 'status-error',
-        'reinstalling': 'status-pending',
-        'resizing': 'status-pending',
-        'rescuing': 'status-pending',
-        'deleted': 'status-stopped'
-    }
-    return statusMap[status?.toLowerCase()] || 'status-pending'
-}
 
 const getStatusText = (status: string) => {
     const s = status?.toLowerCase()
@@ -188,30 +167,8 @@ const getStatusText = (status: string) => {
     return te(key) ? t(key) : status
 }
 
-const formatMemory = (mb: number) => {
-    if (mb >= 1024) {
-        return `${(mb / 1024).toFixed(0)} GB`
-    }
-    return `${mb} MB`
-}
 
-const getIPAddress = (instance: Instance) => {
-    const primaryIface = instance.interfaces?.find(iface => iface.is_primary) || instance.interfaces?.[0]
-    const addr = primaryIface?.ip_address
-    if (!addr) return '-'
-    return addr.split('/')[0]
-}
 
-const getFloatingIP = (instance: Instance) => {
-    const primaryIface = instance.interfaces?.find(iface => iface.is_primary) || instance.interfaces?.[0]
-    if (primaryIface?.floating_ips && primaryIface.floating_ips.length > 0) {
-        const fip = primaryIface.floating_ips.find((f: any) => f.type?.toLowerCase() !== 'native')
-        if (fip && fip.fip_address) {
-            return fip.fip_address.split('/')[0]
-        }
-    }
-    return null
-}
 
 // --- Action States and Dropdown ---
 const activeActionMenuId = ref<string | null>(null)
@@ -267,6 +224,7 @@ const handleAction = async (instance: Instance, action: 'start' | 'stop' | 'rest
         const checkStatus = async () => {
             attempts++
             await fetchInstances(false)
+            if (unmounted) return
             const currentInstance = instanceList.value.find(i => i.id === instance.id)
             const currentStatus = currentInstance?.status?.toLowerCase() || ''
             if (!currentInstance || targetStableStates.includes(currentStatus) || attempts >= 15) {
@@ -277,11 +235,11 @@ const handleAction = async (instance: Instance, action: 'start' | 'stop' | 'rest
                     toast.success(t('dashboard.instanceDetail.actionSuccess', { action: t(`dashboard.instanceDetail.${action}`) }))
                 }
             } else {
-                setTimeout(checkStatus, 3000)
+                statusPollTimers.add(setTimeout(checkStatus, 3000))
             }
         }
-        
-        setTimeout(checkStatus, 2000)
+
+        statusPollTimers.add(setTimeout(checkStatus, 2000))
     } catch (error: any) {
         console.error(`Failed to ${action} instance:`, error)
         actionLoading.value[instance.id] = null
@@ -734,9 +692,6 @@ const getPublicSubnetsForSecondary = (excludeIndex: number) => {
     )
 }
 
-const getAvailablePublicIps = () => {
-    return availableFloatingIps.value.filter(fip => !fip.target_interface && !fip.interface)
-}
 
 const getFilteredSecurityGroups = (vpcId?: string) => {
     if (!vpcId) {
@@ -981,6 +936,10 @@ watch(() => region.currentRegionId, (newId) => {
 
 onUnmounted(() => {
     if (metricsTimer) clearInterval(metricsTimer)
+    // 电源操作后的状态轮询每台最长 45 秒，不停掉会在离开后继续请求并弹出本页的提示
+    unmounted = true
+    statusPollTimers.forEach(clearTimeout)
+    statusPollTimers.clear()
 })
 </script>
 
@@ -988,29 +947,16 @@ onUnmounted(() => {
   <div>
     <!-- Toast Notification removed (using global ToastContainer) -->
 
-    <div class="page-header">
-      <div class="search-wrapper">
-        <label class="search-box">
-          <Search :size="16" class="search-icon" />
-          <input 
-            id="searchQuery"
-            name="searchQuery"
-            type="text" 
-            v-model="searchQuery"
-            :placeholder="t('actions.search') + '...'"
-            class="search-input"
-          />
-        </label>
-      </div>
-      <div class="header-actions">
+    <PageToolbar v-model:search="searchQuery">
+      <template #actions>
         <button class="btn btn-secondary btn-sm btn-icon" @click="fetchInstances()" :title="t('dashboard.regions')">
           <RefreshCw :size="14" :class="{ spinning: loading }" />
         </button>
         <button class="btn btn-primary btn-sm" @click="openCreateModal">
           <Plus :size="14" /> {{ t('dashboard.buttons.createInstance') }}
         </button>
-      </div>
-    </div>
+      </template>
+    </PageToolbar>
 
     <div class="card table-card">
       <table class="data-table">
@@ -1128,9 +1074,7 @@ onUnmounted(() => {
               </div>
             </td>
             <td>
-              <span :class="['badge', getStatusClass(instance.status)]">
-                {{ getStatusText(instance.status) }}
-              </span>
+              <StatusBadge :status="instance.status" :label="getStatusText(instance.status)" />
             </td>
             <td>
                <div class="instance-usage-summary" v-if="['running', 'active'].includes(instance.status?.toLowerCase())">
@@ -1249,20 +1193,18 @@ onUnmounted(() => {
     </div>
 
     <!-- Create Instance Modal -->
-    <div v-if="createModalVisible" class="modal-overlay" @click.self="closeCreateModal">
-      <div class="modal-content card" style="max-width: 600px;">
-        <div class="modal-header">
-          <h3>{{ t('dashboard.buttons.createInstance') }}</h3>
-          <button class="btn btn-ghost btn-sm icon-btn" @click="closeCreateModal">
-            <X :size="20" />
-          </button>
-        </div>
-        
-        <div class="modal-body" v-if="resourcesLoading">
+    <BaseModal
+      :show="createModalVisible"
+      :title="t('dashboard.buttons.createInstance')"
+      size="lg"
+      :loading="creatingInstance"
+      @close="closeCreateModal"
+    >
+        <div v-if="resourcesLoading">
             <div class="loading-spinner" style="margin: 40px auto;"></div>
         </div>
 
-        <div class="modal-body scrollable-options" v-else>
+        <div v-else>
           <!-- Basic Info -->
           <div class="form-section">
             <div class="section-header collapsible-header" @click="newInstanceForm.general_expanded = !newInstanceForm.general_expanded">
@@ -1642,64 +1584,61 @@ onUnmounted(() => {
           </div>
         </div>
 
-        <div class="modal-footer" style="flex-direction: column; align-items: stretch; gap: var(--spacing-2);">
-          <div v-if="createError" class="text-error" style="font-size:var(--font-size-sm);background:var(--error-light);padding:var(--spacing-2);border-radius:var(--radius-sm)">
-            {{ createError }}
-          </div>
-          <div style="display: flex; justify-content: flex-end; gap: var(--spacing-2);">
-            <button class="btn btn-secondary" @click="closeCreateModal" :disabled="creatingInstance">{{ t('marketplace.cancel') }}</button>
-            <button class="btn btn-primary" @click="handleCreateInstance" :disabled="creatingInstance">
-              <span v-if="creatingInstance" class="loading-spinner" style="width: 16px; height: 16px; border-width: 2px;"></span>
-              {{ creatingInstance ? t('dashboard.overview.loadingOverview') : t('dashboard.buttons.createInstance') }}
-            </button>
-          </div>
+        <div v-if="createError" class="modal-error text-error">
+          {{ createError }}
         </div>
-      </div>
-    </div>
+
+      <template #footer>
+        <button type="button" class="btn btn-secondary" @click="closeCreateModal" :disabled="creatingInstance">{{ t('marketplace.cancel') }}</button>
+        <button type="button" class="btn btn-primary" @click="handleCreateInstance" :disabled="creatingInstance">
+          <span v-if="creatingInstance" class="loading-spinner" style="width: 16px; height: 16px; border-width: 2px;"></span>
+          {{ creatingInstance ? t('dashboard.overview.loadingOverview') : t('dashboard.buttons.createInstance') }}
+        </button>
+      </template>
+    </BaseModal>
 
     <!-- Rename Modal -->
-    <div v-if="renameModalVisible" class="modal-overlay" @click.self="renameModalVisible = false" style="z-index: 1001;">
-      <div class="modal-content card" style="max-width: 400px;">
-        <div class="modal-header">
-          <h3>{{ t('dashboard.instanceDetail.rename') }}</h3>
-          <button class="btn btn-ghost btn-sm icon-btn" @click="renameModalVisible = false">
-            <X :size="20" />
-          </button>
-        </div>
-        <div class="modal-body">
+    <BaseModal
+      :show="renameModalVisible"
+      :title="t('dashboard.instanceDetail.rename')"
+      size="sm"
+      :loading="renameLoading"
+      form
+      @close="renameModalVisible = false"
+      @submit="confirmRename"
+    >
           <div class="form-group">
             <label class="form-label">{{ t('dashboard.instanceDetail.hostname') }}</label>
-            <input 
+            <input
               id="renameHostname"
               name="hostname"
-              v-model="renameForm.hostname" 
-              type="text" 
-              class="form-input" 
+              v-model="renameForm.hostname"
+              type="text"
+              class="form-input"
               :placeholder="t('dashboard.table.hostname')"
             />
           </div>
           <div v-if="renameError" class="text-error mt-2">{{ renameError }}</div>
-        </div>
-        <div class="modal-footer">
-          <button class="btn btn-ghost" @click="renameModalVisible = false">{{ t('dashboard.buttons.cancel') }}</button>
-          <button class="btn btn-primary" @click="confirmRename" :disabled="renameLoading">
-            <span v-if="renameLoading" class="loading-spinner small"></span>
-            {{ t('dashboard.buttons.confirm') }}
-          </button>
-        </div>
-      </div>
-    </div>
+
+      <template #footer>
+        <button type="button" class="btn btn-ghost" @click="renameModalVisible = false">{{ t('dashboard.buttons.cancel') }}</button>
+        <button type="submit" class="btn btn-primary" :disabled="renameLoading">
+          <span v-if="renameLoading" class="loading-spinner small"></span>
+          {{ t('dashboard.buttons.confirm') }}
+        </button>
+      </template>
+    </BaseModal>
 
     <!-- Reset Password Modal -->
-    <div v-if="resetPasswordModalVisible" class="modal-overlay" @click.self="resetPasswordModalVisible = false" style="z-index: 1001;">
-      <div class="modal-content card" style="max-width: 450px;">
-        <div class="modal-header">
-          <h3>{{ t('dashboard.instanceDetail.resetPassword') }}</h3>
-          <button class="btn btn-ghost btn-sm icon-btn" @click="resetPasswordModalVisible = false">
-            <X :size="20" />
-          </button>
-        </div>
-        <div class="modal-body">
+    <BaseModal
+      :show="resetPasswordModalVisible"
+      :title="t('dashboard.instanceDetail.resetPassword')"
+      :loading="resetPasswordLoading"
+      form
+      @close="resetPasswordModalVisible = false"
+      @submit="confirmResetPassword"
+    >
+        <div>
           <div class="form-group">
             <label class="form-label">{{ t('dashboard.instanceDetail.userName') }}</label>
             <input v-model="resetPasswordForm.user_name" type="text" class="form-input" disabled />
@@ -1716,7 +1655,7 @@ onUnmounted(() => {
                 :placeholder="t('dashboard.instanceDetail.passwordPlaceholder')" 
                 autocomplete="new-password"
               />
-              <button class="password-toggle" @click="showResetPassword = !showResetPassword">
+              <button type="button" class="password-toggle" @click="showResetPassword = !showResetPassword">
                 <Eye v-if="!showResetPassword" :size="16" />
                 <EyeOff v-else :size="16" />
               </button>
@@ -1735,32 +1674,31 @@ onUnmounted(() => {
             />
           </div>
           <div class="mt-2">
-            <button class="btn btn-ghost btn-sm text-primary" @click="generateRandomResetPassword">
+            <button type="button" class="btn btn-ghost btn-sm text-primary" @click="generateRandomResetPassword">
               <RefreshCw :size="14" /> {{ t('dashboard.instanceDetail.generatePassword') }}
             </button>
           </div>
           <div v-if="resetPasswordError" class="text-error mt-3">{{ resetPasswordError }}</div>
         </div>
-        <div class="modal-footer">
-          <button class="btn btn-ghost" @click="resetPasswordModalVisible = false">{{ t('dashboard.buttons.cancel') }}</button>
-          <button class="btn btn-primary" @click="confirmResetPassword" :disabled="resetPasswordLoading">
-            <span v-if="resetPasswordLoading" class="loading-spinner small"></span>
-            {{ t('dashboard.buttons.confirm') }}
-          </button>
-        </div>
-      </div>
-    </div>
+
+      <template #footer>
+        <button type="button" class="btn btn-ghost" @click="resetPasswordModalVisible = false">{{ t('dashboard.buttons.cancel') }}</button>
+        <button type="submit" class="btn btn-primary" :disabled="resetPasswordLoading">
+          <span v-if="resetPasswordLoading" class="loading-spinner small"></span>
+          {{ t('dashboard.buttons.confirm') }}
+        </button>
+      </template>
+    </BaseModal>
 
     <!-- Resize Modal -->
-    <div v-if="resizeModalVisible" class="modal-overlay" @click.self="resizeModalVisible = false" style="z-index: 1001;">
-      <div class="modal-content card" style="max-width: 450px;">
-        <div class="modal-header">
-          <h3>{{ t('dashboard.instanceDetail.resize') }}</h3>
-          <button class="btn btn-ghost btn-sm icon-btn" @click="resizeModalVisible = false">
-            <X :size="20" />
-          </button>
-        </div>
-        <div class="modal-body">
+    <BaseModal
+      :show="resizeModalVisible"
+      :title="t('dashboard.instanceDetail.resize')"
+      :loading="resizeLoading"
+      form
+      @close="resizeModalVisible = false"
+      @submit="confirmResize"
+    >
           <div class="form-row">
             <div class="form-group">
               <label class="form-label">CPU ({{ t('dashboard.overview.cpuUnit') }})</label>
@@ -1772,16 +1710,15 @@ onUnmounted(() => {
             </div>
           </div>
           <div v-if="resizeError" class="text-error mt-2">{{ resizeError }}</div>
-        </div>
-        <div class="modal-footer">
-          <button class="btn btn-ghost" @click="resizeModalVisible = false">{{ t('dashboard.buttons.cancel') }}</button>
-          <button class="btn btn-primary" @click="confirmResize" :disabled="resizeLoading">
-            <span v-if="resizeLoading" class="loading-spinner small"></span>
-            {{ t('dashboard.buttons.confirm') }}
-          </button>
-        </div>
-      </div>
-    </div>
+
+      <template #footer>
+        <button type="button" class="btn btn-ghost" @click="resizeModalVisible = false">{{ t('dashboard.buttons.cancel') }}</button>
+        <button type="submit" class="btn btn-primary" :disabled="resizeLoading">
+          <span v-if="resizeLoading" class="loading-spinner small"></span>
+          {{ t('dashboard.buttons.confirm') }}
+        </button>
+      </template>
+    </BaseModal>
 
     <Teleport to="body">
       <div v-if="ifaceTooltipVisible" class="iface-help-tooltip"
@@ -1841,7 +1778,7 @@ onUnmounted(() => {
     border: none;
     background: transparent;
     border-radius: var(--radius-sm);
-    color: var(--text-main);
+    color: var(--text-primary);
     font-size: var(--font-size-sm);
     text-align: left;
     cursor: pointer;
@@ -1898,58 +1835,12 @@ onUnmounted(() => {
     justify-content: center;
 }
 
-.modal-footer {
-    display: flex;
-    justify-content: flex-end;
-    gap: 12px;
-    padding-top: 24px;
-}
-
-.page-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 0;
-  padding-right: 20px;
-}
-
-.search-wrapper {
-  flex: 1;
-  max-width: 400px;
-}
-
-.search-box {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  background: var(--bg-secondary);
-  padding: 0 12px;
-  height: 40px;
-  border-radius: var(--radius-md);
-  border: 1px solid var(--border-light);
-  transition: all 0.2s;
-}
-
-.search-box:focus-within {
-  border-color: var(--primary-300);
-  box-shadow: 0 0 0 2px var(--primary-100);
-}
-
-.search-icon {
-  color: var(--gray-400);
-}
-
-.search-input {
-  border: none;
-  background: transparent;
-  width: 100%;
-  height: 100%;
-  font-size: 0.875rem;
-  color: var(--text-primary);
-}
-
-.search-input:focus {
-  outline: none;
+.modal-error {
+  margin-top: var(--spacing-4);
+  font-size: var(--font-size-sm);
+  background: var(--error-light);
+  padding: var(--spacing-2);
+  border-radius: var(--radius-sm);
 }
 
 .table-card {
@@ -2104,7 +1995,7 @@ onUnmounted(() => {
 
 .actions {
   display: flex;
-  gap: var(--spacing-02);
+  gap: var(--spacing-2);
 }
 
 .text-error {
@@ -2581,7 +2472,7 @@ input:checked + .slider:before {
     border-width: 2px;
 }
 
-.header-actions { display: flex; gap: 8px; align-items: center; }
+
 
 .spinning { animation: spin 1s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }

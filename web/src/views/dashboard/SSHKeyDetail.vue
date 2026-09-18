@@ -221,7 +221,7 @@ onMounted(fetchKey)
 }
 
 .info-card h3 {
-    font-size: var(--font-size-md);
+    font-size: var(--font-size-base);
     font-weight: 600;
     margin: 0 0 var(--spacing-4) 0;
     color: var(--text-primary);
@@ -272,7 +272,7 @@ onMounted(fetchKey)
     border-bottom: 1px solid var(--border-light);
 }
 
-.card-header h3 { margin: 0; font-size: var(--font-size-md); }
+.card-header h3 { margin: 0; font-size: var(--font-size-base); }
 
 .key-content {
     padding: var(--spacing-4);

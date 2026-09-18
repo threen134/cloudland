@@ -2,9 +2,10 @@
 import { ref, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { alarmsApi, RULE_TYPES, type NodeAlarmRule } from '../../api/alarms'
-import { ArrowLeft, AlertTriangle, Copy, Check, Trash2, X, Loader2 } from 'lucide-vue-next'
+import { ArrowLeft, AlertTriangle, Copy, Check, Trash2 } from 'lucide-vue-next'
 import { useI18n } from 'vue-i18n'
 import { useToast } from '../../composables/useToast'
+import DeleteModal from '../../components/modals/DeleteModal.vue'
 
 const { t } = useI18n()
 const toast = useToast()
@@ -163,26 +164,14 @@ onMounted(fetchAlarmDetail)
     </div>
 
     <!-- Delete Confirm Modal -->
-    <Teleport to="body">
-      <div v-if="showDeleteConfirm" class="modal-overlay" @click.self="showDeleteConfirm = false">
-        <div class="modal-content" style="max-width: 440px;">
-          <div class="modal-header">
-            <h3>{{ t('dashboard.alarmActions.deleteTitle') }}</h3>
-            <button class="btn btn-ghost btn-icon" @click="showDeleteConfirm = false"><X :size="18" /></button>
-          </div>
-          <div class="modal-body">
-            <p>{{ t('dashboard.alarmActions.deleteConfirm', { name: alarm?.name }) }}</p>
-          </div>
-          <div class="modal-footer">
-            <button class="btn btn-secondary" @click="showDeleteConfirm = false">{{ t('actions.cancel') }}</button>
-            <button class="btn btn-danger" @click="handleDelete" :disabled="deleting">
-              <Loader2 v-if="deleting" :size="14" class="spinning" />
-              {{ deleting ? t('messages.deleting') : t('actions.delete') }}
-            </button>
-          </div>
-        </div>
-      </div>
-    </Teleport>
+    <DeleteModal
+      :show="showDeleteConfirm"
+      :title="t('dashboard.alarmActions.deleteTitle')"
+      :message="t('dashboard.alarmActions.deleteConfirm', { name: alarm?.name })"
+      :loading="deleting"
+      @close="showDeleteConfirm = false"
+      @confirm="handleDelete"
+    />
   </div>
 </template>
 
@@ -300,18 +289,6 @@ onMounted(fetchAlarmDetail)
 }
 
 .btn-danger-outline:hover { background: #fef2f2; }
-
-/* Modal */
-.btn-danger {
-  background: #ef4444; color: white; border: none;
-  padding: 8px 16px; border-radius: var(--radius-md); cursor: pointer; font-weight: 500;
-}
-
-.btn-danger:hover { background: #dc2626; }
-.btn-danger:disabled { opacity: 0.5; cursor: not-allowed; }
-
-.spinning { animation: spin 1s linear infinite; }
-@keyframes spin { to { transform: rotate(360deg); } }
 
 @media (max-width: 768px) {
   .info-grid { grid-template-columns: 1fr; }

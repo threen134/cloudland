@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, computed, watch } from 'vue'
+import { ref, onMounted, onUnmounted, computed, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useToast } from '../../composables/useToast'
 import { useCopyId } from '../../composables/useCopyId'
@@ -8,7 +8,10 @@ import { securityGroupsApi, vpcsApi, type SecurityGroup, type VPC } from '../../
 import { isValidName } from '../../utils/validation'
 import { useRegionStore } from '../../stores/region'
 
-import { Shield, Plus, Trash2, Search, X, RefreshCw, Edit, HelpCircle, Check, Copy } from 'lucide-vue-next'
+import { Shield, Plus, Trash2, Search, RefreshCw, Edit, HelpCircle, Check, Copy } from 'lucide-vue-next'
+import PageToolbar from '../../components/base/PageToolbar.vue'
+import BaseModal from '../../components/modals/BaseModal.vue'
+import DeleteModal from '../../components/modals/DeleteModal.vue'
 
 const region = useRegionStore()
 const { translateDescription } = useSecurityGroup()
@@ -87,6 +90,8 @@ const onSearchInput = () => {
         fetchSecurityGroups()
     }, 400)
 }
+// 搜索框现在由 PageToolbar 渲染，改用 watch 触发原来的输入防抖
+watch(searchQuery, onSearchInput)
 
 const onVpcFilterChange = () => {
     currentPage.value = 1
@@ -236,38 +241,33 @@ onMounted(() => {
 watch(() => region.currentRegionId, (newId) => {
     if (newId) loadPage()
 })
+
+// 搜索防抖定时器：组件卸载后不应再触发请求
+onUnmounted(() => {
+    if (searchTimer) clearTimeout(searchTimer)
+})
 </script>
 
 <template>
   <div>
-    <div class="page-header">
-      <div class="filters">
-        <div class="search-box">
-          <Search :size="16" class="search-icon" />
-          <input
-            type="text"
-            v-model="searchQuery"
-            @input="onSearchInput"
-            :placeholder="$t('actions.search') + '...'"
-            class="search-input"
-          />
-        </div>
+    <PageToolbar v-model:search="searchQuery">
+      <template #filters>
         <div class="select-wrapper vpc-filter">
           <select v-model="vpcFilter" class="form-input" @change="onVpcFilterChange">
             <option value="">{{ $t('dashboard.table.vpc') }}: {{ $t('dashboard.forms.placeholder.all') }}</option>
             <option v-for="vpc in vpcs" :key="vpc.id" :value="vpc.id">{{ vpc.name }}</option>
           </select>
         </div>
-      </div>
-      <div class="header-actions">
+      </template>
+      <template #actions>
         <button class="btn btn-secondary btn-sm btn-icon" @click="refresh" :title="$t('actions.refresh')">
           <RefreshCw :size="14" :class="{ spinning: loading }" />
         </button>
         <button class="btn btn-primary btn-sm" @click="openCreateModal">
           <Plus :size="14" /> {{ $t('dashboard.buttons.createSecurityGroup') }}
         </button>
-      </div>
-    </div>
+      </template>
+    </PageToolbar>
 
     <div class="card table-card">
       <div class="table-responsive">
@@ -373,149 +373,120 @@ watch(() => region.currentRegionId, (newId) => {
     </div>
 
     <!-- Create Security Group Modal -->
-    <div v-if="createModalVisible" class="modal-overlay" @click.self="closeCreateModal">
-      <div class="modal-content card">
-        <div class="modal-header">
-          <h3>{{ $t('dashboard.buttons.createSecurityGroup') }}</h3>
-          <button class="btn btn-ghost btn-sm icon-btn" @click="closeCreateModal">
-            <X :size="20" />
-          </button>
-        </div>
-
-        <div class="modal-body">
-          <div class="form-group">
-            <label class="form-label">{{ $t('dashboard.forms.name') }}</label>
-            <input
-              v-model="newGroupForm.name"
-              type="text"
-              :class="['form-input', { 'input-error': !isNameValid }]"
-              :placeholder="$t('dashboard.forms.placeholder.sgNameExample')"
-            />
-            <div v-if="!isNameValid" class="text-error text-xs mt-1">
-              {{ $t('messages.invalidHostname') }}
-            </div>
-          </div>
-
-          <div class="form-group">
-            <label class="form-label">{{ $t('dashboard.forms.description') }} <span class="text-optional">({{ $t('dashboard.forms.optional') }})</span></label>
-            <input
-              v-model="newGroupForm.description"
-              type="text"
-              class="form-input"
-              :placeholder="$t('messages.placeholderDescription')"
-            />
-          </div>
-
-          <div class="form-group">
-            <label class="form-label">{{ $t('dashboard.forms.vpc') }} <span class="text-optional">({{ $t('dashboard.forms.optional') }})</span></label>
-            <div class="select-wrapper">
-              <select v-model="newGroupForm.vpc_id" class="form-input">
-                <option value="">{{ $t('dashboard.forms.placeholder.none') }}</option>
-                <option v-for="vpc in vpcs" :key="vpc.id" :value="vpc.id">
-                  {{ vpc.name }} ({{ vpc.id.slice(0, 8) }}...)
-                </option>
-              </select>
-            </div>
-          </div>
-
-          <div v-if="newGroupForm.vpc_id" class="form-group form-group-checkbox">
-            <label class="checkbox-label">
-              <input type="checkbox" v-model="newGroupForm.is_default" class="checkbox-input" />
-              <span>{{ $t('dashboard.forms.setAsDefault') }}</span>
-              <span class="help-icon-wrap">
-                <HelpCircle :size="14" class="help-icon" />
-                <span class="help-tooltip">{{ $t('dashboard.forms.setAsDefaultTooltip') }}</span>
-              </span>
-            </label>
-          </div>
-        </div>
-        <div class="modal-footer" style="flex-direction: column; align-items: stretch; gap: var(--spacing-2);">
-          <div v-if="createError" class="error-box">{{ createError }}</div>
-          <div style="display: flex; justify-content: flex-end; gap: var(--spacing-2);">
-            <button class="btn btn-secondary" @click="closeCreateModal" :disabled="creating">{{ $t('actions.cancel') }}</button>
-            <button class="btn btn-primary" @click="handleCreateGroup" :disabled="creating || !newGroupForm.name || !isNameValid">
-              <span v-if="creating" class="loading-spinner" style="width: 16px; height: 16px; border-width: 2px;"></span>
-              {{ creating ? $t('messages.creating') : $t('dashboard.buttons.createSecurityGroup') }}
-            </button>
-          </div>
+    <BaseModal
+      :show="createModalVisible"
+      :title="$t('dashboard.buttons.createSecurityGroup')"
+      :loading="creating"
+      form
+      @close="closeCreateModal"
+      @submit="handleCreateGroup"
+    >
+      <div class="form-group">
+        <label class="form-label">{{ $t('dashboard.forms.name') }}</label>
+        <input
+          v-model="newGroupForm.name"
+          type="text"
+          :class="['form-input', { 'input-error': !isNameValid }]"
+          :placeholder="$t('dashboard.forms.placeholder.sgNameExample')"
+        />
+        <div v-if="!isNameValid" class="text-error text-xs mt-1">
+          {{ $t('messages.invalidHostname') }}
         </div>
       </div>
-    </div>
+
+      <div class="form-group">
+        <label class="form-label">{{ $t('dashboard.forms.description') }} <span class="text-optional">({{ $t('dashboard.forms.optional') }})</span></label>
+        <input
+          v-model="newGroupForm.description"
+          type="text"
+          class="form-input"
+          :placeholder="$t('messages.placeholderDescription')"
+        />
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">{{ $t('dashboard.forms.vpc') }} <span class="text-optional">({{ $t('dashboard.forms.optional') }})</span></label>
+        <div class="select-wrapper">
+          <select v-model="newGroupForm.vpc_id" class="form-input">
+            <option value="">{{ $t('dashboard.forms.placeholder.none') }}</option>
+            <option v-for="vpc in vpcs" :key="vpc.id" :value="vpc.id">
+              {{ vpc.name }} ({{ vpc.id.slice(0, 8) }}...)
+            </option>
+          </select>
+        </div>
+      </div>
+
+      <div v-if="newGroupForm.vpc_id" class="form-group form-group-checkbox">
+        <label class="checkbox-label">
+          <input type="checkbox" v-model="newGroupForm.is_default" class="checkbox-input" />
+          <span>{{ $t('dashboard.forms.setAsDefault') }}</span>
+          <span class="help-icon-wrap">
+            <HelpCircle :size="14" class="help-icon" />
+            <span class="help-tooltip">{{ $t('dashboard.forms.setAsDefaultTooltip') }}</span>
+          </span>
+        </label>
+      </div>
+
+      <div v-if="createError" class="error-box">{{ createError }}</div>
+
+      <template #footer>
+        <button type="button" class="btn btn-secondary" @click="closeCreateModal" :disabled="creating">{{ $t('actions.cancel') }}</button>
+        <button type="submit" class="btn btn-primary" :disabled="creating || !newGroupForm.name || !isNameValid">
+          <span v-if="creating" class="loading-spinner" style="width: 16px; height: 16px; border-width: 2px;"></span>
+          {{ creating ? $t('messages.creating') : $t('dashboard.buttons.createSecurityGroup') }}
+        </button>
+      </template>
+    </BaseModal>
 
     <!-- Edit Modal -->
-    <div v-if="editModalVisible" class="modal-overlay" @click.self="closeEditModal">
-      <div class="modal-content card" style="max-width: 460px;">
-        <div class="modal-header">
-          <h3>{{ $t('actions.edit') }}</h3>
-          <button class="btn btn-ghost btn-sm icon-btn" @click="closeEditModal"><X :size="20" /></button>
-        </div>
-        <div class="modal-body">
-          <div class="form-group">
-            <label class="form-label">{{ $t('dashboard.forms.name') }}</label>
-            <input
-              v-model="editForm.name"
-              type="text"
-              :class="['form-input', { 'input-error': !isEditValid }]"
-              :placeholder="$t('dashboard.forms.placeholder.sgNameExample')"
-              @keyup.enter="confirmEdit"
-            />
-            <div v-if="!isEditValid" class="text-error text-xs mt-1">{{ $t('messages.invalidHostname') }}</div>
-          </div>
-          <div class="form-group">
-            <label class="form-label">{{ $t('dashboard.forms.description') }}</label>
-            <input v-model="editForm.description" type="text" class="form-input" :placeholder="$t('messages.placeholderDescription')" />
-          </div>
-          <div v-if="editError" class="error-box">{{ editError }}</div>
-        </div>
-        <div class="modal-footer">
-          <button class="btn btn-secondary" @click="closeEditModal" :disabled="editing">{{ $t('actions.cancel') }}</button>
-          <button class="btn btn-primary" @click="confirmEdit" :disabled="editing || !isEditValid">
-            <span v-if="editing" class="loading-spinner" style="width:16px;height:16px;border-width:2px"></span>
-            {{ editing ? $t('messages.saving') : $t('actions.save') }}
-          </button>
-        </div>
+    <BaseModal
+      :show="editModalVisible"
+      :title="$t('actions.edit')"
+      :loading="editing"
+      form
+      @close="closeEditModal"
+      @submit="confirmEdit"
+    >
+      <div class="form-group">
+        <label class="form-label">{{ $t('dashboard.forms.name') }}</label>
+        <input
+          v-model="editForm.name"
+          type="text"
+          :class="['form-input', { 'input-error': !isEditValid }]"
+          :placeholder="$t('dashboard.forms.placeholder.sgNameExample')"
+        />
+        <div v-if="!isEditValid" class="text-error text-xs mt-1">{{ $t('messages.invalidHostname') }}</div>
       </div>
-    </div>
+      <div class="form-group">
+        <label class="form-label">{{ $t('dashboard.forms.description') }}</label>
+        <input v-model="editForm.description" type="text" class="form-input" :placeholder="$t('messages.placeholderDescription')" />
+      </div>
+      <div v-if="editError" class="error-box">{{ editError }}</div>
+
+      <template #footer>
+        <button type="button" class="btn btn-secondary" @click="closeEditModal" :disabled="editing">{{ $t('actions.cancel') }}</button>
+        <button type="submit" class="btn btn-primary" :disabled="editing || !isEditValid">
+          <span v-if="editing" class="loading-spinner" style="width:16px;height:16px;border-width:2px"></span>
+          {{ editing ? $t('messages.saving') : $t('actions.save') }}
+        </button>
+      </template>
+    </BaseModal>
 
     <!-- Delete Confirmation Modal -->
-    <div v-if="deleteModalVisible" class="modal-overlay" @click.self="closeDeleteModal">
-      <div class="modal-content card" style="max-width: 460px;">
-        <div class="modal-header">
-          <h3>{{ $t('actions.delete') }}</h3>
-          <button class="btn btn-ghost btn-sm icon-btn" @click="closeDeleteModal"><X :size="20" /></button>
-        </div>
-        <div class="modal-body">
-          <div style="text-align:center;padding:var(--spacing-4) 0">
-            <div style="width:64px;height:64px;border-radius:50%;background:var(--error-light);display:flex;align-items:center;justify-content:center;margin:0 auto var(--spacing-4);color:var(--error-color)"><Shield :size="32" /></div>
-            <p style="color:var(--text-secondary);margin:0 0 var(--spacing-4)">{{ $t('dashboard.securityGroupDetail.deleteConfirm') }}</p>
-            <div style="background:var(--bg-secondary);border:1px solid var(--border-light);border-radius:var(--radius-md);padding:var(--spacing-3) var(--spacing-4);text-align:left">
-              <span style="font-size:var(--font-size-xs);color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.05em;display:block;margin-bottom:var(--spacing-1)">{{ $t('dashboard.deleteConfirm.resource') }}</span>
-              <span style="font-weight:var(--font-weight-semibold);display:block">{{ groupToDelete?.name }}</span>
-              <span style="font-size:var(--font-size-xs);color:var(--text-light);font-family:var(--font-family-mono);display:block;margin-top:2px">{{ groupToDelete?.id }}</span>
-            </div>
-            <div v-if="deleteError" class="error-box" style="margin-top:var(--spacing-4)">{{ deleteError }}</div>
-          </div>
-        </div>
-        <div class="modal-footer">
-          <button class="btn btn-secondary" @click="closeDeleteModal" :disabled="deleting">{{ $t('actions.cancel') }}</button>
-          <button class="btn btn-danger" @click="confirmDelete" :disabled="deleting">
-            <span v-if="deleting" class="loading-spinner" style="width:16px;height:16px;border-width:2px"></span>
-            <Trash2 v-else :size="14" />
-            {{ deleting ? $t('dashboard.deleteConfirm.deleting') : $t('actions.delete') }}
-          </button>
-        </div>
-      </div>
-    </div>
+    <DeleteModal
+      :show="deleteModalVisible"
+      :message="$t('dashboard.securityGroupDetail.deleteConfirm')"
+      :resource-name="groupToDelete?.name"
+      :resource-id="groupToDelete?.id"
+      :loading="deleting"
+      :error="deleteError"
+      @close="closeDeleteModal"
+      @confirm="confirmDelete"
+    />
   </div>
 </template>
 
 <style scoped>
-.header-actions {
-  display: flex;
-  align-items: center;
-  gap: var(--spacing-2);
-}
-
 .spinning {
   animation: spin 1s linear infinite;
 }
@@ -523,61 +494,6 @@ watch(() => region.currentRegionId, (newId) => {
 @keyframes spin {
   from { transform: rotate(0deg); }
   to { transform: rotate(360deg); }
-}
-
-.page-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: var(--spacing-3);
-  flex-wrap: wrap;
-  margin-bottom: 0;
-  padding-right: 20px;
-}
-
-.filters {
-  display: flex;
-  align-items: center;
-  gap: var(--spacing-2);
-  flex: 1;
-  flex-wrap: wrap;
-}
-
-.search-box {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex: 1;
-  max-width: 400px;
-  min-width: 200px;
-  background: var(--bg-secondary);
-  padding: 0 12px;
-  height: 40px;
-  border-radius: var(--radius-md);
-  border: 1px solid var(--border-light);
-  transition: all 0.2s;
-}
-
-.search-box:focus-within {
-  border-color: var(--primary-300);
-  box-shadow: 0 0 0 2px var(--primary-100);
-}
-
-.search-icon {
-  color: var(--gray-400);
-}
-
-.search-input {
-  border: none;
-  background: transparent;
-  width: 100%;
-  height: 100%;
-  font-size: 0.875rem;
-  color: var(--text-primary);
-}
-
-.search-input:focus {
-  outline: none;
 }
 
 .vpc-filter {
@@ -812,7 +728,7 @@ watch(() => region.currentRegionId, (newId) => {
   width: 16px;
   height: 16px;
   cursor: pointer;
-  accent-color: var(--primary);
+  accent-color: var(--primary-color);
 }
 
 .help-icon-wrap {
@@ -862,21 +778,4 @@ watch(() => region.currentRegionId, (newId) => {
 .help-icon-wrap:hover .help-tooltip {
   display: block;
 }
-
-.btn-danger {
-  background: var(--error-color);
-  color: white;
-  border: none;
-  padding: 8px 20px;
-  border-radius: var(--radius-md);
-  font-size: var(--font-size-sm);
-  font-weight: var(--font-weight-medium);
-  cursor: pointer;
-  display: inline-flex;
-  align-items: center;
-  gap: var(--spacing-2);
-  transition: background var(--transition-base);
-}
-.btn-danger:hover { background: var(--error-dark); }
-.btn-danger:disabled { opacity: 0.5; cursor: not-allowed; }
 </style>

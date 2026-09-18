@@ -1,11 +1,15 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Plus, Trash2, Search, Bell, Pencil, ToggleLeft, ToggleRight, RefreshCw, X } from 'lucide-vue-next'
+import { Plus, Trash2, Bell, Pencil, ToggleLeft, ToggleRight, RefreshCw } from 'lucide-vue-next'
 import { useToast } from '../../composables/useToast'
 import { notificationsApi, type NotificationChannel, type CreateChannelPayload } from '../../api/notifications'
 import { useAuthStore } from '../../stores/auth'
 import { useTenantStore } from '../../stores/tenant'
+import { formatDateTime } from '../../utils/format'
+import PageToolbar from '../../components/base/PageToolbar.vue'
+import BaseModal from '../../components/modals/BaseModal.vue'
+import DeleteModal from '../../components/modals/DeleteModal.vue'
 
 const { t } = useI18n()
 const toast = useToast()
@@ -133,14 +137,8 @@ onMounted(fetchChannels)
 
 <template>
     <div class="vpc-list-container">
-        <div class="page-header">
-            <div class="search-wrapper">
-                <div class="search-box">
-                    <Search :size="16" class="search-icon" />
-                    <input v-model="searchQuery" :placeholder="t('actions.search') + '...'" class="search-input" />
-                </div>
-            </div>
-            <div class="header-actions">
+        <PageToolbar v-model:search="searchQuery">
+            <template #actions>
                 <button class="btn btn-secondary btn-sm btn-icon" @click="fetchChannels" :title="t('actions.refresh')">
                     <RefreshCw :size="14" :class="{ spinning: loading }" />
                 </button>
@@ -148,8 +146,8 @@ onMounted(fetchChannels)
                     <Plus :size="14" />
                     <span>{{ t('actions.create') }}</span>
                 </button>
-            </div>
-        </div>
+            </template>
+        </PageToolbar>
 
         <div v-if="errorMsg" class="error-banner" @click="errorMsg = ''">{{ errorMsg }}</div>
 
@@ -193,7 +191,7 @@ onMounted(fetchChannels)
                                 {{ ch.enabled ? t('dashboard.alarm.enabled') : t('dashboard.alarm.disabled') }}
                             </span>
                         </td>
-                        <td>{{ new Date(ch.created_at).toLocaleString() }}</td>
+                        <td>{{ formatDateTime(ch.created_at) }}</td>
                         <td>
                             <div v-if="canManage" class="actions-cell">
                                 <button class="icon-btn-table" @click="toggleEnabled(ch)" :title="ch.enabled ? 'Disable' : 'Enable'">
@@ -214,117 +212,57 @@ onMounted(fetchChannels)
 
         <!-- Create/Edit Modal -->
         <Teleport to="body">
-            <div v-if="showCreateModal" class="modal-overlay" @click.self="showCreateModal = false">
-                <div class="modal-content card" style="max-width: 520px;">
-                    <div class="modal-header">
-                        <h3>{{ editTarget ? t('actions.edit') : t('actions.create') }} {{ t('dashboard.notificationChannel') }}</h3>
-                        <button class="btn btn-ghost btn-icon" @click="showCreateModal = false"><X :size="18" /></button>
+            <BaseModal
+                :show="showCreateModal"
+                :title="`${editTarget ? t('actions.edit') : t('actions.create')} ${t('dashboard.notificationChannel')}`"
+                size="lg"
+                form
+                @close="showCreateModal = false"
+                @submit="submitForm"
+            >
+                <div class="form-stack">
+                    <div class="form-group">
+                        <label class="form-label">{{ t('dashboard.table.name') }}</label>
+                        <input v-model="form.name" class="form-input" required />
                     </div>
-                    <div class="modal-body">
-                        <div class="form-stack">
-                            <div class="form-group">
-                                <label class="form-label">{{ t('dashboard.table.name') }}</label>
-                                <input v-model="form.name" class="form-input" required />
-                            </div>
-                            <div class="form-group" v-if="!editTarget">
-                                <label class="form-label">{{ t('dashboard.notificationChannelType') }}</label>
-                                <select v-model="form.type" class="form-input" @change="onTypeChange">
-                                    <option value="feishu">{{ t('dashboard.notificationFeishu') }} Webhook</option>
-                                    <option value="webhook">{{ t('dashboard.notificationCustomWebhook') }}</option>
-                                </select>
-                            </div>
-                            <div class="form-group">
-                                <label class="form-label">Webhook URL</label>
-                                <input v-model="form.config[form.type === 'feishu' ? 'webhook_url' : 'url']" class="form-input" :placeholder="$t('dashboard.forms.placeholder.webhookExample')" required />
-                            </div>
-                            <div class="form-group" v-if="form.type === 'feishu'">
-                                <label class="form-label">{{ t('dashboard.notificationSecret') }}</label>
-                                <input v-model="form.config.secret" class="form-input" :placeholder="t('dashboard.notificationSecretPlaceholder')" />
-                            </div>
-                        </div>
+                    <div class="form-group" v-if="!editTarget">
+                        <label class="form-label">{{ t('dashboard.notificationChannelType') }}</label>
+                        <select v-model="form.type" class="form-input" @change="onTypeChange">
+                            <option value="feishu">{{ t('dashboard.notificationFeishu') }} Webhook</option>
+                            <option value="webhook">{{ t('dashboard.notificationCustomWebhook') }}</option>
+                        </select>
                     </div>
-                    <div class="modal-footer">
-                        <button class="btn btn-secondary" @click="showCreateModal = false">{{ t('actions.cancel') }}</button>
-                        <button class="btn btn-primary" @click="submitForm">{{ t('actions.save') }}</button>
+                    <div class="form-group">
+                        <label class="form-label">Webhook URL</label>
+                        <input v-model="form.config[form.type === 'feishu' ? 'webhook_url' : 'url']" class="form-input" :placeholder="$t('dashboard.forms.placeholder.webhookExample')" required />
+                    </div>
+                    <div class="form-group" v-if="form.type === 'feishu'">
+                        <label class="form-label">{{ t('dashboard.notificationSecret') }}</label>
+                        <input v-model="form.config.secret" class="form-input" :placeholder="t('dashboard.notificationSecretPlaceholder')" />
                     </div>
                 </div>
-            </div>
+
+                <template #footer>
+                    <button type="button" class="btn btn-secondary" @click="showCreateModal = false">{{ t('actions.cancel') }}</button>
+                    <button type="submit" class="btn btn-primary">{{ t('actions.save') }}</button>
+                </template>
+            </BaseModal>
         </Teleport>
 
         <!-- Delete Confirm Modal -->
         <Teleport to="body">
-            <div v-if="showDeleteModal" class="modal-overlay" @click.self="showDeleteModal = false">
-                <div class="modal-content card" style="max-width: 440px;">
-                    <div class="modal-header">
-                        <h3>{{ t('actions.confirmDelete') }}</h3>
-                        <button class="btn btn-ghost btn-icon" @click="showDeleteModal = false"><X :size="18" /></button>
-                    </div>
-                    <div class="modal-body">
-                        <p>{{ t('messages.confirmDeleteChannel', { name: deleteTarget?.name }) }}</p>
-                    </div>
-                    <div class="modal-footer">
-                        <button class="btn btn-secondary" @click="showDeleteModal = false">{{ t('actions.cancel') }}</button>
-                        <button class="btn btn-danger" @click="executeDelete">{{ t('actions.delete') }}</button>
-                    </div>
-                </div>
-            </div>
+            <DeleteModal
+                :show="showDeleteModal"
+                :title="t('actions.confirmDelete')"
+                :message="t('messages.confirmDeleteChannel', { name: deleteTarget?.name })"
+                @close="showDeleteModal = false"
+                @confirm="executeDelete"
+            />
         </Teleport>
     </div>
 </template>
 
 <style scoped>
-.page-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 0;
-    padding-right: 20px;
-}
-
-.search-wrapper {
-    display: flex;
-    gap: 8px;
-    flex: 1;
-    max-width: 560px;
-}
-
-.header-actions {
-    display: flex;
-    gap: 8px;
-    align-items: center;
-}
-
-.search-box {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    background: var(--bg-secondary);
-    padding: 0 12px;
-    height: 40px;
-    border-radius: var(--radius-md);
-    border: 1px solid var(--border-light);
-    transition: all 0.2s;
-    flex: 1;
-}
-
-.search-box:focus-within {
-    border-color: var(--primary-300);
-    box-shadow: 0 0 0 2px var(--primary-100);
-}
-
-.search-icon { color: var(--gray-400); }
-
-.search-input {
-    border: none;
-    background: transparent;
-    width: 100%;
-    height: 100%;
-    font-size: 0.875rem;
-    color: var(--text-primary);
-}
-
-.search-input:focus { outline: none; }
-
 .table-card { padding: 0; overflow: hidden; }
 
 .empty-state { display: flex; flex-direction: column; align-items: center; justify-content: center; }
@@ -357,7 +295,7 @@ onMounted(fetchChannels)
     font-size: var(--font-size-xs); font-weight: var(--font-weight-medium);
 }
 
-.badge-primary { background: var(--primary-light); color: var(--primary-dark); }
+.badge-primary { background: var(--primary-light); color: var(--primary-700); }
 .badge-secondary { background: var(--accent-purple-light); color: var(--accent-purple); }
 
 .status-active { background: var(--success-light); color: var(--success-dark); }
@@ -385,12 +323,6 @@ onMounted(fetchChannels)
 }
 
 .form-input:focus { outline: none; border-color: var(--primary-300); box-shadow: 0 0 0 2px var(--primary-100); }
-
-.btn-danger {
-    background: var(--error-color); color: white; border: none;
-    padding: 8px 16px; border-radius: var(--radius-md); cursor: pointer; font-weight: 500;
-}
-.btn-danger:hover { background: var(--error-dark); }
 
 .spinning { animation: spin 1s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
