@@ -4,7 +4,7 @@ import { useI18n } from 'vue-i18n'
 import { useToast } from '../../composables/useToast'
 import { useCopyId } from '../../composables/useCopyId'
 import { useListQuery } from '../../composables/useListQuery'
-import { volumesApi, type Volume } from '../../api/volumes'
+import { volumesApi, type Volume, type VolumePayload } from '../../api/volumes'
 import { useRegionStore } from '../../stores/region'
 import { isValidName } from '../../utils/validation'
 import { errorMessage } from '../../utils/error'
@@ -23,11 +23,11 @@ const region = useRegionStore()
 const createModalVisible = ref(false)
 const creating = ref(false)
 const createError = ref('')
-const newVolumeForm = ref({
+// 只有名称和容量：后端建卷时格式固定为 raw，booting 只在虚拟机创建系统盘时为真，
+// 界面上原来的「格式」下拉和「可启动」勾选实际都不生效（apis/volume.go 的 VolumePayload 不收）
+const newVolumeForm = ref<VolumePayload>({
     name: '',
     size: 10,
-    format: 'qcow2',
-    bootable: false
 })
 
 const { t } = useI18n()
@@ -78,7 +78,7 @@ const getStatusText = (status: string) => {
 
 
 const openCreateModal = () => {
-    newVolumeForm.value = { name: '', size: 10, format: 'qcow2', bootable: false }
+    newVolumeForm.value = { name: '', size: 10 }
     createModalVisible.value = true
 }
 
@@ -289,22 +289,6 @@ onMounted(() => {
               />
             </div>
             
-            <div class="form-group">
-              <label class="form-label">{{ $t('dashboard.forms.format') }}</label>
-              <div class="select-wrapper">
-                <select v-model="newVolumeForm.format" class="form-input">
-                  <option value="qcow2">QCOW2</option>
-                  <option value="raw">RAW</option>
-                </select>
-              </div>
-            </div>
-          </div>
-
-          <div class="form-group">
-            <label class="checkbox-label">
-              <input type="checkbox" v-model="newVolumeForm.bootable" />
-              <span>{{ $t('dashboard.forms.bootable') }}</span>
-            </label>
           </div>
 
           <div v-if="createError" class="text-error" style="font-size:var(--font-size-sm);background:var(--error-light);padding:var(--spacing-2);border-radius:var(--radius-sm)">
