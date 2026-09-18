@@ -111,7 +111,7 @@ const columns = computed<Column[]>(() => [
     { key: 'role', label: t('dashboard.table.role'), sortable: true, sortValue: (u) => u.role || 'member' },
     { key: 'status', label: t('dashboard.table.status'), sortable: true, sortValue: (u) => getUserStatus(u.status) },
     { key: 'created', label: t('dashboard.table.created'), sortable: true, sortValue: (u) => u.created_at || '' },
-    { key: 'actions', label: t('dashboard.table.actions') },
+    { key: 'actions', label: t('dashboard.table.actions'), align: 'center' },
 ])
 
 
@@ -485,6 +485,7 @@ onMounted(fetchUsers)
 
 .actions {
   display: flex;
+  justify-content: center;
   gap: var(--spacing-2);
 }
 

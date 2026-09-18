@@ -56,7 +56,7 @@ const columns = computed<Column[]>(() => [
     { key: 'usage', label: t('dashboard.table.ipUsage'), sortable: true, sortValue: (s) => s.allocated_count || 0 },
     { key: 'vpc', label: t('dashboard.table.vpc'), sortable: true, sortValue: (s) => s.vpc?.name ?? null },
     { key: 'type', label: t('dashboard.table.type'), sortable: true },
-    { key: 'actions', label: t('dashboard.table.actions') },
+    { key: 'actions', label: t('dashboard.table.actions'), align: 'center' },
 ])
 
 const fetchSubnets = async () => {
@@ -583,6 +583,7 @@ onMounted(() => {
 
 .actions {
   display: flex;
+  justify-content: center;
   gap: var(--spacing-2);
 }
 

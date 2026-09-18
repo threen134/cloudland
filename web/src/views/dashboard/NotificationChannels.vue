@@ -51,7 +51,7 @@ const columns = computed<Column[]>(() => [
     { key: 'url', label: 'Webhook URL' },
     { key: 'status', label: t('dashboard.table.status'), sortable: true, sortValue: (ch) => (ch.enabled ? 0 : 1) },
     { key: 'created_at', label: t('dashboard.table.createdAt'), sortable: true, sortValue: (ch) => ch.created_at },
-    { key: 'actions', label: t('dashboard.table.actions') },
+    { key: 'actions', label: t('dashboard.table.actions'), align: 'center' },
 ])
 
 const fetchChannels = async () => {

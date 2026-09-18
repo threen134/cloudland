@@ -67,7 +67,7 @@ const columns = computed<Column[]>(() => [
     { key: 'ip', label: t('dashboard.table.ipAddress'), sortable: true, sortValue: (fip) => fip.public_ip || fip.ip_address || '' },
     { key: 'type', label: t('dashboard.table.type'), sortable: true },
     { key: 'attachedTo', label: t('dashboard.table.attachedTo'), sortable: true, sortValue: (fip) => fip.target_interface?.from_instance?.hostname ?? null },
-    { key: 'actions', label: t('dashboard.table.actions') },
+    { key: 'actions', label: t('dashboard.table.actions'), align: 'center' },
 ])
 
 const fetchFloatingIPs = async () => {
@@ -687,6 +687,7 @@ watch(() => newFipForm.value.selectedPublicSubnetId, (newId) => {
 
 .actions {
   display: flex;
+  justify-content: center;
   gap: var(--spacing-2);
 }
 

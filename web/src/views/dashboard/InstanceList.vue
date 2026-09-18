@@ -171,7 +171,7 @@ const columns = computed<Column[]>(() => [
     { key: 'ip', label: t('dashboard.table.ipAddress') },
     { key: 'status', label: t('dashboard.table.status'), sortable: true, sortValue: (i) => i.status || '' },
     { key: 'usage', label: t('dashboard.overview.resourceUsage') },
-    { key: 'actions', label: t('dashboard.table.actions') },
+    { key: 'actions', label: t('dashboard.table.actions'), align: 'center' },
 ])
 
 
@@ -1999,6 +1999,7 @@ onUnmounted(() => {
 
 .actions {
   display: flex;
+  justify-content: center;
   gap: var(--spacing-2);
 }
 

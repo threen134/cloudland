@@ -42,7 +42,7 @@ const columns = computed<Column[]>(() => [
     { key: 'name', label: t('dashboard.table.nameId'), sortable: true },
     { key: 'remark', label: t('dashboard.zoneActions.remark'), sortable: true },
     { key: 'type', label: t('dashboard.table.type'), sortable: true, sortValue: (z) => (z.default ? 0 : 1) },
-    { key: 'actions', label: t('dashboard.table.actions') },
+    { key: 'actions', label: t('dashboard.table.actions'), align: 'center' },
 ])
 
 const fetchZones = async () => {

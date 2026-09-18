@@ -64,7 +64,7 @@ const columns = computed<Column[]>(() => [
     { key: 'ruleType', label: t('dashboard.alarmActions.ruleType'), sortable: true, sortValue: (a) => a.rule_type || '' },
     { key: 'status', label: t('dashboard.table.status'), sortable: true, sortValue: (a) => (a.enabled ? 'enabled' : 'disabled') },
     { key: 'description', label: t('dashboard.table.description'), sortable: true },
-    { key: 'actions', label: t('dashboard.table.actions') },
+    { key: 'actions', label: t('dashboard.table.actions'), align: 'center' },
 ])
 
 const filteredAlarms = computed(() => {

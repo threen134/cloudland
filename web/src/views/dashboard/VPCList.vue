@@ -40,7 +40,7 @@ const columns = computed<Column[]>(() => [
     { key: 'name', label: t('dashboard.table.nameId'), sortable: true },
     { key: 'status', label: t('dashboard.table.status'), sortable: true, sortValue: (v) => v.status || 'active' },
     { key: 'subnets', label: t('dashboard.subnets'), sortable: true, sortValue: (v) => v.subnets?.length || 0 },
-    { key: 'actions', label: t('dashboard.table.actions') },
+    { key: 'actions', label: t('dashboard.table.actions'), align: 'center' },
 ])
 
 const fetchVPCs = async () => {
@@ -813,6 +813,7 @@ onMounted(() => {
 
 .actions {
   display: flex;
+  justify-content: center;
   gap: var(--spacing-2);
 }
 

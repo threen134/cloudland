@@ -44,7 +44,7 @@ const columns = computed<Column[]>(() => [
     { key: 'boot', label: t('dashboard.table.boot'), sortable: true, sortValue: (v) => (v.booting ? 0 : 1) },
     { key: 'format', label: t('dashboard.table.format'), sortable: true },
     { key: 'attachedTo', label: t('dashboard.table.attachedTo'), sortable: true, sortValue: (v) => v.instance?.name ?? null },
-    { key: 'actions', label: t('dashboard.table.actions') },
+    { key: 'actions', label: t('dashboard.table.actions'), align: 'center' },
 ])
 
 const fetchVolumes = async () => {
@@ -350,6 +350,7 @@ onMounted(() => {
 
 .actions {
   display: flex;
+  justify-content: center;
   gap: var(--spacing-2);
 }
 

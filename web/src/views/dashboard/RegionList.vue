@@ -29,7 +29,7 @@ const columns = computed<Column[]>(() => [
     { key: 'name', label: t('dashboard.table.nameId'), sortable: true, sortValue: (r) => r.display_name || r.name },
     { key: 'status', label: t('dashboard.table.status'), sortable: true, sortValue: regionState },
     { key: 'description', label: t('dashboard.table.description'), sortable: true },
-    { key: 'actions', label: t('dashboard.table.actions') },
+    { key: 'actions', label: t('dashboard.table.actions'), align: 'center' },
 ])
 
 // Create modal
@@ -548,6 +548,7 @@ onMounted(fetchRegions)
 
 .table-actions {
     display: flex;
+    justify-content: center;
     gap: 8px;
 }
 

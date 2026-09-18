@@ -81,7 +81,7 @@ const columns = computed<Column[]>(() => [
     { key: 'memory', label: `${t('dashboard.table.memory')} (${t('dashboard.table.available')})` },
     { key: 'disk', label: `${t('dashboard.table.disk')} (${t('dashboard.table.available')})` },
     { key: 'zone', label: t('dashboard.table.zone') },
-    { key: 'actions', label: t('dashboard.table.actions'), width: '80px' },
+    { key: 'actions', label: t('dashboard.table.actions'), width: '80px', align: 'center' },
 ])
 
 // Pagination
@@ -1013,6 +1013,7 @@ onUnmounted(() => {
 .action-dropdown {
   position: relative;
   display: flex;
+  justify-content: center;
 }
 
 .dropdown-menu {

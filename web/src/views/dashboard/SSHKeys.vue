@@ -38,7 +38,7 @@ const columns = computed<Column[]>(() => [
     { key: 'name', label: t('dashboard.table.nameId'), sortable: true },
     { key: 'type', label: t('dashboard.table.type'), sortable: true, sortValue: (k) => k.public_key?.split(' ')[0] || 'ssh-rsa' },
     { key: 'fingerprint', label: t('dashboard.table.fingerprint'), sortable: true, sortValue: (k) => k.finger_print || '' },
-    { key: 'actions', label: t('dashboard.table.actions') },
+    { key: 'actions', label: t('dashboard.table.actions'), align: 'center' },
 ])
 
 const fetchKeys = async () => {

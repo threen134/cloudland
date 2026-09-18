@@ -93,7 +93,7 @@ const columns = computed<Column[]>(() => [
     { key: 'ip', label: t('dashboard.table.ipAddress') },
     { key: 'vpc', label: t('dashboard.table.vpc') },
     { key: 'listeners', label: t('dashboard.loadBalancerDetail.listeners') },
-    { key: 'actions', label: t('dashboard.table.actions') },
+    { key: 'actions', label: t('dashboard.table.actions'), align: 'center' },
 ])
 
 const fetchLoadBalancers = async () => {
@@ -468,6 +468,7 @@ onUnmounted(() => {
 
 .actions {
   display: flex;
+  justify-content: center;
   gap: var(--spacing-2);
 }
 

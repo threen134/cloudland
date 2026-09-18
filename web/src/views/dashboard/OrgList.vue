@@ -51,7 +51,7 @@ const columns = computed<Column[]>(() => [
     { key: 'status', label: t('dashboard.table.status'), sortable: true, sortValue: (o) => o.status ?? 0 },
     { key: 'owner', label: t('dashboard.table.owner'), sortable: true, sortValue: (o) => o.owner_name || o.owner_email || o.owner_uuid || '' },
     { key: 'created', label: t('dashboard.table.created'), sortable: true, sortValue: (o) => o.created_at || '' },
-    { key: 'actions', label: t('dashboard.table.actions') },
+    { key: 'actions', label: t('dashboard.table.actions'), align: 'center' },
 ])
 
 const fetchOrgs = async () => {
@@ -570,6 +570,7 @@ onMounted(fetchOrgs)
 
 .actions {
   display: flex;
+  justify-content: center;
   gap: var(--spacing-2);
 }
 

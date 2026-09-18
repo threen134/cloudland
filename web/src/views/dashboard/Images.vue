@@ -62,7 +62,7 @@ const columns = computed<Column[]>(() => [
     { key: 'format', label: t('dashboard.table.format'), sortable: true },
     { key: 'size', label: t('dashboard.table.size'), sortable: true, sortValue: (i) => i.size || 0 },
     { key: 'status', label: t('dashboard.table.status'), sortable: true },
-    { key: 'actions', label: t('dashboard.table.actions') },
+    { key: 'actions', label: t('dashboard.table.actions'), align: 'center' },
 ])
 
 const fetchImages = async () => {
@@ -515,6 +515,7 @@ onMounted(async () => {
 
 .actions {
   display: flex;
+  justify-content: center;
   gap: var(--spacing-2);
 }
 

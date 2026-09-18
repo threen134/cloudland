@@ -44,7 +44,7 @@ const columns = computed<Column[]>(() => [
     { key: 'cpu', label: t('specs.cpu'), sortable: true, sortValue: (f) => f.vcpus || f.cpu || 0 },
     { key: 'ram', label: t('specs.ram'), sortable: true, sortValue: (f) => f.ram || f.memory || 0 },
     { key: 'disk', label: t('specs.storage'), sortable: true, sortValue: (f) => f.disk || 0 },
-    { key: 'actions', label: t('dashboard.table.actions') },
+    { key: 'actions', label: t('dashboard.table.actions'), align: 'center' },
 ])
 
 const fetchFlavors = async () => {
@@ -366,6 +366,7 @@ onMounted(() => {
 
 .actions {
   display: flex;
+  justify-content: center;
   gap: var(--spacing-2);
 }
 
