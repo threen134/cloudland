@@ -6,6 +6,7 @@ import { useCopyId } from '../../composables/useCopyId'
 import { useListQuery } from '../../composables/useListQuery'
 import { subnetsApi, vpcsApi, type Subnet, type SubnetPayload, type VPC } from '../../api/networks'
 import { isValidName } from '../../utils/validation'
+import { errorMessage } from '../../utils/error'
 import { useAuthStore } from '../../stores/auth'
 import { useRegionStore } from '../../stores/region'
 
@@ -165,9 +166,9 @@ const handleCreateSubnet = async () => {
         await reloadSubnets()
         closeCreateModal()
         toast.success(t('messages.createSuccess'))
-    } catch (err: any) {
+    } catch (err) {
         console.error('Failed to create subnet:', err)
-        createError.value = err.response?.data?.error_message || err.message || t('messages.error')
+        createError.value = errorMessage(err, t('messages.error'))
     } finally {
         creating.value = false
     }
@@ -208,9 +209,9 @@ const confirmDelete = async () => {
         await fetchSubnets()
         closeDeleteModal()
         toast.success(t('messages.deleteSuccess'))
-    } catch (error: any) {
+    } catch (error) {
         console.error('Failed to delete subnet:', error)
-        deleteError.value = error.response?.data?.error_message || error.message || t('messages.error')
+        deleteError.value = errorMessage(error, t('messages.error'))
     } finally {
         deletingResource.value = false
     }

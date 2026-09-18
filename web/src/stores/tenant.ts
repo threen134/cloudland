@@ -1,17 +1,16 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
-import { authApi } from '../api/auth'
+import { authApi, type UserOrgItem } from '../api/auth'
 import { setAuthToken, beginTokenSwitch, decodeTokenClaims, getToken } from '../api/client'
 import { useAuthStore } from './auth'
+import { errorMessage } from '../utils/error'
 
-export interface Organization {
+/**
+ * GET /auth/me/orgs 返回的 UserOrgItem 加上一个前端补出来的 id（= uuid）。
+ * 原来是 Partial + [key: string]: any 的松散结构，这里直接沿用接口类型。
+ */
+export interface Organization extends UserOrgItem {
     id: string
-    name: string
-    slug?: string
-    org_role?: number
-    is_owner?: boolean
-    is_current?: boolean
-    [key: string]: any
 }
 
 export const useTenantStore = defineStore('tenant', () => {
@@ -43,9 +42,9 @@ export const useTenantStore = defineStore('tenant', () => {
             // GET /auth/me/orgs 直接返回数组（cpgateway 的 GetMyOrgs）
             const raw = await authApi.getMyOrgs()
             // Backend returns uuid as the identifier
-            organizations.value = raw.map((o: any) => ({
+            organizations.value = raw.map((o) => ({
                 ...o,
-                id: o.uuid || o.id,
+                id: o.uuid,
             }))
 
             // Ensure we have an org selected and a scoped token
@@ -62,9 +61,9 @@ export const useTenantStore = defineStore('tenant', () => {
                     await switchOrg(targetOrgId)
                 }
             }
-        } catch (err: any) {
+        } catch (err) {
             console.warn('Failed to fetch organizations:', err)
-            error.value = err.message
+            error.value = errorMessage(err, 'Failed to fetch organizations')
         } finally {
             isLoading.value = false
         }
@@ -84,9 +83,9 @@ export const useTenantStore = defineStore('tenant', () => {
                 setAuthToken(newToken)
             }
             localStorage.setItem('cloudland_org_id', orgId)
-        } catch (err: any) {
+        } catch (err) {
             console.error('Failed to switch org:', err)
-            error.value = err.message
+            error.value = errorMessage(err, 'Failed to switch org')
             isSwitching.value = false
             throw err
         } finally {

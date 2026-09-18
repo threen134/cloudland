@@ -6,6 +6,7 @@ import { useCopyId } from '../../composables/useCopyId'
 import { securityGroupsApi, vpcsApi, type SecurityGroup, type VPC } from '../../api/networks'
 import { isValidName } from '../../utils/validation'
 import { useRegionStore } from '../../stores/region'
+import { errorMessage } from '../../utils/error'
 
 import { Shield, Plus, Trash2, Search, RefreshCw, Edit, HelpCircle, Check, Copy } from 'lucide-vue-next'
 import PageToolbar from '../../components/base/PageToolbar.vue'
@@ -156,9 +157,9 @@ const handleCreateGroup = async () => {
         await fetchSecurityGroups()
         closeCreateModal()
         toast.success(t('messages.createSuccess'))
-    } catch (err: any) {
+    } catch (err) {
         console.error('Failed to create security group:', err)
-        createError.value = err.response?.data?.error_message || err.message || t('messages.error')
+        createError.value = errorMessage(err, t('messages.error'))
     } finally {
         creating.value = false
     }
@@ -198,9 +199,9 @@ const confirmEdit = async () => {
         await fetchSecurityGroups()
         closeEditModal()
         toast.success(t('messages.updateSuccess'))
-    } catch (err: any) {
+    } catch (err) {
         console.error('Failed to update security group:', err)
-        editError.value = err.response?.data?.error_message || err.message || t('messages.error')
+        editError.value = errorMessage(err, t('messages.error'))
     } finally {
         editing.value = false
     }
@@ -233,9 +234,9 @@ const confirmDelete = async () => {
         await fetchSecurityGroups()
         closeDeleteModal()
         toast.success(t('messages.deleteSuccess'))
-    } catch (err: any) {
+    } catch (err) {
         console.error('Failed to delete security group:', err)
-        deleteError.value = err.response?.data?.error_message || err.message || t('messages.error')
+        deleteError.value = errorMessage(err, t('messages.error'))
     } finally {
         deleting.value = false
     }
@@ -334,8 +335,8 @@ onUnmounted(() => {
 
       <template #cell-rules="{ row: group }">
         <div class="rule-counts">
-          <span class="direction-badge ingress">{{ $t('dashboard.table.ingress') }} {{ ruleCount(group as any, 'ingress') }}</span>
-          <span class="direction-badge egress">{{ $t('dashboard.table.egress') }} {{ ruleCount(group as any, 'egress') }}</span>
+          <span class="direction-badge ingress">{{ $t('dashboard.table.ingress') }} {{ ruleCount(group as SecurityGroup, 'ingress') }}</span>
+          <span class="direction-badge egress">{{ $t('dashboard.table.egress') }} {{ ruleCount(group as SecurityGroup, 'egress') }}</span>
         </div>
       </template>
 
@@ -347,14 +348,14 @@ onUnmounted(() => {
 
       <template #cell-actions="{ row: group }">
         <div class="actions">
-          <button class="btn btn-ghost btn-sm" :title="$t('actions.edit')" @click="handleEditClick(group as any)">
+          <button class="btn btn-ghost btn-sm" :title="$t('actions.edit')" @click="handleEditClick(group as SecurityGroup)">
             <Edit :size="14" />
           </button>
           <button
             class="btn btn-ghost btn-sm text-error"
             :title="group.is_default ? $t('dashboard.securityGroupDetail.defaultNotDeletable') : $t('actions.delete')"
             :disabled="group.is_default"
-            @click="handleDeleteClick(group as any)"
+            @click="handleDeleteClick(group as SecurityGroup)"
           >
             <Trash2 :size="14" />
           </button>

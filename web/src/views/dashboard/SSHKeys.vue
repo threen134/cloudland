@@ -6,6 +6,7 @@ import { useCopyId } from '../../composables/useCopyId'
 import { useListQuery } from '../../composables/useListQuery'
 import { keysApi, type SSHKey } from '../../api/keys'
 import { isValidName } from '../../utils/validation'
+import { errorMessage } from '../../utils/error'
 
 import { Key, Plus, Trash2, Copy, Check, Search, RefreshCw } from 'lucide-vue-next'
 import PageToolbar from '../../components/base/PageToolbar.vue'
@@ -99,9 +100,9 @@ const handleCreateKey = async () => {
         await reloadKeys()
         closeCreateModal()
         toast.success(t('messages.createSuccess'))
-    } catch (err: any) {
+    } catch (err) {
         console.error('Failed to create key:', err)
-        createError.value = err.response?.data?.error_message || err.message || t('messages.error')
+        createError.value = errorMessage(err, t('messages.error'))
     } finally {
         creating.value = false
     }
@@ -131,12 +132,13 @@ const confirmDelete = async () => {
         await fetchKeys()
         closeDeleteModal()
         toast.success(t('messages.deleteSuccess'))
-    } catch (error: any) {
+    } catch (error) {
         console.error('Failed to delete SSH key:', error)
-        if (error.response?.data?.error_code === 161006 || error.response?.data?.error_code_str === 'SSHKeyInUse') {
+        const data = (error as { response?: { data?: { error_code?: number; error_code_str?: string } } })?.response?.data
+        if (data?.error_code === 161006 || data?.error_code_str === 'SSHKeyInUse') {
             deleteError.value = t('messages.sshKeyInUse')
         } else {
-            deleteError.value = error.response?.data?.error_message || error.message || t('messages.error')
+            deleteError.value = errorMessage(error, t('messages.error'))
         }
     } finally {
         deletingResource.value = false
@@ -211,7 +213,7 @@ onMounted(fetchKeys)
           <code class="fingerprint">{{ key.finger_print || '-' }}</code>
           <button
             class="btn btn-ghost btn-sm copy-btn"
-            @click="copyFingerprint(key as any)"
+            @click="copyFingerprint(key as SSHKey)"
             :title="copiedFingerprintId === key.id ? $t('messages.copied') : $t('actions.copy')"
           >
             <component :is="copiedFingerprintId === key.id ? Check : Copy" :size="14" />
@@ -220,7 +222,7 @@ onMounted(fetchKeys)
       </template>
 
       <template #cell-actions="{ row: key }">
-        <button class="btn btn-ghost btn-sm text-error" :title="$t('actions.delete')" @click="handleDeleteClick(key as any)">
+        <button class="btn btn-ghost btn-sm text-error" :title="$t('actions.delete')" @click="handleDeleteClick(key as SSHKey)">
           <Trash2 :size="14" />
         </button>
       </template>

@@ -11,6 +11,7 @@ import DeleteModal from '../../components/modals/DeleteModal.vue'
 import InfoRow from '../../components/base/InfoRow.vue'
 import { useCopyId } from '../../composables/useCopyId'
 import { useGoBack } from '../../composables/useGoBack'
+import { errorMessage } from '../../utils/error'
 
 const route = useRoute()
 const router = useRouter()
@@ -49,11 +50,10 @@ const fetchZoneDetail = async () => {
     error.value = null
     try {
         const zoneName = route.params.name as string
-        const response = await zonesApi.getZone(zoneName)
-        const data = response as any
-        zone.value = data.zone || data
-    } catch (err: any) {
-        error.value = err.message || 'Failed to load Zone details'
+        // GET /zones/:name 直接返回 Zone 本身，原先的 data.zone 兜底取不到任何东西
+        zone.value = await zonesApi.getZone(zoneName)
+    } catch (err) {
+        error.value = errorMessage(err, 'Failed to load Zone details')
     } finally {
         loading.value = false
     }
@@ -64,9 +64,8 @@ const fetchAssociatedHypervisors = async () => {
     loadingHypers.value = true
     try {
         const response = await hypervisorsApi.fetchHypervisors({ limit: 200 })
-        const data = response as any
-        const allHypers = data.hypers || []
-        hypervisors.value = allHypers.filter((h: Hypervisor) => h.zone_name === zone.value!.name)
+        const allHypers = response.hypers || []
+        hypervisors.value = allHypers.filter((h) => h.zone_name === zone.value!.name)
     } catch {
         hypervisors.value = []
     } finally {
@@ -89,8 +88,8 @@ const handleEdit = async () => {
         showEditModal.value = false
         toast.success(t('messages.success'))
         await fetchZoneDetail()
-    } catch (err: any) {
-        toast.error(err.response?.data?.error || 'Update failed')
+    } catch (err) {
+        toast.error(errorMessage(err, 'Update failed'))
     } finally {
         editing.value = false
     }
@@ -104,8 +103,8 @@ const handleDelete = async () => {
         await zonesApi.deleteZone(zone.value.name)
         toast.success(t('messages.success'))
         router.push({ name: 'zones' })
-    } catch (err: any) {
-        toast.error(err.response?.data?.error || 'Delete failed')
+    } catch (err) {
+        toast.error(errorMessage(err, 'Delete failed'))
     } finally {
         deleting.value = false
     }

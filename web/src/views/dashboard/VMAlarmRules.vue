@@ -5,10 +5,16 @@ import { Plus, Trash2, Search, ShieldAlert, Link, RefreshCw, ChevronDown, Chevro
 import BaseModal from '../../components/modals/BaseModal.vue'
 import DeleteModal from '../../components/modals/DeleteModal.vue'
 import PageToolbar from '../../components/base/PageToolbar.vue'
-import { vmAlarmRulesApi, VM_RULE_TYPES, type VMAlarmRuleGroup, type VMRuleType } from '../../api/vmAlarmRules'
+import {
+    vmAlarmRulesApi, VM_RULE_TYPES,
+    type VMAlarmRuleGroup, type VMRuleType,
+    type CPURuleDetail, type MemoryRuleDetail, type BWRuleDetail,
+    type CreateVMAlarmRuleResponse, type CreateBWRuleResponse,
+} from '../../api/vmAlarmRules'
 import { alarmEventsApi } from '../../api/alarmEvents'
 import { notificationsApi, type NotificationChannel } from '../../api/notifications'
-import { instancesApi, type Instance } from '../../api/instances'
+import { instancesApi, type Instance, type InstanceListResponse } from '../../api/instances'
+import { errorMessage } from '../../utils/error'
 import { useRegionStore } from '../../stores/region'
 import { useToast } from '../../composables/useToast'
 import { useCopyId } from '../../composables/useCopyId'
@@ -26,12 +32,25 @@ const total = ref(0)
 
 const { copiedId, copyId } = useCopyId()
 
+/**
+ * 创建表单里的一行阈值。三种规则类型共用同一张表单：CPU / 内存用 rule（比较符），
+ * 带宽用 direction，其余字段相同，所以这里是并集而不是 VMAlarmRuleDetail 那个判别联合。
+ */
+interface RuleFormRow {
+    name: string
+    limit: number
+    duration: number
+    level: string
+    rule?: string
+    direction?: 'in' | 'out'
+}
+
 // Create modal
 const showCreateModal = ref(false)
 const createForm = ref({
     name: '',
     type: 'cpu' as VMRuleType,
-    rules: [{ name: '', limit: 80, duration: 5, rule: 'gt', level: 'warning' }] as Record<string, any>[],
+    rules: [{ name: '', limit: 80, duration: 5, rule: 'gt', level: 'warning' }] as RuleFormRow[],
     linkedvms: [] as string[],
     bwLinkedVMs: [] as { instance_id: string; target_device: string }[],
     linkedchannels: [] as string[],
@@ -79,8 +98,8 @@ const toggleRule = async (id: string) => {
                     alarmEventsApi.getRuleChannels(id),
                 ])
                 const allCh: NotificationChannel[] = channelsRes.channels || []
-                const bindings = (bindingsRes as any).bindings || []
-                const boundUuids: string[] = bindings.map((b: any) => b.channel_uuid)
+                const bindings = bindingsRes.bindings || []
+                const boundUuids: string[] = bindings.map((b) => b.channel_uuid)
                 ruleChannels.value[id] = allCh.filter(c => boundUuids.includes(c.uuid))
                 ruleChannelCounts.value[id] = ruleChannels.value[id].length
             } catch (err) {
@@ -117,7 +136,7 @@ const filteredRules = computed(() => {
     return rules.value.filter(r => {
         if (r.name.toLowerCase().includes(q) || r.uuid.toLowerCase().includes(q)) return true
         if (r.linkedvms) {
-            return r.linkedvms.some(entry => getVMName(getLinkedVMId(entry as any)).toLowerCase().includes(q))
+            return r.linkedvms.some(entry => getVMName(getLinkedVMId(entry)).toLowerCase().includes(q))
         }
         return false
     })
@@ -126,7 +145,7 @@ const filteredRules = computed(() => {
 const fetchAllVMs = async () => {
     try {
         const res = await instancesApi.fetchInstances()
-        const data = res as any
+        const data = res as InstanceListResponse | Instance[]
         allVMs.value = Array.isArray(data) ? data : (data.instances || [])
     } catch (err) {
         console.error('Failed to fetch instances:', err)
@@ -147,7 +166,7 @@ const fetchRules = async () => {
         ruleResults.forEach((result, idx) => {
             const type = types[idx]
             if (result.status === 'fulfilled') {
-                const typeRules = (result.value.data || []).map((r: any) => ({ ...r, type }))
+                const typeRules = (result.value.data || []).map((r: VMAlarmRuleGroup) => ({ ...r, type }))
                 allRules.push(...typeRules)
             } else {
                 console.error(`Failed to fetch ${type} alarm rules:`, result.reason)
@@ -163,7 +182,7 @@ const fetchRules = async () => {
             results.forEach((result, idx) => {
                 const uuid = allRules[idx].uuid
                 if (result.status === 'fulfilled') {
-                    const bindings = (result.value as any).bindings || []
+                    const bindings = result.value.bindings || []
                     ruleChannelCounts.value[uuid] = bindings.length
                 } else {
                     ruleChannelCounts.value[uuid] = 0
@@ -192,7 +211,7 @@ const openCreate = async () => {
         vmsLoading.value = true
         try {
             const res = await instancesApi.fetchInstances()
-            const data = res as any
+            const data = res as InstanceListResponse | Instance[]
             allVMs.value = Array.isArray(data) ? data : (data.instances || [])
         } catch (err) {
             console.error('Failed to fetch instances:', err)
@@ -271,21 +290,24 @@ const submitCreate = async () => {
             region_id: regionUuid,
         }
 
-        let res: any
+        // 表单行是三种规则类型的并集，提交时按当前类型收窄（见 RuleFormRow）
+        let res: CreateVMAlarmRuleResponse | CreateBWRuleResponse | undefined
         if (createForm.value.type === 'cpu') {
-            res = await vmAlarmRulesApi.createCPURule({ ...base, rules: createForm.value.rules as any })
+            res = await vmAlarmRulesApi.createCPURule({ ...base, rules: createForm.value.rules as CPURuleDetail[] })
         } else if (createForm.value.type === 'memory') {
-            res = await vmAlarmRulesApi.createMemoryRule({ ...base, rules: createForm.value.rules as any })
+            res = await vmAlarmRulesApi.createMemoryRule({ ...base, rules: createForm.value.rules as MemoryRuleDetail[] })
         } else if (createForm.value.type === 'bw') {
             res = await vmAlarmRulesApi.createBWRule({
                 ...base,
                 enable: true,
-                rules: createForm.value.rules as any,
+                rules: createForm.value.rules as BWRuleDetail[],
                 linkedvms: createForm.value.bwLinkedVMs.length > 0 ? createForm.value.bwLinkedVMs : undefined,
             })
         }
 
-        const ruleUuid = res.data?.uuid || res.data?.group_uuid
+        // 带宽接口返回 uuid，CPU / 内存接口返回 group_uuid
+        const resData = res?.data
+        const ruleUuid = resData && ('uuid' in resData ? resData.uuid : resData.group_uuid)
 
         // Link VMs if selected (cpu/memory only; bw links are handled in createBWRule)
         if (createForm.value.type !== 'bw' && createForm.value.linkedvms && createForm.value.linkedvms.length > 0 && ruleUuid) {
@@ -308,9 +330,9 @@ const submitCreate = async () => {
 
         showCreateModal.value = false
         await fetchRules()
-    } catch (err: any) {
+    } catch (err) {
         console.error('Failed to create rule:', err)
-        errorMsg.value = err.response?.data?.error || t('messages.error')
+        errorMsg.value = errorMessage(err, t('messages.error'))
     }
 }
 
@@ -330,8 +352,8 @@ const toggleRuleStatus = async (rule: VMAlarmRuleGroup) => {
             rule.enable = true
             toast.success(t('messages.enabledSuccess'))
         }
-    } catch (err: any) {
-        toast.error(err.response?.data?.error || t('messages.operationFailed'))
+    } catch (err) {
+        toast.error(errorMessage(err, t('messages.operationFailed')))
     }
 }
 
@@ -342,9 +364,9 @@ const executeDelete = async () => {
         showDeleteModal.value = false
         deleteTarget.value = null
         await fetchRules()
-    } catch (err: any) {
+    } catch (err) {
         console.error('Failed to delete rule:', err)
-        errorMsg.value = err.response?.data?.error || t('messages.error')
+        errorMsg.value = errorMessage(err, t('messages.error'))
     }
 }
 
@@ -359,8 +381,8 @@ const openBindChannels = async (rule: VMAlarmRuleGroup) => {
             alarmEventsApi.getRuleChannels(rule.uuid),
         ])
         allChannels.value = channelsRes.channels || []
-        const bindings = (bindingsRes as any).bindings || []
-        selectedChannelUuids.value = bindings.map((b: any) => b.channel_uuid)
+        const bindings = bindingsRes.bindings || []
+        selectedChannelUuids.value = bindings.map((b) => b.channel_uuid)
     } catch (err) {
         console.error('Failed to load channels:', err)
         allChannels.value = []
@@ -380,8 +402,8 @@ const saveChannelBindings = async () => {
         ruleChannelCounts.value[uuid] = bound.length
         showBindModal.value = false
         toast.success(t('messages.success'))
-    } catch (err: any) {
-        const errCode = err.response?.data?.error
+    } catch (err) {
+        const errCode = (err as { response?: { data?: { error?: string } } })?.response?.data?.error
         if (errCode === 'channel_not_synced') {
             toast.error(t('dashboard.vmAlarmRules.channelNotSynced'))
         } else {
@@ -402,13 +424,13 @@ const toggleChannel = (uuid: string) => {
 // --- VM Binding ---
 const openBindVMs = async (rule: VMAlarmRuleGroup) => {
     bindVMsTarget.value = rule
-    selectedVMUuids.value = rule.linkedvms ? rule.linkedvms.map((e: any) => getLinkedVMId(e)) : []
+    selectedVMUuids.value = rule.linkedvms ? rule.linkedvms.map((e) => getLinkedVMId(e)) : []
     showBindVMsModal.value = true
     vmsLoading.value = true
     vmSearchQuery.value = ''
     try {
         const res = await instancesApi.fetchInstances()
-        const data = res as any
+        const data = res as InstanceListResponse | Instance[]
         allVMs.value = Array.isArray(data) ? data : (data.instances || [])
     } catch (err) {
         console.error('Failed to fetch instances:', err)
@@ -438,7 +460,7 @@ const saveVMBindings = async () => {
     linkVMsLoading.value = true
     try {
         const groupUuid = bindVMsTarget.value.uuid
-        const currentVMIds = (bindVMsTarget.value.linkedvms || []).map((e: any) => getLinkedVMId(e))
+        const currentVMIds = (bindVMsTarget.value.linkedvms || []).map((e) => getLinkedVMId(e))
 
         const toLink = selectedVMUuids.value.filter(id => !currentVMIds.includes(id))
         const toUnlink = currentVMIds.filter(id => !selectedVMUuids.value.includes(id))
@@ -453,9 +475,9 @@ const saveVMBindings = async () => {
         toast.success(t('dashboard.vmAlarmRules.bindSuccess'))
         showBindVMsModal.value = false
         await fetchRules()
-    } catch (err: any) {
+    } catch (err) {
         console.error('Failed to save VM bindings:', err)
-        toast.error(err.response?.data?.error || t('messages.error'))
+        toast.error(errorMessage(err, t('messages.error')))
     } finally {
         linkVMsLoading.value = false
     }
@@ -592,9 +614,9 @@ onMounted(fetchRules)
                         <div class="vms-section">
                             <div class="section-label">{{ t('dashboard.vmAlarmRules.linkedVMs') }} ({{ rule.linkedvms?.length || 0 }})</div>
                             <div class="linked-vms-chips">
-                                <div v-for="entry in rule.linkedvms" :key="getLinkedVMId(entry as any)" class="vm-chip" :title="getLinkedVMId(entry as any)">
-                                    {{ getVMName(getLinkedVMId(entry as any)) }}
-                                    <span class="badge badge-secondary" style="margin-left: 4px; font-size: 10px;">{{ getLinkedVMId(entry as any).substring(0, 8) }}</span>
+                                <div v-for="entry in rule.linkedvms" :key="getLinkedVMId(entry)" class="vm-chip" :title="getLinkedVMId(entry)">
+                                    {{ getVMName(getLinkedVMId(entry)) }}
+                                    <span class="badge badge-secondary" style="margin-left: 4px; font-size: 10px;">{{ getLinkedVMId(entry).substring(0, 8) }}</span>
                                 </div>
                                 <div v-if="!rule.linkedvms || rule.linkedvms.length === 0" class="text-secondary" style="font-size: 12px;">
                                     {{ t('dashboard.vmAlarmRules.noLinkedVMs') }}

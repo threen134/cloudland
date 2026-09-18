@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
-import { hypervisorsApi, type Hypervisor } from '../../api/hypervisors'
-import { instancesApi } from '../../api/instances'
-import { zonesApi } from '../../api/zones'
+import { hypervisorsApi, type Hypervisor, type HyperPatchPayload, type HyperListResponse } from '../../api/hypervisors'
+import { instancesApi, type Instance, type InstanceListResponse } from '../../api/instances'
+import { zonesApi, type Zone, type ZoneListResponse } from '../../api/zones'
+import { errorMessage } from '../../utils/error'
 import { ArrowLeft, Server, Copy, Check, Wrench, Loader2, ChevronDown, Pencil, Info, Activity, SquareTerminal } from 'lucide-vue-next'
 import HostMonitoringCharts from '../../components/monitoring/HostMonitoringCharts.vue'
 import { useI18n } from 'vue-i18n'
@@ -28,7 +29,7 @@ const loading = ref(true)
 const error = ref<string | null>(null)
 const saving = ref(false)
 const editMode = ref(false)
-const zoneList = ref<any[]>([])
+const zoneList = ref<Zone[]>([])
 const showActionMenu = ref(false)
 const toggleActionMenu = () => { showActionMenu.value = !showActionMenu.value }
 const closeActionMenu = () => { showActionMenu.value = false }
@@ -44,7 +45,9 @@ const STATUS_MAP: Record<number, { label: string; variant: StatusVariant }> = {
 
 const form = ref({
     status: 0 as number | undefined,
-    zone_id: 0 as number | undefined,
+    // ⚠️ 存的是 zone 的 uuid：GET /zones 的 ResourceReference.id 就是 uuid，
+    // 而 PATCH /hypers 的 zone_id 要的是数据库自增 ID（后端 binding `*int64,min=1`），两边对不上
+    zone_id: '' as string,
     cpu_over_rate: 1,
     mem_over_rate: 1,
     disk_over_rate: 1,
@@ -66,14 +69,14 @@ const tabs = computed(() => [
 ])
 
 // 该节点上的虚拟机列表（概览卡片），按 host id 过滤
-const hyperInstances = ref<any[]>([])
+const hyperInstances = ref<Instance[]>([])
 const hyperInstancesLoading = ref(false)
 
 const fetchHyperInstances = async (hostid: number) => {
     hyperInstancesLoading.value = true
     try {
         const resp = await instancesApi.fetchInstances({ hyper: hostid, limit: 200 })
-        const data = resp as any
+        const data = resp as InstanceListResponse | Instance[]
         hyperInstances.value = Array.isArray(data) ? data : (data.instances || [])
     } catch (err) {
         console.error('Failed to load instances of hypervisor:', err)
@@ -119,25 +122,25 @@ const fetchHypervisorDetail = async () => {
     error.value = null
     try {
         const uuid = route.params.id as string
-        const response = await hypervisorsApi.getHypervisor(uuid)
-        hypervisor.value = response as any
+        hypervisor.value = await hypervisorsApi.getHypervisor(uuid)
         syncForm()
         // 详情返回后才知道 host id，虚拟机列表随后单独拉取
         if (hypervisor.value?.hostid !== undefined) {
             await fetchHyperInstances(hypervisor.value.hostid)
         }
-    } catch (err: any) {
+    } catch (err) {
         console.error('Failed to fetch hypervisor detail:', err)
-        error.value = err.message || t('dashboard.hypervisorDetail.loadError')
+        error.value = errorMessage(err, t('dashboard.hypervisorDetail.loadError'))
     } finally {
         loading.value = false
     }
 }
 
+// 返回的是 zone uuid，见 form.zone_id 的说明
 const currentZoneId = computed(() => {
-    if (!hypervisor.value) return 0
-    const match = zoneList.value.find((z: any) => z.name === hypervisor.value!.zone_name)
-    return match ? (match as any).id : 0
+    if (!hypervisor.value) return ''
+    const match = zoneList.value.find((z) => z.name === hypervisor.value!.zone_name)
+    return match ? match.id : ''
 })
 
 const syncForm = () => {
@@ -166,7 +169,7 @@ const toggleEdit = async () => {
     editMode.value = true
     try {
         const resp = await zonesApi.fetchZones()
-        const data = resp as any
+        const data = resp as ZoneListResponse | Zone[]
         zoneList.value = Array.isArray(data) ? data : (data.zones || [])
     } catch { zoneList.value = [] }
     syncForm()
@@ -181,8 +184,9 @@ const handleSave = async () => {
     if (!hypervisor.value) return
     saving.value = true
     try {
-        const payload: any = {}
+        const payload: HyperPatchPayload = {}
         if (form.value.status !== hypervisor.value.status) payload.status = form.value.status
+        // 保持原行为：下拉框里是 uuid，接口的 zone_id 却是 int64，发过去后端会 400（既有问题，未改）
         if (form.value.zone_id !== currentZoneId.value) payload.zone_id = form.value.zone_id
         if (form.value.cpu_over_rate !== hypervisor.value.cpu_over_rate) payload.cpu_over_rate = Number(form.value.cpu_over_rate)
         if (form.value.mem_over_rate !== hypervisor.value.mem_over_rate) payload.mem_over_rate = Number(form.value.mem_over_rate)
@@ -193,8 +197,8 @@ const handleSave = async () => {
         await fetchHypervisorDetail()
         editMode.value = false
         toast.success(t('messages.success'))
-    } catch (err: any) {
-        toast.error(err.response?.data?.error || t('messages.error'))
+    } catch (err) {
+        toast.error(errorMessage(err, t('messages.error')))
     } finally {
         saving.value = false
     }
@@ -202,7 +206,7 @@ const handleSave = async () => {
 
 // 维护模式可选的目标节点：本页只持有当前节点，打开对话框时按需拉取列表；
 // 排除当前节点本身（迁到自己后端会直接跳过），只列活动状态的节点
-const maintainTargetOptions = ref<any[]>([])
+const maintainTargetOptions = ref<Hypervisor[]>([])
 
 // Maintain
 const openMaintainModal = async () => {
@@ -211,10 +215,10 @@ const openMaintainModal = async () => {
     showMaintainModal.value = true
     try {
         const resp = await hypervisorsApi.fetchHypervisors()
-        const data = resp as any
+        const data = resp as HyperListResponse | Hypervisor[]
         const list = Array.isArray(data) ? data : (data.hypers || [])
         maintainTargetOptions.value = list.filter(
-            (h: any) => h.status === 1 && h.hostid !== hypervisor.value?.hostid
+            (h) => h.status === 1 && h.hostid !== hypervisor.value?.hostid
         )
     } catch (err) {
         console.error('Failed to load hypervisors for maintenance target:', err)
@@ -230,8 +234,8 @@ const handleMaintain = async () => {
         showMaintainModal.value = false
         toast.success(t('messages.success'))
         await fetchHypervisorDetail()
-    } catch (err: any) {
-        toast.error(err.response?.data?.error || t('messages.error'))
+    } catch (err) {
+        toast.error(errorMessage(err, t('messages.error')))
     } finally {
         maintaining.value = false
     }

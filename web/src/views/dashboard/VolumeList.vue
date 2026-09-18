@@ -7,6 +7,7 @@ import { useListQuery } from '../../composables/useListQuery'
 import { volumesApi, type Volume } from '../../api/volumes'
 import { useRegionStore } from '../../stores/region'
 import { isValidName } from '../../utils/validation'
+import { errorMessage } from '../../utils/error'
 
 import { HardDrive, Plus, Paperclip, Trash2, Maximize, Search, Check, Copy, RefreshCw } from 'lucide-vue-next'
 import { formatDisk } from '../../utils/format'
@@ -105,9 +106,9 @@ const handleCreateVolume = async () => {
         await reloadVolumes()
         closeCreateModal()
         toast.success(t('messages.createSuccess'))
-    } catch (err: any) {
+    } catch (err) {
         console.error('Failed to create volume:', err)
-        createError.value = err.response?.data?.error_message || err.message || t('messages.error')
+        createError.value = errorMessage(err, t('messages.error'))
     } finally {
         creating.value = false
     }
@@ -137,9 +138,9 @@ const confirmDelete = async () => {
         await fetchVolumes()
         closeDeleteModal()
         toast.success(t('messages.deleteSuccess'))
-    } catch (error: any) {
+    } catch (error) {
         console.error('Failed to delete volume:', error)
-        deleteError.value = error.response?.data?.error_message || error.message || t('messages.error')
+        deleteError.value = errorMessage(error, t('messages.error'))
     } finally {
         deletingResource.value = false
     }

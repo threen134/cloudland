@@ -7,6 +7,7 @@ import { useListQuery } from '../../composables/useListQuery'
 import { flavorsApi, type Flavor, type FlavorPayload } from '../../api/flavors'
 import { useRegionStore } from '../../stores/region'
 import { isValidName } from '../../utils/validation'
+import { errorMessage } from '../../utils/error'
 
 const region = useRegionStore()
 
@@ -99,9 +100,9 @@ const handleCreateFlavor = async () => {
         await reloadFlavors()
         closeCreateModal()
         toast.success(t('messages.createSuccess'))
-    } catch (err: any) {
+    } catch (err) {
         console.error('Failed to create flavor:', err)
-        createError.value = err.response?.data?.error_message || err.message || t('messages.error')
+        createError.value = errorMessage(err, t('messages.error'))
     } finally {
         creating.value = false
     }
@@ -111,9 +112,9 @@ const handleCreateFlavor = async () => {
 const deleteModalVisible = ref(false)
 const deletingResource = ref(false)
 const deleteError = ref('')
-const resourceToDelete = ref<any>(null)
+const resourceToDelete = ref<Flavor | null>(null)
 
-const handleDeleteClick = (item: any) => {
+const handleDeleteClick = (item: Flavor) => {
     resourceToDelete.value = item
     deleteModalVisible.value = true
 }
@@ -131,9 +132,9 @@ const confirmDelete = async () => {
         await fetchFlavors()
         closeDeleteModal()
         toast.success(t('messages.deleteSuccess'))
-    } catch (error: any) {
-        console.error('Failed to delete flavor:', error)
-        deleteError.value = error.response?.data?.error_message || error.message || t('messages.error')
+    } catch (err) {
+        console.error('Failed to delete flavor:', err)
+        deleteError.value = errorMessage(err, t('messages.error'))
     } finally {
         deletingResource.value = false
     }

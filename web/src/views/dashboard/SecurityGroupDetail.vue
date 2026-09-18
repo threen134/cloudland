@@ -15,6 +15,7 @@ import DeleteModal from '../../components/modals/DeleteModal.vue'
 import InfoRow from '../../components/base/InfoRow.vue'
 import DetailTabs from '../../components/base/DetailTabs.vue'
 import { useGoBack } from '../../composables/useGoBack'
+import { errorMessage } from '../../utils/error'
 import { ArrowLeft, Shield, Trash2, Plus, X, Edit, ArrowUpDown, ArrowUp, ArrowDown, Network, Server, ChevronDown, Search } from 'lucide-vue-next'
 
 const route = useRoute()
@@ -144,9 +145,9 @@ const confirmDeleteRule = async () => {
         await fetchGroup()
         ruleToDelete.value = null
         toast.success(t('messages.deleteSuccess'))
-    } catch (err: any) {
+    } catch (err) {
         console.error('Failed to delete rule:', err)
-        deleteRuleError.value = err.response?.data?.error_message || err.message || t('messages.error')
+        deleteRuleError.value = errorMessage(err, t('messages.error'))
     } finally {
         deletingRule.value = false
     }
@@ -177,9 +178,9 @@ const confirmDeleteGroup = async () => {
         toast.success(t('messages.deleteSuccess'))
         deleteGroupModalVisible.value = false
         router.push({ name: 'security-groups' })
-    } catch (err: any) {
+    } catch (err) {
         console.error('Failed to delete security group:', err)
-        deleteGroupError.value = err.response?.data?.error_message || err.message || t('messages.error')
+        deleteGroupError.value = errorMessage(err, t('messages.error'))
     } finally {
         deletingGroup.value = false
     }
@@ -225,9 +226,9 @@ const saveInfo = async () => {
         }
         showEditModal.value = false
         toast.success(t('messages.updateSuccess'))
-    } catch (err: any) {
+    } catch (err) {
         console.error('Failed to update info:', err)
-        editError.value = err.response?.data?.error_message || err.message || t('messages.error')
+        editError.value = errorMessage(err, t('messages.error'))
     } finally {
         savingInfo.value = false
     }

@@ -1,10 +1,11 @@
 <script setup lang="ts">
 import { ref, onMounted, computed, watch } from 'vue'
-import { alarmsApi, RULE_TYPES, type NodeAlarmRule, type CreateNodeAlarmRulePayload } from '../../api/alarms'
+import { alarmsApi, RULE_TYPES, type NodeAlarmRule, type NodeAlarmRuleListResponse, type CreateNodeAlarmRulePayload } from '../../api/alarms'
 import { Search as SearchIcon, AlertTriangle, Plus, Trash2, RefreshCw, Loader2, RefreshCcw, Check, Copy } from 'lucide-vue-next'
 import { useI18n } from 'vue-i18n'
 import { useToast } from '../../composables/useToast'
 import { useCopyId } from '../../composables/useCopyId'
+import { errorMessage } from '../../utils/error'
 import { useRegionStore } from '../../stores/region'
 import BaseModal from '../../components/modals/BaseModal.vue'
 import DeleteModal from '../../components/modals/DeleteModal.vue'
@@ -44,10 +45,11 @@ const fetchAlarms = async () => {
     loading.value = true
     loadError.value = ''
     try {
-        const params: any = {}
+        const params: { uuid?: string; rule_type?: string } = {}
         if (filterRuleType.value) params.rule_type = filterRuleType.value
         const response = await alarmsApi.fetchAlarmRules(params)
-        const data = response as any
+        // 接口返回 { status, data, count }，这里保留"直接是数组"的兼容分支
+        const data = response as NodeAlarmRuleListResponse | NodeAlarmRule[]
         alarmList.value = Array.isArray(data) ? data : (data.data || [])
     } catch (error) {
         console.error('API fetch failed:', error)
@@ -142,9 +144,8 @@ const handleCreate = async () => {
         showCreateModal.value = false
         toast.success(t('messages.success'))
         await fetchAlarms()
-    } catch (err: any) {
-        const errData = err.response?.data
-        toast.error(errData?.error || errData?.message || t('messages.error'))
+    } catch (err) {
+        toast.error(errorMessage(err, t('messages.error')))
     } finally {
         creating.value = false
     }
@@ -165,8 +166,8 @@ const handleDelete = async () => {
         deletingRule.value = null
         toast.success(t('messages.success'))
         await fetchAlarms()
-    } catch (err: any) {
-        toast.error(err.response?.data?.error || t('messages.error'))
+    } catch (err) {
+        toast.error(errorMessage(err, t('messages.error')))
     } finally {
         deleting.value = false
     }
@@ -179,8 +180,8 @@ const handleSync = async () => {
     try {
         await alarmsApi.syncMappings()
         toast.success(t('dashboard.alarmActions.syncSuccess'))
-    } catch (err: any) {
-        toast.error(err.response?.data?.error || t('messages.error'))
+    } catch (err) {
+        toast.error(errorMessage(err, t('messages.error')))
     } finally {
         syncing.value = false
     }

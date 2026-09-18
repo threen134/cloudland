@@ -9,6 +9,7 @@ import DeleteModal from '../../components/modals/DeleteModal.vue'
 import InfoRow from '../../components/base/InfoRow.vue'
 import { useCopyId } from '../../composables/useCopyId'
 import { useGoBack } from '../../composables/useGoBack'
+import { errorMessage } from '../../utils/error'
 
 const route = useRoute()
 const router = useRouter()
@@ -44,9 +45,9 @@ const confirmDelete = async () => {
         await subnetsApi.delete(subnetId)
         toast.success(t('messages.deleteSuccess'))
         router.push({ name: 'subnets' })
-    } catch (err: any) {
+    } catch (err) {
         console.error('Failed to delete subnet:', err)
-        deleteError.value = err.response?.data?.error_message || err.message || t('messages.error')
+        deleteError.value = errorMessage(err, t('messages.error'))
     } finally {
         deletingResource.value = false
     }

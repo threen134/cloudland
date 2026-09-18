@@ -53,7 +53,8 @@ export interface HyperDeployPayload {
 // 对应 hyper.go 的 HyperPatchPayload（全部为指针，不传即不改）
 export interface HyperPatchPayload {
     status?: number
-    zone_id?: number
+    /** 可用区 UUID（后端按 UUID 解析，见 apis/hyper.go 的 HyperPatchPayload） */
+    zone_id?: string
     cpu_over_rate?: number
     mem_over_rate?: number
     disk_over_rate?: number

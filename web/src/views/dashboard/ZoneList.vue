@@ -7,6 +7,7 @@ import { useToast } from '../../composables/useToast'
 import { useCopyId } from '../../composables/useCopyId'
 import { useListQuery } from '../../composables/useListQuery'
 import { useRegionStore } from '../../stores/region'
+import { errorMessage } from '../../utils/error'
 import BaseModal from '../../components/modals/BaseModal.vue'
 import DeleteModal from '../../components/modals/DeleteModal.vue'
 import PageToolbar from '../../components/base/PageToolbar.vue'
@@ -82,8 +83,8 @@ const handleCreate = async () => {
         showCreateModal.value = false
         toast.success(t('messages.success'))
         await reloadZones()
-    } catch (err: any) {
-        const msg = err.response?.data?.error || err.response?.data?.message || 'Create failed'
+    } catch (err) {
+        const msg = errorMessage(err, 'Create failed')
         toast.error(msg)
     } finally {
         creating.value = false
@@ -105,8 +106,8 @@ const handleEdit = async () => {
         showEditModal.value = false
         toast.success(t('messages.success'))
         await fetchZones()
-    } catch (err: any) {
-        toast.error(err.response?.data?.error || 'Update failed')
+    } catch (err) {
+        toast.error(errorMessage(err, 'Update failed'))
     } finally {
         editing.value = false
     }
@@ -127,8 +128,8 @@ const handleDelete = async () => {
         deletingZone.value = null
         toast.success(t('messages.success'))
         await fetchZones()
-    } catch (err: any) {
-        toast.error(err.response?.data?.error || 'Delete failed')
+    } catch (err) {
+        toast.error(errorMessage(err, 'Delete failed'))
     } finally {
         deleting.value = false
     }

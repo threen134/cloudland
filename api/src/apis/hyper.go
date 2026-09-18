@@ -79,8 +79,10 @@ type HyperMaintainPayload struct {
 }
 
 type HyperPatchPayload struct {
-	Status       *int32   `json:"status" binding:"omitempty,min=0,max=1"`
-	ZoneID       *int64   `json:"zone_id" binding:"omitempty,min=1"`
+	Status *int32 `json:"status" binding:"omitempty,min=0,max=1"`
+	// 可用区的 UUID。接口对外暴露的 id 一律是 UUID，此前这里收的是数据库自增 ID，
+	// 而 GET /zones 只返回 UUID，界面上改可用区必定 400
+	ZoneID       *string  `json:"zone_id" binding:"omitempty,uuid"`
 	CpuOverRate  *float32 `json:"cpu_over_rate" binding:"omitempty,min=1"`
 	MemOverRate  *float32 `json:"mem_over_rate" binding:"omitempty,min=1"`
 	DiskOverRate *float32 `json:"disk_over_rate" binding:"omitempty,min=1"`
@@ -210,7 +212,12 @@ func (v *HyperAPI) Patch(c *gin.Context) {
 		hyper.Status = *payload.Status
 	}
 	if payload.ZoneID != nil {
-		hyper.ZoneID = *payload.ZoneID
+		zone, zoneErr := zoneAdmin.GetZoneByUUID(c.Request.Context(), *payload.ZoneID)
+		if zoneErr != nil {
+			ErrorResponse(c, http.StatusBadRequest, "Invalid zone", zoneErr)
+			return
+		}
+		hyper.ZoneID = zone.ID
 	}
 	if payload.CpuOverRate != nil {
 		hyper.CpuOverRate = *payload.CpuOverRate

@@ -6,6 +6,7 @@ import { Cloud, User, Mail, Lock, ArrowRight, ShieldCheck, Building2, XCircle, E
 import { authApi } from '../../api/auth'
 import { useToast } from '../../composables/useToast'
 import { isChinese } from '../../locales'
+import { errorMessage } from '../../utils/error'
 
 const { t, locale } = useI18n()
 const toast = useToast()
@@ -72,13 +73,9 @@ const handleSubmit = async () => {
         
         // Redirect to success page
         router.push('/register/success')
-    } catch (error: any) {
+    } catch (error) {
         console.error('Registration failed:', error)
-        const detail = error.response?.data?.detail
-        const msg = Array.isArray(detail)
-            ? detail.map((d: any) => d.msg).join('; ')
-            : (detail || error.message || t('messages.error'))
-        toast.error(msg)
+        toast.error(errorMessage(error, t('messages.error')))
     } finally {
         isLoading.value = false
     }

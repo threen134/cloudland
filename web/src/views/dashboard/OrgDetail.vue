@@ -18,6 +18,7 @@ import { useTenantStore } from '../../stores/tenant'
 import { useQuota } from '../../composables/useQuota'
 import { useToast } from '../../composables/useToast'
 import { formatDate } from '../../utils/format'
+import { errorMessage } from '../../utils/error'
 
 const { t } = useI18n()
 const toast = useToast()
@@ -69,8 +70,8 @@ const handleSaveQuota = async (regionUuid: string) => {
     try {
         await handleSaveQuotaBase(orgId, regionUuid)
         toast.success(t('messages.updateSuccess'))
-    } catch (err: any) {
-        toast.error(err.response?.data?.detail || err.message || t('messages.error'))
+    } catch (err) {
+        toast.error(errorMessage(err, t('messages.error')))
     }
 }
 
@@ -109,10 +110,10 @@ const fetchOrg = async () => {
     loading.value = true
     error.value = ''
     try {
-        const response = await orgsApi.getOrg(orgId)
-        org.value = response?.org || response
-    } catch (err: any) {
-        error.value = err.response?.data?.detail || 'Failed to load organization.'
+        // GET /orgs/:uuid 直接返回 orgDetailOut，没有 { org: ... } 外层包装
+        org.value = await orgsApi.getOrg(orgId)
+    } catch (err) {
+        error.value = errorMessage(err, 'Failed to load organization.')
     } finally {
         loading.value = false
     }
@@ -121,9 +122,9 @@ const fetchOrg = async () => {
 const fetchMembers = async () => {
     membersLoading.value = true
     try {
-        const response = await orgsApi.fetchMembers(orgId)
-        members.value = response?.members || response || []
-    } catch (err: any) {
+        // GET /orgs/:uuid/members 直接返回数组，没有 { members: ... } 外层包装
+        members.value = await orgsApi.fetchMembers(orgId) || []
+    } catch (err) {
         console.error('Failed to fetch members:', err)
     } finally {
         membersLoading.value = false
@@ -136,7 +137,7 @@ const fetchInvitations = async () => {
     try {
         const response = await orgsApi.fetchInvitations(orgId)
         invitations.value = response || []
-    } catch (err: any) {
+    } catch (err) {
         console.error('Failed to fetch invitations:', err)
     } finally {
         invitationsLoading.value = false
@@ -167,8 +168,8 @@ const handleAddMember = async () => {
         toast.success(t('messages.createSuccess'))
         await fetchInvitations()
         addMemberVisible.value = false
-    } catch (err: any) {
-        addMemberError.value = err.response?.data?.detail || err.message
+    } catch (err) {
+        addMemberError.value = errorMessage(err, t('messages.error'))
     } finally {
         addingMember.value = false
     }
@@ -182,7 +183,7 @@ const handleCancelInvitation = async (inv: OrgInvitation) => {
         await orgsApi.cancelInvitation(orgId, inv.uuid)
         toast.success(t('messages.deleteSuccess'))
         await fetchInvitations()
-    } catch (err: any) {
+    } catch (err) {
         console.error('Failed to cancel invitation:', err)
     } finally {
         cancellingInvitation.value = null
@@ -204,8 +205,8 @@ const handleChangeRole = async () => {
         toast.success(t('messages.updateSuccess'))
         await fetchMembers()
         changeRoleVisible.value = false
-    } catch (err: any) {
-        changeRoleError.value = err.response?.data?.detail || err.message
+    } catch (err) {
+        changeRoleError.value = errorMessage(err, t('messages.error'))
     } finally {
         changingRole.value = false
     }
@@ -227,8 +228,8 @@ const handleRemoveMember = async () => {
         toast.success(t('messages.deleteSuccess'))
         await fetchMembers()
         removeMemberVisible.value = false
-    } catch (err: any) {
-        removeMemberError.value = err.response?.data?.detail || err.message
+    } catch (err) {
+        removeMemberError.value = errorMessage(err, t('messages.error'))
     } finally {
         removingMember.value = false
     }
@@ -251,8 +252,8 @@ const handleTransfer = async () => {
         await fetchOrg()
         await fetchMembers()
         transferVisible.value = false
-    } catch (err: any) {
-        transferError.value = err.response?.data?.detail || err.message
+    } catch (err) {
+        transferError.value = errorMessage(err, t('messages.error'))
     } finally {
         transferring.value = false
     }
@@ -391,19 +392,19 @@ onUnmounted(() => {
               <tbody>
                 <tr v-for="res in QUOTA_ROWS" :key="res.key">
                   <td>{{ $t(res.label) }}</td>
-                  <td>{{ (region.quota as any)[res.qkey] }}</td>
-                  <td>{{ (region.consumption as any)[res.key] }}</td>
+                  <td>{{ region.quota[res.qkey] }}</td>
+                  <td>{{ region.consumption[res.key] }}</td>
                   <td>
                     <div class="usage-bar-container">
                       <div
                         class="usage-bar"
                         :style="{
-                          width: getUsagePercent((region.consumption as any)[res.key], (region.quota as any)[res.qkey]) + '%',
-                          background: getUsageColor(getUsagePercent((region.consumption as any)[res.key], (region.quota as any)[res.qkey]))
+                          width: getUsagePercent(region.consumption[res.key], region.quota[res.qkey]) + '%',
+                          background: getUsageColor(getUsagePercent(region.consumption[res.key], region.quota[res.qkey]))
                         }"
                       ></div>
                     </div>
-                    <span class="usage-text">{{ getUsagePercent((region.consumption as any)[res.key], (region.quota as any)[res.qkey]) }}%</span>
+                    <span class="usage-text">{{ getUsagePercent(region.consumption[res.key], region.quota[res.qkey]) }}%</span>
                   </td>
                 </tr>
               </tbody>
@@ -537,24 +538,24 @@ onUnmounted(() => {
                     type="number"
                     class="form-input quota-input"
                     :value="editingQuota[region.region_uuid]?.[res.qkey as keyof OrgResourceQuotaUpdate]"
-                    @input="(e: any) => { if (editingQuota[region.region_uuid]) (editingQuota[region.region_uuid] as any)[res.qkey] = Number(e.target.value) }"
+                    @input="(e: Event) => { if (editingQuota[region.region_uuid]) editingQuota[region.region_uuid][res.qkey] = Number((e.target as HTMLInputElement).value) }"
                     min="0"
                     step="1"
                   />
-                  <span v-else>{{ (region.quota as any)[res.qkey] }}</span>
+                  <span v-else>{{ region.quota[res.qkey] }}</span>
                 </td>
-                <td>{{ (region.consumption as any)[res.key] }}</td>
+                <td>{{ region.consumption[res.key] }}</td>
                 <td>
                   <div class="usage-bar-container">
                     <div
                       class="usage-bar"
                       :style="{
-                        width: getUsagePercent((region.consumption as any)[res.key], (region.quota as any)[res.qkey]) + '%',
-                        background: getUsageColor(getUsagePercent((region.consumption as any)[res.key], (region.quota as any)[res.qkey]))
+                        width: getUsagePercent(region.consumption[res.key], region.quota[res.qkey]) + '%',
+                        background: getUsageColor(getUsagePercent(region.consumption[res.key], region.quota[res.qkey]))
                       }"
                     ></div>
                   </div>
-                  <span class="usage-text">{{ getUsagePercent((region.consumption as any)[res.key], (region.quota as any)[res.qkey]) }}%</span>
+                  <span class="usage-text">{{ getUsagePercent(region.consumption[res.key], region.quota[res.qkey]) }}%</span>
                 </td>
               </tr>
             </tbody>

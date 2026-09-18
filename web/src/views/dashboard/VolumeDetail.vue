@@ -12,6 +12,7 @@ import StatusBadge from '../../components/base/StatusBadge.vue'
 import InfoRow from '../../components/base/InfoRow.vue'
 import { useCopyId } from '../../composables/useCopyId'
 import { useGoBack } from '../../composables/useGoBack'
+import { errorMessage } from '../../utils/error'
 
 const route = useRoute()
 const router = useRouter()
@@ -42,9 +43,9 @@ const fetchVolume = async () => {
     try {
         const response = await volumesApi.get(id)
         volume.value = response
-    } catch (err: any) {
+    } catch (err) {
         console.error('Failed to fetch volume:', err)
-        error.value = err.message || 'Failed to load volume details'
+        error.value = errorMessage(err, 'Failed to load volume details')
     } finally {
         loading.value = false
     }
@@ -91,9 +92,9 @@ const confirmDelete = async () => {
         await volumesApi.delete(route.params.id as string)
         toast.success(t('messages.deleteSuccess'))
         router.push({ name: 'volumes' })
-    } catch (err: any) {
+    } catch (err) {
         console.error('Failed to delete volume:', err)
-        deleteError.value = err.response?.data?.error_message || err.message || t('messages.error')
+        deleteError.value = errorMessage(err, t('messages.error'))
     } finally {
         deletingResource.value = false
     }

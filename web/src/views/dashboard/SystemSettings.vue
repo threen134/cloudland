@@ -50,7 +50,9 @@ const loading = ref(false)
 const saving = ref(false)
 const settings = ref<SystemSetting[]>([])
 // Values bound to the inputs, and the normalized values last loaded from the server
-const editValues = ref<Record<string, any>>({})
+// value 的实际类型随 value_type 变（string / number / boolean / json 解析出来的数组或对象），
+// 用 unknown 由 normalize / saveSettings 里的运行时判断收窄
+const editValues = ref<Record<string, unknown>>({})
 const savedValues = ref<Record<string, string>>({})
 
 // Numeric settings with an allowed range; keep in sync with settingRanges in cpgateway (the backend validates too)
@@ -111,7 +113,7 @@ const normalize = (setting: SystemSetting, value: unknown): string => {
 
 const loadValues = (list: SystemSetting[]) => {
     settings.value = list
-    const edits: Record<string, any> = {}
+    const edits: Record<string, unknown> = {}
     const saved: Record<string, string> = {}
     for (const s of list) {
         let value = s.value

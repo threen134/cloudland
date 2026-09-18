@@ -50,9 +50,8 @@ const fetchImage = async () => {
     loading.value = true
     error.value = ''
     try {
-        const response = await imagesApi.getImage(imageId)
-        const data = response as any
-        image.value = data.image || data
+        // 后端 GET /images/:id 直接返回 ImageResponse，没有 { image } 外层包装
+        image.value = await imagesApi.getImage(imageId)
     } catch (err) {
         console.error('Failed to fetch image:', err)
         error.value = 'Failed to load image details.'

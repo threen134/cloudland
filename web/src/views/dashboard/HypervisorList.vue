@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, computed, watch } from 'vue'
-import { hypervisorsApi, type Hypervisor, type HyperDeployPayload } from '../../api/hypervisors'
-import { instancesApi } from '../../api/instances'
-import { zonesApi } from '../../api/zones'
+import { ref, onMounted, onUnmounted, computed, watch, type Directive } from 'vue'
+import { hypervisorsApi, type Hypervisor, type HyperDeployPayload, type HyperPatchPayload, type HyperListResponse } from '../../api/hypervisors'
+import { instancesApi, type Instance, type InstanceListResponse } from '../../api/instances'
+import { zonesApi, type Zone, type ZoneListResponse } from '../../api/zones'
+import { errorMessage } from '../../utils/error'
 import { useRegionStore } from '../../stores/region'
 
 const region = useRegionStore()
@@ -20,17 +21,20 @@ import StatusBadge from '../../components/base/StatusBadge.vue'
 import DataTable, { type Column } from '../../components/base/DataTable.vue'
 import PaginationBar from '../../components/base/PaginationBar.vue'
 
-const vClickOutside = {
-  mounted(el: any, binding: any) {
+// 指令把监听器挂在元素自身上，卸载时再取下来，所以元素类型要带上这个附加属性
+type ClickOutsideEl = HTMLElement & { clickOutsideEvent?: (event: Event) => void }
+
+const vClickOutside: Directive<ClickOutsideEl, (event: Event) => void> = {
+  mounted(el, binding) {
     el.clickOutsideEvent = (event: Event) => {
-      if (!(el === event.target || el.contains(event.target))) {
+      if (!(el === event.target || el.contains(event.target as Node))) {
         binding.value(event)
       }
     }
     document.addEventListener('click', el.clickOutsideEvent)
   },
-  unmounted(el: any) {
-    document.removeEventListener('click', el.clickOutsideEvent)
+  unmounted(el) {
+    if (el.clickOutsideEvent) document.removeEventListener('click', el.clickOutsideEvent)
   }
 }
 
@@ -40,7 +44,7 @@ const hypervisorList = ref<Hypervisor[]>([])
 
 // 虚拟机数量列的悬浮列表：按 host id 缓存，避免同一节点反复请求
 const hoveredHyperId = ref<string | null>(null)
-const hyperInstances = ref<Record<number, any[]>>({})
+const hyperInstances = ref<Record<number, Instance[]>>({})
 const hyperInstancesLoading = ref<Record<number, boolean>>({})
 
 const loadHyperInstances = async (h: Hypervisor) => {
@@ -50,7 +54,7 @@ const loadHyperInstances = async (h: Hypervisor) => {
     try {
         // limit 取较大值：悬浮是为了看清都有哪些虚拟机，分页会让列表看起来缺失
         const resp = await instancesApi.fetchInstances({ hyper: h.hostid, limit: 200 })
-        const data = resp as any
+        const data = resp as InstanceListResponse | Instance[]
         hyperInstances.value[h.hostid] = Array.isArray(data) ? data : (data.instances || [])
     } catch (err) {
         console.error('Failed to load instances of hypervisor:', err)
@@ -104,7 +108,7 @@ const deployForm = ref<HyperDeployPayload>({
     zone_name: '',
     virt_type: 'kvm-x86_64'
 })
-const zoneList = ref<any[]>([])
+const zoneList = ref<Zone[]>([])
 const copiedCmd = ref(false)
 
 // Delete
@@ -118,7 +122,8 @@ const editingHyper = ref<Hypervisor | null>(null)
 const saving = ref(false)
 const editForm = ref({
     status: 0,
-    zone_id: 0,
+    // 下拉框绑的是 zone uuid（见 resolveZoneIdByName 的说明）
+    zone_id: '',
     cpu_over_rate: 1,
     mem_over_rate: 1,
     disk_over_rate: 1,
@@ -163,9 +168,9 @@ const fetchHypervisors = async () => {
             limit: pageSize.value,
             q: searchQuery.value || undefined
         })
-        const data = response as any
+        const data = response as HyperListResponse | Hypervisor[]
         hypervisorList.value = Array.isArray(data) ? data : (data.hypers || [])
-        totalCount.value = data.total || hypervisorList.value.length
+        totalCount.value = (Array.isArray(data) ? 0 : data.total) || hypervisorList.value.length
     } catch (error) {
         console.error('API fetch failed:', error)
         hypervisorList.value = []
@@ -239,7 +244,7 @@ const openDeployModal = async () => {
     showDeployModal.value = true
     try {
         const resp = await zonesApi.fetchZones()
-        const data = resp as any
+        const data = resp as ZoneListResponse | Zone[]
         zoneList.value = Array.isArray(data) ? data : (data.zones || [])
     } catch { zoneList.value = [] }
 }
@@ -249,9 +254,9 @@ const handleDeploy = async () => {
     deploying.value = true
     try {
         const resp = await hypervisorsApi.deployHypervisor(deployForm.value)
-        deployResult.value = resp as any
-    } catch (err: any) {
-        toast.error(err.response?.data?.error || t('messages.deployFailed'))
+        deployResult.value = resp
+    } catch (err) {
+        toast.error(errorMessage(err, t('messages.deployFailed')))
     } finally {
         deploying.value = false
     }
@@ -286,18 +291,20 @@ const handleDelete = async () => {
         deletingHyper.value = null
         await fetchHypervisors()
         toast.success(t('messages.deleteSuccess'))
-    } catch (err: any) {
-        toast.error(err.response?.data?.error || t('messages.deleteFailed'))
+    } catch (err) {
+        toast.error(errorMessage(err, t('messages.deleteFailed')))
     } finally {
         deleting.value = false
     }
 }
 
-const editingZoneId = ref<number>(0)
+// ⚠️ 这里存的是 zone 的 uuid：GET /zones 的 ResourceReference.id 就是 uuid，
+// 而 PATCH /hypers 的 zone_id 要的是数据库自增 ID（后端 binding `*int64,min=1`），两边对不上
+const editingZoneId = ref<string>('')
 
-const resolveZoneIdByName = (name: string): number => {
-    const match = zoneList.value.find((z: any) => z.name === name)
-    return match ? (match as any).id : 0
+const resolveZoneIdByName = (name: string): string => {
+    const match = zoneList.value.find((z) => z.name === name)
+    return match ? match.id : ''
 }
 
 // Edit logic
@@ -308,7 +315,7 @@ const openEditModal = async (h: Hypervisor) => {
     if (zoneList.value.length === 0) {
         try {
             const resp = await zonesApi.fetchZones()
-            const data = resp as any
+            const data = resp as ZoneListResponse | Zone[]
             zoneList.value = Array.isArray(data) ? data : (data.zones || [])
         } catch { zoneList.value = [] }
     }
@@ -329,8 +336,9 @@ const handleEditSave = async () => {
     if (!editingHyper.value) return
     saving.value = true
     try {
-        const payload: any = {}
+        const payload: HyperPatchPayload = {}
         if (editForm.value.status !== editingHyper.value.status) payload.status = editForm.value.status
+        // 保持原行为：下拉框里是 uuid，接口的 zone_id 却是 int64，发过去后端会 400（既有问题，未改）
         if (editForm.value.zone_id !== editingZoneId.value) payload.zone_id = editForm.value.zone_id
         if (editForm.value.cpu_over_rate !== editingHyper.value.cpu_over_rate) payload.cpu_over_rate = Number(editForm.value.cpu_over_rate)
         if (editForm.value.mem_over_rate !== editingHyper.value.mem_over_rate) payload.mem_over_rate = Number(editForm.value.mem_over_rate)
@@ -341,8 +349,8 @@ const handleEditSave = async () => {
         showEditModal.value = false
         toast.success(t('messages.success'))
         await fetchHypervisors()
-    } catch (err: any) {
-        toast.error(err.response?.data?.error || t('messages.error'))
+    } catch (err) {
+        toast.error(errorMessage(err, t('messages.error')))
     } finally {
         saving.value = false
     }
@@ -370,8 +378,8 @@ const handleMaintain = async () => {
         showMaintainModal.value = false
         toast.success(t('messages.success'))
         await fetchHypervisors()
-    } catch (err: any) {
-        toast.error(err.response?.data?.error || t('messages.error'))
+    } catch (err) {
+        toast.error(errorMessage(err, t('messages.error')))
     } finally {
         maintaining.value = false
     }
@@ -399,8 +407,8 @@ const confirmExitMaintain = async () => {
         exitMaintainHyper.value = null
         toast.success(t('messages.success'))
         await fetchHypervisors()
-    } catch (err: any) {
-        toast.error(err.response?.data?.error || t('messages.error'))
+    } catch (err) {
+        toast.error(errorMessage(err, t('messages.error')))
     } finally {
         exitingMaintain.value = false
     }

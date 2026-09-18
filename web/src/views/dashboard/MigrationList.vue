@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, computed, watch } from 'vue'
-import { migrationsApi, MIGRATION_ACTIVE_STATUSES, type Migration } from '../../api/migrations'
-import { instancesApi, type Instance } from '../../api/instances'
+import { migrationsApi, MIGRATION_ACTIVE_STATUSES, type Migration, type CreateMigrationPayload } from '../../api/migrations'
+import { instancesApi, type Instance, type InstanceListResponse } from '../../api/instances'
 import { hypervisorsApi, type Hypervisor, type HyperListResponse } from '../../api/hypervisors'
 import { Search as SearchIcon, ArrowRightLeft, Plus, RefreshCw, Check, Copy } from 'lucide-vue-next'
 import { useToast } from '../../composables/useToast'
@@ -10,6 +10,7 @@ import { useListQuery } from '../../composables/useListQuery'
 import { useI18n } from 'vue-i18n'
 import { useRegionStore } from '../../stores/region'
 import { formatDateTime } from '../../utils/format'
+import { errorMessage } from '../../utils/error'
 import BaseModal from '../../components/modals/BaseModal.vue'
 import PageToolbar from '../../components/base/PageToolbar.vue'
 import StatusBadge from '../../components/base/StatusBadge.vue'
@@ -171,7 +172,7 @@ const fetchResources = async () => {
             hypervisorsApi.fetchHypervisors()
         ])
 
-        const instData = instRes as any
+        const instData = instRes as InstanceListResponse | Instance[]
         availableInstances.value = Array.isArray(instData) ? instData : (instData.instances || [])
 
         // 接口返回的字段是 hypers，不是 hypervisors。这里原先写成 as any，字段名拼错也能编译通过，
@@ -195,7 +196,7 @@ const handleCreateMigration = async () => {
     try {
         // 接口要求 name 与 instances 数组；目标节点用 hostid，冷迁移是 force=true
         const inst = availableInstances.value.find(i => i.id === newMigrationForm.value.instance_id)
-        const payload: any = {
+        const payload: CreateMigrationPayload = {
             name: `ui-${(inst?.hostname || 'migration').slice(0, 20)}-${Date.now().toString().slice(-6)}`,
             instances: [{ id: newMigrationForm.value.instance_id }],
             force: newMigrationForm.value.migration_type === 'cold'
@@ -209,9 +210,9 @@ const handleCreateMigration = async () => {
         await reloadMigrations()
         closeCreateModal()
         toast.success(t('messages.createSuccess'))
-    } catch (err: any) {
+    } catch (err) {
         console.error('Failed to start migration:', err)
-        toast.error(err.response?.data?.error || t('messages.startMigrationFailed'))
+        toast.error(errorMessage(err, t('messages.startMigrationFailed')))
     } finally {
         creatingMigration.value = false
     }

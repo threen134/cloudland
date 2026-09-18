@@ -1,13 +1,14 @@
 <script setup lang="ts">
 import { ref, onMounted, computed, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { usersApi, type User } from '../../api/users'
+import { usersApi } from '../../api/users'
 import { orgsApi } from '../../api/orgs'
 import { useTenantStore } from '../../stores/tenant'
 import { useToast } from '../../composables/useToast'
 import { useCopyId } from '../../composables/useCopyId'
 import { User as UserIcon, Plus, Trash2, Edit, Search, RefreshCw, Check, Copy } from 'lucide-vue-next'
 import { formatDate } from '../../utils/format'
+import { errorMessage } from '../../utils/error'
 import BaseModal from '../../components/modals/BaseModal.vue'
 import DeleteModal from '../../components/modals/DeleteModal.vue'
 import PageToolbar from '../../components/base/PageToolbar.vue'
@@ -19,7 +20,27 @@ const toast = useToast()
 
 const { copiedId, copyId } = useCopyId()
 
-const users = ref<User[]>([])
+/**
+ * 列表里的一行。两个来源拼出来的形状不一样，后端也没有对应的统一模型，所以在这里定义：
+ * 有当前组织时由 OrgMember 拼出（带 role / member_uuid），系统管理员无组织上下文时直接用 User。
+ */
+interface UserRow {
+    uuid: string
+    username: string
+    email: string
+    is_superuser: boolean
+    /** invited | active */
+    status: string
+    created_at: string
+    /** owner / admin / writer / reader / member；全局用户列表里没有 */
+    role?: string
+    /** 邀请中的成员才有：取消邀请用的是 membership 的 uuid */
+    member_uuid?: string
+    /** 兼容旧写法保留的嵌套引用 */
+    user?: { uuid: string; name: string }
+}
+
+const users = ref<UserRow[]>([])
 const loading = ref(false)
 const loadError = ref('')
 const searchQuery = ref('')
@@ -62,7 +83,7 @@ const fetchUsers = async () => {
             // Fetch org members
             const response = await orgsApi.fetchMembers(orgId)
             const members = Array.isArray(response) ? response : []
-            users.value = members.map((m: any) => ({
+            users.value = members.map((m) => ({
                 user: {
                     uuid: m.user_uuid,
                     name: m.user_email || m.user_uuid,
@@ -78,8 +99,9 @@ const fetchUsers = async () => {
             }))
         } else {
             // Fallback: global user list (system admin context)
-            const response = await usersApi.fetchUsers()
-            users.value = (response as any).users || []
+            // GET /users 直接返回 userOut 数组，没有 { users: [...] } 外层包装；
+            // 原先写的是 (response as any).users，取到的恒为 undefined，这条分支永远是空列表
+            users.value = await usersApi.fetchUsers()
         }
     } catch (error) {
         console.error('Failed to fetch users:', error)
@@ -140,15 +162,15 @@ const handleInviteUser = async () => {
         await fetchUsers()
         closeCreateModal()
         toast.success(t('messages.createSuccess'))
-    } catch (err: any) {
+    } catch (err) {
         console.error('Failed to invite user:', err)
-        createError.value = err.response?.data?.error_message || err.response?.data?.detail || err.message || t('messages.error')
+        createError.value = errorMessage(err, t('messages.error'))
     } finally {
         creatingResource.value = false
     }
 }
 
-const openEditModal = (user: User) => {
+const openEditModal = (user: UserRow) => {
     editUserForm.value = {
         uuid: user.uuid,
         username: user.username,
@@ -180,9 +202,9 @@ const handleEditUser = async () => {
         await fetchUsers()
         closeEditModal()
         toast.success(t('messages.updateSuccess'))
-    } catch (err: any) {
+    } catch (err) {
         console.error('Failed to update user:', err)
-        editError.value = err.response?.data?.detail || err.message || t('messages.error')
+        editError.value = errorMessage(err, t('messages.error'))
     } finally {
         creatingResource.value = false
     }
@@ -192,11 +214,11 @@ const handleEditUser = async () => {
 const deleteModalVisible = ref(false)
 const deletingResource = ref(false)
 const deleteError = ref('')
-const resourceToDelete = ref<User | null>(null)
+const resourceToDelete = ref<UserRow | null>(null)
 
-const isInvitedUser = computed(() => (resourceToDelete.value as any)?.status === 'invited')
+const isInvitedUser = computed(() => resourceToDelete.value?.status === 'invited')
 
-const handleDeleteClick = (item: User) => {
+const handleDeleteClick = (item: UserRow) => {
     resourceToDelete.value = item
     deleteModalVisible.value = true
 }
@@ -210,7 +232,7 @@ const confirmDelete = async () => {
     deletingResource.value = true
     deleteError.value = ''
     try {
-        const item = resourceToDelete.value as any
+        const item = resourceToDelete.value
         if (item.status === 'invited' && item.member_uuid) {
             // Cancel invitation
             const orgId = tenantStore.currentOrgId
@@ -223,9 +245,9 @@ const confirmDelete = async () => {
         await fetchUsers()
         closeDeleteModal()
         toast.success(t('messages.deleteSuccess'))
-    } catch (error: any) {
+    } catch (error) {
         console.error('Failed to delete user:', error)
-        deleteError.value = error.response?.data?.detail || error.message || t('messages.error')
+        deleteError.value = errorMessage(error, t('messages.error'))
     } finally {
         deletingResource.value = false
     }
@@ -300,10 +322,10 @@ onMounted(fetchUsers)
 
       <template #cell-actions="{ row: user }">
         <div class="actions">
-          <button class="btn btn-ghost btn-sm" :title="$t('actions.edit')" @click="openEditModal(user as any)">
+          <button class="btn btn-ghost btn-sm" :title="$t('actions.edit')" @click="openEditModal(user as UserRow)">
             <Edit :size="14" />
           </button>
-          <button class="btn btn-ghost btn-sm text-error" :title="$t('actions.delete')" @click="handleDeleteClick(user as any)">
+          <button class="btn btn-ghost btn-sm text-error" :title="$t('actions.delete')" @click="handleDeleteClick(user as UserRow)">
             <Trash2 :size="14" />
           </button>
         </div>

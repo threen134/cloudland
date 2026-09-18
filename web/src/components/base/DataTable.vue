@@ -10,6 +10,11 @@
 import { computed, ref } from 'vue'
 import { RefreshCw } from 'lucide-vue-next'
 
+// 行数据保留 Record<string, any>：这里是通用表格，各列表页传进来的是 Flavor / Instance 这类
+// 具体接口类型。TypeScript 只允许把它们赋给 `Record<string, any>`，换成 `Record<string, unknown>`
+// 会报 "Index signature is missing"，所有调用方都编译不过；要真正定型得把组件改成泛型组件，
+// 那会连带改掉 20 多个列表页的插槽签名，超出本次清理范围。
+
 export interface Column {
     key: string
     /** 表头文案（已翻译） */

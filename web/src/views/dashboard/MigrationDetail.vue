@@ -9,6 +9,7 @@ import StatusBadge from '../../components/base/StatusBadge.vue'
 import InfoRow from '../../components/base/InfoRow.vue'
 import { useCopyId } from '../../composables/useCopyId'
 import { useGoBack } from '../../composables/useGoBack'
+import { errorMessage } from '../../utils/error'
 
 const { t, te } = useI18n()
 const route = useRoute()
@@ -26,11 +27,11 @@ const fetchMigrationDetail = async (silent = false) => {
     error.value = null
     try {
         const id = route.params.id as string
-        const data = await migrationsApi.getMigration(id) as any
-        migration.value = data.migration || data
-    } catch (err: any) {
+        // GET /migrations/:id 直接返回 MigrationResponse，没有 { migration: ... } 外层包装
+        migration.value = await migrationsApi.getMigration(id)
+    } catch (err) {
         console.error('Failed to fetch migration detail:', err)
-        if (!silent) error.value = err.message || t('dashboard.migrationDetail.loadError')
+        if (!silent) error.value = errorMessage(err, t('dashboard.migrationDetail.loadError'))
     } finally {
         loading.value = false
         if (refreshTimer) clearTimeout(refreshTimer)

@@ -7,7 +7,9 @@ import { Mail, CheckCircle, ArrowRight, Cloud } from 'lucide-vue-next'
 const { t } = useI18n()
 const router = useRouter()
 const countdown = ref(5)
-let timer: any = null
+// setInterval 的返回值类型随环境不同（DOM 下是 number），用 ReturnType 取；
+// 用 undefined 而不是 null 是为了能直接传给 clearInterval(id?: number)
+let timer: ReturnType<typeof setInterval> | undefined
 
 onMounted(() => {
   timer = setInterval(() => {

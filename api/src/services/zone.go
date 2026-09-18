@@ -72,6 +72,19 @@ func (a *ZoneAdmin) Get(ctx context.Context, id int64) (zone *model.Zone, err er
 	return
 }
 
+// GetZoneByUUID 按 UUID 查可用区。接口对外暴露的 id 一律是 UUID（ResourceReference.ID），
+// 调用方拿不到数据库自增 ID，需要引用可用区时用这个
+func (a *ZoneAdmin) GetZoneByUUID(ctx context.Context, uuID string) (zone *model.Zone, err error) {
+	ctx, db := GetContextDB(ctx)
+	zone = &model.Zone{}
+	if err = db.Where("uuid = ?", uuID).Take(zone).Error; err != nil {
+		logger.Ctx(ctx).Errorf("Failed to query zone by uuid %s, %v", uuID, err)
+		err = NewCLError(ErrZoneNotFound, "Zone not found", err)
+		return
+	}
+	return
+}
+
 func (a *ZoneAdmin) GetZoneByName(ctx context.Context, name string) (zone *model.Zone, err error) {
 	logger.Ctx(ctx).Infof("ENTER ZoneAdmin.GetZoneByName: name=%s", name)
 	defer func() {

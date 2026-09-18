@@ -36,10 +36,10 @@ const handleSubmit = async () => {
     errorMessage.value = ''
     await auth.login(email.value, password.value, rememberMe.value)
     router.push('/dashboard')
-  } catch (error: any) {
+  } catch (error) {
     console.error('Login failed:', error)
     isVerified.value = false
-    if (error.response?.status === 401) {
+    if ((error as { response?: { status?: number } })?.response?.status === 401) {
       errorMessage.value = t('auth.invalidCredentials')
     } else {
       errorMessage.value = t('messages.error')

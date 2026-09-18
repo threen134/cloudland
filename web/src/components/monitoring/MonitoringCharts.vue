@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, watch } from 'vue'
-import { instancesApi } from '../../api/instances'
+import { instancesApi, type InstanceInterface, type InstanceVolume } from '../../api/instances'
+import type { ChartData, ChartDataset } from 'chart.js'
 import { Line } from 'vue-chartjs'
 import { useI18n } from 'vue-i18n'
 import { Activity, RefreshCw } from 'lucide-vue-next'
@@ -8,15 +9,19 @@ import { useMonitoring, TIME_RANGES, CHART_OPTIONS } from '../../composables/use
 
 const props = defineProps<{
     instanceId: string
-    interfaces: any[]
-    volumes: any[]
+    interfaces: InstanceInterface[]
+    volumes: InstanceVolume[]
 }>()
 
 const { t } = useI18n()
 
-const cpuData = ref<any>(null)
-const memData = ref<any>(null)
-const netData = ref<any>(null)
+// 内存图的数值是 toFixed(2) 出来的字符串（chart.js 运行时会自己解析），
+// 所以把 ChartData 的数据点类型显式写成 number | string
+type LineData = ChartData<'line', (number | string)[]>
+
+const cpuData = ref<LineData | null>(null)
+const memData = ref<LineData | null>(null)
+const netData = ref<LineData | null>(null)
 
 const fetchData = async () => {
     loading.value = true
@@ -46,10 +51,10 @@ const fetchData = async () => {
         if (cpuRes.data?.result?.[0]) {
             const result = cpuRes.data.result[0]
             cpuData.value = {
-                labels: result.values.map((v: any) => formatTimestamp(v.time)),
+                labels: result.values.map((v) => formatTimestamp(v.time)),
                 datasets: [{
                     label: t('dashboard.monitoring.cpuUsage'),
-                    data: result.values.map((v: any) => parseFloat(v.value)),
+                    data: result.values.map((v) => parseFloat(v.value)),
                     borderColor: '#0ea5e9',
                     backgroundColor: 'rgba(14, 165, 233, 0.1)',
                     fill: true,
@@ -62,20 +67,20 @@ const fetchData = async () => {
             const result = memRes.data.result[0]
             if (Array.isArray(result.values) && result.values.length >= 2
                 && Array.isArray(result.values[0]) && result.values[0].length > 0) {
-                const labels = result.values[0].map((v: any) => formatTimestamp(v.time))
+                const labels = result.values[0].map((v) => formatTimestamp(v.time))
                 memData.value = {
                     labels,
                     datasets: [
                         {
                             label: t('dashboard.monitoring.total'),
-                            data: result.values[0].map((v: any) => (parseFloat(v.value) / 1024 / 1024).toFixed(2)),
+                            data: result.values[0].map((v) => (parseFloat(v.value) / 1024 / 1024).toFixed(2)),
                             borderColor: '#94a3b8',
                             borderDash: [5, 5],
                             fill: false,
                         },
                         {
                             label: t('dashboard.monitoring.used'),
-                            data: result.values[1].map((v: any) => (parseFloat(v.value) / 1024 / 1024).toFixed(2)),
+                            data: result.values[1].map((v) => (parseFloat(v.value) / 1024 / 1024).toFixed(2)),
                             borderColor: '#10b981',
                             backgroundColor: 'rgba(16, 185, 129, 0.1)',
                             fill: true,
@@ -87,7 +92,7 @@ const fetchData = async () => {
 
         // Network
         if (props.interfaces?.length > 0) {
-            const interfaceIDs: string[] = props.interfaces.map((i: any) => i.id).filter(Boolean)
+            const interfaceIDs: string[] = props.interfaces.map((i) => i.id).filter(Boolean)
             if (interfaceIDs.length > 0) {
                 const netRes = await instancesApi.getNetworkMetrics({
                     interface_ids: interfaceIDs,
@@ -97,28 +102,28 @@ const fetchData = async () => {
                 })
                 // build interface_id → name lookup
                 const ifaceNameById: Record<string, string> = {}
-                props.interfaces.forEach((i: any, idx: number) => {
+                props.interfaces.forEach((i, idx) => {
                     if (i.id) ifaceNameById[i.id] = i.name || `eth${idx}`
                 })
 
                 const colors = ['#0ea5e9', '#06b6d4', '#10b981', '#f59e0b', '#8b5cf6', '#f43f5e']
-                const datasets: any[] = []
+                const datasets: ChartDataset<'line', (number | string)[]>[] = []
                 let labels: string[] = []
                 let colorIdx = 0
 
-                const perIfaceResults: any[] = netRes || []
-                perIfaceResults.forEach((ifaceResult: any) => {
+                const perIfaceResults = netRes || []
+                perIfaceResults.forEach((ifaceResult) => {
                     const res = ifaceResult?.data?.result?.[0]
                     if (!res?.values || res.values.length < 2) return
                     // match by interface_id from metric, not by array index
                     const ifaceUUID: string = res.metric?.interface_id || ''
                     const ifaceName = ifaceNameById[ifaceUUID] || ifaceUUID.slice(0, 8)
                     if (labels.length === 0) {
-                        labels = res.values[0].map((v: any) => formatTimestamp(v.time))
+                        labels = res.values[0].map((v) => formatTimestamp(v.time))
                     }
                     datasets.push(
-                        { label: `${ifaceName} ${t('dashboard.monitoring.receive')}`, data: res.values[0].map((v: any) => parseFloat(v.value)), borderColor: colors[colorIdx % colors.length], fill: false },
-                        { label: `${ifaceName} ${t('dashboard.monitoring.transmit')}`, data: res.values[1].map((v: any) => parseFloat(v.value)), borderColor: colors[(colorIdx + 1) % colors.length], fill: false }
+                        { label: `${ifaceName} ${t('dashboard.monitoring.receive')}`, data: res.values[0].map((v) => parseFloat(v.value)), borderColor: colors[colorIdx % colors.length], fill: false },
+                        { label: `${ifaceName} ${t('dashboard.monitoring.transmit')}`, data: res.values[1].map((v) => parseFloat(v.value)), borderColor: colors[(colorIdx + 1) % colors.length], fill: false }
                     )
                     colorIdx += 2
                 })
@@ -128,7 +133,7 @@ const fetchData = async () => {
             }
         }
 
-    } catch (err: any) {
+    } catch (err) {
         console.error('Failed to fetch metrics:', err)
         error.value = t('dashboard.monitoring.loadError')
     } finally {

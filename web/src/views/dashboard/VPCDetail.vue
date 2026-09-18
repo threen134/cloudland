@@ -14,6 +14,7 @@ import InfoRow from '../../components/base/InfoRow.vue'
 import { formatDateTime } from '../../utils/format'
 import { useCopyId } from '../../composables/useCopyId'
 import { useGoBack } from '../../composables/useGoBack'
+import { errorMessage } from '../../utils/error'
 
 const route = useRoute()
 const router = useRouter()
@@ -51,12 +52,13 @@ const confirmDelete = async () => {
         await vpcsApi.delete(vpc.value.id)
         toast.success(t('messages.deleteSuccess'))
         router.push({ name: 'vpcs' })
-    } catch (err: any) {
+    } catch (err) {
         console.error('Failed to delete VPC:', err)
-        if (err.response?.data?.error_code === 131307 || err.response?.data?.error_code_str === 'RouterHasFloatingIPs') {
+        const data = (err as { response?: { data?: { error_code?: number; error_code_str?: string } } })?.response?.data
+        if (data?.error_code === 131307 || data?.error_code_str === 'RouterHasFloatingIPs') {
             deleteError.value = t('messages.vpcHasFloatingIPs')
         } else {
-            deleteError.value = err.response?.data?.error_message || err.message || t('messages.error')
+            deleteError.value = errorMessage(err, t('messages.error'))
         }
     } finally {
         deletingResource.value = false
@@ -93,8 +95,8 @@ const confirmEdit = async () => {
         showEditModal.value = false
         toast.success(t('messages.updateSuccess'))
         await fetchVPC()
-    } catch (err: any) {
-        editError.value = err.response?.data?.error_message || err.message || t('messages.error')
+    } catch (err) {
+        editError.value = errorMessage(err, t('messages.error'))
     } finally {
         editLoading.value = false
     }
@@ -176,9 +178,9 @@ const handleCreateSubnet = async () => {
         closeCreateSubnetModal()
         toast.success(t('messages.createSuccess'))
         await fetchVPC()
-    } catch (err: any) {
+    } catch (err) {
         console.error('Failed to create subnet:', err)
-        createSubnetError.value = err.response?.data?.error_message || err.message || t('messages.error')
+        createSubnetError.value = errorMessage(err, t('messages.error'))
     } finally {
         creatingSubnet.value = false
     }
@@ -193,9 +195,9 @@ const fetchVPC = async () => {
     try {
         const response = await vpcsApi.get(id)
         vpc.value = response
-    } catch (err: any) {
+    } catch (err) {
         console.error('Failed to fetch VPC:', err)
-        error.value = err.message || t('dashboard.vpcDetail.loadError')
+        error.value = errorMessage(err, t('dashboard.vpcDetail.loadError'))
     } finally {
         loading.value = false
     }

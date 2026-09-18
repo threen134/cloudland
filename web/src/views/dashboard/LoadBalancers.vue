@@ -9,6 +9,7 @@ import { isValidName } from '../../utils/validation'
 
 import { GitFork, Plus, Trash2, Search, Edit, RefreshCw, Check, Copy } from 'lucide-vue-next'
 import { quotaErrorMessage } from '../../utils/quotaError'
+import { errorMessage } from '../../utils/error'
 import BaseModal from '../../components/modals/BaseModal.vue'
 import DeleteModal from '../../components/modals/DeleteModal.vue'
 import PageToolbar from '../../components/base/PageToolbar.vue'
@@ -69,8 +70,8 @@ const confirmEdit = async () => {
         await fetchLoadBalancers()
         closeEditModal()
         toast.success(t('messages.success'))
-    } catch (error: any) {
-        editError.value = error.response?.data?.error_message || error.message || t('messages.error')
+    } catch (error) {
+        editError.value = errorMessage(error, t('messages.error'))
     } finally {
         editing.value = false
     }
@@ -183,9 +184,9 @@ const handleCreateLB = async () => {
 
         closeCreateModal()
         toast.success(t('messages.createSuccess'))
-    } catch (err: any) {
+    } catch (err) {
         console.error('Failed to create load balancer:', err)
-        createError.value = quotaErrorMessage(err, t, te) || err.response?.data?.error_message || err.message || t('messages.error')
+        createError.value = quotaErrorMessage(err, t, te) || errorMessage(err, t('messages.error'))
     } finally {
         creating.value = false
     }
@@ -221,9 +222,9 @@ const confirmDelete = async () => {
         await fetchLoadBalancers()
         closeDeleteModal()
         toast.success(t('messages.deleteSuccess'))
-    } catch (error: any) {
+    } catch (error) {
         console.error('Failed to delete load balancer:', error)
-        deleteError.value = error.response?.data?.error_message || error.message || t('messages.error')
+        deleteError.value = errorMessage(error, t('messages.error'))
     } finally {
         deletingResource.value = false
     }
@@ -312,15 +313,15 @@ onUnmounted(() => {
       <template #cell-vpc="{ row: lb }">{{ lb.vpc?.name || '-' }}</template>
 
       <template #cell-listeners="{ row: lb }">
-        <span class="text-secondary text-sm">{{ formatListeners(lb as any) }}</span>
+        <span class="text-secondary text-sm">{{ formatListeners(lb as LoadBalancer) }}</span>
       </template>
 
       <template #cell-actions="{ row: lb }">
         <div class="actions">
-          <button class="btn btn-ghost btn-sm" :title="$t('actions.edit')" @click="handleEditClick(lb as any)">
+          <button class="btn btn-ghost btn-sm" :title="$t('actions.edit')" @click="handleEditClick(lb as LoadBalancer)">
             <Edit :size="14" />
           </button>
-          <button class="btn btn-ghost btn-sm text-error" :title="$t('actions.delete')" @click="handleDeleteClick(lb as any)">
+          <button class="btn btn-ghost btn-sm text-error" :title="$t('actions.delete')" @click="handleDeleteClick(lb as LoadBalancer)">
             <Trash2 :size="14" />
           </button>
         </div>

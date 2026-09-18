@@ -1,6 +1,8 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import client from '../api/client'
+import type { RegionPublic } from '../api/regions'
+import { errorMessage } from '../utils/error'
 
 export interface Region {
     id: string
@@ -40,12 +42,14 @@ export const useRegionStore = defineStore('region', () => {
         error.value = null
 
         try {
-            const response = await client.get('/regions')
-            const data = Array.isArray(response.data) ? response.data : (response.data?.regions || [])
+            const response = await client.get<RegionPublic[] | { regions?: RegionPublic[] }>('/regions')
+            const data: RegionPublic[] = Array.isArray(response.data)
+                ? response.data
+                : (response.data?.regions || [])
 
             // Map API response to Region interface
             // API now returns uuid instead of id
-            regions.value = data.map((r: any) => {
+            regions.value = data.map((r) => {
                 let status: 'available' | 'maintenance' | 'offline' = 'available'
                 if (r.maintenance_mode) {
                     status = 'maintenance'
@@ -58,7 +62,8 @@ export const useRegionStore = defineStore('region', () => {
                     name: r.name,
                     label: r.description || r.name,
                     status,
-                    endpoint: r.endpoint_url,
+                    // 注：GET /regions 的 regionPublicOut 里没有 endpoint_url（公开视图不含地址），
+                    // 原先的 endpoint: r.endpoint_url 恒为 undefined 且全站无人读取，去掉赋值
                 }
             })
 
@@ -68,9 +73,9 @@ export const useRegionStore = defineStore('region', () => {
             if ((!currentRegionId.value || !currentExists) && availableRegions.value.length > 0) {
                 setCurrentRegion(availableRegions.value[0].id)
             }
-        } catch (err: any) {
+        } catch (err) {
             console.warn('Failed to fetch regions:', err)
-            error.value = err.message
+            error.value = errorMessage(err, 'Failed to fetch regions')
         } finally {
             isLoading.value = false
         }

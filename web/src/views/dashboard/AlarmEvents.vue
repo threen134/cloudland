@@ -26,7 +26,10 @@ const loadingLogs = ref<string | null>(null)
 const fetchEvents = async () => {
     loading.value = true
     try {
-        const params: Record<string, any> = { page: page.value, page_size: pageSize.value }
+        const params: { status?: string; query?: string; page?: number; page_size?: number } = {
+            page: page.value,
+            page_size: pageSize.value,
+        }
         if (statusFilter.value) params.status = statusFilter.value
         if (searchQuery.value.trim()) params.query = searchQuery.value.trim()
         const res = await alarmEventsApi.list(params)

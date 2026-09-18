@@ -1,5 +1,6 @@
 import { ref } from 'vue'
 import { quotaApi, type OrgResourceSummary, type OrgResourceQuotaUpdate } from '../api/quota'
+import { errorMessage } from '../utils/error'
 
 export function useQuota() {
     const quotaSummary = ref<OrgResourceSummary | null>(null)
@@ -26,8 +27,8 @@ export function useQuota() {
                     max_images: region.quota.max_images,
                 }
             }
-        } catch (err: any) {
-            quotaError.value = err.response?.data?.detail || 'Failed to load quota'
+        } catch (err) {
+            quotaError.value = errorMessage(err, 'Failed to load quota')
         } finally {
             quotaLoading.value = false
         }
@@ -38,8 +39,8 @@ export function useQuota() {
         try {
             await quotaApi.updateOrgQuota(orgId, regionUuid, editingQuota.value[regionUuid])
             await fetchQuota(orgId)
-        } catch (err: any) {
-            quotaError.value = err.response?.data?.detail || 'Failed to update quota'
+        } catch (err) {
+            quotaError.value = errorMessage(err, 'Failed to update quota')
             throw err
         } finally {
             savingQuota.value = null

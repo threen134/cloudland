@@ -3,10 +3,10 @@ import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { useToast } from '../../composables/useToast'
-import { instancesApi, type Instance } from '../../api/instances'
+import { instancesApi, type Instance, type ResourceReference } from '../../api/instances'
 import { securityGroupsApi, type SecurityGroup } from '../../api/networks'
 import MonitoringCharts from '../../components/monitoring/MonitoringCharts.vue'
-import { vmAlarmRulesApi, VM_RULE_TYPES, type VMAlarmRuleGroup, type VMRuleType } from '../../api/vmAlarmRules'
+import { vmAlarmRulesApi, VM_RULE_TYPES, type VMAlarmRuleDetail, type VMAlarmRuleGroup, type VMRuleType } from '../../api/vmAlarmRules'
 import { ArrowLeft, Play, Square, RotateCw, Trash2, Server, Monitor, Cpu, HardDrive, MemoryStick, Network, Key, ExternalLink, Copy, Check, ShieldAlert, Link, Unlink, Eye, EyeOff, ChevronDown, KeyRound, RefreshCw, Maximize2, Pencil, Shuffle, Shield, Activity, SquareTerminal } from 'lucide-vue-next'
 import DeleteModal from '../../components/modals/DeleteModal.vue'
 import BaseModal from '../../components/modals/BaseModal.vue'
@@ -16,6 +16,7 @@ import DetailTabs from '../../components/base/DetailTabs.vue'
 import { useCopyId } from '../../composables/useCopyId'
 import { useGoBack } from '../../composables/useGoBack'
 import { formatMemory } from '../../utils/format'
+import { errorMessage } from '../../utils/error'
 
 const route = useRoute()
 const router = useRouter()
@@ -67,9 +68,9 @@ const confirmDelete = async () => {
         await instancesApi.deleteInstance(instanceId)
         toast.success(t('messages.deleteSuccess'))
         router.push({ name: 'instances' })
-    } catch (err: any) {
+    } catch (err) {
         console.error('Failed to delete instance:', err)
-        deleteError.value = err.response?.data?.error_message || err.message || t('messages.error')
+        deleteError.value = errorMessage(err, t('messages.error'))
     } finally {
         deletingInstance.value = false
     }
@@ -81,9 +82,8 @@ const fetchInstance = async (showLoading: boolean = true) => {
         error.value = ''
     }
     try {
-        const response = await instancesApi.getInstance(instanceId)
-        const data = response as any
-        instance.value = data.instance || data
+        // 后端 GET /instances/:id 直接返回 InstanceResponse，没有 { instance } 外层包装
+        instance.value = await instancesApi.getInstance(instanceId)
     } catch (err) {
         console.error('Failed to fetch instance:', err)
         if (showLoading) error.value = t('dashboard.instanceDetail.loadError')
@@ -147,10 +147,10 @@ const handleAction = async (action: 'start' | 'stop' | 'restart' | 'hard_stop' |
 
         // Start polling after 2 seconds
         statusPollTimer = setTimeout(checkStatus, 2000)
-    } catch (err: any) {
+    } catch (err) {
         console.error(`Failed to ${action} instance:`, err)
         actionLoading.value = null
-        toast.error(err.response?.data?.error_message || err.message || t('messages.error'))
+        toast.error(errorMessage(err, t('messages.error')))
     }
 }
 
@@ -173,13 +173,17 @@ const tabs = computed(() => [
 ])
 
 // --- Alarm Rules Integration ---
+// 三种规则详情的公共字段一致，只有带宽规则多一个 direction，
+// 模板按 rule.type 区分渲染，所以这里用交叉类型把可选的 direction 并进来
+type AlarmRuleDetailView = VMAlarmRuleDetail & { direction?: 'in' | 'out' }
+
 interface LinkedRule {
     type: VMRuleType
     typeLabel: string
     uuid: string
     name: string
     enable: boolean
-    rules?: any[]
+    rules?: AlarmRuleDetailView[]
 }
 
 const expandedRules = ref<Set<string>>(new Set())
@@ -281,9 +285,9 @@ const linkRule = async (rule: LinkedRule) => {
         showLinkModal.value = false
         await fetchLinkedRules()
         toast.success(t('messages.updateSuccess'))
-    } catch (err: any) {
+    } catch (err) {
         console.error('Failed to link rule:', err)
-        alarmError.value = err.response?.data?.error || t('messages.error')
+        alarmError.value = errorMessage(err, t('messages.error'))
     }
 }
 
@@ -293,9 +297,9 @@ const unlinkRule = async (rule: LinkedRule) => {
         await vmAlarmRulesApi.unlinkRule(rule.uuid, [{ vm_uuid: instanceId }])
         await fetchLinkedRules()
         toast.success(t('messages.updateSuccess'))
-    } catch (err: any) {
+    } catch (err) {
         console.error('Failed to unlink rule:', err)
-        alarmError.value = err.response?.data?.error || t('messages.error')
+        alarmError.value = errorMessage(err, t('messages.error'))
     } finally {
         unlinkLoading.value = null
     }
@@ -341,8 +345,8 @@ const confirmResetPassword = async () => {
         showResetPasswordModal.value = false
         toast.success(t('dashboard.instanceDetail.resetPasswordSuccess'))
         await fetchInstance(false)
-    } catch (err: any) {
-        resetPasswordError.value = err.response?.data?.error_message || err.message || t('messages.error')
+    } catch (err) {
+        resetPasswordError.value = errorMessage(err, t('messages.error'))
     } finally {
         resetPasswordLoading.value = false
     }
@@ -375,8 +379,8 @@ const confirmResize = async () => {
         showResizeModal.value = false
         toast.success(t('dashboard.instanceDetail.resizeSuccess'))
         await fetchInstance(false)
-    } catch (err: any) {
-        resizeError.value = err.response?.data?.error_message || err.message || t('messages.error')
+    } catch (err) {
+        resizeError.value = errorMessage(err, t('messages.error'))
     } finally {
         resizeLoading.value = false
     }
@@ -406,8 +410,8 @@ const confirmRename = async () => {
         showRenameModal.value = false
         toast.success(t('dashboard.instanceDetail.renameSuccess'))
         await fetchInstance(false)
-    } catch (err: any) {
-        renameError.value = err.response?.data?.error_message || err.message || t('messages.error')
+    } catch (err) {
+        renameError.value = errorMessage(err, t('messages.error'))
     } finally {
         renameLoading.value = false
     }
@@ -440,7 +444,7 @@ const navigateToVPC = (vpcId: string) => {
 interface EditingInterface {
     id: string
     name?: string
-    currentSgs: { id: string; name: string }[]
+    currentSgs: ResourceReference[]
 }
 
 const showEditSgModal = ref(false)
@@ -472,14 +476,14 @@ const openEditSgModal = async (iface: NonNullable<Instance['interfaces']>[number
         const result = await securityGroupsApi.list({ limit: pageSize, vpc_id: vpcId })
         availableSecgroups.value = result.security_groups || []
         sgListTruncated.value = result.total > pageSize
-    } catch (err: any) {
-        editSgError.value = err.response?.data?.error_message || err.message || t('messages.error')
+    } catch (err) {
+        editSgError.value = errorMessage(err, t('messages.error'))
     } finally {
         editSgLoading.value = false
     }
 }
 
-const toggleSg = (sgId: string) => {
+const toggleSg =(sgId: string) => {
     if (selectedSgIds.value.has(sgId)) {
         selectedSgIds.value.delete(sgId)
     } else {
@@ -498,8 +502,8 @@ const confirmEditSg = async () => {
         showEditSgModal.value = false
         toast.success(t('dashboard.instanceDetail.securityGroupsUpdated'))
         await fetchInstance(false)
-    } catch (err: any) {
-        editSgError.value = err.response?.data?.error_message || err.message || t('messages.error')
+    } catch (err) {
+        editSgError.value = errorMessage(err, t('messages.error'))
     } finally {
         editSgLoading.value = false
     }

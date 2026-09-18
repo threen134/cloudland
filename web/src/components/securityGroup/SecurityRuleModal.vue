@@ -7,6 +7,7 @@ import {
     newSecurityRuleForm, securityRuleFormFromRule, securityRulePayloadFromForm, validateSecurityRuleForm,
     type SecurityRuleForm
 } from '../../utils/securityRule'
+import { errorMessage } from '../../utils/error'
 
 // Add or edit one rule of a security group; `rule` null means add
 const props = defineProps<{
@@ -45,9 +46,9 @@ const save = async () => {
             await securityGroupsApi.addRule(props.groupId, payload)
         }
         emit('saved', !!props.rule)
-    } catch (err: any) {
+    } catch (err) {
         console.error('Failed to save rule:', err)
-        submitError.value = err.response?.data?.error_message || err.message || t('messages.error')
+        submitError.value = errorMessage(err, t('messages.error'))
     } finally {
         saving.value = false
     }

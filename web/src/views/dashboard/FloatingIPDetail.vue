@@ -10,6 +10,7 @@ import DeleteModal from '../../components/modals/DeleteModal.vue'
 import InfoRow from '../../components/base/InfoRow.vue'
 import { useCopyId } from '../../composables/useCopyId'
 import { useGoBack } from '../../composables/useGoBack'
+import { errorMessage } from '../../utils/error'
 
 const route = useRoute()
 const router = useRouter()
@@ -46,9 +47,9 @@ const confirmDelete = async () => {
         await floatingIpsApi.delete(fipId)
         toast.success(t('messages.deleteSuccess'))
         router.push({ name: 'floating-ips' })
-    } catch (err: any) {
+    } catch (err) {
         console.error('Failed to release Floating IP:', err)
-        deleteError.value = err.response?.data?.error_message || err.message || t('messages.error')
+        deleteError.value = errorMessage(err, t('messages.error'))
     } finally {
         deletingResource.value = false
     }

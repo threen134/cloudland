@@ -14,6 +14,7 @@ const region = useRegionStore()
 
 import { Disc, Search, Trash2, Plus, Eye, EyeOff, Check, Copy, RefreshCw } from 'lucide-vue-next'
 import { quotaErrorMessage } from '../../utils/quotaError'
+import { errorMessage } from '../../utils/error'
 import { formatBytes } from '../../utils/format'
 import BaseModal from '../../components/modals/BaseModal.vue'
 import DeleteModal from '../../components/modals/DeleteModal.vue'
@@ -129,9 +130,9 @@ const handleCreateImage = async () => {
         await reloadImages()
         closeCreateModal()
         toast.success(t('messages.createSuccess'))
-    } catch (err: any) {
+    } catch (err) {
         console.error('Failed to create image:', err)
-        createError.value = quotaErrorMessage(err, t, te) || err.response?.data?.error_message || err.message || t('messages.error')
+        createError.value = quotaErrorMessage(err, t, te) || errorMessage(err, t('messages.error'))
     } finally {
         creating.value = false
     }
@@ -147,9 +148,9 @@ const toggleVisibility = async (image: Image) => {
         await imagesApi.patchImage(image.id, { public: !image.public })
         await fetchImages()
         toast.success(t('messages.updateSuccess'))
-    } catch (err: any) {
+    } catch (err) {
         console.error('Failed to toggle visibility:', err)
-        toast.error(err.response?.data?.error_message || err.message || t('messages.error'))
+        toast.error(errorMessage(err, t('messages.error')))
     }
 }
 
@@ -191,9 +192,9 @@ const confirmDelete = async () => {
         await fetchImages()
         closeDeleteModal()
         toast.success(t('messages.deleteSuccess'))
-    } catch (error: any) {
+    } catch (error) {
         console.error('Failed to delete image:', error)
-        deleteError.value = error.response?.data?.error_message || error.message || t('messages.error')
+        deleteError.value = errorMessage(error, t('messages.error'))
     } finally {
         deletingResource.value = false
     }

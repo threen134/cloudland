@@ -10,6 +10,7 @@ import BaseModal from '../../components/modals/BaseModal.vue'
 import StatusBadge from '../../components/base/StatusBadge.vue'
 import InfoRow from '../../components/base/InfoRow.vue'
 import { useGoBack } from '../../composables/useGoBack'
+import { errorMessage } from '../../utils/error'
 
 const { t } = useI18n()
 const toast = useToast()
@@ -49,8 +50,8 @@ const handleEdit = async () => {
         showEditModal.value = false
         toast.success(t('messages.success'))
         await fetchLB()
-    } catch (err: any) {
-        editError.value = err.response?.data?.error_message || err.message || t('messages.error')
+    } catch (err) {
+        editError.value = errorMessage(err, t('messages.error'))
     } finally {
         editing.value = false
     }
@@ -90,8 +91,8 @@ const confirmDelete = async () => {
     try {
         await deleteModal.value.onConfirm()
         closeDeleteModal()
-    } catch (err: any) {
-        deleteModal.value.error = err.response?.data?.error_message || err.message || t('messages.error')
+    } catch (err) {
+        deleteModal.value.error = errorMessage(err, t('messages.error'))
     } finally {
         deleteModal.value.loading = false
     }
@@ -167,8 +168,8 @@ const handleAddFip = async () => {
         showFipModal.value = false
         toast.success(t('messages.createSuccess'))
         await fetchLB()
-    } catch (err: any) {
-        fipError.value = err.response?.data?.error_message || err.message || t('messages.error')
+    } catch (err) {
+        fipError.value = errorMessage(err, t('messages.error'))
     } finally {
         addingFip.value = false
     }
@@ -214,8 +215,8 @@ const handleAddListener = async () => {
         showListenerModal.value = false
         toast.success(t('messages.createSuccess'))
         await fetchLB()
-    } catch (err: any) {
-        listenerError.value = err.response?.data?.error_message || err.message || t('messages.error')
+    } catch (err) {
+        listenerError.value = errorMessage(err, t('messages.error'))
     } finally {
         addingListener.value = false
     }
@@ -255,8 +256,8 @@ const handleEditListener = async () => {
         showListenerEditModal.value = false
         toast.success(t('messages.success'))
         await fetchLB()
-    } catch (err: any) {
-        listenerEditError.value = err.response?.data?.error_message || err.message || t('messages.error')
+    } catch (err) {
+        listenerEditError.value = errorMessage(err, t('messages.error'))
     } finally {
         savingListener.value = false
     }
@@ -322,8 +323,8 @@ const handleSaveBackend = async () => {
         }
         showBackendModal.value = false
         await fetchLB()
-    } catch (err: any) {
-        backendError.value = err.response?.data?.error_message || err.message || t('messages.error')
+    } catch (err) {
+        backendError.value = errorMessage(err, t('messages.error'))
     } finally {
         addingBackend.value = false
     }

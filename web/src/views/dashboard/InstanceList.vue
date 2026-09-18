@@ -1,18 +1,18 @@
 <script setup lang="ts">
-import { ref, onMounted, computed, watch, onUnmounted } from 'vue'
+import { ref, onMounted, computed, watch, onUnmounted, type DirectiveBinding } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { useToast } from '../../composables/useToast'
 import { useCopyId } from '../../composables/useCopyId'
 import { useListQuery } from '../../composables/useListQuery'
-import { instancesApi, type Instance } from '../../api/instances'
+import { instancesApi, type Instance, type CreateInstancePayload, type InterfacePayload } from '../../api/instances'
 import { Play, Square, RotateCw, Trash2, Plus, Terminal, MoreVertical, Search, Check, Copy, Monitor, ChevronDown, ChevronUp, PlusCircle, MinusCircle, RefreshCw, Eye, EyeOff, Shuffle, Pencil, KeyRound, Maximize2, Server, Activity, Network, Globe, HelpCircle } from 'lucide-vue-next'
 
 import { imagesApi, type Image } from '../../api/images'
 import { vpcsApi, subnetsApi, securityGroupsApi, floatingIpsApi, type VPC, type Subnet, type SecurityGroup, type FloatingIP } from '../../api/networks'
 
 import { keysApi, type SSHKey } from '../../api/keys'
-import { flavorsApi } from '../../api/flavors'
+import { flavorsApi, type Flavor } from '../../api/flavors'
 import { zonesApi, type Zone } from '../../api/zones'
 import { hypervisorsApi, type Hypervisor } from '../../api/hypervisors'
 import { isValidName } from '../../utils/validation'
@@ -25,6 +25,7 @@ import PaginationBar from '../../components/base/PaginationBar.vue'
 import { useRegionStore } from '../../stores/region'
 import { useAuthStore } from '../../stores/auth'
 import { quotaErrorMessage } from '../../utils/quotaError'
+import { errorMessage } from '../../utils/error'
 import { formatMemory } from '../../utils/format'
 
 const region = useRegionStore()
@@ -33,17 +34,20 @@ const isSystemAdmin = computed(() => authStore.user?.role === 'admin' || authSto
 
 
 
+// 指令把监听器挂在元素上，卸载时再取下来，所以元素类型要带上这个附加字段
+type ClickOutsideEl = HTMLElement & { clickOutsideEvent?: (event: Event) => void }
+
 const vClickOutside = {
-  mounted(el: any, binding: any) {
+  mounted(el: ClickOutsideEl, binding: DirectiveBinding<(event: Event) => void>) {
     el.clickOutsideEvent = (event: Event) => {
-      if (!(el === event.target || el.contains(event.target))) {
+      if (!(el === event.target || el.contains(event.target as Node))) {
         binding.value(event)
       }
     }
     document.addEventListener('click', el.clickOutsideEvent)
   },
-  unmounted(el: any) {
-    document.removeEventListener('click', el.clickOutsideEvent)
+  unmounted(el: ClickOutsideEl) {
+    if (el.clickOutsideEvent) document.removeEventListener('click', el.clickOutsideEvent)
   }
 }
 
@@ -95,20 +99,20 @@ const fetchUsageMetrics = async () => {
         const newMetrics: Record<string, { cpu: number, memory: number }> = {}
         ids.forEach(id => {
             // CPU: match by metric.uuid, one-dimensional values array [{time, value}]
-            const cpuResult = cpuRes?.data?.result?.find((r: any) => r.metric?.uuid === id)
+            const cpuResult = cpuRes?.data?.result?.find(r => r.metric?.uuid === id)
             const cpuValues = cpuResult?.values || []
             const lastCpu = cpuValues.length
-                ? parseFloat(cpuValues[cpuValues.length - 1].value || 0)
+                ? parseFloat(cpuValues[cpuValues.length - 1].value || '0')
                 : 0
 
             // Memory: match by metric.uuid, two-dimensional values array [totalValues[], usedValues[]]
-            const memResult = memRes?.data?.result?.find((r: any) => r.metric?.uuid === id)
+            const memResult = memRes?.data?.result?.find(r => r.metric?.uuid === id)
             let lastMem = 0
-            if (memResult?.values?.length >= 2) {
-                const totalValues = memResult.values[0]
-                const usedValues = memResult.values[1]
-                const total = totalValues.length ? parseFloat(totalValues[totalValues.length - 1].value || 0) : 0
-                const used = usedValues.length ? parseFloat(usedValues[usedValues.length - 1].value || 0) : 0
+            if ((memResult?.values?.length ?? 0) >= 2) {
+                const totalValues = memResult!.values[0]
+                const usedValues = memResult!.values[1]
+                const total = totalValues.length ? parseFloat(totalValues[totalValues.length - 1].value || '0') : 0
+                const used = usedValues.length ? parseFloat(usedValues[usedValues.length - 1].value || '0') : 0
                 lastMem = total > 0 ? (used / total) * 100 : 0
             }
 
@@ -252,10 +256,10 @@ const handleAction = async (instance: Instance, action: 'start' | 'stop' | 'rest
         }
 
         statusPollTimers.add(setTimeout(checkStatus, 2000))
-    } catch (error: any) {
+    } catch (error) {
         console.error(`Failed to ${action} instance:`, error)
         actionLoading.value[instance.id] = null
-        toast.error(error.response?.data?.error_message || error.message || t('dashboard.userDetail.loadError'))
+        toast.error(errorMessage(error, t('dashboard.userDetail.loadError')))
     }
 }
 
@@ -287,8 +291,8 @@ const confirmRename = async () => {
         await fetchInstances(false)
         renameModalVisible.value = false
         toast.success(t('dashboard.instanceDetail.renameSuccess'))
-    } catch (err: any) {
-        renameError.value = err.response?.data?.error_message || err.message || t('dashboard.userDetail.loadError')
+    } catch (err) {
+        renameError.value = errorMessage(err, t('dashboard.userDetail.loadError'))
     } finally {
         renameLoading.value = false
     }
@@ -336,8 +340,8 @@ const confirmResetPassword = async () => {
         await instancesApi.setUserPassword(selectedInstance.value.id, resetPasswordForm.value.user_name, resetPasswordForm.value.password)
         resetPasswordModalVisible.value = false
         toast.success(t('dashboard.instanceDetail.resetPasswordSuccess'))
-    } catch (err: any) {
-        resetPasswordError.value = err.response?.data?.error_message || err.message || t('dashboard.userDetail.loadError')
+    } catch (err) {
+        resetPasswordError.value = errorMessage(err, t('dashboard.userDetail.loadError'))
     } finally {
         resetPasswordLoading.value = false
     }
@@ -373,8 +377,8 @@ const confirmResize = async () => {
         resizeModalVisible.value = false
         toast.success(t('dashboard.instanceDetail.resizeSuccess'))
         await fetchInstances(false)
-    } catch (err: any) {
-        resizeError.value = err.response?.data?.error_message || err.message || t('dashboard.userDetail.loadError')
+    } catch (err) {
+        resizeError.value = errorMessage(err, t('dashboard.userDetail.loadError'))
     } finally {
         resizeLoading.value = false
     }
@@ -416,9 +420,9 @@ const confirmDelete = async () => {
         await fetchInstances()
         closeDeleteModal()
         toast.success(t('dashboard.instanceDetail.actionSuccess', { action: t('dashboard.buttons.delete') }))
-    } catch (error: any) {
+    } catch (error) {
         console.error('Failed to delete instance:', error)
-        deleteError.value = error.response?.data?.error_message || error.message || t('dashboard.userDetail.loadError')
+        deleteError.value = errorMessage(error, t('dashboard.userDetail.loadError'))
     } finally {
         deletingInstance.value = false
     }
@@ -432,7 +436,7 @@ const createError = ref('')
 const resourcesLoading = ref(false)
 
 const availableImages = ref<Image[]>([])
-const availableFlavors = ref<any[]>([])
+const availableFlavors = ref<Flavor[]>([])
 const availableVPCs = ref<VPC[]>([])
 const availableSubnets = ref<Subnet[]>([])
 const availableSecurityGroups = ref<SecurityGroup[]>([])
@@ -607,15 +611,15 @@ const fetchResources = async () => {
         ])
 
 
-        availableImages.value = (imgsRes as any).images || []
+        availableImages.value = imgsRes.images || []
         availableVPCs.value = vpcsRes.vpcs || []
         availableSecurityGroups.value = sgsRes.security_groups || []
-        availableKeys.value = (keysRes as any).keys || []
+        availableKeys.value = keysRes.keys || []
         availableSubnets.value = subnetsRes.subnets || []
         availableFloatingIps.value = fipsRes.floating_ips || []
-        
-        availableFlavors.value = (flavorsRes as any).flavors || flavorsRes || []
-        availableZones.value = (zonesRes as any).zones || zonesRes || []
+
+        availableFlavors.value = flavorsRes.flavors || []
+        availableZones.value = zonesRes.zones || []
 
         // Set default zone if available
         if (availableZones.value.length > 0) {
@@ -728,7 +732,15 @@ const handleNetworkTypeChange = (iface: InterfaceForm, isSecondary = false) => {
     autoSelectDefaultSGs(iface)
 }
 
-const subnetAddresses = ref<Record<string, any[]>>({})
+// GET /addresses/:subnet 返回的地址项（api/src/apis/address.go 的 AddressResponse）。
+// networks.ts 的 listAddresses 目前把 addresses 声明为 any[]，这里按实际用到的字段收窄
+interface SubnetAddress {
+    address: string
+    allocated?: boolean
+    reserved?: boolean
+}
+
+const subnetAddresses = ref<Record<string, SubnetAddress[]>>({})
 const addressesLoading = ref<Record<string, boolean>>({})
 
 const fetchSubnetAddresses = async (subnetId: string) => {
@@ -869,8 +881,8 @@ const handleCreateInstance = async () => {
 
     creatingInstance.value = true
     try {
-        const mapInterface = (iface: InterfaceForm) => {
-            const payload: any = {
+        const mapInterface = (iface: InterfaceForm): InterfacePayload => {
+            const payload: InterfacePayload = {
                 security_groups: iface.security_group_ids.map(id => ({ id }))
             }
             if (iface.network_type === 'public' && iface.public_ip_id) {
@@ -886,7 +898,7 @@ const handleCreateInstance = async () => {
             return payload
         }
 
-        const payload: any = {
+        const payload: CreateInstancePayload = {
             hostname: form.hostname,
             image: { id: form.image_id },
             flavor: form.flavor_id,
@@ -914,17 +926,20 @@ const handleCreateInstance = async () => {
         if (isSystemAdmin.value && form.hypervisor != null) {
             payload.hypervisor = form.hypervisor
         }
-
         await instancesApi.createInstance(payload)
         // 列表按创建时间倒序，新建的在第一页
         await reloadInstances()
         closeCreateModal()
         toast.success(t('dashboard.instanceDetail.actionSuccess', { action: t('dashboard.buttons.createInstance') }))
-    } catch (err: any) {
+    } catch (err) {
         console.error('Failed to create instance:', err)
-        const detail = err.response?.data?.detail
+        // detail 是对象时（cpgateway 的结构化错误）errorMessage 取不到，单独取一层 detail.message；
+        // clapi 的 error_message 与 cpgateway 的 detail 不会同时出现，所以顺序不影响结果
+        const detail = (err as { response?: { data?: { detail?: { message?: unknown } } } })?.response?.data?.detail
+        const detailMessage = typeof detail?.message === 'string' ? detail.message : ''
         createError.value = quotaErrorMessage(err, t, te)
-            || err.response?.data?.error_message || detail?.message || err.message || t('dashboard.floatingIPDetail.loadError')
+            || detailMessage
+            || errorMessage(err, t('dashboard.floatingIPDetail.loadError'))
     } finally {
         creatingInstance.value = false
     }
@@ -1029,9 +1044,9 @@ onUnmounted(() => {
                 <div class="ip-list">
                   <div v-for="(iface, idx) in (instance.interfaces || []).slice(0, 2)" :key="idx" class="ip-item">
                     <code class="ip-address">{{ iface.ip_address?.split('/')[0] || '-' }}</code>
-                    <span v-if="iface.floating_ips?.find((f: any) => f.type?.toLowerCase() !== 'native')?.fip_address" class="fip-inline">
+                    <span v-if="iface.floating_ips?.find((f) => f.type?.toLowerCase() !== 'native')?.fip_address" class="fip-inline">
                       <Globe :size="10" />
-                      <code>{{ iface.floating_ips.find((f: any) => f.type?.toLowerCase() !== 'native').fip_address.split('/')[0] }}</code>
+                      <code>{{ iface.floating_ips.find((f) => f.type?.toLowerCase() !== 'native').fip_address.split('/')[0] }}</code>
                     </span>
                   </div>
                 </div>
@@ -1066,7 +1081,7 @@ onUnmounted(() => {
                             <td><code class="text-xs">{{ iface.ip_address?.split('/')[0] || '-' }}</code></td>
                             <td>
                               <code v-if="iface.floating_ips && iface.floating_ips.length > 0" class="text-xs text-primary">
-                                {{ iface.floating_ips.find((f: any) => f.type?.toLowerCase() !== 'native')?.fip_address?.split('/')[0] || '-' }}
+                                {{ iface.floating_ips.find((f) => f.type?.toLowerCase() !== 'native')?.fip_address?.split('/')[0] || '-' }}
                               </code>
                               <span v-else class="text-xs text-secondary">-</span>
                             </td>

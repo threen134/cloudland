@@ -7,7 +7,7 @@ import { Server, HardDrive, Layers, Disc, Globe, Network, ChevronRight } from 'l
 import { instancesApi, type Instance } from '../../api/instances'
 import { activitiesApi, type Activity as ActivityItem } from '../../api/activities'
 import ActivityEntry from '../../components/activity/ActivityEntry.vue'
-import { volumesApi } from '../../api/volumes'
+import { volumesApi, type Volume } from '../../api/volumes'
 import { imagesApi } from '../../api/images'
 import { vpcsApi, floatingIpsApi, loadBalancersApi } from '../../api/networks'
 import { quotaApi, type QuotaFields } from '../../api/quota'
@@ -121,7 +121,7 @@ onMounted(async () => {
         // Use server-side consumption when available, otherwise compute from list data
         const usedCpu = consumption?.cpu_cores ?? (Array.isArray(instances) ? instances.reduce((acc: number, inst: Instance) => acc + (inst.cpu || 0), 0) : 0)
         const usedMemGB = consumption?.ram_gb ?? (Array.isArray(instances) ? instances.reduce((acc: number, inst: Instance) => acc + (inst.memory || 0), 0) / 1024 : 0)
-        const usedDiskGB = consumption?.disk_gb ?? (Array.isArray(volumes) ? volumes.reduce((acc: number, vol: any) => acc + (vol.size || 0), 0) : 0)
+        const usedDiskGB = consumption?.disk_gb ?? (Array.isArray(volumes) ? volumes.reduce((acc: number, vol: Volume) => acc + (vol.size || 0), 0) : 0)
         const usedPublicIps = consumption?.public_ips ?? (Array.isArray(fips) ? fips.length : 0)
 
         const instanceCount = Array.isArray(instances) ? instances.length : 0

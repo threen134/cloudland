@@ -7,6 +7,7 @@ import { useAuthStore } from '../../stores/auth'
 import { useQuota } from '../../composables/useQuota'
 import { useToast } from '../../composables/useToast'
 import { useCopyId } from '../../composables/useCopyId'
+import { errorMessage } from '../../utils/error'
 import {
     Plus, Building2, Trash2, Edit2, User, Search, Gauge, RefreshCw, Check, Copy,
     CheckCircle, AlertCircle, ShieldAlert, PauseCircle, PlayCircle
@@ -59,7 +60,8 @@ const fetchOrgs = async () => {
     loading.value = true
     loadError.value = ''
     try {
-        const data = await orgsApi.fetchOrgs() as any
+        // GET /orgs 直接返回数组，这里保留"带 orgs 包装"的兼容分支
+        const data = await orgsApi.fetchOrgs() as Organization[] | { orgs?: Organization[] }
         orgs.value = Array.isArray(data) ? data : (data.orgs || [])
     } catch (error) {
         console.error('Failed to fetch orgs:', error)
@@ -116,15 +118,17 @@ const handleCreateOrg = async () => {
         await fetchOrgs()
         closeCreateModal()
         toast.success(t('messages.createSuccess'))
-    } catch (err: any) {
+    } catch (err) {
         console.error('Failed to create organization:', err)
-        createError.value = err.response?.data?.error_message || err.message || t('messages.error')
+        createError.value = errorMessage(err, t('messages.error'))
     } finally {
         creating.value = false
     }
 }
 
-const openEditModal = (org: Organization) => {
+// orgOut 里没有 description（后端可写不可读），读到的恒为 undefined；
+// 这里显式写成可选字段，等后端补上响应字段就能直接生效
+const openEditModal = (org: Organization & { description?: string }) => {
     editOrgForm.value = {
         uuid: org.uuid,
         name: org.name,
@@ -154,9 +158,9 @@ const handleEditOrg = async () => {
         await fetchOrgs()
         closeEditModal()
         toast.success(t('messages.updateSuccess'))
-    } catch (err: any) {
+    } catch (err) {
         console.error('Failed to update organization:', err)
-        editError.value = err.response?.data?.error_message || err.message || t('messages.error')
+        editError.value = errorMessage(err, t('messages.error'))
     } finally {
         editing.value = false
     }
@@ -186,9 +190,9 @@ const confirmDelete = async () => {
         await fetchOrgs()
         closeDeleteModal()
         toast.success(t('messages.deleteSuccess'))
-    } catch (error: any) {
+    } catch (error) {
         console.error('Failed to delete organization:', error)
-        deleteError.value = error.response?.data?.error_message || error.message || t('messages.error')
+        deleteError.value = errorMessage(error, t('messages.error'))
     } finally {
         deletingResource.value = false
     }
@@ -227,8 +231,8 @@ const handleSaveQuota = async (regionUuid: string) => {
     try {
         await handleSaveQuotaBase(quotaOrgId.value, regionUuid)
         toast.success(t('messages.updateSuccess'))
-    } catch (err: any) {
-        toast.error(err.response?.data?.error_message || err.message || t('messages.error'))
+    } catch (err) {
+        toast.error(errorMessage(err, t('messages.error')))
     }
 }
 
@@ -237,8 +241,8 @@ const handleUpdateStatus = async (orgId: string, status: number) => {
         await orgsApi.updateOrgStatus(orgId, status)
         await fetchOrgs()
         toast.success(t('messages.updateSuccess'))
-    } catch (err: any) {
-        toast.error(err.response?.data?.error_message || err.message || t('messages.error'))
+    } catch (err) {
+        toast.error(errorMessage(err, t('messages.error')))
     }
 }
 
@@ -343,10 +347,10 @@ onMounted(fetchOrgs)
 
       <template #cell-actions="{ row: org }">
         <div class="actions">
-          <button class="btn btn-ghost btn-sm" :title="$t('actions.edit')" @click="openEditModal(org as any)">
+          <button class="btn btn-ghost btn-sm" :title="$t('actions.edit')" @click="openEditModal(org as Organization)">
             <Edit2 :size="14" />
           </button>
-          <button class="btn btn-ghost btn-sm" :title="$t('quota.manage')" @click="openQuotaModal(org as any)">
+          <button class="btn btn-ghost btn-sm" :title="$t('quota.manage')" @click="openQuotaModal(org as Organization)">
             <Gauge :size="14" />
           </button>
           <!-- Admin Status Actions -->
@@ -361,7 +365,7 @@ onMounted(fetchOrgs)
               <ShieldAlert :size="14" />
             </button>
           </template>
-          <button class="btn btn-ghost btn-sm text-error" :title="$t('actions.delete')" @click="handleDeleteClick(org as any)">
+          <button class="btn btn-ghost btn-sm text-error" :title="$t('actions.delete')" @click="handleDeleteClick(org as Organization)">
             <Trash2 :size="14" />
           </button>
         </div>
@@ -495,24 +499,24 @@ onMounted(fetchOrgs)
                     type="number"
                     class="form-input quota-input"
                     :value="editingQuota[region.region_uuid]?.[res.qkey as keyof OrgResourceQuotaUpdate]"
-                    @input="(e: any) => { if (editingQuota[region.region_uuid]) (editingQuota[region.region_uuid] as any)[res.qkey] = Number(e.target.value) }"
+                    @input="(e: Event) => { if (editingQuota[region.region_uuid]) editingQuota[region.region_uuid][res.qkey] = Number((e.target as HTMLInputElement).value) }"
                     min="0"
                     step="1"
                   />
-                  <span v-else>{{ (region.quota as any)[res.qkey] }}</span>
+                  <span v-else>{{ region.quota[res.qkey] }}</span>
                 </td>
-                <td>{{ (region.consumption as any)[res.key] }}</td>
+                <td>{{ region.consumption[res.key] }}</td>
                 <td>
                   <div class="usage-bar-container">
                     <div
                       class="usage-bar"
                       :style="{
-                        width: getUsagePercent((region.consumption as any)[res.key], (region.quota as any)[res.qkey]) + '%',
-                        background: getUsageColor(getUsagePercent((region.consumption as any)[res.key], (region.quota as any)[res.qkey]))
+                        width: getUsagePercent(region.consumption[res.key], region.quota[res.qkey]) + '%',
+                        background: getUsageColor(getUsagePercent(region.consumption[res.key], region.quota[res.qkey]))
                       }"
                     ></div>
                   </div>
-                  <span class="usage-text">{{ getUsagePercent((region.consumption as any)[res.key], (region.quota as any)[res.qkey]) }}%</span>
+                  <span class="usage-text">{{ getUsagePercent(region.consumption[res.key], region.quota[res.qkey]) }}%</span>
                 </td>
               </tr>
             </tbody>

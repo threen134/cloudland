@@ -16,6 +16,14 @@ import DataTable, { type Column } from '../../components/base/DataTable.vue'
 import PaginationBar from '../../components/base/PaginationBar.vue'
 import { useRegionStore } from '../../stores/region'
 import { quotaErrorMessage } from '../../utils/quotaError'
+import { errorMessage } from '../../utils/error'
+
+// GET /addresses/:subnet 的返回项（api/networks.ts 的 listAddresses 尚未定型，这里先声明本页用到的字段）
+interface SubnetAddress {
+    address: string
+    allocated?: boolean
+    reserved?: boolean
+}
 
 const region = useRegionStore()
 
@@ -44,7 +52,7 @@ const newFipForm = ref({
 const siteSubnets = ref<Subnet[]>([])
 const publicSubnets = ref<Subnet[]>([])
 const instances = ref<Instance[]>([])
-const subnetAddresses = ref<Record<string, any[]>>({})
+const subnetAddresses = ref<Record<string, SubnetAddress[]>>({})
 const addressesLoading = ref<Record<string, boolean>>({})
 
 const fetchSubnetAddresses = async (subnetId: string) => {
@@ -52,7 +60,7 @@ const fetchSubnetAddresses = async (subnetId: string) => {
     addressesLoading.value[subnetId] = true
     try {
         const response = await subnetsApi.listAddresses(subnetId)
-        subnetAddresses.value[subnetId] = (response.addresses || []).filter((a: any) => !a.allocated && !a.reserved)
+        subnetAddresses.value[subnetId] = (response.addresses || []).filter((a: SubnetAddress) => !a.allocated && !a.reserved)
     } catch (err) {
         console.error('Failed to fetch subnet addresses:', err)
     } finally {
@@ -190,9 +198,9 @@ const handleCreateIP = async () => {
 
         closeCreateModal()
         toast.success(t('messages.createSuccess'))
-    } catch (err: any) {
+    } catch (err) {
         console.error('Failed to create floating IP:', err)
-        createError.value = quotaErrorMessage(err, t, te) || err.response?.data?.error_message || err.message || t('messages.error')
+        createError.value = quotaErrorMessage(err, t, te) || errorMessage(err, t('messages.error'))
     } finally {
         creating.value = false
     }
@@ -226,9 +234,9 @@ const confirmDelete = async () => {
         await fetchFloatingIPs()
         closeDeleteModal()
         toast.success(t('messages.deleteSuccess'))
-    } catch (error: any) {
+    } catch (error) {
         console.error('Failed to delete floating IP:', error)
-        deleteError.value = error.response?.data?.error_message || error.message || t('messages.error')
+        deleteError.value = errorMessage(error, t('messages.error'))
     } finally {
         deletingResource.value = false
     }
@@ -267,9 +275,9 @@ const confirmAttach = async () => {
         await fetchFloatingIPs()
         closeAttachModal()
         toast.success(t('messages.attachSuccess') || t('messages.updateSuccess'))
-    } catch (err: any) {
+    } catch (err) {
         console.error('Failed to attach floating IP:', err)
-        attachError.value = err.response?.data?.error_message || err.message || t('messages.error')
+        attachError.value = errorMessage(err, t('messages.error'))
     } finally {
         attaching.value = false
     }
@@ -302,9 +310,9 @@ const confirmDetach = async () => {
         await fetchFloatingIPs()
         closeDetachModal()
         toast.success(t('messages.detachSuccess') || t('messages.updateSuccess'))
-    } catch (err: any) {
+    } catch (err) {
         console.error('Failed to detach floating IP:', err)
-        detachError.value = err.response?.data?.error_message || err.message || t('messages.error')
+        detachError.value = errorMessage(err, t('messages.error'))
     } finally {
         detaching.value = false
     }

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, watch } from 'vue'
 import { hypervisorsApi } from '../../api/hypervisors'
+import type { ChartData } from 'chart.js'
 import { Line } from 'vue-chartjs'
 import { useI18n } from 'vue-i18n'
 import { Activity, Clock, RefreshCw } from 'lucide-vue-next'
@@ -12,8 +13,12 @@ const props = defineProps<{
 
 const { t } = useI18n()
 
-const cpuData = ref<any>(null)
-const memData = ref<any>(null)
+// 内存图的数值是 toFixed(2) 出来的字符串（chart.js 运行时会自己解析），
+// 所以把 ChartData 的数据点类型显式写成 number | string
+type LineData = ChartData<'line', (number | string)[]>
+
+const cpuData = ref<LineData | null>(null)
+const memData = ref<LineData | null>(null)
 
 const fetchData = async () => {
     if (!props.hostname) return
@@ -44,10 +49,10 @@ const fetchData = async () => {
         const cpuResult = cpuRes.data?.result?.[0]
         if (cpuResult?.values?.length) {
             cpuData.value = {
-                labels: cpuResult.values.map((v: any) => formatTimestamp(v.time)),
+                labels: cpuResult.values.map((v) => formatTimestamp(v.time)),
                 datasets: [{
                     label: t('dashboard.monitoring.cpuUsage'),
-                    data: cpuResult.values.map((v: any) => parseFloat(v.value)),
+                    data: cpuResult.values.map((v) => parseFloat(v.value)),
                     borderColor: '#3b82f6',
                     backgroundColor: 'rgba(59, 130, 246, 0.1)',
                     fill: true,
@@ -62,20 +67,20 @@ const fetchData = async () => {
             const usedSamples = memResult.values[1]
 
             if (Array.isArray(totalSamples) && totalSamples.length > 0 && Array.isArray(usedSamples)) {
-                const labels = totalSamples.map((v: any) => formatTimestamp(v.time))
+                const labels = totalSamples.map((v) => formatTimestamp(v.time))
                 memData.value = {
                     labels,
                     datasets: [
                         {
                             label: t('dashboard.monitoring.total'),
-                            data: totalSamples.map((v: any) => (parseFloat(v.value) / 1024 / 1024).toFixed(2)),
+                            data: totalSamples.map((v) => (parseFloat(v.value) / 1024 / 1024).toFixed(2)),
                             borderColor: '#94a3b8',
                             borderDash: [5, 5],
                             fill: false,
                         },
                         {
                             label: t('dashboard.monitoring.used'),
-                            data: usedSamples.map((v: any) => (parseFloat(v.value) / 1024 / 1024).toFixed(2)),
+                            data: usedSamples.map((v) => (parseFloat(v.value) / 1024 / 1024).toFixed(2)),
                             borderColor: '#10b981',
                             backgroundColor: 'rgba(16, 185, 129, 0.1)',
                             fill: true,
@@ -85,7 +90,7 @@ const fetchData = async () => {
             }
         }
 
-    } catch (err: any) {
+    } catch (err) {
         console.error('Failed to fetch host metrics:', err)
         error.value = t('dashboard.monitoring.loadError')
     } finally {

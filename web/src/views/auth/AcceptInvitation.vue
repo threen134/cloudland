@@ -2,8 +2,9 @@
 import { ref, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { CheckCircle, XCircle, Loader2, ArrowRight, Cloud, Mail } from 'lucide-vue-next'
-import { authApi } from '../../api/auth'
+import { authApi, type InvitationInfo } from '../../api/auth'
 import { ORG_ROLES } from '../../api/orgs'
+import { errorMessage } from '../../utils/error'
 
 const route = useRoute()
 const router = useRouter()
@@ -12,14 +13,7 @@ const status = ref<'loading' | 'info' | 'accepting' | 'success' | 'error'>('load
 const errorMsg = ref('')
 
 // Invitation info
-const invitationInfo = ref<{
-    email: string
-    org_name: string
-    org_role: number
-    inviter_email: string
-    is_existing_user: boolean
-    expires_at: string
-} | null>(null)
+const invitationInfo = ref<InvitationInfo | null>(null)
 
 // New user form
 const username = ref('')
@@ -38,9 +32,9 @@ const fetchInfo = async () => {
         const response = await authApi.getInvitationInfo(token)
         invitationInfo.value = response
         status.value = 'info'
-    } catch (err: any) {
+    } catch (err) {
         status.value = 'error'
-        errorMsg.value = err.response?.data?.detail || 'Invalid or expired invitation.'
+        errorMsg.value = errorMessage(err, 'Invalid or expired invitation.')
     }
 }
 
@@ -73,9 +67,9 @@ const handleAccept = async () => {
             password: invitationInfo.value.is_existing_user ? undefined : password.value,
         })
         status.value = 'success'
-    } catch (err: any) {
+    } catch (err) {
         status.value = 'info'
-        errorMsg.value = err.response?.data?.detail || 'Failed to accept invitation.'
+        errorMsg.value = errorMessage(err, 'Failed to accept invitation.')
     }
 }
 

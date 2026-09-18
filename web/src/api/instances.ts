@@ -121,7 +121,8 @@ export interface InterfacePayload {
 
 export interface CreateInstancePayload {
     count?: number
-    hypervisor?: number
+    /** 宿主机 uuid（后端 binding:"omitempty,uuid"） */
+    hypervisor?: string
     hostname: string
     keys?: BaseReference[]
     root_passwd?: string

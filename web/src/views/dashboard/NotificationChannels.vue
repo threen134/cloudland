@@ -7,6 +7,7 @@ import { notificationsApi, type NotificationChannel, type CreateChannelPayload }
 import { useAuthStore } from '../../stores/auth'
 import { useTenantStore } from '../../stores/tenant'
 import { formatDateTime } from '../../utils/format'
+import { errorMessage } from '../../utils/error'
 import PageToolbar from '../../components/base/PageToolbar.vue'
 import DataTable, { type Column } from '../../components/base/DataTable.vue'
 import BaseModal from '../../components/modals/BaseModal.vue'
@@ -107,9 +108,9 @@ const submitForm = async () => {
         showCreateModal.value = false
         await fetchChannels()
         toast.success(editTarget.value ? t('messages.updateSuccess') : t('messages.createSuccess'))
-    } catch (err: any) {
+    } catch (err) {
         console.error('Failed to save channel:', err)
-        toast.error(err.response?.data?.detail || err.response?.data?.error || t('messages.error'))
+        toast.error(errorMessage(err, t('messages.error')))
     }
 }
 
@@ -126,9 +127,9 @@ const executeDelete = async () => {
         deleteTarget.value = null
         await fetchChannels()
         toast.success(t('messages.deleteSuccess'))
-    } catch (err: any) {
+    } catch (err) {
         console.error('Failed to delete channel:', err)
-        toast.error(err.response?.data?.detail || err.response?.data?.error || t('messages.error'))
+        toast.error(errorMessage(err, t('messages.error')))
     }
 }
 
@@ -137,9 +138,9 @@ const toggleEnabled = async (ch: NotificationChannel) => {
         await notificationsApi.update(ch.uuid, { enabled: !ch.enabled })
         await fetchChannels()
         toast.success(t('messages.updateSuccess'))
-    } catch (err: any) {
+    } catch (err) {
         console.error('Failed to toggle channel:', err)
-        toast.error(err.response?.data?.detail || err.response?.data?.error || t('messages.error'))
+        toast.error(errorMessage(err, t('messages.error')))
     }
 }
 

@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { alarmsApi, RULE_TYPES, type NodeAlarmRule } from '../../api/alarms'
+import { alarmsApi, RULE_TYPES, type NodeAlarmRule, type NodeAlarmRuleListResponse } from '../../api/alarms'
+import { errorMessage } from '../../utils/error'
 import { ArrowLeft, AlertTriangle, Copy, Check, Trash2 } from 'lucide-vue-next'
 import { useI18n } from 'vue-i18n'
 import { useToast } from '../../composables/useToast'
@@ -29,15 +30,16 @@ const fetchAlarmDetail = async () => {
     try {
         const uuid = route.params.id as string
         const response = await alarmsApi.fetchAlarmRules({ uuid })
-        const data = response as any
+        // 接口返回 { status, data, count }，这里保留"直接是数组"的兼容分支
+        const data = response as NodeAlarmRuleListResponse | NodeAlarmRule[]
         const rules = Array.isArray(data) ? data : (data.data || [])
         alarm.value = rules.length > 0 ? rules[0] : null
         if (!alarm.value) {
             error.value = 'Alarm rule not found'
         }
-    } catch (err: any) {
+    } catch (err) {
         console.error('Failed to fetch alarm detail:', err)
-        error.value = err.message || 'Failed to load Alarm Rule details'
+        error.value = errorMessage(err, 'Failed to load Alarm Rule details')
     } finally {
         loading.value = false
     }
@@ -57,8 +59,8 @@ const handleDelete = async () => {
         await alarmsApi.deleteAlarmRule(alarm.value.uuid)
         toast.success(t('messages.deleteSuccess'))
         router.push({ name: 'alarms' })
-    } catch (err: any) {
-        toast.error(err.response?.data?.error || 'Delete failed')
+    } catch (err) {
+        toast.error(errorMessage(err, 'Delete failed'))
     } finally {
         deleting.value = false
     }

@@ -16,6 +16,7 @@ import StatusBadge from '../../components/base/StatusBadge.vue'
 import DataTable, { type Column } from '../../components/base/DataTable.vue'
 import PaginationBar from '../../components/base/PaginationBar.vue'
 import { quotaErrorMessage } from '../../utils/quotaError'
+import { errorMessage } from '../../utils/error'
 
 const region = useRegionStore()
 
@@ -93,9 +94,9 @@ const handleCreateVPC = async () => {
         await reloadVPCs()
         closeCreateModal()
         toast.success(t('messages.createSuccess'))
-    } catch (err: any) {
+    } catch (err) {
         console.error('Failed to create VPC:', err)
-        createError.value = quotaErrorMessage(err, t, te) || err.response?.data?.error_message || err.message || t('messages.error')
+        createError.value = quotaErrorMessage(err, t, te) || errorMessage(err, t('messages.error'))
     } finally {
         creating.value = false
     }
@@ -125,12 +126,13 @@ const confirmDelete = async () => {
         await fetchVPCs()
         closeDeleteModal()
         toast.success(t('messages.deleteSuccess'))
-    } catch (error: any) {
+    } catch (error) {
         console.error('Failed to delete VPC:', error)
-        if (error.response?.data?.error_code === 131307 || error.response?.data?.error_code_str === 'RouterHasFloatingIPs') {
+        const data = (error as { response?: { data?: { error_code?: number; error_code_str?: string } } })?.response?.data
+        if (data?.error_code === 131307 || data?.error_code_str === 'RouterHasFloatingIPs') {
             deleteError.value = t('messages.vpcHasFloatingIPs')
         } else {
-            deleteError.value = error.response?.data?.error_message || error.message || t('messages.error')
+            deleteError.value = errorMessage(error, t('messages.error'))
         }
     } finally {
         deletingResource.value = false
@@ -176,8 +178,8 @@ const handleEditVPC = async () => {
         await fetchVPCs()
         closeEditModal()
         toast.success(t('messages.updateSuccess'))
-    } catch (err: any) {
-        editError.value = err.response?.data?.error_message || err.message || t('messages.error')
+    } catch (err) {
+        editError.value = errorMessage(err, t('messages.error'))
     } finally {
         editingVPC.value = false
     }
@@ -265,8 +267,8 @@ const handleCreateSubnet = async () => {
         await fetchVPCs()
         closeCreateSubnetModal()
         toast.success(t('messages.createSuccess'))
-    } catch (err: any) {
-        createSubnetError.value = err.response?.data?.error_message || err.message || t('messages.error')
+    } catch (err) {
+        createSubnetError.value = errorMessage(err, t('messages.error'))
     } finally {
         creatingSubnet.value = false
     }

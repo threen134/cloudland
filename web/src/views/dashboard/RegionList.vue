@@ -9,6 +9,7 @@ import {
 import { regionsApi, type RegionPublic, type RegionAdmin, type RegionCreated, type CreateRegionPayload, type UpdateRegionPayload } from '../../api/regions'
 import { useToast } from '../../composables/useToast'
 import { useCopyId } from '../../composables/useCopyId'
+import { errorMessage } from '../../utils/error'
 import PageToolbar from '../../components/base/PageToolbar.vue'
 import DataTable, { type Column } from '../../components/base/DataTable.vue'
 import BaseModal from '../../components/modals/BaseModal.vue'
@@ -23,7 +24,9 @@ const loadError = ref('')
 const searchQuery = ref('')
 
 // 状态列显示的是翻译后的文案，排序按原始状态串
-const regionState = (r: any) => (r.maintenance_mode ? 'maintenance' : r.is_available ? 'available' : 'offline')
+// 参数写成可选字段的结构类型，才能直接交给 DataTable 的 sortValue（它拿到的是通用行对象）
+const regionState = (r: { maintenance_mode?: boolean; is_available?: boolean }) =>
+    (r.maintenance_mode ? 'maintenance' : r.is_available ? 'available' : 'offline')
 
 const columns = computed<Column[]>(() => [
     { key: 'name', label: t('dashboard.table.nameId'), sortable: true, sortValue: (r) => r.display_name || r.name },
@@ -138,11 +141,8 @@ const handleCreate = async () => {
         if (!createdSecret.value) {
             router.go(0)
         }
-    } catch (err: any) {
-        let msg = err.response?.data?.detail
-        if (Array.isArray(msg)) msg = msg[0]?.msg
-        msg = msg || err.response?.data?.message || 'Create failed'
-        toast.error(msg)
+    } catch (err) {
+        toast.error(errorMessage(err, 'Create failed'))
     } finally {
         creating.value = false
     }
@@ -165,8 +165,8 @@ const openEditModal = async (region: RegionPublic) => {
             description: detail.description || ''
         }
         showEditModal.value = true
-    } catch (err: any) {
-        toast.error(err.response?.data?.detail || 'Failed to load region details')
+    } catch (err) {
+        toast.error(errorMessage(err, 'Failed to load region details'))
     }
 }
 
@@ -189,8 +189,8 @@ const handleEdit = async () => {
         toast.success(t('messages.success'))
         await fetchRegions()
         router.go(0)
-    } catch (err: any) {
-        toast.error(err.response?.data?.detail || 'Update failed')
+    } catch (err) {
+        toast.error(errorMessage(err, 'Update failed'))
     } finally {
         editing.value = false
     }
@@ -211,8 +211,8 @@ const handleDelete = async () => {
         deletingRegion.value = null
         toast.success(t('messages.success'))
         await fetchRegions()
-    } catch (err: any) {
-        toast.error(err.response?.data?.detail || 'Delete failed')
+    } catch (err) {
+        toast.error(errorMessage(err, 'Delete failed'))
     } finally {
         deleting.value = false
     }
@@ -235,10 +235,10 @@ const handleRotate = async () => {
     rotating.value = true
     try {
         const response = await regionsApi.rotateSecret(rotatingRegion.value.uuid)
-        rotatedSecret.value = (response as any).new_secret
+        rotatedSecret.value = response.new_secret
         toast.success(t('messages.success'))
-    } catch (err: any) {
-        toast.error(err.response?.data?.detail || 'Rotate failed')
+    } catch (err) {
+        toast.error(errorMessage(err, 'Rotate failed'))
     } finally {
         rotating.value = false
     }
