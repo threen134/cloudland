@@ -1,20 +1,13 @@
 <script setup lang="ts">
-import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import Navbar from '../components/Navbar.vue'
 import { 
     Zap, 
-    Shield, 
     Globe, 
-    Server, 
-    HardDrive, 
-    Network, 
     Check, 
     ArrowRight,
     Cpu,
-    Database,
-    Clock,
     Headphones,
     Cloud
 } from 'lucide-vue-next'

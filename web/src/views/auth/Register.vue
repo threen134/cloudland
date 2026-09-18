@@ -2,7 +2,7 @@
 import { ref, reactive, computed } from 'vue'
 import { useRouter, RouterLink } from 'vue-router'
 import { useI18n } from 'vue-i18n'
-import { Cloud, User, Mail, Lock, ArrowRight, ShieldCheck, Check, Building2, XCircle, Eye, EyeOff } from 'lucide-vue-next'
+import { Cloud, User, Mail, Lock, ArrowRight, ShieldCheck, Building2, XCircle, Eye, EyeOff } from 'lucide-vue-next'
 import { authApi } from '../../api/auth'
 import { isChinese } from '../../locales'
 
