@@ -106,7 +106,7 @@ export interface AlarmSummaryResponse {
 }
 
 export const alarmEventsApi = {
-    async list(params?: { status?: string; page?: number; page_size?: number }): Promise<AlarmEventListResponse> {
+    async list(params?: { status?: string; query?: string; page?: number; page_size?: number }): Promise<AlarmEventListResponse> {
         const response = await client.get<AlarmEventListResponse>('/alarm/events', { params })
         return response.data
     },

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, watch } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { AlertTriangle, ChevronDown, ChevronRight, CheckCircle, XCircle, RefreshCw, Check, Copy } from 'lucide-vue-next'
 import { alarmEventsApi, type AlarmEvent, type AlarmDeliveryLog } from '../../api/alarmEvents'
@@ -23,21 +23,12 @@ const expandedEvent = ref<string | null>(null)
 const deliveryLogs = ref<Record<string, AlarmDeliveryLog[]>>({})
 const loadingLogs = ref<string | null>(null)
 
-const filteredEvents = computed(() => {
-    if (!searchQuery.value) return events.value
-    const q = searchQuery.value.toLowerCase()
-    return events.value.filter(e =>
-        e.alert_name.toLowerCase().includes(q) ||
-        e.vm_name.toLowerCase().includes(q) ||
-        e.vm_uuid.toLowerCase().includes(q)
-    )
-})
-
 const fetchEvents = async () => {
     loading.value = true
     try {
         const params: Record<string, any> = { page: page.value, page_size: pageSize.value }
         if (statusFilter.value) params.status = statusFilter.value
+        if (searchQuery.value.trim()) params.query = searchQuery.value.trim()
         const res = await alarmEventsApi.list(params)
         events.value = res.events || []
         total.value = res.total || 0
@@ -84,6 +75,21 @@ const severityClass = (severity: string) => {
 }
 
 watch([page, statusFilter], fetchEvents)
+
+// 搜索走服务端（此前是在当前页的 20 条里前端过滤，翻页后就搜不到别的页了）。
+// 输入防抖 400ms，并回到第一页——换了搜索条件后停留在第 3 页没有意义
+let searchTimer: ReturnType<typeof setTimeout> | null = null
+watch(searchQuery, () => {
+    if (searchTimer) clearTimeout(searchTimer)
+    searchTimer = setTimeout(() => {
+        if (page.value === 1) fetchEvents()
+        else page.value = 1
+    }, 400)
+})
+onUnmounted(() => {
+    if (searchTimer) clearTimeout(searchTimer)
+})
+
 onMounted(fetchEvents)
 </script>
 
@@ -126,7 +132,7 @@ onMounted(fetchEvents)
                             <div class="loading-spinner" style="margin: 20px auto;"></div>
                         </td>
                     </tr>
-                    <template v-else-if="filteredEvents.length > 0" v-for="event in filteredEvents" :key="event.uuid">
+                    <template v-else-if="events.length > 0" v-for="event in events" :key="event.uuid">
                         <tr class="event-row" @click="toggleExpand(event.uuid)">
                             <td>
                                 <component :is="expandedEvent === event.uuid ? ChevronDown : ChevronRight" :size="14" />

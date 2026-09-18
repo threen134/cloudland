@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"time"
 
+	"api/src/dbs"
 	"api/src/model"
 
 	. "api/src/common"
@@ -301,7 +302,7 @@ func (n *NotificationAdmin) UpsertAlarmEvent(ctx context.Context, fingerprint st
 }
 
 // ListAlarmEvents 分页查询告警事件（支持按 owner 过滤，实现租户隔离）
-func (n *NotificationAdmin) ListAlarmEvents(ctx context.Context, owner string, status string, page, pageSize int) (int64, []*model.AlarmEvent, error) {
+func (n *NotificationAdmin) ListAlarmEvents(ctx context.Context, owner string, status string, search string, page, pageSize int) (int64, []*model.AlarmEvent, error) {
 	ctx, db := GetContextDB(ctx)
 
 	query := db.Model(&model.AlarmEvent{})
@@ -311,6 +312,9 @@ func (n *NotificationAdmin) ListAlarmEvents(ctx context.Context, owner string, s
 	if status != "" {
 		query = query.Where("status = ?", status)
 	}
+	// 按告警名与虚拟机名搜索。此前后端不支持搜索，前端只能在当前页的 20 条里过滤，
+	// 翻到下一页搜的又是另外 20 条
+	query = query.Scopes(dbs.Contains(search, "alert_name", "vm_name"))
 
 	var total int64
 	if err := query.Count(&total).Error; err != nil {

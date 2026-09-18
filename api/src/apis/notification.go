@@ -227,6 +227,7 @@ func (a *NotificationAPI) ListAlarmEvents(c *gin.Context) {
 	memberShip := GetMemberShip(ctx)
 
 	statusFilter := c.Query("status")
+	searchStr := c.Query("query")
 	countOnly := c.Query("count_only")
 
 	// count_only 模式：只返回数量（按当前组织过滤）
@@ -250,7 +251,7 @@ func (a *NotificationAPI) ListAlarmEvents(c *gin.Context) {
 	}
 
 	// 按当前用户的组织 ID 过滤，实现租户隔离（owner 字段存储的是 OrgID 字符串）
-	total, events, err := a.admin.ListAlarmEvents(ctx, strconv.FormatInt(memberShip.OrgID, 10), statusFilter, page, pageSize)
+	total, events, err := a.admin.ListAlarmEvents(ctx, strconv.FormatInt(memberShip.OrgID, 10), statusFilter, searchStr, page, pageSize)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -351,7 +352,7 @@ func (a *NotificationAPI) InternalListAlarmEvents(c *gin.Context) {
 	if pageSize < 1 || pageSize > 100 {
 		pageSize = 20
 	}
-	total, events, err := a.admin.ListAlarmEvents(ctx, owner, statusFilter, page, pageSize)
+	total, events, err := a.admin.ListAlarmEvents(ctx, owner, statusFilter, "", page, pageSize)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
