@@ -27,7 +27,7 @@ export interface VPCListResponse {
 }
 
 export const vpcsApi = {
-    list: async (params?: { offset?: number; limit?: number }): Promise<VPCListResponse> => {
+    list: async (params?: { offset?: number; limit?: number; query?: string }): Promise<VPCListResponse> => {
         const response = await client.get('/vpcs', { params })
         return response.data
     },
@@ -106,7 +106,7 @@ export interface SubnetListResponse {
 }
 
 export const subnetsApi = {
-    list: async (params?: { offset?: number; limit?: number; vpc?: string }): Promise<SubnetListResponse> => {
+    list: async (params?: { offset?: number; limit?: number; query?: string; vpc?: string }): Promise<SubnetListResponse> => {
         const response = await client.get('/subnets', { params })
         return response.data
     },
@@ -185,7 +185,7 @@ export interface FloatingIPListResponse {
 }
 
 export const floatingIpsApi = {
-    list: async (params?: { offset?: number; limit?: number }): Promise<FloatingIPListResponse> => {
+    list: async (params?: { offset?: number; limit?: number; query?: string }): Promise<FloatingIPListResponse> => {
         const response = await client.get('/floating_ips', { params })
         return response.data
     },

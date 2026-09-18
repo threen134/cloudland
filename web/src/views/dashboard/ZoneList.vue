@@ -1,26 +1,24 @@
 <script setup lang="ts">
-import { ref, onMounted, computed, watch } from 'vue'
+import { ref, onMounted, computed } from 'vue'
 import { zonesApi, type Zone, type CreateZonePayload } from '../../api/zones'
 import { Search as SearchIcon, MapPin, Plus, RefreshCw, Trash2, Settings2, Loader2, Check, Copy } from 'lucide-vue-next'
 import { useI18n } from 'vue-i18n'
 import { useToast } from '../../composables/useToast'
 import { useCopyId } from '../../composables/useCopyId'
+import { useListQuery } from '../../composables/useListQuery'
 import { useRegionStore } from '../../stores/region'
 import BaseModal from '../../components/modals/BaseModal.vue'
 import DeleteModal from '../../components/modals/DeleteModal.vue'
 import PageToolbar from '../../components/base/PageToolbar.vue'
 import DataTable, { type Column } from '../../components/base/DataTable.vue'
+import PaginationBar from '../../components/base/PaginationBar.vue'
 
 const region = useRegionStore()
 
 const { t } = useI18n()
 const toast = useToast()
-const zoneList = ref<Zone[]>([])
-const loading = ref(false)
-const loadError = ref('')
 
 const { copiedId, copyId } = useCopyId()
-const searchQuery = ref('')
 
 // Create modal
 const showCreateModal = ref(false)
@@ -38,45 +36,32 @@ const showDeleteModal = ref(false)
 const deleting = ref(false)
 const deletingZone = ref<Zone | null>(null)
 
+// 分页后排序只能排当前页，会误导用户，所以列上不再提供排序
 const columns = computed<Column[]>(() => [
-    { key: 'name', label: t('dashboard.table.nameId'), sortable: true },
-    { key: 'remark', label: t('dashboard.zoneActions.remark'), sortable: true },
-    { key: 'type', label: t('dashboard.table.type'), sortable: true, sortValue: (z) => (z.default ? 0 : 1) },
+    { key: 'name', label: t('dashboard.table.nameId') },
+    { key: 'remark', label: t('dashboard.zoneActions.remark') },
+    { key: 'type', label: t('dashboard.table.type') },
     { key: 'actions', label: t('dashboard.table.actions'), align: 'center' },
 ])
 
-const fetchZones = async () => {
-    loading.value = true
-    loadError.value = ''
-    try {
-        const response = await zonesApi.fetchZones()
-        const data = response as any
-        zoneList.value = Array.isArray(data) ? data : (data.zones || [])
-    } catch (error) {
-        // 原先失败只打日志、把列表清空，用户看到的是"没有数据"
-        console.error('API fetch failed:', error)
-        zoneList.value = []
-        loadError.value = t('messages.error')
-    } finally {
-        loading.value = false
-    }
-}
-
-// Re-fetch when region changes
-watch(() => region.currentRegionId, (newId) => {
-    if (newId) {
-        fetchZones()
-    }
-})
-
-const filteredZones = computed(() => {
-    if (!searchQuery.value) return zoneList.value
-    const query = searchQuery.value.toLowerCase()
-    return zoneList.value.filter(z =>
-        (z.name && z.name.toLowerCase().includes(query)) ||
-        (z.remark && z.remark.toLowerCase().includes(query))
-    )
-})
+// 分页与搜索都在服务端做
+const {
+    items: zoneList,
+    total,
+    page,
+    pageSize,
+    loading,
+    error: loadError,
+    search: searchQuery,
+    load: fetchZones,
+    reload: reloadZones,
+} = useListQuery<Zone>(
+    async ({ offset, limit, query }) => {
+        const response = await zonesApi.fetchZones({ offset, limit, query: query || undefined })
+        return { items: response.zones || [], total: response.total ?? 0 }
+    },
+    { watchSources: [computed(() => region.currentRegionId)] }
+)
 
 // Create
 const openCreateModal = () => {
@@ -91,7 +76,7 @@ const handleCreate = async () => {
         await zonesApi.createZone(createForm.value)
         showCreateModal.value = false
         toast.success(t('messages.success'))
-        await fetchZones()
+        await reloadZones()
     } catch (err: any) {
         const msg = err.response?.data?.error || err.response?.data?.message || 'Create failed'
         toast.error(msg)
@@ -155,7 +140,7 @@ onMounted(() => {
   <div class="vpc-list-container">
     <PageToolbar v-model:search="searchQuery">
       <template #actions>
-        <button class="btn btn-secondary btn-sm btn-icon" @click="fetchZones" :title="t('actions.refresh')">
+        <button class="btn btn-secondary btn-sm btn-icon" @click="() => fetchZones()" :title="t('actions.refresh')">
           <RefreshCw :size="14" :class="{ spinning: loading }" />
         </button>
         <button class="btn btn-primary btn-sm" @click="openCreateModal">
@@ -167,11 +152,11 @@ onMounted(() => {
 
     <DataTable
       :columns="columns"
-      :rows="filteredZones"
+      :rows="zoneList"
       row-key="name"
       :loading="loading"
       :error="loadError"
-      @retry="fetchZones"
+      @retry="() => fetchZones()"
     >
       <template #empty>
         <div v-if="searchQuery">
@@ -226,6 +211,10 @@ onMounted(() => {
             <Trash2 :size="16" />
           </button>
         </div>
+      </template>
+
+      <template #footer>
+        <PaginationBar :page="page" :page-size="pageSize" :total="total" @update:page="page = $event" />
       </template>
     </DataTable>
 

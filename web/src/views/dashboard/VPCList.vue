@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { ref, onMounted, computed, watch } from 'vue'
+import { ref, onMounted, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useToast } from '../../composables/useToast'
 import { useCopyId } from '../../composables/useCopyId'
+import { useListQuery } from '../../composables/useListQuery'
 import { vpcsApi, subnetsApi, type VPC, type SubnetPayload } from '../../api/networks'
 import { useRegionStore } from '../../stores/region'
 import { isValidName } from '../../utils/validation'
@@ -13,14 +14,11 @@ import BaseModal from '../../components/modals/BaseModal.vue'
 import PageToolbar from '../../components/base/PageToolbar.vue'
 import StatusBadge from '../../components/base/StatusBadge.vue'
 import DataTable, { type Column } from '../../components/base/DataTable.vue'
+import PaginationBar from '../../components/base/PaginationBar.vue'
 import { quotaErrorMessage } from '../../utils/quotaError'
 
 const region = useRegionStore()
 
-const vpcs = ref<VPC[]>([])
-const loading = ref(false)
-const loadError = ref('')
-const searchQuery = ref('')
 const createModalVisible = ref(false)
 const creating = ref(false)
 const createError = ref('')
@@ -36,42 +34,32 @@ const isNameValid = computed(() => isValidName(newVPCForm.value.name))
 const { copiedId, copyId } = useCopyId()
 
 
+// 分页后前端排序只能排当前页，会误导用户，所以列头不再可排序
 const columns = computed<Column[]>(() => [
-    { key: 'name', label: t('dashboard.table.nameId'), sortable: true },
-    { key: 'status', label: t('dashboard.table.status'), sortable: true, sortValue: (v) => v.status || 'active' },
-    { key: 'subnets', label: t('dashboard.subnets'), sortable: true, sortValue: (v) => v.subnets?.length || 0 },
+    { key: 'name', label: t('dashboard.table.nameId') },
+    { key: 'status', label: t('dashboard.table.status') },
+    { key: 'subnets', label: t('dashboard.subnets') },
     { key: 'actions', label: t('dashboard.table.actions'), align: 'center' },
 ])
 
-const fetchVPCs = async () => {
-    loading.value = true
-    loadError.value = ''
-    try {
-        const response = await vpcsApi.list()
-        vpcs.value = response.vpcs || (Array.isArray(response) ? response : [])
-    } catch (err: any) {
-        console.error('Failed to fetch VPCs:', err)
-        loadError.value = t('messages.error')
-        vpcs.value = []
-    } finally {
-        loading.value = false
-    }
-}
-
-watch(() => region.currentRegionId, (newId) => {
-    if (newId) {
-        fetchVPCs()
-    }
-})
-
-const filteredVPCs = computed(() => {
-    if (!searchQuery.value) return vpcs.value
-    const query = searchQuery.value.toLowerCase()
-    return vpcs.value.filter(vpc => 
-        vpc.name.toLowerCase().includes(query) || 
-        vpc.id.toLowerCase().includes(query)
-    )
-})
+// 分页与搜索都在服务端做
+const {
+    items: vpcs,
+    total,
+    page,
+    pageSize,
+    loading,
+    error: loadError,
+    search: searchQuery,
+    load: fetchVPCs,
+    reload: reloadVPCs,
+} = useListQuery<VPC>(
+    async ({ offset, limit, query }) => {
+        const response = await vpcsApi.list({ offset, limit, query: query || undefined })
+        return { items: response.vpcs || [], total: response.total ?? 0 }
+    },
+    { watchSources: [computed(() => region.currentRegionId)] }
+)
 
 const openCreateModal = () => {
     newVPCForm.value = { name: '', description: '' }
@@ -98,7 +86,8 @@ const handleCreateVPC = async () => {
     creating.value = true
     try {
         await vpcsApi.create(newVPCForm.value)
-        await fetchVPCs()
+        // 列表按创建时间倒序，新建的在第一页
+        await reloadVPCs()
         closeCreateModal()
         toast.success(t('messages.createSuccess'))
     } catch (err: any) {
@@ -291,7 +280,7 @@ onMounted(() => {
   <div class="vpc-list-container">
     <PageToolbar v-model:search="searchQuery">
       <template #actions>
-        <button class="btn btn-secondary btn-sm btn-icon" @click="fetchVPCs" :title="$t('actions.refresh')">
+        <button class="btn btn-secondary btn-sm btn-icon" @click="() => fetchVPCs()" :title="$t('actions.refresh')">
           <RefreshCw :size="14" :class="{ spinning: loading }" />
         </button>
         <button class="btn btn-primary btn-sm" @click="openCreateModal">
@@ -303,11 +292,11 @@ onMounted(() => {
     <DataTable
       allow-overflow
       :columns="columns"
-      :rows="filteredVPCs"
+      :rows="vpcs"
       row-key="id"
       :loading="loading"
       :error="loadError"
-      @retry="fetchVPCs"
+      @retry="() => fetchVPCs()"
     >
       <template #empty>
         <div v-if="searchQuery">
@@ -402,6 +391,10 @@ onMounted(() => {
             <Trash2 :size="14" />
           </button>
         </div>
+      </template>
+
+      <template #footer>
+        <PaginationBar :page="page" :page-size="pageSize" :total="total" @update:page="page = $event" />
       </template>
     </DataTable>
 

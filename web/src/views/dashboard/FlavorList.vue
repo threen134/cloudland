@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { ref, onMounted, computed, watch } from 'vue'
+import { ref, onMounted, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useToast } from '../../composables/useToast'
 import { useCopyId } from '../../composables/useCopyId'
+import { useListQuery } from '../../composables/useListQuery'
 import { flavorsApi, type Flavor, type FlavorPayload } from '../../api/flavors'
 import { useRegionStore } from '../../stores/region'
 import { isValidName } from '../../utils/validation'
@@ -14,11 +15,8 @@ import BaseModal from '../../components/modals/BaseModal.vue'
 import DeleteModal from '../../components/modals/DeleteModal.vue'
 import PageToolbar from '../../components/base/PageToolbar.vue'
 import DataTable, { type Column } from '../../components/base/DataTable.vue'
+import PaginationBar from '../../components/base/PaginationBar.vue'
 
-const flavors = ref<Flavor[]>([])
-const loading = ref(false)
-const loadError = ref('')
-const searchQuery = ref('')
 const toast = useToast()
 
 const { copiedId, copyId } = useCopyId()
@@ -37,38 +35,33 @@ const { t } = useI18n()
 const isNameValid = computed(() => isValidName(newFlavorForm.value.name))
 
 
-// 列定义。接口返回的字段是 cpu / memory，与列名（cpu / ram）对不上，
-// 所以排序取值要单独给，不能直接按 key 取
+// 分页后排序只能排当前页，会误导用户，所以列上不再提供排序
 const columns = computed<Column[]>(() => [
-    { key: 'name', label: t('dashboard.table.nameId'), sortable: true },
-    { key: 'cpu', label: t('specs.cpu'), sortable: true, sortValue: (f) => f.cpu || 0 },
-    { key: 'ram', label: t('specs.ram'), sortable: true, sortValue: (f) => f.memory || 0 },
-    { key: 'disk', label: t('specs.storage'), sortable: true, sortValue: (f) => f.disk || 0 },
+    { key: 'name', label: t('dashboard.table.nameId') },
+    { key: 'cpu', label: t('specs.cpu') },
+    { key: 'ram', label: t('specs.ram') },
+    { key: 'disk', label: t('specs.storage') },
     { key: 'actions', label: t('dashboard.table.actions'), align: 'center' },
 ])
 
-const fetchFlavors = async () => {
-    loading.value = true
-    loadError.value = ''
-    try {
-        const response = await flavorsApi.fetchFlavors()
-        flavors.value = response.flavors || []
-    } catch (err) {
-        // 原先失败只打日志、把列表清空，用户看到的是"没有数据"
-        console.error('API fetch failed:', err)
-        flavors.value = []
-        loadError.value = t('messages.error')
-    } finally {
-        loading.value = false
-    }
-}
-
-// Re-fetch when region changes
-watch(() => region.currentRegionId, (newId) => {
-    if (newId) {
-        fetchFlavors()
-    }
-})
+// 分页与搜索都在服务端做
+const {
+    items: flavors,
+    total,
+    page,
+    pageSize,
+    loading,
+    error: loadError,
+    search: searchQuery,
+    load: fetchFlavors,
+    reload: reloadFlavors,
+} = useListQuery<Flavor>(
+    async ({ offset, limit, query }) => {
+        const response = await flavorsApi.fetchFlavors({ offset, limit, query: query || undefined })
+        return { items: response.flavors || [], total: response.total ?? 0 }
+    },
+    { watchSources: [computed(() => region.currentRegionId)] }
+)
 
 const openCreateModal = () => {
     newFlavorForm.value = {
@@ -100,7 +93,8 @@ const handleCreateFlavor = async () => {
     creating.value = true
     try {
         await flavorsApi.createFlavor(newFlavorForm.value)
-        await fetchFlavors()
+        // 列表按创建时间倒序，新建的在第一页
+        await reloadFlavors()
         closeCreateModal()
         toast.success(t('messages.createSuccess'))
     } catch (err: any) {
@@ -110,15 +104,6 @@ const handleCreateFlavor = async () => {
         creating.value = false
     }
 }
-
-const filteredFlavors = computed(() => {
-    if (!searchQuery.value) return flavors.value
-    const query = searchQuery.value.toLowerCase()
-    return flavors.value.filter(flavor =>
-        flavor.name.toLowerCase().includes(query) ||
-        (flavor.uuid || '').toLowerCase().includes(query)
-    )
-})
 
 // --- Delete Confirmation Modal ---
 const deleteModalVisible = ref(false)
@@ -176,7 +161,7 @@ onMounted(() => {
   <div>
     <PageToolbar v-model:search="searchQuery">
       <template #actions>
-        <button class="btn btn-secondary btn-sm btn-icon" @click="fetchFlavors" :title="$t('actions.refresh')">
+        <button class="btn btn-secondary btn-sm btn-icon" @click="() => fetchFlavors()" :title="$t('actions.refresh')">
           <RefreshCw :size="14" :class="{ spinning: loading }" />
         </button>
         <button class="btn btn-primary btn-sm" @click="openCreateModal">
@@ -187,11 +172,11 @@ onMounted(() => {
 
     <DataTable
       :columns="columns"
-      :rows="filteredFlavors"
+      :rows="flavors"
       :row-key="(flavor: any) => flavor.uuid || flavor.name"
       :loading="loading"
       :error="loadError"
-      @retry="fetchFlavors"
+      @retry="() => fetchFlavors()"
     >
       <template #empty>
         <div v-if="searchQuery">
@@ -251,6 +236,10 @@ onMounted(() => {
             <Trash2 :size="14" />
           </button>
         </div>
+      </template>
+
+      <template #footer>
+        <PaginationBar :page="page" :page-size="pageSize" :total="total" @update:page="page = $event" />
       </template>
     </DataTable>
 

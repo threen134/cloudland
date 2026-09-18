@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { ref, onMounted, computed, watch } from 'vue'
+import { ref, onMounted, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useToast } from '../../composables/useToast'
 import { useCopyId } from '../../composables/useCopyId'
+import { useListQuery } from '../../composables/useListQuery'
 import { volumesApi, type Volume } from '../../api/volumes'
 import { useRegionStore } from '../../stores/region'
 import { isValidName } from '../../utils/validation'
@@ -14,13 +15,10 @@ import DeleteModal from '../../components/modals/DeleteModal.vue'
 import PageToolbar from '../../components/base/PageToolbar.vue'
 import StatusBadge from '../../components/base/StatusBadge.vue'
 import DataTable, { type Column } from '../../components/base/DataTable.vue'
+import PaginationBar from '../../components/base/PaginationBar.vue'
 
 const region = useRegionStore()
 
-const volumes = ref<Volume[]>([])
-const loading = ref(false)
-const loadError = ref('')
-const searchQuery = ref('')
 const createModalVisible = ref(false)
 const creating = ref(false)
 const createError = ref('')
@@ -37,50 +35,36 @@ const isNameValid = computed(() => isValidName(newVolumeForm.value.name))
 
 const { copiedId, copyId } = useCopyId()
 
+// 分页后排序只能排当前页，会误导用户，所以列上不再提供排序
 const columns = computed<Column[]>(() => [
-    { key: 'name', label: t('dashboard.table.nameId'), sortable: true },
-    { key: 'status', label: t('dashboard.table.status'), sortable: true },
-    { key: 'size', label: t('dashboard.table.size'), sortable: true },
-    { key: 'boot', label: t('dashboard.table.boot'), sortable: true, sortValue: (v) => (v.booting ? 0 : 1) },
-    { key: 'format', label: t('dashboard.table.format'), sortable: true },
-    { key: 'attachedTo', label: t('dashboard.table.attachedTo'), sortable: true, sortValue: (v) => v.instance?.name ?? null },
+    { key: 'name', label: t('dashboard.table.nameId') },
+    { key: 'status', label: t('dashboard.table.status') },
+    { key: 'size', label: t('dashboard.table.size') },
+    { key: 'boot', label: t('dashboard.table.boot') },
+    { key: 'format', label: t('dashboard.table.format') },
+    { key: 'attachedTo', label: t('dashboard.table.attachedTo') },
     { key: 'actions', label: t('dashboard.table.actions'), align: 'center' },
 ])
 
-const fetchVolumes = async () => {
-
-    loading.value = true
-    loadError.value = ''
-    try {
+// 分页与搜索都在服务端做（卷列表的搜索参数是 name，不是通用的 query）
+const {
+    items: volumes,
+    total,
+    page,
+    pageSize,
+    loading,
+    error: loadError,
+    search: searchQuery,
+    load: fetchVolumes,
+    reload: reloadVolumes,
+} = useListQuery<Volume>(
+    async ({ offset, limit, query }) => {
         // 列表页有「启动盘」一列，系统盘与数据盘都要显示
-        const response = await volumesApi.list({ type: 'all' })
-        volumes.value = response.volumes || (Array.isArray(response) ? response : [])
-    } catch (err: any) {
-        console.error('Failed to fetch volumes:', err)
-        loadError.value = t('messages.error')
-        volumes.value = []
-    } finally {
-        loading.value = false
-    }
-}
-
-// Re-fetch when region changes
-watch(() => region.currentRegionId, (newId) => {
-    if (newId) {
-        fetchVolumes()
-    }
-})
-
-const filteredVolumes = computed(() => {
-    if (!searchQuery.value) return volumes.value
-    const query = searchQuery.value.toLowerCase()
-    return volumes.value.filter(vol => {
-        const nameMatch = (vol.name?.toLowerCase() || '').includes(query)
-        const idMatch = (vol.id?.toLowerCase() || '').includes(query)
-        const instanceMatch = (vol.instance?.name?.toLowerCase() || '').includes(query)
-        return nameMatch || idMatch || instanceMatch
-    })
-})
+        const response = await volumesApi.list({ offset, limit, type: 'all', name: query || undefined })
+        return { items: response.volumes || [], total: response.total ?? 0 }
+    },
+    { watchSources: [computed(() => region.currentRegionId)] }
+)
 
 const getStatusText = (status: string) => {
     const key = status?.toLowerCase().replace(/ /g, '_')
@@ -114,7 +98,8 @@ const handleCreateVolume = async () => {
     creating.value = true
     try {
         await volumesApi.create(newVolumeForm.value)
-        await fetchVolumes()
+        // 列表按创建时间倒序，新建的在第一页
+        await reloadVolumes()
         closeCreateModal()
         toast.success(t('messages.createSuccess'))
     } catch (err: any) {
@@ -170,7 +155,7 @@ onMounted(() => {
   <div>
     <PageToolbar v-model:search="searchQuery">
       <template #actions>
-        <button class="btn btn-secondary btn-sm btn-icon" @click="fetchVolumes" :title="$t('actions.refresh')">
+        <button class="btn btn-secondary btn-sm btn-icon" @click="() => fetchVolumes()" :title="$t('actions.refresh')">
           <RefreshCw :size="14" :class="{ spinning: loading }" />
         </button>
         <button class="btn btn-primary btn-sm" @click="openCreateModal">
@@ -181,11 +166,11 @@ onMounted(() => {
 
     <DataTable
       :columns="columns"
-      :rows="filteredVolumes"
+      :rows="volumes"
       row-key="id"
       :loading="loading"
       :error="loadError"
-      @retry="fetchVolumes"
+      @retry="() => fetchVolumes()"
     >
       <template #empty>
         <div v-if="searchQuery">
@@ -216,6 +201,10 @@ onMounted(() => {
             </div>
           </div>
         </router-link>
+      </template>
+
+      <template #footer>
+        <PaginationBar :page="page" :page-size="pageSize" :total="total" @update:page="page = $event" />
       </template>
 
       <template #cell-status="{ row: volume }">

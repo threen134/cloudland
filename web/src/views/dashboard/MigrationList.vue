@@ -6,6 +6,7 @@ import { hypervisorsApi, type Hypervisor, type HyperListResponse } from '../../a
 import { Search as SearchIcon, ArrowRightLeft, Plus, RefreshCw, Check, Copy } from 'lucide-vue-next'
 import { useToast } from '../../composables/useToast'
 import { useCopyId } from '../../composables/useCopyId'
+import { useListQuery } from '../../composables/useListQuery'
 import { useI18n } from 'vue-i18n'
 import { useRegionStore } from '../../stores/region'
 import { formatDateTime } from '../../utils/format'
@@ -13,16 +14,32 @@ import BaseModal from '../../components/modals/BaseModal.vue'
 import PageToolbar from '../../components/base/PageToolbar.vue'
 import StatusBadge from '../../components/base/StatusBadge.vue'
 import DataTable, { type Column } from '../../components/base/DataTable.vue'
+import PaginationBar from '../../components/base/PaginationBar.vue'
 
 const { t, te } = useI18n()
 const region = useRegionStore()
 const toast = useToast()
-const migrationList = ref<Migration[]>([])
-const loading = ref(false)
-const loadError = ref('')
 
 const { copiedId, copyId } = useCopyId()
-const searchQuery = ref('')
+
+// 分页与搜索都在服务端做
+const {
+    items: migrationList,
+    total,
+    page,
+    pageSize,
+    loading,
+    error: loadError,
+    search: searchQuery,
+    load: fetchMigrations,
+    reload: reloadMigrations,
+} = useListQuery<Migration>(
+    async ({ offset, limit, query }) => {
+        const response = await migrationsApi.fetchMigrations({ offset, limit, query: query || undefined })
+        return { items: response.migrations || [], total: response.total ?? 0 }
+    },
+    { watchSources: [computed(() => region.currentRegionId)] }
+)
 
 // Create Migration State
 const createModalVisible = ref(false)
@@ -69,46 +86,19 @@ watch(instanceHyperFilter, () => {
     }
 })
 
-// 有迁移进行中时每 5 秒自动刷新，展示进度
+// 有迁移进行中时每 5 秒自动刷新，展示进度。
+// 取数交给 useListQuery 之后没有 finally 可以挂，改成每次列表更新（每次加载都会
+// 重新赋值）后重新排期，切换区域、翻页、搜索之后同样能接上
 let refreshTimer: ReturnType<typeof setTimeout> | null = null
 const hasActiveMigration = computed(() =>
     migrationList.value.some(m => MIGRATION_ACTIVE_STATUSES.includes((m.status || '').toLowerCase()))
 )
 
-const fetchMigrations = async (silent = false) => {
-    if (!silent) {
-        loading.value = true
-        loadError.value = ''
-    }
-    try {
-        const data = await migrationsApi.fetchMigrations() as any
-        migrationList.value = Array.isArray(data) ? data : (data.migrations || [])
-    } catch (error) {
-        console.error('API fetch failed:', error)
-        if (!silent) {
-            migrationList.value = []
-            loadError.value = t('messages.error')
-        }
-    } finally {
-        loading.value = false
-        if (refreshTimer) clearTimeout(refreshTimer)
-        if (hasActiveMigration.value) refreshTimer = setTimeout(() => fetchMigrations(true), 5000)
-    }
-}
-
-const filteredMigrations = computed(() => {
-    if (!searchQuery.value) return migrationList.value
-    const query = searchQuery.value.toLowerCase()
-    return migrationList.value.filter(m =>
-        (m.instance?.id && m.instance.id.toLowerCase().includes(query)) ||
-        (m.instance?.hostname && m.instance.hostname.toLowerCase().includes(query)) ||
-        (m.id && m.id.toString().includes(query)) ||
-        (m.name && m.name.toLowerCase().includes(query)) ||
-        String(m.source_hyper).includes(query) ||
-        String(m.target_hyper).includes(query) ||
-        (m.source_hyper_name || '').toLowerCase().includes(query) ||
-        (m.target_hyper_name || '').toLowerCase().includes(query)
-    )
+watch(migrationList, () => {
+    if (refreshTimer) clearTimeout(refreshTimer)
+    // 静默刷新：不显示加载态，失败时保留列表（后台每 5 秒一次，一次网络抖动
+    // 不该把用户正在看的迁移列表清空）
+    if (hasActiveMigration.value) refreshTimer = setTimeout(() => fetchMigrations(true), 5000)
 })
 
 // 缺键时 t() 返回键路径本身，必须用 te() 判断后再回退到原始状态串。
@@ -140,17 +130,17 @@ const getTypeText = (type: string) => {
     return te(key) ? t(key) : type
 }
 
-// 类型、状态、节点这几列显示的都是翻译后 / 解析后的文案，排序按原始值
+// 分页后排序只能排当前页，会误导用户，所以列上不再提供排序
 const columns = computed<Column[]>(() => [
-    { key: 'name', label: t('dashboard.table.nameId'), sortable: true, sortValue: (m) => m.id },
-    { key: 'instance', label: t('dashboard.table.instanceId'), sortable: true, sortValue: (m) => m.instance?.hostname || m.instance?.id || '' },
-    { key: 'type', label: t('dashboard.table.type'), sortable: true, sortValue: (m) => m.type || '' },
-    { key: 'sourceNode', label: t('dashboard.table.sourceNode'), sortable: true, sortValue: (m) => m.source_hyper_name || String(m.source_hyper ?? '') },
-    { key: 'destNode', label: t('dashboard.table.destNode'), sortable: true, sortValue: (m) => m.target_hyper_name || String(m.target_hyper ?? '') },
-    { key: 'status', label: t('dashboard.table.status'), sortable: true, sortValue: (m) => m.status || '' },
+    { key: 'name', label: t('dashboard.table.nameId') },
+    { key: 'instance', label: t('dashboard.table.instanceId') },
+    { key: 'type', label: t('dashboard.table.type') },
+    { key: 'sourceNode', label: t('dashboard.table.sourceNode') },
+    { key: 'destNode', label: t('dashboard.table.destNode') },
+    { key: 'status', label: t('dashboard.table.status') },
     { key: 'progress', label: t('dashboard.migrationDetail.progressShort') },
-    { key: 'creator', label: t('dashboard.table.creator'), sortable: true, sortValue: (m) => m.creater_name || '' },
-    { key: 'createdAt', label: t('dashboard.table.createdAt'), sortable: true, sortValue: (m) => m.created_at || '' },
+    { key: 'creator', label: t('dashboard.table.creator') },
+    { key: 'createdAt', label: t('dashboard.table.createdAt') },
 ])
 
 // Create Modal Logic
@@ -211,7 +201,8 @@ const handleCreateMigration = async () => {
         }
 
         await migrationsApi.createMigration(payload)
-        await fetchMigrations()
+        // 列表按创建时间倒序，新建的在第一页
+        await reloadMigrations()
         closeCreateModal()
         toast.success(t('messages.createSuccess'))
     } catch (err: any) {
@@ -231,20 +222,13 @@ onMounted(() => {
 onUnmounted(() => {
     if (refreshTimer) clearTimeout(refreshTimer)
 })
-
-// Re-fetch when region changes
-watch(() => region.currentRegionId, (newId) => {
-    if (newId) {
-        fetchMigrations()
-    }
-})
 </script>
 
 <template>
   <div class="vpc-list-container">
     <PageToolbar v-model:search="searchQuery">
       <template #actions>
-        <button class="btn btn-secondary btn-sm btn-icon" @click="fetchMigrations" :title="$t('actions.refresh')">
+        <button class="btn btn-secondary btn-sm btn-icon" @click="() => fetchMigrations()" :title="$t('actions.refresh')">
           <RefreshCw :size="14" :class="{ spinning: loading }" />
         </button>
         <button class="btn btn-primary btn-sm" @click="openCreateModal">
@@ -255,7 +239,7 @@ watch(() => region.currentRegionId, (newId) => {
 
     <DataTable
       :columns="columns"
-      :rows="filteredMigrations"
+      :rows="migrationList"
       row-key="id"
       :loading="loading"
       :error="loadError"
@@ -320,6 +304,10 @@ watch(() => region.currentRegionId, (newId) => {
 
       <template #cell-creator="{ row: m }">{{ m.creater_name || '-' }}</template>
       <template #cell-createdAt="{ row: m }"><span class="mono-value">{{ formatDateTime(m.created_at) }}</span></template>
+
+      <template #footer>
+        <PaginationBar :page="page" :page-size="pageSize" :total="total" @update:page="page = $event" />
+      </template>
     </DataTable>
 
     <!-- Create Migration Modal -->

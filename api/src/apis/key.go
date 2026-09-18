@@ -158,6 +158,7 @@ func (v *KeyAPI) List(c *gin.Context) {
 	ctx := c.Request.Context()
 	offsetStr := c.DefaultQuery("offset", "0")
 	limitStr := c.DefaultQuery("limit", "50")
+	queryStr := c.DefaultQuery("query", "")
 	offset, err := strconv.Atoi(offsetStr)
 	if err != nil {
 		ErrorResponse(c, http.StatusBadRequest, "Invalid query offset: "+offsetStr, err)
@@ -172,7 +173,7 @@ func (v *KeyAPI) List(c *gin.Context) {
 		ErrorResponse(c, http.StatusBadRequest, "Invalid query offset or limit", err)
 		return
 	}
-	total, keys, err := keyAdmin.List(ctx, int64(offset), int64(limit), "-created_at", "")
+	total, keys, err := keyAdmin.List(ctx, int64(offset), int64(limit), "-created_at", queryStr)
 	if err != nil {
 		ErrorResponse(c, http.StatusBadRequest, "Failed to list vpcs", err)
 		return

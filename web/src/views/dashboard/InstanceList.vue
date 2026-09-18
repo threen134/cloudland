@@ -4,6 +4,7 @@ import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { useToast } from '../../composables/useToast'
 import { useCopyId } from '../../composables/useCopyId'
+import { useListQuery } from '../../composables/useListQuery'
 import { instancesApi, type Instance } from '../../api/instances'
 import { Play, Square, RotateCw, Trash2, Plus, Terminal, MoreVertical, Search, Check, Copy, Monitor, ChevronDown, ChevronUp, PlusCircle, MinusCircle, RefreshCw, Eye, EyeOff, Shuffle, Pencil, KeyRound, Maximize2, Server, Activity, Network, Globe, HelpCircle } from 'lucide-vue-next'
 
@@ -20,6 +21,7 @@ import BaseModal from '../../components/modals/BaseModal.vue'
 import PageToolbar from '../../components/base/PageToolbar.vue'
 import StatusBadge from '../../components/base/StatusBadge.vue'
 import DataTable, { type Column } from '../../components/base/DataTable.vue'
+import PaginationBar from '../../components/base/PaginationBar.vue'
 import { useRegionStore } from '../../stores/region'
 import { useAuthStore } from '../../stores/auth'
 import { quotaErrorMessage } from '../../utils/quotaError'
@@ -45,11 +47,7 @@ const vClickOutside = {
   }
 }
 
-const instanceList = ref<Instance[]>([])
-const loading = ref(false)
-const loadError = ref('')
 const actionLoading = ref<Record<string, string | null>>({})
-const searchQuery = ref('')
 
 const ifaceTooltipVisible = ref(false)
 const ifaceTooltipPos = ref({ bottom: '0px', right: '0px' })
@@ -79,7 +77,7 @@ const statusPollTimers = new Set<ReturnType<typeof setTimeout>>()
 let unmounted = false
 
 const fetchUsageMetrics = async () => {
-    const ids = filteredInstances.value
+    const ids = instances.value
         .filter(inst => ['running', 'active'].includes(inst.status?.toLowerCase()))
         .map(inst => inst.id)
     if (!ids.length) return
@@ -122,54 +120,48 @@ const fetchUsageMetrics = async () => {
     }
 }
 
-const fetchInstances = async (showLoading: boolean = true) => {
-    if (showLoading) loading.value = true
-    loadError.value = ''
-    try {
-        const response = await instancesApi.fetchInstances()
-        const data = response as any
-        instanceList.value = Array.isArray(data) ? data : (data.instances || [])
-        
-        // Start fetching metrics after full list is loaded
+// 分页与搜索都在服务端做
+const {
+    items: instances,
+    total,
+    page,
+    pageSize,
+    loading,
+    error: loadError,
+    search: searchQuery,
+    load: loadInstances,
+    reload: reloadInstances,
+} = useListQuery<Instance>(
+    async ({ offset, limit, query }) => {
+        const response = await instancesApi.fetchInstances({ offset, limit, query: query || undefined })
+        // 列表落地后再取指标（本页的虚拟机）
         setTimeout(fetchUsageMetrics, 500)
-    } catch (error) {
-        // 原先失败只打日志、把列表清空，用户看到的是"没有数据"
-        console.error('API fetch failed:', error)
-        instanceList.value = []
-        loadError.value = t('messages.error')
+        return { items: response.instances || [], total: response.total ?? 0 }
+    },
+    { watchSources: [computed(() => region.currentRegionId)] }
+)
+
+// 电源操作后的状态轮询、改名等场景要静默刷新：表格和刷新按钮都不进入 loading 态，
+// 否则每 3 秒闪一次。fetchInstances(false) 的语义与改造前一致
+const silentRefresh = ref(false)
+const tableLoading = computed(() => loading.value && !silentRefresh.value)
+
+const fetchInstances = async (showLoading: boolean = true) => {
+    silentRefresh.value = !showLoading
+    try {
+        await loadInstances()
     } finally {
-        if (showLoading) loading.value = false
+        silentRefresh.value = false
     }
 }
 
-const filteredInstances = computed(() => {
-    if (!searchQuery.value) return instanceList.value
-    const query = searchQuery.value.toLowerCase()
-    return instanceList.value.filter(inst => {
-        const nameMatch = (inst.name?.toLowerCase() || '').includes(query)
-        const hostnameMatch = (inst.hostname?.toLowerCase() || '').includes(query)
-        const idMatch = (inst.id?.toLowerCase() || '').includes(query)
-        const ipMatch = (inst.ip_address?.toLowerCase() || '').includes(query)
-        const interfaceIpMatch = inst.interfaces?.some(iface => (iface.ip_address?.toLowerCase() || '').includes(query))
-        const fipMatch = inst.interfaces?.some(iface => iface.floating_ips?.some((fip: any) => 
-            fip.type?.toLowerCase() !== 'native' && (fip.fip_address?.toLowerCase() || '').includes(query)
-        ))
-        
-        const vpcMatch = (inst.vpc?.name?.toLowerCase() || '').includes(query)
-        const imageMatch = (inst.image?.name?.toLowerCase() || '').includes(query)
-        
-        return nameMatch || hostnameMatch || idMatch || ipMatch || interfaceIpMatch || fipMatch || vpcMatch || imageMatch
-    })
-})
-
-// 列定义。IP（一行多个）和资源占用（30 秒刷新的实时值）不排序；状态列显示的是翻译过的
-// 文案，排序按原始状态串；规格列显示 "核数 / 内存"，按核数排
+// 列定义。分页后前端排序只能排当前页，会误导用户，所以列头一律不可排序
 const columns = computed<Column[]>(() => [
-    { key: 'name', label: t('dashboard.table.nameId'), sortable: true, sortValue: (i) => i.hostname || '' },
-    { key: 'flavor', label: t('dashboard.table.flavor'), sortable: true, sortValue: (i) => i.cpu || 0 },
-    { key: 'image', label: t('dashboard.table.image'), sortable: true, sortValue: (i) => i.image?.name || '' },
+    { key: 'name', label: t('dashboard.table.nameId') },
+    { key: 'flavor', label: t('dashboard.table.flavor') },
+    { key: 'image', label: t('dashboard.table.image') },
     { key: 'ip', label: t('dashboard.table.ipAddress') },
-    { key: 'status', label: t('dashboard.table.status'), sortable: true, sortValue: (i) => i.status || '' },
+    { key: 'status', label: t('dashboard.table.status') },
     { key: 'usage', label: t('dashboard.overview.resourceUsage') },
     { key: 'actions', label: t('dashboard.table.actions'), align: 'center' },
 ])
@@ -242,7 +234,7 @@ const handleAction = async (instance: Instance, action: 'start' | 'stop' | 'rest
             attempts++
             await fetchInstances(false)
             if (unmounted) return
-            const currentInstance = instanceList.value.find(i => i.id === instance.id)
+            const currentInstance = instances.value.find(i => i.id === instance.id)
             const currentStatus = currentInstance?.status?.toLowerCase() || ''
             if (!currentInstance || targetStableStates.includes(currentStatus) || attempts >= 15) {
                 actionLoading.value[instance.id] = null
@@ -921,7 +913,8 @@ const handleCreateInstance = async () => {
         }
 
         await instancesApi.createInstance(payload)
-        await fetchInstances()
+        // 列表按创建时间倒序，新建的在第一页
+        await reloadInstances()
         closeCreateModal()
         toast.success(t('dashboard.instanceDetail.actionSuccess', { action: t('dashboard.buttons.createInstance') }))
     } catch (err: any) {
@@ -942,10 +935,9 @@ onMounted(() => {
     }
 })
 
-// Re-fetch when region changes
+// 列表本身由 useListQuery 的 watchSources 在切换区域时重载，这里只重置指标定时器
 watch(() => region.currentRegionId, (newId) => {
     if (newId) {
-        fetchInstances()
         if (metricsTimer) clearInterval(metricsTimer)
         metricsTimer = setInterval(fetchUsageMetrics, 30000)
     }
@@ -967,7 +959,7 @@ onUnmounted(() => {
     <PageToolbar v-model:search="searchQuery">
       <template #actions>
         <button class="btn btn-secondary btn-sm btn-icon" @click="fetchInstances()" :title="t('dashboard.regions')">
-          <RefreshCw :size="14" :class="{ spinning: loading }" />
+          <RefreshCw :size="14" :class="{ spinning: tableLoading }" />
         </button>
         <button class="btn btn-primary btn-sm" @click="openCreateModal">
           <Plus :size="14" /> {{ t('dashboard.buttons.createInstance') }}
@@ -978,9 +970,9 @@ onUnmounted(() => {
     <DataTable
       allow-overflow
       :columns="columns"
-      :rows="filteredInstances"
+      :rows="instances"
       row-key="id"
-      :loading="loading"
+      :loading="tableLoading"
       :error="loadError"
       @retry="fetchInstances()"
     >
@@ -1198,6 +1190,10 @@ onUnmounted(() => {
                     </Transition>
                  </div>
               </div>
+      </template>
+
+      <template #footer>
+        <PaginationBar :page="page" :page-size="pageSize" :total="total" @update:page="page = $event" />
       </template>
     </DataTable>
 

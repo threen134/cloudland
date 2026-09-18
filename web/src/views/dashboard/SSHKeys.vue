@@ -3,6 +3,7 @@ import { ref, onMounted, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useToast } from '../../composables/useToast'
 import { useCopyId } from '../../composables/useCopyId'
+import { useListQuery } from '../../composables/useListQuery'
 import { keysApi, type SSHKey } from '../../api/keys'
 import { isValidName } from '../../utils/validation'
 
@@ -11,13 +12,10 @@ import PageToolbar from '../../components/base/PageToolbar.vue'
 import BaseModal from '../../components/modals/BaseModal.vue'
 import DeleteModal from '../../components/modals/DeleteModal.vue'
 import DataTable, { type Column } from '../../components/base/DataTable.vue'
+import PaginationBar from '../../components/base/PaginationBar.vue'
 
-const keys = ref<SSHKey[]>([])
-const loading = ref(false)
-const loadError = ref('')
 const copiedFingerprintId = ref<string | null>(null)
 const { copiedId, copyId } = useCopyId()
-const searchQuery = ref('')
 const createModalVisible = ref(false)
 const creating = ref(false)
 const createError = ref('')
@@ -33,37 +31,28 @@ const isNameValid = computed(() => isValidName(newKeyForm.value.name))
 
 // const router = useRouter()
 
-// 密钥类型取自公钥的第一段（ssh-rsa / ssh-ed25519 …），和显示值一致，排序单独给取值
+// 分页后排序只能排当前页，会误导用户，所以列上不再提供排序
 const columns = computed<Column[]>(() => [
-    { key: 'name', label: t('dashboard.table.nameId'), sortable: true },
-    { key: 'type', label: t('dashboard.table.type'), sortable: true, sortValue: (k) => k.public_key?.split(' ')[0] || 'ssh-rsa' },
-    { key: 'fingerprint', label: t('dashboard.table.fingerprint'), sortable: true, sortValue: (k) => k.finger_print || '' },
+    { key: 'name', label: t('dashboard.table.nameId') },
+    { key: 'type', label: t('dashboard.table.type') },
+    { key: 'fingerprint', label: t('dashboard.table.fingerprint') },
     { key: 'actions', label: t('dashboard.table.actions'), align: 'center' },
 ])
 
-const fetchKeys = async () => {
-    loading.value = true
-    loadError.value = ''
-    try {
-        const response = await keysApi.fetchKeys()
-        keys.value = (response as any).keys || []
-    } catch (err) {
-        console.error('API fetch failed:', err)
-        keys.value = []
-        loadError.value = t('messages.error')
-    } finally {
-        loading.value = false
-    }
-}
-
-const filteredKeys = computed(() => {
-    if (!searchQuery.value) return keys.value
-    const query = searchQuery.value.toLowerCase()
-    return keys.value.filter(key => 
-        (key.name?.toLowerCase() || '').includes(query) || 
-        (key.finger_print?.toLowerCase() || '').includes(query) ||
-        (key.id?.toLowerCase() || '').includes(query)
-    )
+// 分页与搜索都在服务端做
+const {
+    items: keys,
+    total,
+    page,
+    pageSize,
+    loading,
+    error: loadError,
+    search: searchQuery,
+    load: fetchKeys,
+    reload: reloadKeys,
+} = useListQuery<SSHKey>(async ({ offset, limit, query }) => {
+    const response = await keysApi.fetchKeys({ offset, limit, query: query || undefined })
+    return { items: response.keys || [], total: response.total ?? 0 }
 })
 
 
@@ -103,7 +92,8 @@ const handleCreateKey = async () => {
     creating.value = true
     try {
         await keysApi.createKey(newKeyForm.value)
-        await fetchKeys()
+        // 列表按创建时间倒序，新建的在第一页
+        await reloadKeys()
         closeCreateModal()
         toast.success(t('messages.createSuccess'))
     } catch (err: any) {
@@ -157,7 +147,7 @@ onMounted(fetchKeys)
   <div>
     <PageToolbar v-model:search="searchQuery">
       <template #actions>
-        <button class="btn btn-secondary btn-sm btn-icon" @click="fetchKeys" :title="$t('actions.refresh')">
+        <button class="btn btn-secondary btn-sm btn-icon" @click="() => fetchKeys()" :title="$t('actions.refresh')">
           <RefreshCw :size="14" :class="{ spinning: loading }" />
         </button>
         <button class="btn btn-primary btn-sm" @click="openCreateModal">
@@ -168,11 +158,11 @@ onMounted(fetchKeys)
 
     <DataTable
       :columns="columns"
-      :rows="filteredKeys"
+      :rows="keys"
       row-key="id"
       :loading="loading"
       :error="loadError"
-      @retry="fetchKeys"
+      @retry="() => fetchKeys()"
     >
       <template #empty>
         <div v-if="searchQuery">
@@ -228,6 +218,10 @@ onMounted(fetchKeys)
         <button class="btn btn-ghost btn-sm text-error" :title="$t('actions.delete')" @click="handleDeleteClick(key as any)">
           <Trash2 :size="14" />
         </button>
+      </template>
+
+      <template #footer>
+        <PaginationBar :page="page" :page-size="pageSize" :total="total" @update:page="page = $event" />
       </template>
     </DataTable>
 

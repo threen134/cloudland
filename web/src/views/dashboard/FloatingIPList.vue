@@ -4,6 +4,7 @@ import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import { useToast } from '../../composables/useToast'
 import { useCopyId } from '../../composables/useCopyId'
+import { useListQuery } from '../../composables/useListQuery'
 import { floatingIpsApi, subnetsApi, type FloatingIP, type FloatingIPPayload, type Subnet } from '../../api/networks'
 import { instancesApi, type Instance } from '../../api/instances'
 import { Globe2, Plus, Link, Unlink, Trash2, Search, RefreshCw, Check, Copy, ChevronDown, ChevronUp } from 'lucide-vue-next'
@@ -12,6 +13,7 @@ import BaseModal from '../../components/modals/BaseModal.vue'
 import DeleteModal from '../../components/modals/DeleteModal.vue'
 import PageToolbar from '../../components/base/PageToolbar.vue'
 import DataTable, { type Column } from '../../components/base/DataTable.vue'
+import PaginationBar from '../../components/base/PaginationBar.vue'
 import { useRegionStore } from '../../stores/region'
 import { quotaErrorMessage } from '../../utils/quotaError'
 
@@ -23,10 +25,6 @@ const { getTypeBadgeClass, getTypeLabel } = useFloatingIP()
 const router = useRouter()
 
 const { copiedId, copyId } = useCopyId()
-const floatingIps = ref<FloatingIP[]>([])
-const loading = ref(false)
-const loadError = ref('')
-const searchQuery = ref('')
 const createModalVisible = ref(false)
 const creating = ref(false)
 const createError = ref('')
@@ -62,35 +60,45 @@ const fetchSubnetAddresses = async (subnetId: string) => {
     }
 }
 
+// 分页后前端排序只能排当前页，会误导用户，所以列头不再可排序
 const columns = computed<Column[]>(() => [
-    { key: 'name', label: t('dashboard.table.userName'), sortable: true, sortValue: (fip) => fip.name || '' },
-    { key: 'ip', label: t('dashboard.table.ipAddress'), sortable: true, sortValue: (fip) => fip.public_ip || fip.ip_address || '' },
-    { key: 'type', label: t('dashboard.table.type'), sortable: true },
-    { key: 'attachedTo', label: t('dashboard.table.attachedTo'), sortable: true, sortValue: (fip) => fip.target_interface?.from_instance?.hostname ?? null },
+    { key: 'name', label: t('dashboard.table.userName') },
+    { key: 'ip', label: t('dashboard.table.ipAddress') },
+    { key: 'type', label: t('dashboard.table.type') },
+    { key: 'attachedTo', label: t('dashboard.table.attachedTo') },
     { key: 'actions', label: t('dashboard.table.actions'), align: 'center' },
 ])
 
-const fetchFloatingIPs = async () => {
-    loading.value = true
-    loadError.value = ''
-    try {
-        const [ipResponse, subnetsResponse] = await Promise.all([
-            floatingIpsApi.list(),
-            subnetsApi.list()
-        ])
-        floatingIps.value = ipResponse.floating_ips || []
+// 分页与搜索都在服务端做
+const {
+    items: floatingIps,
+    total,
+    page,
+    pageSize,
+    loading,
+    error: loadError,
+    search: searchQuery,
+    load: fetchFloatingIPs,
+    reload: reloadFloatingIPs,
+} = useListQuery<FloatingIP>(
+    async ({ offset, limit, query }) => {
+        const response = await floatingIpsApi.list({ offset, limit, query: query || undefined })
+        return { items: response.floating_ips || [], total: response.total ?? 0 }
+    },
+    { watchSources: [computed(() => region.currentRegionId)] }
+)
 
+// 新建弹窗里的子网下拉；原先随列表一起拉，分页后改为挂载时和打开弹窗时各拉一次
+const fetchSubnetOptions = async () => {
+    try {
+        const subnetsResponse = await subnetsApi.list()
         const allSubnets = subnetsResponse.subnets || []
         siteSubnets.value = allSubnets.filter(s => s.type === 'site')
         publicSubnets.value = allSubnets.filter(s => s.type === 'public')
     } catch (err) {
-        console.error('API fetch failed:', err)
-        floatingIps.value = []
+        console.error('Failed to fetch subnets:', err)
         siteSubnets.value = []
         publicSubnets.value = []
-        loadError.value = t('messages.error')
-    } finally {
-        loading.value = false
     }
 }
 
@@ -122,6 +130,7 @@ const openCreateModal = () => {
     createError.value = ''
     createModalVisible.value = true
     fetchInstances()
+    fetchSubnetOptions()
 }
 
 const closeCreateModal = () => {
@@ -173,8 +182,8 @@ const handleCreateIP = async () => {
 
         await floatingIpsApi.create(payload)
 
-        const response = await floatingIpsApi.list()
-        floatingIps.value = response.floating_ips || []
+        // 列表按创建时间倒序，新建的在第一页
+        await reloadFloatingIPs()
 
         closeCreateModal()
         toast.success(t('messages.createSuccess'))
@@ -185,17 +194,6 @@ const handleCreateIP = async () => {
         creating.value = false
     }
 }
-
-const filteredFloatingIPs = computed(() => {
-    if (!searchQuery.value) return floatingIps.value
-    const query = searchQuery.value.toLowerCase()
-    return floatingIps.value.filter(fip => 
-        (fip.name?.toLowerCase() || '').includes(query) ||
-        (fip.public_ip || fip.ip_address || '').toLowerCase().includes(query) || 
-        (fip.id?.toLowerCase() || '').includes(query)
-    )
-})
-
 
 const navigateToInstance = (instanceId: string) => {
     router.push({ name: 'instance-detail', params: { id: instanceId } })
@@ -312,13 +310,7 @@ const confirmDetach = async () => {
 onMounted(() => {
     if (region.currentRegionId) {
         fetchFloatingIPs()
-    }
-})
-
-// Re-fetch when region changes
-watch(() => region.currentRegionId, (newId) => {
-    if (newId) {
-        fetchFloatingIPs()
+        fetchSubnetOptions()
     }
 })
 
@@ -341,7 +333,7 @@ watch(() => newFipForm.value.selectedPublicSubnetId, (newId) => {
   <div>
     <PageToolbar v-model:search="searchQuery">
       <template #actions>
-        <button class="btn btn-secondary btn-sm btn-icon" @click="fetchFloatingIPs" :title="$t('actions.refresh')">
+        <button class="btn btn-secondary btn-sm btn-icon" @click="() => fetchFloatingIPs()" :title="$t('actions.refresh')">
           <RefreshCw :size="14" :class="{ spinning: loading }" />
         </button>
         <button class="btn btn-primary btn-sm" @click="openCreateModal">
@@ -352,11 +344,11 @@ watch(() => newFipForm.value.selectedPublicSubnetId, (newId) => {
 
     <DataTable
       :columns="columns"
-      :rows="filteredFloatingIPs"
+      :rows="floatingIps"
       row-key="id"
       :loading="loading"
       :error="loadError"
-      @retry="fetchFloatingIPs"
+      @retry="() => fetchFloatingIPs()"
     >
       <template #empty>
         <div v-if="searchQuery">
@@ -428,6 +420,10 @@ watch(() => newFipForm.value.selectedPublicSubnetId, (newId) => {
             <Trash2 :size="14" />
           </button>
         </div>
+      </template>
+
+      <template #footer>
+        <PaginationBar :page="page" :page-size="pageSize" :total="total" @update:page="page = $event" />
       </template>
     </DataTable>
 

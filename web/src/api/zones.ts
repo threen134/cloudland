@@ -31,8 +31,9 @@ export interface UpdateZonePayload {
 }
 
 export const zonesApi = {
-    async fetchZones(): Promise<ZoneListResponse> {
-        const response = await client.get<ZoneListResponse>('/zones')
+    // 分页与搜索都在服务端做
+    async fetchZones(params?: { offset?: number; limit?: number; query?: string }): Promise<ZoneListResponse> {
+        const response = await client.get<ZoneListResponse>('/zones', { params })
         return response.data
     },
 

@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { ref, onMounted, computed, watch } from 'vue'
+import { ref, onMounted, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useToast } from '../../composables/useToast'
 import { useCopyId } from '../../composables/useCopyId'
+import { useListQuery } from '../../composables/useListQuery'
 import { subnetsApi, vpcsApi, type Subnet, type SubnetPayload, type VPC } from '../../api/networks'
 import { isValidName } from '../../utils/validation'
 import { useAuthStore } from '../../stores/auth'
@@ -15,12 +16,9 @@ import DeleteModal from '../../components/modals/DeleteModal.vue'
 import BaseModal from '../../components/modals/BaseModal.vue'
 import PageToolbar from '../../components/base/PageToolbar.vue'
 import DataTable, { type Column } from '../../components/base/DataTable.vue'
+import PaginationBar from '../../components/base/PaginationBar.vue'
 
-const subnets = ref<Subnet[]>([])
 const vpcs = ref<VPC[]>([])
-const loading = ref(false)
-const loadError = ref('')
-const searchQuery = ref('')
 
 const createModalVisible = ref(false)
 const creating = ref(false)
@@ -49,39 +47,37 @@ const isNameValid = computed(() => isValidName(newSubnetForm.value.name))
 const { copiedId, copyId } = useCopyId()
 
 
+// 分页后前端排序只能排当前页，会误导用户，所以列头不再可排序
 const columns = computed<Column[]>(() => [
-    { key: 'name', label: t('dashboard.table.nameId'), sortable: true },
-    { key: 'cidr', label: t('dashboard.table.cidr'), sortable: true, sortValue: (s) => s.network || s.network_cidr || '' },
-    { key: 'vlan', label: t('dashboard.table.rangeVlan'), sortable: true, sortValue: (s) => s.vlan ?? null },
-    { key: 'usage', label: t('dashboard.table.ipUsage'), sortable: true, sortValue: (s) => s.allocated_count || 0 },
-    { key: 'vpc', label: t('dashboard.table.vpc'), sortable: true, sortValue: (s) => s.vpc?.name ?? null },
-    { key: 'type', label: t('dashboard.table.type'), sortable: true },
+    { key: 'name', label: t('dashboard.table.nameId') },
+    { key: 'cidr', label: t('dashboard.table.cidr') },
+    { key: 'vlan', label: t('dashboard.table.rangeVlan') },
+    { key: 'usage', label: t('dashboard.table.ipUsage') },
+    { key: 'vpc', label: t('dashboard.table.vpc') },
+    { key: 'type', label: t('dashboard.table.type') },
     { key: 'actions', label: t('dashboard.table.actions'), align: 'center' },
 ])
 
-const fetchSubnets = async () => {
-    loading.value = true
-    loadError.value = ''
-    try {
-        const response = await subnetsApi.list()
-        subnets.value = response.subnets || []
-    } catch (err) {
-        console.error('API fetch failed:', err)
-        subnets.value = []
-        loadError.value = t('messages.error')
-    } finally {
-        loading.value = false
-    }
-}
+// 分页与搜索都在服务端做
+const {
+    items: subnets,
+    total,
+    page,
+    pageSize,
+    loading,
+    error: loadError,
+    search: searchQuery,
+    load: fetchSubnets,
+    reload: reloadSubnets,
+} = useListQuery<Subnet>(
+    async ({ offset, limit, query }) => {
+        const response = await subnetsApi.list({ offset, limit, query: query || undefined })
+        return { items: response.subnets || [], total: response.total ?? 0 }
+    },
+    { watchSources: [computed(() => region.currentRegionId)] }
+)
 
-// Re-fetch when region changes
-watch(() => region.currentRegionId, (newId) => {
-    if (newId) {
-        fetchSubnets()
-        fetchVpcs()
-    }
-})
-
+// 新建子网弹窗里的 VPC 下拉；打开弹窗时也会重新拉一次
 const fetchVpcs = async () => {
     try {
         const response = await vpcsApi.list()
@@ -162,7 +158,8 @@ const handleCreateSubnet = async () => {
     creating.value = true
     try {
         await subnetsApi.create(payload)
-        await fetchSubnets()
+        // 列表按创建时间倒序，新建的在第一页
+        await reloadSubnets()
         closeCreateModal()
         toast.success(t('messages.createSuccess'))
     } catch (err: any) {
@@ -172,15 +169,6 @@ const handleCreateSubnet = async () => {
         creating.value = false
     }
 }
-
-const filteredSubnets = computed(() => {
-    if (!searchQuery.value) return subnets.value
-    const query = searchQuery.value.toLowerCase()
-    return subnets.value.filter(subnet => 
-        subnet.name.toLowerCase().includes(query) || 
-        subnet.id.toLowerCase().includes(query)
-    )
-})
 
 const getTypeClass = (type: string) => {
     const map: Record<string, string> = {
@@ -237,7 +225,7 @@ onMounted(() => {
   <div>
     <PageToolbar v-model:search="searchQuery">
       <template #actions>
-        <button class="btn btn-secondary btn-sm btn-icon" @click="fetchSubnets" :title="$t('actions.refresh')">
+        <button class="btn btn-secondary btn-sm btn-icon" @click="() => fetchSubnets()" :title="$t('actions.refresh')">
           <RefreshCw :size="14" :class="{ spinning: loading }" />
         </button>
         <button class="btn btn-primary btn-sm" @click="openCreateModal">
@@ -248,11 +236,11 @@ onMounted(() => {
 
     <DataTable
       :columns="columns"
-      :rows="filteredSubnets"
+      :rows="subnets"
       row-key="id"
       :loading="loading"
       :error="loadError"
-      @retry="fetchSubnets"
+      @retry="() => fetchSubnets()"
     >
       <template #empty>
         <div v-if="searchQuery">
@@ -339,6 +327,10 @@ onMounted(() => {
             <Trash2 :size="14" />
           </button>
         </div>
+      </template>
+
+      <template #footer>
+        <PaginationBar :page="page" :page-size="pageSize" :total="total" @update:page="page = $event" />
       </template>
     </DataTable>
 

@@ -1,11 +1,12 @@
 <script setup lang="ts">
-import { ref, onMounted, watch, computed } from 'vue'
+import { ref, onMounted, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { imagesApi, type Image, type ImagePayload } from '../../api/images'
 import { isValidName } from '../../utils/validation'
 import { useAuthStore } from '../../stores/auth'
 import { useToast } from '../../composables/useToast'
 import { useCopyId } from '../../composables/useCopyId'
+import { useListQuery } from '../../composables/useListQuery'
 import { useTenantStore } from '../../stores/tenant'
 import { useRegionStore } from '../../stores/region'
 
@@ -19,12 +20,8 @@ import DeleteModal from '../../components/modals/DeleteModal.vue'
 import PageToolbar from '../../components/base/PageToolbar.vue'
 import StatusBadge from '../../components/base/StatusBadge.vue'
 import DataTable, { type Column } from '../../components/base/DataTable.vue'
+import PaginationBar from '../../components/base/PaginationBar.vue'
 
-const images = ref<Image[]>([])
-const loading = ref(false)
-const loadError = ref('')
-const searchQuery = ref('')
-const selectedType = ref<string>('all')
 const selectedVisibility = ref<string>('all')
 const auth = useAuthStore()
 const tenant = useTenantStore()
@@ -54,38 +51,41 @@ const isNameValid = computed(() => isValidName(newImageForm.value.name))
 
 
 
+// 分页后前端排序只能排当前页，会误导用户，所以列头不再可排序
 const columns = computed<Column[]>(() => [
-    { key: 'name', label: t('dashboard.table.nameId'), sortable: true },
-    { key: 'visibility', label: t('dashboard.table.visibility'), sortable: true, sortValue: (i) => (i.public ? 0 : 1) },
-    { key: 'os', label: t('dashboard.table.os'), sortable: true, sortValue: (i) => getOsName(i as Image) },
-    { key: 'architecture', label: t('dashboard.table.architecture'), sortable: true },
-    { key: 'format', label: t('dashboard.table.format'), sortable: true },
-    { key: 'size', label: t('dashboard.table.size'), sortable: true, sortValue: (i) => i.size || 0 },
-    { key: 'status', label: t('dashboard.table.status'), sortable: true },
+    { key: 'name', label: t('dashboard.table.nameId') },
+    { key: 'visibility', label: t('dashboard.table.visibility') },
+    { key: 'os', label: t('dashboard.table.os') },
+    { key: 'architecture', label: t('dashboard.table.architecture') },
+    { key: 'format', label: t('dashboard.table.format') },
+    { key: 'size', label: t('dashboard.table.size') },
+    { key: 'status', label: t('dashboard.table.status') },
     { key: 'actions', label: t('dashboard.table.actions'), align: 'center' },
 ])
 
-const fetchImages = async () => {
-    loading.value = true
-    loadError.value = ''
-    try {
-        const response = await imagesApi.fetchImages()
-        images.value = (response as any).images || []
-    } catch (err) {
-        console.error('API fetch failed:', err)
-        images.value = []
-        loadError.value = t('messages.error')
-    } finally {
-        loading.value = false
-    }
-}
-
-// Re-fetch when region changes
-watch(() => region.currentRegionId, (newId) => {
-    if (newId) {
-        fetchImages()
-    }
-})
+// 分页、搜索、公开/私有筛选都在服务端做（后端 /images 支持 visibility=public|private）
+const {
+    items: images,
+    total,
+    page,
+    pageSize,
+    loading,
+    error: loadError,
+    search: searchQuery,
+    load: fetchImages,
+    reload: reloadImages,
+} = useListQuery<Image>(
+    async ({ offset, limit, query }) => {
+        const response = await imagesApi.fetchImages({
+            offset,
+            limit,
+            query: query || undefined,
+            visibility: selectedVisibility.value === 'all' ? undefined : selectedVisibility.value,
+        })
+        return { items: response.images || [], total: response.total ?? 0 }
+    },
+    { watchSources: [computed(() => region.currentRegionId), selectedVisibility] }
+)
 
 const openCreateModal = () => {
     newImageForm.value = {
@@ -121,7 +121,8 @@ const handleCreateImage = async () => {
     creating.value = true
     try {
         await imagesApi.createImage(newImageForm.value)
-        await fetchImages()
+        // 列表按创建时间倒序，新建的在第一页
+        await reloadImages()
         closeCreateModal()
         toast.success(t('messages.createSuccess'))
     } catch (err: any) {
@@ -130,37 +131,6 @@ const handleCreateImage = async () => {
     } finally {
         creating.value = false
     }
-}
-
-const filteredImages = ref<Image[]>([])
-
-const filterImages = () => {
-    filteredImages.value = images.value.filter(img => {
-        const matchesSearch = img.name.toLowerCase().includes(searchQuery.value.toLowerCase())
-
-        let matchesType = true
-        if (selectedType.value === 'all') {
-            matchesType = true
-        } else if (selectedType.value === 'linux') {
-            matchesType = img.os_code === 'linux'
-        } else if (selectedType.value === 'windows') {
-            matchesType = img.os_code === 'windows'
-        } else if (selectedType.value === 'windows-server') {
-             matchesType = img.name.toLowerCase().includes('windows') && img.name.toLowerCase().includes('server')
-        } else {
-            // Specific distro check
-            matchesType = img.name.toLowerCase().includes(selectedType.value)
-        }
-
-        let matchesVisibility = true
-        if (selectedVisibility.value === 'public') {
-            matchesVisibility = img.public === true
-        } else if (selectedVisibility.value === 'private') {
-            matchesVisibility = !img.public
-        }
-
-        return matchesSearch && matchesType && matchesVisibility
-    })
 }
 
 const canDelete = (image: Image) => {
@@ -172,19 +142,12 @@ const toggleVisibility = async (image: Image) => {
     try {
         await imagesApi.patchImage(image.id, { public: !image.public })
         await fetchImages()
-        filterImages()
         toast.success(t('messages.updateSuccess'))
     } catch (err: any) {
         console.error('Failed to toggle visibility:', err)
         toast.error(err.response?.data?.error_message || err.message || t('messages.error'))
     }
 }
-
-
-// Watch for changes to trigger filtering automatically
-watch(selectedType, filterImages)
-watch(searchQuery, filterImages)
-watch(selectedVisibility, filterImages)
 
 
 const getOsName = (image: Image) => {
@@ -222,7 +185,6 @@ const confirmDelete = async () => {
     try {
         await imagesApi.deleteImage(resourceToDelete.value.id)
         await fetchImages()
-        filterImages()
         closeDeleteModal()
         toast.success(t('messages.deleteSuccess'))
     } catch (error: any) {
@@ -243,7 +205,6 @@ const getStatusText = (status: string | undefined) => {
 onMounted(async () => {
     if (region.currentRegionId) {
         await fetchImages()
-        filterImages()
     }
 })
 </script>
@@ -263,7 +224,7 @@ onMounted(async () => {
       </template>
 
       <template #actions>
-        <button class="btn btn-secondary btn-sm btn-icon" @click="fetchImages().then(filterImages)" :title="$t('actions.refresh')">
+        <button class="btn btn-secondary btn-sm btn-icon" @click="fetchImages()" :title="$t('actions.refresh')">
           <RefreshCw :size="14" :class="{ spinning: loading }" />
         </button>
         <button class="btn btn-primary btn-sm" @click="openCreateModal">
@@ -275,11 +236,11 @@ onMounted(async () => {
     <!-- Table View -->
     <DataTable
       :columns="columns"
-      :rows="filteredImages"
+      :rows="images"
       row-key="id"
       :loading="loading"
       :error="loadError"
-      @retry="fetchImages().then(filterImages)"
+      @retry="fetchImages()"
     >
       <template #empty>
         <div v-if="searchQuery">
@@ -347,6 +308,10 @@ onMounted(async () => {
             <Trash2 :size="14" />
           </button>
         </div>
+      </template>
+
+      <template #footer>
+        <PaginationBar :page="page" :page-size="pageSize" :total="total" @update:page="page = $event" />
       </template>
     </DataTable>
 
