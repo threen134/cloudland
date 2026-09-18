@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { CheckCircle, XCircle, Loader2, ArrowRight, Cloud } from 'lucide-vue-next'
@@ -11,6 +11,8 @@ const router = useRouter()
 
 const status = ref<'loading' | 'success' | 'error'>('loading')
 const countdown = ref(5)
+// 倒计时跳转：用户提前离开时要停掉，否则会在别的页面上触发跳转
+let redirectTimer: ReturnType<typeof setInterval> | null = null
 
 const activate = async () => {
     const token = route.query.token as string
@@ -25,10 +27,10 @@ const activate = async () => {
         status.value = 'success'
         
         // Auto redirect on success
-        const timer = setInterval(() => {
+        redirectTimer = setInterval(() => {
             countdown.value--
             if (countdown.value <= 0) {
-                clearInterval(timer)
+                if (redirectTimer) clearInterval(redirectTimer)
                 router.push('/login')
             }
         }, 1000)
@@ -40,6 +42,10 @@ const activate = async () => {
 
 onMounted(() => {
     activate()
+})
+
+onUnmounted(() => {
+    if (redirectTimer) clearInterval(redirectTimer)
 })
 </script>
 

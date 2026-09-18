@@ -1645,6 +1645,7 @@ export default {
         close: '关闭',
         attach: '挂载',
         detach: '卸载',
+        apply: '应用',
         resize: '扩容',
         release: '释放',
         confirmDelete: '确认删除',

@@ -28,13 +28,10 @@ import {
     Cloud,
     ChevronDown,
     ChevronRight,
-    Cpu,
     SquareStack,
-    Zap,
     Monitor,
 
     Users,
-    Languages,
     Globe,
     Link,
     PanelLeftClose,
@@ -45,7 +42,6 @@ import {
     LifeBuoy,
     ShoppingBag,
     MapPin,
-    ServerCog,
     ArrowRightLeft,
     AlertTriangle,
     Building2,
@@ -59,7 +55,7 @@ const tenant = useTenantStore()
 const region = useRegionStore()
 const router = useRouter()
 const route = useRoute()
-const { t, locale } = useI18n()
+const { t } = useI18n()
 const toast = useToast()
 const isSidebarCollapsed = ref(false)
 const isSwitchingRegion = ref(false)
@@ -933,7 +929,7 @@ onUnmounted(() => {
   flex: 1;
   padding: var(--spacing-6);
   overflow-y: auto;
-  background-color: var(--ui-background);
+  background-color: var(--bg-secondary);
 }
 
 /* Responsive */

@@ -1,16 +1,14 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref } from 'vue'
 import { RouterLink, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { Cloud, Menu, X, ChevronDown, Phone, Mail, Globe } from 'lucide-vue-next'
 import { useAuthStore } from '../stores/auth'
-import { useTenantStore } from '../stores/tenant'
 import { setLanguage, getCurrentLanguage, SUPPORTED_LANGUAGES, LANGUAGE_LABEL_KEYS, type Language } from '../locales'
 
 const { t } = useI18n()
 const router = useRouter()
 const auth = useAuthStore()
-const tenant = useTenantStore()
 
 const docsUrl = '/docs/'
 
@@ -23,9 +21,6 @@ const closeMenu = () => {
     activeDropdown.value = null
 }
 
-const toggleDropdown = (name: string) => {
-    activeDropdown.value = activeDropdown.value === name ? null : name
-}
 
 const navigateTo = (path: string) => {
     router.push(path)
@@ -365,7 +360,7 @@ const solutionLinks = [
 
     .nav-menu {
         position: absolute;
-        top: var(--header-height);
+        top: var(--height-header);
         left: 0;
         right: 0;
         flex-direction: column;

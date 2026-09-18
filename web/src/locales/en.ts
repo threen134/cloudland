@@ -340,7 +340,6 @@ export default {
         // Load balancer products
         lbSmall: 'Network Load Balancer S',
         lbSmallDesc: 'Up to 10 backends',
-        cancel: 'Cancel',
         lbMedium: 'Network Load Balancer M',
         lbMediumDesc: 'Up to 50 backends',
         lbLarge: 'Network Load Balancer L',

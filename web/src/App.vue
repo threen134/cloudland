@@ -7,7 +7,3 @@ import ToastContainer from './components/ToastContainer.vue'
   <RouterView />
   <ToastContainer />
 </template>
-
-<style>
-/* Global styles move to styles/main.css or similar */
-</style>

@@ -1645,6 +1645,7 @@ export default {
         close: '關閉',
         attach: '掛載',
         detach: '卸載',
+        apply: '套用',
         resize: '擴容',
         release: '釋放',
         confirmDelete: '確認刪除',
