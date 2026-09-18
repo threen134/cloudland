@@ -119,13 +119,6 @@ const router = createRouter({
                     name: 'keys', // SSH Keys real path
                     component: () => import('../views/dashboard/SSHKeys.vue')
                 },
-                // SSH key detail page removed as requested
-                // {
-                //     path: 'keys/:id',
-                //     name: 'ssh-key-detail',
-                //     component: () => import('../views/dashboard/SSHKeyDetail.vue')
-                // },
-                // Compute Resources
                 {
                     path: 'instances',
                     name: 'instances',
