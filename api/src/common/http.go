@@ -12,6 +12,7 @@ import (
 	"fmt"
 
 	"github.com/gin-gonic/gin"
+	"github.com/jackc/pgx/v5/pgconn"
 )
 
 // type JSONTime time.Time
@@ -22,9 +23,12 @@ type BaseReference struct {
 }
 
 type ResourceReference struct {
-	ID        string `json:"id,omitempty"`
-	Name      string `json:"name,omitempty"`
-	Owner     string `json:"owner,omitempty"`
+	ID    string `json:"id,omitempty"`
+	Name  string `json:"name,omitempty"`
+	Owner string `json:"owner,omitempty"`
+	// OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to
+	// release quota only when the caller's org actually owns the deleted resource
+	OwnerUUID string `json:"owner_uuid,omitempty"`
 	CreatedAt string `json:"created_at,omitempty"`
 	UpdatedAt string `json:"updated_at,omitempty"`
 }
@@ -39,8 +43,15 @@ type APIError struct {
 	ErrorMessage string `json:"error_message"`
 }
 
+// isDatabaseError reports whether err wraps a database server error. Its text can carry SQL fragments and
+// column values (error-based SQL injection reads data through it), so it only goes to the log
+func isDatabaseError(err error) bool {
+	var pgErr *pgconn.PgError
+	return errors.As(err, &pgErr)
+}
+
 func ErrorResponse(c *gin.Context, code int, errorMsg string, err error) {
-	logger.Errorf("%s, %v\n", errorMsg, err)
+	logger.Ctx(c).Errorf("%s, %v\n", errorMsg, err)
 	status := code
 	if err != nil {
 		var clErr *CLError
@@ -49,14 +60,20 @@ func ErrorResponse(c *gin.Context, code int, errorMsg string, err error) {
 			if businessStatus := clErr.Code.ToHTTPStatus(); businessStatus != 500 {
 				status = businessStatus
 			}
+			message := clErr.Error()
+			if isDatabaseError(err) {
+				message = fmt.Sprintf("Code %d: %s", clErr.Code, clErr.Message)
+			}
 			c.JSON(status, &APIError{
 				ErrorCode:    int(clErr.Code),
 				ErrorCodeStr: clErr.Code.String(),
-				ErrorMessage: clErr.Error(),
+				ErrorMessage: message,
 			})
 			return
 		}
-		errorMsg = errorMsg + ": " + err.Error()
+		if !isDatabaseError(err) {
+			errorMsg = errorMsg + ": " + err.Error()
+		}
 	}
 	c.JSON(status, &APIError{
 		ErrorCode:    status,

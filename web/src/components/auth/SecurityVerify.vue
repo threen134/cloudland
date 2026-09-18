@@ -265,9 +265,9 @@ onMounted(() => {
 }
 
 .has-error .captcha-input {
-    border-color: var(--error-400);
-    background-color: var(--error-50);
-    color: var(--error-700);
+    border-color: var(--error-color);
+    background-color: var(--error-light);
+    color: var(--error-dark);
     animation: shake 0.5s cubic-bezier(.36,.07,.19,.97) both;
 }
 
@@ -289,7 +289,7 @@ onMounted(() => {
     right: 12px;
     top: 50%;
     transform: translateY(-50%);
-    color: var(--success-500);
+    color: var(--success-color);
     animation: popIn 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
@@ -301,7 +301,7 @@ onMounted(() => {
 .error-text {
     margin-top: var(--spacing-2);
     font-size: var(--font-size-xs);
-    color: var(--error-600);
+    color: var(--error-dark);
     font-weight: 600;
 }
 </style>

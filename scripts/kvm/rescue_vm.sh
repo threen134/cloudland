@@ -45,7 +45,7 @@ if [ -z "$wds_address" ]; then
         # 本地缓存未命中则通过 clapi 下发的 presigned URL 从 S3/MinIO 拉取
         if ! ensure_image_cached "$img_name" "$image_download_url"; then
             echo "Image is not available!"
-            echo "|:-COMMAND-:| $(basename $0) '$ID' '$state' '$SCI_CLIENT_ID' 'failed'"
+            echo "|:-COMMAND-:| $(basename $0) '$ID' '$state' '$NODE_ID' 'failed'"
             exit -1
         fi
         # 更新 mtime，供 GC 判断"最近使用"
@@ -67,7 +67,7 @@ else
         snapshot_ret=$(wds_curl POST "api/v2/sync/block/snaps" "{\"name\": \"$snapshot_name\", \"description\": \"$snapshot_name\", \"volume_id\": \"$image_volume_id\"}")
         read -d'\n' -r snapshot_id volume_size <<< $(wds_curl GET "api/v2/sync/block/snaps?name=$snapshot_name" | jq -r '.snaps[0] | "\(.id) \(.snap_size)"')
         if [ -z "$snapshot_id" -o "$snapshot_id" = null ]; then
-            echo "|:-COMMAND-:| $(basename $0) '$ID' '$state' '$SCI_CLIENT_ID' 'failed'"
+            echo "|:-COMMAND-:| $(basename $0) '$ID' '$state' '$NODE_ID' 'failed'"
             exit -1
         fi
         wds_curl DELETE "api/v2/sync/block/snaps/$image-$(($snapshot-1))?force=false"
@@ -75,7 +75,7 @@ else
     volume_ret=$(wds_curl POST "api/v2/sync/block/snaps/$snapshot_id/clone" "{\"name\": \"$vhost_name\"}")
     volume_id=$(echo $volume_ret | jq -r .id)
     if [ -z "$volume_id" -o "$volume_id" = null ]; then
-        echo "|:-COMMAND-:| $(basename $0) '$ID' '$state' '$SCI_CLIENT_ID' 'failed'"
+        echo "|:-COMMAND-:| $(basename $0) '$ID' '$state' '$NODE_ID' 'failed'"
         exit -1
     fi
     uss_id=$(get_uss_gateway)
@@ -85,7 +85,7 @@ else
     ret_code=$(echo $uss_ret | jq -r .ret_code)
     if [ "$ret_code" != "0" ]; then
         echo "|:-COMMAND-:| create_volume_wds_vhost '$vol_ID' '$vol_state' 'wds_vhost://$wds_pool_id/$volume_id' 'failed to create wds vhost for boot volume, $vhost_ret, $uss_ret!'"
-        echo "|:-COMMAND-:| $(basename $0) '$ID' '$state' '$SCI_CLIENT_ID' 'failed'"
+        echo "|:-COMMAND-:| $(basename $0) '$ID' '$state' '$NODE_ID' 'failed'"
         exit -1
     fi
     vol_state=attached
@@ -215,7 +215,7 @@ while [ $i -lt $nvlan ]; do
 done
 virsh start $vm_rescue
 [ $? -eq 0 ] && state=rescuing
-echo "|:-COMMAND-:| $(basename $0) '$ID' '$state' '$SCI_CLIENT_ID' 'sync'"
+echo "|:-COMMAND-:| $(basename $0) '$ID' '$state' '$NODE_ID' 'sync'"
 
 # check if the vm is windows and whether to change the rdp port
 if [ "$os_code" = "windows" ]; then

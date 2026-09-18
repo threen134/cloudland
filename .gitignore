@@ -61,19 +61,9 @@ cloudland.sum
 cloudland.tgz
 ipcalc
 cloudrc.local
-/sci/Makefile
-/sci/*.log
-/sci/config.h
-/sci/libtool
-/sci/scia/scia64
-/sci/stamp-h1
-/sci/usecase
-/sci/autom4te.cache
-/src/remotexec/remotexec*.pb.*
 .vscode
 /commitID
 **/.DS_Store
-.github/
 CLAUDE.md
 GEMINI.md
 refs
@@ -105,6 +95,11 @@ api/apitest/reinstall.sh
 api/apitest/user_post.sh
 api/bin/
 api/alarm_rules_manager
+api/api
+api/cland
+api/cland-go
+api/cloudlet
+api/cloudlet-go
 cpgateway/keys/
 
 # Sensitive local tools
@@ -117,3 +112,4 @@ deploy/dns/hosts/hyper-hosts
 deploy/dns/conf.d/upstream.conf
 deploy/docker/.env_103
 .ibm_cloudkey
+.ibm_cloud.env

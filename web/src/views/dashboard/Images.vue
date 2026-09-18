@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted, watch, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { useRouter } from 'vue-router'
 import { imagesApi, type Image, type ImagePayload } from '../../api/images'
 import { isValidName } from '../../utils/validation'
 import { useAuthStore } from '../../stores/auth'
@@ -12,14 +11,21 @@ import { useRegionStore } from '../../stores/region'
 
 const region = useRegionStore()
 
-import { Disc, Search, Monitor, Server, Trash2, Plus, X, Globe, Cpu, User, Eye, EyeOff, Check, Copy, RefreshCw } from 'lucide-vue-next'
+import { Disc, Search, Trash2, Plus, Eye, EyeOff, Check, Copy, RefreshCw } from 'lucide-vue-next'
+import { quotaErrorMessage } from '../../utils/quotaError'
+import { formatBytes } from '../../utils/format'
+import BaseModal from '../../components/modals/BaseModal.vue'
+import DeleteModal from '../../components/modals/DeleteModal.vue'
+import PageToolbar from '../../components/base/PageToolbar.vue'
+import StatusBadge from '../../components/base/StatusBadge.vue'
+import DataTable, { type Column } from '../../components/base/DataTable.vue'
 
 const images = ref<Image[]>([])
 const loading = ref(false)
+const loadError = ref('')
 const searchQuery = ref('')
 const selectedType = ref<string>('all')
 const selectedVisibility = ref<string>('all')
-const router = useRouter()
 const auth = useAuthStore()
 const tenant = useTenantStore()
 const isSuperuser = computed(() => auth.user?.is_superuser === true)
@@ -42,20 +48,33 @@ const newImageForm = ref<ImagePayload>({
     user: 'admin'
 })
 
-const { t } = useI18n()
+const { t, te } = useI18n()
 const isNameValid = computed(() => isValidName(newImageForm.value.name))
 
 
 
 
+const columns = computed<Column[]>(() => [
+    { key: 'name', label: t('dashboard.table.nameId'), sortable: true },
+    { key: 'visibility', label: t('dashboard.table.visibility'), sortable: true, sortValue: (i) => (i.public ? 0 : 1) },
+    { key: 'os', label: t('dashboard.table.os'), sortable: true, sortValue: (i) => getOsName(i as Image) },
+    { key: 'architecture', label: t('dashboard.table.architecture'), sortable: true },
+    { key: 'format', label: t('dashboard.table.format'), sortable: true },
+    { key: 'size', label: t('dashboard.table.size'), sortable: true, sortValue: (i) => i.size || 0 },
+    { key: 'status', label: t('dashboard.table.status'), sortable: true },
+    { key: 'actions', label: t('dashboard.table.actions'), align: 'center' },
+])
+
 const fetchImages = async () => {
     loading.value = true
+    loadError.value = ''
     try {
         const response = await imagesApi.fetchImages()
-        images.value = (response.data as any).images || []
+        images.value = (response as any).images || []
     } catch (err) {
         console.error('API fetch failed:', err)
         images.value = []
+        loadError.value = t('messages.error')
     } finally {
         loading.value = false
     }
@@ -90,7 +109,7 @@ const closeCreateModal = () => {
 const handleCreateImage = async () => {
     createError.value = ''
     if (!newImageForm.value.name || !newImageForm.value.download_url) {
-        createError.value = t('dashboard.imageActions.fillRequired')
+        createError.value = t('dashboard.overview.imageActions.fillRequired')
         return
     }
     if (!isNameValid.value) {
@@ -107,7 +126,7 @@ const handleCreateImage = async () => {
         toast.success(t('messages.createSuccess'))
     } catch (err: any) {
         console.error('Failed to create image:', err)
-        createError.value = err.response?.data?.error_message || err.message || t('messages.error')
+        createError.value = quotaErrorMessage(err, t, te) || err.response?.data?.error_message || err.message || t('messages.error')
     } finally {
         creating.value = false
     }
@@ -161,22 +180,12 @@ const toggleVisibility = async (image: Image) => {
     }
 }
 
-const navigateToDetail = (image: Image) => {
-    router.push({ name: 'image-detail', params: { id: image.id } })
-}
 
 // Watch for changes to trigger filtering automatically
 watch(selectedType, filterImages)
 watch(searchQuery, filterImages)
 watch(selectedVisibility, filterImages)
 
-const formatSize = (bytes: number) => {
-    if (!bytes) return `0 ${t('specs.b')}`
-    const k = 1024
-    const units = ['b', 'kb', 'mb', 'gb', 'tb']
-    const i = Math.floor(Math.log(bytes) / Math.log(k))
-    return `${(bytes / Math.pow(k, i)).toFixed(1)} ${t('specs.' + units[i])}`
-}
 
 const getOsName = (image: Image) => {
     const nameLower = image.name.toLowerCase()
@@ -224,15 +233,6 @@ const confirmDelete = async () => {
     }
 }
 
-const getStatusClass = (status: string | undefined) => {
-    if (!status) return 'status-running'
-    const s = status.toLowerCase()
-    if (s === 'active' || s === 'available') return 'status-running'
-    if (s === 'error' || s === 'failed') return 'status-error'
-    if (s === 'deleting' || s === 'pending') return 'status-pending'
-    return 'status-stopped'
-}
-
 const getStatusText = (status: string | undefined) => {
     if (!status) return t('dashboard.imageStatus.active')
     const key = status.toLowerCase()
@@ -253,135 +253,112 @@ onMounted(async () => {
     <!-- Header Removed by request -->
 
     <!-- Filters Bar replaced by Page Header -->
-    <div class="page-header">
-      <div class="search-wrapper">
-        <div class="search-box">
-          <Search :size="16" class="search-icon" />
-          <input
-            type="text"
-            v-model="searchQuery"
-            :placeholder="$t('actions.search') + '...'"
-            class="search-input"
-          />
-        </div>
+    <PageToolbar v-model:search="searchQuery">
+      <template #filters>
         <select v-model="selectedVisibility" class="visibility-filter">
           <option value="all">{{ $t('dashboard.table.allVisibility') }}</option>
           <option value="public">{{ $t('dashboard.table.public') }}</option>
           <option value="private">{{ $t('dashboard.table.private') }}</option>
         </select>
-      </div>
+      </template>
 
-      <div class="header-actions">
+      <template #actions>
         <button class="btn btn-secondary btn-sm btn-icon" @click="fetchImages().then(filterImages)" :title="$t('actions.refresh')">
           <RefreshCw :size="14" :class="{ spinning: loading }" />
         </button>
         <button class="btn btn-primary btn-sm" @click="openCreateModal">
           <Plus :size="14" /> {{ $t('dashboard.buttons.createImage') }}
         </button>
-      </div>
-    </div>
+      </template>
+    </PageToolbar>
 
     <!-- Table View -->
-    <div class="card table-card">
-      <table class="data-table">
-        <thead>
-          <tr>
-            <th>{{ $t('dashboard.table.nameId') }}</th>
-            <th>{{ $t('dashboard.table.visibility') }}</th>
-            <th>{{ $t('dashboard.table.os') }}</th>
-            <th>{{ $t('dashboard.table.architecture') }}</th>
-            <th>{{ $t('dashboard.table.format') }}</th>
-            <th>{{ $t('dashboard.table.size') }}</th>
-            <th>{{ $t('dashboard.table.status') }}</th>
-            <th>{{ $t('dashboard.table.actions') }}</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-if="loading">
-            <td colspan="8" class="text-center">
-              <div class="loading-spinner" style="margin: 20px auto;"></div>
-            </td>
-          </tr>
-          <tr v-else-if="filteredImages.length === 0">
-            <td colspan="8" class="text-center text-secondary" style="padding: 48px;">
-               <div v-if="searchQuery">
-                  <Search :size="48" style="opacity: 0.3; margin-bottom: 16px;" />
-                  <p>{{ $t('messages.noResults') }}</p>
-               </div>
-               <div v-else>
-                  <p>{{ $t('messages.noData') }}</p>
-               </div>
-            </td>
-          </tr>
-          <tr v-else v-for="image in filteredImages" :key="image.id">
-            <td>
-              <router-link :to="{ name: 'image-detail', params: { id: image.id } }" class="resource-link">
-                <div class="resource-info">
-                  <div class="resource-icon" :class="image.os_code">
-                    <Disc :size="16" />
-                  </div>
-                  <div>
-                    <div class="resource-name">{{ image.name }}</div>
-                    <div class="resource-id-row">
-                      <span class="resource-id" :title="image.id">{{ image.id.slice(0, 8) }}...</span>
-                      <button class="copy-btn-mini" @click.stop.prevent="copyId(image.id)" :title="t('actions.copy')" :aria-label="t('actions.copy')">
-                        <Check v-if="copiedId === image.id" :size="10" style="color: #10b981;" />
-                        <Copy v-else :size="10" />
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              </router-link>
-            </td>
-            <td>
-              <span :class="['badge', image.public ? 'status-running' : 'status-stopped']">
-                {{ image.public ? $t('dashboard.table.public') : $t('dashboard.table.private') }}
-              </span>
-            </td>
-            <td>
-              <span class="os-text">{{ getOsName(image) }}</span>
-            </td>
-            <td>
-              <span class="arch-tag">{{ image.architecture }}</span>
-            </td>
-            <td>
-              <span class="format-text">{{ image.format?.toUpperCase() || '-' }}</span>
-            </td>
-            <td>
-              {{ formatSize(image.size || 0) }}
-            </td>
-            <td>
-               <span :class="['badge', getStatusClass(image.status)]">
-                  {{ getStatusText(image.status) }}
-               </span>
-            </td>
-            <td>
-              <div class="actions">
-                <button v-if="isSuperuser" class="btn btn-ghost btn-sm" :title="image.public ? $t('dashboard.table.setPrivate') : $t('dashboard.table.setPublic')" @click="toggleVisibility(image)">
-                  <EyeOff v-if="image.public" :size="14" />
-                  <Eye v-else :size="14" />
-                </button>
-                <button v-if="canDelete(image)" class="btn btn-ghost btn-sm text-error" :title="$t('actions.delete')" @click="handleDeleteClick(image)">
-                  <Trash2 :size="14" />
+    <DataTable
+      :columns="columns"
+      :rows="filteredImages"
+      row-key="id"
+      :loading="loading"
+      :error="loadError"
+      @retry="fetchImages().then(filterImages)"
+    >
+      <template #empty>
+        <div v-if="searchQuery">
+          <Search :size="48" style="opacity: 0.3; margin-bottom: 16px;" />
+          <p>{{ $t('messages.noResults') }}</p>
+        </div>
+        <div v-else>
+          <p>{{ $t('messages.noData') }}</p>
+        </div>
+      </template>
+
+      <template #cell-name="{ row: image }">
+        <router-link :to="{ name: 'image-detail', params: { id: image.id } }" class="resource-link">
+          <div class="resource-info">
+            <div class="resource-icon" :class="image.os_code">
+              <Disc :size="16" />
+            </div>
+            <div>
+              <div class="resource-name">{{ image.name }}</div>
+              <div class="resource-id-row">
+                <span class="resource-id" :title="image.id">{{ image.id.slice(0, 8) }}...</span>
+                <button class="copy-btn-mini" @click.stop.prevent="copyId(image.id)" :title="t('actions.copy')" :aria-label="t('actions.copy')">
+                  <Check v-if="copiedId === image.id" :size="10" style="color: #10b981;" />
+                  <Copy v-else :size="10" />
                 </button>
               </div>
-            </td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
+            </div>
+          </div>
+        </router-link>
+      </template>
 
-    <!-- Create Image Modal -->
-    <div v-if="createModalVisible" class="modal-overlay" @click.self="closeCreateModal">
-      <div class="modal-content card">
-        <div class="modal-header">
-          <h3>{{ $t('dashboard.buttons.createImage') }}</h3>
-          <button class="btn btn-ghost btn-sm icon-btn" @click="closeCreateModal">
-            <X :size="20" />
+      <template #cell-visibility="{ row: image }">
+        <span :class="['badge', image.public ? 'status-running' : 'status-stopped']">
+          {{ image.public ? $t('dashboard.table.public') : $t('dashboard.table.private') }}
+        </span>
+      </template>
+
+      <template #cell-os="{ row: image }">
+        <span class="os-text">{{ getOsName(image) }}</span>
+      </template>
+
+      <template #cell-architecture="{ row: image }">
+        <span class="arch-tag">{{ image.architecture }}</span>
+      </template>
+
+      <template #cell-format="{ row: image }">
+        <span class="format-text">{{ image.format?.toUpperCase() || '-' }}</span>
+      </template>
+
+      <template #cell-size="{ row: image }">
+        {{ formatBytes(image.size || 0) }}
+      </template>
+
+      <template #cell-status="{ row: image }">
+        <StatusBadge :status="image.status" :label="getStatusText(image.status)" />
+      </template>
+
+      <template #cell-actions="{ row: image }">
+        <div class="actions">
+          <button v-if="isSuperuser" class="btn btn-ghost btn-sm" :title="image.public ? $t('dashboard.table.setPrivate') : $t('dashboard.table.setPublic')" @click="toggleVisibility(image)">
+            <EyeOff v-if="image.public" :size="14" />
+            <Eye v-else :size="14" />
+          </button>
+          <button v-if="canDelete(image)" class="btn btn-ghost btn-sm text-error" :title="$t('actions.delete')" @click="handleDeleteClick(image)">
+            <Trash2 :size="14" />
           </button>
         </div>
-        
-        <div class="modal-body">
+      </template>
+    </DataTable>
+
+    <!-- Create Image Modal -->
+    <BaseModal
+      :show="createModalVisible"
+      :title="$t('dashboard.buttons.createImage')"
+      :loading="creating"
+      form
+      @close="closeCreateModal"
+      @submit="handleCreateImage"
+    >
           <div class="form-grid">
             <div class="form-group">
               <label class="form-label">{{ $t('dashboard.forms.name') }}</label>
@@ -464,73 +441,34 @@ onMounted(async () => {
               />
             </div>
           </div>
-        </div>
-        <div class="modal-footer" style="flex-direction: column; align-items: stretch; gap: var(--spacing-2);">
-          <div v-if="createError" class="text-error" style="font-size:var(--font-size-sm);background:var(--error-light);padding:var(--spacing-2);border-radius:var(--radius-sm)">
+
+          <div v-if="createError" class="modal-error text-error">
             {{ createError }}
           </div>
-          <div style="display: flex; justify-content: flex-end; gap: var(--spacing-2);">
-            <button class="btn btn-secondary" @click="closeCreateModal" :disabled="creating">{{ $t('actions.cancel') }}</button>
-            <button class="btn btn-primary" @click="handleCreateImage" :disabled="creating">
-              <span v-if="creating" class="loading-spinner" style="width: 16px; height: 16px; border-width: 2px;"></span>
-              {{ creating ? $t('messages.loading') : $t('dashboard.buttons.createImage') }}
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
+
+      <template #footer>
+        <button type="button" class="btn btn-secondary" @click="closeCreateModal" :disabled="creating">{{ $t('actions.cancel') }}</button>
+        <button type="submit" class="btn btn-primary" :disabled="creating">
+          <span v-if="creating" class="loading-spinner" style="width: 16px; height: 16px; border-width: 2px;"></span>
+          {{ creating ? $t('messages.loading') : $t('dashboard.buttons.createImage') }}
+        </button>
+      </template>
+    </BaseModal>
 
     <!-- Delete Confirmation Modal -->
-    <div v-if="deleteModalVisible" class="modal-overlay" @click.self="closeDeleteModal">
-      <div class="modal-content card" style="max-width: 460px;">
-        <div class="modal-header">
-          <h3>{{ $t('actions.delete') }}</h3>
-          <button class="btn btn-ghost btn-sm icon-btn" @click="closeDeleteModal"><X :size="20" /></button>
-        </div>
-        <div class="modal-body">
-          <div style="text-align:center;padding:var(--spacing-4) 0">
-            <div style="width:64px;height:64px;border-radius:50%;background:var(--error-light);display:flex;align-items:center;justify-content:center;margin:0 auto var(--spacing-4);color:var(--error-color)"><Trash2 :size="32" /></div>
-            <p style="color:var(--text-secondary);margin:0 0 var(--spacing-4)">{{ $t('dashboard.deleteConfirm.message') }}</p>
-            <div style="background:var(--bg-secondary);border:1px solid var(--border-light);border-radius:var(--radius-md);padding:var(--spacing-3) var(--spacing-4);text-align:left">
-              <span style="font-size:var(--font-size-xs);color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.05em;display:block;margin-bottom:var(--spacing-1)">{{ $t('dashboard.deleteConfirm.resource') }}</span>
-              <span style="font-weight:var(--font-weight-semibold);display:block">{{ resourceToDelete?.name }}</span>
-              <span style="font-size:var(--font-size-xs);color:var(--text-light);font-family:var(--font-family-mono);display:block;margin-top:2px">{{ resourceToDelete?.id }}</span>
-            </div>
-            <div v-if="deleteError" class="text-error" style="margin-top:var(--spacing-4);font-size:var(--font-size-sm);background:var(--error-light);padding:var(--spacing-2);border-radius:var(--radius-sm)">
-              {{ deleteError }}
-            </div>
-          </div>
-        </div>
-        <div class="modal-footer">
-          <button class="btn btn-secondary" @click="closeDeleteModal" :disabled="deletingResource">{{ $t('actions.cancel') }}</button>
-          <button class="btn btn-danger" @click="confirmDelete" :disabled="deletingResource">
-            <span v-if="deletingResource" class="loading-spinner" style="width:16px;height:16px;border-width:2px"></span>
-            <Trash2 v-else :size="14" />
-            {{ deletingResource ? $t('dashboard.deleteConfirm.deleting') : $t('actions.delete') }}
-          </button>
-        </div>
-      </div>
-    </div>
+    <DeleteModal
+      :show="deleteModalVisible"
+      :resource-name="resourceToDelete?.name"
+      :resource-id="resourceToDelete?.id"
+      :loading="deletingResource"
+      :error="deleteError"
+      @close="closeDeleteModal"
+      @confirm="confirmDelete"
+    />
   </div>
 </template>
 
 <style scoped>
-.page-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 0;
-  padding-right: 20px;
-}
-
-.search-wrapper {
-  flex: 1;
-  max-width: 500px;
-  display: flex;
-  gap: 10px;
-  align-items: center;
-}
-
 .visibility-filter {
   height: 40px;
   padding: 0 10px;
@@ -540,45 +478,6 @@ onMounted(async () => {
   color: var(--text-primary);
   font-size: 0.875rem;
   cursor: pointer;
-}
-
-.search-box {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  background: var(--bg-secondary);
-  padding: 0 12px;
-  height: 40px;
-  border-radius: var(--radius-md);
-  border: 1px solid var(--border-light);
-  transition: all 0.2s;
-}
-
-.search-box:focus-within {
-  border-color: var(--primary-300);
-  box-shadow: 0 0 0 2px var(--primary-100);
-}
-
-.search-icon {
-  color: var(--gray-400);
-}
-
-.search-input {
-  border: none;
-  background: transparent;
-  width: 100%;
-  height: 100%;
-  font-size: 0.875rem;
-  color: var(--text-primary);
-}
-
-.search-input:focus {
-  outline: none;
-}
-
-.table-card {
-  padding: 0;
-  overflow: hidden;
 }
 
 /* .resource-info, .resource-icon etc. are global from index.css */
@@ -603,12 +502,6 @@ onMounted(async () => {
 .format-text {
   font-weight: 500;
   color: var(--text-secondary);
-}
-
-.header-actions {
-  display: flex;
-  align-items: center;
-  gap: var(--spacing-2);
 }
 
 .spinning {
@@ -672,20 +565,11 @@ onMounted(async () => {
   border-color: var(--primary-color);
 }
 
-.btn-danger {
-    background: var(--error-color);
-    color: white;
-    border: none;
-    padding: 8px 20px;
-    border-radius: var(--radius-md);
-    font-size: var(--font-size-sm);
-    font-weight: var(--font-weight-medium);
-    cursor: pointer;
-    display: inline-flex;
-    align-items: center;
-    gap: var(--spacing-2);
+.modal-error {
+  margin-top: var(--spacing-4);
+  font-size: var(--font-size-sm);
+  background: var(--error-light);
+  padding: var(--spacing-2);
+  border-radius: var(--radius-sm);
 }
-
-.btn-danger:hover { background: var(--error-dark); }
-.btn-danger:disabled { opacity: 0.5; cursor: not-allowed; }
 </style>

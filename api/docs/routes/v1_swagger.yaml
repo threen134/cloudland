@@ -1,5 +1,34 @@
 basePath: /api/v1
 definitions:
+  apis.ActivityListResponse:
+    properties:
+      activities:
+        items:
+          $ref: '#/definitions/apis.ActivityResponse'
+        type: array
+      next_cursor:
+        description: NextCursor 非空表示还有更早的记录，作为下一页的 cursor 参数传回
+        type: string
+    type: object
+  apis.ActivityResponse:
+    properties:
+      action:
+        type: string
+      actor:
+        type: string
+      created_at:
+        type: string
+      id:
+        type: string
+      resource_id:
+        type: string
+      resource_name:
+        type: string
+      resource_type:
+        type: string
+      success:
+        type: boolean
+    type: object
   apis.AddressInfo:
     properties:
       ip_address:
@@ -49,6 +78,11 @@ definitions:
         type: string
       owner:
         type: string
+      owner_uuid:
+        description: |-
+          OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to
+          release quota only when the caller's org actually owns the deleted resource
+        type: string
       remark:
         type: string
       reserved:
@@ -72,6 +106,50 @@ definitions:
     required:
     - addresses
     type: object
+  apis.AuditLogListResponse:
+    properties:
+      limit:
+        type: integer
+      logs:
+        items:
+          $ref: '#/definitions/apis.AuditLogResponse'
+        type: array
+      offset:
+        type: integer
+      total:
+        type: integer
+    type: object
+  apis.AuditLogResponse:
+    properties:
+      action:
+        type: string
+      actor:
+        type: string
+      actor_uuid:
+        type: string
+      created_at:
+        type: string
+      detail:
+        type: string
+      id:
+        type: string
+      latency_ms:
+        type: integer
+      method:
+        type: string
+      path:
+        type: string
+      resource_id:
+        type: string
+      resource_name:
+        type: string
+      resource_type:
+        type: string
+      status:
+        type: integer
+      trace_id:
+        type: string
+    type: object
   apis.BackendListResponse:
     properties:
       backends:
@@ -87,11 +165,6 @@ definitions:
     type: object
   apis.BackendPatchPayload:
     properties:
-      action:
-        enum:
-        - enable
-        - disable
-        type: string
       endpoint:
         maxLength: 128
         minLength: 8
@@ -100,6 +173,8 @@ definitions:
         maxLength: 32
         minLength: 2
         type: string
+      ssl:
+        type: boolean
     required:
     - name
     type: object
@@ -113,6 +188,8 @@ definitions:
         maxLength: 32
         minLength: 2
         type: string
+      ssl:
+        type: boolean
     required:
     - endpoint
     - name
@@ -123,12 +200,23 @@ definitions:
         type: string
       endpoint:
         type: string
+      health:
+        description: 'Health check result from the master haproxy: up, down, or unknown
+          when not reported yet'
+        type: string
       id:
         type: string
       name:
         type: string
       owner:
         type: string
+      owner_uuid:
+        description: |-
+          OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to
+          release quota only when the caller's org actually owns the deleted resource
+        type: string
+      ssl:
+        type: boolean
       status:
         type: string
       updated_at:
@@ -173,6 +261,11 @@ definitions:
       name:
         type: string
       owner:
+        type: string
+      owner_uuid:
+        description: |-
+          OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to
+          release quota only when the caller's org actually owns the deleted resource
         type: string
       resources:
         type: string
@@ -233,6 +326,11 @@ definitions:
         type: string
       owner:
         type: string
+      owner_uuid:
+        description: |-
+          OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to
+          release quota only when the caller's org actually owns the deleted resource
+        type: string
       status:
         type: string
       updated_at:
@@ -289,6 +387,11 @@ definitions:
         type: string
       owner:
         type: string
+      owner_uuid:
+        description: |-
+          OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to
+          release quota only when the caller's org actually owns the deleted resource
+        type: string
       size:
         type: integer
       status:
@@ -308,6 +411,16 @@ definitions:
         type: array
     required:
     - volumes
+    type: object
+  apis.ConsolePayload:
+    properties:
+      type:
+        description: vnc (graphical, default) or serial (text console on the first
+          serial port)
+        enum:
+        - vnc
+        - serial
+        type: string
     type: object
   apis.ConsoleResponse:
     properties:
@@ -383,6 +496,11 @@ definitions:
         type: string
       owner:
         type: string
+      owner_uuid:
+        description: |-
+          OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to
+          release quota only when the caller's org actually owns the deleted resource
+        type: string
       shortname:
         type: string
       subtype1:
@@ -453,6 +571,8 @@ definitions:
         type: integer
       name:
         type: string
+      uuid:
+        type: string
     type: object
   apis.FloatingIpInfo:
     properties:
@@ -469,6 +589,11 @@ definitions:
       name:
         type: string
       owner:
+        type: string
+      owner_uuid:
+        description: |-
+          OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to
+          release quota only when the caller's org actually owns the deleted resource
         type: string
       type:
         type: string
@@ -562,6 +687,11 @@ definitions:
         type: integer
       owner:
         type: string
+      owner_uuid:
+        description: |-
+          OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to
+          release quota only when the caller's org actually owns the deleted resource
+        type: string
       public_ip:
         type: string
       subnet:
@@ -603,6 +733,30 @@ definitions:
         type: string
       vlan:
         type: integer
+    type: object
+  apis.HostConsolePayload:
+    properties:
+      cols:
+        maximum: 1000
+        minimum: 1
+        type: integer
+      rows:
+        description: Terminal size the shell starts with
+        maximum: 500
+        minimum: 1
+        type: integer
+    type: object
+  apis.HostConsoleResponse:
+    properties:
+      console_url:
+        type: string
+      hyper:
+        $ref: '#/definitions/common.ResourceReference'
+      idle_timeout:
+        description: Seconds without traffic after which the node closes the session
+        type: integer
+      token:
+        type: string
     type: object
   apis.HyperDeployPayload:
     properties:
@@ -646,6 +800,11 @@ definitions:
       migrate:
         type: boolean
       target_hyper:
+        description: |-
+          用指针而非值类型：值类型时客户端漏传 target_hyper 会得到零值 0，而 0 不是合法 hostid，
+          会被当作"迁往 hostid 0"从而报 HypervisorNotFound。约定 nil / -1 表示由调度器自选
+        maximum: 65535
+        minimum: -1
         type: integer
     type: object
   apis.HyperResponse:
@@ -669,18 +828,17 @@ definitions:
       host_ip:
         type: string
       hostid:
+        description: 节点编号：迁移接口的 target_hyper、实例的 hyper 字段用的都是它
         type: integer
       hostname:
         type: string
-      id:
+      instance_count:
         type: integer
       mem_over_rate:
         type: number
       memory:
         type: integer
       memory_total:
-        type: integer
-      parentid:
         type: integer
       remark:
         type: string
@@ -694,8 +852,6 @@ definitions:
         type: string
       virt_type:
         type: string
-      zone_id:
-        type: integer
       zone_name:
         type: string
     type: object
@@ -754,7 +910,7 @@ definitions:
         type: string
       instance_uuid:
         type: string
-      is_resque:
+      is_rescue:
         type: boolean
       name:
         maxLength: 32
@@ -811,6 +967,11 @@ definitions:
         type: string
       owner:
         type: string
+      owner_uuid:
+        description: |-
+          OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to
+          release quota only when the caller's org actually owns the deleted resource
+        type: string
       public:
         type: boolean
       size:
@@ -832,6 +993,11 @@ definitions:
         type: string
       owner:
         type: string
+      owner_uuid:
+        description: |-
+          OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to
+          release quota only when the caller's org actually owns the deleted resource
+        type: string
       pool_id:
         type: string
       status:
@@ -852,6 +1018,11 @@ definitions:
       name:
         type: string
       owner:
+        type: string
+      owner_uuid:
+        description: |-
+          OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to
+          release quota only when the caller's org actually owns the deleted resource
         type: string
       updated_at:
         type: string
@@ -913,9 +1084,7 @@ definitions:
       hostname:
         type: string
       hypervisor:
-        maximum: 65535
-        minimum: 0
-        type: integer
+        type: string
       image:
         $ref: '#/definitions/common.BaseReference'
       keys:
@@ -984,14 +1153,20 @@ definitions:
         minimum: 1
         type: integer
       password:
+        maxLength: 64
+        minLength: 8
         type: string
     type: object
   apis.InstanceRescuePayload:
     properties:
       password:
+        maxLength: 64
+        minLength: 8
         type: string
       rescue_image:
         $ref: '#/definitions/common.BaseReference'
+    required:
+    - password
     type: object
   apis.InstanceResizePayload:
     properties:
@@ -1035,6 +1210,11 @@ definitions:
       name:
         type: string
       owner:
+        type: string
+      owner_uuid:
+        description: |-
+          OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to
+          release quota only when the caller's org actually owns the deleted resource
         type: string
       passwd_login:
         type: boolean
@@ -1254,6 +1434,11 @@ definitions:
         type: string
       owner:
         type: string
+      owner_uuid:
+        description: |-
+          OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to
+          release quota only when the caller's org actually owns the deleted resource
+        type: string
       subnet_names:
         type: string
       subnets:
@@ -1306,6 +1491,11 @@ definitions:
         type: string
       owner:
         type: string
+      owner_uuid:
+        description: |-
+          OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to
+          release quota only when the caller's org actually owns the deleted resource
+        type: string
       public_key:
         type: string
       updated_at:
@@ -1326,11 +1516,6 @@ definitions:
     type: object
   apis.ListenerPatchPayload:
     properties:
-      action:
-        enum:
-        - enable
-        - disable
-        type: string
       name:
         maxLength: 32
         minLength: 2
@@ -1378,6 +1563,11 @@ definitions:
         type: string
       owner:
         type: string
+      owner_uuid:
+        description: |-
+          OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to
+          release quota only when the caller's org actually owns the deleted resource
+        type: string
       port:
         type: integer
       status:
@@ -1400,11 +1590,6 @@ definitions:
     type: object
   apis.LoadBalancerPatchPayload:
     properties:
-      action:
-        enum:
-        - enable
-        - disable
-        type: string
       description:
         maxLength: 255
         type: string
@@ -1454,6 +1639,11 @@ definitions:
         type: string
       owner:
         type: string
+      owner_uuid:
+        description: |-
+          OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to
+          release quota only when the caller's org actually owns the deleted resource
+        type: string
       status:
         type: string
       updated_at:
@@ -1469,6 +1659,10 @@ definitions:
         type: array
       end:
         type: string
+      hostname:
+        items:
+          type: string
+        type: array
       id:
         items:
           type: string
@@ -1528,6 +1722,11 @@ definitions:
     properties:
       created_at:
         type: string
+      creater_name:
+        description: 发起迁移的用户名，创建时快照下来
+        type: string
+      creater_uuid:
+        type: string
       force:
         type: boolean
       id:
@@ -1538,15 +1737,32 @@ definitions:
         type: string
       owner:
         type: string
+      owner_uuid:
+        description: |-
+          OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to
+          release quota only when the caller's org actually owns the deleted resource
+        type: string
       phases:
         items:
           $ref: '#/definitions/apis.TaskResponse'
         type: array
+      progress:
+        description: 迁移进度：百分比与已传输 / 总字节数（内存 + 本地磁盘合计），由源节点上报
+        type: integer
       source_hyper:
         type: integer
+      source_hyper_name:
+        description: 节点名称，便于界面直接展示；目标节点由调度器自选（-1）时为空
+        type: string
       status:
         type: string
       target_hyper:
+        type: integer
+      target_hyper_name:
+        type: string
+      total:
+        type: integer
+      transferred:
         type: integer
       type:
         type: string
@@ -1579,17 +1795,20 @@ definitions:
         type: string
       port_max:
         maximum: 65535
-        minimum: 1
+        minimum: -1
         type: integer
       port_min:
+        description: 含义同 SecurityRulePayload；不传表示保持原值（协议变更时重置为新协议的默认值）
         maximum: 65535
-        minimum: 1
+        minimum: -1
         type: integer
       protocol:
         enum:
         - tcp
         - udp
         - icmp
+        - gre
+        - ipv6
         type: string
       remote_cidr:
         type: string
@@ -1607,6 +1826,11 @@ definitions:
       name:
         type: string
       owner:
+        type: string
+      owner_uuid:
+        description: |-
+          OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to
+          release quota only when the caller's org actually owns the deleted resource
         type: string
       port_max:
         type: integer
@@ -1678,6 +1902,11 @@ definitions:
         type: string
       owner:
         type: string
+      owner_uuid:
+        description: |-
+          OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to
+          release quota only when the caller's org actually owns the deleted resource
+        type: string
       security_rules:
         items:
           $ref: '#/definitions/apis.SecruleResponse'
@@ -1703,18 +1932,26 @@ definitions:
         minLength: 2
         type: string
       port_max:
+        description: |-
+          结束端口 / ICMP code。tcp/udp：1-65535，只传一个端口时表示单端口；
+          icmp：ICMP code 0-255，不传或 -1 表示任意，指定 code 时必须指定 type；gre/ipv6：忽略
         maximum: 65535
-        minimum: 1
+        minimum: -1
         type: integer
       port_min:
+        description: |-
+          起始端口 / ICMP type。tcp/udp：1-65535，port_min、port_max 都不传表示全部端口；
+          icmp：ICMP type 0-254，不传或 -1 表示任意；gre/ipv6：忽略。用指针区分“未传”与 0（ICMP type 可以为 0）
         maximum: 65535
-        minimum: 1
+        minimum: -1
         type: integer
       protocol:
         enum:
         - tcp
         - udp
         - icmp
+        - gre
+        - ipv6
         type: string
       remote_cidr:
         type: string
@@ -1764,6 +2001,11 @@ definitions:
       network:
         type: string
       owner:
+        type: string
+      owner_uuid:
+        description: |-
+          OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to
+          release quota only when the caller's org actually owns the deleted resource
         type: string
       start:
         type: string
@@ -1876,6 +2118,11 @@ definitions:
         type: string
       owner:
         type: string
+      owner_uuid:
+        description: |-
+          OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to
+          release quota only when the caller's org actually owns the deleted resource
+        type: string
       priority:
         type: integer
       reserved_count:
@@ -1930,11 +2177,18 @@ definitions:
         type: string
       owner:
         type: string
+      owner_uuid:
+        description: |-
+          OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to
+          release quota only when the caller's org actually owns the deleted resource
+        type: string
       updated_at:
         type: string
     type: object
   apis.TaskResponse:
     properties:
+      message:
+        type: string
       name:
         type: string
       source:
@@ -1993,6 +2247,11 @@ definitions:
         type: string
       owner:
         type: string
+      owner_uuid:
+        description: |-
+          OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to
+          release quota only when the caller's org actually owns the deleted resource
+        type: string
       subnets:
         items:
           $ref: '#/definitions/apis.SubnetResponse'
@@ -2046,6 +2305,11 @@ definitions:
         type: string
       owner:
         type: string
+      owner_uuid:
+        description: |-
+          OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to
+          release quota only when the caller's org actually owns the deleted resource
+        type: string
       path:
         type: string
       size:
@@ -2070,6 +2334,11 @@ definitions:
       name:
         type: string
       owner:
+        type: string
+      owner_uuid:
+        description: |-
+          OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to
+          release quota only when the caller's org actually owns the deleted resource
         type: string
       target:
         type: string
@@ -2175,6 +2444,11 @@ definitions:
         type: string
       owner:
         type: string
+      owner_uuid:
+        description: |-
+          OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to
+          release quota only when the caller's org actually owns the deleted resource
+        type: string
       path:
         type: string
       size:
@@ -2232,6 +2506,11 @@ definitions:
       name:
         type: string
       owner:
+        type: string
+      owner_uuid:
+        description: |-
+          OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to
+          release quota only when the caller's org actually owns the deleted resource
         type: string
       remark:
         type: string
@@ -2291,6 +2570,11 @@ definitions:
         type: string
       owner:
         type: string
+      owner_uuid:
+        description: |-
+          OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to
+          release quota only when the caller's org actually owns the deleted resource
+        type: string
       updated_at:
         type: string
     type: object
@@ -2329,6 +2613,58 @@ info:
   title: CloudLand API
   version: "1.0"
 paths:
+  /activities:
+    get:
+      consumes:
+      - application/json
+      description: 当前组织在本区域的操作动态，按时间倒序、游标分页，组织内所有成员可见
+      parameters:
+      - description: default 20, max 100
+        in: query
+        name: limit
+        type: integer
+      - description: next_cursor from previous page
+        in: query
+        name: cursor
+        type: string
+      - description: RFC3339, inclusive; default 7 days before end
+        in: query
+        name: start
+        type: string
+      - description: RFC3339, exclusive; default now; range must not exceed 90 days
+        in: query
+        name: end
+        type: string
+      - description: resource type, such as instance
+        in: query
+        name: resource_type
+        type: string
+      - description: resource uuid
+        in: query
+        name: resource_uuid
+        type: string
+      - description: 'true: only succeeded, false: only failed'
+        in: query
+        name: success
+        type: boolean
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.ActivityListResponse'
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: list activities of current organization
+      tags:
+      - Activity
   /addresses/{uuid}:
     get:
       consumes:
@@ -2418,6 +2754,33 @@ paths:
       tags:
       - Administration
       - Address Admin
+  /adjust/regenerate-bandwidth-metrics:
+    post:
+      consumes:
+      - application/json
+      description: Regenerate bandwidth configuration metrics for all active VMs or
+        a specific hyper node
+      parameters:
+      - description: Specific hyper node ID
+        in: query
+        name: hyper_id
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Regeneration result
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal server error
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Regenerate bandwidth config metrics
+      tags:
+      - Auto Scaling
   /alarm/events:
     get:
       consumes:
@@ -2610,28 +2973,66 @@ paths:
       summary: Process resource adjustment webhook
       tags:
       - Auto Scaling
-  /api/v1/metrics/alarm/sync-mappings:
-    post:
+  /audit_logs:
+    get:
       consumes:
       - application/json
-      description: Perform a full synchronization of all VM rule mappings to ensure
-        matched_vms.json is consistent with the database
+      description: 按时间倒序返回改动型操作的审计记录，仅系统管理员可见
+      parameters:
+      - description: offset
+        in: query
+        name: offset
+        type: integer
+      - description: limit, default 50
+        in: query
+        name: limit
+        type: integer
+      - description: username
+        in: query
+        name: actor
+        type: string
+      - description: user uuid
+        in: query
+        name: actor_uuid
+        type: string
+      - description: request path contains
+        in: query
+        name: path
+        type: string
+      - description: resource type, such as instance
+        in: query
+        name: resource_type
+        type: string
+      - description: resource uuid
+        in: query
+        name: resource_uuid
+        type: string
+      - description: RFC3339, inclusive
+        in: query
+        name: start
+        type: string
+      - description: RFC3339, exclusive; range must not exceed 90 days
+        in: query
+        name: end
+        type: string
       produces:
       - application/json
       responses:
         "200":
-          description: Synchronization successful
+          description: OK
           schema:
-            additionalProperties: true
-            type: object
-        "500":
-          description: Internal server error
+            $ref: '#/definitions/apis.AuditLogListResponse'
+        "400":
+          description: Bad request
           schema:
-            additionalProperties: true
-            type: object
-      summary: Synchronize all VM rule mappings
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: list audit logs
       tags:
-      - Alarm
+      - Administration
   /backups:
     get:
       consumes:
@@ -3713,6 +4114,44 @@ paths:
       tags:
       - Administration
       - Hypervisor
+  /hypers/{uuid}/console:
+    post:
+      consumes:
+      - application/json
+      description: create a single-use token for a root shell on a hypervisor (system
+        admins only, when enabled in system settings). Through the gateway the body
+        must also carry "password", the caller's login password, which the gateway
+        checks and removes
+      parameters:
+      - description: Hypervisor UUID
+        in: path
+        name: uuid
+        required: true
+        type: string
+      - description: Terminal size
+        in: body
+        name: message
+        schema:
+          $ref: '#/definitions/apis.HostConsolePayload'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.HostConsoleResponse'
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "403":
+          description: Not authorized or host console disabled
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: create a host console
+      tags:
+      - Administration
+      - Hypervisor
   /hypers/{uuid}/maintain:
     post:
       consumes:
@@ -3759,6 +4198,16 @@ paths:
       consumes:
       - application/json
       description: list images
+      parameters:
+      - description: 'true: only images owned by the current org, regardless of system
+          role'
+        in: query
+        name: owned
+        type: boolean
+      - description: public or private
+        in: query
+        name: visibility
+        type: string
       produces:
       - application/json
       responses:
@@ -4018,13 +4467,19 @@ paths:
     post:
       consumes:
       - application/json
-      description: create a console
+      description: create a console access token; type vnc (graphical, default) or
+        serial (text)
       parameters:
       - description: Instance ID
         in: path
         name: id
         required: true
         type: integer
+      - description: Console type
+        in: body
+        name: message
+        schema:
+          $ref: '#/definitions/apis.ConsolePayload'
       produces:
       - application/json
       responses:
@@ -4368,12 +4823,16 @@ paths:
     get:
       consumes:
       - application/json
-      description: Internal endpoint for CPGateway to query alarm events without owner
-        filtering
+      description: Internal endpoint for CPGateway to query alarm events, filtered
+        by org_uuid when provided
       parameters:
       - description: If 'true', only return firing event count
         in: query
         name: count_only
+        type: string
+      - description: Filter by organization UUID
+        in: query
+        name: org_uuid
         type: string
       - description: Filter by status
         in: query
@@ -4432,6 +4891,33 @@ paths:
       summary: Sync notification channels
       tags:
       - Notification
+  /internal/system-settings/sync:
+    post:
+      consumes:
+      - application/json
+      description: Internal endpoint for CPGateway to push system settings (full sync
+        with version check)
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Sync successful
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad request
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal server error
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Sync system settings
+      tags:
+      - SystemSettings
   /ip_groups:
     get:
       consumes:
@@ -4902,46 +5388,6 @@ paths:
       summary: create a listener
       tags:
       - Load Balancer
-  /load_balancers/{id}/listeners/:listener_id/backends:
-    get:
-      consumes:
-      - application/json
-      description: list backends
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/apis.BackendListResponse'
-        "401":
-          description: Not authorized
-          schema:
-            $ref: '#/definitions/common.APIError'
-      summary: list backends
-      tags:
-      - Load Balancer
-  /load_balancers/{id}/listeners/:listener_id/backends/{backend_id}:
-    delete:
-      consumes:
-      - application/json
-      description: delete a backend
-      produces:
-      - application/json
-      responses:
-        "204":
-          description: No Content
-        "400":
-          description: Bad request
-          schema:
-            $ref: '#/definitions/common.APIError'
-        "401":
-          description: Not authorized
-          schema:
-            $ref: '#/definitions/common.APIError'
-      summary: delete a backend
-      tags:
-      - Load Balancer
   /load_balancers/{id}/listeners/{listener_id}:
     delete:
       consumes:
@@ -5015,6 +5461,24 @@ paths:
       tags:
       - Load Balancer
   /load_balancers/{id}/listeners/{listener_id}/backends:
+    get:
+      consumes:
+      - application/json
+      description: list backends
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.BackendListResponse'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: list backends
+      tags:
+      - Load Balancer
     post:
       consumes:
       - application/json
@@ -5045,6 +5509,26 @@ paths:
       tags:
       - Load Balancer
   /load_balancers/{id}/listeners/{listener_id}/backends/{backend_id}:
+    delete:
+      consumes:
+      - application/json
+      description: delete a backend
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: delete a backend
+      tags:
+      - Load Balancer
     get:
       consumes:
       - application/json
@@ -5744,22 +6228,17 @@ paths:
       summary: Create memory alarm rule
       tags:
       - Alarm
-  /metrics/api/v1/adjust/regenerate-bandwidth-metrics:
+  /metrics/alarm/sync-mappings:
     post:
       consumes:
       - application/json
-      description: Regenerate bandwidth configuration metrics for all active VMs or
-        a specific hyper node
-      parameters:
-      - description: Specific hyper node ID
-        in: query
-        name: hyper_id
-        type: string
+      description: Perform a full synchronization of all VM rule mappings to ensure
+        matched_vms.json is consistent with the database
       produces:
       - application/json
       responses:
         "200":
-          description: Regeneration result
+          description: Synchronization successful
           schema:
             additionalProperties: true
             type: object
@@ -5768,10 +6247,10 @@ paths:
           schema:
             additionalProperties: true
             type: object
-      summary: Regenerate bandwidth config metrics
+      summary: Synchronize all VM rule mappings
       tags:
-      - Auto Scaling
-  /metrics/api/v1/current-alarms:
+      - Alarm
+  /metrics/current-alarms:
     get:
       consumes:
       - application/json
@@ -5792,7 +6271,7 @@ paths:
       summary: Get current active alarms
       tags:
       - Alarm
-  /metrics/api/v1/history-alarms:
+  /metrics/history-alarms:
     get:
       consumes:
       - application/json
@@ -5834,39 +6313,6 @@ paths:
       summary: Get historical alarms
       tags:
       - Alarm
-  /metrics/api/v1/rules/links:
-    get:
-      consumes:
-      - application/json
-      description: Get VM link information for alarm or adjustment rules by rule_id
-        or UUID
-      parameters:
-      - description: Rule ID or UUID
-        in: query
-        name: rule_id
-        required: true
-        type: string
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: Rule links
-          schema:
-            additionalProperties: true
-            type: object
-        "400":
-          description: Bad request
-          schema:
-            additionalProperties: true
-            type: object
-        "404":
-          description: Rule not found
-          schema:
-            additionalProperties: true
-            type: object
-      summary: Get rule VM links
-      tags:
-      - Auto Scaling
   /metrics/instances/cpu/his_data:
     post:
       consumes:
@@ -6349,6 +6795,39 @@ paths:
       summary: Get available metric subjects
       tags:
       - OpenMeter
+  /rules/links:
+    get:
+      consumes:
+      - application/json
+      description: Get VM link information for alarm or adjustment rules by rule_id
+        or UUID
+      parameters:
+      - description: Rule ID or UUID
+        in: query
+        name: rule_id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Rule links
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad request
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: Rule not found
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Get rule VM links
+      tags:
+      - Auto Scaling
   /security_groups:
     get:
       consumes:

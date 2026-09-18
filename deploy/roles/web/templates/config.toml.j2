@@ -15,8 +15,10 @@ cert = "/etc/ssl/certs/cland-selfsigned.crt"
 [internal]
 listen = "127.0.0.1:5005"
 
-[sci]
-endpoint = "http://127.0.0.1:5006"
+[cland]
+# cland-go gRPC 地址与共享令牌（环境变量 GRPC_AUTH_TOKEN 优先）
+endpoint = "127.0.0.1:5006"
+token = "{{ grpc_auth_token }}"
 
 [db]
 type = "postgres"

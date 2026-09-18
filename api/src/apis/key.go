@@ -44,8 +44,6 @@ type KeyPayload struct {
 	UUID      string `json:"uuid,omitempty" binding:"omitempty"`
 }
 
-
-
 // @Summary get a key
 // @Description get a key
 // @tags Key
@@ -70,8 +68,6 @@ func (v *KeyAPI) Get(c *gin.Context) {
 	}
 	c.JSON(http.StatusOK, keyResp)
 }
-
-
 
 // @Summary delete a key
 // @Description delete a key
@@ -117,7 +113,7 @@ func (v *KeyAPI) Create(c *gin.Context) {
 		return
 	}
 	if payload.UUID != "" && !utils.IsUUID(payload.UUID) {
-		logger.Errorf("Invalid input UUID %s", payload.UUID)
+		logger.Ctx(ctx).Errorf("Invalid input UUID %s", payload.UUID)
 		ErrorResponse(c, http.StatusBadRequest, "Invalid input UUID", nil)
 		return
 	}

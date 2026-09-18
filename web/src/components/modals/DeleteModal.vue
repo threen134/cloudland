@@ -1,5 +1,9 @@
 <script setup lang="ts">
-import { X, Trash2 } from 'lucide-vue-next'
+import { Trash2 } from 'lucide-vue-next'
+import { useI18n } from 'vue-i18n'
+import BaseModal from './BaseModal.vue'
+
+const { t } = useI18n()
 
 const props = defineProps<{
     show: boolean
@@ -9,6 +13,10 @@ const props = defineProps<{
     resourceId?: string
     loading?: boolean
     error?: string
+    /** 确认按钮文案，默认是「删除」。用于"移除成员""解绑"这类不叫删除的场景 */
+    confirmLabel?: string
+    /** 确认按钮禁用（例如资源处于不允许删除的状态） */
+    confirmDisabled?: boolean
 }>()
 
 const emit = defineEmits(['close', 'confirm'])
@@ -25,44 +33,41 @@ const handleConfirm = () => {
 </script>
 
 <template>
-    <div v-if="show" class="modal-overlay" @click.self="handleClose">
-        <div class="modal-content card delete-modal">
-            <div class="modal-header">
-                <h3>{{ title || '删除' }}</h3>
-                <button class="btn btn-ghost btn-sm icon-btn" @click="handleClose" :disabled="loading">
-                    <X :size="20" />
-                </button>
+    <BaseModal
+        :show="show"
+        :title="title || t('actions.delete')"
+        :loading="loading"
+        content-class="delete-modal"
+        @close="handleClose"
+    >
+        <div class="delete-warning">
+            <div class="delete-warning-icon">
+                <Trash2 :size="32" />
             </div>
-            <div class="modal-body">
-                <div class="delete-warning">
-                    <div class="delete-warning-icon">
-                        <Trash2 :size="32" />
-                    </div>
-                    <p class="delete-warning-text">
-                        {{ message || '确定要删除此资源吗？此操作无法撤销。' }}
-                    </p>
-                    <div v-if="resourceName || resourceId" class="delete-resource-info">
-                        <span class="delete-resource-label">资源</span>
-                        <span v-if="resourceName" class="delete-resource-name">{{ resourceName }}</span>
-                        <span v-if="resourceId" class="delete-resource-id">{{ resourceId }}</span>
-                    </div>
-                    <div v-if="error" class="text-error-box">
-                        {{ error }}
-                    </div>
-                </div>
+            <p class="delete-warning-text">
+                {{ message || t('dashboard.deleteConfirm.message') }}
+            </p>
+            <div v-if="resourceName || resourceId" class="delete-resource-info">
+                <span class="delete-resource-label">{{ t('dashboard.deleteConfirm.resource') }}</span>
+                <span v-if="resourceName" class="delete-resource-name">{{ resourceName }}</span>
+                <span v-if="resourceId" class="delete-resource-id">{{ resourceId }}</span>
             </div>
-            <div class="modal-footer">
-                <button class="btn btn-secondary" @click="handleClose" :disabled="loading">
-                    取消
-                </button>
-                <button class="btn btn-danger" @click="handleConfirm" :disabled="loading">
-                    <span v-if="loading" class="loading-spinner" style="width: 16px; height: 16px; border-width: 2px;"></span>
-                    <Trash2 v-else :size="14" />
-                    {{ loading ? ('删除中...') : ('删除') }}
-                </button>
+            <div v-if="error" class="text-error-box">
+                {{ error }}
             </div>
         </div>
-    </div>
+
+        <template #footer>
+            <button class="btn btn-secondary" @click="handleClose" :disabled="loading">
+                {{ t('actions.cancel') }}
+            </button>
+            <button class="btn btn-danger" @click="handleConfirm" :disabled="loading || confirmDisabled">
+                <span v-if="loading" class="loading-spinner" style="width: 16px; height: 16px; border-width: 2px;"></span>
+                <Trash2 v-else :size="14" />
+                {{ loading ? t('dashboard.deleteConfirm.deleting') : (confirmLabel || t('actions.delete')) }}
+            </button>
+        </template>
+    </BaseModal>
 </template>
 
 <style scoped>

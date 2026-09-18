@@ -33,17 +33,17 @@ func GetVolumeDriver() (driver string) {
 }
 
 func (a *VolumeAdmin) Get(ctx context.Context, id int64) (volume *model.Volume, err error) {
-	logger.Infof("ENTER VolumeAdmin.Get: id=%d", id)
+	logger.Ctx(ctx).Infof("ENTER VolumeAdmin.Get: id=%d", id)
 	defer func() {
 		if err != nil {
-			logger.Errorf("EXIT VolumeAdmin.Get: error=%v", err)
+			logger.Ctx(ctx).Errorf("EXIT VolumeAdmin.Get: error=%v", err)
 		} else {
-			logger.Info("EXIT VolumeAdmin.Get: success")
+			logger.Ctx(ctx).Info("EXIT VolumeAdmin.Get: success")
 		}
 	}()
 	if id <= 0 {
 		err = NewCLError(ErrInvalidParameter, fmt.Sprintf("Invalid volume ID: %d", id), nil)
-		logger.Error(err)
+		logger.Ctx(ctx).Error(err)
 		return
 	}
 	ctx, db := GetContextDB(ctx)
@@ -51,13 +51,13 @@ func (a *VolumeAdmin) Get(ctx context.Context, id int64) (volume *model.Volume, 
 	query, args := memberShip.GetOrgFilter()
 	volume = &model.Volume{Model: model.Model{ID: id}}
 	if err = db.Preload("Instance").Where(query, args...).Take(volume).Error; err != nil {
-		logger.Error("Failed to query volume, %v", err)
+		logger.Ctx(ctx).Error("Failed to query volume, %v", err)
 		err = NewCLError(ErrVolumeNotFound, "Failed to query volume", err)
 		return
 	}
 	permit := memberShip.CheckResourceOrg(model.OrgReader, volume.Owner)
 	if !permit {
-		logger.Error("Not authorized to read the volume")
+		logger.Ctx(ctx).Error("Not authorized to read the volume")
 		err = NewCLError(ErrPermissionDenied, "Not authorized to read the volume", nil)
 		return
 	}
@@ -65,12 +65,12 @@ func (a *VolumeAdmin) Get(ctx context.Context, id int64) (volume *model.Volume, 
 }
 
 func (a *VolumeAdmin) GetVolumeByUUID(ctx context.Context, uuID string) (volume *model.Volume, err error) {
-	logger.Infof("ENTER VolumeAdmin.GetVolumeByUUID: uuID=%s", uuID)
+	logger.Ctx(ctx).Infof("ENTER VolumeAdmin.GetVolumeByUUID: uuID=%s", uuID)
 	defer func() {
 		if err != nil {
-			logger.Errorf("EXIT VolumeAdmin.GetVolumeByUUID: error=%v", err)
+			logger.Ctx(ctx).Errorf("EXIT VolumeAdmin.GetVolumeByUUID: error=%v", err)
 		} else {
-			logger.Info("EXIT VolumeAdmin.GetVolumeByUUID: success")
+			logger.Ctx(ctx).Info("EXIT VolumeAdmin.GetVolumeByUUID: success")
 		}
 	}()
 	ctx, db := GetContextDB(ctx)
@@ -79,13 +79,13 @@ func (a *VolumeAdmin) GetVolumeByUUID(ctx context.Context, uuID string) (volume 
 	query, args := memberShip.GetOrgFilter()
 	err = db.Preload("Instance").Where(query, args...).Where("uuid = ?", uuID).Take(volume).Error
 	if err != nil {
-		logger.Error("DB: query volume failed", err)
+		logger.Ctx(ctx).Error("DB: query volume failed", err)
 		err = NewCLError(ErrVolumeNotFound, "Volume not found", err)
 		return
 	}
 	permit := memberShip.CheckResourceOrg(model.OrgReader, volume.Owner)
 	if !permit {
-		logger.Error("Not authorized to read the volume")
+		logger.Ctx(ctx).Error("Not authorized to read the volume")
 		err = NewCLError(ErrPermissionDenied, "Not authorized to read the volume", nil)
 		return
 	}
@@ -94,12 +94,12 @@ func (a *VolumeAdmin) GetVolumeByUUID(ctx context.Context, uuID string) (volume 
 
 func (a *VolumeAdmin) CreateVolume(ctx context.Context, name string, size int32, instanceID int64, booting bool,
 	iopsLimit int32, iopsBurst int32, bpsLimit int32, bpsBurst int32, poolID string) (volume *model.Volume, err error) {
-	logger.Infof("ENTER VolumeAdmin.CreateVolume: name=%s, size=%d, instanceID=%d, booting=%v, iopsLimit=%d, bpsLimit=%d, poolID=%s", name, size, instanceID, booting, iopsLimit, bpsLimit, poolID)
+	logger.Ctx(ctx).Infof("ENTER VolumeAdmin.CreateVolume: name=%s, size=%d, instanceID=%d, booting=%v, iopsLimit=%d, bpsLimit=%d, poolID=%s", name, size, instanceID, booting, iopsLimit, bpsLimit, poolID)
 	defer func() {
 		if err != nil {
-			logger.Errorf("EXIT VolumeAdmin.CreateVolume: error=%v", err)
+			logger.Ctx(ctx).Errorf("EXIT VolumeAdmin.CreateVolume: error=%v", err)
 		} else {
-			logger.Info("EXIT VolumeAdmin.CreateVolume: success")
+			logger.Ctx(ctx).Info("EXIT VolumeAdmin.CreateVolume: success")
 		}
 	}()
 	ctx, db, newTransaction := StartTransaction(ctx)
@@ -124,13 +124,13 @@ func (a *VolumeAdmin) CreateVolume(ctx context.Context, name string, size int32,
 		poolID = viper.GetString("volume.default_wds_pool_id")
 	}
 	if bpsLimit > 0 && (bpsLimit < model.VolumeBpsLimitMin || bpsLimit > model.VolumeBpsLimitMax) {
-		logger.Error("Invalid bps limit: %d", bpsLimit)
+		logger.Ctx(ctx).Error("Invalid bps limit: %d", bpsLimit)
 		errMsg := fmt.Sprintf("Invalid bps limit: %d, should be between %d and %d (MB/s)", bpsLimit, model.VolumeBpsLimitMin, model.VolumeBpsLimitMax)
 		err = NewCLError(ErrInvalidParameter, errMsg, nil)
 		return
 	}
 	if iopsLimit > 0 && (iopsLimit < model.VolumeIopsLimitMin || iopsLimit > model.VolumeIopsLimitMax) {
-		logger.Error("Invalid iops limit: %d", iopsLimit)
+		logger.Ctx(ctx).Error("Invalid iops limit: %d", iopsLimit)
 		errMsg := fmt.Sprintf("Invalid iops limit: %d, should be between %d and %d (IOPS)", iopsLimit, model.VolumeIopsLimitMin, model.VolumeIopsLimitMax)
 		err = NewCLError(ErrInvalidParameter, errMsg, nil)
 		return
@@ -158,7 +158,7 @@ func (a *VolumeAdmin) CreateVolume(ctx context.Context, name string, size int32,
 	}
 	err = db.Create(volume).Error
 	if err != nil {
-		logger.Error("DB failed to create volume", err)
+		logger.Ctx(ctx).Error("DB failed to create volume", err)
 		err = NewCLError(ErrVolumeCreationFailed, "Failed to create volume", err)
 		return
 	}
@@ -167,55 +167,66 @@ func (a *VolumeAdmin) CreateVolume(ctx context.Context, name string, size int32,
 
 func (a *VolumeAdmin) Create(ctx context.Context, name string, size int32,
 	iopsLimit int32, iopsBurst int32, bpsLimit int32, bpsBurst int32, poolID string) (volume *model.Volume, err error) {
-	logger.Infof("ENTER VolumeAdmin.Create: name=%s, size=%d, iopsLimit=%d, bpsLimit=%d, poolID=%s", name, size, iopsLimit, bpsLimit, poolID)
+	logger.Ctx(ctx).Infof("ENTER VolumeAdmin.Create: name=%s, size=%d, iopsLimit=%d, bpsLimit=%d, poolID=%s", name, size, iopsLimit, bpsLimit, poolID)
 	defer func() {
 		if err != nil {
-			logger.Errorf("EXIT VolumeAdmin.Create: error=%v", err)
+			logger.Ctx(ctx).Errorf("EXIT VolumeAdmin.Create: error=%v", err)
 		} else {
-			logger.Info("EXIT VolumeAdmin.Create: success")
+			logger.Ctx(ctx).Info("EXIT VolumeAdmin.Create: success")
 		}
 	}()
 	memberShip := GetMemberShip(ctx)
 	// check the permission
 	permit := memberShip.CheckOrgPermission(model.OrgWriter)
 	if !permit {
-		logger.Error("Not authorized to create volume")
+		logger.Ctx(ctx).Error("Not authorized to create volume")
 		err = NewCLError(ErrPermissionDenied, "Not authorized to create volume", nil)
 		return
 	}
 
 	volume, err = a.CreateVolume(ctx, name, size, 0, false, iopsLimit, iopsBurst, bpsLimit, bpsBurst, poolID)
 	if err != nil {
-		logger.Error("DB create volume failed", err)
+		logger.Ctx(ctx).Error("DB create volume failed", err)
 		return
 	}
 
+	if GetVolumeDriver() == "local" {
+		// 本地卷创建时还不知道会挂到哪个节点的虚拟机上，不落盘；首次挂载时在虚拟机所在节点创建（attach_volume_local.sh）
+		_, vdb := GetContextDB(ctx)
+		volume.Path = fmt.Sprintf("volume-%d.disk", volume.ID)
+		volume.Status = model.VolumeStatusAvailable
+		if err = vdb.Model(&model.Volume{}).Where("id = ?", volume.ID).Updates(map[string]interface{}{"path": volume.Path, "status": volume.Status}).Error; err != nil {
+			logger.Ctx(ctx).Error("DB update volume failed", err)
+			err = NewCLError(ErrVolumeUpdateFailed, "Failed to update volume", err)
+		}
+		return
+	}
 	control := "inter="
 	// RN-156: append the volume UUID to the command
 	command := fmt.Sprintf("/opt/cloudland/scripts/backend/create_volume_%s.sh '%d' '%d' '%s' '%d' '%d' '%d' '%d' '%s'",
-		GetVolumeDriver(), volume.ID, volume.Size, volume.UUID, iopsLimit, iopsBurst, bpsLimit, bpsBurst, poolID)
+		GetVolumeDriver(), volume.ID, volume.Size, ShellEscape(volume.UUID), iopsLimit, iopsBurst, bpsLimit, bpsBurst, ShellEscape(poolID))
 	err = HyperExecute(ctx, control, command)
 	if err != nil {
-		logger.Error("Create volume execution failed", err)
+		logger.Ctx(ctx).Error("Create volume execution failed", err)
 		return
 	}
 	return
 }
 
 func (a *VolumeAdmin) UpdateByUUID(ctx context.Context, uuid string, name string, instID int64) (volume *model.Volume, err error) {
-	logger.Infof("ENTER VolumeAdmin.UpdateByUUID: uuid=%s, name=%s, instID=%d", uuid, name, instID)
+	logger.Ctx(ctx).Infof("ENTER VolumeAdmin.UpdateByUUID: uuid=%s, name=%s, instID=%d", uuid, name, instID)
 	defer func() {
 		if err != nil {
-			logger.Errorf("EXIT VolumeAdmin.UpdateByUUID: error=%v", err)
+			logger.Ctx(ctx).Errorf("EXIT VolumeAdmin.UpdateByUUID: error=%v", err)
 		} else {
-			logger.Info("EXIT VolumeAdmin.UpdateByUUID: success")
+			logger.Ctx(ctx).Info("EXIT VolumeAdmin.UpdateByUUID: success")
 		}
 	}()
-	logger.Debugf("Update volume by UUID %s, name: %s, instID: %d", uuid, name, instID)
+	logger.Ctx(ctx).Debugf("Update volume by UUID %s, name: %s, instID: %d", uuid, name, instID)
 	ctx, db := GetContextDB(ctx)
 	volume = &model.Volume{}
 	if err = db.Where("uuid = ?", uuid).Take(volume).Error; err != nil {
-		logger.Error("DB: query volume failed", err)
+		logger.Ctx(ctx).Error("DB: query volume failed", err)
 		err = NewCLError(ErrVolumeNotFound, "Volume not found", err)
 		return
 	}
@@ -223,19 +234,19 @@ func (a *VolumeAdmin) UpdateByUUID(ctx context.Context, uuid string, name string
 }
 
 func (a *VolumeAdmin) UpdateQosByUUID(ctx context.Context, uuid string, iopsLimit int32, bpsLimit int32) (volume *model.Volume, err error) {
-	logger.Infof("ENTER VolumeAdmin.UpdateQosByUUID: uuid=%s, iopsLimit=%d, bpsLimit=%d", uuid, iopsLimit, bpsLimit)
+	logger.Ctx(ctx).Infof("ENTER VolumeAdmin.UpdateQosByUUID: uuid=%s, iopsLimit=%d, bpsLimit=%d", uuid, iopsLimit, bpsLimit)
 	defer func() {
 		if err != nil {
-			logger.Errorf("EXIT VolumeAdmin.UpdateQosByUUID: error=%v", err)
+			logger.Ctx(ctx).Errorf("EXIT VolumeAdmin.UpdateQosByUUID: error=%v", err)
 		} else {
-			logger.Info("EXIT VolumeAdmin.UpdateQosByUUID: success")
+			logger.Ctx(ctx).Info("EXIT VolumeAdmin.UpdateQosByUUID: success")
 		}
 	}()
-	logger.Debugf("Update volume qos by UUID %s, iopsLimit: %d, bpsLimit: %d", uuid, iopsLimit, bpsLimit)
+	logger.Ctx(ctx).Debugf("Update volume qos by UUID %s, iopsLimit: %d, bpsLimit: %d", uuid, iopsLimit, bpsLimit)
 	ctx, db := GetContextDB(ctx)
 	volume = &model.Volume{}
 	if err = db.Where("uuid = ?", uuid).Take(volume).Error; err != nil {
-		logger.Error("DB: query volume failed", err)
+		logger.Ctx(ctx).Error("DB: query volume failed", err)
 		err = NewCLError(ErrVolumeNotFound, "Volume not found", err)
 		return
 	}
@@ -243,23 +254,23 @@ func (a *VolumeAdmin) UpdateQosByUUID(ctx context.Context, uuid string, iopsLimi
 }
 
 func (a *VolumeAdmin) UpdateQos(ctx context.Context, id int64, iopsLimit int32, bpsLimit int32) (volume *model.Volume, err error) {
-	logger.Infof("ENTER VolumeAdmin.UpdateQos: id=%d, iopsLimit=%d, bpsLimit=%d", id, iopsLimit, bpsLimit)
+	logger.Ctx(ctx).Infof("ENTER VolumeAdmin.UpdateQos: id=%d, iopsLimit=%d, bpsLimit=%d", id, iopsLimit, bpsLimit)
 	defer func() {
 		if err != nil {
-			logger.Errorf("EXIT VolumeAdmin.UpdateQos: error=%v", err)
+			logger.Ctx(ctx).Errorf("EXIT VolumeAdmin.UpdateQos: error=%v", err)
 		} else {
-			logger.Info("EXIT VolumeAdmin.UpdateQos: success")
+			logger.Ctx(ctx).Info("EXIT VolumeAdmin.UpdateQos: success")
 		}
 	}()
-	logger.Debugf("Update volume qos by ID %d, iopsLimit: %d, bpsLimit: %d", id, iopsLimit, bpsLimit)
+	logger.Ctx(ctx).Debugf("Update volume qos by ID %d, iopsLimit: %d, bpsLimit: %d", id, iopsLimit, bpsLimit)
 	if bpsLimit > 0 && (bpsLimit < model.VolumeBpsLimitMin || bpsLimit > model.VolumeBpsLimitMax) {
-		logger.Error("Invalid bps limit: %d", bpsLimit)
+		logger.Ctx(ctx).Error("Invalid bps limit: %d", bpsLimit)
 		errMsg := fmt.Sprintf("Invalid bps limit: %d, should be between %d and %d (MB/s)", bpsLimit, model.VolumeBpsLimitMin, model.VolumeBpsLimitMax)
 		err = NewCLError(ErrInvalidParameter, errMsg, nil)
 		return
 	}
 	if iopsLimit > 0 && (iopsLimit < model.VolumeIopsLimitMin || iopsLimit > model.VolumeIopsLimitMax) {
-		logger.Error("Invalid iops limit: %d", iopsLimit)
+		logger.Ctx(ctx).Error("Invalid iops limit: %d", iopsLimit)
 		errMsg := fmt.Sprintf("Invalid iops limit: %d, should be between %d and %d (IOPS)", iopsLimit, model.VolumeIopsLimitMin, model.VolumeIopsLimitMax)
 		err = NewCLError(ErrInvalidParameter, errMsg, nil)
 		return
@@ -272,7 +283,7 @@ func (a *VolumeAdmin) UpdateQos(ctx context.Context, id int64, iopsLimit int32, 
 	}()
 	volume = &model.Volume{Model: model.Model{ID: id}}
 	if err = db.Preload("Instance").Take(volume).Error; err != nil {
-		logger.Error("DB: query volume failed", err)
+		logger.Ctx(ctx).Error("DB: query volume failed", err)
 		err = NewCLError(ErrVolumeNotFound, "Volume not found", err)
 		return
 	}
@@ -280,7 +291,7 @@ func (a *VolumeAdmin) UpdateQos(ctx context.Context, id int64, iopsLimit int32, 
 	memberShip := GetMemberShip(ctx)
 	permit := memberShip.CheckResourceOrg(model.OrgWriter, volume.Owner)
 	if !permit {
-		logger.Error("Not authorized to update the volume")
+		logger.Ctx(ctx).Error("Not authorized to update the volume")
 		err = NewCLError(ErrPermissionDenied, "Not authorized to update the volume", nil)
 		return
 	}
@@ -297,19 +308,19 @@ func (a *VolumeAdmin) UpdateQos(ctx context.Context, id int64, iopsLimit int32, 
 	}
 	// RN-156: append the volume UUID to the command
 	if volume.IopsLimit != iopsLimit || volume.BpsLimit != bpsLimit {
-		logger.Debugf("Update volume %d, iopsLimit: %d, bpsLimit: %d", volume.ID, iopsLimit, bpsLimit)
+		logger.Ctx(ctx).Debugf("Update volume %d, iopsLimit: %d, bpsLimit: %d", volume.ID, iopsLimit, bpsLimit)
 		volume.IopsLimit = iopsLimit
 		volume.BpsLimit = bpsLimit
 		control := "inter="
-		command := fmt.Sprintf("/opt/cloudland/scripts/backend/update_volume_%s.sh '%d' '%s' '%d' '%d'", vol_driver, volume.ID, volume.GetOriginVolumeID(), iopsLimit, bpsLimit)
+		command := fmt.Sprintf("/opt/cloudland/scripts/backend/update_volume_%s.sh '%d' '%s' '%d' '%d'", vol_driver, volume.ID, ShellEscape(volume.GetOriginVolumeID()), iopsLimit, bpsLimit)
 		err = HyperExecute(ctx, control, command)
 		if err != nil {
-			logger.Error("Create volume execution failed", err)
+			logger.Ctx(ctx).Error("Create volume execution failed", err)
 			return
 		}
 	}
 	if err = db.Model(volume).Updates(map[string]interface{}{"iops_limit": iopsLimit, "bps_limit": bpsLimit}).Error; err != nil {
-		logger.Error("DB: update volume failed", err)
+		logger.Ctx(ctx).Error("DB: update volume failed", err)
 		err = NewCLError(ErrVolumeUpdateFailed, "Failed to update volume", err)
 		return
 	}
@@ -317,15 +328,15 @@ func (a *VolumeAdmin) UpdateQos(ctx context.Context, id int64, iopsLimit int32, 
 }
 
 func (a *VolumeAdmin) Update(ctx context.Context, id int64, name string, instID int64) (volume *model.Volume, err error) {
-	logger.Infof("ENTER VolumeAdmin.Update: id=%d, name=%s, instID=%d", id, name, instID)
+	logger.Ctx(ctx).Infof("ENTER VolumeAdmin.Update: id=%d, name=%s, instID=%d", id, name, instID)
 	defer func() {
 		if err != nil {
-			logger.Errorf("EXIT VolumeAdmin.Update: error=%v", err)
+			logger.Ctx(ctx).Errorf("EXIT VolumeAdmin.Update: error=%v", err)
 		} else {
-			logger.Info("EXIT VolumeAdmin.Update: success")
+			logger.Ctx(ctx).Info("EXIT VolumeAdmin.Update: success")
 		}
 	}()
-	logger.Debugf("Update volume %d, name: %s, instID: %d", id, name, instID)
+	logger.Ctx(ctx).Debugf("Update volume %d, name: %s, instID: %d", id, name, instID)
 	ctx, db, newTransaction := StartTransaction(ctx)
 	defer func() {
 		if newTransaction {
@@ -334,7 +345,7 @@ func (a *VolumeAdmin) Update(ctx context.Context, id int64, name string, instID 
 	}()
 	volume = &model.Volume{Model: model.Model{ID: id}}
 	if err = db.Preload("Instance").Take(volume).Error; err != nil {
-		logger.Error("DB: query volume failed", err)
+		logger.Ctx(ctx).Error("DB: query volume failed", err)
 		err = NewCLError(ErrVolumeNotFound, "Volume not found", err)
 		return
 	}
@@ -342,7 +353,7 @@ func (a *VolumeAdmin) Update(ctx context.Context, id int64, name string, instID 
 	memberShip := GetMemberShip(ctx)
 	permit := memberShip.CheckResourceOrg(model.OrgWriter, volume.Owner)
 	if !permit {
-		logger.Error("Not authorized to update the volume")
+		logger.Ctx(ctx).Error("Not authorized to update the volume")
 		err = NewCLError(ErrPermissionDenied, "Not authorized to update the volume", nil)
 		return
 	}
@@ -366,33 +377,33 @@ func (a *VolumeAdmin) Update(ctx context.Context, id int64, name string, instID 
 	}
 	if volume.InstanceID != instID && volume.IsBusy() {
 		// no change
-		logger.Error("Volume is busy, cannot be updated", volume.Status)
+		logger.Ctx(ctx).Error("Volume is busy, cannot be updated", volume.Status)
 		err = NewCLError(ErrVolumeIsBusy, fmt.Sprintf("Volume is busy, cannot be updated, status: %s", volume.Status), nil)
 		return
 	}
 	// RN-156: append the volume UUID to the command
 	if volume.InstanceID > 0 && instID == 0 && volume.IsAttached() {
 		if volume.Booting {
-			logger.Error("Boot volume can not be detached")
+			logger.Ctx(ctx).Error("Boot volume can not be detached")
 			err = NewCLError(ErrBootVolumeCannotDetach, "Boot volume can not be detached", nil)
 			return
 		}
 		instance := &model.Instance{Model: model.Model{ID: volume.InstanceID}}
 		if err = db.Model(instance).Take(instance).Error; err != nil {
-			logger.Error("DB: query instance failed", err)
+			logger.Ctx(ctx).Error("DB: query instance failed", err)
 			err = NewCLError(ErrInstanceNotFound, "Instance not found", err)
 			return
 		}
 		if instance.Status == model.InstanceStatusPaused || instance.Status == model.InstanceStatusRescuing {
-			logger.Error("Cannot detach volume to a paused/rescuing instance", instID)
+			logger.Ctx(ctx).Error("Cannot detach volume to a paused/rescuing instance", instID)
 			err = NewCLError(ErrInstanceInvalidState, "Cannot detach volume to a paused/rescuing instance", nil)
 			return
 		}
 		control := fmt.Sprintf("inter=%d", volume.Instance.Hyper)
-		command := fmt.Sprintf("/opt/cloudland/scripts/backend/detach_volume_%s.sh '%d' '%d' '%s'", vol_driver, volume.Instance.ID, volume.ID, uuid)
+		command := fmt.Sprintf("/opt/cloudland/scripts/backend/detach_volume_%s.sh '%d' '%d' '%s'", vol_driver, volume.Instance.ID, volume.ID, ShellEscape(uuid))
 		err = HyperExecute(ctx, control, command)
 		if err != nil {
-			logger.Error("Detach volume execution failed", err)
+			logger.Ctx(ctx).Error("Detach volume execution failed", err)
 			return
 		}
 		volume.Status = model.VolumeStatusDetaching
@@ -403,21 +414,29 @@ func (a *VolumeAdmin) Update(ctx context.Context, id int64, name string, instID 
 	} else if instID > 0 && volume.InstanceID == 0 && volume.Status == model.VolumeStatusAvailable {
 		instance := &model.Instance{Model: model.Model{ID: instID}}
 		if err = db.Model(instance).Take(instance).Error; err != nil {
-			logger.Error("DB: query instance failed", err)
+			logger.Ctx(ctx).Error("DB: query instance failed", err)
 			err = NewCLError(ErrInstanceNotFound, "Instance not found", err)
 			return
 		}
 		if instance.Status == model.InstanceStatusPaused || instance.Status == model.InstanceStatusRescuing {
-			logger.Error("Cannot attach volume to a paused/rescuing instance", instID)
+			logger.Ctx(ctx).Error("Cannot attach volume to a paused/rescuing instance", instID)
 			err = NewCLError(ErrInstanceInvalidState, "Cannot attach volume to a paused/rescuing instance", nil)
 			return
 		}
 		control := fmt.Sprintf("inter=%d", instance.Hyper)
 		// RN-156: append the volume UUID to the command
-		command := fmt.Sprintf("/opt/cloudland/scripts/backend/attach_volume_%s.sh '%d' '%d' '%s' '%s'", vol_driver, instance.ID, volume.ID, volume.GetVolumePath(), uuid)
+		command := fmt.Sprintf("/opt/cloudland/scripts/backend/attach_volume_%s.sh '%d' '%d' '%s' '%s'", vol_driver, instance.ID, volume.ID, ShellEscape(volume.GetVolumePath()), ShellEscape(uuid))
+		if vol_driver == "local" {
+			// 本地卷文件只在一个节点上：已落盘的卷只能挂给同节点的虚拟机；未落盘的卷按大小在虚拟机所在节点创建
+			if volume.Hyper > 0 && volume.Hyper != instance.Hyper {
+				err = NewCLError(ErrVolumeInvalidState, fmt.Sprintf("Local volume %s is on hypervisor %d, can not be attached to an instance on hypervisor %d", volume.UUID, volume.Hyper, instance.Hyper), nil)
+				return
+			}
+			command += fmt.Sprintf(" '%d'", volume.Size)
+		}
 		err = HyperExecute(ctx, control, command)
 		if err != nil {
-			logger.Error("Create volume execution failed", err)
+			logger.Ctx(ctx).Error("Create volume execution failed", err)
 			return
 		}
 		volume.Status = model.VolumeStatusAttaching
@@ -427,7 +446,7 @@ func (a *VolumeAdmin) Update(ctx context.Context, id int64, name string, instID 
 		//volume.Instance = nil
 	}
 	if err = db.Model(&model.Volume{}).Where("id = ?", volume.ID).Updates(map[string]interface{}{"status": volume.Status, "target": volume.Target}).Error; err != nil {
-		logger.Error("DB: update volume failed", err)
+		logger.Ctx(ctx).Error("DB: update volume failed", err)
 		err = NewCLError(ErrVolumeUpdateFailed, "Failed to update volume", err)
 		return
 	}
@@ -435,12 +454,12 @@ func (a *VolumeAdmin) Update(ctx context.Context, id int64, name string, instID 
 }
 
 func (a *VolumeAdmin) Delete(ctx context.Context, volume *model.Volume) (err error) {
-	logger.Infof("ENTER VolumeAdmin.Delete: volumeID=%d, uuid=%s", volume.ID, volume.UUID)
+	logger.Ctx(ctx).Infof("ENTER VolumeAdmin.Delete: volumeID=%d, uuid=%s", volume.ID, volume.UUID)
 	defer func() {
 		if err != nil {
-			logger.Errorf("EXIT VolumeAdmin.Delete: error=%v", err)
+			logger.Ctx(ctx).Errorf("EXIT VolumeAdmin.Delete: error=%v", err)
 		} else {
-			logger.Info("EXIT VolumeAdmin.Delete: success")
+			logger.Ctx(ctx).Info("EXIT VolumeAdmin.Delete: success")
 		}
 	}()
 	ctx, db, newTransaction := StartTransaction(ctx)
@@ -453,18 +472,18 @@ func (a *VolumeAdmin) Delete(ctx context.Context, volume *model.Volume) (err err
 	memberShip := GetMemberShip(ctx)
 	permit := memberShip.CheckResourceOrg(model.OrgWriter, volume.Owner)
 	if !permit {
-		logger.Error("Not authorized to delete the volume")
+		logger.Ctx(ctx).Error("Not authorized to delete the volume")
 		err = NewCLError(ErrPermissionDenied, "Not authorized to delete the volume", nil)
 		return
 	}
 
 	if volume.IsAttached() {
-		logger.Errorf("Volume is attached to an instance, cannot be deleted %+v", volume)
+		logger.Ctx(ctx).Errorf("Volume is attached to an instance, cannot be deleted %+v", volume)
 		err = NewCLError(ErrVolumeIsInUse, fmt.Sprintf("Volume[%s](%s) is attached to an instance, please detach it first", volume.Name, volume.UUID), nil)
 		return
 	}
 	if volume.IsBusy() {
-		logger.Errorf("Volume is busy, cannot be deleted %+v", volume)
+		logger.Ctx(ctx).Errorf("Volume is busy, cannot be deleted %+v", volume)
 		err = NewCLError(ErrVolumeIsBusy, fmt.Sprintf("Volume[%s](%s) is busy, cannot be deleted", volume.Name, volume.UUID), nil)
 		return
 	}
@@ -476,13 +495,13 @@ func (a *VolumeAdmin) Delete(ctx context.Context, volume *model.Volume) (err err
 		return
 	}
 	if inCG {
-		logger.Errorf("Volume %s is in a consistency group, cannot be deleted", volume.UUID)
+		logger.Ctx(ctx).Errorf("Volume %s is in a consistency group, cannot be deleted", volume.UUID)
 		err = NewCLError(ErrVolumeInConsistencyGroup, fmt.Sprintf("Volume %s is in a consistency group, please remove it from the CG first", volume.UUID), nil)
 		return
 	}
 
 	if err = db.Model(volume).Delete(volume).Error; err != nil {
-		logger.Error("DB: delete volume failed", err)
+		logger.Ctx(ctx).Error("DB: delete volume failed", err)
 		err = NewCLError(ErrVolumeDeleteFailed, "Failed to delete volume", err)
 		return
 	}
@@ -491,30 +510,36 @@ func (a *VolumeAdmin) Delete(ctx context.Context, volume *model.Volume) (err err
 	uuid := volume.UUID
 	if vol_driver != "local" {
 		uuid = volume.GetOriginVolumeID()
+	} else {
+		if volume.Hyper <= 0 {
+			// 从未挂载过的本地卷没有落盘
+			return
+		}
+		control = fmt.Sprintf("inter=%d", volume.Hyper)
 	}
-	logger.Debug("Delete volume", vol_driver, volume.ID, uuid, volume.GetVolumePath())
-	command := fmt.Sprintf("/opt/cloudland/scripts/backend/clear_volume_%s.sh '%d' '%s' '%s'", vol_driver, volume.ID, uuid, volume.GetVolumePath())
+	logger.Ctx(ctx).Debug("Delete volume", vol_driver, volume.ID, uuid, volume.GetVolumePath())
+	command := fmt.Sprintf("/opt/cloudland/scripts/backend/clear_volume_%s.sh '%d' '%s' '%s'", vol_driver, volume.ID, ShellEscape(uuid), ShellEscape(volume.GetVolumePath()))
 	err = HyperExecute(ctx, control, command)
 	if err != nil {
-		logger.Error("Delete volume execution failed", err)
+		logger.Ctx(ctx).Error("Delete volume execution failed", err)
 		return
 	}
 	return
 }
 
 func (a *VolumeAdmin) DeleteVolumeByUUID(ctx context.Context, uuID string) (err error) {
-	logger.Infof("ENTER VolumeAdmin.DeleteVolumeByUUID: uuID=%s", uuID)
+	logger.Ctx(ctx).Infof("ENTER VolumeAdmin.DeleteVolumeByUUID: uuID=%s", uuID)
 	defer func() {
 		if err != nil {
-			logger.Errorf("EXIT VolumeAdmin.DeleteVolumeByUUID: error=%v", err)
+			logger.Ctx(ctx).Errorf("EXIT VolumeAdmin.DeleteVolumeByUUID: error=%v", err)
 		} else {
-			logger.Info("EXIT VolumeAdmin.DeleteVolumeByUUID: success")
+			logger.Ctx(ctx).Info("EXIT VolumeAdmin.DeleteVolumeByUUID: success")
 		}
 	}()
 	ctx, db := GetContextDB(ctx)
 	volume := &model.Volume{}
 	if err = db.Where("uuid = ?", uuID).Take(volume).Error; err != nil {
-		logger.Error("DB: query volume failed", err)
+		logger.Ctx(ctx).Error("DB: query volume failed", err)
 		err = NewCLError(ErrVolumeNotFound, "Volume not found", err)
 		return
 	}
@@ -522,15 +547,15 @@ func (a *VolumeAdmin) DeleteVolumeByUUID(ctx context.Context, uuID string) (err 
 }
 
 func (a *VolumeAdmin) Resize(ctx context.Context, volume *model.Volume, size int32) (err error) {
-	logger.Infof("ENTER VolumeAdmin.Resize: volumeID=%d, size=%d", volume.ID, size)
+	logger.Ctx(ctx).Infof("ENTER VolumeAdmin.Resize: volumeID=%d, size=%d", volume.ID, size)
 	defer func() {
 		if err != nil {
-			logger.Errorf("EXIT VolumeAdmin.Resize: error=%v", err)
+			logger.Ctx(ctx).Errorf("EXIT VolumeAdmin.Resize: error=%v", err)
 		} else {
-			logger.Info("EXIT VolumeAdmin.Resize: success")
+			logger.Ctx(ctx).Info("EXIT VolumeAdmin.Resize: success")
 		}
 	}()
-	logger.Debugf("Resize volume %d with size %d", volume.ID, size)
+	logger.Ctx(ctx).Debugf("Resize volume %d with size %d", volume.ID, size)
 	ctx, db, newTransaction := StartTransaction(ctx)
 	defer func() {
 		if newTransaction {
@@ -540,23 +565,23 @@ func (a *VolumeAdmin) Resize(ctx context.Context, volume *model.Volume, size int
 	memberShip := GetMemberShip(ctx)
 	permit := memberShip.CheckResourceOrg(model.OrgWriter, volume.Owner)
 	if !permit {
-		logger.Error("Not authorized to resize the volume")
+		logger.Ctx(ctx).Error("Not authorized to resize the volume")
 		err = NewCLError(ErrPermissionDenied, "Not authorized to resize the volume", nil)
 		return
 	}
 	if volume.IsError() {
-		logger.Error("Volume is in error status")
+		logger.Ctx(ctx).Error("Volume is in error status")
 		err = NewCLError(ErrVolumeInvalidState, "Volume is in error status", nil)
 		return
 	}
 	if volume.IsBusy() {
-		logger.Error("Volume is busy")
+		logger.Ctx(ctx).Error("Volume is busy")
 		err = NewCLError(ErrVolumeIsBusy, "Volume is busy", nil)
 		return
 	}
 
 	if size <= volume.Size {
-		logger.Error("The size must be greater than the original size")
+		logger.Ctx(ctx).Error("The size must be greater than the original size")
 		err = NewCLError(ErrVolumeInvalidSize, "The size must be greater than the original size", nil)
 		return
 	}
@@ -564,14 +589,14 @@ func (a *VolumeAdmin) Resize(ctx context.Context, volume *model.Volume, size int
 		"size":   size,
 		"status": model.VolumeStatusResizing,
 	}).Error; err != nil {
-		logger.Error("update volume failed", err)
+		logger.Ctx(ctx).Error("update volume failed", err)
 		err = NewCLError(ErrVolumeUpdateFailed, "Failed to update volume", err)
 		return
 	}
 	if volume.Booting {
 		instance := &model.Instance{Model: model.Model{ID: volume.InstanceID}}
 		if err = db.Model(instance).Take(instance).Error; err != nil {
-			logger.Error("DB: query instance failed", err)
+			logger.Ctx(ctx).Error("DB: query instance failed", err)
 			err = NewCLError(ErrInstanceNotFound, "Instance not found", err)
 			return
 		}
@@ -580,7 +605,7 @@ func (a *VolumeAdmin) Resize(ctx context.Context, volume *model.Volume, size int
 			var flavor *model.Flavor
 			flavor, err = flavorAdmin.Get(ctx, instance.FlavorID)
 			if err != nil {
-				logger.Errorf("Failed to get flavor %+v, %+v", instance.FlavorID, err)
+				logger.Ctx(ctx).Errorf("Failed to get flavor %+v, %+v", instance.FlavorID, err)
 				err = NewCLError(ErrFlavorNotFound, "Flavor not found", err)
 				return
 			}
@@ -591,7 +616,7 @@ func (a *VolumeAdmin) Resize(ctx context.Context, volume *model.Volume, size int
 			"memory": memory,
 			"disk":   size,
 		}).Error; err != nil {
-			logger.Error("DB: update instance failed", err)
+			logger.Ctx(ctx).Error("DB: update instance failed", err)
 			err = NewCLError(ErrInstanceUpdateFailed, "Failed to update instance", err)
 			return
 		}
@@ -604,23 +629,30 @@ func (a *VolumeAdmin) Resize(ctx context.Context, volume *model.Volume, size int
 	}
 	if volume.InstanceID != 0 {
 		control = fmt.Sprintf("inter=%d", volume.Instance.Hyper)
+	} else if volDriver == "local" {
+		if volume.Hyper <= 0 {
+			// 未落盘的本地卷只改记录，首次挂载时按新大小创建
+			err = db.Model(&model.Volume{}).Where("id = ?", volume.ID).Update("status", model.VolumeStatusAvailable).Error
+			return
+		}
+		control = fmt.Sprintf("inter=%d", volume.Hyper)
 	}
-	command := fmt.Sprintf("/opt/cloudland/scripts/backend/resize_volume_%s.sh '%d' '%s' '%d' '%t' '%d'", volDriver, volume.ID, uuid, size, volume.Booting, volume.InstanceID)
+	command := fmt.Sprintf("/opt/cloudland/scripts/backend/resize_volume_%s.sh '%d' '%s' '%d' '%t' '%d'", volDriver, volume.ID, ShellEscape(uuid), size, volume.Booting, volume.InstanceID)
 	err = HyperExecute(ctx, control, command)
 	if err != nil {
-		logger.Error("Resize remote exec failed", err)
+		logger.Ctx(ctx).Error("Resize remote exec failed", err)
 		return
 	}
 	return
 }
 
 func (a *VolumeAdmin) GetVolumesByInstanceID(ctx context.Context, instanceID int64) (volumes []*model.Volume, err error) {
-	logger.Infof("ENTER VolumeAdmin.GetVolumesByInstanceID: instanceID=%d", instanceID)
+	logger.Ctx(ctx).Infof("ENTER VolumeAdmin.GetVolumesByInstanceID: instanceID=%d", instanceID)
 	defer func() {
 		if err != nil {
-			logger.Errorf("EXIT VolumeAdmin.GetVolumesByInstanceID: error=%v", err)
+			logger.Ctx(ctx).Errorf("EXIT VolumeAdmin.GetVolumesByInstanceID: error=%v", err)
 		} else {
-			logger.Info("EXIT VolumeAdmin.GetVolumesByInstanceID: success")
+			logger.Ctx(ctx).Info("EXIT VolumeAdmin.GetVolumesByInstanceID: success")
 		}
 	}()
 	ctx, db := GetContextDB(ctx)
@@ -628,7 +660,7 @@ func (a *VolumeAdmin) GetVolumesByInstanceID(ctx context.Context, instanceID int
 	query, args := memberShip.GetOrgFilter()
 	volumes = []*model.Volume{}
 	if err = db.Preload("Instance").Where(query, args...).Where("instance_id = ?", instanceID).Find(&volumes).Error; err != nil {
-		logger.Error("Failed to query volumes, %v", err)
+		logger.Ctx(ctx).Error("Failed to query volumes, %v", err)
 		err = NewCLError(ErrSQLSyntaxError, "Failed to query volumes", err)
 		return
 	}
@@ -637,24 +669,24 @@ func (a *VolumeAdmin) GetVolumesByInstanceID(ctx context.Context, instanceID int
 
 // list data volumes
 func (a *VolumeAdmin) List(ctx context.Context, offset, limit int64, order, query string) (total int64, volumes []*model.Volume, err error) {
-	logger.Infof("ENTER VolumeAdmin.List: offset=%d, limit=%d, order=%s, query=%s", offset, limit, order, query)
+	logger.Ctx(ctx).Infof("ENTER VolumeAdmin.List: offset=%d, limit=%d, order=%s, query=%s", offset, limit, order, query)
 	defer func() {
 		if err != nil {
-			logger.Errorf("EXIT VolumeAdmin.List: error=%v", err)
+			logger.Ctx(ctx).Errorf("EXIT VolumeAdmin.List: error=%v", err)
 		} else {
-			logger.Info("EXIT VolumeAdmin.List: success")
+			logger.Ctx(ctx).Info("EXIT VolumeAdmin.List: success")
 		}
 	}()
 	return a.ListVolume(ctx, offset, limit, order, query, "all")
 }
 
 func (a *VolumeAdmin) ListVolume(ctx context.Context, offset, limit int64, order, query string, volume_type string) (total int64, volumes []*model.Volume, err error) {
-	logger.Infof("ENTER VolumeAdmin.ListVolume: offset=%d, limit=%d, order=%s, query=%s, volume_type=%s", offset, limit, order, query, volume_type)
+	logger.Ctx(ctx).Infof("ENTER VolumeAdmin.ListVolume: offset=%d, limit=%d, order=%s, query=%s, volume_type=%s", offset, limit, order, query, volume_type)
 	defer func() {
 		if err != nil {
-			logger.Errorf("EXIT VolumeAdmin.ListVolume: error=%v", err)
+			logger.Ctx(ctx).Errorf("EXIT VolumeAdmin.ListVolume: error=%v", err)
 		} else {
-			logger.Info("EXIT VolumeAdmin.ListVolume: success")
+			logger.Ctx(ctx).Info("EXIT VolumeAdmin.ListVolume: success")
 		}
 	}()
 	memberShip := GetMemberShip(ctx)
@@ -667,9 +699,6 @@ func (a *VolumeAdmin) ListVolume(ctx context.Context, offset, limit int64, order
 		order = "created_at"
 	}
 
-	if query != "" {
-		query = fmt.Sprintf("name like '%%%s%%'", query)
-	}
 	queryBuilder, args := memberShip.GetOrgFilter()
 	booting_where := ""
 	switch volume_type {
@@ -685,27 +714,32 @@ func (a *VolumeAdmin) ListVolume(ctx context.Context, offset, limit int64, order
 	}
 	volumes = []*model.Volume{}
 	if booting_where != "" {
-		if err = db.Model(&model.Volume{}).Where(queryBuilder, args...).Where(query).Where(booting_where).Count(&total).Error; err != nil {
+		if err = db.Model(&model.Volume{}).Where(queryBuilder, args...).Scopes(dbs.Contains(query, "name")).Where(booting_where).Count(&total).Error; err != nil {
 			err = NewCLError(ErrSQLSyntaxError, "Failed to count volumes", err)
 			return
 		}
 	} else {
-		if err = db.Model(&model.Volume{}).Where(queryBuilder, args...).Where(query).Count(&total).Error; err != nil {
+		if err = db.Model(&model.Volume{}).Where(queryBuilder, args...).Scopes(dbs.Contains(query, "name")).Count(&total).Error; err != nil {
 			err = NewCLError(ErrSQLSyntaxError, "Failed to count volumes", err)
 			return
 		}
 	}
-	db = dbs.Sortby(db.Offset(offset).Limit(limit), order)
-	if err = db.Preload("Instance").Where(queryBuilder, args...).Where(query).Find(&volumes).Error; err != nil {
+	db = dbs.Sortby(db.Offset(int(offset)).Limit(int(limit)), order)
+	listQuery := db.Preload("Instance").Where(queryBuilder, args...).Scopes(dbs.Contains(query, "name"))
+	// 类型条件必须同时作用于计数和取数：此前只加在计数上，type=data 返回 total=0 却列出全部系统盘
+	if booting_where != "" {
+		listQuery = listQuery.Where(booting_where)
+	}
+	if err = listQuery.Find(&volumes).Error; err != nil {
 		err = NewCLError(ErrSQLSyntaxError, "Failed to query volumes", err)
 		return
 	}
 	if memberShip.IsSystemAdmin() {
-		db = db.Offset(0).Limit(-1)
+		_, db = GetContextDB(ctx) // 链式调用复用 Statement，取新会话查询 OwnerInfo
 		for _, vol := range volumes {
 			vol.OwnerInfo = &model.Organization{Model: model.Model{ID: vol.Owner}}
 			if err = db.Take(vol.OwnerInfo).Error; err != nil {
-				logger.Error("Failed to query owner info", err)
+				logger.Ctx(ctx).Error("Failed to query owner info", err)
 				err = NewCLError(ErrOwnerNotFound, "Owner organization not found", err)
 				return
 			}

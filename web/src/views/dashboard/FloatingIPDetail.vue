@@ -2,20 +2,23 @@
 import { ref, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { floatingIpsApi, type FloatingIP } from '../../api/networks'
-import { ArrowLeft, Globe, Trash2, Server, Network, Copy, Check, ChevronDown, Pencil } from 'lucide-vue-next'
+import { ArrowLeft, Globe, Trash2, Server, Network, Copy, Check, ChevronDown } from 'lucide-vue-next'
 import { useI18n } from 'vue-i18n'
 import { useToast } from '../../composables/useToast'
 import { useFloatingIP } from '../../composables/useFloatingIP'
 import DeleteModal from '../../components/modals/DeleteModal.vue'
+import InfoRow from '../../components/base/InfoRow.vue'
+import { useCopyId } from '../../composables/useCopyId'
+import { useGoBack } from '../../composables/useGoBack'
 
 const route = useRoute()
 const router = useRouter()
 const fipId = route.params.id as string
+const { copiedId: copiedField, copyId: copyToClipboard } = useCopyId()
 
 const fip = ref<FloatingIP | null>(null)
 const loading = ref(true)
 const error = ref('')
-const copiedField = ref<string | null>(null)
 const showActionMenu = ref(false)
 const { t } = useI18n()
 const toast = useToast()
@@ -65,9 +68,7 @@ const fetchFip = async () => {
     }
 }
 
-const goBack = () => {
-    router.back()
-}
+const goBack = useGoBack('floating-ips')
 
 const toggleActionMenu = () => {
     showActionMenu.value = !showActionMenu.value
@@ -75,13 +76,6 @@ const toggleActionMenu = () => {
 
 const closeActionMenu = () => {
     showActionMenu.value = false
-}
-
-const copyToClipboard = (text: string, field: string) => {
-    navigator.clipboard.writeText(text).then(() => {
-        copiedField.value = field
-        setTimeout(() => { copiedField.value = null }, 2000)
-    })
 }
 
 onMounted(fetchFip)
@@ -153,34 +147,13 @@ onMounted(fetchFip)
                     <div class="card info-card">
                         <h3>{{ $t('dashboard.table.generalInformation') }}</h3>
                         <div class="key-value-list">
-                            <div class="kv-item">
-                                <span class="label">{{ $t('dashboard.table.name') }}</span>
-                                <span class="value">{{ fip.name || '-' }}</span>
-                            </div>
-                            <div class="kv-item">
-                                <span class="label">{{ $t('dashboard.table.type') }}</span>
-                                <span class="value">{{ getTypeLabel(fip.type || '') }}</span>
-                            </div>
-                            <div class="kv-item">
-                                <span class="label">{{ $t('dashboard.floatingIPDetail.publicIp') }}</span>
-                                <span class="value mono">{{ fip.public_ip || '-' }}</span>
-                            </div>
-                            <div class="kv-item">
-                                <span class="label">{{ $t('dashboard.floatingIPDetail.internalIp') }}</span>
-                                <span class="value mono">{{ fip.ip_address }}</span>
-                            </div>
-                            <div class="kv-item">
-                                <span class="label">{{ $t('dashboard.table.owner') }}</span>
-                                <span class="value">{{ fip.owner || '-' }}</span>
-                            </div>
-                            <div class="kv-item">
-                                <span class="label">{{ $t('dashboard.table.createdAt') }}</span>
-                                <span class="value">{{ fip.created_at || '-' }}</span>
-                            </div>
-                            <div class="kv-item">
-                                <span class="label">{{ $t('dashboard.table.updatedAt') }}</span>
-                                <span class="value">{{ fip.updated_at || '-' }}</span>
-                            </div>
+                            <InfoRow :label="$t('dashboard.table.name')">{{ fip.name || '-' }}</InfoRow>
+                            <InfoRow :label="$t('dashboard.table.type')">{{ getTypeLabel(fip.type || '') }}</InfoRow>
+                            <InfoRow :label="$t('dashboard.floatingIPDetail.publicIp')" mono>{{ fip.public_ip || '-' }}</InfoRow>
+                            <InfoRow :label="$t('dashboard.floatingIPDetail.internalIp')" mono>{{ fip.ip_address }}</InfoRow>
+                            <InfoRow :label="$t('dashboard.table.owner')">{{ fip.owner || '-' }}</InfoRow>
+                            <InfoRow :label="$t('dashboard.table.createdAt')">{{ fip.created_at || '-' }}</InfoRow>
+                            <InfoRow :label="$t('dashboard.table.updatedAt')">{{ fip.updated_at || '-' }}</InfoRow>
                         </div>
                     </div>
 
@@ -188,14 +161,8 @@ onMounted(fetchFip)
                     <div class="card info-card">
                         <h3>{{ $t('dashboard.floatingIPDetail.bandwidth') }}</h3>
                         <div class="key-value-list">
-                            <div class="kv-item">
-                                <span class="label">{{ $t('dashboard.floatingIPDetail.inbound') }}</span>
-                                <span class="value">{{ fip.inbound || 0 }} Mbps</span>
-                            </div>
-                            <div class="kv-item">
-                                <span class="label">{{ $t('dashboard.floatingIPDetail.outbound') }}</span>
-                                <span class="value">{{ fip.outbound || 0 }} Mbps</span>
-                            </div>
+                            <InfoRow :label="$t('dashboard.floatingIPDetail.inbound')">{{ fip.inbound || 0 }} Mbps</InfoRow>
+                            <InfoRow :label="$t('dashboard.floatingIPDetail.outbound')">{{ fip.outbound || 0 }} Mbps</InfoRow>
                         </div>
                     </div>
                 </div>
@@ -205,35 +172,23 @@ onMounted(fetchFip)
                     <div class="card info-card" v-if="fip.type !== 'native'">
                         <h3>{{ $t('dashboard.table.networkDetails') }}</h3>
                         <div class="key-value-list">
-                            <div class="kv-item">
-                                <span class="label">{{ $t('dashboard.table.vpc') }}</span>
-                                <span class="value" v-if="fip.vpc">
-                                    <router-link :to="{name: 'vpc-detail', params: {id: fip.vpc.id}}" class="text-link">
-                                        {{ fip.vpc.name }}
-                                    </router-link>
-                                </span>
-                                <span class="value text-secondary" v-else>-</span>
-                            </div>
-                            <div class="kv-item">
-                                <span class="label">{{ $t('dashboard.table.subnet') }}</span>
-                                <span class="value" v-if="fip.subnet">
-                                    <router-link :to="{name: 'subnet-detail', params: {id: fip.subnet.id}}" class="text-link">
-                                        {{ fip.subnet.name }}
-                                    </router-link>
-                                </span>
-                                <span class="value text-secondary" v-else>-</span>
-                            </div>
-                            <div class="kv-item">
-                                <span class="label">{{ $t('dashboard.floatingIPDetail.ipGroup') }}</span>
-                                <span class="value" v-if="fip.group">
-                                    {{ fip.group.name }}
-                                </span>
-                                <span class="value text-secondary" v-else>-</span>
-                            </div>
-                            <div class="kv-item">
-                                <span class="label">{{ $t('dashboard.floatingIPDetail.vlan') }}</span>
-                                <span class="value mono">{{ fip.vlan || '-' }}</span>
-                            </div>
+                            <InfoRow :label="$t('dashboard.table.vpc')">
+                                <router-link v-if="fip.vpc" :to="{name: 'vpc-detail', params: {id: fip.vpc.id}}" class="text-link">
+                                    {{ fip.vpc.name }}
+                                </router-link>
+                                <span v-else class="text-secondary">-</span>
+                            </InfoRow>
+                            <InfoRow :label="$t('dashboard.table.subnet')">
+                                <router-link v-if="fip.subnet" :to="{name: 'subnet-detail', params: {id: fip.subnet.id}}" class="text-link">
+                                    {{ fip.subnet.name }}
+                                </router-link>
+                                <span v-else class="text-secondary">-</span>
+                            </InfoRow>
+                            <InfoRow :label="$t('dashboard.floatingIPDetail.ipGroup')">
+                                <span v-if="fip.group">{{ fip.group.name }}</span>
+                                <span v-else class="text-secondary">-</span>
+                            </InfoRow>
+                            <InfoRow :label="$t('dashboard.floatingIPDetail.vlan')" mono>{{ fip.vlan || '-' }}</InfoRow>
                         </div>
                     </div>
 
@@ -241,23 +196,18 @@ onMounted(fetchFip)
                     <div class="card info-card">
                         <h3>{{ $t('dashboard.floatingIPDetail.association') }}</h3>
                         <div class="key-value-list">
-                            <div class="kv-item">
-                                <span class="label"><Server :size="14" /> {{ $t('dashboard.table.instance') }}</span>
-                                <span class="value" v-if="fip.target_interface?.from_instance">
-                                    <router-link :to="{name: 'instance-detail', params: {id: fip.target_interface.from_instance.id}}" class="text-link">
-                                        {{ fip.target_interface.from_instance.hostname }}
-                                    </router-link>
-                                </span>
-                                <span class="value text-secondary" v-else>{{ $t('messages.notAttached') }}</span>
-                            </div>
-                            <div class="kv-item">
-                                <span class="label"><Network :size="14" /> {{ $t('dashboard.floatingIPDetail.interfaceId') }}</span>
-                                <span class="value mono">{{ fip.target_interface?.id || '-' }}</span>
-                            </div>
-                            <div class="kv-item">
-                                <span class="label">{{ $t('dashboard.floatingIPDetail.interfaceIp') }}</span>
-                                <span class="value mono">{{ fip.target_interface?.ip_address || '-' }}</span>
-                            </div>
+                            <InfoRow :label="$t('dashboard.table.instance')">
+                                <template #label><Server :size="14" /> {{ $t('dashboard.table.instance') }}</template>
+                                <router-link v-if="fip.target_interface?.from_instance" :to="{name: 'instance-detail', params: {id: fip.target_interface.from_instance.id}}" class="text-link">
+                                    {{ fip.target_interface.from_instance.hostname }}
+                                </router-link>
+                                <span v-else class="text-secondary">{{ $t('messages.notAttached') }}</span>
+                            </InfoRow>
+                            <InfoRow :label="$t('dashboard.floatingIPDetail.interfaceId')" mono>
+                                <template #label><Network :size="14" /> {{ $t('dashboard.floatingIPDetail.interfaceId') }}</template>
+                                {{ fip.target_interface?.id || '-' }}
+                            </InfoRow>
+                            <InfoRow :label="$t('dashboard.floatingIPDetail.interfaceIp')" mono>{{ fip.target_interface?.ip_address || '-' }}</InfoRow>
                         </div>
                     </div>
                 </div>
@@ -462,7 +412,7 @@ onMounted(fetchFip)
 }
 
 .info-card h3 {
-    font-size: var(--font-size-md);
+    font-size: var(--font-size-base);
     font-weight: 600;
     margin: 0 0 var(--spacing-4) 0;
     color: var(--text-primary);
@@ -474,29 +424,6 @@ onMounted(fetchFip)
     display: flex;
     flex-direction: column;
     gap: var(--spacing-3);
-}
-
-.kv-item {
-    display: flex;
-    justify-content: space-between;
-    font-size: var(--font-size-sm);
-}
-
-.kv-item .label {
-    color: var(--text-secondary);
-    display: flex;
-    align-items: center;
-    gap: 6px;
-}
-
-.kv-item .value {
-    color: var(--text-primary);
-    font-weight: 500;
-    text-align: right;
-}
-
-.value.mono {
-    font-family: var(--font-family-mono);
 }
 
 .text-link {

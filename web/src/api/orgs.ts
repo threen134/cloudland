@@ -64,76 +64,90 @@ export const ORG_ROLES: Record<number, string> = {
 
 export const orgsApi = {
     // List organizations
-    fetchOrgs() {
-        return client.get('/orgs')
+    async fetchOrgs() {
+        const response = await client.get('/orgs')
+        return response.data
     },
 
     // Get single organization
-    getOrg(uuid: string) {
-        return client.get(`/orgs/${uuid}`)
+    async getOrg(uuid: string) {
+        const response = await client.get(`/orgs/${uuid}`)
+        return response.data
     },
 
     // Create organization
-    createOrg(payload: CreateOrgPayload) {
-        return client.post('/orgs', payload)
+    async createOrg(payload: CreateOrgPayload) {
+        const response = await client.post('/orgs', payload)
+        return response.data
     },
 
     // Update organization
-    updateOrg(uuid: string, payload: Partial<CreateOrgPayload>) {
-        return client.patch(`/orgs/${uuid}`, payload)
+    async updateOrg(uuid: string, payload: Partial<CreateOrgPayload>) {
+        const response = await client.patch(`/orgs/${uuid}`, payload)
+        return response.data
     },
 
     // Delete organization
-    deleteOrg(uuid: string) {
-        return client.delete(`/orgs/${uuid}`)
+    async deleteOrg(uuid: string) {
+        const response = await client.delete(`/orgs/${uuid}`)
+        return response.data
     },
 
     // --- Member Management ---
 
     // List members of an org
-    fetchMembers(orgUuid: string) {
-        return client.get(`/orgs/${orgUuid}/members`)
+    async fetchMembers(orgUuid: string) {
+        const response = await client.get(`/orgs/${orgUuid}/members`)
+        return response.data
     },
 
     // Add member to an org
-    addMember(orgUuid: string, payload: AddMemberPayload) {
-        return client.post(`/orgs/${orgUuid}/members`, payload)
+    async addMember(orgUuid: string, payload: AddMemberPayload) {
+        const response = await client.post(`/orgs/${orgUuid}/members`, payload)
+        return response.data
     },
 
     // Update member role
-    updateMemberRole(orgUuid: string, userUuid: string, payload: UpdateMemberRolePayload) {
-        return client.patch(`/orgs/${orgUuid}/members/${userUuid}`, payload)
+    async updateMemberRole(orgUuid: string, userUuid: string, payload: UpdateMemberRolePayload) {
+        const response = await client.patch(`/orgs/${orgUuid}/members/${userUuid}`, payload)
+        return response.data
     },
 
     // Remove member from org
-    removeMember(orgUuid: string, userUuid: string) {
-        return client.delete(`/orgs/${orgUuid}/members/${userUuid}`)
+    async removeMember(orgUuid: string, userUuid: string) {
+        const response = await client.delete(`/orgs/${orgUuid}/members/${userUuid}`)
+        return response.data
     },
 
     // Transfer ownership
-    transferOwnership(orgUuid: string, newOwnerUuid: string) {
-        return client.post(`/orgs/${orgUuid}/transfer-owner`, { new_owner_uuid: newOwnerUuid })
+    async transferOwnership(orgUuid: string, newOwnerUuid: string) {
+        const response = await client.post(`/orgs/${orgUuid}/transfer-owner`, { new_owner_uuid: newOwnerUuid })
+        return response.data
     },
 
     // --- Invitations ---
 
     // Send invitation
-    inviteMember(orgUuid: string, payload: InvitePayload) {
-        return client.post(`/orgs/${orgUuid}/invitations`, payload)
+    async inviteMember(orgUuid: string, payload: InvitePayload) {
+        const response = await client.post(`/orgs/${orgUuid}/invitations`, payload)
+        return response.data
     },
 
     // List pending invitations
-    fetchInvitations(orgUuid: string) {
-        return client.get(`/orgs/${orgUuid}/invitations`)
+    async fetchInvitations(orgUuid: string) {
+        const response = await client.get(`/orgs/${orgUuid}/invitations`)
+        return response.data
     },
 
     // Cancel invitation
-    cancelInvitation(orgUuid: string, invitationUuid: string) {
-        return client.delete(`/orgs/${orgUuid}/invitations/${invitationUuid}`)
+    async cancelInvitation(orgUuid: string, invitationUuid: string) {
+        const response = await client.delete(`/orgs/${orgUuid}/invitations/${invitationUuid}`)
+        return response.data
     },
 
     // Update organization status
-    updateOrgStatus(uuid: string, status: number) {
-        return client.patch(`/orgs/${uuid}/status`, { status })
+    async updateOrgStatus(uuid: string, status: number) {
+        const response = await client.patch(`/orgs/${uuid}/status`, { status })
+        return response.data
     },
 }

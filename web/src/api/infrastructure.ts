@@ -18,8 +18,8 @@ export interface InfrastructureConfig {
     minio_hostname: string
     clapi_hostname: string
     clapi_internal_url: string
-    sci_shared_secret: string     // always masked
-    sci_shared_secret_set: boolean
+    capture_upload_secret: string     // always masked
+    capture_upload_secret_set: boolean
 }
 
 export interface TestS3Response {
@@ -29,11 +29,13 @@ export interface TestS3Response {
 }
 
 export const infrastructureApi = {
-    get(): Promise<{ data: InfrastructureConfig }> {
-        return apiClient.get('/system/infrastructure')
+    async get(): Promise<InfrastructureConfig> {
+        const response = await apiClient.get('/system/infrastructure')
+        return response.data
     },
 
-    testS3(): Promise<{ data: TestS3Response }> {
-        return apiClient.post('/system/infrastructure/test-s3')
+    async testS3(): Promise<TestS3Response> {
+        const response = await apiClient.post('/system/infrastructure/test-s3')
+        return response.data
     },
 }

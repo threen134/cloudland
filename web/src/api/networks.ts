@@ -280,7 +280,7 @@ export interface SecurityGroupListResponse {
 }
 
 export const securityGroupsApi = {
-    list: async (params?: { offset?: number; limit?: number; vpc_id?: string }): Promise<SecurityGroupListResponse> => {
+    list: async (params?: { offset?: number; limit?: number; query?: string; vpc_id?: string }): Promise<SecurityGroupListResponse> => {
         const response = await client.get('/security_groups', { params })
         return response.data
     },
@@ -321,6 +321,9 @@ export interface Backend {
     name?: string
     endpoint: string
     status?: string
+    ssl?: boolean
+    // Health check result reported by the master haproxy
+    health?: 'up' | 'down' | 'unknown'
     created_at?: string
     owner?: string
 }
@@ -367,6 +370,13 @@ export interface ListenerPayload {
 export interface BackendPayload {
     name: string
     endpoint: string
+    ssl?: boolean
+}
+
+export interface BackendPatchPayload {
+    name: string
+    endpoint?: string
+    ssl?: boolean
 }
 
 export interface LoadBalancerListResponse {
@@ -377,7 +387,7 @@ export interface LoadBalancerListResponse {
 }
 
 export const loadBalancersApi = {
-    list: async (params?: { offset?: number; limit?: number }): Promise<LoadBalancerListResponse> => {
+    list: async (params?: { offset?: number; limit?: number; query?: string; vpc_id?: string }): Promise<LoadBalancerListResponse> => {
         const response = await client.get('/load_balancers', { params })
         return response.data
     },
@@ -389,7 +399,7 @@ export const loadBalancersApi = {
         const response = await client.post('/load_balancers', payload)
         return response.data
     },
-    patch: async (id: string, payload: { name?: string; description?: string; action?: 'enable' | 'disable' }): Promise<LoadBalancer> => {
+    patch: async (id: string, payload: { name: string; description?: string }): Promise<LoadBalancer> => {
         const response = await client.patch(`/load_balancers/${id}`, payload)
         return response.data
     },
@@ -404,6 +414,10 @@ export const loadBalancersApi = {
     deleteListener: async (lbId: string, listenerId: string): Promise<void> => {
         await client.delete(`/load_balancers/${lbId}/listeners/${listenerId}`)
     },
+    patchListener: async (lbId: string, listenerId: string, payload: { name: string }): Promise<Listener> => {
+        const response = await client.patch(`/load_balancers/${lbId}/listeners/${listenerId}`, payload)
+        return response.data
+    },
     // Backends
     addBackend: async (lbId: string, listenerId: string, backend: BackendPayload): Promise<Backend> => {
         const response = await client.post(`/load_balancers/${lbId}/listeners/${listenerId}/backends`, backend)
@@ -412,7 +426,11 @@ export const loadBalancersApi = {
     deleteBackend: async (lbId: string, listenerId: string, backendId: string): Promise<void> => {
         await client.delete(`/load_balancers/${lbId}/listeners/${listenerId}/backends/${backendId}`)
     },
-    addFloatingIp: async (lbId: string, payload: { name: string; public_subnet?: { id: string }; inbound?: number; outbound?: number }): Promise<FloatingIP> => {
+    patchBackend: async (lbId: string, listenerId: string, backendId: string, payload: BackendPatchPayload): Promise<Backend> => {
+        const response = await client.patch(`/load_balancers/${lbId}/listeners/${listenerId}/backends/${backendId}`, payload)
+        return response.data
+    },
+    addFloatingIp: async (lbId: string, payload: { name: string; public_subnet?: { id: string }; inbound?: number; outbound?: number }): Promise<FloatingIP[]> => {
         const response = await client.post(`/load_balancers/${lbId}/floating_ips`, payload)
         return response.data
     },

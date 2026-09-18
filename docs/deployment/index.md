@@ -56,7 +56,7 @@ graph TB
     subgraph regionA["Region A <small>（区域控制面）</small>"]
         RGW_A["Region Gateway<br/><small>VNC WebSocket TLS 终端</small><br/><small>:8443</small>"]
         CLAPI_A["clapi<br/><small>REST API :8255</small>"]
-        CLAND_A["cloudland<br/><small>主控 SCI :9988</small>"]
+        CLAND_A["cland-go<br/><small>主控 gRPC :5006</small>"]
         CONSOLE_A["consoleproxy<br/><small>VNC :9443 内网</small>"]
         MONITOR_A["Prometheus / Grafana<br/><small>Alertmanager / Loki</small>"]
     end
@@ -64,7 +64,7 @@ graph TB
     subgraph regionB["Region B <small>（区域控制面）</small>"]
         RGW_B["Region Gateway<br/><small>VNC WebSocket TLS 终端</small><br/><small>:8443</small>"]
         CLAPI_B["clapi<br/><small>REST API :8255</small>"]
-        CLAND_B["cloudland<br/><small>主控 SCI :9988</small>"]
+        CLAND_B["cland-go<br/><small>主控 gRPC :5006</small>"]
         CONSOLE_B["consoleproxy<br/><small>VNC :9443 内网</small>"]
         MONITOR_B["Prometheus / Grafana<br/><small>Alertmanager / Loki</small>"]
     end
@@ -80,9 +80,9 @@ graph TB
     RGW_B --> CONSOLE_B
     CLAPI_A --> CLAND_A
     CLAPI_B --> CLAND_B
-    CLAND_A -. "SCI" .-> HY_A1["计算节点 A1"]
-    CLAND_A -. "SCI" .-> HY_A2["计算节点 A2"]
-    CLAND_B -. "SCI" .-> HY_B1["计算节点 B1"]
+    HY_A1["计算节点 A1"] -. "gRPC" .-> CLAND_A
+    HY_A2["计算节点 A2"] -. "gRPC" .-> CLAND_A
+    HY_B1["计算节点 B1"] -. "gRPC" .-> CLAND_B
 ```
 
 > [!NOTE]

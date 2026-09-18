@@ -25,7 +25,7 @@ export const useAuthStore = defineStore('auth', () => {
         try {
             const res = await authApi.getUserInfo()
             // API returns { message, user: {...} } — extract the nested user object
-            const userData = res.data?.user || res.data
+            const userData = res?.user || res
             user.value = userData
             const userStorage = localStorage.getItem('cloudland_remember') === '1' ? localStorage : sessionStorage
             userStorage.setItem('cloudland_user', JSON.stringify(user.value))
@@ -40,10 +40,18 @@ export const useAuthStore = defineStore('auth', () => {
     const init = () => {
         const storedUser = sessionStorage.getItem('cloudland_user') || localStorage.getItem('cloudland_user')
         if (storedUser) {
-            user.value = JSON.parse(storedUser)
+            try {
+                user.value = JSON.parse(storedUser)
+            } catch {
+                // 存储里的用户信息损坏：清掉当成未登录处理，
+                // 否则这里抛错会中断 store 初始化（路由守卫里调用），整个页面白屏
+                console.warn('[auth] stored user info is not valid JSON, clearing it')
+                localStorage.removeItem('cloudland_user')
+                sessionStorage.removeItem('cloudland_user')
+            }
             // Restore token if needed, or check validity
             const token = getToken()
-            if (token) {
+            if (user.value && token) {
                 setAuthToken(token)
                 // Fetch fresh user info to ensure we have the latest (e.g. username)
                 refreshUser().catch(() => {})
@@ -62,14 +70,14 @@ export const useAuthStore = defineStore('auth', () => {
 
         try {
             const response = await authApi.login({ username, password })
-            const token = response.data.access_token
+            const token = response.access_token
 
             setAuthToken(token, rememberMe)
 
             // Fetch user info from /auth/me
             const userInfoRes = await authApi.getUserInfo()
             // API returns { message, user: {...} } — extract the nested user object
-            const userData = userInfoRes.data?.user || userInfoRes.data
+            const userData = userInfoRes?.user || userInfoRes
             user.value = userData
             const userStorage = rememberMe ? localStorage : sessionStorage
             userStorage.setItem('cloudland_user', JSON.stringify(user.value))

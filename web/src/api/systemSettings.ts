@@ -15,7 +15,7 @@ export interface SystemSettingsResponse {
 }
 
 export interface TestNotificationRequest {
-    channel: 'email' | 'feishu' | 'slack' | 'webhook'
+    channel: 'email' | 'feishu'
 }
 
 export interface TestNotificationResponse {
@@ -25,15 +25,18 @@ export interface TestNotificationResponse {
 }
 
 export const systemSettingsApi = {
-    list(): Promise<{ data: SystemSettingsResponse }> {
-        return apiClient.get('/system/settings')
+    async list(): Promise<SystemSettingsResponse> {
+        const response = await apiClient.get('/system/settings')
+        return response.data
     },
 
-    update(payload: Record<string, any>): Promise<{ data: SystemSettingsResponse }> {
-        return apiClient.put('/system/settings', payload)
+    async update(payload: Record<string, any>): Promise<SystemSettingsResponse> {
+        const response = await apiClient.put('/system/settings', payload)
+        return response.data
     },
 
-    testNotification(channel: string): Promise<{ data: TestNotificationResponse }> {
-        return apiClient.post('/system/settings/test-notification', { channel })
+    async testNotification(channel: string): Promise<TestNotificationResponse> {
+        const response = await apiClient.post('/system/settings/test-notification', { channel })
+        return response.data
     },
 }

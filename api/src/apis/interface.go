@@ -91,17 +91,17 @@ type InterfacePatchPayload struct {
 func (v *InterfaceAPI) Get(c *gin.Context) {
 	ctx := c.Request.Context()
 	uuID := c.Param("id")
-	logger.Debugf("Patch instance interface %s", uuID)
+	logger.Ctx(ctx).Debugf("Patch instance interface %s", uuID)
 	instance, err := instanceAdmin.GetInstanceByUUID(ctx, uuID)
 	if err != nil {
-		logger.Errorf("Failed to get instance %s, %+v", uuID, err)
+		logger.Ctx(ctx).Errorf("Failed to get instance %s, %+v", uuID, err)
 		ErrorResponse(c, http.StatusBadRequest, "Invalid instance query", err)
 		return
 	}
 	ifaceID := c.Param("interface_id")
 	iface, err := interfaceAdmin.GetInterfaceByUUID(ctx, ifaceID)
 	if err != nil {
-		logger.Errorf("Failed to get interface %s, %+v", ifaceID, err)
+		logger.Ctx(ctx).Errorf("Failed to get interface %s, %+v", ifaceID, err)
 		ErrorResponse(c, http.StatusBadRequest, "Invalid interface query", err)
 		return
 	}
@@ -110,7 +110,7 @@ func (v *InterfaceAPI) Get(c *gin.Context) {
 		ErrorResponse(c, http.StatusInternalServerError, "Internal error", err)
 		return
 	}
-	logger.Debugf("Get interface successfully, %s, %+v", ifaceID, interfaceResp)
+	logger.Ctx(ctx).Debugf("Get interface successfully, %s, %+v", ifaceID, interfaceResp)
 	c.JSON(http.StatusOK, interfaceResp)
 }
 
@@ -138,7 +138,7 @@ func (v *InterfaceAPI) getInterfaceResponse(ctx context.Context, instance *model
 			for i, floatingip := range instance.FloatingIps {
 				err = floatingIpAdmin.EnsureSubnetID(ctx, floatingip)
 				if err != nil {
-					logger.Error("Failed to ensure subnet_id", err)
+					logger.Ctx(ctx).Error("Failed to ensure subnet_id", err)
 					err = nil
 					continue
 				}
@@ -222,31 +222,31 @@ func (v *InterfaceAPI) getInterfaceResponse(ctx context.Context, instance *model
 func (v *InterfaceAPI) Patch(c *gin.Context) {
 	ctx := c.Request.Context()
 	uuID := c.Param("id")
-	logger.Debugf("Patch instance interface %s", uuID)
+	logger.Ctx(ctx).Debugf("Patch instance interface %s", uuID)
 	instance, err := instanceAdmin.GetInstanceByUUID(ctx, uuID)
 	if err != nil {
-		logger.Errorf("Failed to get instance %s, %+v", uuID, err)
+		logger.Ctx(ctx).Errorf("Failed to get instance %s, %+v", uuID, err)
 		ErrorResponse(c, http.StatusBadRequest, "Invalid instance query", err)
 		return
 	}
 	ifaceID := c.Param("interface_id")
 	iface, err := interfaceAdmin.GetInterfaceByUUID(ctx, ifaceID)
 	if err != nil {
-		logger.Errorf("Failed to get interface %s, %+v", ifaceID, err)
+		logger.Ctx(ctx).Errorf("Failed to get interface %s, %+v", ifaceID, err)
 		ErrorResponse(c, http.StatusBadRequest, "Invalid interface query", err)
 		return
 	}
 	payload := &InterfacePatchPayload{}
 	err = c.ShouldBindJSON(payload)
 	if err != nil {
-		logger.Errorf("Failed to bind JSON, %+v", err)
+		logger.Ctx(ctx).Errorf("Failed to bind JSON, %+v", err)
 		ErrorResponse(c, http.StatusBadRequest, "Invalid input JSON", err)
 		return
 	}
 	ifaceName := iface.Name
 	if payload.Name != "" {
 		ifaceName = payload.Name
-		logger.Debugf("Update interface name to %s", ifaceName)
+		logger.Ctx(ctx).Debugf("Update interface name to %s", ifaceName)
 	}
 	inbound := iface.Inbound
 	if payload.Inbound != nil {
@@ -273,7 +273,7 @@ func (v *InterfaceAPI) Patch(c *gin.Context) {
 				var secgroup *model.SecurityGroup
 				secgroup, err = secgroupAdmin.GetSecurityGroup(ctx, sg)
 				if err != nil {
-					logger.Errorf("Get security group failed, %+v", err)
+					logger.Ctx(ctx).Errorf("Get security group failed, %+v", err)
 					ErrorResponse(c, http.StatusBadRequest, "Invalid security group", err)
 					return
 				}
@@ -289,14 +289,14 @@ func (v *InterfaceAPI) Patch(c *gin.Context) {
 			if instance.Router != nil {
 				secgroup, err = secgroupAdmin.Get(ctx, instance.Router.DefaultSG)
 				if err != nil {
-					logger.Errorf("Get security group failed, %+v", err)
+					logger.Ctx(ctx).Errorf("Get security group failed, %+v", err)
 					ErrorResponse(c, http.StatusBadRequest, "Invalid security group", err)
 					return
 				}
 			} else {
 				secgroup, err = secgroupAdmin.GetDefaultSecgroup(ctx)
 				if err != nil {
-					logger.Error("Get default security group failed", err)
+					logger.Ctx(ctx).Error("Get default security group failed", err)
 					return
 				}
 			}
@@ -308,9 +308,9 @@ func (v *InterfaceAPI) Patch(c *gin.Context) {
 	if iface.FloatingIp > 0 {
 		ifaceVlan := iface.Address.Subnet.Vlan
 		if payload.PublicAddresses == nil {
-			_, publicIps, err = floatingIpAdmin.List(ctx, 0, -1, "", "", fmt.Sprintf("instance_id = %d", iface.Instance))
+			_, publicIps, err = floatingIpAdmin.List(ctx, 0, -1, "", "", "instance_id = ?", iface.Instance)
 			if err != nil {
-				logger.Errorf("Failed to get public ips")
+				logger.Ctx(ctx).Errorf("Failed to get public ips")
 				ErrorResponse(c, http.StatusBadRequest, "Failed to get public ip", err)
 				return
 			}
@@ -319,17 +319,17 @@ func (v *InterfaceAPI) Patch(c *gin.Context) {
 				var floatingIp *model.FloatingIp
 				floatingIp, err = floatingIpAdmin.GetFloatingIpByUUID(ctx, pubAddr.ID)
 				if err != nil {
-					logger.Errorf("Failed to get public ip")
+					logger.Ctx(ctx).Errorf("Failed to get public ip")
 					ErrorResponse(c, http.StatusBadRequest, "Failed to get public ip", err)
 					return
 				}
 				if floatingIp.InstanceID > 0 && floatingIp.InstanceID != instance.ID {
-					logger.Errorf("Public IP %s is in use", floatingIp.FipAddress)
+					logger.Ctx(ctx).Errorf("Public IP %s is in use", floatingIp.FipAddress)
 					ErrorResponse(c, http.StatusBadRequest, "Public IP is in use", err)
 					return
 				}
 				if ifaceVlan != floatingIp.Subnet.Vlan {
-					logger.Error("Second ips are not allowed to be in different vlan")
+					logger.Ctx(ctx).Error("Second ips are not allowed to be in different vlan")
 					ErrorResponse(c, http.StatusBadRequest, "Second ips are not allowed to be in different vlan", err)
 					return
 				}
@@ -340,12 +340,12 @@ func (v *InterfaceAPI) Patch(c *gin.Context) {
 			var primaryFip *model.FloatingIp
 			primaryFip, err = floatingIpAdmin.GetFloatingIpByUUID(ctx, payload.PrimaryAddress.ID)
 			if err != nil {
-				logger.Errorf("Failed to get primary public ip")
+				logger.Ctx(ctx).Errorf("Failed to get primary public ip")
 				ErrorResponse(c, http.StatusBadRequest, "Failed to get primary public ip", err)
 				return
 			}
 			if ifaceVlan != primaryFip.Subnet.Vlan {
-				logger.Error("New primary ip is not allowed to be in different vlan")
+				logger.Ctx(ctx).Error("New primary ip is not allowed to be in different vlan")
 				ErrorResponse(c, http.StatusBadRequest, "New primary ip is not allowed to be in different vlan", nil)
 				return
 			}
@@ -364,12 +364,12 @@ func (v *InterfaceAPI) Patch(c *gin.Context) {
 			var ifaceSubnet *model.Subnet
 			ifaceSubnet, err = subnetAdmin.GetSubnet(ctx, subnet)
 			if err != nil {
-				logger.Errorf("Failed to get interface subnet")
+				logger.Ctx(ctx).Errorf("Failed to get interface subnet")
 				ErrorResponse(c, http.StatusBadRequest, "Failed to get interface subnet", err)
 				return
 			}
 			if ifaceSubnet.Vlan != iface.Address.Subnet.Vlan {
-				logger.Errorf("Invalid subnet vlan for interface")
+				logger.Ctx(ctx).Errorf("Invalid subnet vlan for interface")
 				ErrorResponse(c, http.StatusBadRequest, "Invalid subnet vlan for interface", err)
 				return
 			}
@@ -378,7 +378,7 @@ func (v *InterfaceAPI) Patch(c *gin.Context) {
 	}
 	var siteSubnets []*model.Subnet
 	if !iface.PrimaryIf && len(payload.SiteSubnets) > 0 {
-		logger.Errorf("Only primary interface can have site subnets")
+		logger.Ctx(ctx).Errorf("Only primary interface can have site subnets")
 		ErrorResponse(c, http.StatusBadRequest, "Only primary interface can have site subnets", err)
 		return
 	}
@@ -386,7 +386,7 @@ func (v *InterfaceAPI) Patch(c *gin.Context) {
 		var siteSubnet *model.Subnet
 		siteSubnet, err = subnetAdmin.GetSubnet(ctx, site)
 		if err != nil {
-			logger.Errorf("Failed to get site subnet")
+			logger.Ctx(ctx).Errorf("Failed to get site subnet")
 			ErrorResponse(c, http.StatusBadRequest, "Failed to get site subnet", err)
 			return
 		}
@@ -394,13 +394,13 @@ func (v *InterfaceAPI) Patch(c *gin.Context) {
 	}
 	iface2, err := interfaceAdmin.Update(ctx, instance, iface, ifaceName, inbound, outbound, allowSpoofing, secgroups, ifaceSubnets, siteSubnets, count, publicIps)
 	if err != nil {
-		logger.Errorf("Patch instance failed, %+v", err)
+		logger.Ctx(ctx).Errorf("Patch instance failed, %+v", err)
 		ErrorResponse(c, http.StatusBadRequest, "Patch instance failed", err)
 		return
 	}
 	interfaceResp, err := v.getInterfaceResponse(ctx, instance, iface2)
 	if err != nil {
-		logger.Errorf("Get interface responsefailed, %+v", err)
+		logger.Ctx(ctx).Errorf("Get interface responsefailed, %+v", err)
 		ErrorResponse(c, http.StatusInternalServerError, "Internal error", err)
 		return
 	}
@@ -421,14 +421,14 @@ func (v *InterfaceAPI) Delete(c *gin.Context) {
 	uuID := c.Param("id")
 	instance, err := instanceAdmin.GetInstanceByUUID(ctx, uuID)
 	if err != nil {
-		logger.Errorf("Failed to get instance: %+v", err)
+		logger.Ctx(ctx).Errorf("Failed to get instance: %+v", err)
 		ErrorResponse(c, http.StatusBadRequest, "Failed to get instance", err)
 		return
 	}
 	ifaceID := c.Param("interface_id")
 	iface, err := interfaceAdmin.GetInterfaceByUUID(ctx, ifaceID)
 	if err != nil {
-		logger.Errorf("Failed to get interface %s, %+v", ifaceID, err)
+		logger.Ctx(ctx).Errorf("Failed to get interface %s, %+v", ifaceID, err)
 		ErrorResponse(c, http.StatusBadRequest, "Invalid interface query", err)
 		return
 	}
@@ -441,7 +441,7 @@ func (v *InterfaceAPI) Delete(c *gin.Context) {
 }
 
 func (v *InterfaceAPI) getInterfaceInfo(ctx context.Context, vpc *model.Router, ifacePayload *InterfacePayload) (router *model.Router, ifaceInfo *services.InterfaceInfo, err error) {
-	logger.Debugf("Get interface info with VPC %+v, ifacePayload %+v", vpc, ifacePayload)
+	logger.Ctx(ctx).Debugf("Get interface info with VPC %+v, ifacePayload %+v", vpc, ifacePayload)
 	if ifacePayload == nil {
 		err = fmt.Errorf("Interface can not be nill")
 		return
@@ -467,12 +467,12 @@ func (v *InterfaceAPI) getInterfaceInfo(ctx context.Context, vpc *model.Router, 
 				return
 			}
 			if floatingIp.InstanceID > 0 {
-				logger.Errorf("Public IP %s is in use", floatingIp.FipAddress)
+				logger.Ctx(ctx).Errorf("Public IP %s is in use", floatingIp.FipAddress)
 				return
 			}
 			err = floatingIpAdmin.EnsureSubnetID(ctx, floatingIp)
 			if err != nil {
-				logger.Error("Failed to ensure subnet_id", err)
+				logger.Ctx(ctx).Error("Failed to ensure subnet_id", err)
 				return
 			}
 
@@ -564,7 +564,7 @@ func (v *InterfaceAPI) getInterfaceInfo(ctx context.Context, vpc *model.Router, 
 		} else {
 			secgroup, err = secgroupAdmin.GetDefaultSecgroup(ctx)
 			if err != nil {
-				logger.Error("Get default security group failed", err)
+				logger.Ctx(ctx).Error("Get default security group failed", err)
 				return
 			}
 		}
@@ -583,7 +583,7 @@ func (v *InterfaceAPI) getInterfaceInfo(ctx context.Context, vpc *model.Router, 
 			ifaceInfo.SecurityGroups = append(ifaceInfo.SecurityGroups, secgroup)
 		}
 	}
-	logger.Debugf("Get interface info success, router %+v, ifaceInfo %+v", router, ifaceInfo)
+	logger.Ctx(ctx).Debugf("Get interface info success, router %+v, ifaceInfo %+v", router, ifaceInfo)
 	return
 }
 
@@ -608,25 +608,25 @@ func (v *InterfaceAPI) Create(c *gin.Context) {
 	}
 	instance, err := instanceAdmin.GetInstanceByUUID(ctx, uuID)
 	if err != nil {
-		logger.Errorf("Failed to get instance: %+v", err)
+		logger.Ctx(ctx).Errorf("Failed to get instance: %+v", err)
 		ErrorResponse(c, http.StatusBadRequest, "Failed to get instance", err)
 		return
 	}
 	_, ifaceInfo, err := v.getInterfaceInfo(ctx, nil, payload)
 	if err != nil {
-		logger.Errorf("Failed to get interface %+v, %+v", payload, err)
+		logger.Ctx(ctx).Errorf("Failed to get interface %+v, %+v", payload, err)
 		ErrorResponse(c, http.StatusBadRequest, "Invalid primary interface", err)
 		return
 	}
 	iface, err := interfaceAdmin.Create(ctx, instance, ifaceInfo.MacAddress, ifaceInfo.IpAddress, ifaceInfo.Inbound, ifaceInfo.Outbound, ifaceInfo.AllowSpoofing, ifaceInfo.SecurityGroups, ifaceInfo.Subnets, ifaceInfo.Count-1)
 	if err != nil {
-		logger.Errorf("Failed to create subnet, err=%v", err)
+		logger.Ctx(ctx).Errorf("Failed to create subnet, err=%v", err)
 		ErrorResponse(c, http.StatusBadRequest, "Failed to create subnet", err)
 		return
 	}
 	interfaceResp, err := v.getInterfaceResponse(ctx, instance, iface)
 	if err != nil {
-		logger.Errorf("Failed to get interface response, err=%v", err)
+		logger.Ctx(ctx).Errorf("Failed to get interface response, err=%v", err)
 		ErrorResponse(c, http.StatusInternalServerError, "Internal error", err)
 		return
 	}
@@ -646,34 +646,34 @@ func (v *InterfaceAPI) List(c *gin.Context) {
 	uuID := c.Param("id")
 	offsetStr := c.DefaultQuery("offset", "0")
 	limitStr := c.DefaultQuery("limit", "50")
-	logger.Debugf("List interfaces for instance %s, offset:%s, limit:%s", uuID, offsetStr, limitStr)
+	logger.Ctx(ctx).Debugf("List interfaces for instance %s, offset:%s, limit:%s", uuID, offsetStr, limitStr)
 	offset, err := strconv.Atoi(offsetStr)
 	if err != nil {
-		logger.Errorf("Failed to parse offset: %s, %+v", offsetStr, err)
+		logger.Ctx(ctx).Errorf("Failed to parse offset: %s, %+v", offsetStr, err)
 		ErrorResponse(c, http.StatusBadRequest, "Invalid query offset: "+offsetStr, err)
 		return
 	}
 	limit, err := strconv.Atoi(limitStr)
 	if err != nil {
-		logger.Errorf("Failed to parse limit: %s, %+v", limitStr, err)
+		logger.Ctx(ctx).Errorf("Failed to parse limit: %s, %+v", limitStr, err)
 		ErrorResponse(c, http.StatusBadRequest, "Invalid query limit: "+limitStr, err)
 		return
 	}
 	if offset < 0 || limit < 0 {
 		errStr := "Invalid query offset or limit, cannot be negative"
-		logger.Errorf(errStr)
+		logger.Ctx(ctx).Errorf(errStr)
 		ErrorResponse(c, http.StatusBadRequest, "Invalid query offset or limit", errors.New(errStr))
 		return
 	}
 	instance, err := instanceAdmin.GetInstanceByUUID(ctx, uuID)
 	if err != nil {
-		logger.Errorf("Failed to get instance: %+v", err)
+		logger.Ctx(ctx).Errorf("Failed to get instance: %+v", err)
 		ErrorResponse(c, http.StatusBadRequest, "Failed to get instance", err)
 		return
 	}
 	total, interfaces, err := interfaceAdmin.List(ctx, int64(offset), int64(limit), "-created_at", instance)
 	if err != nil {
-		logger.Errorf("Failed to list interfaces, %+v", err)
+		logger.Ctx(ctx).Errorf("Failed to list interfaces, %+v", err)
 		ErrorResponse(c, http.StatusBadRequest, "Failed to list secrules", err)
 		return
 	}
@@ -690,6 +690,6 @@ func (v *InterfaceAPI) List(c *gin.Context) {
 			return
 		}
 	}
-	logger.Debugf("List secrules successfully for SG %s, %+v", uuID, interfaceListResp)
+	logger.Ctx(ctx).Debugf("List secrules successfully for SG %s, %+v", uuID, interfaceListResp)
 	c.JSON(http.StatusOK, interfaceListResp)
 }

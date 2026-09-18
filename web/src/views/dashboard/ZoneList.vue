@@ -1,11 +1,15 @@
 <script setup lang="ts">
 import { ref, onMounted, computed, watch } from 'vue'
 import { zonesApi, type Zone, type CreateZonePayload } from '../../api/zones'
-import { Search as SearchIcon, MapPin, Plus, RefreshCw, Trash2, Settings2, X, Loader2, Check, Copy } from 'lucide-vue-next'
+import { Search as SearchIcon, MapPin, Plus, RefreshCw, Trash2, Settings2, Loader2, Check, Copy } from 'lucide-vue-next'
 import { useI18n } from 'vue-i18n'
 import { useToast } from '../../composables/useToast'
 import { useCopyId } from '../../composables/useCopyId'
 import { useRegionStore } from '../../stores/region'
+import BaseModal from '../../components/modals/BaseModal.vue'
+import DeleteModal from '../../components/modals/DeleteModal.vue'
+import PageToolbar from '../../components/base/PageToolbar.vue'
+import DataTable, { type Column } from '../../components/base/DataTable.vue'
 
 const region = useRegionStore()
 
@@ -13,6 +17,7 @@ const { t } = useI18n()
 const toast = useToast()
 const zoneList = ref<Zone[]>([])
 const loading = ref(false)
+const loadError = ref('')
 
 const { copiedId, copyId } = useCopyId()
 const searchQuery = ref('')
@@ -33,15 +38,25 @@ const showDeleteModal = ref(false)
 const deleting = ref(false)
 const deletingZone = ref<Zone | null>(null)
 
+const columns = computed<Column[]>(() => [
+    { key: 'name', label: t('dashboard.table.nameId'), sortable: true },
+    { key: 'remark', label: t('dashboard.zoneActions.remark'), sortable: true },
+    { key: 'type', label: t('dashboard.table.type'), sortable: true, sortValue: (z) => (z.default ? 0 : 1) },
+    { key: 'actions', label: t('dashboard.table.actions'), align: 'center' },
+])
+
 const fetchZones = async () => {
     loading.value = true
+    loadError.value = ''
     try {
         const response = await zonesApi.fetchZones()
-        const data = response.data as any
+        const data = response as any
         zoneList.value = Array.isArray(data) ? data : (data.zones || [])
     } catch (error) {
+        // 原先失败只打日志、把列表清空，用户看到的是"没有数据"
         console.error('API fetch failed:', error)
         zoneList.value = []
+        loadError.value = t('messages.error')
     } finally {
         loading.value = false
     }
@@ -138,14 +153,8 @@ onMounted(() => {
 
 <template>
   <div class="vpc-list-container">
-    <div class="page-header">
-      <div class="search-wrapper">
-        <div class="search-box">
-          <SearchIcon :size="16" class="search-icon" />
-          <input type="text" v-model="searchQuery" :placeholder="t('actions.search') + '...'" class="search-input" />
-        </div>
-      </div>
-      <div class="header-actions">
+    <PageToolbar v-model:search="searchQuery">
+      <template #actions>
         <button class="btn btn-secondary btn-sm btn-icon" @click="fetchZones" :title="t('actions.refresh')">
           <RefreshCw :size="14" :class="{ spinning: loading }" />
         </button>
@@ -153,214 +162,152 @@ onMounted(() => {
           <Plus :size="14" />
           <span>{{ t('actions.create') }}</span>
         </button>
-      </div>
-    </div>
+      </template>
+    </PageToolbar>
 
-    <div class="card table-card">
-      <table class="data-table">
-        <thead>
-          <tr>
-            <th>{{ t('dashboard.table.nameId') }}</th>
-            <th>{{ t('dashboard.zoneActions.remark') }}</th>
-            <th>{{ t('dashboard.table.type') }}</th>
-            <th>{{ t('dashboard.table.actions') }}</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-if="loading">
-            <td colspan="4" class="text-center">
-              <div class="loading-spinner" style="margin: 20px auto;"></div>
-            </td>
-          </tr>
-          <tr v-else-if="filteredZones.length === 0">
-            <td colspan="4" class="text-center text-secondary" style="padding: 48px;">
-               <div v-if="searchQuery">
-                  <SearchIcon :size="48" style="opacity: 0.3; margin-bottom: 16px;" />
-                  <p>{{ t('messages.noResults') }}</p>
-               </div>
-               <div v-else class="empty-state">
-                  <MapPin :size="48" style="opacity: 0.2; margin-bottom: 16px;" />
-                  <p>{{ t('messages.noData') }}</p>
-               </div>
-            </td>
-          </tr>
-          <tr v-else v-for="zone in filteredZones" :key="zone.name">
-            <td>
-              <router-link :to="{ name: 'zone-detail', params: { name: zone.name } }" class="resource-link">
-                <div class="resource-info">
-                  <div class="resource-icon">
-                    <MapPin :size="16" />
-                  </div>
-                  <div>
-                    <div class="resource-name">{{ zone.name }}</div>
-                    <div class="resource-id-row">
-                      <span class="resource-id" :title="zone.id || '-'">
-                        {{ (zone.id || '-').slice(0, 8) }}{{ (zone.id || '').length > 8 ? '...' : '' }}
-                      </span>
-                      <button v-if="zone.id" class="copy-btn-mini" @click.stop.prevent="copyId(zone.id)" :title="t('actions.copy')" :aria-label="t('actions.copy')">
-                        <Check v-if="copiedId === zone.id" :size="10" style="color: #10b981;" />
-                        <Copy v-else :size="10" />
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              </router-link>
-            </td>
-            <td class="remark-cell">{{ zone.remark || '-' }}</td>
-            <td>
-              <span class="badge" :class="zone.default ? 'badge-primary' : 'badge-secondary'">
-                <Check v-if="zone.default" :size="12" />
-                {{ zone.default ? t('dashboard.zoneActions.default') : 'Zone' }}
-              </span>
-            </td>
-            <td>
-              <div class="table-actions">
-                <button class="icon-btn-table" @click.prevent="openEditModal(zone)" :title="t('actions.edit')">
-                  <Settings2 :size="16" />
-                </button>
-                <button class="icon-btn-table text-error" @click.prevent="confirmDelete(zone)" :title="t('actions.delete')">
-                  <Trash2 :size="16" />
+    <DataTable
+      :columns="columns"
+      :rows="filteredZones"
+      row-key="name"
+      :loading="loading"
+      :error="loadError"
+      @retry="fetchZones"
+    >
+      <template #empty>
+        <div v-if="searchQuery">
+          <SearchIcon :size="48" style="opacity: 0.3; margin-bottom: 16px;" />
+          <p>{{ t('messages.noResults') }}</p>
+        </div>
+        <div v-else class="empty-state">
+          <MapPin :size="48" style="opacity: 0.2; margin-bottom: 16px;" />
+          <p>{{ t('messages.noData') }}</p>
+        </div>
+      </template>
+
+      <template #cell-name="{ row: zone }">
+        <router-link :to="{ name: 'zone-detail', params: { name: zone.name } }" class="resource-link">
+          <div class="resource-info">
+            <div class="resource-icon">
+              <MapPin :size="16" />
+            </div>
+            <div>
+              <div class="resource-name">{{ zone.name }}</div>
+              <div class="resource-id-row">
+                <span class="resource-id" :title="zone.id || '-'">
+                  {{ (zone.id || '-').slice(0, 8) }}{{ (zone.id || '').length > 8 ? '...' : '' }}
+                </span>
+                <button v-if="zone.id" class="copy-btn-mini" @click.stop.prevent="copyId(zone.id)" :title="t('actions.copy')" :aria-label="t('actions.copy')">
+                  <Check v-if="copiedId === zone.id" :size="10" style="color: #10b981;" />
+                  <Copy v-else :size="10" />
                 </button>
               </div>
-            </td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
+            </div>
+          </div>
+        </router-link>
+      </template>
+
+      <template #cell-remark="{ row: zone }">
+        <span class="remark-cell">{{ zone.remark || '-' }}</span>
+      </template>
+
+      <template #cell-type="{ row: zone }">
+        <span class="badge" :class="zone.default ? 'badge-primary' : 'badge-secondary'">
+          <Check v-if="zone.default" :size="12" />
+          {{ zone.default ? t('dashboard.zoneActions.default') : 'Zone' }}
+        </span>
+      </template>
+
+      <template #cell-actions="{ row: zone }">
+        <div class="table-actions">
+          <button class="icon-btn-table" @click.prevent="openEditModal(zone)" :title="t('actions.edit')">
+            <Settings2 :size="16" />
+          </button>
+          <button class="icon-btn-table text-error" @click.prevent="confirmDelete(zone)" :title="t('actions.delete')">
+            <Trash2 :size="16" />
+          </button>
+        </div>
+      </template>
+    </DataTable>
 
     <!-- Create Modal -->
-    <Teleport to="body">
-      <div v-if="showCreateModal" class="modal-overlay" @click.self="showCreateModal = false">
-        <div class="modal-content card" style="max-width: 480px;">
-          <div class="modal-header">
-            <h3>{{ t('dashboard.zoneActions.createTitle') }}</h3>
-            <button class="btn btn-ghost btn-icon" @click="showCreateModal = false"><X :size="18" /></button>
-          </div>
-          <div class="modal-body">
-            <div class="form-stack">
-              <div class="form-group">
-                <label class="form-label">{{ t('dashboard.table.name') }} *</label>
-                <input type="text" v-model="createForm.name" class="form-input" :placeholder="t('dashboard.forms.placeholder.zoneNameExample')" />
-              </div>
-              <div class="form-group">
-                <label class="form-label">{{ t('dashboard.zoneActions.remark') }}</label>
-                <input type="text" v-model="createForm.remark" class="form-input" />
-              </div>
-              <div class="form-group">
-                <label class="form-label" style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
-                  <input type="checkbox" v-model="createForm.default" />
-                  {{ t('dashboard.zoneActions.default') }}
-                </label>
-              </div>
-            </div>
-          </div>
-          <div class="modal-footer">
-            <button class="btn btn-secondary" @click="showCreateModal = false">{{ t('actions.cancel') }}</button>
-            <button class="btn btn-primary" @click="handleCreate" :disabled="creating || !createForm.name">
-              <Loader2 v-if="creating" :size="14" class="spinning" />
-              {{ creating ? t('messages.creating') : t('actions.create') }}
-            </button>
-          </div>
+    <BaseModal
+      :show="showCreateModal"
+      :title="t('dashboard.zoneActions.createTitle')"
+      :loading="creating"
+      form
+      @close="showCreateModal = false"
+      @submit="handleCreate"
+    >
+      <div class="form-stack">
+        <div class="form-group">
+          <label class="form-label">{{ t('dashboard.table.name') }} *</label>
+          <input type="text" v-model="createForm.name" class="form-input" :placeholder="t('dashboard.forms.placeholder.zoneNameExample')" />
+        </div>
+        <div class="form-group">
+          <label class="form-label">{{ t('dashboard.zoneActions.remark') }}</label>
+          <input type="text" v-model="createForm.remark" class="form-input" />
+        </div>
+        <div class="form-group">
+          <label class="form-label" style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+            <input type="checkbox" v-model="createForm.default" />
+            {{ t('dashboard.zoneActions.default') }}
+          </label>
         </div>
       </div>
-    </Teleport>
+
+      <template #footer>
+        <button type="button" class="btn btn-secondary" @click="showCreateModal = false">{{ t('actions.cancel') }}</button>
+        <button type="submit" class="btn btn-primary" :disabled="creating || !createForm.name">
+          <Loader2 v-if="creating" :size="14" class="spinning" />
+          {{ creating ? t('messages.creating') : t('actions.create') }}
+        </button>
+      </template>
+    </BaseModal>
 
     <!-- Edit Modal -->
-    <Teleport to="body">
-      <div v-if="showEditModal" class="modal-overlay" @click.self="showEditModal = false">
-        <div class="modal-content card" style="max-width: 480px;">
-          <div class="modal-header">
-            <h3>{{ t('dashboard.zoneActions.editTitle') }} - {{ editingZone?.name }}</h3>
-            <button class="btn btn-ghost btn-icon" @click="showEditModal = false"><X :size="18" /></button>
-          </div>
-          <div class="modal-body">
-            <div class="form-stack">
-              <div class="form-group">
-                <label class="form-label">{{ t('dashboard.zoneActions.remark') }}</label>
-                <input type="text" v-model="editForm.remark" class="form-input" />
-              </div>
-              <div class="form-group">
-                <label class="form-label" style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
-                  <input type="checkbox" v-model="editForm.default" />
-                  {{ t('dashboard.zoneActions.default') }}
-                </label>
-              </div>
-            </div>
-          </div>
-          <div class="modal-footer">
-            <button class="btn btn-secondary" @click="showEditModal = false">{{ t('actions.cancel') }}</button>
-            <button class="btn btn-primary" @click="handleEdit" :disabled="editing">
-              <Loader2 v-if="editing" :size="14" class="spinning" />
-              {{ editing ? t('messages.saving') : t('actions.save') }}
-            </button>
-          </div>
+    <BaseModal
+      :show="showEditModal"
+      :title="`${t('dashboard.zoneActions.editTitle')} - ${editingZone?.name ?? ''}`"
+      :loading="editing"
+      form
+      @close="showEditModal = false"
+      @submit="handleEdit"
+    >
+      <div class="form-stack">
+        <div class="form-group">
+          <label class="form-label">{{ t('dashboard.zoneActions.remark') }}</label>
+          <input type="text" v-model="editForm.remark" class="form-input" />
+        </div>
+        <div class="form-group">
+          <label class="form-label" style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+            <input type="checkbox" v-model="editForm.default" />
+            {{ t('dashboard.zoneActions.default') }}
+          </label>
         </div>
       </div>
-    </Teleport>
+
+      <template #footer>
+        <button type="button" class="btn btn-secondary" @click="showEditModal = false">{{ t('actions.cancel') }}</button>
+        <button type="submit" class="btn btn-primary" :disabled="editing">
+          <Loader2 v-if="editing" :size="14" class="spinning" />
+          {{ editing ? t('messages.saving') : t('actions.save') }}
+        </button>
+      </template>
+    </BaseModal>
 
     <!-- Delete Confirm Modal -->
-    <Teleport to="body">
-      <div v-if="showDeleteModal" class="modal-overlay" @click.self="showDeleteModal = false">
-        <div class="modal-content card" style="max-width: 440px;">
-          <div class="modal-header">
-            <h3>{{ t('dashboard.zoneActions.deleteTitle') }}</h3>
-            <button class="btn btn-ghost btn-icon" @click="showDeleteModal = false"><X :size="18" /></button>
-          </div>
-          <div class="modal-body">
-            <p>{{ t('dashboard.zoneActions.deleteConfirm', { name: deletingZone?.name }) }}</p>
-          </div>
-          <div class="modal-footer">
-            <button class="btn btn-secondary" @click="showDeleteModal = false">{{ t('actions.cancel') }}</button>
-            <button class="btn btn-danger" @click="handleDelete" :disabled="deleting">
-              <Loader2 v-if="deleting" :size="14" class="spinning" />
-              {{ deleting ? t('messages.deleting') : t('actions.delete') }}
-            </button>
-          </div>
-        </div>
-      </div>
-    </Teleport>
+    <DeleteModal
+      :show="showDeleteModal"
+      :title="t('dashboard.zoneActions.deleteTitle')"
+      :message="t('dashboard.zoneActions.deleteConfirm', { name: deletingZone?.name })"
+      :loading="deleting"
+      @close="showDeleteModal = false"
+      @confirm="handleDelete"
+    />
   </div>
 </template>
 
 <style scoped>
-.page-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 0;
-  padding-right: 20px;
-}
-
-.search-wrapper { flex: 1; max-width: 400px; }
-
-.header-actions { display: flex; gap: 8px; align-items: center; }
-
-.search-box {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  background: var(--bg-secondary);
-  padding: 0 12px;
-  height: 40px;
-  border-radius: var(--radius-md);
-  border: 1px solid var(--border-light);
-  transition: all 0.2s;
-}
-
-.search-box:focus-within {
-  border-color: var(--primary-300);
-  box-shadow: 0 0 0 2px var(--primary-100);
-}
-
-.search-icon { color: var(--gray-400); }
-
-.search-input {
-  border: none; background: transparent; width: 100%;
-  height: 100%; font-size: 0.875rem; color: var(--text-primary);
-}
-.search-input:focus { outline: none; }
-
-.table-card { padding: 0; overflow: hidden; }
 
 /* Standardized resource-info is global from index.css */
 
@@ -371,7 +318,7 @@ onMounted(() => {
   display: flex; align-items: center; justify-content: center;
 }
 
-.resource-name { font-weight: var(--font-weight-semibold); color: var(--text-main); font-size: var(--font-size-sm); }
+.resource-name { font-weight: var(--font-weight-semibold); color: var(--text-primary); font-size: var(--font-size-sm); }
 
 .resource-id {
   font-size: var(--font-size-xs); color: var(--text-light);
@@ -423,13 +370,6 @@ onMounted(() => {
   font-size: 0.875rem; background: var(--bg-primary); color: var(--text-primary);
 }
 .form-input:focus { outline: none; border-color: var(--primary-300); box-shadow: 0 0 0 2px var(--primary-100); }
-
-.btn-danger {
-  background: #ef4444; color: white; border: none;
-  padding: 8px 16px; border-radius: var(--radius-md); cursor: pointer; font-weight: 500;
-}
-.btn-danger:hover { background: #dc2626; }
-.btn-danger:disabled { opacity: 0.5; cursor: not-allowed; }
 
 .spinning { animation: spin 1s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }

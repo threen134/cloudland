@@ -8,14 +8,13 @@ SPDX-License-Identifier: Apache-2.0
 package apis
 
 import (
-	"context"
-	"fmt"
-	"net/http"
-	"strconv"
-	"strings"
 	. "api/src/common"
 	"api/src/model"
 	"api/src/services"
+	"context"
+	"net/http"
+	"strconv"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 )
@@ -120,7 +119,7 @@ type InstanceListResponse struct {
 func (v *InstanceAPI) Get(c *gin.Context) {
 	ctx := c.Request.Context()
 	uuID := c.Param("id")
-	logger.Debugf("Get instance %s", uuID)
+	logger.Ctx(ctx).Debugf("Get instance %s", uuID)
 	instance, err := instanceAdmin.GetInstanceByUUID(ctx, uuID)
 	if err != nil {
 		ErrorResponse(c, http.StatusBadRequest, "Invalid instance query", err)
@@ -148,38 +147,44 @@ func (v *InstanceAPI) Get(c *gin.Context) {
 func (v *InstanceAPI) Patch(c *gin.Context) {
 	ctx := c.Request.Context()
 	uuID := c.Param("id")
-	logger.Debugf("Patch instance %s", uuID)
+	logger.Ctx(ctx).Debugf("Patch instance %s", uuID)
 	instance, err := instanceAdmin.GetInstanceByUUID(ctx, uuID)
 	if err != nil {
-		logger.Errorf("Failed to get instance %s, %+v", uuID, err)
+		logger.Ctx(ctx).Errorf("Failed to get instance %s, %+v", uuID, err)
 		ErrorResponse(c, http.StatusBadRequest, "Invalid instance query", err)
 		return
 	}
 	payload := &InstancePatchPayload{}
 	err = c.ShouldBindJSON(payload)
 	if err != nil {
-		logger.Errorf("Failed to bind JSON, %+v", err)
+		logger.Ctx(ctx).Errorf("Failed to bind JSON, %+v", err)
 		ErrorResponse(c, http.StatusBadRequest, "Invalid input JSON", err)
 		return
+	}
+	// 同一个 PATCH 承载开关机与改名，审计动作按请求体区分
+	if payload.PowerAction != "" {
+		SetAuditAction(c, "instance."+string(payload.PowerAction))
+	} else if payload.Hostname != "" && payload.Hostname != instance.Hostname {
+		SetAuditAction(c, "instance.rename")
 	}
 	hostname := instance.Hostname
 	if payload.Hostname != "" {
 		hostname = payload.Hostname
-		logger.Debugf("Update hostname to %s", hostname)
+		logger.Ctx(ctx).Debugf("Update hostname to %s", hostname)
 	}
 	err = instanceAdmin.Update(ctx, instance, hostname, payload.PowerAction, int(instance.Hyper))
 	if err != nil {
-		logger.Errorf("Patch instance failed, %+v", err)
+		logger.Ctx(ctx).Errorf("Patch instance failed, %+v", err)
 		ErrorResponse(c, http.StatusBadRequest, "Patch instance failed", err)
 		return
 	}
 	instanceResp, err := v.getInstanceResponse(ctx, instance)
 	if err != nil {
-		logger.Errorf("Failed to create instance response, %+v", err)
+		logger.Ctx(ctx).Errorf("Failed to create instance response, %+v", err)
 		ErrorResponse(c, http.StatusInternalServerError, "Internal error", err)
 		return
 	}
-	logger.Debugf("Patch instance %s success, response: %+v", uuID, instanceResp)
+	logger.Ctx(ctx).Debugf("Patch instance %s success, response: %+v", uuID, instanceResp)
 	c.JSON(http.StatusOK, instanceResp)
 }
 
@@ -197,23 +202,27 @@ func (v *InstanceAPI) Patch(c *gin.Context) {
 func (v *InstanceAPI) SetUserPassword(c *gin.Context) {
 	ctx := c.Request.Context()
 	uuID := c.Param("id")
-	logger.Debugf("Set user password for instance %s", uuID)
+	logger.Ctx(ctx).Debugf("Set user password for instance %s", uuID)
 	instance, err := instanceAdmin.GetInstanceByUUID(ctx, uuID)
 	if err != nil {
-		logger.Errorf("Failed to get instance %s, %+v", uuID, err)
+		logger.Ctx(ctx).Errorf("Failed to get instance %s, %+v", uuID, err)
 		ErrorResponse(c, http.StatusBadRequest, "Invalid instance query", err)
 		return
 	}
 	payload := &InstanceSetUserPasswordPayload{}
 	err = c.ShouldBindJSON(payload)
 	if err != nil {
-		logger.Errorf("Failed to bind JSON, %+v", err)
+		logger.Ctx(ctx).Errorf("Failed to bind JSON, %+v", err)
 		ErrorResponse(c, http.StatusBadRequest, "Invalid input JSON", err)
+		return
+	}
+	if err = validateGuestCredentials(payload.UserName, payload.Password); err != nil {
+		ErrorResponse(c, http.StatusBadRequest, "Invalid user name or password", NewCLError(ErrInvalidParameter, err.Error(), nil))
 		return
 	}
 	err = instanceAdmin.SetUserPassword(ctx, instance.ID, payload.UserName, payload.Password)
 	if err != nil {
-		logger.Errorf("Set user password failed, %+v", err)
+		logger.Ctx(ctx).Errorf("Set user password failed, %+v", err)
 		ErrorResponse(c, http.StatusBadRequest, "Set user password failed", err)
 		return
 	}
@@ -234,10 +243,10 @@ func (v *InstanceAPI) SetUserPassword(c *gin.Context) {
 func (v *InstanceAPI) Reinstall(c *gin.Context) {
 	ctx := c.Request.Context()
 	uuID := c.Param("id")
-	logger.Debugf("Reinstall instance %s", uuID)
+	logger.Ctx(ctx).Debugf("Reinstall instance %s", uuID)
 	instance, err := instanceAdmin.GetInstanceByUUID(ctx, uuID)
 	if err != nil {
-		logger.Errorf("Failed to get instance %s, %+v", uuID, err)
+		logger.Ctx(ctx).Errorf("Failed to get instance %s, %+v", uuID, err)
 		ErrorResponse(c, http.StatusBadRequest, "Invalid instance query", err)
 		return
 	}
@@ -246,18 +255,18 @@ func (v *InstanceAPI) Reinstall(c *gin.Context) {
 	payload := &InstanceReinstallPayload{}
 	err = c.ShouldBindJSON(payload)
 	if err != nil {
-		logger.Errorf("Failed to bind JSON, %+v", err)
+		logger.Ctx(ctx).Errorf("Failed to bind JSON, %+v", err)
 		ErrorResponse(c, http.StatusBadRequest, "Invalid input JSON", err)
 		return
 	}
-	logger.Debugf("Reinstall instance with %+v", payload)
+	logger.Ctx(ctx).Debugf("Reinstall instance with %+v", payload)
 
 	// check image
 	image := instance.Image
 	if payload.Image != nil {
 		image, err = imageAdmin.GetImage(ctx, payload.Image)
 		if err != nil {
-			logger.Errorf("Failed to get image %+v, %+v", payload.Image, err)
+			logger.Ctx(ctx).Errorf("Failed to get image %+v, %+v", payload.Image, err)
 			ErrorResponse(c, http.StatusBadRequest, "Invalid image", err)
 			return
 		}
@@ -272,7 +281,7 @@ func (v *InstanceAPI) Reinstall(c *gin.Context) {
 		var flavor *model.Flavor
 		flavor, err = flavorAdmin.GetFlavorByName(ctx, payload.Flavor)
 		if err != nil {
-			logger.Errorf("Failed to get flavor %+v, %+v", payload.Flavor, err)
+			logger.Ctx(ctx).Errorf("Failed to get flavor %+v, %+v", payload.Flavor, err)
 			ErrorResponse(c, http.StatusBadRequest, "Invalid flavor", err)
 			return
 		}
@@ -286,20 +295,20 @@ func (v *InstanceAPI) Reinstall(c *gin.Context) {
 		var key *model.Key
 		key, err = keyAdmin.GetKey(ctx, ky)
 		if err != nil {
-			logger.Errorf("Failed to get key %+v, %+v", ky, err)
+			logger.Ctx(ctx).Errorf("Failed to get key %+v, %+v", ky, err)
 			ErrorResponse(c, http.StatusBadRequest, "Invalid key", err)
 			return
 		}
 		keys = append(keys, key)
 	}
 	if password == "" && len(keys) == 0 {
-		logger.Errorf("Password or key must be provided")
+		logger.Ctx(ctx).Errorf("Password or key must be provided")
 		ErrorResponse(c, http.StatusBadRequest, "Password or key must be provided", err)
 		return
 	}
 	err = instanceAdmin.Reinstall(ctx, instance, image, password, keys, cpu, memory, disk, payload.LoginPort)
 	if err != nil {
-		logger.Error("Reinstall failed", err)
+		logger.Ctx(ctx).Error("Reinstall failed", err)
 		ErrorResponse(c, http.StatusBadRequest, "Reinstall failed", err)
 		return
 	}
@@ -321,10 +330,10 @@ func (v *InstanceAPI) Reinstall(c *gin.Context) {
 func (v *InstanceAPI) Rescue(c *gin.Context) {
 	ctx := c.Request.Context()
 	uuID := c.Param("id")
-	logger.Debugf("Rescue instance %s", uuID)
+	logger.Ctx(ctx).Debugf("Rescue instance %s", uuID)
 	instance, err := instanceAdmin.GetInstanceByUUID(ctx, uuID)
 	if err != nil {
-		logger.Errorf("Failed to get instance %s, %+v", uuID, err)
+		logger.Ctx(ctx).Errorf("Failed to get instance %s, %+v", uuID, err)
 		ErrorResponse(c, http.StatusBadRequest, "Invalid instance query", err)
 		return
 	}
@@ -333,18 +342,18 @@ func (v *InstanceAPI) Rescue(c *gin.Context) {
 	payload := &InstanceRescuePayload{}
 	err = c.ShouldBindJSON(payload)
 	if err != nil {
-		logger.Errorf("Failed to bind JSON, %+v", err)
+		logger.Ctx(ctx).Errorf("Failed to bind JSON, %+v", err)
 		ErrorResponse(c, http.StatusBadRequest, "Invalid input JSON", err)
 		return
 	}
-	logger.Debugf("Rescue instance with %+v", payload)
+	logger.Ctx(ctx).Debugf("Rescue instance with %+v", payload)
 
 	// check rescue image
 	var rescueImage *model.Image
 	if payload.RescueImage != nil {
 		rescueImage, err = imageAdmin.GetImage(ctx, payload.RescueImage)
 		if err != nil {
-			logger.Errorf("Failed to get rescue image %+v, %+v", payload.RescueImage, err)
+			logger.Ctx(ctx).Errorf("Failed to get rescue image %+v, %+v", payload.RescueImage, err)
 			ErrorResponse(c, http.StatusBadRequest, "Invalid rescue image", err)
 			return
 		}
@@ -352,7 +361,7 @@ func (v *InstanceAPI) Rescue(c *gin.Context) {
 
 	err = instanceAdmin.Rescue(ctx, instance, rescueImage, payload.Password)
 	if err != nil {
-		logger.Error("Rescue failed", err)
+		logger.Ctx(ctx).Error("Rescue failed", err)
 		ErrorResponse(c, http.StatusBadRequest, "Rescue failed", err)
 		return
 	}
@@ -373,17 +382,17 @@ func (v *InstanceAPI) Rescue(c *gin.Context) {
 func (v *InstanceAPI) EndRescue(c *gin.Context) {
 	ctx := c.Request.Context()
 	uuID := c.Param("id")
-	logger.Debugf("Rescue instance %s", uuID)
+	logger.Ctx(ctx).Debugf("Rescue instance %s", uuID)
 	instance, err := instanceAdmin.GetInstanceByUUID(ctx, uuID)
 	if err != nil {
-		logger.Errorf("Failed to get instance %s, %+v", uuID, err)
+		logger.Ctx(ctx).Errorf("Failed to get instance %s, %+v", uuID, err)
 		ErrorResponse(c, http.StatusBadRequest, "Invalid instance query", err)
 		return
 	}
 
 	err = instanceAdmin.EndRescue(ctx, instance)
 	if err != nil {
-		logger.Error("End rescue failed", err)
+		logger.Ctx(ctx).Error("End rescue failed", err)
 		ErrorResponse(c, http.StatusBadRequest, "End rescue failed", err)
 		return
 	}
@@ -405,10 +414,10 @@ func (v *InstanceAPI) EndRescue(c *gin.Context) {
 func (v *InstanceAPI) Resize(c *gin.Context) {
 	ctx := c.Request.Context()
 	uuID := c.Param("id")
-	logger.Debugf("Resize instance %s", uuID)
+	logger.Ctx(ctx).Debugf("Resize instance %s", uuID)
 	instance, err := instanceAdmin.GetInstanceByUUID(ctx, uuID)
 	if err != nil {
-		logger.Errorf("Failed to get instance %s, %+v", uuID, err)
+		logger.Ctx(ctx).Errorf("Failed to get instance %s, %+v", uuID, err)
 		ErrorResponse(c, http.StatusBadRequest, "Invalid instance query", err)
 		return
 	}
@@ -417,11 +426,11 @@ func (v *InstanceAPI) Resize(c *gin.Context) {
 	payload := &InstanceResizePayload{}
 	err = c.ShouldBindJSON(payload)
 	if err != nil {
-		logger.Errorf("Failed to bind JSON, %+v", err)
+		logger.Ctx(ctx).Errorf("Failed to bind JSON, %+v", err)
 		ErrorResponse(c, http.StatusBadRequest, "Invalid input JSON", err)
 		return
 	}
-	logger.Debugf("Resize instance %s with payload %+v", uuID, payload)
+	logger.Ctx(ctx).Debugf("Resize instance %s with payload %+v", uuID, payload)
 
 	// old data compatibility
 	cpu, memory := instance.Cpu, instance.Memory
@@ -429,7 +438,7 @@ func (v *InstanceAPI) Resize(c *gin.Context) {
 		var flavor *model.Flavor
 		flavor, err = flavorAdmin.Get(ctx, instance.FlavorID)
 		if err != nil {
-			logger.Errorf("Failed to get flavor %+v, %+v", instance.FlavorID, err)
+			logger.Ctx(ctx).Errorf("Failed to get flavor %+v, %+v", instance.FlavorID, err)
 			ErrorResponse(c, http.StatusBadRequest, "Invalid flavor", err)
 			return
 		}
@@ -442,10 +451,10 @@ func (v *InstanceAPI) Resize(c *gin.Context) {
 		memory = payload.Memory
 	}
 
-	logger.Debugf("Resize instance %s to cpu %d, memory %d", uuID, cpu, memory)
+	logger.Ctx(ctx).Debugf("Resize instance %s to cpu %d, memory %d", uuID, cpu, memory)
 	err = instanceAdmin.Resize(ctx, instance, cpu, memory)
 	if err != nil {
-		logger.Errorf("Failed to resize instance %s, %+v", uuID, err)
+		logger.Ctx(ctx).Errorf("Failed to resize instance %s, %+v", uuID, err)
 		ErrorResponse(c, http.StatusBadRequest, "Failed to resize instance", err)
 		return
 	}
@@ -466,16 +475,16 @@ func (v *InstanceAPI) Resize(c *gin.Context) {
 func (v *InstanceAPI) Delete(c *gin.Context) {
 	ctx := c.Request.Context()
 	uuID := c.Param("id")
-	logger.Debugf("Delete instance %s", uuID)
+	logger.Ctx(ctx).Debugf("Delete instance %s", uuID)
 	instance, err := instanceAdmin.GetInstanceByUUID(ctx, uuID)
 	if err != nil {
-		logger.Errorf("Failed to get instance %s, %+v", uuID, err)
+		logger.Ctx(ctx).Errorf("Failed to get instance %s, %+v", uuID, err)
 		ErrorResponse(c, http.StatusBadRequest, "Invalid query", err)
 		return
 	}
 	err = instanceAdmin.Delete(ctx, instance)
 	if err != nil {
-		logger.Errorf("Failed to delete instance %s, %+v", uuID, err)
+		logger.Ctx(ctx).Errorf("Failed to delete instance %s, %+v", uuID, err)
 		ErrorResponse(c, http.StatusBadRequest, "Not able to delete", err)
 		return
 	}
@@ -493,22 +502,22 @@ func (v *InstanceAPI) Delete(c *gin.Context) {
 // @Failure 401 {object} common.APIError "Not authorized"
 // @Router /instances [post]
 func (v *InstanceAPI) Create(c *gin.Context) {
-	logger.Debug("Create instance")
+	logger.Ctx(c).Debug("Create instance")
 	ctx := c.Request.Context()
 	payload := &InstancePayload{}
 	err := c.ShouldBindJSON(payload)
 	if err != nil {
-		logger.Errorf("Failed to bind instance payload JSON, %+v", err)
+		logger.Ctx(ctx).Errorf("Failed to bind instance payload JSON, %+v", err)
 		ErrorResponse(c, http.StatusBadRequest, "Invalid input JSON", err)
 		return
 	}
-	logger.Debugf("Creating instance with payload: %+v", payload)
+	logger.Ctx(ctx).Debugf("Creating instance with payload: %+v", payload)
 	hostname := payload.Hostname
 	rootPasswd := payload.RootPasswd
 	userdata := payload.Userdata
 	image, err := imageAdmin.GetImage(ctx, payload.Image)
 	if err != nil {
-		logger.Errorf("Failed to get image %+v, %+v", payload.Image, err)
+		logger.Ctx(ctx).Errorf("Failed to get image %+v, %+v", payload.Image, err)
 		ErrorResponse(c, http.StatusBadRequest, "Invalid image", err)
 		return
 	}
@@ -517,14 +526,14 @@ func (v *InstanceAPI) Create(c *gin.Context) {
 	if payload.Flavor != "" {
 		flavor, err = flavorAdmin.GetFlavorByName(ctx, payload.Flavor)
 		if err != nil {
-			logger.Errorf("Failed to get flavor %+v, %+v", payload.Flavor, err)
+			logger.Ctx(ctx).Errorf("Failed to get flavor %+v, %+v", payload.Flavor, err)
 			ErrorResponse(c, http.StatusBadRequest, "Invalid flavor", err)
 			return
 		}
 	}
 	zone, err := zoneAdmin.GetZoneByName(ctx, payload.Zone)
 	if err != nil {
-		logger.Errorf("Failed to get zone %+v, %+v", payload.Zone, err)
+		logger.Ctx(ctx).Errorf("Failed to get zone %+v, %+v", payload.Zone, err)
 		ErrorResponse(c, http.StatusBadRequest, "Invalid zone", err)
 		return
 	}
@@ -532,14 +541,14 @@ func (v *InstanceAPI) Create(c *gin.Context) {
 	if payload.VPC != nil {
 		router, err = routerAdmin.GetRouter(ctx, payload.VPC)
 		if err != nil {
-			logger.Errorf("Failed to get VPC %+v, %+v", payload.VPC, err)
+			logger.Ctx(ctx).Errorf("Failed to get VPC %+v, %+v", payload.VPC, err)
 			ErrorResponse(c, http.StatusBadRequest, "Invalid VPC", nil)
 			return
 		}
 	}
 	router, primaryIface, err := interfaceAPI.getInterfaceInfo(ctx, router, payload.PrimaryInterface)
 	if err != nil {
-		logger.Errorf("Failed to get primary interface %+v, %+v", payload.PrimaryInterface, err)
+		logger.Ctx(ctx).Errorf("Failed to get primary interface %+v, %+v", payload.PrimaryInterface, err)
 		ErrorResponse(c, http.StatusBadRequest, "Invalid primary interface", err)
 		return
 	}
@@ -548,7 +557,7 @@ func (v *InstanceAPI) Create(c *gin.Context) {
 		var ifaceInfo *services.InterfaceInfo
 		router, ifaceInfo, err = interfaceAPI.getInterfaceInfo(ctx, router, ifacePayload)
 		if err != nil {
-			logger.Errorf("Failed to get secondary interface %+v, %+v", ifacePayload, err)
+			logger.Ctx(ctx).Errorf("Failed to get secondary interface %+v, %+v", ifacePayload, err)
 			ErrorResponse(c, http.StatusBadRequest, "Invalid secondary interfaces", err)
 			return
 		}
@@ -572,14 +581,14 @@ func (v *InstanceAPI) Create(c *gin.Context) {
 	if payload.Hypervisor != nil {
 		hyper, herr := hyperAdmin.GetHyperByUUID(ctx, *payload.Hypervisor)
 		if herr != nil {
-			logger.Errorf("Failed to find hypervisor by UUID %s: %+v", *payload.Hypervisor, herr)
+			logger.Ctx(ctx).Errorf("Failed to find hypervisor by UUID %s: %+v", *payload.Hypervisor, herr)
 			ErrorResponse(c, http.StatusBadRequest, "Specified hypervisor not found", herr)
 			return
 		}
 		hypervisor = int(hyper.Hostid)
 	}
 	if flavor == nil && (payload.Cpu <= 0 || payload.Memory <= 0 || payload.Disk <= 0) {
-		logger.Errorf("no valid configuration")
+		logger.Ctx(ctx).Errorf("no valid configuration")
 		ErrorResponse(c, http.StatusBadRequest, "no valid configuration", nil)
 		return
 	}
@@ -596,7 +605,7 @@ func (v *InstanceAPI) Create(c *gin.Context) {
 	if userdataType == "" {
 		userdataType = model.UserDataTypePlain
 	} else if !model.IsValidUserDataType(userdataType) {
-		logger.Errorf("Invalid userdata_type: %s", userdataType)
+		logger.Ctx(ctx).Errorf("Invalid userdata_type: %s", userdataType)
 		ErrorResponse(c, http.StatusBadRequest, "Invalid userdata_type", nil)
 		return
 	}
@@ -605,40 +614,41 @@ func (v *InstanceAPI) Create(c *gin.Context) {
 	if vendorDataType == "" {
 		vendorDataType = model.UserDataTypePlain
 	} else if !model.IsValidUserDataType(vendorDataType) {
-		logger.Errorf("Invalid vendor_data_type: %s", vendorDataType)
+		logger.Ctx(ctx).Errorf("Invalid vendor_data_type: %s", vendorDataType)
 		ErrorResponse(c, http.StatusBadRequest, "Invalid vendor_data_type", nil)
 		return
 	}
 
-	logger.Debugf("Creating %d instances with hostname %s, userdata %s, userdata_type %s, vendordata %s, vendordatatype %s, image %s, zone %s, router %d, primaryIface %v, secondaryIfaces %v, keys %v, login_port %d, hypervisor %d, cpu %d, memory %d, disk %d, disk_iops_limit %d, disk_bps_limit %d, nestedEnable %v, poolID: %s",
+	logger.Ctx(ctx).Debugf("Creating %d instances with hostname %s, userdata %s, userdata_type %s, vendordata %s, vendordatatype %s, image %s, zone %s, router %d, primaryIface %v, secondaryIfaces %v, keys %v, login_port %d, hypervisor %d, cpu %d, memory %d, disk %d, disk_iops_limit %d, disk_bps_limit %d, nestedEnable %v, poolID: %s",
 		count, hostname, userdata, userdataType, vendorData, vendorDataType, image.Name, zone.Name, routerID, primaryIface, secondaryIfaces, keys, payload.LoginPort, hypervisor, payload.Cpu, payload.Memory, payload.Disk, payload.DiskIopsLimit, payload.DiskBpsLimit, payload.NestedEnable, payload.PoolID)
 	instances, err := instanceAdmin.Create(ctx, count, hostname, userdata, userdataType, vendorData, vendorDataType, image, zone, routerID, primaryIface, secondaryIfaces, keys, rootPasswd, payload.LoginPort, hypervisor, payload.Cpu, payload.Memory, payload.Disk, payload.DiskIopsLimit, payload.DiskBpsLimit, payload.NestedEnable, payload.PoolID)
 	if err != nil {
-		logger.Errorf("Failed to create instances, %+v", err)
+		logger.Ctx(ctx).Errorf("Failed to create instances, %+v", err)
 		ErrorResponse(c, http.StatusBadRequest, "Failed to create instances", err)
 		return
 	}
-	logger.Debugf("Created %d instances, %+v", len(instances), instances)
+	logger.Ctx(ctx).Debugf("Created %d instances, %+v", len(instances), instances)
 	instancesResp := make([]*InstanceResponse, len(instances))
 	for i, instance := range instances {
 		instancesResp[i], err = v.getInstanceResponse(ctx, instance)
 		if err != nil {
-			logger.Errorf("Failed to create instance response, %+v", err)
+			logger.Ctx(ctx).Errorf("Failed to create instance response, %+v", err)
 			ErrorResponse(c, http.StatusInternalServerError, "Failed to create instances", err)
 			return
 		}
 	}
-	logger.Debugf("Create instance success, %+v", instancesResp)
+	logger.Ctx(ctx).Debugf("Create instance success, %+v", instancesResp)
 	c.JSON(http.StatusOK, instancesResp)
 }
 
 func (v *InstanceAPI) getInstanceResponse(ctx context.Context, instance *model.Instance) (instanceResp *InstanceResponse, err error) {
-	logger.Debugf("Create instance response for instance %+v", instance)
+	logger.Ctx(ctx).Debugf("Create instance response for instance %+v", instance)
 	owner := orgAdmin.GetOrgName(ctx, instance.Owner)
 	instanceResp = &InstanceResponse{
 		ResourceReference: &ResourceReference{
 			ID:        instance.UUID,
 			Owner:     owner,
+			OwnerUUID: orgAdmin.GetOrgUUID(ctx, instance.Owner),
 			CreatedAt: instance.CreatedAt.Format(TimeStringForMat),
 			UpdatedAt: instance.UpdatedAt.Format(TimeStringForMat),
 		},
@@ -691,7 +701,7 @@ func (v *InstanceAPI) getInstanceResponse(ctx context.Context, instance *model.I
 	for i, iface := range instance.Interfaces {
 		interfaces[i], err = interfaceAPI.getInterfaceResponse(ctx, instance, iface)
 		if err != nil {
-			logger.Errorf("Failed to get interface response, %+v", err)
+			logger.Ctx(ctx).Errorf("Failed to get interface response, %+v", err)
 			return
 		}
 	}
@@ -703,7 +713,7 @@ func (v *InstanceAPI) getInstanceResponse(ctx context.Context, instance *model.I
 			Name: router.Name,
 		}
 	}
-	logger.Debugf("Create instance response success, %+v", instanceResp)
+	logger.Ctx(ctx).Debugf("Create instance response success, %+v", instanceResp)
 	return
 }
 
@@ -721,42 +731,54 @@ func (v *InstanceAPI) List(c *gin.Context) {
 	limitStr := c.DefaultQuery("limit", "50")
 	queryStr := c.DefaultQuery("query", "")
 	vpcID := strings.TrimSpace(c.DefaultQuery("vpc_id", "")) // Retrieve vpc_id from query params
-	logger.Debugf("List instances with offset %s, limit %s, query %s, vpc_id %s", offsetStr, limitStr, queryStr, vpcID)
+	logger.Ctx(ctx).Debugf("List instances with offset %s, limit %s, query %s, vpc_id %s", offsetStr, limitStr, queryStr, vpcID)
 
+	// vpc_id 过滤必须单独传参：此前把 "router_id = N" 塞进 queryStr，而服务层是拿 query
+	// 做 hostname 的模糊匹配（hostname LIKE '%router_id = N%'），条件永远匹配不到，
+	// 按 VPC 过滤实例实际上是失效的
+	routerID := int64(0)
 	if vpcID != "" {
-		logger.Debugf("Filtering instances by VPC ID: %s", vpcID)
+		logger.Ctx(ctx).Debugf("Filtering instances by VPC ID: %s", vpcID)
 		var router *model.Router
 		router, err := routerAdmin.GetRouterByUUID(ctx, vpcID)
 		if err != nil {
-			logger.Errorf("Invalid query vpc_id: %s, %+v", vpcID, err)
+			logger.Ctx(ctx).Errorf("Invalid query vpc_id: %s, %+v", vpcID, err)
 			ErrorResponse(c, http.StatusBadRequest, "Invalid query router by vpc_id UUID: "+vpcID, err)
 			return
 		}
-
-		logger.Debugf("The router with vpc_id: %+v\n", router)
-		logger.Debugf("The router_id in vpc is: %d", router.ID)
-		queryStr = fmt.Sprintf("router_id = %d", router.ID)
+		logger.Ctx(ctx).Debugf("The router_id in vpc is: %d", router.ID)
+		routerID = router.ID
 	}
 	offset, err := strconv.Atoi(offsetStr)
 	if err != nil {
-		logger.Errorf("Invalid query offset: %s, %+v", offsetStr, err)
+		logger.Ctx(ctx).Errorf("Invalid query offset: %s, %+v", offsetStr, err)
 		ErrorResponse(c, http.StatusBadRequest, "Invalid query offset: "+offsetStr, err)
 		return
 	}
 	limit, err := strconv.Atoi(limitStr)
 	if err != nil {
-		logger.Errorf("Invalid query limit: %s, %+v", limitStr, err)
+		logger.Ctx(ctx).Errorf("Invalid query limit: %s, %+v", limitStr, err)
 		ErrorResponse(c, http.StatusBadRequest, "Invalid query limit: "+limitStr, err)
 		return
 	}
 	if offset < 0 || limit < 0 {
-		logger.Errorf("Invalid query offset or limit, %+v", err)
+		logger.Ctx(ctx).Errorf("Invalid query offset or limit, %+v", err)
 		ErrorResponse(c, http.StatusBadRequest, "Invalid query offset or limit", err)
 		return
 	}
-	total, instances, err := instanceAdmin.List(ctx, int64(offset), int64(limit), "-created_at", queryStr)
+	// hyper：按所在计算节点过滤，缺省 -1 表示不过滤
+	hyperID := -1
+	if hyperStr := strings.TrimSpace(c.DefaultQuery("hyper", "")); hyperStr != "" {
+		hyperID, err = strconv.Atoi(hyperStr)
+		if err != nil {
+			logger.Ctx(ctx).Errorf("Invalid query hyper: %s, %+v", hyperStr, err)
+			ErrorResponse(c, http.StatusBadRequest, "Invalid query hyper: "+hyperStr, err)
+			return
+		}
+	}
+	total, instances, err := instanceAdmin.List(ctx, int64(offset), int64(limit), "-created_at", queryStr, int32(hyperID), routerID)
 	if err != nil {
-		logger.Errorf("Failed to list instances, %+v", err)
+		logger.Ctx(ctx).Errorf("Failed to list instances, %+v", err)
 		ErrorResponse(c, http.StatusBadRequest, "Failed to list instances", err)
 		return
 	}
@@ -769,14 +791,14 @@ func (v *InstanceAPI) List(c *gin.Context) {
 	for i, instance := range instances {
 		instanceList[i], err = v.getInstanceResponse(ctx, instance)
 		if err != nil {
-			logger.Errorf("Failed to create instance response, %+v", err)
+			logger.Ctx(ctx).Errorf("Failed to create instance response, %+v", err)
 			ErrorResponse(c, http.StatusInternalServerError, "Internal error", err)
 			return
 		}
 		instanceList[i].RootPasswd = ""
 	}
 	instanceListResp.Instances = instanceList
-	logger.Debugf("List instances success, %+v", instanceListResp)
+	logger.Ctx(ctx).Debugf("List instances success, %+v", instanceListResp)
 	c.JSON(http.StatusOK, instanceListResp)
 }
 
@@ -806,7 +828,7 @@ func (v *InstanceAPI) GetInstanceRuleLinks(c *gin.Context) {
 	alarmOp := &services.AlarmOperator{}
 	result, err := alarmOp.GetInstanceRuleDetails(c.Request.Context(), instanceIDs)
 	if err != nil {
-		logger.Errorf("Failed to get rule details: %v", err)
+		logger.Ctx(c).Errorf("Failed to get rule details: %v", err)
 		ErrorResponse(c, http.StatusInternalServerError, "Failed to query rule details", err)
 		return
 	}

@@ -15,7 +15,7 @@ order: 40
 管理员在 Web UI / API 注册节点 → 系统返回部署命令 → 管理员在计算节点上执行命令
 ```
 
-系统会自动分配唯一的节点 ID（SCI_CLIENT_ID），并生成包含所有参数的一键部署命令，无需手动拼接。
+系统会自动分配唯一的节点 ID（NODE_ID），并生成包含所有参数的一键部署命令，无需手动拼接。
 
 ---
 
@@ -24,8 +24,8 @@ order: 40
 请确保目标计算节点满足以下条件：
 
 - **CPU 支持硬件虚拟化**：`ls /dev/kvm` 应当有输出。
-- **操作系统**：Ubuntu 22.04 LTS。
-- **管理网络互通**：可访问控制节点的 `9988` (SCI) 端口。
+- **操作系统**：Ubuntu 24.04 LTS 或 Ubuntu 26.04 LTS。
+- **管理网络互通**：可访问控制节点的 `5006`（cland-go gRPC）端口。
 - **root 权限**：部署脚本需以 root 身份执行。
 
 ---
@@ -52,7 +52,7 @@ order: 40
 
 4. 点击确认后，系统将：
    - 创建 Hyper 记录（状态为 **DEPLOYING**）
-   - 自动分配唯一的 `SCI_CLIENT_ID`
+   - 自动分配唯一的 `NODE_ID`
    - **返回一条部署命令**
 
 5. 点击 **复制** 按钮，将部署命令复制到剪贴板。
@@ -87,7 +87,7 @@ curl -sk -X POST https://<PUBLIC_IP>/api/v1/hypers \
   "hostname": "compute-01",
   "status": 4,
   "status_name": "deploying",
-  "deploy_command": "export CONTROLLER_IP=... HOSTNAME=compute-01 ... ; curl -sSL ... | sudo -E bash"
+  "deploy_command": "export CONTROLLER_IP=... HOSTNAME=compute-01 ... REPO_BRANCH=staging; curl -sSL ... | sudo --preserve-env=CONTROLLER_IP,...,REPO_BRANCH bash"
 }
 ```
 
@@ -99,21 +99,21 @@ SSH 登录到目标计算节点，粘贴并执行上一步获得的部署命令�
 
 ```bash
 # 示例（实际命令由系统自动生成，请勿手动拼接）
-export CONTROLLER_IP=10.0.0.100 HOSTNAME=compute-01 NETWORK_DEVICE=eth0 \
-  VLAN_DEVICE=eth0 PRIVATE_VLAN_DEVICE=eth0 DNS_SERVER=8.8.8.8 \
-  SCI_CLIENT_ID=1 DOMAIN=example.com ZONE_NAME=zone0 VIRT_TYPE=kvm-x86_64; \
-  curl -sSL https://raw.githubusercontent.com/threen134/cloudland/staging/deploy/docker/scripts/deploy-compute-node.sh | sudo -E bash
+export CLAND_PUBKEY='...' GRPC_AUTH_TOKEN='...' CONTROLLER_IP=10.0.0.100 HOSTNAME=compute-01 \
+  NETWORK_DEVICE=eth0 VLAN_DEVICE=eth0 PRIVATE_VLAN_DEVICE=eth0 DNS_SERVER=8.8.8.8 \
+  NODE_ID=1 DOMAIN=example.com ZONE_NAME=zone0 VIRT_TYPE=kvm-x86_64 REPO_BRANCH=staging; \
+  curl -sSL https://raw.githubusercontent.com/threen134/cloudland/staging/deploy/docker/scripts/deploy-compute-node.sh | sudo --preserve-env=CLAND_PUBKEY,GRPC_AUTH_TOKEN,CONTROLLER_IP,HOSTNAME,NETWORK_DEVICE,VLAN_DEVICE,PRIVATE_VLAN_DEVICE,DNS_SERVER,NODE_ID,DOMAIN,ZONE_NAME,VIRT_TYPE,REPO_BRANCH bash
 ```
 
 脚本将自动完成：
 - 系统配置（时区、主机名、网络）
 - 安装 Docker 及相关依赖
-- 部署 SCI 计算节点服务
+- 编译并部署计算节点 agent（cloudlet-go）
 - 配置 libvirt/KVM
-- 注册到控制节点（`CONTROLLER_IP:9988`）
+- 连接并注册到控制节点（`CONTROLLER_IP:5006`）
 
 > [!IMPORTANT]
-> - 部署命令中的所有参数（包括 `SCI_CLIENT_ID`）由系统自动生成，请直接复制执行，**无需手动修改**。
+> - 部署命令中的所有参数（包括 `NODE_ID`）由系统自动生成，请直接复制执行，**无需手动修改**。
 > - 部署完成后，节点状态将从 `DEPLOYING` 自动变为 `ACTIVE`。
 > - 如果部署失败（状态变为 `DEPLOY_FAILED`），可以在 Web UI 中重新点击部署，系统会复用相同的 hostid 重新生成命令。
 
@@ -160,11 +160,11 @@ graph TB
 
 ### Network Device — 东西向 Overlay（VXLAN）
 
-承载 **VXLAN 隧道封装的东西向流量**（VNI >= 4095）以及 **SCI 管理通信**。这是唯一的必填网卡参数。
+承载 **VXLAN 隧道封装的东西向流量**（VNI >= 4095）以及 **与控制节点的管理通信**。这是唯一的必填网卡参数。
 
 - **方向**：东西向（VM ↔ VM 跨节点通信）
 - **封装**：VXLAN Overlay，跨三层网络，不依赖物理交换机 VLAN 配置
-- 同时承载计算节点与控制节点之间的 SCI 协议通信（9988 端口）
+- 同时承载计算节点与控制节点之间的 gRPC 通信（cland-go 5006 端口）
 - 对应 `cloudrc.local` 中的 `vxlan_interface`
 
 ### VLAN Device — 南北向出口
@@ -237,7 +237,7 @@ Private VLAN   = bond2   ← 东西向私有 VLAN（独立隔离）
 ## 常见问题
 
 - **节点状态停留在 DEPLOYING**：SSH 到计算节点查看部署脚本输出，确认是否有报错。
-- **SCI 通信超时**：检查控制节点的 `9988` 端口是否被防火墙拦截。
+- **节点离线 / 无法注册**：检查控制节点的 `5006` 端口是否被防火墙拦截，以及 `/etc/sysconfig/cloudlet` 中的 `GRPC_AUTH_TOKEN` 是否与控制面一致（`journalctl -u cloudlet-go` 查看连接错误）。
 - **注册失败（API 返回错误）**：确认 hostname 集群内唯一，且控制面服务已正常运行。
 - **KVM 不可用**：进入节点 BIOS，开启 `Virtualization Technology` 支持。
 - **部署失败重试**：在 Web UI 重新点击部署即可，系统会复用已分配的 hostid。

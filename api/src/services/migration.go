@@ -24,11 +24,11 @@ var (
 type MigrationAdmin struct{}
 
 func (a *MigrationAdmin) Create(ctx context.Context, name string, instances []*model.Instance, force bool, tgtHyper int32) (migrations []*model.Migration, err error) {
-	logger.Debugf("Start migrating instances to %d, migration type %t", tgtHyper, force)
+	logger.Ctx(ctx).Debugf("Start migrating instances to %d, migration type %t", tgtHyper, force)
 	memberShip := GetMemberShip(ctx)
 	permit := memberShip.CheckSystemPermission()
 	if !permit {
-		logger.Error("Not authorized for this operation")
+		logger.Ctx(ctx).Error("Not authorized for this operation")
 		err = NewCLError(ErrPermissionDenied, "Not authorized for this operation", nil)
 		return
 	}
@@ -42,14 +42,36 @@ func (a *MigrationAdmin) Create(ctx context.Context, name string, instances []*m
 		targetHyper := &model.Hyper{}
 		err = db.Where("hostid = ?", tgtHyper).Take(targetHyper).Error
 		if err != nil {
-			logger.Error("Failed to query hyper", err)
+			logger.Ctx(ctx).Error("Failed to query hyper", err)
 			err = NewCLError(ErrHypervisorNotFound, "Failed to find target hypervisor", err)
 			return
 		}
-		if targetHyper.Status == 10 {
-			err = NewCLError(ErrHypervisorInvalidState, "Target hypervisor is in wrong state", nil)
-			logger.Error("Target hypervisor is in wrong state")
+		// 只接受活动状态的目标节点。此前只挡住离线(10)，维护中(2)、已禁用(0)、部署中(4)
+		// 都能通过——往一台即将断电维护的节点上迁虚拟机等于埋雷
+		if targetHyper.Status != 1 {
+			err = NewCLError(ErrHypervisorInvalidState,
+				fmt.Sprintf("Target hypervisor %s is not active (status %d)", targetHyper.Hostname, targetHyper.Status), nil)
+			logger.Ctx(ctx).Errorf("Target hypervisor %d is in status %d, not accepting instances", tgtHyper, targetHyper.Status)
 			return
+		}
+	}
+	// 本地存储的磁盘只在源节点上：只能在源节点在线时热迁移（磁盘随 virsh migrate 复制），不支持强制/冷迁移
+	if GetVolumeDriver() == "local" {
+		if force {
+			err = NewCLError(ErrOperationNotSupported, "Force migration is not supported with local storage", nil)
+			return
+		}
+		for _, instance := range instances {
+			sourceHyper := &model.Hyper{}
+			err = db.Where("hostid = ?", instance.Hyper).Take(sourceHyper).Error
+			if err != nil {
+				err = NewCLError(ErrHypervisorNotFound, "Failed to query source hypervisor", err)
+				return
+			}
+			if sourceHyper.Status == 10 {
+				err = NewCLError(ErrOperationNotSupported, fmt.Sprintf("Source hypervisor of instance %s is offline, instances with local storage can not be migrated", instance.Hostname), nil)
+				return
+			}
 		}
 	}
 	for _, instance := range instances {
@@ -59,7 +81,7 @@ func (a *MigrationAdmin) Create(ctx context.Context, name string, instances []*m
 		sourceHyper := &model.Hyper{Hostid: instance.Hyper}
 		err = db.Where(sourceHyper).Take(sourceHyper).Error
 		if err != nil {
-			logger.Error("Failed to query hyper", err)
+			logger.Ctx(ctx).Error("Failed to query hyper", err)
 			err = NewCLError(ErrHypervisorNotFound, "Failed to query source hypervisor", err)
 			return
 		}
@@ -69,8 +91,22 @@ func (a *MigrationAdmin) Create(ctx context.Context, name string, instances []*m
 			migrationType = "warm"
 		}
 		if instance.Hyper == tgtHyper {
-			logger.Error("No need to migrate if source and target hypervisors are the same")
+			logger.Ctx(ctx).Error("No need to migrate if source and target hypervisors are the same")
 			continue
+		}
+		// 引导卷校验放在创建迁移记录之前：放在之后的话，校验失败会留下一条永远停在
+		// in_progress 的空记录（既占着界面，又让该实例的心跳状态更新被跳过 10 分钟）
+		var bootVolume *model.Volume
+		for _, volume := range instance.Volumes {
+			if volume.Booting {
+				bootVolume = volume
+				break
+			}
+		}
+		if bootVolume == nil {
+			logger.Ctx(ctx).Error("Instance has no boot volume")
+			err = NewCLError(ErrBootVolumeNotFound, "Instance has no boot volume", nil)
+			return
 		}
 		task1 := &model.Task{
 			Name:    "Prepare_Target",
@@ -83,35 +119,25 @@ func (a *MigrationAdmin) Create(ctx context.Context, name string, instances []*m
 			InstanceID:  instance.ID,
 			Type:        migrationType,
 			Force:       force,
+			CreaterName: memberShip.UserName,
+			CreaterUUID: memberShip.UserUUID,
 			SourceHyper: instance.Hyper,
 			TargetHyper: tgtHyper,
 			Phases:      []*model.Task{task1},
 			Status:      status,
 		}
 		migration.Instance = instance
-		logger.Debugf("Creating migration %+v", migration)
+		logger.Ctx(ctx).Debugf("Creating migration %+v", migration)
 		err = db.Create(migration).Error
 		if err != nil {
-			logger.Error("DB create migration failed, %v", err)
+			logger.Ctx(ctx).Error("DB create migration failed, %v", err)
 			err = NewCLError(ErrMigrationCreateFailed, "DB create migration failed", err)
 			return
 		}
 		var metadata string
 		metadata, err = instanceAdmin.GetMetadata(ctx, instance, "")
 		if err != nil {
-			logger.Error("Failed to get metadata")
-			return
-		}
-		var bootVolume *model.Volume
-		for _, volume := range instance.Volumes {
-			if volume.Booting {
-				bootVolume = volume
-				break
-			}
-		}
-		if bootVolume == nil {
-			logger.Error("Instance has no boot volume")
-			err = NewCLError(ErrBootVolumeNotFound, "Instance has no boot volume", nil)
+			logger.Ctx(ctx).Error("Failed to get metadata")
 			return
 		}
 		poolID := bootVolume.GetVolumePoolID()
@@ -127,7 +153,7 @@ func (a *MigrationAdmin) Create(ctx context.Context, name string, instances []*m
 					"status": migration.Status,
 				}).Error
 				if mErr != nil {
-					logger.Error("Failed to update save migration, %v", mErr)
+					logger.Ctx(ctx).Error("Failed to update save migration, %v", mErr)
 					err = NewCLError(ErrMigrationUpdateFailed, "Failed to update migration", mErr)
 					return
 				}
@@ -135,11 +161,15 @@ func (a *MigrationAdmin) Create(ctx context.Context, name string, instances []*m
 				continue
 			}
 			rcNeeded := fmt.Sprintf("cpu=%d memory=%d disk=%d network=%d", instance.Cpu, instance.Memory*1024, int64(instance.Disk)*1024*1024, 0)
-			control = "select=" + hyperGroup + rcNeeded
+			// hyperGroup 与资源条件之间必须有空格分隔：cland 的 controlValue 取 select= 之后
+			// 到第一个空白为止的内容作为候选描述符，少了空格就变成 "group-zone-1:4cpu=2"，
+			// 成员解析失败后调度器会回退到「所有节点」，本函数精心过滤出的候选集（同可用区、
+			// 活动状态、排除源节点）被整个丢弃，虚拟机可能被迁到源节点自己或维护中的节点
+			control = "select=" + hyperGroup + " " + rcNeeded
 		}
 		err = db.Model(instance).Update("status", model.InstanceStatusMigrating).Error
 		if err != nil {
-			logger.Error("Failed to update instance status to migrating, %v", err)
+			logger.Ctx(ctx).Error("Failed to update instance status to migrating, %v", err)
 			err = NewCLError(ErrInstanceUpdateFailed, "Failed to update instance status", err)
 			return
 		}
@@ -156,10 +186,10 @@ func (a *MigrationAdmin) Create(ctx context.Context, name string, instances []*m
 		if instance.Image != nil {
 			bootLoader = instance.Image.BootLoader
 		}
-		command := fmt.Sprintf("/opt/cloudland/scripts/backend/target_migration.sh '%d' '%d' '%d' '%s' '%d' '%d' '%d' '%s' '%s' '%s' '%s' '%s'<<EOF\n%s\nEOF", migration.ID, task1.ID, instance.ID, instance.Hostname, cpu, memory, disk, sourceHyper.Hostname, migrationType, bootLoader, poolID, instance.UUID, base64.StdEncoding.EncodeToString([]byte(metadata)))
+		command := fmt.Sprintf("/opt/cloudland/scripts/backend/target_migration.sh '%d' '%d' '%d' '%s' '%d' '%d' '%d' '%s' '%s' '%s' '%s' '%s'<<'EOF'\n%s\nEOF", migration.ID, task1.ID, instance.ID, ShellEscape(instance.Hostname), cpu, memory, disk, ShellEscape(sourceHyper.Hostname), ShellEscape(migrationType), ShellEscape(bootLoader), ShellEscape(poolID), ShellEscape(instance.UUID), base64.StdEncoding.EncodeToString([]byte(metadata)))
 		err = HyperExecute(ctx, control, command)
 		if err != nil {
-			logger.Error("Target migration command execution failed", err)
+			logger.Ctx(ctx).Error("Target migration command execution failed", err)
 			return
 		}
 		migrations = append(migrations, migration)
@@ -172,14 +202,14 @@ func (a *MigrationAdmin) GetMigrationByUUID(ctx context.Context, uuID string) (m
 	migration = &model.Migration{}
 	err = db.Preload("Instance").Preload("Phases").Where("uuid = ?", uuID).Take(migration).Error
 	if err != nil {
-		logger.Error("Failed to query migration, %v", err)
+		logger.Ctx(ctx).Error("Failed to query migration, %v", err)
 		err = NewCLError(ErrMigrationNotFound, "Failed to find migration", err)
 		return
 	}
 	memberShip := GetMemberShip(ctx)
 	permit := memberShip.CheckSystemPermission()
 	if !permit {
-		logger.Error("Not authorized to get migration")
+		logger.Ctx(ctx).Error("Not authorized to get migration")
 		err = NewCLError(ErrPermissionDenied, "Not authorized to get migration", nil)
 		return
 	}
@@ -191,14 +221,14 @@ func (a *MigrationAdmin) GetMigrationByName(ctx context.Context, name string) (m
 	migration = &model.Migration{}
 	err = db.Where("name = ?", name).Take(migration).Error
 	if err != nil {
-		logger.Error("Failed to query migration, %v", err)
+		logger.Ctx(ctx).Error("Failed to query migration, %v", err)
 		err = NewCLError(ErrMigrationNotFound, "Failed to find migration", err)
 		return
 	}
 	memberShip := GetMemberShip(ctx)
 	permit := memberShip.CheckSystemPermission()
 	if !permit {
-		logger.Error("Not authorized to get migration")
+		logger.Ctx(ctx).Error("Not authorized to get migration")
 		err = NewCLError(ErrPermissionDenied, "Not authorized to get migration", nil)
 		return
 	}
@@ -208,21 +238,21 @@ func (a *MigrationAdmin) GetMigrationByName(ctx context.Context, name string) (m
 func (a *MigrationAdmin) Get(ctx context.Context, id int64) (migration *model.Migration, err error) {
 	if id <= 0 {
 		err = fmt.Errorf("Invalid migration ID: %d", id)
-		logger.Error(err)
+		logger.Ctx(ctx).Error(err)
 		return
 	}
 	ctx, db := GetContextDB(ctx)
 	migration = &model.Migration{Model: model.Model{ID: id}}
 	err = db.Take(migration).Error
 	if err != nil {
-		logger.Error("DB failed to query migration, %v", err)
+		logger.Ctx(ctx).Error("DB failed to query migration, %v", err)
 		err = NewCLError(ErrMigrationNotFound, "Failed to find migration", err)
 		return
 	}
 	memberShip := GetMemberShip(ctx)
 	permit := memberShip.CheckSystemPermission()
 	if !permit {
-		logger.Error("Not authorized to get migration")
+		logger.Ctx(ctx).Error("Not authorized to get migration")
 		err = NewCLError(ErrPermissionDenied, "Not authorized to get migration", nil)
 		return
 	}
@@ -255,16 +285,13 @@ func (a *MigrationAdmin) List(ctx context.Context, offset, limit int64, order, q
 		order = "created_at"
 	}
 
-	if query != "" {
-		query = fmt.Sprintf("name like '%%%s%%'", query)
-	}
 	migrations = []*model.Migration{}
-	if err = db.Model(&model.Migration{}).Where(query).Count(&total).Error; err != nil {
+	if err = db.Model(&model.Migration{}).Scopes(dbs.Contains(query, "name")).Count(&total).Error; err != nil {
 		err = NewCLError(ErrSQLSyntaxError, "Failed to count migrations", err)
 		return
 	}
-	db = dbs.Sortby(db.Offset(offset).Limit(limit), order)
-	if err = db.Preload("Instance").Preload("Phases").Where(query).Find(&migrations).Error; err != nil {
+	db = dbs.Sortby(db.Offset(int(offset)).Limit(int(limit)), order)
+	if err = db.Preload("Instance").Preload("Phases").Scopes(dbs.Contains(query, "name")).Find(&migrations).Error; err != nil {
 		err = NewCLError(ErrSQLSyntaxError, "Failed to query migrations", err)
 		return
 	}

@@ -46,7 +46,7 @@ export const useCartStore = defineStore('cart', () => {
         if (storedCart) {
             try {
                 items.value = JSON.parse(storedCart)
-            } catch (e) {
+            } catch {
                 console.warn('Failed to parse cart from storage')
             }
         }

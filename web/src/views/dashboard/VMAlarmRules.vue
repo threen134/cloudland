@@ -1,7 +1,10 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Plus, Trash2, Search, ShieldAlert, Link, RefreshCw, X, ChevronDown, ChevronRight, Monitor, Power, Check, Copy } from 'lucide-vue-next'
+import { Plus, Trash2, Search, ShieldAlert, Link, RefreshCw, ChevronDown, ChevronRight, Monitor, Power, Check, Copy } from 'lucide-vue-next'
+import BaseModal from '../../components/modals/BaseModal.vue'
+import DeleteModal from '../../components/modals/DeleteModal.vue'
+import PageToolbar from '../../components/base/PageToolbar.vue'
 import { vmAlarmRulesApi, VM_RULE_TYPES, type VMAlarmRuleGroup, type VMRuleType } from '../../api/vmAlarmRules'
 import { alarmEventsApi } from '../../api/alarmEvents'
 import { notificationsApi, type NotificationChannel } from '../../api/notifications'
@@ -18,7 +21,6 @@ const loading = ref(false)
 const errorMsg = ref('')
 const searchQuery = ref('')
 const page = ref(1)
-const pageSize = ref(100)
 const totalPages = ref(1)
 const total = ref(0)
 
@@ -76,8 +78,8 @@ const toggleRule = async (id: string) => {
                     notificationsApi.list(),
                     alarmEventsApi.getRuleChannels(id),
                 ])
-                const allCh: NotificationChannel[] = channelsRes.data.channels || []
-                const bindings = (bindingsRes.data as any).bindings || []
+                const allCh: NotificationChannel[] = channelsRes.channels || []
+                const bindings = (bindingsRes as any).bindings || []
                 const boundUuids: string[] = bindings.map((b: any) => b.channel_uuid)
                 ruleChannels.value[id] = allCh.filter(c => boundUuids.includes(c.uuid))
                 ruleChannelCounts.value[id] = ruleChannels.value[id].length
@@ -124,7 +126,7 @@ const filteredRules = computed(() => {
 const fetchAllVMs = async () => {
     try {
         const res = await instancesApi.fetchInstances()
-        const data = res.data as any
+        const data = res as any
         allVMs.value = Array.isArray(data) ? data : (data.instances || [])
     } catch (err) {
         console.error('Failed to fetch instances:', err)
@@ -145,7 +147,7 @@ const fetchRules = async () => {
         ruleResults.forEach((result, idx) => {
             const type = types[idx]
             if (result.status === 'fulfilled') {
-                const typeRules = (result.value.data.data || []).map((r: any) => ({ ...r, type }))
+                const typeRules = (result.value.data || []).map((r: any) => ({ ...r, type }))
                 allRules.push(...typeRules)
             } else {
                 console.error(`Failed to fetch ${type} alarm rules:`, result.reason)
@@ -161,7 +163,7 @@ const fetchRules = async () => {
             results.forEach((result, idx) => {
                 const uuid = allRules[idx].uuid
                 if (result.status === 'fulfilled') {
-                    const bindings = (result.value.data as any).bindings || []
+                    const bindings = (result.value as any).bindings || []
                     ruleChannelCounts.value[uuid] = bindings.length
                 } else {
                     ruleChannelCounts.value[uuid] = 0
@@ -190,7 +192,7 @@ const openCreate = async () => {
         vmsLoading.value = true
         try {
             const res = await instancesApi.fetchInstances()
-            const data = res.data as any
+            const data = res as any
             allVMs.value = Array.isArray(data) ? data : (data.instances || [])
         } catch (err) {
             console.error('Failed to fetch instances:', err)
@@ -202,7 +204,7 @@ const openCreate = async () => {
         createChannelsLoading.value = true
         try {
             const res = await notificationsApi.list()
-            allChannels.value = res.data.channels || []
+            allChannels.value = res.channels || []
         } catch (err) {
             console.error('Failed to fetch channels:', err)
         } finally {
@@ -240,7 +242,7 @@ const toggleBWVM = async (vmId: string) => {
         vmInterfacesLoading.value[vmId] = true
         try {
             const res = await instancesApi.getInterfaces(vmId)
-            vmInterfaces.value[vmId] = (res.data.interfaces || []).map(i => ({ id: i.id, name: i.name, ip_address: i.ip_address }))
+            vmInterfaces.value[vmId] = (res.interfaces || []).map(i => ({ id: i.id, name: i.name, ip_address: i.ip_address }))
         } catch {
             vmInterfaces.value[vmId] = []
         } finally {
@@ -283,7 +285,7 @@ const submitCreate = async () => {
             })
         }
 
-        const ruleUuid = res.data?.data?.uuid || res.data?.data?.group_uuid
+        const ruleUuid = res.data?.uuid || res.data?.group_uuid
 
         // Link VMs if selected (cpu/memory only; bw links are handled in createBWRule)
         if (createForm.value.type !== 'bw' && createForm.value.linkedvms && createForm.value.linkedvms.length > 0 && ruleUuid) {
@@ -356,8 +358,8 @@ const openBindChannels = async (rule: VMAlarmRuleGroup) => {
             notificationsApi.list(),
             alarmEventsApi.getRuleChannels(rule.uuid),
         ])
-        allChannels.value = channelsRes.data.channels || []
-        const bindings = (bindingsRes.data as any).bindings || []
+        allChannels.value = channelsRes.channels || []
+        const bindings = (bindingsRes as any).bindings || []
         selectedChannelUuids.value = bindings.map((b: any) => b.channel_uuid)
     } catch (err) {
         console.error('Failed to load channels:', err)
@@ -381,7 +383,7 @@ const saveChannelBindings = async () => {
     } catch (err: any) {
         const errCode = err.response?.data?.error
         if (errCode === 'channel_not_synced') {
-            alert(t('dashboard.vmAlarmRules.channelNotSynced'))
+            toast.error(t('dashboard.vmAlarmRules.channelNotSynced'))
         } else {
             console.error('Failed to bind channels:', err)
         }
@@ -406,7 +408,7 @@ const openBindVMs = async (rule: VMAlarmRuleGroup) => {
     vmSearchQuery.value = ''
     try {
         const res = await instancesApi.fetchInstances()
-        const data = res.data as any
+        const data = res as any
         allVMs.value = Array.isArray(data) ? data : (data.instances || [])
     } catch (err) {
         console.error('Failed to fetch instances:', err)
@@ -482,14 +484,8 @@ onMounted(fetchRules)
 
 <template>
     <div class="vpc-list-container">
-        <div class="page-header">
-            <div class="search-wrapper">
-                <div class="search-box">
-                    <Search :size="16" class="search-icon" />
-                    <input v-model="searchQuery" :placeholder="t('actions.search') + '...'" class="search-input" />
-                </div>
-            </div>
-            <div class="header-actions">
+        <PageToolbar v-model:search="searchQuery">
+            <template #actions>
                 <button class="btn btn-secondary btn-sm btn-icon" @click="fetchRules" :title="t('actions.refresh')">
                     <RefreshCw :size="14" :class="{ spinning: loading }" />
                 </button>
@@ -497,8 +493,8 @@ onMounted(fetchRules)
                     <Plus :size="14" />
                     <span>{{ t('actions.create') }}</span>
                 </button>
-            </div>
-        </div>
+            </template>
+        </PageToolbar>
 
         <div v-if="errorMsg" class="error-banner" @click="errorMsg = ''">{{ errorMsg }}</div>
 
@@ -630,14 +626,14 @@ onMounted(fetchRules)
         </div>
 
         <!-- Create Modal -->
-        <Teleport to="body">
-            <div v-if="showCreateModal" class="modal-overlay" @click.self="showCreateModal = false">
-                <div class="modal-content card" style="max-width: 600px;">
-                    <div class="modal-header">
-                        <h3>{{ t('dashboard.vmAlarmRules.createTitle', { type: t('dashboard.vmAlarmRules.ruleTypes.' + createForm.type) }) }}</h3>
-                        <button class="btn btn-ghost btn-icon" @click="showCreateModal = false"><X :size="18" /></button>
-                    </div>
-                    <div class="modal-body">
+        <BaseModal
+            :show="showCreateModal"
+            :title="t('dashboard.vmAlarmRules.createTitle', { type: t('dashboard.vmAlarmRules.ruleTypes.' + createForm.type) })"
+            size="lg"
+            form
+            @close="showCreateModal = false"
+            @submit="submitCreate"
+        >
                         <div class="form-stack">
                             <div class="form-group">
                                 <label class="form-label">{{ t('dashboard.table.type') }}</label>
@@ -658,7 +654,7 @@ onMounted(fetchRules)
                                         <label class="form-label mb-0">{{ t('dashboard.vmAlarmRules.thresholds') }}</label>
                                         <span class="input-tip ml-2">{{ t('dashboard.vmAlarmRules.thresholdHint') }}</span>
                                     </div>
-                                    <button class="btn btn-ghost btn-sm" @click="addRuleRow">
+                                    <button type="button" class="btn btn-ghost btn-sm" @click="addRuleRow">
                                         <Plus :size="14" /> {{ t('actions.add') }}
                                     </button>
                                 </div>
@@ -681,7 +677,7 @@ onMounted(fetchRules)
                                         <option value="warning">{{ t('dashboard.vmAlarmRules.levels.warning') }}</option>
                                         <option value="info">{{ t('dashboard.vmAlarmRules.levels.info') }}</option>
                                     </select>
-                                    <button v-if="createForm.rules.length > 1" class="btn btn-ghost btn-icon text-error" @click="removeRuleRow(idx)">
+                                    <button v-if="createForm.rules.length > 1" type="button" class="btn btn-ghost btn-icon text-error" @click="removeRuleRow(idx)">
                                         <Trash2 :size="14" />
                                     </button>
                                 </div>
@@ -742,120 +738,78 @@ onMounted(fetchRules)
                                 </div>
                             </div>
                         </div>
-                    </div>
-                    <div class="modal-footer">
-                        <button class="btn btn-secondary" @click="showCreateModal = false">{{ t('actions.cancel') }}</button>
-                        <button class="btn btn-primary" @click="submitCreate" :disabled="!createForm.name">{{ t('actions.save') }}</button>
-                    </div>
-                </div>
-            </div>
-        </Teleport>
+
+            <template #footer>
+                <button type="button" class="btn btn-secondary" @click="showCreateModal = false">{{ t('actions.cancel') }}</button>
+                <button type="submit" class="btn btn-primary" :disabled="!createForm.name">{{ t('actions.save') }}</button>
+            </template>
+        </BaseModal>
 
         <!-- Delete Modal -->
-        <Teleport to="body">
-            <div v-if="showDeleteModal" class="modal-overlay" @click.self="showDeleteModal = false">
-                <div class="modal-content card" style="max-width: 440px;">
-                    <div class="modal-header">
-                        <h3>{{ t('actions.confirmDelete') }}</h3>
-                        <button class="btn btn-ghost btn-icon" @click="showDeleteModal = false"><X :size="18" /></button>
-                    </div>
-                    <div class="modal-body">
-                        <p>{{ t('dashboard.vmAlarmRules.deleteConfirm', { name: deleteTarget?.name }) }}</p>
-                    </div>
-                    <div class="modal-footer">
-                        <button class="btn btn-secondary" @click="showDeleteModal = false">{{ t('actions.cancel') }}</button>
-                        <button class="btn btn-danger" @click="executeDelete">{{ t('actions.delete') }}</button>
-                    </div>
-                </div>
-            </div>
-        </Teleport>
+        <DeleteModal
+            :show="showDeleteModal"
+            :title="t('actions.confirmDelete')"
+            :message="t('dashboard.vmAlarmRules.deleteConfirm', { name: deleteTarget?.name })"
+            @close="showDeleteModal = false"
+            @confirm="executeDelete"
+        />
 
         <!-- Bind Channels Modal -->
-        <Teleport to="body">
-            <div v-if="showBindModal" class="modal-overlay" @click.self="showBindModal = false">
-                <div class="modal-content card" style="max-width: 480px;">
-                    <div class="modal-header">
-                        <h3>{{ t('dashboard.vmAlarmRules.bindChannels') }} - {{ bindTarget?.name }}</h3>
-                        <button class="btn btn-ghost btn-icon" @click="showBindModal = false"><X :size="18" /></button>
-                    </div>
-                    <div class="modal-body">
-                        <div v-if="bindLoading" class="loading-spinner" style="margin: 20px auto;"></div>
-                        <div v-else-if="allChannels.length === 0" class="text-muted">
-                            {{ t('dashboard.vmAlarmRules.noChannels') }}
-                        </div>
-                        <div v-else class="channel-list">
-                            <label v-for="ch in allChannels" :key="ch.uuid" class="channel-item">
-                                <input type="checkbox" :checked="selectedChannelUuids.includes(ch.uuid)" @change="toggleChannel(ch.uuid)" />
-                                <span class="channel-name">{{ ch.name }}</span>
-                                <span class="badge" :class="ch.type === 'feishu' ? 'badge-info' : 'badge-secondary'">
-                                    {{ ch.type === 'feishu' ? t('dashboard.notificationFeishu') : (ch.type === 'webhook' ? t('dashboard.notificationCustomWebhook') : ch.type) }}
-                                </span>
-                            </label>
-                        </div>
-                    </div>
-                    <div class="modal-footer">
-                        <button class="btn btn-secondary" @click="showBindModal = false">{{ t('actions.cancel') }}</button>
-                        <button class="btn btn-primary" @click="saveChannelBindings" :disabled="bindLoading">{{ t('actions.save') }}</button>
-                    </div>
-                </div>
+        <BaseModal
+            :show="showBindModal"
+            :title="`${t('dashboard.vmAlarmRules.bindChannels')} - ${bindTarget?.name ?? ''}`"
+            @close="showBindModal = false"
+        >
+            <div v-if="bindLoading" class="loading-spinner" style="margin: 20px auto;"></div>
+            <div v-else-if="allChannels.length === 0" class="text-muted">
+                {{ t('dashboard.vmAlarmRules.noChannels') }}
             </div>
-        </Teleport>
+            <div v-else class="channel-list">
+                <label v-for="ch in allChannels" :key="ch.uuid" class="channel-item">
+                    <input type="checkbox" :checked="selectedChannelUuids.includes(ch.uuid)" @change="toggleChannel(ch.uuid)" />
+                    <span class="channel-name">{{ ch.name }}</span>
+                    <span class="badge" :class="ch.type === 'feishu' ? 'badge-info' : 'badge-secondary'">
+                        {{ ch.type === 'feishu' ? t('dashboard.notificationFeishu') : (ch.type === 'webhook' ? t('dashboard.notificationCustomWebhook') : ch.type) }}
+                    </span>
+                </label>
+            </div>
+
+            <template #footer>
+                <button class="btn btn-secondary" @click="showBindModal = false">{{ t('actions.cancel') }}</button>
+                <button class="btn btn-primary" @click="saveChannelBindings" :disabled="bindLoading">{{ t('actions.save') }}</button>
+            </template>
+        </BaseModal>
 
         <!-- Bind VMs Modal -->
-        <Teleport to="body">
-            <div v-if="showBindVMsModal" class="modal-overlay" @click.self="showBindVMsModal = false">
-                <div class="modal-content card" style="max-width: 480px;">
-                    <div class="modal-header">
-                        <h3>{{ t('dashboard.vmAlarmRules.bindVMs') }}</h3>
-                        <button class="btn btn-ghost btn-icon" @click="showBindVMsModal = false"><X :size="18" /></button>
-                    </div>
-                    <div class="modal-body">
-                        <p class="text-secondary mb-4">{{ t('dashboard.vmAlarmRules.selectVMsToBind') }}</p>
-                        <div class="search-box mb-4">
-                            <Search :size="16" class="search-icon" />
-                            <input v-model="vmSearchQuery" :placeholder="t('dashboard.vmAlarmRules.searchVMs')" class="search-input" />
-                        </div>
-                        <div v-if="vmsLoading" class="loading-spinner" style="margin: 20px auto;"></div>
-                        <div v-else class="channel-list">
-                            <label v-for="vm in filteredVMs" :key="vm.id" class="channel-item" @click="toggleVMSelection(vm.id)">
-                                <input type="checkbox" :checked="selectedVMUuids.includes(vm.id)" />
-                                <span class="channel-name">{{ vm.hostname || vm.name }}</span>
-                                <span class="badge badge-secondary">{{ vm.id.substring(0, 8) }}</span>
-                            </label>
-                        </div>
-                    </div>
-                    <div class="modal-footer">
-                        <button class="btn btn-secondary" @click="showBindVMsModal = false">{{ t('actions.cancel') }}</button>
-                        <button class="btn btn-primary" @click="saveVMBindings" :disabled="linkVMsLoading">{{ t('actions.save') }}</button>
-                    </div>
-                </div>
+        <BaseModal
+            :show="showBindVMsModal"
+            :title="t('dashboard.vmAlarmRules.bindVMs')"
+            @close="showBindVMsModal = false"
+        >
+            <p class="text-secondary mb-4">{{ t('dashboard.vmAlarmRules.selectVMsToBind') }}</p>
+            <div class="search-box mb-4">
+                <Search :size="16" class="search-icon" />
+                <input v-model="vmSearchQuery" :placeholder="t('dashboard.vmAlarmRules.searchVMs')" class="search-input" />
             </div>
-        </Teleport>
+            <div v-if="vmsLoading" class="loading-spinner" style="margin: 20px auto;"></div>
+            <div v-else class="channel-list">
+                <label v-for="vm in filteredVMs" :key="vm.id" class="channel-item" @click="toggleVMSelection(vm.id)">
+                    <input type="checkbox" :checked="selectedVMUuids.includes(vm.id)" />
+                    <span class="channel-name">{{ vm.hostname || vm.name }}</span>
+                    <span class="badge badge-secondary">{{ vm.id.substring(0, 8) }}</span>
+                </label>
+            </div>
+
+            <template #footer>
+                <button class="btn btn-secondary" @click="showBindVMsModal = false">{{ t('actions.cancel') }}</button>
+                <button class="btn btn-primary" @click="saveVMBindings" :disabled="linkVMsLoading">{{ t('actions.save') }}</button>
+            </template>
+        </BaseModal>
     </div>
 </template>
 
 <style scoped>
-.page-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 0;
-    padding-right: 20px;
-}
-
-.search-wrapper {
-    display: flex;
-    gap: 8px;
-    flex: 1;
-    max-width: 560px;
-}
-
-.header-actions {
-    display: flex;
-    gap: 8px;
-    align-items: center;
-}
-
+/* 绑定虚拟机弹窗里的搜索框 */
 .search-box {
     display: flex;
     align-items: center;
@@ -1103,7 +1057,6 @@ onMounted(fetchRules)
 }
 
 /* Modal */
-.modal-lg { max-width: 600px; }
 .form-stack { display: flex; flex-direction: column; gap: 16px; }
 .form-group { display: flex; flex-direction: column; }
 .form-label { font-size: 0.8125rem; color: var(--text-secondary); margin-bottom: 4px; font-weight: 500; }
@@ -1134,12 +1087,6 @@ onMounted(fetchRules)
 .channel-item:hover { background: var(--bg-hover, #f3f4f6); }
 .channel-item input[type="checkbox"] { cursor: pointer; }
 .channel-name { flex: 1; }
-
-.btn-danger {
-    background: var(--error-color); color: white; border: none;
-    padding: 8px 16px; border-radius: var(--radius-md); cursor: pointer; font-weight: 500;
-}
-.btn-danger:hover { background: var(--error-dark); }
 
 .spinning { animation: spin 1s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }

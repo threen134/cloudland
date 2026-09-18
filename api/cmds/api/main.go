@@ -17,6 +17,7 @@ import (
 	"api/src/rpcs"
 	"api/src/services"
 	rlog "api/src/utils/log"
+	"api/src/utils/tracing"
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
@@ -34,6 +35,9 @@ var (
 )
 
 func RunDaemon(cmd *cobra.Command, args []string) (err error) {
+	flushTracing := tracing.Init(context.Background(), "clapi", Version)
+	defer flushTracing()
+
 	g, _ := errgroup.WithContext(context.Background())
 	g.Go(apis.Run)
 	g.Go(rpcs.Run)
@@ -84,14 +88,14 @@ func init() {
 
 	// capture 上传链路：compute → clapi → MinIO
 	viper.BindEnv("clapi.internal_url", "CLAPI_INTERNAL_URL")
-	viper.BindEnv("sci.shared_secret", "SCI_SHARED_SECRET")
+	viper.BindEnv("capture.upload_secret", "CAPTURE_UPLOAD_SECRET")
 
 	// management_vip 用于 DNS 注册（MinIO/clapi 域名指向控制节点 VIP）
 	viper.BindEnv("management_vip", "MANAGEMENT_VIP")
 
 	rlog.InitLogger("clapi.log")
 	fmt.Printf("Logger initialized, logs are being written to clapi.log\n")
-	
+
 	// Initialize services (creates admin user, org, default security group)
 	services.Init()
 }

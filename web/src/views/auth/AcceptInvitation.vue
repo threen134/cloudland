@@ -1,14 +1,12 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { useI18n } from 'vue-i18n'
 import { CheckCircle, XCircle, Loader2, ArrowRight, Cloud, Mail } from 'lucide-vue-next'
 import { authApi } from '../../api/auth'
 import { ORG_ROLES } from '../../api/orgs'
 
 const route = useRoute()
 const router = useRouter()
-const { t } = useI18n()
 
 const status = ref<'loading' | 'info' | 'accepting' | 'success' | 'error'>('loading')
 const errorMsg = ref('')
@@ -38,7 +36,7 @@ const fetchInfo = async () => {
     }
     try {
         const response = await authApi.getInvitationInfo(token)
-        invitationInfo.value = response.data
+        invitationInfo.value = response
         status.value = 'info'
     } catch (err: any) {
         status.value = 'error'

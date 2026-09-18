@@ -2,9 +2,13 @@
 import { ref, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { alarmsApi, RULE_TYPES, type NodeAlarmRule } from '../../api/alarms'
-import { ArrowLeft, AlertTriangle, Copy, Check, Trash2, X, Loader2 } from 'lucide-vue-next'
+import { ArrowLeft, AlertTriangle, Copy, Check, Trash2 } from 'lucide-vue-next'
 import { useI18n } from 'vue-i18n'
 import { useToast } from '../../composables/useToast'
+import DeleteModal from '../../components/modals/DeleteModal.vue'
+import InfoRow from '../../components/base/InfoRow.vue'
+import { useCopyId } from '../../composables/useCopyId'
+import { useGoBack } from '../../composables/useGoBack'
 
 const { t } = useI18n()
 const toast = useToast()
@@ -13,7 +17,7 @@ const router = useRouter()
 const alarm = ref<NodeAlarmRule | null>(null)
 const loading = ref(true)
 const error = ref<string | null>(null)
-const copiedField = ref<string | null>(null)
+const { copiedId: copiedField, copyId: copyToClipboard } = useCopyId()
 
 // Delete
 const showDeleteConfirm = ref(false)
@@ -25,7 +29,7 @@ const fetchAlarmDetail = async () => {
     try {
         const uuid = route.params.id as string
         const response = await alarmsApi.fetchAlarmRules({ uuid })
-        const data = response.data as any
+        const data = response as any
         const rules = Array.isArray(data) ? data : (data.data || [])
         alarm.value = rules.length > 0 ? rules[0] : null
         if (!alarm.value) {
@@ -39,19 +43,12 @@ const fetchAlarmDetail = async () => {
     }
 }
 
-const copyToClipboard = (text: string, field: string) => {
-    navigator.clipboard.writeText(text).then(() => {
-        copiedField.value = field
-        setTimeout(() => { copiedField.value = null }, 2000)
-    })
-}
-
 const getRuleTypeLabel = (type: string) => {
     const found = RULE_TYPES.find(r => r.value === type)
     return found ? found.label : type
 }
 
-const goBack = () => { router.push({ name: 'alarms' }) }
+const goBack = useGoBack('alarms')
 
 const handleDelete = async () => {
     if (!alarm.value) return
@@ -131,24 +128,12 @@ onMounted(fetchAlarmDetail)
         <div class="info-card card">
           <h3 class="card-section-title">{{ t('dashboard.table.overview') }}</h3>
           <div class="info-rows">
-            <div class="info-row">
-              <span class="info-label">{{ t('dashboard.table.name') }}</span>
-              <span class="info-value">{{ alarm.name }}</span>
-            </div>
-            <div class="info-row">
-              <span class="info-label">{{ t('dashboard.alarmActions.ruleType') }}</span>
-              <span class="info-value">
-                <span class="rule-type-badge">{{ getRuleTypeLabel(alarm.rule_type) }}</span>
-              </span>
-            </div>
-            <div class="info-row">
-              <span class="info-label">{{ t('dashboard.alarmActions.owner') }}</span>
-              <span class="info-value">{{ alarm.owner || '-' }}</span>
-            </div>
-            <div class="info-row" v-if="alarm.description">
-              <span class="info-label">{{ t('dashboard.table.description') }}</span>
-              <span class="info-value">{{ alarm.description }}</span>
-            </div>
+            <InfoRow :label="t('dashboard.table.name')">{{ alarm.name }}</InfoRow>
+            <InfoRow :label="t('dashboard.alarmActions.ruleType')">
+              <span class="rule-type-badge">{{ getRuleTypeLabel(alarm.rule_type) }}</span>
+            </InfoRow>
+            <InfoRow :label="t('dashboard.alarmActions.owner')">{{ alarm.owner || '-' }}</InfoRow>
+            <InfoRow v-if="alarm.description" :label="t('dashboard.table.description')">{{ alarm.description }}</InfoRow>
           </div>
         </div>
 
@@ -163,26 +148,14 @@ onMounted(fetchAlarmDetail)
     </div>
 
     <!-- Delete Confirm Modal -->
-    <Teleport to="body">
-      <div v-if="showDeleteConfirm" class="modal-overlay" @click.self="showDeleteConfirm = false">
-        <div class="modal-content" style="max-width: 440px;">
-          <div class="modal-header">
-            <h3>{{ t('dashboard.alarmActions.deleteTitle') }}</h3>
-            <button class="btn btn-ghost btn-icon" @click="showDeleteConfirm = false"><X :size="18" /></button>
-          </div>
-          <div class="modal-body">
-            <p>{{ t('dashboard.alarmActions.deleteConfirm', { name: alarm?.name }) }}</p>
-          </div>
-          <div class="modal-footer">
-            <button class="btn btn-secondary" @click="showDeleteConfirm = false">{{ t('actions.cancel') }}</button>
-            <button class="btn btn-danger" @click="handleDelete" :disabled="deleting">
-              <Loader2 v-if="deleting" :size="14" class="spinning" />
-              {{ deleting ? t('messages.deleting') : t('actions.delete') }}
-            </button>
-          </div>
-        </div>
-      </div>
-    </Teleport>
+    <DeleteModal
+      :show="showDeleteConfirm"
+      :title="t('dashboard.alarmActions.deleteTitle')"
+      :message="t('dashboard.alarmActions.deleteConfirm', { name: alarm?.name })"
+      :loading="deleting"
+      @close="showDeleteConfirm = false"
+      @confirm="handleDelete"
+    />
   </div>
 </template>
 
@@ -271,18 +244,6 @@ onMounted(fetchAlarmDetail)
 
 .info-rows { display: flex; flex-direction: column; gap: var(--spacing-3); }
 
-.info-row {
-  display: flex; justify-content: space-between; align-items: center;
-  padding: var(--spacing-1) 0; min-height: 24px;
-}
-
-.info-label { font-size: var(--font-size-sm); color: var(--text-secondary); flex-shrink: 0; }
-
-.info-value {
-  font-size: var(--font-size-sm); color: var(--text-primary);
-  font-weight: var(--font-weight-medium); text-align: right; word-break: break-all;
-}
-
 .config-display {
   background: var(--bg-tertiary); border-radius: var(--radius-md);
   padding: 12px; overflow-x: auto;
@@ -300,18 +261,6 @@ onMounted(fetchAlarmDetail)
 }
 
 .btn-danger-outline:hover { background: #fef2f2; }
-
-/* Modal */
-.btn-danger {
-  background: #ef4444; color: white; border: none;
-  padding: 8px 16px; border-radius: var(--radius-md); cursor: pointer; font-weight: 500;
-}
-
-.btn-danger:hover { background: #dc2626; }
-.btn-danger:disabled { opacity: 0.5; cursor: not-allowed; }
-
-.spinning { animation: spin 1s linear infinite; }
-@keyframes spin { to { transform: rotate(360deg); } }
 
 @media (max-width: 768px) {
   .info-grid { grid-template-columns: 1fr; }

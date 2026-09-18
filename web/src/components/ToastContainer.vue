@@ -18,7 +18,10 @@ const iconMap = {
       <TransitionGroup name="toast">
         <div v-for="toast in toasts" :key="toast.id" :class="['toast-item', `toast-${toast.type}`]">
           <component :is="iconMap[toast.type]" :size="20" class="toast-icon" />
-          <span class="toast-message">{{ toast.message }}</span>
+          <div class="toast-body">
+            <span class="toast-message">{{ toast.message }}</span>
+            <span v-if="toast.traceId" class="toast-trace">Trace ID: {{ toast.traceId }}</span>
+          </div>
           <button class="toast-close" @click="removeToast(toast.id)" aria-label="Close">
             <X :size="14" />
           </button>
@@ -56,6 +59,22 @@ const iconMap = {
 
 .toast-icon {
   flex-shrink: 0;
+}
+
+.toast-body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.toast-trace {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  opacity: 0.7;
+  user-select: all;
+  word-break: break-all;
 }
 
 .toast-message {

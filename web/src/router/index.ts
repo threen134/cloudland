@@ -16,6 +16,18 @@ const router = createRouter({
             meta: { requiresAuth: true }
         },
         {
+            path: '/serial-console/:id',
+            name: 'instance-serial-console',
+            component: () => import('../views/dashboard/SerialConsole.vue'),
+            meta: { requiresAuth: true }
+        },
+        {
+            path: '/host-console/:id',
+            name: 'host-console',
+            component: () => import('../views/dashboard/SerialConsole.vue'),
+            meta: { requiresAuth: true }
+        },
+        {
             path: '/login',
             name: 'login',
             component: () => import('../views/auth/Login.vue')
@@ -68,6 +80,13 @@ const router = createRouter({
                     component: () => import('../views/dashboard/Overview.vue')
                 },
                 {
+                    // Activity page: operations of the current organization in the current region, visible to all members
+                    // (entry point: the Recent Activity card on the overview page).
+                    path: 'activities',
+                    name: 'activities',
+                    component: () => import('../views/dashboard/ActivityList.vue')
+                },
+                {
                     path: 'marketplace',
                     name: 'dashboard-marketplace',
                     component: () => import('../views/marketplace/Marketplace.vue')
@@ -100,13 +119,6 @@ const router = createRouter({
                     name: 'keys', // SSH Keys real path
                     component: () => import('../views/dashboard/SSHKeys.vue')
                 },
-                // SSH key detail page removed as requested
-                // {
-                //     path: 'keys/:id',
-                //     name: 'ssh-key-detail',
-                //     component: () => import('../views/dashboard/SSHKeyDetail.vue')
-                // },
-                // Compute Resources
                 {
                     path: 'instances',
                     name: 'instances',
@@ -298,6 +310,31 @@ router.beforeEach((to, _from, next) => {
     }
 
     next()
+})
+
+// A deploy replaces the hashed chunks, so a tab opened before it cannot load the pages it has not visited yet.
+// Load the target URL once from the server to pick up the new build; the flag stops a reload loop when the
+// chunk is really broken.
+const CHUNK_RELOAD_KEY = 'cloudland_chunk_reload'
+const CHUNK_LOAD_ERROR = /dynamically imported module|Importing a module script failed|Unable to preload CSS/i
+
+router.onError((error, to) => {
+    if (!CHUNK_LOAD_ERROR.test(String((error as Error)?.message ?? error))) return
+    try {
+        if (sessionStorage.getItem(CHUNK_RELOAD_KEY) === to.fullPath) return
+        sessionStorage.setItem(CHUNK_RELOAD_KEY, to.fullPath)
+    } catch {
+        return
+    }
+    window.location.assign(to.fullPath)
+})
+
+router.afterEach(() => {
+    try {
+        sessionStorage.removeItem(CHUNK_RELOAD_KEY)
+    } catch {
+        // storage unavailable: nothing to clear
+    }
 })
 
 export default router

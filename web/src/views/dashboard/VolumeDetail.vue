@@ -6,17 +6,23 @@ import { useToast } from '../../composables/useToast'
 import { volumesApi, type Volume } from '../../api/volumes'
 import { useRegionStore } from '../../stores/region'
 import { ArrowLeft, HardDrive, Paperclip, Maximize, Trash2, Copy, Check, Server, Play, ChevronDown, CalendarDays } from 'lucide-vue-next'
+import { formatDisk, formatDateTime } from '../../utils/format'
+import DeleteModal from '../../components/modals/DeleteModal.vue'
+import StatusBadge from '../../components/base/StatusBadge.vue'
+import InfoRow from '../../components/base/InfoRow.vue'
+import { useCopyId } from '../../composables/useCopyId'
+import { useGoBack } from '../../composables/useGoBack'
 
 const route = useRoute()
 const router = useRouter()
 const { t } = useI18n()
 const toast = useToast()
 const region = useRegionStore()
+const { copiedId: copiedField, copyId: copyToClipboard } = useCopyId()
 
 const volume = ref<Volume | null>(null)
 const loading = ref(false)
 const error = ref<string | null>(null)
-const copiedField = ref<string | null>(null)
 const showActionMenu = ref(false)
 
 const toggleActionMenu = () => {
@@ -50,20 +56,12 @@ watch(() => region.currentRegionId, (newId) => {
     }
 })
 
-const goBack = () => {
-    router.push({ name: 'volumes' })
-}
+const goBack = useGoBack('volumes')
 
 const navigateToInstance = (id: string) => {
     router.push({ name: 'instance-detail', params: { id } })
 }
 
-const formatSize = (size: number) => {
-    if (size >= 1000) {
-        return `${(size / 1000).toFixed(1)} TB`
-    }
-    return `${size} GB`
-}
 
 const getStatusText = (status: string | undefined) => {
     if (!status) return '-'
@@ -72,45 +70,33 @@ const getStatusText = (status: string | undefined) => {
     return translated === `dashboard.volumeStatus.${key}` ? status : translated
 }
 
-const getStatusClass = (status: string | undefined) => {
-    if (!status) return 'status-pending'
-    const statusMap: Record<string, string> = {
-        'available': 'status-running',
-        'attached': 'status-success',
-        'in-use': 'status-success',
-        'creating': 'status-pending',
-        'deleting': 'status-pending',
-        'detaching': 'status-pending',
-        'attaching': 'status-pending',
-        'error': 'status-error'
-    }
-    return statusMap[status] || 'status-pending'
+// --- Delete Confirmation Modal ---
+const deleteModalVisible = ref(false)
+const deletingResource = ref(false)
+const deleteError = ref('')
+
+const handleDeleteClick = () => {
+    deleteModalVisible.value = true
 }
 
-const formatDate = (dateStr?: string) => {
-    if (!dateStr) return '-'
-    const d = new Date(dateStr)
-    return d.toLocaleString()
+const closeDeleteModal = () => {
+    deleteModalVisible.value = false
+    deleteError.value = ''
 }
 
-const handleDelete = async () => {
-    if (!confirm('Are you sure you want to delete this volume? This action cannot be undone.')) return
-    
+const confirmDelete = async () => {
+    deletingResource.value = true
+    deleteError.value = ''
     try {
         await volumesApi.delete(route.params.id as string)
         toast.success(t('messages.deleteSuccess'))
         router.push({ name: 'volumes' })
-    } catch (err) {
+    } catch (err: any) {
         console.error('Failed to delete volume:', err)
-        alert('Failed to delete volume.')
+        deleteError.value = err.response?.data?.error_message || err.message || t('messages.error')
+    } finally {
+        deletingResource.value = false
     }
-}
-
-const copyToClipboard = (text: string, field: string) => {
-    navigator.clipboard.writeText(text).then(() => {
-        copiedField.value = field
-        setTimeout(() => { copiedField.value = null }, 2000)
-    })
 }
 
 onMounted(() => {
@@ -156,9 +142,7 @@ onMounted(() => {
           <div>
             <h2 class="volume-title">
                 {{ volume.name }}
-                <span :class="['badge', getStatusClass(volume.status)]">
-                    {{ getStatusText(volume.status) }}
-                </span>
+                <StatusBadge :status="volume.status" :label="getStatusText(volume.status)" />
             </h2>
             <div class="volume-id-row">
               <span class="volume-id">{{ volume.id }}</span>
@@ -183,7 +167,7 @@ onMounted(() => {
                             <Maximize :size="14" /> {{ $t('actions.resize') }}
                         </button>
                         <div class="dropdown-divider"></div>
-                        <button class="dropdown-item dropdown-item-danger" @click.stop="handleDelete">
+                        <button class="dropdown-item dropdown-item-danger" @click.stop="handleDeleteClick">
                             <Trash2 :size="14" /> {{ $t('actions.delete') }}
                         </button>
                     </div>
@@ -200,26 +184,24 @@ onMounted(() => {
           <div class="card info-card">
             <h3>{{ $t('dashboard.table.generalInformation') }}</h3>
             <div class="key-value-list">
-              <div class="kv-item">
-                <span class="label"><HardDrive :size="14" /> {{ $t('dashboard.table.size') }}</span>
-                <span class="value">{{ formatSize(volume.size) }}</span>
-              </div>
-              <div class="kv-item">
-                <span class="label"><Maximize :size="14" /> {{ $t('dashboard.table.format') }}</span>
-                <span class="value" style="text-transform: uppercase;">{{ volume.format || '-' }}</span>
-              </div>
-              <div class="kv-item">
-                <span class="label"><Play :size="14" /> {{ $t('dashboard.table.boot') }}</span>
-                <span class="value">
-                  <span :class="['status-badge', volume.booting ? 'status-success' : 'status-default']">
-                    {{ volume.booting ? $t('messages.yes') : $t('messages.no') }}
-                  </span>
+              <InfoRow :label="$t('dashboard.table.size')">
+                <template #label><HardDrive :size="14" /> {{ $t('dashboard.table.size') }}</template>
+                {{ formatDisk(volume.size) }}
+              </InfoRow>
+              <InfoRow :label="$t('dashboard.table.format')">
+                <template #label><Maximize :size="14" /> {{ $t('dashboard.table.format') }}</template>
+                <span style="text-transform: uppercase;">{{ volume.format || '-' }}</span>
+              </InfoRow>
+              <InfoRow :label="$t('dashboard.table.boot')">
+                <template #label><Play :size="14" /> {{ $t('dashboard.table.boot') }}</template>
+                <span :class="['status-badge', volume.booting ? 'status-success' : 'status-default']">
+                  {{ volume.booting ? $t('messages.yes') : $t('messages.no') }}
                 </span>
-              </div>
-              <div class="kv-item">
-                <span class="label"><Server :size="14" /> {{ $t('dashboard.table.status') }}</span>
-                <span class="value">{{ getStatusText(volume.status) }}</span>
-              </div>
+              </InfoRow>
+              <InfoRow :label="$t('dashboard.table.status')">
+                <template #label><Server :size="14" /> {{ $t('dashboard.table.status') }}</template>
+                {{ getStatusText(volume.status) }}
+              </InfoRow>
             </div>
           </div>
 
@@ -227,18 +209,15 @@ onMounted(() => {
           <div class="card info-card">
             <h3>{{ $t('dashboard.table.metadata') }}</h3>
             <div class="key-value-list">
-              <div class="kv-item">
-                <span class="label">{{ $t('dashboard.table.owner') }}</span>
-                <span class="value">{{ volume.owner || '-' }}</span>
-              </div>
-              <div class="kv-item">
-                <span class="label"><CalendarDays :size="14" /> {{ $t('dashboard.table.created') }}</span>
-                <span class="value">{{ formatDate(volume.created_at) }}</span>
-              </div>
-              <div class="kv-item">
-                <span class="label"><CalendarDays :size="14" /> {{ $t('dashboard.table.updatedAt') }}</span>
-                <span class="value">{{ formatDate(volume.updated_at) }}</span>
-              </div>
+              <InfoRow :label="$t('dashboard.table.owner')">{{ volume.owner || '-' }}</InfoRow>
+              <InfoRow :label="$t('dashboard.table.created')">
+                <template #label><CalendarDays :size="14" /> {{ $t('dashboard.table.created') }}</template>
+                {{ formatDateTime(volume.created_at) }}
+              </InfoRow>
+              <InfoRow :label="$t('dashboard.table.updatedAt')">
+                <template #label><CalendarDays :size="14" /> {{ $t('dashboard.table.updatedAt') }}</template>
+                {{ formatDateTime(volume.updated_at) }}
+              </InfoRow>
             </div>
           </div>
         </div>
@@ -248,25 +227,16 @@ onMounted(() => {
           <div class="card info-card">
             <h3>{{ $t('dashboard.table.attachedTo') }}</h3>
             <div class="key-value-list">
-              <div class="kv-item">
-                <span class="label"><Server :size="14" /> {{ $t('dashboard.instances') }}</span>
-                <span v-if="volume.instance" class="value text-primary clickable" @click="navigateToInstance(volume.instance.id)">
+              <InfoRow :label="$t('dashboard.instances')">
+                <template #label><Server :size="14" /> {{ $t('dashboard.instances') }}</template>
+                <span v-if="volume.instance" class="link-value" @click="navigateToInstance(volume.instance.id)">
                   {{ volume.instance.name }}
                 </span>
-                <span v-else class="value text-light">{{ $t('messages.notAttached') }}</span>
-              </div>
-              <div v-if="volume.instance" class="kv-item">
-                <span class="label">{{ $t('dashboard.table.instanceId') }}</span>
-                <span class="value mono">{{ volume.instance.id }}</span>
-              </div>
-              <div class="kv-item">
-                <span class="label">{{ $t('dashboard.table.target') }}</span>
-                <span class="value mono">{{ volume.target || '-' }}</span>
-              </div>
-              <div class="kv-item">
-                <span class="label">{{ $t('dashboard.table.path') }}</span>
-                <span class="value mono">{{ volume.path || '-' }}</span>
-              </div>
+                <span v-else class="muted-value">{{ $t('messages.notAttached') }}</span>
+              </InfoRow>
+              <InfoRow v-if="volume.instance" :label="$t('dashboard.table.instanceId')" mono>{{ volume.instance.id }}</InfoRow>
+              <InfoRow :label="$t('dashboard.table.target')" mono>{{ volume.target || '-' }}</InfoRow>
+              <InfoRow :label="$t('dashboard.table.path')" mono>{{ volume.path || '-' }}</InfoRow>
             </div>
           </div>
 
@@ -274,19 +244,23 @@ onMounted(() => {
           <div class="card info-card">
             <h3>{{ $t('dashboard.table.performance') }}</h3>
             <div class="key-value-list">
-              <div class="kv-item">
-                <span class="label">{{ $t('dashboard.table.iopsLimitBurst') }}</span>
-                <span class="value">{{ volume.iops_limit ?? '-' }} / {{ volume.iops_burst ?? '-' }}</span>
-              </div>
-              <div class="kv-item">
-                <span class="label">{{ $t('dashboard.table.bpsLimitBurst') }}</span>
-                <span class="value">{{ volume.bps_limit ?? '-' }} / {{ volume.bps_burst ?? '-' }}</span>
-              </div>
+              <InfoRow :label="$t('dashboard.table.iopsLimitBurst')">{{ volume.iops_limit ?? '-' }} / {{ volume.iops_burst ?? '-' }}</InfoRow>
+              <InfoRow :label="$t('dashboard.table.bpsLimitBurst')">{{ volume.bps_limit ?? '-' }} / {{ volume.bps_burst ?? '-' }}</InfoRow>
             </div>
           </div>
         </div>
       </div>
     </div>
+
+    <DeleteModal
+      :show="deleteModalVisible"
+      :resource-name="volume?.name"
+      :resource-id="volume?.id"
+      :loading="deletingResource"
+      :error="deleteError"
+      @close="closeDeleteModal"
+      @confirm="confirmDelete"
+    />
   </div>
 </template>
 
@@ -348,11 +322,6 @@ onMounted(() => {
   display: flex;
   align-items: center;
   gap: var(--spacing-3);
-}
-
-.volume-title .badge {
-  font-size: var(--font-size-xs);
-  font-weight: 500;
 }
 
 .volume-id-row {
@@ -481,7 +450,7 @@ onMounted(() => {
 }
 
 .info-card h3 {
-  font-size: var(--font-size-md);
+  font-size: var(--font-size-base);
   font-weight: 600;
   margin: 0 0 var(--spacing-4) 0;
   color: var(--text-primary);
@@ -495,44 +464,16 @@ onMounted(() => {
   gap: var(--spacing-3);
 }
 
-.kv-item {
-  display: flex;
-  justify-content: space-between;
-  font-size: var(--font-size-sm);
-}
-
-.kv-item .label {
-  color: var(--text-secondary);
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.kv-item .value {
-  color: var(--text-primary);
-  font-weight: 500;
-  text-align: right;
-  word-break: break-all;
-}
-
-.value.mono {
-  font-family: var(--font-family-mono);
-  font-size: var(--font-size-xs);
-}
-
-.value.text-primary {
+.link-value {
   color: var(--primary-color);
-}
-
-.value.clickable {
   cursor: pointer;
 }
 
-.value.clickable:hover {
+.link-value:hover {
   text-decoration: underline;
 }
 
-.value.text-light {
+.muted-value {
   color: var(--text-light);
   font-weight: normal;
 }
@@ -544,7 +485,7 @@ onMounted(() => {
     font-size: var(--font-size-xs);
     font-weight: 500;
 }
-.status-success { background: var(--success-50); color: var(--success-700); }
+.status-success { background: var(--success-light); color: var(--success-dark); }
 .status-default { background: var(--gray-100); color: var(--gray-700); }
 
 /* Responsive */

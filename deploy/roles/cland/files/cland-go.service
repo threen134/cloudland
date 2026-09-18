@@ -1,0 +1,14 @@
+[Unit]
+Description=cland-go service (Go gRPC)
+After=network.target
+
+[Service]
+Type=simple
+User=cland
+EnvironmentFile=/etc/sysconfig/cland-go
+ExecStart=/usr/local/bin/cland-go.sh
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

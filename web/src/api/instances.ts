@@ -91,96 +91,120 @@ export interface CreateInstancePayload {
 
 export const instancesApi = {
     // List instances
-    fetchInstances() {
-        return client.get('/instances')
+    // hyper：按所在计算节点过滤（host id）；不传表示不过滤
+    async fetchInstances(params?: { offset?: number; limit?: number; query?: string; hyper?: number }) {
+        const response = await client.get('/instances', { params })
+        return response.data
     },
 
     // Get single instance
-    getInstance(id: string) {
-        return client.get(`/instances/${id}`)
+    async getInstance(id: string) {
+        const response = await client.get(`/instances/${id}`)
+        return response.data
     },
 
     // Create instance
-    createInstance(payload: CreateInstancePayload) {
-        return client.post('/instances', payload)
+    async createInstance(payload: CreateInstancePayload) {
+        const response = await client.post('/instances', payload)
+        return response.data
     },
 
     // Delete instance
-    deleteInstance(id: string) {
-        return client.delete(`/instances/${id}`)
+    async deleteInstance(id: string) {
+        const response = await client.delete(`/instances/${id}`)
+        return response.data
     },
 
     // Instance Actions
-    startInstance(id: string, hostname: string = '') {
-        return client.patch(`/instances/${id}`, { hostname, power_action: 'start' })
+    async startInstance(id: string, hostname: string = '') {
+        const response = await client.patch(`/instances/${id}`, { hostname, power_action: 'start' })
+        return response.data
     },
 
-    stopInstance(id: string, hostname: string = '') {
-        return client.patch(`/instances/${id}`, { hostname, power_action: 'stop' })
+    async stopInstance(id: string, hostname: string = '') {
+        const response = await client.patch(`/instances/${id}`, { hostname, power_action: 'stop' })
+        return response.data
     },
 
-    rebootInstance(id: string, hostname: string = '') {
-        return client.patch(`/instances/${id}`, { hostname, power_action: 'restart' })
+    async rebootInstance(id: string, hostname: string = '') {
+        const response = await client.patch(`/instances/${id}`, { hostname, power_action: 'restart' })
+        return response.data
     },
 
-    hardStopInstance(id: string, hostname: string = '') {
-        return client.patch(`/instances/${id}`, { hostname, power_action: 'hard_stop' })
+    async hardStopInstance(id: string, hostname: string = '') {
+        const response = await client.patch(`/instances/${id}`, { hostname, power_action: 'hard_stop' })
+        return response.data
     },
 
-    hardRebootInstance(id: string, hostname: string = '') {
-        return client.patch(`/instances/${id}`, { hostname, power_action: 'hard_restart' })
+    async hardRebootInstance(id: string, hostname: string = '') {
+        const response = await client.patch(`/instances/${id}`, { hostname, power_action: 'hard_restart' })
+        return response.data
     },
 
-    pauseInstance(id: string, hostname: string = '') {
-        return client.patch(`/instances/${id}`, { hostname, power_action: 'pause' })
+    async pauseInstance(id: string, hostname: string = '') {
+        const response = await client.patch(`/instances/${id}`, { hostname, power_action: 'pause' })
+        return response.data
     },
 
-    resumeInstance(id: string, hostname: string = '') {
-        return client.patch(`/instances/${id}`, { hostname, power_action: 'resume' })
+    async resumeInstance(id: string, hostname: string = '') {
+        const response = await client.patch(`/instances/${id}`, { hostname, power_action: 'resume' })
+        return response.data
     },
 
-    resizeInstance(id: string, cpu: number, memory: number) {
-        return client.post(`/instances/${id}/resize`, { cpu, memory })
+    async resizeInstance(id: string, cpu: number, memory: number) {
+        const response = await client.post(`/instances/${id}/resize`, { cpu, memory })
+        return response.data
     },
 
-    getConsole(id: string) {
-        return client.post(`/instances/${id}/console`)
+    // type: vnc (graphical, default) or serial (text console)
+    async getConsole(id: string, type?: 'vnc' | 'serial') {
+        const response = await client.post(`/instances/${id}/console`, type ? { type } : undefined)
+        return response.data
     },
 
-    setUserPassword(id: string, user_name: string, password: string) {
-        return client.post(`/instances/${id}/set_user_password`, { user_name, password })
+    async setUserPassword(id: string, user_name: string, password: string) {
+        const response = await client.post(`/instances/${id}/set_user_password`, { user_name, password })
+        return response.data
     },
 
-    reinstallInstance(id: string, payload: { image?: { id: string }, password?: string, keys?: { id: string }[], flavor?: string, login_port?: number }) {
-        return client.post(`/instances/${id}/reinstall`, payload)
+    async reinstallInstance(id: string, payload: { image?: { id: string }, password?: string, keys?: { id: string }[], flavor?: string, login_port?: number }) {
+        const response = await client.post(`/instances/${id}/reinstall`, payload)
+        return response.data
     },
 
-    renameInstance(id: string, hostname: string) {
-        return client.patch(`/instances/${id}`, { hostname })
+    async renameInstance(id: string, hostname: string) {
+        const response = await client.patch(`/instances/${id}`, { hostname })
+        return response.data
     },
 
-    getInterfaces(instanceId: string) {
-        return client.get<{ interfaces: { id: string; name: string; ip_address?: string; is_primary?: boolean }[] }>(`/instances/${instanceId}/interfaces`)
+    async getInterfaces(instanceId: string) {
+        const response = await client.get<{ interfaces: { id: string; name: string; ip_address?: string; is_primary?: boolean }[] }>(`/instances/${instanceId}/interfaces`)
+        return response.data
     },
 
-    patchInterface(instanceId: string, ifaceId: string, payload: { security_groups?: BaseReference[] }) {
-        return client.patch(`/instances/${instanceId}/interfaces/${ifaceId}`, payload)
+    async patchInterface(instanceId: string, ifaceId: string, payload: { security_groups?: BaseReference[] }) {
+        const response = await client.patch(`/instances/${instanceId}/interfaces/${ifaceId}`, payload)
+        return response.data
     },
 
     // Monitoring Metrics
-    getCPUMetrics(payload: { id: string[], start: string, end: string, step: string }) {
-        return client.post('/metrics/instances/cpu/his_data', payload)
+    async getCPUMetrics(payload: { id: string[], start: string, end: string, step: string }) {
+        const response = await client.post('/metrics/instances/cpu/his_data', payload)
+        return response.data
     },
 
-    getMemoryMetrics(payload: { id: string[], start: string, end: string, step: string }) {
-        return client.post('/metrics/instances/memory/his_data', payload)
+    async getMemoryMetrics(payload: { id: string[], start: string, end: string, step: string }) {
+        const response = await client.post('/metrics/instances/memory/his_data', payload)
+        return response.data
     },
 
-    getDiskMetrics(payload: { id: string[], disk: string[], start: string, end: string, step: string }) {
-        return client.post('/metrics/instances/disk/his_data', payload)
+    async getDiskMetrics(payload: { id: string[], disk: string[], start: string, end: string, step: string }) {
+        const response = await client.post('/metrics/instances/disk/his_data', payload)
+        return response.data
     },
 
-    getNetworkMetrics(payload: { interface_ids: string[], start: string, end: string, step: string }) {
-        return client.post('/metrics/instances/network/his_data', payload)
+    async getNetworkMetrics(payload: { interface_ids: string[], start: string, end: string, step: string }) {
+        const response = await client.post('/metrics/instances/network/his_data', payload)
+        return response.data
     }
 }

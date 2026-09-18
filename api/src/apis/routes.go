@@ -15,6 +15,7 @@ import (
 	. "api/src/common"
 	"api/src/services"
 	"api/src/utils/log"
+	"api/src/utils/tracing"
 
 	"github.com/gin-gonic/gin"
 	"github.com/spf13/viper"
@@ -46,17 +47,42 @@ func runAlarmEventCleanup(admin *services.NotificationAdmin) {
 	ctx = SetContextDB(ctx, DB())
 	deleted, err := admin.CleanupExpiredAlarmEvents(ctx, retentionDays)
 	if err != nil {
-		logger.Errorf("Failed to cleanup expired alarm events: %v", err)
+		logger.Ctx(ctx).Errorf("Failed to cleanup expired alarm events: %v", err)
 		return
 	}
 	if deleted > 0 {
-		logger.Infof("Cleaned up %d expired alarm events (older than %d days)", deleted, retentionDays)
+		logger.Ctx(ctx).Infof("Cleaned up %d expired alarm events (older than %d days)", deleted, retentionDays)
+	}
+}
+
+func startAuditLogCleanup() {
+	ticker := time.NewTicker(24 * time.Hour)
+	go func() {
+		time.Sleep(30 * time.Second)
+		runAuditLogCleanup()
+		for range ticker.C {
+			runAuditLogCleanup()
+		}
+	}()
+}
+
+func runAuditLogCleanup() {
+	retentionDays := services.AuditLogRetentionDays()
+	ctx := SetContextDB(context.Background(), DB())
+	deleted, err := services.CleanupExpiredAuditLogs(ctx, retentionDays)
+	if err != nil {
+		logger.Ctx(ctx).Errorf("Failed to cleanup expired audit logs (deleted %d before failure): %v", deleted, err)
+		return
+	}
+	if deleted > 0 {
+		logger.Ctx(ctx).Infof("Cleaned up %d expired audit logs (older than %d days)", deleted, retentionDays)
 	}
 }
 
 func Run() (err error) {
 	logger.Info("Starting cloudland api daemon...")
 	startAlarmEventCleanup()
+	startAuditLogCleanup()
 	r := Register()
 	cert := viper.GetString("rest.cert")
 	key := viper.GetString("rest.key")
@@ -95,7 +121,8 @@ func Register() (r *gin.Engine) {
 	r.SetTrustedProxies(nil)
 
 	r.Use(gin.Recovery())
-	r.Use(log.RequestID())
+	// 版本查询与 Prometheus 服务发现为周期轮询，不产生 trace
+	r.Use(tracing.GinMiddleware("clapi", "/api/v1/version", "/api/v1/prometheus/sd/")...)
 	r.Use(log.Logger())
 
 	apiV1 := "/api/v1"
@@ -111,8 +138,12 @@ func Register() (r *gin.Engine) {
 	// 鉴权由 handler 内的 HMAC token 校验承担；compute 节点无 JWT，故不进 authGroup
 	v1.POST("/internal/images/:id/upload", imageAPI.UploadCapture)
 
-	authGroup := v1.Group("").Use(Authorize())
+	// Audit 必须排在 Authorize 之后：操作者身份取自 MemberShip
+	authGroup := v1.Group("").Use(Authorize(), Audit())
 	{
+		authGroup.GET("/audit_logs", auditAPI.List)
+		authGroup.GET("/activities", auditAPI.Activities)
+
 		authGroup.GET("/zones", zoneAPI.List)
 		authGroup.POST("/zones", zoneAPI.Create)
 		authGroup.GET("/zones/:name", zoneAPI.Get)
@@ -125,6 +156,7 @@ func Register() (r *gin.Engine) {
 		authGroup.DELETE("/hypers/:uuid", hyperAPI.Delete)
 		authGroup.PATCH("/hypers/:uuid", hyperAPI.Patch)
 		authGroup.POST("/hypers/:uuid/maintain", hyperAPI.Maintain)
+		authGroup.POST("/hypers/:uuid/console", consoleAPI.CreateHost)
 
 		authGroup.GET("/migrations", migrationAPI.List)
 		authGroup.POST("/migrations", migrationAPI.Create)
@@ -181,11 +213,13 @@ func Register() (r *gin.Engine) {
 		authGroup.POST("/load_balancers/:id/listeners", listenerAPI.Create)
 		authGroup.GET("/load_balancers/:id/listeners/:listener_id", listenerAPI.Get)
 		authGroup.DELETE("/load_balancers/:id/listeners/:listener_id", listenerAPI.Delete)
+		authGroup.PATCH("/load_balancers/:id/listeners/:listener_id", listenerAPI.Patch)
 
 		authGroup.GET("/load_balancers/:id/listeners/:listener_id/backends", backendAPI.List)
 		authGroup.POST("/load_balancers/:id/listeners/:listener_id/backends", backendAPI.Create)
 		authGroup.GET("/load_balancers/:id/listeners/:listener_id/backends/:backend_id", backendAPI.Get)
 		authGroup.DELETE("/load_balancers/:id/listeners/:listener_id/backends/:backend_id", backendAPI.Delete)
+		authGroup.PATCH("/load_balancers/:id/listeners/:listener_id/backends/:backend_id", backendAPI.Patch)
 
 		authGroup.GET("/floating_ips", floatingIpAPI.List)
 		authGroup.POST("/floating_ips", floatingIpAPI.Create)

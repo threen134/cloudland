@@ -1,16 +1,14 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref } from 'vue'
 import { RouterLink, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { Cloud, Menu, X, ChevronDown, Phone, Mail, Globe } from 'lucide-vue-next'
 import { useAuthStore } from '../stores/auth'
-import { useTenantStore } from '../stores/tenant'
-import { setLanguage, getCurrentLanguage } from '../locales'
+import { setLanguage, getCurrentLanguage, SUPPORTED_LANGUAGES, LANGUAGE_LABEL_KEYS, type Language } from '../locales'
 
-const { t, locale } = useI18n()
+const { t } = useI18n()
 const router = useRouter()
 const auth = useAuthStore()
-const tenant = useTenantStore()
 
 const docsUrl = '/docs/'
 
@@ -23,16 +21,13 @@ const closeMenu = () => {
     activeDropdown.value = null
 }
 
-const toggleDropdown = (name: string) => {
-    activeDropdown.value = activeDropdown.value === name ? null : name
-}
 
 const navigateTo = (path: string) => {
     router.push(path)
     closeMenu()
 }
 
-const switchLanguage = (lang: 'en' | 'zh') => {
+const switchLanguage = (lang: Language) => {
     setLanguage(lang)
     currentLang.value = lang
     activeDropdown.value = null
@@ -136,15 +131,12 @@ const solutionLinks = [
             <div class="nav-item dropdown" @mouseenter="activeDropdown = 'lang'" @mouseleave="activeDropdown = null">
               <button class="nav-link lang-btn">
                 <Globe :size="16" />
-                {{ locale === 'zh' ? t('languages.zh') : t('languages.en') }}
+                {{ t(LANGUAGE_LABEL_KEYS[currentLang]) }}
                 <ChevronDown :size="14" />
               </button>
               <div class="dropdown-menu dropdown-compact dropdown-right" v-show="activeDropdown === 'lang'">
-                <button class="dropdown-item" :class="{ active: currentLang === 'en' }" @click="switchLanguage('en')">
-                  {{ t('languages.en') }}
-                </button>
-                <button class="dropdown-item" :class="{ active: currentLang === 'zh' }" @click="switchLanguage('zh')">
-                  {{ t('languages.zh_hans') }}
+                <button v-for="lang in SUPPORTED_LANGUAGES" :key="lang" class="dropdown-item" :class="{ active: currentLang === lang }" @click="switchLanguage(lang)">
+                  {{ t(LANGUAGE_LABEL_KEYS[lang]) }}
                 </button>
               </div>
             </div>
@@ -368,7 +360,7 @@ const solutionLinks = [
 
     .nav-menu {
         position: absolute;
-        top: var(--header-height);
+        top: var(--height-header);
         left: 0;
         right: 0;
         flex-direction: column;

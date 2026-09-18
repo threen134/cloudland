@@ -14,7 +14,6 @@ import (
 	. "api/src/common"
 	"api/src/dbs"
 	"api/src/model"
-
 )
 
 var (
@@ -30,18 +29,18 @@ type ConsistencyGroupAdmin struct{}
 // Get retrieves a consistency group by ID
 // 通过 ID 获取一致性组
 func (a *ConsistencyGroupAdmin) Get(ctx context.Context, id int64) (cg *model.ConsistencyGroup, err error) {
-	logger.Infof("ENTER ConsistencyGroupAdmin.Get: id=%d", id)
+	logger.Ctx(ctx).Infof("ENTER ConsistencyGroupAdmin.Get: id=%d", id)
 	defer func() {
 		if err != nil {
-			logger.Errorf("EXIT ConsistencyGroupAdmin.Get: error=%v", err)
+			logger.Ctx(ctx).Errorf("EXIT ConsistencyGroupAdmin.Get: error=%v", err)
 		} else {
-			logger.Infof("EXIT ConsistencyGroupAdmin.Get: cgUUID=%s", cg.UUID)
+			logger.Ctx(ctx).Infof("EXIT ConsistencyGroupAdmin.Get: cgUUID=%s", cg.UUID)
 		}
 	}()
 	ctx, db := GetContextDB(ctx)
 	cg = &model.ConsistencyGroup{Model: model.Model{ID: id}}
 	if err = db.Take(cg).Error; err != nil {
-		logger.Errorf("Failed to get consistency group by ID %d: %+v", id, err)
+		logger.Ctx(ctx).Errorf("Failed to get consistency group by ID %d: %+v", id, err)
 		err = NewCLError(ErrCGNotFound, "Consistency group not found", err)
 		return
 	}
@@ -51,18 +50,18 @@ func (a *ConsistencyGroupAdmin) Get(ctx context.Context, id int64) (cg *model.Co
 // GetByUUID retrieves a consistency group by UUID
 // 通过 UUID 获取一致性组
 func (a *ConsistencyGroupAdmin) GetByUUID(ctx context.Context, uuid string) (cg *model.ConsistencyGroup, err error) {
-	logger.Infof("ENTER ConsistencyGroupAdmin.GetByUUID: uuid=%s", uuid)
+	logger.Ctx(ctx).Infof("ENTER ConsistencyGroupAdmin.GetByUUID: uuid=%s", uuid)
 	defer func() {
 		if err != nil {
-			logger.Errorf("EXIT ConsistencyGroupAdmin.GetByUUID: error=%v", err)
+			logger.Ctx(ctx).Errorf("EXIT ConsistencyGroupAdmin.GetByUUID: error=%v", err)
 		} else {
-			logger.Infof("EXIT ConsistencyGroupAdmin.GetByUUID: cgID=%d", cg.ID)
+			logger.Ctx(ctx).Infof("EXIT ConsistencyGroupAdmin.GetByUUID: cgID=%d", cg.ID)
 		}
 	}()
 	ctx, db := GetContextDB(ctx)
 	cg = &model.ConsistencyGroup{}
 	if err = db.Where("uuid = ?", uuid).Take(cg).Error; err != nil {
-		logger.Errorf("Failed to get consistency group by UUID %s: %+v", uuid, err)
+		logger.Ctx(ctx).Errorf("Failed to get consistency group by UUID %s: %+v", uuid, err)
 		err = NewCLError(ErrCGNotFound, "Consistency group not found", err)
 		return
 	}
@@ -72,12 +71,12 @@ func (a *ConsistencyGroupAdmin) GetByUUID(ctx context.Context, uuid string) (cg 
 // IsVolumeInCG checks if a volume is in any consistency group
 // 检查卷是否在任何一致性组中
 func (a *ConsistencyGroupAdmin) IsVolumeInCG(ctx context.Context, volumeID int64) (isInCG bool, err error) {
-	logger.Infof("ENTER ConsistencyGroupAdmin.IsVolumeInCG: volumeID=%d", volumeID)
+	logger.Ctx(ctx).Infof("ENTER ConsistencyGroupAdmin.IsVolumeInCG: volumeID=%d", volumeID)
 	defer func() {
 		if err != nil {
-			logger.Errorf("EXIT ConsistencyGroupAdmin.IsVolumeInCG: error=%v", err)
+			logger.Ctx(ctx).Errorf("EXIT ConsistencyGroupAdmin.IsVolumeInCG: error=%v", err)
 		} else {
-			logger.Infof("EXIT ConsistencyGroupAdmin.IsVolumeInCG: isInCG=%v", isInCG)
+			logger.Ctx(ctx).Infof("EXIT ConsistencyGroupAdmin.IsVolumeInCG: isInCG=%v", isInCG)
 		}
 	}()
 	ctx, db := GetContextDB(ctx)
@@ -95,7 +94,7 @@ func (a *ConsistencyGroupAdmin) IsVolumeInCG(ctx context.Context, volumeID int64
 		Where("consistency_group_volumes.volume_id = ?", volumeID).
 		Where(cgQueryBuilder, cgArgs...).
 		Count(&count).Error; err != nil {
-		logger.Errorf("Failed to check if volume %d is in consistency group: %+v", volumeID, err)
+		logger.Ctx(ctx).Errorf("Failed to check if volume %d is in consistency group: %+v", volumeID, err)
 		return false, NewCLError(ErrDatabaseError, "Failed to check if volume is in consistency group", err)
 	}
 	return count > 0, nil
@@ -104,12 +103,12 @@ func (a *ConsistencyGroupAdmin) IsVolumeInCG(ctx context.Context, volumeID int64
 // List retrieves a list of consistency groups with pagination
 // 获取一致性组列表（分页）
 func (a *ConsistencyGroupAdmin) List(ctx context.Context, offset, limit int64, order, name string) (total int64, cgs []*model.ConsistencyGroup, err error) {
-	logger.Infof("ENTER ConsistencyGroupAdmin.List: offset=%d, limit=%d, order=%s, name=%s", offset, limit, order, name)
+	logger.Ctx(ctx).Infof("ENTER ConsistencyGroupAdmin.List: offset=%d, limit=%d, order=%s, name=%s", offset, limit, order, name)
 	defer func() {
 		if err != nil {
-			logger.Errorf("EXIT ConsistencyGroupAdmin.List: error=%v", err)
+			logger.Ctx(ctx).Errorf("EXIT ConsistencyGroupAdmin.List: error=%v", err)
 		} else {
-			logger.Infof("EXIT ConsistencyGroupAdmin.List: total=%d, count=%d", total, len(cgs))
+			logger.Ctx(ctx).Infof("EXIT ConsistencyGroupAdmin.List: total=%d, count=%d", total, len(cgs))
 		}
 	}()
 	ctx, db := GetContextDB(ctx)
@@ -131,7 +130,7 @@ func (a *ConsistencyGroupAdmin) List(ctx context.Context, offset, limit int64, o
 
 	// Get total count
 	if err = query.Count(&total).Error; err != nil {
-		logger.Errorf("Failed to count consistency groups: %+v", err)
+		logger.Ctx(ctx).Errorf("Failed to count consistency groups: %+v", err)
 		err = NewCLError(ErrDatabaseError, "Failed to count consistency groups", err)
 		return
 	}
@@ -140,24 +139,24 @@ func (a *ConsistencyGroupAdmin) List(ctx context.Context, offset, limit int64, o
 	cgs = []*model.ConsistencyGroup{}
 	query = dbs.Sortby(query.Offset(int(offset)).Limit(int(limit)), order)
 	if err = query.Find(&cgs).Error; err != nil {
-		logger.Errorf("Failed to list consistency groups: %+v", err)
+		logger.Ctx(ctx).Errorf("Failed to list consistency groups: %+v", err)
 		err = NewCLError(ErrDatabaseError, "Failed to list consistency groups", err)
 		return
 	}
 
-	logger.Debugf("Found %d consistency groups (total: %d)", len(cgs), total)
+	logger.Ctx(ctx).Debugf("Found %d consistency groups (total: %d)", len(cgs), total)
 	return
 }
 
 // Create creates a new consistency group with volumes
 // 创建新的一致性组
 func (a *ConsistencyGroupAdmin) Create(ctx context.Context, name, description string, volumeUUIDs []string) (cg *model.ConsistencyGroup, err error) {
-	logger.Infof("ENTER ConsistencyGroupAdmin.Create: name=%s, description=%s, volumeCount=%d", name, description, len(volumeUUIDs))
+	logger.Ctx(ctx).Infof("ENTER ConsistencyGroupAdmin.Create: name=%s, description=%s, volumeCount=%d", name, description, len(volumeUUIDs))
 	defer func() {
 		if err != nil {
-			logger.Errorf("EXIT ConsistencyGroupAdmin.Create: error=%v", err)
+			logger.Ctx(ctx).Errorf("EXIT ConsistencyGroupAdmin.Create: error=%v", err)
 		} else {
-			logger.Infof("EXIT ConsistencyGroupAdmin.Create: success, cgID=%d", cg.ID)
+			logger.Ctx(ctx).Infof("EXIT ConsistencyGroupAdmin.Create: success, cgID=%d", cg.ID)
 		}
 	}()
 
@@ -165,14 +164,14 @@ func (a *ConsistencyGroupAdmin) Create(ctx context.Context, name, description st
 	memberShip := GetMemberShip(ctx)
 	permit := memberShip.CheckOrgPermission(model.OrgWriter)
 	if !permit {
-		logger.Errorf("Not authorized to create consistency group")
+		logger.Ctx(ctx).Errorf("Not authorized to create consistency group")
 		err = NewCLError(ErrPermissionDenied, "Not authorized to create consistency group", nil)
 		return
 	}
 
 	// Validate input
 	if len(volumeUUIDs) == 0 {
-		logger.Errorf("No volumes provided for consistency group")
+		logger.Ctx(ctx).Errorf("No volumes provided for consistency group")
 		err = NewCLError(ErrInvalidParameter, "At least one volume is required", nil)
 		return
 	}
@@ -184,7 +183,7 @@ func (a *ConsistencyGroupAdmin) Create(ctx context.Context, name, description st
 	for _, uuid := range volumeUUIDs {
 		volume := &model.Volume{}
 		if err = db.Where("uuid = ?", uuid).Take(volume).Error; err != nil {
-			logger.Errorf("Volume not found: %s, %+v", uuid, err)
+			logger.Ctx(ctx).Errorf("Volume not found: %s, %+v", uuid, err)
 			err = NewCLError(ErrVolumeNotFound, fmt.Sprintf("Volume %s not found", uuid), err)
 			return
 		}
@@ -194,18 +193,18 @@ func (a *ConsistencyGroupAdmin) Create(ctx context.Context, name, description st
 	// Validate volume states
 	for _, vol := range volumes {
 		if vol.IsError() {
-			logger.Errorf("Volume %s is in error state", vol.UUID)
+			logger.Ctx(ctx).Errorf("Volume %s is in error state", vol.UUID)
 			err = NewCLError(ErrCGVolumeInvalidState, fmt.Sprintf("Volume %s is in error state", vol.UUID), nil)
 			return
 		}
 		if vol.IsBusy() {
-			logger.Errorf("Volume %s is busy", vol.UUID)
+			logger.Ctx(ctx).Errorf("Volume %s is busy", vol.UUID)
 			err = NewCLError(ErrCGVolumeIsBusy, fmt.Sprintf("Volume %s is busy", vol.UUID), nil)
 			return
 		}
 	}
 
-	logger.Debugf("All volumes validated successfully")
+	logger.Ctx(ctx).Debugf("All volumes validated successfully")
 
 	// Start transaction
 	// 开始事务
@@ -225,11 +224,11 @@ func (a *ConsistencyGroupAdmin) Create(ctx context.Context, name, description st
 		Status:      model.CGStatusProcessing,
 	}
 	if err = db.Create(cg).Error; err != nil {
-		logger.Errorf("Failed to create consistency group: %+v", err)
+		logger.Ctx(ctx).Errorf("Failed to create consistency group: %+v", err)
 		err = NewCLError(ErrCGCreationFailed, "Failed to create consistency group", err)
 		return
 	}
-	logger.Debugf("Created consistency group with ID: %d", cg.ID)
+	logger.Ctx(ctx).Debugf("Created consistency group with ID: %d", cg.ID)
 
 	// Create task record for tracking
 	// 创建任务记录用于跟踪
@@ -241,11 +240,11 @@ func (a *ConsistencyGroupAdmin) Create(ctx context.Context, name, description st
 		Source:  model.TaskSourceManual,
 	}
 	if err = db.Create(task).Error; err != nil {
-		logger.Errorf("Failed to create task: %+v", err)
+		logger.Ctx(ctx).Errorf("Failed to create task: %+v", err)
 		err = NewCLError(ErrDatabaseError, "Failed to create task record", err)
 		return
 	}
-	logger.Debugf("Created task with ID: %d", task.ID)
+	logger.Ctx(ctx).Debugf("Created task with ID: %d", task.ID)
 
 	// Create volume associations
 	// 创建卷关联记录
@@ -255,12 +254,12 @@ func (a *ConsistencyGroupAdmin) Create(ctx context.Context, name, description st
 			VolumeID: vol.ID,
 		}
 		if err = db.Create(cgVolume).Error; err != nil {
-			logger.Errorf("Failed to create consistency group volume association: %+v", err)
+			logger.Ctx(ctx).Errorf("Failed to create consistency group volume association: %+v", err)
 			err = NewCLError(ErrCGCreationFailed, "Failed to create volume association", err)
 			return
 		}
 	}
-	logger.Debugf("Created %d volume associations", len(volumes))
+	logger.Ctx(ctx).Debugf("Created %d volume associations", len(volumes))
 
 	// Collect volume UUIDs for WDS API call
 	// 收集卷 WDS ID 用于 WDS API 调用
@@ -276,15 +275,15 @@ func (a *ConsistencyGroupAdmin) Create(ctx context.Context, name, description st
 	cgName := fmt.Sprintf("cg_%s", cg.UUID)
 	control := "inter="
 	command := fmt.Sprintf("/opt/cloudland/scripts/backend/create_cg_wds.sh '%d' '%d' '%s' '%s'",
-		task.ID, cg.ID, cgName, volumeWDSIDJSON)
+		task.ID, cg.ID, ShellEscape(cgName), ShellEscape(volumeWDSIDJSON))
 	err = HyperExecute(ctx, control, command)
 	if err != nil {
-		logger.Errorf("Failed to execute create CG script: %+v", err)
+		logger.Ctx(ctx).Errorf("Failed to execute create CG script: %+v", err)
 		db.Model(task).Update("status", model.TaskStatusFailed)
 		err = NewCLError(ErrCGCreationFailed, "Failed to execute create CG script", err)
 		return
 	}
-	logger.Debugf("Executed create CG script for CG ID: %d", cg.ID)
+	logger.Ctx(ctx).Debugf("Executed create CG script for CG ID: %d", cg.ID)
 
 	return
 }
@@ -292,12 +291,12 @@ func (a *ConsistencyGroupAdmin) Create(ctx context.Context, name, description st
 // Update updates a consistency group's name and description
 // 更新一致性组的名称和描述
 func (a *ConsistencyGroupAdmin) Update(ctx context.Context, id int64, name, description string) (cg *model.ConsistencyGroup, err error) {
-	logger.Infof("ENTER ConsistencyGroupAdmin.Update: id=%d, name=%s, description=%s", id, name, description)
+	logger.Ctx(ctx).Infof("ENTER ConsistencyGroupAdmin.Update: id=%d, name=%s, description=%s", id, name, description)
 	defer func() {
 		if err != nil {
-			logger.Errorf("EXIT ConsistencyGroupAdmin.Update: error=%v", err)
+			logger.Ctx(ctx).Errorf("EXIT ConsistencyGroupAdmin.Update: error=%v", err)
 		} else {
-			logger.Info("EXIT ConsistencyGroupAdmin.Update: success")
+			logger.Ctx(ctx).Info("EXIT ConsistencyGroupAdmin.Update: success")
 		}
 	}()
 
@@ -311,7 +310,7 @@ func (a *ConsistencyGroupAdmin) Update(ctx context.Context, id int64, name, desc
 	// 获取一致性组
 	cg = &model.ConsistencyGroup{Model: model.Model{ID: id}}
 	if err = db.Take(cg).Error; err != nil {
-		logger.Errorf("Failed to get consistency group by ID %d: %+v", id, err)
+		logger.Ctx(ctx).Errorf("Failed to get consistency group by ID %d: %+v", id, err)
 		err = NewCLError(ErrCGNotFound, "Consistency group not found", err)
 		return
 	}
@@ -320,7 +319,7 @@ func (a *ConsistencyGroupAdmin) Update(ctx context.Context, id int64, name, desc
 	// 权限检查
 	permit := memberShip.CheckResourceOrg(model.OrgWriter, cg.Owner)
 	if !permit {
-		logger.Errorf("Not authorized to update consistency group ID %d", id)
+		logger.Ctx(ctx).Errorf("Not authorized to update consistency group ID %d", id)
 		err = NewCLError(ErrPermissionDenied, "Not authorized to update consistency group", nil)
 		return
 	}
@@ -328,7 +327,7 @@ func (a *ConsistencyGroupAdmin) Update(ctx context.Context, id int64, name, desc
 	// Check if CG can be updated
 	// 检查一致性组是否可以更新
 	if !cg.CanUpdate() {
-		logger.Errorf("Consistency group ID %d is not available for update, status: %s", id, cg.Status)
+		logger.Ctx(ctx).Errorf("Consistency group ID %d is not available for update, status: %s", id, cg.Status)
 		err = NewCLError(ErrCGInvalidState, fmt.Sprintf("Consistency group is not available for update, status: %s", cg.Status), nil)
 		return
 	}
@@ -337,12 +336,12 @@ func (a *ConsistencyGroupAdmin) Update(ctx context.Context, id int64, name, desc
 	// 检查一致性组是否有快照
 	var snapshotCount int64
 	if err = db.Model(&model.ConsistencyGroupSnapshot{}).Where("cg_id = ?", cg.ID).Count(&snapshotCount).Error; err != nil {
-		logger.Errorf("Failed to count snapshots for CG ID %d: %+v", id, err)
+		logger.Ctx(ctx).Errorf("Failed to count snapshots for CG ID %d: %+v", id, err)
 		err = NewCLError(ErrDatabaseError, "Failed to count snapshots", err)
 		return
 	}
 	if snapshotCount > 0 {
-		logger.Errorf("Consistency group ID %d has %d snapshots, cannot update", id, snapshotCount)
+		logger.Ctx(ctx).Errorf("Consistency group ID %d has %d snapshots, cannot update", id, snapshotCount)
 		err = NewCLError(ErrCGSnapshotExists, "Consistency group has snapshots, cannot update", nil)
 		return
 	}
@@ -368,11 +367,11 @@ func (a *ConsistencyGroupAdmin) Update(ctx context.Context, id int64, name, desc
 
 	if len(updates) > 0 {
 		if err = db.Model(cg).Updates(updates).Error; err != nil {
-			logger.Errorf("Failed to update consistency group ID %d: %+v", id, err)
+			logger.Ctx(ctx).Errorf("Failed to update consistency group ID %d: %+v", id, err)
 			err = NewCLError(ErrCGUpdateFailed, "Failed to update consistency group", err)
 			return
 		}
-		logger.Debugf("Updated consistency group ID %d", id)
+		logger.Ctx(ctx).Debugf("Updated consistency group ID %d", id)
 	}
 
 	return
@@ -381,12 +380,12 @@ func (a *ConsistencyGroupAdmin) Update(ctx context.Context, id int64, name, desc
 // Delete deletes a consistency group
 // 删除一致性组
 func (a *ConsistencyGroupAdmin) Delete(ctx context.Context, id int64) (err error) {
-	logger.Infof("ENTER ConsistencyGroupAdmin.Delete: id=%d", id)
+	logger.Ctx(ctx).Infof("ENTER ConsistencyGroupAdmin.Delete: id=%d", id)
 	defer func() {
 		if err != nil {
-			logger.Errorf("EXIT ConsistencyGroupAdmin.Delete: error=%v", err)
+			logger.Ctx(ctx).Errorf("EXIT ConsistencyGroupAdmin.Delete: error=%v", err)
 		} else {
-			logger.Info("EXIT ConsistencyGroupAdmin.Delete: success")
+			logger.Ctx(ctx).Info("EXIT ConsistencyGroupAdmin.Delete: success")
 		}
 	}()
 
@@ -400,7 +399,7 @@ func (a *ConsistencyGroupAdmin) Delete(ctx context.Context, id int64) (err error
 	// 获取一致性组
 	cg := &model.ConsistencyGroup{Model: model.Model{ID: id}}
 	if err = db.Take(cg).Error; err != nil {
-		logger.Errorf("Failed to get consistency group by ID %d: %+v", id, err)
+		logger.Ctx(ctx).Errorf("Failed to get consistency group by ID %d: %+v", id, err)
 		err = NewCLError(ErrCGNotFound, "Consistency group not found", err)
 		return
 	}
@@ -409,7 +408,7 @@ func (a *ConsistencyGroupAdmin) Delete(ctx context.Context, id int64) (err error
 	// 权限检查
 	permit := memberShip.CheckResourceOrg(model.OrgWriter, cg.Owner)
 	if !permit {
-		logger.Errorf("Not authorized to delete consistency group ID %d", id)
+		logger.Ctx(ctx).Errorf("Not authorized to delete consistency group ID %d", id)
 		err = NewCLError(ErrPermissionDenied, "Not authorized to delete consistency group", nil)
 		return
 	}
@@ -417,7 +416,7 @@ func (a *ConsistencyGroupAdmin) Delete(ctx context.Context, id int64) (err error
 	// Check if CG can be deleted
 	// 检查一致性组是否可以删除
 	if !cg.CanDelete() {
-		logger.Errorf("Consistency group ID %d is busy, status: %s", id, cg.Status)
+		logger.Ctx(ctx).Errorf("Consistency group ID %d is busy, status: %s", id, cg.Status)
 		err = NewCLError(ErrCGIsBusy, fmt.Sprintf("Consistency group is busy, status: %s", cg.Status), nil)
 		return
 	}
@@ -426,12 +425,12 @@ func (a *ConsistencyGroupAdmin) Delete(ctx context.Context, id int64) (err error
 	// 检查一致性组是否有快照
 	var snapshotCount int64
 	if err = db.Model(&model.ConsistencyGroupSnapshot{}).Where("cg_id = ?", cg.ID).Count(&snapshotCount).Error; err != nil {
-		logger.Errorf("Failed to count snapshots for CG ID %d: %+v", id, err)
+		logger.Ctx(ctx).Errorf("Failed to count snapshots for CG ID %d: %+v", id, err)
 		err = NewCLError(ErrDatabaseError, "Failed to count snapshots", err)
 		return
 	}
 	if snapshotCount > 0 {
-		logger.Errorf("Consistency group ID %d has %d snapshots, cannot delete", id, snapshotCount)
+		logger.Ctx(ctx).Errorf("Consistency group ID %d has %d snapshots, cannot delete", id, snapshotCount)
 		err = NewCLError(ErrCGSnapshotExists, "Consistency group has snapshots, cannot delete", nil)
 		return
 	}
@@ -448,7 +447,7 @@ func (a *ConsistencyGroupAdmin) Delete(ctx context.Context, id int64) (err error
 	// Update status to deleting
 	// 更新状态为删除中
 	if err = db.Model(cg).Update("status", model.CGStatusDeleting).Error; err != nil {
-		logger.Errorf("Failed to update CG status to deleting: %+v", err)
+		logger.Ctx(ctx).Errorf("Failed to update CG status to deleting: %+v", err)
 		err = NewCLError(ErrCGDeleteFailed, "Failed to update CG status", err)
 		return
 	}
@@ -457,28 +456,28 @@ func (a *ConsistencyGroupAdmin) Delete(ctx context.Context, id int64) (err error
 	// 执行 WDS 脚本删除一致性组
 	control := "inter="
 	command := fmt.Sprintf("/opt/cloudland/scripts/backend/delete_cg_wds.sh '%d' '%s'",
-		cg.ID, cg.WdsCgID)
+		cg.ID, ShellEscape(cg.WdsCgID))
 	err = HyperExecute(ctx, control, command)
 	if err != nil {
-		logger.Errorf("Failed to execute delete CG script: %+v", err)
+		logger.Ctx(ctx).Errorf("Failed to execute delete CG script: %+v", err)
 		err = NewCLError(ErrCGDeleteFailed, "Failed to execute delete CG script", err)
 		return
 	}
-	logger.Debugf("Executed delete CG script for CG ID: %d", cg.ID)
+	logger.Ctx(ctx).Debugf("Executed delete CG script for CG ID: %d", cg.ID)
 
 	return
 }
 
 // GetVolumes get volumes of a consistency group
 func (a *ConsistencyGroupAdmin) GetVolumes(ctx context.Context, id int64) (volumes []*model.Volume, err error) {
-	logger.Debugf("Get volumes of consistency group ID: %d", id)
+	logger.Ctx(ctx).Debugf("Get volumes of consistency group ID: %d", id)
 	memberShip := GetMemberShip(ctx)
 	ctx, db := GetContextDB(ctx)
 	// Retrieve consistency group
 	// 获取一致性组
 	cg := &model.ConsistencyGroup{Model: model.Model{ID: id}}
 	if err = db.Take(cg).Error; err != nil {
-		logger.Errorf("Failed to get consistency group by ID %d: %+v", id, err)
+		logger.Ctx(ctx).Errorf("Failed to get consistency group by ID %d: %+v", id, err)
 		err = NewCLError(ErrCGNotFound, "Consistency group not found", err)
 		return
 	}
@@ -487,7 +486,7 @@ func (a *ConsistencyGroupAdmin) GetVolumes(ctx context.Context, id int64) (volum
 	// 权限检查
 	permit := memberShip.CheckResourceOrg(model.OrgReader, cg.Owner)
 	if !permit {
-		logger.Errorf("Not authorized to get volumes of consistency group ID %d", id)
+		logger.Ctx(ctx).Errorf("Not authorized to get volumes of consistency group ID %d", id)
 		err = NewCLError(ErrPermissionDenied, "Not authorized to get volumes of consistency group", nil)
 		return
 	}
@@ -505,12 +504,12 @@ func (a *ConsistencyGroupAdmin) GetVolumes(ctx context.Context, id int64) (volum
 // AddVolumes adds volumes to a consistency group
 // 向一致性组添加卷
 func (a *ConsistencyGroupAdmin) AddVolumes(ctx context.Context, id int64, volumeUUIDs []string) (cg *model.ConsistencyGroup, err error) {
-	logger.Infof("ENTER ConsistencyGroupAdmin.AddVolumes: id=%d, volumeCount=%d", id, len(volumeUUIDs))
+	logger.Ctx(ctx).Infof("ENTER ConsistencyGroupAdmin.AddVolumes: id=%d, volumeCount=%d", id, len(volumeUUIDs))
 	defer func() {
 		if err != nil {
-			logger.Errorf("EXIT ConsistencyGroupAdmin.AddVolumes: error=%v", err)
+			logger.Ctx(ctx).Errorf("EXIT ConsistencyGroupAdmin.AddVolumes: error=%v", err)
 		} else {
-			logger.Info("EXIT ConsistencyGroupAdmin.AddVolumes: success")
+			logger.Ctx(ctx).Info("EXIT ConsistencyGroupAdmin.AddVolumes: success")
 		}
 	}()
 
@@ -524,7 +523,7 @@ func (a *ConsistencyGroupAdmin) AddVolumes(ctx context.Context, id int64, volume
 	// 获取一致性组
 	cg = &model.ConsistencyGroup{Model: model.Model{ID: id}}
 	if err = db.Take(cg).Error; err != nil {
-		logger.Errorf("Failed to get consistency group by ID %d: %+v", id, err)
+		logger.Ctx(ctx).Errorf("Failed to get consistency group by ID %d: %+v", id, err)
 		err = NewCLError(ErrCGNotFound, "Consistency group not found", err)
 		return
 	}
@@ -533,7 +532,7 @@ func (a *ConsistencyGroupAdmin) AddVolumes(ctx context.Context, id int64, volume
 	// 权限检查
 	permit := memberShip.CheckResourceOrg(model.OrgWriter, cg.Owner)
 	if !permit {
-		logger.Errorf("Not authorized to add volumes to consistency group ID %d", id)
+		logger.Ctx(ctx).Errorf("Not authorized to add volumes to consistency group ID %d", id)
 		err = NewCLError(ErrPermissionDenied, "Not authorized to add volumes to consistency group", nil)
 		return
 	}
@@ -541,7 +540,7 @@ func (a *ConsistencyGroupAdmin) AddVolumes(ctx context.Context, id int64, volume
 	// Check if CG can be updated
 	// 检查一致性组是否可以更新
 	if !cg.CanUpdate() {
-		logger.Errorf("Consistency group ID %d is not available for update, status: %s", id, cg.Status)
+		logger.Ctx(ctx).Errorf("Consistency group ID %d is not available for update, status: %s", id, cg.Status)
 		err = NewCLError(ErrCGInvalidState, fmt.Sprintf("Consistency group is not available for update, status: %s", cg.Status), nil)
 		return
 	}
@@ -550,12 +549,12 @@ func (a *ConsistencyGroupAdmin) AddVolumes(ctx context.Context, id int64, volume
 	// 检查一致性组是否有快照
 	var snapshotCount int64
 	if err = db.Model(&model.ConsistencyGroupSnapshot{}).Where("cg_id = ?", cg.ID).Count(&snapshotCount).Error; err != nil {
-		logger.Errorf("Failed to count snapshots for CG ID %d: %+v", id, err)
+		logger.Ctx(ctx).Errorf("Failed to count snapshots for CG ID %d: %+v", id, err)
 		err = NewCLError(ErrDatabaseError, "Failed to count snapshots", err)
 		return
 	}
 	if snapshotCount > 0 {
-		logger.Errorf("Consistency group ID %d has %d snapshots, cannot add volumes", id, snapshotCount)
+		logger.Ctx(ctx).Errorf("Consistency group ID %d has %d snapshots, cannot add volumes", id, snapshotCount)
 		err = NewCLError(ErrCGSnapshotExists, "Consistency group has snapshots, cannot add volumes", nil)
 		return
 	}
@@ -563,7 +562,7 @@ func (a *ConsistencyGroupAdmin) AddVolumes(ctx context.Context, id int64, volume
 	// Validate input
 	// 验证输入
 	if len(volumeUUIDs) == 0 {
-		logger.Errorf("No volumes provided")
+		logger.Ctx(ctx).Errorf("No volumes provided")
 		err = NewCLError(ErrInvalidParameter, "At least one volume is required", nil)
 		return
 	}
@@ -574,7 +573,7 @@ func (a *ConsistencyGroupAdmin) AddVolumes(ctx context.Context, id int64, volume
 	for _, uuid := range volumeUUIDs {
 		volume := &model.Volume{}
 		if err = db.Where("uuid = ?", uuid).Take(volume).Error; err != nil {
-			logger.Errorf("Volume not found: %s, %+v", uuid, err)
+			logger.Ctx(ctx).Errorf("Volume not found: %s, %+v", uuid, err)
 			err = NewCLError(ErrVolumeNotFound, fmt.Sprintf("Volume %s not found", uuid), err)
 			return
 		}
@@ -585,12 +584,12 @@ func (a *ConsistencyGroupAdmin) AddVolumes(ctx context.Context, id int64, volume
 	// 验证卷状态
 	for _, vol := range volumes {
 		if vol.IsError() {
-			logger.Errorf("Volume %s is in error state", vol.UUID)
+			logger.Ctx(ctx).Errorf("Volume %s is in error state", vol.UUID)
 			err = NewCLError(ErrCGVolumeInvalidState, fmt.Sprintf("Volume %s is in error state", vol.UUID), nil)
 			return
 		}
 		if vol.IsBusy() {
-			logger.Errorf("Volume %s is busy", vol.UUID)
+			logger.Ctx(ctx).Errorf("Volume %s is busy", vol.UUID)
 			err = NewCLError(ErrCGVolumeIsBusy, fmt.Sprintf("Volume %s is busy", vol.UUID), nil)
 			return
 		}
@@ -601,12 +600,12 @@ func (a *ConsistencyGroupAdmin) AddVolumes(ctx context.Context, id int64, volume
 	for _, vol := range volumes {
 		var count int64
 		if err = db.Model(&model.ConsistencyGroupVolume{}).Where("cg_id = ? AND volume_id = ?", cg.ID, vol.ID).Count(&count).Error; err != nil {
-			logger.Errorf("Failed to check volume association: %+v", err)
+			logger.Ctx(ctx).Errorf("Failed to check volume association: %+v", err)
 			err = NewCLError(ErrDatabaseError, "Failed to check volume association", err)
 			return
 		}
 		if count > 0 {
-			logger.Errorf("Volume %s is already in consistency group", vol.UUID)
+			logger.Ctx(ctx).Errorf("Volume %s is already in consistency group", vol.UUID)
 			err = NewCLError(ErrInvalidParameter, fmt.Sprintf("Volume %s is already in consistency group", vol.UUID), nil)
 			return
 		}
@@ -617,18 +616,18 @@ func (a *ConsistencyGroupAdmin) AddVolumes(ctx context.Context, id int64, volume
 	for _, vol := range volumes {
 		var count int64
 		if err = db.Model(&model.ConsistencyGroupVolume{}).Where("volume_id = ?", vol.ID).Count(&count).Error; err != nil {
-			logger.Errorf("Failed to check volume in other CGs: %+v", err)
+			logger.Ctx(ctx).Errorf("Failed to check volume in other CGs: %+v", err)
 			err = NewCLError(ErrDatabaseError, "Failed to check volume in other CGs", err)
 			return
 		}
 		if count > 0 {
-			logger.Errorf("Volume %s is already in another consistency group", vol.UUID)
+			logger.Ctx(ctx).Errorf("Volume %s is already in another consistency group", vol.UUID)
 			err = NewCLError(ErrInvalidParameter, fmt.Sprintf("Volume %s is already in another consistency group", vol.UUID), nil)
 			return
 		}
 	}
 
-	logger.Debugf("All volumes validated successfully")
+	logger.Ctx(ctx).Debugf("All volumes validated successfully")
 
 	// Start transaction
 	// 开始事务
@@ -642,7 +641,7 @@ func (a *ConsistencyGroupAdmin) AddVolumes(ctx context.Context, id int64, volume
 	// Update status to updating
 	// 更新状态为更新中
 	if err = db.Model(cg).Update("status", model.CGStatusUpdating).Error; err != nil {
-		logger.Errorf("Failed to update CG status to updating: %+v", err)
+		logger.Ctx(ctx).Errorf("Failed to update CG status to updating: %+v", err)
 		err = NewCLError(ErrCGUpdateFailed, "Failed to update CG status", err)
 		return
 	}
@@ -655,12 +654,12 @@ func (a *ConsistencyGroupAdmin) AddVolumes(ctx context.Context, id int64, volume
 			VolumeID: vol.ID,
 		}
 		if err = db.Create(cgVolume).Error; err != nil {
-			logger.Errorf("Failed to create consistency group volume association: %+v", err)
+			logger.Ctx(ctx).Errorf("Failed to create consistency group volume association: %+v", err)
 			err = NewCLError(ErrCGUpdateFailed, "Failed to create volume association", err)
 			return
 		}
 	}
-	logger.Debugf("Created %d volume associations", len(volumes))
+	logger.Ctx(ctx).Debugf("Created %d volume associations", len(volumes))
 
 	// Collect volume WDS IDs for WDS API call
 	// 收集卷 WDS ID 用于 WDS API 调用
@@ -675,14 +674,14 @@ func (a *ConsistencyGroupAdmin) AddVolumes(ctx context.Context, id int64, volume
 	// 执行 WDS 脚本向一致性组添加卷
 	control := "inter="
 	command := fmt.Sprintf("/opt/cloudland/scripts/backend/add_volumes_to_cg_wds.sh '%d' '%s' '%s'",
-		cg.ID, cg.WdsCgID, volumeWDSIDJSON)
+		cg.ID, ShellEscape(cg.WdsCgID), ShellEscape(volumeWDSIDJSON))
 	err = HyperExecute(ctx, control, command)
 	if err != nil {
-		logger.Errorf("Failed to execute add volumes to CG script: %+v", err)
+		logger.Ctx(ctx).Errorf("Failed to execute add volumes to CG script: %+v", err)
 		err = NewCLError(ErrCGUpdateFailed, "Failed to execute add volumes to CG script", err)
 		return
 	}
-	logger.Debugf("Executed add volumes to CG script for CG ID: %d", cg.ID)
+	logger.Ctx(ctx).Debugf("Executed add volumes to CG script for CG ID: %d", cg.ID)
 
 	return
 }
@@ -690,12 +689,12 @@ func (a *ConsistencyGroupAdmin) AddVolumes(ctx context.Context, id int64, volume
 // RemoveVolume removes a volume from a consistency group
 // 从一致性组删除卷
 func (a *ConsistencyGroupAdmin) RemoveVolume(ctx context.Context, id int64, volumeUUID string) (cg *model.ConsistencyGroup, err error) {
-	logger.Infof("ENTER ConsistencyGroupAdmin.RemoveVolume: id=%d, volumeUUID=%s", id, volumeUUID)
+	logger.Ctx(ctx).Infof("ENTER ConsistencyGroupAdmin.RemoveVolume: id=%d, volumeUUID=%s", id, volumeUUID)
 	defer func() {
 		if err != nil {
-			logger.Errorf("EXIT ConsistencyGroupAdmin.RemoveVolume: error=%v", err)
+			logger.Ctx(ctx).Errorf("EXIT ConsistencyGroupAdmin.RemoveVolume: error=%v", err)
 		} else {
-			logger.Info("EXIT ConsistencyGroupAdmin.RemoveVolume: success")
+			logger.Ctx(ctx).Info("EXIT ConsistencyGroupAdmin.RemoveVolume: success")
 		}
 	}()
 
@@ -709,7 +708,7 @@ func (a *ConsistencyGroupAdmin) RemoveVolume(ctx context.Context, id int64, volu
 	// 获取一致性组
 	cg = &model.ConsistencyGroup{Model: model.Model{ID: id}}
 	if err = db.Take(cg).Error; err != nil {
-		logger.Errorf("Failed to get consistency group by ID %d: %+v", id, err)
+		logger.Ctx(ctx).Errorf("Failed to get consistency group by ID %d: %+v", id, err)
 		err = NewCLError(ErrCGNotFound, "Consistency group not found", err)
 		return
 	}
@@ -718,7 +717,7 @@ func (a *ConsistencyGroupAdmin) RemoveVolume(ctx context.Context, id int64, volu
 	// 权限检查
 	permit := memberShip.CheckResourceOrg(model.OrgWriter, cg.Owner)
 	if !permit {
-		logger.Errorf("Not authorized to remove volume from consistency group ID %d", id)
+		logger.Ctx(ctx).Errorf("Not authorized to remove volume from consistency group ID %d", id)
 		err = NewCLError(ErrPermissionDenied, "Not authorized to remove volume from consistency group", nil)
 		return
 	}
@@ -726,7 +725,7 @@ func (a *ConsistencyGroupAdmin) RemoveVolume(ctx context.Context, id int64, volu
 	// Check if CG can be updated
 	// 检查一致性组是否可以更新
 	if !cg.CanUpdate() {
-		logger.Errorf("Consistency group ID %d is not available for update, status: %s", id, cg.Status)
+		logger.Ctx(ctx).Errorf("Consistency group ID %d is not available for update, status: %s", id, cg.Status)
 		err = NewCLError(ErrCGInvalidState, fmt.Sprintf("Consistency group is not available for update, status: %s", cg.Status), nil)
 		return
 	}
@@ -735,12 +734,12 @@ func (a *ConsistencyGroupAdmin) RemoveVolume(ctx context.Context, id int64, volu
 	// 检查一致性组是否有快照
 	var snapshotCount int64
 	if err = db.Model(&model.ConsistencyGroupSnapshot{}).Where("cg_id = ?", cg.ID).Count(&snapshotCount).Error; err != nil {
-		logger.Errorf("Failed to count snapshots for CG ID %d: %+v", id, err)
+		logger.Ctx(ctx).Errorf("Failed to count snapshots for CG ID %d: %+v", id, err)
 		err = NewCLError(ErrDatabaseError, "Failed to count snapshots", err)
 		return
 	}
 	if snapshotCount > 0 {
-		logger.Errorf("Consistency group ID %d has %d snapshots, cannot remove volume", id, snapshotCount)
+		logger.Ctx(ctx).Errorf("Consistency group ID %d has %d snapshots, cannot remove volume", id, snapshotCount)
 		err = NewCLError(ErrCGSnapshotExists, "Consistency group has snapshots, cannot remove volume", nil)
 		return
 	}
@@ -749,7 +748,7 @@ func (a *ConsistencyGroupAdmin) RemoveVolume(ctx context.Context, id int64, volu
 	// 获取卷
 	volume := &model.Volume{}
 	if err = db.Where("uuid = ?", volumeUUID).Take(volume).Error; err != nil {
-		logger.Errorf("Volume not found: %s, %+v", volumeUUID, err)
+		logger.Ctx(ctx).Errorf("Volume not found: %s, %+v", volumeUUID, err)
 		err = NewCLError(ErrVolumeNotFound, fmt.Sprintf("Volume %s not found", volumeUUID), err)
 		return
 	}
@@ -758,12 +757,12 @@ func (a *ConsistencyGroupAdmin) RemoveVolume(ctx context.Context, id int64, volu
 	// 检查卷是否在一致性组中
 	var cgVolume model.ConsistencyGroupVolume
 	if err = db.Where("cg_id = ? AND volume_id = ?", cg.ID, volume.ID).Take(&cgVolume).Error; err != nil {
-		logger.Errorf("Volume %s is not in consistency group %d: %+v", volumeUUID, id, err)
+		logger.Ctx(ctx).Errorf("Volume %s is not in consistency group %d: %+v", volumeUUID, id, err)
 		err = NewCLError(ErrInvalidParameter, fmt.Sprintf("Volume %s is not in consistency group", volumeUUID), err)
 		return
 	}
 
-	logger.Debugf("Volume validated successfully")
+	logger.Ctx(ctx).Debugf("Volume validated successfully")
 
 	// Start transaction
 	// 开始事务
@@ -777,7 +776,7 @@ func (a *ConsistencyGroupAdmin) RemoveVolume(ctx context.Context, id int64, volu
 	// Update status to updating
 	// 更新状态为更新中
 	if err = db.Model(cg).Update("status", model.CGStatusUpdating).Error; err != nil {
-		logger.Errorf("Failed to update CG status to updating: %+v", err)
+		logger.Ctx(ctx).Errorf("Failed to update CG status to updating: %+v", err)
 		err = NewCLError(ErrCGUpdateFailed, "Failed to update CG status", err)
 		return
 	}
@@ -785,11 +784,11 @@ func (a *ConsistencyGroupAdmin) RemoveVolume(ctx context.Context, id int64, volu
 	// Delete volume association
 	// 删除卷关联记录
 	if err = db.Delete(&cgVolume).Error; err != nil {
-		logger.Errorf("Failed to delete consistency group volume association: %+v", err)
+		logger.Ctx(ctx).Errorf("Failed to delete consistency group volume association: %+v", err)
 		err = NewCLError(ErrCGUpdateFailed, "Failed to delete volume association", err)
 		return
 	}
-	logger.Debugf("Deleted volume association for volume %s", volumeUUID)
+	logger.Ctx(ctx).Debugf("Deleted volume association for volume %s", volumeUUID)
 
 	// Execute WDS script to remove volume from consistency group
 	// 执行 WDS 脚本从一致性组删除卷
@@ -797,14 +796,14 @@ func (a *ConsistencyGroupAdmin) RemoveVolume(ctx context.Context, id int64, volu
 	volumeWDSIDJSON := string(volumeWDSIDJSONBytes)
 	control := "inter="
 	command := fmt.Sprintf("/opt/cloudland/scripts/backend/remove_volumes_from_cg_wds.sh '%d' '%s' '%s'",
-		cg.ID, cg.WdsCgID, volumeWDSIDJSON)
+		cg.ID, ShellEscape(cg.WdsCgID), ShellEscape(volumeWDSIDJSON))
 	err = HyperExecute(ctx, control, command)
 	if err != nil {
-		logger.Errorf("Failed to execute remove volume from CG script: %+v", err)
+		logger.Ctx(ctx).Errorf("Failed to execute remove volume from CG script: %+v", err)
 		err = NewCLError(ErrCGUpdateFailed, "Failed to execute remove volume from CG script", err)
 		return
 	}
-	logger.Debugf("Executed remove volume from CG script for CG ID: %d", cg.ID)
+	logger.Ctx(ctx).Debugf("Executed remove volume from CG script for CG ID: %d", cg.ID)
 
 	return
 }
@@ -812,18 +811,18 @@ func (a *ConsistencyGroupAdmin) RemoveVolume(ctx context.Context, id int64, volu
 // GetSnapshot retrieves a consistency group snapshot by ID
 // 通过 ID 获取一致性组快照
 func (a *ConsistencyGroupAdmin) GetSnapshot(ctx context.Context, id int64) (snapshot *model.ConsistencyGroupSnapshot, err error) {
-	logger.Infof("ENTER ConsistencyGroupAdmin.GetSnapshot: id=%d", id)
+	logger.Ctx(ctx).Infof("ENTER ConsistencyGroupAdmin.GetSnapshot: id=%d", id)
 	defer func() {
 		if err != nil {
-			logger.Errorf("EXIT ConsistencyGroupAdmin.GetSnapshot: error=%v", err)
+			logger.Ctx(ctx).Errorf("EXIT ConsistencyGroupAdmin.GetSnapshot: error=%v", err)
 		} else {
-			logger.Infof("EXIT ConsistencyGroupAdmin.GetSnapshot: snapshotUUID=%s", snapshot.UUID)
+			logger.Ctx(ctx).Infof("EXIT ConsistencyGroupAdmin.GetSnapshot: snapshotUUID=%s", snapshot.UUID)
 		}
 	}()
 	ctx, db := GetContextDB(ctx)
 	snapshot = &model.ConsistencyGroupSnapshot{Model: model.Model{ID: id}}
 	if err = db.Take(snapshot).Error; err != nil {
-		logger.Errorf("Failed to get snapshot by ID %d: %+v", id, err)
+		logger.Ctx(ctx).Errorf("Failed to get snapshot by ID %d: %+v", id, err)
 		err = NewCLError(ErrCGSnapshotNotFound, "Snapshot not found", err)
 		return
 	}
@@ -833,18 +832,18 @@ func (a *ConsistencyGroupAdmin) GetSnapshot(ctx context.Context, id int64) (snap
 // GetSnapshotByUUID retrieves a consistency group snapshot by UUID
 // 通过 UUID 获取一致性组快照
 func (a *ConsistencyGroupAdmin) GetSnapshotByUUID(ctx context.Context, uuid string) (snapshot *model.ConsistencyGroupSnapshot, err error) {
-	logger.Infof("ENTER ConsistencyGroupAdmin.GetSnapshotByUUID: uuid=%s", uuid)
+	logger.Ctx(ctx).Infof("ENTER ConsistencyGroupAdmin.GetSnapshotByUUID: uuid=%s", uuid)
 	defer func() {
 		if err != nil {
-			logger.Errorf("EXIT ConsistencyGroupAdmin.GetSnapshotByUUID: error=%v", err)
+			logger.Ctx(ctx).Errorf("EXIT ConsistencyGroupAdmin.GetSnapshotByUUID: error=%v", err)
 		} else {
-			logger.Infof("EXIT ConsistencyGroupAdmin.GetSnapshotByUUID: snapshotID=%d", snapshot.ID)
+			logger.Ctx(ctx).Infof("EXIT ConsistencyGroupAdmin.GetSnapshotByUUID: snapshotID=%d", snapshot.ID)
 		}
 	}()
 	ctx, db := GetContextDB(ctx)
 	snapshot = &model.ConsistencyGroupSnapshot{}
 	if err = db.Where("uuid = ?", uuid).Take(snapshot).Error; err != nil {
-		logger.Errorf("Failed to get snapshot by UUID %s: %+v", uuid, err)
+		logger.Ctx(ctx).Errorf("Failed to get snapshot by UUID %s: %+v", uuid, err)
 		err = NewCLError(ErrCGSnapshotNotFound, "Snapshot not found", err)
 		return
 	}
@@ -854,12 +853,12 @@ func (a *ConsistencyGroupAdmin) GetSnapshotByUUID(ctx context.Context, uuid stri
 // ListSnapshots retrieves a list of consistency group snapshots with pagination
 // 获取一致性组快照列表（分页）
 func (a *ConsistencyGroupAdmin) ListSnapshots(ctx context.Context, cgID int64, offset, limit int64, order string) (total int64, snapshots []*model.ConsistencyGroupSnapshot, err error) {
-	logger.Infof("ENTER ConsistencyGroupAdmin.ListSnapshots: cgID=%d, offset=%d, limit=%d, order=%s", cgID, offset, limit, order)
+	logger.Ctx(ctx).Infof("ENTER ConsistencyGroupAdmin.ListSnapshots: cgID=%d, offset=%d, limit=%d, order=%s", cgID, offset, limit, order)
 	defer func() {
 		if err != nil {
-			logger.Errorf("EXIT ConsistencyGroupAdmin.ListSnapshots: error=%v", err)
+			logger.Ctx(ctx).Errorf("EXIT ConsistencyGroupAdmin.ListSnapshots: error=%v", err)
 		} else {
-			logger.Infof("EXIT ConsistencyGroupAdmin.ListSnapshots: total=%d, count=%d", total, len(snapshots))
+			logger.Ctx(ctx).Infof("EXIT ConsistencyGroupAdmin.ListSnapshots: total=%d, count=%d", total, len(snapshots))
 		}
 	}()
 	ctx, db := GetContextDB(ctx)
@@ -871,7 +870,7 @@ func (a *ConsistencyGroupAdmin) ListSnapshots(ctx context.Context, cgID int64, o
 	// Get total count
 	// 获取总数
 	if err = query.Count(&total).Error; err != nil {
-		logger.Errorf("Failed to count snapshots: %+v", err)
+		logger.Ctx(ctx).Errorf("Failed to count snapshots: %+v", err)
 		err = NewCLError(ErrDatabaseError, "Failed to count snapshots", err)
 		return
 	}
@@ -884,24 +883,24 @@ func (a *ConsistencyGroupAdmin) ListSnapshots(ctx context.Context, cgID int64, o
 	}
 	query = dbs.Sortby(query.Offset(int(offset)).Limit(int(limit)), order)
 	if err = query.Find(&snapshots).Error; err != nil {
-		logger.Errorf("Failed to list snapshots: %+v", err)
+		logger.Ctx(ctx).Errorf("Failed to list snapshots: %+v", err)
 		err = NewCLError(ErrDatabaseError, "Failed to list snapshots", err)
 		return
 	}
 
-	logger.Debugf("Found %d snapshots (total: %d)", len(snapshots), total)
+	logger.Ctx(ctx).Debugf("Found %d snapshots (total: %d)", len(snapshots), total)
 	return
 }
 
 // CreateSnapshot creates a consistency group snapshot
 // 创建一致性组快照
 func (a *ConsistencyGroupAdmin) CreateSnapshot(ctx context.Context, cgUUID string, name, description string) (snapshot *model.ConsistencyGroupSnapshot, err error) {
-	logger.Infof("ENTER ConsistencyGroupAdmin.CreateSnapshot: cgUUID=%s, name=%s, description=%s", cgUUID, name, description)
+	logger.Ctx(ctx).Infof("ENTER ConsistencyGroupAdmin.CreateSnapshot: cgUUID=%s, name=%s, description=%s", cgUUID, name, description)
 	defer func() {
 		if err != nil {
-			logger.Errorf("EXIT ConsistencyGroupAdmin.CreateSnapshot: error=%v", err)
+			logger.Ctx(ctx).Errorf("EXIT ConsistencyGroupAdmin.CreateSnapshot: error=%v", err)
 		} else {
-			logger.Infof("EXIT ConsistencyGroupAdmin.CreateSnapshot: success, snapshotID=%d", snapshot.ID)
+			logger.Ctx(ctx).Infof("EXIT ConsistencyGroupAdmin.CreateSnapshot: success, snapshotID=%d", snapshot.ID)
 		}
 	}()
 
@@ -915,13 +914,13 @@ func (a *ConsistencyGroupAdmin) CreateSnapshot(ctx context.Context, cgUUID strin
 	memberShip := GetMemberShip(ctx)
 	permit := memberShip.CheckResourceOrg(model.OrgWriter, cg.Owner)
 	if !permit {
-		logger.Errorf("Not authorized to create snapshot for CG %s", cg.UUID)
+		logger.Ctx(ctx).Errorf("Not authorized to create snapshot for CG %s", cg.UUID)
 		return nil, NewCLError(ErrPermissionDenied, "Not authorized to create snapshot for this consistency group", nil)
 	}
 
 	// 3. 检查一致性组状态
 	if !cg.IsAvailable() {
-		logger.Errorf("Consistency group %s is not available (status: %s)", cg.UUID, cg.Status)
+		logger.Ctx(ctx).Errorf("Consistency group %s is not available (status: %s)", cg.UUID, cg.Status)
 		return nil, NewCLError(ErrCGInvalidState, fmt.Sprintf("Consistency group is not available (status: %s)", cg.Status), nil)
 	}
 
@@ -930,12 +929,12 @@ func (a *ConsistencyGroupAdmin) CreateSnapshot(ctx context.Context, cgUUID strin
 	// 4. 获取一致性组中的所有卷
 	var cgVolumes []*model.ConsistencyGroupVolume
 	if err = db.Preload("Volume").Where("cg_id = ?", cg.ID).Find(&cgVolumes).Error; err != nil {
-		logger.Errorf("Failed to get volumes for CG %s: %v", cg.UUID, err)
+		logger.Ctx(ctx).Errorf("Failed to get volumes for CG %s: %v", cg.UUID, err)
 		return nil, NewCLError(ErrDatabaseError, "Failed to get volumes for consistency group", err)
 	}
 
 	if len(cgVolumes) == 0 {
-		logger.Errorf("Consistency group %s has no volumes", cg.UUID)
+		logger.Ctx(ctx).Errorf("Consistency group %s has no volumes", cg.UUID)
 		return nil, NewCLError(ErrCGNoVolumes, "Consistency group has no volumes", nil)
 	}
 
@@ -943,7 +942,7 @@ func (a *ConsistencyGroupAdmin) CreateSnapshot(ctx context.Context, cgUUID strin
 	for _, cgv := range cgVolumes {
 		if cgv.Volume.IsBusy() {
 			msg := fmt.Sprintf("Volume %s is busy (status: %s), cannot create snapshot now", cgv.Volume.UUID, cgv.Volume.Status)
-			logger.Errorf(msg)
+			logger.Ctx(ctx).Errorf(msg)
 			return nil, NewCLError(ErrCGVolumeIsBusy, msg, nil)
 		}
 	}
@@ -966,7 +965,7 @@ func (a *ConsistencyGroupAdmin) CreateSnapshot(ctx context.Context, cgUUID strin
 		Action:  model.TaskActionSnapshot,
 	}
 	if err = db.Create(task).Error; err != nil {
-		logger.Errorf("Failed to create task: %v", err)
+		logger.Ctx(ctx).Errorf("Failed to create task: %v", err)
 		return nil, NewCLError(ErrDatabaseError, "Failed to create task record", err)
 	}
 
@@ -980,7 +979,7 @@ func (a *ConsistencyGroupAdmin) CreateSnapshot(ctx context.Context, cgUUID strin
 		TaskID:      task.ID,
 	}
 	if err = db.Create(snapshot).Error; err != nil {
-		logger.Errorf("Failed to create snapshot record: %v", err)
+		logger.Ctx(ctx).Errorf("Failed to create snapshot record: %v", err)
 		return nil, NewCLError(ErrDatabaseError, "Failed to create snapshot record", err)
 	}
 
@@ -988,7 +987,7 @@ func (a *ConsistencyGroupAdmin) CreateSnapshot(ctx context.Context, cgUUID strin
 	for _, cgv := range cgVolumes {
 		if err = db.Model(&model.Volume{}).Where("id = ?", cgv.Volume.ID).
 			Update("status", model.VolumeStatusBackuping).Error; err != nil {
-			logger.Errorf("Failed to update volume %d status: %v", cgv.Volume.ID, err)
+			logger.Ctx(ctx).Errorf("Failed to update volume %d status: %v", cgv.Volume.ID, err)
 			return nil, NewCLError(ErrDatabaseError, "Failed to update volume status", err)
 		}
 	}
@@ -998,29 +997,29 @@ func (a *ConsistencyGroupAdmin) CreateSnapshot(ctx context.Context, cgUUID strin
 	cg_snapshot_Name := fmt.Sprintf("cg_snap_%s", snapshot.UUID)
 	control := "inter="
 	command := fmt.Sprintf("/opt/cloudland/scripts/backend/create_cg_snapshot_wds.sh '%d' '%d' '%s' '%s'",
-		cg.ID, snapshot.ID, cg_snapshot_Name, cg.WdsCgID)
+		cg.ID, snapshot.ID, ShellEscape(cg_snapshot_Name), ShellEscape(cg.WdsCgID))
 	err = HyperExecute(ctx, control, command)
 	if err != nil {
-		logger.Errorf("Failed to execute create CG snapshot script: %v", err)
+		logger.Ctx(ctx).Errorf("Failed to execute create CG snapshot script: %v", err)
 		// 更新任务状态为失败
 		db.Model(task).Update("status", model.TaskStatusFailed)
 		db.Model(snapshot).Update("status", model.CGSnapshotStatusError)
 		return nil, NewCLError(ErrExecuteOnHyperFailed, "Failed to execute create CG snapshot script", err)
 	}
 
-	logger.Debugf("Successfully initiated CG snapshot creation for CG %s, snapshot ID: %d", cg.UUID, snapshot.ID)
+	logger.Ctx(ctx).Debugf("Successfully initiated CG snapshot creation for CG %s, snapshot ID: %d", cg.UUID, snapshot.ID)
 	return snapshot, nil
 }
 
 // DeleteSnapshot deletes a consistency group snapshot
 // 删除一致性组快照
 func (a *ConsistencyGroupAdmin) DeleteSnapshot(ctx context.Context, cgUUID, snapUUID string) (err error) {
-	logger.Infof("ENTER ConsistencyGroupAdmin.DeleteSnapshot: cgUUID=%s, snapUUID=%s", cgUUID, snapUUID)
+	logger.Ctx(ctx).Infof("ENTER ConsistencyGroupAdmin.DeleteSnapshot: cgUUID=%s, snapUUID=%s", cgUUID, snapUUID)
 	defer func() {
 		if err != nil {
-			logger.Errorf("EXIT ConsistencyGroupAdmin.DeleteSnapshot: error=%v", err)
+			logger.Ctx(ctx).Errorf("EXIT ConsistencyGroupAdmin.DeleteSnapshot: error=%v", err)
 		} else {
-			logger.Info("EXIT ConsistencyGroupAdmin.DeleteSnapshot: success")
+			logger.Ctx(ctx).Info("EXIT ConsistencyGroupAdmin.DeleteSnapshot: success")
 		}
 	}()
 
@@ -1034,7 +1033,7 @@ func (a *ConsistencyGroupAdmin) DeleteSnapshot(ctx context.Context, cgUUID, snap
 	memberShip := GetMemberShip(ctx)
 	permit := memberShip.CheckResourceOrg(model.OrgWriter, cg.Owner)
 	if !permit {
-		logger.Errorf("Not authorized to delete snapshot for CG %s", cg.UUID)
+		logger.Ctx(ctx).Errorf("Not authorized to delete snapshot for CG %s", cg.UUID)
 		return NewCLError(ErrPermissionDenied, "Not authorized to delete snapshot for this consistency group", nil)
 	}
 
@@ -1043,13 +1042,13 @@ func (a *ConsistencyGroupAdmin) DeleteSnapshot(ctx context.Context, cgUUID, snap
 	// 3. 获取快照
 	snapshot := &model.ConsistencyGroupSnapshot{}
 	if err = db.Where("uuid = ? AND cg_id = ?", snapUUID, cg.ID).First(snapshot).Error; err != nil {
-		logger.Errorf("Snapshot %s not found for CG %s: %v", snapUUID, cg.UUID, err)
+		logger.Ctx(ctx).Errorf("Snapshot %s not found for CG %s: %v", snapUUID, cg.UUID, err)
 		return NewCLError(ErrCGSnapshotNotFound, fmt.Sprintf("Snapshot %s not found", snapUUID), err)
 	}
 
 	// 4. 检查快照状态
 	if !snapshot.CanDelete() {
-		logger.Errorf("Snapshot %s is busy (status: %s) and cannot be deleted", snapshot.UUID, snapshot.Status)
+		logger.Ctx(ctx).Errorf("Snapshot %s is busy (status: %s) and cannot be deleted", snapshot.UUID, snapshot.Status)
 		return NewCLError(ErrCGSnapshotIsBusy, fmt.Sprintf("Snapshot is busy (status: %s) and cannot be deleted", snapshot.Status), nil)
 	}
 
@@ -1063,12 +1062,12 @@ func (a *ConsistencyGroupAdmin) DeleteSnapshot(ctx context.Context, cgUUID, snap
 
 	// if the original snapshot status is error and wds_snap_id is empty, then delete the snapshot record directly
 	if snapshot.Status == model.CGSnapshotStatusError && snapshot.WdsSnapID == "" {
-		logger.Debugf("CG Snapshot %s is in error status and has no WDS snapshot ID, deleting snapshot record directly", snapshot.UUID)
+		logger.Ctx(ctx).Debugf("CG Snapshot %s is in error status and has no WDS snapshot ID, deleting snapshot record directly", snapshot.UUID)
 		if err = db.Delete(snapshot).Error; err != nil {
-			logger.Errorf("Failed to delete snapshot record: %v", err)
+			logger.Ctx(ctx).Errorf("Failed to delete snapshot record: %v", err)
 			return NewCLError(ErrDatabaseError, "Failed to delete snapshot record", err)
 		}
-		logger.Debugf("Successfully deleted snapshot record %s in CG %s", snapshot.UUID, cg.UUID)
+		logger.Ctx(ctx).Debugf("Successfully deleted snapshot record %s in CG %s", snapshot.UUID, cg.UUID)
 		return nil
 	}
 
@@ -1082,7 +1081,7 @@ func (a *ConsistencyGroupAdmin) DeleteSnapshot(ctx context.Context, cgUUID, snap
 		Action:  model.TaskActionSnapshot,
 	}
 	if err = db.Create(task).Error; err != nil {
-		logger.Errorf("Failed to create task: %v", err)
+		logger.Ctx(ctx).Errorf("Failed to create task: %v", err)
 		return NewCLError(ErrDatabaseError, "Failed to create task record", err)
 	}
 
@@ -1091,7 +1090,7 @@ func (a *ConsistencyGroupAdmin) DeleteSnapshot(ctx context.Context, cgUUID, snap
 		"status":  model.CGSnapshotStatusDeleting,
 		"task_id": task.ID,
 	}).Error; err != nil {
-		logger.Errorf("Failed to update snapshot status: %v", err)
+		logger.Ctx(ctx).Errorf("Failed to update snapshot status: %v", err)
 		return NewCLError(ErrDatabaseError, "Failed to update snapshot status", err)
 	}
 
@@ -1099,29 +1098,29 @@ func (a *ConsistencyGroupAdmin) DeleteSnapshot(ctx context.Context, cgUUID, snap
 	// Parameters: cg_snapshot_ID, wds_snap_id
 	control := "inter="
 	command := fmt.Sprintf("/opt/cloudland/scripts/backend/delete_cg_snapshot_wds.sh '%d' '%s'",
-		snapshot.ID, snapshot.WdsSnapID)
+		snapshot.ID, ShellEscape(snapshot.WdsSnapID))
 	err = HyperExecute(ctx, control, command)
 	if err != nil {
-		logger.Errorf("Failed to execute delete CG snapshot script: %v", err)
+		logger.Ctx(ctx).Errorf("Failed to execute delete CG snapshot script: %v", err)
 		// 更新任务状态为失败
 		db.Model(task).Update("status", model.TaskStatusFailed)
 		db.Model(snapshot).Update("status", model.CGSnapshotStatusError)
 		return NewCLError(ErrExecuteOnHyperFailed, "Failed to execute delete CG snapshot script", err)
 	}
 
-	logger.Debugf("Successfully initiated CG snapshot deletion for snapshot %s", snapshot.UUID)
+	logger.Ctx(ctx).Debugf("Successfully initiated CG snapshot deletion for snapshot %s", snapshot.UUID)
 	return nil
 }
 
 // RestoreSnapshot restores a consistency group from a snapshot
 // 从快照恢复一致性组
 func (a *ConsistencyGroupAdmin) RestoreSnapshot(ctx context.Context, cgUUID, snapshotUUID string) (task *model.Task, err error) {
-	logger.Infof("ENTER ConsistencyGroupAdmin.RestoreSnapshot: cgUUID=%s, snapshotUUID=%s", cgUUID, snapshotUUID)
+	logger.Ctx(ctx).Infof("ENTER ConsistencyGroupAdmin.RestoreSnapshot: cgUUID=%s, snapshotUUID=%s", cgUUID, snapshotUUID)
 	defer func() {
 		if err != nil {
-			logger.Errorf("EXIT ConsistencyGroupAdmin.RestoreSnapshot: error=%v", err)
+			logger.Ctx(ctx).Errorf("EXIT ConsistencyGroupAdmin.RestoreSnapshot: error=%v", err)
 		} else {
-			logger.Infof("EXIT ConsistencyGroupAdmin.RestoreSnapshot: success, taskID=%d", task.ID)
+			logger.Ctx(ctx).Infof("EXIT ConsistencyGroupAdmin.RestoreSnapshot: success, taskID=%d", task.ID)
 		}
 	}()
 
@@ -1135,7 +1134,7 @@ func (a *ConsistencyGroupAdmin) RestoreSnapshot(ctx context.Context, cgUUID, sna
 	memberShip := GetMemberShip(ctx)
 	permit := memberShip.CheckResourceOrg(model.OrgWriter, cg.Owner)
 	if !permit {
-		logger.Errorf("Not authorized to restore snapshot for CG %s", cg.UUID)
+		logger.Ctx(ctx).Errorf("Not authorized to restore snapshot for CG %s", cg.UUID)
 		return nil, NewCLError(ErrPermissionDenied, "Not authorized to restore snapshot for this consistency group", nil)
 	}
 
@@ -1144,7 +1143,7 @@ func (a *ConsistencyGroupAdmin) RestoreSnapshot(ctx context.Context, cgUUID, sna
 	// 3. 获取快照
 	snapshot := &model.ConsistencyGroupSnapshot{}
 	if err = db.Where("uuid = ? AND cg_id = ?", snapshotUUID, cg.ID).First(snapshot).Error; err != nil {
-		logger.Errorf("Snapshot %s not found for CG %s: %v", snapshotUUID, cg.UUID, err)
+		logger.Ctx(ctx).Errorf("Snapshot %s not found for CG %s: %v", snapshotUUID, cg.UUID, err)
 		return nil, NewCLError(ErrCGSnapshotNotFound, fmt.Sprintf("Snapshot %s not found", snapshotUUID), err)
 	}
 
@@ -1152,24 +1151,24 @@ func (a *ConsistencyGroupAdmin) RestoreSnapshot(ctx context.Context, cgUUID, sna
 	// 4.1 检查是否有恢复任务正在执行中
 	// Check if a restore operation is already in progress
 	if snapshot.Status == model.CGSnapshotStatusRestoring {
-		logger.Errorf("Snapshot %s has a restore operation already in progress", snapshot.UUID)
+		logger.Ctx(ctx).Errorf("Snapshot %s has a restore operation already in progress", snapshot.UUID)
 		return nil, NewCLError(ErrCGSnapshotRestoreInProgress, fmt.Sprintf("Snapshot %s has a restore operation already in progress", snapshot.UUID), nil)
 	}
 	// 4.2 检查快照是否可以恢复
 	if !snapshot.CanRestore() {
-		logger.Errorf("Snapshot %s cannot be restored (status: %s)", snapshot.UUID, snapshot.Status)
+		logger.Ctx(ctx).Errorf("Snapshot %s cannot be restored (status: %s)", snapshot.UUID, snapshot.Status)
 		return nil, NewCLError(ErrCGSnapshotCannotRestore, fmt.Sprintf("Snapshot %s cannot be restored (status: %s)", snapshot.UUID, snapshot.Status), nil)
 	}
 
 	// 5. 获取一致性组中的所有卷
 	var cgVolumes []*model.ConsistencyGroupVolume
 	if err = db.Preload("Volume").Where("cg_id = ?", cg.ID).Find(&cgVolumes).Error; err != nil {
-		logger.Errorf("Failed to get volumes for CG %s: %v", cg.UUID, err)
+		logger.Ctx(ctx).Errorf("Failed to get volumes for CG %s: %v", cg.UUID, err)
 		return nil, NewCLError(ErrDatabaseError, "Failed to get volumes for consistency group", err)
 	}
 
 	if len(cgVolumes) == 0 {
-		logger.Errorf("Consistency group %s has no volumes", cg.UUID)
+		logger.Ctx(ctx).Errorf("Consistency group %s has no volumes", cg.UUID)
 		return nil, NewCLError(ErrCGNoVolumes, "Consistency group has no volumes", nil)
 	}
 
@@ -1189,7 +1188,7 @@ func (a *ConsistencyGroupAdmin) RestoreSnapshot(ctx context.Context, cgUUID, sna
 		// 检查卷忙碌状态
 		if vol.IsBusy() {
 			msg := fmt.Sprintf("Volume %s is busy (status: %s), cannot restore now", vol.UUID, vol.Status)
-			logger.Errorf(msg)
+			logger.Ctx(ctx).Errorf(msg)
 			return nil, NewCLError(ErrCGVolumeIsBusy, msg, nil)
 		}
 
@@ -1207,14 +1206,14 @@ func (a *ConsistencyGroupAdmin) RestoreSnapshot(ctx context.Context, cgUUID, sna
 			if _, exists := instanceMap[vol.InstanceID]; !exists {
 				instance := &model.Instance{Model: model.Model{ID: vol.InstanceID}}
 				if err = db.Take(instance).Error; err != nil {
-					logger.Errorf("Failed to get instance %d for volume %s: %v", vol.InstanceID, vol.UUID, err)
+					logger.Ctx(ctx).Errorf("Failed to get instance %d for volume %s: %v", vol.InstanceID, vol.UUID, err)
 					return nil, NewCLError(ErrInstanceNotFound, fmt.Sprintf("Instance not found for volume %s", vol.UUID), err)
 				}
 				instanceMap[vol.InstanceID] = instance
 			}
 		} else if vol.Status == "attached" {
 			// 状态是 attached 但没有 instanceID？异常情况
-			logger.Errorf("Volume %s status is attached but has no instance ID", vol.UUID)
+			logger.Ctx(ctx).Errorf("Volume %s status is attached but has no instance ID", vol.UUID)
 			return nil, NewCLError(ErrCGVolumeAttachedNoInstance, fmt.Sprintf("Volume %s status is attached but has no instance", vol.UUID), nil)
 		}
 
@@ -1226,7 +1225,7 @@ func (a *ConsistencyGroupAdmin) RestoreSnapshot(ctx context.Context, cgUUID, sna
 		if instance.Status != model.InstanceStatusShutoff {
 			msg := fmt.Sprintf("Instance %s (ID: %d) is not shutoff (status: %s), all instances must be stopped before restoring CG snapshot",
 				instance.Hostname, instance.ID, instance.Status)
-			logger.Errorf(msg)
+			logger.Ctx(ctx).Errorf(msg)
 			return nil, NewCLError(ErrCGInstanceNotShutoff, msg, nil)
 		}
 	}
@@ -1234,7 +1233,7 @@ func (a *ConsistencyGroupAdmin) RestoreSnapshot(ctx context.Context, cgUUID, sna
 	// 9. 序列化 volumes_json
 	volumesJSON, err := json.Marshal(volumeInfos)
 	if err != nil {
-		logger.Errorf("Failed to serialize volumes info: %v", err)
+		logger.Ctx(ctx).Errorf("Failed to serialize volumes info: %v", err)
 		return nil, NewCLError(ErrJSONMarshalFailed, "Failed to serialize volumes info", err)
 	}
 
@@ -1256,7 +1255,7 @@ func (a *ConsistencyGroupAdmin) RestoreSnapshot(ctx context.Context, cgUUID, sna
 		Action:  model.TaskActionRestore,
 	}
 	if err = db.Create(task).Error; err != nil {
-		logger.Errorf("Failed to create restore task: %v", err)
+		logger.Ctx(ctx).Errorf("Failed to create restore task: %v", err)
 		return nil, NewCLError(ErrDatabaseError, "Failed to create restore task", err)
 	}
 
@@ -1265,7 +1264,7 @@ func (a *ConsistencyGroupAdmin) RestoreSnapshot(ctx context.Context, cgUUID, sna
 		"status":  model.CGSnapshotStatusRestoring,
 		"task_id": task.ID,
 	}).Error; err != nil {
-		logger.Errorf("Failed to update snapshot status: %v", err)
+		logger.Ctx(ctx).Errorf("Failed to update snapshot status: %v", err)
 		return nil, NewCLError(ErrDatabaseError, "Failed to update snapshot status", err)
 	}
 
@@ -1273,7 +1272,7 @@ func (a *ConsistencyGroupAdmin) RestoreSnapshot(ctx context.Context, cgUUID, sna
 	for _, cgv := range cgVolumes {
 		if err = db.Model(&model.Volume{}).Where("id = ?", cgv.Volume.ID).
 			Update("status", "restoring").Error; err != nil {
-			logger.Errorf("Failed to update volume %d status: %v", cgv.Volume.ID, err)
+			logger.Ctx(ctx).Errorf("Failed to update volume %d status: %v", cgv.Volume.ID, err)
 			return nil, NewCLError(ErrDatabaseError, "Failed to update volume status", err)
 		}
 	}
@@ -1282,17 +1281,17 @@ func (a *ConsistencyGroupAdmin) RestoreSnapshot(ctx context.Context, cgUUID, sna
 	// Parameters: cg_snapshot_ID, cg_ID, wds_cg_id, wds_snap_id, volumes_json
 	control := "inter="
 	command := fmt.Sprintf("/opt/cloudland/scripts/backend/restore_cg_snapshot_wds.sh '%d' '%d' '%s' '%s' '%s'",
-		snapshot.ID, cg.ID, cg.WdsCgID, snapshot.WdsSnapID, string(volumesJSON))
+		snapshot.ID, cg.ID, ShellEscape(cg.WdsCgID), ShellEscape(snapshot.WdsSnapID), ShellEscape(string(volumesJSON)))
 	err = HyperExecute(ctx, control, command)
 	if err != nil {
-		logger.Errorf("Failed to execute restore CG snapshot script: %v", err)
+		logger.Ctx(ctx).Errorf("Failed to execute restore CG snapshot script: %v", err)
 		// 更新任务状态为失败
 		db.Model(task).Update("status", model.TaskStatusFailed)
 		db.Model(snapshot).Update("status", model.CGSnapshotStatusError)
 		return nil, NewCLError(ErrExecuteOnHyperFailed, "Failed to execute restore CG snapshot script", err)
 	}
 
-	logger.Debugf("Successfully initiated CG snapshot restore for CG %s from snapshot %s", cg.UUID, snapshot.UUID)
+	logger.Ctx(ctx).Debugf("Successfully initiated CG snapshot restore for CG %s from snapshot %s", cg.UUID, snapshot.UUID)
 	return task, nil
 }
 

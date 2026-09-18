@@ -7,7 +7,6 @@ package services
 
 import (
 	"context"
-	"fmt"
 	"math/rand"
 	"time"
 
@@ -15,7 +14,6 @@ import (
 	"api/src/model"
 
 	jwt "github.com/golang-jwt/jwt/v4"
-	"golang.org/x/crypto/sha3"
 )
 
 const (
@@ -38,43 +36,41 @@ func RandomStr() (res string) {
 	return string(result)
 }
 
-func MakeToken(ctx context.Context, instance *model.Instance) (token string, err error) {
-	logger.Infof("ENTER MakeToken: instanceID=%d", instance.ID)
+func MakeToken(ctx context.Context, instance *model.Instance, consoleType string) (token string, err error) {
+	logger.Ctx(ctx).Infof("ENTER MakeToken: instanceID=%d, type=%s", instance.ID, consoleType)
 	defer func() {
 		if err != nil {
-			logger.Errorf("EXIT MakeToken: error=%v", err)
+			logger.Ctx(ctx).Errorf("EXIT MakeToken: error=%v", err)
 		} else {
-			logger.Infof("EXIT MakeToken: tokenGenerated")
+			logger.Ctx(ctx).Infof("EXIT MakeToken: tokenGenerated")
 		}
 	}()
 	memberShip := GetMemberShip(ctx)
 	permit := memberShip.CheckOrgPermission(model.OrgWriter)
 	if !permit {
-		logger.Error("Not authorized to create interface in public subnet")
+		logger.Ctx(ctx).Error("Not authorized to create interface in public subnet")
 		return "", NewCLError(ErrPermissionDenied, "Not authorized to create interface in public subnet", nil)
 	}
 	secret := RandomStr()
 	tkClaim := TokenClaim{
-		OrgID:      memberShip.OrgID,
-		OrgRole:    memberShip.OrgRole,
-		InstanceID: int(instance.ID),
-		Secret:     secret,
+		OrgID:       memberShip.OrgID,
+		OrgRole:     memberShip.OrgRole,
+		InstanceID:  int(instance.ID),
+		Secret:      secret,
+		ConsoleType: consoleType,
 	}
 	tkClaim.RegisteredClaims.ExpiresAt = jwt.NewNumericDate(time.Now().Add(TokenExpireDuration))
-	tokenHash := make([]byte, 32)
-	data := sha3.NewShake256()
-	data.Write([]byte(secret))
-	data.Read(tokenHash)
-	hashSecret := fmt.Sprintf("%x", tokenHash)
+	hashSecret := ConsoleSecretHash(secret)
 	ctx, db := GetContextDB(ctx)
 	console := &model.Console{
 		Instance:   instance.ID,
-		Type:       "vnc",
+		Type:       consoleType,
 		HashSecret: hashSecret,
 	}
-	err = db.Where("instance = ?", instance.ID).Assign(console).FirstOrCreate(&model.Console{}).Error
+	// One record per instance and console type: opening a serial console does not invalidate a pending VNC token
+	err = db.Where("instance = ? AND type = ?", instance.ID, consoleType).Assign(console).FirstOrCreate(&model.Console{}).Error
 	if err != nil {
-		logger.Error("Failed to make console record ", err)
+		logger.Ctx(ctx).Error("Failed to make console record ", err)
 		return "", NewCLError(ErrConsoleCreateFailed, "Failed to make console record", err)
 	}
 	tokenClaim := jwt.NewWithClaims(jwt.SigningMethodHS256, tkClaim)
@@ -83,12 +79,12 @@ func MakeToken(ctx context.Context, instance *model.Instance) (token string, err
 }
 
 func ResolveToken(ctx context.Context, tokenString string) (instanceID int, memberShip *MemberShip, err error) {
-	logger.Infof("ENTER ResolveToken: tokenLength=%d", len(tokenString))
+	logger.Ctx(ctx).Infof("ENTER ResolveToken: tokenLength=%d", len(tokenString))
 	defer func() {
 		if err != nil {
-			logger.Errorf("EXIT ResolveToken: error=%v", err)
+			logger.Ctx(ctx).Errorf("EXIT ResolveToken: error=%v", err)
 		} else {
-			logger.Infof("EXIT ResolveToken: instanceID=%d", instanceID)
+			logger.Ctx(ctx).Infof("EXIT ResolveToken: instanceID=%d", instanceID)
 		}
 	}()
 	token, err := jwt.ParseWithClaims(tokenString, &TokenClaim{}, func(token *jwt.Token) (interface{}, error) {
@@ -103,17 +99,12 @@ func ResolveToken(ctx context.Context, tokenString string) (instanceID int, memb
 	}
 	ctx, db := GetContextDB(ctx)
 	instanceID = claims.InstanceID
-	console := &model.Console{Instance: int64(instanceID)}
-	err = db.Where(console).Take(console).Error
+	console := &model.Console{}
+	err = db.Where("instance = ? AND type = ?", instanceID, claims.Type()).Take(console).Error
 	if err != nil {
 		return 0, nil, NewCLError(ErrConsoleNotFound, "Failed to retrieve console record", err)
 	}
-	tokenHash := make([]byte, 32)
-	data := sha3.NewShake256()
-	data.Write([]byte(claims.Secret))
-	data.Read(tokenHash)
-	hashSecret := fmt.Sprintf("%x", tokenHash)
-	if hashSecret != console.HashSecret {
+	if ConsoleSecretHash(claims.Secret) != console.HashSecret {
 		return 0, nil, NewCLError(ErrInvalidConsoleToken, "Secret can not pass validation", nil)
 	}
 	memberShip = &MemberShip{

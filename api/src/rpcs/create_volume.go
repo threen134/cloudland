@@ -7,11 +7,11 @@ SPDX-License-Identifier: Apache-2.0
 package rpcs
 
 import (
+	. "api/src/common"
+	"api/src/model"
 	"context"
 	"fmt"
 	"strconv"
-	. "api/src/common"
-	"api/src/model"
 )
 
 func init() {
@@ -24,7 +24,7 @@ func updateInstance(ctx context.Context, volume *model.Volume, status string, re
 	if volume.Booting && status == "error" {
 		instance := &model.Instance{Model: model.Model{ID: volume.InstanceID}}
 		if err = db.Take(&instance).Error; err != nil {
-			logger.Error("Invalid instance ID", err)
+			logger.Ctx(ctx).Error("Invalid instance ID", err)
 			return err
 		}
 
@@ -35,7 +35,7 @@ func updateInstance(ctx context.Context, volume *model.Volume, status string, re
 			"reason": instance.Reason,
 		}).Error
 		if err != nil {
-			logger.Error("Update instance status failed", err)
+			logger.Ctx(ctx).Error("Update instance status failed", err)
 			return err
 		}
 	}
@@ -50,33 +50,33 @@ func CreateVolumeLocal(ctx context.Context, args []string) (status string, err e
 			EndTransaction(ctx, err)
 		}
 	}()
-	logger.Debug("CreateVolumeLocal", args)
+	logger.Ctx(ctx).Debug("CreateVolumeLocal", args)
 	argn := len(args)
 	if argn < 5 {
 		err = fmt.Errorf("Wrong params")
-		logger.Error("Invalid args", err)
+		logger.Ctx(ctx).Error("Invalid args", err)
 		return
 	}
 	volID, err := strconv.ParseInt(args[1], 10, 64)
 	if err != nil {
-		logger.Error("Invalid volume ID", err)
+		logger.Ctx(ctx).Error("Invalid volume ID", err)
 		return
 	}
 	volume := &model.Volume{Model: model.Model{ID: volID}}
 	err = db.Where(volume).Take(volume).Error
 	if err != nil {
-		logger.Error("Invalid volume ID", err)
+		logger.Ctx(ctx).Error("Invalid volume ID", err)
 		return
 	}
 	path := args[2]
 	status = args[3]
 	err = db.Model(&volume).Updates(map[string]interface{}{"path": path, "status": status}).Error
 	if err != nil {
-		logger.Error("Update volume status failed", err)
+		logger.Ctx(ctx).Error("Update volume status failed", err)
 		return
 	}
 	if err = updateInstance(ctx, volume, status, args[4]); err != nil {
-		logger.Error("Update instance status failed", err)
+		logger.Ctx(ctx).Error("Update instance status failed", err)
 		return
 	}
 	return
@@ -90,33 +90,33 @@ func CreateVolumeWDSVhost(ctx context.Context, args []string) (status string, er
 			EndTransaction(ctx, err)
 		}
 	}()
-	logger.Debug("CreateVolumeWDSVhost", args)
+	logger.Ctx(ctx).Debug("CreateVolumeWDSVhost", args)
 	argn := len(args)
 	if argn < 5 {
 		err = fmt.Errorf("Wrong params")
-		logger.Error("Invalid args", err)
+		logger.Ctx(ctx).Error("Invalid args", err)
 		return
 	}
 	volID, err := strconv.ParseInt(args[1], 10, 64)
 	if err != nil {
-		logger.Error("Invalid volume ID", err)
+		logger.Ctx(ctx).Error("Invalid volume ID", err)
 		return
 	}
 	volume := &model.Volume{Model: model.Model{ID: volID}}
 	err = db.Where(volume).Take(volume).Error
 	if err != nil {
-		logger.Error("Invalid volume ID", err)
+		logger.Ctx(ctx).Error("Invalid volume ID", err)
 		return
 	}
 	status = args[2]
 	path := args[3]
 	err = db.Model(&volume).Updates(map[string]interface{}{"path": path, "status": status}).Error
 	if err != nil {
-		logger.Error("Update volume status failed", err)
+		logger.Ctx(ctx).Error("Update volume status failed", err)
 		return
 	}
 	if err = updateInstance(ctx, volume, status, args[4]); err != nil {
-		logger.Error("Update instance status failed", err)
+		logger.Ctx(ctx).Error("Update instance status failed", err)
 		return
 	}
 	return

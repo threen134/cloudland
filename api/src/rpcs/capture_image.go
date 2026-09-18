@@ -31,18 +31,18 @@ func CaptureImage(ctx context.Context, args []string) (status string, err error)
 	argn := len(args)
 	if argn < 6 {
 		err = fmt.Errorf("Wrong params")
-		logger.Error("Invalid args", err)
+		logger.Ctx(ctx).Error("Invalid args", err)
 		return
 	}
 	imgID, err := strconv.ParseInt(args[1], 10, 64)
 	if err != nil {
-		logger.Error("Invalid image ID", err)
+		logger.Ctx(ctx).Error("Invalid image ID", err)
 		return
 	}
 	image := &model.Image{Model: model.Model{ID: imgID}}
 	err = db.Take(image).Error
 	if err != nil {
-		logger.Error("Invalid image ID", err)
+		logger.Ctx(ctx).Error("Invalid image ID", err)
 		return
 	}
 	state := args[2]
@@ -50,7 +50,7 @@ func CaptureImage(ctx context.Context, args []string) (status string, err error)
 	if image.Status == "error" {
 		errMsg := args[4]
 		// log the error message and continue to save image
-		logger.Errorf("Capture image failed: %s", errMsg)
+		logger.Ctx(ctx).Errorf("Capture image failed: %s", errMsg)
 	}
 	volDriver := services.GetVolumeDriver()
 	if volDriver == "local" {
@@ -58,7 +58,7 @@ func CaptureImage(ctx context.Context, args []string) (status string, err error)
 		var imageSize int
 		imageSize, err = strconv.Atoi(args[4])
 		if err != nil {
-			logger.Error("Invalid image size", err)
+			logger.Ctx(ctx).Error("Invalid image size", err)
 			return
 		}
 		image.Size = int64(imageSize)
@@ -69,20 +69,20 @@ func CaptureImage(ctx context.Context, args []string) (status string, err error)
 		"size":   image.Size,
 	}).Error
 	if err != nil {
-		logger.Error("Update image failed", err)
+		logger.Ctx(ctx).Error("Update image failed", err)
 		return
 	}
 
 	storageID, err := strconv.ParseInt(args[6], 10, 64)
 	if err != nil {
-		logger.Error("Invalid storage ID", err)
+		logger.Ctx(ctx).Error("Invalid storage ID", err)
 		return
 	}
 	if storageID > 0 {
 		storage := &model.ImageStorage{Model: model.Model{ID: storageID}}
 		err = db.Take(storage).Error
 		if err != nil {
-			logger.Error("Invalid storage ID", err)
+			logger.Ctx(ctx).Error("Invalid storage ID", err)
 			return
 		}
 		storage.VolumeID = args[5]
@@ -96,7 +96,7 @@ func CaptureImage(ctx context.Context, args []string) (status string, err error)
 			"volume_id": storage.VolumeID,
 		}).Error
 		if err != nil {
-			logger.Error("Update image storage failed", err)
+			logger.Ctx(ctx).Error("Update image storage failed", err)
 			return
 		}
 	}

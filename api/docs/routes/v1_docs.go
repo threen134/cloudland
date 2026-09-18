@@ -19,6 +19,85 @@ const docTemplatev1 = `{
     "host": "{{.Host}}",
     "basePath": "{{.BasePath}}",
     "paths": {
+        "/activities": {
+            "get": {
+                "description": "当前组织在本区域的操作动态，按时间倒序、游标分页，组织内所有成员可见",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Activity"
+                ],
+                "summary": "list activities of current organization",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "default 20, max 100",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "next_cursor from previous page",
+                        "name": "cursor",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "RFC3339, inclusive; default 7 days before end",
+                        "name": "start",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "RFC3339, exclusive; default now; range must not exceed 90 days",
+                        "name": "end",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "resource type, such as instance",
+                        "name": "resource_type",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "resource uuid",
+                        "name": "resource_uuid",
+                        "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "true: only succeeded, false: only failed",
+                        "name": "success",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apis.ActivityListResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            }
+        },
         "/addresses/remark": {
             "patch": {
                 "description": "batch patch addresses with unified remark",
@@ -149,6 +228,45 @@ const docTemplatev1 = `{
                         "description": "Not authorized",
                         "schema": {
                             "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            }
+        },
+        "/adjust/regenerate-bandwidth-metrics": {
+            "post": {
+                "description": "Regenerate bandwidth configuration metrics for all active VMs or a specific hyper node",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Auto Scaling"
+                ],
+                "summary": "Regenerate bandwidth config metrics",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Specific hyper node ID",
+                        "name": "hyper_id",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Regeneration result",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
                         }
                     }
                 }
@@ -428,9 +546,9 @@ const docTemplatev1 = `{
                 }
             }
         },
-        "/api/v1/metrics/alarm/sync-mappings": {
-            "post": {
-                "description": "Perform a full synchronization of all VM rule mappings to ensure matched_vms.json is consistent with the database",
+        "/audit_logs": {
+            "get": {
+                "description": "按时间倒序返回改动型操作的审计记录，仅系统管理员可见",
                 "consumes": [
                     "application/json"
                 ],
@@ -438,22 +556,82 @@ const docTemplatev1 = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Alarm"
+                    "Administration"
                 ],
-                "summary": "Synchronize all VM rule mappings",
+                "summary": "list audit logs",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "offset",
+                        "name": "offset",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "limit, default 50",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "username",
+                        "name": "actor",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "user uuid",
+                        "name": "actor_uuid",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "request path contains",
+                        "name": "path",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "resource type, such as instance",
+                        "name": "resource_type",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "resource uuid",
+                        "name": "resource_uuid",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "RFC3339, inclusive",
+                        "name": "start",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "RFC3339, exclusive; range must not exceed 90 days",
+                        "name": "end",
+                        "in": "query"
+                    }
+                ],
                 "responses": {
                     "200": {
-                        "description": "Synchronization successful",
+                        "description": "OK",
                         "schema": {
-                            "type": "object",
-                            "additionalProperties": true
+                            "$ref": "#/definitions/apis.AuditLogListResponse"
                         }
                     },
-                    "500": {
-                        "description": "Internal server error",
+                    "400": {
+                        "description": "Bad request",
                         "schema": {
-                            "type": "object",
-                            "additionalProperties": true
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
                         }
                     }
                 }
@@ -2087,6 +2265,59 @@ const docTemplatev1 = `{
                 "responses": {}
             }
         },
+        "/hypers/{uuid}/console": {
+            "post": {
+                "description": "create a single-use token for a root shell on a hypervisor (system admins only, when enabled in system settings). Through the gateway the body must also carry \"password\", the caller's login password, which the gateway checks and removes",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Administration",
+                    "Hypervisor"
+                ],
+                "summary": "create a host console",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Hypervisor UUID",
+                        "name": "uuid",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Terminal size",
+                        "name": "message",
+                        "in": "body",
+                        "schema": {
+                            "$ref": "#/definitions/apis.HostConsolePayload"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apis.HostConsoleResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "403": {
+                        "description": "Not authorized or host console disabled",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            }
+        },
         "/hypers/{uuid}/maintain": {
             "post": {
                 "description": "start maintenance for a hypervisor, optionally migrating all instances",
@@ -2162,6 +2393,20 @@ const docTemplatev1 = `{
                     "Image"
                 ],
                 "summary": "list images",
+                "parameters": [
+                    {
+                        "type": "boolean",
+                        "description": "true: only images owned by the current org, regardless of system role",
+                        "name": "owned",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "public or private",
+                        "name": "visibility",
+                        "in": "query"
+                    }
+                ],
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -2546,7 +2791,7 @@ const docTemplatev1 = `{
         },
         "/instances/:id/console": {
             "post": {
-                "description": "create a console",
+                "description": "create a console access token; type vnc (graphical, default) or serial (text)",
                 "consumes": [
                     "application/json"
                 ],
@@ -2564,6 +2809,14 @@ const docTemplatev1 = `{
                         "name": "id",
                         "in": "path",
                         "required": true
+                    },
+                    {
+                        "description": "Console type",
+                        "name": "message",
+                        "in": "body",
+                        "schema": {
+                            "$ref": "#/definitions/apis.ConsolePayload"
+                        }
                     }
                 ],
                 "responses": {
@@ -3076,7 +3329,7 @@ const docTemplatev1 = `{
         },
         "/internal/alarm/events": {
             "get": {
-                "description": "Internal endpoint for CPGateway to query alarm events without owner filtering",
+                "description": "Internal endpoint for CPGateway to query alarm events, filtered by org_uuid when provided",
                 "consumes": [
                     "application/json"
                 ],
@@ -3092,6 +3345,12 @@ const docTemplatev1 = `{
                         "type": "string",
                         "description": "If 'true', only return firing event count",
                         "name": "count_only",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Filter by organization UUID",
+                        "name": "org_uuid",
                         "in": "query"
                     },
                     {
@@ -3146,6 +3405,44 @@ const docTemplatev1 = `{
                     "Notification"
                 ],
                 "summary": "Sync notification channels",
+                "responses": {
+                    "200": {
+                        "description": "Sync successful",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/internal/system-settings/sync": {
+            "post": {
+                "description": "Internal endpoint for CPGateway to push system settings (full sync with version check)",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "SystemSettings"
+                ],
+                "summary": "Sync system settings",
                 "responses": {
                     "200": {
                         "description": "Sync successful",
@@ -3884,67 +4181,6 @@ const docTemplatev1 = `{
                 }
             }
         },
-        "/load_balancers/{id}/listeners/:listener_id/backends": {
-            "get": {
-                "description": "list backends",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Load Balancer"
-                ],
-                "summary": "list backends",
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/apis.BackendListResponse"
-                        }
-                    },
-                    "401": {
-                        "description": "Not authorized",
-                        "schema": {
-                            "$ref": "#/definitions/common.APIError"
-                        }
-                    }
-                }
-            }
-        },
-        "/load_balancers/{id}/listeners/:listener_id/backends/{backend_id}": {
-            "delete": {
-                "description": "delete a backend",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Load Balancer"
-                ],
-                "summary": "delete a backend",
-                "responses": {
-                    "204": {
-                        "description": "No Content"
-                    },
-                    "400": {
-                        "description": "Bad request",
-                        "schema": {
-                            "$ref": "#/definitions/common.APIError"
-                        }
-                    },
-                    "401": {
-                        "description": "Not authorized",
-                        "schema": {
-                            "$ref": "#/definitions/common.APIError"
-                        }
-                    }
-                }
-            }
-        },
         "/load_balancers/{id}/listeners/{listener_id}": {
             "get": {
                 "description": "get a listener",
@@ -4055,6 +4291,33 @@ const docTemplatev1 = `{
             }
         },
         "/load_balancers/{id}/listeners/{listener_id}/backends": {
+            "get": {
+                "description": "list backends",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Load Balancer"
+                ],
+                "summary": "list backends",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apis.BackendListResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            },
             "post": {
                 "description": "create a backend",
                 "consumes": [
@@ -4119,6 +4382,36 @@ const docTemplatev1 = `{
                         "schema": {
                             "$ref": "#/definitions/apis.BackendResponse"
                         }
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "description": "delete a backend",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Load Balancer"
+                ],
+                "summary": "delete a backend",
+                "responses": {
+                    "204": {
+                        "description": "No Content"
                     },
                     "400": {
                         "description": "Bad request",
@@ -5107,9 +5400,9 @@ const docTemplatev1 = `{
                 }
             }
         },
-        "/metrics/api/v1/adjust/regenerate-bandwidth-metrics": {
+        "/metrics/alarm/sync-mappings": {
             "post": {
-                "description": "Regenerate bandwidth configuration metrics for all active VMs or a specific hyper node",
+                "description": "Perform a full synchronization of all VM rule mappings to ensure matched_vms.json is consistent with the database",
                 "consumes": [
                     "application/json"
                 ],
@@ -5117,20 +5410,12 @@ const docTemplatev1 = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Auto Scaling"
+                    "Alarm"
                 ],
-                "summary": "Regenerate bandwidth config metrics",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "Specific hyper node ID",
-                        "name": "hyper_id",
-                        "in": "query"
-                    }
-                ],
+                "summary": "Synchronize all VM rule mappings",
                 "responses": {
                     "200": {
-                        "description": "Regeneration result",
+                        "description": "Synchronization successful",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -5146,7 +5431,7 @@ const docTemplatev1 = `{
                 }
             }
         },
-        "/metrics/api/v1/current-alarms": {
+        "/metrics/current-alarms": {
             "get": {
                 "description": "Query currently firing alarms from Prometheus",
                 "consumes": [
@@ -5177,7 +5462,7 @@ const docTemplatev1 = `{
                 }
             }
         },
-        "/metrics/api/v1/history-alarms": {
+        "/metrics/history-alarms": {
             "get": {
                 "description": "Query historical alarm data from Prometheus within a time range",
                 "consumes": [
@@ -5230,53 +5515,6 @@ const docTemplatev1 = `{
                     },
                     "500": {
                         "description": "Internal server error",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    }
-                }
-            }
-        },
-        "/metrics/api/v1/rules/links": {
-            "get": {
-                "description": "Get VM link information for alarm or adjustment rules by rule_id or UUID",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Auto Scaling"
-                ],
-                "summary": "Get rule VM links",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "Rule ID or UUID",
-                        "name": "rule_id",
-                        "in": "query",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "Rule links",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "400": {
-                        "description": "Bad request",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "404": {
-                        "description": "Rule not found",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -5983,6 +6221,53 @@ const docTemplatev1 = `{
                 "responses": {
                     "200": {
                         "description": "Available subjects",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/rules/links": {
+            "get": {
+                "description": "Get VM link information for alarm or adjustment rules by rule_id or UUID",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Auto Scaling"
+                ],
+                "summary": "Get rule VM links",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Rule ID or UUID",
+                        "name": "rule_id",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Rule links",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "404": {
+                        "description": "Rule not found",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -7323,6 +7608,50 @@ const docTemplatev1 = `{
         }
     },
     "definitions": {
+        "apis.ActivityListResponse": {
+            "type": "object",
+            "properties": {
+                "activities": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/apis.ActivityResponse"
+                    }
+                },
+                "next_cursor": {
+                    "description": "NextCursor 非空表示还有更早的记录，作为下一页的 cursor 参数传回",
+                    "type": "string"
+                }
+            }
+        },
+        "apis.ActivityResponse": {
+            "type": "object",
+            "properties": {
+                "action": {
+                    "type": "string"
+                },
+                "actor": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "resource_id": {
+                    "type": "string"
+                },
+                "resource_name": {
+                    "type": "string"
+                },
+                "resource_type": {
+                    "type": "string"
+                },
+                "success": {
+                    "type": "boolean"
+                }
+            }
+        },
         "apis.AddressInfo": {
             "type": "object",
             "properties": {
@@ -7397,6 +7726,10 @@ const docTemplatev1 = `{
                 "owner": {
                     "type": "string"
                 },
+                "owner_uuid": {
+                    "description": "OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to\nrelease quota only when the caller's org actually owns the deleted resource",
+                    "type": "string"
+                },
                 "remark": {
                     "type": "string"
                 },
@@ -7432,6 +7765,73 @@ const docTemplatev1 = `{
                 }
             }
         },
+        "apis.AuditLogListResponse": {
+            "type": "object",
+            "properties": {
+                "limit": {
+                    "type": "integer"
+                },
+                "logs": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/apis.AuditLogResponse"
+                    }
+                },
+                "offset": {
+                    "type": "integer"
+                },
+                "total": {
+                    "type": "integer"
+                }
+            }
+        },
+        "apis.AuditLogResponse": {
+            "type": "object",
+            "properties": {
+                "action": {
+                    "type": "string"
+                },
+                "actor": {
+                    "type": "string"
+                },
+                "actor_uuid": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "detail": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "latency_ms": {
+                    "type": "integer"
+                },
+                "method": {
+                    "type": "string"
+                },
+                "path": {
+                    "type": "string"
+                },
+                "resource_id": {
+                    "type": "string"
+                },
+                "resource_name": {
+                    "type": "string"
+                },
+                "resource_type": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "integer"
+                },
+                "trace_id": {
+                    "type": "string"
+                }
+            }
+        },
         "apis.BackendListResponse": {
             "type": "object",
             "properties": {
@@ -7458,13 +7858,6 @@ const docTemplatev1 = `{
                 "name"
             ],
             "properties": {
-                "action": {
-                    "type": "string",
-                    "enum": [
-                        "enable",
-                        "disable"
-                    ]
-                },
                 "endpoint": {
                     "type": "string",
                     "maxLength": 128,
@@ -7474,6 +7867,9 @@ const docTemplatev1 = `{
                     "type": "string",
                     "maxLength": 32,
                     "minLength": 2
+                },
+                "ssl": {
+                    "type": "boolean"
                 }
             }
         },
@@ -7493,6 +7889,9 @@ const docTemplatev1 = `{
                     "type": "string",
                     "maxLength": 32,
                     "minLength": 2
+                },
+                "ssl": {
+                    "type": "boolean"
                 }
             }
         },
@@ -7505,6 +7904,10 @@ const docTemplatev1 = `{
                 "endpoint": {
                     "type": "string"
                 },
+                "health": {
+                    "description": "Health check result from the master haproxy: up, down, or unknown when not reported yet",
+                    "type": "string"
+                },
                 "id": {
                     "type": "string"
                 },
@@ -7513,6 +7916,13 @@ const docTemplatev1 = `{
                 },
                 "owner": {
                     "type": "string"
+                },
+                "owner_uuid": {
+                    "description": "OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to\nrelease quota only when the caller's org actually owns the deleted resource",
+                    "type": "string"
+                },
+                "ssl": {
+                    "type": "boolean"
                 },
                 "status": {
                     "type": "string"
@@ -7581,6 +7991,10 @@ const docTemplatev1 = `{
                     "type": "string"
                 },
                 "owner": {
+                    "type": "string"
+                },
+                "owner_uuid": {
+                    "description": "OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to\nrelease quota only when the caller's org actually owns the deleted resource",
                     "type": "string"
                 },
                 "resources": {
@@ -7672,6 +8086,10 @@ const docTemplatev1 = `{
                 "owner": {
                     "type": "string"
                 },
+                "owner_uuid": {
+                    "description": "OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to\nrelease quota only when the caller's org actually owns the deleted resource",
+                    "type": "string"
+                },
                 "status": {
                     "type": "string"
                 },
@@ -7758,6 +8176,10 @@ const docTemplatev1 = `{
                 "owner": {
                     "type": "string"
                 },
+                "owner_uuid": {
+                    "description": "OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to\nrelease quota only when the caller's org actually owns the deleted resource",
+                    "type": "string"
+                },
                 "size": {
                     "type": "integer"
                 },
@@ -7785,6 +8207,19 @@ const docTemplatev1 = `{
                     "items": {
                         "type": "string"
                     }
+                }
+            }
+        },
+        "apis.ConsolePayload": {
+            "type": "object",
+            "properties": {
+                "type": {
+                    "description": "vnc (graphical, default) or serial (text console on the first serial port)",
+                    "type": "string",
+                    "enum": [
+                        "vnc",
+                        "serial"
+                    ]
                 }
             }
         },
@@ -7893,6 +8328,10 @@ const docTemplatev1 = `{
                 "owner": {
                     "type": "string"
                 },
+                "owner_uuid": {
+                    "description": "OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to\nrelease quota only when the caller's org actually owns the deleted resource",
+                    "type": "string"
+                },
                 "shortname": {
                     "type": "string"
                 },
@@ -7994,6 +8433,9 @@ const docTemplatev1 = `{
                 },
                 "name": {
                     "type": "string"
+                },
+                "uuid": {
+                    "type": "string"
                 }
             }
         },
@@ -8019,6 +8461,10 @@ const docTemplatev1 = `{
                     "type": "string"
                 },
                 "owner": {
+                    "type": "string"
+                },
+                "owner_uuid": {
+                    "description": "OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to\nrelease quota only when the caller's org actually owns the deleted resource",
                     "type": "string"
                 },
                 "type": {
@@ -8155,6 +8601,10 @@ const docTemplatev1 = `{
                 "owner": {
                     "type": "string"
                 },
+                "owner_uuid": {
+                    "description": "OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to\nrelease quota only when the caller's org actually owns the deleted resource",
+                    "type": "string"
+                },
                 "public_ip": {
                     "type": "string"
                 },
@@ -8215,6 +8665,40 @@ const docTemplatev1 = `{
                 },
                 "vlan": {
                     "type": "integer"
+                }
+            }
+        },
+        "apis.HostConsolePayload": {
+            "type": "object",
+            "properties": {
+                "cols": {
+                    "type": "integer",
+                    "maximum": 1000,
+                    "minimum": 1
+                },
+                "rows": {
+                    "description": "Terminal size the shell starts with",
+                    "type": "integer",
+                    "maximum": 500,
+                    "minimum": 1
+                }
+            }
+        },
+        "apis.HostConsoleResponse": {
+            "type": "object",
+            "properties": {
+                "console_url": {
+                    "type": "string"
+                },
+                "hyper": {
+                    "$ref": "#/definitions/common.ResourceReference"
+                },
+                "idle_timeout": {
+                    "description": "Seconds without traffic after which the node closes the session",
+                    "type": "integer"
+                },
+                "token": {
+                    "type": "string"
                 }
             }
         },
@@ -8281,7 +8765,10 @@ const docTemplatev1 = `{
                     "type": "boolean"
                 },
                 "target_hyper": {
-                    "type": "integer"
+                    "description": "用指针而非值类型：值类型时客户端漏传 target_hyper 会得到零值 0，而 0 不是合法 hostid，\n会被当作\"迁往 hostid 0\"从而报 HypervisorNotFound。约定 nil / -1 表示由调度器自选",
+                    "type": "integer",
+                    "maximum": 65535,
+                    "minimum": -1
                 }
             }
         },
@@ -8316,12 +8803,13 @@ const docTemplatev1 = `{
                     "type": "string"
                 },
                 "hostid": {
+                    "description": "节点编号：迁移接口的 target_hyper、实例的 hyper 字段用的都是它",
                     "type": "integer"
                 },
                 "hostname": {
                     "type": "string"
                 },
-                "id": {
+                "instance_count": {
                     "type": "integer"
                 },
                 "mem_over_rate": {
@@ -8331,9 +8819,6 @@ const docTemplatev1 = `{
                     "type": "integer"
                 },
                 "memory_total": {
-                    "type": "integer"
-                },
-                "parentid": {
                     "type": "integer"
                 },
                 "remark": {
@@ -8353,9 +8838,6 @@ const docTemplatev1 = `{
                 },
                 "virt_type": {
                     "type": "string"
-                },
-                "zone_id": {
-                    "type": "integer"
                 },
                 "zone_name": {
                     "type": "string"
@@ -8450,7 +8932,7 @@ const docTemplatev1 = `{
                 "instance_uuid": {
                     "type": "string"
                 },
-                "is_resque": {
+                "is_rescue": {
                     "type": "boolean"
                 },
                 "name": {
@@ -8520,6 +9002,10 @@ const docTemplatev1 = `{
                 "owner": {
                     "type": "string"
                 },
+                "owner_uuid": {
+                    "description": "OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to\nrelease quota only when the caller's org actually owns the deleted resource",
+                    "type": "string"
+                },
                 "public": {
                     "type": "boolean"
                 },
@@ -8552,6 +9038,10 @@ const docTemplatev1 = `{
                 "owner": {
                     "type": "string"
                 },
+                "owner_uuid": {
+                    "description": "OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to\nrelease quota only when the caller's org actually owns the deleted resource",
+                    "type": "string"
+                },
                 "pool_id": {
                     "type": "string"
                 },
@@ -8582,6 +9072,10 @@ const docTemplatev1 = `{
                     "type": "string"
                 },
                 "owner": {
+                    "type": "string"
+                },
+                "owner_uuid": {
+                    "description": "OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to\nrelease quota only when the caller's org actually owns the deleted resource",
                     "type": "string"
                 },
                 "updated_at": {
@@ -8675,9 +9169,7 @@ const docTemplatev1 = `{
                     "type": "string"
                 },
                 "hypervisor": {
-                    "type": "integer",
-                    "maximum": 65535,
-                    "minimum": 0
+                    "type": "string"
                 },
                 "image": {
                     "$ref": "#/definitions/common.BaseReference"
@@ -8766,15 +9258,22 @@ const docTemplatev1 = `{
                     "minimum": 1
                 },
                 "password": {
-                    "type": "string"
+                    "type": "string",
+                    "maxLength": 64,
+                    "minLength": 8
                 }
             }
         },
         "apis.InstanceRescuePayload": {
             "type": "object",
+            "required": [
+                "password"
+            ],
             "properties": {
                 "password": {
-                    "type": "string"
+                    "type": "string",
+                    "maxLength": 64,
+                    "minLength": 8
                 },
                 "rescue_image": {
                     "$ref": "#/definitions/common.BaseReference"
@@ -8843,6 +9342,10 @@ const docTemplatev1 = `{
                     "type": "string"
                 },
                 "owner": {
+                    "type": "string"
+                },
+                "owner_uuid": {
+                    "description": "OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to\nrelease quota only when the caller's org actually owns the deleted resource",
                     "type": "string"
                 },
                 "passwd_login": {
@@ -9158,6 +9661,10 @@ const docTemplatev1 = `{
                 "owner": {
                     "type": "string"
                 },
+                "owner_uuid": {
+                    "description": "OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to\nrelease quota only when the caller's org actually owns the deleted resource",
+                    "type": "string"
+                },
                 "subnet_names": {
                     "type": "string"
                 },
@@ -9235,6 +9742,10 @@ const docTemplatev1 = `{
                 "owner": {
                     "type": "string"
                 },
+                "owner_uuid": {
+                    "description": "OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to\nrelease quota only when the caller's org actually owns the deleted resource",
+                    "type": "string"
+                },
                 "public_key": {
                     "type": "string"
                 },
@@ -9269,13 +9780,6 @@ const docTemplatev1 = `{
                 "name"
             ],
             "properties": {
-                "action": {
-                    "type": "string",
-                    "enum": [
-                        "enable",
-                        "disable"
-                    ]
-                },
                 "name": {
                     "type": "string",
                     "maxLength": 32,
@@ -9340,6 +9844,10 @@ const docTemplatev1 = `{
                 "owner": {
                     "type": "string"
                 },
+                "owner_uuid": {
+                    "description": "OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to\nrelease quota only when the caller's org actually owns the deleted resource",
+                    "type": "string"
+                },
                 "port": {
                     "type": "integer"
                 },
@@ -9377,13 +9885,6 @@ const docTemplatev1 = `{
                 "name"
             ],
             "properties": {
-                "action": {
-                    "type": "string",
-                    "enum": [
-                        "enable",
-                        "disable"
-                    ]
-                },
                 "description": {
                     "type": "string",
                     "maxLength": 255
@@ -9451,6 +9952,10 @@ const docTemplatev1 = `{
                 "owner": {
                     "type": "string"
                 },
+                "owner_uuid": {
+                    "description": "OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to\nrelease quota only when the caller's org actually owns the deleted resource",
+                    "type": "string"
+                },
                 "status": {
                     "type": "string"
                 },
@@ -9478,6 +9983,12 @@ const docTemplatev1 = `{
                 },
                 "end": {
                     "type": "string"
+                },
+                "hostname": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
                 },
                 "id": {
                     "type": "array",
@@ -9560,6 +10071,13 @@ const docTemplatev1 = `{
                 "created_at": {
                     "type": "string"
                 },
+                "creater_name": {
+                    "description": "发起迁移的用户名，创建时快照下来",
+                    "type": "string"
+                },
+                "creater_uuid": {
+                    "type": "string"
+                },
                 "force": {
                     "type": "boolean"
                 },
@@ -9575,19 +10093,40 @@ const docTemplatev1 = `{
                 "owner": {
                     "type": "string"
                 },
+                "owner_uuid": {
+                    "description": "OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to\nrelease quota only when the caller's org actually owns the deleted resource",
+                    "type": "string"
+                },
                 "phases": {
                     "type": "array",
                     "items": {
                         "$ref": "#/definitions/apis.TaskResponse"
                     }
                 },
+                "progress": {
+                    "description": "迁移进度：百分比与已传输 / 总字节数（内存 + 本地磁盘合计），由源节点上报",
+                    "type": "integer"
+                },
                 "source_hyper": {
                     "type": "integer"
+                },
+                "source_hyper_name": {
+                    "description": "节点名称，便于界面直接展示；目标节点由调度器自选（-1）时为空",
+                    "type": "string"
                 },
                 "status": {
                     "type": "string"
                 },
                 "target_hyper": {
+                    "type": "integer"
+                },
+                "target_hyper_name": {
+                    "type": "string"
+                },
+                "total": {
+                    "type": "integer"
+                },
+                "transferred": {
                     "type": "integer"
                 },
                 "type": {
@@ -9636,19 +10175,22 @@ const docTemplatev1 = `{
                 "port_max": {
                     "type": "integer",
                     "maximum": 65535,
-                    "minimum": 1
+                    "minimum": -1
                 },
                 "port_min": {
+                    "description": "含义同 SecurityRulePayload；不传表示保持原值（协议变更时重置为新协议的默认值）",
                     "type": "integer",
                     "maximum": 65535,
-                    "minimum": 1
+                    "minimum": -1
                 },
                 "protocol": {
                     "type": "string",
                     "enum": [
                         "tcp",
                         "udp",
-                        "icmp"
+                        "icmp",
+                        "gre",
+                        "ipv6"
                     ]
                 },
                 "remote_cidr": {
@@ -9675,6 +10217,10 @@ const docTemplatev1 = `{
                     "type": "string"
                 },
                 "owner": {
+                    "type": "string"
+                },
+                "owner_uuid": {
+                    "description": "OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to\nrelease quota only when the caller's org actually owns the deleted resource",
                     "type": "string"
                 },
                 "port_max": {
@@ -9781,6 +10327,10 @@ const docTemplatev1 = `{
                 "owner": {
                     "type": "string"
                 },
+                "owner_uuid": {
+                    "description": "OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to\nrelease quota only when the caller's org actually owns the deleted resource",
+                    "type": "string"
+                },
                 "security_rules": {
                     "type": "array",
                     "items": {
@@ -9821,21 +10371,25 @@ const docTemplatev1 = `{
                     "minLength": 2
                 },
                 "port_max": {
+                    "description": "结束端口 / ICMP code。tcp/udp：1-65535，只传一个端口时表示单端口；\nicmp：ICMP code 0-255，不传或 -1 表示任意，指定 code 时必须指定 type；gre/ipv6：忽略",
                     "type": "integer",
                     "maximum": 65535,
-                    "minimum": 1
+                    "minimum": -1
                 },
                 "port_min": {
+                    "description": "起始端口 / ICMP type。tcp/udp：1-65535，port_min、port_max 都不传表示全部端口；\nicmp：ICMP type 0-254，不传或 -1 表示任意；gre/ipv6：忽略。用指针区分“未传”与 0（ICMP type 可以为 0）",
                     "type": "integer",
                     "maximum": 65535,
-                    "minimum": 1
+                    "minimum": -1
                 },
                 "protocol": {
                     "type": "string",
                     "enum": [
                         "tcp",
                         "udp",
-                        "icmp"
+                        "icmp",
+                        "gre",
+                        "ipv6"
                     ]
                 },
                 "remote_cidr": {
@@ -9906,6 +10460,10 @@ const docTemplatev1 = `{
                     "type": "string"
                 },
                 "owner": {
+                    "type": "string"
+                },
+                "owner_uuid": {
+                    "description": "OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to\nrelease quota only when the caller's org actually owns the deleted resource",
                     "type": "string"
                 },
                 "start": {
@@ -10072,6 +10630,10 @@ const docTemplatev1 = `{
                 "owner": {
                     "type": "string"
                 },
+                "owner_uuid": {
+                    "description": "OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to\nrelease quota only when the caller's org actually owns the deleted resource",
+                    "type": "string"
+                },
                 "priority": {
                     "type": "integer"
                 },
@@ -10153,6 +10715,10 @@ const docTemplatev1 = `{
                 "owner": {
                     "type": "string"
                 },
+                "owner_uuid": {
+                    "description": "OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to\nrelease quota only when the caller's org actually owns the deleted resource",
+                    "type": "string"
+                },
                 "updated_at": {
                     "type": "string"
                 }
@@ -10161,6 +10727,9 @@ const docTemplatev1 = `{
         "apis.TaskResponse": {
             "type": "object",
             "properties": {
+                "message": {
+                    "type": "string"
+                },
                 "name": {
                     "type": "string"
                 },
@@ -10247,6 +10816,10 @@ const docTemplatev1 = `{
                 "owner": {
                     "type": "string"
                 },
+                "owner_uuid": {
+                    "description": "OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to\nrelease quota only when the caller's org actually owns the deleted resource",
+                    "type": "string"
+                },
                 "subnets": {
                     "type": "array",
                     "items": {
@@ -10327,6 +10900,10 @@ const docTemplatev1 = `{
                 "owner": {
                     "type": "string"
                 },
+                "owner_uuid": {
+                    "description": "OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to\nrelease quota only when the caller's org actually owns the deleted resource",
+                    "type": "string"
+                },
                 "path": {
                     "type": "string"
                 },
@@ -10363,6 +10940,10 @@ const docTemplatev1 = `{
                     "type": "string"
                 },
                 "owner": {
+                    "type": "string"
+                },
+                "owner_uuid": {
+                    "description": "OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to\nrelease quota only when the caller's org actually owns the deleted resource",
                     "type": "string"
                 },
                 "target": {
@@ -10516,6 +11097,10 @@ const docTemplatev1 = `{
                 "owner": {
                     "type": "string"
                 },
+                "owner_uuid": {
+                    "description": "OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to\nrelease quota only when the caller's org actually owns the deleted resource",
+                    "type": "string"
+                },
                 "path": {
                     "type": "string"
                 },
@@ -10603,6 +11188,10 @@ const docTemplatev1 = `{
                 "owner": {
                     "type": "string"
                 },
+                "owner_uuid": {
+                    "description": "OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to\nrelease quota only when the caller's org actually owns the deleted resource",
+                    "type": "string"
+                },
                 "remark": {
                     "type": "string"
                 },
@@ -10683,6 +11272,10 @@ const docTemplatev1 = `{
                     "type": "string"
                 },
                 "owner": {
+                    "type": "string"
+                },
+                "owner_uuid": {
+                    "description": "OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to\nrelease quota only when the caller's org actually owns the deleted resource",
                     "type": "string"
                 },
                 "updated_at": {

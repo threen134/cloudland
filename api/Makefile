@@ -1,9 +1,10 @@
 export GO111MODULE=on
 
-all: api alarm_rules_manager
+all: api alarm_rules_manager cland cloudlet
 
+# git describe 失败时（无 .git、非属主执行、未装 git）保留已提交的 .version，不中断构建
 version:
-	git describe --always --tags > .version
+	git describe --always --tags > .version.tmp 2>/dev/null && mv -f .version.tmp .version || rm -f .version.tmp
 
 setup:
 	go install github.com/swaggo/swag/cmd/swag@latest
@@ -24,6 +25,12 @@ docs: clapi_docs alarm_rules_manager_docs
 
 api: version
 	cd cmds/api && go build -o ../../clapi -ldflags "-X \"main.Version=`cat ../../.version`\""
+
+cland: version
+	cd cmds/cland && CGO_ENABLED=0 go build -o ../../cland-go -ldflags "-X \"main.Version=`cat ../../.version`\""
+
+cloudlet: version
+	cd cmds/cloudlet && CGO_ENABLED=0 go build -o ../../cloudlet-go -ldflags "-X \"main.Version=`cat ../../.version`\""
 
 alarm_rules_manager: version
 	cd cmds/alarm_rules_manager && CGO_ENABLED=0 go build -o ../../alarm_rules_manager -ldflags "-X \"main.Version=`cat ../../.version`\"" alarm_rules_manager.go

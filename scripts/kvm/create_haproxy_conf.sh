@@ -18,18 +18,24 @@ nfloating_ip=$(jq length <<< $floating_ips)
 listeners=$(jq -r .listeners <<< $content)
 nlistener=$(jq length <<< $listeners)
 if [ $nlistener -eq 0 -o $nfloating_ip -eq 0 ]; then
-    haproxy_pid=$(cat $lb_dir/haproxy.pid)
-    ip netns exec $router kill $haproxy_pid
-    rm -rf $lb_dir
+    # 持锁删除：避免 check_lb_process.sh 在停进程与删目录之间把进程重新拉起
+    (
+        flock 9
+        lb_proc_alive $lb_dir/haproxy.pid $lb_dir/haproxy.conf && haproxy_pid=$(cat $lb_dir/haproxy.pid)
+        rm -rf $lb_dir
+        [ -n "$haproxy_pid" ] && ip netns exec $router kill $haproxy_pid
+    ) 9>$lb_lock_file
     exit 0
 fi
-ip netns exec $router sysctl -w net.ipv4.ip_nonlocal_bind=1
-cat >$lb_dir/haproxy.conf <<EOF
+ip netns exec $router sysctl -qw net.ipv4.ip_nonlocal_bind=1
+# 路由器 netns 的 INPUT 默认 DROP，放行 lo，否则 haproxy 统计页（127.0.0.1:8080）无法访问
+ip netns exec $router iptables -C INPUT -i lo -j ACCEPT 2>/dev/null || ip netns exec $router iptables -I INPUT -i lo -j ACCEPT
+# pid 文件只由命令行 -p 指定：配置里再写 pidfile 会让 haproxy 每次启动都输出告警，被当作回调发给 clapi
+cat >$lb_dir/haproxy.conf.new <<EOF
 global
     log /dev/log local0 info
     log /dev/log local0 notice
     chroot $lb_dir
-    pidfile $lb_dir/haproxy.pid
     maxconn 4000
     user haproxy
     group haproxy
@@ -78,19 +84,19 @@ while [ $i -lt $nlistener ]; do
 	echo >>$lb_dir/$name.pem
         ssl_config="ssl crt $lb_dir/$name.pem"
     fi
-    cat >>$lb_dir/haproxy.conf <<EOF
+    cat >>$lb_dir/haproxy.conf.new <<EOF
 
 frontend ${name}_front
 EOF
     j=0
     while [ $j -lt $nfloating_ip ]; do
         fip=$(jq -r .[$j] <<< $floating_ips)
-        cat >>$lb_dir/haproxy.conf <<EOF
+        cat >>$lb_dir/haproxy.conf.new <<EOF
     bind ${fip%/*}:$port $ssl_config
 EOF
         let j=$j+1
     done
-    cat >>$lb_dir/haproxy.conf <<EOF
+    cat >>$lb_dir/haproxy.conf.new <<EOF
     mode $mode
     default_backend ${name}_back
 
@@ -104,19 +110,29 @@ EOF
     j=0
     while [ $j -lt $nbackend ]; do
         backend=$(jq -r .[$j] <<< $backends)
-        read -d'\n' -r backend_url ssl< <(jq -r ".backend_url, .ssl" <<<$backend)
+        read -d'\n' -r backend_id backend_url ssl< <(jq -r ".id, .backend_url, .ssl" <<<$backend)
         ssl_option=""
         if [ "$ssl" == "true" ]; then
             ssl_option=" ssl verify none"
         fi
-        cat >>$lb_dir/haproxy.conf <<EOF
-    server ${name}-$j $backend_url check weight 100 maxconn 1000$ssl_option
+        # Server name carries the backend ID: report_lb_health.sh maps health check results back by it
+        cat >>$lb_dir/haproxy.conf.new <<EOF
+    server be-$backend_id $backend_url check weight 100 maxconn 1000$ssl_option
 EOF
         let j=$j+1
     done
     let i=$i+1
 done
-
-haproxy_pid=$(cat $lb_dir/haproxy.pid)
-[ $haproxy_pid -gt 0 ] && ip netns exec $router haproxy -D -f $lb_dir/haproxy.conf -sf $haproxy_pid -p $lb_dir/haproxy.pid
-[ $? -ne 0 ] && ip netns exec $router haproxy -D -p $lb_dir/haproxy.pid -f $lb_dir/haproxy.conf
+# 替换配置与启动/重载在锁内完成，与 check_lb_process.sh 互斥（见 cloudrc 的 lb_lock_file），否则双方可能各起一个 haproxy，
+# pid 文件只记录其中一个，另一个此后的重载都停不掉、一直按旧配置服务；写完再整体替换，避免读到写了一半的文件
+(
+    flock 9
+    mv -f $lb_dir/haproxy.conf.new $lb_dir/haproxy.conf
+    if lb_proc_alive $lb_dir/haproxy.pid $lb_dir/haproxy.conf; then
+        # -x 经 stats socket（expose-fd listeners）接管旧进程的监听 socket：只用 -sf 时新旧进程各自绑定端口，
+        # 旧进程关闭监听时积压在其队列中的连接被重置，每次重载都可能丢请求（实测 6 次重载丢 4 个）
+        ip netns exec $router haproxy -D -p $lb_dir/haproxy.pid -f $lb_dir/haproxy.conf -x $lb_dir/admin.sock -sf $(cat $lb_dir/haproxy.pid) 9>&-
+    else
+        ip netns exec $router haproxy -D -p $lb_dir/haproxy.pid -f $lb_dir/haproxy.conf 9>&-
+    fi
+) 9>$lb_lock_file

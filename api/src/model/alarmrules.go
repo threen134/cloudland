@@ -1,14 +1,14 @@
 package model
 
 import (
+	"api/src/dbs"
 	"database/sql/driver"
 	"encoding/json"
 	"fmt"
 	"log"
-	"api/src/dbs"
 
-	"github.com/jinzhu/gorm"
 	_ "github.com/lib/pq"
+	"gorm.io/gorm"
 )
 
 func init() {
@@ -106,10 +106,10 @@ type CPURuleDetail struct {
 	Model
 	GroupUUID    string `gorm:"column:group_uuid;type:varchar(36);index;not null;references:rule_group_v2(uuid)"`
 	Name         string `gorm:"type:varchar(128);column:name"`
-	Limit        int    `gorm:"column:limit;check:limit >= 1"`
+	Limit        int    `gorm:"column:limit;check:\"limit\" >= 1"`
 	Rule         string `gorm:"type:varchar(8);column:rule"`
 	Duration     int    `gorm:"check:duration >= 1"`
-	Over         int    `gorm:"column:over;check:over >= 1"`
+	Over         int    `gorm:"column:over;check:\"over\" >= 1"`
 	DownDuration int    `gorm:"column:down_duration;check:down_duration >= 1"`
 	DownTo       int    `gorm:"column:down_to;check:down_to <= 100"`
 	Level        string `gorm:"type:varchar(32);column:level" json:"level"`
@@ -119,10 +119,10 @@ type MemoryRuleDetail struct {
 	Model
 	GroupUUID    string `gorm:"column:group_uuid;type:varchar(36);index;not null;references:rule_group_v2(uuid)"`
 	Name         string `gorm:"type:varchar(128);column:name"`
-	Limit        int    `gorm:"column:limit;check:limit >= 1"`
+	Limit        int    `gorm:"column:limit;check:\"limit\" >= 1"`
 	Rule         string `gorm:"type:varchar(8);column:rule"`
 	Duration     int    `gorm:"check:duration >= 1"`
-	Over         int    `gorm:"column:over;check:over >= 1"`
+	Over         int    `gorm:"column:over;check:\"over\" >= 1"`
 	DownDuration int    `gorm:"column:down_duration;check:down_duration >= 1"`
 	DownTo       int    `gorm:"column:down_to;check:down_to <= 100"`
 	Level        string `gorm:"type:varchar(32);column:level" json:"level"`
@@ -135,7 +135,7 @@ type BWRuleDetail struct {
 
 	// New single-direction fields for API v2
 	Direction string `gorm:"type:varchar(8);check:direction IN ('in','out')"`
-	Limit     int    `gorm:"check:limit >= 1 AND limit <= 100"`
+	Limit     int    `gorm:"check:\"limit\" >= 1 AND \"limit\" <= 100"`
 	Duration  int    `gorm:"check:duration >= 1"`
 
 	Level string `gorm:"type:varchar(32);column:level" json:"level"`

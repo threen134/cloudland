@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import { authApi } from '../api/auth'
-import { setAuthToken, beginTokenSwitch } from '../api/client'
+import { setAuthToken, beginTokenSwitch, decodeTokenClaims, getToken } from '../api/client'
 import { useAuthStore } from './auth'
 
 export interface Organization {
@@ -41,7 +41,7 @@ export const useTenantStore = defineStore('tenant', () => {
 
         try {
             const response = await authApi.getMyOrgs()
-            const raw = Array.isArray(response.data) ? response.data : (response.data?.orgs || [])
+            const raw = Array.isArray(response) ? response : (response?.orgs || [])
             // Backend returns uuid as the identifier
             organizations.value = raw.map((o: any) => ({
                 ...o,
@@ -53,7 +53,14 @@ export const useTenantStore = defineStore('tenant', () => {
                 const targetOrgId = currentOrgId.value && organizations.value.some(o => o.id === currentOrgId.value)
                     ? currentOrgId.value
                     : organizations.value[0].id
-                await switchOrg(targetOrgId)
+                // Switching issues a new token and revokes the current one: only do it when the token is not
+                // scoped to that org yet, so reloading a page does not invalidate the tokens of other windows
+                if (decodeTokenClaims(getToken())?.org_id === targetOrgId) {
+                    currentOrgId.value = targetOrgId
+                    localStorage.setItem('cloudland_org_id', targetOrgId)
+                } else {
+                    await switchOrg(targetOrgId)
+                }
             }
         } catch (err: any) {
             console.warn('Failed to fetch organizations:', err)
@@ -72,7 +79,7 @@ export const useTenantStore = defineStore('tenant', () => {
 
         try {
             const response = await authApi.switchOrg(orgId)
-            const newToken = response.data?.access_token
+            const newToken = response?.access_token
             if (newToken) {
                 setAuthToken(newToken)
             }

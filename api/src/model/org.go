@@ -18,7 +18,7 @@ import (
 
 	"api/src/dbs"
 
-	"github.com/jinzhu/gorm"
+	"gorm.io/gorm"
 )
 
 func init() {

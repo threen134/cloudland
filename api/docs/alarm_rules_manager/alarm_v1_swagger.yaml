@@ -113,6 +113,8 @@ definitions:
         maxLength: 32
         minLength: 2
         type: string
+      ssl:
+        type: boolean
     required:
     - endpoint
     - name
@@ -453,6 +455,8 @@ definitions:
         type: integer
       name:
         type: string
+      uuid:
+        type: string
     type: object
   apis.FloatingIpInfo:
     properties:
@@ -668,19 +672,13 @@ definitions:
         type: integer
       host_ip:
         type: string
-      hostid:
-        type: integer
       hostname:
         type: string
-      id:
-        type: integer
       mem_over_rate:
         type: number
       memory:
         type: integer
       memory_total:
-        type: integer
-      parentid:
         type: integer
       remark:
         type: string
@@ -694,8 +692,6 @@ definitions:
         type: string
       virt_type:
         type: string
-      zone_id:
-        type: integer
       zone_name:
         type: string
     type: object
@@ -754,7 +750,7 @@ definitions:
         type: string
       instance_uuid:
         type: string
-      is_resque:
+      is_rescue:
         type: boolean
       name:
         maxLength: 32
@@ -913,9 +909,7 @@ definitions:
       hostname:
         type: string
       hypervisor:
-        maximum: 65535
-        minimum: 0
-        type: integer
+        type: string
       image:
         $ref: '#/definitions/common.BaseReference'
       keys:
@@ -984,14 +978,20 @@ definitions:
         minimum: 1
         type: integer
       password:
+        maxLength: 64
+        minLength: 8
         type: string
     type: object
   apis.InstanceRescuePayload:
     properties:
       password:
+        maxLength: 64
+        minLength: 8
         type: string
       rescue_image:
         $ref: '#/definitions/common.BaseReference'
+    required:
+    - password
     type: object
   apis.InstanceResizePayload:
     properties:
@@ -1469,6 +1469,10 @@ definitions:
         type: array
       end:
         type: string
+      hostname:
+        items:
+          type: string
+        type: array
       id:
         items:
           type: string
@@ -1579,17 +1583,20 @@ definitions:
         type: string
       port_max:
         maximum: 65535
-        minimum: 1
+        minimum: -1
         type: integer
       port_min:
+        description: 含义同 SecurityRulePayload；不传表示保持原值（协议变更时重置为新协议的默认值）
         maximum: 65535
-        minimum: 1
+        minimum: -1
         type: integer
       protocol:
         enum:
         - tcp
         - udp
         - icmp
+        - gre
+        - ipv6
         type: string
       remote_cidr:
         type: string
@@ -1703,18 +1710,26 @@ definitions:
         minLength: 2
         type: string
       port_max:
+        description: |-
+          结束端口 / ICMP code。tcp/udp：1-65535，只传一个端口时表示单端口；
+          icmp：ICMP code 0-255，不传或 -1 表示任意，指定 code 时必须指定 type；gre/ipv6：忽略
         maximum: 65535
-        minimum: 1
+        minimum: -1
         type: integer
       port_min:
+        description: |-
+          起始端口 / ICMP type。tcp/udp：1-65535，port_min、port_max 都不传表示全部端口；
+          icmp：ICMP type 0-254，不传或 -1 表示任意；gre/ipv6：忽略。用指针区分“未传”与 0（ICMP type 可以为 0）
         maximum: 65535
-        minimum: 1
+        minimum: -1
         type: integer
       protocol:
         enum:
         - tcp
         - udp
         - icmp
+        - gre
+        - ipv6
         type: string
       remote_cidr:
         type: string
@@ -2448,6 +2463,33 @@ paths:
       tags:
       - Administration
       - Address Admin
+  /adjust/regenerate-bandwidth-metrics:
+    post:
+      consumes:
+      - application/json
+      description: Regenerate bandwidth configuration metrics for all active VMs or
+        a specific hyper node
+      parameters:
+      - description: Specific hyper node ID
+        in: query
+        name: hyper_id
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Regeneration result
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal server error
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Regenerate bandwidth config metrics
+      tags:
+      - Auto Scaling
   /alarm/events:
     get:
       consumes:
@@ -2640,28 +2682,6 @@ paths:
       summary: Process resource adjustment webhook
       tags:
       - Auto Scaling
-  /api/v1/metrics/alarm/sync-mappings:
-    post:
-      consumes:
-      - application/json
-      description: Perform a full synchronization of all VM rule mappings to ensure
-        matched_vms.json is consistent with the database
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: Synchronization successful
-          schema:
-            additionalProperties: true
-            type: object
-        "500":
-          description: Internal server error
-          schema:
-            additionalProperties: true
-            type: object
-      summary: Synchronize all VM rule mappings
-      tags:
-      - Alarm
   /api/v1/rules:
     post:
       consumes:
@@ -4443,12 +4463,16 @@ paths:
     get:
       consumes:
       - application/json
-      description: Internal endpoint for CPGateway to query alarm events without owner
-        filtering
+      description: Internal endpoint for CPGateway to query alarm events, filtered
+        by org_uuid when provided
       parameters:
       - description: If 'true', only return firing event count
         in: query
         name: count_only
+        type: string
+      - description: Filter by organization UUID
+        in: query
+        name: org_uuid
         type: string
       - description: Filter by status
         in: query
@@ -4507,6 +4531,33 @@ paths:
       summary: Sync notification channels
       tags:
       - Notification
+  /internal/system-settings/sync:
+    post:
+      consumes:
+      - application/json
+      description: Internal endpoint for CPGateway to push system settings (full sync
+        with version check)
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Sync successful
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad request
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal server error
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Sync system settings
+      tags:
+      - SystemSettings
   /ip_groups:
     get:
       consumes:
@@ -5819,22 +5870,17 @@ paths:
       summary: Create memory alarm rule
       tags:
       - Alarm
-  /metrics/api/v1/adjust/regenerate-bandwidth-metrics:
+  /metrics/alarm/sync-mappings:
     post:
       consumes:
       - application/json
-      description: Regenerate bandwidth configuration metrics for all active VMs or
-        a specific hyper node
-      parameters:
-      - description: Specific hyper node ID
-        in: query
-        name: hyper_id
-        type: string
+      description: Perform a full synchronization of all VM rule mappings to ensure
+        matched_vms.json is consistent with the database
       produces:
       - application/json
       responses:
         "200":
-          description: Regeneration result
+          description: Synchronization successful
           schema:
             additionalProperties: true
             type: object
@@ -5843,10 +5889,10 @@ paths:
           schema:
             additionalProperties: true
             type: object
-      summary: Regenerate bandwidth config metrics
+      summary: Synchronize all VM rule mappings
       tags:
-      - Auto Scaling
-  /metrics/api/v1/current-alarms:
+      - Alarm
+  /metrics/current-alarms:
     get:
       consumes:
       - application/json
@@ -5867,7 +5913,7 @@ paths:
       summary: Get current active alarms
       tags:
       - Alarm
-  /metrics/api/v1/history-alarms:
+  /metrics/history-alarms:
     get:
       consumes:
       - application/json
@@ -5909,39 +5955,6 @@ paths:
       summary: Get historical alarms
       tags:
       - Alarm
-  /metrics/api/v1/rules/links:
-    get:
-      consumes:
-      - application/json
-      description: Get VM link information for alarm or adjustment rules by rule_id
-        or UUID
-      parameters:
-      - description: Rule ID or UUID
-        in: query
-        name: rule_id
-        required: true
-        type: string
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: Rule links
-          schema:
-            additionalProperties: true
-            type: object
-        "400":
-          description: Bad request
-          schema:
-            additionalProperties: true
-            type: object
-        "404":
-          description: Rule not found
-          schema:
-            additionalProperties: true
-            type: object
-      summary: Get rule VM links
-      tags:
-      - Auto Scaling
   /metrics/instances/cpu/his_data:
     post:
       consumes:
@@ -6424,6 +6437,39 @@ paths:
       summary: Get available metric subjects
       tags:
       - OpenMeter
+  /rules/links:
+    get:
+      consumes:
+      - application/json
+      description: Get VM link information for alarm or adjustment rules by rule_id
+        or UUID
+      parameters:
+      - description: Rule ID or UUID
+        in: query
+        name: rule_id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Rule links
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad request
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: Rule not found
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Get rule VM links
+      tags:
+      - Auto Scaling
   /security_groups:
     get:
       consumes:

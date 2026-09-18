@@ -150,6 +150,45 @@ const docTemplatealarm_v1 = `{
                 }
             }
         },
+        "/adjust/regenerate-bandwidth-metrics": {
+            "post": {
+                "description": "Regenerate bandwidth configuration metrics for all active VMs or a specific hyper node",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Auto Scaling"
+                ],
+                "summary": "Regenerate bandwidth config metrics",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Specific hyper node ID",
+                        "name": "hyper_id",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Regeneration result",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
         "/alarm/events": {
             "get": {
                 "description": "List alarm events filtered by the current user's organization, supports pagination and status filter",
@@ -409,37 +448,6 @@ const docTemplatealarm_v1 = `{
                     },
                     "400": {
                         "description": "Bad request",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "500": {
-                        "description": "Internal server error",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    }
-                }
-            }
-        },
-        "/api/v1/metrics/alarm/sync-mappings": {
-            "post": {
-                "description": "Perform a full synchronization of all VM rule mappings to ensure matched_vms.json is consistent with the database",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Alarm"
-                ],
-                "summary": "Synchronize all VM rule mappings",
-                "responses": {
-                    "200": {
-                        "description": "Synchronization successful",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -3137,7 +3145,7 @@ const docTemplatealarm_v1 = `{
         },
         "/internal/alarm/events": {
             "get": {
-                "description": "Internal endpoint for CPGateway to query alarm events without owner filtering",
+                "description": "Internal endpoint for CPGateway to query alarm events, filtered by org_uuid when provided",
                 "consumes": [
                     "application/json"
                 ],
@@ -3153,6 +3161,12 @@ const docTemplatealarm_v1 = `{
                         "type": "string",
                         "description": "If 'true', only return firing event count",
                         "name": "count_only",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Filter by organization UUID",
+                        "name": "org_uuid",
                         "in": "query"
                     },
                     {
@@ -3207,6 +3221,44 @@ const docTemplatealarm_v1 = `{
                     "Notification"
                 ],
                 "summary": "Sync notification channels",
+                "responses": {
+                    "200": {
+                        "description": "Sync successful",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/internal/system-settings/sync": {
+            "post": {
+                "description": "Internal endpoint for CPGateway to push system settings (full sync with version check)",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "SystemSettings"
+                ],
+                "summary": "Sync system settings",
                 "responses": {
                     "200": {
                         "description": "Sync successful",
@@ -5168,9 +5220,9 @@ const docTemplatealarm_v1 = `{
                 }
             }
         },
-        "/metrics/api/v1/adjust/regenerate-bandwidth-metrics": {
+        "/metrics/alarm/sync-mappings": {
             "post": {
-                "description": "Regenerate bandwidth configuration metrics for all active VMs or a specific hyper node",
+                "description": "Perform a full synchronization of all VM rule mappings to ensure matched_vms.json is consistent with the database",
                 "consumes": [
                     "application/json"
                 ],
@@ -5178,20 +5230,12 @@ const docTemplatealarm_v1 = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Auto Scaling"
+                    "Alarm"
                 ],
-                "summary": "Regenerate bandwidth config metrics",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "Specific hyper node ID",
-                        "name": "hyper_id",
-                        "in": "query"
-                    }
-                ],
+                "summary": "Synchronize all VM rule mappings",
                 "responses": {
                     "200": {
-                        "description": "Regeneration result",
+                        "description": "Synchronization successful",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -5207,7 +5251,7 @@ const docTemplatealarm_v1 = `{
                 }
             }
         },
-        "/metrics/api/v1/current-alarms": {
+        "/metrics/current-alarms": {
             "get": {
                 "description": "Query currently firing alarms from Prometheus",
                 "consumes": [
@@ -5238,7 +5282,7 @@ const docTemplatealarm_v1 = `{
                 }
             }
         },
-        "/metrics/api/v1/history-alarms": {
+        "/metrics/history-alarms": {
             "get": {
                 "description": "Query historical alarm data from Prometheus within a time range",
                 "consumes": [
@@ -5291,53 +5335,6 @@ const docTemplatealarm_v1 = `{
                     },
                     "500": {
                         "description": "Internal server error",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    }
-                }
-            }
-        },
-        "/metrics/api/v1/rules/links": {
-            "get": {
-                "description": "Get VM link information for alarm or adjustment rules by rule_id or UUID",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Auto Scaling"
-                ],
-                "summary": "Get rule VM links",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "Rule ID or UUID",
-                        "name": "rule_id",
-                        "in": "query",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "Rule links",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "400": {
-                        "description": "Bad request",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "404": {
-                        "description": "Rule not found",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -6044,6 +6041,53 @@ const docTemplatealarm_v1 = `{
                 "responses": {
                     "200": {
                         "description": "Available subjects",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/rules/links": {
+            "get": {
+                "description": "Get VM link information for alarm or adjustment rules by rule_id or UUID",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Auto Scaling"
+                ],
+                "summary": "Get rule VM links",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Rule ID or UUID",
+                        "name": "rule_id",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Rule links",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "404": {
+                        "description": "Rule not found",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -7554,6 +7598,9 @@ const docTemplatealarm_v1 = `{
                     "type": "string",
                     "maxLength": 32,
                     "minLength": 2
+                },
+                "ssl": {
+                    "type": "boolean"
                 }
             }
         },
@@ -8055,6 +8102,9 @@ const docTemplatealarm_v1 = `{
                 },
                 "name": {
                     "type": "string"
+                },
+                "uuid": {
+                    "type": "string"
                 }
             }
         },
@@ -8376,14 +8426,8 @@ const docTemplatealarm_v1 = `{
                 "host_ip": {
                     "type": "string"
                 },
-                "hostid": {
-                    "type": "integer"
-                },
                 "hostname": {
                     "type": "string"
-                },
-                "id": {
-                    "type": "integer"
                 },
                 "mem_over_rate": {
                     "type": "number"
@@ -8392,9 +8436,6 @@ const docTemplatealarm_v1 = `{
                     "type": "integer"
                 },
                 "memory_total": {
-                    "type": "integer"
-                },
-                "parentid": {
                     "type": "integer"
                 },
                 "remark": {
@@ -8414,9 +8455,6 @@ const docTemplatealarm_v1 = `{
                 },
                 "virt_type": {
                     "type": "string"
-                },
-                "zone_id": {
-                    "type": "integer"
                 },
                 "zone_name": {
                     "type": "string"
@@ -8511,7 +8549,7 @@ const docTemplatealarm_v1 = `{
                 "instance_uuid": {
                     "type": "string"
                 },
-                "is_resque": {
+                "is_rescue": {
                     "type": "boolean"
                 },
                 "name": {
@@ -8736,9 +8774,7 @@ const docTemplatealarm_v1 = `{
                     "type": "string"
                 },
                 "hypervisor": {
-                    "type": "integer",
-                    "maximum": 65535,
-                    "minimum": 0
+                    "type": "string"
                 },
                 "image": {
                     "$ref": "#/definitions/common.BaseReference"
@@ -8827,15 +8863,22 @@ const docTemplatealarm_v1 = `{
                     "minimum": 1
                 },
                 "password": {
-                    "type": "string"
+                    "type": "string",
+                    "maxLength": 64,
+                    "minLength": 8
                 }
             }
         },
         "apis.InstanceRescuePayload": {
             "type": "object",
+            "required": [
+                "password"
+            ],
             "properties": {
                 "password": {
-                    "type": "string"
+                    "type": "string",
+                    "maxLength": 64,
+                    "minLength": 8
                 },
                 "rescue_image": {
                     "$ref": "#/definitions/common.BaseReference"
@@ -9540,6 +9583,12 @@ const docTemplatealarm_v1 = `{
                 "end": {
                     "type": "string"
                 },
+                "hostname": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
                 "id": {
                     "type": "array",
                     "items": {
@@ -9697,19 +9746,22 @@ const docTemplatealarm_v1 = `{
                 "port_max": {
                     "type": "integer",
                     "maximum": 65535,
-                    "minimum": 1
+                    "minimum": -1
                 },
                 "port_min": {
+                    "description": "含义同 SecurityRulePayload；不传表示保持原值（协议变更时重置为新协议的默认值）",
                     "type": "integer",
                     "maximum": 65535,
-                    "minimum": 1
+                    "minimum": -1
                 },
                 "protocol": {
                     "type": "string",
                     "enum": [
                         "tcp",
                         "udp",
-                        "icmp"
+                        "icmp",
+                        "gre",
+                        "ipv6"
                     ]
                 },
                 "remote_cidr": {
@@ -9882,21 +9934,25 @@ const docTemplatealarm_v1 = `{
                     "minLength": 2
                 },
                 "port_max": {
+                    "description": "结束端口 / ICMP code。tcp/udp：1-65535，只传一个端口时表示单端口；\nicmp：ICMP code 0-255，不传或 -1 表示任意，指定 code 时必须指定 type；gre/ipv6：忽略",
                     "type": "integer",
                     "maximum": 65535,
-                    "minimum": 1
+                    "minimum": -1
                 },
                 "port_min": {
+                    "description": "起始端口 / ICMP type。tcp/udp：1-65535，port_min、port_max 都不传表示全部端口；\nicmp：ICMP type 0-254，不传或 -1 表示任意；gre/ipv6：忽略。用指针区分“未传”与 0（ICMP type 可以为 0）",
                     "type": "integer",
                     "maximum": 65535,
-                    "minimum": 1
+                    "minimum": -1
                 },
                 "protocol": {
                     "type": "string",
                     "enum": [
                         "tcp",
                         "udp",
-                        "icmp"
+                        "icmp",
+                        "gre",
+                        "ipv6"
                     ]
                 },
                 "remote_cidr": {

@@ -1,3 +1,10 @@
+# cloudlet-go 向 cland-go 注册需要 gRPC 共享令牌
+- name: check grpc auth token
+  assert:
+    that: grpc_auth_token is defined and grpc_auth_token | length > 0
+    fail_msg: "grpc_auth_token 未设置：cloudlet-go 将被 cland-go 拒绝（见 netconf.yml.example）"
+  tags: [always]
+
 - name: install common packages
   apt:
     name:
@@ -17,6 +24,8 @@
         "ipcalc",
         "ipset",
         "keepalived",
+        "haproxy",
+        "socat",
         "iputils-arping",
         "libvirt-daemon",
         "libvirt-daemon-system",
@@ -80,22 +89,6 @@
     group: root
   tags: [be_srv, cloudlet]
 
-- name: copy sci binaries
-  copy:
-    src: /opt/sci
-    dest: /opt
-    mode: preserve
-  tags: [sci]
-
-- name: copy sci service file
-  copy:
-    src: "{{ item.src }}"
-    dest: "{{ item.dest }}"
-    mode: preserve
-  with_items:
-    - { src: "scid.service", dest: "/lib/systemd/system", owner: "root" }
-  tags: [be_srv, sci]
-
 - name: copy scripts
   synchronize:
     src: "{{ item.src }}"
@@ -150,6 +143,7 @@
   when: virt_type == 'kvm-x86_64'
   tags: [be_conf, scripts]
 
+# 同步 /opt/cloudland/bin（含 build.sh 编译的 cloudlet-go）
 - name: synchronize cloudlet
   synchronize:
     src: "{{ item.src }}"
@@ -163,22 +157,21 @@
       }
   tags: [sync, cloudlet]
 
-- name: create cloudlet environment file
+# 环境文件含令牌，仅 root 可读（systemd 以 root 读取 EnvironmentFile）
+- name: create cloudlet-go environment file
   template:
-    src: "{{ item.src }}"
-    dest: "{{ item.dest }}"
-    owner: "{{ item.owner }}"
-  with_items:
-    - { src: "cloudlet.j2", dest: "/etc/sysconfig/cloudlet", owner: "root" }
+    src: cloudlet.j2
+    dest: /etc/sysconfig/cloudlet
+    owner: root
+    group: root
+    mode: "0600"
   tags: [be_srv, cloudlet]
 
-- name: copy cloudlet service file
+- name: copy cloudlet-go service file
   copy:
-    src: "{{ item.src }}"
-    dest: "{{ item.dest }}"
-    mode: preserve
-  with_items:
-    - { src: "cloudlet.service", dest: "/lib/systemd/system", owner: "root" }
+    src: cloudlet-go.service
+    dest: /lib/systemd/system/cloudlet-go.service
+    mode: "0644"
   tags: [be_srv, cloudlet]
 
 - name: copy compute service file
@@ -190,25 +183,12 @@
     - { src: "kvm-nested.conf", dest: "/etc/modprobe.d", owner: "root" }
   tags: [be_srv]
 
-- name: start scid services
+- name: start cloudlet-go service
   systemd:
-    name: "{{ item }}"
+    name: cloudlet-go
     enabled: yes
     daemon_reload: yes
     state: restarted
-  with_items:
-    - "scid"
-  when: not ansible_check_mode
-  tags: [be_srv, sci, start_sci]
-
-- name: start cloudlet services
-  systemd:
-    name: "{{ item }}"
-    enabled: yes
-    daemon_reload: yes
-    state: restarted
-  with_items:
-    - "cloudlet"
   when: not ansible_check_mode
   tags: [be_srv, cloudlet]
 

@@ -9,7 +9,7 @@ package model
 import (
 	"api/src/dbs"
 
-	"github.com/jinzhu/gorm"
+	"gorm.io/gorm"
 )
 
 const (
@@ -60,7 +60,7 @@ type Image struct {
 	UserName              string    `gorm:"type:varchar(128)"`
 	QAEnabled             bool      `gorm:"default:false"`
 	CaptureFromInstanceID int64     `gorm:"default:0"`
-	CaptureFromInstance   *Instance `gorm:"foreignkey:InstanceID"`
+	CaptureFromInstance   *Instance `gorm:"foreignKey:CaptureFromInstanceID"`
 	IsRescue              bool      `gorm:"default:false"`
 	RescueImage           int64     `gorm:"default:0"`
 	StorageType           string    `gorm:"type:varchar(36);"`
@@ -81,7 +81,7 @@ func init() {
 	dbs.AutoUpgrade("image_visibility_default", func(db *gorm.DB) error {
 		// Set visibility to 'public' for system org images that have no visibility set yet
 		if err := db.Exec(
-			"UPDATE images SET visibility = ? WHERE (visibility = '' OR visibility IS NULL) AND owner IN (SELECT id FROM organizations WHERE type = ?)",
+			"UPDATE images SET visibility = ? WHERE (visibility = '' OR visibility IS NULL) AND owner IN (SELECT id FROM organizations WHERE org_type = ?)",
 			ImageVisibilityPublic, OrgTypeSystem,
 		).Error; err != nil {
 			return err

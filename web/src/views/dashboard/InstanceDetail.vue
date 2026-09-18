@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { useToast } from '../../composables/useToast'
@@ -7,22 +7,33 @@ import { instancesApi, type Instance } from '../../api/instances'
 import { securityGroupsApi, type SecurityGroup } from '../../api/networks'
 import MonitoringCharts from '../../components/monitoring/MonitoringCharts.vue'
 import { vmAlarmRulesApi, VM_RULE_TYPES, type VMAlarmRuleGroup, type VMRuleType } from '../../api/vmAlarmRules'
-import { ArrowLeft, Play, Square, RotateCw, Trash2, Server, Monitor, Cpu, HardDrive, MemoryStick, Network, Key, ExternalLink, Copy, Check, ShieldAlert, Link, Unlink, Eye, EyeOff, ChevronDown, KeyRound, RefreshCw, Maximize2, Pencil, Shuffle, Shield, Activity } from 'lucide-vue-next'
+import { ArrowLeft, Play, Square, RotateCw, Trash2, Server, Monitor, Cpu, HardDrive, MemoryStick, Network, Key, ExternalLink, Copy, Check, ShieldAlert, Link, Unlink, Eye, EyeOff, ChevronDown, KeyRound, RefreshCw, Maximize2, Pencil, Shuffle, Shield, Activity, SquareTerminal } from 'lucide-vue-next'
 import DeleteModal from '../../components/modals/DeleteModal.vue'
+import BaseModal from '../../components/modals/BaseModal.vue'
+import StatusBadge from '../../components/base/StatusBadge.vue'
+import InfoRow from '../../components/base/InfoRow.vue'
+import DetailTabs from '../../components/base/DetailTabs.vue'
+import { useCopyId } from '../../composables/useCopyId'
+import { useGoBack } from '../../composables/useGoBack'
+import { formatMemory } from '../../utils/format'
 
 const route = useRoute()
 const router = useRouter()
 const { t } = useI18n()
 const instanceId = route.params.id as string
+const { copiedId: copiedField, copyId: copyToClipboard } = useCopyId()
 
 const instance = ref<Instance | null>(null)
 const loading = ref(true)
 const error = ref('')
 const actionLoading = ref<string | null>(null)
-const copiedField = ref<string | null>(null)
 const showPassword = ref(false)
 const showActionMenu = ref(false)
-const activeTab = ref<'info' | 'monitoring' | 'alerts'>('info')
+const activeTab = ref<string>('info')
+
+// 电源操作后的状态轮询：定时器与卸载标记，供 onUnmounted 停止
+let statusPollTimer: ReturnType<typeof setTimeout> | null = null
+let unmounted = false
 
 const toast = useToast()
 
@@ -71,7 +82,7 @@ const fetchInstance = async (showLoading: boolean = true) => {
     }
     try {
         const response = await instancesApi.getInstance(instanceId)
-        const data = response.data as any
+        const data = response as any
         instance.value = data.instance || data
     } catch (err) {
         console.error('Failed to fetch instance:', err)
@@ -120,6 +131,7 @@ const handleAction = async (action: 'start' | 'stop' | 'restart' | 'hard_stop' |
         const checkStatus = async () => {
             attempts++
             await fetchInstance(false)
+            if (unmounted) return
             const currentStatus = instance.value?.status?.toLowerCase() || ''
             if (targetStableStates.includes(currentStatus) || attempts >= 15) {
                 actionLoading.value = null
@@ -129,12 +141,12 @@ const handleAction = async (action: 'start' | 'stop' | 'restart' | 'hard_stop' |
                     toast.success(t('dashboard.instanceDetail.actionSuccess', { action }))
                 }
             } else {
-                setTimeout(checkStatus, 3000)
+                statusPollTimer = setTimeout(checkStatus, 3000)
             }
         }
 
         // Start polling after 2 seconds
-        setTimeout(checkStatus, 2000)
+        statusPollTimer = setTimeout(checkStatus, 2000)
     } catch (err: any) {
         console.error(`Failed to ${action} instance:`, err)
         actionLoading.value = null
@@ -142,42 +154,23 @@ const handleAction = async (action: 'start' | 'stop' | 'restart' | 'hard_stop' |
     }
 }
 
-const openConsole = async () => {
-    // Open window immediately to avoid popup blockers
-    const consoleWindow = window.open('about:blank', '_blank')
-    if (!consoleWindow) {
-        alert(t('dashboard.instanceDetail.popupBlocked'))
-        return
-    }
-
-    try {
-        const response = await instancesApi.getConsole(instanceId)
-        const { console_host, console_port, console_path, token } = response.data
-
-        const host = console_host
-        const port = console_port || 443
-        const path = console_path || 'websockify'
-        const encrypt = port === 443
-
-        const externalUrl = `https://novnc.com/noVNC/vnc.html?host=${host}&port=${port}&autoconnect=true&encrypt=${encrypt}&path=${path}?token=${token}`
-        consoleWindow.location.href = externalUrl
-    } catch (error: any) {
-        console.error('Failed to get console info:', error)
-        consoleWindow.close()
-        alert(t('dashboard.instanceDetail.consoleError') + (error.response?.data?.error_message || error.message))
+// The console page embeds the bundled noVNC client and requests the console token itself.
+// Opened without noopener so the new window inherits sessionStorage (login session).
+const openConsole = (type: 'vnc' | 'serial' = 'vnc') => {
+    const name = type === 'serial' ? 'instance-serial-console' : 'instance-console'
+    const url = router.resolve({ name, params: { id: instanceId } }).href
+    if (!window.open(url, '_blank')) {
+        toast.error(t('dashboard.instanceDetail.popupBlocked'))
     }
 }
 
-const goBack = () => {
-    router.back()
-}
+const goBack = useGoBack('instances')
 
-const copyToClipboard = (text: string, field: string) => {
-    navigator.clipboard.writeText(text).then(() => {
-        copiedField.value = field
-        setTimeout(() => { copiedField.value = null }, 2000)
-    })
-}
+const tabs = computed(() => [
+    { id: 'info', label: t('dashboard.instanceDetail.generalInfo'), icon: Server },
+    { id: 'monitoring', label: t('dashboard.instanceDetail.resourceMonitoring'), icon: Activity },
+    { id: 'alerts', label: t('dashboard.instanceDetail.monitoringAlerts'), icon: ShieldAlert },
+])
 
 // --- Alarm Rules Integration ---
 interface LinkedRule {
@@ -222,11 +215,11 @@ const fetchLinkedRules = async () => {
         const results = await Promise.all(
             VM_RULE_TYPES.map(rt =>
                 vmAlarmRulesApi.listRules(rt.value, { page: 1, page_size: 1000 })
-                    .then(res => ({ type: rt.value, label: rt.label, data: res.data.data || [] }))
+                    .then(res => ({ type: rt.value, label: rt.label, data: res.data || [] }))
                     .catch(() => ({ type: rt.value, label: rt.label, data: [] as VMAlarmRuleGroup[] }))
             )
         )
-        for (const { type, label, data } of results) {
+        for (const { type, data } of results) {
             for (const rule of data) {
                 if (rule.linkedvms?.includes(instanceId)) {
                     linked.push({
@@ -257,11 +250,11 @@ const openLinkModal = async () => {
         const results = await Promise.all(
             VM_RULE_TYPES.map(rt =>
                 vmAlarmRulesApi.listRules(rt.value, { page: 1, page_size: 1000 })
-                    .then(res => ({ type: rt.value, label: rt.label, data: res.data.data || [] }))
+                    .then(res => ({ type: rt.value, label: rt.label, data: res.data || [] }))
                     .catch(() => ({ type: rt.value, label: rt.label, data: [] as VMAlarmRuleGroup[] }))
             )
         )
-        for (const { type, label, data } of results) {
+        for (const { type, data } of results) {
             for (const rule of data) {
                 if (!rule.linkedvms?.includes(instanceId)) {
                     available.push({
@@ -420,36 +413,12 @@ const confirmRename = async () => {
     }
 }
 
-const getStatusClass = (status: string) => {
-    const statusMap: Record<string, string> = {
-        'running': 'status-running',
-        'active': 'status-running',
-        'stopped': 'status-stopped',
-        'shutoff': 'status-stopped',
-        'shut_off': 'status-stopped',
-        'paused': 'status-paused',
-        'provisioning': 'status-pending',
-        'starting': 'status-pending',
-        'stopping': 'status-pending',
-        'deleting': 'status-pending',
-        'error': 'status-error'
-    }
-    return statusMap[status?.toLowerCase()] || 'status-pending'
-}
-
 const getStatusText = (status: string) => {
     const key = status?.toLowerCase().replace(/ /g, '_')
     const translated = t(`dashboard.instanceStatus.${key}`)
     return translated === `dashboard.instanceStatus.${key}` ? status : translated
 }
 
-const formatMemory = (mb?: number) => {
-    if (!mb) return '-'
-    if (mb >= 1024) {
-        return `${(mb / 1024).toFixed(0)} ${t('specs.gb')}`
-    }
-    return `${mb} ${t('specs.mb')}`
-}
 
 const navigateToVolume = (volumeId: string) => {
     router.push({ name: 'volume-detail', params: { id: volumeId } })
@@ -540,6 +509,13 @@ onMounted(() => {
     fetchInstance()
     fetchLinkedRules()
 })
+
+// 电源操作后的状态轮询最长会持续 45 秒，离开页面必须停掉，
+// 否则会继续请求，并在用户已经打开的其他页面上弹出本页的提示
+onUnmounted(() => {
+    unmounted = true
+    if (statusPollTimer) clearTimeout(statusPollTimer)
+})
 </script>
 
 <template>
@@ -572,7 +548,7 @@ onMounted(() => {
                     <div>
                         <h2 class="instance-title">
                             {{ instance.hostname }}
-                            <span :class="['badge', getStatusClass(instance.status)]">{{ getStatusText(instance.status) }}</span>
+                            <StatusBadge :status="instance.status" :label="getStatusText(instance.status)" />
                         </h2>
                         <div class="instance-id-row">
                             <span class="instance-id">{{ instance.id }}</span>
@@ -659,8 +635,11 @@ onMounted(() => {
                                     {{ actionLoading === 'resume' ? $t('dashboard.instanceDetail.resuming') : $t('dashboard.instanceDetail.resume') }}
                                 </button>
                                 <div class="dropdown-divider"></div>
-                                <button class="dropdown-item" @click="openConsole">
+                                <button class="dropdown-item" @click="openConsole()">
                                     <img src="/images/vnc.svg" alt="VNC" width="14" height="14" /> {{ $t('actions.console') }}
+                                </button>
+                                <button class="dropdown-item" data-console="serial" @click="openConsole('serial')">
+                                    <SquareTerminal :size="14" /> {{ $t('dashboard.console.serial.title') }}
                                 </button>
                                 <div class="dropdown-divider"></div>
                                 <button class="dropdown-item" @click="openRenameModal">
@@ -683,28 +662,7 @@ onMounted(() => {
                 </div>
             </div>
             <!-- Tabs Navigation -->
-            <div class="card tabs-nav-container">
-                <div class="tabs-nav">
-                    <button 
-                        :class="['tab-btn', { active: activeTab === 'info' }]"
-                        @click="activeTab = 'info'"
-                    >
-                        <Server :size="16" /> {{ $t('dashboard.instanceDetail.generalInfo') }}
-                    </button>
-                    <button 
-                        :class="['tab-btn', { active: activeTab === 'monitoring' }]"
-                        @click="activeTab = 'monitoring'"
-                    >
-                        <Activity :size="16" /> {{ $t('dashboard.instanceDetail.resourceMonitoring') }}
-                    </button>
-                    <button 
-                        :class="['tab-btn', { active: activeTab === 'alerts' }]"
-                        @click="activeTab = 'alerts'"
-                    >
-                        <ShieldAlert :size="16" /> {{ t('dashboard.instanceDetail.monitoringAlerts') }}
-                    </button>
-                </div>
-            </div>
+            <DetailTabs v-model="activeTab" :tabs="tabs" />
 
             <!-- Two-Column Layout (Info Tab) -->
             <div v-if="activeTab === 'info'" class="two-col-layout">
@@ -713,21 +671,11 @@ onMounted(() => {
                     <div class="card info-card">
                         <h3>{{ $t('dashboard.instanceDetail.generalInfo') }}</h3>
                         <div class="key-value-list">
-                            <div class="kv-item">
-                                <span class="label">{{ $t('dashboard.table.createdAt') }}</span>
-                                <span class="value">{{ instance.created_at || '-' }}</span>
-                            </div>
-                            <div class="kv-item">
-                                <span class="label">{{ $t('dashboard.table.zone') }}</span>
-                                <span class="value">{{ instance.zone || '-' }}</span>
-                            </div>
-                            <div class="kv-item">
-                                <span class="label">{{ $t('dashboard.table.hyper') }}</span>
-                                <span class="value">{{ instance.hypervisor || '-' }}</span>
-                            </div>
-                            <div class="kv-item" v-if="instance.root_passwd">
-                                <span class="label">{{ $t('dashboard.instanceDetail.rootPassword') }}</span>
-                                <span class="value password-value">
+                            <InfoRow :label="$t('dashboard.table.createdAt')">{{ instance.created_at || '-' }}</InfoRow>
+                            <InfoRow :label="$t('dashboard.table.zone')">{{ instance.zone || '-' }}</InfoRow>
+                            <InfoRow :label="$t('dashboard.table.hyper')">{{ instance.hypervisor || '-' }}</InfoRow>
+                            <InfoRow v-if="instance.root_passwd" :label="$t('dashboard.instanceDetail.rootPassword')">
+                                <span class="password-value">
                                     <span class="mono">{{ showPassword ? instance.root_passwd : '••••••••' }}</span>
                                     <button class="icon-btn-inline" @click="showPassword = !showPassword" :title="showPassword ? $t('dashboard.instanceDetail.hidePassword') : $t('dashboard.instanceDetail.showPassword')">
                                         <Eye v-if="!showPassword" :size="14" />
@@ -738,33 +686,30 @@ onMounted(() => {
                                         <Copy v-else :size="14" />
                                     </button>
                                 </span>
-                            </div>
+                            </InfoRow>
                         </div>
                     </div>
 
                     <div class="card info-card">
                         <h3>{{ $t('dashboard.instanceDetail.specs') }}</h3>
                         <div class="key-value-list">
-                            <div class="kv-item" v-if="instance.flavor">
-                                <span class="label">{{ $t('dashboard.table.flavor') }}</span>
-                                <span class="value">{{ typeof instance.flavor === 'string' ? instance.flavor : instance.flavor.name }}</span>
-                            </div>
-                            <div class="kv-item">
-                                <span class="label"><Cpu :size="14" /> {{ $t('dashboard.instanceDetail.cpu') }}</span>
-                                <span class="value">{{ instance.cpu || (instance.flavor && typeof instance.flavor === 'object' ? instance.flavor.cpu : '-') }}</span>
-                            </div>
-                            <div class="kv-item">
-                                <span class="label"><MemoryStick :size="14" /> {{ $t('dashboard.instanceDetail.ram') }}</span>
-                                <span class="value">{{ formatMemory(instance.memory || (instance.flavor && typeof instance.flavor === 'object' ? instance.flavor.memory : undefined)) }}</span>
-                            </div>
-                            <div class="kv-item">
-                                <span class="label"><HardDrive :size="14" /> {{ $t('dashboard.instanceDetail.disk') }}</span>
-                                <span class="value">{{ instance.disk || (instance.flavor && typeof instance.flavor === 'object' ? instance.flavor.disk : '-') }} {{ t('specs.gb') }}</span>
-                            </div>
-                            <div class="kv-item">
-                                <span class="label"><HardDrive :size="14" /> {{ $t('dashboard.instanceDetail.image') }}</span>
-                                <span class="value">{{ instance.image?.name || '-' }}</span>
-                            </div>
+                            <InfoRow v-if="instance.flavor" :label="$t('dashboard.table.flavor')">{{ typeof instance.flavor === 'string' ? instance.flavor : instance.flavor.name }}</InfoRow>
+                            <InfoRow :label="$t('dashboard.instanceDetail.cpu')">
+                                <template #label><Cpu :size="14" /> {{ $t('dashboard.instanceDetail.cpu') }}</template>
+                                {{ instance.cpu || (instance.flavor && typeof instance.flavor === 'object' ? instance.flavor.cpu : '-') }}
+                            </InfoRow>
+                            <InfoRow :label="$t('dashboard.instanceDetail.ram')">
+                                <template #label><MemoryStick :size="14" /> {{ $t('dashboard.instanceDetail.ram') }}</template>
+                                {{ formatMemory(instance.memory || (instance.flavor && typeof instance.flavor === 'object' ? instance.flavor.memory : undefined)) }}
+                            </InfoRow>
+                            <InfoRow :label="$t('dashboard.instanceDetail.disk')">
+                                <template #label><HardDrive :size="14" /> {{ $t('dashboard.instanceDetail.disk') }}</template>
+                                {{ instance.disk || (instance.flavor && typeof instance.flavor === 'object' ? instance.flavor.disk : '-') }} {{ t('specs.gb') }}
+                            </InfoRow>
+                            <InfoRow :label="$t('dashboard.instanceDetail.image')">
+                                <template #label><HardDrive :size="14" /> {{ $t('dashboard.instanceDetail.image') }}</template>
+                                {{ instance.image?.name || '-' }}
+                            </InfoRow>
                         </div>
                     </div>
 
@@ -774,19 +719,17 @@ onMounted(() => {
                             <div v-if="!instance.volumes?.length" class="text-secondary empty-hint">
                                 {{ $t('messages.noVolumesAttached') }}
                             </div>
-                            <div v-else v-for="volume in instance.volumes" :key="volume.id" class="kv-item">
-                                <span class="label">
+                            <InfoRow v-else v-for="volume in instance.volumes" :key="volume.id" :label="volume.target || volume.device || $t('dashboard.instanceDetail.volume')">
+                                <template #label>
                                     <HardDrive :size="14" />
                                     {{ volume.target || volume.device || $t('dashboard.instanceDetail.volume') }}
                                     <span v-if="volume.booting || volume.boot_index === 0" class="status-badge status-success mini-badge">{{ $t('dashboard.instanceDetail.boot') }}</span>
-                                </span>
-                                <span class="value">
-                                    <span v-if="volume.size" class="mono volume-size">{{ volume.size }} {{ t('specs.gb') }}</span>
-                                    <a href="#" @click.prevent="navigateToVolume(volume.id)" class="resource-link">
-                                        {{ volume.name || volume.id.substring(0, 8) }} <ExternalLink :size="12" class="inline-icon" />
-                                    </a>
-                                </span>
-                            </div>
+                                </template>
+                                <span v-if="volume.size" class="mono volume-size">{{ volume.size }} {{ t('specs.gb') }}</span>
+                                <a href="#" @click.prevent="navigateToVolume(volume.id)" class="resource-link">
+                                    {{ volume.name || volume.id.substring(0, 8) }} <ExternalLink :size="12" class="inline-icon" />
+                                </a>
+                            </InfoRow>
                         </div>
                     </div>
                 </div>
@@ -796,57 +739,38 @@ onMounted(() => {
                     <div class="card info-card">
                         <h3>{{ $t('dashboard.instanceDetail.network') }}</h3>
                         <div class="key-value-list">
-                            <div class="kv-item" v-if="instance.vpc?.name">
-                                <span class="label">{{ $t('dashboard.table.vpc') }}</span>
-                                <span class="value">
-                                    <a v-if="instance.vpc?.id" href="#" @click.prevent="navigateToVPC(instance.vpc.id)" class="resource-link">
-                                        {{ instance.vpc.name }}
-                                    </a>
-                                    <span v-else>{{ instance.vpc?.name || '-' }}</span>
-                                </span>
-                            </div>
+                            <InfoRow v-if="instance.vpc?.name" :label="$t('dashboard.table.vpc')">
+                                <a v-if="instance.vpc?.id" href="#" @click.prevent="navigateToVPC(instance.vpc.id)" class="resource-link">
+                                    {{ instance.vpc.name }}
+                                </a>
+                                <span v-else>{{ instance.vpc?.name || '-' }}</span>
+                            </InfoRow>
 
                             <div v-if="!instance.interfaces?.length" class="text-secondary empty-hint">
                                 {{ $t('messages.noNics') }}
                             </div>
                             <template v-else>
                                 <div v-for="(iface, index) in instance.interfaces" :key="iface.id" class="interface-block" :class="{ 'interface-separator': index > 0 }">
-                                    <div class="kv-item interface-header">
-                                        <span class="label interface-name">
+                                    <div class="interface-header">
+                                        <span class="interface-name">
                                             <Network :size="14" /> {{ iface.name || $t('dashboard.instanceDetail.interface') }}
                                             <span v-if="iface.is_primary" class="status-badge status-running mini-badge">{{ $t('dashboard.instanceDetail.primary') }}</span>
                                         </span>
                                     </div>
-                                    <div class="kv-item interface-detail">
-                                        <span class="label">{{ $t('dashboard.table.subnet') }}</span>
-                                        <span class="value">
-                                            <a v-if="iface.subnet?.id" href="#" @click.prevent="navigateToSubnet(iface.subnet.id)" class="resource-link">
-                                                {{ iface.subnet.name }}
-                                            </a>
-                                            <span v-else>{{ iface.subnet?.name || '-' }}</span>
-                                        </span>
-                                    </div>
-                                    <div class="kv-item interface-detail">
-                                        <span class="label">{{ $t('dashboard.table.ipAddress') }}</span>
-                                        <span class="value mono">{{ iface.ip_address ? iface.ip_address.split('/')[0] : '-' }}</span>
-                                    </div>
-                                    <div class="kv-item interface-detail">
-                                        <span class="label">{{ $t('dashboard.instanceDetail.macAddress') }}</span>
-                                        <span class="value mono">{{ iface.mac_address || '-' }}</span>
-                                    </div>
+                                    <InfoRow class="interface-detail" :label="$t('dashboard.table.subnet')">
+                                        <a v-if="iface.subnet?.id" href="#" @click.prevent="navigateToSubnet(iface.subnet.id)" class="resource-link">
+                                            {{ iface.subnet.name }}
+                                        </a>
+                                        <span v-else>{{ iface.subnet?.name || '-' }}</span>
+                                    </InfoRow>
+                                    <InfoRow class="interface-detail" :label="$t('dashboard.table.ipAddress')" mono>{{ iface.ip_address ? iface.ip_address.split('/')[0] : '-' }}</InfoRow>
+                                    <InfoRow class="interface-detail" :label="$t('dashboard.instanceDetail.macAddress')" mono>{{ iface.mac_address || '-' }}</InfoRow>
                                     <template v-for="fip in iface.floating_ips" :key="fip.id">
-                                        <div v-if="(fip.ip_address || fip.fip_address) !== iface.ip_address" class="kv-item interface-detail">
-                                            <span class="label">{{ $t('dashboard.instanceDetail.floatingIp') }}</span>
-                                            <span class="value mono">{{ fip.ip_address || fip.fip_address || '-' }}</span>
-                                        </div>
-                                        <div v-if="fip.vlan" class="kv-item interface-detail">
-                                            <span class="label">{{ $t('dashboard.instanceDetail.fipVlan') }}</span>
-                                            <span class="value">{{ fip.vlan }}</span>
-                                        </div>
+                                        <InfoRow v-if="(fip.ip_address || fip.fip_address) !== iface.ip_address" class="interface-detail" :label="$t('dashboard.instanceDetail.floatingIp')" mono>{{ fip.ip_address || fip.fip_address || '-' }}</InfoRow>
+                                        <InfoRow v-if="fip.vlan" class="interface-detail" :label="$t('dashboard.instanceDetail.fipVlan')">{{ fip.vlan }}</InfoRow>
                                     </template>
-                                    <div class="kv-item interface-detail">
-                                        <span class="label">{{ $t('dashboard.securityGroups') }}</span>
-                                        <span class="value sg-value-row">
+                                    <InfoRow class="interface-detail" :label="$t('dashboard.securityGroups')">
+                                        <span class="sg-value-row">
                                             <template v-if="iface.security_groups?.length">
                                                 <template v-for="(sg, sgIndex) in iface.security_groups" :key="sg.id">
                                                     <a href="#" @click.prevent="navigateToSecurityGroup(sg.id)" class="resource-link">{{ sg.name || sg.id.substring(0, 8) }}</a><span v-if="sgIndex < iface.security_groups.length - 1">, </span>
@@ -857,7 +781,7 @@ onMounted(() => {
                                                 <Pencil :size="12" />
                                             </button>
                                         </span>
-                                    </div>
+                                    </InfoRow>
                                 </div>
                             </template>
                         </div>
@@ -866,14 +790,14 @@ onMounted(() => {
                     <div class="card info-card">
                         <h3>{{ $t('dashboard.sshKeys') }}</h3>
                         <div class="key-value-list">
-                            <div v-if="!instance.keys?.length" class="kv-item">
-                                <span class="label"><Key :size="14" /> {{ $t('dashboard.instanceDetail.keyPair') }}</span>
-                                <span class="value">-</span>
-                            </div>
-                            <div v-else v-for="key in instance.keys" :key="key.id" class="kv-item">
-                                <span class="label"><Key :size="14" /> {{ $t('dashboard.instanceDetail.keyPair') }}</span>
-                                <span class="value">{{ key.name }}</span>
-                            </div>
+                            <InfoRow v-if="!instance.keys?.length" :label="$t('dashboard.instanceDetail.keyPair')">
+                                <template #label><Key :size="14" /> {{ $t('dashboard.instanceDetail.keyPair') }}</template>
+                                -
+                            </InfoRow>
+                            <InfoRow v-else v-for="key in instance.keys" :key="key.id" :label="$t('dashboard.instanceDetail.keyPair')">
+                                <template #label><Key :size="14" /> {{ $t('dashboard.instanceDetail.keyPair') }}</template>
+                                {{ key.name }}
+                            </InfoRow>
                         </div>
                     </div>
                 </div>
@@ -973,12 +897,11 @@ onMounted(() => {
             </div>
 
             <!-- Link Rule Modal -->
-            <div v-if="showLinkModal" class="modal-overlay" @click.self="showLinkModal = false">
-                <div class="modal-content">
-                    <div class="modal-header">
-                        <h3>{{ t('dashboard.instanceDetail.linkRule') }}</h3>
-                    </div>
-                    <div class="modal-body">
+            <BaseModal
+                :show="showLinkModal"
+                :title="t('dashboard.instanceDetail.linkRule')"
+                @close="showLinkModal = false"
+            >
                         <div v-if="linkLoading" class="text-secondary" style="padding: 12px 0;">{{ $t('messages.loading') }}</div>
                         <div v-else-if="availableRules.length === 0" class="text-secondary" style="padding: 12px 0;">
                             {{ t('dashboard.instanceDetail.noAvailableRules') }}
@@ -992,12 +915,11 @@ onMounted(() => {
                                 <Link :size="14" class="rule-pick-icon" />
                             </div>
                         </div>
-                    </div>
-                    <div class="modal-footer">
-                        <button class="btn btn-secondary btn-sm" @click="showLinkModal = false">{{ t('actions.cancel') }}</button>
-                    </div>
-                </div>
-            </div>
+
+                <template #footer>
+                    <button class="btn btn-secondary btn-sm" @click="showLinkModal = false">{{ t('actions.cancel') }}</button>
+                </template>
+            </BaseModal>
         </div>
 
         <DeleteModal
@@ -1011,12 +933,14 @@ onMounted(() => {
         />
 
         <!-- Edit Security Groups Modal -->
-        <div v-if="showEditSgModal" class="modal-overlay" @click.self="showEditSgModal = false">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h3><Shield :size="16" /> {{ $t('dashboard.instanceDetail.editSecurityGroupsTitle', { name: editingSgIface?.name || editingSgIface?.id?.substring(0, 8) }) }}</h3>
-                </div>
-                <div class="modal-body">
+        <BaseModal
+            :show="showEditSgModal"
+            @close="showEditSgModal = false"
+        >
+            <template #header>
+                <h3><Shield :size="16" /> {{ $t('dashboard.instanceDetail.editSecurityGroupsTitle', { name: editingSgIface?.name || editingSgIface?.id?.substring(0, 8) }) }}</h3>
+            </template>
+
                     <div v-if="editSgError" class="modal-error">{{ editSgError }}</div>
                     <div v-if="sgListTruncated" class="modal-warning">{{ $t('dashboard.instanceDetail.sgListTruncated') }}</div>
                     <div v-if="editSgLoading && availableSecgroups.length === 0" class="text-secondary empty-hint">{{ $t('messages.loading') }}</div>
@@ -1029,23 +953,24 @@ onMounted(() => {
                         </label>
                     </div>
                     <div v-if="selectedSgIds.size === 0 && !editSgLoading" class="sg-empty-hint">{{ $t('dashboard.instanceDetail.sgEmptyWillUseDefault') }}</div>
-                </div>
-                <div class="modal-footer">
-                    <button class="btn btn-ghost" @click="showEditSgModal = false">{{ $t('actions.cancel') }}</button>
-                    <button class="btn btn-primary" @click="confirmEditSg" :disabled="editSgLoading">
-                        {{ editSgLoading ? $t('messages.loading') : $t('actions.save') }}
-                    </button>
-                </div>
-            </div>
-        </div>
+
+            <template #footer>
+                <button class="btn btn-ghost" @click="showEditSgModal = false">{{ $t('actions.cancel') }}</button>
+                <button class="btn btn-primary" @click="confirmEditSg" :disabled="editSgLoading">
+                    {{ editSgLoading ? $t('messages.loading') : $t('actions.save') }}
+                </button>
+            </template>
+        </BaseModal>
 
         <!-- Reset Password Modal -->
-        <div v-if="showResetPasswordModal" class="modal-overlay" @click.self="showResetPasswordModal = false">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h3>{{ $t('dashboard.instanceDetail.resetPassword') }}</h3>
-                </div>
-                <div class="modal-body">
+        <BaseModal
+            :show="showResetPasswordModal"
+            :title="$t('dashboard.instanceDetail.resetPassword')"
+            :loading="resetPasswordLoading"
+            form
+            @close="showResetPasswordModal = false"
+            @submit="confirmResetPassword"
+        >
                     <div v-if="resetPasswordError" class="modal-error">{{ resetPasswordError }}</div>
                     <div class="form-group">
                         <label>{{ $t('dashboard.instanceDetail.userName') }}</label>
@@ -1074,24 +999,25 @@ onMounted(() => {
                     <button class="btn btn-ghost btn-sm" type="button" @click="generateRandomPassword" style="margin-top: 4px;">
                         <Shuffle :size="14" /> {{ $t('dashboard.instanceDetail.generatePassword') }}
                     </button>
-                </div>
-                <div class="modal-footer">
-                    <button class="btn btn-secondary btn-sm" @click="showResetPasswordModal = false">{{ $t('actions.cancel') }}</button>
-                    <button class="btn btn-primary btn-sm" @click="confirmResetPassword" :disabled="resetPasswordLoading">
-                        <span v-if="resetPasswordLoading" class="loading-spinner small"></span>
-                        {{ $t('actions.confirm') }}
-                    </button>
-                </div>
-            </div>
-        </div>
+
+            <template #footer>
+                <button type="button" class="btn btn-secondary btn-sm" @click="showResetPasswordModal = false">{{ $t('actions.cancel') }}</button>
+                <button type="submit" class="btn btn-primary btn-sm" :disabled="resetPasswordLoading">
+                    <span v-if="resetPasswordLoading" class="loading-spinner small"></span>
+                    {{ $t('actions.confirm') }}
+                </button>
+            </template>
+        </BaseModal>
 
         <!-- Resize Modal -->
-        <div v-if="showResizeModal" class="modal-overlay" @click.self="showResizeModal = false">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h3>{{ $t('actions.resize') }}</h3>
-                </div>
-                <div class="modal-body">
+        <BaseModal
+            :show="showResizeModal"
+            :title="$t('actions.resize')"
+            :loading="resizeLoading"
+            form
+            @close="showResizeModal = false"
+            @submit="confirmResize"
+        >
                     <div v-if="resizeError" class="modal-error">{{ resizeError }}</div>
                     <div class="form-group">
                         <label>{{ $t('dashboard.instanceDetail.cpuLabel') }}</label>
@@ -1101,39 +1027,39 @@ onMounted(() => {
                         <label>{{ $t('dashboard.instanceDetail.ramLabel') }}</label>
                         <input v-model.number="resizeForm.memory" type="number" min="1" class="form-input" />
                     </div>
-                </div>
-                <div class="modal-footer">
-                    <button class="btn btn-secondary btn-sm" @click="showResizeModal = false">{{ $t('actions.cancel') }}</button>
-                    <button class="btn btn-primary btn-sm" @click="confirmResize" :disabled="resizeLoading">
-                        <span v-if="resizeLoading" class="loading-spinner small"></span>
-                        {{ $t('actions.confirm') }}
-                    </button>
-                </div>
-            </div>
-        </div>
+
+            <template #footer>
+                <button type="button" class="btn btn-secondary btn-sm" @click="showResizeModal = false">{{ $t('actions.cancel') }}</button>
+                <button type="submit" class="btn btn-primary btn-sm" :disabled="resizeLoading">
+                    <span v-if="resizeLoading" class="loading-spinner small"></span>
+                    {{ $t('actions.confirm') }}
+                </button>
+            </template>
+        </BaseModal>
 
         <!-- Rename Modal -->
-        <div v-if="showRenameModal" class="modal-overlay" @click.self="showRenameModal = false">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h3>{{ $t('dashboard.instanceDetail.rename') }}</h3>
-                </div>
-                <div class="modal-body">
+        <BaseModal
+            :show="showRenameModal"
+            :title="$t('dashboard.instanceDetail.rename')"
+            :loading="renameLoading"
+            form
+            @close="showRenameModal = false"
+            @submit="confirmRename"
+        >
                     <div v-if="renameError" class="modal-error">{{ renameError }}</div>
                     <div class="form-group">
                         <label>{{ $t('dashboard.instanceDetail.hostname') }}</label>
                         <input v-model="renameForm.hostname" type="text" class="form-input" />
                     </div>
-                </div>
-                <div class="modal-footer">
-                    <button class="btn btn-secondary btn-sm" @click="showRenameModal = false">{{ $t('actions.cancel') }}</button>
-                    <button class="btn btn-primary btn-sm" @click="confirmRename" :disabled="renameLoading">
-                        <span v-if="renameLoading" class="loading-spinner small"></span>
-                        {{ $t('actions.confirm') }}
-                    </button>
-                </div>
-            </div>
-        </div>
+
+            <template #footer>
+                <button type="button" class="btn btn-secondary btn-sm" @click="showRenameModal = false">{{ $t('actions.cancel') }}</button>
+                <button type="submit" class="btn btn-primary btn-sm" :disabled="renameLoading">
+                    <span v-if="renameLoading" class="loading-spinner small"></span>
+                    {{ $t('actions.confirm') }}
+                </button>
+            </template>
+        </BaseModal>
     </div>
 </template>
 
@@ -1324,7 +1250,7 @@ onMounted(() => {
 }
 
 .info-card h3 {
-    font-size: var(--font-size-md);
+    font-size: var(--font-size-base);
     font-weight: 600;
     margin: 0 0 var(--spacing-4) 0;
     color: var(--text-primary);
@@ -1342,26 +1268,7 @@ onMounted(() => {
     gap: var(--spacing-3);
 }
 
-.kv-item {
-    display: flex;
-    justify-content: space-between;
-    font-size: var(--font-size-sm);
-}
-
-.kv-item .label {
-    color: var(--text-secondary);
-    display: flex;
-    align-items: center;
-    gap: 6px;
-}
-
-.kv-item .value {
-    color: var(--text-primary);
-    font-weight: 500;
-    text-align: right;
-}
-
-.value.mono, .mono {
+.mono {
     font-family: var(--font-family-mono);
 }
 
@@ -1447,11 +1354,15 @@ onMounted(() => {
 }
 
 .interface-name {
-    color: var(--primary-color) !important;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: var(--font-size-sm);
+    color: var(--primary-color);
     font-weight: 500;
 }
 
-.interface-detail .label {
+.interface-detail :deep(.info-label) {
     padding-left: 20px;
 }
 
@@ -1523,7 +1434,7 @@ onMounted(() => {
 }
 
 .alarm-card-header h3 {
-    font-size: var(--font-size-md);
+    font-size: var(--font-size-base);
     font-weight: 600;
     margin: 0;
     color: var(--text-primary);
@@ -1851,51 +1762,6 @@ onMounted(() => {
     border-radius: var(--radius-sm);
     font-size: var(--font-size-sm);
     color: var(--text-secondary);
-}
-
-/* Tabs Navigation Styles */
-.tabs-nav-container {
-    padding: 0;
-    margin-bottom: var(--spacing-6);
-    overflow: hidden;
-    border: none;
-    background: transparent;
-    box-shadow: none;
-}
-
-.tabs-nav {
-    display: flex;
-    padding: 0;
-    border-bottom: 1px solid var(--border-light);
-    background: transparent;
-}
-
-.tab-btn {
-    display: flex;
-    align-items: center;
-    gap: var(--spacing-2);
-    padding: var(--spacing-4) var(--spacing-6);
-    background: none;
-    border: none;
-    border-bottom: 2px solid transparent;
-    font-size: var(--font-size-sm);
-    font-weight: 500;
-    color: var(--text-secondary);
-    cursor: pointer;
-    transition: all 0.2s;
-    margin-bottom: -1px;
-}
-
-.tab-btn:hover {
-    color: var(--text-primary);
-}
-
-.tab-btn.active {
-    color: var(--primary-color);
-    border-bottom-color: var(--primary-color);
-    background: var(--bg-primary);
-    border-top-left-radius: var(--radius-md);
-    border-top-right-radius: var(--radius-md);
 }
 
 .alarm-card {

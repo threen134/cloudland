@@ -61,7 +61,7 @@ function halfday_job()
         [[ "$last_halfday" == "$current_halfday" ]] && return
     fi
 
-    ./generate_vm_instance_map.sh full
+    ./generate_vm_instance_map.sh full >/dev/null
     echo "$current_halfday" > "$state_file"
 }
 
@@ -89,14 +89,14 @@ function inst_status()
         if [ $n -eq 10 ]; then
             n=0
             inst_list=$(echo $inst_list)
-            echo "|:-COMMAND-:| inst_status.sh '$SCI_CLIENT_ID' '$inst_list'"
+            echo "|:-COMMAND-:| inst_status.sh '$NODE_ID' '$inst_list'"
             inst_list=""
         fi
         let n=$n+1
     done <<<$all_inst_list
     echo "$all_inst_list" >$inst_list_file
     inst_list=$(echo $inst_list)
-    [ -n "$inst_list" ] && echo "|:-COMMAND-:| inst_status.sh '$SCI_CLIENT_ID' '$inst_list'"
+    [ -n "$inst_list" ] && echo "|:-COMMAND-:| inst_status.sh '$NODE_ID' '$inst_list'"
 }
 
 function vlan_status()
@@ -118,7 +118,7 @@ function vlan_status()
         vlan_status_list="$vlan_status_list $var:$status:$first:$second"
     done
     vlan_status_list=$(echo $vlan_status_list | sed -e 's/^[ ]*//g')
-    [ -n "$vlan_status_list" ] && echo "|:-COMMAND-:| vlan_status.sh '$SCI_CLIENT_ID' '$vlan_status_list'"
+    [ -n "$vlan_status_list" ] && echo "|:-COMMAND-:| vlan_status.sh '$NODE_ID' '$vlan_status_list'"
     echo "$vlan_list" >old_vlan_list
 }
 
@@ -129,7 +129,7 @@ function router_status()
     router_list=$(ls router* 2>/dev/null)
     router_list=$(echo "$router_list $(sudo ip netns list | grep router | cut -d' ' -f1)" | xargs | sed 's/router-//g')
     [ "$router_list" = "$old_router_list" ] && return
-    [ -n "$router_list" ] && echo "|:-COMMAND-:| router_status.sh '$SCI_CLIENT_ID' '$router_list'"
+    [ -n "$router_list" ] && echo "|:-COMMAND-:| router_status.sh '$NODE_ID' '$router_list'"
     echo "$router_list" >old_router_list
 }
 
@@ -137,9 +137,12 @@ function check_system_router()
 {
     sudo systemctl status NetworkManager >/dev/null
     [ $? -ne 0 ] && sudo systemctl restart NetworkManager
-    sudo ip netns exec router-0 ip r | grep default
+    # 只看退出码：本脚本 stdout 除首行外都会作为回调命令发给 clapi，不能输出其他内容
+    sudo ip netns exec router-0 ip r | grep -q default
     if [ $? -ne 0 ]; then
-        sudo -E bash -c "echo '|:-COMMAND-:|' system_router.sh \'$SCI_CLIENT_ID\' \'$HOSTNAME\' >$async_job_dir/system_router.done"
+        # 目录只由 cloudrc 的延迟日志按需创建，新节点上可能不存在；缺了它任务写不出去，router-0 永远不会重建
+        sudo mkdir -p $async_job_dir
+        sudo -E bash -c "echo '|:-COMMAND-:|' system_router.sh \'$NODE_ID\' \'$HOSTNAME\' >$async_job_dir/system_router.done"
     fi
 }
 
@@ -163,37 +166,58 @@ function check_conntrack()
 
 function recover_loadbalancer()
 {
+    # 与 sync_instance 一样按 boot_id 判断：run_dir 在磁盘上，原先只 touch 标记文件，
+    # 节点重启后标记仍在，负载均衡从不重建（只在节点首次部署时触发过一次）
     lb_flag_file=$run_dir/need_to_sync_lb
-    [ -f "$lb_flag_file" ] && return
-    echo "|:-COMMAND-:| recover_loadbalancer.sh '$SCI_CLIENT_ID'"
-    touch $lb_flag_file
+    boot_file=/proc/sys/kernel/random/boot_id
+    diff $lb_flag_file $boot_file >/dev/null 2>&1 && return
+    echo "|:-COMMAND-:| recover_loadbalancer.sh '$NODE_ID'"
+    sudo cp $boot_file $lb_flag_file
+}
+
+function check_lb_process()
+{
+    # 运行中异常退出的 keepalived / haproxy 由心跳拉起；输出不能进 stdout（会被当作回调）
+    sudo bash $base_dir/check_lb_process.sh >/dev/null 2>&1
+}
+
+function report_lb_health()
+{
+    # Backend health check results of the load balancers this node is master of; prints callback lines only
+    sudo bash $base_dir/report_lb_health.sh 2>/dev/null
 }
 
 function sync_instance()
 {
     flag_file=$run_dir/need_to_sync
     boot_file=/proc/sys/kernel/random/boot_id
-    diff $flag_file $boot_file
+    diff $flag_file $boot_file >/dev/null 2>&1
     [ $? -eq 0 ] && return
     sudo iptables-restore </etc/iptables.rules
     bridges=$(cat /proc/net/dev | grep br | awk -F: '{print $1}')
     sudo iptables -N secgroup-chain && sudo iptables -A secgroup-chain -j ACCEPT
     for bridge in $bridges; do
+	# 追加到链尾：网桥内部放行必须排在安全组跳转之后（apply_fw 把安全组跳转插在 FORWARD 第 3 条），
+	# 插在前面会让该网桥上所有虚拟机的安全组失效；下面会把兜底 REJECT 重新挪到最后
 	sudo iptables -C FORWARD -i $bridge -o $bridge -j ACCEPT
-	[ $? -ne 0 ] && sudo iptables -I FORWARD 2 -i $bridge -o $bridge -j ACCEPT
+	[ $? -ne 0 ] && sudo iptables -A FORWARD -i $bridge -o $bridge -j ACCEPT
     done
     sudo iptables -D FORWARD -j REJECT --reject-with icmp-host-prohibited
     sudo iptables -A FORWARD -j REJECT --reject-with icmp-host-prohibited
     insts=$(ls $xml_dir)
     for inst in $insts; do
 	inst_id=${inst/inst-/}
-        for i in {1..100}; do
-            ls /var/run/wds/instance-${inst_id}*
-            [ $? -eq 0 ] && break
-            sleep 2
-        done
-        sudo virsh start inst-$inst_id
-        echo "|:-COMMAND-:| launch_vm.sh '$inst_id' 'running' '$SCI_CLIENT_ID' 'sync'"
+        # 只有 WDS 存储需要等卷设备就绪；本地存储永远等不到该文件，原先每台虚拟机空等 200 秒，
+        # 节点重启后首次心跳被阻塞（实测 2 台虚拟机时节点离线约 7 分钟，虚拟机与负载均衡恢复都随之推迟）
+        if [ -n "$wds_address" ]; then
+            for i in {1..100}; do
+                ls /var/run/wds/instance-${inst_id}* >/dev/null 2>&1
+                [ $? -eq 0 ] && break
+                sleep 2
+            done
+        fi
+        sudo virsh start inst-$inst_id >/dev/null
+        echo "|:-COMMAND-:| launch_vm.sh '$inst_id' 'running' '$NODE_ID' 'sync'"
     done
     sudo cp $boot_file $flag_file
 }
@@ -282,12 +306,14 @@ function calc_resource()
     echo "'$cpu' '$total_cpu' '$memory' '$total_memory' '$disk' '$total_disk' '$state'" >/opt/cloudland/run/old_resource_list
     [ "$resource_list" = "$old_resource_list" ] && return
     cpu_model=$(lscpu | grep 'Model name:' | cut -d: -f2 | xargs)
-    echo "|:-COMMAND-:| hyper_status.sh '$SCI_CLIENT_ID' '$HOSTNAME' '$cpu' '$total_cpu' '$memory' '$total_memory' '$disk' '$total_disk' '$state' '$vtep_ip' '$ZONE_NAME' '$cpu_over_ratio' '$mem_over_ratio' '$disk_over_ratio' '$cpu_model'"
+    echo "|:-COMMAND-:| hyper_status.sh '$NODE_ID' '$HOSTNAME' '$cpu' '$total_cpu' '$memory' '$total_memory' '$disk' '$total_disk' '$state' '$vtep_ip' '$ZONE_NAME' '$cpu_over_ratio' '$mem_over_ratio' '$disk_over_ratio' '$cpu_model'"
 }
 
 calc_resource
 sync_instance
 recover_loadbalancer
+check_lb_process
+report_lb_health
 sync_delayed_job
 check_system_router
 #probe_arp >/dev/null 2>&1

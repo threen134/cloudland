@@ -8,8 +8,8 @@ SPDX-License-Identifier: Apache-2.0
 package apis
 
 import (
-	"net/http"
 	"api/src/services"
+	"net/http"
 
 	"github.com/gin-gonic/gin"
 )

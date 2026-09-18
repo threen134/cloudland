@@ -25,27 +25,32 @@ export interface CreateUserPayload {
 
 export const usersApi = {
     // List users
-    fetchUsers() {
-        return client.get('/users')
+    async fetchUsers() {
+        const response = await client.get('/users')
+        return response.data
     },
 
     // Get single user
-    getUser(uuid: string) {
-        return client.get(`/users/${uuid}`)
+    async getUser(uuid: string) {
+        const response = await client.get(`/users/${uuid}`)
+        return response.data
     },
 
     // Create user
-    createUser(payload: CreateUserPayload) {
-        return client.post('/users', payload)
+    async createUser(payload: CreateUserPayload) {
+        const response = await client.post('/users', payload)
+        return response.data
     },
 
     // Update user
-    updateUser(uuid: string, payload: Partial<CreateUserPayload>) {
-        return client.put(`/users/${uuid}`, payload)
+    async updateUser(uuid: string, payload: Partial<CreateUserPayload>) {
+        const response = await client.put(`/users/${uuid}`, payload)
+        return response.data
     },
 
     // Delete user
-    deleteUser(uuid: string) {
-        return client.delete(`/users/${uuid}`)
+    async deleteUser(uuid: string) {
+        const response = await client.delete(`/users/${uuid}`)
+        return response.data
     },
 }

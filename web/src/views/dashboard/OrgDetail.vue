@@ -1,23 +1,29 @@
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
+import { useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { orgsApi, ORG_ROLES, type Organization, type OrgMember, type OrgInvitation } from '../../api/orgs'
-import { type OrgResourceQuotaUpdate } from '../../api/quota'
-import { 
-    ArrowLeft, Building2, Users, Trash2, Shield, Crown, X, Mail, Clock, XCircle, Gauge, ChevronDown,
-    CheckCircle, AlertCircle, ShieldAlert, PauseCircle 
+import { QUOTA_ROWS, type OrgResourceQuotaUpdate } from '../../api/quota'
+import {
+    ArrowLeft, Building2, Users, Trash2, Shield, Crown, Mail, Clock, XCircle, Gauge, ChevronDown,
+    CheckCircle, AlertCircle, ShieldAlert, PauseCircle
 } from 'lucide-vue-next'
+import BaseModal from '../../components/modals/BaseModal.vue'
+import InfoRow from '../../components/base/InfoRow.vue'
+import DetailTabs from '../../components/base/DetailTabs.vue'
+import { useGoBack } from '../../composables/useGoBack'
 import { useAuthStore } from '../../stores/auth'
+import { useTenantStore } from '../../stores/tenant'
 import { useQuota } from '../../composables/useQuota'
 import { useToast } from '../../composables/useToast'
+import { formatDate } from '../../utils/format'
 
 const { t } = useI18n()
 const toast = useToast()
 const authStore = useAuthStore()
 const route = useRoute()
-const router = useRouter()
+const goBack = useGoBack('orgs')
 const orgId = route.params.id as string
 
 const org = ref<Organization | null>(null)
@@ -27,7 +33,11 @@ const membersLoading = ref(false)
 const error = ref('')
 
 // Tabs
-const activeTab = ref<'members' | 'quota'>('members')
+const activeTab = ref<string>('members')
+const tabs = computed(() => [
+    { id: 'members', label: t('dashboard.org.members'), icon: Users },
+    { id: 'quota', label: t('quota.limit'), icon: Gauge },
+])
 
 // Quota modal
 const quotaModalVisible = ref(false)
@@ -49,6 +59,11 @@ const {
     getUsageColor,
 } = useQuota()
 const isSuperuser = computed(() => authStore.user?.is_superuser === true)
+// Listing invitations requires org ADMIN or SystemAdmin (enforced by the gateway)
+const tenantStore = useTenantStore()
+const canManageInvitations = computed(() =>
+    isSuperuser.value || (tenantStore.organizations.find(o => o.id === orgId)?.org_role ?? 0) >= 3
+)
 
 const handleSaveQuota = async (regionUuid: string) => {
     try {
@@ -95,7 +110,7 @@ const fetchOrg = async () => {
     error.value = ''
     try {
         const response = await orgsApi.getOrg(orgId)
-        org.value = response.data?.org || response.data
+        org.value = response?.org || response
     } catch (err: any) {
         error.value = err.response?.data?.detail || 'Failed to load organization.'
     } finally {
@@ -107,7 +122,7 @@ const fetchMembers = async () => {
     membersLoading.value = true
     try {
         const response = await orgsApi.fetchMembers(orgId)
-        members.value = response.data?.members || response.data || []
+        members.value = response?.members || response || []
     } catch (err: any) {
         console.error('Failed to fetch members:', err)
     } finally {
@@ -120,13 +135,17 @@ const fetchInvitations = async () => {
     invitationsLoading.value = true
     try {
         const response = await orgsApi.fetchInvitations(orgId)
-        invitations.value = response.data || []
+        invitations.value = response || []
     } catch (err: any) {
         console.error('Failed to fetch invitations:', err)
     } finally {
         invitationsLoading.value = false
     }
 }
+// The org list may load after this page mounts
+watch(canManageInvitations, (allowed) => {
+    if (allowed) fetchInvitations()
+}, { immediate: true })
 
 // --- Invite Member ---
 const openAddMember = () => {
@@ -253,7 +272,6 @@ const handleKeydown = (e: KeyboardEvent) => {
 onMounted(() => {
     fetchOrg()
     fetchMembers()
-    fetchInvitations()
     fetchQuota(orgId)
     document.addEventListener('keydown', handleKeydown)
 })
@@ -267,7 +285,7 @@ onUnmounted(() => {
   <div>
     <!-- Back button -->
     <div class="page-header">
-      <button class="btn btn-ghost btn-sm" @click="router.push({ name: 'orgs' })">
+      <button class="btn btn-ghost btn-sm" @click="goBack">
         <ArrowLeft :size="16" /> {{ $t('actions.back') }}
       </button>
     </div>
@@ -322,27 +340,17 @@ onUnmounted(() => {
         </div>
 
         <div class="detail-grid">
-          <div class="detail-item">
-            <span class="detail-label">{{ $t('dashboard.table.description') }}</span>
-            <span class="detail-value">{{ org.description || '-' }}</span>
-          </div>
-          <div class="detail-item">
-            <span class="detail-label">{{ $t('dashboard.table.owner') }}</span>
-            <span class="detail-value">{{ org.owner_email || org.owner_uuid || '-' }}</span>
-          </div>
-          <div class="detail-item">
-            <span class="detail-label">{{ $t('dashboard.org.memberCount') }}</span>
-            <span class="detail-value">{{ org.member_count ?? members.length }}</span>
-          </div>
-          <div class="detail-item">
-            <span class="detail-label">{{ $t('dashboard.table.status') }}</span>
+          <InfoRow :label="$t('dashboard.table.description')">{{ org.description || '-' }}</InfoRow>
+          <InfoRow :label="$t('dashboard.table.owner')">{{ org.owner_email || org.owner_uuid || '-' }}</InfoRow>
+          <InfoRow :label="$t('dashboard.org.memberCount')">{{ org.member_count ?? members.length }}</InfoRow>
+          <InfoRow :label="$t('dashboard.table.status')">
             <div class="status-cell" :class="'status-' + (org.status || 0)">
                 <CheckCircle v-if="org.status === 1" :size="14" />
                 <PauseCircle v-else-if="org.status === 2" :size="14" />
                 <ShieldAlert v-else-if="org.status === 3" :size="14" />
                 <AlertCircle v-else :size="14" />
                 <span>
-                  {{ 
+                  {{
                     org.status === 0 ? $t('dashboard.org.status.pending') :
                     org.status === 1 ? $t('dashboard.org.status.active') :
                     org.status === 2 ? $t('dashboard.org.status.suspended') :
@@ -351,23 +359,13 @@ onUnmounted(() => {
                   }}
                 </span>
             </div>
-          </div>
-          <div class="detail-item">
-            <span class="detail-label">{{ $t('dashboard.table.created') }}</span>
-            <span class="detail-value">{{ org.created_at || '-' }}</span>
-          </div>
+          </InfoRow>
+          <InfoRow :label="$t('dashboard.table.created')">{{ org.created_at || '-' }}</InfoRow>
         </div>
       </div>
 
       <!-- Tabs -->
-      <div class="tab-bar">
-        <button class="tab-btn" :class="{ active: activeTab === 'members' }" @click="activeTab = 'members'">
-          <Users :size="16" /> {{ $t('dashboard.org.members') }}
-        </button>
-        <button class="tab-btn" :class="{ active: activeTab === 'quota' }" @click="activeTab = 'quota'">
-          <Gauge :size="16" /> {{ $t('quota.limit') }}
-        </button>
-      </div>
+      <DetailTabs v-model="activeTab" :tabs="tabs" />
 
       <!-- Quota Tab (read-only) -->
       <div v-if="activeTab === 'quota'" class="card">
@@ -391,13 +389,8 @@ onUnmounted(() => {
                 </tr>
               </thead>
               <tbody>
-                <tr v-for="res in [
-                  { key: 'cpu_cores', qkey: 'max_cpu_cores', label: $t('quota.cpuCores') },
-                  { key: 'ram_gb', qkey: 'max_ram_gb', label: $t('quota.ramGb') },
-                  { key: 'disk_gb', qkey: 'max_disk_gb', label: $t('quota.diskGb') },
-                  { key: 'public_ips', qkey: 'max_public_ips', label: $t('quota.publicIps') },
-                ]" :key="res.key">
-                  <td>{{ res.label }}</td>
+                <tr v-for="res in QUOTA_ROWS" :key="res.key">
+                  <td>{{ $t(res.label) }}</td>
                   <td>{{ (region.quota as any)[res.qkey] }}</td>
                   <td>{{ (region.consumption as any)[res.key] }}</td>
                   <td>
@@ -439,7 +432,7 @@ onUnmounted(() => {
               </div>
               <div class="invitation-meta">
                 <span>{{ $t('dashboard.org.invitedBy', { user: inv.inviter_email }) }}</span>
-                <span>{{ $t('dashboard.org.expires', { date: new Date(inv.expires_at).toLocaleDateString() }) }}</span>
+                <span>{{ $t('dashboard.org.expires', { date: formatDate(inv.expires_at) }) }}</span>
               </div>
               <button
                 class="btn btn-ghost btn-sm text-error"
@@ -511,221 +504,217 @@ onUnmounted(() => {
     </template>
 
     <!-- Quota Management Modal -->
-    <div v-if="quotaModalVisible" class="modal-overlay" @click.self="quotaModalVisible = false">
-      <div class="modal-content card" style="max-width: 700px; width: 95%;">
-        <div class="modal-header">
-          <h3><Gauge :size="18" style="margin-right: 8px;" />{{ $t('quota.manage') }}</h3>
-          <button class="btn btn-ghost btn-sm icon-btn" @click="quotaModalVisible = false"><X :size="20" /></button>
-        </div>
-        <div class="modal-body" style="padding: var(--spacing-6); max-height: 60vh; overflow-y: auto;">
-          <div v-if="quotaLoading" class="text-center" style="padding: 48px;">
-            <div class="loading-spinner" style="margin: 0 auto;"></div>
+    <BaseModal :show="quotaModalVisible" size="xl" @close="quotaModalVisible = false">
+      <template #header>
+        <h3><Gauge :size="18" style="margin-right: 8px;" />{{ $t('quota.manage') }}</h3>
+      </template>
+
+      <div v-if="quotaLoading" class="text-center" style="padding: 48px;">
+        <div class="loading-spinner" style="margin: 0 auto;"></div>
+      </div>
+      <div v-else-if="quotaError" class="text-center" style="padding: 24px;">
+        <p class="text-error">{{ quotaError }}</p>
+        <button class="btn btn-secondary btn-sm" @click="fetchQuota(orgId)">{{ $t('actions.retry') }}</button>
+      </div>
+      <div v-else-if="quotaSummary && quotaSummary.regions.length > 0">
+        <div v-for="region in quotaSummary.regions" :key="region.region_name" class="quota-region-card">
+          <h5 class="quota-region-title">{{ region.region_name }}</h5>
+          <table class="data-table quota-table">
+            <thead>
+              <tr>
+                <th>{{ $t('dashboard.table.name') }}</th>
+                <th>{{ $t('quota.limit') }}</th>
+                <th>{{ $t('quota.used') }}</th>
+                <th style="width: 200px;">{{ $t('dashboard.table.status') }}</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="res in QUOTA_ROWS" :key="res.key">
+                <td>{{ $t(res.label) }}</td>
+                <td>
+                  <input
+                    v-if="isSuperuser"
+                    type="number"
+                    class="form-input quota-input"
+                    :value="editingQuota[region.region_uuid]?.[res.qkey as keyof OrgResourceQuotaUpdate]"
+                    @input="(e: any) => { if (editingQuota[region.region_uuid]) (editingQuota[region.region_uuid] as any)[res.qkey] = Number(e.target.value) }"
+                    min="0"
+                    step="1"
+                  />
+                  <span v-else>{{ (region.quota as any)[res.qkey] }}</span>
+                </td>
+                <td>{{ (region.consumption as any)[res.key] }}</td>
+                <td>
+                  <div class="usage-bar-container">
+                    <div
+                      class="usage-bar"
+                      :style="{
+                        width: getUsagePercent((region.consumption as any)[res.key], (region.quota as any)[res.qkey]) + '%',
+                        background: getUsageColor(getUsagePercent((region.consumption as any)[res.key], (region.quota as any)[res.qkey]))
+                      }"
+                    ></div>
+                  </div>
+                  <span class="usage-text">{{ getUsagePercent((region.consumption as any)[res.key], (region.quota as any)[res.qkey]) }}%</span>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+          <div v-if="isSuperuser" class="quota-save-row">
+            <button
+              class="btn btn-primary btn-sm"
+              @click="handleSaveQuota(region.region_uuid)"
+              :disabled="savingQuota === region.region_uuid"
+            >
+              {{ savingQuota === region.region_uuid ? $t('messages.loading') : $t('actions.save') }}
+            </button>
           </div>
-          <div v-else-if="quotaError" class="text-center" style="padding: 24px;">
-            <p class="text-error">{{ quotaError }}</p>
-            <button class="btn btn-secondary btn-sm" @click="fetchQuota(orgId)">{{ $t('actions.retry') }}</button>
-          </div>
-          <div v-else-if="quotaSummary && quotaSummary.regions.length > 0">
-            <div v-for="region in quotaSummary.regions" :key="region.region_name" class="quota-region-card">
-              <h5 class="quota-region-title">{{ region.region_name }}</h5>
-              <table class="data-table quota-table">
-                <thead>
-                  <tr>
-                    <th>{{ $t('dashboard.table.name') }}</th>
-                    <th>{{ $t('quota.limit') }}</th>
-                    <th>{{ $t('quota.used') }}</th>
-                    <th style="width: 200px;">{{ $t('dashboard.table.status') }}</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr v-for="res in [
-                    { key: 'cpu_cores', qkey: 'max_cpu_cores', label: $t('quota.cpuCores') },
-                    { key: 'ram_gb', qkey: 'max_ram_gb', label: $t('quota.ramGb') },
-                    { key: 'disk_gb', qkey: 'max_disk_gb', label: $t('quota.diskGb') },
-                    { key: 'public_ips', qkey: 'max_public_ips', label: $t('quota.publicIps') },
-                  ]" :key="res.key">
-                    <td>{{ res.label }}</td>
-                    <td>
-                      <input
-                        v-if="isSuperuser"
-                        type="number"
-                        class="form-input quota-input"
-                        :value="editingQuota[region.region_uuid]?.[res.qkey as keyof OrgResourceQuotaUpdate]"
-                        @input="(e: any) => { if (editingQuota[region.region_uuid]) (editingQuota[region.region_uuid] as any)[res.qkey] = Number(e.target.value) }"
-                        min="0"
-                        step="1"
-                      />
-                      <span v-else>{{ (region.quota as any)[res.qkey] }}</span>
-                    </td>
-                    <td>{{ (region.consumption as any)[res.key] }}</td>
-                    <td>
-                      <div class="usage-bar-container">
-                        <div
-                          class="usage-bar"
-                          :style="{
-                            width: getUsagePercent((region.consumption as any)[res.key], (region.quota as any)[res.qkey]) + '%',
-                            background: getUsageColor(getUsagePercent((region.consumption as any)[res.key], (region.quota as any)[res.qkey]))
-                          }"
-                        ></div>
-                      </div>
-                      <span class="usage-text">{{ getUsagePercent((region.consumption as any)[res.key], (region.quota as any)[res.qkey]) }}%</span>
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
-              <div v-if="isSuperuser" class="quota-save-row">
-                <button
-                  class="btn btn-primary btn-sm"
-                  @click="handleSaveQuota(region.region_uuid)"
-                  :disabled="savingQuota === region.region_uuid"
-                >
-                  {{ savingQuota === region.region_uuid ? $t('messages.loading') : $t('actions.save') }}
-                </button>
-              </div>
-            </div>
-          </div>
-          <div v-else class="text-center text-secondary" style="padding: 48px;">
-            {{ $t('quota.noQuota') || 'No quota assigned' }}
-          </div>
-        </div>
-        <div class="modal-footer">
-          <button class="btn btn-secondary" @click="quotaModalVisible = false">{{ $t('actions.close') || $t('actions.cancel') }}</button>
         </div>
       </div>
-    </div>
+      <div v-else class="text-center text-secondary" style="padding: 48px;">
+        {{ $t('quota.noQuota') || 'No quota assigned' }}
+      </div>
+
+      <template #footer>
+        <button class="btn btn-secondary" @click="quotaModalVisible = false">{{ $t('actions.close') || $t('actions.cancel') }}</button>
+      </template>
+    </BaseModal>
 
     <!-- Invite Member Modal -->
-    <div v-if="addMemberVisible" class="modal-overlay" @click.self="addMemberVisible = false">
-      <div class="modal-content card" style="max-width: 460px;">
-        <div class="modal-header">
-          <h3><Mail :size="18" /> {{ $t('dashboard.org.inviteMember') }}</h3>
-          <button class="btn btn-ghost btn-sm icon-btn" @click="addMemberVisible = false"><X :size="20" /></button>
-        </div>
-        <div class="modal-body" style="padding: var(--spacing-6);">
-          <p style="margin-bottom: var(--spacing-4); color: var(--text-secondary); font-size: var(--font-size-sm);">
-            {{ $t('dashboard.org.inviteHint') }}
-          </p>
-          <div class="form-group">
-            <label class="form-label" for="invite_email">{{ $t('dashboard.table.email') }}</label>
-            <input id="invite_email" v-model="addMemberForm.email" type="email" class="form-input" :placeholder="$t('dashboard.forms.placeholder.emailExample')" />
-          </div>
-          <div class="form-group">
-            <label class="form-label" for="invite_role">{{ $t('dashboard.org.role') }}</label>
-            <select id="invite_role" v-model="addMemberForm.org_role" class="form-input">
-              <option :value="1">{{ $t('roles.reader') }}</option>
-              <option :value="2">{{ $t('roles.writer') }}</option>
-              <option :value="3">{{ $t('roles.admin') }}</option>
-            </select>
-          </div>
-        </div>
-        <div v-if="addMemberError" class="text-error" style="margin: 0 var(--spacing-6) var(--spacing-4); font-size:var(--font-size-sm); background:var(--error-light); padding:var(--spacing-2); border-radius:var(--radius-sm)">
-          {{ addMemberError }}
-        </div>
-        <div class="modal-footer">
-          <button class="btn btn-secondary" @click="addMemberVisible = false" :disabled="addingMember">{{ $t('actions.cancel') }}</button>
-          <button class="btn btn-primary" @click="handleAddMember" :disabled="addingMember">
-            <span v-if="addingMember" class="loading-spinner" style="width: 16px; height: 16px; border-width: 2px;"></span>
-            <Mail v-if="!addingMember" :size="14" />
-            {{ addingMember ? $t('messages.loading') : $t('dashboard.org.sendInvitation') }}
-          </button>
-        </div>
+    <BaseModal
+      :show="addMemberVisible"
+      :loading="addingMember"
+      form
+      @close="addMemberVisible = false"
+      @submit="handleAddMember"
+    >
+      <template #header>
+        <h3><Mail :size="18" /> {{ $t('dashboard.org.inviteMember') }}</h3>
+      </template>
+
+      <p style="margin-bottom: var(--spacing-4); color: var(--text-secondary); font-size: var(--font-size-sm);">
+        {{ $t('dashboard.org.inviteHint') }}
+      </p>
+      <div class="form-group">
+        <label class="form-label" for="invite_email">{{ $t('dashboard.table.email') }}</label>
+        <input id="invite_email" v-model="addMemberForm.email" type="email" class="form-input" :placeholder="$t('dashboard.forms.placeholder.emailExample')" />
       </div>
-    </div>
+      <div class="form-group">
+        <label class="form-label" for="invite_role">{{ $t('dashboard.org.role') }}</label>
+        <select id="invite_role" v-model="addMemberForm.org_role" class="form-input">
+          <option :value="1">{{ $t('roles.reader') }}</option>
+          <option :value="2">{{ $t('roles.writer') }}</option>
+          <option :value="3">{{ $t('roles.admin') }}</option>
+        </select>
+      </div>
+      <div v-if="addMemberError" class="text-error modal-error">
+        {{ addMemberError }}
+      </div>
+
+      <template #footer>
+        <button type="button" class="btn btn-secondary" @click="addMemberVisible = false" :disabled="addingMember">{{ $t('actions.cancel') }}</button>
+        <button type="submit" class="btn btn-primary" :disabled="addingMember">
+          <span v-if="addingMember" class="loading-spinner" style="width: 16px; height: 16px; border-width: 2px;"></span>
+          <Mail v-if="!addingMember" :size="14" />
+          {{ addingMember ? $t('messages.loading') : $t('dashboard.org.sendInvitation') }}
+        </button>
+      </template>
+    </BaseModal>
 
     <!-- Change Role Modal -->
-    <div v-if="changeRoleVisible" class="modal-overlay" @click.self="changeRoleVisible = false">
-      <div class="modal-content card" style="max-width: 420px;">
-        <div class="modal-header">
-          <h3>{{ $t('dashboard.org.changeRole') }}</h3>
-          <button class="btn btn-ghost btn-sm icon-btn" @click="changeRoleVisible = false"><X :size="20" /></button>
-        </div>
-        <div class="modal-body" style="padding: var(--spacing-6);">
-          <p style="margin-bottom: var(--spacing-4); color: var(--text-secondary);">
-            {{ $t('dashboard.org.changeRoleFor') }} <strong>{{ changeRoleForm.username }}</strong>
-          </p>
-          <div class="form-group">
-            <label class="form-label" for="change_role_select">{{ $t('dashboard.org.role') }}</label>
-            <select id="change_role_select" v-model="changeRoleForm.org_role" class="form-input">
-              <option :value="1">{{ $t('roles.reader') }}</option>
-              <option :value="2">{{ $t('roles.writer') }}</option>
-              <option :value="3">{{ $t('roles.admin') }}</option>
-            </select>
-          </div>
-        </div>
-        <div v-if="changeRoleError" class="text-error" style="margin: 0 var(--spacing-6) var(--spacing-4); font-size:var(--font-size-sm); background:var(--error-light); padding:var(--spacing-2); border-radius:var(--radius-sm)">
-          {{ changeRoleError }}
-        </div>
-        <div class="modal-footer">
-          <button class="btn btn-secondary" @click="changeRoleVisible = false" :disabled="changingRole">{{ $t('actions.cancel') }}</button>
-          <button class="btn btn-primary" @click="handleChangeRole" :disabled="changingRole">
-            {{ changingRole ? $t('messages.loading') : $t('actions.confirm') }}
-          </button>
-        </div>
+    <BaseModal
+      :show="changeRoleVisible"
+      :title="$t('dashboard.org.changeRole')"
+      :loading="changingRole"
+      form
+      @close="changeRoleVisible = false"
+      @submit="handleChangeRole"
+    >
+      <p style="margin-bottom: var(--spacing-4); color: var(--text-secondary);">
+        {{ $t('dashboard.org.changeRoleFor') }} <strong>{{ changeRoleForm.username }}</strong>
+      </p>
+      <div class="form-group">
+        <label class="form-label" for="change_role_select">{{ $t('dashboard.org.role') }}</label>
+        <select id="change_role_select" v-model="changeRoleForm.org_role" class="form-input">
+          <option :value="1">{{ $t('roles.reader') }}</option>
+          <option :value="2">{{ $t('roles.writer') }}</option>
+          <option :value="3">{{ $t('roles.admin') }}</option>
+        </select>
       </div>
-    </div>
+      <div v-if="changeRoleError" class="text-error modal-error">
+        {{ changeRoleError }}
+      </div>
+
+      <template #footer>
+        <button type="button" class="btn btn-secondary" @click="changeRoleVisible = false" :disabled="changingRole">{{ $t('actions.cancel') }}</button>
+        <button type="submit" class="btn btn-primary" :disabled="changingRole">
+          {{ changingRole ? $t('messages.loading') : $t('actions.confirm') }}
+        </button>
+      </template>
+    </BaseModal>
 
     <!-- Remove Member Modal -->
-    <div v-if="removeMemberVisible" class="modal-overlay" @click.self="removeMemberVisible = false">
-      <div class="modal-content card" style="max-width: 420px;">
-        <div class="modal-header">
-          <h3>{{ $t('dashboard.org.removeMember') }}</h3>
-          <button class="btn btn-ghost btn-sm icon-btn" @click="removeMemberVisible = false"><X :size="20" /></button>
+    <BaseModal
+      :show="removeMemberVisible"
+      :title="$t('dashboard.org.removeMember')"
+      :loading="removingMember"
+      content-class="remove-member-modal"
+      @close="removeMemberVisible = false"
+    >
+      <div class="remove-member-body">
+        <div class="remove-member-icon">
+          <Trash2 :size="32" />
         </div>
-        <div class="modal-body" style="padding: var(--spacing-6); text-align: center;">
-          <div style="width:64px;height:64px;border-radius:50%;background:var(--error-light);display:flex;align-items:center;justify-content:center;margin:0 auto var(--spacing-4);color:var(--error-color)">
-            <Trash2 :size="32" />
-          </div>
-          <p style="color: var(--text-secondary);">{{ $t('dashboard.org.removeMemberConfirm') }}</p>
-          <div style="background:var(--bg-secondary);border:1px solid var(--border-light);border-radius:var(--radius-md);padding:var(--spacing-3) var(--spacing-4);margin-top:var(--spacing-4);text-align:left">
-            <span style="font-weight:var(--font-weight-semibold);display:block">{{ memberToRemove?.username }}</span>
-            <span style="font-size:var(--font-size-xs);color:var(--text-light);display:block;margin-top:2px">{{ memberToRemove?.email }}</span>
-          </div>
-          <div v-if="removeMemberError" class="text-error" style="margin-top:var(--spacing-4);font-size:var(--font-size-sm);background:var(--error-light);padding:var(--spacing-2);border-radius:var(--radius-sm)">
-            {{ removeMemberError }}
-          </div>
+        <p style="color: var(--text-secondary);">{{ $t('dashboard.org.removeMemberConfirm') }}</p>
+        <div class="remove-member-target">
+          <span style="font-weight:var(--font-weight-semibold);display:block">{{ memberToRemove?.username }}</span>
+          <span style="font-size:var(--font-size-xs);color:var(--text-light);display:block;margin-top:2px">{{ memberToRemove?.email }}</span>
         </div>
-        <div class="modal-footer">
-          <button class="btn btn-secondary" @click="removeMemberVisible = false" :disabled="removingMember">{{ $t('actions.cancel') }}</button>
-          <button class="btn btn-danger" @click="handleRemoveMember" :disabled="removingMember">
-            <Trash2 :size="14" />
-            {{ removingMember ? $t('messages.loading') : $t('dashboard.org.removeMember') }}
-          </button>
+        <div v-if="removeMemberError" class="text-error modal-error">
+          {{ removeMemberError }}
         </div>
       </div>
-    </div>
+
+      <template #footer>
+        <button class="btn btn-secondary" @click="removeMemberVisible = false" :disabled="removingMember">{{ $t('actions.cancel') }}</button>
+        <button class="btn btn-danger" @click="handleRemoveMember" :disabled="removingMember">
+          <Trash2 :size="14" />
+          {{ removingMember ? $t('messages.loading') : $t('dashboard.org.removeMember') }}
+        </button>
+      </template>
+    </BaseModal>
 
     <!-- Transfer Ownership Modal -->
-    <div v-if="transferVisible" class="modal-overlay" @click.self="transferVisible = false">
-      <div class="modal-content card" style="max-width: 420px;">
-        <div class="modal-header">
-          <h3>{{ $t('dashboard.org.transferOwnership') }}</h3>
-          <button class="btn btn-ghost btn-sm icon-btn" @click="transferVisible = false"><X :size="20" /></button>
-        </div>
-        <div class="modal-body" style="padding: var(--spacing-6);">
-          <p style="margin-bottom: var(--spacing-4); color: var(--text-secondary);">
-            {{ $t('dashboard.org.transferConfirm') }}
-          </p>
-          <div class="form-group">
-            <label class="form-label" for="transfer_owner_target">{{ $t('dashboard.org.selectNewOwner') }}</label>
-            <select id="transfer_owner_target" v-model="transferTargetId" class="form-input">
-              <option :value="null" disabled>-- {{ $t('dashboard.org.selectMember') }} --</option>
-              <option v-for="m in members.filter(m => !m.is_owner)" :key="m.user_uuid" :value="m.user_uuid">
-                {{ m.username }} ({{ m.email }})
-              </option>
-            </select>
-          </div>
-          <div v-if="transferError" class="text-error" style="margin-top:var(--spacing-4);font-size:var(--font-size-sm);background:var(--error-light);padding:var(--spacing-2);border-radius:var(--radius-sm)">
-            {{ transferError }}
-          </div>
-        </div>
-        <div class="modal-footer">
-          <button class="btn btn-secondary" @click="transferVisible = false" :disabled="transferring">{{ $t('actions.cancel') }}</button>
-          <button class="btn btn-primary" @click="handleTransfer" :disabled="transferring || !transferTargetId">
-            {{ transferring ? $t('messages.loading') : $t('actions.confirm') }}
-          </button>
-        </div>
+    <BaseModal
+      :show="transferVisible"
+      :title="$t('dashboard.org.transferOwnership')"
+      :loading="transferring"
+      form
+      @close="transferVisible = false"
+      @submit="handleTransfer"
+    >
+      <p style="margin-bottom: var(--spacing-4); color: var(--text-secondary);">
+        {{ $t('dashboard.org.transferConfirm') }}
+      </p>
+      <div class="form-group">
+        <label class="form-label" for="transfer_owner_target">{{ $t('dashboard.org.selectNewOwner') }}</label>
+        <select id="transfer_owner_target" v-model="transferTargetId" class="form-input">
+          <option :value="null" disabled>-- {{ $t('dashboard.org.selectMember') }} --</option>
+          <option v-for="m in members.filter(m => !m.is_owner)" :key="m.user_uuid" :value="m.user_uuid">
+            {{ m.username }} ({{ m.email }})
+          </option>
+        </select>
       </div>
-    </div>
+      <div v-if="transferError" class="text-error modal-error">
+        {{ transferError }}
+      </div>
+
+      <template #footer>
+        <button type="button" class="btn btn-secondary" @click="transferVisible = false" :disabled="transferring">{{ $t('actions.cancel') }}</button>
+        <button type="submit" class="btn btn-primary" :disabled="transferring || !transferTargetId">
+          {{ transferring ? $t('messages.loading') : $t('actions.confirm') }}
+        </button>
+      </template>
+    </BaseModal>
   </div>
 </template>
 
@@ -780,26 +769,6 @@ onUnmounted(() => {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
   gap: var(--spacing-5);
-}
-
-.detail-item {
-  display: flex;
-  flex-direction: column;
-  gap: var(--spacing-1);
-}
-
-.detail-label {
-  font-size: var(--font-size-xs);
-  color: var(--text-tertiary);
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  font-weight: var(--font-weight-semibold);
-}
-
-.detail-value {
-  font-size: var(--font-size-sm);
-  color: var(--text-primary);
-  font-weight: var(--font-weight-medium);
 }
 
 .card-header-row {
@@ -894,7 +863,7 @@ onUnmounted(() => {
 
 .actions {
   display: flex;
-  gap: var(--spacing-02);
+  gap: var(--spacing-2);
 }
 
 .text-error {
@@ -954,6 +923,39 @@ onUnmounted(() => {
 }
 
 /* Modal styles */
+.modal-error {
+  margin-top: var(--spacing-4);
+  font-size: var(--font-size-sm);
+  background: var(--error-light);
+  padding: var(--spacing-2);
+  border-radius: var(--radius-sm);
+}
+
+.remove-member-body {
+  text-align: center;
+}
+
+.remove-member-icon {
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  background: var(--error-light);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto var(--spacing-4);
+  color: var(--error-color);
+}
+
+.remove-member-target {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-md);
+  padding: var(--spacing-3) var(--spacing-4);
+  margin-top: var(--spacing-4);
+  text-align: left;
+}
+
 .btn-danger {
   background: var(--error-color);
   color: white;
@@ -971,40 +973,6 @@ onUnmounted(() => {
 .btn-danger:hover { background: var(--error-dark); }
 .btn-danger:disabled { opacity: 0.5; cursor: not-allowed; }
 
-/* Tabs */
-.tab-bar {
-  display: flex;
-  gap: var(--spacing-1);
-  margin-bottom: var(--spacing-4);
-  border-bottom: 1px solid var(--border-light);
-  padding-bottom: 0;
-}
-
-.tab-btn {
-  display: flex;
-  align-items: center;
-  gap: var(--spacing-2);
-  padding: var(--spacing-3) var(--spacing-4);
-  border: none;
-  background: none;
-  color: var(--text-secondary);
-  font-size: var(--font-size-sm);
-  font-weight: var(--font-weight-medium);
-  cursor: pointer;
-  border-bottom: 2px solid transparent;
-  margin-bottom: -1px;
-  transition: all var(--transition-base);
-}
-
-.tab-btn:hover {
-  color: var(--text-primary);
-}
-
-.tab-btn.active {
-  color: var(--primary-600);
-  border-bottom-color: var(--primary-600);
-}
-
 /* Quota */
 .quota-region-card {
   padding: var(--spacing-4) 0;
@@ -1017,7 +985,7 @@ onUnmounted(() => {
 
 .quota-region-title {
   margin: 0 0 var(--spacing-3);
-  font-size: var(--font-size-md);
+  font-size: var(--font-size-base);
   font-weight: var(--font-weight-semibold);
   color: var(--text-primary);
 }

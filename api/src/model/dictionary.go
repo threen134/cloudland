@@ -22,7 +22,7 @@ type Dictionary struct {
 	Category  string `gorm:"column:category;type:varchar(64);index"`
 	Name      string `gorm:"type:varchar(64)"`
 	ShortName string `gorm:"type:varchar(64)"`
-	Value     string `gorm:"unique_index"`
+	Value     string `gorm:"uniqueIndex"`
 	SubType1  string `gorm:"type:varchar(32);default:''"` // data center
 	SubType2  string `gorm:"type:varchar(32);default:''"` // ddos/ ddospro / siteip
 	SubType3  string `gorm:"type:varchar(32);default:''"` //

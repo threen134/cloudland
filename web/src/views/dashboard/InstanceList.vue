@@ -5,7 +5,7 @@ import { useI18n } from 'vue-i18n'
 import { useToast } from '../../composables/useToast'
 import { useCopyId } from '../../composables/useCopyId'
 import { instancesApi, type Instance } from '../../api/instances'
-import { Play, Square, RotateCw, Trash2, Plus, Terminal, MoreVertical, Search, X, Check, Copy, Monitor, ChevronDown, ChevronUp, PlusCircle, MinusCircle, RefreshCw, Cpu, HardDrive, Eye, EyeOff, Shuffle, Pencil, KeyRound, Maximize2, Server, Activity, Network, Globe, HelpCircle } from 'lucide-vue-next'
+import { Play, Square, RotateCw, Trash2, Plus, Terminal, MoreVertical, Search, Check, Copy, Monitor, ChevronDown, ChevronUp, PlusCircle, MinusCircle, RefreshCw, Eye, EyeOff, Shuffle, Pencil, KeyRound, Maximize2, Server, Activity, Network, Globe, HelpCircle } from 'lucide-vue-next'
 
 import { imagesApi, type Image } from '../../api/images'
 import { vpcsApi, subnetsApi, securityGroupsApi, floatingIpsApi, type VPC, type Subnet, type SecurityGroup, type FloatingIP } from '../../api/networks'
@@ -16,8 +16,14 @@ import { zonesApi, type Zone } from '../../api/zones'
 import { hypervisorsApi, type Hypervisor } from '../../api/hypervisors'
 import { isValidName } from '../../utils/validation'
 import DeleteModal from '../../components/modals/DeleteModal.vue'
+import BaseModal from '../../components/modals/BaseModal.vue'
+import PageToolbar from '../../components/base/PageToolbar.vue'
+import StatusBadge from '../../components/base/StatusBadge.vue'
+import DataTable, { type Column } from '../../components/base/DataTable.vue'
 import { useRegionStore } from '../../stores/region'
 import { useAuthStore } from '../../stores/auth'
+import { quotaErrorMessage } from '../../utils/quotaError'
+import { formatMemory } from '../../utils/format'
 
 const region = useRegionStore()
 const authStore = useAuthStore()
@@ -41,6 +47,7 @@ const vClickOutside = {
 
 const instanceList = ref<Instance[]>([])
 const loading = ref(false)
+const loadError = ref('')
 const actionLoading = ref<Record<string, string | null>>({})
 const searchQuery = ref('')
 
@@ -61,12 +68,15 @@ const hideIfaceHelp = () => {
 }
 
 const router = useRouter()
-const { t } = useI18n()
+const { t, te } = useI18n()
 const toast = useToast()
 
 
 const instanceMetrics = ref<Record<string, { cpu: number, memory: number }>>({})
-let metricsTimer: any = null
+let metricsTimer: ReturnType<typeof setInterval> | null = null
+// 电源操作后的状态轮询：可能同时有多台，统一在 onUnmounted 停止
+const statusPollTimers = new Set<ReturnType<typeof setTimeout>>()
+let unmounted = false
 
 const fetchUsageMetrics = async () => {
     const ids = filteredInstances.value
@@ -87,14 +97,14 @@ const fetchUsageMetrics = async () => {
         const newMetrics: Record<string, { cpu: number, memory: number }> = {}
         ids.forEach(id => {
             // CPU: match by metric.uuid, one-dimensional values array [{time, value}]
-            const cpuResult = cpuRes.data?.data?.result?.find((r: any) => r.metric?.uuid === id)
+            const cpuResult = cpuRes?.data?.result?.find((r: any) => r.metric?.uuid === id)
             const cpuValues = cpuResult?.values || []
             const lastCpu = cpuValues.length
                 ? parseFloat(cpuValues[cpuValues.length - 1].value || 0)
                 : 0
 
             // Memory: match by metric.uuid, two-dimensional values array [totalValues[], usedValues[]]
-            const memResult = memRes.data?.data?.result?.find((r: any) => r.metric?.uuid === id)
+            const memResult = memRes?.data?.result?.find((r: any) => r.metric?.uuid === id)
             let lastMem = 0
             if (memResult?.values?.length >= 2) {
                 const totalValues = memResult.values[0]
@@ -114,16 +124,19 @@ const fetchUsageMetrics = async () => {
 
 const fetchInstances = async (showLoading: boolean = true) => {
     if (showLoading) loading.value = true
+    loadError.value = ''
     try {
         const response = await instancesApi.fetchInstances()
-        const data = response.data as any
+        const data = response as any
         instanceList.value = Array.isArray(data) ? data : (data.instances || [])
         
         // Start fetching metrics after full list is loaded
         setTimeout(fetchUsageMetrics, 500)
     } catch (error) {
+        // 原先失败只打日志、把列表清空，用户看到的是"没有数据"
         console.error('API fetch failed:', error)
         instanceList.value = []
+        loadError.value = t('messages.error')
     } finally {
         if (showLoading) loading.value = false
     }
@@ -149,58 +162,30 @@ const filteredInstances = computed(() => {
     })
 })
 
-const navigateToDetail = (instance: Instance) => {
-    router.push({ name: 'instance-detail', params: { id: instance.id } })
-}
+// 列定义。IP（一行多个）和资源占用（30 秒刷新的实时值）不排序；状态列显示的是翻译过的
+// 文案，排序按原始状态串；规格列显示 "核数 / 内存"，按核数排
+const columns = computed<Column[]>(() => [
+    { key: 'name', label: t('dashboard.table.nameId'), sortable: true, sortValue: (i) => i.hostname || '' },
+    { key: 'flavor', label: t('dashboard.table.flavor'), sortable: true, sortValue: (i) => i.cpu || 0 },
+    { key: 'image', label: t('dashboard.table.image'), sortable: true, sortValue: (i) => i.image?.name || '' },
+    { key: 'ip', label: t('dashboard.table.ipAddress') },
+    { key: 'status', label: t('dashboard.table.status'), sortable: true, sortValue: (i) => i.status || '' },
+    { key: 'usage', label: t('dashboard.overview.resourceUsage') },
+    { key: 'actions', label: t('dashboard.table.actions'), align: 'center' },
+])
 
-const getStatusClass = (status: string) => {
-    const statusMap: Record<string, string> = {
-        'running': 'status-running',
-        'active': 'status-running',
-        'stopped': 'status-stopped',
-        'shutoff': 'status-stopped',
-        'shut_off': 'status-stopped',
-        'paused': 'status-paused',
-        'provisioning': 'status-pending',
-        'starting': 'status-pending',
-        'stopping': 'status-pending',
-        'deleting': 'status-pending',
-        'error': 'status-error'
-    }
-    return statusMap[status?.toLowerCase()] || 'status-pending'
-}
 
 const getStatusText = (status: string) => {
     const s = status?.toLowerCase()
     if (!s) return '-'
-    // Note: status keys are defined in dashboard.instanceStatus
-    return t(`dashboard.instanceStatus.${s}`) || status
+    // 状态键定义在 dashboard.instanceStatus；缺键时 t() 会返回键路径本身，
+    // 所以必须用 te() 判断，否则界面上会直接显示 dashboard.instanceStatus.xxx
+    const key = `dashboard.instanceStatus.${s}`
+    return te(key) ? t(key) : status
 }
 
-const formatMemory = (mb: number) => {
-    if (mb >= 1024) {
-        return `${(mb / 1024).toFixed(0)} GB`
-    }
-    return `${mb} MB`
-}
 
-const getIPAddress = (instance: Instance) => {
-    const primaryIface = instance.interfaces?.find(iface => iface.is_primary) || instance.interfaces?.[0]
-    const addr = primaryIface?.ip_address
-    if (!addr) return '-'
-    return addr.split('/')[0]
-}
 
-const getFloatingIP = (instance: Instance) => {
-    const primaryIface = instance.interfaces?.find(iface => iface.is_primary) || instance.interfaces?.[0]
-    if (primaryIface?.floating_ips && primaryIface.floating_ips.length > 0) {
-        const fip = primaryIface.floating_ips.find((f: any) => f.type?.toLowerCase() !== 'native')
-        if (fip && fip.fip_address) {
-            return fip.fip_address.split('/')[0]
-        }
-    }
-    return null
-}
 
 // --- Action States and Dropdown ---
 const activeActionMenuId = ref<string | null>(null)
@@ -256,6 +241,7 @@ const handleAction = async (instance: Instance, action: 'start' | 'stop' | 'rest
         const checkStatus = async () => {
             attempts++
             await fetchInstances(false)
+            if (unmounted) return
             const currentInstance = instanceList.value.find(i => i.id === instance.id)
             const currentStatus = currentInstance?.status?.toLowerCase() || ''
             if (!currentInstance || targetStableStates.includes(currentStatus) || attempts >= 15) {
@@ -266,11 +252,11 @@ const handleAction = async (instance: Instance, action: 'start' | 'stop' | 'rest
                     toast.success(t('dashboard.instanceDetail.actionSuccess', { action: t(`dashboard.instanceDetail.${action}`) }))
                 }
             } else {
-                setTimeout(checkStatus, 3000)
+                statusPollTimers.add(setTimeout(checkStatus, 3000))
             }
         }
-        
-        setTimeout(checkStatus, 2000)
+
+        statusPollTimers.add(setTimeout(checkStatus, 2000))
     } catch (error: any) {
         console.error(`Failed to ${action} instance:`, error)
         actionLoading.value[instance.id] = null
@@ -399,29 +385,13 @@ const confirmResize = async () => {
     }
 }
 
-const openConsole = async (instance: Instance) => {
-    // Open window immediately to avoid popup blockers
-    const consoleWindow = window.open('about:blank', '_blank')
-    if (!consoleWindow) {
+// The console page embeds the bundled noVNC client and requests the console token itself.
+// Opened without noopener so the new window inherits sessionStorage (login session).
+const openConsole = (instance: Instance, type: 'vnc' | 'serial' = 'vnc') => {
+    const name = type === 'serial' ? 'instance-serial-console' : 'instance-console'
+    const url = router.resolve({ name, params: { id: instance.id } }).href
+    if (!window.open(url, '_blank')) {
         toast.error(t('dashboard.instanceDetail.popupBlocked'))
-        return
-    }
-
-    try {
-        const response = await instancesApi.getConsole(instance.id)
-        const { console_host, console_port, console_path, token } = response.data
-        
-        const host = console_host
-        const port = console_port || 443
-        const path = console_path || 'websockify'
-        const encrypt = port === 443
-        
-        const externalUrl = `https://novnc.com/noVNC/vnc.html?host=${host}&port=${port}&autoconnect=true&encrypt=${encrypt}&path=${path}?token=${token}`
-        consoleWindow.location.href = externalUrl
-    } catch (error: any) {
-        console.error('Failed to get console info:', error)
-        consoleWindow.close()
-        toast.error(t('dashboard.instanceDetail.consoleError', { error: error.response?.data?.error_message || error.message }))
     }
 }
 
@@ -519,7 +489,8 @@ const newInstanceForm = ref({
     zone: 'default',
     keys: [] as string[],
     root_passwd: '',
-    login_port: 22,
+    // 留空时由后端按镜像类型决定（Linux 22、Windows 3389）
+    login_port: '' as number | '',
     count: 1,
     userdata_type: 'plain',
     userdata: '',
@@ -567,7 +538,7 @@ const openCreateModal = () => {
         zone: 'default',
         keys: [],
         root_passwd: '',
-        login_port: 22,
+        login_port: '',
         count: 1,
         userdata_type: 'plain',
         userdata: '',
@@ -641,15 +612,15 @@ const fetchResources = async () => {
         ])
 
 
-        availableImages.value = (imgsRes.data as any).images || []
+        availableImages.value = (imgsRes as any).images || []
         availableVPCs.value = vpcsRes.vpcs || []
         availableSecurityGroups.value = sgsRes.security_groups || []
-        availableKeys.value = (keysRes.data as any).keys || []
+        availableKeys.value = (keysRes as any).keys || []
         availableSubnets.value = subnetsRes.subnets || []
         availableFloatingIps.value = fipsRes.floating_ips || []
         
-        availableFlavors.value = (flavorsRes.data as any).flavors || flavorsRes.data || []
-        availableZones.value = (zonesRes.data as any).zones || zonesRes.data || []
+        availableFlavors.value = (flavorsRes as any).flavors || flavorsRes || []
+        availableZones.value = (zonesRes as any).zones || zonesRes || []
 
         // Set default zone if available
         if (availableZones.value.length > 0) {
@@ -659,7 +630,7 @@ const fetchResources = async () => {
         if (isSystemAdmin.value) {
             try {
                 const hypersRes = await hypervisorsApi.fetchHypervisors({ limit: 500 })
-                availableHypers.value = hypersRes.data.hypers || []
+                availableHypers.value = hypersRes.hypers || []
             } catch (err) {
                 console.error('Failed to fetch hypervisors:', err)
                 availableHypers.value = []
@@ -738,9 +709,6 @@ const getPublicSubnetsForSecondary = (excludeIndex: number) => {
     )
 }
 
-const getAvailablePublicIps = () => {
-    return availableFloatingIps.value.filter(fip => !fip.target_interface && !fip.interface)
-}
 
 const getFilteredSecurityGroups = (vpcId?: string) => {
     if (!vpcId) {
@@ -934,7 +902,8 @@ const handleCreateInstance = async () => {
             nested_enable: form.nested_enable,
             userdata_type: form.userdata_type,
             userdata: form.userdata,
-            login_port: form.login_port,
+            // 留空不传，由后端按镜像类型决定（Linux 22、Windows 3389）
+            login_port: form.login_port || undefined,
             keys: form.keys.map(id => ({ id }))
         }
 
@@ -958,17 +927,8 @@ const handleCreateInstance = async () => {
     } catch (err: any) {
         console.error('Failed to create instance:', err)
         const detail = err.response?.data?.detail
-        if (detail?.error === 'quota_exceeded') {
-            createError.value = t('dashboard.instanceDetail.quotaExceeded', {
-                resource: detail.resource,
-                region: detail.region,
-                requested: detail.requested,
-                available: detail.available,
-                limit: detail.limit
-            })
-        } else {
-            createError.value = err.response?.data?.error_message || detail?.message || err.message || t('dashboard.floatingIPDetail.loadError')
-        }
+        createError.value = quotaErrorMessage(err, t, te)
+            || err.response?.data?.error_message || detail?.message || err.message || t('dashboard.floatingIPDetail.loadError')
     } finally {
         creatingInstance.value = false
     }
@@ -993,6 +953,10 @@ watch(() => region.currentRegionId, (newId) => {
 
 onUnmounted(() => {
     if (metricsTimer) clearInterval(metricsTimer)
+    // 电源操作后的状态轮询每台最长 45 秒，不停掉会在离开后继续请求并弹出本页的提示
+    unmounted = true
+    statusPollTimers.forEach(clearTimeout)
+    statusPollTimers.clear()
 })
 </script>
 
@@ -1000,63 +964,38 @@ onUnmounted(() => {
   <div>
     <!-- Toast Notification removed (using global ToastContainer) -->
 
-    <div class="page-header">
-      <div class="search-wrapper">
-        <label class="search-box">
-          <Search :size="16" class="search-icon" />
-          <input 
-            id="searchQuery"
-            name="searchQuery"
-            type="text" 
-            v-model="searchQuery"
-            :placeholder="t('marketplace.searchPlaceholder')" 
-            class="search-input"
-          />
-        </label>
-      </div>
-      <div class="header-actions">
+    <PageToolbar v-model:search="searchQuery">
+      <template #actions>
         <button class="btn btn-secondary btn-sm btn-icon" @click="fetchInstances()" :title="t('dashboard.regions')">
           <RefreshCw :size="14" :class="{ spinning: loading }" />
         </button>
         <button class="btn btn-primary btn-sm" @click="openCreateModal">
           <Plus :size="14" /> {{ t('dashboard.buttons.createInstance') }}
         </button>
-      </div>
-    </div>
+      </template>
+    </PageToolbar>
 
-    <div class="card table-card">
-      <table class="data-table">
-        <thead>
-          <tr>
-            <th>{{ t('dashboard.table.nameId') }}</th>
-            <th>{{ t('dashboard.table.flavor') }}</th>
-            <th>{{ t('dashboard.table.image') }}</th>
-            <th>{{ t('dashboard.table.ipAddress') }}</th>
-            <th>{{ t('dashboard.table.status') }}</th>
-            <th>{{ t('dashboard.overview.resourceUsage') }}</th>
-            <th>{{ t('dashboard.table.actions') }}</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-if="loading">
-            <td colspan="7" class="text-center">
-              <div class="loading-spinner" style="margin: 20px auto;"></div>
-            </td>
-          </tr>
-          <tr v-else-if="filteredInstances.length === 0">
-            <td colspan="7" class="text-center text-secondary" style="padding: 48px;">
-               <div v-if="searchQuery">
-                  <Search :size="48" style="opacity: 0.3; margin-bottom: 16px;" />
-                   <p>{{ t('dashboard.table.noResults') }}</p>
-               </div>
-               <div v-else>
-                  <Monitor :size="48" style="opacity: 0.3; margin-bottom: 16px;" />
-                   <p class="text-secondary">{{ t('dashboard.table.noData') }}</p>
-               </div>
-            </td>
-          </tr>
-          <tr v-else v-for="instance in filteredInstances" :key="instance.id" :class="{'active-row': activeActionMenuId === instance.id}">
-            <td>
+    <DataTable
+      allow-overflow
+      :columns="columns"
+      :rows="filteredInstances"
+      row-key="id"
+      :loading="loading"
+      :error="loadError"
+      @retry="fetchInstances()"
+    >
+      <template #empty>
+        <div v-if="searchQuery">
+          <Search :size="48" style="opacity: 0.3; margin-bottom: 16px;" />
+          <p>{{ t('dashboard.table.noResults') }}</p>
+        </div>
+        <div v-else>
+          <Monitor :size="48" style="opacity: 0.3; margin-bottom: 16px;" />
+          <p class="text-secondary">{{ t('dashboard.table.noData') }}</p>
+        </div>
+      </template>
+
+      <template #cell-name="{ row: instance }">
               <router-link :to="{ name: 'instance-detail', params: { id: instance.id } }" class="resource-link">
                 <div class="resource-info">
                   <div class="resource-icon">
@@ -1074,18 +1013,21 @@ onUnmounted(() => {
                   </div>
                 </div>
               </router-link>
-            </td>
-            <td>
+      </template>
+
+      <template #cell-flavor="{ row: instance }">
               <div class="specs-display">
                 <div class="specs-main">{{ instance.cpu }}C / {{ formatMemory(instance.memory).replace(' GB', 'G').replace(' MB', 'M') }}</div>
                 <div v-if="instance.flavor" class="specs-sub">
                   {{ typeof instance.flavor === 'string' ? instance.flavor : instance.flavor.name }}
                 </div>
               </div>
-            </td>
-            <td>{{ instance.image?.name || '-' }}</td>
-            <td @mouseleave="closeIpPopover">
-              <div class="ip-display-wrapper">
+      </template>
+
+      <template #cell-image="{ row: instance }">{{ instance.image?.name || '-' }}</template>
+
+      <template #cell-ip="{ row: instance }">
+              <div class="ip-display-wrapper" @mouseleave="closeIpPopover">
                 <!-- Show first 2 interfaces inline -->
                 <div class="ip-list">
                   <div v-for="(iface, idx) in (instance.interfaces || []).slice(0, 2)" :key="idx" class="ip-item">
@@ -1138,13 +1080,13 @@ onUnmounted(() => {
                   </Transition>
                 </div>
               </div>
-            </td>
-            <td>
-              <span :class="['badge', getStatusClass(instance.status)]">
-                {{ getStatusText(instance.status) }}
-              </span>
-            </td>
-            <td>
+      </template>
+
+      <template #cell-status="{ row: instance }">
+              <StatusBadge :status="instance.status" :label="getStatusText(instance.status)" />
+      </template>
+
+      <template #cell-usage="{ row: instance }">
                <div class="instance-usage-summary" v-if="['running', 'active'].includes(instance.status?.toLowerCase())">
                  <div class="usage-mini-item" :title="'CPU: ' + (instanceMetrics[instance.id]?.cpu || 0).toFixed(1) + '%'">
                    <span class="usage-label">CPU</span>
@@ -1160,10 +1102,12 @@ onUnmounted(() => {
                  </div>
                </div>
                <span v-else class="text-secondary text-xs">-</span>
-            </td>
-            <td class="actions-usage-cell">
+      </template>
+
+      <template #cell-actions="{ row: instance }">
                <div class="actions">
-                 <div class="action-dropdown" style="position: relative;">
+                 <!-- 菜单展开时把这一格抬到上层：原先是给整行加 .active-row -->
+                 <div class="action-dropdown" style="position: relative;" :class="{ 'active-row': activeActionMenuId === instance.id }">
                     <button class="btn btn-ghost btn-sm" @click.stop="toggleActionMenu(instance.id)" :title="t('dashboard.instanceDetail.more')">
                         <MoreVertical :size="14" />
                     </button>
@@ -1195,6 +1139,9 @@ onUnmounted(() => {
                             
                             <button class="dropdown-item" @click="openConsole(instance)">
                                 <Terminal :size="14" /> {{ t('dashboard.instanceDetail.console') }}
+                            </button>
+                            <button class="dropdown-item" @click="openConsole(instance, 'serial')">
+                                <Terminal :size="14" /> {{ t('dashboard.console.serial.title') }}
                             </button>
 
                             <div class="dropdown-divider"></div>
@@ -1251,27 +1198,22 @@ onUnmounted(() => {
                     </Transition>
                  </div>
               </div>
-            </td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
+      </template>
+    </DataTable>
 
     <!-- Create Instance Modal -->
-    <div v-if="createModalVisible" class="modal-overlay" @click.self="closeCreateModal">
-      <div class="modal-content card" style="max-width: 600px;">
-        <div class="modal-header">
-          <h3>{{ t('dashboard.buttons.createInstance') }}</h3>
-          <button class="btn btn-ghost btn-sm icon-btn" @click="closeCreateModal">
-            <X :size="20" />
-          </button>
-        </div>
-        
-        <div class="modal-body" v-if="resourcesLoading">
+    <BaseModal
+      :show="createModalVisible"
+      :title="t('dashboard.buttons.createInstance')"
+      size="lg"
+      :loading="creatingInstance"
+      @close="closeCreateModal"
+    >
+        <div v-if="resourcesLoading">
             <div class="loading-spinner" style="margin: 40px auto;"></div>
         </div>
 
-        <div class="modal-body scrollable-options" v-else>
+        <div v-else>
           <!-- Basic Info -->
           <div class="form-section">
             <div class="section-header collapsible-header" @click="newInstanceForm.general_expanded = !newInstanceForm.general_expanded">
@@ -1622,6 +1564,7 @@ onUnmounted(() => {
                 <div class="form-group">
                     <label class="form-label">{{ t('dashboard.instanceDetail.loginPort') }}</label>
                     <input id="loginPort" name="loginPort" v-model.number="newInstanceForm.login_port" type="number" class="form-input" :placeholder="t('dashboard.instanceDetail.loginPortPlaceholder')" />
+                    <small class="form-hint">{{ t('dashboard.instanceDetail.loginPortHint') }}</small>
                 </div>
 
                 <div class="form-group">
@@ -1650,64 +1593,61 @@ onUnmounted(() => {
           </div>
         </div>
 
-        <div class="modal-footer" style="flex-direction: column; align-items: stretch; gap: var(--spacing-2);">
-          <div v-if="createError" class="text-error" style="font-size:var(--font-size-sm);background:var(--error-light);padding:var(--spacing-2);border-radius:var(--radius-sm)">
-            {{ createError }}
-          </div>
-          <div style="display: flex; justify-content: flex-end; gap: var(--spacing-2);">
-            <button class="btn btn-secondary" @click="closeCreateModal" :disabled="creatingInstance">{{ t('marketplace.cancel') }}</button>
-            <button class="btn btn-primary" @click="handleCreateInstance" :disabled="creatingInstance">
-              <span v-if="creatingInstance" class="loading-spinner" style="width: 16px; height: 16px; border-width: 2px;"></span>
-              {{ creatingInstance ? t('dashboard.overview.loadingOverview') : t('dashboard.buttons.createInstance') }}
-            </button>
-          </div>
+        <div v-if="createError" class="modal-error text-error">
+          {{ createError }}
         </div>
-      </div>
-    </div>
+
+      <template #footer>
+        <button type="button" class="btn btn-secondary" @click="closeCreateModal" :disabled="creatingInstance">{{ t('actions.cancel') }}</button>
+        <button type="button" class="btn btn-primary" @click="handleCreateInstance" :disabled="creatingInstance">
+          <span v-if="creatingInstance" class="loading-spinner" style="width: 16px; height: 16px; border-width: 2px;"></span>
+          {{ creatingInstance ? t('dashboard.overview.loadingOverview') : t('dashboard.buttons.createInstance') }}
+        </button>
+      </template>
+    </BaseModal>
 
     <!-- Rename Modal -->
-    <div v-if="renameModalVisible" class="modal-overlay" @click.self="renameModalVisible = false" style="z-index: 1001;">
-      <div class="modal-content card" style="max-width: 400px;">
-        <div class="modal-header">
-          <h3>{{ t('dashboard.instanceDetail.rename') }}</h3>
-          <button class="btn btn-ghost btn-sm icon-btn" @click="renameModalVisible = false">
-            <X :size="20" />
-          </button>
-        </div>
-        <div class="modal-body">
+    <BaseModal
+      :show="renameModalVisible"
+      :title="t('dashboard.instanceDetail.rename')"
+      size="sm"
+      :loading="renameLoading"
+      form
+      @close="renameModalVisible = false"
+      @submit="confirmRename"
+    >
           <div class="form-group">
             <label class="form-label">{{ t('dashboard.instanceDetail.hostname') }}</label>
-            <input 
+            <input
               id="renameHostname"
               name="hostname"
-              v-model="renameForm.hostname" 
-              type="text" 
-              class="form-input" 
+              v-model="renameForm.hostname"
+              type="text"
+              class="form-input"
               :placeholder="t('dashboard.table.hostname')"
             />
           </div>
           <div v-if="renameError" class="text-error mt-2">{{ renameError }}</div>
-        </div>
-        <div class="modal-footer">
-          <button class="btn btn-ghost" @click="renameModalVisible = false">{{ t('dashboard.buttons.cancel') }}</button>
-          <button class="btn btn-primary" @click="confirmRename" :disabled="renameLoading">
-            <span v-if="renameLoading" class="loading-spinner small"></span>
-            {{ t('dashboard.buttons.confirm') }}
-          </button>
-        </div>
-      </div>
-    </div>
+
+      <template #footer>
+        <button type="button" class="btn btn-ghost" @click="renameModalVisible = false">{{ t('dashboard.buttons.cancel') }}</button>
+        <button type="submit" class="btn btn-primary" :disabled="renameLoading">
+          <span v-if="renameLoading" class="loading-spinner small"></span>
+          {{ t('dashboard.buttons.confirm') }}
+        </button>
+      </template>
+    </BaseModal>
 
     <!-- Reset Password Modal -->
-    <div v-if="resetPasswordModalVisible" class="modal-overlay" @click.self="resetPasswordModalVisible = false" style="z-index: 1001;">
-      <div class="modal-content card" style="max-width: 450px;">
-        <div class="modal-header">
-          <h3>{{ t('dashboard.instanceDetail.resetPassword') }}</h3>
-          <button class="btn btn-ghost btn-sm icon-btn" @click="resetPasswordModalVisible = false">
-            <X :size="20" />
-          </button>
-        </div>
-        <div class="modal-body">
+    <BaseModal
+      :show="resetPasswordModalVisible"
+      :title="t('dashboard.instanceDetail.resetPassword')"
+      :loading="resetPasswordLoading"
+      form
+      @close="resetPasswordModalVisible = false"
+      @submit="confirmResetPassword"
+    >
+        <div>
           <div class="form-group">
             <label class="form-label">{{ t('dashboard.instanceDetail.userName') }}</label>
             <input v-model="resetPasswordForm.user_name" type="text" class="form-input" disabled />
@@ -1724,7 +1664,7 @@ onUnmounted(() => {
                 :placeholder="t('dashboard.instanceDetail.passwordPlaceholder')" 
                 autocomplete="new-password"
               />
-              <button class="password-toggle" @click="showResetPassword = !showResetPassword">
+              <button type="button" class="password-toggle" @click="showResetPassword = !showResetPassword">
                 <Eye v-if="!showResetPassword" :size="16" />
                 <EyeOff v-else :size="16" />
               </button>
@@ -1743,32 +1683,31 @@ onUnmounted(() => {
             />
           </div>
           <div class="mt-2">
-            <button class="btn btn-ghost btn-sm text-primary" @click="generateRandomResetPassword">
+            <button type="button" class="btn btn-ghost btn-sm text-primary" @click="generateRandomResetPassword">
               <RefreshCw :size="14" /> {{ t('dashboard.instanceDetail.generatePassword') }}
             </button>
           </div>
           <div v-if="resetPasswordError" class="text-error mt-3">{{ resetPasswordError }}</div>
         </div>
-        <div class="modal-footer">
-          <button class="btn btn-ghost" @click="resetPasswordModalVisible = false">{{ t('dashboard.buttons.cancel') }}</button>
-          <button class="btn btn-primary" @click="confirmResetPassword" :disabled="resetPasswordLoading">
-            <span v-if="resetPasswordLoading" class="loading-spinner small"></span>
-            {{ t('dashboard.buttons.confirm') }}
-          </button>
-        </div>
-      </div>
-    </div>
+
+      <template #footer>
+        <button type="button" class="btn btn-ghost" @click="resetPasswordModalVisible = false">{{ t('dashboard.buttons.cancel') }}</button>
+        <button type="submit" class="btn btn-primary" :disabled="resetPasswordLoading">
+          <span v-if="resetPasswordLoading" class="loading-spinner small"></span>
+          {{ t('dashboard.buttons.confirm') }}
+        </button>
+      </template>
+    </BaseModal>
 
     <!-- Resize Modal -->
-    <div v-if="resizeModalVisible" class="modal-overlay" @click.self="resizeModalVisible = false" style="z-index: 1001;">
-      <div class="modal-content card" style="max-width: 450px;">
-        <div class="modal-header">
-          <h3>{{ t('dashboard.instanceDetail.resize') }}</h3>
-          <button class="btn btn-ghost btn-sm icon-btn" @click="resizeModalVisible = false">
-            <X :size="20" />
-          </button>
-        </div>
-        <div class="modal-body">
+    <BaseModal
+      :show="resizeModalVisible"
+      :title="t('dashboard.instanceDetail.resize')"
+      :loading="resizeLoading"
+      form
+      @close="resizeModalVisible = false"
+      @submit="confirmResize"
+    >
           <div class="form-row">
             <div class="form-group">
               <label class="form-label">CPU ({{ t('dashboard.overview.cpuUnit') }})</label>
@@ -1780,16 +1719,15 @@ onUnmounted(() => {
             </div>
           </div>
           <div v-if="resizeError" class="text-error mt-2">{{ resizeError }}</div>
-        </div>
-        <div class="modal-footer">
-          <button class="btn btn-ghost" @click="resizeModalVisible = false">{{ t('dashboard.buttons.cancel') }}</button>
-          <button class="btn btn-primary" @click="confirmResize" :disabled="resizeLoading">
-            <span v-if="resizeLoading" class="loading-spinner small"></span>
-            {{ t('dashboard.buttons.confirm') }}
-          </button>
-        </div>
-      </div>
-    </div>
+
+      <template #footer>
+        <button type="button" class="btn btn-ghost" @click="resizeModalVisible = false">{{ t('dashboard.buttons.cancel') }}</button>
+        <button type="submit" class="btn btn-primary" :disabled="resizeLoading">
+          <span v-if="resizeLoading" class="loading-spinner small"></span>
+          {{ t('dashboard.buttons.confirm') }}
+        </button>
+      </template>
+    </BaseModal>
 
     <Teleport to="body">
       <div v-if="ifaceTooltipVisible" class="iface-help-tooltip"
@@ -1849,7 +1787,7 @@ onUnmounted(() => {
     border: none;
     background: transparent;
     border-radius: var(--radius-sm);
-    color: var(--text-main);
+    color: var(--text-primary);
     font-size: var(--font-size-sm);
     text-align: left;
     cursor: pointer;
@@ -1906,63 +1844,12 @@ onUnmounted(() => {
     justify-content: center;
 }
 
-.modal-footer {
-    display: flex;
-    justify-content: flex-end;
-    gap: 12px;
-    padding-top: 24px;
-}
-
-.page-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 0;
-  padding-right: 20px;
-}
-
-.search-wrapper {
-  flex: 1;
-  max-width: 400px;
-}
-
-.search-box {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  background: var(--bg-secondary);
-  padding: 0 12px;
-  height: 40px;
-  border-radius: var(--radius-md);
-  border: 1px solid var(--border-light);
-  transition: all 0.2s;
-}
-
-.search-box:focus-within {
-  border-color: var(--primary-300);
-  box-shadow: 0 0 0 2px var(--primary-100);
-}
-
-.search-icon {
-  color: var(--gray-400);
-}
-
-.search-input {
-  border: none;
-  background: transparent;
-  width: 100%;
-  height: 100%;
-  font-size: 0.875rem;
-  color: var(--text-primary);
-}
-
-.search-input:focus {
-  outline: none;
-}
-
-.table-card {
-  padding: 0;
-  overflow: visible;
+.modal-error {
+  margin-top: var(--spacing-4);
+  font-size: var(--font-size-sm);
+  background: var(--error-light);
+  padding: var(--spacing-2);
+  border-radius: var(--radius-sm);
 }
 
 .active-row {
@@ -2112,7 +1999,8 @@ onUnmounted(() => {
 
 .actions {
   display: flex;
-  gap: var(--spacing-02);
+  justify-content: center;
+  gap: var(--spacing-2);
 }
 
 .text-error {
@@ -2589,7 +2477,7 @@ input:checked + .slider:before {
     border-width: 2px;
 }
 
-.header-actions { display: flex; gap: 8px; align-items: center; }
+
 
 .spinning { animation: spin 1s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
@@ -2633,11 +2521,6 @@ input:checked + .slider:before {
 
 .cpu-bar { background: var(--primary-color); }
 .mem-bar { background: var(--accent-purple); }
-
-.actions-usage-cell {
-    text-align: right;
-    white-space: nowrap;
-}
 
 .text-xs {
     font-size: 11px;

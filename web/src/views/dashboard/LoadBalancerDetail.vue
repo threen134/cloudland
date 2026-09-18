@@ -2,15 +2,20 @@
 import { ref, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
-import { loadBalancersApi, subnetsApi, type LoadBalancer, type Subnet, type ListenerPayload } from '../../api/networks'
+import { loadBalancersApi, subnetsApi, type LoadBalancer, type Subnet, type ListenerPayload, type Listener, type Backend } from '../../api/networks'
 import { useToast } from '../../composables/useToast'
-import { ArrowLeft, GitFork, Trash2, Plus, ChevronDown, ChevronRight, X, Pencil } from 'lucide-vue-next'
+import { ArrowLeft, GitFork, Trash2, Plus, ChevronDown, ChevronRight, Pencil } from 'lucide-vue-next'
 import DeleteModal from '../../components/modals/DeleteModal.vue'
+import BaseModal from '../../components/modals/BaseModal.vue'
+import StatusBadge from '../../components/base/StatusBadge.vue'
+import InfoRow from '../../components/base/InfoRow.vue'
+import { useGoBack } from '../../composables/useGoBack'
 
 const { t } = useI18n()
 const toast = useToast()
 const route = useRoute()
 const router = useRouter()
+const goBack = useGoBack('load-balancers')
 const lbId = route.params.id as string
 
 const lb = ref<LoadBalancer | null>(null)
@@ -59,7 +64,7 @@ const fetchLB = async () => {
     error.value = ''
     try {
         lb.value = await loadBalancersApi.get(lbId)
-    } catch (err) {
+    } catch {
         error.value = t('dashboard.loadBalancerDetail.loadError')
     } finally {
         loading.value = false
@@ -107,37 +112,47 @@ const toggleListener = (id: string) => {
     expandedListeners.value = next
 }
 
-const getStatusClass = (status: string) => {
-    const map: Record<string, string> = {
-        active: 'status-running',
-        running: 'status-running',
-        available: 'status-running',
-        inactive: 'status-stopped',
-        stopped: 'status-stopped',
-        error: 'status-error',
-        failed: 'status-error',
-    }
-    return map[(status || '').toLowerCase()] || 'status-pending'
+// Backend health comes from the haproxy health checks of the master node, refreshed by heartbeats
+const getHealthVariant = (health?: string) => {
+    if (health === 'up') return 'success' as const
+    if (health === 'down') return 'error' as const
+    return 'pending' as const
 }
+const getHealthLabel = (health?: string) => {
+    if (health === 'up') return t('dashboard.loadBalancerDetail.healthUp')
+    if (health === 'down') return t('dashboard.loadBalancerDetail.healthDown')
+    return t('dashboard.loadBalancerDetail.healthUnknown')
+}
+const countHealthy = (listener: Listener) => (listener.backends || []).filter(b => b.health === 'up').length
 
 // ─── Floating IP ────────────────────────────────────────────────────────────
 
 const showFipModal = ref(false)
 const publicSubnets = ref<Subnet[]>([])
 const loadingSubnets = ref(false)
-const fipForm = ref({ name: '', subnet_id: '' })
+const fipForm = ref({ name: '', subnet_id: '', inbound: null as number | null, outbound: null as number | null })
 const addingFip = ref(false)
 const fipError = ref('')
 
 const openFipModal = () => {
-    fipForm.value = { name: '', subnet_id: publicSubnets.value[0]?.id || '' }
+    fipForm.value = { name: '', subnet_id: publicSubnets.value[0]?.id || '', inbound: null, outbound: null }
     fipError.value = ''
     showFipModal.value = true
 }
 
+// Empty means no bandwidth limit
+const isValidBandwidth = (v: number | null) => v === null || (Number.isInteger(v) && v >= 1 && v <= 20000)
+
 const handleAddFip = async () => {
     if (!fipForm.value.name || !fipForm.value.subnet_id) {
         fipError.value = t('messages.fillRequired')
+        return
+    }
+    // v-model.number yields '' after the input is cleared
+    const inbound = (fipForm.value.inbound as unknown) === '' ? null : fipForm.value.inbound
+    const outbound = (fipForm.value.outbound as unknown) === '' ? null : fipForm.value.outbound
+    if (!isValidBandwidth(inbound) || !isValidBandwidth(outbound)) {
+        fipError.value = t('dashboard.loadBalancerDetail.invalidBandwidth')
         return
     }
     addingFip.value = true
@@ -145,7 +160,9 @@ const handleAddFip = async () => {
     try {
         await loadBalancersApi.addFloatingIp(lbId, {
             name: fipForm.value.name,
-            public_subnet: { id: fipForm.value.subnet_id }
+            public_subnet: { id: fipForm.value.subnet_id },
+            ...(inbound !== null ? { inbound } : {}),
+            ...(outbound !== null ? { outbound } : {})
         })
         showFipModal.value = false
         toast.success(t('messages.createSuccess'))
@@ -215,22 +232,70 @@ const handleDeleteListener = (listenerId: string, listenerName: string) => {
     })
 }
 
+const showListenerEditModal = ref(false)
+const listenerEditForm = ref({ id: '', name: '' })
+const savingListener = ref(false)
+const listenerEditError = ref('')
+
+const openListenerEditModal = (listener: Listener) => {
+    listenerEditForm.value = { id: listener.id, name: listener.name }
+    listenerEditError.value = ''
+    showListenerEditModal.value = true
+}
+
+const handleEditListener = async () => {
+    if (!listenerEditForm.value.name) {
+        listenerEditError.value = t('messages.fillRequired')
+        return
+    }
+    savingListener.value = true
+    listenerEditError.value = ''
+    try {
+        await loadBalancersApi.patchListener(lbId, listenerEditForm.value.id, { name: listenerEditForm.value.name })
+        showListenerEditModal.value = false
+        toast.success(t('messages.success'))
+        await fetchLB()
+    } catch (err: any) {
+        listenerEditError.value = err.response?.data?.error_message || err.message || t('messages.error')
+    } finally {
+        savingListener.value = false
+    }
+}
+
 // ─── Backend ─────────────────────────────────────────────────────────────────
 
 const showBackendModal = ref(false)
 const currentListenerId = ref('')
-const backendForm = ref({ name: '', address: '', port: '' })
+// Empty when adding, the backend ID when editing
+const editingBackendId = ref('')
+const backendForm = ref({ name: '', address: '', port: '', ssl: false })
 const addingBackend = ref(false)
 const backendError = ref('')
 
 const openBackendModal = (listenerId: string) => {
     currentListenerId.value = listenerId
-    backendForm.value = { name: '', address: '', port: '' }
+    editingBackendId.value = ''
+    backendForm.value = { name: '', address: '', port: '', ssl: false }
     backendError.value = ''
     showBackendModal.value = true
 }
 
-const handleAddBackend = async () => {
+const openBackendEditModal = (listenerId: string, backend: Backend) => {
+    currentListenerId.value = listenerId
+    editingBackendId.value = backend.id
+    // Endpoint is IP:port
+    const sep = backend.endpoint.lastIndexOf(':')
+    backendForm.value = {
+        name: backend.name || '',
+        address: sep > 0 ? backend.endpoint.slice(0, sep) : backend.endpoint,
+        port: sep > 0 ? backend.endpoint.slice(sep + 1) : '',
+        ssl: !!backend.ssl
+    }
+    backendError.value = ''
+    showBackendModal.value = true
+}
+
+const handleSaveBackend = async () => {
     if (!backendForm.value.name || !backendForm.value.address || !backendForm.value.port) {
         backendError.value = t('messages.fillRequired')
         return
@@ -243,12 +308,19 @@ const handleAddBackend = async () => {
     addingBackend.value = true
     backendError.value = ''
     try {
-        await loadBalancersApi.addBackend(lbId, currentListenerId.value, {
+        const payload = {
             name: backendForm.value.name,
-            endpoint: `${backendForm.value.address}:${backendForm.value.port}`
-        })
+            endpoint: `${backendForm.value.address}:${portNum}`,
+            ssl: backendForm.value.ssl
+        }
+        if (editingBackendId.value) {
+            await loadBalancersApi.patchBackend(lbId, currentListenerId.value, editingBackendId.value, payload)
+            toast.success(t('messages.success'))
+        } else {
+            await loadBalancersApi.addBackend(lbId, currentListenerId.value, payload)
+            toast.success(t('messages.createSuccess'))
+        }
         showBackendModal.value = false
-        toast.success(t('messages.createSuccess'))
         await fetchLB()
     } catch (err: any) {
         backendError.value = err.response?.data?.error_message || err.message || t('messages.error')
@@ -282,7 +354,7 @@ onMounted(async () => {
 <template>
     <div class="detail-page">
         <div class="detail-header">
-            <button class="btn btn-ghost btn-sm" @click="router.back()">
+            <button class="btn btn-ghost btn-sm" @click="goBack">
                 <ArrowLeft :size="16" /> {{ $t('actions.back') }}
             </button>
         </div>
@@ -306,9 +378,7 @@ onMounted(async () => {
                     <h1>{{ lb.name }}</h1>
                     <div class="subtitle">
                         <span class="id-text">{{ lb.id }}</span>
-                        <span :class="['badge', getStatusClass(lb.status || 'inactive')]">
-                            {{ lb.status || 'inactive' }}
-                        </span>
+                        <StatusBadge :status="lb.status || 'inactive'" />
                     </div>
                 </div>
                 <div class="title-actions">
@@ -338,27 +408,15 @@ onMounted(async () => {
                 <div class="card info-card">
                     <h3>{{ $t('dashboard.loadBalancerDetail.generalInfo') }}</h3>
                     <div class="key-value-list">
-                        <div class="kv-item">
-                            <span class="label">{{ $t('dashboard.loadBalancerDetail.name') }}</span>
-                            <span class="value">{{ lb.name }}</span>
-                        </div>
-                        <div class="kv-item" v-if="lb.description">
-                            <span class="label">{{ $t('dashboard.forms.description') }}</span>
-                            <span class="value">{{ lb.description }}</span>
-                        </div>
-                        <div class="kv-item">
-                            <span class="label">{{ $t('dashboard.loadBalancerDetail.vpc') }}</span>
-                            <span class="value" v-if="lb.vpc">
-                                <router-link :to="{ name: 'vpc-detail', params: { id: lb.vpc.id } }" class="text-link">
-                                    {{ lb.vpc.name }}
-                                </router-link>
-                            </span>
-                            <span class="value" v-else>-</span>
-                        </div>
-                        <div class="kv-item">
-                            <span class="label">{{ $t('dashboard.loadBalancerDetail.createdAt') }}</span>
-                            <span class="value">{{ lb.created_at || '-' }}</span>
-                        </div>
+                        <InfoRow :label="$t('dashboard.loadBalancerDetail.name')">{{ lb.name }}</InfoRow>
+                        <InfoRow v-if="lb.description" :label="$t('dashboard.forms.description')">{{ lb.description }}</InfoRow>
+                        <InfoRow :label="$t('dashboard.loadBalancerDetail.vpc')">
+                            <router-link v-if="lb.vpc" :to="{ name: 'vpc-detail', params: { id: lb.vpc.id } }" class="text-link">
+                                {{ lb.vpc.name }}
+                            </router-link>
+                            <span v-else>-</span>
+                        </InfoRow>
+                        <InfoRow :label="$t('dashboard.loadBalancerDetail.createdAt')">{{ lb.created_at || '-' }}</InfoRow>
                     </div>
                 </div>
 
@@ -424,11 +482,21 @@ onMounted(async () => {
                                     </td>
                                     <td>{{ listener.name }}</td>
                                     <td><code class="mono">{{ listener.mode.toUpperCase() }}:{{ listener.port }}</code></td>
-                                    <td>{{ listener.status || 'active' }}</td>
+                                    <td>
+                                        <StatusBadge :status="listener.status" :label="listener.status || '-'" />
+                                    </td>
                                     <td class="text-secondary text-sm">
                                         {{ listener.backends?.length || 0 }} {{ $t('dashboard.loadBalancerDetail.backends') }}
+                                        <span v-if="listener.backends?.length">{{ $t('dashboard.loadBalancerDetail.healthyCount', { count: countHealthy(listener) }) }}</span>
                                     </td>
                                     <td @click.stop>
+                                        <button
+                                            class="btn btn-ghost btn-sm"
+                                            :title="$t('actions.edit')"
+                                            @click="openListenerEditModal(listener)"
+                                        >
+                                            <Pencil :size="14" />
+                                        </button>
                                         <button
                                             class="btn btn-ghost btn-sm text-error"
                                             @click="handleDeleteListener(listener.id, listener.name)"
@@ -455,7 +523,8 @@ onMounted(async () => {
                                                     <tr>
                                                         <th>{{ $t('dashboard.table.name') }}</th>
                                                         <th>{{ $t('dashboard.loadBalancerDetail.endpoint') }}</th>
-                                                        <th>{{ $t('dashboard.table.status') }}</th>
+                                                        <th>{{ $t('dashboard.loadBalancerDetail.backendSsl') }}</th>
+                                                        <th>{{ $t('dashboard.loadBalancerDetail.health') }}</th>
                                                         <th></th>
                                                     </tr>
                                                 </thead>
@@ -463,8 +532,18 @@ onMounted(async () => {
                                                     <tr v-for="backend in listener.backends" :key="backend.id">
                                                         <td>{{ backend.name || '-' }}</td>
                                                         <td><code class="mono">{{ backend.endpoint }}</code></td>
-                                                        <td>{{ backend.status || 'active' }}</td>
+                                                        <td>{{ backend.ssl ? $t('dashboard.loadBalancerDetail.sslOn') : $t('dashboard.loadBalancerDetail.sslOff') }}</td>
                                                         <td>
+                                                            <StatusBadge :variant="getHealthVariant(backend.health)" :label="getHealthLabel(backend.health)" />
+                                                        </td>
+                                                        <td class="backend-actions">
+                                                            <button
+                                                                class="btn btn-ghost btn-sm"
+                                                                :title="$t('actions.edit')"
+                                                                @click="openBackendEditModal(listener.id, backend)"
+                                                            >
+                                                                <Pencil :size="13" />
+                                                            </button>
                                                             <button
                                                                 class="btn btn-ghost btn-sm text-error"
                                                                 @click="handleDeleteBackend(listener.id, backend.id, backend.name || backend.endpoint)"
@@ -486,13 +565,14 @@ onMounted(async () => {
         </div>
 
         <!-- Bind Floating IP Modal -->
-        <div v-if="showFipModal" class="modal-overlay" @click.self="showFipModal = false">
-            <div class="modal-content card">
-                <div class="modal-header">
-                    <h3>{{ $t('dashboard.loadBalancerDetail.bindFloatingIp') }}</h3>
-                    <button class="btn btn-ghost btn-sm icon-btn" @click="showFipModal = false"><X :size="20" /></button>
-                </div>
-                <div class="modal-body">
+        <BaseModal
+            :show="showFipModal"
+            :title="$t('dashboard.loadBalancerDetail.bindFloatingIp')"
+            :loading="addingFip"
+            form
+            @close="showFipModal = false"
+            @submit="handleAddFip"
+        >
                     <div class="form-group">
                         <label class="form-label">{{ $t('dashboard.forms.name') }} *</label>
                         <input v-model="fipForm.name" type="text" class="form-input" placeholder="e.g. lb-public-ip" />
@@ -509,26 +589,44 @@ onMounted(async () => {
                             </select>
                         </div>
                     </div>
-                </div>
-                <div v-if="fipError" class="modal-error">{{ fipError }}</div>
-                <div class="modal-footer">
-                    <button class="btn btn-secondary" @click="showFipModal = false" :disabled="addingFip">{{ $t('actions.cancel') }}</button>
-                    <button class="btn btn-primary" @click="handleAddFip" :disabled="addingFip || loadingSubnets || publicSubnets.length === 0">
-                        <span v-if="addingFip" class="loading-spinner" style="width:16px;height:16px;border-width:2px"></span>
-                        {{ addingFip ? $t('dashboard.loadBalancerDetail.bindingFloatingIp') : $t('dashboard.loadBalancerDetail.bindFloatingIp') }}
-                    </button>
-                </div>
-            </div>
-        </div>
+                    <div class="form-row">
+                        <div class="form-group form-group-grow">
+                            <label class="form-label">{{ $t('dashboard.floatingIPDetail.inbound') }}</label>
+                            <div class="input-with-suffix">
+                                <input v-model.number="fipForm.inbound" type="number" min="1" max="20000" class="form-input" :placeholder="$t('dashboard.floatingIPDetail.inboundPlaceholder')" />
+                                <span class="input-suffix">{{ $t('dashboard.floatingIPDetail.mbps') }}</span>
+                            </div>
+                        </div>
+                        <div class="form-group form-group-grow">
+                            <label class="form-label">{{ $t('dashboard.floatingIPDetail.outbound') }}</label>
+                            <div class="input-with-suffix">
+                                <input v-model.number="fipForm.outbound" type="number" min="1" max="20000" class="form-input" :placeholder="$t('dashboard.floatingIPDetail.outboundPlaceholder')" />
+                                <span class="input-suffix">{{ $t('dashboard.floatingIPDetail.mbps') }}</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="form-hint">{{ $t('dashboard.loadBalancerDetail.bandwidthHint') }}</div>
+
+                    <div v-if="fipError" class="modal-error">{{ fipError }}</div>
+
+            <template #footer>
+                <button type="button" class="btn btn-secondary" @click="showFipModal = false" :disabled="addingFip">{{ $t('actions.cancel') }}</button>
+                <button type="submit" class="btn btn-primary" :disabled="addingFip || loadingSubnets || publicSubnets.length === 0">
+                    <span v-if="addingFip" class="loading-spinner" style="width:16px;height:16px;border-width:2px"></span>
+                    {{ addingFip ? $t('dashboard.loadBalancerDetail.bindingFloatingIp') : $t('dashboard.loadBalancerDetail.bindFloatingIp') }}
+                </button>
+            </template>
+        </BaseModal>
 
         <!-- Add Listener Modal -->
-        <div v-if="showListenerModal" class="modal-overlay" @click.self="showListenerModal = false">
-            <div class="modal-content card">
-                <div class="modal-header">
-                    <h3>{{ $t('dashboard.loadBalancerDetail.addListener') }}</h3>
-                    <button class="btn btn-ghost btn-sm icon-btn" @click="showListenerModal = false"><X :size="20" /></button>
-                </div>
-                <div class="modal-body">
+        <BaseModal
+            :show="showListenerModal"
+            :title="$t('dashboard.loadBalancerDetail.addListener')"
+            :loading="addingListener"
+            form
+            @close="showListenerModal = false"
+            @submit="handleAddListener"
+        >
                     <div class="form-group">
                         <label class="form-label">{{ $t('dashboard.forms.name') }} *</label>
                         <input v-model="listenerForm.name" type="text" class="form-input" placeholder="e.g. http-80" />
@@ -556,26 +654,52 @@ onMounted(async () => {
                         <label class="form-label">{{ $t('dashboard.loadBalancerDetail.privateKey') }}</label>
                         <textarea v-model="listenerForm.key" class="form-input form-textarea" :placeholder="$t('dashboard.loadBalancerDetail.privateKeyHint')"></textarea>
                     </div>
-                </div>
-                <div v-if="listenerError" class="modal-error">{{ listenerError }}</div>
-                <div class="modal-footer">
-                    <button class="btn btn-secondary" @click="showListenerModal = false" :disabled="addingListener">{{ $t('actions.cancel') }}</button>
-                    <button class="btn btn-primary" @click="handleAddListener" :disabled="addingListener">
-                        <span v-if="addingListener" class="loading-spinner" style="width:16px;height:16px;border-width:2px"></span>
-                        {{ addingListener ? $t('dashboard.loadBalancerDetail.addingListener') : $t('dashboard.loadBalancerDetail.addListener') }}
-                    </button>
-                </div>
-            </div>
-        </div>
 
-        <!-- Add Backend Modal -->
-        <div v-if="showBackendModal" class="modal-overlay" @click.self="showBackendModal = false">
-            <div class="modal-content card">
-                <div class="modal-header">
-                    <h3>{{ $t('dashboard.loadBalancerDetail.addBackend') }}</h3>
-                    <button class="btn btn-ghost btn-sm icon-btn" @click="showBackendModal = false"><X :size="20" /></button>
-                </div>
-                <div class="modal-body">
+                    <div v-if="listenerError" class="modal-error">{{ listenerError }}</div>
+
+            <template #footer>
+                <button type="button" class="btn btn-secondary" @click="showListenerModal = false" :disabled="addingListener">{{ $t('actions.cancel') }}</button>
+                <button type="submit" class="btn btn-primary" :disabled="addingListener">
+                    <span v-if="addingListener" class="loading-spinner" style="width:16px;height:16px;border-width:2px"></span>
+                    {{ addingListener ? $t('dashboard.loadBalancerDetail.addingListener') : $t('dashboard.loadBalancerDetail.addListener') }}
+                </button>
+            </template>
+        </BaseModal>
+
+        <!-- Edit Listener Modal -->
+        <BaseModal
+            :show="showListenerEditModal"
+            :title="$t('dashboard.loadBalancerDetail.editListener')"
+            :loading="savingListener"
+            form
+            @close="showListenerEditModal = false"
+            @submit="handleEditListener"
+        >
+                    <div class="form-group">
+                        <label class="form-label">{{ $t('dashboard.forms.name') }} *</label>
+                        <input v-model="listenerEditForm.name" type="text" class="form-input" />
+                    </div>
+
+                    <div v-if="listenerEditError" class="modal-error">{{ listenerEditError }}</div>
+
+            <template #footer>
+                <button type="button" class="btn btn-secondary" @click="showListenerEditModal = false" :disabled="savingListener">{{ $t('actions.cancel') }}</button>
+                <button type="submit" class="btn btn-primary" :disabled="savingListener || !listenerEditForm.name">
+                    <span v-if="savingListener" class="loading-spinner" style="width:16px;height:16px;border-width:2px"></span>
+                    {{ savingListener ? $t('messages.saving') : $t('actions.save') }}
+                </button>
+            </template>
+        </BaseModal>
+
+        <!-- Add / Edit Backend Modal -->
+        <BaseModal
+            :show="showBackendModal"
+            :title="editingBackendId ? $t('dashboard.loadBalancerDetail.editBackend') : $t('dashboard.loadBalancerDetail.addBackend')"
+            :loading="addingBackend"
+            form
+            @close="showBackendModal = false"
+            @submit="handleSaveBackend"
+        >
                     <div class="form-group">
                         <label class="form-label">{{ $t('dashboard.forms.name') }} *</label>
                         <input v-model="backendForm.name" type="text" class="form-input" placeholder="e.g. web-server-1" />
@@ -590,17 +714,25 @@ onMounted(async () => {
                             <input v-model="backendForm.port" type="number" class="form-input" placeholder="8080" min="1" max="65535" />
                         </div>
                     </div>
-                </div>
-                <div v-if="backendError" class="modal-error">{{ backendError }}</div>
-                <div class="modal-footer">
-                    <button class="btn btn-secondary" @click="showBackendModal = false" :disabled="addingBackend">{{ $t('actions.cancel') }}</button>
-                    <button class="btn btn-primary" @click="handleAddBackend" :disabled="addingBackend">
-                        <span v-if="addingBackend" class="loading-spinner" style="width:16px;height:16px;border-width:2px"></span>
-                        {{ addingBackend ? $t('dashboard.loadBalancerDetail.addingBackend') : $t('dashboard.loadBalancerDetail.addBackend') }}
-                    </button>
-                </div>
-            </div>
-        </div>
+                    <div class="form-group">
+                        <label class="checkbox-label">
+                            <input v-model="backendForm.ssl" type="checkbox" />
+                            {{ $t('dashboard.loadBalancerDetail.backendSslLabel') }}
+                        </label>
+                        <div class="form-hint">{{ $t('dashboard.loadBalancerDetail.backendSslHint') }}</div>
+                    </div>
+
+                    <div v-if="backendError" class="modal-error">{{ backendError }}</div>
+
+            <template #footer>
+                <button type="button" class="btn btn-secondary" @click="showBackendModal = false" :disabled="addingBackend">{{ $t('actions.cancel') }}</button>
+                <button type="submit" class="btn btn-primary" :disabled="addingBackend">
+                    <span v-if="addingBackend" class="loading-spinner" style="width:16px;height:16px;border-width:2px"></span>
+                    <template v-if="editingBackendId">{{ addingBackend ? $t('messages.saving') : $t('actions.save') }}</template>
+                    <template v-else>{{ addingBackend ? $t('dashboard.loadBalancerDetail.addingBackend') : $t('dashboard.loadBalancerDetail.addBackend') }}</template>
+                </button>
+            </template>
+        </BaseModal>
 
         <DeleteModal
             :show="deleteModal.visible"
@@ -612,32 +744,33 @@ onMounted(async () => {
         />
 
         <!-- Edit Modal -->
-        <div v-if="showEditModal" class="modal-overlay" @click.self="showEditModal = false">
-            <div class="modal-content card" style="max-width:460px">
-                <div class="modal-header">
-                    <h3>{{ $t('actions.edit') }}</h3>
-                    <button class="btn btn-ghost btn-sm icon-btn" @click="showEditModal = false"><X :size="20" /></button>
-                </div>
-                <div class="modal-body">
+        <BaseModal
+            :show="showEditModal"
+            :title="$t('actions.edit')"
+            :loading="editing"
+            form
+            @close="showEditModal = false"
+            @submit="handleEdit"
+        >
                     <div class="form-group">
                         <label class="form-label">{{ $t('dashboard.forms.name') }} *</label>
-                        <input v-model="editForm.name" type="text" class="form-input" @keyup.enter="handleEdit" />
+                        <input v-model="editForm.name" type="text" class="form-input" />
                     </div>
                     <div class="form-group">
                         <label class="form-label">{{ $t('dashboard.forms.description') }}</label>
                         <input v-model="editForm.description" type="text" class="form-input" :placeholder="$t('messages.placeholderDescription')" />
                     </div>
-                </div>
-                <div v-if="editError" class="modal-error">{{ editError }}</div>
-                <div class="modal-footer">
-                    <button class="btn btn-secondary" @click="showEditModal = false" :disabled="editing">{{ $t('actions.cancel') }}</button>
-                    <button class="btn btn-primary" @click="handleEdit" :disabled="editing || !editForm.name">
-                        <span v-if="editing" class="loading-spinner" style="width:16px;height:16px;border-width:2px"></span>
-                        {{ editing ? $t('messages.saving') : $t('actions.save') }}
-                    </button>
-                </div>
-            </div>
-        </div>
+
+                    <div v-if="editError" class="modal-error">{{ editError }}</div>
+
+            <template #footer>
+                <button type="button" class="btn btn-secondary" @click="showEditModal = false" :disabled="editing">{{ $t('actions.cancel') }}</button>
+                <button type="submit" class="btn btn-primary" :disabled="editing || !editForm.name">
+                    <span v-if="editing" class="loading-spinner" style="width:16px;height:16px;border-width:2px"></span>
+                    {{ editing ? $t('messages.saving') : $t('actions.save') }}
+                </button>
+            </template>
+        </BaseModal>
     </div>
 </template>
 
@@ -703,7 +836,7 @@ onMounted(async () => {
 }
 .info-card { padding: var(--spacing-5); }
 .info-card h3 {
-    font-size: var(--font-size-md);
+    font-size: var(--font-size-base);
     font-weight: 600;
     margin: 0 0 var(--spacing-4) 0;
     color: var(--text-primary);
@@ -726,13 +859,6 @@ onMounted(async () => {
     flex-direction: column;
     gap: var(--spacing-3);
 }
-.kv-item {
-    display: flex;
-    justify-content: space-between;
-    font-size: var(--font-size-sm);
-}
-.kv-item .label { color: var(--text-secondary); }
-.kv-item .value { color: var(--text-primary); font-weight: 500; }
 .text-link {
     color: var(--primary-600);
     text-decoration: none;
@@ -801,7 +927,7 @@ onMounted(async () => {
 
 /* Modals */
 .modal-error {
-    margin: 0 var(--spacing-6) var(--spacing-4);
+    margin-top: var(--spacing-4);
     font-size: var(--font-size-sm);
     color: var(--error-color);
     background: var(--error-light);
@@ -825,6 +951,28 @@ onMounted(async () => {
     color: var(--text-tertiary);
     margin-top: 4px;
 }
+.checkbox-label {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--spacing-2);
+    font-size: var(--font-size-sm);
+    color: var(--text-primary);
+    cursor: pointer;
+}
+.input-with-suffix {
+    position: relative;
+    display: flex;
+    align-items: center;
+}
+.input-with-suffix .form-input { padding-right: 52px; }
+.input-suffix {
+    position: absolute;
+    right: 12px;
+    font-size: var(--font-size-xs);
+    color: var(--text-tertiary);
+    pointer-events: none;
+}
+.backend-actions { white-space: nowrap; text-align: right; }
 
 /* Action Dropdown */
 .action-dropdown { position: relative; }
@@ -862,23 +1010,6 @@ onMounted(async () => {
 .dropdown-divider { height: 1px; background: var(--border-light); margin: 4px 0; }
 .dropdown-enter-active, .dropdown-leave-active { transition: opacity 0.12s, transform 0.12s; }
 .dropdown-enter-from, .dropdown-leave-to { opacity: 0; transform: translateY(-4px); }
-
-.btn-danger {
-    background: var(--error-color);
-    color: white;
-    border: none;
-    padding: 8px 20px;
-    border-radius: var(--radius-md);
-    font-size: var(--font-size-sm);
-    font-weight: var(--font-weight-medium);
-    cursor: pointer;
-    display: inline-flex;
-    align-items: center;
-    gap: var(--spacing-2);
-    transition: background var(--transition-base);
-}
-.btn-danger:hover { background: var(--error-dark); }
-.btn-danger:disabled { opacity: 0.5; cursor: not-allowed; }
 
 /* Misc */
 .mono { font-family: var(--font-family-mono); }

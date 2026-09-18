@@ -1,0 +1,26 @@
+apiVersion: 1
+
+datasources:
+  - name: Tempo
+    type: tempo
+    uid: tempo
+    access: proxy
+    orgId: 1
+    url: ${TEMPO_QUERY_URL}
+    basicAuth: false
+    isDefault: false
+    version: 1
+    editable: true
+    jsonData:
+      # 服务拓扑图：使用 OTel Collector servicegraph 指标
+      serviceMap:
+        datasourceUid: prometheus
+      nodeGraph:
+        enabled: true
+      # 链路 span 跳转到对应时间段内包含该 trace_id 的日志（provisioning 中 $ 需转义为 $$）
+      tracesToLogsV2:
+        datasourceUid: loki
+        spanStartTimeShift: "-5m"
+        spanEndTimeShift: "5m"
+        customQuery: true
+        query: '{container=~"cloudland-.+"} |= "$${__trace.traceId}"'

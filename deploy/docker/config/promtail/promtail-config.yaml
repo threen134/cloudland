@@ -33,7 +33,8 @@ scrape_configs:
             method: method
             path: path
             ip: ip
-            request_id: request_id
+            trace_id: trace_id
+            span_id: span_id
             log_time: time
       # 将关键字段提升为 Loki label（仅低基数字段）
       - labels:

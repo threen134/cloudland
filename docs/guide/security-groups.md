@@ -19,4 +19,4 @@
 
 ## 快速配置
 
-安全组规则支持**实时下发**。当您在 Dashboard 修改规则后，Hypervisor 会通过 OVS 立即更新流表，无需重启实例。
+安全组规则支持**实时下发**。当您在 Dashboard 修改规则后，Hypervisor 会立即更新该网卡对应的 iptables 规则链，无需重启实例。

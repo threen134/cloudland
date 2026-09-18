@@ -55,11 +55,12 @@ export const VM_RULE_TYPES = [
 ] as const
 
 export const vmAlarmRulesApi = {
-    listRules(type: VMRuleType, params?: { page?: number; page_size?: number }) {
-        return client.get<VMAlarmRuleListResponse>(`/metrics/alarm/${type}/rules`, { params })
+    async listRules(type: VMRuleType, params?: { page?: number; page_size?: number }) {
+        const response = await client.get<VMAlarmRuleListResponse>(`/metrics/alarm/${type}/rules`, { params })
+        return response.data
     },
 
-    createCPURule(payload: {
+    async createCPURule(payload: {
         name: string
         rule_id?: string
         region_id: string
@@ -67,20 +68,22 @@ export const vmAlarmRulesApi = {
         rules: CPURuleDetail[]
         linkedvms?: string[]
     }) {
-        return client.post('/metrics/alarm/cpu/rules', payload)
+        const response = await client.post('/metrics/alarm/cpu/rules', payload)
+        return response.data
     },
 
-    createMemoryRule(payload: {
+    async createMemoryRule(payload: {
         name: string
         rule_id?: string
         region_id: string
         rules: MemoryRuleDetail[]
         linkedvms?: string[]
     }) {
-        return client.post('/metrics/alarm/memory/rules', payload)
+        const response = await client.post('/metrics/alarm/memory/rules', payload)
+        return response.data
     },
 
-    createBWRule(payload: {
+    async createBWRule(payload: {
         name: string
         rule_id?: string
         region_id: string
@@ -88,32 +91,38 @@ export const vmAlarmRulesApi = {
         rules: BWRuleDetail[]
         linkedvms?: { instance_id: string; target_device: string }[]
     }) {
-        return client.post('/metrics/alarm/bw/rules', payload)
+        const response = await client.post('/metrics/alarm/bw/rules', payload)
+        return response.data
     },
 
-    deleteRule(type: VMRuleType, uuid: string) {
-        return client.delete(`/metrics/alarm/${type}/rule/${uuid}`)
+    async deleteRule(type: VMRuleType, uuid: string) {
+        const response = await client.delete(`/metrics/alarm/${type}/rule/${uuid}`)
+        return response.data
     },
 
-    linkRule(groupUuid: string, vmLinks: { vm_uuid: string; interface?: string }[]) {
-        return client.post('/metrics/alarm/link', {
+    async linkRule(groupUuid: string, vmLinks: { vm_uuid: string; interface?: string }[]) {
+        const response = await client.post('/metrics/alarm/link', {
             group_uuid: groupUuid,
             vm_links: vmLinks,
         })
+        return response.data
     },
 
-    unlinkRule(groupUuid: string, vmLinks: { vm_uuid: string; interface?: string }[]) {
-        return client.post('/metrics/alarm/unlink', {
+    async unlinkRule(groupUuid: string, vmLinks: { vm_uuid: string; interface?: string }[]) {
+        const response = await client.post('/metrics/alarm/unlink', {
             group_uuid: groupUuid,
             vm_links: vmLinks,
         })
+        return response.data
     },
 
-    enableRule(uuid: string) {
-        return client.post(`/metrics/alarm/${uuid}/enable`)
+    async enableRule(uuid: string) {
+        const response = await client.post(`/metrics/alarm/${uuid}/enable`)
+        return response.data
     },
 
-    disableRule(uuid: string) {
-        return client.post(`/metrics/alarm/${uuid}/disable`)
+    async disableRule(uuid: string) {
+        const response = await client.post(`/metrics/alarm/${uuid}/disable`)
+        return response.data
     },
 }

@@ -5,7 +5,7 @@ import (
 
 	"api/src/dbs"
 
-	"github.com/jinzhu/gorm"
+	"gorm.io/gorm"
 )
 
 func init() {
@@ -22,10 +22,35 @@ func init() {
 		if err := db.Exec(`DELETE FROM alarm_notification_bindings WHERE channel_uuid NOT IN (SELECT uuid FROM notification_channels)`).Error; err != nil {
 			return err
 		}
-		// 添加外键约束：删除渠道时级联清理绑定
-		return db.Model(&AlarmNotificationBinding{}).AddForeignKey(
-			"channel_uuid", "notification_channels(uuid)", "CASCADE", "CASCADE",
-		).Error
+		// 旧同步逻辑重复下发已软删除的渠道时会插入同 uuid 的新行；建唯一索引前每个 uuid 只保留一行（优先未删除，其次最新）
+		if err := db.Exec(`
+			DELETE FROM notification_channels a
+			USING notification_channels b
+			WHERE a.uuid = b.uuid AND a.id <> b.id
+			AND ((a.deleted_at IS NOT NULL AND b.deleted_at IS NULL)
+				OR ((a.deleted_at IS NULL) = (b.deleted_at IS NULL) AND a.id < b.id))
+		`).Error; err != nil {
+			return err
+		}
+		// 外键要求被引用列唯一，uuid 只有普通索引，先补唯一索引
+		if err := db.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_notification_channels_uuid_unique ON notification_channels (uuid)`).Error; err != nil {
+			return err
+		}
+		// 添加外键约束：删除渠道时级联清理绑定（GORM v2 不再提供 AddForeignKey，改用 raw SQL）
+		return db.Exec(`
+			DO $$ BEGIN
+				IF NOT EXISTS (
+					SELECT 1 FROM information_schema.table_constraints
+					WHERE constraint_name = 'fk_alarm_notification_bindings_channel'
+					AND table_name = 'alarm_notification_bindings'
+				) THEN
+					ALTER TABLE alarm_notification_bindings
+					ADD CONSTRAINT fk_alarm_notification_bindings_channel
+					FOREIGN KEY (channel_uuid) REFERENCES notification_channels(uuid)
+					ON DELETE CASCADE ON UPDATE CASCADE;
+				END IF;
+			END $$;
+		`).Error
 	})
 }
 

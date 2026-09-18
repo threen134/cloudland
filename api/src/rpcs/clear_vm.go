@@ -42,16 +42,16 @@ func deleteInterfaces(ctx context.Context, instance *model.Instance, vrrpInstanc
 	if hyperNode >= 0 {
 		err = db.Where("hostid = ?", hyperNode).Take(hyper).Error
 		if err != nil {
-			logger.Error("Failed to query hypervisor")
+			logger.Ctx(ctx).Error("Failed to query hypervisor")
 			return
 		}
 	} else {
-		logger.Infof("Skipping hyper lookup for hyperNode=%d (instance never placed on a hypervisor)", hyperNode)
+		logger.Ctx(ctx).Infof("Skipping hyper lookup for hyperNode=%d (instance never placed on a hypervisor)", hyperNode)
 	}
 	if routerID > 0 {
 		err = db.Where("router_id = ?", routerID).Find(&instances).Error
 		if err != nil {
-			logger.Error("Failed to query all instances", err)
+			logger.Ctx(ctx).Error("Failed to query all instances", err)
 			return
 		}
 		for _, inst := range instances {
@@ -62,7 +62,7 @@ func deleteInterfaces(ctx context.Context, instance *model.Instance, vrrpInstanc
 		vrrpIfaces := []*model.Interface{}
 		err = db.Where("router_id = ?", routerID).Find(&vrrpIfaces).Error
 		if err != nil {
-			logger.Error("Failed to query all instances", err)
+			logger.Ctx(ctx).Error("Failed to query all instances", err)
 			return
 		}
 		for _, iface := range vrrpIfaces {
@@ -85,47 +85,47 @@ func deleteInterfaces(ctx context.Context, instance *model.Instance, vrrpInstanc
 		if iface.FloatingIp == 0 {
 			err = db.Delete(iface).Error
 			if err != nil {
-				logger.Error("Failed to delete interface", err)
+				logger.Ctx(ctx).Error("Failed to delete interface", err)
 				return
 			}
 		} else {
-			err = db.Model(&model.Interface{}).Where("id = ?", iface.ID).Update(map[string]interface{}{"instance": 0, "primary_if": false, "name": "fip", "inbound": 0, "outbound": 0, "allow_spoofing": false}).Error
+			err = db.Model(&model.Interface{}).Where("id = ?", iface.ID).Updates(map[string]interface{}{"instance": 0, "primary_if": false, "name": "fip", "inbound": 0, "outbound": 0, "allow_spoofing": false}).Error
 			if err != nil {
-				logger.Error("Failed to Update addresses, %v", err)
+				logger.Ctx(ctx).Error("Failed to Update addresses, %v", err)
 				return
 			}
 		}
 		if iface.FloatingIp == 0 {
-			err = db.Model(&model.Address{}).Where("interface = ?", iface.ID).Update(map[string]interface{}{"allocated": false, "interface": 0}).Error
+			err = db.Model(&model.Address{}).Where("interface = ?", iface.ID).Updates(map[string]interface{}{"allocated": false, "interface": 0}).Error
 			if err != nil {
-				logger.Error("Failed to Update addresses, %v", err)
+				logger.Ctx(ctx).Error("Failed to Update addresses, %v", err)
 				return
 			}
 		}
-		err = db.Model(&model.Address{}).Where("second_interface = ? and interface = 0", iface.ID).Update(map[string]interface{}{"allocated": false, "second_interface": 0}).Error
+		err = db.Model(&model.Address{}).Where("second_interface = ? and interface = 0", iface.ID).Updates(map[string]interface{}{"allocated": false, "second_interface": 0}).Error
 		if err != nil {
-			logger.Error("Failed to Update addresses, %v", err)
+			logger.Ctx(ctx).Error("Failed to Update addresses, %v", err)
 			return
 		}
-		err = db.Model(&model.Address{}).Where("second_interface = ? and interface > 0", iface.ID).Update(map[string]interface{}{"second_interface": 0}).Error
+		err = db.Model(&model.Address{}).Where("second_interface = ? and interface > 0", iface.ID).Updates(map[string]interface{}{"second_interface": 0}).Error
 		if err != nil {
-			logger.Error("Failed to Update addresses, %v", err)
+			logger.Ctx(ctx).Error("Failed to Update addresses, %v", err)
 			return
 		}
 		err = db.Model(&model.Subnet{}).Where("interface = ?", iface.ID).Updates(map[string]interface{}{
 			"interface": 0}).Error
 		if err != nil {
-			logger.Error("Failed to update subnet", err)
+			logger.Ctx(ctx).Error("Failed to update subnet", err)
 			return
 		}
 		if routerID > 0 && hyperNode >= 0 {
 			spreadRules := []*FdbRule{{Instance: iface.Name, Vni: iface.Address.Subnet.Vlan, InnerIP: iface.Address.Address, InnerMac: iface.MacAddr, OuterIP: hyper.HostIP, Gateway: iface.Address.Subnet.Gateway, Router: iface.Address.Subnet.RouterID}}
 			fdbJson, _ := json.Marshal(spreadRules)
 			control := "toall=" + hyperList
-			command := fmt.Sprintf("/opt/cloudland/scripts/backend/del_fwrule.sh <<EOF\n%s\nEOF", fdbJson)
+			command := fmt.Sprintf("/opt/cloudland/scripts/backend/del_fwrule.sh <<'EOF'\n%s\nEOF", fdbJson)
 			err = HyperExecute(ctx, control, command)
 			if err != nil {
-				logger.Error("Execute deleting fdb rules failed", err)
+				logger.Ctx(ctx).Error("Execute deleting fdb rules failed", err)
 				return
 			}
 		}
@@ -143,7 +143,7 @@ func updateAttachedVolumes(ctx context.Context, instanceID int64) (err error) {
 			"status":      model.VolumeStatusAvailable,
 		}).Error
 	if err != nil {
-		logger.Error("Failed to update attached data volumes", err)
+		logger.Ctx(ctx).Error("Failed to update attached data volumes", err)
 		return
 	}
 	return
@@ -160,39 +160,39 @@ func ClearVM(ctx context.Context, args []string) (status string, err error) {
 	argn := len(args)
 	if argn < 2 {
 		err = fmt.Errorf("Wrong params")
-		logger.Error("Invalid args", err)
+		logger.Ctx(ctx).Error("Invalid args", err)
 		return
 	}
 	instID, err := strconv.ParseInt(args[1], 10, 64)
 	if err != nil {
-		logger.Error("Invalid instance ID", err)
+		logger.Ctx(ctx).Error("Invalid instance ID", err)
 		return
 	}
 	reason := ""
 	instance := &model.Instance{Model: model.Model{ID: instID}}
 	err = db.Take(instance).Error
 	if err != nil {
-		logger.Error("Invalid instance ID", err)
+		logger.Ctx(ctx).Error("Invalid instance ID", err)
 		reason = err.Error()
 		return
 	}
 	err = db.Preload("Address").Preload("Address.Subnet").Preload("Address.Subnet").Where("instance = ?", instID).Find(&instance.Interfaces).Error
 	if err != nil {
-		logger.Error("Failed to get interfaces", err)
+		logger.Ctx(ctx).Error("Failed to get interfaces", err)
 		reason = err.Error()
 		return
 	}
 	err = deleteInterfaces(ctx, instance, nil, nil)
 	if err != nil {
-		logger.Error("Failed to delete interfaces", err)
+		logger.Ctx(ctx).Error("Failed to delete interfaces", err)
 		return
 	}
 	if err = db.Delete(instance).Error; err != nil {
-		logger.Error("Failed to delete instance, %v", err)
+		logger.Ctx(ctx).Error("Failed to delete instance, %v", err)
 		return
 	}
 	if err = updateAttachedVolumes(ctx, instance.ID); err != nil {
-		logger.Error("Failed to update attached volumes", err)
+		logger.Ctx(ctx).Error("Failed to update attached volumes", err)
 		return
 	}
 	// Unscoped update
@@ -202,7 +202,7 @@ func ClearVM(ctx context.Context, args []string) (status string, err error) {
 		"reason":   reason,
 	}).Error
 	if err != nil {
-		logger.Error("Failed to update instance, %v", err)
+		logger.Ctx(ctx).Error("Failed to update instance, %v", err)
 		return
 	}
 

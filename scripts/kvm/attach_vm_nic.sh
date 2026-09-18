@@ -95,4 +95,4 @@ more_addresses=$(jq -r .more_addresses <<< $vlan_info)
 if [ -n "$more_addresses" -o "$update_meta" = true ]; then
     ./apply_second_ips.sh "$ID" "$mac" "$os_code" "$update_meta" "$ip" "$gateway" <<<$more_addresses
 fi
-echo "|:-COMMAND-:| $(basename $0) '$ID' '$mac' '$SCI_CLIENT_ID'"
+echo "|:-COMMAND-:| $(basename $0) '$ID' '$mac' '$NODE_ID'"

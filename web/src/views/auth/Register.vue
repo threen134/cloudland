@@ -2,10 +2,13 @@
 import { ref, reactive, computed } from 'vue'
 import { useRouter, RouterLink } from 'vue-router'
 import { useI18n } from 'vue-i18n'
-import { Cloud, User, Mail, Lock, ArrowRight, ShieldCheck, Check, Building2, XCircle, Eye, EyeOff } from 'lucide-vue-next'
+import { Cloud, User, Mail, Lock, ArrowRight, ShieldCheck, Building2, XCircle, Eye, EyeOff } from 'lucide-vue-next'
 import { authApi } from '../../api/auth'
+import { useToast } from '../../composables/useToast'
+import { isChinese } from '../../locales'
 
 const { t, locale } = useI18n()
+const toast = useToast()
 const router = useRouter()
 const isLoading = ref(false)
 
@@ -45,12 +48,12 @@ const usernameError = computed(() => {
 
 const handleSubmit = async () => {
     if (form.password !== form.confirmPassword) {
-      alert(t('auth.passwordMismatch')) 
+      toast.error(t('auth.passwordMismatch'))
       return
     }
 
     if (usernameError.value) {
-      alert(usernameError.value)
+      toast.error(usernameError.value)
       return
     }
 
@@ -61,7 +64,8 @@ const handleSubmit = async () => {
             email: form.email,
             username: form.username,
             password: form.password,
-            language: locale.value === 'zh' ? 'zh' : 'en',
+            // 邮件模板只有中英文，繁体用户收中文邮件（language 列为 varchar(5)）
+            language: isChinese(locale.value) ? 'zh' : 'en',
             org_name: form.orgName,
             org_slug: form.orgSlug
         })
@@ -74,7 +78,7 @@ const handleSubmit = async () => {
         const msg = Array.isArray(detail)
             ? detail.map((d: any) => d.msg).join('; ')
             : (detail || error.message || t('messages.error'))
-        alert(msg)
+        toast.error(msg)
     } finally {
         isLoading.value = false
     }

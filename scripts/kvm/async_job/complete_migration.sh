@@ -13,11 +13,17 @@ vm_ID=inst-$ID
 echo $$ >$run_dir/${vm_ID}-$migrate_ID
 state="failed"
 
-for i in {1..600}; do
-    sleep 3
+for i in {1..1800}; do
+    [ $i -gt 1 ] && sleep 1
     if [ "$migration_type" = "warm" ]; then
-        virsh domjobinfo --completed --keep-completed $vm_ID | grep Completed
-        [ $? -eq 0 ] && state="completed"
+        # 本脚本在源节点迁移完成后才下发；离线迁移在目标节点没有 completed job 信息，域已持久定义即视为完成
+        if virsh domjobinfo --completed --keep-completed $vm_ID 2>/dev/null | grep -q Completed || virsh dominfo $vm_ID 2>/dev/null | grep -qE "^Persistent:\s+yes"; then
+            state="completed"
+            if [ -z "$wds_address" ]; then
+                vm_xml=$xml_dir/$vm_ID/${vm_ID}.xml
+                virsh dumpxml --security-info $vm_ID 2>/dev/null | sed "s/autoport='yes'/autoport='no'/g" > $vm_xml.dump && mv -f $vm_xml.dump $vm_xml
+            fi
+        fi
     else
         vm_state=$(virsh domstate $vm_ID)
         if [ -n "$vm_state" ]; then
@@ -31,10 +37,12 @@ for i in {1..600}; do
     if [ "$state" = "completed" ]; then 
         rm -f $run_dir/${vm_ID}-$migrate_ID
         # Update vm_instance_map metrics - add VM to current hypervisor
-        echo "Updating vm_instance_map metrics: adding VM $vm_ID to current hypervisor"
-        ../generate_vm_instance_map.sh add $vm_ID
+        # 热迁移时本脚本同步执行，stdout 会作为回调发给 clapi，只输出回调行
+        ../generate_vm_instance_map.sh add $vm_ID >/dev/null 2>&1
 
-        echo "|:-COMMAND-:| migrate_vm.sh '$migrate_ID' '$task_ID' '$ID' '$SCI_CLIENT_ID' '$state' ''"
+        # 带上虚拟机实际状态：迁移期间心跳已上报过该虚拟机（clapi 因 migrating 跳过），之后状态不变就不会再上报
+        vm_state=$(virsh domstate $vm_ID 2>/dev/null | head -1 | sed 's/shut off/shut_off/')
+        echo "|:-COMMAND-:| migrate_vm.sh '$migrate_ID' '$task_ID' '$ID' '$NODE_ID' '$state' 'vm_state=$vm_state'"
         exit 0
     fi
 done
@@ -48,5 +56,5 @@ virsh undefine --nvram $vm_ID
 rm -f ${cache_dir}/meta/${vm_ID}.iso
 rm -rf $xml_dir/$vm_ID
 rm -f $run_dir/${vm_ID}-$migrate_ID
-echo "|:-COMMAND-:| migrate_vm.sh '$migrate_ID' '$task_ID' '$ID' '$SCI_CLIENT_ID' '$state' 'cleanup target'"
+echo "|:-COMMAND-:| migrate_vm.sh '$migrate_ID' '$task_ID' '$ID' '$NODE_ID' '$state' 'cleanup target'"
 sync_vm $ID

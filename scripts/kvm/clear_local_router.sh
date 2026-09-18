@@ -34,6 +34,6 @@ ip netns exec router-0 ip link del int-$suffix
 ip netns del $router
 rm -rf $cache_dir/router/$router
 
-nat_ip=169.$(($SCI_CLIENT_ID % 234)).$(($suffix % 234)).3
+nat_ip=169.$(($NODE_ID % 234)).$(($suffix % 234)).3
 route_ip=$(ifconfig $vxlan_interface | grep 'inet ' | awk '{print $2}')
 iptables -t nat -D POSTROUTING -s ${nat_ip}/32 -j SNAT --to-source $route_ip

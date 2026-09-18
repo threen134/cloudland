@@ -7,14 +7,19 @@ import { vpcsApi, subnetsApi, type VPC, type SubnetPayload } from '../../api/net
 import { useRegionStore } from '../../stores/region'
 import { isValidName } from '../../utils/validation'
 
-import { Layers, Plus, Trash2, Network, Search as SearchIcon, X, RefreshCw, Pencil, Check, Copy, ChevronDown, HelpCircle } from 'lucide-vue-next'
+import { Layers, Plus, Trash2, Network, Search as SearchIcon, RefreshCw, Pencil, Check, Copy, ChevronDown, HelpCircle } from 'lucide-vue-next'
 import DeleteModal from '../../components/modals/DeleteModal.vue'
+import BaseModal from '../../components/modals/BaseModal.vue'
+import PageToolbar from '../../components/base/PageToolbar.vue'
+import StatusBadge from '../../components/base/StatusBadge.vue'
+import DataTable, { type Column } from '../../components/base/DataTable.vue'
+import { quotaErrorMessage } from '../../utils/quotaError'
 
 const region = useRegionStore()
 
 const vpcs = ref<VPC[]>([])
 const loading = ref(false)
-const error = ref<string | null>(null)
+const loadError = ref('')
 const searchQuery = ref('')
 const createModalVisible = ref(false)
 const creating = ref(false)
@@ -24,22 +29,29 @@ const newVPCForm = ref({
     description: ''
 })
 
-const { t } = useI18n()
+const { t, te } = useI18n()
 const toast = useToast()
 const isNameValid = computed(() => isValidName(newVPCForm.value.name))
 
 const { copiedId, copyId } = useCopyId()
 
 
+const columns = computed<Column[]>(() => [
+    { key: 'name', label: t('dashboard.table.nameId'), sortable: true },
+    { key: 'status', label: t('dashboard.table.status'), sortable: true, sortValue: (v) => v.status || 'active' },
+    { key: 'subnets', label: t('dashboard.subnets'), sortable: true, sortValue: (v) => v.subnets?.length || 0 },
+    { key: 'actions', label: t('dashboard.table.actions'), align: 'center' },
+])
+
 const fetchVPCs = async () => {
     loading.value = true
-    error.value = null
+    loadError.value = ''
     try {
         const response = await vpcsApi.list()
         vpcs.value = response.vpcs || (Array.isArray(response) ? response : [])
     } catch (err: any) {
         console.error('Failed to fetch VPCs:', err)
-        error.value = err.message
+        loadError.value = t('messages.error')
         vpcs.value = []
     } finally {
         loading.value = false
@@ -91,7 +103,7 @@ const handleCreateVPC = async () => {
         toast.success(t('messages.createSuccess'))
     } catch (err: any) {
         console.error('Failed to create VPC:', err)
-        createError.value = err.response?.data?.error_message || err.message || t('messages.error')
+        createError.value = quotaErrorMessage(err, t, te) || err.response?.data?.error_message || err.message || t('messages.error')
     } finally {
         creating.value = false
     }
@@ -277,158 +289,131 @@ onMounted(() => {
 
 <template>
   <div class="vpc-list-container">
-    <div class="page-header">
-      <div class="search-wrapper">
-        <label class="search-box">
-          <SearchIcon :size="16" class="search-icon" />
-          <input 
-            id="searchQuery"
-            name="searchQuery"
-            type="text" 
-            v-model="searchQuery"
-            :placeholder="$t('actions.search') + '...'" 
-            class="search-input"
-          />
-        </label>
-      </div>
-      <div class="header-actions">
+    <PageToolbar v-model:search="searchQuery">
+      <template #actions>
         <button class="btn btn-secondary btn-sm btn-icon" @click="fetchVPCs" :title="$t('actions.refresh')">
           <RefreshCw :size="14" :class="{ spinning: loading }" />
         </button>
         <button class="btn btn-primary btn-sm" @click="openCreateModal">
           <Plus :size="14" /> {{ $t('dashboard.buttons.createVpc') }}
         </button>
-      </div>
-    </div>
-    
-    <div class="card table-card">
-      <table class="data-table">
-        <thead>
-          <tr>
-            <th>{{ $t('dashboard.table.nameId') }}</th>
-            <th>{{ $t('dashboard.table.status') }}</th>
-            <th>{{ $t('dashboard.subnets') }}</th>
-            <th>{{ $t('dashboard.table.actions') }}</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-if="loading">
-            <td colspan="4" class="text-center">
-              <div class="loading-spinner" style="margin: 20px auto;"></div>
-            </td>
-          </tr>
-          <tr v-else-if="filteredVPCs.length === 0">
-            <td colspan="4" class="text-center text-secondary" style="padding: 48px;">
-               <div v-if="searchQuery">
-                  <SearchIcon :size="48" style="opacity: 0.3; margin-bottom: 16px;" />
-                  <p>{{ $t('messages.noResults') }}</p>
-               </div>
-               <div v-else class="empty-state">
-                <Layers :size="48" style="opacity: 0.2; margin-bottom: 16px;" />
-                <p>{{ $t('messages.noVpcs') }}</p>
+      </template>
+    </PageToolbar>
+
+    <DataTable
+      allow-overflow
+      :columns="columns"
+      :rows="filteredVPCs"
+      row-key="id"
+      :loading="loading"
+      :error="loadError"
+      @retry="fetchVPCs"
+    >
+      <template #empty>
+        <div v-if="searchQuery">
+          <SearchIcon :size="48" style="opacity: 0.3; margin-bottom: 16px;" />
+          <p>{{ $t('messages.noResults') }}</p>
+        </div>
+        <div v-else class="empty-state">
+          <Layers :size="48" style="opacity: 0.2; margin-bottom: 16px;" />
+          <p>{{ $t('messages.noVpcs') }}</p>
+        </div>
+      </template>
+
+      <template #cell-name="{ row: vpc }">
+        <router-link :to="{ name: 'vpc-detail', params: { id: vpc.id } }" class="resource-link">
+          <div class="resource-info">
+            <div class="resource-icon">
+              <Layers :size="16" />
+            </div>
+            <div>
+              <div class="resource-name">{{ vpc.name }}</div>
+              <div class="resource-id-row">
+                <span class="resource-id" :title="vpc.id">{{ vpc.id.slice(0, 8) }}...</span>
+                <button class="copy-btn-mini" @click.stop.prevent="copyId(vpc.id)" :title="t('actions.copy')" :aria-label="t('actions.copy')">
+                  <Check v-if="copiedId === vpc.id" :size="10" style="color: #10b981;" />
+                  <Copy v-else :size="10" />
+                </button>
               </div>
-            </td>
-          </tr>
-          <tr v-else v-for="vpc in filteredVPCs" :key="vpc.id">
-            <td>
-              <router-link :to="{ name: 'vpc-detail', params: { id: vpc.id } }" class="resource-link">
-                <div class="resource-info">
-                  <div class="resource-icon">
-                    <Layers :size="16" />
-                  </div>
-                  <div>
-                    <div class="resource-name">{{ vpc.name }}</div>
-                    <div class="resource-id-row">
-                      <span class="resource-id" :title="vpc.id">{{ vpc.id.slice(0, 8) }}...</span>
-                      <button class="copy-btn-mini" @click.stop.prevent="copyId(vpc.id)" :title="t('actions.copy')" :aria-label="t('actions.copy')">
-                        <Check v-if="copiedId === vpc.id" :size="10" style="color: #10b981;" />
-                        <Copy v-else :size="10" />
-                      </button>
-                    </div>
-                  </div>
-                </div>
+            </div>
+          </div>
+        </router-link>
+      </template>
+
+      <template #cell-status="{ row: vpc }">
+        <StatusBadge :status="vpc.status || 'active'" :label="getStatusText(vpc.status)" />
+      </template>
+
+      <template #cell-subnets="{ row: vpc }">
+        <div class="subnets-column-wrapper" v-if="vpc.subnets && vpc.subnets.length > 0">
+          <div class="subnet-list-vertical">
+            <div class="subnet-first-row">
+              <router-link
+                :to="{ name: 'subnet-detail', params: { id: vpc.subnets[0].id } }"
+                class="subnet-inline-item"
+              >
+                <span class="inline-name">{{ vpc.subnets[0].name }}</span>
+                <span class="inline-cidr">({{ vpc.subnets[0].network || vpc.subnets[0].network_cidr }})</span>
               </router-link>
-            </td>
-            <td>
-              <span class="status-pill status-active">
-                <span class="status-dot"></span>
-                {{ getStatusText(vpc.status) }}
-              </span>
-            </td>
-            <td>
-              <div class="subnets-column-wrapper" v-if="vpc.subnets && vpc.subnets.length > 0">
-                <div class="subnet-list-vertical">
-                  <div class="subnet-first-row">
-                    <router-link 
-                      :to="{ name: 'subnet-detail', params: { id: vpc.subnets[0].id } }" 
-                      class="subnet-inline-item"
-                    >
-                      <span class="inline-name">{{ vpc.subnets[0].name }}</span>
-                      <span class="inline-cidr">({{ vpc.subnets[0].network || vpc.subnets[0].network_cidr }})</span>
-                    </router-link>
-                    
-                    <div v-if="vpc.subnets.length > 2" class="subnet-more-wrapper">
-                      <button class="badge badge-multi-iface clickable">
-                        <Network :size="10" />
-                        +{{ vpc.subnets.length - 2 }} {{ $t('dashboard.instanceDetail.more').toLowerCase() }}
-                      </button>
-                      <div class="subnet-popover">
-                        <div class="subnet-popover-header">{{ $t('dashboard.subnets') }}</div>
-                        <router-link 
-                          v-for="sub in vpc.subnets.slice(2)" 
-                          :key="sub.id" 
-                          :to="{ name: 'subnet-detail', params: { id: sub.id } }" 
-                          class="subnet-popover-item"
-                        >
-                          <Network :size="12" />
-                          <span class="subnet-popover-name">{{ sub.name }}</span>
-                          <span class="subnet-popover-cidr">{{ sub.network || sub.network_cidr }}</span>
-                        </router-link>
-                      </div>
-                    </div>
-                  </div>
-                  
-                  <router-link 
-                    v-if="vpc.subnets.length > 1"
-                    :to="{ name: 'subnet-detail', params: { id: vpc.subnets[1].id } }" 
-                    class="subnet-inline-item"
+
+              <div v-if="vpc.subnets.length > 2" class="subnet-more-wrapper">
+                <button class="badge badge-multi-iface clickable">
+                  <Network :size="10" />
+                  +{{ vpc.subnets.length - 2 }} {{ $t('dashboard.instanceDetail.more').toLowerCase() }}
+                </button>
+                <div class="subnet-popover">
+                  <div class="subnet-popover-header">{{ $t('dashboard.subnets') }}</div>
+                  <router-link
+                    v-for="sub in vpc.subnets.slice(2)"
+                    :key="sub.id"
+                    :to="{ name: 'subnet-detail', params: { id: sub.id } }"
+                    class="subnet-popover-item"
                   >
-                    <span class="inline-name">{{ vpc.subnets[1].name }}</span>
-                    <span class="inline-cidr">({{ vpc.subnets[1].network || vpc.subnets[1].network_cidr }})</span>
+                    <Network :size="12" />
+                    <span class="subnet-popover-name">{{ sub.name }}</span>
+                    <span class="subnet-popover-cidr">{{ sub.network || sub.network_cidr }}</span>
                   </router-link>
                 </div>
               </div>
-              <span v-else class="text-secondary">{{ $t('messages.noData') }}</span>
-            </td>
-            <td>
-              <div class="actions">
-                <button class="btn btn-ghost btn-sm" :title="$t('actions.edit')" @click="openEditModal(vpc)">
-                  <Pencil :size="14" />
-                </button>
-                <button class="btn btn-ghost btn-sm" :title="$t('dashboard.buttons.createSubnet')" @click="openCreateSubnetModal(vpc)">
-                  <Plus :size="14" />
-                </button>
-                <button class="btn btn-ghost btn-sm text-error" :title="$t('actions.delete')" @click="handleDeleteClick(vpc)">
-                  <Trash2 :size="14" />
-                </button>
-              </div>
-            </td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
+            </div>
 
-    <!-- Create VPC Modal -->
-    <div v-if="createModalVisible" class="modal-overlay" @click.self="closeCreateModal">
-      <div class="modal-content card">
-        <div class="modal-header">
-          <h3>{{ $t('dashboard.buttons.createVpc') }}</h3>
-          <button class="btn btn-ghost btn-sm icon-btn" @click="closeCreateModal">
-            <X :size="20" />
+            <router-link
+              v-if="vpc.subnets.length > 1"
+              :to="{ name: 'subnet-detail', params: { id: vpc.subnets[1].id } }"
+              class="subnet-inline-item"
+            >
+              <span class="inline-name">{{ vpc.subnets[1].name }}</span>
+              <span class="inline-cidr">({{ vpc.subnets[1].network || vpc.subnets[1].network_cidr }})</span>
+            </router-link>
+          </div>
+        </div>
+        <span v-else class="text-secondary">{{ $t('messages.noData') }}</span>
+      </template>
+
+      <template #cell-actions="{ row: vpc }">
+        <div class="actions">
+          <button class="btn btn-ghost btn-sm" :title="$t('actions.edit')" @click="openEditModal(vpc)">
+            <Pencil :size="14" />
+          </button>
+          <button class="btn btn-ghost btn-sm" :title="$t('dashboard.buttons.createSubnet')" @click="openCreateSubnetModal(vpc)">
+            <Plus :size="14" />
+          </button>
+          <button class="btn btn-ghost btn-sm text-error" :title="$t('actions.delete')" @click="handleDeleteClick(vpc)">
+            <Trash2 :size="14" />
           </button>
         </div>
-        
-        <div class="modal-body">
+      </template>
+    </DataTable>
+
+    <!-- Create VPC Modal -->
+    <BaseModal
+      :show="createModalVisible"
+      :title="$t('dashboard.buttons.createVpc')"
+      :loading="creating"
+      form
+      @close="closeCreateModal"
+      @submit="handleCreateVPC"
+    >
           <div class="form-group">
              <label class="form-label" for="vpc_name">{{ $t('dashboard.table.name') }}</label>
             <input 
@@ -455,21 +440,19 @@ onMounted(() => {
               :placeholder="$t('messages.placeholderDescription')"
             ></textarea>
           </div>
-        </div>
-        <div class="modal-footer" style="flex-direction: column; align-items: stretch; gap: var(--spacing-2);">
-          <div v-if="createError" class="text-error" style="font-size:var(--font-size-sm);background:var(--error-light);padding:var(--spacing-2);border-radius:var(--radius-sm)">
+
+          <div v-if="createError" class="text-error" style="margin-top:var(--spacing-4);font-size:var(--font-size-sm);background:var(--error-light);padding:var(--spacing-2);border-radius:var(--radius-sm)">
             {{ createError }}
           </div>
-          <div style="display: flex; justify-content: flex-end; gap: var(--spacing-2);">
-            <button class="btn btn-secondary" @click="closeCreateModal" :disabled="creating">{{ $t('actions.cancel') }}</button>
-            <button class="btn btn-primary" @click="handleCreateVPC" :disabled="creating">
-              <span v-if="creating" class="loading-spinner" style="width: 16px; height: 16px; border-width: 2px;"></span>
-              {{ creating ? $t('messages.creating') : $t('dashboard.buttons.createVpc') }}
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
+
+      <template #footer>
+        <button type="button" class="btn btn-secondary" @click="closeCreateModal" :disabled="creating">{{ $t('actions.cancel') }}</button>
+        <button type="submit" class="btn btn-primary" :disabled="creating">
+          <span v-if="creating" class="loading-spinner" style="width: 16px; height: 16px; border-width: 2px;"></span>
+          {{ creating ? $t('messages.creating') : $t('dashboard.buttons.createVpc') }}
+        </button>
+      </template>
+    </BaseModal>
 
     <DeleteModal
       :show="deleteModalVisible"
@@ -482,15 +465,14 @@ onMounted(() => {
     />
 
     <!-- Edit VPC Modal -->
-    <div v-if="editModalVisible" class="modal-overlay" @click.self="closeEditModal">
-      <div class="modal-content card">
-        <div class="modal-header">
-          <h3>{{ $t('actions.edit') }} - {{ editTarget?.name }}</h3>
-          <button class="btn btn-ghost btn-sm icon-btn" @click="closeEditModal">
-            <X :size="20" />
-          </button>
-        </div>
-        <div class="modal-body">
+    <BaseModal
+      :show="editModalVisible"
+      :title="`${$t('actions.edit')} - ${editTarget?.name ?? ''}`"
+      :loading="editingVPC"
+      form
+      @close="closeEditModal"
+      @submit="handleEditVPC"
+    >
           <div class="form-group">
             <label class="form-label" for="edit_vpc_name">{{ $t('dashboard.table.name') }}</label>
             <input
@@ -516,30 +498,30 @@ onMounted(() => {
               :placeholder="$t('messages.placeholderDescription')"
             ></textarea>
           </div>
-        </div>
-        <div v-if="editError" class="text-error" style="margin: 0 var(--spacing-6) var(--spacing-4); font-size:var(--font-size-sm);background:var(--error-light);padding:var(--spacing-2);border-radius:var(--radius-sm)">
-          {{ editError }}
-        </div>
-        <div class="modal-footer">
-          <button class="btn btn-secondary" @click="closeEditModal" :disabled="editingVPC">{{ $t('actions.cancel') }}</button>
-          <button class="btn btn-primary" @click="handleEditVPC" :disabled="editingVPC">
-            <span v-if="editingVPC" class="loading-spinner" style="width: 16px; height: 16px; border-width: 2px;"></span>
-            {{ $t('actions.confirm') }}
-          </button>
-        </div>
-      </div>
-    </div>
+
+          <div v-if="editError" class="text-error" style="margin-top:var(--spacing-4);font-size:var(--font-size-sm);background:var(--error-light);padding:var(--spacing-2);border-radius:var(--radius-sm)">
+            {{ editError }}
+          </div>
+
+      <template #footer>
+        <button type="button" class="btn btn-secondary" @click="closeEditModal" :disabled="editingVPC">{{ $t('actions.cancel') }}</button>
+        <button type="submit" class="btn btn-primary" :disabled="editingVPC">
+          <span v-if="editingVPC" class="loading-spinner" style="width: 16px; height: 16px; border-width: 2px;"></span>
+          {{ $t('actions.confirm') }}
+        </button>
+      </template>
+    </BaseModal>
 
     <!-- Create Subnet Modal -->
-    <div v-if="createSubnetVisible" class="modal-overlay" @click.self="closeCreateSubnetModal">
-      <div class="modal-content card" style="max-width: 600px;">
-        <div class="modal-header">
-          <h3>{{ $t('dashboard.buttons.createSubnet') }} - {{ subnetTargetVPC?.name }}</h3>
-          <button class="btn btn-ghost btn-sm icon-btn" @click="closeCreateSubnetModal">
-            <X :size="20" />
-          </button>
-        </div>
-        <div class="modal-body">
+    <BaseModal
+      :show="createSubnetVisible"
+      :title="`${$t('dashboard.buttons.createSubnet')} - ${subnetTargetVPC?.name ?? ''}`"
+      size="lg"
+      :loading="creatingSubnet"
+      form
+      @close="closeCreateSubnetModal"
+      @submit="handleCreateSubnet"
+    >
           <div class="form-group">
             <label class="form-label" for="subnet_name">{{ $t('dashboard.table.name') }} *</label>
             <input
@@ -669,81 +651,23 @@ onMounted(() => {
               </div>
             </div>
           </div>
-        </div>
 
-        <div v-if="createSubnetError" class="text-error" style="margin: 0 var(--spacing-6) var(--spacing-4); font-size:var(--font-size-sm);background:var(--error-light);padding:var(--spacing-2);border-radius:var(--radius-sm)">
-          {{ createSubnetError }}
-        </div>
+          <div v-if="createSubnetError" class="text-error" style="margin-top:var(--spacing-4);font-size:var(--font-size-sm);background:var(--error-light);padding:var(--spacing-2);border-radius:var(--radius-sm)">
+            {{ createSubnetError }}
+          </div>
 
-        <div class="modal-footer">
-          <button class="btn btn-secondary" @click="closeCreateSubnetModal" :disabled="creatingSubnet">{{ $t('actions.cancel') }}</button>
-          <button class="btn btn-primary" @click="handleCreateSubnet" :disabled="creatingSubnet">
-            <span v-if="creatingSubnet" class="loading-spinner" style="width: 16px; height: 16px; border-width: 2px;"></span>
-            {{ creatingSubnet ? $t('messages.creating') : $t('dashboard.buttons.createSubnet') }}
-          </button>
-        </div>
-      </div>
-    </div>
+      <template #footer>
+        <button type="button" class="btn btn-secondary" @click="closeCreateSubnetModal" :disabled="creatingSubnet">{{ $t('actions.cancel') }}</button>
+        <button type="submit" class="btn btn-primary" :disabled="creatingSubnet">
+          <span v-if="creatingSubnet" class="loading-spinner" style="width: 16px; height: 16px; border-width: 2px;"></span>
+          {{ creatingSubnet ? $t('messages.creating') : $t('dashboard.buttons.createSubnet') }}
+        </button>
+      </template>
+    </BaseModal>
   </div>
 </template>
 
 <style scoped>
-.page-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 0;
-  padding-right: 20px;
-}
-
-.search-wrapper {
-  flex: 1;
-  max-width: 400px;
-}
-
-.search-box {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  background: var(--bg-secondary);
-  padding: 0 12px;
-  height: 40px;
-  border-radius: var(--radius-md);
-  border: 1px solid var(--border-light);
-  transition: all 0.2s;
-}
-
-.search-box:focus-within {
-  border-color: var(--primary-300);
-  box-shadow: 0 0 0 2px var(--primary-100);
-}
-
-.search-icon {
-  color: var(--gray-400);
-}
-
-.search-input {
-  border: none;
-  background: transparent;
-  width: 100%;
-  height: 100%;
-  font-size: 0.875rem;
-  color: var(--text-primary);
-}
-
-.search-input:focus {
-  outline: none;
-}
-
-.table-card {
-  padding: 0;
-  overflow: visible;
-}
-
-.table-card td {
-  overflow: visible;
-  position: relative;
-}
 
 /* .resource-info etc. are global from index.css */
 
@@ -758,25 +682,6 @@ onMounted(() => {
 .resource-link:hover .resource-name {
   color: var(--primary-600);
   text-decoration: underline;
-}
-
-.status-pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 4px 10px;
-  border-radius: var(--radius-full);
-  font-size: var(--font-size-xs);
-  font-weight: var(--font-weight-medium);
-  background: rgba(16, 185, 129, 0.1);
-  color: #10b981;
-}
-
-.status-dot {
-  width: 6px;
-  height: 6px;
-  background: currentColor;
-  border-radius: 50%;
 }
 
 .subnet-list-vertical {
@@ -817,7 +722,7 @@ onMounted(() => {
   gap: 4px;
   padding: 4px 8px;
   background: var(--bg-tertiary);
-  border: 1px solid var(--border-subtle);
+  border: 1px solid var(--border-light);
   border-radius: var(--radius-sm);
   font-size: var(--font-size-xs);
   color: var(--primary-600);
@@ -871,7 +776,7 @@ onMounted(() => {
   font-size: var(--font-size-xs);
   font-weight: var(--font-weight-semibold);
   color: var(--text-light);
-  border-bottom: 1px solid var(--border-subtle);
+  border-bottom: 1px solid var(--border-light);
   margin-bottom: 4px;
 }
 
@@ -908,7 +813,8 @@ onMounted(() => {
 
 .actions {
   display: flex;
-  gap: var(--spacing-02);
+  justify-content: center;
+  gap: var(--spacing-2);
 }
 
 .text-error {
@@ -926,10 +832,6 @@ onMounted(() => {
   justify-content: center;
 }
 
-.btn-danger:hover { background: var(--error-dark); }
-.btn-danger:disabled { opacity: 0.5; cursor: not-allowed; }
-
-.header-actions { display: flex; gap: 8px; align-items: center; }
 .spinning { animation: spin 1s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 

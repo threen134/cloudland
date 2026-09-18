@@ -28,9 +28,9 @@ var systemSettingAPI = &SystemSettingAPI{}
 // @Router /internal/system-settings/sync [post]
 func (a *SystemSettingAPI) SyncSystemSettings(c *gin.Context) {
 	var req struct {
-		ConfigVersion int64                        `json:"config_version"`
-		Force         bool                         `json:"force"`
-		Settings      []model.SystemSettingMirror  `json:"settings" binding:"required"`
+		ConfigVersion int64                       `json:"config_version"`
+		Force         bool                        `json:"force"`
+		Settings      []model.SystemSettingMirror `json:"settings" binding:"required"`
 	}
 
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -46,7 +46,7 @@ func (a *SystemSettingAPI) SyncSystemSettings(c *gin.Context) {
 	var localVer model.SystemSettingMirrorVersion
 	db.Where("id = ?", 1).First(&localVer)
 	if !req.Force && req.ConfigVersion > 0 && req.ConfigVersion <= localVer.Version {
-		logger.Warningf("Received stale or duplicate system settings sync (version=%d <= local=%d), ignoring",
+		logger.Ctx(ctx).Warningf("Received stale or duplicate system settings sync (version=%d <= local=%d), ignoring",
 			req.ConfigVersion, localVer.Version)
 		c.JSON(http.StatusOK, gin.H{"status": "ignored", "reason": "stale_or_duplicate_version"})
 		return
@@ -83,7 +83,7 @@ func (a *SystemSettingAPI) SyncSystemSettings(c *gin.Context) {
 		return
 	}
 
-	logger.Infof("System settings synced: %d settings, version=%d", len(req.Settings), req.ConfigVersion)
+	logger.Ctx(ctx).Infof("System settings synced: %d settings, version=%d", len(req.Settings), req.ConfigVersion)
 
 	// 异步应用 DNS 上游配置（不阻塞 HTTP 响应）
 	go services.ApplyDnsUpstream()

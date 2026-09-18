@@ -3,12 +3,15 @@ import { ref, onMounted, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import {
-    Globe2, Plus, Search, RefreshCw, Settings2, Trash2, X,
-    CheckCircle2, AlertCircle, KeyRound, Copy, Check, Loader2, ExternalLink, Wrench
+    Globe2, Plus, Search, RefreshCw, Settings2, Trash2,
+    CheckCircle2, AlertCircle, KeyRound, Copy, Check, Loader2, Wrench
 } from 'lucide-vue-next'
 import { regionsApi, type RegionPublic, type RegionAdmin, type RegionCreated, type CreateRegionPayload, type UpdateRegionPayload } from '../../api/regions'
 import { useToast } from '../../composables/useToast'
 import { useCopyId } from '../../composables/useCopyId'
+import PageToolbar from '../../components/base/PageToolbar.vue'
+import DataTable, { type Column } from '../../components/base/DataTable.vue'
+import BaseModal from '../../components/modals/BaseModal.vue'
 
 const { t } = useI18n()
 const toast = useToast()
@@ -16,7 +19,18 @@ const router = useRouter()
 
 const regions = ref<RegionPublic[]>([])
 const isLoading = ref(false)
+const loadError = ref('')
 const searchQuery = ref('')
+
+// 状态列显示的是翻译后的文案，排序按原始状态串
+const regionState = (r: any) => (r.maintenance_mode ? 'maintenance' : r.is_available ? 'available' : 'offline')
+
+const columns = computed<Column[]>(() => [
+    { key: 'name', label: t('dashboard.table.nameId'), sortable: true, sortValue: (r) => r.display_name || r.name },
+    { key: 'status', label: t('dashboard.table.status'), sortable: true, sortValue: regionState },
+    { key: 'description', label: t('dashboard.table.description'), sortable: true },
+    { key: 'actions', label: t('dashboard.table.actions'), align: 'center' },
+])
 
 // Create modal
 const showCreateModal = ref(false)
@@ -65,13 +79,14 @@ const filteredRegions = computed(() => {
 
 const fetchRegions = async () => {
     isLoading.value = true
+    loadError.value = ''
     try {
-        const response = await regionsApi.fetchRegions()
-        const data = response.data
+        const data = await regionsApi.fetchRegions()
         regions.value = Array.isArray(data) ? data : []
     } catch (err) {
         console.error('Failed to fetch regions:', err)
         regions.value = []
+        loadError.value = t('messages.error')
     } finally {
         isLoading.value = false
     }
@@ -87,25 +102,12 @@ const splitEndpoint = (endpoint: string) => {
                 port: url.port || '8255'
             }
         }
-    } catch (e) {}
+    } catch {
+        // endpoint 不是合法 URL：按原样当作主机名，端口取默认值
+    }
     return { host: endpoint, port: '8255' }
 }
 
-const ensurePort = (endpoint: string) => {
-    // keeping this as safety fallback but will use the combined host+port primarily
-    if (!endpoint) return endpoint
-    try {
-        if (endpoint.startsWith('http://') || endpoint.startsWith('https://')) {
-            const url = new URL(endpoint)
-            if (!url.port) {
-                url.port = '8255'
-                const result = url.toString()
-                return endpoint.endsWith('/') ? result : result.replace(/\/$/, '')
-            }
-        }
-    } catch (e) {}
-    return endpoint
-}
 
 // Create
 const openCreateModal = () => {
@@ -129,8 +131,7 @@ const handleCreate = async () => {
 
     creating.value = true
     try {
-        const response = await regionsApi.createRegion(createForm.value)
-        const created = response.data as RegionCreated
+        const created = await regionsApi.createRegion(createForm.value) as RegionCreated
         createdSecret.value = created.internal_secret
         toast.success(t('dashboard.regionActions.createdSuccess'))
         await fetchRegions()
@@ -150,8 +151,7 @@ const handleCreate = async () => {
 // Edit
 const openEditModal = async (region: RegionPublic) => {
     try {
-        const response = await regionsApi.getRegion(region.uuid)
-        const detail = response.data as RegionAdmin
+        const detail = await regionsApi.getRegion(region.uuid) as RegionAdmin
         editingRegion.value = detail
         
         const { host, port } = splitEndpoint(detail.internal_endpoint)
@@ -235,7 +235,7 @@ const handleRotate = async () => {
     rotating.value = true
     try {
         const response = await regionsApi.rotateSecret(rotatingRegion.value.uuid)
-        rotatedSecret.value = (response.data as any).new_secret
+        rotatedSecret.value = (response as any).new_secret
         toast.success(t('messages.success'))
     } catch (err: any) {
         toast.error(err.response?.data?.detail || 'Rotate failed')
@@ -257,19 +257,8 @@ onMounted(fetchRegions)
 
 <template>
     <div>
-        <div class="page-header">
-            <div class="search-wrapper">
-                <div class="search-box">
-                    <Search :size="16" class="search-icon" />
-                    <input 
-                        type="text" 
-                        v-model="searchQuery" 
-                        :placeholder="t('actions.search') + '...'" 
-                        class="search-input"
-                    />
-                </div>
-            </div>
-            <div class="header-actions">
+        <PageToolbar v-model:search="searchQuery">
+            <template #actions>
                 <button class="btn btn-secondary btn-sm btn-icon" @click="fetchRegions" :title="t('actions.refresh')">
                     <RefreshCw :size="14" :class="{ 'spinning': isLoading }" />
                 </button>
@@ -277,337 +266,262 @@ onMounted(fetchRegions)
                     <Plus :size="14" />
                     <span>{{ t('actions.create') }}</span>
                 </button>
-            </div>
-        </div>
+            </template>
+        </PageToolbar>
 
-        <div class="card table-card">
-            <table class="data-table">
-                <thead>
-                    <tr>
-                        <th>{{ t('dashboard.table.nameId') }}</th>
-                        <th>{{ t('dashboard.table.status') }}</th>
-                        <th>{{ t('dashboard.table.description') }}</th>
-                        <th>{{ t('dashboard.table.actions') }}</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    <tr v-if="isLoading && regions.length === 0">
-                        <td colspan="4" class="text-center" style="padding: 48px;">
-                            <div class="loading-spinner" style="margin: 0 auto;"></div>
-                        </td>
-                    </tr>
-                    <tr v-else-if="filteredRegions.length === 0">
-                        <td colspan="4" class="text-center text-secondary" style="padding: 48px;">
-                            <div v-if="searchQuery">
-                                <Search :size="48" style="opacity: 0.3; margin-bottom: 16px;" />
-                                <p>{{ t('messages.noResults') }}</p>
-                            </div>
-                            <div v-else>
-                                <Globe2 :size="48" style="opacity: 0.3; margin-bottom: 16px;" />
-                                <p>{{ t('dashboard.regionActions.noRegions') }}</p>
-                            </div>
-                        </td>
-                    </tr>
-                    <tr v-else v-for="region in filteredRegions" :key="region.uuid">
-                        <td>
-                            <div class="resource-info">
-                                <div class="resource-icon">
-                                    <Globe2 :size="16" />
-                                </div>
-                                <div>
-                                    <div class="resource-name">{{ region.display_name || region.name }}</div>
-                                    <div class="resource-id-row">
-                                      <span class="resource-id" :title="region.name + ' / ' + region.uuid">
-                                        {{ region.name }} / {{ region.uuid.slice(0, 8) }}...
-                                      </span>
-                                      <button class="copy-btn-mini" @click.stop.prevent="copyId(region.uuid)" :title="t('actions.copy')" :aria-label="t('actions.copy')">
-                                        <Check v-if="copiedId === region.uuid" :size="10" style="color: #10b981;" />
-                                        <Copy v-else :size="10" />
-                                      </button>
-                                    </div>
-                                </div>
-                            </div>
-                        </td>
-                        <td>
-                            <span class="status-pill"
-                                :class="region.maintenance_mode ? 'status-maintenance' : region.is_available ? 'status-available' : 'status-offline'">
-                                <Wrench v-if="region.maintenance_mode" :size="12" />
-                                <CheckCircle2 v-else-if="region.is_available" :size="12" />
-                                <AlertCircle v-else :size="12" />
-                                {{ region.maintenance_mode ? t('dashboard.regionActions.maintenance') : region.is_available ? t('dashboard.regionActions.available') : t('dashboard.regionActions.offline') }}
-                            </span>
-                        </td>
-                        <td class="desc-cell">{{ region.description || '-' }}</td>
-                        <td>
-                            <div class="table-actions">
-                                <button class="icon-btn-table" @click="openEditModal(region)" :title="t('actions.edit')">
-                                    <Settings2 :size="16" />
-                                </button>
-                                <button class="icon-btn-table" @click="confirmRotate(region)" :title="t('dashboard.regionActions.rotateSecret')">
-                                    <KeyRound :size="16" />
-                                </button>
-                                <button class="icon-btn-table text-error" @click="confirmDelete(region)" :title="t('actions.delete')">
-                                    <Trash2 :size="16" />
-                                </button>
-                            </div>
-                        </td>
-                    </tr>
-                </tbody>
-            </table>
-        </div>
+        <DataTable
+            :columns="columns"
+            :rows="filteredRegions"
+            row-key="uuid"
+            :loading="isLoading"
+            :error="loadError"
+            @retry="fetchRegions"
+        >
+            <template #empty>
+                <div v-if="searchQuery">
+                    <Search :size="48" style="opacity: 0.3; margin-bottom: 16px;" />
+                    <p>{{ t('messages.noResults') }}</p>
+                </div>
+                <div v-else>
+                    <Globe2 :size="48" style="opacity: 0.3; margin-bottom: 16px;" />
+                    <p>{{ t('dashboard.regionActions.noRegions') }}</p>
+                </div>
+            </template>
+
+            <template #cell-name="{ row: region }">
+                <div class="resource-info">
+                    <div class="resource-icon">
+                        <Globe2 :size="16" />
+                    </div>
+                    <div>
+                        <div class="resource-name">{{ region.display_name || region.name }}</div>
+                        <div class="resource-id-row">
+                          <span class="resource-id" :title="region.name + ' / ' + region.uuid">
+                            {{ region.name }} / {{ region.uuid.slice(0, 8) }}...
+                          </span>
+                          <button class="copy-btn-mini" @click.stop.prevent="copyId(region.uuid)" :title="t('actions.copy')" :aria-label="t('actions.copy')">
+                            <Check v-if="copiedId === region.uuid" :size="10" style="color: #10b981;" />
+                            <Copy v-else :size="10" />
+                          </button>
+                        </div>
+                    </div>
+                </div>
+            </template>
+
+            <template #cell-status="{ row: region }">
+                <span class="status-pill"
+                    :class="region.maintenance_mode ? 'status-maintenance' : region.is_available ? 'status-available' : 'status-offline'">
+                    <Wrench v-if="region.maintenance_mode" :size="12" />
+                    <CheckCircle2 v-else-if="region.is_available" :size="12" />
+                    <AlertCircle v-else :size="12" />
+                    {{ region.maintenance_mode ? t('dashboard.regionActions.maintenance') : region.is_available ? t('dashboard.regionActions.available') : t('dashboard.regionActions.offline') }}
+                </span>
+            </template>
+
+            <template #cell-description="{ row: region }">
+                <div class="desc-cell">{{ region.description || '-' }}</div>
+            </template>
+
+            <template #cell-actions="{ row: region }">
+                <div class="table-actions">
+                    <button class="icon-btn-table" @click="openEditModal(region)" :title="t('actions.edit')">
+                        <Settings2 :size="16" />
+                    </button>
+                    <button class="icon-btn-table" @click="confirmRotate(region)" :title="t('dashboard.regionActions.rotateSecret')">
+                        <KeyRound :size="16" />
+                    </button>
+                    <button class="icon-btn-table text-error" @click="confirmDelete(region)" :title="t('actions.delete')">
+                        <Trash2 :size="16" />
+                    </button>
+                </div>
+            </template>
+        </DataTable>
 
         <!-- Create Modal -->
         <Teleport to="body">
-            <div v-if="showCreateModal" class="modal-overlay" @click.self="!createdSecret && (showCreateModal = false)">
-                <div class="modal-content card" style="max-width: 560px;">
-                    <div class="modal-header">
-                        <h3>{{ t('dashboard.regionActions.createTitle') }}</h3>
-                        <button class="btn btn-ghost btn-icon" @click="createdSecret ? closeAndReload() : (showCreateModal = false)"><X :size="18" /></button>
+            <BaseModal
+                :show="showCreateModal"
+                :title="t('dashboard.regionActions.createTitle')"
+                size="lg"
+                @close="createdSecret ? closeAndReload() : (showCreateModal = false)"
+            >
+                <!-- Show secret after creation -->
+                <div v-if="createdSecret" class="secret-display">
+                    <div class="secret-warning">
+                        <AlertCircle :size="18" />
+                        <span>{{ t('dashboard.regionActions.secretWarning') }}</span>
                     </div>
-
-                    <!-- Show secret after creation -->
-                    <div v-if="createdSecret" class="modal-body">
-                        <div class="secret-display">
-                            <div class="secret-warning">
-                                <AlertCircle :size="18" />
-                                <span>{{ t('dashboard.regionActions.secretWarning') }}</span>
-                            </div>
-                            <div class="secret-box">
-                                <code>{{ createdSecret }}</code>
-                                <button class="copy-btn" @click="copyToClipboard(createdSecret!, 'created-secret')">
-                                    <Check v-if="copiedField === 'created-secret'" :size="14" class="copied-icon" />
-                                    <Copy v-else :size="14" />
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Create form -->
-                    <div v-else class="modal-body">
-                        <div class="form-stack">
-                            <div class="form-group">
-                                <label class="form-label">{{ t('dashboard.regionActions.name') }} *</label>
-                                <input type="text" v-model="createForm.name" class="form-input" :placeholder="t('dashboard.forms.placeholder.regionIdExample')" />
-                                <span class="form-hint">{{ t('dashboard.regionActions.nameHint') }}</span>
-                            </div>
-                            <div class="form-group">
-                                <label class="form-label">{{ t('dashboard.regionActions.displayName') }}</label>
-                                <input type="text" v-model="createForm.display_name" class="form-input" :placeholder="t('dashboard.forms.placeholder.regionNameExample')" />
-                            </div>
-                            <div class="form-group">
-                                <label class="form-label">{{ t('dashboard.regionActions.internalEndpoint') }} *</label>
-                                <div style="display: flex; gap: 8px;">
-                                    <input type="text" v-model="endpointHost" class="form-input" style="flex: 1;" :placeholder="t('dashboard.forms.placeholder.endpointExample')" />
-                                    <div style="width: 100px;">
-                                        <input type="text" v-model="endpointPort" class="form-input" placeholder="8255" />
-                                    </div>
-                                </div>
-                                <span class="form-hint">{{ t('dashboard.regionActions.internalEndpointHint') }}</span>
-                            </div>
-                            <div class="form-group">
-                                <label class="form-label">{{ t('dashboard.regionActions.internalSecret') }}</label>
-                                <input type="text" v-model="createForm.internal_secret" class="form-input" />
-                                <span class="form-hint">{{ t('dashboard.regionActions.internalSecretHint') }}</span>
-                            </div>
-                            <div class="form-group">
-                                <label class="form-label">{{ t('dashboard.table.description') }}</label>
-                                <input type="text" v-model="createForm.description" class="form-input" />
-                            </div>
-                        </div>
-                    </div>
-
-                    <div class="modal-footer">
-                        <button v-if="createdSecret" class="btn btn-primary" @click="closeAndReload">{{ t('actions.close') }}</button>
-                        <template v-else>
-                            <button class="btn btn-secondary" @click="showCreateModal = false">{{ t('actions.cancel') }}</button>
-                            <button class="btn btn-primary" @click="handleCreate" :disabled="creating || !createForm.name || !endpointHost">
-                                <Loader2 v-if="creating" :size="14" class="spinning" />
-                                {{ creating ? t('messages.creating') : t('actions.create') }}
-                            </button>
-                        </template>
+                    <div class="secret-box">
+                        <code>{{ createdSecret }}</code>
+                        <button class="copy-btn" @click="copyToClipboard(createdSecret!, 'created-secret')">
+                            <Check v-if="copiedField === 'created-secret'" :size="14" class="copied-icon" />
+                            <Copy v-else :size="14" />
+                        </button>
                     </div>
                 </div>
-            </div>
+
+                <!-- Create form -->
+                <div v-else class="form-stack">
+                    <div class="form-group">
+                        <label class="form-label">{{ t('dashboard.regionActions.name') }} *</label>
+                        <input type="text" v-model="createForm.name" class="form-input" :placeholder="t('dashboard.forms.placeholder.regionIdExample')" />
+                        <span class="form-hint">{{ t('dashboard.regionActions.nameHint') }}</span>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">{{ t('dashboard.regionActions.displayName') }}</label>
+                        <input type="text" v-model="createForm.display_name" class="form-input" :placeholder="t('dashboard.forms.placeholder.regionNameExample')" />
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">{{ t('dashboard.regionActions.internalEndpoint') }} *</label>
+                        <div style="display: flex; gap: 8px;">
+                            <input type="text" v-model="endpointHost" class="form-input" style="flex: 1;" :placeholder="t('dashboard.forms.placeholder.endpointExample')" />
+                            <div style="width: 100px;">
+                                <input type="text" v-model="endpointPort" class="form-input" placeholder="8255" />
+                            </div>
+                        </div>
+                        <span class="form-hint">{{ t('dashboard.regionActions.internalEndpointHint') }}</span>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">{{ t('dashboard.regionActions.internalSecret') }}</label>
+                        <input type="text" v-model="createForm.internal_secret" class="form-input" />
+                        <span class="form-hint">{{ t('dashboard.regionActions.internalSecretHint') }}</span>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">{{ t('dashboard.table.description') }}</label>
+                        <input type="text" v-model="createForm.description" class="form-input" />
+                    </div>
+                </div>
+
+                <template #footer>
+                    <button v-if="createdSecret" class="btn btn-primary" @click="closeAndReload">{{ t('actions.close') }}</button>
+                    <template v-else>
+                        <button class="btn btn-secondary" @click="showCreateModal = false">{{ t('actions.cancel') }}</button>
+                        <button class="btn btn-primary" @click="handleCreate" :disabled="creating || !createForm.name || !endpointHost">
+                            <Loader2 v-if="creating" :size="14" class="spinning" />
+                            {{ creating ? t('messages.creating') : t('actions.create') }}
+                        </button>
+                    </template>
+                </template>
+            </BaseModal>
         </Teleport>
 
         <!-- Edit Modal -->
         <Teleport to="body">
-            <div v-if="showEditModal" class="modal-overlay" @click.self="showEditModal = false">
-                <div class="modal-content card" style="max-width: 560px;">
-                    <div class="modal-header">
-                        <h3>{{ t('dashboard.regionActions.editTitle') }}</h3>
-                        <button class="btn btn-ghost btn-icon" @click="showEditModal = false"><X :size="18" /></button>
+            <BaseModal
+                :show="showEditModal"
+                :title="t('dashboard.regionActions.editTitle')"
+                size="lg"
+                :loading="editing"
+                form
+                @close="showEditModal = false"
+                @submit="handleEdit"
+            >
+                <div class="form-stack">
+                    <div class="form-group">
+                        <label class="form-label">{{ t('dashboard.regionActions.displayName') }}</label>
+                        <input type="text" v-model="editForm.display_name" class="form-input" />
                     </div>
-                    <div class="modal-body">
-                        <div class="form-stack">
-                            <div class="form-group">
-                                <label class="form-label">{{ t('dashboard.regionActions.displayName') }}</label>
-                                <input type="text" v-model="editForm.display_name" class="form-input" />
-                            </div>
-                            <div class="form-group">
-                                <label class="form-label">{{ t('dashboard.regionActions.internalEndpoint') }} *</label>
-                                <div style="display: flex; gap: 8px;">
-                                    <input type="text" v-model="endpointHost" class="form-input" style="flex: 1;" />
-                                    <div style="width: 100px;">
-                                        <input type="text" v-model="endpointPort" class="form-input" placeholder="8255" />
-                                    </div>
-                                </div>
-                            </div>
-                            <div class="form-group">
-                                <label class="form-label">{{ t('dashboard.table.description') }}</label>
-                                <input type="text" v-model="editForm.description" class="form-input" />
-                            </div>
-                            <div class="form-group">
-                                <label class="form-label" style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
-                                    <input type="checkbox" v-model="editForm.maintenance_mode" />
-                                    {{ t('dashboard.regionActions.maintenanceMode') }}
-                                </label>
-                                <span class="form-hint">{{ t('dashboard.regionActions.maintenanceModeHint') }}</span>
+                    <div class="form-group">
+                        <label class="form-label">{{ t('dashboard.regionActions.internalEndpoint') }} *</label>
+                        <div style="display: flex; gap: 8px;">
+                            <input type="text" v-model="endpointHost" class="form-input" style="flex: 1;" />
+                            <div style="width: 100px;">
+                                <input type="text" v-model="endpointPort" class="form-input" placeholder="8255" />
                             </div>
                         </div>
                     </div>
-                    <div class="modal-footer">
-                        <button class="btn btn-secondary" @click="showEditModal = false">{{ t('actions.cancel') }}</button>
-                        <button class="btn btn-primary" @click="handleEdit" :disabled="editing">
-                            <Loader2 v-if="editing" :size="14" class="spinning" />
-                            {{ editing ? t('messages.saving') : t('actions.save') }}
-                        </button>
+                    <div class="form-group">
+                        <label class="form-label">{{ t('dashboard.table.description') }}</label>
+                        <input type="text" v-model="editForm.description" class="form-input" />
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                            <input type="checkbox" v-model="editForm.maintenance_mode" />
+                            {{ t('dashboard.regionActions.maintenanceMode') }}
+                        </label>
+                        <span class="form-hint">{{ t('dashboard.regionActions.maintenanceModeHint') }}</span>
                     </div>
                 </div>
-            </div>
+
+                <template #footer>
+                    <button type="button" class="btn btn-secondary" @click="showEditModal = false">{{ t('actions.cancel') }}</button>
+                    <button type="submit" class="btn btn-primary" :disabled="editing">
+                        <Loader2 v-if="editing" :size="14" class="spinning" />
+                        {{ editing ? t('messages.saving') : t('actions.save') }}
+                    </button>
+                </template>
+            </BaseModal>
         </Teleport>
 
         <!-- Delete Confirm Modal -->
         <Teleport to="body">
-            <div v-if="showDeleteModal" class="modal-overlay" @click.self="showDeleteModal = false">
-                <div class="modal-content card" style="max-width: 440px;">
-                    <div class="modal-header">
-                        <h3>{{ t('dashboard.regionActions.deleteTitle') }}</h3>
-                        <button class="btn btn-ghost btn-icon" @click="showDeleteModal = false"><X :size="18" /></button>
-                    </div>
-                    <div class="modal-body">
-                        <p>{{ t('dashboard.regionActions.deleteConfirm', { name: deletingRegion?.display_name || deletingRegion?.name }) }}</p>
-                        <div class="delete-warning-box">
-                            <i class="fas fa-exclamation-triangle"></i>
-                            <p>{{ t('dashboard.regionActions.deleteWarning') }}</p>
-                        </div>
-                    </div>
-                    <div class="modal-footer">
-                        <button class="btn btn-secondary" @click="showDeleteModal = false">{{ t('actions.cancel') }}</button>
-                        <button 
-                            class="btn btn-danger" 
-                            @click="handleDelete" 
-                            :disabled="deleting || !deletingRegion?.maintenance_mode"
-                        >
-                            <Loader2 v-if="deleting" :size="14" class="spinning" />
-                            {{ deleting ? t('messages.deleting') : t('actions.delete') }}
-                        </button>
-                    </div>
+            <BaseModal
+                :show="showDeleteModal"
+                :title="t('dashboard.regionActions.deleteTitle')"
+                :loading="deleting"
+                @close="showDeleteModal = false"
+            >
+                <p>{{ t('dashboard.regionActions.deleteConfirm', { name: deletingRegion?.display_name || deletingRegion?.name }) }}</p>
+                <div class="delete-warning-box">
+                    <i class="fas fa-exclamation-triangle"></i>
+                    <p>{{ t('dashboard.regionActions.deleteWarning') }}</p>
                 </div>
-            </div>
+
+                <template #footer>
+                    <button class="btn btn-secondary" @click="showDeleteModal = false">{{ t('actions.cancel') }}</button>
+                    <button
+                        class="btn btn-danger"
+                        @click="handleDelete"
+                        :disabled="deleting || !deletingRegion?.maintenance_mode"
+                    >
+                        <Loader2 v-if="deleting" :size="14" class="spinning" />
+                        {{ deleting ? t('messages.deleting') : t('actions.delete') }}
+                    </button>
+                </template>
+            </BaseModal>
         </Teleport>
 
         <!-- Rotate Secret Modal -->
         <Teleport to="body">
-            <div v-if="showRotateModal" class="modal-overlay" @click.self="!rotatedSecret && (showRotateModal = false)">
-                <div class="modal-content card" style="max-width: 500px;">
-                    <div class="modal-header">
-                        <h3>{{ t('dashboard.regionActions.rotateSecretTitle') }}</h3>
-                        <button class="btn btn-ghost btn-icon" @click="showRotateModal = false"><X :size="18" /></button>
+            <BaseModal
+                :show="showRotateModal"
+                :title="t('dashboard.regionActions.rotateSecretTitle')"
+                :loading="rotating"
+                @close="showRotateModal = false"
+            >
+                <div v-if="rotatedSecret" class="secret-display">
+                    <div class="secret-warning">
+                        <AlertCircle :size="18" />
+                        <span>{{ t('dashboard.regionActions.secretWarning') }}</span>
                     </div>
-                    <div class="modal-body">
-                        <div v-if="rotatedSecret" class="secret-display">
-                            <div class="secret-warning">
-                                <AlertCircle :size="18" />
-                                <span>{{ t('dashboard.regionActions.secretWarning') }}</span>
-                            </div>
-                            <label class="form-label">{{ t('dashboard.regionActions.newSecret') }}</label>
-                            <div class="secret-box">
-                                <code>{{ rotatedSecret }}</code>
-                                <button class="copy-btn" @click="copyToClipboard(rotatedSecret!, 'rotated-secret')">
-                                    <Check v-if="copiedField === 'rotated-secret'" :size="14" class="copied-icon" />
-                                    <Copy v-else :size="14" />
-                                </button>
-                            </div>
-                        </div>
-                        <p v-else>{{ t('dashboard.regionActions.rotateSecretConfirm', { name: rotatingRegion?.display_name || rotatingRegion?.name }) }}</p>
-                    </div>
-                    <div class="modal-footer">
-                        <button v-if="rotatedSecret" class="btn btn-primary" @click="showRotateModal = false">{{ t('actions.close') }}</button>
-                        <template v-else>
-                            <button class="btn btn-secondary" @click="showRotateModal = false">{{ t('actions.cancel') }}</button>
-                            <button class="btn btn-warning" @click="handleRotate" :disabled="rotating">
-                                <Loader2 v-if="rotating" :size="14" class="spinning" />
-                                {{ rotating ? '...' : t('dashboard.regionActions.rotateSecret') }}
-                            </button>
-                        </template>
+                    <label class="form-label">{{ t('dashboard.regionActions.newSecret') }}</label>
+                    <div class="secret-box">
+                        <code>{{ rotatedSecret }}</code>
+                        <button class="copy-btn" @click="copyToClipboard(rotatedSecret!, 'rotated-secret')">
+                            <Check v-if="copiedField === 'rotated-secret'" :size="14" class="copied-icon" />
+                            <Copy v-else :size="14" />
+                        </button>
                     </div>
                 </div>
-            </div>
+                <p v-else>{{ t('dashboard.regionActions.rotateSecretConfirm', { name: rotatingRegion?.display_name || rotatingRegion?.name }) }}</p>
+
+                <template #footer>
+                    <button v-if="rotatedSecret" class="btn btn-primary" @click="showRotateModal = false">{{ t('actions.close') }}</button>
+                    <template v-else>
+                        <button class="btn btn-secondary" @click="showRotateModal = false">{{ t('actions.cancel') }}</button>
+                        <button class="btn btn-warning" @click="handleRotate" :disabled="rotating">
+                            <Loader2 v-if="rotating" :size="14" class="spinning" />
+                            {{ rotating ? '...' : t('dashboard.regionActions.rotateSecret') }}
+                        </button>
+                    </template>
+                </template>
+            </BaseModal>
         </Teleport>
     </div>
 </template>
 
 <style scoped>
 /* .resource-info etc. are global from index.css */
-
-.page-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 0px;
-  padding-right: 20px;
-}
-
-.search-wrapper {
-  flex: 1;
-  max-width: 400px;
-}
-
-.search-box {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  background: var(--bg-secondary);
-  padding: 0 12px;
-  height: 40px;
-  border-radius: var(--radius-md);
-  border: 1px solid var(--border-light);
-  transition: all 0.2s;
-}
-
-.search-box:focus-within {
-  border-color: var(--primary-300);
-  box-shadow: 0 0 0 2px var(--primary-100);
-}
-
-.search-icon {
-  color: var(--gray-400);
-}
-
-.search-input {
-  border: none;
-  background: transparent;
-  width: 100%;
-  height: 100%;
-  font-size: 0.875rem;
-  color: var(--text-primary);
-}
-
-.search-input:focus {
-  outline: none;
-}
-
-.header-actions {
-  display: flex;
-  align-items: center;
-  gap: var(--spacing-2);
-}
-
-.table-card {
-    padding: 0;
-    overflow: hidden;
-}
 
 .desc-cell {
     max-width: 200px;
@@ -634,6 +548,7 @@ onMounted(fetchRegions)
 
 .table-actions {
     display: flex;
+    justify-content: center;
     gap: 8px;
 }
 
@@ -652,7 +567,7 @@ onMounted(fetchRegions)
 }
 
 .icon-btn-table:hover { background-color: var(--bg-tertiary); color: var(--primary-500); }
-.icon-btn-table.text-error:hover { background-color: #fef2f2; color: var(--error-600); }
+.icon-btn-table.text-error:hover { background-color: #fef2f2; color: var(--error-dark); }
 
 /* Modals */
 .form-stack { display: flex; flex-direction: column; gap: 16px; }
@@ -699,7 +614,7 @@ onMounted(fetchRegions)
 
 .secret-box code {
     flex: 1; font-size: 0.8125rem; word-break: break-all;
-    font-family: var(--font-mono); color: var(--text-primary);
+    font-family: var(--font-family-mono); color: var(--text-primary);
 }
 
 .copy-btn {

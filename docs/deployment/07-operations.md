@@ -38,7 +38,7 @@ docker compose logs -f clapi
 # 查看网关及认证日志
 docker compose logs -f cpgateway
 
-# 查看主控 SCI 通信日志
+# 查看主控 cland-go 日志（计算节点接入、命令分发）
 docker compose logs -f cloudland
 ```
 
@@ -80,7 +80,7 @@ cat volumes/host.list
 **症状**: Web 界面主机状态长时间为 `Offline`。
 **解决**:
 - **Host 模式确认**: 确保 `cloudland-cland` 容器运行在 `network_mode: host`。
-- **端口检查**: 在控制节点执行 `ss -tlnp | grep 9988` 确认 SCI 监听端口已开启。
+- **端口检查**: 在控制节点执行 `ss -tlnp | grep 5006` 确认 cland-go 的 gRPC 端口已监听。
 - **IP 连通性**: 在计算节点尝试 `ping <CONTROL_IP>`，并确认无防火墙拦截。
 
 ---

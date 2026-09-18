@@ -21,8 +21,9 @@ var orgAdmin = &services.OrgAdmin{}
 // SyncOrg handles POST /internal/orgs/sync
 // Called by CPGateway to keep the local organizations table in sync.
 func SyncOrg(c *gin.Context) {
+	// 以 UUID 为准同步：两侧组织表的自增主键各自独立，不能拿控制面的 ID 当本地主键
 	var req struct {
-		ID   int64  `json:"id" binding:"required,min=1"`
+		UUID string `json:"uuid" binding:"required"`
 		Name string `json:"name" binding:"required"`
 		Slug string `json:"slug"`
 	}
@@ -33,7 +34,7 @@ func SyncOrg(c *gin.Context) {
 
 	ctx := c.Request.Context()
 	ctx = SetContextDB(ctx, DB())
-	if err := orgAdmin.UpsertOrgByID(ctx, req.ID, req.Name, req.Slug); err != nil {
+	if err := orgAdmin.UpsertOrgByUUID(ctx, req.UUID, req.Name, req.Slug); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}

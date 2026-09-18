@@ -1,34 +1,45 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { useRoute } from 'vue-router'
 import { hypervisorsApi, type Hypervisor } from '../../api/hypervisors'
+import { instancesApi } from '../../api/instances'
 import { zonesApi } from '../../api/zones'
-import { ArrowLeft, Server, Cpu, Copy, Check, Edit, Save, X, Wrench, Loader2, ChevronDown, Pencil, Settings, Info, Activity } from 'lucide-vue-next'
+import { ArrowLeft, Server, Copy, Check, Wrench, Loader2, ChevronDown, Pencil, Info, Activity, SquareTerminal } from 'lucide-vue-next'
 import HostMonitoringCharts from '../../components/monitoring/HostMonitoringCharts.vue'
 import { useI18n } from 'vue-i18n'
 import { useToast } from '../../composables/useToast'
+import { useHostConsole } from '../../composables/useHostConsole'
+import { formatMemory, formatDisk } from '../../utils/format'
+import type { StatusVariant } from '../../utils/status'
+import BaseModal from '../../components/modals/BaseModal.vue'
+import StatusBadge from '../../components/base/StatusBadge.vue'
+import InfoRow from '../../components/base/InfoRow.vue'
+import DetailTabs from '../../components/base/DetailTabs.vue'
+import { useCopyId } from '../../composables/useCopyId'
+import { useGoBack } from '../../composables/useGoBack'
 
-const { t } = useI18n()
+const { t, te } = useI18n()
 const toast = useToast()
 const route = useRoute()
-const router = useRouter()
+const { copiedId: copiedField, copyId: copyToClipboard } = useCopyId()
+const goBack = useGoBack('hypervisors')
 const hypervisor = ref<Hypervisor | null>(null)
 const loading = ref(true)
 const error = ref<string | null>(null)
-const copiedField = ref<string | null>(null)
 const saving = ref(false)
 const editMode = ref(false)
 const zoneList = ref<any[]>([])
 const showActionMenu = ref(false)
 const toggleActionMenu = () => { showActionMenu.value = !showActionMenu.value }
 const closeActionMenu = () => { showActionMenu.value = false }
+const { disabledReason: consoleDisabledReason, openHostConsole } = useHostConsole()
 
-const STATUS_MAP: Record<number, { label: string; class: string }> = {
-    0: { label: 'dashboard.hypervisorStatus.disabled', class: 'status-disabled' },
-    1: { label: 'dashboard.hypervisorStatus.active', class: 'status-active' },
-    2: { label: 'dashboard.hypervisorStatus.maintaining', class: 'status-warning' },
-    4: { label: 'dashboard.hypervisorStatus.deploying', class: 'status-info' },
-    5: { label: 'dashboard.hypervisorStatus.deployFailed', class: 'status-error' }
+const STATUS_MAP: Record<number, { label: string; variant: StatusVariant }> = {
+    0: { label: 'dashboard.hypervisorStatus.disabled', variant: 'neutral' },
+    1: { label: 'dashboard.hypervisorStatus.active', variant: 'success' },
+    2: { label: 'dashboard.hypervisorStatus.maintaining', variant: 'warning' },
+    4: { label: 'dashboard.hypervisorStatus.deploying', variant: 'pending' },
+    5: { label: 'dashboard.hypervisorStatus.deployFailed', variant: 'error' }
 }
 
 const form = ref({
@@ -49,10 +60,59 @@ const maintainForm = ref({
 })
 
 const activeTab = ref('overview')
-const tabs = [
-    { id: 'overview', label: 'dashboard.table.overview', icon: Info },
-    { id: 'monitor', label: 'dashboard.instanceDetail.resourceMonitoring', icon: Activity }
-]
+const tabs = computed(() => [
+    { id: 'overview', label: t('dashboard.table.overview'), icon: Info },
+    { id: 'monitor', label: t('dashboard.instanceDetail.resourceMonitoring'), icon: Activity }
+])
+
+// 该节点上的虚拟机列表（概览卡片），按 host id 过滤
+const hyperInstances = ref<any[]>([])
+const hyperInstancesLoading = ref(false)
+
+const fetchHyperInstances = async (hostid: number) => {
+    hyperInstancesLoading.value = true
+    try {
+        const resp = await instancesApi.fetchInstances({ hyper: hostid, limit: 200 })
+        const data = resp as any
+        hyperInstances.value = Array.isArray(data) ? data : (data.instances || [])
+    } catch (err) {
+        console.error('Failed to load instances of hypervisor:', err)
+        hyperInstances.value = []
+    } finally {
+        hyperInstancesLoading.value = false
+    }
+}
+
+// 缺键时 t() 返回键路径本身，必须用 te() 判断后再回退到原始状态串
+const instanceStatusText = (status: string) => {
+    const s = (status || '').toLowerCase()
+    if (!s) return '-'
+    const key = `dashboard.instanceStatus.${s}`
+    return te(key) ? t(key) : status
+}
+
+// 进入维护模式只是「开始腾空」，虚拟机迁移是异步的；仅凭「维护中」看不出能否断电。
+// 这里用本页已经拉取的虚拟机列表长度判断（详情接口不返回 instance_count），
+// 且用剩余虚拟机数而非进行中的迁移数——迁移失败时虚拟机会留在原地
+const drainHint = computed(() => {
+    if (hypervisor.value?.status !== 2) return ''
+    const left = hyperInstances.value.length
+    return left > 0
+        ? t('dashboard.hypervisorStatus.draining', { count: left })
+        : t('dashboard.hypervisorStatus.drained')
+})
+
+// created_at 形如 "2026-09-16 00:36:12.343038"，不带时区标记；直接截到分钟展示，
+// 交给 Date 解析在不同浏览器和时区下会出现偏移
+const formatInstanceTime = (value?: string) => (value ? String(value).slice(0, 16) : '-')
+
+const instanceStatusVariant = (status: string): StatusVariant => {
+    const s = (status || '').toLowerCase()
+    if (s === 'running' || s === 'active' || s === 'migrated') return 'success'
+    if (s === 'error' || s === 'unknown' || s === 'rollback') return 'error'
+    if (s === 'shut_off' || s === 'shutoff' || s === 'stopped' || s === 'deleted') return 'neutral'
+    return 'warning'
+}
 
 const fetchHypervisorDetail = async () => {
     loading.value = true
@@ -60,8 +120,12 @@ const fetchHypervisorDetail = async () => {
     try {
         const uuid = route.params.id as string
         const response = await hypervisorsApi.getHypervisor(uuid)
-        hypervisor.value = response.data as any
+        hypervisor.value = response as any
         syncForm()
+        // 详情返回后才知道 host id，虚拟机列表随后单独拉取
+        if (hypervisor.value?.hostid !== undefined) {
+            await fetchHyperInstances(hypervisor.value.hostid)
+        }
     } catch (err: any) {
         console.error('Failed to fetch hypervisor detail:', err)
         error.value = err.message || t('dashboard.hypervisorDetail.loadError')
@@ -88,35 +152,21 @@ const syncForm = () => {
     }
 }
 
-const copyToClipboard = (text: string, field: string) => {
-    navigator.clipboard.writeText(text).then(() => {
-        copiedField.value = field
-        setTimeout(() => { copiedField.value = null }, 2000)
-    })
-}
+const getStatusVariant = (status: number): StatusVariant => STATUS_MAP[status]?.variant ?? 'neutral'
 
-const formatMemory = (mb: number) => {
-    if (mb >= 1024) return `${(mb / 1024).toFixed(1)} GB`
-    return `${mb} MB`
+// statusName 是后端返回的英文原文（active / maintaining …），只在该状态没有对应翻译时兜底。
+// 此前模板写成 `status_name || t(...)`，英文原文非空就短路了，翻译永远不生效
+const getStatusLabel = (status: number, statusName?: string) => {
+    const info = STATUS_MAP[status]
+    return info ? t(info.label) : (statusName || `Unknown(${status})`)
 }
-
-const formatDisk = (gb: number) => {
-    if (gb >= 1024) return `${(gb / 1024).toFixed(1)} TB`
-    return `${gb} GB`
-}
-
-const getStatusInfo = (status: number) => {
-    return STATUS_MAP[status] || { label: `Unknown(${status})`, class: '' }
-}
-
-const goBack = () => { router.push({ name: 'hypervisors' }) }
 
 const toggleEdit = async () => {
     closeActionMenu()
     editMode.value = true
     try {
         const resp = await zonesApi.fetchZones()
-        const data = resp.data as any
+        const data = resp as any
         zoneList.value = Array.isArray(data) ? data : (data.zones || [])
     } catch { zoneList.value = [] }
     syncForm()
@@ -150,11 +200,26 @@ const handleSave = async () => {
     }
 }
 
+// 维护模式可选的目标节点：本页只持有当前节点，打开对话框时按需拉取列表；
+// 排除当前节点本身（迁到自己后端会直接跳过），只列活动状态的节点
+const maintainTargetOptions = ref<any[]>([])
+
 // Maintain
-const openMaintainModal = () => {
+const openMaintainModal = async () => {
     closeActionMenu()
     maintainForm.value = { migrate: true, target_hyper: -1 }
     showMaintainModal.value = true
+    try {
+        const resp = await hypervisorsApi.fetchHypervisors()
+        const data = resp as any
+        const list = Array.isArray(data) ? data : (data.hypers || [])
+        maintainTargetOptions.value = list.filter(
+            (h: any) => h.status === 1 && h.hostid !== hypervisor.value?.hostid
+        )
+    } catch (err) {
+        console.error('Failed to load hypervisors for maintenance target:', err)
+        maintainTargetOptions.value = []
+    }
 }
 
 const handleMaintain = async () => {
@@ -210,7 +275,8 @@ onMounted(fetchHypervisorDetail)
           <div>
             <h2 class="resource-title">
               {{ hypervisor.hostname }}
-              <span :class="['badge', getStatusInfo(hypervisor.status).class]">{{ hypervisor.status_name || t(getStatusInfo(hypervisor.status).label) }}</span>
+              <StatusBadge :variant="getStatusVariant(hypervisor.status)" :label="getStatusLabel(hypervisor.status, hypervisor.status_name)" />
+              <span v-if="hypervisor.status === 2" :class="['drain-hint', hyperInstances.length ? 'drain-hint-warn' : 'drain-hint-done']">{{ drainHint }}</span>
             </h2>
             <div class="resource-id-row">
               <span class="resource-id-text">{{ hypervisor.uuid }}</span>
@@ -234,6 +300,14 @@ onMounted(fetchHypervisorDetail)
                 <button class="dropdown-item" @click="toggleEdit">
                   <Pencil :size="14" /> {{ t('actions.edit') }}
                 </button>
+                <button
+                  class="dropdown-item"
+                  :disabled="!!consoleDisabledReason(hypervisor.status)"
+                  :title="consoleDisabledReason(hypervisor.status)"
+                  @click="closeActionMenu(); openHostConsole(hypervisor.uuid)"
+                >
+                  <SquareTerminal :size="14" /> {{ t('dashboard.hypervisorActions.console') }}
+                </button>
               </div>
             </Transition>
             <div v-if="showActionMenu" class="dropdown-backdrop" @click="closeActionMenu"></div>
@@ -242,18 +316,7 @@ onMounted(fetchHypervisorDetail)
       </div>
 
       <!-- Tabs -->
-      <div class="detail-tabs">
-        <button 
-          v-for="tab in tabs" 
-          :key="tab.id"
-          class="tab-btn" 
-          :class="{ active: activeTab === tab.id }"
-          @click="activeTab = tab.id"
-        >
-          <component :is="tab.icon" :size="16" />
-          {{ t(tab.label) }}
-        </button>
-      </div>
+      <DetailTabs v-model="activeTab" :tabs="tabs" />
 
       <!-- Info Sections -->
       <div v-if="activeTab === 'overview'">
@@ -262,26 +325,11 @@ onMounted(fetchHypervisorDetail)
           <div class="info-card card">
             <h3 class="card-section-title">{{ t('dashboard.table.overview') }}</h3>
             <div class="info-rows">
-              <div class="info-row">
-                <span class="info-label">{{ t('dashboard.table.hostname') }}</span>
-                <span class="info-value">{{ hypervisor.hostname }}</span>
-              </div>
-              <div class="info-row">
-                <span class="info-label">{{ t('dashboard.table.hostIp') }}</span>
-                <span class="info-value mono">{{ hypervisor.host_ip }}</span>
-              </div>
-              <div class="info-row">
-                <span class="info-label">{{ t('dashboard.table.routeIp') || 'Route IP' }}</span>
-                <span class="info-value mono">{{ hypervisor.route_ip || '-' }}</span>
-              </div>
-              <div class="info-row">
-                <span class="info-label">{{ t('dashboard.hypervisorDeploy.virtType') }}</span>
-                <span class="info-value">{{ hypervisor.virt_type }}</span>
-              </div>
-              <div class="info-row">
-                <span class="info-label">{{ t('dashboard.table.zone') }}</span>
-                <span class="info-value">{{ hypervisor.zone_name || '-' }}</span>
-              </div>
+              <InfoRow :label="t('dashboard.table.hostname')">{{ hypervisor.hostname }}</InfoRow>
+              <InfoRow :label="t('dashboard.table.hostIp')" mono>{{ hypervisor.host_ip }}</InfoRow>
+              <InfoRow :label="t('dashboard.table.routeIp') || 'Route IP'" mono>{{ hypervisor.route_ip || '-' }}</InfoRow>
+              <InfoRow :label="t('dashboard.hypervisorDeploy.virtType')">{{ hypervisor.virt_type }}</InfoRow>
+              <InfoRow :label="t('dashboard.table.zone')">{{ hypervisor.zone_name || '-' }}</InfoRow>
             </div>
           </div>
 
@@ -289,28 +337,56 @@ onMounted(fetchHypervisorDetail)
           <div class="info-card card">
             <h3 class="card-section-title">{{ t('dashboard.table.resourcesCapacity') }}</h3>
             <div class="info-rows">
-              <div class="info-row">
-                <span class="info-label">{{ t('dashboard.table.vcpus') }}</span>
-                <span class="info-value">
-                  {{ hypervisor.cpu }} / {{ hypervisor.cpu_total }} {{ t('specs.cores_plain') || 'cores' }} 
+              <InfoRow :label="t('dashboard.table.vcpus')">
+                <span>
+                  {{ hypervisor.cpu }} / {{ hypervisor.cpu_total }} {{ t('specs.cores_plain') || 'cores' }}
                   <span class="avail-badge">{{ t('dashboard.table.available') }}</span>
                 </span>
-              </div>
-              <div class="info-row">
-                <span class="info-label">{{ t('dashboard.table.memory') }}</span>
-                <span class="info-value">
-                  {{ formatMemory(hypervisor.memory) }} / {{ formatMemory(hypervisor.memory_total) }} 
+              </InfoRow>
+              <InfoRow :label="t('dashboard.table.memory')">
+                <span>
+                  {{ formatMemory(hypervisor.memory) }} / {{ formatMemory(hypervisor.memory_total) }}
                   <span class="avail-badge">{{ t('dashboard.table.available') }}</span>
                 </span>
-              </div>
-              <div class="info-row">
-                <span class="info-label">{{ t('dashboard.table.disk') }}</span>
-                <span class="info-value">
-                  {{ formatDisk(hypervisor.disk) }} / {{ formatDisk(hypervisor.disk_total) }} 
+              </InfoRow>
+              <InfoRow :label="t('dashboard.table.disk')">
+                <span>
+                  {{ formatDisk(hypervisor.disk) }} / {{ formatDisk(hypervisor.disk_total) }}
                   <span class="avail-badge">{{ t('dashboard.table.available') }}</span>
                 </span>
-              </div>
+              </InfoRow>
             </div>
+          </div>
+        </div>
+
+        <!-- 该节点上的虚拟机 -->
+        <div class="info-card card" style="margin-bottom: var(--spacing-5);">
+          <h3 class="card-section-title">
+            {{ t('dashboard.table.instancesOnHyper') }}
+            <span class="hyper-vm-count">{{ hyperInstances.length }}</span>
+          </h3>
+          <div v-if="hyperInstancesLoading" class="text-secondary" style="font-size: 0.875rem;">{{ t('messages.loading') }}</div>
+          <div v-else-if="!hyperInstances.length" class="text-secondary" style="font-size: 0.875rem;">{{ t('messages.noData') }}</div>
+          <div v-else class="hyper-vm-list">
+            <div class="hyper-vm-head">
+              <span class="hyper-vm-name">{{ t('dashboard.table.hostname') }}</span>
+              <span class="hyper-vm-os">{{ t('dashboard.table.image') }}</span>
+              <span class="hyper-vm-spec">{{ t('dashboard.table.flavor') }}</span>
+              <span class="hyper-vm-time">{{ t('dashboard.table.createdAt') }}</span>
+              <span class="hyper-vm-badge">{{ t('dashboard.table.status') }}</span>
+            </div>
+            <router-link
+              v-for="inst in hyperInstances"
+              :key="inst.id"
+              :to="{ name: 'instance-detail', params: { id: inst.id } }"
+              class="hyper-vm-item"
+            >
+              <span class="hyper-vm-name" :title="inst.hostname">{{ inst.hostname }}</span>
+              <span class="hyper-vm-os" :title="inst.image?.name">{{ inst.image?.name || '-' }}</span>
+              <span class="hyper-vm-spec">{{ inst.cpu }}C / {{ formatMemory(inst.memory) }} / {{ formatDisk(inst.disk) }}</span>
+              <span class="hyper-vm-time">{{ formatInstanceTime(inst.created_at) }}</span>
+              <StatusBadge class="hyper-vm-badge" :variant="instanceStatusVariant(inst.status)" :label="instanceStatusText(inst.status)" />
+            </router-link>
           </div>
         </div>
 
@@ -319,22 +395,10 @@ onMounted(fetchHypervisorDetail)
           <h3 class="card-section-title">{{ t('dashboard.table.overcommit') }}</h3>
           
           <div class="info-rows">
-            <div class="info-row">
-               <span class="info-label">{{ t('dashboard.table.cpuOverCommit') }}</span>
-              <span class="info-value">{{ hypervisor.cpu_over_rate }}x</span>
-            </div>
-            <div class="info-row">
-               <span class="info-label">{{ t('dashboard.table.memOverCommit') }}</span>
-              <span class="info-value">{{ hypervisor.mem_over_rate }}x</span>
-            </div>
-            <div class="info-row">
-               <span class="info-label">{{ t('dashboard.table.diskOverCommit') }}</span>
-              <span class="info-value">{{ hypervisor.disk_over_rate }}x</span>
-            </div>
-            <div class="info-row" v-if="hypervisor.remark">
-               <span class="info-label">{{ t('dashboard.table.remark') }}</span>
-              <span class="info-value">{{ hypervisor.remark }}</span>
-            </div>
+            <InfoRow :label="t('dashboard.table.cpuOverCommit')">{{ hypervisor.cpu_over_rate }}x</InfoRow>
+            <InfoRow :label="t('dashboard.table.memOverCommit')">{{ hypervisor.mem_over_rate }}x</InfoRow>
+            <InfoRow :label="t('dashboard.table.diskOverCommit')">{{ hypervisor.disk_over_rate }}x</InfoRow>
+            <InfoRow v-if="hypervisor.remark" :label="t('dashboard.table.remark')">{{ hypervisor.remark }}</InfoRow>
           </div>
         </div>
       </div>
@@ -346,92 +410,93 @@ onMounted(fetchHypervisorDetail)
     </div>
 
     <!-- Edit Overcommit Modal -->
-    <Teleport to="body">
-      <div v-if="editMode" class="modal-overlay" @click.self="cancelEdit">
-        <div class="modal-content" style="max-width: 500px;">
-          <div class="modal-header">
-            <h3>{{ t('actions.edit') }} {{ t('dashboard.table.overcommit') }}</h3>
-            <button class="btn btn-ghost btn-icon" @click="cancelEdit"><X :size="18" /></button>
-          </div>
-          <div class="modal-body">
-            <div class="form-grid" style="grid-template-columns: 1fr 1fr; gap: 16px;">
-              <div class="form-group">
-                 <label class="form-label">{{ t('dashboard.table.status') }}</label>
-                <select v-model="form.status" class="form-select">
-                    <option :value="0">{{ t('dashboard.hypervisorStatus.disabled') }}</option>
-                    <option :value="1">{{ t('dashboard.hypervisorStatus.active') }}</option>
-                </select>
-              </div>
-              <div class="form-group">
-                 <label class="form-label">{{ t('dashboard.table.zone') }}</label>
-                <select v-model="form.zone_id" class="form-select">
-                    <option :value="0">-</option>
-                    <option v-for="z in zoneList" :key="z.id" :value="z.id">{{ z.name }}</option>
-                </select>
-              </div>
-              <div class="form-group">
-                 <label class="form-label">{{ t('dashboard.table.cpuOverCommit') }}</label>
-                <input type="number" step="0.1" min="1" v-model="form.cpu_over_rate" class="form-select" />
-              </div>
-              <div class="form-group">
-                 <label class="form-label">{{ t('dashboard.table.memOverCommit') }}</label>
-                <input type="number" step="0.1" min="1" v-model="form.mem_over_rate" class="form-select" />
-              </div>
-              <div class="form-group">
-                 <label class="form-label">{{ t('dashboard.table.diskOverCommit') }}</label>
-                <input type="number" step="0.1" min="1" v-model="form.disk_over_rate" class="form-select" />
-              </div>
-              <div class="form-group" style="grid-column: span 2;">
-                 <label class="form-label">{{ t('dashboard.table.remark') }}</label>
-                <input type="text" v-model="form.remark" class="form-select" />
-              </div>
-            </div>
-          </div>
-          <div class="modal-footer">
-            <button class="btn btn-secondary" @click="cancelEdit" :disabled="saving">{{ t('actions.cancel') }}</button>
-            <button class="btn btn-primary" @click="handleSave" :disabled="saving">
-              <Loader2 v-if="saving" :size="14" class="spinning" />
-              {{ saving ? t('messages.loading') : t('actions.save') }}
-            </button>
-          </div>
+    <BaseModal
+      :show="editMode"
+      :title="`${t('actions.edit')} ${t('dashboard.table.overcommit')}`"
+      form
+      :loading="saving"
+      @close="cancelEdit"
+      @submit="handleSave"
+    >
+      <div class="form-grid" style="grid-template-columns: 1fr 1fr; gap: 16px;">
+        <div class="form-group">
+           <label class="form-label">{{ t('dashboard.table.status') }}</label>
+          <select v-model="form.status" class="form-select">
+              <option :value="0">{{ t('dashboard.hypervisorStatus.disabled') }}</option>
+              <option :value="1">{{ t('dashboard.hypervisorStatus.active') }}</option>
+          </select>
+        </div>
+        <div class="form-group">
+           <label class="form-label">{{ t('dashboard.table.zone') }}</label>
+          <select v-model="form.zone_id" class="form-select">
+              <option :value="0">-</option>
+              <option v-for="z in zoneList" :key="z.id" :value="z.id">{{ z.name }}</option>
+          </select>
+        </div>
+        <div class="form-group">
+           <label class="form-label">{{ t('dashboard.table.cpuOverCommit') }}</label>
+          <input type="number" step="0.1" min="1" v-model="form.cpu_over_rate" class="form-select" />
+        </div>
+        <div class="form-group">
+           <label class="form-label">{{ t('dashboard.table.memOverCommit') }}</label>
+          <input type="number" step="0.1" min="1" v-model="form.mem_over_rate" class="form-select" />
+        </div>
+        <div class="form-group">
+           <label class="form-label">{{ t('dashboard.table.diskOverCommit') }}</label>
+          <input type="number" step="0.1" min="1" v-model="form.disk_over_rate" class="form-select" />
+        </div>
+        <div class="form-group" style="grid-column: span 2;">
+           <label class="form-label">{{ t('dashboard.table.remark') }}</label>
+          <input type="text" v-model="form.remark" class="form-select" />
         </div>
       </div>
-    </Teleport>
+
+      <template #footer>
+        <button type="button" class="btn btn-secondary" @click="cancelEdit" :disabled="saving">{{ t('actions.cancel') }}</button>
+        <button type="submit" class="btn btn-primary" :disabled="saving">
+          <Loader2 v-if="saving" :size="14" class="spinning" />
+          {{ saving ? t('messages.loading') : t('actions.save') }}
+        </button>
+      </template>
+    </BaseModal>
 
     <!-- Maintain Modal -->
-    <Teleport to="body">
-      <div v-if="showMaintainModal" class="modal-overlay" @click.self="showMaintainModal = false">
-        <div class="modal-content" style="max-width: 460px;">
-          <div class="modal-header">
-            <h3>{{ t('dashboard.hypervisorActions.maintainTitle') }}</h3>
-            <button class="btn btn-ghost btn-icon" @click="showMaintainModal = false"><X :size="18" /></button>
-          </div>
-          <div class="modal-body">
-            <p style="margin-bottom: 16px; color: var(--text-secondary); font-size: 0.875rem;">
-              {{ t('dashboard.hypervisorActions.maintainDesc', { hostname: hypervisor?.hostname }) }}
-            </p>
-            <div class="form-group" style="margin-bottom: 16px;">
-              <label class="form-label" style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
-                <input type="checkbox" v-model="maintainForm.migrate" />
-                {{ t('dashboard.hypervisorActions.migrateInstances') }}
-              </label>
-            </div>
-            <div v-if="maintainForm.migrate" class="form-group">
-              <label class="form-label">{{ t('dashboard.hypervisorActions.targetHyper') }}</label>
-              <input type="number" v-model="maintainForm.target_hyper" class="form-select" />
-              <span style="font-size: 0.75rem; color: var(--text-light); margin-top: 4px;">{{ t('dashboard.hypervisorActions.targetHyperHint') }}</span>
-            </div>
-          </div>
-          <div class="modal-footer">
-            <button class="btn btn-secondary" @click="showMaintainModal = false">{{ t('actions.cancel') }}</button>
-            <button class="btn btn-warning" @click="handleMaintain" :disabled="maintaining">
-              <Loader2 v-if="maintaining" :size="14" class="spinning" />
-              {{ maintaining ? t('messages.loading') : t('dashboard.hypervisorActions.maintain') }}
-            </button>
-          </div>
-        </div>
+    <BaseModal
+      :show="showMaintainModal"
+      :title="t('dashboard.hypervisorActions.maintainTitle')"
+      form
+      :loading="maintaining"
+      @close="showMaintainModal = false"
+      @submit="handleMaintain"
+    >
+      <p style="margin-bottom: 16px; color: var(--text-secondary); font-size: 0.875rem;">
+        {{ t('dashboard.hypervisorActions.maintainDesc', { hostname: hypervisor?.hostname }) }}
+      </p>
+      <div class="form-group" style="margin-bottom: 16px;">
+        <label class="form-label" style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+          <input type="checkbox" v-model="maintainForm.migrate" />
+          {{ t('dashboard.hypervisorActions.migrateInstances') }}
+        </label>
       </div>
-    </Teleport>
+      <div v-if="maintainForm.migrate" class="form-group">
+        <label class="form-label">{{ t('dashboard.hypervisorActions.targetHyper') }}</label>
+        <select v-model="maintainForm.target_hyper" class="form-select" style="width: 100%;">
+          <option :value="-1">{{ t('dashboard.migrationForm.autoSelect') }}</option>
+          <option v-for="hyp in maintainTargetOptions" :key="hyp.uuid" :value="hyp.hostid">
+            {{ hyp.hostname }} ({{ hyp.hostid }})
+          </option>
+        </select>
+        <span style="font-size: 0.75rem; color: var(--text-light); margin-top: 4px;">{{ t('dashboard.hypervisorActions.targetHyperHint') }}</span>
+      </div>
+
+      <template #footer>
+        <button type="button" class="btn btn-secondary" @click="showMaintainModal = false">{{ t('actions.cancel') }}</button>
+        <button type="submit" class="btn btn-warning" :disabled="maintaining">
+          <Loader2 v-if="maintaining" :size="14" class="spinning" />
+          {{ maintaining ? t('messages.loading') : t('dashboard.hypervisorActions.maintain') }}
+        </button>
+      </template>
+    </BaseModal>
   </div>
 </template>
 
@@ -502,12 +567,6 @@ onMounted(fetchHypervisorDetail)
   gap: var(--spacing-3);
 }
 
-.resource-title .badge {
-  font-size: var(--font-size-xs);
-  font-weight: 500;
-  vertical-align: middle;
-}
-
 .resource-id-row { display: flex; align-items: center; gap: var(--spacing-2); }
 
 .resource-id-text {
@@ -576,6 +635,11 @@ onMounted(fetchHypervisorDetail)
   background: var(--bg-hover, #f3f4f6);
 }
 
+.dropdown-item:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 .dropdown-enter-active {
   transition: opacity 0.15s, transform 0.15s;
 }
@@ -594,12 +658,6 @@ onMounted(fetchHypervisorDetail)
   transform: translateY(-4px);
 }
 
-.badge.status-active, .status-active { background: rgba(16, 185, 129, 0.1); color: #10b981; }
-.status-error { background: rgba(239, 68, 68, 0.1); color: #ef4444; }
-.status-warning { background: rgba(245, 158, 11, 0.1); color: #f59e0b; }
-.status-info { background: rgba(59, 130, 246, 0.1); color: #3b82f6; }
-.status-disabled { background: var(--gray-100); color: var(--gray-500); }
-
 .info-grid {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
@@ -608,6 +666,135 @@ onMounted(fetchHypervisorDetail)
 }
 
 .info-card { padding: var(--spacing-5); }
+
+/* 维护模式的腾空进度提示：还有虚拟机时是「别断电」的警告，必须显眼 */
+.drain-hint {
+    margin-left: var(--spacing-2);
+    padding: 2px 10px;
+    border-radius: 10px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+.drain-hint-warn {
+    background: var(--warning-light);
+    color: var(--warning-dark);
+    border: 1px solid var(--warning-color);
+}
+
+.drain-hint-done {
+    background: var(--success-light);
+    color: var(--success-dark);
+}
+
+/* 节点上的虚拟机列表 */
+.hyper-vm-count {
+    margin-left: 8px;
+    padding: 1px 8px;
+    border-radius: 10px;
+    background: var(--primary-50, #eef2ff);
+    color: var(--primary-600, #4f46e5);
+    font-size: 0.75rem;
+    font-weight: 600;
+}
+
+.hyper-vm-list {
+    display: flex;
+    flex-direction: column;
+}
+
+/* 单行表格式布局。用 grid 而非 flex：flex 的剩余空间会被设了 grow 的列全部吸走，
+   导致前几列过宽、后几列挤在一起；grid 按比例给每一列分配，各行也天然对齐 */
+.hyper-vm-head,
+.hyper-vm-item {
+    display: grid;
+    grid-template-columns:
+        minmax(110px, 1.1fr)
+        minmax(150px, 1.5fr)
+        minmax(150px, 1.4fr)
+        minmax(120px, 1.1fr)
+        minmax(64px, auto);
+    align-items: center;
+    gap: var(--spacing-3);
+    padding: 10px 8px;
+    white-space: nowrap;
+}
+
+.hyper-vm-head {
+    font-size: 0.75rem;
+    color: var(--text-light, #9ca3af);
+    border-bottom: 1px solid var(--border-default);
+    padding-bottom: 6px;
+}
+
+.hyper-vm-item {
+    border-bottom: 1px solid var(--border-light);
+    border-radius: var(--radius-sm);
+    text-decoration: none;
+    color: inherit;
+    transition: background var(--transition-fast);
+}
+
+.hyper-vm-item:last-child { border-bottom: none; }
+
+.hyper-vm-item:hover {
+    background: var(--gray-50, #f9fafb);
+}
+
+/* 每个单元格都要能收缩并省略，否则长内容会把整列撑开、破坏对齐 */
+.hyper-vm-head > span,
+.hyper-vm-item > span {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.hyper-vm-name {
+    font-size: 0.875rem;
+    font-weight: 500;
+}
+
+.hyper-vm-item .hyper-vm-name {
+    color: var(--primary-color);
+}
+
+.hyper-vm-os {
+    font-size: 0.8125rem;
+    color: var(--text-primary);
+}
+
+.hyper-vm-spec,
+.hyper-vm-time {
+    font-size: 0.8125rem;
+    color: var(--text-secondary);
+}
+
+.hyper-vm-badge {
+    justify-self: end;
+}
+
+/* 窄屏放弃列对齐，改为自动换行，避免横向滚动；表头失去意义故隐藏 */
+@media (max-width: 720px) {
+    .hyper-vm-head {
+        display: none;
+    }
+
+    .hyper-vm-item {
+        display: flex;
+        flex-wrap: wrap;
+        white-space: normal;
+        gap: 4px var(--spacing-3);
+    }
+
+    .hyper-vm-name {
+        flex: 1 0 100%;
+    }
+
+    .hyper-vm-badge {
+        margin-left: auto;
+    }
+}
 
 .card-section-title {
   margin: 0 0 var(--spacing-4) 0;
@@ -622,28 +809,8 @@ onMounted(fetchHypervisorDetail)
 
 .info-rows { display: flex; flex-direction: column; gap: var(--spacing-3); }
 
-.info-row {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: var(--spacing-1) 0;
-  min-height: 24px;
-}
-
-.info-label { font-size: var(--font-size-sm); color: var(--text-secondary); flex-shrink: 0; }
-
-.info-value {
-  font-size: var(--font-size-sm);
-  color: var(--text-primary);
-  font-weight: var(--font-weight-medium);
-  text-align: right;
-  word-break: break-all;
-}
-
-.info-value.mono { font-family: var(--font-family-mono); font-size: var(--font-size-xs); }
-
 .avail-badge {
-  font-family: var(--font-family-sans);
+  font-family: var(--font-family);
   background: rgba(16, 185, 129, 0.1);
   color: #10b981;
   padding: 1px 6px; border-radius: 4px; font-size: 0.65rem;
@@ -685,48 +852,6 @@ onMounted(fetchHypervisorDetail)
 
 .spinning { animation: spin 1s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
-
-.detail-tabs {
-  display: flex;
-  gap: var(--spacing-4);
-  margin-bottom: var(--spacing-6);
-  border-bottom: 1px solid var(--border-color);
-  padding: 0 var(--spacing-2);
-}
-
-.tab-btn {
-  display: flex;
-  align-items: center;
-  gap: var(--spacing-2);
-  padding: var(--spacing-3) var(--spacing-4);
-  background: none;
-  border: none;
-  border-bottom: 2px solid transparent;
-  color: var(--text-secondary);
-  font-size: 0.95rem;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 0.2s;
-  margin-bottom: -1px;
-}
-
-.tab-btn:hover {
-  color: var(--text-primary);
-}
-
-.tab-btn.active {
-  color: var(--text-primary);
-  border-bottom-color: var(--primary-color);
-}
-
-.tab-btn svg {
-  opacity: 0.7;
-}
-
-.tab-btn.active svg {
-  opacity: 1;
-  color: var(--primary-color);
-}
 
 .monitor-section {
   animation: fadeIn 0.3s ease-out;

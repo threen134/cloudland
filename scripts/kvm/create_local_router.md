@@ -37,7 +37,7 @@ ip netns exec $router ip route add default via $peer_ip
    ```bash
    def_route=$(ip netns exec router-0 ip route | grep default)
    if [ -z "$def_route" ]; then
-       echo "|:-COMMAND-:| system_router.sh '$SCI_CLIENT_ID' '$HOSTNAME'"
+       echo "|:-COMMAND-:| system_router.sh '$NODE_ID' '$HOSTNAME'"
    fi
    ```
 2. 强制确保 `router-0` 命名空间存在（不存在则创建）：
