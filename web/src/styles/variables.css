@@ -202,17 +202,3 @@
     --z-modal: 500;
     --z-tooltip: 600;
 }
-
-/* Dark theme variables (dashboard) */
-.dark-theme {
-    --bg-primary: #0f172a;
-    --bg-secondary: #1e293b;
-    --bg-tertiary: #334155;
-
-    --text-primary: #f8fafc;
-    --text-secondary: #cbd5e1;
-    --text-tertiary: #94a3b8;
-
-    --border-light: #334155;
-    --border-default: #475569;
-}
