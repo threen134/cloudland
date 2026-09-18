@@ -12,8 +12,11 @@ import ActivityText from '../../components/activity/ActivityText.vue'
 import { useActivityTime } from '../../components/activity/activityTime'
 import PageToolbar from '../../components/base/PageToolbar.vue'
 import StatusBadge from '../../components/base/StatusBadge.vue'
+import DataTable, { type Column } from '../../components/base/DataTable.vue'
+import { useToast } from '../../composables/useToast'
 
 const { t } = useI18n()
+const toast = useToast()
 const router = useRouter()
 const { relativeTime, absoluteTime } = useActivityTime()
 
@@ -145,7 +148,10 @@ const loadMore = async () => {
         nextCursor.value = res.next_cursor || ''
     } catch (err) {
         if (gen !== generation) return
-        errorMessage.value = detailOf(err)
+        // 加载更多失败只提示，不能写进 errorMessage：那会让 DataTable 切到错误态，
+        // 把已经加载出来的记录整个换掉
+        console.error('Failed to load more activities:', err)
+        toast.error(detailOf(err) || t('messages.error'))
     } finally {
         loadingMore.value = false
     }
@@ -176,11 +182,20 @@ onMounted(reload)
 
 const hasFilter = computed(() => resourceType.value !== '' || result.value !== '')
 
-// The reason for an invalid range or a failed request is shown in the banner above the table
-const emptyText = computed(() => {
-    if (rangeError.value || errorMessage.value) return t('dashboard.activityPage.loadFailed')
-    return hasFilter.value ? t('dashboard.activityPage.emptyFiltered') : t('dashboard.activityPage.empty')
-})
+const emptyText = computed(() =>
+    hasFilter.value ? t('dashboard.activityPage.emptyFiltered') : t('dashboard.activityPage.empty')
+)
+
+// 游标分页，表头一律不排序（前端只持有已加载的那几页）
+const columns = computed<Column[]>(() => [
+    { key: 'time', label: t('dashboard.activityPage.colTime'), width: '190px' },
+    { key: 'actor', label: t('dashboard.activityPage.colActor'), width: '160px' },
+    { key: 'action', label: t('dashboard.activityPage.colAction') },
+    { key: 'result', label: t('dashboard.activityPage.result'), width: '100px' },
+])
+
+// 无效的自定义时间范围与请求失败都交给 DataTable 的错误态显示（原先是表格上方的横幅）
+const loadError = computed(() => rangeError.value || errorMessage.value)
 </script>
 
 <template>
@@ -224,56 +239,52 @@ const emptyText = computed(() => {
       </template>
     </PageToolbar>
 
-    <div v-if="rangeError || errorMessage" class="error-banner">{{ rangeError || errorMessage }}</div>
+    <DataTable
+      :columns="columns"
+      :rows="activities"
+      row-key="id"
+      :loading="loading"
+      :error="loadError"
+      @retry="reload"
+    >
+      <template #empty>
+        <div class="empty-state">
+          <History :size="48" style="opacity: 0.2; margin-bottom: 16px;" />
+          <p>{{ emptyText }}</p>
+        </div>
+      </template>
 
-    <div class="card table-card">
-      <table class="data-table">
-        <thead>
-          <tr>
-            <th class="col-time">{{ $t('dashboard.activityPage.colTime') }}</th>
-            <th class="col-actor">{{ $t('dashboard.activityPage.colActor') }}</th>
-            <th>{{ $t('dashboard.activityPage.colAction') }}</th>
-            <th class="col-result">{{ $t('dashboard.activityPage.result') }}</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-if="loading">
-            <td colspan="4" class="text-center">
-              <div class="loading-spinner" style="margin: 20px auto;"></div>
-            </td>
-          </tr>
-          <tr v-else-if="activities.length === 0">
-            <td colspan="4" class="text-center text-secondary" style="padding: 48px;">
-              <div class="empty-state">
-                <History :size="48" style="opacity: 0.2; margin-bottom: 16px;" />
-                <p>{{ emptyText }}</p>
-                <button v-if="errorMessage" class="btn btn-secondary btn-sm" @click="reload">{{ $t('dashboard.overview.activityRetry') }}</button>
-              </div>
-            </td>
-          </tr>
-          <tr v-else v-for="a in activities" :key="a.id">
-            <td class="col-time">
-              <div>{{ relativeTime(a.created_at) }}</div>
-              <div class="time-absolute">{{ absoluteTime(a.created_at) }}</div>
-            </td>
-            <td class="col-actor">{{ a.actor || $t('dashboard.overview.activityUnknownActor') }}</td>
-            <td class="col-action"><ActivityText :activity="a" /></td>
-            <td class="col-result">
-              <StatusBadge
-                :variant="a.success ? 'success' : 'error'"
-                :label="a.success ? $t('dashboard.activityPage.succeeded') : $t('dashboard.activityPage.failed')"
-              />
-            </td>
-          </tr>
-        </tbody>
-      </table>
-      <div v-if="!loading && activities.length > 0" class="table-footer">
-        <button v-if="nextCursor" class="btn btn-secondary btn-sm" :disabled="loadingMore" @click="loadMore">
-          {{ loadingMore ? $t('dashboard.activityPage.loadingMore') : $t('dashboard.activityPage.loadMore') }}
-        </button>
-        <span v-else class="end-hint">{{ $t('dashboard.activityPage.noMore', { n: activities.length }) }}</span>
-      </div>
-    </div>
+      <template #cell-time="{ row: a }">
+        <div class="col-time">
+          <div>{{ relativeTime(a.created_at) }}</div>
+          <div class="time-absolute">{{ absoluteTime(a.created_at) }}</div>
+        </div>
+      </template>
+
+      <template #cell-actor="{ row: a }">
+        <div class="col-actor">{{ a.actor || $t('dashboard.overview.activityUnknownActor') }}</div>
+      </template>
+
+      <template #cell-action="{ row: a }">
+        <div class="col-action"><ActivityText :activity="a" /></div>
+      </template>
+
+      <template #cell-result="{ row: a }">
+        <StatusBadge
+          :variant="a.success ? 'success' : 'error'"
+          :label="a.success ? $t('dashboard.activityPage.succeeded') : $t('dashboard.activityPage.failed')"
+        />
+      </template>
+
+      <template #footer>
+        <div v-if="!loading && !loadError && activities.length > 0" class="table-footer">
+          <button v-if="nextCursor" class="btn btn-secondary btn-sm" :disabled="loadingMore" @click="loadMore">
+            {{ loadingMore ? $t('dashboard.activityPage.loadingMore') : $t('dashboard.activityPage.loadMore') }}
+          </button>
+          <span v-else class="end-hint">{{ $t('dashboard.activityPage.noMore', { n: activities.length }) }}</span>
+        </div>
+      </template>
+    </DataTable>
   </div>
 </template>
 
@@ -321,21 +332,6 @@ const emptyText = computed(() => {
   color: var(--gray-400);
 }
 
-.error-banner {
-  background: #fef2f2;
-  color: #dc2626;
-  border: 1px solid #fecaca;
-  border-radius: 6px;
-  padding: 10px 14px;
-  margin-bottom: 12px;
-  font-size: 13px;
-}
-
-.table-card {
-  padding: 0;
-  overflow: hidden;
-}
-
 .col-time {
   width: 190px;
   white-space: nowrap;
@@ -354,10 +350,6 @@ const emptyText = computed(() => {
 
 .col-action {
   color: var(--gray-700);
-}
-
-.col-result {
-  width: 100px;
 }
 
 .table-footer {

@@ -18,9 +18,11 @@ import BaseModal from '../../components/modals/BaseModal.vue'
 import DeleteModal from '../../components/modals/DeleteModal.vue'
 import PageToolbar from '../../components/base/PageToolbar.vue'
 import StatusBadge from '../../components/base/StatusBadge.vue'
+import DataTable, { type Column } from '../../components/base/DataTable.vue'
 
 const images = ref<Image[]>([])
 const loading = ref(false)
+const loadError = ref('')
 const searchQuery = ref('')
 const selectedType = ref<string>('all')
 const selectedVisibility = ref<string>('all')
@@ -52,14 +54,27 @@ const isNameValid = computed(() => isValidName(newImageForm.value.name))
 
 
 
+const columns = computed<Column[]>(() => [
+    { key: 'name', label: t('dashboard.table.nameId'), sortable: true },
+    { key: 'visibility', label: t('dashboard.table.visibility'), sortable: true, sortValue: (i) => (i.public ? 0 : 1) },
+    { key: 'os', label: t('dashboard.table.os'), sortable: true, sortValue: (i) => getOsName(i as Image) },
+    { key: 'architecture', label: t('dashboard.table.architecture'), sortable: true },
+    { key: 'format', label: t('dashboard.table.format'), sortable: true },
+    { key: 'size', label: t('dashboard.table.size'), sortable: true, sortValue: (i) => i.size || 0 },
+    { key: 'status', label: t('dashboard.table.status'), sortable: true },
+    { key: 'actions', label: t('dashboard.table.actions') },
+])
+
 const fetchImages = async () => {
     loading.value = true
+    loadError.value = ''
     try {
         const response = await imagesApi.fetchImages()
         images.value = (response as any).images || []
     } catch (err) {
         console.error('API fetch failed:', err)
         images.value = []
+        loadError.value = t('messages.error')
     } finally {
         loading.value = false
     }
@@ -258,92 +273,82 @@ onMounted(async () => {
     </PageToolbar>
 
     <!-- Table View -->
-    <div class="card table-card">
-      <table class="data-table">
-        <thead>
-          <tr>
-            <th>{{ $t('dashboard.table.nameId') }}</th>
-            <th>{{ $t('dashboard.table.visibility') }}</th>
-            <th>{{ $t('dashboard.table.os') }}</th>
-            <th>{{ $t('dashboard.table.architecture') }}</th>
-            <th>{{ $t('dashboard.table.format') }}</th>
-            <th>{{ $t('dashboard.table.size') }}</th>
-            <th>{{ $t('dashboard.table.status') }}</th>
-            <th>{{ $t('dashboard.table.actions') }}</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-if="loading">
-            <td colspan="8" class="text-center">
-              <div class="loading-spinner" style="margin: 20px auto;"></div>
-            </td>
-          </tr>
-          <tr v-else-if="filteredImages.length === 0">
-            <td colspan="8" class="text-center text-secondary" style="padding: 48px;">
-               <div v-if="searchQuery">
-                  <Search :size="48" style="opacity: 0.3; margin-bottom: 16px;" />
-                  <p>{{ $t('messages.noResults') }}</p>
-               </div>
-               <div v-else>
-                  <p>{{ $t('messages.noData') }}</p>
-               </div>
-            </td>
-          </tr>
-          <tr v-else v-for="image in filteredImages" :key="image.id">
-            <td>
-              <router-link :to="{ name: 'image-detail', params: { id: image.id } }" class="resource-link">
-                <div class="resource-info">
-                  <div class="resource-icon" :class="image.os_code">
-                    <Disc :size="16" />
-                  </div>
-                  <div>
-                    <div class="resource-name">{{ image.name }}</div>
-                    <div class="resource-id-row">
-                      <span class="resource-id" :title="image.id">{{ image.id.slice(0, 8) }}...</span>
-                      <button class="copy-btn-mini" @click.stop.prevent="copyId(image.id)" :title="t('actions.copy')" :aria-label="t('actions.copy')">
-                        <Check v-if="copiedId === image.id" :size="10" style="color: #10b981;" />
-                        <Copy v-else :size="10" />
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              </router-link>
-            </td>
-            <td>
-              <span :class="['badge', image.public ? 'status-running' : 'status-stopped']">
-                {{ image.public ? $t('dashboard.table.public') : $t('dashboard.table.private') }}
-              </span>
-            </td>
-            <td>
-              <span class="os-text">{{ getOsName(image) }}</span>
-            </td>
-            <td>
-              <span class="arch-tag">{{ image.architecture }}</span>
-            </td>
-            <td>
-              <span class="format-text">{{ image.format?.toUpperCase() || '-' }}</span>
-            </td>
-            <td>
-              {{ formatBytes(image.size || 0) }}
-            </td>
-            <td>
-               <StatusBadge :status="image.status" :label="getStatusText(image.status)" />
-            </td>
-            <td>
-              <div class="actions">
-                <button v-if="isSuperuser" class="btn btn-ghost btn-sm" :title="image.public ? $t('dashboard.table.setPrivate') : $t('dashboard.table.setPublic')" @click="toggleVisibility(image)">
-                  <EyeOff v-if="image.public" :size="14" />
-                  <Eye v-else :size="14" />
-                </button>
-                <button v-if="canDelete(image)" class="btn btn-ghost btn-sm text-error" :title="$t('actions.delete')" @click="handleDeleteClick(image)">
-                  <Trash2 :size="14" />
+    <DataTable
+      :columns="columns"
+      :rows="filteredImages"
+      row-key="id"
+      :loading="loading"
+      :error="loadError"
+      @retry="fetchImages().then(filterImages)"
+    >
+      <template #empty>
+        <div v-if="searchQuery">
+          <Search :size="48" style="opacity: 0.3; margin-bottom: 16px;" />
+          <p>{{ $t('messages.noResults') }}</p>
+        </div>
+        <div v-else>
+          <p>{{ $t('messages.noData') }}</p>
+        </div>
+      </template>
+
+      <template #cell-name="{ row: image }">
+        <router-link :to="{ name: 'image-detail', params: { id: image.id } }" class="resource-link">
+          <div class="resource-info">
+            <div class="resource-icon" :class="image.os_code">
+              <Disc :size="16" />
+            </div>
+            <div>
+              <div class="resource-name">{{ image.name }}</div>
+              <div class="resource-id-row">
+                <span class="resource-id" :title="image.id">{{ image.id.slice(0, 8) }}...</span>
+                <button class="copy-btn-mini" @click.stop.prevent="copyId(image.id)" :title="t('actions.copy')" :aria-label="t('actions.copy')">
+                  <Check v-if="copiedId === image.id" :size="10" style="color: #10b981;" />
+                  <Copy v-else :size="10" />
                 </button>
               </div>
-            </td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
+            </div>
+          </div>
+        </router-link>
+      </template>
+
+      <template #cell-visibility="{ row: image }">
+        <span :class="['badge', image.public ? 'status-running' : 'status-stopped']">
+          {{ image.public ? $t('dashboard.table.public') : $t('dashboard.table.private') }}
+        </span>
+      </template>
+
+      <template #cell-os="{ row: image }">
+        <span class="os-text">{{ getOsName(image) }}</span>
+      </template>
+
+      <template #cell-architecture="{ row: image }">
+        <span class="arch-tag">{{ image.architecture }}</span>
+      </template>
+
+      <template #cell-format="{ row: image }">
+        <span class="format-text">{{ image.format?.toUpperCase() || '-' }}</span>
+      </template>
+
+      <template #cell-size="{ row: image }">
+        {{ formatBytes(image.size || 0) }}
+      </template>
+
+      <template #cell-status="{ row: image }">
+        <StatusBadge :status="image.status" :label="getStatusText(image.status)" />
+      </template>
+
+      <template #cell-actions="{ row: image }">
+        <div class="actions">
+          <button v-if="isSuperuser" class="btn btn-ghost btn-sm" :title="image.public ? $t('dashboard.table.setPrivate') : $t('dashboard.table.setPublic')" @click="toggleVisibility(image)">
+            <EyeOff v-if="image.public" :size="14" />
+            <Eye v-else :size="14" />
+          </button>
+          <button v-if="canDelete(image)" class="btn btn-ghost btn-sm text-error" :title="$t('actions.delete')" @click="handleDeleteClick(image)">
+            <Trash2 :size="14" />
+          </button>
+        </div>
+      </template>
+    </DataTable>
 
     <!-- Create Image Modal -->
     <BaseModal
@@ -473,11 +478,6 @@ onMounted(async () => {
   color: var(--text-primary);
   font-size: 0.875rem;
   cursor: pointer;
-}
-
-.table-card {
-  padding: 0;
-  overflow: hidden;
 }
 
 /* .resource-info, .resource-icon etc. are global from index.css */

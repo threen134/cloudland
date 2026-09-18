@@ -19,6 +19,7 @@ import DeleteModal from '../../components/modals/DeleteModal.vue'
 import BaseModal from '../../components/modals/BaseModal.vue'
 import PageToolbar from '../../components/base/PageToolbar.vue'
 import StatusBadge from '../../components/base/StatusBadge.vue'
+import DataTable, { type Column } from '../../components/base/DataTable.vue'
 import { useRegionStore } from '../../stores/region'
 import { useAuthStore } from '../../stores/auth'
 import { quotaErrorMessage } from '../../utils/quotaError'
@@ -46,6 +47,7 @@ const vClickOutside = {
 
 const instanceList = ref<Instance[]>([])
 const loading = ref(false)
+const loadError = ref('')
 const actionLoading = ref<Record<string, string | null>>({})
 const searchQuery = ref('')
 
@@ -122,6 +124,7 @@ const fetchUsageMetrics = async () => {
 
 const fetchInstances = async (showLoading: boolean = true) => {
     if (showLoading) loading.value = true
+    loadError.value = ''
     try {
         const response = await instancesApi.fetchInstances()
         const data = response as any
@@ -130,8 +133,10 @@ const fetchInstances = async (showLoading: boolean = true) => {
         // Start fetching metrics after full list is loaded
         setTimeout(fetchUsageMetrics, 500)
     } catch (error) {
+        // 原先失败只打日志、把列表清空，用户看到的是"没有数据"
         console.error('API fetch failed:', error)
         instanceList.value = []
+        loadError.value = t('messages.error')
     } finally {
         if (showLoading) loading.value = false
     }
@@ -156,6 +161,18 @@ const filteredInstances = computed(() => {
         return nameMatch || hostnameMatch || idMatch || ipMatch || interfaceIpMatch || fipMatch || vpcMatch || imageMatch
     })
 })
+
+// 列定义。IP（一行多个）和资源占用（30 秒刷新的实时值）不排序；状态列显示的是翻译过的
+// 文案，排序按原始状态串；规格列显示 "核数 / 内存"，按核数排
+const columns = computed<Column[]>(() => [
+    { key: 'name', label: t('dashboard.table.nameId'), sortable: true, sortValue: (i) => i.hostname || '' },
+    { key: 'flavor', label: t('dashboard.table.flavor'), sortable: true, sortValue: (i) => i.cpu || 0 },
+    { key: 'image', label: t('dashboard.table.image'), sortable: true, sortValue: (i) => i.image?.name || '' },
+    { key: 'ip', label: t('dashboard.table.ipAddress') },
+    { key: 'status', label: t('dashboard.table.status'), sortable: true, sortValue: (i) => i.status || '' },
+    { key: 'usage', label: t('dashboard.overview.resourceUsage') },
+    { key: 'actions', label: t('dashboard.table.actions') },
+])
 
 
 const getStatusText = (status: string) => {
@@ -958,39 +975,27 @@ onUnmounted(() => {
       </template>
     </PageToolbar>
 
-    <div class="card table-card">
-      <table class="data-table">
-        <thead>
-          <tr>
-            <th>{{ t('dashboard.table.nameId') }}</th>
-            <th>{{ t('dashboard.table.flavor') }}</th>
-            <th>{{ t('dashboard.table.image') }}</th>
-            <th>{{ t('dashboard.table.ipAddress') }}</th>
-            <th>{{ t('dashboard.table.status') }}</th>
-            <th>{{ t('dashboard.overview.resourceUsage') }}</th>
-            <th>{{ t('dashboard.table.actions') }}</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-if="loading">
-            <td colspan="7" class="text-center">
-              <div class="loading-spinner" style="margin: 20px auto;"></div>
-            </td>
-          </tr>
-          <tr v-else-if="filteredInstances.length === 0">
-            <td colspan="7" class="text-center text-secondary" style="padding: 48px;">
-               <div v-if="searchQuery">
-                  <Search :size="48" style="opacity: 0.3; margin-bottom: 16px;" />
-                   <p>{{ t('dashboard.table.noResults') }}</p>
-               </div>
-               <div v-else>
-                  <Monitor :size="48" style="opacity: 0.3; margin-bottom: 16px;" />
-                   <p class="text-secondary">{{ t('dashboard.table.noData') }}</p>
-               </div>
-            </td>
-          </tr>
-          <tr v-else v-for="instance in filteredInstances" :key="instance.id" :class="{'active-row': activeActionMenuId === instance.id}">
-            <td>
+    <DataTable
+      allow-overflow
+      :columns="columns"
+      :rows="filteredInstances"
+      row-key="id"
+      :loading="loading"
+      :error="loadError"
+      @retry="fetchInstances()"
+    >
+      <template #empty>
+        <div v-if="searchQuery">
+          <Search :size="48" style="opacity: 0.3; margin-bottom: 16px;" />
+          <p>{{ t('dashboard.table.noResults') }}</p>
+        </div>
+        <div v-else>
+          <Monitor :size="48" style="opacity: 0.3; margin-bottom: 16px;" />
+          <p class="text-secondary">{{ t('dashboard.table.noData') }}</p>
+        </div>
+      </template>
+
+      <template #cell-name="{ row: instance }">
               <router-link :to="{ name: 'instance-detail', params: { id: instance.id } }" class="resource-link">
                 <div class="resource-info">
                   <div class="resource-icon">
@@ -1008,18 +1013,21 @@ onUnmounted(() => {
                   </div>
                 </div>
               </router-link>
-            </td>
-            <td>
+      </template>
+
+      <template #cell-flavor="{ row: instance }">
               <div class="specs-display">
                 <div class="specs-main">{{ instance.cpu }}C / {{ formatMemory(instance.memory).replace(' GB', 'G').replace(' MB', 'M') }}</div>
                 <div v-if="instance.flavor" class="specs-sub">
                   {{ typeof instance.flavor === 'string' ? instance.flavor : instance.flavor.name }}
                 </div>
               </div>
-            </td>
-            <td>{{ instance.image?.name || '-' }}</td>
-            <td @mouseleave="closeIpPopover">
-              <div class="ip-display-wrapper">
+      </template>
+
+      <template #cell-image="{ row: instance }">{{ instance.image?.name || '-' }}</template>
+
+      <template #cell-ip="{ row: instance }">
+              <div class="ip-display-wrapper" @mouseleave="closeIpPopover">
                 <!-- Show first 2 interfaces inline -->
                 <div class="ip-list">
                   <div v-for="(iface, idx) in (instance.interfaces || []).slice(0, 2)" :key="idx" class="ip-item">
@@ -1072,11 +1080,13 @@ onUnmounted(() => {
                   </Transition>
                 </div>
               </div>
-            </td>
-            <td>
+      </template>
+
+      <template #cell-status="{ row: instance }">
               <StatusBadge :status="instance.status" :label="getStatusText(instance.status)" />
-            </td>
-            <td>
+      </template>
+
+      <template #cell-usage="{ row: instance }">
                <div class="instance-usage-summary" v-if="['running', 'active'].includes(instance.status?.toLowerCase())">
                  <div class="usage-mini-item" :title="'CPU: ' + (instanceMetrics[instance.id]?.cpu || 0).toFixed(1) + '%'">
                    <span class="usage-label">CPU</span>
@@ -1092,10 +1102,12 @@ onUnmounted(() => {
                  </div>
                </div>
                <span v-else class="text-secondary text-xs">-</span>
-            </td>
-            <td class="actions-usage-cell">
+      </template>
+
+      <template #cell-actions="{ row: instance }">
                <div class="actions">
-                 <div class="action-dropdown" style="position: relative;">
+                 <!-- 菜单展开时把这一格抬到上层：原先是给整行加 .active-row -->
+                 <div class="action-dropdown" style="position: relative;" :class="{ 'active-row': activeActionMenuId === instance.id }">
                     <button class="btn btn-ghost btn-sm" @click.stop="toggleActionMenu(instance.id)" :title="t('dashboard.instanceDetail.more')">
                         <MoreVertical :size="14" />
                     </button>
@@ -1186,11 +1198,8 @@ onUnmounted(() => {
                     </Transition>
                  </div>
               </div>
-            </td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
+      </template>
+    </DataTable>
 
     <!-- Create Instance Modal -->
     <BaseModal
@@ -1841,11 +1850,6 @@ onUnmounted(() => {
   background: var(--error-light);
   padding: var(--spacing-2);
   border-radius: var(--radius-sm);
-}
-
-.table-card {
-  padding: 0;
-  overflow: visible;
 }
 
 .active-row {
@@ -2516,11 +2520,6 @@ input:checked + .slider:before {
 
 .cpu-bar { background: var(--primary-color); }
 .mem-bar { background: var(--accent-purple); }
-
-.actions-usage-cell {
-    text-align: right;
-    white-space: nowrap;
-}
 
 .text-xs {
     font-size: 11px;

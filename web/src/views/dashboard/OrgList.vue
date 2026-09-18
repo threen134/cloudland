@@ -14,6 +14,7 @@ import {
 import PageToolbar from '../../components/base/PageToolbar.vue'
 import BaseModal from '../../components/modals/BaseModal.vue'
 import DeleteModal from '../../components/modals/DeleteModal.vue'
+import DataTable, { type Column } from '../../components/base/DataTable.vue'
 
 const authStore = useAuthStore()
 const isSuperuser = computed(() => authStore.user?.is_superuser === true)
@@ -25,6 +26,7 @@ const { copiedId, copyId } = useCopyId()
 
 const orgs = ref<Organization[]>([])
 const loading = ref(false)
+const loadError = ref('')
 const searchQuery = ref('')
 const createModalVisible = ref(false)
 const editing = ref(false)
@@ -42,13 +44,25 @@ const editOrgForm = ref({
     description: ''
 })
 
+// 状态列显示的是翻译后的文案，排序按原始状态码；属主列优先按显示的名字排
+const columns = computed<Column[]>(() => [
+    { key: 'name', label: t('dashboard.table.nameId'), sortable: true },
+    { key: 'description', label: t('dashboard.table.description'), sortable: true, sortValue: (o) => o.description || '' },
+    { key: 'status', label: t('dashboard.table.status'), sortable: true, sortValue: (o) => o.status ?? 0 },
+    { key: 'owner', label: t('dashboard.table.owner'), sortable: true, sortValue: (o) => o.owner_name || o.owner_email || o.owner_uuid || '' },
+    { key: 'created', label: t('dashboard.table.created'), sortable: true, sortValue: (o) => o.created_at || '' },
+    { key: 'actions', label: t('dashboard.table.actions') },
+])
+
 const fetchOrgs = async () => {
     loading.value = true
+    loadError.value = ''
     try {
         const data = await orgsApi.fetchOrgs() as any
         orgs.value = Array.isArray(data) ? data : (data.orgs || [])
     } catch (error) {
         console.error('Failed to fetch orgs:', error)
+        loadError.value = t('messages.error')
     } finally {
         loading.value = false
     }
@@ -228,125 +242,115 @@ onMounted(fetchOrgs)
       </template>
     </PageToolbar>
 
-    <div class="card table-card">
-      <table class="data-table">
-        <thead>
-          <tr>
-            <th>{{ $t('dashboard.table.nameId') }}</th>
-            <th>{{ $t('dashboard.table.description') }}</th>
-            <th>{{ $t('dashboard.table.status') }}</th>
-            <th>{{ $t('dashboard.table.owner') }}</th>
-            <th>{{ $t('dashboard.table.created') }}</th>
-            <th>{{ $t('dashboard.table.actions') }}</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-if="loading">
-            <td colspan="5" class="text-center">
-              <div class="loading-spinner" style="margin: 20px auto;"></div>
-            </td>
-          </tr>
-          <tr v-else-if="filteredOrgs.length === 0">
-            <td colspan="5" class="text-center text-secondary" style="padding: 48px;">
-               <div v-if="searchQuery">
-                  <Search :size="48" style="opacity: 0.3; margin-bottom: 16px;" />
-                  <p>{{ $t('messages.noResults') }}</p>
-               </div>
-               <div v-else>
-                  <p>{{ $t('messages.noOrgsFound') }}</p>
-               </div>
-            </td>
-          </tr>
-          <tr v-else v-for="org in filteredOrgs" :key="org.uuid">
-            <td>
-              <router-link :to="`/dashboard/orgs/${org.uuid}`" class="resource-link">
-                <div class="resource-info">
-                  <div class="resource-icon">
-                    <Building2 :size="16" />
-                  </div>
-                  <div>
-                    <div class="resource-name">{{ org.name }}</div>
-                    <div class="resource-id-row">
-                      <span class="resource-id" :title="org.uuid">{{ org.uuid.slice(0, 8) }}...</span>
-                      <button class="copy-btn-mini" @click.stop.prevent="copyId(org.uuid)" :title="t('actions.copy')" :aria-label="t('actions.copy')">
-                        <Check v-if="copiedId === org.uuid" :size="10" style="color: #10b981;" />
-                        <Copy v-else :size="10" />
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              </router-link>
-            </td>
-            <td>{{ org.description || '-' }}</td>
-            <td>
-              <div class="status-cell" :class="'status-' + (org.status || 0)">
-                <CheckCircle v-if="org.status === 1" :size="14" />
-                <PauseCircle v-else-if="org.status === 2" :size="14" />
-                <ShieldAlert v-else-if="org.status === 3" :size="14" />
-                <AlertCircle v-else :size="14" />
-                <span>
-                  {{ 
-                    org.status === 0 ? $t('dashboard.org.status.pending') :
-                    org.status === 1 ? $t('dashboard.org.status.active') :
-                    org.status === 2 ? $t('dashboard.org.status.suspended') :
-                    org.status === 3 ? $t('dashboard.org.status.disabled') :
-                    $t('dashboard.org.status.pending')
-                  }}
-                </span>
-              </div>
-            </td>
-            <td>
-              <div class="owner-cell" v-if="org.owner_name || org.owner_email">
-                <div class="owner-info">
-                  <div class="owner-name">
-                    <User :size="12" />
-                    <span>{{ org.owner_name }}</span>
-                  </div>
-                  <div class="owner-email" v-if="org.owner_email">{{ org.owner_email }}</div>
-                </div>
-              </div>
-              <div class="owner-cell" v-else-if="org.owner_uuid">
-                <User :size="12" />
-                <div class="resource-id-row">
-                  <span class="resource-id" :title="org.owner_uuid">{{ org.owner_uuid.slice(0, 8) }}...</span>
-                  <button class="copy-btn-mini" @click.stop.prevent="copyId(org.owner_uuid)" :title="t('actions.copy')" :aria-label="t('actions.copy')">
-                    <Check v-if="copiedId === org.owner_uuid" :size="10" style="color: #10b981;" />
-                    <Copy v-else :size="10" />
-                  </button>
-                </div>
-              </div>
-              <span v-else>-</span>
-            </td>
-            <td>{{ org.created_at || '-' }}</td>
-            <td>
-              <div class="actions">
-                <button class="btn btn-ghost btn-sm" :title="$t('actions.edit')" @click="openEditModal(org)">
-                  <Edit2 :size="14" />
-                </button>
-                <button class="btn btn-ghost btn-sm" :title="$t('quota.manage')" @click="openQuotaModal(org)">
-                  <Gauge :size="14" />
-                </button>
-                <!-- Admin Status Actions -->
-                <template v-if="isSuperuser">
-                  <button v-if="org.status !== 1" class="btn btn-ghost btn-sm text-success" :title="$t('actions.enable')" @click="handleUpdateStatus(org.uuid, 1)">
-                    <PlayCircle :size="14" />
-                  </button>
-                  <button v-if="org.status === 1" class="btn btn-ghost btn-sm text-warning" :title="$t('dashboard.org.status.suspended')" @click="handleUpdateStatus(org.uuid, 2)">
-                    <PauseCircle :size="14" />
-                  </button>
-                  <button v-if="org.status !== 3" class="btn btn-ghost btn-sm text-error" :title="$t('actions.disable')" @click="handleUpdateStatus(org.uuid, 3)">
-                    <ShieldAlert :size="14" />
-                  </button>
-                </template>
-                <button class="btn btn-ghost btn-sm text-error" :title="$t('actions.delete')" @click="handleDeleteClick(org)">
-                  <Trash2 :size="14" />
+    <DataTable
+      :columns="columns"
+      :rows="filteredOrgs"
+      row-key="uuid"
+      :loading="loading"
+      :error="loadError"
+      @retry="fetchOrgs"
+    >
+      <template #empty>
+        <div v-if="searchQuery">
+          <Search :size="48" style="opacity: 0.3; margin-bottom: 16px;" />
+          <p>{{ $t('messages.noResults') }}</p>
+        </div>
+        <div v-else>
+          <p>{{ $t('messages.noOrgsFound') }}</p>
+        </div>
+      </template>
+
+      <template #cell-name="{ row: org }">
+        <router-link :to="`/dashboard/orgs/${org.uuid}`" class="resource-link">
+          <div class="resource-info">
+            <div class="resource-icon">
+              <Building2 :size="16" />
+            </div>
+            <div>
+              <div class="resource-name">{{ org.name }}</div>
+              <div class="resource-id-row">
+                <span class="resource-id" :title="org.uuid">{{ org.uuid.slice(0, 8) }}...</span>
+                <button class="copy-btn-mini" @click.stop.prevent="copyId(org.uuid)" :title="t('actions.copy')" :aria-label="t('actions.copy')">
+                  <Check v-if="copiedId === org.uuid" :size="10" style="color: #10b981;" />
+                  <Copy v-else :size="10" />
                 </button>
               </div>
-            </td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
+            </div>
+          </div>
+        </router-link>
+      </template>
+
+      <template #cell-description="{ row: org }">{{ org.description || '-' }}</template>
+
+      <template #cell-status="{ row: org }">
+        <div class="status-cell" :class="'status-' + (org.status || 0)">
+          <CheckCircle v-if="org.status === 1" :size="14" />
+          <PauseCircle v-else-if="org.status === 2" :size="14" />
+          <ShieldAlert v-else-if="org.status === 3" :size="14" />
+          <AlertCircle v-else :size="14" />
+          <span>
+            {{
+              org.status === 0 ? $t('dashboard.org.status.pending') :
+              org.status === 1 ? $t('dashboard.org.status.active') :
+              org.status === 2 ? $t('dashboard.org.status.suspended') :
+              org.status === 3 ? $t('dashboard.org.status.disabled') :
+              $t('dashboard.org.status.pending')
+            }}
+          </span>
+        </div>
+      </template>
+
+      <template #cell-owner="{ row: org }">
+        <div class="owner-cell" v-if="org.owner_name || org.owner_email">
+          <div class="owner-info">
+            <div class="owner-name">
+              <User :size="12" />
+              <span>{{ org.owner_name }}</span>
+            </div>
+            <div class="owner-email" v-if="org.owner_email">{{ org.owner_email }}</div>
+          </div>
+        </div>
+        <div class="owner-cell" v-else-if="org.owner_uuid">
+          <User :size="12" />
+          <div class="resource-id-row">
+            <span class="resource-id" :title="org.owner_uuid">{{ org.owner_uuid.slice(0, 8) }}...</span>
+            <button class="copy-btn-mini" @click.stop.prevent="copyId(org.owner_uuid)" :title="t('actions.copy')" :aria-label="t('actions.copy')">
+              <Check v-if="copiedId === org.owner_uuid" :size="10" style="color: #10b981;" />
+              <Copy v-else :size="10" />
+            </button>
+          </div>
+        </div>
+        <span v-else>-</span>
+      </template>
+
+      <template #cell-created="{ row: org }">{{ org.created_at || '-' }}</template>
+
+      <template #cell-actions="{ row: org }">
+        <div class="actions">
+          <button class="btn btn-ghost btn-sm" :title="$t('actions.edit')" @click="openEditModal(org as any)">
+            <Edit2 :size="14" />
+          </button>
+          <button class="btn btn-ghost btn-sm" :title="$t('quota.manage')" @click="openQuotaModal(org as any)">
+            <Gauge :size="14" />
+          </button>
+          <!-- Admin Status Actions -->
+          <template v-if="isSuperuser">
+            <button v-if="org.status !== 1" class="btn btn-ghost btn-sm text-success" :title="$t('actions.enable')" @click="handleUpdateStatus(org.uuid, 1)">
+              <PlayCircle :size="14" />
+            </button>
+            <button v-if="org.status === 1" class="btn btn-ghost btn-sm text-warning" :title="$t('dashboard.org.status.suspended')" @click="handleUpdateStatus(org.uuid, 2)">
+              <PauseCircle :size="14" />
+            </button>
+            <button v-if="org.status !== 3" class="btn btn-ghost btn-sm text-error" :title="$t('actions.disable')" @click="handleUpdateStatus(org.uuid, 3)">
+              <ShieldAlert :size="14" />
+            </button>
+          </template>
+          <button class="btn btn-ghost btn-sm text-error" :title="$t('actions.delete')" @click="handleDeleteClick(org as any)">
+            <Trash2 :size="14" />
+          </button>
+        </div>
+      </template>
+    </DataTable>
 
     <!-- Create Organization Modal -->
     <BaseModal
@@ -520,11 +524,6 @@ onMounted(fetchOrgs)
 </template>
 
 <style scoped>
-.table-card {
-  padding: 0;
-  overflow: visible;
-}
-
 /* .resource-info etc. are global from index.css */
 
 .resource-link {

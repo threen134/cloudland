@@ -10,9 +10,11 @@ import { Key, Plus, Trash2, Copy, Check, Search, RefreshCw } from 'lucide-vue-ne
 import PageToolbar from '../../components/base/PageToolbar.vue'
 import BaseModal from '../../components/modals/BaseModal.vue'
 import DeleteModal from '../../components/modals/DeleteModal.vue'
+import DataTable, { type Column } from '../../components/base/DataTable.vue'
 
 const keys = ref<SSHKey[]>([])
 const loading = ref(false)
+const loadError = ref('')
 const copiedFingerprintId = ref<string | null>(null)
 const { copiedId, copyId } = useCopyId()
 const searchQuery = ref('')
@@ -31,14 +33,24 @@ const isNameValid = computed(() => isValidName(newKeyForm.value.name))
 
 // const router = useRouter()
 
+// 密钥类型取自公钥的第一段（ssh-rsa / ssh-ed25519 …），和显示值一致，排序单独给取值
+const columns = computed<Column[]>(() => [
+    { key: 'name', label: t('dashboard.table.nameId'), sortable: true },
+    { key: 'type', label: t('dashboard.table.type'), sortable: true, sortValue: (k) => k.public_key?.split(' ')[0] || 'ssh-rsa' },
+    { key: 'fingerprint', label: t('dashboard.table.fingerprint'), sortable: true, sortValue: (k) => k.finger_print || '' },
+    { key: 'actions', label: t('dashboard.table.actions') },
+])
+
 const fetchKeys = async () => {
     loading.value = true
+    loadError.value = ''
     try {
         const response = await keysApi.fetchKeys()
         keys.value = (response as any).keys || []
     } catch (err) {
         console.error('API fetch failed:', err)
         keys.value = []
+        loadError.value = t('messages.error')
     } finally {
         loading.value = false
     }
@@ -154,80 +166,70 @@ onMounted(fetchKeys)
       </template>
     </PageToolbar>
 
-    <div class="card table-card">
-      <table class="data-table">
-        <thead>
-          <tr>
-            <th>{{ $t('dashboard.table.nameId') }}</th>
-            <th>{{ $t('dashboard.table.type') }}</th>
-            <th>{{ $t('dashboard.table.fingerprint') }}</th>
-            <th>{{ $t('dashboard.table.actions') }}</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-if="loading">
-            <td colspan="4" class="text-center">
-              <div class="loading-spinner" style="margin: 20px auto;"></div>
-            </td>
-          </tr>
-          <tr v-else-if="filteredKeys.length === 0">
-            <td colspan="4" class="text-center text-secondary" style="padding: 48px;">
-               <div v-if="searchQuery">
-                  <Search :size="48" style="opacity: 0.3; margin-bottom: 16px;" />
-                  <p>{{ $t('messages.noResults') }}</p>
-               </div>
-               <div v-else>
-                  <Key :size="48" style="opacity: 0.3; margin-bottom: 16px;" />
-                  <p>{{ $t('messages.noSSHKeys') }}</p>
-               </div>
-            </td>
-          </tr>
-          <tr v-else v-for="key in filteredKeys" :key="key.id">
-            <td>
-              <div class="resource-link-static">
-                <div class="resource-info">
-                  <div class="resource-icon">
-                    <Key :size="16" />
-                  </div>
-                  <div>
-                    <div class="resource-name">{{ key.name }}</div>
-                    <div class="resource-id-row">
-                      <span class="resource-id" :title="key.id">{{ key.id.slice(0, 8) }}...</span>
-                      <button class="copy-btn-mini" @click.stop.prevent="copyId(key.id)" :title="t('actions.copy')" :aria-label="t('actions.copy')">
-                        <Check v-if="copiedId === key.id" :size="10" style="color: #10b981;" />
-                        <Copy v-else :size="10" />
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </td>
-            <td>
-              <span class="key-type">
-                {{ key.public_key?.split(' ')[0] || 'ssh-rsa' }}
-              </span>
-            </td>
-            <td>
-              <div class="fingerprint-cell">
-                <code class="fingerprint">{{ key.finger_print || '-' }}</code>
-                <button 
-                  class="btn btn-ghost btn-sm copy-btn" 
-                  @click="copyFingerprint(key)"
-                  :title="copiedFingerprintId === key.id ? $t('messages.copied') : $t('actions.copy')"
-                >
-                  <component :is="copiedFingerprintId === key.id ? Check : Copy" :size="14" />
+    <DataTable
+      :columns="columns"
+      :rows="filteredKeys"
+      row-key="id"
+      :loading="loading"
+      :error="loadError"
+      @retry="fetchKeys"
+    >
+      <template #empty>
+        <div v-if="searchQuery">
+          <Search :size="48" style="opacity: 0.3; margin-bottom: 16px;" />
+          <p>{{ $t('messages.noResults') }}</p>
+        </div>
+        <div v-else>
+          <Key :size="48" style="opacity: 0.3; margin-bottom: 16px;" />
+          <p>{{ $t('messages.noSSHKeys') }}</p>
+        </div>
+      </template>
+
+      <template #cell-name="{ row: key }">
+        <div class="resource-link-static">
+          <div class="resource-info">
+            <div class="resource-icon">
+              <Key :size="16" />
+            </div>
+            <div>
+              <div class="resource-name">{{ key.name }}</div>
+              <div class="resource-id-row">
+                <span class="resource-id" :title="key.id">{{ key.id.slice(0, 8) }}...</span>
+                <button class="copy-btn-mini" @click.stop.prevent="copyId(key.id)" :title="t('actions.copy')" :aria-label="t('actions.copy')">
+                  <Check v-if="copiedId === key.id" :size="10" style="color: #10b981;" />
+                  <Copy v-else :size="10" />
                 </button>
               </div>
-            </td>
-            <td>
-              <button class="btn btn-ghost btn-sm text-error" :title="$t('actions.delete')" @click="handleDeleteClick(key)">
-                <Trash2 :size="14" />
-              </button>
-            </td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
+            </div>
+          </div>
+        </div>
+      </template>
+
+      <template #cell-type="{ row: key }">
+        <span class="key-type">
+          {{ key.public_key?.split(' ')[0] || 'ssh-rsa' }}
+        </span>
+      </template>
+
+      <template #cell-fingerprint="{ row: key }">
+        <div class="fingerprint-cell">
+          <code class="fingerprint">{{ key.finger_print || '-' }}</code>
+          <button
+            class="btn btn-ghost btn-sm copy-btn"
+            @click="copyFingerprint(key as any)"
+            :title="copiedFingerprintId === key.id ? $t('messages.copied') : $t('actions.copy')"
+          >
+            <component :is="copiedFingerprintId === key.id ? Check : Copy" :size="14" />
+          </button>
+        </div>
+      </template>
+
+      <template #cell-actions="{ row: key }">
+        <button class="btn btn-ghost btn-sm text-error" :title="$t('actions.delete')" @click="handleDeleteClick(key as any)">
+          <Trash2 :size="14" />
+        </button>
+      </template>
+    </DataTable>
 
     <!-- Create Key Modal -->
     <BaseModal
@@ -301,11 +303,6 @@ onMounted(fetchKeys)
 @keyframes spin {
   from { transform: rotate(0deg); }
   to { transform: rotate(360deg); }
-}
-
-.table-card {
-  padding: 0;
-  overflow: visible;
 }
 
 /* .resource-info etc. are global from index.css */

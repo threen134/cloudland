@@ -35,6 +35,12 @@ const props = withDefaults(
         error?: string
         /** 空态文案，默认用通用的"没有数据"；需要图标等更丰富的空态用 #empty 插槽 */
         emptyText?: string
+        /**
+         * 单元格里有下拉菜单、悬浮卡片这类要溢出表格显示的内容时传 true：
+         * 容器改为 overflow: visible，并给单元格加定位上下文。
+         * 代价是宽表格不再能横向滚动，所以只在确实需要时开
+         */
+        allowOverflow?: boolean
     }>(),
     {
         rowKey: 'id',
@@ -78,7 +84,7 @@ const sortedRows = computed(() => {
 </script>
 
 <template>
-    <div class="table-container">
+    <div class="table-container" :class="{ 'allow-overflow': allowOverflow }">
         <table class="data-table">
             <thead>
                 <tr>
@@ -145,6 +151,16 @@ const sortedRows = computed(() => {
     border: 1px solid var(--border-light);
     border-radius: var(--radius-md);
     overflow-x: auto;
+}
+
+/* 下拉菜单、悬浮卡片要能溢出表格显示；单元格同时需要成为定位上下文，
+   否则插槽里那些 position: absolute 的浮层会以更外层的元素定位 */
+.table-container.allow-overflow {
+    overflow: visible;
+}
+
+.allow-overflow td {
+    position: relative;
 }
 
 th.sortable {

@@ -11,6 +11,7 @@ import { useFloatingIP } from '../../composables/useFloatingIP'
 import BaseModal from '../../components/modals/BaseModal.vue'
 import DeleteModal from '../../components/modals/DeleteModal.vue'
 import PageToolbar from '../../components/base/PageToolbar.vue'
+import DataTable, { type Column } from '../../components/base/DataTable.vue'
 import { useRegionStore } from '../../stores/region'
 import { quotaErrorMessage } from '../../utils/quotaError'
 
@@ -24,6 +25,7 @@ const router = useRouter()
 const { copiedId, copyId } = useCopyId()
 const floatingIps = ref<FloatingIP[]>([])
 const loading = ref(false)
+const loadError = ref('')
 const searchQuery = ref('')
 const createModalVisible = ref(false)
 const creating = ref(false)
@@ -60,8 +62,17 @@ const fetchSubnetAddresses = async (subnetId: string) => {
     }
 }
 
+const columns = computed<Column[]>(() => [
+    { key: 'name', label: t('dashboard.table.userName'), sortable: true, sortValue: (fip) => fip.name || '' },
+    { key: 'ip', label: t('dashboard.table.ipAddress'), sortable: true, sortValue: (fip) => fip.public_ip || fip.ip_address || '' },
+    { key: 'type', label: t('dashboard.table.type'), sortable: true },
+    { key: 'attachedTo', label: t('dashboard.table.attachedTo'), sortable: true, sortValue: (fip) => fip.target_interface?.from_instance?.hostname ?? null },
+    { key: 'actions', label: t('dashboard.table.actions') },
+])
+
 const fetchFloatingIPs = async () => {
     loading.value = true
+    loadError.value = ''
     try {
         const [ipResponse, subnetsResponse] = await Promise.all([
             floatingIpsApi.list(),
@@ -77,6 +88,7 @@ const fetchFloatingIPs = async () => {
         floatingIps.value = []
         siteSubnets.value = []
         publicSubnets.value = []
+        loadError.value = t('messages.error')
     } finally {
         loading.value = false
     }
@@ -338,96 +350,86 @@ watch(() => newFipForm.value.selectedPublicSubnetId, (newId) => {
       </template>
     </PageToolbar>
 
-    <div class="card table-card">
-      <table class="data-table">
-        <thead>
-          <tr>
-            <th>{{ $t('dashboard.table.userName') }}</th>
-            <th>{{ $t('dashboard.table.ipAddress') }}</th>
-            <th>{{ $t('dashboard.table.type') }}</th>
-            <th>{{ $t('dashboard.table.attachedTo') }}</th>
-            <th>{{ $t('dashboard.table.actions') }}</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-if="loading">
-            <td colspan="5" class="text-center">
-              <div class="loading-spinner" style="margin: 20px auto;"></div>
-            </td>
-          </tr>
-          <tr v-else-if="filteredFloatingIPs.length === 0">
-            <td colspan="5" class="text-center text-secondary" style="padding: 48px;">
-               <div v-if="searchQuery">
-                  <Search :size="48" style="opacity: 0.3; margin-bottom: 16px;" />
-                  <p>{{ $t('messages.noResults') }}</p>
-               </div>
-               <div v-else>
-                  <Globe2 :size="48" style="opacity: 0.3; margin-bottom: 16px;" />
-                  <p>{{ $t('messages.noFloatingIPs') }}</p>
-               </div>
-            </td>
-          </tr>
-          <tr v-else v-for="fip in filteredFloatingIPs" :key="fip.id">
-            <td>
-              <router-link :to="{ name: 'floating-ip-detail', params: { id: fip.id } }" class="resource-link">
-                <div class="resource-info">
-                  <div class="resource-icon">
-                    <Globe2 :size="16" />
-                  </div>
-                  <div>
-                    <div class="resource-name">{{ fip.name || $t('messages.unnamed') }}</div>
-                    <div class="resource-id-row">
-                      <span class="resource-id" :title="fip.id">{{ fip.id.slice(0, 8) }}...</span>
-                      <button class="copy-btn-mini" @click.stop.prevent="copyId(fip.id)" :title="t('actions.copy')" :aria-label="t('actions.copy')">
-                        <Check v-if="copiedId === fip.id" :size="10" style="color: #10b981;" />
-                        <Copy v-else :size="10" />
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              </router-link>
-            </td>
-            <td>
-              <div class="ip-address monospace">{{ fip.public_ip || fip.ip_address }}</div>
-            </td>
-            <td>
-              <span :class="['badge', getTypeBadgeClass(fip.type || '')]">
-                {{ getTypeLabel(fip.type || '') }}
-              </span>
-            </td>
-            <td>
-              <span 
-                v-if="fip.target_interface?.from_instance" 
-                class="resource-link"
-                @click="navigateToInstance(fip.target_interface.from_instance.id)"
-              >
-                {{ fip.target_interface.from_instance.hostname || $t('messages.unnamed') }}
-              </span>
-              <span v-else class="text-light">{{ $t('messages.notAttached') }}</span>
-            </td>
-            <td>
-              <div class="actions">
-                <button v-if="!fip.target_interface" class="btn btn-ghost btn-sm" :title="$t('actions.attach')"
-                  :disabled="fip.type !== 'floating' && fip.type !== 'site'"
-                  @click="(fip.type === 'floating' || fip.type === 'site') && handleAttachClick(fip)">
-                  <Link :size="14" /> {{ $t('actions.attach') }}
-                </button>
-                <button v-else class="btn btn-ghost btn-sm" :title="$t('actions.detach')"
-                  :disabled="fip.type !== 'floating' && fip.type !== 'site'"
-                  @click="(fip.type === 'floating' || fip.type === 'site') && handleDetachClick(fip)">
-                  <Unlink :size="14" /> {{ $t('actions.detach') }}
-                </button>
-                <button class="btn btn-ghost btn-sm text-error" :title="$t('actions.release')"
-                  :disabled="fip.type !== 'floating' && fip.type !== 'loadbalancer'"
-                  @click="(fip.type === 'floating' || fip.type === 'loadbalancer') && handleDeleteClick(fip)">
-                  <Trash2 :size="14" />
+    <DataTable
+      :columns="columns"
+      :rows="filteredFloatingIPs"
+      row-key="id"
+      :loading="loading"
+      :error="loadError"
+      @retry="fetchFloatingIPs"
+    >
+      <template #empty>
+        <div v-if="searchQuery">
+          <Search :size="48" style="opacity: 0.3; margin-bottom: 16px;" />
+          <p>{{ $t('messages.noResults') }}</p>
+        </div>
+        <div v-else>
+          <Globe2 :size="48" style="opacity: 0.3; margin-bottom: 16px;" />
+          <p>{{ $t('messages.noFloatingIPs') }}</p>
+        </div>
+      </template>
+
+      <template #cell-name="{ row: fip }">
+        <router-link :to="{ name: 'floating-ip-detail', params: { id: fip.id } }" class="resource-link">
+          <div class="resource-info">
+            <div class="resource-icon">
+              <Globe2 :size="16" />
+            </div>
+            <div>
+              <div class="resource-name">{{ fip.name || $t('messages.unnamed') }}</div>
+              <div class="resource-id-row">
+                <span class="resource-id" :title="fip.id">{{ fip.id.slice(0, 8) }}...</span>
+                <button class="copy-btn-mini" @click.stop.prevent="copyId(fip.id)" :title="t('actions.copy')" :aria-label="t('actions.copy')">
+                  <Check v-if="copiedId === fip.id" :size="10" style="color: #10b981;" />
+                  <Copy v-else :size="10" />
                 </button>
               </div>
-            </td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
+            </div>
+          </div>
+        </router-link>
+      </template>
+
+      <template #cell-ip="{ row: fip }">
+        <div class="ip-address monospace">{{ fip.public_ip || fip.ip_address }}</div>
+      </template>
+
+      <template #cell-type="{ row: fip }">
+        <span :class="['badge', getTypeBadgeClass(fip.type || '')]">
+          {{ getTypeLabel(fip.type || '') }}
+        </span>
+      </template>
+
+      <template #cell-attachedTo="{ row: fip }">
+        <span
+          v-if="fip.target_interface?.from_instance"
+          class="resource-link"
+          @click="navigateToInstance(fip.target_interface.from_instance.id)"
+        >
+          {{ fip.target_interface.from_instance.hostname || $t('messages.unnamed') }}
+        </span>
+        <span v-else class="text-light">{{ $t('messages.notAttached') }}</span>
+      </template>
+
+      <template #cell-actions="{ row: fip }">
+        <div class="actions">
+          <button v-if="!fip.target_interface" class="btn btn-ghost btn-sm" :title="$t('actions.attach')"
+            :disabled="fip.type !== 'floating' && fip.type !== 'site'"
+            @click="(fip.type === 'floating' || fip.type === 'site') && handleAttachClick(fip)">
+            <Link :size="14" /> {{ $t('actions.attach') }}
+          </button>
+          <button v-else class="btn btn-ghost btn-sm" :title="$t('actions.detach')"
+            :disabled="fip.type !== 'floating' && fip.type !== 'site'"
+            @click="(fip.type === 'floating' || fip.type === 'site') && handleDetachClick(fip)">
+            <Unlink :size="14" /> {{ $t('actions.detach') }}
+          </button>
+          <button class="btn btn-ghost btn-sm text-error" :title="$t('actions.release')"
+            :disabled="fip.type !== 'floating' && fip.type !== 'loadbalancer'"
+            @click="(fip.type === 'floating' || fip.type === 'loadbalancer') && handleDeleteClick(fip)">
+            <Trash2 :size="14" />
+          </button>
+        </div>
+      </template>
+    </DataTable>
 
     <!-- Create Floating IP Modal -->
     <BaseModal
@@ -667,10 +669,6 @@ watch(() => newFipForm.value.selectedPublicSubnetId, (newId) => {
 </template>
 
 <style scoped>
-.table-card {
-  padding: 0;
-  overflow: visible;
-}
 
 /* .resource-info etc. are global from index.css */
 

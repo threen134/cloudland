@@ -17,6 +17,8 @@ import BaseModal from '../../components/modals/BaseModal.vue'
 import DeleteModal from '../../components/modals/DeleteModal.vue'
 import PageToolbar from '../../components/base/PageToolbar.vue'
 import StatusBadge from '../../components/base/StatusBadge.vue'
+import DataTable, { type Column } from '../../components/base/DataTable.vue'
+import PaginationBar from '../../components/base/PaginationBar.vue'
 
 const vClickOutside = {
   mounted(el: any, binding: any) {
@@ -66,7 +68,21 @@ const instanceStatusText = (status: string) => {
     return te(key) ? t(key) : status
 }
 const loading = ref(false)
+const loadError = ref('')
 const searchQuery = ref('')
+
+// 列表是后端分页（offset/limit），前端排序只会打乱当前页，所以所有列都不排序
+const columns = computed<Column[]>(() => [
+    { key: 'name', label: t('dashboard.table.nameId') },
+    { key: 'hostIp', label: t('dashboard.table.hostIp') },
+    { key: 'status', label: t('dashboard.table.status') },
+    { key: 'instanceCount', label: t('dashboard.table.instanceCount') },
+    { key: 'cpu', label: `${t('dashboard.table.vcpus')} (${t('dashboard.table.available')})` },
+    { key: 'memory', label: `${t('dashboard.table.memory')} (${t('dashboard.table.available')})` },
+    { key: 'disk', label: `${t('dashboard.table.disk')} (${t('dashboard.table.available')})` },
+    { key: 'zone', label: t('dashboard.table.zone') },
+    { key: 'actions', label: t('dashboard.table.actions'), width: '80px', align: 'center' },
+])
 
 // Pagination
 const currentPage = ref(1)
@@ -139,6 +155,7 @@ const STATUS_MAP: Record<number, { labelKey: string; variant: StatusVariant }> =
 
 const fetchHypervisors = async () => {
     loading.value = true
+    loadError.value = ''
     try {
         const offset = (currentPage.value - 1) * pageSize.value
         const response = await hypervisorsApi.fetchHypervisors({
@@ -152,6 +169,7 @@ const fetchHypervisors = async () => {
     } catch (error) {
         console.error('API fetch failed:', error)
         hypervisorList.value = []
+        loadError.value = t('messages.error')
     } finally {
         loading.value = false
     }
@@ -414,147 +432,129 @@ onUnmounted(() => {
       </template>
     </PageToolbar>
 
-    <div class="card table-card">
-      <table class="data-table">
-        <thead>
-          <tr>
-            <th>{{ t('dashboard.table.nameId') }}</th>
-            <th>{{ t('dashboard.table.hostIp') }}</th>
-            <th>{{ t('dashboard.table.status') }}</th>
-            <th>{{ t('dashboard.table.instanceCount') }}</th>
-            <th>{{ t('dashboard.table.vcpus') }} ({{ t('dashboard.table.available') }})</th>
-            <th>{{ t('dashboard.table.memory') }} ({{ t('dashboard.table.available') }})</th>
-            <th>{{ t('dashboard.table.disk') }} ({{ t('dashboard.table.available') }})</th>
-            <th>{{ t('dashboard.table.zone') }}</th>
-            <th>{{ t('dashboard.table.actions') }}</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-if="loading">
-            <td colspan="9" class="text-center">
-              <div class="loading-spinner" style="margin: 20px auto;"></div>
-            </td>
-          </tr>
-          <tr v-else-if="hypervisorList.length === 0">
-            <td colspan="9" class="text-center text-secondary" style="padding: 48px;">
-               <div v-if="searchQuery">
-                  <SearchIcon :size="48" style="opacity: 0.3; margin-bottom: 16px;" />
-                   <p>{{ t('messages.noResults') }}</p>
-                </div>
-                <div v-else class="empty-state">
-                   <Server :size="48" style="opacity: 0.2; margin-bottom: 16px;" />
-                   <p>{{ t('messages.noData') }}</p>
-                </div>
-             </td>
-           </tr>
-           <tr v-else v-for="h in hypervisorList" :key="h.uuid" :class="{'active-row': activeActionMenuId === h.uuid}">
-             <td>
-               <router-link :to="{ name: 'hypervisor-detail', params: { id: h.uuid } }" class="resource-link">
-                 <div class="resource-info">
-                   <div class="resource-icon">
-                     <Server :size="16" />
-                   </div>
-                    <div>
-                      <div class="resource-name">{{ h.hostname }}</div>
-                      <div class="resource-id-row">
-                        <span class="resource-id" :title="h.uuid">{{ h.uuid.slice(0, 8) }}...</span>
-                        <button class="copy-btn-mini" @click.stop.prevent="copyId(h.uuid)" :title="t('actions.copy')" :aria-label="t('actions.copy')">
-                          <Check v-if="copiedId === h.uuid" :size="10" style="color: #10b981;" />
-                          <Copy v-else :size="10" />
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                </router-link>
-              </td>
-            <td><code class="mono-value">{{ h.host_ip }}</code></td>
-            <td>
-              <StatusBadge :variant="getStatusInfo(h.status).variant" :label="getStatusLabel(h.status, h.status_name)" />
-              <span v-if="h.status === 2" :class="['drain-hint', h.instance_count ? 'drain-hint-warn' : 'drain-hint-done']">{{ getDrainHint(h) }}</span>
-            </td>
-            <td>
-              <span class="vm-count-cell" @mouseenter="loadHyperInstances(h)" @mouseleave="hoveredHyperId = null">
-                <span class="vm-count-badge" :class="{ 'vm-count-zero': !h.instance_count }">{{ h.instance_count || 0 }}</span>
-                <div v-if="hoveredHyperId === h.uuid && h.instance_count" class="vm-tooltip">
-                  <div v-if="hyperInstancesLoading[h.hostid]" class="vm-tooltip-empty">{{ t('messages.loading') }}</div>
-                  <template v-else>
-                    <div v-for="inst in hyperInstances[h.hostid] || []" :key="inst.id" class="vm-tooltip-row">
-                      <span class="vm-tooltip-name">{{ inst.hostname }}</span>
-                      <span class="vm-tooltip-status">{{ instanceStatusText(inst.status) }}</span>
-                    </div>
-                    <div v-if="!(hyperInstances[h.hostid] || []).length" class="vm-tooltip-empty">{{ t('messages.noData') }}</div>
-                  </template>
-                </div>
-              </span>
-            </td>
-            <td>
-              <div class="usage-cell">
-                <span>{{ h.cpu }} / {{ h.cpu_total }}</span>
-                <div class="usage-bar"><div class="usage-fill" :style="{ width: usagePercent(h.cpu, h.cpu_total) + '%' }"></div></div>
-              </div>
-            </td>
-            <td>
-              <div class="usage-cell">
-                <span>{{ formatMemory(h.memory) }} / {{ formatMemory(h.memory_total) }}</span>
-                <div class="usage-bar"><div class="usage-fill" :style="{ width: usagePercent(h.memory, h.memory_total) + '%' }"></div></div>
-              </div>
-            </td>
-            <td>
-              <div class="usage-cell">
-                <span>{{ formatDisk(h.disk) }} / {{ formatDisk(h.disk_total) }}</span>
-                <div class="usage-bar"><div class="usage-fill" :style="{ width: usagePercent(h.disk, h.disk_total) + '%' }"></div></div>
-              </div>
-            </td>
-            <td>{{ h.zone_name || '-' }}</td>
-            <td class="actions-cell">
-              <div class="action-dropdown">
-                <button class="icon-btn-table" @click.stop="toggleActionMenu(h.uuid)" :title="t('actions.actions')">
-                  <MoreVertical :size="16" />
-                </button>
-                <Transition name="dropdown">
-                  <div v-if="activeActionMenuId === h.uuid" class="dropdown-menu dropdown-menu-right" @click.stop v-click-outside="closeActionMenu">
-                    <button class="dropdown-item" @click="openEditModal(h)">
-                        <Pencil :size="14" /> {{ t('actions.edit') }}
-                    </button>
-                    <button v-if="h.status === 1" class="dropdown-item" @click="openMaintainModal(h)">
-                        <Wrench :size="14" /> {{ t('dashboard.hypervisorActions.maintain') }}
-                    </button>
-                    <button v-if="h.status === 2" class="dropdown-item" @click="exitMaintain(h)">
-                        <Wrench :size="14" /> {{ t('dashboard.hypervisorActions.exitMaintain') }}
-                    </button>
-                    <button
-                        class="dropdown-item"
-                        :disabled="!!consoleDisabledReason(h.status)"
-                        :title="consoleDisabledReason(h.status)"
-                        @click="closeActionMenu(); openHostConsole(h.uuid)"
-                    >
-                        <SquareTerminal :size="14" /> {{ t('dashboard.hypervisorActions.console') }}
-                    </button>
-                    <div class="dropdown-divider"></div>
-                    <button class="dropdown-item text-error" @click="confirmDelete(h)">
-                        <Trash2 :size="14" /> {{ t('actions.delete') }}
-                    </button>
-                  </div>
-                </Transition>
-              </div>
-            </td>
-          </tr>
-        </tbody>
-      </table>
-
-      <!-- Pagination -->
-      <div v-if="totalPages > 1" class="pagination-bar">
-        <span class="pagination-info">{{ t('dashboard.pagination.showing', { from: (currentPage - 1) * pageSize + 1, to: Math.min(currentPage * pageSize, totalCount), total: totalCount }) }}</span>
-        <div class="pagination-controls">
-          <button class="page-btn" :disabled="currentPage <= 1" @click="goToPage(currentPage - 1)">&lsaquo;</button>
-          <template v-for="p in totalPages" :key="p">
-            <button v-if="p === 1 || p === totalPages || (p >= currentPage - 1 && p <= currentPage + 1)" class="page-btn" :class="{ active: p === currentPage }" @click="goToPage(p)">{{ p }}</button>
-            <span v-else-if="p === currentPage - 2 || p === currentPage + 2" class="page-ellipsis">...</span>
-          </template>
-          <button class="page-btn" :disabled="currentPage >= totalPages" @click="goToPage(currentPage + 1)">&rsaquo;</button>
+    <DataTable
+      allow-overflow
+      :columns="columns"
+      :rows="hypervisorList"
+      row-key="uuid"
+      :loading="loading"
+      :error="loadError"
+      @retry="fetchHypervisors"
+    >
+      <template #empty>
+        <div v-if="searchQuery">
+          <SearchIcon :size="48" style="opacity: 0.3; margin-bottom: 16px;" />
+          <p>{{ t('messages.noResults') }}</p>
         </div>
-      </div>
-    </div>
+        <div v-else class="empty-state">
+          <Server :size="48" style="opacity: 0.2; margin-bottom: 16px;" />
+          <p>{{ t('messages.noData') }}</p>
+        </div>
+      </template>
+
+      <template #cell-name="{ row: h }">
+        <router-link :to="{ name: 'hypervisor-detail', params: { id: h.uuid } }" class="resource-link">
+          <div class="resource-info">
+            <div class="resource-icon">
+              <Server :size="16" />
+            </div>
+            <div>
+              <div class="resource-name">{{ h.hostname }}</div>
+              <div class="resource-id-row">
+                <span class="resource-id" :title="h.uuid">{{ h.uuid.slice(0, 8) }}...</span>
+                <button class="copy-btn-mini" @click.stop.prevent="copyId(h.uuid)" :title="t('actions.copy')" :aria-label="t('actions.copy')">
+                  <Check v-if="copiedId === h.uuid" :size="10" style="color: #10b981;" />
+                  <Copy v-else :size="10" />
+                </button>
+              </div>
+            </div>
+          </div>
+        </router-link>
+      </template>
+
+      <template #cell-hostIp="{ row: h }"><code class="mono-value">{{ h.host_ip }}</code></template>
+
+      <template #cell-status="{ row: h }">
+        <StatusBadge :variant="getStatusInfo(h.status).variant" :label="getStatusLabel(h.status, h.status_name)" />
+        <span v-if="h.status === 2" :class="['drain-hint', h.instance_count ? 'drain-hint-warn' : 'drain-hint-done']">{{ getDrainHint(h) }}</span>
+      </template>
+
+      <template #cell-instanceCount="{ row: h }">
+        <span class="vm-count-cell" @mouseenter="loadHyperInstances(h)" @mouseleave="hoveredHyperId = null">
+          <span class="vm-count-badge" :class="{ 'vm-count-zero': !h.instance_count }">{{ h.instance_count || 0 }}</span>
+          <div v-if="hoveredHyperId === h.uuid && h.instance_count" class="vm-tooltip">
+            <div v-if="hyperInstancesLoading[h.hostid]" class="vm-tooltip-empty">{{ t('messages.loading') }}</div>
+            <template v-else>
+              <div v-for="inst in hyperInstances[h.hostid] || []" :key="inst.id" class="vm-tooltip-row">
+                <span class="vm-tooltip-name">{{ inst.hostname }}</span>
+                <span class="vm-tooltip-status">{{ instanceStatusText(inst.status) }}</span>
+              </div>
+              <div v-if="!(hyperInstances[h.hostid] || []).length" class="vm-tooltip-empty">{{ t('messages.noData') }}</div>
+            </template>
+          </div>
+        </span>
+      </template>
+
+      <template #cell-cpu="{ row: h }">
+        <div class="usage-cell">
+          <span>{{ h.cpu }} / {{ h.cpu_total }}</span>
+          <div class="usage-bar"><div class="usage-fill" :style="{ width: usagePercent(h.cpu, h.cpu_total) + '%' }"></div></div>
+        </div>
+      </template>
+
+      <template #cell-memory="{ row: h }">
+        <div class="usage-cell">
+          <span>{{ formatMemory(h.memory) }} / {{ formatMemory(h.memory_total) }}</span>
+          <div class="usage-bar"><div class="usage-fill" :style="{ width: usagePercent(h.memory, h.memory_total) + '%' }"></div></div>
+        </div>
+      </template>
+
+      <template #cell-disk="{ row: h }">
+        <div class="usage-cell">
+          <span>{{ formatDisk(h.disk) }} / {{ formatDisk(h.disk_total) }}</span>
+          <div class="usage-bar"><div class="usage-fill" :style="{ width: usagePercent(h.disk, h.disk_total) + '%' }"></div></div>
+        </div>
+      </template>
+
+      <template #cell-zone="{ row: h }">{{ h.zone_name || '-' }}</template>
+
+      <template #cell-actions="{ row: h }">
+        <div class="action-dropdown">
+          <button class="icon-btn-table" @click.stop="toggleActionMenu(h.uuid)" :title="t('actions.actions')">
+            <MoreVertical :size="16" />
+          </button>
+          <Transition name="dropdown">
+            <div v-if="activeActionMenuId === h.uuid" class="dropdown-menu dropdown-menu-right" @click.stop v-click-outside="closeActionMenu">
+              <button class="dropdown-item" @click="openEditModal(h)">
+                  <Pencil :size="14" /> {{ t('actions.edit') }}
+              </button>
+              <button v-if="h.status === 1" class="dropdown-item" @click="openMaintainModal(h)">
+                  <Wrench :size="14" /> {{ t('dashboard.hypervisorActions.maintain') }}
+              </button>
+              <button v-if="h.status === 2" class="dropdown-item" @click="exitMaintain(h)">
+                  <Wrench :size="14" /> {{ t('dashboard.hypervisorActions.exitMaintain') }}
+              </button>
+              <button
+                  class="dropdown-item"
+                  :disabled="!!consoleDisabledReason(h.status)"
+                  :title="consoleDisabledReason(h.status)"
+                  @click="closeActionMenu(); openHostConsole(h.uuid)"
+              >
+                  <SquareTerminal :size="14" /> {{ t('dashboard.hypervisorActions.console') }}
+              </button>
+              <div class="dropdown-divider"></div>
+              <button class="dropdown-item text-error" @click="confirmDelete(h)">
+                  <Trash2 :size="14" /> {{ t('actions.delete') }}
+              </button>
+            </div>
+          </Transition>
+        </div>
+      </template>
+
+      <template #footer>
+        <PaginationBar :page="currentPage" :page-size="pageSize" :total="totalCount" @update:page="goToPage" />
+      </template>
+    </DataTable>
 
     <!-- Deploy Modal -->
     <BaseModal
@@ -780,8 +780,6 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
-.table-card { padding: 0; overflow: visible; }
-
 .resource-link {
   text-decoration: none;
   display: block;
@@ -1036,11 +1034,6 @@ onUnmounted(() => {
     left: auto;
 }
 
-.active-row {
-  position: relative;
-  z-index: 20;
-}
-
 .dropdown-item {
   display: flex;
   align-items: center;
@@ -1107,11 +1100,6 @@ onUnmounted(() => {
   box-shadow: 0 0 0 2px var(--primary-100);
 }
 
-.actions-cell {
-  width: 80px;
-  text-align: center;
-}
-
 .deploy-success {
   display: flex;
   flex-direction: column;
@@ -1152,60 +1140,6 @@ onUnmounted(() => {
 }
 
 .copy-cmd-btn:hover { background: var(--bg-secondary); }
-
-/* Pagination */
-.pagination-bar {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 12px 24px;
-  border-top: 1px solid var(--border-light);
-  font-size: var(--font-size-xs);
-}
-
-.pagination-info { color: var(--text-secondary); }
-
-.pagination-controls {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
-
-.page-btn {
-  min-width: 32px;
-  height: 32px;
-  border: 1px solid var(--border-light);
-  border-radius: var(--radius-sm);
-  background: var(--bg-primary);
-  color: var(--text-primary);
-  cursor: pointer;
-  font-size: var(--font-size-xs);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: all 0.15s;
-}
-
-.page-btn:hover:not(:disabled):not(.active) {
-  background: var(--bg-tertiary);
-  border-color: var(--primary-300);
-}
-
-.page-btn.active {
-  background: var(--primary-color);
-  color: #fff;
-  border-color: var(--primary-color);
-}
-
-.page-btn:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
-}
-
-.page-ellipsis {
-  padding: 0 4px;
-  color: var(--text-light);
-}
 
 .spinning { animation: spin 1s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }

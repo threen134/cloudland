@@ -12,12 +12,14 @@ import { formatDateTime } from '../../utils/format'
 import BaseModal from '../../components/modals/BaseModal.vue'
 import PageToolbar from '../../components/base/PageToolbar.vue'
 import StatusBadge from '../../components/base/StatusBadge.vue'
+import DataTable, { type Column } from '../../components/base/DataTable.vue'
 
 const { t, te } = useI18n()
 const region = useRegionStore()
 const toast = useToast()
 const migrationList = ref<Migration[]>([])
 const loading = ref(false)
+const loadError = ref('')
 
 const { copiedId, copyId } = useCopyId()
 const searchQuery = ref('')
@@ -74,13 +76,19 @@ const hasActiveMigration = computed(() =>
 )
 
 const fetchMigrations = async (silent = false) => {
-    if (!silent) loading.value = true
+    if (!silent) {
+        loading.value = true
+        loadError.value = ''
+    }
     try {
         const data = await migrationsApi.fetchMigrations() as any
         migrationList.value = Array.isArray(data) ? data : (data.migrations || [])
     } catch (error) {
         console.error('API fetch failed:', error)
-        if (!silent) migrationList.value = []
+        if (!silent) {
+            migrationList.value = []
+            loadError.value = t('messages.error')
+        }
     } finally {
         loading.value = false
         if (refreshTimer) clearTimeout(refreshTimer)
@@ -131,6 +139,19 @@ const getTypeText = (type: string) => {
     const key = `dashboard.migrationTypeValue.${s}`
     return te(key) ? t(key) : type
 }
+
+// 类型、状态、节点这几列显示的都是翻译后 / 解析后的文案，排序按原始值
+const columns = computed<Column[]>(() => [
+    { key: 'name', label: t('dashboard.table.nameId'), sortable: true, sortValue: (m) => m.id },
+    { key: 'instance', label: t('dashboard.table.instanceId'), sortable: true, sortValue: (m) => m.instance?.hostname || m.instance?.id || '' },
+    { key: 'type', label: t('dashboard.table.type'), sortable: true, sortValue: (m) => m.type || '' },
+    { key: 'sourceNode', label: t('dashboard.table.sourceNode'), sortable: true, sortValue: (m) => m.source_hyper_name || String(m.source_hyper ?? '') },
+    { key: 'destNode', label: t('dashboard.table.destNode'), sortable: true, sortValue: (m) => m.target_hyper_name || String(m.target_hyper ?? '') },
+    { key: 'status', label: t('dashboard.table.status'), sortable: true, sortValue: (m) => m.status || '' },
+    { key: 'progress', label: t('dashboard.migrationDetail.progressShort') },
+    { key: 'creator', label: t('dashboard.table.creator'), sortable: true, sortValue: (m) => m.creater_name || '' },
+    { key: 'createdAt', label: t('dashboard.table.createdAt'), sortable: true, sortValue: (m) => m.created_at || '' },
+])
 
 // Create Modal Logic
 const openCreateModal = () => {
@@ -232,87 +253,74 @@ watch(() => region.currentRegionId, (newId) => {
       </template>
     </PageToolbar>
 
-    <div class="card table-card">
-      <table class="data-table">
-        <thead>
-          <tr>
-            <th>{{ $t('dashboard.table.nameId') }}</th>
-            <th>{{ $t('dashboard.table.instanceId') }}</th>
-            <th>{{ $t('dashboard.table.type') }}</th>
-            <th>{{ $t('dashboard.table.sourceNode') }}</th>
-            <th>{{ $t('dashboard.table.destNode') }}</th>
-            <th>{{ $t('dashboard.table.status') }}</th>
-            <th>{{ $t('dashboard.migrationDetail.progressShort') }}</th>
-            <th>{{ $t('dashboard.table.creator') }}</th>
-            <th>{{ $t('dashboard.table.createdAt') }}</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-if="loading">
-            <td colspan="9" class="text-center">
-              <div class="loading-spinner" style="margin: 20px auto;"></div>
-            </td>
-          </tr>
-          <tr v-else-if="filteredMigrations.length === 0">
-            <td colspan="9" class="text-center text-secondary" style="padding: 48px;">
-               <div v-if="searchQuery">
-                  <SearchIcon :size="48" style="opacity: 0.3; margin-bottom: 16px;" />
-                  <p>{{ $t('messages.noResults') }}</p>
-               </div>
-               <div v-else class="empty-state">
-                  <ArrowRightLeft :size="48" style="opacity: 0.2; margin-bottom: 16px;" />
-                  <p>{{ $t('messages.noData') }}</p>
-               </div>
-            </td>
-          </tr>
-          <tr v-else v-for="m in filteredMigrations" :key="m.id">
-            <td>
-              <router-link :to="{ name: 'migration-detail', params: { id: m.id.toString() } }" class="resource-link">
-                <div class="resource-info">
-                  <div class="resource-icon">
-                    <ArrowRightLeft :size="16" />
-                  </div>
-                  <div>
-                    <div class="resource-name">{{ $t('dashboard.table.migration') }}</div>
-                    <div class="resource-id-row">
-                      <span class="resource-id" :title="m.id.toString()">{{ m.id.toString().slice(0, 8) }}{{ m.id.toString().length > 8 ? '...' : '' }}</span>
-                      <button class="copy-btn-mini" @click.stop.prevent="copyId(m.id.toString())" :title="t('actions.copy')" :aria-label="t('actions.copy')">
-                        <Check v-if="copiedId === m.id.toString()" :size="10" style="color: #10b981;" />
-                        <Copy v-else :size="10" />
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              </router-link>
-            </td>
-            <td>
+    <DataTable
+      :columns="columns"
+      :rows="filteredMigrations"
+      row-key="id"
+      :loading="loading"
+      :error="loadError"
+      @retry="fetchMigrations()"
+    >
+      <template #empty>
+        <div v-if="searchQuery">
+          <SearchIcon :size="48" style="opacity: 0.3; margin-bottom: 16px;" />
+          <p>{{ $t('messages.noResults') }}</p>
+        </div>
+        <div v-else class="empty-state">
+          <ArrowRightLeft :size="48" style="opacity: 0.2; margin-bottom: 16px;" />
+          <p>{{ $t('messages.noData') }}</p>
+        </div>
+      </template>
+
+      <template #cell-name="{ row: m }">
+        <router-link :to="{ name: 'migration-detail', params: { id: m.id.toString() } }" class="resource-link">
+          <div class="resource-info">
+            <div class="resource-icon">
+              <ArrowRightLeft :size="16" />
+            </div>
+            <div>
+              <div class="resource-name">{{ $t('dashboard.table.migration') }}</div>
               <div class="resource-id-row">
-                <span class="resource-id" :title="m.instance?.id">{{ m.instance?.hostname || (m.instance?.id || '').slice(0, 8) || '-' }}</span>
-                <button v-if="m.instance?.id" class="copy-btn-mini" @click.stop.prevent="copyId(m.instance!.id)" :title="t('actions.copy')" :aria-label="t('actions.copy')">
-                  <Check v-if="copiedId === m.instance?.id" :size="10" style="color: #10b981;" />
+                <span class="resource-id" :title="m.id.toString()">{{ m.id.toString().slice(0, 8) }}{{ m.id.toString().length > 8 ? '...' : '' }}</span>
+                <button class="copy-btn-mini" @click.stop.prevent="copyId(m.id.toString())" :title="t('actions.copy')" :aria-label="t('actions.copy')">
+                  <Check v-if="copiedId === m.id.toString()" :size="10" style="color: #10b981;" />
                   <Copy v-else :size="10" />
                 </button>
               </div>
-            </td>
-            <td>{{ getTypeText(m.type) || $t('messages.unnamed') }}</td>
-            <td>{{ hyperLabel(m.source_hyper, m.source_hyper_name) }}</td>
-            <td>{{ hyperLabel(m.target_hyper, m.target_hyper_name) }}</td>
-            <td>
-              <StatusBadge :status="m.status" :label="getStatusText(m.status, m.progress)" />
-            </td>
-            <td>
-              <div v-if="m.total" class="progress-cell">
-                <div class="progress-track"><div class="progress-fill" :style="{ width: (m.progress || 0) + '%' }"></div></div>
-                <span class="progress-value">{{ m.progress || 0 }}%</span>
-              </div>
-              <span v-else class="text-secondary">-</span>
-            </td>
-            <td>{{ m.creater_name || '-' }}</td>
-            <td><span class="mono-value">{{ formatDateTime(m.created_at) }}</span></td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
+            </div>
+          </div>
+        </router-link>
+      </template>
+
+      <template #cell-instance="{ row: m }">
+        <div class="resource-id-row">
+          <span class="resource-id" :title="m.instance?.id">{{ m.instance?.hostname || (m.instance?.id || '').slice(0, 8) || '-' }}</span>
+          <button v-if="m.instance?.id" class="copy-btn-mini" @click.stop.prevent="copyId(m.instance!.id)" :title="t('actions.copy')" :aria-label="t('actions.copy')">
+            <Check v-if="copiedId === m.instance?.id" :size="10" style="color: #10b981;" />
+            <Copy v-else :size="10" />
+          </button>
+        </div>
+      </template>
+
+      <template #cell-type="{ row: m }">{{ getTypeText(m.type) || $t('messages.unnamed') }}</template>
+      <template #cell-sourceNode="{ row: m }">{{ hyperLabel(m.source_hyper, m.source_hyper_name) }}</template>
+      <template #cell-destNode="{ row: m }">{{ hyperLabel(m.target_hyper, m.target_hyper_name) }}</template>
+
+      <template #cell-status="{ row: m }">
+        <StatusBadge :status="m.status" :label="getStatusText(m.status, m.progress)" />
+      </template>
+
+      <template #cell-progress="{ row: m }">
+        <div v-if="m.total" class="progress-cell">
+          <div class="progress-track"><div class="progress-fill" :style="{ width: (m.progress || 0) + '%' }"></div></div>
+          <span class="progress-value">{{ m.progress || 0 }}%</span>
+        </div>
+        <span v-else class="text-secondary">-</span>
+      </template>
+
+      <template #cell-creator="{ row: m }">{{ m.creater_name || '-' }}</template>
+      <template #cell-createdAt="{ row: m }"><span class="mono-value">{{ formatDateTime(m.created_at) }}</span></template>
+    </DataTable>
 
     <!-- Create Migration Modal -->
     <BaseModal
@@ -388,11 +396,6 @@ watch(() => region.currentRegionId, (newId) => {
 </template>
 
 <style scoped>
-.table-card {
-  padding: 0;
-  overflow: hidden;
-}
-
 /* .resource-info etc. are global from index.css */
 
 .resource-link {

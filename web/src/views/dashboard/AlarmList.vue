@@ -10,12 +10,14 @@ import BaseModal from '../../components/modals/BaseModal.vue'
 import DeleteModal from '../../components/modals/DeleteModal.vue'
 import PageToolbar from '../../components/base/PageToolbar.vue'
 import StatusBadge from '../../components/base/StatusBadge.vue'
+import DataTable, { type Column } from '../../components/base/DataTable.vue'
 
 const { t } = useI18n()
 const toast = useToast()
 const region = useRegionStore()
 const alarmList = ref<NodeAlarmRule[]>([])
 const loading = ref(false)
+const loadError = ref('')
 const { copiedId, copyId } = useCopyId()
 const searchQuery = ref('')
 const filterRuleType = ref('')
@@ -40,6 +42,7 @@ const deleting = ref(false)
 
 const fetchAlarms = async () => {
     loading.value = true
+    loadError.value = ''
     try {
         const params: any = {}
         if (filterRuleType.value) params.rule_type = filterRuleType.value
@@ -49,10 +52,20 @@ const fetchAlarms = async () => {
     } catch (error) {
         console.error('API fetch failed:', error)
         alarmList.value = []
+        loadError.value = t('messages.error')
     } finally {
         loading.value = false
     }
 }
+
+// 规则类型列显示的是标签、状态列显示的是翻译文案，排序都按原始值
+const columns = computed<Column[]>(() => [
+    { key: 'name', label: t('dashboard.table.nameId'), sortable: true },
+    { key: 'ruleType', label: t('dashboard.alarmActions.ruleType'), sortable: true, sortValue: (a) => a.rule_type || '' },
+    { key: 'status', label: t('dashboard.table.status'), sortable: true, sortValue: (a) => (a.enabled ? 'enabled' : 'disabled') },
+    { key: 'description', label: t('dashboard.table.description'), sortable: true },
+    { key: 'actions', label: t('dashboard.table.actions') },
+])
 
 const filteredAlarms = computed(() => {
     if (!searchQuery.value) return alarmList.value
@@ -212,76 +225,68 @@ watch(() => region.currentRegionId, (newId) => {
       </template>
     </PageToolbar>
 
-    <div class="card table-card">
-      <table class="data-table">
-        <thead>
-          <tr>
-            <th>{{ t('dashboard.table.nameId') }}</th>
-            <th>{{ t('dashboard.alarmActions.ruleType') }}</th>
-            <th>{{ t('dashboard.table.status') }}</th>
-            <th>{{ t('dashboard.table.description') }}</th>
-            <th>{{ t('dashboard.table.actions') }}</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-if="loading">
-            <td colspan="5" class="text-center">
-              <div class="loading-spinner" style="margin: 20px auto;"></div>
-            </td>
-          </tr>
-          <tr v-else-if="filteredAlarms.length === 0">
-            <td colspan="5" class="text-center text-secondary" style="padding: 48px;">
-               <div v-if="searchQuery || filterRuleType">
-                  <SearchIcon :size="48" style="opacity: 0.3; margin-bottom: 16px;" />
-                  <p>{{ t('messages.noResults') }}</p>
-               </div>
-               <div v-else class="empty-state">
-                  <AlertTriangle :size="48" style="opacity: 0.2; margin-bottom: 16px;" />
-                  <p>{{ t('messages.noData') }}</p>
-               </div>
-            </td>
-          </tr>
-          <tr v-else v-for="a in filteredAlarms" :key="a.uuid">
-            <td>
-              <router-link :to="{ name: 'alarm-detail', params: { id: a.uuid } }" class="resource-link">
-                <div class="resource-info">
-                  <div class="resource-icon">
-                    <AlertTriangle :size="16" />
-                  </div>
-                  <div>
-                    <div class="resource-name">{{ a.name }}</div>
-                    <div class="resource-id-row">
-                      <span class="resource-id" :title="a.uuid">{{ a.uuid.slice(0, 8) }}...</span>
-                      <button class="copy-btn-mini" @click.stop.prevent="copyId(a.uuid)" :title="t('actions.copy')" :aria-label="t('actions.copy')">
-                        <Check v-if="copiedId === a.uuid" :size="10" style="color: #10b981;" />
-                        <Copy v-else :size="10" />
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              </router-link>
-            </td>
-            <td>
-              <span class="rule-type-badge" :class="getRuleTypeClass(a.rule_type)">
-                {{ getRuleTypeLabel(a.rule_type) }}
-              </span>
-            </td>
-            <td>
-              <StatusBadge
-                :variant="a.enabled ? 'success' : 'neutral'"
-                :label="a.enabled ? t('dashboard.alarmActions.enabled') : t('dashboard.alarmActions.disabled')"
-              />
-            </td>
-            <td class="desc-cell">{{ a.description || '-' }}</td>
-            <td>
-              <button class="icon-btn-table text-error" @click.prevent="confirmDelete(a)" :title="t('actions.delete')">
-                <Trash2 :size="16" />
-              </button>
-            </td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
+    <DataTable
+      :columns="columns"
+      :rows="filteredAlarms"
+      row-key="uuid"
+      :loading="loading"
+      :error="loadError"
+      @retry="fetchAlarms"
+    >
+      <template #empty>
+        <div v-if="searchQuery || filterRuleType">
+          <SearchIcon :size="48" style="opacity: 0.3; margin-bottom: 16px;" />
+          <p>{{ t('messages.noResults') }}</p>
+        </div>
+        <div v-else class="empty-state">
+          <AlertTriangle :size="48" style="opacity: 0.2; margin-bottom: 16px;" />
+          <p>{{ t('messages.noData') }}</p>
+        </div>
+      </template>
+
+      <template #cell-name="{ row: a }">
+        <router-link :to="{ name: 'alarm-detail', params: { id: a.uuid } }" class="resource-link">
+          <div class="resource-info">
+            <div class="resource-icon">
+              <AlertTriangle :size="16" />
+            </div>
+            <div>
+              <div class="resource-name">{{ a.name }}</div>
+              <div class="resource-id-row">
+                <span class="resource-id" :title="a.uuid">{{ a.uuid.slice(0, 8) }}...</span>
+                <button class="copy-btn-mini" @click.stop.prevent="copyId(a.uuid)" :title="t('actions.copy')" :aria-label="t('actions.copy')">
+                  <Check v-if="copiedId === a.uuid" :size="10" style="color: #10b981;" />
+                  <Copy v-else :size="10" />
+                </button>
+              </div>
+            </div>
+          </div>
+        </router-link>
+      </template>
+
+      <template #cell-ruleType="{ row: a }">
+        <span class="rule-type-badge" :class="getRuleTypeClass(a.rule_type)">
+          {{ getRuleTypeLabel(a.rule_type) }}
+        </span>
+      </template>
+
+      <template #cell-status="{ row: a }">
+        <StatusBadge
+          :variant="a.enabled ? 'success' : 'neutral'"
+          :label="a.enabled ? t('dashboard.alarmActions.enabled') : t('dashboard.alarmActions.disabled')"
+        />
+      </template>
+
+      <template #cell-description="{ row: a }">
+        <div class="desc-cell">{{ a.description || '-' }}</div>
+      </template>
+
+      <template #cell-actions="{ row: a }">
+        <button class="icon-btn-table text-error" @click.prevent="confirmDelete(a)" :title="t('actions.delete')">
+          <Trash2 :size="16" />
+        </button>
+      </template>
+    </DataTable>
 
     <!-- Create Modal -->
     <BaseModal
@@ -355,9 +360,6 @@ watch(() => region.currentRegionId, (newId) => {
   color: var(--text-primary);
   min-width: 140px;
 }
-
-.table-card { padding: 0; overflow: hidden; }
-
 
 .resource-link:hover .resource-name { color: var(--primary-600); text-decoration: underline; }
 

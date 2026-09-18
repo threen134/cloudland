@@ -14,10 +14,12 @@ import { Network, Plus, Trash2, Edit, Search, RefreshCw, Check, Copy, ChevronDow
 import DeleteModal from '../../components/modals/DeleteModal.vue'
 import BaseModal from '../../components/modals/BaseModal.vue'
 import PageToolbar from '../../components/base/PageToolbar.vue'
+import DataTable, { type Column } from '../../components/base/DataTable.vue'
 
 const subnets = ref<Subnet[]>([])
 const vpcs = ref<VPC[]>([])
 const loading = ref(false)
+const loadError = ref('')
 const searchQuery = ref('')
 
 const createModalVisible = ref(false)
@@ -47,14 +49,26 @@ const isNameValid = computed(() => isValidName(newSubnetForm.value.name))
 const { copiedId, copyId } = useCopyId()
 
 
+const columns = computed<Column[]>(() => [
+    { key: 'name', label: t('dashboard.table.nameId'), sortable: true },
+    { key: 'cidr', label: t('dashboard.table.cidr'), sortable: true, sortValue: (s) => s.network || s.network_cidr || '' },
+    { key: 'vlan', label: t('dashboard.table.rangeVlan'), sortable: true, sortValue: (s) => s.vlan ?? null },
+    { key: 'usage', label: t('dashboard.table.ipUsage'), sortable: true, sortValue: (s) => s.allocated_count || 0 },
+    { key: 'vpc', label: t('dashboard.table.vpc'), sortable: true, sortValue: (s) => s.vpc?.name ?? null },
+    { key: 'type', label: t('dashboard.table.type'), sortable: true },
+    { key: 'actions', label: t('dashboard.table.actions') },
+])
+
 const fetchSubnets = async () => {
     loading.value = true
+    loadError.value = ''
     try {
         const response = await subnetsApi.list()
         subnets.value = response.subnets || []
     } catch (err) {
         console.error('API fetch failed:', err)
         subnets.value = []
+        loadError.value = t('messages.error')
     } finally {
         loading.value = false
     }
@@ -232,111 +246,101 @@ onMounted(() => {
       </template>
     </PageToolbar>
 
-    <div class="card table-card">
-      <table class="data-table">
-        <thead>
-          <tr>
-            <th>{{ $t('dashboard.table.nameId') }}</th>
-            <th>{{ $t('dashboard.table.cidr') }}</th>
-            <th>{{ $t('dashboard.table.rangeVlan') }}</th>
-            <th>{{ $t('dashboard.table.ipUsage') }}</th>
-            <th>{{ $t('dashboard.table.vpc') }}</th>
-            <th>{{ $t('dashboard.table.type') }}</th>
-            <th>{{ $t('dashboard.table.actions') }}</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-if="loading">
-            <td colspan="7" class="text-center">
-              <div class="loading-spinner" style="margin: 20px auto;"></div>
-            </td>
-          </tr>
-          <tr v-else-if="filteredSubnets.length === 0">
-            <td colspan="7" class="text-center text-secondary" style="padding: 48px;">
-               <div v-if="searchQuery">
-                  <Search :size="48" style="opacity: 0.3; margin-bottom: 16px;" />
-                  <p>{{ $t('messages.noResults') }}</p>
-               </div>
-               <div v-else>
-                  <Network :size="48" style="opacity: 0.3; margin-bottom: 16px;" />
-                  <p>{{ $t('messages.noSubnets') }}</p>
-               </div>
-            </td>
-          </tr>
-          <tr v-else v-for="subnet in filteredSubnets" :key="subnet.id">
-            <td>
-              <router-link :to="{ name: 'subnet-detail', params: { id: subnet.id } }" class="resource-link">
-                <div class="resource-info">
-                  <div class="resource-icon">
-                    <Network :size="16" />
-                  </div>
-                  <div>
-                    <div class="resource-name">{{ subnet.name }}</div>
-                    <div class="resource-id-row">
-                      <span class="resource-id" :title="subnet.id">{{ subnet.id.slice(0, 8) }}...</span>
-                      <button class="copy-btn-mini" @click.stop.prevent="copyId(subnet.id)" :title="t('actions.copy')" :aria-label="t('actions.copy')">
-                        <Check v-if="copiedId === subnet.id" :size="10" style="color: #10b981;" />
-                        <Copy v-else :size="10" />
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              </router-link>
-            </td>
-            <td>
-              <div class="cidr-group">
-                <code class="cidr">{{ subnet.network || subnet.network_cidr }}</code>
-                <div class="text-xs text-light" style="margin-top:2px">{{ $t('dashboard.table.gateway') }}: {{ subnet.gateway || '-' }}</div>
-              </div>
-            </td>
-            <td>
-              <div class="vlan-info">
-                <span v-if="subnet.vlan">
-                  <span class="badge badge-gray text-xs" :title="(subnet.vlan > 4094) ? $t('dashboard.table.vxlan') : $t('dashboard.table.vlan')">
-                    {{ subnet.vlan }}
-                  </span>
-                </span>
-              </div>
-            </td>
-            <td>
-              <div class="usage-stats">
-                  <div class="text-xs">
-                      <span class="text-primary font-bold">{{ subnet.allocated_count }}</span> / 
-                      <span class="text-success">{{ subnet.available_count }}</span> / 
-                      <span>{{ subnet.total_count }}</span>
-                  </div>
-                  <div class="usage-progress" style="width: 100px; height: 4px; background: var(--gray-100); border-radius: 2px; margin-top: 4px; overflow: hidden;">
-                      <div :style="{ width: ((subnet.allocated_count || 0) / (subnet.total_count || 1) * 100) + '%', background: 'var(--primary-color)', height: '100%' }"></div>
-                  </div>
-              </div>
-            </td>
-            <td>
-              <div v-if="subnet.vpc" class="vpc-cell">
-                <router-link :to="{ name: 'vpc-detail', params: { id: subnet.vpc.id } }" class="vpc-link">
-                  {{ subnet.vpc.name }}
-                </router-link>
-              </div>
-              <span v-else class="text-light italic text-xs">{{ $t('dashboard.table.standalone') || 'Standalone' }}</span>
-            </td>
-            <td>
-              <span :class="['badge', getTypeClass(subnet.type || '')]">
-                {{ $t('dashboard.subnetTypes.' + (subnet.type || 'internal')) }}
-              </span>
-            </td>
-            <td>
-              <div class="actions">
-                <button class="btn btn-ghost btn-sm" :title="$t('actions.edit')">
-                  <Edit :size="14" />
-                </button>
-                <button class="btn btn-ghost btn-sm text-error" :title="$t('actions.delete')" @click="handleDeleteClick(subnet)">
-                  <Trash2 :size="14" />
+    <DataTable
+      :columns="columns"
+      :rows="filteredSubnets"
+      row-key="id"
+      :loading="loading"
+      :error="loadError"
+      @retry="fetchSubnets"
+    >
+      <template #empty>
+        <div v-if="searchQuery">
+          <Search :size="48" style="opacity: 0.3; margin-bottom: 16px;" />
+          <p>{{ $t('messages.noResults') }}</p>
+        </div>
+        <div v-else>
+          <Network :size="48" style="opacity: 0.3; margin-bottom: 16px;" />
+          <p>{{ $t('messages.noSubnets') }}</p>
+        </div>
+      </template>
+
+      <template #cell-name="{ row: subnet }">
+        <router-link :to="{ name: 'subnet-detail', params: { id: subnet.id } }" class="resource-link">
+          <div class="resource-info">
+            <div class="resource-icon">
+              <Network :size="16" />
+            </div>
+            <div>
+              <div class="resource-name">{{ subnet.name }}</div>
+              <div class="resource-id-row">
+                <span class="resource-id" :title="subnet.id">{{ subnet.id.slice(0, 8) }}...</span>
+                <button class="copy-btn-mini" @click.stop.prevent="copyId(subnet.id)" :title="t('actions.copy')" :aria-label="t('actions.copy')">
+                  <Check v-if="copiedId === subnet.id" :size="10" style="color: #10b981;" />
+                  <Copy v-else :size="10" />
                 </button>
               </div>
-            </td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
+            </div>
+          </div>
+        </router-link>
+      </template>
+
+      <template #cell-cidr="{ row: subnet }">
+        <div class="cidr-group">
+          <code class="cidr">{{ subnet.network || subnet.network_cidr }}</code>
+          <div class="text-xs text-light" style="margin-top:2px">{{ $t('dashboard.table.gateway') }}: {{ subnet.gateway || '-' }}</div>
+        </div>
+      </template>
+
+      <template #cell-vlan="{ row: subnet }">
+        <div class="vlan-info">
+          <span v-if="subnet.vlan">
+            <span class="badge badge-gray text-xs" :title="(subnet.vlan > 4094) ? $t('dashboard.table.vxlan') : $t('dashboard.table.vlan')">
+              {{ subnet.vlan }}
+            </span>
+          </span>
+        </div>
+      </template>
+
+      <template #cell-usage="{ row: subnet }">
+        <div class="usage-stats">
+            <div class="text-xs">
+                <span class="text-primary font-bold">{{ subnet.allocated_count }}</span> /
+                <span class="text-success">{{ subnet.available_count }}</span> /
+                <span>{{ subnet.total_count }}</span>
+            </div>
+            <div class="usage-progress" style="width: 100px; height: 4px; background: var(--gray-100); border-radius: 2px; margin-top: 4px; overflow: hidden;">
+                <div :style="{ width: ((subnet.allocated_count || 0) / (subnet.total_count || 1) * 100) + '%', background: 'var(--primary-color)', height: '100%' }"></div>
+            </div>
+        </div>
+      </template>
+
+      <template #cell-vpc="{ row: subnet }">
+        <div v-if="subnet.vpc" class="vpc-cell">
+          <router-link :to="{ name: 'vpc-detail', params: { id: subnet.vpc.id } }" class="vpc-link">
+            {{ subnet.vpc.name }}
+          </router-link>
+        </div>
+        <span v-else class="text-light italic text-xs">{{ $t('dashboard.table.standalone') || 'Standalone' }}</span>
+      </template>
+
+      <template #cell-type="{ row: subnet }">
+        <span :class="['badge', getTypeClass(subnet.type || '')]">
+          {{ $t('dashboard.subnetTypes.' + (subnet.type || 'internal')) }}
+        </span>
+      </template>
+
+      <template #cell-actions="{ row: subnet }">
+        <div class="actions">
+          <button class="btn btn-ghost btn-sm" :title="$t('actions.edit')">
+            <Edit :size="14" />
+          </button>
+          <button class="btn btn-ghost btn-sm text-error" :title="$t('actions.delete')" @click="handleDeleteClick(subnet)">
+            <Trash2 :size="14" />
+          </button>
+        </div>
+      </template>
+    </DataTable>
 
     <!-- Create Subnet Modal -->
     <BaseModal
@@ -547,10 +551,6 @@ onMounted(() => {
 </template>
 
 <style scoped>
-.table-card {
-  padding: 0;
-  overflow: hidden;
-}
 
 /* .resource-info etc. are global from index.css */
 

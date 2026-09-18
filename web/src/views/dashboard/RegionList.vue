@@ -10,6 +10,7 @@ import { regionsApi, type RegionPublic, type RegionAdmin, type RegionCreated, ty
 import { useToast } from '../../composables/useToast'
 import { useCopyId } from '../../composables/useCopyId'
 import PageToolbar from '../../components/base/PageToolbar.vue'
+import DataTable, { type Column } from '../../components/base/DataTable.vue'
 import BaseModal from '../../components/modals/BaseModal.vue'
 
 const { t } = useI18n()
@@ -18,7 +19,18 @@ const router = useRouter()
 
 const regions = ref<RegionPublic[]>([])
 const isLoading = ref(false)
+const loadError = ref('')
 const searchQuery = ref('')
+
+// 状态列显示的是翻译后的文案，排序按原始状态串
+const regionState = (r: any) => (r.maintenance_mode ? 'maintenance' : r.is_available ? 'available' : 'offline')
+
+const columns = computed<Column[]>(() => [
+    { key: 'name', label: t('dashboard.table.nameId'), sortable: true, sortValue: (r) => r.display_name || r.name },
+    { key: 'status', label: t('dashboard.table.status'), sortable: true, sortValue: regionState },
+    { key: 'description', label: t('dashboard.table.description'), sortable: true },
+    { key: 'actions', label: t('dashboard.table.actions') },
+])
 
 // Create modal
 const showCreateModal = ref(false)
@@ -67,12 +79,14 @@ const filteredRegions = computed(() => {
 
 const fetchRegions = async () => {
     isLoading.value = true
+    loadError.value = ''
     try {
         const data = await regionsApi.fetchRegions()
         regions.value = Array.isArray(data) ? data : []
     } catch (err) {
         console.error('Failed to fetch regions:', err)
         regions.value = []
+        loadError.value = t('messages.error')
     } finally {
         isLoading.value = false
     }
@@ -255,81 +269,73 @@ onMounted(fetchRegions)
             </template>
         </PageToolbar>
 
-        <div class="card table-card">
-            <table class="data-table">
-                <thead>
-                    <tr>
-                        <th>{{ t('dashboard.table.nameId') }}</th>
-                        <th>{{ t('dashboard.table.status') }}</th>
-                        <th>{{ t('dashboard.table.description') }}</th>
-                        <th>{{ t('dashboard.table.actions') }}</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    <tr v-if="isLoading && regions.length === 0">
-                        <td colspan="4" class="text-center" style="padding: 48px;">
-                            <div class="loading-spinner" style="margin: 0 auto;"></div>
-                        </td>
-                    </tr>
-                    <tr v-else-if="filteredRegions.length === 0">
-                        <td colspan="4" class="text-center text-secondary" style="padding: 48px;">
-                            <div v-if="searchQuery">
-                                <Search :size="48" style="opacity: 0.3; margin-bottom: 16px;" />
-                                <p>{{ t('messages.noResults') }}</p>
-                            </div>
-                            <div v-else>
-                                <Globe2 :size="48" style="opacity: 0.3; margin-bottom: 16px;" />
-                                <p>{{ t('dashboard.regionActions.noRegions') }}</p>
-                            </div>
-                        </td>
-                    </tr>
-                    <tr v-else v-for="region in filteredRegions" :key="region.uuid">
-                        <td>
-                            <div class="resource-info">
-                                <div class="resource-icon">
-                                    <Globe2 :size="16" />
-                                </div>
-                                <div>
-                                    <div class="resource-name">{{ region.display_name || region.name }}</div>
-                                    <div class="resource-id-row">
-                                      <span class="resource-id" :title="region.name + ' / ' + region.uuid">
-                                        {{ region.name }} / {{ region.uuid.slice(0, 8) }}...
-                                      </span>
-                                      <button class="copy-btn-mini" @click.stop.prevent="copyId(region.uuid)" :title="t('actions.copy')" :aria-label="t('actions.copy')">
-                                        <Check v-if="copiedId === region.uuid" :size="10" style="color: #10b981;" />
-                                        <Copy v-else :size="10" />
-                                      </button>
-                                    </div>
-                                </div>
-                            </div>
-                        </td>
-                        <td>
-                            <span class="status-pill"
-                                :class="region.maintenance_mode ? 'status-maintenance' : region.is_available ? 'status-available' : 'status-offline'">
-                                <Wrench v-if="region.maintenance_mode" :size="12" />
-                                <CheckCircle2 v-else-if="region.is_available" :size="12" />
-                                <AlertCircle v-else :size="12" />
-                                {{ region.maintenance_mode ? t('dashboard.regionActions.maintenance') : region.is_available ? t('dashboard.regionActions.available') : t('dashboard.regionActions.offline') }}
-                            </span>
-                        </td>
-                        <td class="desc-cell">{{ region.description || '-' }}</td>
-                        <td>
-                            <div class="table-actions">
-                                <button class="icon-btn-table" @click="openEditModal(region)" :title="t('actions.edit')">
-                                    <Settings2 :size="16" />
-                                </button>
-                                <button class="icon-btn-table" @click="confirmRotate(region)" :title="t('dashboard.regionActions.rotateSecret')">
-                                    <KeyRound :size="16" />
-                                </button>
-                                <button class="icon-btn-table text-error" @click="confirmDelete(region)" :title="t('actions.delete')">
-                                    <Trash2 :size="16" />
-                                </button>
-                            </div>
-                        </td>
-                    </tr>
-                </tbody>
-            </table>
-        </div>
+        <DataTable
+            :columns="columns"
+            :rows="filteredRegions"
+            row-key="uuid"
+            :loading="isLoading"
+            :error="loadError"
+            @retry="fetchRegions"
+        >
+            <template #empty>
+                <div v-if="searchQuery">
+                    <Search :size="48" style="opacity: 0.3; margin-bottom: 16px;" />
+                    <p>{{ t('messages.noResults') }}</p>
+                </div>
+                <div v-else>
+                    <Globe2 :size="48" style="opacity: 0.3; margin-bottom: 16px;" />
+                    <p>{{ t('dashboard.regionActions.noRegions') }}</p>
+                </div>
+            </template>
+
+            <template #cell-name="{ row: region }">
+                <div class="resource-info">
+                    <div class="resource-icon">
+                        <Globe2 :size="16" />
+                    </div>
+                    <div>
+                        <div class="resource-name">{{ region.display_name || region.name }}</div>
+                        <div class="resource-id-row">
+                          <span class="resource-id" :title="region.name + ' / ' + region.uuid">
+                            {{ region.name }} / {{ region.uuid.slice(0, 8) }}...
+                          </span>
+                          <button class="copy-btn-mini" @click.stop.prevent="copyId(region.uuid)" :title="t('actions.copy')" :aria-label="t('actions.copy')">
+                            <Check v-if="copiedId === region.uuid" :size="10" style="color: #10b981;" />
+                            <Copy v-else :size="10" />
+                          </button>
+                        </div>
+                    </div>
+                </div>
+            </template>
+
+            <template #cell-status="{ row: region }">
+                <span class="status-pill"
+                    :class="region.maintenance_mode ? 'status-maintenance' : region.is_available ? 'status-available' : 'status-offline'">
+                    <Wrench v-if="region.maintenance_mode" :size="12" />
+                    <CheckCircle2 v-else-if="region.is_available" :size="12" />
+                    <AlertCircle v-else :size="12" />
+                    {{ region.maintenance_mode ? t('dashboard.regionActions.maintenance') : region.is_available ? t('dashboard.regionActions.available') : t('dashboard.regionActions.offline') }}
+                </span>
+            </template>
+
+            <template #cell-description="{ row: region }">
+                <div class="desc-cell">{{ region.description || '-' }}</div>
+            </template>
+
+            <template #cell-actions="{ row: region }">
+                <div class="table-actions">
+                    <button class="icon-btn-table" @click="openEditModal(region)" :title="t('actions.edit')">
+                        <Settings2 :size="16" />
+                    </button>
+                    <button class="icon-btn-table" @click="confirmRotate(region)" :title="t('dashboard.regionActions.rotateSecret')">
+                        <KeyRound :size="16" />
+                    </button>
+                    <button class="icon-btn-table text-error" @click="confirmDelete(region)" :title="t('actions.delete')">
+                        <Trash2 :size="16" />
+                    </button>
+                </div>
+            </template>
+        </DataTable>
 
         <!-- Create Modal -->
         <Teleport to="body">
@@ -516,11 +522,6 @@ onMounted(fetchRegions)
 
 <style scoped>
 /* .resource-info etc. are global from index.css */
-
-.table-card {
-    padding: 0;
-    overflow: hidden;
-}
 
 .desc-cell {
     max-width: 200px;

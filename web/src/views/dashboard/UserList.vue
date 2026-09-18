@@ -11,6 +11,7 @@ import { formatDate } from '../../utils/format'
 import BaseModal from '../../components/modals/BaseModal.vue'
 import DeleteModal from '../../components/modals/DeleteModal.vue'
 import PageToolbar from '../../components/base/PageToolbar.vue'
+import DataTable, { type Column } from '../../components/base/DataTable.vue'
 
 const { t } = useI18n()
 const tenantStore = useTenantStore()
@@ -20,6 +21,7 @@ const { copiedId, copyId } = useCopyId()
 
 const users = ref<User[]>([])
 const loading = ref(false)
+const loadError = ref('')
 const searchQuery = ref('')
 const inviteForm = ref({
     email: '',
@@ -45,6 +47,7 @@ const editError = ref('')
 
 const fetchUsers = async () => {
     loading.value = true
+    loadError.value = ''
     try {
         // Wait for tenant store to finish loading if needed
         if (tenantStore.isLoading) {
@@ -81,6 +84,7 @@ const fetchUsers = async () => {
     } catch (error) {
         console.error('Failed to fetch users:', error)
         users.value = []
+        loadError.value = t('messages.error')
     } finally {
         loading.value = false
     }
@@ -99,6 +103,16 @@ const filteredUsers = computed(() => {
 const getUserStatus = (status: string | undefined): string => {
     return status || 'active'
 }
+
+// 创建时间列显示的是格式化后的文案，排序要按原始值；状态列空值按 active 处理
+const columns = computed<Column[]>(() => [
+    { key: 'username', label: t('dashboard.table.userName'), sortable: true },
+    { key: 'email', label: t('dashboard.table.email'), sortable: true },
+    { key: 'role', label: t('dashboard.table.role'), sortable: true, sortValue: (u) => u.role || 'member' },
+    { key: 'status', label: t('dashboard.table.status'), sortable: true, sortValue: (u) => getUserStatus(u.status) },
+    { key: 'created', label: t('dashboard.table.created'), sortable: true, sortValue: (u) => u.created_at || '' },
+    { key: 'actions', label: t('dashboard.table.actions') },
+])
 
 
 const openCreateModal = () => {
@@ -233,78 +247,68 @@ onMounted(fetchUsers)
       </template>
     </PageToolbar>
 
-    <div class="card table-card">
-      <table class="data-table">
-        <thead>
-          <tr>
-            <th>{{ $t('dashboard.table.userName') }}</th>
-            <th>{{ $t('dashboard.table.email') }}</th>
-            <th>{{ $t('dashboard.table.role') }}</th>
-            <th>{{ $t('dashboard.table.status') }}</th>
-            <th>{{ $t('dashboard.table.created') }}</th>
-            <th>{{ $t('dashboard.table.actions') }}</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-if="loading">
-            <td colspan="6" class="text-center">
-              <div class="loading-spinner" style="margin: 20px auto;"></div>
-            </td>
-          </tr>
-          <tr v-else-if="filteredUsers.length === 0">
-            <td colspan="6" class="text-center text-secondary" style="padding: 48px;">
-               <div v-if="searchQuery">
-                  <Search :size="48" style="opacity: 0.3; margin-bottom: 16px;" />
-                  <p>{{ $t('messages.noResults') }}</p>
-               </div>
-               <div v-else>
-                  <p>{{ $t('messages.noUsers') }}</p>
-               </div>
-            </td>
-          </tr>
-          <tr v-else v-for="user in filteredUsers" :key="user.uuid">
-            <td>
-              <router-link :to="{ name: 'user-detail', params: { id: user.uuid } }" class="resource-link">
-                <div class="resource-info">
-                  <div class="resource-icon">
-                    <UserIcon :size="16" />
-                  </div>
-                  <div>
-                    <div class="resource-name">{{ user.username }}</div>
-                    <div class="resource-id-row">
-                      <span class="resource-id" :title="user.uuid">{{ user.uuid.slice(0, 8) }}...</span>
-                      <button class="copy-btn-mini" @click.stop.prevent="copyId(user.uuid)" :title="t('actions.copy')" :aria-label="t('actions.copy')">
-                        <Check v-if="copiedId === user.uuid" :size="10" style="color: #10b981;" />
-                        <Copy v-else :size="10" />
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              </router-link>
-            </td>
-            <td>{{ user.email }}</td>
-            <td>
-               <span class="role-badge">{{ $t('roles.' + (user.role?.toLowerCase() || 'member')) }}</span>
-               <span v-if="isSystemOrg && user.is_superuser" class="superuser-tag">{{ $t('roles.superuser') }}</span>
-            </td>
-            <td>
-               <span :class="'status-' + getUserStatus(user.status)">{{ $t('userStatus.' + getUserStatus(user.status)) }}</span>
-            </td>
-            <td>{{ formatDate(user.created_at || new Date()) }}</td>
-            <td>
-              <div class="actions">
-                <button class="btn btn-ghost btn-sm" :title="$t('actions.edit')" @click="openEditModal(user)">
-                  <Edit :size="14" />
-                </button>
-                <button class="btn btn-ghost btn-sm text-error" :title="$t('actions.delete')" @click="handleDeleteClick(user)">
-                  <Trash2 :size="14" />
+    <DataTable
+      :columns="columns"
+      :rows="filteredUsers"
+      row-key="uuid"
+      :loading="loading"
+      :error="loadError"
+      @retry="fetchUsers"
+    >
+      <template #empty>
+        <div v-if="searchQuery">
+          <Search :size="48" style="opacity: 0.3; margin-bottom: 16px;" />
+          <p>{{ $t('messages.noResults') }}</p>
+        </div>
+        <div v-else>
+          <p>{{ $t('messages.noUsers') }}</p>
+        </div>
+      </template>
+
+      <template #cell-username="{ row: user }">
+        <router-link :to="{ name: 'user-detail', params: { id: user.uuid } }" class="resource-link">
+          <div class="resource-info">
+            <div class="resource-icon">
+              <UserIcon :size="16" />
+            </div>
+            <div>
+              <div class="resource-name">{{ user.username }}</div>
+              <div class="resource-id-row">
+                <span class="resource-id" :title="user.uuid">{{ user.uuid.slice(0, 8) }}...</span>
+                <button class="copy-btn-mini" @click.stop.prevent="copyId(user.uuid)" :title="t('actions.copy')" :aria-label="t('actions.copy')">
+                  <Check v-if="copiedId === user.uuid" :size="10" style="color: #10b981;" />
+                  <Copy v-else :size="10" />
                 </button>
               </div>
-            </td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
+            </div>
+          </div>
+        </router-link>
+      </template>
+
+      <template #cell-email="{ row: user }">{{ user.email }}</template>
+
+      <template #cell-role="{ row: user }">
+        <span class="role-badge">{{ $t('roles.' + (user.role?.toLowerCase() || 'member')) }}</span>
+        <span v-if="isSystemOrg && user.is_superuser" class="superuser-tag">{{ $t('roles.superuser') }}</span>
+      </template>
+
+      <template #cell-status="{ row: user }">
+        <span :class="'status-' + getUserStatus(user.status)">{{ $t('userStatus.' + getUserStatus(user.status)) }}</span>
+      </template>
+
+      <template #cell-created="{ row: user }">{{ formatDate(user.created_at || new Date()) }}</template>
+
+      <template #cell-actions="{ row: user }">
+        <div class="actions">
+          <button class="btn btn-ghost btn-sm" :title="$t('actions.edit')" @click="openEditModal(user as any)">
+            <Edit :size="14" />
+          </button>
+          <button class="btn btn-ghost btn-sm text-error" :title="$t('actions.delete')" @click="handleDeleteClick(user as any)">
+            <Trash2 :size="14" />
+          </button>
+        </div>
+      </template>
+    </DataTable>
 
     <!-- Create User Modal -->
     <BaseModal
@@ -429,11 +433,6 @@ onMounted(fetchUsers)
 </template>
 
 <style scoped>
-.table-card {
-  padding: 0;
-  overflow: hidden;
-}
-
 /* .resource-info etc. are global from index.css */
 
 .resource-link {

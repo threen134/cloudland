@@ -13,9 +13,12 @@ import BaseModal from '../../components/modals/BaseModal.vue'
 import DeleteModal from '../../components/modals/DeleteModal.vue'
 import PageToolbar from '../../components/base/PageToolbar.vue'
 import StatusBadge from '../../components/base/StatusBadge.vue'
+import DataTable, { type Column } from '../../components/base/DataTable.vue'
+import PaginationBar from '../../components/base/PaginationBar.vue'
 
 const loadBalancers = ref<LoadBalancer[]>([])
 const loading = ref(false)
+const loadError = ref('')
 const searchQuery = ref('')
 const createModalVisible = ref(false)
 const creating = ref(false)
@@ -83,9 +86,20 @@ const totalPages = computed(() => Math.max(1, Math.ceil(totalCount.value / pageS
 // Drops responses of superseded requests (fast typing, page switches)
 let fetchGeneration = 0
 
+// 分页和搜索都在服务端做，前端排序只能排当前页，所以这些列不开放排序
+const columns = computed<Column[]>(() => [
+    { key: 'name', label: t('dashboard.table.nameId') },
+    { key: 'status', label: t('dashboard.table.status') },
+    { key: 'ip', label: t('dashboard.table.ipAddress') },
+    { key: 'vpc', label: t('dashboard.table.vpc') },
+    { key: 'listeners', label: t('dashboard.loadBalancerDetail.listeners') },
+    { key: 'actions', label: t('dashboard.table.actions') },
+])
+
 const fetchLoadBalancers = async () => {
     const generation = ++fetchGeneration
     loading.value = true
+    loadError.value = ''
     try {
         const [lbResponse, vpcsResponse] = await Promise.all([
             loadBalancersApi.list({
@@ -110,6 +124,7 @@ const fetchLoadBalancers = async () => {
         loadBalancers.value = []
         totalCount.value = 0
         vpcs.value = []
+        loadError.value = t('messages.error')
     } finally {
         if (generation === fetchGeneration) loading.value = false
     }
@@ -246,92 +261,75 @@ onUnmounted(() => {
       </template>
     </PageToolbar>
 
-    <div class="card table-card">
-      <table class="data-table">
-        <thead>
-          <tr>
-            <th>{{ $t('dashboard.table.nameId') }}</th>
-            <th>{{ $t('dashboard.table.status') }}</th>
-            <th>{{ $t('dashboard.table.ipAddress') }}</th>
-            <th>{{ $t('dashboard.table.vpc') }}</th>
-            <th>{{ $t('dashboard.loadBalancerDetail.listeners') }}</th>
-            <th>{{ $t('dashboard.table.actions') }}</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-if="loading">
-            <td colspan="6" class="text-center">
-              <div class="loading-spinner" style="margin: 20px auto;"></div>
-            </td>
-          </tr>
-          <tr v-else-if="loadBalancers.length === 0">
-             <td colspan="6" class="text-center text-secondary" style="padding: 48px;">
-               <div v-if="searchQuery">
-                  <Search :size="48" style="opacity: 0.3; margin-bottom: 16px;" />
-                  <p>{{ $t('messages.noResults') }}</p>
-               </div>
-               <div v-else>
-                  <GitFork :size="48" style="opacity: 0.3; margin-bottom: 16px;" />
-                  <p class="text-secondary">{{ $t('messages.noLoadBalancers') }}</p>
-               </div>
-            </td>
-          </tr>
-          <tr v-else v-for="lb in loadBalancers" :key="lb.id">
-            <td>
-              <router-link :to="{ name: 'load-balancer-detail', params: { id: lb.id } }" class="resource-link">
-                <div class="resource-info">
-                  <div class="resource-icon">
-                    <GitFork :size="16" />
-                  </div>
-                  <div>
-                    <div class="resource-name">{{ lb.name }}</div>
-                    <div class="resource-id-row">
-                      <span class="resource-id" :title="lb.id">{{ lb.id.slice(0, 8) }}...</span>
-                      <button class="copy-btn-mini" @click.stop.prevent="copyId(lb.id)" :title="t('actions.copy')" :aria-label="t('actions.copy')">
-                        <Check v-if="copiedId === lb.id" :size="10" style="color: #10b981;" />
-                        <Copy v-else :size="10" />
-                      </button>
-                    </div>
-                    <div v-if="lb.description" class="resource-desc">{{ lb.description }}</div>
-                  </div>
-                </div>
-              </router-link>
-            </td>
-            <td>
-              <StatusBadge :status="lb.status" />
-            </td>
-            <td>
-              <code class="ip-address">{{ lb.floating_ips?.[0]?.fip_address || '-' }}</code>
-            </td>
-            <td>{{ lb.vpc?.name || '-' }}</td>
-            <td class="text-secondary text-sm">
-              {{ formatListeners(lb) }}
-            </td>
-            <td>
-              <div class="actions">
-                <button class="btn btn-ghost btn-sm" :title="$t('actions.edit')" @click="handleEditClick(lb)">
-                  <Edit :size="14" />
-                </button>
-                <button class="btn btn-ghost btn-sm text-error" title="Delete" @click="handleDeleteClick(lb)">
-                  <Trash2 :size="14" />
+    <DataTable
+      :columns="columns"
+      :rows="loadBalancers"
+      row-key="id"
+      :loading="loading"
+      :error="loadError"
+      @retry="fetchLoadBalancers"
+    >
+      <template #empty>
+        <div v-if="searchQuery">
+          <Search :size="48" style="opacity: 0.3; margin-bottom: 16px;" />
+          <p>{{ $t('messages.noResults') }}</p>
+        </div>
+        <div v-else>
+          <GitFork :size="48" style="opacity: 0.3; margin-bottom: 16px;" />
+          <p class="text-secondary">{{ $t('messages.noLoadBalancers') }}</p>
+        </div>
+      </template>
+
+      <template #cell-name="{ row: lb }">
+        <router-link :to="{ name: 'load-balancer-detail', params: { id: lb.id } }" class="resource-link">
+          <div class="resource-info">
+            <div class="resource-icon">
+              <GitFork :size="16" />
+            </div>
+            <div>
+              <div class="resource-name">{{ lb.name }}</div>
+              <div class="resource-id-row">
+                <span class="resource-id" :title="lb.id">{{ lb.id.slice(0, 8) }}...</span>
+                <button class="copy-btn-mini" @click.stop.prevent="copyId(lb.id)" :title="t('actions.copy')" :aria-label="t('actions.copy')">
+                  <Check v-if="copiedId === lb.id" :size="10" style="color: #10b981;" />
+                  <Copy v-else :size="10" />
                 </button>
               </div>
-            </td>
-          </tr>
-        </tbody>
-      </table>
-      <div v-if="totalPages > 1" class="pagination-bar">
-        <span class="pagination-info">{{ t('dashboard.pagination.showing', { from: (currentPage - 1) * pageSize + 1, to: Math.min(currentPage * pageSize, totalCount), total: totalCount }) }}</span>
-        <div class="pagination-controls">
-          <button class="page-btn" :disabled="currentPage <= 1" @click="goToPage(currentPage - 1)">&lsaquo;</button>
-          <template v-for="p in totalPages" :key="p">
-            <button v-if="p === 1 || p === totalPages || (p >= currentPage - 1 && p <= currentPage + 1)" class="page-btn" :class="{ active: p === currentPage }" @click="goToPage(p)">{{ p }}</button>
-            <span v-else-if="p === currentPage - 2 || p === currentPage + 2" class="page-ellipsis">...</span>
-          </template>
-          <button class="page-btn" :disabled="currentPage >= totalPages" @click="goToPage(currentPage + 1)">&rsaquo;</button>
+              <div v-if="lb.description" class="resource-desc">{{ lb.description }}</div>
+            </div>
+          </div>
+        </router-link>
+      </template>
+
+      <template #cell-status="{ row: lb }">
+        <StatusBadge :status="lb.status" />
+      </template>
+
+      <template #cell-ip="{ row: lb }">
+        <code class="ip-address">{{ lb.floating_ips?.[0]?.fip_address || '-' }}</code>
+      </template>
+
+      <template #cell-vpc="{ row: lb }">{{ lb.vpc?.name || '-' }}</template>
+
+      <template #cell-listeners="{ row: lb }">
+        <span class="text-secondary text-sm">{{ formatListeners(lb as any) }}</span>
+      </template>
+
+      <template #cell-actions="{ row: lb }">
+        <div class="actions">
+          <button class="btn btn-ghost btn-sm" :title="$t('actions.edit')" @click="handleEditClick(lb as any)">
+            <Edit :size="14" />
+          </button>
+          <button class="btn btn-ghost btn-sm text-error" title="Delete" @click="handleDeleteClick(lb as any)">
+            <Trash2 :size="14" />
+          </button>
         </div>
-      </div>
-    </div>
+      </template>
+
+      <template #footer>
+        <PaginationBar :page="currentPage" :page-size="pageSize" :total="totalCount" @update:page="goToPage" />
+      </template>
+    </DataTable>
     <!-- Create LB Modal -->
     <BaseModal
       :show="createModalVisible"
@@ -451,65 +449,6 @@ onUnmounted(() => {
 @keyframes spin {
   from { transform: rotate(0deg); }
   to { transform: rotate(360deg); }
-}
-
-.table-card {
-  padding: 0;
-  overflow: hidden;
-}
-
-/* Pagination */
-.pagination-bar {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 12px 24px;
-  border-top: 1px solid var(--border-light);
-  font-size: var(--font-size-xs);
-}
-
-.pagination-info { color: var(--text-secondary); }
-
-.pagination-controls {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
-
-.page-btn {
-  min-width: 32px;
-  height: 32px;
-  border: 1px solid var(--border-light);
-  border-radius: var(--radius-sm);
-  background: var(--bg-primary);
-  color: var(--text-primary);
-  cursor: pointer;
-  font-size: var(--font-size-xs);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: all 0.15s;
-}
-
-.page-btn:hover:not(:disabled):not(.active) {
-  background: var(--bg-tertiary);
-  border-color: var(--primary-300);
-}
-
-.page-btn.active {
-  background: var(--primary-color);
-  color: #fff;
-  border-color: var(--primary-color);
-}
-
-.page-btn:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
-}
-
-.page-ellipsis {
-  padding: 0 4px;
-  color: var(--text-light);
 }
 
 /* .resource-info etc. are global from index.css */

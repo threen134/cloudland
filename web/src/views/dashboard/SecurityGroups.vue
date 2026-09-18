@@ -12,6 +12,8 @@ import { Shield, Plus, Trash2, Search, RefreshCw, Edit, HelpCircle, Check, Copy 
 import PageToolbar from '../../components/base/PageToolbar.vue'
 import BaseModal from '../../components/modals/BaseModal.vue'
 import DeleteModal from '../../components/modals/DeleteModal.vue'
+import DataTable, { type Column } from '../../components/base/DataTable.vue'
+import PaginationBar from '../../components/base/PaginationBar.vue'
 
 const region = useRegionStore()
 const { translateDescription } = useSecurityGroup()
@@ -22,6 +24,7 @@ const { copiedId, copyId } = useCopyId()
 const securityGroups = ref<SecurityGroup[]>([])
 const vpcs = ref<VPC[]>([])
 const loading = ref(false)
+const loadError = ref('')
 const searchQuery = ref('')
 const vpcFilter = ref('')
 
@@ -33,9 +36,22 @@ const totalPages = computed(() => Math.max(1, Math.ceil(totalCount.value / pageS
 // Drops responses of superseded requests (fast typing, page switches)
 let fetchGeneration = 0
 
+// 分页、搜索、VPC 过滤都在服务端做，前端排序只能排当前页，所以这些列不开放排序。
+// 描述列吃掉剩余宽度（其余列按内容宽度）
+const columns = computed<Column[]>(() => [
+    { key: 'name', label: t('dashboard.table.nameId') },
+    { key: 'description', label: t('dashboard.table.description'), width: '100%' },
+    { key: 'vpc', label: t('dashboard.table.vpc') },
+    { key: 'rules', label: t('dashboard.table.securityRules') },
+    { key: 'interfaces', label: t('dashboard.securityGroupDetail.associatedInterfaces'), align: 'center' },
+    { key: 'created', label: t('dashboard.table.createdAt') },
+    { key: 'actions', label: t('dashboard.table.actions'), align: 'right' },
+])
+
 const fetchSecurityGroups = async () => {
     const generation = ++fetchGeneration
     loading.value = true
+    loadError.value = ''
     try {
         const response = await securityGroupsApi.list({
             offset: (currentPage.value - 1) * pageSize,
@@ -56,6 +72,7 @@ const fetchSecurityGroups = async () => {
         console.error('API fetch failed:', err)
         securityGroups.value = []
         totalCount.value = 0
+        loadError.value = t('messages.error')
     } finally {
         if (generation === fetchGeneration) loading.value = false
     }
@@ -269,108 +286,93 @@ onUnmounted(() => {
       </template>
     </PageToolbar>
 
-    <div class="card table-card">
-      <div class="table-responsive">
-        <table class="data-table">
-          <thead>
-            <tr>
-              <th>{{ $t('dashboard.table.nameId') }}</th>
-              <th class="col-desc">{{ $t('dashboard.table.description') }}</th>
-              <th>{{ $t('dashboard.table.vpc') }}</th>
-              <th>{{ $t('dashboard.table.securityRules') }}</th>
-              <th class="col-center">{{ $t('dashboard.securityGroupDetail.associatedInterfaces') }}</th>
-              <th>{{ $t('dashboard.table.createdAt') }}</th>
-              <th class="col-actions">{{ $t('dashboard.table.actions') }}</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-if="loading && securityGroups.length === 0">
-              <td colspan="7" class="text-center">
-                <div class="loading-spinner" style="margin: 20px auto;"></div>
-              </td>
-            </tr>
-            <tr v-else-if="securityGroups.length === 0">
-              <td colspan="7" class="text-center text-secondary" style="padding: 48px;">
-                <div v-if="searchQuery || vpcFilter">
-                  <Search :size="48" style="opacity: 0.3; margin-bottom: 16px;" />
-                  <p>{{ $t('messages.noResults') }}</p>
-                </div>
-                <div v-else>
-                  <Shield :size="48" style="opacity: 0.3; margin-bottom: 16px;" />
-                  <p class="text-secondary">{{ $t('messages.noSecurityGroups') }}</p>
-                </div>
-              </td>
-            </tr>
-            <tr v-else v-for="group in securityGroups" :key="group.id">
-              <td>
-                <router-link :to="{ name: 'security-group-detail', params: { id: group.id } }" class="resource-link">
-                  <div class="resource-info">
-                    <div class="resource-icon">
-                      <Shield :size="16" />
-                    </div>
-                    <div>
-                      <div class="name-row">
-                        <span class="resource-name">{{ group.name }}</span>
-                        <span v-if="group.is_default" class="badge badge-primary">{{ $t('dashboard.table.default') }}</span>
-                      </div>
-                      <div class="resource-id-row">
-                        <span class="resource-id" :title="group.id">{{ group.id.slice(0, 8) }}...</span>
-                        <button class="copy-btn-mini" @click.stop.prevent="copyId(group.id)" :title="t('actions.copy')" :aria-label="t('actions.copy')">
-                          <Check v-if="copiedId === group.id" :size="10" style="color: #10b981;" />
-                          <Copy v-else :size="10" />
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                </router-link>
-              </td>
-              <td class="col-desc">
-                <div v-if="group.description" class="desc-text" :title="translateDescription(group.description)">{{ translateDescription(group.description) }}</div>
-                <span v-else class="text-light">-</span>
-              </td>
-              <td class="nowrap">
-                <router-link v-if="group.vpc" :to="{ name: 'vpc-detail', params: { id: group.vpc.id } }" class="text-link">
-                  {{ group.vpc.name }}
-                </router-link>
-                <span v-else class="text-secondary">-</span>
-              </td>
-              <td class="rule-counts">
-                <span class="direction-badge ingress">{{ $t('dashboard.table.ingress') }} {{ ruleCount(group, 'ingress') }}</span>
-                <span class="direction-badge egress">{{ $t('dashboard.table.egress') }} {{ ruleCount(group, 'egress') }}</span>
-              </td>
-              <td class="col-center">{{ group.target_interfaces?.length || 0 }}</td>
-              <td class="text-secondary text-sm nowrap" :title="group.created_at">{{ formatCreatedAt(group.created_at) }}</td>
-              <td class="col-actions">
-                <div class="actions">
-                  <button class="btn btn-ghost btn-sm" :title="$t('actions.edit')" @click="handleEditClick(group)">
-                    <Edit :size="14" />
-                  </button>
-                  <button
-                    class="btn btn-ghost btn-sm text-error"
-                    :title="group.is_default ? $t('dashboard.securityGroupDetail.defaultNotDeletable') : $t('actions.delete')"
-                    :disabled="group.is_default"
-                    @click="handleDeleteClick(group)"
-                  >
-                    <Trash2 :size="14" />
-                  </button>
-                </div>
-              </td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-      <div v-if="totalPages > 1" class="pagination-bar">
-        <span class="pagination-info">{{ t('dashboard.pagination.showing', { from: (currentPage - 1) * pageSize + 1, to: Math.min(currentPage * pageSize, totalCount), total: totalCount }) }}</span>
-        <div class="pagination-controls">
-          <button class="page-btn" :disabled="currentPage <= 1" @click="goToPage(currentPage - 1)">&lsaquo;</button>
-          <template v-for="p in totalPages" :key="p">
-            <button v-if="p === 1 || p === totalPages || (p >= currentPage - 1 && p <= currentPage + 1)" class="page-btn" :class="{ active: p === currentPage }" @click="goToPage(p)">{{ p }}</button>
-            <span v-else-if="p === currentPage - 2 || p === currentPage + 2" class="page-ellipsis">...</span>
-          </template>
-          <button class="page-btn" :disabled="currentPage >= totalPages" @click="goToPage(currentPage + 1)">&rsaquo;</button>
+    <DataTable
+      :columns="columns"
+      :rows="securityGroups"
+      row-key="id"
+      :loading="loading"
+      :error="loadError"
+      @retry="fetchSecurityGroups"
+    >
+      <template #empty>
+        <div v-if="searchQuery || vpcFilter">
+          <Search :size="48" style="opacity: 0.3; margin-bottom: 16px;" />
+          <p>{{ $t('messages.noResults') }}</p>
         </div>
-      </div>
-    </div>
+        <div v-else>
+          <Shield :size="48" style="opacity: 0.3; margin-bottom: 16px;" />
+          <p class="text-secondary">{{ $t('messages.noSecurityGroups') }}</p>
+        </div>
+      </template>
+
+      <template #cell-name="{ row: group }">
+        <router-link :to="{ name: 'security-group-detail', params: { id: group.id } }" class="resource-link">
+          <div class="resource-info">
+            <div class="resource-icon">
+              <Shield :size="16" />
+            </div>
+            <div>
+              <div class="name-row">
+                <span class="resource-name">{{ group.name }}</span>
+                <span v-if="group.is_default" class="badge badge-primary">{{ $t('dashboard.table.default') }}</span>
+              </div>
+              <div class="resource-id-row">
+                <span class="resource-id" :title="group.id">{{ group.id.slice(0, 8) }}...</span>
+                <button class="copy-btn-mini" @click.stop.prevent="copyId(group.id)" :title="t('actions.copy')" :aria-label="t('actions.copy')">
+                  <Check v-if="copiedId === group.id" :size="10" style="color: #10b981;" />
+                  <Copy v-else :size="10" />
+                </button>
+              </div>
+            </div>
+          </div>
+        </router-link>
+      </template>
+
+      <template #cell-description="{ row: group }">
+        <div v-if="group.description" class="desc-text" :title="translateDescription(group.description)">{{ translateDescription(group.description) }}</div>
+        <span v-else class="text-light">-</span>
+      </template>
+
+      <template #cell-vpc="{ row: group }">
+        <router-link v-if="group.vpc" :to="{ name: 'vpc-detail', params: { id: group.vpc.id } }" class="text-link nowrap">
+          {{ group.vpc.name }}
+        </router-link>
+        <span v-else class="text-secondary">-</span>
+      </template>
+
+      <template #cell-rules="{ row: group }">
+        <div class="rule-counts">
+          <span class="direction-badge ingress">{{ $t('dashboard.table.ingress') }} {{ ruleCount(group as any, 'ingress') }}</span>
+          <span class="direction-badge egress">{{ $t('dashboard.table.egress') }} {{ ruleCount(group as any, 'egress') }}</span>
+        </div>
+      </template>
+
+      <template #cell-interfaces="{ row: group }">{{ group.target_interfaces?.length || 0 }}</template>
+
+      <template #cell-created="{ row: group }">
+        <span class="text-secondary text-sm nowrap" :title="group.created_at">{{ formatCreatedAt(group.created_at) }}</span>
+      </template>
+
+      <template #cell-actions="{ row: group }">
+        <div class="actions">
+          <button class="btn btn-ghost btn-sm" :title="$t('actions.edit')" @click="handleEditClick(group as any)">
+            <Edit :size="14" />
+          </button>
+          <button
+            class="btn btn-ghost btn-sm text-error"
+            :title="group.is_default ? $t('dashboard.securityGroupDetail.defaultNotDeletable') : $t('actions.delete')"
+            :disabled="group.is_default"
+            @click="handleDeleteClick(group as any)"
+          >
+            <Trash2 :size="14" />
+          </button>
+        </div>
+      </template>
+
+      <template #footer>
+        <PaginationBar :page="currentPage" :page-size="pageSize" :total="totalCount" @update:page="goToPage" />
+      </template>
+    </DataTable>
 
     <!-- Create Security Group Modal -->
     <BaseModal
@@ -506,123 +508,24 @@ onUnmounted(() => {
   padding-bottom: 0;
 }
 
-.data-table th,
 .nowrap {
   white-space: nowrap;
 }
 
-.table-card {
-  padding: 0;
-  overflow: hidden;
-}
-
-.table-responsive {
-  overflow-x: auto;
-}
-
-/* Pagination */
-.pagination-bar {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 12px 24px;
-  border-top: 1px solid var(--border-light);
-  font-size: var(--font-size-xs);
-}
-
-.pagination-info { color: var(--text-secondary); }
-
-.pagination-controls {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
-
-.page-btn {
-  min-width: 32px;
-  height: 32px;
-  border: 1px solid var(--border-light);
-  border-radius: var(--radius-sm);
-  background: var(--bg-primary);
-  color: var(--text-primary);
-  cursor: pointer;
-  font-size: var(--font-size-xs);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: all 0.15s;
-}
-
-.page-btn:hover:not(:disabled):not(.active) {
-  background: var(--bg-tertiary);
-  border-color: var(--primary-300);
-}
-
-.page-btn.active {
-  background: var(--primary-color);
-  color: #fff;
-  border-color: var(--primary-color);
-}
-
-.page-btn:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
-}
-
-.page-ellipsis {
-  padding: 0 4px;
-  color: var(--text-light);
-}
-
 /* .resource-info etc. are global from index.css */
 
-/* Compact rows: the columns size to their content and the description column takes the remaining width */
-.data-table th,
-.data-table td {
-  padding: var(--spacing-3);
-  white-space: nowrap;
-  vertical-align: middle;
-}
-
-.data-table th:first-child,
-.data-table td:first-child {
-  padding-left: var(--spacing-5);
-}
-
-.data-table th:last-child,
-.data-table td:last-child {
-  padding-right: var(--spacing-5);
-}
-
-/* Not enough room for the description next to the other columns: it stays available on the detail page */
-@media (max-width: 1279px) {
-  .data-table .col-desc {
-    display: none;
-  }
-}
-
-.data-table td.col-desc {
-  width: 100%;
-  min-width: 160px;
-  max-width: 1px;
-}
-
+/* 省略号原先靠 td 的 max-width: 1px 实现，表格移入 DataTable 后那条规则失效了。
+   改成限制单元格内容自身的宽度，长描述才不会把表格撑宽 */
 .desc-text {
+  max-width: 420px;
   overflow: hidden;
   text-overflow: ellipsis;
+  white-space: nowrap;
   color: var(--text-secondary);
 }
 
 .text-light {
   color: var(--text-light);
-}
-
-.col-center {
-  text-align: center;
-}
-
-.col-actions {
-  text-align: right;
 }
 
 .resource-link {

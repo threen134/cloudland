@@ -8,6 +8,7 @@ import { useAuthStore } from '../../stores/auth'
 import { useTenantStore } from '../../stores/tenant'
 import { formatDateTime } from '../../utils/format'
 import PageToolbar from '../../components/base/PageToolbar.vue'
+import DataTable, { type Column } from '../../components/base/DataTable.vue'
 import BaseModal from '../../components/modals/BaseModal.vue'
 import DeleteModal from '../../components/modals/DeleteModal.vue'
 
@@ -22,7 +23,7 @@ const canManage = computed(() =>
 const channels = ref<NotificationChannel[]>([])
 const loading = ref(false)
 const searchQuery = ref('')
-const errorMsg = ref('')
+const loadError = ref('')
 const showCreateModal = ref(false)
 const showDeleteModal = ref(false)
 const deleteTarget = ref<NotificationChannel | null>(null)
@@ -44,14 +45,24 @@ const filteredChannels = computed(() => {
     )
 })
 
+const columns = computed<Column[]>(() => [
+    { key: 'name', label: t('dashboard.table.name'), sortable: true },
+    { key: 'type', label: t('dashboard.notificationChannelType'), sortable: true, sortValue: (ch) => ch.type },
+    { key: 'url', label: 'Webhook URL' },
+    { key: 'status', label: t('dashboard.table.status'), sortable: true, sortValue: (ch) => (ch.enabled ? 0 : 1) },
+    { key: 'created_at', label: t('dashboard.table.createdAt'), sortable: true, sortValue: (ch) => ch.created_at },
+    { key: 'actions', label: t('dashboard.table.actions') },
+])
+
 const fetchChannels = async () => {
     loading.value = true
+    loadError.value = ''
     try {
         const res = await notificationsApi.list()
         channels.value = res.channels || []
     } catch (err) {
         console.error('Failed to fetch channels:', err)
-        errorMsg.value = t('messages.error')
+        loadError.value = t('messages.error')
     } finally {
         loading.value = false
     }
@@ -149,66 +160,56 @@ onMounted(fetchChannels)
             </template>
         </PageToolbar>
 
-        <div v-if="errorMsg" class="error-banner" @click="errorMsg = ''">{{ errorMsg }}</div>
+        <DataTable
+            :columns="columns"
+            :rows="filteredChannels"
+            row-key="uuid"
+            :loading="loading"
+            :error="loadError"
+            @retry="fetchChannels"
+        >
+            <template #empty>
+                <div class="empty-state">
+                    <Bell :size="48" style="opacity: 0.2; margin-bottom: 16px;" />
+                    <p>{{ t('messages.noData') }}</p>
+                </div>
+            </template>
 
-        <div class="card table-card">
-            <table class="data-table">
-                <thead>
-                    <tr>
-                        <th>{{ t('dashboard.table.name') }}</th>
-                        <th>{{ t('dashboard.notificationChannelType') }}</th>
-                        <th>Webhook URL</th>
-                        <th>{{ t('dashboard.table.status') }}</th>
-                        <th>{{ t('dashboard.table.createdAt') }}</th>
-                        <th>{{ t('dashboard.table.actions') }}</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    <tr v-if="loading">
-                        <td colspan="6" class="text-center">
-                            <div class="loading-spinner" style="margin: 20px auto;"></div>
-                        </td>
-                    </tr>
-                    <tr v-else-if="filteredChannels.length === 0">
-                        <td colspan="6" class="text-center text-secondary" style="padding: 48px;">
-                            <div class="empty-state">
-                                <Bell :size="48" style="opacity: 0.2; margin-bottom: 16px;" />
-                                <p>{{ t('messages.noData') }}</p>
-                            </div>
-                        </td>
-                    </tr>
-                    <tr v-else v-for="ch in filteredChannels" :key="ch.uuid">
-                        <td>{{ ch.name }}</td>
-                        <td>
-                            <span class="badge" :class="ch.type === 'feishu' ? 'badge-primary' : 'badge-secondary'">
-                                {{ ch.type === 'feishu' ? t('dashboard.notificationFeishu') : 'Webhook' }}
-                            </span>
-                        </td>
-                        <td class="url-cell">{{ ch.config.webhook_url || ch.config.url || '-' }}</td>
-                        <td>
-                            <span class="status-pill" :class="ch.enabled ? 'status-active' : 'status-disabled'">
-                                <span class="status-dot"></span>
-                                {{ ch.enabled ? t('dashboard.alarm.enabled') : t('dashboard.alarm.disabled') }}
-                            </span>
-                        </td>
-                        <td>{{ formatDateTime(ch.created_at) }}</td>
-                        <td>
-                            <div v-if="canManage" class="actions-cell">
-                                <button class="icon-btn-table" @click="toggleEnabled(ch)" :title="ch.enabled ? 'Disable' : 'Enable'">
-                                    <component :is="ch.enabled ? ToggleRight : ToggleLeft" :size="16" />
-                                </button>
-                                <button class="icon-btn-table" @click="openEdit(ch)">
-                                    <Pencil :size="16" />
-                                </button>
-                                <button class="icon-btn-table text-error" @click="confirmDelete(ch)">
-                                    <Trash2 :size="16" />
-                                </button>
-                            </div>
-                        </td>
-                    </tr>
-                </tbody>
-            </table>
-        </div>
+            <template #cell-name="{ row: ch }">{{ ch.name }}</template>
+
+            <template #cell-type="{ row: ch }">
+                <span class="badge" :class="ch.type === 'feishu' ? 'badge-primary' : 'badge-secondary'">
+                    {{ ch.type === 'feishu' ? t('dashboard.notificationFeishu') : 'Webhook' }}
+                </span>
+            </template>
+
+            <template #cell-url="{ row: ch }">
+                <div class="url-cell">{{ ch.config.webhook_url || ch.config.url || '-' }}</div>
+            </template>
+
+            <template #cell-status="{ row: ch }">
+                <span class="status-pill" :class="ch.enabled ? 'status-active' : 'status-disabled'">
+                    <span class="status-dot"></span>
+                    {{ ch.enabled ? t('dashboard.alarm.enabled') : t('dashboard.alarm.disabled') }}
+                </span>
+            </template>
+
+            <template #cell-created_at="{ row: ch }">{{ formatDateTime(ch.created_at) }}</template>
+
+            <template #cell-actions="{ row: ch }">
+                <div v-if="canManage" class="actions-cell">
+                    <button class="icon-btn-table" @click="toggleEnabled(ch)" :title="ch.enabled ? 'Disable' : 'Enable'">
+                        <component :is="ch.enabled ? ToggleRight : ToggleLeft" :size="16" />
+                    </button>
+                    <button class="icon-btn-table" @click="openEdit(ch)">
+                        <Pencil :size="16" />
+                    </button>
+                    <button class="icon-btn-table text-error" @click="confirmDelete(ch)">
+                        <Trash2 :size="16" />
+                    </button>
+                </div>
+            </template>
+        </DataTable>
 
         <!-- Create/Edit Modal -->
         <Teleport to="body">
@@ -263,8 +264,6 @@ onMounted(fetchChannels)
 </template>
 
 <style scoped>
-.table-card { padding: 0; overflow: hidden; }
-
 .empty-state { display: flex; flex-direction: column; align-items: center; justify-content: center; }
 
 .url-cell {
@@ -303,13 +302,6 @@ onMounted(fetchChannels)
 .status-dot { width: 6px; height: 6px; background: currentColor; border-radius: 50%; }
 
 .text-danger { color: var(--error-color); }
-.text-center { text-align: center; }
-
-.error-banner {
-    background: var(--error-light); color: var(--error-dark); border: 1px solid var(--error-color);
-    border-radius: var(--radius-sm); padding: 10px 14px; margin-bottom: var(--spacing-4);
-    font-size: var(--font-size-sm); cursor: pointer;
-}
 
 /* Modal */
 .form-stack { display: flex; flex-direction: column; gap: 16px; }
