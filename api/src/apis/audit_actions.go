@@ -40,6 +40,7 @@ var auditRoutes = map[string]auditRoute{
 	"DELETE /hypers/:uuid":        {"hyper", "hyper.delete", "uuid", false},
 	"PATCH /hypers/:uuid":         {"hyper", "hyper.update", "uuid", false},
 	"POST /hypers/:uuid/maintain": {"hyper", "hyper.maintain", "uuid", false},
+	"POST /hypers/:uuid/console":  {"hyper", "hyper.console", "uuid", false},
 
 	"POST /migrations": {"migration", "migration.create", "", false},
 

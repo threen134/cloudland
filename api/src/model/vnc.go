@@ -25,11 +25,13 @@ func init() {
 	dbs.AutoMigrate(&SerialConsole{})
 }
 
-// SerialConsole is the one-time TCP address a hypervisor exposes the instance's serial console on
-// (start_serial_console.sh), valid until the console proxy connects or the listener times out
+// SerialConsole is the one-time TCP address a hypervisor exposes the instance's serial console
+// (start_serial_console.sh) or a host shell (start_host_console.sh, InstanceID 0) on, valid until the
+// console proxy connects or the listener times out
 type SerialConsole struct {
 	Model
 	InstanceID   int64  `gorm:"index"`
+	HostID       int32  /* Hypervisor that reported the address */
 	Session      string `gorm:"type:varchar(64);index"` /* Chosen by the request waiting for this record */
 	LocalAddress string `gorm:"type:varchar(64)"`
 	LocalPort    int32

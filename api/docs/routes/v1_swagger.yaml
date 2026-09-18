@@ -734,6 +734,30 @@ definitions:
       vlan:
         type: integer
     type: object
+  apis.HostConsolePayload:
+    properties:
+      cols:
+        maximum: 1000
+        minimum: 1
+        type: integer
+      rows:
+        description: Terminal size the shell starts with
+        maximum: 500
+        minimum: 1
+        type: integer
+    type: object
+  apis.HostConsoleResponse:
+    properties:
+      console_url:
+        type: string
+      hyper:
+        $ref: '#/definitions/common.ResourceReference'
+      idle_timeout:
+        description: Seconds without traffic after which the node closes the session
+        type: integer
+      token:
+        type: string
+    type: object
   apis.HyperDeployPayload:
     properties:
       dns_server:
@@ -4087,6 +4111,44 @@ paths:
       - application/json
       responses: {}
       summary: update a hypervisor
+      tags:
+      - Administration
+      - Hypervisor
+  /hypers/{uuid}/console:
+    post:
+      consumes:
+      - application/json
+      description: create a single-use token for a root shell on a hypervisor (system
+        admins only, when enabled in system settings). Through the gateway the body
+        must also carry "password", the caller's login password, which the gateway
+        checks and removes
+      parameters:
+      - description: Hypervisor UUID
+        in: path
+        name: uuid
+        required: true
+        type: string
+      - description: Terminal size
+        in: body
+        name: message
+        schema:
+          $ref: '#/definitions/apis.HostConsolePayload'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.HostConsoleResponse'
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "403":
+          description: Not authorized or host console disabled
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: create a host console
       tags:
       - Administration
       - Hypervisor

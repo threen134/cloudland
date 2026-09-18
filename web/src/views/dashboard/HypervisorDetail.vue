@@ -4,10 +4,11 @@ import { useRoute, useRouter } from 'vue-router'
 import { hypervisorsApi, type Hypervisor } from '../../api/hypervisors'
 import { instancesApi } from '../../api/instances'
 import { zonesApi } from '../../api/zones'
-import { ArrowLeft, Server, Cpu, Copy, Check, Edit, Save, X, Wrench, Loader2, ChevronDown, Pencil, Settings, Info, Activity } from 'lucide-vue-next'
+import { ArrowLeft, Server, Cpu, Copy, Check, Edit, Save, X, Wrench, Loader2, ChevronDown, Pencil, Settings, Info, Activity, SquareTerminal } from 'lucide-vue-next'
 import HostMonitoringCharts from '../../components/monitoring/HostMonitoringCharts.vue'
 import { useI18n } from 'vue-i18n'
 import { useToast } from '../../composables/useToast'
+import { useHostConsole } from '../../composables/useHostConsole'
 
 const { t, te } = useI18n()
 const toast = useToast()
@@ -23,6 +24,7 @@ const zoneList = ref<any[]>([])
 const showActionMenu = ref(false)
 const toggleActionMenu = () => { showActionMenu.value = !showActionMenu.value }
 const closeActionMenu = () => { showActionMenu.value = false }
+const { disabledReason: consoleDisabledReason, openHostConsole } = useHostConsole()
 
 const STATUS_MAP: Record<number, { label: string; class: string }> = {
     0: { label: 'dashboard.hypervisorStatus.disabled', class: 'status-disabled' },
@@ -310,6 +312,14 @@ onMounted(fetchHypervisorDetail)
                 </button>
                 <button class="dropdown-item" @click="toggleEdit">
                   <Pencil :size="14" /> {{ t('actions.edit') }}
+                </button>
+                <button
+                  class="dropdown-item"
+                  :disabled="!!consoleDisabledReason(hypervisor.status)"
+                  :title="consoleDisabledReason(hypervisor.status)"
+                  @click="closeActionMenu(); openHostConsole(hypervisor.uuid)"
+                >
+                  <SquareTerminal :size="14" /> {{ t('dashboard.hypervisorActions.console') }}
                 </button>
               </div>
             </Transition>
@@ -687,6 +697,11 @@ onMounted(fetchHypervisorDetail)
 
 .dropdown-item:hover:not(:disabled) {
   background: var(--bg-hover, #f3f4f6);
+}
+
+.dropdown-item:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .dropdown-enter-active {

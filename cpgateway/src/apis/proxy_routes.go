@@ -139,6 +139,7 @@ var proxyRoutes = []proxyRoute{
 	{"PATCH", "/hypers/:hostid", "/hypers/{hostid}", true},
 	{"POST", "/hypers", "/hypers", true},
 	{"POST", "/hypers/:hostid/maintain", "/hypers/{hostid}/maintain", true},
+	{"POST", "/hypers/:hostid/console", "/hypers/{hostid}/console", true},
 	{"DELETE", "/hypers/:hostid", "/hypers/{hostid}", true},
 	{"GET", "/node-alarm-rules", "/node-alarm-rules", true},
 	{"POST", "/node-alarm-rules", "/node-alarm-rules", true},

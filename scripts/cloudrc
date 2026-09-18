@@ -299,6 +299,53 @@ function start_keepalived()
         ip netns exec $router keepalived -p $vrrp_dir/keepalived.pid -r $vrrp_dir/vrrp.pid -f $vrrp_dir/keepalived.conf 9>&-
 }
 
+# Addresses for a console bridge (console_bridge.sh): <console_proxy_source>
+# Sets console_listen_ip, the address this node uses to reach the controller, and console_sources, the addresses
+# allowed to connect: the controller endpoint (MANAGEMENT_VIP); the host of the console proxy as reported by
+# clapi, which differs from the VIP in an HA control plane because outgoing connections use the node's primary
+# address; and the proxy container itself when it runs on this node (its traffic to a local address is not masqueraded)
+function console_bridge_addrs()
+{
+    local proxy_source=$1 cland_ip proxy_ip
+    [ -z "$proxy_source" ] || [[ "$proxy_source" =~ ^[0-9]{1,3}(\.[0-9]{1,3}){3}$ ]] || die "Invalid console proxy source"
+    command -v socat >/dev/null || die "socat is not installed"
+    cland_ip=$(sed -n 's/^CLAND_ENDPOINT=\([^:]*\):.*/\1/p' /etc/sysconfig/cloudlet 2>/dev/null)
+    [ -n "$cland_ip" ] || die "CLAND_ENDPOINT is not configured"
+    console_sources=$cland_ip
+    [ -n "$proxy_source" ] && [ "$proxy_source" != "$cland_ip" ] && console_sources="$console_sources $proxy_source"
+    proxy_ip=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}} {{end}}' cloudland-consoleproxy 2>/dev/null)
+    [ -n "$proxy_ip" ] && console_sources="$console_sources $proxy_ip"
+    console_listen_ip=$(ip -4 route get $cland_ip 2>/dev/null | sed -n 's/.* src \([0-9.]*\).*/\1/p' | head -1)
+    [ -n "$console_listen_ip" ] || die "Unable to determine the local address towards $cland_ip"
+}
+
+# Start console_bridge.sh on a free port and wait until it listens: <name> <idle_seconds> <socat_address> <log file>
+# Prints the port; fails when no bridge could be started
+function start_console_bridge()
+{
+    local name=$1 idle=$2 address=$3 log=$4 port pid i died=0
+    for port in $(shuf -i 16000-16999 -n 20); do
+        ss -Htln "sport = :$port" | grep -q . && continue
+        setsid /opt/cloudland/scripts/backend/console_bridge.sh "$name" "$idle" "$address" $console_listen_ip $port $console_sources </dev/null >>$log 2>&1 &
+        pid=$!
+        # Report the port only once it accepts connections
+        for i in $(seq 1 30); do
+            ss -Htln "sport = :$port" | grep -q . && break
+            kill -0 $pid 2>/dev/null || break
+            sleep 0.1
+        done
+        if ss -Htln "sport = :$port" | grep -q .; then
+            echo $port
+            return 0
+        fi
+        # The port was free, so a bridge that exited failed for another reason (a firewall rule it could not
+        # insert): give up instead of retrying it on twenty ports
+        kill -0 $pid 2>/dev/null || died=$((died + 1))
+        [ $died -ge 3 ] && return 1
+    done
+    return 1
+}
+
 function log_debug()
 {
     # check if parameter count less than 2

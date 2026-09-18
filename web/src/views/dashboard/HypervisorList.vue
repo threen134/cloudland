@@ -6,10 +6,11 @@ import { zonesApi } from '../../api/zones'
 import { useRegionStore } from '../../stores/region'
 
 const region = useRegionStore()
-import { Search as SearchIcon, Server, Plus, Trash2, RefreshCw, Copy, Check, X, Loader2, HelpCircle, Pencil, Wrench, MoreVertical, ChevronDown } from 'lucide-vue-next'
+import { Search as SearchIcon, Server, Plus, Trash2, RefreshCw, Copy, Check, X, Loader2, HelpCircle, Pencil, Wrench, MoreVertical, ChevronDown, SquareTerminal } from 'lucide-vue-next'
 import { useI18n } from 'vue-i18n'
 import { useToast } from '../../composables/useToast'
 import { useCopyId } from '../../composables/useCopyId'
+import { useHostConsole } from '../../composables/useHostConsole'
 
 const vClickOutside = {
   mounted(el: any, binding: any) {
@@ -120,6 +121,7 @@ const closeActionMenu = () => {
 }
 
 const { copiedId, copyId } = useCopyId()
+const { disabledReason: consoleDisabledReason, openHostConsole } = useHostConsole()
 
 const STATUS_MAP: Record<number, { labelKey: string; class: string }> = {
     0: { labelKey: 'disabled', class: 'status-disabled' },
@@ -510,6 +512,14 @@ onMounted(() => {
                     </button>
                     <button v-if="h.status === 2" class="dropdown-item" @click="exitMaintain(h)">
                         <Wrench :size="14" /> {{ t('dashboard.hypervisorActions.exitMaintain') }}
+                    </button>
+                    <button
+                        class="dropdown-item"
+                        :disabled="!!consoleDisabledReason(h.status)"
+                        :title="consoleDisabledReason(h.status)"
+                        @click="closeActionMenu(); openHostConsole(h.uuid)"
+                    >
+                        <SquareTerminal :size="14" /> {{ t('dashboard.hypervisorActions.console') }}
                     </button>
                     <div class="dropdown-divider"></div>
                     <button class="dropdown-item text-error" @click="confirmDelete(h)">
@@ -1107,6 +1117,11 @@ onMounted(() => {
 
 .dropdown-item:hover:not(:disabled) {
   background: var(--bg-tertiary);
+}
+
+.dropdown-item:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .dropdown-item.text-error {

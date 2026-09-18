@@ -59,6 +59,8 @@ var SettingsMetadata = []SettingMeta{
 	{"ALARM_EVENT_RETENTION_DAYS", "number", "general", "VM 告警事件保留天数", false, constant(30)},
 	{"AUDIT_LOG_RETENTION_DAYS", "number", "general", "操作审计日志保留天数", false, constant(DefaultAuditLogRetentionDays)},
 	{"DNS_UPSTREAM", "string", "general", "内部 DNS 上游转发地址（计算节点 hostname 未匹配时转发至此）", false, cfgString("dns.upstream", "8.8.8.8")},
+	{"HOST_CONSOLE_ENABLED", "boolean", "general", "允许系统管理员从 Web 打开计算节点的 root 终端", false, constant(false)},
+	{"HOST_CONSOLE_IDLE_MINUTES", "number", "general", "计算节点终端空闲断开时间（分钟）", false, constant(DefaultHostConsoleIdleMinutes)},
 	{"DEFAULT_CPU_CORES", "number", "quota", "默认 CPU 配额（核）", false, cfgNumber("quota.defaults.cpu_cores", 4.0)},
 	{"DEFAULT_RAM_GB", "number", "quota", "默认内存配额（GB）", false, cfgNumber("quota.defaults.ram_gb", 8.0)},
 	{"DEFAULT_DISK_GB", "number", "quota", "默认磁盘配额（GB）", false, cfgNumber("quota.defaults.disk_gb", 50.0)},
@@ -85,6 +87,9 @@ var SettingsMetadata = []SettingMeta{
 
 const DefaultAuditLogRetentionDays = 365
 
+// DefaultHostConsoleIdleMinutes and the HOST_CONSOLE_IDLE_MINUTES range must match clapi (services/host_console.go)
+const DefaultHostConsoleIdleMinutes = 15
+
 // settingRange is the allowed value range (inclusive) of a numeric setting.
 type settingRange struct {
 	Min, Max float64
@@ -95,18 +100,26 @@ type settingRange struct {
 // trail cannot be wiped by mistake (clapi applies the same range when reading it). Default quotas must be
 // non-negative, and count quotas whole numbers, matching the per-org quota update API.
 var settingRanges = map[string]settingRange{
-	"AUDIT_LOG_RETENTION_DAYS": {90, 3650, true},
-	"DEFAULT_CPU_CORES":        {0, 1e6, false},
-	"DEFAULT_RAM_GB":           {0, 1e7, false},
-	"DEFAULT_DISK_GB":          {0, 1e9, false},
-	"DEFAULT_PUBLIC_IPS":       {0, 1e5, true},
-	"DEFAULT_VPCS":             {0, 1e5, true},
-	"DEFAULT_LOAD_BALANCERS":   {0, 1e5, true},
-	"DEFAULT_IMAGES":           {0, 1e5, true},
+	"AUDIT_LOG_RETENTION_DAYS":  {90, 3650, true},
+	"HOST_CONSOLE_IDLE_MINUTES": {5, 240, true},
+	"DEFAULT_CPU_CORES":         {0, 1e6, false},
+	"DEFAULT_RAM_GB":            {0, 1e7, false},
+	"DEFAULT_DISK_GB":           {0, 1e9, false},
+	"DEFAULT_PUBLIC_IPS":        {0, 1e5, true},
+	"DEFAULT_VPCS":              {0, 1e5, true},
+	"DEFAULT_LOAD_BALANCERS":    {0, 1e5, true},
+	"DEFAULT_IMAGES":            {0, 1e5, true},
 }
 
-// ValidateSetting validates a single setting value; only numeric settings with a range are checked
+// ValidateSetting validates a single setting value: boolean settings must be booleans, numeric settings with a
+// range must be within it
 func ValidateSetting(key string, value interface{}) error {
+	if meta, ok := FindSettingMeta(key); ok && meta.ValueType == "boolean" {
+		if _, isBool := value.(bool); !isBool {
+			return fmt.Errorf("%s must be true or false", key)
+		}
+		return nil
+	}
 	r, ok := settingRanges[key]
 	if !ok {
 		return nil

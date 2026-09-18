@@ -52,6 +52,11 @@ func proxyHandler(route proxyRoute) gin.HandlerFunc {
 				return
 			}
 		}
+		if route.Template == hostConsoleTemplate {
+			if body, err = verifyHostConsolePassword(c, body); err != nil {
+				return
+			}
+		}
 		forwardToRegion(c, route.Template, body)
 	}
 }

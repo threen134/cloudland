@@ -6,22 +6,29 @@ import { Terminal as XTerm } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import '@xterm/xterm/css/xterm.css'
 import { instancesApi } from '../../api/instances'
-import { SquareTerminal, RefreshCw, AlertTriangle, Copy, ClipboardPaste, Scaling, Monitor } from 'lucide-vue-next'
+import { hypervisorsApi } from '../../api/hypervisors'
+import { SquareTerminal, RefreshCw, AlertTriangle, Copy, ClipboardPaste, Scaling, Monitor, LockKeyhole } from 'lucide-vue-next'
 
-// Text console on the instance's first serial port. The console proxy relays raw bytes between this
-// websocket and the serial port, so the terminal emulation happens here in xterm.js.
+// Text console on the instance's first serial port, or (route host-console) a root shell on a hypervisor. The
+// console proxy relays raw bytes between this websocket and the node, so the terminal emulation happens here
+// in xterm.js. A host console token opens a single session: every connection asks for the password again.
 
 const route = useRoute()
 const router = useRouter()
 const { t } = useI18n()
 const instanceId = route.params.id as string
+const isHost = route.name === 'host-console'
 
 const container = ref<HTMLElement | null>(null)
-const status = ref('connecting') // connecting, connected, disconnected, error
+const status = ref(isHost ? 'auth' : 'connecting') // auth (host only), connecting, connected, disconnected, error
 const errorMessage = ref('')
 const instanceName = ref('')
 const notice = ref('')
 const noticeWarn = ref(false)
+const password = ref('')
+const authError = ref('')
+const idleMinutes = ref(0)
+const passwordInput = ref<HTMLInputElement | null>(null)
 
 let term: XTerm | null = null
 let fitAddon: FitAddon | null = null
@@ -122,13 +129,49 @@ const setupTerminal = () => {
     resizeObserver.observe(container.value)
 }
 
-const connect = async () => {
-    status.value = 'connecting'
-    errorMessage.value = ''
-    // Detach the old socket first: its close event must not mark the new attempt as disconnected
+const apiError = (err: any) =>
+    err.response?.data?.detail || err.response?.data?.error_message || err.message || t('dashboard.console.errorSubtitle')
+
+// Drop the current socket: its close event must not mark a new attempt as disconnected
+const detachSocket = () => {
     const old = socket
     socket = null
     old?.close()
+}
+
+const openSocket = (url: string) => {
+    const ws = new WebSocket(url, ['binary'])
+    ws.binaryType = 'arraybuffer'
+    socket = ws
+    ws.onopen = () => {
+        if (socket !== ws) return
+        status.value = 'connected'
+        term?.focus()
+        // Nothing was reading the serial line before: a carriage return brings up the prompt again.
+        // A host shell starts fresh and prints its own prompt
+        if (!isHost) send('\r')
+    }
+    ws.onmessage = ev => {
+        if (socket !== ws) return
+        term?.write(typeof ev.data === 'string' ? ev.data : new Uint8Array(ev.data))
+    }
+    ws.onclose = () => {
+        if (socket !== ws) return
+        if (status.value !== 'error') status.value = 'disconnected'
+    }
+    ws.onerror = () => {
+        if (socket !== ws) return
+        if (status.value === 'connecting') {
+            status.value = 'error'
+            errorMessage.value = t('dashboard.console.errorSubtitle')
+        }
+    }
+}
+
+const connectSerial = async () => {
+    status.value = 'connecting'
+    errorMessage.value = ''
+    detachSocket()
     try {
         const { data } = await instancesApi.getConsole(instanceId, 'serial')
         instanceName.value = data.instance?.hostname || data.instance?.id || instanceId
@@ -143,42 +186,78 @@ const connect = async () => {
 
         await nextTick()
         setupTerminal()
-        const ws = new WebSocket(url, ['binary'])
-        ws.binaryType = 'arraybuffer'
-        socket = ws
-        ws.onopen = () => {
-            if (socket !== ws) return
-            status.value = 'connected'
-            term?.focus()
-            // Nothing was reading the serial line before: a carriage return brings up the prompt again
-            send('\r')
-        }
-        ws.onmessage = ev => {
-            if (socket !== ws) return
-            term?.write(typeof ev.data === 'string' ? ev.data : new Uint8Array(ev.data))
-        }
-        ws.onclose = () => {
-            if (socket !== ws) return
-            if (status.value !== 'error') status.value = 'disconnected'
-        }
-        ws.onerror = () => {
-            if (socket !== ws) return
-            if (status.value === 'connecting') {
-                status.value = 'error'
-                errorMessage.value = t('dashboard.console.errorSubtitle')
-            }
-        }
+        openSocket(url)
     } catch (err: any) {
         status.value = 'error'
-        errorMessage.value = err.response?.data?.error_message || err.message || t('dashboard.console.errorSubtitle')
+        errorMessage.value = apiError(err)
     }
 }
+
+// A host console asks for the password before every connection
+const requestPassword = async () => {
+    detachSocket()
+    password.value = ''
+    authError.value = ''
+    status.value = 'auth'
+    await nextTick()
+    passwordInput.value?.focus()
+}
+
+const connectHost = async () => {
+    if (!password.value || status.value === 'connecting') return
+    status.value = 'connecting'
+    errorMessage.value = ''
+    authError.value = ''
+    detachSocket()
+    await nextTick()
+    setupTerminal()
+    fitAddon?.fit()
+    try {
+        const { data } = await hypervisorsApi.openConsole(instanceId, {
+            password: password.value,
+            rows: term?.rows,
+            cols: term?.cols,
+        })
+        password.value = ''
+        if (data.hyper?.name) instanceName.value = data.hyper.name
+        idleMinutes.value = Math.round((data.idle_timeout || 0) / 60)
+        if (!data.console_url) throw new Error('No console URL returned from API')
+        term?.reset()
+        openSocket(data.console_url)
+    } catch (err: any) {
+        // A wrong password (403) or too many attempts (429) keep the password form open. A refusal from clapi
+        // (the feature was turned off, or the account is not a system admin) is a 403 as well but carries an
+        // error code: retyping the password would not help, so it is shown as an error
+        if (!err.response?.data?.error_code && (err.response?.status === 403 || err.response?.status === 429)) {
+            status.value = 'auth'
+            authError.value = apiError(err)
+            password.value = ''
+            await nextTick()
+            passwordInput.value?.focus()
+            return
+        }
+        status.value = 'error'
+        errorMessage.value = apiError(err)
+    }
+}
+
+const connect = () => (isHost ? requestPassword() : connectSerial())
 
 const switchToGraphical = () => {
     router.replace({ name: 'instance-console', params: { id: instanceId } })
 }
 
-onMounted(connect)
+onMounted(() => {
+    if (!isHost) {
+        connectSerial()
+        return
+    }
+    instanceName.value = instanceId
+    hypervisorsApi.getHypervisor(instanceId).then(res => {
+        if (res.data.hostname) instanceName.value = res.data.hostname
+    }).catch(() => {})
+    requestPassword()
+})
 
 onUnmounted(() => {
     const ws = socket
@@ -199,11 +278,11 @@ onUnmounted(() => {
                 </div>
                 <div class="instance-info">
                     <h1 class="instance-name">{{ instanceName }}</h1>
-                    <span class="instance-id">{{ t('dashboard.console.serial.title') }} · {{ instanceId }}</span>
+                    <span class="instance-id">{{ t(isHost ? 'dashboard.console.host.title' : 'dashboard.console.serial.title') }} · {{ instanceId }}</span>
                 </div>
                 <div :class="['status-indicator', status]">
                     <span class="status-dot"></span>
-                    <span class="status-text">{{ t(`dashboard.console.${status}`) }}</span>
+                    <span class="status-text">{{ status === 'auth' ? t('dashboard.console.host.passwordTitle') : t(`dashboard.console.${status}`) }}</span>
                 </div>
                 <span v-if="notice" :class="['notice', { warn: noticeWarn }]">{{ notice }}</span>
             </div>
@@ -217,7 +296,7 @@ onUnmounted(() => {
                 <button class="btn-console" :disabled="status !== 'connected'" :title="t('dashboard.console.serial.syncSizeHint')" @click="syncSize">
                     <Scaling :size="16" /> <span class="btn-text">{{ t('dashboard.console.serial.syncSize') }}</span>
                 </button>
-                <button class="btn-console" :title="t('dashboard.console.serial.switchToVnc')" @click="switchToGraphical">
+                <button v-if="!isHost" class="btn-console" :title="t('dashboard.console.serial.switchToVnc')" @click="switchToGraphical">
                     <Monitor :size="16" /> <span class="btn-text">{{ t('dashboard.console.serial.switchToVnc') }}</span>
                 </button>
                 <button class="btn-console" :title="t('dashboard.console.reconnect')" @click="connect">
@@ -237,6 +316,27 @@ onUnmounted(() => {
                     </button>
                 </div>
             </div>
+            <div v-if="status === 'auth'" class="error-overlay">
+                <form class="error-content auth-form" @submit.prevent="connectHost">
+                    <LockKeyhole :size="40" class="text-warn" />
+                    <h2>{{ t('dashboard.console.host.passwordTitle') }}</h2>
+                    <p>{{ t('dashboard.console.host.passwordDesc', { name: instanceName }) }}</p>
+                    <!-- The username field lets password managers fill in the password of the current account -->
+                    <input type="text" autocomplete="username" class="visually-hidden" tabindex="-1" aria-hidden="true" />
+                    <input
+                        ref="passwordInput"
+                        v-model="password"
+                        type="password"
+                        class="password-input"
+                        autocomplete="current-password"
+                        :placeholder="t('dashboard.console.host.passwordPlaceholder')"
+                    />
+                    <p v-if="authError" class="auth-error">{{ t('dashboard.console.host.authFailed') }}: {{ authError }}</p>
+                    <button type="submit" class="btn-primary mt-4" :disabled="!password">
+                        <SquareTerminal :size="16" /> {{ t('dashboard.console.host.open') }}
+                    </button>
+                </form>
+            </div>
             <div v-if="status === 'connecting'" class="loading-overlay">
                 <div class="loading-content">
                     <div class="loading-spinner-lg"></div>
@@ -247,7 +347,8 @@ onUnmounted(() => {
         </main>
 
         <footer class="console-footer">
-            <span>{{ t('dashboard.console.serial.hint') }}</span>
+            <span v-if="isHost">{{ t('dashboard.console.host.hint', { minutes: idleMinutes || 15 }) }}</span>
+            <span v-else>{{ t('dashboard.console.serial.hint') }}</span>
         </footer>
     </div>
 </template>
@@ -418,6 +519,52 @@ onUnmounted(() => {
 
 .text-error {
     color: #ef4444;
+}
+
+.text-warn {
+    color: #eab308;
+}
+
+.auth-form {
+    width: min(420px, calc(100vw - 32px));
+    box-sizing: border-box;
+}
+
+.password-input {
+    width: 100%;
+    box-sizing: border-box;
+    margin-top: 12px;
+    height: 38px;
+    padding: 0 12px;
+    border-radius: 6px;
+    border: 1px solid #475569;
+    background-color: #0f172a;
+    color: #f1f5f9;
+    font-size: 14px;
+}
+
+.password-input:focus {
+    outline: none;
+    border-color: #3b82f6;
+}
+
+.auth-error {
+    margin: 10px 0 0;
+    color: #f87171 !important;
+    font-size: 13px !important;
+}
+
+.btn-primary:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.visually-hidden {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    opacity: 0;
+    pointer-events: none;
 }
 
 .loading-content {

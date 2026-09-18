@@ -46,6 +46,14 @@ export interface HyperDeployPayload {
     virt_type?: string
 }
 
+export interface HostConsoleResponse {
+    hyper: { id: string; name?: string }
+    token: string
+    console_url: string
+    // Seconds without traffic after which the node closes the session
+    idle_timeout: number
+}
+
 export interface HyperMaintainPayload {
     target_hyper: number
     migrate: boolean
@@ -81,6 +89,12 @@ export const hypervisorsApi = {
 
     deleteHypervisor(uuid: string) {
         return client.delete(`/hypers/${uuid}`)
+    },
+
+    // Root shell on the hypervisor (system admins, when enabled in system settings). The gateway checks the password
+    // again; rows and cols are the terminal size the shell starts with
+    openConsole(uuid: string, payload: { password: string; rows?: number; cols?: number }) {
+        return client.post<HostConsoleResponse>(`/hypers/${uuid}/console`, payload)
     },
 
     // Monitoring Metrics

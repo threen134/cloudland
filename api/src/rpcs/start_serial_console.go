@@ -47,7 +47,7 @@ func StartSerialConsole(ctx context.Context, args []string) (status string, err 
 		logger.Ctx(ctx).Errorf("Serial console of instance %d reported by node %d, instance is on %d", instID, hostid, instance.Hyper)
 		return
 	}
-	serial := &model.SerialConsole{InstanceID: instID, Session: session, LocalAddress: args[4], LocalPort: int32(port)}
+	serial := &model.SerialConsole{InstanceID: instID, HostID: instance.Hyper, Session: session, LocalAddress: args[4], LocalPort: int32(port)}
 	// Callbacks are retried: one record per session
 	err = db.Where("instance_id = ? AND session = ?", instID, session).Assign(serial).FirstOrCreate(&model.SerialConsole{}).Error
 	if err != nil {

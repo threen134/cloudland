@@ -387,6 +387,16 @@ export default {
                 copied: '已复制到剪贴板',
                 nothingSelected: '请先用鼠标选中要复制的内容',
                 clipboardDenied: '浏览器不允许访问剪贴板'
+            },
+            host: {
+                title: '节点终端',
+                passwordTitle: '验证身份',
+                passwordDesc: '即将以 root 身份登录计算节点 {name} 的命令行。请输入您的登录密码确认身份。',
+                passwordPlaceholder: '当前账号的登录密码',
+                open: '打开终端',
+                authFailed: '验证失败',
+                hint: '计算节点 root 终端：会话输出会被记录在节点上，空闲 {minutes} 分钟后自动断开；断开后需重新验证密码。',
+                idleHint: '空闲 {minutes} 分钟后断开'
             }
         },
         instances: '云服务器',
@@ -955,6 +965,7 @@ export default {
                     enable: '启用了计算节点 {name}',
                     disable: '禁用了计算节点 {name}',
                     maintain: '将计算节点 {name} 置为维护',
+                    console: '打开了计算节点 {name} 的终端',
                 },
                 migration: {
                     create: '发起了迁移 {name}',
@@ -1068,6 +1079,7 @@ export default {
                     enable: '启用计算节点 {name}',
                     disable: '禁用计算节点 {name}',
                     maintain: '将计算节点 {name} 置为维护',
+                    console: '打开计算节点 {name} 的终端',
                 },
                 migration: {
                     create: '发起迁移 {name}',
@@ -1496,6 +1508,9 @@ export default {
         hypervisorActions: {
             deploy: '部署节点',
             maintain: '维护',
+            console: '终端',
+            consoleDisabled: '节点终端未启用，请在系统设置中开启',
+            consoleOffline: '节点未连接，无法打开终端',
             exitMaintain: '退出维护',
             exitMaintainConfirm: '确定让计算节点 "{hostname}" 退出维护模式并恢复为活动状态吗？',
             maintainTitle: '进入维护模式',
@@ -1874,6 +1889,8 @@ export default {
             quotaCompute: '计算与存储',
             quotaComputeDesc: '新建组织或新增区域时，为每个组织在每个区域写入的初始配额。修改后不影响已有配额，单个组织的配额请在组织详情中调整。',
             quotaOther: '网络与镜像',
+            hostConsole: '计算节点终端',
+            hostConsoleDesc: '允许系统管理员在计算节点页面打开节点的 root 命令行。打开前须再次输入密码，会话输出记录在节点的 /opt/cloudland/log/host_console/ 下（保留 180 天）。',
             other: '其他',
         },
         notificationHint: '用于账号激活、成员邀请等系统通知。虚拟机告警的接收方请在',
@@ -1883,6 +1900,7 @@ export default {
             cores: '核',
             gb: 'GB',
             days: '天',
+            minutes: '分钟',
         },
         fields: {
             FRONTEND_URL: '前端访问地址',
@@ -1912,6 +1930,10 @@ export default {
             AUDIT_LOG_RETENTION_DAYS_desc: '操作审计日志（含概览页「最近动态」）的保留天数，各区域每天自动清理超过该天数的记录。取值 90–3650，默认 365 天。',
             DNS_UPSTREAM: 'DNS 上游转发',
             DNS_UPSTREAM_desc: '内部 dnsmasq 未能匹配节点 hostname 时，将 DNS 查询转发到此地址。支持逗号分隔多个地址，如 8.8.8.8,8.8.4.4。',
+            HOST_CONSOLE_ENABLED: '启用节点终端',
+            HOST_CONSOLE_ENABLED_desc: '关闭后所有用户都无法打开新的节点终端，已打开的会话不受影响。',
+            HOST_CONSOLE_IDLE_MINUTES: '空闲断开时间',
+            HOST_CONSOLE_IDLE_MINUTES_desc: '终端在该时间内没有任何输入输出时自动断开。取值 5–240，默认 15 分钟。',
         },
         infra: {
             readOnlyTitle: '只读视图',

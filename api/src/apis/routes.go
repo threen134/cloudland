@@ -156,6 +156,7 @@ func Register() (r *gin.Engine) {
 		authGroup.DELETE("/hypers/:uuid", hyperAPI.Delete)
 		authGroup.PATCH("/hypers/:uuid", hyperAPI.Patch)
 		authGroup.POST("/hypers/:uuid/maintain", hyperAPI.Maintain)
+		authGroup.POST("/hypers/:uuid/console", consoleAPI.CreateHost)
 
 		authGroup.GET("/migrations", migrationAPI.List)
 		authGroup.POST("/migrations", migrationAPI.Create)

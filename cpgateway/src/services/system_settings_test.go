@@ -45,3 +45,27 @@ func TestValidateSettingDefaultQuotas(t *testing.T) {
 		}
 	}
 }
+
+func TestValidateSettingHostConsole(t *testing.T) {
+	// Boolean settings only accept JSON booleans: clapi reads the mirrored value as the literal true
+	for _, ok := range []interface{}{true, false} {
+		if err := ValidateSetting("HOST_CONSOLE_ENABLED", ok); err != nil {
+			t.Errorf("HOST_CONSOLE_ENABLED=%v should be accepted: %v", ok, err)
+		}
+	}
+	for _, bad := range []interface{}{"true", float64(1), nil} {
+		if err := ValidateSetting("HOST_CONSOLE_ENABLED", bad); err == nil {
+			t.Errorf("HOST_CONSOLE_ENABLED=%#v should be rejected", bad)
+		}
+	}
+	for _, ok := range []interface{}{float64(5), float64(15), float64(240)} {
+		if err := ValidateSetting("HOST_CONSOLE_IDLE_MINUTES", ok); err != nil {
+			t.Errorf("HOST_CONSOLE_IDLE_MINUTES=%v should be accepted: %v", ok, err)
+		}
+	}
+	for _, bad := range []interface{}{float64(4), float64(241), 7.5, "15"} {
+		if err := ValidateSetting("HOST_CONSOLE_IDLE_MINUTES", bad); err == nil {
+			t.Errorf("HOST_CONSOLE_IDLE_MINUTES=%#v should be rejected", bad)
+		}
+	}
+}

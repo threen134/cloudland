@@ -387,6 +387,16 @@ export default {
                 copied: '已複製到剪貼簿',
                 nothingSelected: '請先用滑鼠選取要複製的內容',
                 clipboardDenied: '瀏覽器不允許存取剪貼簿'
+            },
+            host: {
+                title: '節點終端',
+                passwordTitle: '驗證身分',
+                passwordDesc: '即將以 root 身分登入計算節點 {name} 的命令列。請輸入您的登入密碼確認身分。',
+                passwordPlaceholder: '目前帳號的登入密碼',
+                open: '開啟終端',
+                authFailed: '驗證失敗',
+                hint: '計算節點 root 終端：工作階段輸出會記錄在節點上，閒置 {minutes} 分鐘後自動中斷；中斷後需重新驗證密碼。',
+                idleHint: '閒置 {minutes} 分鐘後中斷'
             }
         },
         instances: '雲伺服器',
@@ -955,6 +965,7 @@ export default {
                     enable: '啟用了計算節點 {name}',
                     disable: '停用了計算節點 {name}',
                     maintain: '將計算節點 {name} 置為維護',
+                    console: '開啟了計算節點 {name} 的終端',
                 },
                 migration: {
                     create: '發起了遷移 {name}',
@@ -1068,6 +1079,7 @@ export default {
                     enable: '啟用計算節點 {name}',
                     disable: '停用計算節點 {name}',
                     maintain: '將計算節點 {name} 置為維護',
+                    console: '開啟計算節點 {name} 的終端',
                 },
                 migration: {
                     create: '發起遷移 {name}',
@@ -1496,6 +1508,9 @@ export default {
         hypervisorActions: {
             deploy: '部署節點',
             maintain: '維護',
+            console: '終端',
+            consoleDisabled: '節點終端未啟用，請在系統設定中開啟',
+            consoleOffline: '節點未連線，無法開啟終端',
             exitMaintain: '退出維護',
             exitMaintainConfirm: '確定讓計算節點 "{hostname}" 退出維護模式並恢復為活動狀態嗎？',
             maintainTitle: '進入維護模式',
@@ -1874,6 +1889,8 @@ export default {
             quotaCompute: '運算與儲存',
             quotaComputeDesc: '新建組織或新增區域時，為每個組織在每個區域寫入的初始配額。修改後不影響已有配額，單個組織的配額請在組織詳情中調整。',
             quotaOther: '網路與映像',
+            hostConsole: '計算節點終端',
+            hostConsoleDesc: '允許系統管理員在計算節點頁面開啟節點的 root 命令列。開啟前須再次輸入密碼，工作階段輸出記錄在節點的 /opt/cloudland/log/host_console/ 下（保留 180 天）。',
             other: '其他',
         },
         notificationHint: '用於帳號啟用、成員邀請等系統通知。虛擬機器告警的接收方請在',
@@ -1883,6 +1900,7 @@ export default {
             cores: '核',
             gb: 'GB',
             days: '天',
+            minutes: '分鐘',
         },
         fields: {
             FRONTEND_URL: '前端存取地址',
@@ -1912,6 +1930,10 @@ export default {
             AUDIT_LOG_RETENTION_DAYS_desc: '操作審計日誌（含概覽頁「最近動態」）的保留天數，各區域每天自動清理超過該天數的記錄。取值 90–3650，預設 365 天。',
             DNS_UPSTREAM: 'DNS 上游轉發',
             DNS_UPSTREAM_desc: '內部 dnsmasq 未能匹配節點 hostname 時，將 DNS 查詢轉發到此地址。支援逗號分隔多個地址，如 8.8.8.8,8.8.4.4。',
+            HOST_CONSOLE_ENABLED: '啟用節點終端',
+            HOST_CONSOLE_ENABLED_desc: '關閉後所有使用者都無法開啟新的節點終端，已開啟的工作階段不受影響。',
+            HOST_CONSOLE_IDLE_MINUTES: '閒置中斷時間',
+            HOST_CONSOLE_IDLE_MINUTES_desc: '終端在該時間內沒有任何輸入輸出時自動中斷。取值 5–240，預設 15 分鐘。',
         },
         infra: {
             readOnlyTitle: '只讀檢視',

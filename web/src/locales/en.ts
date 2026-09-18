@@ -388,6 +388,16 @@ export default {
                 copied: 'Copied to clipboard',
                 nothingSelected: 'Select the text to copy first',
                 clipboardDenied: 'The browser denied clipboard access'
+            },
+            host: {
+                title: 'Host Terminal',
+                passwordTitle: 'Confirm your identity',
+                passwordDesc: 'You are about to open a root shell on hypervisor {name}. Enter your login password to continue.',
+                passwordPlaceholder: 'Password of the current account',
+                open: 'Open terminal',
+                authFailed: 'Verification failed',
+                hint: 'Root shell on the hypervisor: the session output is recorded on the node and the session closes after {minutes} idle minutes; reconnecting asks for the password again.',
+                idleHint: 'Closes after {minutes} idle minutes'
             }
         },
         instances: 'Instances',
@@ -956,6 +966,7 @@ export default {
                     enable: 'enabled hypervisor {name}',
                     disable: 'disabled hypervisor {name}',
                     maintain: 'put hypervisor {name} into maintenance',
+                    console: 'opened a terminal on hypervisor {name}',
                 },
                 migration: {
                     create: 'started migration {name}',
@@ -1069,6 +1080,7 @@ export default {
                     enable: 'failed to enable hypervisor {name}',
                     disable: 'failed to disable hypervisor {name}',
                     maintain: 'failed to put hypervisor {name} into maintenance',
+                    console: 'failed to open a terminal on hypervisor {name}',
                 },
                 migration: {
                     create: 'failed to start migration {name}',
@@ -1497,6 +1509,9 @@ export default {
         hypervisorActions: {
             deploy: 'Deploy Node',
             maintain: 'Maintain',
+            console: 'Terminal',
+            consoleDisabled: 'Host terminal is disabled. Enable it in System Settings',
+            consoleOffline: 'The hypervisor is not connected',
             exitMaintain: 'Exit Maintenance',
             exitMaintainConfirm: 'Bring hypervisor "{hostname}" out of maintenance and back to active?',
             maintainTitle: 'Enter Maintenance Mode',
@@ -1874,6 +1889,8 @@ export default {
             quotaCompute: 'Compute & Storage',
             quotaComputeDesc: 'Initial quotas written for every organization in every region when an organization or a region is created. Changing them does not affect existing quotas; adjust a single organization in its detail page.',
             quotaOther: 'Network & Images',
+            hostConsole: 'Host Terminal',
+            hostConsoleDesc: 'Lets system admins open a root shell of a hypervisor from its page. The password is asked again before opening, and the session output is recorded on the node under /opt/cloudland/log/host_console/ (kept for 180 days).',
             other: 'Other',
         },
         notificationHint: 'Used for system notifications such as account activation and member invitations. VM alarm recipients are configured in',
@@ -1883,6 +1900,7 @@ export default {
             cores: 'cores',
             gb: 'GB',
             days: 'days',
+            minutes: 'min',
         },
         fields: {
             FRONTEND_URL: 'Console URL',
@@ -1912,6 +1930,10 @@ export default {
             AUDIT_LOG_RETENTION_DAYS_desc: 'Retention period (in days) for operation audit logs, including Recent Activity on the overview page. Each region cleans up older records daily. Range 90-3650, default 365 days.',
             DNS_UPSTREAM: 'DNS Upstream',
             DNS_UPSTREAM_desc: 'Upstream DNS server for queries not matching internal node hostnames. Supports comma-separated multiple addresses, e.g. 8.8.8.8,8.8.4.4.',
+            HOST_CONSOLE_ENABLED: 'Enable host terminal',
+            HOST_CONSOLE_ENABLED_desc: 'When disabled nobody can open a new host terminal; open sessions are not affected.',
+            HOST_CONSOLE_IDLE_MINUTES: 'Idle timeout',
+            HOST_CONSOLE_IDLE_MINUTES_desc: 'A terminal without any input or output for this long is closed. Range 5-240, default 15 minutes.',
         },
         infra: {
             readOnlyTitle: 'Read-only view',

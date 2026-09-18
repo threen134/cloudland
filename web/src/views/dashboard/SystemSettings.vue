@@ -34,6 +34,7 @@ const sectionLayout: Record<'general' | 'quota', Array<{ key: string; fields: st
         { key: 'access', fields: ['FRONTEND_URL'] },
         { key: 'retention', fields: ['ALARM_EVENT_RETENTION_DAYS', 'AUDIT_LOG_RETENTION_DAYS'] },
         { key: 'network', fields: ['DNS_UPSTREAM'] },
+        { key: 'hostConsole', fields: ['HOST_CONSOLE_ENABLED', 'HOST_CONSOLE_IDLE_MINUTES'] },
     ],
     quota: [
         { key: 'quotaCompute', fields: ['DEFAULT_CPU_CORES', 'DEFAULT_RAM_GB', 'DEFAULT_DISK_GB'] },
@@ -54,6 +55,7 @@ const savedValues = ref<Record<string, string>>({})
 // Numeric settings with an allowed range; keep in sync with settingRanges in cpgateway (the backend validates too)
 const numberRanges: Record<string, { min: number; max: number; integer: boolean }> = {
     AUDIT_LOG_RETENTION_DAYS: { min: 90, max: 3650, integer: true },
+    HOST_CONSOLE_IDLE_MINUTES: { min: 5, max: 240, integer: true },
     DEFAULT_CPU_CORES: { min: 0, max: 1e6, integer: false },
     DEFAULT_RAM_GB: { min: 0, max: 1e7, integer: false },
     DEFAULT_DISK_GB: { min: 0, max: 1e9, integer: false },
@@ -63,12 +65,13 @@ const numberRanges: Record<string, { min: number; max: number; integer: boolean 
     DEFAULT_IMAGES: { min: 0, max: 1e5, integer: true },
 }
 
-const fieldUnits: Record<string, 'cores' | 'gb' | 'days'> = {
+const fieldUnits: Record<string, 'cores' | 'gb' | 'days' | 'minutes'> = {
     DEFAULT_CPU_CORES: 'cores',
     DEFAULT_RAM_GB: 'gb',
     DEFAULT_DISK_GB: 'gb',
     ALARM_EVENT_RETENTION_DAYS: 'days',
     AUDIT_LOG_RETENTION_DAYS: 'days',
+    HOST_CONSOLE_IDLE_MINUTES: 'minutes',
 }
 
 // NOTIFICATION_CHANNELS is edited through the channel switches, not as a field

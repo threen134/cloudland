@@ -2265,6 +2265,59 @@ const docTemplatev1 = `{
                 "responses": {}
             }
         },
+        "/hypers/{uuid}/console": {
+            "post": {
+                "description": "create a single-use token for a root shell on a hypervisor (system admins only, when enabled in system settings). Through the gateway the body must also carry \"password\", the caller's login password, which the gateway checks and removes",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Administration",
+                    "Hypervisor"
+                ],
+                "summary": "create a host console",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Hypervisor UUID",
+                        "name": "uuid",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Terminal size",
+                        "name": "message",
+                        "in": "body",
+                        "schema": {
+                            "$ref": "#/definitions/apis.HostConsolePayload"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apis.HostConsoleResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "403": {
+                        "description": "Not authorized or host console disabled",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            }
+        },
         "/hypers/{uuid}/maintain": {
             "post": {
                 "description": "start maintenance for a hypervisor, optionally migrating all instances",
@@ -8612,6 +8665,40 @@ const docTemplatev1 = `{
                 },
                 "vlan": {
                     "type": "integer"
+                }
+            }
+        },
+        "apis.HostConsolePayload": {
+            "type": "object",
+            "properties": {
+                "cols": {
+                    "type": "integer",
+                    "maximum": 1000,
+                    "minimum": 1
+                },
+                "rows": {
+                    "description": "Terminal size the shell starts with",
+                    "type": "integer",
+                    "maximum": 500,
+                    "minimum": 1
+                }
+            }
+        },
+        "apis.HostConsoleResponse": {
+            "type": "object",
+            "properties": {
+                "console_url": {
+                    "type": "string"
+                },
+                "hyper": {
+                    "$ref": "#/definitions/common.ResourceReference"
+                },
+                "idle_timeout": {
+                    "description": "Seconds without traffic after which the node closes the session",
+                    "type": "integer"
+                },
+                "token": {
+                    "type": "string"
                 }
             }
         },

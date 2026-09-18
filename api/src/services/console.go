@@ -7,7 +7,6 @@ package services
 
 import (
 	"context"
-	"fmt"
 	"math/rand"
 	"time"
 
@@ -15,7 +14,6 @@ import (
 	"api/src/model"
 
 	jwt "github.com/golang-jwt/jwt/v4"
-	"golang.org/x/crypto/sha3"
 )
 
 const (
@@ -62,11 +60,7 @@ func MakeToken(ctx context.Context, instance *model.Instance, consoleType string
 		ConsoleType: consoleType,
 	}
 	tkClaim.RegisteredClaims.ExpiresAt = jwt.NewNumericDate(time.Now().Add(TokenExpireDuration))
-	tokenHash := make([]byte, 32)
-	data := sha3.NewShake256()
-	data.Write([]byte(secret))
-	data.Read(tokenHash)
-	hashSecret := fmt.Sprintf("%x", tokenHash)
+	hashSecret := ConsoleSecretHash(secret)
 	ctx, db := GetContextDB(ctx)
 	console := &model.Console{
 		Instance:   instance.ID,
@@ -110,12 +104,7 @@ func ResolveToken(ctx context.Context, tokenString string) (instanceID int, memb
 	if err != nil {
 		return 0, nil, NewCLError(ErrConsoleNotFound, "Failed to retrieve console record", err)
 	}
-	tokenHash := make([]byte, 32)
-	data := sha3.NewShake256()
-	data.Write([]byte(claims.Secret))
-	data.Read(tokenHash)
-	hashSecret := fmt.Sprintf("%x", tokenHash)
-	if hashSecret != console.HashSecret {
+	if ConsoleSecretHash(claims.Secret) != console.HashSecret {
 		return 0, nil, NewCLError(ErrInvalidConsoleToken, "Secret can not pass validation", nil)
 	}
 	memberShip = &MemberShip{
