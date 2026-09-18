@@ -264,6 +264,7 @@ func (v *VolumeAPI) List(c *gin.Context) {
 	ctx := c.Request.Context()
 	offsetStr := c.DefaultQuery("offset", "0")
 	limitStr := c.DefaultQuery("limit", "50")
+	orderStr := c.DefaultQuery("order", "-created_at")
 	nameStr := c.DefaultQuery("name", "")
 
 	// type: all, data, boot
@@ -288,7 +289,7 @@ func (v *VolumeAPI) List(c *gin.Context) {
 		ErrorResponse(c, http.StatusBadRequest, "Invalid query offset or limit", errors.New(errStr))
 		return
 	}
-	total, volumes, err := volumeAdmin.ListVolume(ctx, int64(offset), int64(limit), "-created_at", nameStr, typeStr)
+	total, volumes, err := volumeAdmin.ListVolume(ctx, int64(offset), int64(limit), orderStr, nameStr, typeStr)
 	if err != nil {
 		logger.Ctx(ctx).Errorf("Failed to list volumes, %+v", err)
 		ErrorResponse(c, http.StatusBadRequest, "Failed to list volumes", err)

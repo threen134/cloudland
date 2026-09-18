@@ -72,7 +72,7 @@ export const MIGRATION_ACTIVE_STATUSES = ['in_progress', 'target_prepared', 'sou
 
 export const migrationsApi = {
     // 分页与搜索都在服务端做
-    async fetchMigrations(params?: { offset?: number; limit?: number; query?: string }): Promise<MigrationListResponse> {
+    async fetchMigrations(params?: { offset?: number; limit?: number; order?: string; query?: string }): Promise<MigrationListResponse> {
         const response = await client.get<MigrationListResponse>('/migrations', { params })
         return response.data
     },

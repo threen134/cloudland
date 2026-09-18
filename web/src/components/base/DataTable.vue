@@ -19,9 +19,12 @@ export interface Column {
     width?: string
     /**
      * 排序取值。字段名和显示值不一致时用它，例如规格的 CPU 在不同接口里
-     * 可能叫 vcpus 也可能叫 cpu，直接按 key 取会排错
+     * 可能叫 vcpus 也可能叫 cpu，直接按 key 取会排错。
+     * 仅用于本地排序；服务端排序用 sortField
      */
     sortValue?: (row: Record<string, any>) => string | number | null | undefined
+    /** 服务端排序时传给后端的列名，默认取 key（例如列 key 是 name、数据库列是 hostname 时要指定） */
+    sortField?: string
 }
 
 const props = withDefaults(
@@ -35,6 +38,11 @@ const props = withDefaults(
         error?: string
         /** 空态文案，默认用通用的"没有数据"；需要图标等更丰富的空态用 #empty 插槽 */
         emptyText?: string
+        /**
+         * 当前排序串（形如 name / -created_at）。传了就是服务端排序：
+         * 点表头只发出事件、不在本地重排——分页后本地排序只能排当前页
+         */
+        order?: string
         /**
          * 单元格里有下拉菜单、悬浮卡片这类要溢出表格显示的内容时传 true：
          * 容器改为 overflow: visible，并给单元格加定位上下文。
@@ -50,27 +58,46 @@ const props = withDefaults(
 const keyOf = (row: Record<string, any>) =>
     typeof props.rowKey === 'function' ? props.rowKey(row) : String(row[props.rowKey])
 
-defineEmits<{ retry: [] }>()
+const emit = defineEmits<{ retry: []; 'update:order': [order: string] }>()
 
-const sortKey = ref<string | null>(null)
-const sortDir = ref<'asc' | 'desc'>('asc')
+// 传了 order 就是服务端排序，本地不再重排
+const serverSorted = computed(() => props.order !== undefined)
+const fieldOf = (column: Column) => column.sortField ?? column.key
+
+// 当前按哪一列排、升序还是降序。服务端模式下从 order 串解析（-field 表示降序）
+const localSortKey = ref<string | null>(null)
+const localSortDir = ref<'asc' | 'desc'>('asc')
+
+const activeSortField = computed(() =>
+    serverSorted.value ? (props.order || '').replace(/^-/, '') : localSortKey.value
+)
+const activeSortDir = computed<'asc' | 'desc'>(() =>
+    serverSorted.value ? ((props.order || '').startsWith('-') ? 'desc' : 'asc') : localSortDir.value
+)
+
+const isSortedBy = (column: Column) =>
+    activeSortField.value === (serverSorted.value ? fieldOf(column) : column.key)
 
 const toggleSort = (column: Column) => {
     if (!column.sortable) return
-    if (sortKey.value === column.key) {
-        sortDir.value = sortDir.value === 'asc' ? 'desc' : 'asc'
+    if (serverSorted.value) {
+        emit('update:order', fieldOf(column))
+        return
+    }
+    if (localSortKey.value === column.key) {
+        localSortDir.value = localSortDir.value === 'asc' ? 'desc' : 'asc'
     } else {
-        sortKey.value = column.key
-        sortDir.value = 'asc'
+        localSortKey.value = column.key
+        localSortDir.value = 'asc'
     }
 }
 
-// 排序在前端做：这些列表页的数据本来就是整页加载的
+// 本地排序：只用于没有分页、数据一次性全部加载的表格
 const sortedRows = computed(() => {
-    if (!sortKey.value) return props.rows
-    const column = props.columns.find((c) => c.key === sortKey.value)
-    const valueOf = column?.sortValue ?? ((row: Record<string, any>) => row[sortKey.value as string])
-    const dir = sortDir.value === 'asc' ? 1 : -1
+    if (serverSorted.value || !localSortKey.value) return props.rows
+    const column = props.columns.find((c) => c.key === localSortKey.value)
+    const valueOf = column?.sortValue ?? ((row: Record<string, any>) => row[localSortKey.value as string])
+    const dir = localSortDir.value === 'asc' ? 1 : -1
     return [...props.rows].sort((a, b) => {
         const av = valueOf(a)
         const bv = valueOf(b)
@@ -94,13 +121,17 @@ const sortedRows = computed(() => {
                         :style="column.width ? { width: column.width } : undefined"
                         :class="[column.align ? `text-${column.align}` : '', { sortable: column.sortable }]"
                         :aria-sort="
-                            sortKey === column.key ? (sortDir === 'asc' ? 'ascending' : 'descending') : undefined
+                            isSortedBy(column)
+                                ? activeSortDir === 'asc'
+                                    ? 'ascending'
+                                    : 'descending'
+                                : undefined
                         "
                         @click="toggleSort(column)"
                     >
                         {{ column.label }}
                         <span v-if="column.sortable" class="sort-arrow">
-                            {{ sortKey === column.key ? (sortDir === 'asc' ? '▲' : '▼') : '' }}
+                            {{ isSortedBy(column) ? (activeSortDir === 'asc' ? '▲' : '▼') : '' }}
                         </span>
                     </th>
                 </tr>

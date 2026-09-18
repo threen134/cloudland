@@ -47,18 +47,19 @@ const isNameValid = computed(() => isValidName(newSubnetForm.value.name))
 const { copiedId, copyId } = useCopyId()
 
 
-// 分页后前端排序只能排当前页，会误导用户，所以列头不再可排序
+// 排序在服务端做（sortField 是 subnets 表的真实列名）；
+// IP 使用率是前端算的，VPC 名在 routers 表里，后端没有 join 排序，所以这两列不给排序
 const columns = computed<Column[]>(() => [
-    { key: 'name', label: t('dashboard.table.nameId') },
-    { key: 'cidr', label: t('dashboard.table.cidr') },
-    { key: 'vlan', label: t('dashboard.table.rangeVlan') },
+    { key: 'name', label: t('dashboard.table.nameId'), sortable: true },
+    { key: 'cidr', label: t('dashboard.table.cidr'), sortable: true, sortField: 'network' },
+    { key: 'vlan', label: t('dashboard.table.rangeVlan'), sortable: true },
     { key: 'usage', label: t('dashboard.table.ipUsage') },
     { key: 'vpc', label: t('dashboard.table.vpc') },
-    { key: 'type', label: t('dashboard.table.type') },
+    { key: 'type', label: t('dashboard.table.type'), sortable: true },
     { key: 'actions', label: t('dashboard.table.actions'), align: 'center' },
 ])
 
-// 分页与搜索都在服务端做
+// 分页、搜索、排序都在服务端做
 const {
     items: subnets,
     total,
@@ -67,11 +68,13 @@ const {
     loading,
     error: loadError,
     search: searchQuery,
+    order,
+    toggleSort,
     load: fetchSubnets,
     reload: reloadSubnets,
 } = useListQuery<Subnet>(
-    async ({ offset, limit, query }) => {
-        const response = await subnetsApi.list({ offset, limit, query: query || undefined })
+    async ({ offset, limit, query, order }) => {
+        const response = await subnetsApi.list({ offset, limit, order, query: query || undefined })
         return { items: response.subnets || [], total: response.total ?? 0 }
     },
     { watchSources: [computed(() => region.currentRegionId)] }
@@ -240,6 +243,8 @@ onMounted(() => {
       row-key="id"
       :loading="loading"
       :error="loadError"
+      :order="order"
+      @update:order="toggleSort"
       @retry="() => fetchSubnets()"
     >
       <template #empty>

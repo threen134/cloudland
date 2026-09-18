@@ -31,11 +31,13 @@ const {
     loading,
     error: loadError,
     search: searchQuery,
+    order,
+    toggleSort,
     load: fetchMigrations,
     reload: reloadMigrations,
 } = useListQuery<Migration>(
-    async ({ offset, limit, query }) => {
-        const response = await migrationsApi.fetchMigrations({ offset, limit, query: query || undefined })
+    async ({ offset, limit, query, order }) => {
+        const response = await migrationsApi.fetchMigrations({ offset, limit, order, query: query || undefined })
         return { items: response.migrations || [], total: response.total ?? 0 }
     },
     { watchSources: [computed(() => region.currentRegionId)] }
@@ -130,17 +132,19 @@ const getTypeText = (type: string) => {
     return te(key) ? t(key) : type
 }
 
-// 分页后排序只能排当前页，会误导用户，所以列上不再提供排序
+// 排序在服务端做（sortField 是数据库列名，和列 key 不一定同名）。
+// 实例名、源/目标节点名都不在 migrations 表里（迁移记录只存实例 ID 和节点编号，
+// 名字是另外查出来的），按这些列排会文不对题，所以不提供排序
 const columns = computed<Column[]>(() => [
-    { key: 'name', label: t('dashboard.table.nameId') },
+    { key: 'name', label: t('dashboard.table.nameId'), sortable: true },
     { key: 'instance', label: t('dashboard.table.instanceId') },
-    { key: 'type', label: t('dashboard.table.type') },
+    { key: 'type', label: t('dashboard.table.type'), sortable: true },
     { key: 'sourceNode', label: t('dashboard.table.sourceNode') },
     { key: 'destNode', label: t('dashboard.table.destNode') },
-    { key: 'status', label: t('dashboard.table.status') },
-    { key: 'progress', label: t('dashboard.migrationDetail.progressShort') },
-    { key: 'creator', label: t('dashboard.table.creator') },
-    { key: 'createdAt', label: t('dashboard.table.createdAt') },
+    { key: 'status', label: t('dashboard.table.status'), sortable: true },
+    { key: 'progress', label: t('dashboard.migrationDetail.progressShort'), sortable: true },
+    { key: 'creator', label: t('dashboard.table.creator'), sortable: true, sortField: 'creater_name' },
+    { key: 'createdAt', label: t('dashboard.table.createdAt'), sortable: true, sortField: 'created_at' },
 ])
 
 // Create Modal Logic
@@ -243,6 +247,8 @@ onUnmounted(() => {
       row-key="id"
       :loading="loading"
       :error="loadError"
+      :order="order"
+      @update:order="toggleSort"
       @retry="fetchMigrations()"
     >
       <template #empty>

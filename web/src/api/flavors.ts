@@ -26,7 +26,7 @@ export interface FlavorPayload {
 
 export const flavorsApi = {
     // List flavors（分页与搜索都在服务端做）
-    async fetchFlavors(params?: { offset?: number; limit?: number; query?: string }): Promise<FlavorListResponse> {
+    async fetchFlavors(params?: { offset?: number; limit?: number; order?: string; query?: string }): Promise<FlavorListResponse> {
         const response = await client.get<FlavorListResponse>('/flavors', { params })
         return response.data
     },

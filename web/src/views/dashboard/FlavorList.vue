@@ -35,12 +35,12 @@ const { t } = useI18n()
 const isNameValid = computed(() => isValidName(newFlavorForm.value.name))
 
 
-// 分页后排序只能排当前页，会误导用户，所以列上不再提供排序
+// 排序在服务端做（sortField 是数据库列名，和列 key 不一定同名）
 const columns = computed<Column[]>(() => [
-    { key: 'name', label: t('dashboard.table.nameId') },
-    { key: 'cpu', label: t('specs.cpu') },
-    { key: 'ram', label: t('specs.ram') },
-    { key: 'disk', label: t('specs.storage') },
+    { key: 'name', label: t('dashboard.table.nameId'), sortable: true },
+    { key: 'cpu', label: t('specs.cpu'), sortable: true },
+    { key: 'ram', label: t('specs.ram'), sortable: true, sortField: 'memory' },
+    { key: 'disk', label: t('specs.storage'), sortable: true },
     { key: 'actions', label: t('dashboard.table.actions'), align: 'center' },
 ])
 
@@ -53,11 +53,13 @@ const {
     loading,
     error: loadError,
     search: searchQuery,
+    order,
+    toggleSort,
     load: fetchFlavors,
     reload: reloadFlavors,
 } = useListQuery<Flavor>(
-    async ({ offset, limit, query }) => {
-        const response = await flavorsApi.fetchFlavors({ offset, limit, query: query || undefined })
+    async ({ offset, limit, query, order }) => {
+        const response = await flavorsApi.fetchFlavors({ offset, limit, order, query: query || undefined })
         return { items: response.flavors || [], total: response.total ?? 0 }
     },
     { watchSources: [computed(() => region.currentRegionId)] }
@@ -176,6 +178,8 @@ onMounted(() => {
       :row-key="(flavor: any) => flavor.uuid || flavor.name"
       :loading="loading"
       :error="loadError"
+      :order="order"
+      @update:order="toggleSort"
       @retry="() => fetchFlavors()"
     >
       <template #empty>

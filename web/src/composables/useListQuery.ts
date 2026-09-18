@@ -15,6 +15,8 @@ export interface ListQueryParams {
     limit: number
     /** 搜索关键词，空串表示不过滤 */
     query: string
+    /** 排序串，形如 name（升序）或 -created_at（降序），由后端 ORDER BY 使用 */
+    order: string
 }
 
 export interface ListQueryResult<T> {
@@ -28,6 +30,8 @@ export function useListQuery<T>(
         pageSize?: number
         /** 搜索输入防抖，毫秒 */
         debounce?: number
+        /** 初始排序，默认按创建时间倒序（与后端默认一致） */
+        defaultOrder?: string
         /** 依赖变化时回到第一页重新加载（如切换区域、切换筛选条件） */
         watchSources?: Ref<unknown>[]
     } = {}
@@ -42,6 +46,8 @@ export function useListQuery<T>(
     const loading = ref(false)
     const error = ref('')
     const search = ref('')
+    // 排序在服务端做：前端只拿到当前页，本地排序排的只是这一页
+    const order = ref(options.defaultOrder ?? '-created_at')
 
     const totalPages = computed(() => Math.max(1, Math.ceil(total.value / pageSize.value)))
 
@@ -66,6 +72,7 @@ export function useListQuery<T>(
                 offset: (page.value - 1) * pageSize.value,
                 limit: pageSize.value,
                 query: search.value.trim(),
+                order: order.value,
             })
             if (current !== generation) return
             items.value = result.items
@@ -101,6 +108,17 @@ export function useListQuery<T>(
     // 改每页条数后当前页码通常已经越界，回到第一页
     watch(pageSize, () => reload())
 
+    // 换排序后当前页码没有意义（第 3 页的内容整个变了），回到第一页
+    watch(order, () => reload())
+
+    /**
+     * 点击表头：同一字段则切换升降序，换字段则从升序开始。
+     * field 是后端的列名（DataTable 的 Column.sortField，默认取 key）。
+     */
+    const toggleSort = (field: string) => {
+        order.value = order.value === field ? `-${field}` : field
+    }
+
     watch(search, () => {
         if (searchTimer) clearTimeout(searchTimer)
         searchTimer = setTimeout(() => {
@@ -120,5 +138,5 @@ export function useListQuery<T>(
         generation++
     })
 
-    return { items, total, page, pageSize, totalPages, loading, error, search, load, reload }
+    return { items, total, page, pageSize, totalPages, loading, error, search, order, toggleSort, load, reload }
 }

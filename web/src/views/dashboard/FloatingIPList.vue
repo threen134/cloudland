@@ -60,11 +60,12 @@ const fetchSubnetAddresses = async (subnetId: string) => {
     }
 }
 
-// 分页后前端排序只能排当前页，会误导用户，所以列头不再可排序
+// 排序在服务端做（sortField 是数据库列名，和列 key 不一定同名）。
+// 「挂载到」的虚拟机名在 instances 表里，浮动 IP 表上没有对应列，不提供排序
 const columns = computed<Column[]>(() => [
-    { key: 'name', label: t('dashboard.table.userName') },
-    { key: 'ip', label: t('dashboard.table.ipAddress') },
-    { key: 'type', label: t('dashboard.table.type') },
+    { key: 'name', label: t('dashboard.table.userName'), sortable: true },
+    { key: 'ip', label: t('dashboard.table.ipAddress'), sortable: true, sortField: 'fip_address' },
+    { key: 'type', label: t('dashboard.table.type'), sortable: true },
     { key: 'attachedTo', label: t('dashboard.table.attachedTo') },
     { key: 'actions', label: t('dashboard.table.actions'), align: 'center' },
 ])
@@ -78,11 +79,13 @@ const {
     loading,
     error: loadError,
     search: searchQuery,
+    order,
+    toggleSort,
     load: fetchFloatingIPs,
     reload: reloadFloatingIPs,
 } = useListQuery<FloatingIP>(
-    async ({ offset, limit, query }) => {
-        const response = await floatingIpsApi.list({ offset, limit, query: query || undefined })
+    async ({ offset, limit, query, order }) => {
+        const response = await floatingIpsApi.list({ offset, limit, order, query: query || undefined })
         return { items: response.floating_ips || [], total: response.total ?? 0 }
     },
     { watchSources: [computed(() => region.currentRegionId)] }
@@ -348,6 +351,8 @@ watch(() => newFipForm.value.selectedPublicSubnetId, (newId) => {
       row-key="id"
       :loading="loading"
       :error="loadError"
+      :order="order"
+      @update:order="toggleSort"
       @retry="() => fetchFloatingIPs()"
     >
       <template #empty>

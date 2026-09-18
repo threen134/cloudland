@@ -120,7 +120,7 @@ const fetchUsageMetrics = async () => {
     }
 }
 
-// 分页与搜索都在服务端做
+// 分页、搜索、排序都在服务端做
 const {
     items: instances,
     total,
@@ -129,11 +129,13 @@ const {
     loading,
     error: loadError,
     search: searchQuery,
+    order,
+    toggleSort,
     load: loadInstances,
     reload: reloadInstances,
 } = useListQuery<Instance>(
-    async ({ offset, limit, query }) => {
-        const response = await instancesApi.fetchInstances({ offset, limit, query: query || undefined })
+    async ({ offset, limit, query, order }) => {
+        const response = await instancesApi.fetchInstances({ offset, limit, order, query: query || undefined })
         // 列表落地后再取指标（本页的虚拟机）
         setTimeout(fetchUsageMetrics, 500)
         return { items: response.instances || [], total: response.total ?? 0 }
@@ -155,13 +157,14 @@ const fetchInstances = async (showLoading: boolean = true) => {
     }
 }
 
-// 列定义。分页后前端排序只能排当前页，会误导用户，所以列头一律不可排序
+// 列定义。排序在服务端做（sortField 是 instances 表的真实列名，和列 key 不一定同名）；
+// 规格、镜像、IP 来自关联表，用量是前端算的，后端 ORDER BY 排不了，所以这些列不给排序
 const columns = computed<Column[]>(() => [
-    { key: 'name', label: t('dashboard.table.nameId') },
+    { key: 'name', label: t('dashboard.table.nameId'), sortable: true, sortField: 'hostname' },
     { key: 'flavor', label: t('dashboard.table.flavor') },
     { key: 'image', label: t('dashboard.table.image') },
     { key: 'ip', label: t('dashboard.table.ipAddress') },
-    { key: 'status', label: t('dashboard.table.status') },
+    { key: 'status', label: t('dashboard.table.status'), sortable: true },
     { key: 'usage', label: t('dashboard.overview.resourceUsage') },
     { key: 'actions', label: t('dashboard.table.actions'), align: 'center' },
 ])
@@ -974,6 +977,8 @@ onUnmounted(() => {
       row-key="id"
       :loading="tableLoading"
       :error="loadError"
+      :order="order"
+      @update:order="toggleSort"
       @retry="fetchInstances()"
     >
       <template #empty>

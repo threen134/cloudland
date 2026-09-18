@@ -36,10 +36,12 @@ const showDeleteModal = ref(false)
 const deleting = ref(false)
 const deletingZone = ref<Zone | null>(null)
 
-// 分页后排序只能排当前页，会误导用户，所以列上不再提供排序
+// 排序在服务端做（sortField 是数据库列名，和列 key 不一定同名）。
+// 类型列对应的是 zones.default，default 是 SQL 保留字、后端的 ORDER BY 不加引号，
+// 会直接报语法错误，所以这一列不提供排序
 const columns = computed<Column[]>(() => [
-    { key: 'name', label: t('dashboard.table.nameId') },
-    { key: 'remark', label: t('dashboard.zoneActions.remark') },
+    { key: 'name', label: t('dashboard.table.nameId'), sortable: true },
+    { key: 'remark', label: t('dashboard.zoneActions.remark'), sortable: true },
     { key: 'type', label: t('dashboard.table.type') },
     { key: 'actions', label: t('dashboard.table.actions'), align: 'center' },
 ])
@@ -53,14 +55,17 @@ const {
     loading,
     error: loadError,
     search: searchQuery,
+    order,
+    toggleSort,
     load: fetchZones,
     reload: reloadZones,
 } = useListQuery<Zone>(
-    async ({ offset, limit, query }) => {
-        const response = await zonesApi.fetchZones({ offset, limit, query: query || undefined })
+    async ({ offset, limit, query, order }) => {
+        const response = await zonesApi.fetchZones({ offset, limit, order, query: query || undefined })
         return { items: response.zones || [], total: response.total ?? 0 }
     },
-    { watchSources: [computed(() => region.currentRegionId)] }
+    // 可用区列表后端默认按 name 排（不是 -created_at），初始排序跟它保持一致
+    { defaultOrder: 'name', watchSources: [computed(() => region.currentRegionId)] }
 )
 
 // Create
@@ -156,6 +161,8 @@ onMounted(() => {
       row-key="name"
       :loading="loading"
       :error="loadError"
+      :order="order"
+      @update:order="toggleSort"
       @retry="() => fetchZones()"
     >
       <template #empty>

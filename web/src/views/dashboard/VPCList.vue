@@ -34,15 +34,16 @@ const isNameValid = computed(() => isValidName(newVPCForm.value.name))
 const { copiedId, copyId } = useCopyId()
 
 
-// 分页后前端排序只能排当前页，会误导用户，所以列头不再可排序
+// 排序在服务端做（列 key 即 routers 表的真实列名）；
+// 子网数量是按关联子网算出来的，后端 ORDER BY 排不了，所以不给排序
 const columns = computed<Column[]>(() => [
-    { key: 'name', label: t('dashboard.table.nameId') },
-    { key: 'status', label: t('dashboard.table.status') },
+    { key: 'name', label: t('dashboard.table.nameId'), sortable: true },
+    { key: 'status', label: t('dashboard.table.status'), sortable: true },
     { key: 'subnets', label: t('dashboard.subnets') },
     { key: 'actions', label: t('dashboard.table.actions'), align: 'center' },
 ])
 
-// 分页与搜索都在服务端做
+// 分页、搜索、排序都在服务端做
 const {
     items: vpcs,
     total,
@@ -51,11 +52,13 @@ const {
     loading,
     error: loadError,
     search: searchQuery,
+    order,
+    toggleSort,
     load: fetchVPCs,
     reload: reloadVPCs,
 } = useListQuery<VPC>(
-    async ({ offset, limit, query }) => {
-        const response = await vpcsApi.list({ offset, limit, query: query || undefined })
+    async ({ offset, limit, query, order }) => {
+        const response = await vpcsApi.list({ offset, limit, order, query: query || undefined })
         return { items: response.vpcs || [], total: response.total ?? 0 }
     },
     { watchSources: [computed(() => region.currentRegionId)] }
@@ -296,6 +299,8 @@ onMounted(() => {
       row-key="id"
       :loading="loading"
       :error="loadError"
+      :order="order"
+      @update:order="toggleSort"
       @retry="() => fetchVPCs()"
     >
       <template #empty>

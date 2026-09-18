@@ -342,6 +342,7 @@ func (v *SubnetAPI) List(c *gin.Context) {
 	ctx := c.Request.Context()
 	offsetStr := c.DefaultQuery("offset", "0")
 	limitStr := c.DefaultQuery("limit", "50")
+	orderStr := c.DefaultQuery("order", "-created_at")
 	queryStr := c.DefaultQuery("query", "")
 	groupID := strings.TrimSpace(c.DefaultQuery("group_id", ""))         // Retrieve group_id from query params
 	ipGroupType := strings.TrimSpace(c.DefaultQuery("ipgroup_type", "")) // Filter by ipgroup type
@@ -385,7 +386,7 @@ func (v *SubnetAPI) List(c *gin.Context) {
 			return
 		}
 	}
-	total, subnets, err := subnetAdmin.List(ctx, int64(offset), int64(limit), "-created_at", queryStr, groupDBID, ipGroupType)
+	total, subnets, err := subnetAdmin.List(ctx, int64(offset), int64(limit), orderStr, queryStr, groupDBID, ipGroupType)
 	if err != nil {
 		ErrorResponse(c, http.StatusBadRequest, "Failed to list subnets", err)
 		return

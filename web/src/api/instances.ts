@@ -215,7 +215,7 @@ export interface NetworkMetricsResponse {
 export const instancesApi = {
     // List instances
     // hyper：按所在计算节点过滤（host id）；不传表示不过滤
-    async fetchInstances(params?: { offset?: number; limit?: number; query?: string; hyper?: number }): Promise<InstanceListResponse> {
+    async fetchInstances(params?: { offset?: number; limit?: number; order?: string; query?: string; hyper?: number }): Promise<InstanceListResponse> {
         const response = await client.get<InstanceListResponse>('/instances', { params })
         return response.data
     },

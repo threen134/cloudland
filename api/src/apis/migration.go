@@ -218,6 +218,7 @@ func (v *MigrationAPI) List(c *gin.Context) {
 	ctx := c.Request.Context()
 	offsetStr := c.DefaultQuery("offset", "0")
 	limitStr := c.DefaultQuery("limit", "50")
+	orderStr := c.DefaultQuery("order", "-created_at")
 	queryStr := c.DefaultQuery("query", "")
 	logger.Ctx(ctx).Debugf("List migrations with offset %s, limit %s, query %s", offsetStr, limitStr, queryStr)
 	offset, err := strconv.Atoi(offsetStr)
@@ -237,7 +238,7 @@ func (v *MigrationAPI) List(c *gin.Context) {
 		ErrorResponse(c, http.StatusBadRequest, "Invalid query offset or limit", err)
 		return
 	}
-	total, migrations, err := migrationAdmin.List(ctx, int64(offset), int64(limit), "-created_at", queryStr)
+	total, migrations, err := migrationAdmin.List(ctx, int64(offset), int64(limit), orderStr, queryStr)
 	if err != nil {
 		logger.Ctx(ctx).Errorf("Failed to list migrations %+v", err)
 		ErrorResponse(c, http.StatusBadRequest, "Failed to list migrations", err)

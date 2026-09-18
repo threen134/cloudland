@@ -31,11 +31,12 @@ const isNameValid = computed(() => isValidName(newKeyForm.value.name))
 
 // const router = useRouter()
 
-// 分页后排序只能排当前页，会误导用户，所以列上不再提供排序
+// 排序在服务端做（sortField 是数据库列名，和列 key 不一定同名）。
+// 类型是前端从 public_key 里截出来的，数据库没有这一列，不提供排序
 const columns = computed<Column[]>(() => [
-    { key: 'name', label: t('dashboard.table.nameId') },
+    { key: 'name', label: t('dashboard.table.nameId'), sortable: true },
     { key: 'type', label: t('dashboard.table.type') },
-    { key: 'fingerprint', label: t('dashboard.table.fingerprint') },
+    { key: 'fingerprint', label: t('dashboard.table.fingerprint'), sortable: true, sortField: 'finger_print' },
     { key: 'actions', label: t('dashboard.table.actions'), align: 'center' },
 ])
 
@@ -48,10 +49,12 @@ const {
     loading,
     error: loadError,
     search: searchQuery,
+    order,
+    toggleSort,
     load: fetchKeys,
     reload: reloadKeys,
-} = useListQuery<SSHKey>(async ({ offset, limit, query }) => {
-    const response = await keysApi.fetchKeys({ offset, limit, query: query || undefined })
+} = useListQuery<SSHKey>(async ({ offset, limit, query, order }) => {
+    const response = await keysApi.fetchKeys({ offset, limit, order, query: query || undefined })
     return { items: response.keys || [], total: response.total ?? 0 }
 })
 
@@ -162,6 +165,8 @@ onMounted(fetchKeys)
       row-key="id"
       :loading="loading"
       :error="loadError"
+      :order="order"
+      @update:order="toggleSort"
       @retry="() => fetchKeys()"
     >
       <template #empty>

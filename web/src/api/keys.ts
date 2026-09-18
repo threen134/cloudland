@@ -26,7 +26,7 @@ export interface CreateKeyPayload {
 
 export const keysApi = {
     // List keys（分页与搜索都在服务端做）
-    async fetchKeys(params?: { offset?: number; limit?: number; query?: string }): Promise<KeyListResponse> {
+    async fetchKeys(params?: { offset?: number; limit?: number; order?: string; query?: string }): Promise<KeyListResponse> {
         const response = await client.get<KeyListResponse>('/keys', { params })
         return response.data
     },

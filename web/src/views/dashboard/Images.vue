@@ -51,19 +51,20 @@ const isNameValid = computed(() => isValidName(newImageForm.value.name))
 
 
 
-// 分页后前端排序只能排当前页，会误导用户，所以列头不再可排序
+// 排序在服务端做（列 key 即 images 表的真实列名）；
+// 操作系统一列是前端按镜像名推断出来的，和任何一列都对不上，所以不给排序
 const columns = computed<Column[]>(() => [
-    { key: 'name', label: t('dashboard.table.nameId') },
-    { key: 'visibility', label: t('dashboard.table.visibility') },
+    { key: 'name', label: t('dashboard.table.nameId'), sortable: true },
+    { key: 'visibility', label: t('dashboard.table.visibility'), sortable: true },
     { key: 'os', label: t('dashboard.table.os') },
-    { key: 'architecture', label: t('dashboard.table.architecture') },
-    { key: 'format', label: t('dashboard.table.format') },
-    { key: 'size', label: t('dashboard.table.size') },
-    { key: 'status', label: t('dashboard.table.status') },
+    { key: 'architecture', label: t('dashboard.table.architecture'), sortable: true },
+    { key: 'format', label: t('dashboard.table.format'), sortable: true },
+    { key: 'size', label: t('dashboard.table.size'), sortable: true },
+    { key: 'status', label: t('dashboard.table.status'), sortable: true },
     { key: 'actions', label: t('dashboard.table.actions'), align: 'center' },
 ])
 
-// 分页、搜索、公开/私有筛选都在服务端做（后端 /images 支持 visibility=public|private）
+// 分页、搜索、排序、公开/私有筛选都在服务端做（后端 /images 支持 visibility=public|private）
 const {
     items: images,
     total,
@@ -72,13 +73,16 @@ const {
     loading,
     error: loadError,
     search: searchQuery,
+    order,
+    toggleSort,
     load: fetchImages,
     reload: reloadImages,
 } = useListQuery<Image>(
-    async ({ offset, limit, query }) => {
+    async ({ offset, limit, query, order }) => {
         const response = await imagesApi.fetchImages({
             offset,
             limit,
+            order,
             query: query || undefined,
             visibility: selectedVisibility.value === 'all' ? undefined : selectedVisibility.value,
         })
@@ -240,6 +244,8 @@ onMounted(async () => {
       row-key="id"
       :loading="loading"
       :error="loadError"
+      :order="order"
+      @update:order="toggleSort"
       @retry="fetchImages()"
     >
       <template #empty>

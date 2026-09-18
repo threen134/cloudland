@@ -35,18 +35,19 @@ const isNameValid = computed(() => isValidName(newVolumeForm.value.name))
 
 const { copiedId, copyId } = useCopyId()
 
-// 分页后排序只能排当前页，会误导用户，所以列上不再提供排序
+// 排序在服务端做（sortField 是 volumes 表的真实列名）；
+// 「挂载到」显示的是虚拟机名，在 instances 表里，后端没有 join 排序，所以不给排序
 const columns = computed<Column[]>(() => [
-    { key: 'name', label: t('dashboard.table.nameId') },
-    { key: 'status', label: t('dashboard.table.status') },
-    { key: 'size', label: t('dashboard.table.size') },
-    { key: 'boot', label: t('dashboard.table.boot') },
-    { key: 'format', label: t('dashboard.table.format') },
+    { key: 'name', label: t('dashboard.table.nameId'), sortable: true },
+    { key: 'status', label: t('dashboard.table.status'), sortable: true },
+    { key: 'size', label: t('dashboard.table.size'), sortable: true },
+    { key: 'boot', label: t('dashboard.table.boot'), sortable: true, sortField: 'booting' },
+    { key: 'format', label: t('dashboard.table.format'), sortable: true },
     { key: 'attachedTo', label: t('dashboard.table.attachedTo') },
     { key: 'actions', label: t('dashboard.table.actions'), align: 'center' },
 ])
 
-// 分页与搜索都在服务端做（卷列表的搜索参数是 name，不是通用的 query）
+// 分页、搜索、排序都在服务端做（卷列表的搜索参数是 name，不是通用的 query）
 const {
     items: volumes,
     total,
@@ -55,12 +56,14 @@ const {
     loading,
     error: loadError,
     search: searchQuery,
+    order,
+    toggleSort,
     load: fetchVolumes,
     reload: reloadVolumes,
 } = useListQuery<Volume>(
-    async ({ offset, limit, query }) => {
+    async ({ offset, limit, query, order }) => {
         // 列表页有「启动盘」一列，系统盘与数据盘都要显示
-        const response = await volumesApi.list({ offset, limit, type: 'all', name: query || undefined })
+        const response = await volumesApi.list({ offset, limit, order, type: 'all', name: query || undefined })
         return { items: response.volumes || [], total: response.total ?? 0 }
     },
     { watchSources: [computed(() => region.currentRegionId)] }
@@ -170,6 +173,8 @@ onMounted(() => {
       row-key="id"
       :loading="loading"
       :error="loadError"
+      :order="order"
+      @update:order="toggleSort"
       @retry="() => fetchVolumes()"
     >
       <template #empty>
