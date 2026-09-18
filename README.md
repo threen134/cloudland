@@ -47,7 +47,7 @@ graph TB
     CL1 -->|gRPC| CLAND
     CL2 -->|gRPC| CLAND
     CLN -->|gRPC| CLAND
-    CL1 --> KVM["KVM / QEMU · Open vSwitch"]
+    CL1 --> KVM["KVM / QEMU · Linux bridge · VXLAN"]
 ```
 
 更详细的架构说明见 [docs/architecture](docs/architecture/overview.md)。
@@ -62,7 +62,6 @@ graph TB
 | `docs/` | VitePress 文档站（指南 / 架构 / 部署 / API） |
 | `deploy/` | Docker Compose 与 Ansible 部署编排、一键部署脚本 |
 | `scripts/` | 计算节点后端脚本（KVM、网络、监控、计量） |
-| `utils/` | VXLAN 相关工具（`vxarp`、`vxresolver`） |
 | `tools/` | Python CLI 工具 `cloudland_cli` |
 
 ## 快速开始（单节点）
@@ -95,13 +94,7 @@ curl -sSL https://raw.githubusercontent.com/threen134/cloudland/staging/deploy/d
 
 ## 本地开发
 
-同时启动 Web UI 与文档站：
-
-```bash
-./dev.sh          # Web UI → http://localhost:5173，文档 → http://localhost:5174
-```
-
-单独构建各组件：
+各组件的构建与启动：
 
 ```bash
 # REST API / Go 版 cland / cloudlet / 告警规则管理
@@ -110,11 +103,11 @@ cd api && make setup && make
 # 中央网关
 cd cpgateway && make
 
-# 管理控制台
+# 管理控制台 → http://localhost:5173
 cd web && npm install && npm run dev
 
-# 文档站
-cd docs && npm install && npm run docs:dev
+# 文档站 → http://localhost:5174
+cd docs && npm install && npm run docs:dev -- --port 5174
 ```
 
 运行测试：
