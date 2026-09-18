@@ -3,7 +3,6 @@ import { ref, onMounted, onUnmounted, computed, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useToast } from '../../composables/useToast'
 import { useCopyId } from '../../composables/useCopyId'
-import { useSecurityGroup } from '../../composables/useSecurityGroup'
 import { securityGroupsApi, vpcsApi, type SecurityGroup, type VPC } from '../../api/networks'
 import { isValidName } from '../../utils/validation'
 import { useRegionStore } from '../../stores/region'
@@ -16,7 +15,6 @@ import DataTable, { type Column } from '../../components/base/DataTable.vue'
 import PaginationBar from '../../components/base/PaginationBar.vue'
 
 const region = useRegionStore()
-const { translateDescription } = useSecurityGroup()
 const { t } = useI18n()
 const toast = useToast()
 const { copiedId, copyId } = useCopyId()
@@ -37,10 +35,9 @@ const totalPages = computed(() => Math.max(1, Math.ceil(totalCount.value / pageS
 let fetchGeneration = 0
 
 // 分页、搜索、VPC 过滤都在服务端做，前端排序只能排当前页，所以这些列不开放排序。
-// 描述列吃掉剩余宽度（其余列按内容宽度）
+// 名称列吃掉剩余宽度（其余列按内容宽度）
 const columns = computed<Column[]>(() => [
     { key: 'name', label: t('dashboard.table.nameId') },
-    { key: 'description', label: t('dashboard.table.description'), width: '100%' },
     { key: 'vpc', label: t('dashboard.table.vpc') },
     { key: 'rules', label: t('dashboard.table.securityRules') },
     { key: 'interfaces', label: t('dashboard.securityGroupDetail.associatedInterfaces'), align: 'center' },
@@ -328,11 +325,6 @@ onUnmounted(() => {
         </router-link>
       </template>
 
-      <template #cell-description="{ row: group }">
-        <div v-if="group.description" class="desc-text" :title="translateDescription(group.description)">{{ translateDescription(group.description) }}</div>
-        <span v-else class="text-light">-</span>
-      </template>
-
       <template #cell-vpc="{ row: group }">
         <router-link v-if="group.vpc" :to="{ name: 'vpc-detail', params: { id: group.vpc.id } }" class="text-link nowrap">
           {{ group.vpc.name }}
@@ -513,16 +505,6 @@ onUnmounted(() => {
 }
 
 /* .resource-info etc. are global from index.css */
-
-/* 省略号原先靠 td 的 max-width: 1px 实现，表格移入 DataTable 后那条规则失效了。
-   改成限制单元格内容自身的宽度，长描述才不会把表格撑宽 */
-.desc-text {
-  max-width: 420px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  color: var(--text-secondary);
-}
 
 .text-light {
   color: var(--text-light);
