@@ -4,9 +4,11 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
+    "postinstall": "node scripts/patch-novnc.mjs",
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
+    "i18n:check": "node scripts/check-i18n.mjs",
     "format": "prettier --write \"src/**/*.{ts,vue,css,json}\"",
     "format:check": "prettier --check \"src/**/*.{ts,vue,css,json}\"",
     "preview": "vite preview"

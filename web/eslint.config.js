@@ -31,6 +31,13 @@ export default defineConfig([
     },
   },
   {
+    // scripts/ 下是构建期跑的 Node 脚本，不是浏览器代码
+    files: ['scripts/**/*.mjs'],
+    languageOptions: {
+      globals: globals.node,
+    },
+  },
+  {
     // 路由页面和布局组件的名字由文件名决定（Login、Overview、Layout…），
     // 改成多词名没有意义，这条规则只对可复用组件有价值。
     files: ['src/views/**/*.vue', 'src/App.vue', 'src/components/Navbar.vue'],
