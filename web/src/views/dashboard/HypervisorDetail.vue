@@ -69,7 +69,7 @@ const fetchHyperInstances = async (hostid: number) => {
     hyperInstancesLoading.value = true
     try {
         const resp = await instancesApi.fetchInstances({ hyper: hostid, limit: 200 })
-        const data = resp.data as any
+        const data = resp as any
         hyperInstances.value = Array.isArray(data) ? data : (data.instances || [])
     } catch (err) {
         console.error('Failed to load instances of hypervisor:', err)
@@ -116,7 +116,7 @@ const fetchHypervisorDetail = async () => {
     try {
         const uuid = route.params.id as string
         const response = await hypervisorsApi.getHypervisor(uuid)
-        hypervisor.value = response.data as any
+        hypervisor.value = response as any
         syncForm()
         // 详情返回后才知道 host id，虚拟机列表随后单独拉取
         if (hypervisor.value?.hostid !== undefined) {
@@ -173,7 +173,7 @@ const toggleEdit = async () => {
     editMode.value = true
     try {
         const resp = await zonesApi.fetchZones()
-        const data = resp.data as any
+        const data = resp as any
         zoneList.value = Array.isArray(data) ? data : (data.zones || [])
     } catch { zoneList.value = [] }
     syncForm()
@@ -218,7 +218,7 @@ const openMaintainModal = async () => {
     showMaintainModal.value = true
     try {
         const resp = await hypervisorsApi.fetchHypervisors()
-        const data = resp.data as any
+        const data = resp as any
         const list = Array.isArray(data) ? data : (data.hypers || [])
         maintainTargetOptions.value = list.filter(
             (h: any) => h.status === 1 && h.hostid !== hypervisor.value?.hostid

@@ -28,23 +28,28 @@ export interface UpdateZonePayload {
 }
 
 export const zonesApi = {
-    fetchZones() {
-        return client.get('/zones')
+    async fetchZones() {
+        const response = await client.get('/zones')
+        return response.data
     },
 
-    getZone(name: string) {
-        return client.get(`/zones/${name}`)
+    async getZone(name: string) {
+        const response = await client.get(`/zones/${name}`)
+        return response.data
     },
 
-    createZone(payload: CreateZonePayload) {
-        return client.post('/zones', payload)
+    async createZone(payload: CreateZonePayload) {
+        const response = await client.post('/zones', payload)
+        return response.data
     },
 
-    updateZone(name: string, payload: UpdateZonePayload) {
-        return client.patch(`/zones/${name}`, payload)
+    async updateZone(name: string, payload: UpdateZonePayload) {
+        const response = await client.patch(`/zones/${name}`, payload)
+        return response.data
     },
 
-    deleteZone(name: string) {
-        return client.delete(`/zones/${name}`)
+    async deleteZone(name: string) {
+        const response = await client.delete(`/zones/${name}`)
+        return response.data
     }
 }

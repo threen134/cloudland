@@ -60,15 +60,17 @@ export interface HyperMaintainPayload {
 }
 
 export const hypervisorsApi = {
-    fetchHypervisors(params?: { offset?: number; limit?: number; q?: string }) {
-        return client.get<HyperListResponse>('/hypers', { params })
+    async fetchHypervisors(params?: { offset?: number; limit?: number; q?: string }) {
+        const response = await client.get<HyperListResponse>('/hypers', { params })
+        return response.data
     },
 
-    getHypervisor(uuid: string) {
-        return client.get<Hypervisor>(`/hypers/${uuid}`)
+    async getHypervisor(uuid: string) {
+        const response = await client.get<Hypervisor>(`/hypers/${uuid}`)
+        return response.data
     },
 
-    updateHypervisor(uuid: string, payload: {
+    async updateHypervisor(uuid: string, payload: {
         status?: number
         zone_id?: number
         cpu_over_rate?: number
@@ -76,34 +78,41 @@ export const hypervisorsApi = {
         disk_over_rate?: number
         remark?: string
     }) {
-        return client.patch<Hypervisor>(`/hypers/${uuid}`, payload)
+        const response = await client.patch<Hypervisor>(`/hypers/${uuid}`, payload)
+        return response.data
     },
 
-    deployHypervisor(payload: HyperDeployPayload) {
-        return client.post<Hypervisor>('/hypers', payload)
+    async deployHypervisor(payload: HyperDeployPayload) {
+        const response = await client.post<Hypervisor>('/hypers', payload)
+        return response.data
     },
 
-    maintainHypervisor(uuid: string, payload: HyperMaintainPayload) {
-        return client.post(`/hypers/${uuid}/maintain`, payload)
+    async maintainHypervisor(uuid: string, payload: HyperMaintainPayload) {
+        const response = await client.post(`/hypers/${uuid}/maintain`, payload)
+        return response.data
     },
 
-    deleteHypervisor(uuid: string) {
-        return client.delete(`/hypers/${uuid}`)
+    async deleteHypervisor(uuid: string) {
+        const response = await client.delete(`/hypers/${uuid}`)
+        return response.data
     },
 
     // Root shell on the hypervisor (system admins, when enabled in system settings). The gateway checks the
     // password again while HOST_CONSOLE_REQUIRE_PASSWORD is on, and answers 400 when it is missing;
     // rows and cols are the terminal size the shell starts with
-    openConsole(uuid: string, payload: { password?: string; rows?: number; cols?: number }) {
-        return client.post<HostConsoleResponse>(`/hypers/${uuid}/console`, payload)
+    async openConsole(uuid: string, payload: { password?: string; rows?: number; cols?: number }) {
+        const response = await client.post<HostConsoleResponse>(`/hypers/${uuid}/console`, payload)
+        return response.data
     },
 
     // Monitoring Metrics
-    getCPUMetrics(payload: { hostname: string[], start: string, end: string, step: string }) {
-        return client.post('/metrics/hypers/cpu/his_data', payload)
+    async getCPUMetrics(payload: { hostname: string[], start: string, end: string, step: string }) {
+        const response = await client.post('/metrics/hypers/cpu/his_data', payload)
+        return response.data
     },
 
-    getMemoryMetrics(payload: { hostname: string[], start: string, end: string, step: string }) {
-        return client.post('/metrics/hypers/memory/his_data', payload)
+    async getMemoryMetrics(payload: { hostname: string[], start: string, end: string, step: string }) {
+        const response = await client.post('/metrics/hypers/memory/his_data', payload)
+        return response.data
     }
 }

@@ -41,16 +41,19 @@ export interface Migration {
 export const MIGRATION_ACTIVE_STATUSES = ['in_progress', 'target_prepared', 'source_prepared']
 
 export const migrationsApi = {
-    fetchMigrations() {
-        return client.get('/migrations')
+    async fetchMigrations() {
+        const response = await client.get('/migrations')
+        return response.data
     },
 
-    getMigration(id: string) {
-        return client.get(`/migrations/${id}`)
+    async getMigration(id: string) {
+        const response = await client.get(`/migrations/${id}`)
+        return response.data
     },
 
     // 接口要求：name（2-32 字符）、instances 数组；target_hyper 为节点 hostid，省略则由调度器选择；force=true 为冷迁移
-    createMigration(payload: { name: string; instances: { id: string }[]; target_hyper?: number; force?: boolean }) {
-        return client.post('/migrations', payload)
+    async createMigration(payload: { name: string; instances: { id: string }[]; target_hyper?: number; force?: boolean }) {
+        const response = await client.post('/migrations', payload)
+        return response.data
     }
 }

@@ -41,27 +41,33 @@ export interface RegionSecretRotated {
 }
 
 export const regionsApi = {
-    fetchRegions() {
-        return client.get<RegionPublic[]>('/regions')
+    async fetchRegions() {
+        const response = await client.get<RegionPublic[]>('/regions')
+        return response.data
     },
 
-    getRegion(uuid: string) {
-        return client.get<RegionAdmin>(`/regions/${uuid}`)
+    async getRegion(uuid: string) {
+        const response = await client.get<RegionAdmin>(`/regions/${uuid}`)
+        return response.data
     },
 
-    createRegion(payload: CreateRegionPayload) {
-        return client.post<RegionCreated>('/regions', payload)
+    async createRegion(payload: CreateRegionPayload) {
+        const response = await client.post<RegionCreated>('/regions', payload)
+        return response.data
     },
 
-    updateRegion(uuid: string, payload: UpdateRegionPayload) {
-        return client.patch<RegionAdmin>(`/regions/${uuid}`, payload)
+    async updateRegion(uuid: string, payload: UpdateRegionPayload) {
+        const response = await client.patch<RegionAdmin>(`/regions/${uuid}`, payload)
+        return response.data
     },
 
-    deleteRegion(uuid: string) {
-        return client.delete(`/regions/${uuid}`)
+    async deleteRegion(uuid: string) {
+        const response = await client.delete(`/regions/${uuid}`)
+        return response.data
     },
 
-    rotateSecret(uuid: string) {
-        return client.post<RegionSecretRotated>(`/regions/${uuid}/rotate-secret`)
+    async rotateSecret(uuid: string) {
+        const response = await client.post<RegionSecretRotated>(`/regions/${uuid}/rotate-secret`)
+        return response.data
     }
 }

@@ -58,7 +58,7 @@ const fetchUsers = async () => {
         if (orgId) {
             // Fetch org members
             const response = await orgsApi.fetchMembers(orgId)
-            const members = Array.isArray(response.data) ? response.data : []
+            const members = Array.isArray(response) ? response : []
             users.value = members.map((m: any) => ({
                 user: {
                     uuid: m.user_uuid,
@@ -76,7 +76,7 @@ const fetchUsers = async () => {
         } else {
             // Fallback: global user list (system admin context)
             const response = await usersApi.fetchUsers()
-            users.value = (response.data as any).users || []
+            users.value = (response as any).users || []
         }
     } catch (error) {
         console.error('Failed to fetch users:', error)

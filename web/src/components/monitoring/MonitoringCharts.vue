@@ -43,8 +43,8 @@ const fetchData = async () => {
         ])
 
         // Parse CPU
-        if (cpuRes.data?.data?.result?.[0]) {
-            const result = cpuRes.data.data.result[0]
+        if (cpuRes.data?.result?.[0]) {
+            const result = cpuRes.data.result[0]
             cpuData.value = {
                 labels: result.values.map((v: any) => formatTimestamp(v.time)),
                 datasets: [{
@@ -58,8 +58,8 @@ const fetchData = async () => {
         }
 
         // Parse Memory
-        if (memRes.data?.data?.result?.[0]) {
-            const result = memRes.data.data.result[0]
+        if (memRes.data?.result?.[0]) {
+            const result = memRes.data.result[0]
             if (Array.isArray(result.values) && result.values.length >= 2
                 && Array.isArray(result.values[0]) && result.values[0].length > 0) {
                 const labels = result.values[0].map((v: any) => formatTimestamp(v.time))
@@ -106,7 +106,7 @@ const fetchData = async () => {
                 let labels: string[] = []
                 let colorIdx = 0
 
-                const perIfaceResults: any[] = netRes.data || []
+                const perIfaceResults: any[] = netRes || []
                 perIfaceResults.forEach((ifaceResult: any) => {
                     const res = ifaceResult?.data?.result?.[0]
                     if (!res?.values || res.values.length < 2) return

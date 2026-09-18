@@ -38,19 +38,23 @@ export const RULE_TYPES = [
 ] as const
 
 export const alarmsApi = {
-    fetchAlarmRules(params?: { uuid?: string; rule_type?: string }) {
-        return client.get<NodeAlarmRuleListResponse>('/node-alarm-rules', { params })
+    async fetchAlarmRules(params?: { uuid?: string; rule_type?: string }) {
+        const response = await client.get<NodeAlarmRuleListResponse>('/node-alarm-rules', { params })
+        return response.data
     },
 
-    createAlarmRule(payload: CreateNodeAlarmRulePayload) {
-        return client.post('/node-alarm-rules', payload)
+    async createAlarmRule(payload: CreateNodeAlarmRulePayload) {
+        const response = await client.post('/node-alarm-rules', payload)
+        return response.data
     },
 
-    deleteAlarmRule(uuid: string) {
-        return client.delete(`/node-alarm-rules/${uuid}`)
+    async deleteAlarmRule(uuid: string) {
+        const response = await client.delete(`/node-alarm-rules/${uuid}`)
+        return response.data
     },
 
-    syncMappings() {
-        return client.post('/metrics/alarm/sync-mappings')
+    async syncMappings() {
+        const response = await client.post('/metrics/alarm/sync-mappings')
+        return response.data
     }
 }

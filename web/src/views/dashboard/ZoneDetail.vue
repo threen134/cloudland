@@ -46,7 +46,7 @@ const fetchZoneDetail = async () => {
     try {
         const zoneName = route.params.name as string
         const response = await zonesApi.getZone(zoneName)
-        const data = response.data as any
+        const data = response as any
         zone.value = data.zone || data
     } catch (err: any) {
         error.value = err.message || 'Failed to load Zone details'
@@ -60,7 +60,7 @@ const fetchAssociatedHypervisors = async () => {
     loadingHypers.value = true
     try {
         const response = await hypervisorsApi.fetchHypervisors({ limit: 200 })
-        const data = response.data as any
+        const data = response as any
         const allHypers = data.hypers || []
         hypervisors.value = allHypers.filter((h: Hypervisor) => h.zone_name === zone.value!.name)
     } catch {

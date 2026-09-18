@@ -48,7 +48,7 @@ const fetchChannels = async () => {
     loading.value = true
     try {
         const res = await notificationsApi.list()
-        channels.value = res.data.channels || []
+        channels.value = res.channels || []
     } catch (err) {
         console.error('Failed to fetch channels:', err)
         errorMsg.value = t('messages.error')

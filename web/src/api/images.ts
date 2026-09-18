@@ -31,27 +31,32 @@ export interface ImagePayload {
 
 export const imagesApi = {
     // List images
-    fetchImages() {
-        return client.get('/images')
+    async fetchImages() {
+        const response = await client.get('/images')
+        return response.data
     },
 
     // Get single image
-    getImage(id: string) {
-        return client.get(`/images/${id}`)
+    async getImage(id: string) {
+        const response = await client.get(`/images/${id}`)
+        return response.data
     },
 
     // Create image
-    createImage(payload: ImagePayload) {
-        return client.post('/images', payload)
+    async createImage(payload: ImagePayload) {
+        const response = await client.post('/images', payload)
+        return response.data
     },
 
     // Patch image
-    patchImage(id: string, payload: Record<string, any>) {
-        return client.patch(`/images/${id}`, payload)
+    async patchImage(id: string, payload: Record<string, any>) {
+        const response = await client.patch(`/images/${id}`, payload)
+        return response.data
     },
 
     // Delete image
-    deleteImage(id: string) {
-        return client.delete(`/images/${id}`)
+    async deleteImage(id: string) {
+        const response = await client.delete(`/images/${id}`)
+        return response.data
     }
 }

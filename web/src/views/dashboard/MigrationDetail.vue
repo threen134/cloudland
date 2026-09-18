@@ -24,8 +24,7 @@ const fetchMigrationDetail = async (silent = false) => {
     error.value = null
     try {
         const id = route.params.id as string
-        const response = await migrationsApi.getMigration(id)
-        const data = response.data as any
+        const data = await migrationsApi.getMigration(id) as any
         migration.value = data.migration || data
     } catch (err: any) {
         console.error('Failed to fetch migration detail:', err)

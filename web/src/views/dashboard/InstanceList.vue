@@ -95,14 +95,14 @@ const fetchUsageMetrics = async () => {
         const newMetrics: Record<string, { cpu: number, memory: number }> = {}
         ids.forEach(id => {
             // CPU: match by metric.uuid, one-dimensional values array [{time, value}]
-            const cpuResult = cpuRes.data?.data?.result?.find((r: any) => r.metric?.uuid === id)
+            const cpuResult = cpuRes?.data?.result?.find((r: any) => r.metric?.uuid === id)
             const cpuValues = cpuResult?.values || []
             const lastCpu = cpuValues.length
                 ? parseFloat(cpuValues[cpuValues.length - 1].value || 0)
                 : 0
 
             // Memory: match by metric.uuid, two-dimensional values array [totalValues[], usedValues[]]
-            const memResult = memRes.data?.data?.result?.find((r: any) => r.metric?.uuid === id)
+            const memResult = memRes?.data?.result?.find((r: any) => r.metric?.uuid === id)
             let lastMem = 0
             if (memResult?.values?.length >= 2) {
                 const totalValues = memResult.values[0]
@@ -124,7 +124,7 @@ const fetchInstances = async (showLoading: boolean = true) => {
     if (showLoading) loading.value = true
     try {
         const response = await instancesApi.fetchInstances()
-        const data = response.data as any
+        const data = response as any
         instanceList.value = Array.isArray(data) ? data : (data.instances || [])
         
         // Start fetching metrics after full list is loaded
@@ -595,15 +595,15 @@ const fetchResources = async () => {
         ])
 
 
-        availableImages.value = (imgsRes.data as any).images || []
+        availableImages.value = (imgsRes as any).images || []
         availableVPCs.value = vpcsRes.vpcs || []
         availableSecurityGroups.value = sgsRes.security_groups || []
-        availableKeys.value = (keysRes.data as any).keys || []
+        availableKeys.value = (keysRes as any).keys || []
         availableSubnets.value = subnetsRes.subnets || []
         availableFloatingIps.value = fipsRes.floating_ips || []
         
-        availableFlavors.value = (flavorsRes.data as any).flavors || flavorsRes.data || []
-        availableZones.value = (zonesRes.data as any).zones || zonesRes.data || []
+        availableFlavors.value = (flavorsRes as any).flavors || flavorsRes || []
+        availableZones.value = (zonesRes as any).zones || zonesRes || []
 
         // Set default zone if available
         if (availableZones.value.length > 0) {
@@ -613,7 +613,7 @@ const fetchResources = async () => {
         if (isSystemAdmin.value) {
             try {
                 const hypersRes = await hypervisorsApi.fetchHypervisors({ limit: 500 })
-                availableHypers.value = hypersRes.data.hypers || []
+                availableHypers.value = hypersRes.hypers || []
             } catch (err) {
                 console.error('Failed to fetch hypervisors:', err)
                 availableHypers.value = []
@@ -1589,7 +1589,7 @@ onUnmounted(() => {
         </div>
 
       <template #footer>
-        <button type="button" class="btn btn-secondary" @click="closeCreateModal" :disabled="creatingInstance">{{ t('marketplace.cancel') }}</button>
+        <button type="button" class="btn btn-secondary" @click="closeCreateModal" :disabled="creatingInstance">{{ t('actions.cancel') }}</button>
         <button type="button" class="btn btn-primary" @click="handleCreateInstance" :disabled="creatingInstance">
           <span v-if="creatingInstance" class="loading-spinner" style="width: 16px; height: 16px; border-width: 2px;"></span>
           {{ creatingInstance ? t('dashboard.overview.loadingOverview') : t('dashboard.buttons.createInstance') }}

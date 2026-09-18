@@ -142,7 +142,7 @@ const fetchSettings = async () => {
     loading.value = true
     try {
         const res = await systemSettingsApi.list()
-        loadValues(res.data.settings || [])
+        loadValues(res.settings || [])
     } catch (err) {
         console.error('Failed to load system settings:', err)
         toast.error(t('messages.error'))
@@ -228,7 +228,7 @@ const saveSettings = async (password?: string) => {
     saving.value = true
     try {
         const res = await systemSettingsApi.update(payload)
-        loadValues(res.data.settings || [])
+        loadValues(res.settings || [])
         if (otherEdits) Object.assign(editValues.value, otherEdits)
         promptFromToggle.value = false
         cancelPasswordPrompt()
@@ -291,10 +291,10 @@ const testChannel = async (channel: Channel) => {
     testingChannel.value = channel
     try {
         const res = await systemSettingsApi.testNotification(channel)
-        if (res.data.success) {
+        if (res.success) {
             toast.success(t('settings.testSuccess', { channel: t(`settings.channel.${channel}`) }))
         } else {
-            toast.error(t('settings.testFailed', { message: res.data.message }))
+            toast.error(t('settings.testFailed', { message: res.message }))
         }
     } catch (err) {
         console.error('Notification test failed:', err)
@@ -322,7 +322,7 @@ const fetchInfrastructure = async () => {
     s3TestResult.value = null
     try {
         const res = await infrastructureApi.get()
-        infraConfig.value = res.data
+        infraConfig.value = res
     } catch (err) {
         infraError.value = errorMessage(err, t('messages.error'))
         infraConfig.value = null
@@ -336,11 +336,11 @@ const testS3Connection = async () => {
     s3TestResult.value = null
     try {
         const res = await infrastructureApi.testS3()
-        s3TestResult.value = res.data
-        if (res.data.success) {
+        s3TestResult.value = res
+        if (res.success) {
             toast.success(t('settings.infra.testS3Success'))
         } else {
-            toast.error(t('settings.infra.testS3Failed', { message: res.data.message }))
+            toast.error(t('settings.infra.testS3Failed', { message: res.message }))
         }
     } catch (err) {
         const msg = errorMessage(err, t('messages.error'))

@@ -26,7 +26,7 @@ const fetchAlarmDetail = async () => {
     try {
         const uuid = route.params.id as string
         const response = await alarmsApi.fetchAlarmRules({ uuid })
-        const data = response.data as any
+        const data = response as any
         const rules = Array.isArray(data) ? data : (data.data || [])
         alarm.value = rules.length > 0 ? rules[0] : null
         if (!alarm.value) {

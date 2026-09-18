@@ -55,7 +55,7 @@ const fetchImage = async () => {
     error.value = ''
     try {
         const response = await imagesApi.getImage(imageId)
-        const data = response.data as any
+        const data = response as any
         image.value = data.image || data
     } catch (err) {
         console.error('Failed to fetch image:', err)
@@ -84,7 +84,7 @@ const handleDelete = async () => {
         router.push({ name: 'images' })
     } catch (err) {
         console.error('Failed to delete image:', err)
-        alert('Failed to delete image.')
+        toast.error(t('messages.deleteFailed'))
         deleting.value = false
     }
 }

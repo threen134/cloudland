@@ -41,7 +41,7 @@ export const useTenantStore = defineStore('tenant', () => {
 
         try {
             const response = await authApi.getMyOrgs()
-            const raw = Array.isArray(response.data) ? response.data : (response.data?.orgs || [])
+            const raw = Array.isArray(response) ? response : (response?.orgs || [])
             // Backend returns uuid as the identifier
             organizations.value = raw.map((o: any) => ({
                 ...o,
@@ -79,7 +79,7 @@ export const useTenantStore = defineStore('tenant', () => {
 
         try {
             const response = await authApi.switchOrg(orgId)
-            const newToken = response.data?.access_token
+            const newToken = response?.access_token
             if (newToken) {
                 setAuthToken(newToken)
             }

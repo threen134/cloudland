@@ -29,23 +29,28 @@ export interface UpdateChannelPayload {
 }
 
 export const notificationsApi = {
-    list() {
-        return client.get<ChannelListResponse>('/notification-channels')
+    async list() {
+        const response = await client.get<ChannelListResponse>('/notification-channels')
+        return response.data
     },
 
-    get(uuid: string) {
-        return client.get<NotificationChannel>(`/notification-channels/${uuid}`)
+    async get(uuid: string) {
+        const response = await client.get<NotificationChannel>(`/notification-channels/${uuid}`)
+        return response.data
     },
 
-    create(payload: CreateChannelPayload) {
-        return client.post<NotificationChannel>('/notification-channels', payload)
+    async create(payload: CreateChannelPayload) {
+        const response = await client.post<NotificationChannel>('/notification-channels', payload)
+        return response.data
     },
 
-    update(uuid: string, payload: UpdateChannelPayload) {
-        return client.put<NotificationChannel>(`/notification-channels/${uuid}`, payload)
+    async update(uuid: string, payload: UpdateChannelPayload) {
+        const response = await client.put<NotificationChannel>(`/notification-channels/${uuid}`, payload)
+        return response.data
     },
 
-    delete(uuid: string) {
-        return client.delete(`/notification-channels/${uuid}`)
+    async delete(uuid: string) {
+        const response = await client.delete(`/notification-channels/${uuid}`)
+        return response.data
     },
 }

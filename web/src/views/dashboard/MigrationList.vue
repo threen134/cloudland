@@ -76,8 +76,7 @@ const hasActiveMigration = computed(() =>
 const fetchMigrations = async (silent = false) => {
     if (!silent) loading.value = true
     try {
-        const response = await migrationsApi.fetchMigrations()
-        const data = response.data as any
+        const data = await migrationsApi.fetchMigrations() as any
         migrationList.value = Array.isArray(data) ? data : (data.migrations || [])
     } catch (error) {
         console.error('API fetch failed:', error)
@@ -156,13 +155,13 @@ const fetchResources = async () => {
             instancesApi.fetchInstances(),
             hypervisorsApi.fetchHypervisors()
         ])
-        
-        const instData = instRes.data as any
+
+        const instData = instRes as any
         availableInstances.value = Array.isArray(instData) ? instData : (instData.instances || [])
-        
+
         // 接口返回的字段是 hypers，不是 hypervisors。这里原先写成 as any，字段名拼错也能编译通过，
         // 结果目标节点下拉框永远取到 undefined 而回退成空数组；改用真实类型让同类错误在编译期暴露
-        const hypData = hypRes.data as HyperListResponse | Hypervisor[]
+        const hypData = hypRes as HyperListResponse | Hypervisor[]
         availableHypervisors.value = Array.isArray(hypData) ? hypData : (hypData.hypers || [])
     } catch (err) {
         console.error('Error fetching resources for migration:', err)

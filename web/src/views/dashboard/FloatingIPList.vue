@@ -85,7 +85,7 @@ const fetchFloatingIPs = async () => {
 const fetchInstances = async () => {
     try {
         const response = await instancesApi.fetchInstances()
-        instances.value = (response.data?.instances || []).filter((inst: Instance) =>
+        instances.value = (response?.instances || []).filter((inst: Instance) =>
             inst.vpc && inst.status !== 'provisioning' && inst.interfaces?.some(iface => iface.is_primary)
         )
     } catch (err) {

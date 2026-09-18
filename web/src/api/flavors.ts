@@ -18,22 +18,26 @@ export interface FlavorPayload {
 
 export const flavorsApi = {
     // List flavors
-    fetchFlavors() {
-        return client.get('/flavors')
+    async fetchFlavors() {
+        const response = await client.get('/flavors')
+        return response.data
     },
 
     // Get single flavor
-    getFlavor(name: string) {
-        return client.get(`/flavors/${name}`)
+    async getFlavor(name: string) {
+        const response = await client.get(`/flavors/${name}`)
+        return response.data
     },
 
     // Create flavor
-    createFlavor(payload: FlavorPayload) {
-        return client.post('/flavors', payload)
+    async createFlavor(payload: FlavorPayload) {
+        const response = await client.post('/flavors', payload)
+        return response.data
     },
 
     // Delete flavor
-    deleteFlavor(name: string) {
-        return client.delete(`/flavors/${name}`)
+    async deleteFlavor(name: string) {
+        const response = await client.delete(`/flavors/${name}`)
+        return response.data
     }
 }

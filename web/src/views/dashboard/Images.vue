@@ -56,7 +56,7 @@ const fetchImages = async () => {
     loading.value = true
     try {
         const response = await imagesApi.fetchImages()
-        images.value = (response.data as any).images || []
+        images.value = (response as any).images || []
     } catch (err) {
         console.error('API fetch failed:', err)
         images.value = []
@@ -94,7 +94,7 @@ const closeCreateModal = () => {
 const handleCreateImage = async () => {
     createError.value = ''
     if (!newImageForm.value.name || !newImageForm.value.download_url) {
-        createError.value = t('dashboard.imageActions.fillRequired')
+        createError.value = t('dashboard.overview.imageActions.fillRequired')
         return
     }
     if (!isNameValid.value) {

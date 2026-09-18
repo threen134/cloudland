@@ -78,7 +78,7 @@ const fetchInstance = async (showLoading: boolean = true) => {
     }
     try {
         const response = await instancesApi.getInstance(instanceId)
-        const data = response.data as any
+        const data = response as any
         instance.value = data.instance || data
     } catch (err) {
         console.error('Failed to fetch instance:', err)
@@ -156,7 +156,7 @@ const openConsole = (type: 'vnc' | 'serial' = 'vnc') => {
     const name = type === 'serial' ? 'instance-serial-console' : 'instance-console'
     const url = router.resolve({ name, params: { id: instanceId } }).href
     if (!window.open(url, '_blank')) {
-        alert(t('dashboard.instanceDetail.popupBlocked'))
+        toast.error(t('dashboard.instanceDetail.popupBlocked'))
     }
 }
 
@@ -214,7 +214,7 @@ const fetchLinkedRules = async () => {
         const results = await Promise.all(
             VM_RULE_TYPES.map(rt =>
                 vmAlarmRulesApi.listRules(rt.value, { page: 1, page_size: 1000 })
-                    .then(res => ({ type: rt.value, label: rt.label, data: res.data.data || [] }))
+                    .then(res => ({ type: rt.value, label: rt.label, data: res.data || [] }))
                     .catch(() => ({ type: rt.value, label: rt.label, data: [] as VMAlarmRuleGroup[] }))
             )
         )
@@ -249,7 +249,7 @@ const openLinkModal = async () => {
         const results = await Promise.all(
             VM_RULE_TYPES.map(rt =>
                 vmAlarmRulesApi.listRules(rt.value, { page: 1, page_size: 1000 })
-                    .then(res => ({ type: rt.value, label: rt.label, data: res.data.data || [] }))
+                    .then(res => ({ type: rt.value, label: rt.label, data: res.data || [] }))
                     .catch(() => ({ type: rt.value, label: rt.label, data: [] as VMAlarmRuleGroup[] }))
             )
         )

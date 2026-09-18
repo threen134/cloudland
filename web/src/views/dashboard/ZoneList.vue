@@ -40,7 +40,7 @@ const fetchZones = async () => {
     loading.value = true
     try {
         const response = await zonesApi.fetchZones()
-        const data = response.data as any
+        const data = response as any
         zoneList.value = Array.isArray(data) ? data : (data.zones || [])
     } catch (error) {
         console.error('API fetch failed:', error)

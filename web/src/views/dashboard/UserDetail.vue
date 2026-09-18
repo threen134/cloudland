@@ -24,7 +24,7 @@ const fetchUser = async () => {
     error.value = ''
     try {
         const response = await usersApi.getUser(userId)
-        user.value = response.data as any
+        user.value = response as any
     } catch (err) {
         console.error('Failed to fetch user:', err)
         error.value = t('dashboard.userDetail.loadError')

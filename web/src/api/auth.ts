@@ -13,46 +13,53 @@ export interface LoginResponse {
 
 export const authApi = {
     // Login
-    login(payload: LoginPayload) {
+    async login(payload: LoginPayload) {
         const formData = new URLSearchParams()
         formData.append('username', payload.username || '')
         formData.append('password', payload.password || '')
 
-        return client.post<LoginResponse>('/auth/token/form', formData, {
+        const response = await client.post<LoginResponse>('/auth/token/form', formData, {
             headers: {
                 'Content-Type': 'application/x-www-form-urlencoded'
             }
         })
+        return response.data
     },
 
     // Get current user info
-    getUserInfo() {
-        return client.get('/auth/me')
+    async getUserInfo() {
+        const response = await client.get('/auth/me')
+        return response.data
     },
 
     // Register
-    register(payload: any) {
-        return client.post('/auth/register', payload)
+    async register(payload: any) {
+        const response = await client.post('/auth/register', payload)
+        return response.data
     },
 
     // Activate Account
-    activateAccount(token: string) {
-        return client.get(`/auth/activate?token=${token}`)
+    async activateAccount(token: string) {
+        const response = await client.get(`/auth/activate?token=${token}`)
+        return response.data
     },
 
     // Switch organization (returns new token)
-    switchOrg(orgUuid: string, region?: string) {
-        return client.post<LoginResponse>('/auth/switch-org', { org_uuid: orgUuid, region })
+    async switchOrg(orgUuid: string, region?: string) {
+        const response = await client.post<LoginResponse>('/auth/switch-org', { org_uuid: orgUuid, region })
+        return response.data
     },
 
     // Switch region (returns new token)
-    switchRegion(regionUuid: string) {
-        return client.post<LoginResponse>('/auth/switch-region', { region: regionUuid })
+    async switchRegion(regionUuid: string) {
+        const response = await client.post<LoginResponse>('/auth/switch-region', { region: regionUuid })
+        return response.data
     },
 
     // Get current user's organizations
-    getMyOrgs() {
-        return client.get('/auth/me/orgs')
+    async getMyOrgs() {
+        const response = await client.get('/auth/me/orgs')
+        return response.data
     },
 
     // Logout
@@ -63,12 +70,14 @@ export const authApi = {
     // --- Invitation (public) ---
 
     // Get invitation info by token
-    getInvitationInfo(token: string) {
-        return client.get(`/auth/invitation/info?token=${encodeURIComponent(token)}`)
+    async getInvitationInfo(token: string) {
+        const response = await client.get(`/auth/invitation/info?token=${encodeURIComponent(token)}`)
+        return response.data
     },
 
     // Accept invitation
-    acceptInvitation(payload: { token: string; username?: string; password?: string }) {
-        return client.post('/auth/invitation/accept', payload)
+    async acceptInvitation(payload: { token: string; username?: string; password?: string }) {
+        const response = await client.post('/auth/invitation/accept', payload)
+        return response.data
     },
 }

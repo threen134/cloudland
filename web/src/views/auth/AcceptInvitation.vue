@@ -36,7 +36,7 @@ const fetchInfo = async () => {
     }
     try {
         const response = await authApi.getInvitationInfo(token)
-        invitationInfo.value = response.data
+        invitationInfo.value = response
         status.value = 'info'
     } catch (err: any) {
         status.value = 'error'

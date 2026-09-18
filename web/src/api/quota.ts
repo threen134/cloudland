@@ -76,22 +76,26 @@ export interface OrgResourceSummary {
 
 export const quotaApi = {
     // 获取 org 在所有 region 的配额+消费汇总
-    getOrgResourceSummary(orgUuid: string) {
-        return client.get<OrgResourceSummary>(`/resources/info/${orgUuid}`)
+    async getOrgResourceSummary(orgUuid: string) {
+        const response = await client.get<OrgResourceSummary>(`/resources/info/${orgUuid}`)
+        return response.data
     },
 
     // 获取 org 在特定 region 的配额+消费
-    getOrgRegionResourceInfo(orgUuid: string, regionUuid: string) {
-        return client.get<OrgResourceInfo>(`/resources/info/${orgUuid}/${regionUuid}`)
+    async getOrgRegionResourceInfo(orgUuid: string, regionUuid: string) {
+        const response = await client.get<OrgResourceInfo>(`/resources/info/${orgUuid}/${regionUuid}`)
+        return response.data
     },
 
     // 获取 org 在特定 region 的配额
-    getOrgQuota(orgUuid: string, regionUuid: string) {
-        return client.get<OrgResourceQuota>(`/resources/quota/${orgUuid}/${regionUuid}`)
+    async getOrgQuota(orgUuid: string, regionUuid: string) {
+        const response = await client.get<OrgResourceQuota>(`/resources/quota/${orgUuid}/${regionUuid}`)
+        return response.data
     },
 
     // 更新 org 在特定 region 的配额 (superuser only)
-    updateOrgQuota(orgUuid: string, regionUuid: string, payload: OrgResourceQuotaUpdate) {
-        return client.put<OrgResourceQuota>(`/resources/quota/${orgUuid}/${regionUuid}`, payload)
+    async updateOrgQuota(orgUuid: string, regionUuid: string, payload: OrgResourceQuotaUpdate) {
+        const response = await client.put<OrgResourceQuota>(`/resources/quota/${orgUuid}/${regionUuid}`, payload)
+        return response.data
     },
 }

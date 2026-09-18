@@ -68,8 +68,7 @@ const filteredRegions = computed(() => {
 const fetchRegions = async () => {
     isLoading.value = true
     try {
-        const response = await regionsApi.fetchRegions()
-        const data = response.data
+        const data = await regionsApi.fetchRegions()
         regions.value = Array.isArray(data) ? data : []
     } catch (err) {
         console.error('Failed to fetch regions:', err)
@@ -118,8 +117,7 @@ const handleCreate = async () => {
 
     creating.value = true
     try {
-        const response = await regionsApi.createRegion(createForm.value)
-        const created = response.data as RegionCreated
+        const created = await regionsApi.createRegion(createForm.value) as RegionCreated
         createdSecret.value = created.internal_secret
         toast.success(t('dashboard.regionActions.createdSuccess'))
         await fetchRegions()
@@ -139,8 +137,7 @@ const handleCreate = async () => {
 // Edit
 const openEditModal = async (region: RegionPublic) => {
     try {
-        const response = await regionsApi.getRegion(region.uuid)
-        const detail = response.data as RegionAdmin
+        const detail = await regionsApi.getRegion(region.uuid) as RegionAdmin
         editingRegion.value = detail
         
         const { host, port } = splitEndpoint(detail.internal_endpoint)
@@ -224,7 +221,7 @@ const handleRotate = async () => {
     rotating.value = true
     try {
         const response = await regionsApi.rotateSecret(rotatingRegion.value.uuid)
-        rotatedSecret.value = (response.data as any).new_secret
+        rotatedSecret.value = (response as any).new_secret
         toast.success(t('messages.success'))
     } catch (err: any) {
         toast.error(err.response?.data?.detail || 'Rotate failed')

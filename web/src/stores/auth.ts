@@ -25,7 +25,7 @@ export const useAuthStore = defineStore('auth', () => {
         try {
             const res = await authApi.getUserInfo()
             // API returns { message, user: {...} } — extract the nested user object
-            const userData = res.data?.user || res.data
+            const userData = res?.user || res
             user.value = userData
             const userStorage = localStorage.getItem('cloudland_remember') === '1' ? localStorage : sessionStorage
             userStorage.setItem('cloudland_user', JSON.stringify(user.value))
@@ -70,14 +70,14 @@ export const useAuthStore = defineStore('auth', () => {
 
         try {
             const response = await authApi.login({ username, password })
-            const token = response.data.access_token
+            const token = response.access_token
 
             setAuthToken(token, rememberMe)
 
             // Fetch user info from /auth/me
             const userInfoRes = await authApi.getUserInfo()
             // API returns { message, user: {...} } — extract the nested user object
-            const userData = userInfoRes.data?.user || userInfoRes.data
+            const userData = userInfoRes?.user || userInfoRes
             user.value = userData
             const userStorage = rememberMe ? localStorage : sessionStorage
             userStorage.setItem('cloudland_user', JSON.stringify(user.value))

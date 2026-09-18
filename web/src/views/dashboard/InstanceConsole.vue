@@ -23,7 +23,7 @@ const fetchConsoleInfo = async () => {
     try {
         status.value = 'connecting'
         const response = await instancesApi.getConsole(instanceId)
-        const { console_url, instance } = response.data
+        const { console_url, instance } = response
         
         // Try to get hostname from console response or fallback to ID
         instanceName.value = instance?.hostname || instance?.id || instanceId
@@ -31,7 +31,7 @@ const fetchConsoleInfo = async () => {
         // If we don't have a good hostname yet, try fetching full instance info
         if (!instance?.hostname) {
             instancesApi.getInstance(instanceId).then(res => {
-                const fullInstance = res.data.instance || res.data
+                const fullInstance = res.instance || res
                 if (fullInstance.hostname) {
                     instanceName.value = fullInstance.hostname
                 }
@@ -39,7 +39,7 @@ const fetchConsoleInfo = async () => {
         }
 
         let url = console_url
-        const consoleData = response.data
+        const consoleData = response
         if (!url && consoleData.console_host) {
             const host = consoleData.console_host
             const port = consoleData.console_port || 443

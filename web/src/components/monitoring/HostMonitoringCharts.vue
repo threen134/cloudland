@@ -41,7 +41,7 @@ const fetchData = async () => {
         ])
 
         // Parse CPU
-        const cpuResult = cpuRes.data?.data?.result?.[0]
+        const cpuResult = cpuRes.data?.result?.[0]
         if (cpuResult?.values?.length) {
             cpuData.value = {
                 labels: cpuResult.values.map((v: any) => formatTimestamp(v.time)),
@@ -56,7 +56,7 @@ const fetchData = async () => {
         }
 
         // Parse Memory — mergeMemoryResults returns values as [totalValues, usedValues]
-        const memResult = memRes.data?.data?.result?.[0]
+        const memResult = memRes.data?.result?.[0]
         if (memResult?.values && Array.isArray(memResult.values) && memResult.values.length >= 2) {
             const totalSamples = memResult.values[0]
             const usedSamples = memResult.values[1]

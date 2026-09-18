@@ -35,7 +35,7 @@ const fetchKeys = async () => {
     loading.value = true
     try {
         const response = await keysApi.fetchKeys()
-        keys.value = (response.data as any).keys || []
+        keys.value = (response as any).keys || []
     } catch (err) {
         console.error('API fetch failed:', err)
         keys.value = []
@@ -54,10 +54,6 @@ const filteredKeys = computed(() => {
     )
 })
 
-// Detail view removed as requested
-// const navigateToDetail = (key: SSHKey) => {
-//     router.push({ name: 'ssh-key-detail', params: { id: key.id } })
-// }
 
 const copyFingerprint = async (key: SSHKey) => {
     if (key.finger_print) {

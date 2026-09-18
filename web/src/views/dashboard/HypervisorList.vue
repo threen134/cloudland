@@ -48,7 +48,7 @@ const loadHyperInstances = async (h: Hypervisor) => {
     try {
         // limit 取较大值：悬浮是为了看清都有哪些虚拟机，分页会让列表看起来缺失
         const resp = await instancesApi.fetchInstances({ hyper: h.hostid, limit: 200 })
-        const data = resp.data as any
+        const data = resp as any
         hyperInstances.value[h.hostid] = Array.isArray(data) ? data : (data.instances || [])
     } catch (err) {
         console.error('Failed to load instances of hypervisor:', err)
@@ -146,7 +146,7 @@ const fetchHypervisors = async () => {
             limit: pageSize.value,
             q: searchQuery.value || undefined
         })
-        const data = response.data as any
+        const data = response as any
         hypervisorList.value = Array.isArray(data) ? data : (data.hypers || [])
         totalCount.value = data.total || hypervisorList.value.length
     } catch (error) {
@@ -221,7 +221,7 @@ const openDeployModal = async () => {
     showDeployModal.value = true
     try {
         const resp = await zonesApi.fetchZones()
-        const data = resp.data as any
+        const data = resp as any
         zoneList.value = Array.isArray(data) ? data : (data.zones || [])
     } catch { zoneList.value = [] }
 }
@@ -231,7 +231,7 @@ const handleDeploy = async () => {
     deploying.value = true
     try {
         const resp = await hypervisorsApi.deployHypervisor(deployForm.value)
-        deployResult.value = resp.data as any
+        deployResult.value = resp as any
     } catch (err: any) {
         toast.error(err.response?.data?.error || t('messages.deployFailed'))
     } finally {
@@ -290,7 +290,7 @@ const openEditModal = async (h: Hypervisor) => {
     if (zoneList.value.length === 0) {
         try {
             const resp = await zonesApi.fetchZones()
-            const data = resp.data as any
+            const data = resp as any
             zoneList.value = Array.isArray(data) ? data : (data.zones || [])
         } catch { zoneList.value = [] }
     }
@@ -361,15 +361,30 @@ const handleMaintain = async () => {
 
 // 退出维护模式：把状态改回活动。维护状态由控制面单方面置位、心跳不会再覆盖它
 // （见 rpcs/hyper_status.go），所以必须提供出口，否则节点进了维护模式就只能去编辑对话框里改
-const exitMaintain = async (h: Hypervisor) => {
+const showExitMaintainModal = ref(false)
+const exitingMaintain = ref(false)
+const exitMaintainHyper = ref<Hypervisor | null>(null)
+
+const exitMaintain = (h: Hypervisor) => {
     closeActionMenu()
-    if (!window.confirm(t('dashboard.hypervisorActions.exitMaintainConfirm', { hostname: h.hostname }))) return
+    exitMaintainHyper.value = h
+    showExitMaintainModal.value = true
+}
+
+const confirmExitMaintain = async () => {
+    const h = exitMaintainHyper.value
+    if (!h) return
+    exitingMaintain.value = true
     try {
         await hypervisorsApi.updateHypervisor(h.uuid, { status: 1 })
+        showExitMaintainModal.value = false
+        exitMaintainHyper.value = null
         toast.success(t('messages.success'))
         await fetchHypervisors()
     } catch (err: any) {
         toast.error(err.response?.data?.error || t('messages.error'))
+    } finally {
+        exitingMaintain.value = false
     }
 }
 
@@ -735,6 +750,29 @@ onUnmounted(() => {
         <button type="submit" class="btn btn-warning" :disabled="maintaining">
           <Loader2 v-if="maintaining" :size="14" class="spinning" />
           {{ maintaining ? t('messages.loading') : t('dashboard.hypervisorActions.maintain') }}
+        </button>
+      </template>
+    </BaseModal>
+
+    <!-- 退出维护模式确认 -->
+    <BaseModal
+      :show="showExitMaintainModal"
+      :title="t('dashboard.hypervisorActions.exitMaintain')"
+      size="sm"
+      :loading="exitingMaintain"
+      @close="showExitMaintainModal = false"
+    >
+      <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">
+        {{ t('dashboard.hypervisorActions.exitMaintainConfirm', { hostname: exitMaintainHyper?.hostname }) }}
+      </p>
+
+      <template #footer>
+        <button type="button" class="btn btn-secondary" :disabled="exitingMaintain" @click="showExitMaintainModal = false">
+          {{ t('actions.cancel') }}
+        </button>
+        <button type="button" class="btn btn-primary" :disabled="exitingMaintain" @click="confirmExitMaintain">
+          <Loader2 v-if="exitingMaintain" :size="14" class="spinning" />
+          {{ exitingMaintain ? t('messages.loading') : t('actions.confirm') }}
         </button>
       </template>
     </BaseModal>

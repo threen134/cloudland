@@ -44,7 +44,7 @@ const fetchAlarms = async () => {
         const params: any = {}
         if (filterRuleType.value) params.rule_type = filterRuleType.value
         const response = await alarmsApi.fetchAlarmRules(params)
-        const data = response.data as any
+        const data = response as any
         alarmList.value = Array.isArray(data) ? data : (data.data || [])
     } catch (error) {
         console.error('API fetch failed:', error)

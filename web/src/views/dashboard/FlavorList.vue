@@ -39,7 +39,7 @@ const fetchFlavors = async () => {
     loading.value = true
     try {
         const response = await flavorsApi.fetchFlavors()
-        flavors.value = (response.data as any).flavors || []
+        flavors.value = (response as any).flavors || []
     } catch (err) {
         console.error('API fetch failed:', err)
         flavors.value = []

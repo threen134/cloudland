@@ -50,28 +50,33 @@ export interface AlarmSummaryResponse {
 }
 
 export const alarmEventsApi = {
-    list(params?: { status?: string; page?: number; page_size?: number }) {
-        return client.get<AlarmEventListResponse>('/alarm/events', { params })
+    async list(params?: { status?: string; page?: number; page_size?: number }) {
+        const response = await client.get<AlarmEventListResponse>('/alarm/events', { params })
+        return response.data
     },
 
-    getDeliveryLogs(eventUuid: string) {
-        return client.get<{ delivery_logs: AlarmDeliveryLog[] }>(
+    async getDeliveryLogs(eventUuid: string) {
+        const response = await client.get<{ delivery_logs: AlarmDeliveryLog[] }>(
             `/alarm/events/${eventUuid}/delivery-logs`
         )
+        return response.data
     },
 
-    getSummary() {
-        return client.get<AlarmSummaryResponse>('/alarm/summary')
+    async getSummary() {
+        const response = await client.get<AlarmSummaryResponse>('/alarm/summary')
+        return response.data
     },
 
-    bindRuleChannels(ruleGroupUuid: string, channelUuids: string[]) {
-        return client.post('/alarm/rule-channels', {
+    async bindRuleChannels(ruleGroupUuid: string, channelUuids: string[]) {
+        const response = await client.post('/alarm/rule-channels', {
             rule_group_uuid: ruleGroupUuid,
             channel_uuids: channelUuids,
         })
+        return response.data
     },
 
-    getRuleChannels(ruleGroupUuid: string) {
-        return client.get(`/alarm/rule-channels/${ruleGroupUuid}`)
+    async getRuleChannels(ruleGroupUuid: string) {
+        const response = await client.get(`/alarm/rule-channels/${ruleGroupUuid}`)
+        return response.data
     },
 }

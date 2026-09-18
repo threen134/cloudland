@@ -78,8 +78,8 @@ const toggleRule = async (id: string) => {
                     notificationsApi.list(),
                     alarmEventsApi.getRuleChannels(id),
                 ])
-                const allCh: NotificationChannel[] = channelsRes.data.channels || []
-                const bindings = (bindingsRes.data as any).bindings || []
+                const allCh: NotificationChannel[] = channelsRes.channels || []
+                const bindings = (bindingsRes as any).bindings || []
                 const boundUuids: string[] = bindings.map((b: any) => b.channel_uuid)
                 ruleChannels.value[id] = allCh.filter(c => boundUuids.includes(c.uuid))
                 ruleChannelCounts.value[id] = ruleChannels.value[id].length
@@ -126,7 +126,7 @@ const filteredRules = computed(() => {
 const fetchAllVMs = async () => {
     try {
         const res = await instancesApi.fetchInstances()
-        const data = res.data as any
+        const data = res as any
         allVMs.value = Array.isArray(data) ? data : (data.instances || [])
     } catch (err) {
         console.error('Failed to fetch instances:', err)
@@ -147,7 +147,7 @@ const fetchRules = async () => {
         ruleResults.forEach((result, idx) => {
             const type = types[idx]
             if (result.status === 'fulfilled') {
-                const typeRules = (result.value.data.data || []).map((r: any) => ({ ...r, type }))
+                const typeRules = (result.value.data || []).map((r: any) => ({ ...r, type }))
                 allRules.push(...typeRules)
             } else {
                 console.error(`Failed to fetch ${type} alarm rules:`, result.reason)
@@ -163,7 +163,7 @@ const fetchRules = async () => {
             results.forEach((result, idx) => {
                 const uuid = allRules[idx].uuid
                 if (result.status === 'fulfilled') {
-                    const bindings = (result.value.data as any).bindings || []
+                    const bindings = (result.value as any).bindings || []
                     ruleChannelCounts.value[uuid] = bindings.length
                 } else {
                     ruleChannelCounts.value[uuid] = 0
@@ -192,7 +192,7 @@ const openCreate = async () => {
         vmsLoading.value = true
         try {
             const res = await instancesApi.fetchInstances()
-            const data = res.data as any
+            const data = res as any
             allVMs.value = Array.isArray(data) ? data : (data.instances || [])
         } catch (err) {
             console.error('Failed to fetch instances:', err)
@@ -204,7 +204,7 @@ const openCreate = async () => {
         createChannelsLoading.value = true
         try {
             const res = await notificationsApi.list()
-            allChannels.value = res.data.channels || []
+            allChannels.value = res.channels || []
         } catch (err) {
             console.error('Failed to fetch channels:', err)
         } finally {
@@ -242,7 +242,7 @@ const toggleBWVM = async (vmId: string) => {
         vmInterfacesLoading.value[vmId] = true
         try {
             const res = await instancesApi.getInterfaces(vmId)
-            vmInterfaces.value[vmId] = (res.data.interfaces || []).map(i => ({ id: i.id, name: i.name, ip_address: i.ip_address }))
+            vmInterfaces.value[vmId] = (res.interfaces || []).map(i => ({ id: i.id, name: i.name, ip_address: i.ip_address }))
         } catch {
             vmInterfaces.value[vmId] = []
         } finally {
@@ -285,7 +285,7 @@ const submitCreate = async () => {
             })
         }
 
-        const ruleUuid = res.data?.data?.uuid || res.data?.data?.group_uuid
+        const ruleUuid = res.data?.uuid || res.data?.group_uuid
 
         // Link VMs if selected (cpu/memory only; bw links are handled in createBWRule)
         if (createForm.value.type !== 'bw' && createForm.value.linkedvms && createForm.value.linkedvms.length > 0 && ruleUuid) {
@@ -358,8 +358,8 @@ const openBindChannels = async (rule: VMAlarmRuleGroup) => {
             notificationsApi.list(),
             alarmEventsApi.getRuleChannels(rule.uuid),
         ])
-        allChannels.value = channelsRes.data.channels || []
-        const bindings = (bindingsRes.data as any).bindings || []
+        allChannels.value = channelsRes.channels || []
+        const bindings = (bindingsRes as any).bindings || []
         selectedChannelUuids.value = bindings.map((b: any) => b.channel_uuid)
     } catch (err) {
         console.error('Failed to load channels:', err)
@@ -383,7 +383,7 @@ const saveChannelBindings = async () => {
     } catch (err: any) {
         const errCode = err.response?.data?.error
         if (errCode === 'channel_not_synced') {
-            alert(t('dashboard.vmAlarmRules.channelNotSynced'))
+            toast.error(t('dashboard.vmAlarmRules.channelNotSynced'))
         } else {
             console.error('Failed to bind channels:', err)
         }
@@ -408,7 +408,7 @@ const openBindVMs = async (rule: VMAlarmRuleGroup) => {
     vmSearchQuery.value = ''
     try {
         const res = await instancesApi.fetchInstances()
-        const data = res.data as any
+        const data = res as any
         allVMs.value = Array.isArray(data) ? data : (data.instances || [])
     } catch (err) {
         console.error('Failed to fetch instances:', err)

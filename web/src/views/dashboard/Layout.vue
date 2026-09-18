@@ -102,7 +102,7 @@ const handleSwitchRegion = async (regionId: string) => {
     const endSwitch = beginTokenSwitch()
     try {
         const response = await authApi.switchRegion(regionId)
-        const newToken = response.data?.access_token
+        const newToken = response?.access_token
         if (newToken) {
             setAuthToken(newToken)
         }
@@ -153,7 +153,6 @@ const pageTitle = computed(() => {
         'load-balancers': t('dashboard.loadBalancers'),
         'load-balancer-detail': t('dashboard.loadBalancers'),
         'ssh-keys': t('dashboard.sshKeys'),
-        'ssh-key-detail': t('dashboard.sshKeys'),
         'users': t('dashboard.users'),
         'user-detail': t('dashboard.users'),
         'orgs': t('dashboard.organizations'),
@@ -194,7 +193,7 @@ const firingCount = ref(0)
 const fetchFiringCount = async () => {
     try {
         const res = await alarmEventsApi.getSummary()
-        firingCount.value = res.data.total_firing || 0
+        firingCount.value = res.total_firing || 0
     } catch {
         firingCount.value = 0
     }

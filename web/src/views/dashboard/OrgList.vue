@@ -45,8 +45,7 @@ const editOrgForm = ref({
 const fetchOrgs = async () => {
     loading.value = true
     try {
-        const response = await orgsApi.fetchOrgs()
-        const data = response.data as any
+        const data = await orgsApi.fetchOrgs() as any
         orgs.value = Array.isArray(data) ? data : (data.orgs || [])
     } catch (error) {
         console.error('Failed to fetch orgs:', error)

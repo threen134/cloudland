@@ -103,7 +103,7 @@ const fetchOrg = async () => {
     error.value = ''
     try {
         const response = await orgsApi.getOrg(orgId)
-        org.value = response.data?.org || response.data
+        org.value = response?.org || response
     } catch (err: any) {
         error.value = err.response?.data?.detail || 'Failed to load organization.'
     } finally {
@@ -115,7 +115,7 @@ const fetchMembers = async () => {
     membersLoading.value = true
     try {
         const response = await orgsApi.fetchMembers(orgId)
-        members.value = response.data?.members || response.data || []
+        members.value = response?.members || response || []
     } catch (err: any) {
         console.error('Failed to fetch members:', err)
     } finally {
@@ -128,7 +128,7 @@ const fetchInvitations = async () => {
     invitationsLoading.value = true
     try {
         const response = await orgsApi.fetchInvitations(orgId)
-        invitations.value = response.data || []
+        invitations.value = response || []
     } catch (err: any) {
         console.error('Failed to fetch invitations:', err)
     } finally {

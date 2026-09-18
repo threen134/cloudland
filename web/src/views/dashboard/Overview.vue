@@ -96,9 +96,9 @@ onMounted(async () => {
         const regionUuid = regionStore.currentRegionId || ''
 
         const [instRes, volRes, imgRes, vpcRes, fipRes, lbRes, quotaRes] = await Promise.all([
-            instancesApi.fetchInstances().catch(err => { console.warn('Instances fetch failed:', err); return { data: [] } }),
+            instancesApi.fetchInstances().catch(err => { console.warn('Instances fetch failed:', err); return [] }),
             volumesApi.list({ limit: 100, type: 'all' }).catch(err => { console.warn('Volumes fetch failed:', err); return { volumes: [] } }),
-            imagesApi.fetchImages().catch(err => { console.warn('Images fetch failed:', err); return { data: [] } }),
+            imagesApi.fetchImages().catch(err => { console.warn('Images fetch failed:', err); return [] }),
             vpcsApi.list({ limit: 100 }).catch(err => { console.warn('VPCs fetch failed:', err); return { vpcs: [] } }),
             floatingIpsApi.list({ limit: 100 }).catch(err => { console.warn('FIPs fetch failed:', err); return { floating_ips: [] } }),
             // Only the total is needed for the load balancer card
@@ -108,15 +108,15 @@ onMounted(async () => {
                 : Promise.resolve(null),
         ])
 
-        const instances = instRes.data?.instances || instRes.data || []
+        const instances = instRes?.instances || instRes || []
         const volumes = volRes.volumes || []
-        const images = imgRes.data?.images || imgRes.data || []
+        const images = imgRes?.images || imgRes || []
         const vpcs = vpcRes.vpcs || []
         const fips = fipRes.floating_ips || []
 
         // Get quota and consumption from API (fallback to client-side calculation)
-        const quota = quotaRes?.data?.quota
-        const consumption = quotaRes?.data?.consumption
+        const quota = quotaRes?.quota
+        const consumption = quotaRes?.consumption
 
         // Use server-side consumption when available, otherwise compute from list data
         const usedCpu = consumption?.cpu_cores ?? (Array.isArray(instances) ? instances.reduce((acc: number, inst: Instance) => acc + (inst.flavor?.cpu || 0), 0) : 0)

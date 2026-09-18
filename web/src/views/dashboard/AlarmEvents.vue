@@ -39,8 +39,8 @@ const fetchEvents = async () => {
         const params: Record<string, any> = { page: page.value, page_size: pageSize.value }
         if (statusFilter.value) params.status = statusFilter.value
         const res = await alarmEventsApi.list(params)
-        events.value = res.data.events || []
-        total.value = res.data.total || 0
+        events.value = res.events || []
+        total.value = res.total || 0
     } catch (err) {
         console.error('Failed to fetch alarm events:', err)
         errorMsg.value = t('messages.error')
@@ -59,7 +59,7 @@ const toggleExpand = async (eventUuid: string) => {
         loadingLogs.value = eventUuid
         try {
             const res = await alarmEventsApi.getDeliveryLogs(eventUuid)
-            deliveryLogs.value[eventUuid] = res.data.delivery_logs || []
+            deliveryLogs.value[eventUuid] = res.delivery_logs || []
         } catch (err) {
             console.error('Failed to fetch delivery logs:', err)
             deliveryLogs.value[eventUuid] = []

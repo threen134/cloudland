@@ -174,11 +174,11 @@ const connectSerial = async () => {
     errorMessage.value = ''
     detachSocket()
     try {
-        const { data } = await instancesApi.getConsole(instanceId, 'serial')
+        const data = await instancesApi.getConsole(instanceId, 'serial')
         instanceName.value = data.instance?.hostname || data.instance?.id || instanceId
         if (!data.instance?.hostname) {
             instancesApi.getInstance(instanceId).then(res => {
-                const full = res.data.instance || res.data
+                const full = res.instance || res
                 if (full.hostname) instanceName.value = full.hostname
             }).catch(() => {})
         }
@@ -219,7 +219,7 @@ const connectHost = async () => {
     setupTerminal()
     fitAddon?.fit()
     try {
-        const { data } = await hypervisorsApi.openConsole(instanceId, {
+        const data = await hypervisorsApi.openConsole(instanceId, {
             password: password.value || undefined,
             rows: term?.rows,
             cols: term?.cols,
@@ -271,7 +271,7 @@ onMounted(() => {
     }
     instanceName.value = instanceId
     hypervisorsApi.getHypervisor(instanceId).then(res => {
-        if (res.data.hostname) instanceName.value = res.data.hostname
+        if (res.hostname) instanceName.value = res.hostname
     }).catch(() => {})
     connectHostFromStart()
 })
