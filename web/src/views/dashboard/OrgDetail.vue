@@ -436,7 +436,7 @@ onUnmounted(() => {
               </div>
               <button
                 class="btn btn-ghost btn-sm text-error"
-                title="Cancel invitation"
+                :title="$t('actions.cancelInvitation')"
                 @click="handleCancelInvitation(inv)"
                 :disabled="cancellingInvitation === inv.uuid"
               >

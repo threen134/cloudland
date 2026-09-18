@@ -1,10 +1,12 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
+import { useI18n } from 'vue-i18n'
 import { useAuthStore } from '../../stores/auth'
 import Navbar from '../../components/Navbar.vue'
 import { CheckCircle, CreditCard, Loader2 } from 'lucide-vue-next'
 
+const { t } = useI18n()
 const route = useRoute()
 const router = useRouter()
 const auth = useAuthStore()
@@ -34,19 +36,19 @@ const handleConfirmPayment = async () => {
     <div class="payment-container">
         <div class="card payment-card">
         <template v-if="status === 'confirm'">
-            <h2 class="title">Complete Purchase</h2>
+            <h2 class="title">{{ t('payment.title') }}</h2>
             <div class="order-summary">
-                <div class="label">Product</div>
+                <div class="label">{{ t('payment.product') }}</div>
                 <div class="value">{{ productId }}</div>
                 <hr class="divider" />
                 <div class="total-row">
-                    <span>Total Due Today</span>
-                    <span class="total-amount">$0.00 (Trial)</span>
+                    <span>{{ t('payment.totalDue') }}</span>
+                    <span class="total-amount">{{ t('payment.trialAmount') }}</span>
                 </div>
             </div>
-            
+
             <button class="btn btn-primary btn-block btn-lg" @click="handleConfirmPayment">
-                <CreditCard :size="20" class="btn-icon" /> Conform & Pay
+                <CreditCard :size="20" class="btn-icon" /> {{ t('payment.confirmAndPay') }}
             </button>
         </template>
 
@@ -55,8 +57,8 @@ const handleConfirmPayment = async () => {
                 <div class="spinner">
                     <Loader2 :size="48" color="var(--primary-color)" />
                 </div>
-                <h3>Processing Payment...</h3>
-                <p>Please do not close this window.</p>
+                <h3>{{ t('payment.processing') }}</h3>
+                <p>{{ t('payment.doNotClose') }}</p>
             </div>
         </template>
 
@@ -65,8 +67,8 @@ const handleConfirmPayment = async () => {
                 <div class="success-icon">
                     <CheckCircle :size="64" />
                 </div>
-                <h3>Payment Successful!</h3>
-                <p>Redirecting to your dashboard...</p>
+                <h3>{{ t('payment.success') }}</h3>
+                <p>{{ t('payment.redirecting') }}</p>
             </div>
         </template>
         </div>

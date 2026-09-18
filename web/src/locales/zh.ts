@@ -346,6 +346,19 @@ export default {
         lbLargeDesc: '不限后端数量',
     },
 
+    // 支付页
+    payment: {
+        title: '完成购买',
+        product: '产品',
+        totalDue: '本次应付',
+        trialAmount: '/usr/bin/bash.00（试用）',
+        confirmAndPay: '确认并支付',
+        processing: '正在处理支付...',
+        doNotClose: '请不要关闭此窗口。',
+        success: '支付成功！',
+        redirecting: '正在跳转到控制台...',
+    },
+
     // 控制台
     dashboard: {
         console: {
@@ -696,6 +709,7 @@ export default {
             unbind: '解绑',
             noFloatingIps: '未绑定浮动 IP',
             publicSubnet: '公网子网',
+            noPublicSubnets: '未找到公网子网。',
             listeners: '监听器',
             addListener: '添加监听器',
             addingListener: '添加中...',
@@ -1393,6 +1407,10 @@ export default {
                 all: '全部',
                 auto: '自动',
                 sgNameExample: '例如：web-servers',
+                lbFipNameExample: '例如：lb-public-ip',
+                lbListenerNameExample: '例如：http-80',
+                lbBackendNameExample: '例如：web-server-1',
+                zoneExample: '例如：zone1',
                 nameExample: '例如：web-server-01',
                 vpcNameExample: '例如：生产环境-VPC',
                 subnetNameExample: '例如：后端-子网',
@@ -1683,6 +1701,8 @@ export default {
         redirecting: '{n} 秒后将自动跳转至登录页面...',
         activationTitle: '账户激活',
         activating: '正在激活您的账户...',
+        activatingDesc: '正在验证激活链接，请稍候。',
+        activationErrorDesc: '链接可能已过期或已被使用。请重新注册或联系技术支持。',
         activationSuccess: '账户激活成功！',
         invalidCredentials: '用户名或密码错误',
         activationError: '激活失败或链接已失效',

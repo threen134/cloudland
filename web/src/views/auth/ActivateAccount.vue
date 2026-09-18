@@ -70,7 +70,7 @@ onUnmounted(() => {
             <Loader2 class="icon-spin" :size="64" />
           </div>
           <h2>{{ t('auth.activating') }}</h2>
-          <p class="status-desc">Please wait while we verify your activation link.</p>
+          <p class="status-desc">{{ t('auth.activatingDesc') }}</p>
         </div>
 
         <!-- Success State -->
@@ -100,7 +100,7 @@ onUnmounted(() => {
           </div>
           <h2>{{ t('auth.activationError') }}</h2>
           <p class="error-desc text-secondary">
-            The link may have expired or is already used. Please try registering again or contact support.
+            {{ t('auth.activationErrorDesc') }}
           </p>
 
           <div class="error-actions">

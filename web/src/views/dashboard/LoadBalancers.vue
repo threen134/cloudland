@@ -320,7 +320,7 @@ onUnmounted(() => {
           <button class="btn btn-ghost btn-sm" :title="$t('actions.edit')" @click="handleEditClick(lb as any)">
             <Edit :size="14" />
           </button>
-          <button class="btn btn-ghost btn-sm text-error" title="Delete" @click="handleDeleteClick(lb as any)">
+          <button class="btn btn-ghost btn-sm text-error" :title="$t('actions.delete')" @click="handleDeleteClick(lb as any)">
             <Trash2 :size="14" />
           </button>
         </div>
@@ -370,7 +370,7 @@ onUnmounted(() => {
           </div>
           <div class="form-group">
             <label class="form-label">{{ $t('dashboard.forms.zone') }}（{{ $t('dashboard.forms.optional') }}）</label>
-            <input v-model="newLBForm.zone" type="text" class="form-input" placeholder="e.g. zone1" />
+            <input v-model="newLBForm.zone" type="text" class="form-input" :placeholder="$t('dashboard.forms.placeholder.zoneExample')" />
           </div>
 
           <div v-if="createError" class="modal-error text-error">

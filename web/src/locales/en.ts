@@ -346,6 +346,19 @@ export default {
         lbLargeDesc: 'Unlimited backends',
     },
 
+    // 支付页
+    payment: {
+        title: 'Complete Purchase',
+        product: 'Product',
+        totalDue: 'Total Due Today',
+        trialAmount: '/usr/bin/bash.00 (Trial)',
+        confirmAndPay: 'Confirm & Pay',
+        processing: 'Processing Payment...',
+        doNotClose: 'Please do not close this window.',
+        success: 'Payment Successful!',
+        redirecting: 'Redirecting to your dashboard...',
+    },
+
     // Dashboard
     dashboard: {
         console: {
@@ -696,6 +709,7 @@ export default {
             unbind: 'Unbind',
             noFloatingIps: 'No floating IPs bound',
             publicSubnet: 'Public Subnet',
+            noPublicSubnets: 'No public subnets found.',
             listeners: 'Listeners',
             addListener: 'Add Listener',
             addingListener: 'Adding...',
@@ -1405,6 +1419,10 @@ export default {
                 ipExample: 'e.g. 10.0.1.10',
                 all: 'All',
                 sgNameExample: 'e.g. web-servers',
+                lbFipNameExample: 'e.g. lb-public-ip',
+                lbListenerNameExample: 'e.g. http-80',
+                lbBackendNameExample: 'e.g. web-server-1',
+                zoneExample: 'e.g. zone1',
                 lbNameExample: 'e.g. web-lb-01',
                 volumeNameExample: 'e.g. data-disk-01',
                 sshKeyNameExample: 'e.g. My Laptop Key',
@@ -1683,6 +1701,8 @@ export default {
         redirecting: 'Automatically redirecting you to login in {n} seconds...',
         activationTitle: 'Account Activation',
         activating: 'Activating your account...',
+        activatingDesc: 'Please wait while we verify your activation link.',
+        activationErrorDesc: 'The link may have expired or is already used. Please try registering again or contact support.',
         activationSuccess: 'Account activated successfully!',
         invalidCredentials: 'Invalid username or password',
         activationError: 'Activation failed or link expired',

@@ -575,12 +575,12 @@ onMounted(async () => {
         >
                     <div class="form-group">
                         <label class="form-label">{{ $t('dashboard.forms.name') }} *</label>
-                        <input v-model="fipForm.name" type="text" class="form-input" placeholder="e.g. lb-public-ip" />
+                        <input v-model="fipForm.name" type="text" class="form-input" :placeholder="$t('dashboard.forms.placeholder.lbFipNameExample')" />
                     </div>
                     <div class="form-group">
                         <label class="form-label">{{ $t('dashboard.loadBalancerDetail.publicSubnet') }} *</label>
                         <div v-if="loadingSubnets" class="text-secondary text-sm">{{ $t('messages.loading') }}</div>
-                        <div v-else-if="publicSubnets.length === 0" class="text-secondary text-sm">No public subnets found.</div>
+                        <div v-else-if="publicSubnets.length === 0" class="text-secondary text-sm">{{ $t('dashboard.loadBalancerDetail.noPublicSubnets') }}</div>
                         <div v-else class="select-wrapper">
                             <select v-model="fipForm.subnet_id" class="form-input">
                                 <option v-for="s in publicSubnets" :key="s.id" :value="s.id">
@@ -629,7 +629,7 @@ onMounted(async () => {
         >
                     <div class="form-group">
                         <label class="form-label">{{ $t('dashboard.forms.name') }} *</label>
-                        <input v-model="listenerForm.name" type="text" class="form-input" placeholder="e.g. http-80" />
+                        <input v-model="listenerForm.name" type="text" class="form-input" :placeholder="$t('dashboard.forms.placeholder.lbListenerNameExample')" />
                     </div>
                     <div class="form-row">
                         <div class="form-group">
@@ -702,7 +702,7 @@ onMounted(async () => {
         >
                     <div class="form-group">
                         <label class="form-label">{{ $t('dashboard.forms.name') }} *</label>
-                        <input v-model="backendForm.name" type="text" class="form-input" placeholder="e.g. web-server-1" />
+                        <input v-model="backendForm.name" type="text" class="form-input" :placeholder="$t('dashboard.forms.placeholder.lbBackendNameExample')" />
                     </div>
                     <div class="form-row">
                         <div class="form-group form-group-grow">

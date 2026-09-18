@@ -346,6 +346,19 @@ export default {
         lbLargeDesc: '不限後端數量',
     },
 
+    // 支付頁
+    payment: {
+        title: '完成購買',
+        product: '產品',
+        totalDue: '本次應付',
+        trialAmount: '/usr/bin/bash.00（試用）',
+        confirmAndPay: '確認並支付',
+        processing: '正在處理支付...',
+        doNotClose: '請不要關閉此視窗。',
+        success: '支付成功！',
+        redirecting: '正在跳轉到控制台...',
+    },
+
     // 控制台
     dashboard: {
         console: {
@@ -696,6 +709,7 @@ export default {
             unbind: '解綁',
             noFloatingIps: '未繫結浮動 IP',
             publicSubnet: '公網子網',
+            noPublicSubnets: '未找到公網子網。',
             listeners: '監聽器',
             addListener: '新增監聽器',
             addingListener: '新增中...',
@@ -1393,6 +1407,10 @@ export default {
                 all: '全部',
                 auto: '自動',
                 sgNameExample: '例如：web-servers',
+                lbFipNameExample: '例如：lb-public-ip',
+                lbListenerNameExample: '例如：http-80',
+                lbBackendNameExample: '例如：web-server-1',
+                zoneExample: '例如：zone1',
                 nameExample: '例如：web-server-01',
                 vpcNameExample: '例如：生產環境-VPC',
                 subnetNameExample: '例如：後端-子網',
@@ -1683,6 +1701,8 @@ export default {
         redirecting: '{n} 秒後將自動跳轉至登入頁面...',
         activationTitle: '帳戶啟用',
         activating: '正在啟用您的帳戶...',
+        activatingDesc: '正在驗證啟用連結，請稍候。',
+        activationErrorDesc: '連結可能已過期或已被使用。請重新註冊或聯絡技術支援。',
         activationSuccess: '帳戶啟用成功！',
         invalidCredentials: '使用者名稱或密碼錯誤',
         activationError: '啟用失敗或連結已失效',
