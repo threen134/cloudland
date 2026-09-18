@@ -90,8 +90,9 @@ func CreateOrg(c *gin.Context) {
 		return
 	}
 	var in struct {
-		Name string `json:"name" binding:"required"`
-		Slug string `json:"slug" binding:"required"`
+		Name        string `json:"name" binding:"required"`
+		Slug        string `json:"slug" binding:"required"`
+		Description string `json:"description"`
 	}
 	if !bindJSON(c, &in) {
 		return
@@ -105,7 +106,7 @@ func CreateOrg(c *gin.Context) {
 	}
 
 	me := currentUser(c)
-	org := model.Organization{Name: in.Name, Slug: in.Slug, OrgType: model.OrgTeam, OwnerUserID: me.ID, Status: model.OrgActive}
+	org := model.Organization{Name: in.Name, Slug: in.Slug, Description: in.Description, OrgType: model.OrgTeam, OwnerUserID: me.ID, Status: model.OrgActive}
 	err := db.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Create(&org).Error; err != nil {
 			return err

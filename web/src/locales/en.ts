@@ -1718,6 +1718,7 @@ export default {
         orgNamePlaceholder: 'My Company',
         orgSlugPlaceholder: 'my-company',
         orgSlugHint: 'Lowercase letters, numbers, and hyphens only',
+        orgSlugRequired: 'Organization ID is required.',
         usernameStartLetterError: 'Username must start with a letter',
         usernameCharsetError: 'Username can only contain letters and numbers',
     },

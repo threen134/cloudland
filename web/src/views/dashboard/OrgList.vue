@@ -36,6 +36,7 @@ const createError = ref('')
 const editError = ref('')
 const newOrgForm = ref({
     name: '',
+    slug: '',
     description: ''
 })
 const editOrgForm = ref({
@@ -78,7 +79,7 @@ const filteredOrgs = computed(() => {
 })
 
 const openCreateModal = () => {
-    newOrgForm.value = { name: '', description: '' }
+    newOrgForm.value = { name: '', slug: '', description: '' }
     createModalVisible.value = true
 }
 
@@ -87,10 +88,25 @@ const closeCreateModal = () => {
     createError.value = ''
 }
 
+// slug 是后端建组织的必填项，没填就按名称生成一个（与注册页一致）
+const autoGenerateSlug = () => {
+    if (newOrgForm.value.name && !newOrgForm.value.slug) {
+        newOrgForm.value.slug = newOrgForm.value.name
+            .toLowerCase()
+            .replace(/[^a-z0-9]+/g, '-')
+            .replace(/^-|-$/g, '')
+    }
+}
+
 const handleCreateOrg = async () => {
     createError.value = ''
     if (!newOrgForm.value.name) {
         createError.value = t('dashboard.org.enterName')
+        return
+    }
+    autoGenerateSlug()
+    if (!newOrgForm.value.slug) {
+        createError.value = t('auth.orgSlugRequired')
         return
     }
 
@@ -368,7 +384,18 @@ onMounted(fetchOrgs)
           type="text"
           class="form-input"
           :placeholder="$t('dashboard.table.name')"
+          @blur="autoGenerateSlug"
         />
+      </div>
+      <div class="form-group">
+        <label class="form-label">{{ $t('auth.orgSlug') }}</label>
+        <input
+          v-model="newOrgForm.slug"
+          type="text"
+          class="form-input"
+          :placeholder="$t('auth.orgSlugPlaceholder')"
+        />
+        <span class="form-hint">{{ $t('auth.orgSlugHint') }}</span>
       </div>
       <div class="form-group">
         <label class="form-label">{{ $t('dashboard.table.description') }}</label>

@@ -191,11 +191,14 @@ export const backupsApi = {
         return response.data
     },
 
-    // Create backup from volume
-    create: async (volumeId: string, name: string): Promise<VolumeBackup> => {
+    // Create backup or snapshot from a volume。后端 VolBackupPayload 要的是
+    // volume_id 与必填的 type（snapshot / backup），此前发的 volume: { id } 会被 400
+    create: async (volumeId: string, name: string, type: 'snapshot' | 'backup' = 'backup', poolId?: string): Promise<VolumeBackup> => {
         const response = await client.post<VolumeBackup>('/backups', {
             name,
-            volume: { id: volumeId }
+            volume_id: volumeId,
+            type,
+            ...(poolId ? { pool_id: poolId } : {}),
         })
         return response.data
     },
@@ -205,11 +208,9 @@ export const backupsApi = {
         await client.delete(`/backups/${id}`)
     },
 
-    // Restore backup（后端返回的是备份对象本身，不是新卷）
-    restore: async (id: string, volumeName: string): Promise<VolumeBackup> => {
-        const response = await client.post<VolumeBackup>(`/backups/${id}/restore`, {
-            name: volumeName
-        })
+    // Restore backup。后端按 id 恢复、不读请求体，返回的是备份对象本身而非新卷
+    restore: async (id: string): Promise<VolumeBackup> => {
+        const response = await client.post<VolumeBackup>(`/backups/${id}/restore`)
         return response.data
     }
 }

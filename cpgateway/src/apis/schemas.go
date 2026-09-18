@@ -42,6 +42,7 @@ type orgOut struct {
 	OwnerUUID  string    `json:"owner_uuid"`
 	OwnerName  *string   `json:"owner_name"`
 	OwnerEmail *string   `json:"owner_email"`
+	Description string   `json:"description"`
 	CreatedAt  time.Time `json:"created_at"`
 }
 
@@ -49,6 +50,7 @@ func toOrgOut(org *model.Organization, owner *model.User) orgOut {
 	out := orgOut{
 		UUID: org.UUID, Name: org.Name, Slug: org.Slug,
 		OrgType: int(org.OrgType), Status: int(org.Status), CreatedAt: org.CreatedAt,
+		Description: org.Description,
 	}
 	if owner != nil && owner.ID != 0 {
 		out.OwnerUUID = owner.UUID

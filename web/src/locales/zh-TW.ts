@@ -1718,6 +1718,7 @@ export default {
         orgNamePlaceholder: '我的公司',
         orgSlugPlaceholder: 'my-company',
         orgSlugHint: '僅支援小寫字母、數字和連字元',
+        orgSlugRequired: '組織 ID 不能為空。',
         usernameStartLetterError: '使用者名稱必須以字母開頭',
         usernameCharsetError: '使用者名稱只能包含字母和數字',
     },
