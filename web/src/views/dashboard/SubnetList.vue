@@ -712,7 +712,7 @@ onMounted(() => {
   border-radius: var(--radius-md);
   white-space: normal;
   width: 260px;
-  z-index: 10;
+  z-index: var(--z-tooltip);
   transition: opacity 0.15s, visibility 0.15s;
   pointer-events: none;
   box-shadow: 0 4px 12px rgba(0,0,0,0.15);

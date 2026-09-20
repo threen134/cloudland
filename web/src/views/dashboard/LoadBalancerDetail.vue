@@ -977,7 +977,7 @@ onMounted(async () => {
 
 /* Action Dropdown */
 .action-dropdown { position: relative; }
-.dropdown-backdrop { position: fixed; inset: 0; z-index: 9; }
+.dropdown-backdrop { position: fixed; inset: 0; z-index: var(--z-dropdown-backdrop); }
 .dropdown-menu {
     position: absolute;
     top: calc(100% + 6px);
@@ -988,7 +988,7 @@ onMounted(async () => {
     border-radius: var(--radius-md);
     box-shadow: 0 4px 16px rgba(0,0,0,.12);
     padding: 4px 0;
-    z-index: 10;
+    z-index: var(--z-dropdown);
 }
 .dropdown-item {
     display: flex;

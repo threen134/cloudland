@@ -1786,7 +1786,7 @@ onUnmounted(() => {
     position: absolute;
     top: 100%;
     right: 0;
-    z-index: 10000;
+    z-index: var(--z-dropdown);
     min-width: 180px;
     padding: 8px;
     margin-top: 4px;
@@ -1962,7 +1962,7 @@ onUnmounted(() => {
   position: absolute;
   top: 100%;
   left: 0;
-  z-index: 100;
+  z-index: var(--z-tooltip);
   margin-top: 8px;
   width: 340px;
   padding: 0;
@@ -2098,7 +2098,7 @@ onUnmounted(() => {
     top: calc(100% + 4px);
     left: 0;
     right: 0;
-    z-index: 10;
+    z-index: var(--z-dropdown);
     background: var(--bg-primary);
     border: 1px solid var(--border-light);
     border-radius: var(--radius-md);
@@ -2111,7 +2111,7 @@ onUnmounted(() => {
 .p-2 { padding: 8px !important; }
 .hover-bg:hover { background: var(--bg-secondary); }
 
-.sub-modal { z-index: 1100; }
+.sub-modal { z-index: var(--z-modal-nested); }
 .password-modal { max-width: 400px; }
 
 .password-input-wrapper {
@@ -2181,12 +2181,12 @@ onUnmounted(() => {
 }
 
 .iface-help-icon:hover {
-    z-index: 10000;
+    z-index: var(--z-tooltip);
 }
 
 .iface-help-tooltip {
     position: fixed;
-    z-index: 9999;
+    z-index: var(--z-tooltip);
     width: max-content;
     max-width: 420px;
     background: var(--bg-primary);

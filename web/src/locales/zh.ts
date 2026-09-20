@@ -110,8 +110,6 @@ export default {
         cores_plain: '核',
         mb: 'MB',
         gb: 'GB',
-        tb: 'TB',
-        b: 'B',
         kb: 'KB',
         mbps: 'Mbps',
         version: '版本',
@@ -845,7 +843,6 @@ export default {
             countUnit: '个',
             privateIp: '内网 IP',
             used: '已用',
-            total: '总量',
             remaining: '剩余',
             legend: {
                 cpu: 'CPU 已用',
@@ -1208,7 +1205,6 @@ export default {
             bpsLimitBurst: 'BPS 限制 / 突发',
             target: '挂载点',
             path: '路径',
-            publicKey: '公钥',
             default: '默认',
             dns: 'DNS 服务器',
             vlan: 'VLAN',
@@ -1385,8 +1381,6 @@ export default {
             architecture: '架构',
             defaultUser: '默认用户',
             size: '容量 (GB)',
-            format: '格式',
-            bootable: '可启动',
             description: '描述',
             zone: '可用区',
             optional: '可选',
@@ -1559,8 +1553,6 @@ export default {
         pagination: {
             showing: '第 {from}-{to} 条，共 {total} 条',
             perPage: '每页',
-            prev: '上一页',
-            next: '下一页',
         },
         alarmActions: {
             ruleType: '规则类型',

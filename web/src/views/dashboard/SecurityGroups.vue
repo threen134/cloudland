@@ -653,7 +653,7 @@ onUnmounted(() => {
   width: 220px;
   text-align: left;
   pointer-events: none;
-  z-index: 100;
+  z-index: var(--z-tooltip);
   box-shadow: 0 2px 8px rgba(0,0,0,0.18);
 }
 

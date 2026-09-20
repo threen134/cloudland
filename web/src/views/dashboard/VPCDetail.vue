@@ -678,7 +678,7 @@ onMounted(() => {
 .dropdown-backdrop {
     position: fixed;
     inset: 0;
-    z-index: 9;
+    z-index: var(--z-dropdown-backdrop);
 }
 
 .dropdown-menu {
@@ -691,7 +691,7 @@ onMounted(() => {
     border-radius: var(--radius-md);
     box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
     padding: 4px 0;
-    z-index: 10;
+    z-index: var(--z-dropdown);
 }
 
 .dropdown-item {
@@ -840,7 +840,7 @@ onMounted(() => {
     display: flex;
     align-items: center;
     gap: 8px;
-    z-index: 1000;
+    z-index: var(--z-toast);
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
 }
 
@@ -1014,7 +1014,7 @@ onMounted(() => {
   border-radius: var(--radius-sm);
   font-size: var(--font-size-xs);
   white-space: nowrap;
-  z-index: 20;
+  z-index: var(--z-tooltip);
 }
 
 .tooltip-wrapper:hover .tooltip-text {

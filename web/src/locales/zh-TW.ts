@@ -110,8 +110,6 @@ export default {
         cores_plain: '核',
         mb: 'MB',
         gb: 'GB',
-        tb: 'TB',
-        b: 'B',
         kb: 'KB',
         mbps: 'Mbps',
         version: '版本',
@@ -845,7 +843,6 @@ export default {
             countUnit: '個',
             privateIp: '內網 IP',
             used: '已用',
-            total: '總量',
             remaining: '剩餘',
             legend: {
                 cpu: 'CPU 已用',
@@ -1208,7 +1205,6 @@ export default {
             bpsLimitBurst: 'BPS 限制 / 突發',
             target: '掛載點',
             path: '路徑',
-            publicKey: '公鑰',
             default: '預設',
             dns: 'DNS 伺服器',
             vlan: 'VLAN',
@@ -1385,8 +1381,6 @@ export default {
             architecture: '架構',
             defaultUser: '預設使用者',
             size: '容量 (GB)',
-            format: '格式',
-            bootable: '可啟動',
             description: '描述',
             zone: '可用區',
             optional: '可選',
@@ -1559,8 +1553,6 @@ export default {
         pagination: {
             showing: '第 {from}-{to} 條，共 {total} 條',
             perPage: '每頁',
-            prev: '上一頁',
-            next: '下一頁',
         },
         alarmActions: {
             ruleType: '規則類型',

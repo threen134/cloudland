@@ -341,7 +341,7 @@ onMounted(fetchImage)
 .dropdown-backdrop {
     position: fixed;
     inset: 0;
-    z-index: 9;
+    z-index: var(--z-dropdown-backdrop);
 }
 
 .dropdown-menu {
@@ -354,7 +354,7 @@ onMounted(fetchImage)
     border-radius: var(--radius-md);
     box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
     padding: 4px 0;
-    z-index: 10;
+    z-index: var(--z-dropdown);
 }
 
 .dropdown-item {

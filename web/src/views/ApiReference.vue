@@ -70,7 +70,7 @@ const config = {
   border-bottom: 1px solid rgba(226, 232, 240, 0.6);
   position: sticky;
   top: 0;
-  z-index: 9999;
+  z-index: var(--z-fixed);
   flex-shrink: 0;
 }
 

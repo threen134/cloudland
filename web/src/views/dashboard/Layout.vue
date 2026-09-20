@@ -525,7 +525,7 @@ onUnmounted(() => {
   flex-direction: column;
   flex-shrink: 0;
   transition: width 0.3s ease;
-  z-index: 50;
+  z-index: var(--z-sidebar);
   box-shadow: 2px 0 10px rgba(0, 0, 0, 0.03);
 }
 
@@ -758,7 +758,7 @@ onUnmounted(() => {
   padding: 0 32px;
   color: var(--text-primary);
   flex-shrink: 0;
-  z-index: 40;
+  z-index: var(--z-fixed);
 }
 
 .header h2 {
@@ -849,7 +849,7 @@ onUnmounted(() => {
   border: 1px solid var(--border-light);
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-lg);
-  z-index: 1000;
+  z-index: var(--z-dropdown);
   padding: 6px;
   margin-top: 10px;
 }

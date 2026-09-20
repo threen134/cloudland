@@ -864,7 +864,7 @@ onUnmounted(() => {
     position: absolute;
     top: 100%;
     left: 0;
-    z-index: 30;
+    z-index: var(--z-tooltip);
     margin-top: 6px;
     min-width: 200px;
     max-height: 260px;
@@ -995,7 +995,7 @@ onUnmounted(() => {
   font-weight: 400;
   width: 220px;
   line-height: 1.4;
-  z-index: 1000;
+  z-index: var(--z-tooltip);
   box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.4);
   pointer-events: none;
   white-space: normal;
@@ -1040,7 +1040,7 @@ onUnmounted(() => {
   border-radius: var(--radius-md);
   box-shadow: var(--shadow-lg);
   padding: 4px 0;
-  z-index: 100;
+  z-index: var(--z-dropdown);
 }
 
 .dropdown-menu-right {

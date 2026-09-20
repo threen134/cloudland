@@ -36,7 +36,7 @@ const iconMap = {
   position: fixed;
   top: 24px;
   right: 24px;
-  z-index: 10000;
+  z-index: var(--z-toast);
   display: flex;
   flex-direction: column;
   gap: 10px;

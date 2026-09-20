@@ -274,7 +274,7 @@ onMounted(fetchEvents)
     pointer-events: none;
     opacity: 0;
     transition: opacity 0.15s;
-    z-index: 100;
+    z-index: var(--z-tooltip);
 }
 .alert-name-cell:hover::after {
     opacity: 1;

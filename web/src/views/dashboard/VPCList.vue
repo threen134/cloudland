@@ -764,7 +764,7 @@ onMounted(() => {
   position: absolute;
   top: calc(100% + 8px);
   left: 0;
-  z-index: 50;
+  z-index: var(--z-tooltip);
   min-width: 260px;
   background: var(--bg-primary);
   border: 1px solid var(--border-light);
@@ -937,7 +937,7 @@ onMounted(() => {
   border-radius: var(--radius-sm);
   font-size: var(--font-size-xs);
   white-space: nowrap;
-  z-index: 20;
+  z-index: var(--z-tooltip);
 }
 
 .tooltip-wrapper:hover .tooltip-text { display: block; }
