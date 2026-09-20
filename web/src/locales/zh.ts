@@ -1780,6 +1780,7 @@ export default {
 
     // 消息提示
     messages: {
+        notFound: '未找到',
         loading: '加载中...',
         unnamed: '未命名',
         creating: '正在创建...',

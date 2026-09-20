@@ -3,10 +3,11 @@ import { ref, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { alarmsApi, RULE_TYPES, type NodeAlarmRule, type NodeAlarmRuleListResponse } from '../../api/alarms'
 import { errorMessage } from '../../utils/error'
-import { ArrowLeft, AlertTriangle, Copy, Check, Trash2 } from 'lucide-vue-next'
+import { ArrowLeft, AlertTriangle, Copy, Check, Trash2, Pencil, Power } from 'lucide-vue-next'
 import { useI18n } from 'vue-i18n'
 import { useToast } from '../../composables/useToast'
 import DeleteModal from '../../components/modals/DeleteModal.vue'
+import NodeAlarmRuleEditModal from '../../components/alarm/NodeAlarmRuleEditModal.vue'
 import InfoRow from '../../components/base/InfoRow.vue'
 import { useCopyId } from '../../composables/useCopyId'
 import { useGoBack } from '../../composables/useGoBack'
@@ -35,13 +36,30 @@ const fetchAlarmDetail = async () => {
         const rules = Array.isArray(data) ? data : data.data || []
         alarm.value = rules.length > 0 ? rules[0] : null
         if (!alarm.value) {
-            error.value = 'Alarm rule not found'
+            error.value = t('messages.notFound')
         }
     } catch (err) {
         console.error('Failed to fetch alarm detail:', err)
-        error.value = errorMessage(err, 'Failed to load Alarm Rule details')
+        error.value = errorMessage(err, t('messages.error'))
     } finally {
         loading.value = false
+    }
+}
+
+// 编辑与启停：和列表页共用同一个弹窗，停用会让后端撤下这条规则的 Prometheus 规则文件
+const showEditModal = ref(false)
+const toggling = ref(false)
+
+const toggleEnabled = async () => {
+    if (!alarm.value) return
+    toggling.value = true
+    try {
+        await alarmsApi.updateAlarmRule(alarm.value.uuid, { enabled: !alarm.value.enabled })
+        await fetchAlarmDetail()
+    } catch (err) {
+        toast.error(errorMessage(err, t('messages.error')))
+    } finally {
+        toggling.value = false
     }
 }
 
@@ -60,7 +78,7 @@ const handleDelete = async () => {
         toast.success(t('messages.deleteSuccess'))
         router.push({ name: 'alarms' })
     } catch (err) {
-        toast.error(errorMessage(err, 'Delete failed'))
+        toast.error(errorMessage(err, t('messages.error')))
     } finally {
         deleting.value = false
     }
@@ -118,6 +136,14 @@ onMounted(fetchAlarmDetail)
                     </div>
                 </div>
                 <div class="title-actions">
+                    <button class="btn btn-secondary btn-sm" @click="showEditModal = true">
+                        <Pencil :size="14" />
+                        {{ t('actions.edit') }}
+                    </button>
+                    <button class="btn btn-secondary btn-sm" :disabled="toggling" @click="toggleEnabled">
+                        <Power :size="14" />
+                        {{ alarm.enabled ? t('actions.disable') : t('actions.enable') }}
+                    </button>
                     <button class="btn btn-danger-outline btn-sm" @click="showDeleteConfirm = true">
                         <Trash2 :size="14" />
                         {{ t('actions.delete') }}
@@ -138,7 +164,8 @@ onMounted(fetchAlarmDetail)
                         <InfoRow :label="t('dashboard.alarmActions.ruleType')">
                             <span class="rule-type-badge">{{ getRuleTypeLabel(alarm.rule_type) }}</span>
                         </InfoRow>
-                        <InfoRow :label="t('dashboard.alarmActions.owner')">{{ alarm.owner || '-' }}</InfoRow>
+                        <!-- 原先这里显示 alarm.owner，那是 clapi 内部的组织自增 ID（界面上就是个 "1"），
+                             既不是创建者也不是任何用户能对上的东西，去掉 -->
                         <InfoRow v-if="alarm.description" :label="t('dashboard.table.description')">{{
                             alarm.description
                         }}</InfoRow>
@@ -154,6 +181,13 @@ onMounted(fetchAlarmDetail)
                 </div>
             </div>
         </div>
+
+        <NodeAlarmRuleEditModal
+            :show="showEditModal"
+            :rule="alarm"
+            @close="showEditModal = false"
+            @saved="fetchAlarmDetail()"
+        />
 
         <!-- Delete Confirm Modal -->
         <DeleteModal

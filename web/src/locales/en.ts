@@ -1814,6 +1814,7 @@ export default {
 
     // Messages
     messages: {
+        notFound: 'Not found',
         loading: 'Loading...',
         unnamed: 'Unnamed',
         creating: 'Creating...',

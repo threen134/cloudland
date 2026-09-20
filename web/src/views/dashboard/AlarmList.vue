@@ -30,6 +30,7 @@ import DeleteModal from '../../components/modals/DeleteModal.vue'
 import PageToolbar from '../../components/base/PageToolbar.vue'
 import StatusBadge from '../../components/base/StatusBadge.vue'
 import DataTable, { type Column } from '../../components/base/DataTable.vue'
+import NodeAlarmRuleEditModal from '../../components/alarm/NodeAlarmRuleEditModal.vue'
 
 const { t } = useI18n()
 const toast = useToast()
@@ -215,53 +216,13 @@ const handleCreate = async () => {
         creating.value = false
     }
 }
-
-// Edit：规则类型不能改（每种类型只能有一条），所以编辑弹窗只有名称 / 描述 / 配置
+// 编辑弹窗与详情页共用（components/alarm/NodeAlarmRuleEditModal.vue）
 const showEditModal = ref(false)
-const editing = ref(false)
 const editingRule = ref<NodeAlarmRule | null>(null)
-const editForm = ref({ name: '', description: '' })
-const editConfigJsonStr = ref('{}')
-const editConfigError = ref('')
 
 const openEditModal = (rule: NodeAlarmRule) => {
     editingRule.value = rule
-    editForm.value = { name: rule.name, description: rule.description || '' }
-    editConfigJsonStr.value = JSON.stringify(rule.config ?? {}, null, 2)
-    editConfigError.value = ''
     showEditModal.value = true
-}
-
-const validateEditConfig = () => {
-    try {
-        JSON.parse(editConfigJsonStr.value)
-        editConfigError.value = ''
-        return true
-    } catch {
-        editConfigError.value = t('dashboard.alarmActions.invalidJson')
-        return false
-    }
-}
-
-const handleEdit = async () => {
-    if (!editingRule.value || !editForm.value.name) return
-    if (!validateEditConfig()) return
-    editing.value = true
-    try {
-        await alarmsApi.updateAlarmRule(editingRule.value.uuid, {
-            name: editForm.value.name,
-            description: editForm.value.description,
-            config: JSON.parse(editConfigJsonStr.value),
-        })
-        showEditModal.value = false
-        toast.success(t('messages.success'))
-        await fetchAlarms()
-    } catch (err) {
-        // 配置的键和规则模板对不上时后端会明确报哪几个变量缺值，原样显示出来
-        toast.error(errorMessage(err, t('messages.error')))
-    } finally {
-        editing.value = false
-    }
 }
 
 // 停用只改数据库行是不够的：后端会同时撤下这条规则的 Prometheus 规则文件
@@ -517,56 +478,12 @@ watch(
             </template>
         </BaseModal>
 
-        <!-- Edit Modal：规则类型不可改 -->
-        <BaseModal
+        <NodeAlarmRuleEditModal
             :show="showEditModal"
-            :title="t('dashboard.alarmActions.editTitle')"
-            size="lg"
-            form
-            :loading="editing"
+            :rule="editingRule"
             @close="showEditModal = false"
-            @submit="handleEdit"
-        >
-            <div class="form-stack">
-                <div class="form-group">
-                    <label class="form-label">{{ t('dashboard.alarmActions.ruleType') }}</label>
-                    <input
-                        type="text"
-                        class="form-input"
-                        :value="editingRule ? getRuleTypeLabel(editingRule.rule_type) : ''"
-                        disabled
-                    />
-                </div>
-                <div class="form-group">
-                    <label class="form-label">{{ t('dashboard.table.name') }} *</label>
-                    <input type="text" v-model="editForm.name" class="form-input" />
-                </div>
-                <div class="form-group">
-                    <label class="form-label">{{ t('dashboard.table.description') }}</label>
-                    <input type="text" v-model="editForm.description" class="form-input" />
-                </div>
-                <div class="form-group">
-                    <label class="form-label">{{ t('dashboard.alarmActions.configLabel') }} *</label>
-                    <textarea
-                        v-model="editConfigJsonStr"
-                        class="form-input config-textarea"
-                        rows="8"
-                        @blur="validateEditConfig"
-                    ></textarea>
-                    <span v-if="editConfigError" class="form-error">{{ editConfigError }}</span>
-                </div>
-            </div>
-
-            <template #footer>
-                <button type="button" class="btn btn-secondary" @click="showEditModal = false">
-                    {{ t('actions.cancel') }}
-                </button>
-                <button type="submit" class="btn btn-primary" :disabled="editing || !editForm.name">
-                    <Loader2 v-if="editing" :size="14" class="spinning" />
-                    {{ editing ? t('messages.saving') : t('actions.save') }}
-                </button>
-            </template>
-        </BaseModal>
+            @saved="fetchAlarms()"
+        />
 
         <!-- Delete Confirm Modal -->
         <DeleteModal

@@ -1781,6 +1781,7 @@ export default {
 
     // 訊息提示
     messages: {
+        notFound: '未找到',
         loading: '載入中...',
         unnamed: '未命名',
         creating: '正在建立...',
