@@ -62,9 +62,13 @@ const handleConfirm = () => {
                 {{ t('actions.cancel') }}
             </button>
             <button class="btn btn-danger" @click="handleConfirm" :disabled="loading || confirmDisabled">
-                <span v-if="loading" class="loading-spinner" style="width: 16px; height: 16px; border-width: 2px;"></span>
+                <span
+                    v-if="loading"
+                    class="loading-spinner"
+                    style="width: 16px; height: 16px; border-width: 2px"
+                ></span>
                 <Trash2 v-else :size="14" />
-                {{ loading ? t('dashboard.deleteConfirm.deleting') : (confirmLabel || t('actions.delete')) }}
+                {{ loading ? t('dashboard.deleteConfirm.deleting') : confirmLabel || t('actions.delete') }}
             </button>
         </template>
     </BaseModal>
@@ -148,7 +152,9 @@ const handleConfirm = () => {
 }
 
 @keyframes spin {
-    to { transform: rotate(360deg); }
+    to {
+        transform: rotate(360deg);
+    }
 }
 
 .btn-danger {

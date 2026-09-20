@@ -133,8 +133,8 @@ export const authApi = {
 
         const response = await client.post<LoginResponse>('/auth/token/form', formData, {
             headers: {
-                'Content-Type': 'application/x-www-form-urlencoded'
-            }
+                'Content-Type': 'application/x-www-form-urlencoded',
+            },
         })
         return response.data
     },
@@ -189,7 +189,11 @@ export const authApi = {
     },
 
     // Accept invitation
-    async acceptInvitation(payload: { token: string; username?: string; password?: string }): Promise<AcceptInvitationResponse> {
+    async acceptInvitation(payload: {
+        token: string
+        username?: string
+        password?: string
+    }): Promise<AcceptInvitationResponse> {
         const response = await client.post<AcceptInvitationResponse>('/auth/invitation/accept', payload)
         return response.data
     },

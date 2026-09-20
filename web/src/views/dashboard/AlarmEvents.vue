@@ -71,14 +71,20 @@ const columns = computed<Column[]>(() => [
 
 const severityClass = (severity: string) => {
     switch (severity) {
-        case 'critical': return 'badge-critical'
-        case 'warning': return 'badge-warning'
-        default: return 'badge-info'
+        case 'critical':
+            return 'badge-critical'
+        case 'warning':
+            return 'badge-warning'
+        default:
+            return 'badge-info'
     }
 }
 
 watch([page, statusFilter], () => fetchEvents())
-watch(pageSize, () => { if (page.value === 1) fetchEvents(); else page.value = 1 })
+watch(pageSize, () => {
+    if (page.value === 1) fetchEvents()
+    else page.value = 1
+})
 
 // 搜索走服务端（此前是在当前页的 20 条里前端过滤，翻页后就搜不到别的页了）。
 // 输入防抖 400ms，并回到第一页——换了搜索条件后停留在第 3 页没有意义
@@ -125,7 +131,7 @@ onMounted(fetchEvents)
             @retry="() => fetchEvents()"
         >
             <template #empty>
-                <AlertTriangle :size="48" style="opacity: 0.2; margin-bottom: 16px;" />
+                <AlertTriangle :size="48" style="opacity: 0.2; margin-bottom: 16px" />
                 <p>{{ searchQuery || statusFilter ? t('messages.noResults') : t('messages.noData') }}</p>
             </template>
 
@@ -138,8 +144,13 @@ onMounted(fetchEvents)
                     <div v-if="event.vm_name" class="resource-name">{{ event.vm_name }}</div>
                     <div class="resource-id-row">
                         <span class="resource-id" :title="event.vm_uuid">{{ event.vm_uuid.slice(0, 8) + '...' }}</span>
-                        <button class="copy-btn-mini" @click.stop.prevent="copyId(event.vm_uuid)" :title="t('actions.copy')" :aria-label="t('actions.copy')">
-                            <Check v-if="copiedId === event.vm_uuid" :size="10" style="color: var(--success-color);" />
+                        <button
+                            class="copy-btn-mini"
+                            @click.stop.prevent="copyId(event.vm_uuid)"
+                            :title="t('actions.copy')"
+                            :aria-label="t('actions.copy')"
+                        >
+                            <Check v-if="copiedId === event.vm_uuid" :size="10" style="color: var(--success-color)" />
                             <Copy v-else :size="10" />
                         </button>
                     </div>
@@ -157,7 +168,11 @@ onMounted(fetchEvents)
             <template #cell-status="{ row: event }">
                 <StatusBadge
                     :status="event.status"
-                    :label="event.status === 'firing' ? t('dashboard.alarmStatusFiring') : t('dashboard.alarmStatusResolved')"
+                    :label="
+                        event.status === 'firing'
+                            ? t('dashboard.alarmStatusFiring')
+                            : t('dashboard.alarmStatusResolved')
+                    "
                 />
             </template>
 
@@ -168,7 +183,7 @@ onMounted(fetchEvents)
             <template #expanded="{ row: event }">
                 <div class="delivery-logs">
                     <h4>{{ t('dashboard.alarmDeliveryLogs') }}</h4>
-                    <div v-if="loadingLogs === event.uuid" class="loading-spinner" style="margin: 12px auto;"></div>
+                    <div v-if="loadingLogs === event.uuid" class="loading-spinner" style="margin: 12px auto"></div>
                     <table v-else-if="deliveryLogs[event.uuid]?.length" class="data-table nested-table">
                         <thead>
                             <tr>
@@ -185,17 +200,27 @@ onMounted(fetchEvents)
                                 <td>{{ log.channel_name }}</td>
                                 <td>{{ log.channel_type }}</td>
                                 <td>
-                                    <span class="badge" :class="{
-                                        'badge-notify-trigger': log.notify_type === 'firing_trigger',
-                                        'badge-notify-remind': log.notify_type === 'repeat_remind',
-                                        'badge-resolved': log.notify_type === 'resolved',
-                                        'badge-secondary': !['firing_trigger','repeat_remind','resolved'].includes(log.notify_type)
-                                    }">{{ t('dashboard.alarmNotifyTypes.' + log.notify_type) }}</span>
+                                    <span
+                                        class="badge"
+                                        :class="{
+                                            'badge-notify-trigger': log.notify_type === 'firing_trigger',
+                                            'badge-notify-remind': log.notify_type === 'repeat_remind',
+                                            'badge-resolved': log.notify_type === 'resolved',
+                                            'badge-secondary': ![
+                                                'firing_trigger',
+                                                'repeat_remind',
+                                                'resolved',
+                                            ].includes(log.notify_type),
+                                        }"
+                                        >{{ t('dashboard.alarmNotifyTypes.' + log.notify_type) }}</span
+                                    >
                                 </td>
                                 <td>
                                     <CheckCircle v-if="log.status === 'sent'" :size="16" class="text-success" />
                                     <XCircle v-else :size="16" class="text-danger" />
-                                    <span style="vertical-align: middle; margin-left: 4px;">{{ log.status === 'sent' ? t('messages.success') : t('messages.error') }}</span>
+                                    <span style="vertical-align: middle; margin-left: 4px">{{
+                                        log.status === 'sent' ? t('messages.success') : t('messages.error')
+                                    }}</span>
                                 </td>
                                 <td>{{ formatDateTime(log.sent_at) }}</td>
                                 <td class="error-cell">{{ log.error_message || '-' }}</td>
@@ -231,24 +256,70 @@ onMounted(fetchEvents)
     min-width: 120px;
 }
 
-.delivery-logs { padding: 12px 16px; background: var(--bg-secondary, #f9fafb); }
-.delivery-logs h4 { margin: 0 0 8px 0; font-size: 13px; }
-.nested-table { margin: 0; font-size: 13px; width: 100%; }
-.nested-table th, .nested-table td { text-align: center; }
+.delivery-logs {
+    padding: 12px 16px;
+    background: var(--bg-secondary, #f9fafb);
+}
+.delivery-logs h4 {
+    margin: 0 0 8px 0;
+    font-size: 13px;
+}
+.nested-table {
+    margin: 0;
+    font-size: 13px;
+    width: 100%;
+}
+.nested-table th,
+.nested-table td {
+    text-align: center;
+}
 
-
-.badge-resolved { background: #22c55e; color: white; }
-.badge-critical { background: #dc2626; color: white; }
-.badge-warning { background: #f59e0b; color: white; }
-.badge-info { background: #3b82f6; color: white; }
-.badge-secondary { background: #6b7280; color: white; }
-.badge-notify-trigger { background: #1e3a8a; color: white; }
-.badge-notify-remind { background: #60a5fa; color: white; }
-.text-success { color: #22c55e; }
-.text-danger { color: #ef4444; }
-.text-center { text-align: center; }
-.text-muted { color: #9ca3af; }
-.error-cell { max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.badge-resolved {
+    background: #22c55e;
+    color: white;
+}
+.badge-critical {
+    background: #dc2626;
+    color: white;
+}
+.badge-warning {
+    background: #f59e0b;
+    color: white;
+}
+.badge-info {
+    background: #3b82f6;
+    color: white;
+}
+.badge-secondary {
+    background: #6b7280;
+    color: white;
+}
+.badge-notify-trigger {
+    background: #1e3a8a;
+    color: white;
+}
+.badge-notify-remind {
+    background: #60a5fa;
+    color: white;
+}
+.text-success {
+    color: #22c55e;
+}
+.text-danger {
+    color: #ef4444;
+}
+.text-center {
+    text-align: center;
+}
+.text-muted {
+    color: #9ca3af;
+}
+.error-cell {
+    max-width: 200px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
 .alert-name-cell {
     display: inline-block;
     max-width: 200px;
@@ -280,6 +351,12 @@ onMounted(fetchEvents)
     opacity: 1;
 }
 
-.spinning { animation: spin 1s linear infinite; }
-@keyframes spin { to { transform: rotate(360deg); } }
+.spinning {
+    animation: spin 1s linear infinite;
+}
+@keyframes spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
 </style>

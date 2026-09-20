@@ -5,7 +5,19 @@ import { useI18n } from 'vue-i18n'
 import { useToast } from '../../composables/useToast'
 import { volumesApi, type Volume } from '../../api/volumes'
 import { useRegionStore } from '../../stores/region'
-import { ArrowLeft, HardDrive, Paperclip, Maximize, Trash2, Copy, Check, Server, Play, ChevronDown, CalendarDays } from 'lucide-vue-next'
+import {
+    ArrowLeft,
+    HardDrive,
+    Paperclip,
+    Maximize,
+    Trash2,
+    Copy,
+    Check,
+    Server,
+    Play,
+    ChevronDown,
+    CalendarDays,
+} from 'lucide-vue-next'
 import { formatDisk, formatDateTime } from '../../utils/format'
 import DeleteModal from '../../components/modals/DeleteModal.vue'
 import StatusBadge from '../../components/base/StatusBadge.vue'
@@ -51,18 +63,20 @@ const fetchVolume = async () => {
     }
 }
 
-watch(() => region.currentRegionId, (newId) => {
-    if (newId) {
-        fetchVolume()
+watch(
+    () => region.currentRegionId,
+    (newId) => {
+        if (newId) {
+            fetchVolume()
+        }
     }
-})
+)
 
 const goBack = useGoBack('volumes')
 
 const navigateToInstance = (id: string) => {
     router.push({ name: 'instance-detail', params: { id } })
 }
-
 
 const getStatusText = (status: string | undefined) => {
     if (!status) return '-'
@@ -108,261 +122,280 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="detail-page">
-    <!-- Header -->
-    <div class="detail-header">
-      <button class="btn btn-ghost btn-sm" @click="goBack">
-        <ArrowLeft :size="16" />
-        <span>{{ $t('actions.back') }}</span>
-      </button>
-    </div>
-
-    <!-- Loading State -->
-    <div v-if="loading" class="loading-container">
-      <div class="loading-spinner"></div>
-      <p class="loading-text">{{ $t('messages.loading') }}</p>
-    </div>
-
-    <!-- Error State -->
-    <div v-else-if="error" class="error-container card">
-      <HardDrive :size="48" style="opacity: 0.3; margin-bottom: 16px;" />
-      <p class="text-secondary">{{ error }}</p>
-      <button class="btn btn-primary btn-sm" @click="fetchVolume" style="margin-top: 12px;">
-        {{ $t('actions.refresh') }}
-      </button>
-    </div>
-
-    <!-- Volume Detail Content -->
-    <div v-else-if="volume" class="detail-content">
-      <!-- Title Bar -->
-      <div class="title-bar card">
-        <div class="title-info">
-          <div class="title-icon">
-            <HardDrive :size="28" />
-          </div>
-          <div>
-            <h2 class="volume-title">
-                {{ volume.name }}
-                <StatusBadge :status="volume.status" :label="getStatusText(volume.status)" />
-            </h2>
-            <div class="volume-id-row">
-              <span class="volume-id">{{ volume.id }}</span>
-              <button class="copy-btn" @click="copyToClipboard(volume.id, 'id')" :title="$t('messages.copied')">
-                <Check v-if="copiedField === 'id'" :size="12" class="copied-icon" />
-                <Copy v-else :size="12" />
-              </button>
-            </div>
-          </div>
+    <div class="detail-page">
+        <!-- Header -->
+        <div class="detail-header">
+            <button class="btn btn-ghost btn-sm" @click="goBack">
+                <ArrowLeft :size="16" />
+                <span>{{ $t('actions.back') }}</span>
+            </button>
         </div>
-        <div class="title-actions">
-           <div class="action-dropdown">
-                <button class="btn btn-primary" @click="toggleActionMenu">
-                    {{ $t('actions.actions') }} <ChevronDown :size="14" />
-                </button>
-                <Transition name="dropdown">
-                    <div v-if="showActionMenu" class="dropdown-menu">
-                        <button class="dropdown-item">
-                            <Paperclip :size="14" /> {{ $t('actions.attach') }} / {{ $t('actions.detach') }}
-                        </button>
-                        <button class="dropdown-item">
-                            <Maximize :size="14" /> {{ $t('actions.resize') }}
-                        </button>
-                        <div class="dropdown-divider"></div>
-                        <button class="dropdown-item dropdown-item-danger" @click.stop="handleDeleteClick">
-                            <Trash2 :size="14" /> {{ $t('actions.delete') }}
-                        </button>
+
+        <!-- Loading State -->
+        <div v-if="loading" class="loading-container">
+            <div class="loading-spinner"></div>
+            <p class="loading-text">{{ $t('messages.loading') }}</p>
+        </div>
+
+        <!-- Error State -->
+        <div v-else-if="error" class="error-container card">
+            <HardDrive :size="48" style="opacity: 0.3; margin-bottom: 16px" />
+            <p class="text-secondary">{{ error }}</p>
+            <button class="btn btn-primary btn-sm" @click="fetchVolume" style="margin-top: 12px">
+                {{ $t('actions.refresh') }}
+            </button>
+        </div>
+
+        <!-- Volume Detail Content -->
+        <div v-else-if="volume" class="detail-content">
+            <!-- Title Bar -->
+            <div class="title-bar card">
+                <div class="title-info">
+                    <div class="title-icon">
+                        <HardDrive :size="28" />
                     </div>
-                </Transition>
-                <div v-if="showActionMenu" class="dropdown-backdrop" @click="closeActionMenu"></div>
-           </div>
+                    <div>
+                        <h2 class="volume-title">
+                            {{ volume.name }}
+                            <StatusBadge :status="volume.status" :label="getStatusText(volume.status)" />
+                        </h2>
+                        <div class="volume-id-row">
+                            <span class="volume-id">{{ volume.id }}</span>
+                            <button
+                                class="copy-btn"
+                                @click="copyToClipboard(volume.id, 'id')"
+                                :title="$t('messages.copied')"
+                            >
+                                <Check v-if="copiedField === 'id'" :size="12" class="copied-icon" />
+                                <Copy v-else :size="12" />
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                <div class="title-actions">
+                    <div class="action-dropdown">
+                        <button class="btn btn-primary" @click="toggleActionMenu">
+                            {{ $t('actions.actions') }} <ChevronDown :size="14" />
+                        </button>
+                        <Transition name="dropdown">
+                            <div v-if="showActionMenu" class="dropdown-menu">
+                                <button class="dropdown-item">
+                                    <Paperclip :size="14" /> {{ $t('actions.attach') }} / {{ $t('actions.detach') }}
+                                </button>
+                                <button class="dropdown-item">
+                                    <Maximize :size="14" /> {{ $t('actions.resize') }}
+                                </button>
+                                <div class="dropdown-divider"></div>
+                                <button class="dropdown-item dropdown-item-danger" @click.stop="handleDeleteClick">
+                                    <Trash2 :size="14" /> {{ $t('actions.delete') }}
+                                </button>
+                            </div>
+                        </Transition>
+                        <div v-if="showActionMenu" class="dropdown-backdrop" @click="closeActionMenu"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Info Sections -->
+            <div class="two-col-layout">
+                <div class="col-stack">
+                    <!-- Basic Info Card (Merged with Metadata) -->
+                    <div class="card info-card">
+                        <h3>{{ $t('dashboard.table.generalInformation') }}</h3>
+                        <div class="key-value-list">
+                            <InfoRow :label="$t('dashboard.table.size')">
+                                <template #label><HardDrive :size="14" /> {{ $t('dashboard.table.size') }}</template>
+                                {{ formatDisk(volume.size) }}
+                            </InfoRow>
+                            <InfoRow :label="$t('dashboard.table.format')">
+                                <template #label><Maximize :size="14" /> {{ $t('dashboard.table.format') }}</template>
+                                <span style="text-transform: uppercase">{{ volume.format || '-' }}</span>
+                            </InfoRow>
+                            <InfoRow :label="$t('dashboard.table.boot')">
+                                <template #label><Play :size="14" /> {{ $t('dashboard.table.boot') }}</template>
+                                <span :class="['status-badge', volume.booting ? 'status-success' : 'status-default']">
+                                    {{ volume.booting ? $t('messages.yes') : $t('messages.no') }}
+                                </span>
+                            </InfoRow>
+                            <InfoRow :label="$t('dashboard.table.status')">
+                                <template #label><Server :size="14" /> {{ $t('dashboard.table.status') }}</template>
+                                {{ getStatusText(volume.status) }}
+                            </InfoRow>
+                        </div>
+                    </div>
+
+                    <!-- Metadata Card -->
+                    <div class="card info-card">
+                        <h3>{{ $t('dashboard.table.metadata') }}</h3>
+                        <div class="key-value-list">
+                            <InfoRow :label="$t('dashboard.table.owner')">{{ volume.owner || '-' }}</InfoRow>
+                            <InfoRow :label="$t('dashboard.table.created')">
+                                <template #label
+                                    ><CalendarDays :size="14" /> {{ $t('dashboard.table.created') }}</template
+                                >
+                                {{ formatDateTime(volume.created_at) }}
+                            </InfoRow>
+                            <InfoRow :label="$t('dashboard.table.updatedAt')">
+                                <template #label
+                                    ><CalendarDays :size="14" /> {{ $t('dashboard.table.updatedAt') }}</template
+                                >
+                                {{ formatDateTime(volume.updated_at) }}
+                            </InfoRow>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="col-stack">
+                    <!-- Attachment Info Card -->
+                    <div class="card info-card">
+                        <h3>{{ $t('dashboard.table.attachedTo') }}</h3>
+                        <div class="key-value-list">
+                            <InfoRow :label="$t('dashboard.instances')">
+                                <template #label><Server :size="14" /> {{ $t('dashboard.instances') }}</template>
+                                <span
+                                    v-if="volume.instance"
+                                    class="link-value"
+                                    @click="navigateToInstance(volume.instance.id)"
+                                >
+                                    {{ volume.instance.name }}
+                                </span>
+                                <span v-else class="muted-value">{{ $t('messages.notAttached') }}</span>
+                            </InfoRow>
+                            <InfoRow v-if="volume.instance" :label="$t('dashboard.table.instanceId')" mono>{{
+                                volume.instance.id
+                            }}</InfoRow>
+                            <InfoRow :label="$t('dashboard.table.target')" mono>{{ volume.target || '-' }}</InfoRow>
+                            <InfoRow :label="$t('dashboard.table.path')" mono>{{ volume.path || '-' }}</InfoRow>
+                        </div>
+                    </div>
+
+                    <!-- QoS Info Card -->
+                    <div class="card info-card">
+                        <h3>{{ $t('dashboard.table.performance') }}</h3>
+                        <div class="key-value-list">
+                            <InfoRow :label="$t('dashboard.table.iopsLimitBurst')"
+                                >{{ volume.iops_limit ?? '-' }} / {{ volume.iops_burst ?? '-' }}</InfoRow
+                            >
+                            <InfoRow :label="$t('dashboard.table.bpsLimitBurst')"
+                                >{{ volume.bps_limit ?? '-' }} / {{ volume.bps_burst ?? '-' }}</InfoRow
+                            >
+                        </div>
+                    </div>
+                </div>
+            </div>
         </div>
-      </div>
 
-      <!-- Info Sections -->
-      <div class="two-col-layout">
-        <div class="col-stack">
-          <!-- Basic Info Card (Merged with Metadata) -->
-          <div class="card info-card">
-            <h3>{{ $t('dashboard.table.generalInformation') }}</h3>
-            <div class="key-value-list">
-              <InfoRow :label="$t('dashboard.table.size')">
-                <template #label><HardDrive :size="14" /> {{ $t('dashboard.table.size') }}</template>
-                {{ formatDisk(volume.size) }}
-              </InfoRow>
-              <InfoRow :label="$t('dashboard.table.format')">
-                <template #label><Maximize :size="14" /> {{ $t('dashboard.table.format') }}</template>
-                <span style="text-transform: uppercase;">{{ volume.format || '-' }}</span>
-              </InfoRow>
-              <InfoRow :label="$t('dashboard.table.boot')">
-                <template #label><Play :size="14" /> {{ $t('dashboard.table.boot') }}</template>
-                <span :class="['status-badge', volume.booting ? 'status-success' : 'status-default']">
-                  {{ volume.booting ? $t('messages.yes') : $t('messages.no') }}
-                </span>
-              </InfoRow>
-              <InfoRow :label="$t('dashboard.table.status')">
-                <template #label><Server :size="14" /> {{ $t('dashboard.table.status') }}</template>
-                {{ getStatusText(volume.status) }}
-              </InfoRow>
-            </div>
-          </div>
-
-          <!-- Metadata Card -->
-          <div class="card info-card">
-            <h3>{{ $t('dashboard.table.metadata') }}</h3>
-            <div class="key-value-list">
-              <InfoRow :label="$t('dashboard.table.owner')">{{ volume.owner || '-' }}</InfoRow>
-              <InfoRow :label="$t('dashboard.table.created')">
-                <template #label><CalendarDays :size="14" /> {{ $t('dashboard.table.created') }}</template>
-                {{ formatDateTime(volume.created_at) }}
-              </InfoRow>
-              <InfoRow :label="$t('dashboard.table.updatedAt')">
-                <template #label><CalendarDays :size="14" /> {{ $t('dashboard.table.updatedAt') }}</template>
-                {{ formatDateTime(volume.updated_at) }}
-              </InfoRow>
-            </div>
-          </div>
-        </div>
-
-        <div class="col-stack">
-          <!-- Attachment Info Card -->
-          <div class="card info-card">
-            <h3>{{ $t('dashboard.table.attachedTo') }}</h3>
-            <div class="key-value-list">
-              <InfoRow :label="$t('dashboard.instances')">
-                <template #label><Server :size="14" /> {{ $t('dashboard.instances') }}</template>
-                <span v-if="volume.instance" class="link-value" @click="navigateToInstance(volume.instance.id)">
-                  {{ volume.instance.name }}
-                </span>
-                <span v-else class="muted-value">{{ $t('messages.notAttached') }}</span>
-              </InfoRow>
-              <InfoRow v-if="volume.instance" :label="$t('dashboard.table.instanceId')" mono>{{ volume.instance.id }}</InfoRow>
-              <InfoRow :label="$t('dashboard.table.target')" mono>{{ volume.target || '-' }}</InfoRow>
-              <InfoRow :label="$t('dashboard.table.path')" mono>{{ volume.path || '-' }}</InfoRow>
-            </div>
-          </div>
-
-          <!-- QoS Info Card -->
-          <div class="card info-card">
-            <h3>{{ $t('dashboard.table.performance') }}</h3>
-            <div class="key-value-list">
-              <InfoRow :label="$t('dashboard.table.iopsLimitBurst')">{{ volume.iops_limit ?? '-' }} / {{ volume.iops_burst ?? '-' }}</InfoRow>
-              <InfoRow :label="$t('dashboard.table.bpsLimitBurst')">{{ volume.bps_limit ?? '-' }} / {{ volume.bps_burst ?? '-' }}</InfoRow>
-            </div>
-          </div>
-        </div>
-      </div>
+        <DeleteModal
+            :show="deleteModalVisible"
+            :resource-name="volume?.name"
+            :resource-id="volume?.id"
+            :loading="deletingResource"
+            :error="deleteError"
+            @close="closeDeleteModal"
+            @confirm="confirmDelete"
+        />
     </div>
-
-    <DeleteModal
-      :show="deleteModalVisible"
-      :resource-name="volume?.name"
-      :resource-id="volume?.id"
-      :loading="deletingResource"
-      :error="deleteError"
-      @close="closeDeleteModal"
-      @confirm="confirmDelete"
-    />
-  </div>
 </template>
 
 <style scoped>
 .detail-page {
-  max-width: 1200px;
-  margin: 0 auto;
+    max-width: 1200px;
+    margin: 0 auto;
 }
 
 .detail-header {
-  margin-bottom: var(--spacing-4);
+    margin-bottom: var(--spacing-4);
 }
 
-.loading-container, .error-container {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: 60px;
+.loading-container,
+.error-container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 60px;
 }
 
 .loading-text {
-  margin-top: var(--spacing-3);
-  color: var(--text-secondary);
-  font-size: var(--font-size-sm);
+    margin-top: var(--spacing-3);
+    color: var(--text-secondary);
+    font-size: var(--font-size-sm);
 }
 
 /* Title Bar */
 .title-bar {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: var(--spacing-5);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: var(--spacing-5);
 }
 
 .title-info {
-  display: flex;
-  align-items: center;
-  gap: var(--spacing-4);
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-4);
 }
 
 .title-icon {
-  width: 52px;
-  height: 52px;
-  border-radius: var(--radius-lg);
-  background: linear-gradient(135deg, var(--primary-50), var(--primary-100));
-  color: var(--primary-color);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
+    width: 52px;
+    height: 52px;
+    border-radius: var(--radius-lg);
+    background: linear-gradient(135deg, var(--primary-50), var(--primary-100));
+    color: var(--primary-color);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
 }
 
 .volume-title {
-  margin: 0 0 4px 0;
-  font-size: var(--font-size-xl);
-  font-weight: var(--font-weight-semibold);
-  color: var(--primary-color);
-  display: flex;
-  align-items: center;
-  gap: var(--spacing-3);
+    margin: 0 0 4px 0;
+    font-size: var(--font-size-xl);
+    font-weight: var(--font-weight-semibold);
+    color: var(--primary-color);
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-3);
 }
 
 .volume-id-row {
-  display: flex;
-  align-items: center;
-  gap: var(--spacing-2);
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-2);
 }
 
 .volume-id {
-  font-size: var(--font-size-xs);
-  color: var(--text-light);
-  font-family: var(--font-family-mono);
+    font-size: var(--font-size-xs);
+    color: var(--text-light);
+    font-family: var(--font-family-mono);
 }
 
 .copy-btn {
-  background: none;
-  border: 1px solid var(--border-light);
-  border-radius: var(--radius-sm);
-  padding: 2px 5px;
-  cursor: pointer;
-  color: var(--text-light);
-  display: inline-flex;
-  align-items: center;
-  transition: all 0.15s;
+    background: none;
+    border: 1px solid var(--border-light);
+    border-radius: var(--radius-sm);
+    padding: 2px 5px;
+    cursor: pointer;
+    color: var(--text-light);
+    display: inline-flex;
+    align-items: center;
+    transition: all 0.15s;
 }
 
 .copy-btn:hover {
-  color: var(--primary-color);
-  border-color: var(--primary-200);
-  background: var(--primary-50);
+    color: var(--primary-color);
+    border-color: var(--primary-200);
+    background: var(--primary-50);
 }
 
 .copied-icon {
-  color: var(--success-color);
+    color: var(--success-color);
 }
 
 .title-actions {
-  display: flex;
-  align-items: center;
-  gap: var(--spacing-3);
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-3);
 }
 
 /* Action Dropdown */
@@ -422,61 +455,65 @@ onMounted(() => {
     margin: 4px 0;
 }
 
-.dropdown-enter-active, .dropdown-leave-active {
-    transition: opacity 0.15s, transform 0.15s;
+.dropdown-enter-active,
+.dropdown-leave-active {
+    transition:
+        opacity 0.15s,
+        transform 0.15s;
 }
 
-.dropdown-enter-from, .dropdown-leave-to {
+.dropdown-enter-from,
+.dropdown-leave-to {
     opacity: 0;
     transform: translateY(-4px);
 }
 
 /* Two-Column Layout */
 .two-col-layout {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: var(--spacing-4);
-  margin-bottom: var(--spacing-6);
-  align-items: start;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: var(--spacing-4);
+    margin-bottom: var(--spacing-6);
+    align-items: start;
 }
 
 .col-stack {
-  display: flex;
-  flex-direction: column;
-  gap: var(--spacing-4);
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-4);
 }
 
 .info-card {
-  padding: var(--spacing-5);
+    padding: var(--spacing-5);
 }
 
 .info-card h3 {
-  font-size: var(--font-size-base);
-  font-weight: 600;
-  margin: 0 0 var(--spacing-4) 0;
-  color: var(--text-primary);
-  border-bottom: 1px solid var(--border-light);
-  padding-bottom: var(--spacing-3);
+    font-size: var(--font-size-base);
+    font-weight: 600;
+    margin: 0 0 var(--spacing-4) 0;
+    color: var(--text-primary);
+    border-bottom: 1px solid var(--border-light);
+    padding-bottom: var(--spacing-3);
 }
 
 .key-value-list {
-  display: flex;
-  flex-direction: column;
-  gap: var(--spacing-3);
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-3);
 }
 
 .link-value {
-  color: var(--primary-color);
-  cursor: pointer;
+    color: var(--primary-color);
+    cursor: pointer;
 }
 
 .link-value:hover {
-  text-decoration: underline;
+    text-decoration: underline;
 }
 
 .muted-value {
-  color: var(--text-light);
-  font-weight: normal;
+    color: var(--text-light);
+    font-weight: normal;
 }
 
 .status-badge {
@@ -486,13 +523,19 @@ onMounted(() => {
     font-size: var(--font-size-xs);
     font-weight: 500;
 }
-.status-success { background: var(--success-light); color: var(--success-dark); }
-.status-default { background: var(--gray-100); color: var(--gray-700); }
+.status-success {
+    background: var(--success-light);
+    color: var(--success-dark);
+}
+.status-default {
+    background: var(--gray-100);
+    color: var(--gray-700);
+}
 
 /* Responsive */
 @media (max-width: 768px) {
-  .two-col-layout {
-    grid-template-columns: 1fr;
-  }
+    .two-col-layout {
+        grid-template-columns: 1fr;
+    }
 }
 </style>

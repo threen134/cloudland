@@ -94,12 +94,16 @@ onMounted(fetchUser)
                     <h1>{{ user.username || user.name || $t('dashboard.userDetail.unknownUser') }}</h1>
                     <div class="subtitle">
                         <span class="id-text">{{ user.uuid }}</span>
-                        <StatusBadge :status="user.status || 'active'" :label="$t('userStatus.' + (user.status || 'active'))" />
+                        <StatusBadge
+                            :status="user.status || 'active'"
+                            :label="$t('userStatus.' + (user.status || 'active'))"
+                        />
                     </div>
                 </div>
                 <div class="title-actions">
                     <button class="btn btn-danger" @click="handleDeleteClick" :disabled="deleting">
-                        <Trash2 :size="16" /> {{ deleting ? $t('dashboard.userDetail.deleting') : $t('dashboard.userDetail.deleteUser') }}
+                        <Trash2 :size="16" />
+                        {{ deleting ? $t('dashboard.userDetail.deleting') : $t('dashboard.userDetail.deleteUser') }}
                     </button>
                 </div>
             </div>
@@ -124,9 +128,9 @@ onMounted(fetchUser)
                 </div>
 
                 <!-- Organization Info -->
-                 <div class="card info-card">
+                <div class="card info-card">
                     <h3>{{ $t('dashboard.userDetail.organization') }}</h3>
-                     <div class="key-value-list">
+                    <div class="key-value-list">
                         <InfoRow :label="$t('dashboard.userDetail.orgUuid')" mono>{{ user.org?.uuid || '-' }}</InfoRow>
                         <InfoRow :label="$t('dashboard.userDetail.orgName')">{{ user.org?.name || '-' }}</InfoRow>
                     </div>
@@ -157,7 +161,8 @@ onMounted(fetchUser)
     margin-bottom: var(--spacing-4);
 }
 
-.loading-container, .error-container {
+.loading-container,
+.error-container {
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -248,6 +253,11 @@ onMounted(fetchUser)
     align-items: center;
     gap: var(--spacing-2);
 }
-.btn-danger:hover { background: var(--error-dark); }
-.btn-danger:disabled { opacity: 0.5; cursor: not-allowed; }
+.btn-danger:hover {
+    background: var(--error-dark);
+}
+.btn-danger:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
 </style>

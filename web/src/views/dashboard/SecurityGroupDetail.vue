@@ -7,7 +7,11 @@ import { useSecurityGroup } from '../../composables/useSecurityGroup'
 import { securityGroupsApi, type SecurityGroup, type SecurityRule } from '../../api/networks'
 import { isValidName } from '../../utils/validation'
 import {
-    formatRulePort, ruleServiceName, filterAndSortRules, type RuleSortKey, type RuleFilter
+    formatRulePort,
+    ruleServiceName,
+    filterAndSortRules,
+    type RuleSortKey,
+    type RuleFilter,
 } from '../../utils/securityRule'
 import SecurityRuleModal from '../../components/securityGroup/SecurityRuleModal.vue'
 import BaseModal from '../../components/modals/BaseModal.vue'
@@ -16,7 +20,21 @@ import InfoRow from '../../components/base/InfoRow.vue'
 import DetailTabs from '../../components/base/DetailTabs.vue'
 import { useGoBack } from '../../composables/useGoBack'
 import { errorMessage } from '../../utils/error'
-import { ArrowLeft, Shield, Trash2, Plus, X, Edit, ArrowUpDown, ArrowUp, ArrowDown, Network, Server, ChevronDown, Search } from 'lucide-vue-next'
+import {
+    ArrowLeft,
+    Shield,
+    Trash2,
+    Plus,
+    X,
+    Edit,
+    ArrowUpDown,
+    ArrowUp,
+    ArrowDown,
+    Network,
+    Server,
+    ChevronDown,
+    Search,
+} from 'lucide-vue-next'
 
 const route = useRoute()
 const router = useRouter()
@@ -66,7 +84,8 @@ const toggleSort = (key: RuleSortKey) => {
 }
 
 const sortedRules = computed(() =>
-    filterAndSortRules(group.value?.security_rules || [], ruleFilter.value, sortKey.value, sortOrder.value))
+    filterAndSortRules(group.value?.security_rules || [], ruleFilter.value, sortKey.value, sortOrder.value)
+)
 
 const ruleColumns: Array<{ key: RuleSortKey; label: string }> = [
     { key: 'name', label: 'dashboard.table.name' },
@@ -89,8 +108,12 @@ const fetchGroup = async () => {
     }
 }
 
-const toggleActionMenu = () => { showActionMenu.value = !showActionMenu.value }
-const closeActionMenu = () => { showActionMenu.value = false }
+const toggleActionMenu = () => {
+    showActionMenu.value = !showActionMenu.value
+}
+const closeActionMenu = () => {
+    showActionMenu.value = false
+}
 
 // --- Add / Edit Rule ---
 const ruleModalVisible = ref(false)
@@ -281,7 +304,9 @@ onMounted(fetchGroup)
                                 <div class="dropdown-divider" />
                                 <button
                                     class="dropdown-item dropdown-item-danger"
-                                    :title="group.is_default ? $t('dashboard.securityGroupDetail.defaultNotDeletable') : ''"
+                                    :title="
+                                        group.is_default ? $t('dashboard.securityGroupDetail.defaultNotDeletable') : ''
+                                    "
                                     :disabled="group.is_default"
                                     @click="handleDelete"
                                 >
@@ -303,7 +328,11 @@ onMounted(fetchGroup)
                             {{ translateDescription(group.description || '') || '-' }}
                         </InfoRow>
                         <InfoRow :label="$t('dashboard.table.vpc')">
-                            <router-link v-if="group.vpc" :to="{ name: 'vpc-detail', params: { id: group.vpc.id } }" class="text-link">
+                            <router-link
+                                v-if="group.vpc"
+                                :to="{ name: 'vpc-detail', params: { id: group.vpc.id } }"
+                                class="text-link"
+                            >
                                 {{ group.vpc.name }}
                             </router-link>
                             <span v-else>-</span>
@@ -320,7 +349,11 @@ onMounted(fetchGroup)
                 <div class="tab-header">
                     <DetailTabs v-model="activeTab" :tabs="tabs" />
                     <div v-if="activeTab === 'rules'" class="tab-header-actions">
-                        <button :class="['btn btn-ghost btn-sm', { 'btn-filter-active': showRuleFilter }]" :title="$t('actions.filter')" @click="toggleRuleFilter">
+                        <button
+                            :class="['btn btn-ghost btn-sm', { 'btn-filter-active': showRuleFilter }]"
+                            :title="$t('actions.filter')"
+                            @click="toggleRuleFilter"
+                        >
                             <Search :size="14" />
                         </button>
                         <button class="btn btn-primary btn-sm" @click="openAddRuleModal">
@@ -333,14 +366,18 @@ onMounted(fetchGroup)
                 <div v-if="activeTab === 'rules' && showRuleFilter" class="filter-bar">
                     <div class="select-wrapper filter-select">
                         <select v-model="ruleFilter.direction" class="form-input form-input-sm">
-                            <option value="">{{ $t('dashboard.table.direction') }}: {{ $t('dashboard.forms.placeholder.all') }}</option>
+                            <option value="">
+                                {{ $t('dashboard.table.direction') }}: {{ $t('dashboard.forms.placeholder.all') }}
+                            </option>
                             <option value="ingress">{{ $t('dashboard.table.ingress') }}</option>
                             <option value="egress">{{ $t('dashboard.table.egress') }}</option>
                         </select>
                     </div>
                     <div class="select-wrapper filter-select">
                         <select v-model="ruleFilter.protocol" class="form-input form-input-sm">
-                            <option value="">{{ $t('dashboard.table.protocol') }}: {{ $t('dashboard.forms.placeholder.all') }}</option>
+                            <option value="">
+                                {{ $t('dashboard.table.protocol') }}: {{ $t('dashboard.forms.placeholder.all') }}
+                            </option>
                             <option value="tcp">TCP</option>
                             <option value="udp">UDP</option>
                             <option value="icmp">ICMP</option>
@@ -365,7 +402,12 @@ onMounted(fetchGroup)
                     <table class="data-table">
                         <thead>
                             <tr>
-                                <th v-for="col in ruleColumns" :key="col.key" class="sortable-th" @click="toggleSort(col.key)">
+                                <th
+                                    v-for="col in ruleColumns"
+                                    :key="col.key"
+                                    class="sortable-th"
+                                    @click="toggleSort(col.key)"
+                                >
                                     {{ $t(col.label) }}
                                     <ArrowUp v-if="sortKey === col.key && sortOrder === 'asc'" :size="12" />
                                     <ArrowDown v-else-if="sortKey === col.key && sortOrder === 'desc'" :size="12" />
@@ -382,20 +424,34 @@ onMounted(fetchGroup)
                                 <td>{{ rule.name || '-' }}</td>
                                 <td>
                                     <span :class="['direction-badge', rule.direction]">
-                                        {{ rule.direction === 'ingress' ? $t('dashboard.table.ingress') : $t('dashboard.table.egress') }}
+                                        {{
+                                            rule.direction === 'ingress'
+                                                ? $t('dashboard.table.ingress')
+                                                : $t('dashboard.table.egress')
+                                        }}
                                     </span>
                                 </td>
                                 <td class="mono">{{ rule.protocol.toUpperCase() }}</td>
                                 <td class="mono">
                                     {{ formatRulePort(rule, t) }}
-                                    <span v-if="ruleServiceName(rule)" class="service-tag">{{ ruleServiceName(rule) }}</span>
+                                    <span v-if="ruleServiceName(rule)" class="service-tag">{{
+                                        ruleServiceName(rule)
+                                    }}</span>
                                 </td>
                                 <td class="mono">{{ rule.remote_cidr || '-' }}</td>
                                 <td class="actions-cell">
-                                    <button class="btn btn-ghost btn-sm" :title="$t('actions.edit')" @click="openEditRuleModal(rule)">
+                                    <button
+                                        class="btn btn-ghost btn-sm"
+                                        :title="$t('actions.edit')"
+                                        @click="openEditRuleModal(rule)"
+                                    >
                                         <Edit :size="14" />
                                     </button>
-                                    <button class="btn btn-ghost btn-sm text-error" :title="$t('actions.delete')" @click="handleDeleteRule(rule)">
+                                    <button
+                                        class="btn btn-ghost btn-sm text-error"
+                                        :title="$t('actions.delete')"
+                                        @click="handleDeleteRule(rule)"
+                                    >
                                         <Trash2 :size="14" />
                                     </button>
                                 </td>
@@ -417,7 +473,9 @@ onMounted(fetchGroup)
                         </thead>
                         <tbody>
                             <tr v-if="!group.target_interfaces?.length">
-                                <td colspan="4" class="text-center text-secondary">{{ $t('dashboard.securityGroupDetail.noInterfaces') }}</td>
+                                <td colspan="4" class="text-center text-secondary">
+                                    {{ $t('dashboard.securityGroupDetail.noInterfaces') }}
+                                </td>
                             </tr>
                             <tr v-else v-for="iface in group.target_interfaces" :key="iface.id">
                                 <td>{{ iface.name || '-' }}</td>
@@ -430,7 +488,10 @@ onMounted(fetchGroup)
                                 <td>
                                     <div v-if="iface.from_instance" class="iface-cell">
                                         <Server :size="14" class="text-secondary" />
-                                        <router-link :to="{ name: 'instance-detail', params: { id: iface.from_instance.id } }" class="text-link">
+                                        <router-link
+                                            :to="{ name: 'instance-detail', params: { id: iface.from_instance.id } }"
+                                            class="text-link"
+                                        >
                                             {{ iface.from_instance.hostname || iface.from_instance.id }}
                                         </router-link>
                                     </div>
@@ -469,14 +530,25 @@ onMounted(fetchGroup)
             </div>
             <div class="form-group">
                 <label class="form-label">{{ $t('dashboard.table.description') }}</label>
-                <input v-model="editForm.description" type="text" class="form-input" :placeholder="$t('messages.placeholderDescription')" />
+                <input
+                    v-model="editForm.description"
+                    type="text"
+                    class="form-input"
+                    :placeholder="$t('messages.placeholderDescription')"
+                />
             </div>
             <div v-if="editError" class="error-box">{{ editError }}</div>
 
             <template #footer>
-                <button type="button" class="btn btn-secondary" @click="showEditModal = false" :disabled="savingInfo">{{ $t('actions.cancel') }}</button>
+                <button type="button" class="btn btn-secondary" @click="showEditModal = false" :disabled="savingInfo">
+                    {{ $t('actions.cancel') }}
+                </button>
                 <button type="submit" class="btn btn-primary" :disabled="savingInfo || !isEditValid">
-                    <span v-if="savingInfo" class="loading-spinner" style="width:16px;height:16px;border-width:2px;"></span>
+                    <span
+                        v-if="savingInfo"
+                        class="loading-spinner"
+                        style="width: 16px; height: 16px; border-width: 2px"
+                    ></span>
                     {{ savingInfo ? $t('messages.saving') : $t('actions.save') }}
                 </button>
             </template>
@@ -518,7 +590,8 @@ onMounted(fetchGroup)
     margin-bottom: var(--spacing-4);
 }
 
-.loading-container, .error-container {
+.loading-container,
+.error-container {
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -644,9 +717,21 @@ onMounted(fetchGroup)
     margin: 4px 0;
 }
 
-.dropdown-enter-active { transition: opacity 0.15s, transform 0.15s; }
-.dropdown-leave-active { transition: opacity 0.1s, transform 0.1s; }
-.dropdown-enter-from, .dropdown-leave-to { opacity: 0; transform: translateY(-4px); }
+.dropdown-enter-active {
+    transition:
+        opacity 0.15s,
+        transform 0.15s;
+}
+.dropdown-leave-active {
+    transition:
+        opacity 0.1s,
+        transform 0.1s;
+}
+.dropdown-enter-from,
+.dropdown-leave-to {
+    opacity: 0;
+    transform: translateY(-4px);
+}
 
 /* Info Grid */
 .info-grid {
@@ -675,8 +760,13 @@ onMounted(fetchGroup)
     gap: var(--spacing-3);
 }
 
-.text-link { color: var(--primary-600); text-decoration: none; }
-.text-link:hover { text-decoration: underline; }
+.text-link {
+    color: var(--primary-600);
+    text-decoration: none;
+}
+.text-link:hover {
+    text-decoration: underline;
+}
 
 /* Tabs */
 .tab-card {
@@ -751,7 +841,9 @@ onMounted(fetchGroup)
     font-size: var(--font-size-sm);
     line-height: 1.5;
     outline: none;
-    transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
+    transition:
+        border-color var(--transition-fast),
+        box-shadow var(--transition-fast);
 }
 
 .filter-search-input:focus {
@@ -795,10 +887,18 @@ onMounted(fetchGroup)
     font-weight: 600;
 }
 
-.direction-badge.ingress { background: var(--success-light); color: var(--success-dark); }
-.direction-badge.egress { background: var(--info-light); color: var(--info-dark); }
+.direction-badge.ingress {
+    background: var(--success-light);
+    color: var(--success-dark);
+}
+.direction-badge.egress {
+    background: var(--info-light);
+    color: var(--info-dark);
+}
 
-.mono { font-family: var(--font-family-mono); }
+.mono {
+    font-family: var(--font-family-mono);
+}
 
 .sortable-th {
     cursor: pointer;
@@ -806,9 +906,16 @@ onMounted(fetchGroup)
     white-space: nowrap;
 }
 
-.sortable-th:hover { color: var(--primary-color); }
-.sortable-th svg { vertical-align: middle; margin-left: 4px; }
-.sort-idle { opacity: 0.3; }
+.sortable-th:hover {
+    color: var(--primary-color);
+}
+.sortable-th svg {
+    vertical-align: middle;
+    margin-left: 4px;
+}
+.sort-idle {
+    opacity: 0.3;
+}
 
 .service-tag {
     display: inline-block;
@@ -846,5 +953,4 @@ onMounted(fetchGroup)
     border-radius: var(--radius-sm);
     text-align: left;
 }
-
 </style>

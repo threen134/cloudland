@@ -28,7 +28,7 @@ const newLBForm = ref({
     name: '',
     description: '',
     vpc_id: '',
-    zone: ''
+    zone: '',
 })
 
 const { t, te } = useI18n()
@@ -66,7 +66,10 @@ const confirmEdit = async () => {
     editing.value = true
     editError.value = ''
     try {
-        await loadBalancersApi.patch(lbToEdit.value.id, { name: editForm.value.name, description: editForm.value.description })
+        await loadBalancersApi.patch(lbToEdit.value.id, {
+            name: editForm.value.name,
+            description: editForm.value.description,
+        })
         await fetchLoadBalancers()
         closeEditModal()
         toast.success(t('messages.success'))
@@ -106,9 +109,9 @@ const fetchLoadBalancers = async () => {
             loadBalancersApi.list({
                 offset: (currentPage.value - 1) * pageSize.value,
                 limit: pageSize.value,
-                query: searchQuery.value.trim() || undefined
+                query: searchQuery.value.trim() || undefined,
             }),
-            vpcsApi.list()
+            vpcsApi.list(),
         ])
         if (generation !== fetchGeneration) return
         loadBalancers.value = lbResponse.load_balancers || []
@@ -167,12 +170,11 @@ const handleCreateLB = async () => {
         return
     }
 
-    
     creating.value = true
     try {
         const payload: LoadBalancerPayload = {
             name: newLBForm.value.name,
-            vpc: { id: newLBForm.value.vpc_id }
+            vpc: { id: newLBForm.value.vpc_id },
         }
         if (newLBForm.value.description) payload.description = newLBForm.value.description
         if (newLBForm.value.zone) payload.zone = newLBForm.value.zone
@@ -194,9 +196,8 @@ const handleCreateLB = async () => {
 
 const formatListeners = (lb: LoadBalancer) => {
     if (!lb.listeners || lb.listeners.length === 0) return '-'
-    return lb.listeners.map(l => `${l.port}/${l.mode.toUpperCase()}`).join(', ')
+    return lb.listeners.map((l) => `${l.port}/${l.mode.toUpperCase()}`).join(', ')
 }
-
 
 // --- Delete Confirmation Modal ---
 const deleteModalVisible = ref(false)
@@ -237,11 +238,14 @@ onMounted(() => {
 })
 
 // Re-fetch when region changes
-watch(() => region.currentRegionId, (newId) => {
-    if (newId) {
-        fetchLoadBalancers()
+watch(
+    () => region.currentRegionId,
+    (newId) => {
+        if (newId) {
+            fetchLoadBalancers()
+        }
     }
-})
+)
 
 // 搜索防抖定时器：组件卸载后不应再触发请求
 onUnmounted(() => {
@@ -250,261 +254,313 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div>
-    <PageToolbar v-model:search="searchQuery">
-      <template #actions>
-        <button class="btn btn-secondary btn-sm btn-icon" @click="fetchLoadBalancers" :title="$t('actions.refresh')">
-          <RefreshCw :size="14" :class="{ spinning: loading }" />
-        </button>
-        <button class="btn btn-primary btn-sm" @click="openCreateModal">
-          <Plus :size="14" /> {{ $t('dashboard.buttons.createLoadBalancer') }}
-        </button>
-      </template>
-    </PageToolbar>
-
-    <DataTable
-      :columns="columns"
-      :rows="loadBalancers"
-      row-key="id"
-      :loading="loading"
-      :error="loadError"
-      @retry="fetchLoadBalancers"
-    >
-      <template #empty>
-        <div v-if="searchQuery">
-          <Search :size="48" style="opacity: 0.3; margin-bottom: 16px;" />
-          <p>{{ $t('messages.noResults') }}</p>
-        </div>
-        <div v-else>
-          <GitFork :size="48" style="opacity: 0.3; margin-bottom: 16px;" />
-          <p class="text-secondary">{{ $t('messages.noLoadBalancers') }}</p>
-        </div>
-      </template>
-
-      <template #cell-name="{ row: lb }">
-        <router-link :to="{ name: 'load-balancer-detail', params: { id: lb.id } }" class="resource-link">
-          <div class="resource-info">
-            <div class="resource-icon">
-              <GitFork :size="16" />
-            </div>
-            <div>
-              <div class="resource-name">{{ lb.name }}</div>
-              <div class="resource-id-row">
-                <span class="resource-id" :title="lb.id">{{ lb.id.slice(0, 8) }}...</span>
-                <button class="copy-btn-mini" @click.stop.prevent="copyId(lb.id)" :title="t('actions.copy')" :aria-label="t('actions.copy')">
-                  <Check v-if="copiedId === lb.id" :size="10" style="color: var(--success-color);" />
-                  <Copy v-else :size="10" />
+    <div>
+        <PageToolbar v-model:search="searchQuery">
+            <template #actions>
+                <button
+                    class="btn btn-secondary btn-sm btn-icon"
+                    @click="fetchLoadBalancers"
+                    :title="$t('actions.refresh')"
+                >
+                    <RefreshCw :size="14" :class="{ spinning: loading }" />
                 </button>
-              </div>
-              <div v-if="lb.description" class="resource-desc">{{ lb.description }}</div>
+                <button class="btn btn-primary btn-sm" @click="openCreateModal">
+                    <Plus :size="14" /> {{ $t('dashboard.buttons.createLoadBalancer') }}
+                </button>
+            </template>
+        </PageToolbar>
+
+        <DataTable
+            :columns="columns"
+            :rows="loadBalancers"
+            row-key="id"
+            :loading="loading"
+            :error="loadError"
+            @retry="fetchLoadBalancers"
+        >
+            <template #empty>
+                <div v-if="searchQuery">
+                    <Search :size="48" style="opacity: 0.3; margin-bottom: 16px" />
+                    <p>{{ $t('messages.noResults') }}</p>
+                </div>
+                <div v-else>
+                    <GitFork :size="48" style="opacity: 0.3; margin-bottom: 16px" />
+                    <p class="text-secondary">{{ $t('messages.noLoadBalancers') }}</p>
+                </div>
+            </template>
+
+            <template #cell-name="{ row: lb }">
+                <router-link :to="{ name: 'load-balancer-detail', params: { id: lb.id } }" class="resource-link">
+                    <div class="resource-info">
+                        <div class="resource-icon">
+                            <GitFork :size="16" />
+                        </div>
+                        <div>
+                            <div class="resource-name">{{ lb.name }}</div>
+                            <div class="resource-id-row">
+                                <span class="resource-id" :title="lb.id">{{ lb.id.slice(0, 8) }}...</span>
+                                <button
+                                    class="copy-btn-mini"
+                                    @click.stop.prevent="copyId(lb.id)"
+                                    :title="t('actions.copy')"
+                                    :aria-label="t('actions.copy')"
+                                >
+                                    <Check v-if="copiedId === lb.id" :size="10" style="color: var(--success-color)" />
+                                    <Copy v-else :size="10" />
+                                </button>
+                            </div>
+                            <div v-if="lb.description" class="resource-desc">{{ lb.description }}</div>
+                        </div>
+                    </div>
+                </router-link>
+            </template>
+
+            <template #cell-status="{ row: lb }">
+                <StatusBadge :status="lb.status" />
+            </template>
+
+            <template #cell-ip="{ row: lb }">
+                <code class="ip-address">{{ lb.floating_ips?.[0]?.fip_address || '-' }}</code>
+            </template>
+
+            <template #cell-vpc="{ row: lb }">{{ lb.vpc?.name || '-' }}</template>
+
+            <template #cell-listeners="{ row: lb }">
+                <span class="text-secondary text-sm">{{ formatListeners(lb as LoadBalancer) }}</span>
+            </template>
+
+            <template #cell-actions="{ row: lb }">
+                <div class="actions">
+                    <button
+                        class="btn btn-ghost btn-sm"
+                        :title="$t('actions.edit')"
+                        @click="handleEditClick(lb as LoadBalancer)"
+                    >
+                        <Edit :size="14" />
+                    </button>
+                    <button
+                        class="btn btn-ghost btn-sm text-error"
+                        :title="$t('actions.delete')"
+                        @click="handleDeleteClick(lb as LoadBalancer)"
+                    >
+                        <Trash2 :size="14" />
+                    </button>
+                </div>
+            </template>
+
+            <template #footer>
+                <PaginationBar
+                    :page="currentPage"
+                    :page-size="pageSize"
+                    :total="totalCount"
+                    @update:page="goToPage"
+                    @update:page-size="
+                        (size) => {
+                            pageSize = size
+                            currentPage = 1
+                            fetchLoadBalancers()
+                        }
+                    "
+                />
+            </template>
+        </DataTable>
+        <!-- Create LB Modal -->
+        <BaseModal
+            :show="createModalVisible"
+            :title="$t('dashboard.buttons.createLoadBalancer')"
+            :loading="creating"
+            form
+            @close="closeCreateModal"
+            @submit="handleCreateLB"
+        >
+            <div class="form-group">
+                <label class="form-label">{{ $t('dashboard.forms.name') }}</label>
+                <input
+                    v-model="newLBForm.name"
+                    type="text"
+                    :class="['form-input', { 'input-error': !isNameValid }]"
+                    :placeholder="$t('dashboard.forms.placeholder.lbNameExample')"
+                />
+                <div v-if="!isNameValid" class="text-error text-xs mt-1">
+                    {{ $t('messages.invalidHostname') }}
+                </div>
             </div>
-          </div>
-        </router-link>
-      </template>
 
-      <template #cell-status="{ row: lb }">
-        <StatusBadge :status="lb.status" />
-      </template>
+            <div class="form-group">
+                <label class="form-label"
+                    >{{ $t('dashboard.forms.description') }}（{{ $t('dashboard.forms.optional') }}）</label
+                >
+                <input
+                    v-model="newLBForm.description"
+                    type="text"
+                    class="form-input"
+                    :placeholder="$t('messages.placeholderDescription')"
+                />
+            </div>
 
-      <template #cell-ip="{ row: lb }">
-        <code class="ip-address">{{ lb.floating_ips?.[0]?.fip_address || '-' }}</code>
-      </template>
+            <div class="form-group">
+                <label class="form-label">{{ $t('dashboard.forms.vpc') }}</label>
+                <div class="select-wrapper">
+                    <select v-model="newLBForm.vpc_id" class="form-input">
+                        <option v-for="vpc in vpcs" :key="vpc.id" :value="vpc.id">
+                            {{ vpc.name }} ({{ vpc.id.slice(0, 8) }}...)
+                        </option>
+                    </select>
+                </div>
+            </div>
+            <div class="form-group">
+                <label class="form-label"
+                    >{{ $t('dashboard.forms.zone') }}（{{ $t('dashboard.forms.optional') }}）</label
+                >
+                <input
+                    v-model="newLBForm.zone"
+                    type="text"
+                    class="form-input"
+                    :placeholder="$t('dashboard.forms.placeholder.zoneExample')"
+                />
+            </div>
 
-      <template #cell-vpc="{ row: lb }">{{ lb.vpc?.name || '-' }}</template>
+            <div v-if="createError" class="modal-error text-error">
+                {{ createError }}
+            </div>
 
-      <template #cell-listeners="{ row: lb }">
-        <span class="text-secondary text-sm">{{ formatListeners(lb as LoadBalancer) }}</span>
-      </template>
+            <template #footer>
+                <button type="button" class="btn btn-secondary" @click="closeCreateModal" :disabled="creating">
+                    {{ $t('actions.cancel') }}
+                </button>
+                <button type="submit" class="btn btn-primary" :disabled="creating">
+                    <span
+                        v-if="creating"
+                        class="loading-spinner"
+                        style="width: 16px; height: 16px; border-width: 2px"
+                    ></span>
+                    {{ creating ? $t('messages.creating') : $t('dashboard.buttons.createLoadBalancer') }}
+                </button>
+            </template>
+        </BaseModal>
 
-      <template #cell-actions="{ row: lb }">
-        <div class="actions">
-          <button class="btn btn-ghost btn-sm" :title="$t('actions.edit')" @click="handleEditClick(lb as LoadBalancer)">
-            <Edit :size="14" />
-          </button>
-          <button class="btn btn-ghost btn-sm text-error" :title="$t('actions.delete')" @click="handleDeleteClick(lb as LoadBalancer)">
-            <Trash2 :size="14" />
-          </button>
-        </div>
-      </template>
+        <!-- Edit Modal -->
+        <BaseModal
+            :show="editModalVisible"
+            :title="$t('actions.edit')"
+            :loading="editing"
+            form
+            @close="closeEditModal"
+            @submit="confirmEdit"
+        >
+            <div class="form-group">
+                <label class="form-label">{{ $t('dashboard.forms.name') }}</label>
+                <input
+                    v-model="editForm.name"
+                    type="text"
+                    :class="['form-input', { 'input-error': !isEditValid }]"
+                    :placeholder="$t('dashboard.forms.placeholder.lbNameExample')"
+                />
+                <div v-if="!isEditValid" class="text-error text-xs mt-1">{{ $t('messages.invalidHostname') }}</div>
+            </div>
+            <div class="form-group">
+                <label class="form-label">{{ $t('dashboard.forms.description') }}</label>
+                <input
+                    v-model="editForm.description"
+                    type="text"
+                    class="form-input"
+                    :placeholder="$t('messages.placeholderDescription')"
+                />
+            </div>
 
-      <template #footer>
-        <PaginationBar
-          :page="currentPage"
-          :page-size="pageSize"
-          :total="totalCount"
-          @update:page="goToPage"
-          @update:page-size="size => { pageSize = size; currentPage = 1; fetchLoadBalancers() }"
+            <div v-if="editError" class="modal-error text-error">
+                {{ editError }}
+            </div>
+
+            <template #footer>
+                <button type="button" class="btn btn-secondary" @click="closeEditModal" :disabled="editing">
+                    {{ $t('actions.cancel') }}
+                </button>
+                <button type="submit" class="btn btn-primary" :disabled="editing || !isEditValid">
+                    <span
+                        v-if="editing"
+                        class="loading-spinner"
+                        style="width: 16px; height: 16px; border-width: 2px"
+                    ></span>
+                    {{ editing ? $t('messages.saving') : $t('actions.save') }}
+                </button>
+            </template>
+        </BaseModal>
+
+        <!-- Delete Confirmation Modal -->
+        <DeleteModal
+            :show="deleteModalVisible"
+            :resource-name="resourceToDelete?.name"
+            :resource-id="resourceToDelete?.id"
+            :loading="deletingResource"
+            :error="deleteError"
+            @close="closeDeleteModal"
+            @confirm="confirmDelete"
         />
-      </template>
-    </DataTable>
-    <!-- Create LB Modal -->
-    <BaseModal
-      :show="createModalVisible"
-      :title="$t('dashboard.buttons.createLoadBalancer')"
-      :loading="creating"
-      form
-      @close="closeCreateModal"
-      @submit="handleCreateLB"
-    >
-          <div class="form-group">
-            <label class="form-label">{{ $t('dashboard.forms.name') }}</label>
-            <input 
-              v-model="newLBForm.name" 
-              type="text" 
-              :class="['form-input', { 'input-error': !isNameValid }]" 
-              :placeholder="$t('dashboard.forms.placeholder.lbNameExample')" 
-            />
-            <div v-if="!isNameValid" class="text-error text-xs mt-1">
-              {{ $t('messages.invalidHostname') }}
-            </div>
-
-          </div>
-          
-          <div class="form-group">
-            <label class="form-label">{{ $t('dashboard.forms.description') }}（{{ $t('dashboard.forms.optional') }}）</label>
-            <input v-model="newLBForm.description" type="text" class="form-input" :placeholder="$t('messages.placeholderDescription')" />
-          </div>
-
-          <div class="form-group">
-            <label class="form-label">{{ $t('dashboard.forms.vpc') }}</label>
-            <div class="select-wrapper">
-                <select v-model="newLBForm.vpc_id" class="form-input">
-                    <option v-for="vpc in vpcs" :key="vpc.id" :value="vpc.id">
-                        {{ vpc.name }} ({{ vpc.id.slice(0, 8) }}...)
-                    </option>
-                </select>
-            </div>
-          </div>
-          <div class="form-group">
-            <label class="form-label">{{ $t('dashboard.forms.zone') }}（{{ $t('dashboard.forms.optional') }}）</label>
-            <input v-model="newLBForm.zone" type="text" class="form-input" :placeholder="$t('dashboard.forms.placeholder.zoneExample')" />
-          </div>
-
-          <div v-if="createError" class="modal-error text-error">
-            {{ createError }}
-          </div>
-
-      <template #footer>
-        <button type="button" class="btn btn-secondary" @click="closeCreateModal" :disabled="creating">{{ $t('actions.cancel') }}</button>
-        <button type="submit" class="btn btn-primary" :disabled="creating">
-          <span v-if="creating" class="loading-spinner" style="width: 16px; height: 16px; border-width: 2px;"></span>
-          {{ creating ? $t('messages.creating') : $t('dashboard.buttons.createLoadBalancer') }}
-        </button>
-      </template>
-    </BaseModal>
-
-    <!-- Edit Modal -->
-    <BaseModal
-      :show="editModalVisible"
-      :title="$t('actions.edit')"
-      :loading="editing"
-      form
-      @close="closeEditModal"
-      @submit="confirmEdit"
-    >
-          <div class="form-group">
-            <label class="form-label">{{ $t('dashboard.forms.name') }}</label>
-            <input
-              v-model="editForm.name"
-              type="text"
-              :class="['form-input', { 'input-error': !isEditValid }]"
-              :placeholder="$t('dashboard.forms.placeholder.lbNameExample')"
-            />
-            <div v-if="!isEditValid" class="text-error text-xs mt-1">{{ $t('messages.invalidHostname') }}</div>
-          </div>
-          <div class="form-group">
-            <label class="form-label">{{ $t('dashboard.forms.description') }}</label>
-            <input
-              v-model="editForm.description"
-              type="text"
-              class="form-input"
-              :placeholder="$t('messages.placeholderDescription')"
-            />
-          </div>
-
-          <div v-if="editError" class="modal-error text-error">
-            {{ editError }}
-          </div>
-
-      <template #footer>
-        <button type="button" class="btn btn-secondary" @click="closeEditModal" :disabled="editing">{{ $t('actions.cancel') }}</button>
-        <button type="submit" class="btn btn-primary" :disabled="editing || !isEditValid">
-          <span v-if="editing" class="loading-spinner" style="width:16px;height:16px;border-width:2px"></span>
-          {{ editing ? $t('messages.saving') : $t('actions.save') }}
-        </button>
-      </template>
-    </BaseModal>
-
-    <!-- Delete Confirmation Modal -->
-    <DeleteModal
-      :show="deleteModalVisible"
-      :resource-name="resourceToDelete?.name"
-      :resource-id="resourceToDelete?.id"
-      :loading="deletingResource"
-      :error="deleteError"
-      @close="closeDeleteModal"
-      @confirm="confirmDelete"
-    />
-  </div>
+    </div>
 </template>
 
 <style scoped>
 .spinning {
-  animation: spin 1s linear infinite;
+    animation: spin 1s linear infinite;
 }
 
 @keyframes spin {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
+    from {
+        transform: rotate(0deg);
+    }
+    to {
+        transform: rotate(360deg);
+    }
 }
 
 /* .resource-info etc. are global from index.css */
 
 .resource-link {
-  text-decoration: none;
-  display: block;
-  padding: 4px 0;
-  border-radius: var(--radius-sm);
-  transition: all 0.15s;
+    text-decoration: none;
+    display: block;
+    padding: 4px 0;
+    border-radius: var(--radius-sm);
+    transition: all 0.15s;
 }
 
 .resource-link:hover .resource-name {
-  color: var(--primary-600);
-  text-decoration: underline;
+    color: var(--primary-600);
+    text-decoration: underline;
 }
 
 .actions {
-  display: flex;
-  justify-content: center;
-  gap: var(--spacing-2);
+    display: flex;
+    justify-content: center;
+    gap: var(--spacing-2);
 }
 
 .text-error {
-  color: var(--error-color);
+    color: var(--error-color);
 }
 
 /* Modal Styles */
 
 .modal-error {
-  margin-top: var(--spacing-4);
-  font-size: var(--font-size-sm);
-  background: var(--error-light);
-  padding: var(--spacing-2);
-  border-radius: var(--radius-sm);
+    margin-top: var(--spacing-4);
+    font-size: var(--font-size-sm);
+    background: var(--error-light);
+    padding: var(--spacing-2);
+    border-radius: var(--radius-sm);
 }
 
 .resource-link {
-  color: var(--primary-600);
-  cursor: pointer;
+    color: var(--primary-600);
+    cursor: pointer;
 }
 
 .resource-link:hover {
-  text-decoration: underline;
+    text-decoration: underline;
 }
 
 .resource-desc {
-  font-size: var(--font-size-xs);
-  color: var(--text-tertiary);
-  margin-top: 2px;
+    font-size: var(--font-size-xs);
+    color: var(--text-tertiary);
+    margin-top: 2px;
 }
 </style>

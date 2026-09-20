@@ -6,8 +6,44 @@ import { useToast } from '../../composables/useToast'
 import { instancesApi, type Instance, type ResourceReference } from '../../api/instances'
 import { securityGroupsApi, type SecurityGroup } from '../../api/networks'
 import MonitoringCharts from '../../components/monitoring/MonitoringCharts.vue'
-import { vmAlarmRulesApi, VM_RULE_TYPES, type VMAlarmRuleDetail, type VMAlarmRuleGroup, type VMRuleType } from '../../api/vmAlarmRules'
-import { ArrowLeft, Play, Square, RotateCw, Trash2, Server, Monitor, Cpu, HardDrive, MemoryStick, Network, Key, ExternalLink, Copy, Check, ShieldAlert, Link, Unlink, Eye, EyeOff, ChevronDown, KeyRound, RefreshCw, Maximize2, Pencil, Shuffle, Shield, Activity, SquareTerminal } from 'lucide-vue-next'
+import {
+    vmAlarmRulesApi,
+    VM_RULE_TYPES,
+    type VMAlarmRuleDetail,
+    type VMAlarmRuleGroup,
+    type VMRuleType,
+} from '../../api/vmAlarmRules'
+import {
+    ArrowLeft,
+    Play,
+    Square,
+    RotateCw,
+    Trash2,
+    Server,
+    Monitor,
+    Cpu,
+    HardDrive,
+    MemoryStick,
+    Network,
+    Key,
+    ExternalLink,
+    Copy,
+    Check,
+    ShieldAlert,
+    Link,
+    Unlink,
+    Eye,
+    EyeOff,
+    ChevronDown,
+    KeyRound,
+    RefreshCw,
+    Maximize2,
+    Pencil,
+    Shuffle,
+    Shield,
+    Activity,
+    SquareTerminal,
+} from 'lucide-vue-next'
 import DeleteModal from '../../components/modals/DeleteModal.vue'
 import BaseModal from '../../components/modals/BaseModal.vue'
 import StatusBadge from '../../components/base/StatusBadge.vue'
@@ -92,7 +128,9 @@ const fetchInstance = async (showLoading: boolean = true) => {
     }
 }
 
-const handleAction = async (action: 'start' | 'stop' | 'restart' | 'hard_stop' | 'hard_restart' | 'pause' | 'resume') => {
+const handleAction = async (
+    action: 'start' | 'stop' | 'restart' | 'hard_stop' | 'hard_restart' | 'pause' | 'resume'
+) => {
     if (!instance.value) return
 
     actionLoading.value = action
@@ -123,7 +161,8 @@ const handleAction = async (action: 'start' | 'stop' | 'restart' | 'hard_stop' |
         }
 
         let targetStableStates: string[] = []
-        if (['start', 'restart', 'hard_restart', 'resume'].includes(action)) targetStableStates = ['running', 'active', 'error']
+        if (['start', 'restart', 'hard_restart', 'resume'].includes(action))
+            targetStableStates = ['running', 'active', 'error']
         if (['stop', 'hard_stop'].includes(action)) targetStableStates = ['stopped', 'shutoff', 'shut_off', 'error']
         if (action === 'pause') targetStableStates = ['paused', 'error']
 
@@ -208,7 +247,7 @@ const getSeverityClass = (level: string) => {
     return {
         'badge-critical': l === 'critical',
         'badge-warning': l === 'warning',
-        'badge-info': l === 'info'
+        'badge-info': l === 'info',
     }
 }
 
@@ -217,9 +256,10 @@ const fetchLinkedRules = async () => {
     const linked: LinkedRule[] = []
     try {
         const results = await Promise.all(
-            VM_RULE_TYPES.map(rt =>
-                vmAlarmRulesApi.listRules(rt.value, { page: 1, page_size: 1000 })
-                    .then(res => ({ type: rt.value, label: rt.label, data: res.data || [] }))
+            VM_RULE_TYPES.map((rt) =>
+                vmAlarmRulesApi
+                    .listRules(rt.value, { page: 1, page_size: 1000 })
+                    .then((res) => ({ type: rt.value, label: rt.label, data: res.data || [] }))
                     .catch(() => ({ type: rt.value, label: rt.label, data: [] as VMAlarmRuleGroup[] }))
             )
         )
@@ -252,9 +292,10 @@ const openLinkModal = async () => {
     const available: LinkedRule[] = []
     try {
         const results = await Promise.all(
-            VM_RULE_TYPES.map(rt =>
-                vmAlarmRulesApi.listRules(rt.value, { page: 1, page_size: 1000 })
-                    .then(res => ({ type: rt.value, label: rt.label, data: res.data || [] }))
+            VM_RULE_TYPES.map((rt) =>
+                vmAlarmRulesApi
+                    .listRules(rt.value, { page: 1, page_size: 1000 })
+                    .then((res) => ({ type: rt.value, label: rt.label, data: res.data || [] }))
                     .catch(() => ({ type: rt.value, label: rt.label, data: [] as VMAlarmRuleGroup[] }))
             )
         )
@@ -316,7 +357,7 @@ const generateRandomPassword = () => {
     const charset = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%&*'
     const array = new Uint8Array(16)
     crypto.getRandomValues(array)
-    const pwd = Array.from(array, b => charset[b % charset.length]).join('')
+    const pwd = Array.from(array, (b) => charset[b % charset.length]).join('')
     resetPasswordForm.value.password = pwd
     resetPasswordForm.value.confirmPassword = pwd
     showResetPassword.value = true
@@ -341,7 +382,11 @@ const confirmResetPassword = async () => {
     resetPasswordLoading.value = true
     resetPasswordError.value = ''
     try {
-        await instancesApi.setUserPassword(instanceId, resetPasswordForm.value.user_name, resetPasswordForm.value.password)
+        await instancesApi.setUserPassword(
+            instanceId,
+            resetPasswordForm.value.user_name,
+            resetPasswordForm.value.password
+        )
         showResetPasswordModal.value = false
         toast.success(t('dashboard.instanceDetail.resetPasswordSuccess'))
         await fetchInstance(false)
@@ -423,7 +468,6 @@ const getStatusText = (status: string) => {
     return translated === `dashboard.instanceStatus.${key}` ? status : translated
 }
 
-
 const navigateToVolume = (volumeId: string) => {
     router.push({ name: 'volume-detail', params: { id: volumeId } })
 }
@@ -466,7 +510,7 @@ const openEditSgModal = async (iface: NonNullable<Instance['interfaces']>[number
         name: iface.name,
         currentSgs: iface.security_groups || [],
     }
-    selectedSgIds.value = new Set((iface.security_groups || []).map(sg => sg.id))
+    selectedSgIds.value = new Set((iface.security_groups || []).map((sg) => sg.id))
     editSgError.value = ''
     sgListTruncated.value = false
     editSgLoading.value = true
@@ -483,7 +527,7 @@ const openEditSgModal = async (iface: NonNullable<Instance['interfaces']>[number
     }
 }
 
-const toggleSg =(sgId: string) => {
+const toggleSg = (sgId: string) => {
     if (selectedSgIds.value.has(sgId)) {
         selectedSgIds.value.delete(sgId)
     } else {
@@ -497,7 +541,7 @@ const confirmEditSg = async () => {
     editSgLoading.value = true
     editSgError.value = ''
     try {
-        const payload = { security_groups: [...selectedSgIds.value].map(id => ({ id })) }
+        const payload = { security_groups: [...selectedSgIds.value].map((id) => ({ id })) }
         await instancesApi.patchInterface(instanceId, editingSgIface.value.id, payload)
         showEditSgModal.value = false
         toast.success(t('dashboard.instanceDetail.securityGroupsUpdated'))
@@ -556,7 +600,13 @@ onUnmounted(() => {
                         </h2>
                         <div class="instance-id-row">
                             <span class="instance-id">{{ instance.id }}</span>
-                            <button class="copy-btn" @click="copyToClipboard(instance.id, 'id')" :title="copiedField === 'id' ? $t('messages.copied') : $t('dashboard.instanceDetail.copyId')">
+                            <button
+                                class="copy-btn"
+                                @click="copyToClipboard(instance.id, 'id')"
+                                :title="
+                                    copiedField === 'id' ? $t('messages.copied') : $t('dashboard.instanceDetail.copyId')
+                                "
+                            >
                                 <Check v-if="copiedField === 'id'" :size="12" class="copied-icon" />
                                 <Copy v-else :size="12" />
                             </button>
@@ -578,7 +628,11 @@ onUnmounted(() => {
                                 >
                                     <span v-if="actionLoading === 'start'" class="loading-spinner small"></span>
                                     <Play v-else :size="14" />
-                                    {{ actionLoading === 'start' ? $t('dashboard.instanceDetail.starting') : $t('actions.start') }}
+                                    {{
+                                        actionLoading === 'start'
+                                            ? $t('dashboard.instanceDetail.starting')
+                                            : $t('actions.start')
+                                    }}
                                 </button>
                                 <button
                                     v-else
@@ -588,7 +642,11 @@ onUnmounted(() => {
                                 >
                                     <span v-if="actionLoading === 'stop'" class="loading-spinner small"></span>
                                     <Square v-else :size="14" />
-                                    {{ actionLoading === 'stop' ? $t('dashboard.instanceDetail.stopping') : $t('actions.stop') }}
+                                    {{
+                                        actionLoading === 'stop'
+                                            ? $t('dashboard.instanceDetail.stopping')
+                                            : $t('actions.stop')
+                                    }}
                                 </button>
                                 <button
                                     class="dropdown-item"
@@ -597,26 +655,46 @@ onUnmounted(() => {
                                 >
                                     <span v-if="actionLoading === 'restart'" class="loading-spinner small"></span>
                                     <RotateCw v-else :size="14" />
-                                    {{ actionLoading === 'restart' ? $t('dashboard.instanceDetail.rebooting') : $t('actions.restart') }}
+                                    {{
+                                        actionLoading === 'restart'
+                                            ? $t('dashboard.instanceDetail.rebooting')
+                                            : $t('actions.restart')
+                                    }}
                                 </button>
                                 <div class="dropdown-divider"></div>
                                 <button
                                     class="dropdown-item"
                                     @click="handleAction('hard_stop')"
-                                    :disabled="!!actionLoading || ['stopped', 'shutoff', 'shut_off', 'paused'].includes(instance.status?.toLowerCase())"
+                                    :disabled="
+                                        !!actionLoading ||
+                                        ['stopped', 'shutoff', 'shut_off', 'paused'].includes(
+                                            instance.status?.toLowerCase()
+                                        )
+                                    "
                                 >
                                     <span v-if="actionLoading === 'hard_stop'" class="loading-spinner small"></span>
                                     <Square v-else :size="14" />
-                                    {{ actionLoading === 'hard_stop' ? $t('dashboard.instanceDetail.stopping') : $t('dashboard.instanceDetail.hardStop') }}
+                                    {{
+                                        actionLoading === 'hard_stop'
+                                            ? $t('dashboard.instanceDetail.stopping')
+                                            : $t('dashboard.instanceDetail.hardStop')
+                                    }}
                                 </button>
                                 <button
                                     class="dropdown-item"
                                     @click="handleAction('hard_restart')"
-                                    :disabled="!!actionLoading || ['stopped', 'shutoff', 'shut_off'].includes(instance.status?.toLowerCase())"
+                                    :disabled="
+                                        !!actionLoading ||
+                                        ['stopped', 'shutoff', 'shut_off'].includes(instance.status?.toLowerCase())
+                                    "
                                 >
                                     <span v-if="actionLoading === 'hard_restart'" class="loading-spinner small"></span>
                                     <RefreshCw v-else :size="14" />
-                                    {{ actionLoading === 'hard_restart' ? $t('dashboard.instanceDetail.rebooting') : $t('dashboard.instanceDetail.hardRestart') }}
+                                    {{
+                                        actionLoading === 'hard_restart'
+                                            ? $t('dashboard.instanceDetail.rebooting')
+                                            : $t('dashboard.instanceDetail.hardRestart')
+                                    }}
                                 </button>
                                 <button
                                     v-if="instance.status?.toLowerCase() !== 'paused'"
@@ -625,8 +703,12 @@ onUnmounted(() => {
                                     :disabled="!!actionLoading || instance.status?.toLowerCase() !== 'running'"
                                 >
                                     <span v-if="actionLoading === 'pause'" class="loading-spinner small"></span>
-                                    <span v-else style="font-size: 14px;">⏸</span>
-                                    {{ actionLoading === 'pause' ? $t('dashboard.instanceDetail.pausing') : $t('dashboard.instanceDetail.pause') }}
+                                    <span v-else style="font-size: 14px">⏸</span>
+                                    {{
+                                        actionLoading === 'pause'
+                                            ? $t('dashboard.instanceDetail.pausing')
+                                            : $t('dashboard.instanceDetail.pause')
+                                    }}
                                 </button>
                                 <button
                                     v-if="instance.status?.toLowerCase() === 'paused'"
@@ -636,11 +718,16 @@ onUnmounted(() => {
                                 >
                                     <span v-if="actionLoading === 'resume'" class="loading-spinner small"></span>
                                     <Play v-else :size="14" />
-                                    {{ actionLoading === 'resume' ? $t('dashboard.instanceDetail.resuming') : $t('dashboard.instanceDetail.resume') }}
+                                    {{
+                                        actionLoading === 'resume'
+                                            ? $t('dashboard.instanceDetail.resuming')
+                                            : $t('dashboard.instanceDetail.resume')
+                                    }}
                                 </button>
                                 <div class="dropdown-divider"></div>
                                 <button class="dropdown-item" @click="openConsole()">
-                                    <img src="/images/vnc.svg" alt="VNC" width="14" height="14" /> {{ $t('actions.console') }}
+                                    <img src="/images/vnc.svg" alt="VNC" width="14" height="14" />
+                                    {{ $t('actions.console') }}
                                 </button>
                                 <button class="dropdown-item" data-console="serial" @click="openConsole('serial')">
                                     <SquareTerminal :size="14" /> {{ $t('dashboard.console.serial.title') }}
@@ -681,11 +768,23 @@ onUnmounted(() => {
                             <InfoRow v-if="instance.root_passwd" :label="$t('dashboard.instanceDetail.rootPassword')">
                                 <span class="password-value">
                                     <span class="mono">{{ showPassword ? instance.root_passwd : '••••••••' }}</span>
-                                    <button class="icon-btn-inline" @click="showPassword = !showPassword" :title="showPassword ? $t('dashboard.instanceDetail.hidePassword') : $t('dashboard.instanceDetail.showPassword')">
+                                    <button
+                                        class="icon-btn-inline"
+                                        @click="showPassword = !showPassword"
+                                        :title="
+                                            showPassword
+                                                ? $t('dashboard.instanceDetail.hidePassword')
+                                                : $t('dashboard.instanceDetail.showPassword')
+                                        "
+                                    >
                                         <Eye v-if="!showPassword" :size="14" />
                                         <EyeOff v-else :size="14" />
                                     </button>
-                                    <button class="icon-btn-inline" @click="copyToClipboard(instance.root_passwd, 'root_passwd')" :title="$t('dashboard.instanceDetail.copyPassword')">
+                                    <button
+                                        class="icon-btn-inline"
+                                        @click="copyToClipboard(instance.root_passwd, 'root_passwd')"
+                                        :title="$t('dashboard.instanceDetail.copyPassword')"
+                                    >
                                         <Check v-if="copiedField === 'root_passwd'" :size="14" class="copied-icon" />
                                         <Copy v-else :size="14" />
                                     </button>
@@ -697,21 +796,45 @@ onUnmounted(() => {
                     <div class="card info-card">
                         <h3>{{ $t('dashboard.instanceDetail.specs') }}</h3>
                         <div class="key-value-list">
-                            <InfoRow v-if="instance.flavor" :label="$t('dashboard.table.flavor')">{{ typeof instance.flavor === 'string' ? instance.flavor : instance.flavor.name }}</InfoRow>
+                            <InfoRow v-if="instance.flavor" :label="$t('dashboard.table.flavor')">{{
+                                typeof instance.flavor === 'string' ? instance.flavor : instance.flavor.name
+                            }}</InfoRow>
                             <InfoRow :label="$t('dashboard.instanceDetail.cpu')">
                                 <template #label><Cpu :size="14" /> {{ $t('dashboard.instanceDetail.cpu') }}</template>
-                                {{ instance.cpu || (instance.flavor && typeof instance.flavor === 'object' ? instance.flavor.cpu : '-') }}
+                                {{
+                                    instance.cpu ||
+                                    (instance.flavor && typeof instance.flavor === 'object' ? instance.flavor.cpu : '-')
+                                }}
                             </InfoRow>
                             <InfoRow :label="$t('dashboard.instanceDetail.ram')">
-                                <template #label><MemoryStick :size="14" /> {{ $t('dashboard.instanceDetail.ram') }}</template>
-                                {{ formatMemory(instance.memory || (instance.flavor && typeof instance.flavor === 'object' ? instance.flavor.memory : undefined)) }}
+                                <template #label
+                                    ><MemoryStick :size="14" /> {{ $t('dashboard.instanceDetail.ram') }}</template
+                                >
+                                {{
+                                    formatMemory(
+                                        instance.memory ||
+                                            (instance.flavor && typeof instance.flavor === 'object'
+                                                ? instance.flavor.memory
+                                                : undefined)
+                                    )
+                                }}
                             </InfoRow>
                             <InfoRow :label="$t('dashboard.instanceDetail.disk')">
-                                <template #label><HardDrive :size="14" /> {{ $t('dashboard.instanceDetail.disk') }}</template>
-                                {{ instance.disk || (instance.flavor && typeof instance.flavor === 'object' ? instance.flavor.disk : '-') }} {{ t('specs.gb') }}
+                                <template #label
+                                    ><HardDrive :size="14" /> {{ $t('dashboard.instanceDetail.disk') }}</template
+                                >
+                                {{
+                                    instance.disk ||
+                                    (instance.flavor && typeof instance.flavor === 'object'
+                                        ? instance.flavor.disk
+                                        : '-')
+                                }}
+                                {{ t('specs.gb') }}
                             </InfoRow>
                             <InfoRow :label="$t('dashboard.instanceDetail.image')">
-                                <template #label><HardDrive :size="14" /> {{ $t('dashboard.instanceDetail.image') }}</template>
+                                <template #label
+                                    ><HardDrive :size="14" /> {{ $t('dashboard.instanceDetail.image') }}</template
+                                >
                                 {{ instance.image?.name || '-' }}
                             </InfoRow>
                         </div>
@@ -723,15 +846,25 @@ onUnmounted(() => {
                             <div v-if="!instance.volumes?.length" class="text-secondary empty-hint">
                                 {{ $t('messages.noVolumesAttached') }}
                             </div>
-                            <InfoRow v-else v-for="volume in instance.volumes" :key="volume.id" :label="volume.target || $t('dashboard.instanceDetail.volume')">
+                            <InfoRow
+                                v-else
+                                v-for="volume in instance.volumes"
+                                :key="volume.id"
+                                :label="volume.target || $t('dashboard.instanceDetail.volume')"
+                            >
                                 <template #label>
                                     <HardDrive :size="14" />
                                     {{ volume.target || $t('dashboard.instanceDetail.volume') }}
-                                    <span v-if="volume.booting" class="status-badge status-success mini-badge">{{ $t('dashboard.instanceDetail.boot') }}</span>
+                                    <span v-if="volume.booting" class="status-badge status-success mini-badge">{{
+                                        $t('dashboard.instanceDetail.boot')
+                                    }}</span>
                                 </template>
-                                <span v-if="volume.size" class="mono volume-size">{{ volume.size }} {{ t('specs.gb') }}</span>
+                                <span v-if="volume.size" class="mono volume-size"
+                                    >{{ volume.size }} {{ t('specs.gb') }}</span
+                                >
                                 <a href="#" @click.prevent="navigateToVolume(volume.id)" class="resource-link">
-                                    {{ volume.name || volume.id.substring(0, 8) }} <ExternalLink :size="12" class="inline-icon" />
+                                    {{ volume.name || volume.id.substring(0, 8) }}
+                                    <ExternalLink :size="12" class="inline-icon" />
                                 </a>
                             </InfoRow>
                         </div>
@@ -744,7 +877,12 @@ onUnmounted(() => {
                         <h3>{{ $t('dashboard.instanceDetail.network') }}</h3>
                         <div class="key-value-list">
                             <InfoRow v-if="instance.vpc?.name" :label="$t('dashboard.table.vpc')">
-                                <a v-if="instance.vpc?.id" href="#" @click.prevent="navigateToVPC(instance.vpc.id)" class="resource-link">
+                                <a
+                                    v-if="instance.vpc?.id"
+                                    href="#"
+                                    @click.prevent="navigateToVPC(instance.vpc.id)"
+                                    class="resource-link"
+                                >
                                     {{ instance.vpc.name }}
                                 </a>
                                 <span v-else>{{ instance.vpc?.name || '-' }}</span>
@@ -754,34 +892,77 @@ onUnmounted(() => {
                                 {{ $t('messages.noNics') }}
                             </div>
                             <template v-else>
-                                <div v-for="(iface, index) in instance.interfaces" :key="iface.id" class="interface-block" :class="{ 'interface-separator': index > 0 }">
+                                <div
+                                    v-for="(iface, index) in instance.interfaces"
+                                    :key="iface.id"
+                                    class="interface-block"
+                                    :class="{ 'interface-separator': index > 0 }"
+                                >
                                     <div class="interface-header">
                                         <span class="interface-name">
-                                            <Network :size="14" /> {{ iface.name || $t('dashboard.instanceDetail.interface') }}
-                                            <span v-if="iface.is_primary" class="status-badge status-running mini-badge">{{ $t('dashboard.instanceDetail.primary') }}</span>
+                                            <Network :size="14" />
+                                            {{ iface.name || $t('dashboard.instanceDetail.interface') }}
+                                            <span
+                                                v-if="iface.is_primary"
+                                                class="status-badge status-running mini-badge"
+                                                >{{ $t('dashboard.instanceDetail.primary') }}</span
+                                            >
                                         </span>
                                     </div>
                                     <InfoRow class="interface-detail" :label="$t('dashboard.table.subnet')">
-                                        <a v-if="iface.subnet?.id" href="#" @click.prevent="navigateToSubnet(iface.subnet.id)" class="resource-link">
+                                        <a
+                                            v-if="iface.subnet?.id"
+                                            href="#"
+                                            @click.prevent="navigateToSubnet(iface.subnet.id)"
+                                            class="resource-link"
+                                        >
                                             {{ iface.subnet.name }}
                                         </a>
                                         <span v-else>{{ iface.subnet?.name || '-' }}</span>
                                     </InfoRow>
-                                    <InfoRow class="interface-detail" :label="$t('dashboard.table.ipAddress')" mono>{{ iface.ip_address ? iface.ip_address.split('/')[0] : '-' }}</InfoRow>
-                                    <InfoRow class="interface-detail" :label="$t('dashboard.instanceDetail.macAddress')" mono>{{ iface.mac_address || '-' }}</InfoRow>
+                                    <InfoRow class="interface-detail" :label="$t('dashboard.table.ipAddress')" mono>{{
+                                        iface.ip_address ? iface.ip_address.split('/')[0] : '-'
+                                    }}</InfoRow>
+                                    <InfoRow
+                                        class="interface-detail"
+                                        :label="$t('dashboard.instanceDetail.macAddress')"
+                                        mono
+                                        >{{ iface.mac_address || '-' }}</InfoRow
+                                    >
                                     <template v-for="fip in iface.floating_ips" :key="fip.id">
-                                        <InfoRow v-if="(fip.ip_address || fip.fip_address) !== iface.ip_address" class="interface-detail" :label="$t('dashboard.instanceDetail.floatingIp')" mono>{{ fip.ip_address || fip.fip_address || '-' }}</InfoRow>
-                                        <InfoRow v-if="fip.vlan" class="interface-detail" :label="$t('dashboard.instanceDetail.fipVlan')">{{ fip.vlan }}</InfoRow>
+                                        <InfoRow
+                                            v-if="(fip.ip_address || fip.fip_address) !== iface.ip_address"
+                                            class="interface-detail"
+                                            :label="$t('dashboard.instanceDetail.floatingIp')"
+                                            mono
+                                            >{{ fip.ip_address || fip.fip_address || '-' }}</InfoRow
+                                        >
+                                        <InfoRow
+                                            v-if="fip.vlan"
+                                            class="interface-detail"
+                                            :label="$t('dashboard.instanceDetail.fipVlan')"
+                                            >{{ fip.vlan }}</InfoRow
+                                        >
                                     </template>
                                     <InfoRow class="interface-detail" :label="$t('dashboard.securityGroups')">
                                         <span class="sg-value-row">
                                             <template v-if="iface.security_groups?.length">
                                                 <template v-for="(sg, sgIndex) in iface.security_groups" :key="sg.id">
-                                                    <a href="#" @click.prevent="navigateToSecurityGroup(sg.id)" class="resource-link">{{ sg.name || sg.id.substring(0, 8) }}</a><span v-if="sgIndex < iface.security_groups.length - 1">, </span>
+                                                    <a
+                                                        href="#"
+                                                        @click.prevent="navigateToSecurityGroup(sg.id)"
+                                                        class="resource-link"
+                                                        >{{ sg.name || sg.id.substring(0, 8) }}</a
+                                                    ><span v-if="sgIndex < iface.security_groups.length - 1">, </span>
                                                 </template>
                                             </template>
                                             <span v-else class="text-secondary">-</span>
-                                            <button class="btn-icon-inline" @click="openEditSgModal(iface)" :aria-label="$t('dashboard.instanceDetail.editSecurityGroups')" :title="$t('dashboard.instanceDetail.editSecurityGroups')">
+                                            <button
+                                                class="btn-icon-inline"
+                                                @click="openEditSgModal(iface)"
+                                                :aria-label="$t('dashboard.instanceDetail.editSecurityGroups')"
+                                                :title="$t('dashboard.instanceDetail.editSecurityGroups')"
+                                            >
                                                 <Pencil :size="12" />
                                             </button>
                                         </span>
@@ -795,11 +976,20 @@ onUnmounted(() => {
                         <h3>{{ $t('dashboard.sshKeys') }}</h3>
                         <div class="key-value-list">
                             <InfoRow v-if="!instance.keys?.length" :label="$t('dashboard.instanceDetail.keyPair')">
-                                <template #label><Key :size="14" /> {{ $t('dashboard.instanceDetail.keyPair') }}</template>
+                                <template #label
+                                    ><Key :size="14" /> {{ $t('dashboard.instanceDetail.keyPair') }}</template
+                                >
                                 -
                             </InfoRow>
-                            <InfoRow v-else v-for="key in instance.keys" :key="key.id" :label="$t('dashboard.instanceDetail.keyPair')">
-                                <template #label><Key :size="14" /> {{ $t('dashboard.instanceDetail.keyPair') }}</template>
+                            <InfoRow
+                                v-else
+                                v-for="key in instance.keys"
+                                :key="key.id"
+                                :label="$t('dashboard.instanceDetail.keyPair')"
+                            >
+                                <template #label
+                                    ><Key :size="14" /> {{ $t('dashboard.instanceDetail.keyPair') }}</template
+                                >
                                 {{ key.name }}
                             </InfoRow>
                         </div>
@@ -808,11 +998,11 @@ onUnmounted(() => {
             </div>
 
             <!-- Monitoring Charts (Monitoring Tab) -->
-            <MonitoringCharts 
+            <MonitoringCharts
                 v-if="activeTab === 'monitoring'"
-                :instance-id="instance.id" 
-                :interfaces="instance.interfaces || []" 
-                :volumes="instance.volumes || []" 
+                :instance-id="instance.id"
+                :interfaces="instance.interfaces || []"
+                :volumes="instance.volumes || []"
             />
 
             <!-- Monitoring & Alerts (Alerts Tab) -->
@@ -843,11 +1033,16 @@ onUnmounted(() => {
                             <tr :class="{ 'row-expanded': expandedRules.has(rule.uuid) }">
                                 <td class="expand-cell">
                                     <button class="btn-icon-sm" @click="toggleRuleExpand(rule.uuid)">
-                                        <ChevronDown :size="14" :class="{ 'icon-rotate': expandedRules.has(rule.uuid) }" />
+                                        <ChevronDown
+                                            :size="14"
+                                            :class="{ 'icon-rotate': expandedRules.has(rule.uuid) }"
+                                        />
                                     </button>
                                     {{ rule.name }}
                                 </td>
-                                <td><span class="badge badge-secondary">{{ rule.typeLabel }}</span></td>
+                                <td>
+                                    <span class="badge badge-secondary">{{ rule.typeLabel }}</span>
+                                </td>
                                 <td>
                                     <span class="badge" :class="rule.enable ? 'badge-success' : 'badge-muted'">
                                         {{ rule.enable ? t('dashboard.alarm.enabled') : t('dashboard.alarm.disabled') }}
@@ -855,7 +1050,11 @@ onUnmounted(() => {
                                 </td>
                                 <td>
                                     <div class="table-actions">
-                                        <button class="btn btn-ghost btn-sm text-danger" @click="unlinkRule(rule)" :disabled="unlinkLoading === rule.uuid">
+                                        <button
+                                            class="btn btn-ghost btn-sm text-danger"
+                                            @click="unlinkRule(rule)"
+                                            :disabled="unlinkLoading === rule.uuid"
+                                        >
                                             <Unlink :size="14" /> {{ t('dashboard.instanceDetail.unlink') }}
                                         </button>
                                     </div>
@@ -867,30 +1066,51 @@ onUnmounted(() => {
                                         <table class="inner-table">
                                             <thead>
                                                 <tr>
-                                                    <th v-if="rule.type === 'bw'">{{ t('dashboard.table.direction') }}</th>
-                                                        <th>{{ t('dashboard.vmAlarmRules.thresholdLimit') }}</th>
-                                                        <th>{{ t('dashboard.vmAlarmRules.durationMin') }}</th>
-                                                        <th>{{ t('dashboard.vmAlarmRules.ruleLevel') }}</th>
-                                                    </tr>
-                                                </thead>
-                                                <tbody>
-                                                    <tr v-for="(detail, idx) in rule.rules" :key="idx">
-                                                        <td v-if="rule.type === 'bw'">
-                                                            {{ detail.direction ? t('dashboard.vmAlarmRules.directions.' + detail.direction) : '-' }}
-                                                        </td>
-                                                        <td>
-                                                            <span v-if="rule.type === 'bw'">{{ (detail.limit / 1024 / 1024).toFixed(0) }} {{ t('specs.mbps') }}</span>
-                                                            <span v-else>{{ detail.limit }}%</span>
-                                                        </td>
-                                                        <td>{{ detail.duration }} {{ t('dashboard.alarm.minutes') }}</td>
-                                                        <td>
-                                                            <span v-if="detail.level" class="badge" :class="getSeverityClass(detail.level)">
-                                                                {{ t('dashboard.vmAlarmRules.levels.' + detail.level.toLowerCase()) }}
-                                                            </span>
-                                                            <span v-else>-</span>
-                                                        </td>
-                                                    </tr>
-                                                </tbody>
+                                                    <th v-if="rule.type === 'bw'">
+                                                        {{ t('dashboard.table.direction') }}
+                                                    </th>
+                                                    <th>{{ t('dashboard.vmAlarmRules.thresholdLimit') }}</th>
+                                                    <th>{{ t('dashboard.vmAlarmRules.durationMin') }}</th>
+                                                    <th>{{ t('dashboard.vmAlarmRules.ruleLevel') }}</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                <tr v-for="(detail, idx) in rule.rules" :key="idx">
+                                                    <td v-if="rule.type === 'bw'">
+                                                        {{
+                                                            detail.direction
+                                                                ? t(
+                                                                      'dashboard.vmAlarmRules.directions.' +
+                                                                          detail.direction
+                                                                  )
+                                                                : '-'
+                                                        }}
+                                                    </td>
+                                                    <td>
+                                                        <span v-if="rule.type === 'bw'"
+                                                            >{{ (detail.limit / 1024 / 1024).toFixed(0) }}
+                                                            {{ t('specs.mbps') }}</span
+                                                        >
+                                                        <span v-else>{{ detail.limit }}%</span>
+                                                    </td>
+                                                    <td>{{ detail.duration }} {{ t('dashboard.alarm.minutes') }}</td>
+                                                    <td>
+                                                        <span
+                                                            v-if="detail.level"
+                                                            class="badge"
+                                                            :class="getSeverityClass(detail.level)"
+                                                        >
+                                                            {{
+                                                                t(
+                                                                    'dashboard.vmAlarmRules.levels.' +
+                                                                        detail.level.toLowerCase()
+                                                                )
+                                                            }}
+                                                        </span>
+                                                        <span v-else>-</span>
+                                                    </td>
+                                                </tr>
+                                            </tbody>
                                         </table>
                                     </div>
                                 </td>
@@ -906,22 +1126,26 @@ onUnmounted(() => {
                 :title="t('dashboard.instanceDetail.linkRule')"
                 @close="showLinkModal = false"
             >
-                        <div v-if="linkLoading" class="text-secondary" style="padding: 12px 0;">{{ $t('messages.loading') }}</div>
-                        <div v-else-if="availableRules.length === 0" class="text-secondary" style="padding: 12px 0;">
-                            {{ t('dashboard.instanceDetail.noAvailableRules') }}
+                <div v-if="linkLoading" class="text-secondary" style="padding: 12px 0">
+                    {{ $t('messages.loading') }}
+                </div>
+                <div v-else-if="availableRules.length === 0" class="text-secondary" style="padding: 12px 0">
+                    {{ t('dashboard.instanceDetail.noAvailableRules') }}
+                </div>
+                <div v-else class="rule-pick-list">
+                    <div v-for="rule in availableRules" :key="rule.uuid" class="rule-pick-item" @click="linkRule(rule)">
+                        <div class="rule-pick-info">
+                            <span class="rule-pick-name">{{ rule.name }}</span>
+                            <span class="badge badge-secondary">{{ rule.typeLabel }}</span>
                         </div>
-                        <div v-else class="rule-pick-list">
-                            <div v-for="rule in availableRules" :key="rule.uuid" class="rule-pick-item" @click="linkRule(rule)">
-                                <div class="rule-pick-info">
-                                    <span class="rule-pick-name">{{ rule.name }}</span>
-                                    <span class="badge badge-secondary">{{ rule.typeLabel }}</span>
-                                </div>
-                                <Link :size="14" class="rule-pick-icon" />
-                            </div>
-                        </div>
+                        <Link :size="14" class="rule-pick-icon" />
+                    </div>
+                </div>
 
                 <template #footer>
-                    <button class="btn btn-secondary btn-sm" @click="showLinkModal = false">{{ t('actions.cancel') }}</button>
+                    <button class="btn btn-secondary btn-sm" @click="showLinkModal = false">
+                        {{ t('actions.cancel') }}
+                    </button>
                 </template>
             </BaseModal>
         </div>
@@ -937,26 +1161,38 @@ onUnmounted(() => {
         />
 
         <!-- Edit Security Groups Modal -->
-        <BaseModal
-            :show="showEditSgModal"
-            @close="showEditSgModal = false"
-        >
+        <BaseModal :show="showEditSgModal" @close="showEditSgModal = false">
             <template #header>
-                <h3><Shield :size="16" /> {{ $t('dashboard.instanceDetail.editSecurityGroupsTitle', { name: editingSgIface?.name || editingSgIface?.id?.substring(0, 8) }) }}</h3>
+                <h3>
+                    <Shield :size="16" />
+                    {{
+                        $t('dashboard.instanceDetail.editSecurityGroupsTitle', {
+                            name: editingSgIface?.name || editingSgIface?.id?.substring(0, 8),
+                        })
+                    }}
+                </h3>
             </template>
 
-                    <div v-if="editSgError" class="modal-error">{{ editSgError }}</div>
-                    <div v-if="sgListTruncated" class="modal-warning">{{ $t('dashboard.instanceDetail.sgListTruncated') }}</div>
-                    <div v-if="editSgLoading && availableSecgroups.length === 0" class="text-secondary empty-hint">{{ $t('messages.loading') }}</div>
-                    <div v-else-if="availableSecgroups.length === 0" class="text-secondary empty-hint">{{ $t('dashboard.instanceDetail.noSecurityGroupsAvailable') }}</div>
-                    <div v-else class="sg-checkbox-list">
-                        <label v-for="sg in availableSecgroups" :key="sg.id" class="sg-checkbox-item">
-                            <input type="checkbox" :checked="selectedSgIds.has(sg.id)" @change="toggleSg(sg.id)" />
-                            <span class="sg-checkbox-name">{{ sg.name }}</span>
-                            <span v-if="sg.is_default" class="status-badge status-running mini-badge">{{ $t('dashboard.instanceDetail.primary') }}</span>
-                        </label>
-                    </div>
-                    <div v-if="selectedSgIds.size === 0 && !editSgLoading" class="sg-empty-hint">{{ $t('dashboard.instanceDetail.sgEmptyWillUseDefault') }}</div>
+            <div v-if="editSgError" class="modal-error">{{ editSgError }}</div>
+            <div v-if="sgListTruncated" class="modal-warning">{{ $t('dashboard.instanceDetail.sgListTruncated') }}</div>
+            <div v-if="editSgLoading && availableSecgroups.length === 0" class="text-secondary empty-hint">
+                {{ $t('messages.loading') }}
+            </div>
+            <div v-else-if="availableSecgroups.length === 0" class="text-secondary empty-hint">
+                {{ $t('dashboard.instanceDetail.noSecurityGroupsAvailable') }}
+            </div>
+            <div v-else class="sg-checkbox-list">
+                <label v-for="sg in availableSecgroups" :key="sg.id" class="sg-checkbox-item">
+                    <input type="checkbox" :checked="selectedSgIds.has(sg.id)" @change="toggleSg(sg.id)" />
+                    <span class="sg-checkbox-name">{{ sg.name }}</span>
+                    <span v-if="sg.is_default" class="status-badge status-running mini-badge">{{
+                        $t('dashboard.instanceDetail.primary')
+                    }}</span>
+                </label>
+            </div>
+            <div v-if="selectedSgIds.size === 0 && !editSgLoading" class="sg-empty-hint">
+                {{ $t('dashboard.instanceDetail.sgEmptyWillUseDefault') }}
+            </div>
 
             <template #footer>
                 <button class="btn btn-ghost" @click="showEditSgModal = false">{{ $t('actions.cancel') }}</button>
@@ -975,37 +1211,48 @@ onUnmounted(() => {
             @close="showResetPasswordModal = false"
             @submit="confirmResetPassword"
         >
-                    <div v-if="resetPasswordError" class="modal-error">{{ resetPasswordError }}</div>
-                    <div class="form-group">
-                        <label>{{ $t('dashboard.instanceDetail.userName') }}</label>
-                        <input v-model="resetPasswordForm.user_name" type="text" class="form-input" />
-                    </div>
-                    <div class="form-group">
-                        <label>{{ $t('auth.password') }}</label>
-                        <div class="password-input-wrapper">
-                            <input v-model="resetPasswordForm.password" :type="showResetPassword ? 'text' : 'password'" class="form-input" :placeholder="$t('dashboard.instanceDetail.passwordPlaceholder')" />
-                            <button class="password-toggle-btn" type="button" @click="showResetPassword = !showResetPassword">
-                                <Eye v-if="!showResetPassword" :size="14" />
-                                <EyeOff v-else :size="14" />
-                            </button>
-                        </div>
-                    </div>
-                    <div class="form-group">
-                        <label>{{ $t('dashboard.instanceDetail.confirmPassword') }}</label>
-                        <div class="password-input-wrapper">
-                            <input v-model="resetPasswordForm.confirmPassword" :type="showResetPassword ? 'text' : 'password'" class="form-input" />
-                            <button class="password-toggle-btn" type="button" @click="showResetPassword = !showResetPassword">
-                                <Eye v-if="!showResetPassword" :size="14" />
-                                <EyeOff v-else :size="14" />
-                            </button>
-                        </div>
-                    </div>
-                    <button class="btn btn-ghost btn-sm" type="button" @click="generateRandomPassword" style="margin-top: 4px;">
-                        <Shuffle :size="14" /> {{ $t('dashboard.instanceDetail.generatePassword') }}
+            <div v-if="resetPasswordError" class="modal-error">{{ resetPasswordError }}</div>
+            <div class="form-group">
+                <label>{{ $t('dashboard.instanceDetail.userName') }}</label>
+                <input v-model="resetPasswordForm.user_name" type="text" class="form-input" />
+            </div>
+            <div class="form-group">
+                <label>{{ $t('auth.password') }}</label>
+                <div class="password-input-wrapper">
+                    <input
+                        v-model="resetPasswordForm.password"
+                        :type="showResetPassword ? 'text' : 'password'"
+                        class="form-input"
+                        :placeholder="$t('dashboard.instanceDetail.passwordPlaceholder')"
+                    />
+                    <button class="password-toggle-btn" type="button" @click="showResetPassword = !showResetPassword">
+                        <Eye v-if="!showResetPassword" :size="14" />
+                        <EyeOff v-else :size="14" />
                     </button>
+                </div>
+            </div>
+            <div class="form-group">
+                <label>{{ $t('dashboard.instanceDetail.confirmPassword') }}</label>
+                <div class="password-input-wrapper">
+                    <input
+                        v-model="resetPasswordForm.confirmPassword"
+                        :type="showResetPassword ? 'text' : 'password'"
+                        class="form-input"
+                    />
+                    <button class="password-toggle-btn" type="button" @click="showResetPassword = !showResetPassword">
+                        <Eye v-if="!showResetPassword" :size="14" />
+                        <EyeOff v-else :size="14" />
+                    </button>
+                </div>
+            </div>
+            <button class="btn btn-ghost btn-sm" type="button" @click="generateRandomPassword" style="margin-top: 4px">
+                <Shuffle :size="14" /> {{ $t('dashboard.instanceDetail.generatePassword') }}
+            </button>
 
             <template #footer>
-                <button type="button" class="btn btn-secondary btn-sm" @click="showResetPasswordModal = false">{{ $t('actions.cancel') }}</button>
+                <button type="button" class="btn btn-secondary btn-sm" @click="showResetPasswordModal = false">
+                    {{ $t('actions.cancel') }}
+                </button>
                 <button type="submit" class="btn btn-primary btn-sm" :disabled="resetPasswordLoading">
                     <span v-if="resetPasswordLoading" class="loading-spinner small"></span>
                     {{ $t('actions.confirm') }}
@@ -1022,18 +1269,20 @@ onUnmounted(() => {
             @close="showResizeModal = false"
             @submit="confirmResize"
         >
-                    <div v-if="resizeError" class="modal-error">{{ resizeError }}</div>
-                    <div class="form-group">
-                        <label>{{ $t('dashboard.instanceDetail.cpuLabel') }}</label>
-                        <input v-model.number="resizeForm.cpu" type="number" min="1" class="form-input" />
-                    </div>
-                    <div class="form-group">
-                        <label>{{ $t('dashboard.instanceDetail.ramLabel') }}</label>
-                        <input v-model.number="resizeForm.memory" type="number" min="1" class="form-input" />
-                    </div>
+            <div v-if="resizeError" class="modal-error">{{ resizeError }}</div>
+            <div class="form-group">
+                <label>{{ $t('dashboard.instanceDetail.cpuLabel') }}</label>
+                <input v-model.number="resizeForm.cpu" type="number" min="1" class="form-input" />
+            </div>
+            <div class="form-group">
+                <label>{{ $t('dashboard.instanceDetail.ramLabel') }}</label>
+                <input v-model.number="resizeForm.memory" type="number" min="1" class="form-input" />
+            </div>
 
             <template #footer>
-                <button type="button" class="btn btn-secondary btn-sm" @click="showResizeModal = false">{{ $t('actions.cancel') }}</button>
+                <button type="button" class="btn btn-secondary btn-sm" @click="showResizeModal = false">
+                    {{ $t('actions.cancel') }}
+                </button>
                 <button type="submit" class="btn btn-primary btn-sm" :disabled="resizeLoading">
                     <span v-if="resizeLoading" class="loading-spinner small"></span>
                     {{ $t('actions.confirm') }}
@@ -1050,14 +1299,16 @@ onUnmounted(() => {
             @close="showRenameModal = false"
             @submit="confirmRename"
         >
-                    <div v-if="renameError" class="modal-error">{{ renameError }}</div>
-                    <div class="form-group">
-                        <label>{{ $t('dashboard.instanceDetail.hostname') }}</label>
-                        <input v-model="renameForm.hostname" type="text" class="form-input" />
-                    </div>
+            <div v-if="renameError" class="modal-error">{{ renameError }}</div>
+            <div class="form-group">
+                <label>{{ $t('dashboard.instanceDetail.hostname') }}</label>
+                <input v-model="renameForm.hostname" type="text" class="form-input" />
+            </div>
 
             <template #footer>
-                <button type="button" class="btn btn-secondary btn-sm" @click="showRenameModal = false">{{ $t('actions.cancel') }}</button>
+                <button type="button" class="btn btn-secondary btn-sm" @click="showRenameModal = false">
+                    {{ $t('actions.cancel') }}
+                </button>
                 <button type="submit" class="btn btn-primary btn-sm" :disabled="renameLoading">
                     <span v-if="renameLoading" class="loading-spinner small"></span>
                     {{ $t('actions.confirm') }}
@@ -1077,7 +1328,8 @@ onUnmounted(() => {
     margin-bottom: var(--spacing-4);
 }
 
-.loading-container, .error-container {
+.loading-container,
+.error-container {
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -1210,11 +1462,15 @@ onUnmounted(() => {
 }
 
 .dropdown-enter-active {
-    transition: opacity 0.15s, transform 0.15s;
+    transition:
+        opacity 0.15s,
+        transform 0.15s;
 }
 
 .dropdown-leave-active {
-    transition: opacity 0.1s, transform 0.1s;
+    transition:
+        opacity 0.1s,
+        transform 0.1s;
 }
 
 .dropdown-enter-from {
@@ -1475,13 +1731,33 @@ onUnmounted(() => {
     border-bottom: none;
 }
 
-.badge-critical { background: var(--error-light); color: var(--error-dark); }
-.badge-warning { background: var(--warning-light); color: var(--warning-dark); }
-.badge-info { background: var(--info-light); color: var(--info-dark); }
-.badge-success { background: var(--success-light); color: var(--success-dark); }
-.badge-muted { background: var(--bg-tertiary); color: var(--text-tertiary); }
-.badge-secondary { background: var(--accent-purple-light); color: var(--accent-purple); }
-.text-danger { color: var(--error-color); }
+.badge-critical {
+    background: var(--error-light);
+    color: var(--error-dark);
+}
+.badge-warning {
+    background: var(--warning-light);
+    color: var(--warning-dark);
+}
+.badge-info {
+    background: var(--info-light);
+    color: var(--info-dark);
+}
+.badge-success {
+    background: var(--success-light);
+    color: var(--success-dark);
+}
+.badge-muted {
+    background: var(--bg-tertiary);
+    color: var(--text-tertiary);
+}
+.badge-secondary {
+    background: var(--accent-purple-light);
+    color: var(--accent-purple);
+}
+.text-danger {
+    color: var(--error-color);
+}
 
 .expand-cell {
     display: flex;
@@ -1692,8 +1968,6 @@ onUnmounted(() => {
     color: var(--primary-color);
 }
 
-
-
 /* Security Group inline edit */
 .sg-value-row {
     display: inline-flex;
@@ -1740,7 +2014,7 @@ onUnmounted(() => {
     background: var(--bg-secondary);
 }
 
-.sg-checkbox-item input[type="checkbox"] {
+.sg-checkbox-item input[type='checkbox'] {
     cursor: pointer;
 }
 

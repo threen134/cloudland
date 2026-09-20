@@ -100,7 +100,6 @@ const toggleVisibility = async () => {
 
 const goBack = useGoBack('images')
 
-
 const getStatusText = (status: string | undefined) => {
     if (!status) return t('dashboard.imageStatus.active')
     const key = status.toLowerCase()
@@ -145,7 +144,11 @@ onMounted(fetchImage)
                         </h2>
                         <div class="image-id-row">
                             <span class="image-id">{{ image.id }}</span>
-                            <button class="copy-btn" @click="copyToClipboard(image.id, 'id')" :title="$t('messages.copied')">
+                            <button
+                                class="copy-btn"
+                                @click="copyToClipboard(image.id, 'id')"
+                                :title="$t('messages.copied')"
+                            >
                                 <Check v-if="copiedField === 'id'" :size="12" class="copied-icon" />
                                 <Copy v-else :size="12" />
                             </button>
@@ -159,13 +162,27 @@ onMounted(fetchImage)
                         </button>
                         <Transition name="dropdown">
                             <div v-if="showActionMenu" class="dropdown-menu" @click="closeActionMenu">
-                                <button v-if="isSuperuser" class="dropdown-item" @click="toggleVisibility" :disabled="togglingVisibility">
+                                <button
+                                    v-if="isSuperuser"
+                                    class="dropdown-item"
+                                    @click="toggleVisibility"
+                                    :disabled="togglingVisibility"
+                                >
                                     <EyeOff v-if="image.public" :size="14" />
                                     <Eye v-else :size="14" />
-                                    {{ image.public ? $t('dashboard.table.setPrivate') : $t('dashboard.table.setPublic') }}
+                                    {{
+                                        image.public
+                                            ? $t('dashboard.table.setPrivate')
+                                            : $t('dashboard.table.setPublic')
+                                    }}
                                 </button>
                                 <div v-if="isSuperuser && canDelete" class="dropdown-divider"></div>
-                                <button v-if="canDelete" class="dropdown-item dropdown-item-danger" @click="openDeleteModal" :disabled="deleting">
+                                <button
+                                    v-if="canDelete"
+                                    class="dropdown-item dropdown-item-danger"
+                                    @click="openDeleteModal"
+                                    :disabled="deleting"
+                                >
                                     <Trash2 :size="14" /> {{ $t('actions.delete') }}
                                 </button>
                             </div>
@@ -188,7 +205,9 @@ onMounted(fetchImage)
                                 {{ getStatusText(image.status) }}
                             </InfoRow>
                             <InfoRow :label="$t('dashboard.table.createdAt')">
-                                <template #label><CalendarDays :size="14" /> {{ $t('dashboard.table.createdAt') }}</template>
+                                <template #label
+                                    ><CalendarDays :size="14" /> {{ $t('dashboard.table.createdAt') }}</template
+                                >
                                 {{ image.created_at || '-' }}
                             </InfoRow>
                         </div>
@@ -200,8 +219,12 @@ onMounted(fetchImage)
                         <div class="key-value-list">
                             <InfoRow :label="$t('dashboard.table.osFamily')">{{ image.os_family || '-' }}</InfoRow>
                             <InfoRow :label="$t('dashboard.table.osVersion')">{{ image.os_version || '-' }}</InfoRow>
-                            <InfoRow :label="$t('dashboard.table.architecture')" mono>{{ image.architecture || 'x86_64' }}</InfoRow>
-                            <InfoRow :label="$t('dashboard.table.bootLoader')">{{ image.boot_loader || 'BIOS' }}</InfoRow>
+                            <InfoRow :label="$t('dashboard.table.architecture')" mono>{{
+                                image.architecture || 'x86_64'
+                            }}</InfoRow>
+                            <InfoRow :label="$t('dashboard.table.bootLoader')">{{
+                                image.boot_loader || 'BIOS'
+                            }}</InfoRow>
                         </div>
                     </div>
                 </div>
@@ -215,7 +238,9 @@ onMounted(fetchImage)
                                 <span class="uppercase">{{ image.format || 'qcow2' }}</span>
                             </InfoRow>
                             <InfoRow :label="$t('dashboard.table.size')">{{ formatBytes(image.size) }}</InfoRow>
-                            <InfoRow :label="$t('dashboard.table.defaultUser')" mono>{{ image.user || 'root' }}</InfoRow>
+                            <InfoRow :label="$t('dashboard.table.defaultUser')" mono>{{
+                                image.user || 'root'
+                            }}</InfoRow>
                         </div>
                     </div>
                 </div>
@@ -243,7 +268,8 @@ onMounted(fetchImage)
     margin-bottom: var(--spacing-4);
 }
 
-.loading-container, .error-container {
+.loading-container,
+.error-container {
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -396,11 +422,15 @@ onMounted(fetchImage)
 }
 
 .dropdown-enter-active {
-    transition: opacity 0.15s, transform 0.15s;
+    transition:
+        opacity 0.15s,
+        transform 0.15s;
 }
 
 .dropdown-leave-active {
-    transition: opacity 0.1s, transform 0.1s;
+    transition:
+        opacity 0.1s,
+        transform 0.1s;
 }
 
 .dropdown-enter-from {

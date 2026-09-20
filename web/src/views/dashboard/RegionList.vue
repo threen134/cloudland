@@ -3,10 +3,28 @@ import { ref, onMounted, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import {
-    Globe2, Plus, Search, RefreshCw, Settings2, Trash2,
-    CheckCircle2, AlertCircle, KeyRound, Copy, Check, Loader2, Wrench
+    Globe2,
+    Plus,
+    Search,
+    RefreshCw,
+    Settings2,
+    Trash2,
+    CheckCircle2,
+    AlertCircle,
+    KeyRound,
+    Copy,
+    Check,
+    Loader2,
+    Wrench,
 } from 'lucide-vue-next'
-import { regionsApi, type RegionPublic, type RegionAdmin, type RegionCreated, type CreateRegionPayload, type UpdateRegionPayload } from '../../api/regions'
+import {
+    regionsApi,
+    type RegionPublic,
+    type RegionAdmin,
+    type RegionCreated,
+    type CreateRegionPayload,
+    type UpdateRegionPayload,
+} from '../../api/regions'
 import { useToast } from '../../composables/useToast'
 import { useCopyId } from '../../composables/useCopyId'
 import { errorMessage } from '../../utils/error'
@@ -26,7 +44,7 @@ const searchQuery = ref('')
 // 状态列显示的是翻译后的文案，排序按原始状态串
 // 参数写成可选字段的结构类型，才能直接交给 DataTable 的 sortValue（它拿到的是通用行对象）
 const regionState = (r: { maintenance_mode?: boolean; is_available?: boolean }) =>
-    (r.maintenance_mode ? 'maintenance' : r.is_available ? 'available' : 'offline')
+    r.maintenance_mode ? 'maintenance' : r.is_available ? 'available' : 'offline'
 
 const columns = computed<Column[]>(() => [
     { key: 'name', label: t('dashboard.table.nameId'), sortable: true, sortValue: (r) => r.display_name || r.name },
@@ -43,7 +61,7 @@ const createForm = ref<CreateRegionPayload>({
     display_name: '',
     internal_endpoint: '',
     internal_secret: 'auto-generate',
-    description: ''
+    description: '',
 })
 const endpointHost = ref('')
 const endpointPort = ref('8255')
@@ -73,10 +91,11 @@ const { copiedId, copyId } = useCopyId()
 const filteredRegions = computed(() => {
     if (!searchQuery.value) return regions.value
     const q = searchQuery.value.toLowerCase()
-    return regions.value.filter(r =>
-        r.name.toLowerCase().includes(q) ||
-        (r.display_name && r.display_name.toLowerCase().includes(q)) ||
-        r.uuid.toLowerCase().includes(q)
+    return regions.value.filter(
+        (r) =>
+            r.name.toLowerCase().includes(q) ||
+            (r.display_name && r.display_name.toLowerCase().includes(q)) ||
+            r.uuid.toLowerCase().includes(q)
     )
 })
 
@@ -102,7 +121,7 @@ const splitEndpoint = (endpoint: string) => {
             const url = new URL(endpoint)
             return {
                 host: `${url.protocol}//${url.hostname}`,
-                port: url.port || '8255'
+                port: url.port || '8255',
             }
         }
     } catch {
@@ -111,10 +130,15 @@ const splitEndpoint = (endpoint: string) => {
     return { host: endpoint, port: '8255' }
 }
 
-
 // Create
 const openCreateModal = () => {
-    createForm.value = { name: '', display_name: '', internal_endpoint: '', internal_secret: 'auto-generate', description: '' }
+    createForm.value = {
+        name: '',
+        display_name: '',
+        internal_endpoint: '',
+        internal_secret: 'auto-generate',
+        description: '',
+    }
     endpointHost.value = ''
     endpointPort.value = '8255'
     createdSecret.value = null
@@ -123,7 +147,7 @@ const openCreateModal = () => {
 
 const handleCreate = async () => {
     if (!createForm.value.name || !endpointHost.value) return
-    
+
     let host = endpointHost.value.trim()
     if (!host.startsWith('http://') && !host.startsWith('https://')) {
         host = 'http://' + host
@@ -134,7 +158,7 @@ const handleCreate = async () => {
 
     creating.value = true
     try {
-        const created = await regionsApi.createRegion(createForm.value) as RegionCreated
+        const created = (await regionsApi.createRegion(createForm.value)) as RegionCreated
         createdSecret.value = created.internal_secret
         toast.success(t('dashboard.regionActions.createdSuccess'))
         await fetchRegions()
@@ -151,9 +175,9 @@ const handleCreate = async () => {
 // Edit
 const openEditModal = async (region: RegionPublic) => {
     try {
-        const detail = await regionsApi.getRegion(region.uuid) as RegionAdmin
+        const detail = (await regionsApi.getRegion(region.uuid)) as RegionAdmin
         editingRegion.value = detail
-        
+
         const { host, port } = splitEndpoint(detail.internal_endpoint)
         endpointHost.value = host
         endpointPort.value = port
@@ -162,7 +186,7 @@ const openEditModal = async (region: RegionPublic) => {
             display_name: detail.display_name || '',
             internal_endpoint: detail.internal_endpoint,
             maintenance_mode: detail.maintenance_mode,
-            description: detail.description || ''
+            description: detail.description || '',
         }
         showEditModal.value = true
     } catch (err) {
@@ -248,7 +272,9 @@ const copyToClipboard = (text: string, field: string) => {
     navigator.clipboard.writeText(text).then(() => {
         copiedField.value = field
         toast.success(t('dashboard.regionActions.secretCopied'))
-        setTimeout(() => { copiedField.value = null }, 2000)
+        setTimeout(() => {
+            copiedField.value = null
+        }, 2000)
     })
 }
 
@@ -260,7 +286,7 @@ onMounted(fetchRegions)
         <PageToolbar v-model:search="searchQuery">
             <template #actions>
                 <button class="btn btn-secondary btn-sm btn-icon" @click="fetchRegions" :title="t('actions.refresh')">
-                    <RefreshCw :size="14" :class="{ 'spinning': isLoading }" />
+                    <RefreshCw :size="14" :class="{ spinning: isLoading }" />
                 </button>
                 <button class="btn btn-primary btn-sm" @click="openCreateModal">
                     <Plus :size="14" />
@@ -279,11 +305,11 @@ onMounted(fetchRegions)
         >
             <template #empty>
                 <div v-if="searchQuery">
-                    <Search :size="48" style="opacity: 0.3; margin-bottom: 16px;" />
+                    <Search :size="48" style="opacity: 0.3; margin-bottom: 16px" />
                     <p>{{ t('messages.noResults') }}</p>
                 </div>
                 <div v-else>
-                    <Globe2 :size="48" style="opacity: 0.3; margin-bottom: 16px;" />
+                    <Globe2 :size="48" style="opacity: 0.3; margin-bottom: 16px" />
                     <p>{{ t('dashboard.regionActions.noRegions') }}</p>
                 </div>
             </template>
@@ -296,25 +322,44 @@ onMounted(fetchRegions)
                     <div>
                         <div class="resource-name">{{ region.display_name || region.name }}</div>
                         <div class="resource-id-row">
-                          <span class="resource-id" :title="region.name + ' / ' + region.uuid">
-                            {{ region.name }} / {{ region.uuid.slice(0, 8) }}...
-                          </span>
-                          <button class="copy-btn-mini" @click.stop.prevent="copyId(region.uuid)" :title="t('actions.copy')" :aria-label="t('actions.copy')">
-                            <Check v-if="copiedId === region.uuid" :size="10" style="color: var(--success-color);" />
-                            <Copy v-else :size="10" />
-                          </button>
+                            <span class="resource-id" :title="region.name + ' / ' + region.uuid">
+                                {{ region.name }} / {{ region.uuid.slice(0, 8) }}...
+                            </span>
+                            <button
+                                class="copy-btn-mini"
+                                @click.stop.prevent="copyId(region.uuid)"
+                                :title="t('actions.copy')"
+                                :aria-label="t('actions.copy')"
+                            >
+                                <Check v-if="copiedId === region.uuid" :size="10" style="color: var(--success-color)" />
+                                <Copy v-else :size="10" />
+                            </button>
                         </div>
                     </div>
                 </div>
             </template>
 
             <template #cell-status="{ row: region }">
-                <span class="status-pill"
-                    :class="region.maintenance_mode ? 'status-maintenance' : region.is_available ? 'status-available' : 'status-offline'">
+                <span
+                    class="status-pill"
+                    :class="
+                        region.maintenance_mode
+                            ? 'status-maintenance'
+                            : region.is_available
+                              ? 'status-available'
+                              : 'status-offline'
+                    "
+                >
                     <Wrench v-if="region.maintenance_mode" :size="12" />
                     <CheckCircle2 v-else-if="region.is_available" :size="12" />
                     <AlertCircle v-else :size="12" />
-                    {{ region.maintenance_mode ? t('dashboard.regionActions.maintenance') : region.is_available ? t('dashboard.regionActions.available') : t('dashboard.regionActions.offline') }}
+                    {{
+                        region.maintenance_mode
+                            ? t('dashboard.regionActions.maintenance')
+                            : region.is_available
+                              ? t('dashboard.regionActions.available')
+                              : t('dashboard.regionActions.offline')
+                    }}
                 </span>
             </template>
 
@@ -327,10 +372,18 @@ onMounted(fetchRegions)
                     <button class="icon-btn-table" @click="openEditModal(region)" :title="t('actions.edit')">
                         <Settings2 :size="16" />
                     </button>
-                    <button class="icon-btn-table" @click="confirmRotate(region)" :title="t('dashboard.regionActions.rotateSecret')">
+                    <button
+                        class="icon-btn-table"
+                        @click="confirmRotate(region)"
+                        :title="t('dashboard.regionActions.rotateSecret')"
+                    >
                         <KeyRound :size="16" />
                     </button>
-                    <button class="icon-btn-table text-error" @click="confirmDelete(region)" :title="t('actions.delete')">
+                    <button
+                        class="icon-btn-table text-error"
+                        @click="confirmDelete(region)"
+                        :title="t('actions.delete')"
+                    >
                         <Trash2 :size="16" />
                     </button>
                 </div>
@@ -364,18 +417,34 @@ onMounted(fetchRegions)
                 <div v-else class="form-stack">
                     <div class="form-group">
                         <label class="form-label">{{ t('dashboard.regionActions.name') }} *</label>
-                        <input type="text" v-model="createForm.name" class="form-input" :placeholder="t('dashboard.forms.placeholder.regionIdExample')" />
+                        <input
+                            type="text"
+                            v-model="createForm.name"
+                            class="form-input"
+                            :placeholder="t('dashboard.forms.placeholder.regionIdExample')"
+                        />
                         <span class="form-hint">{{ t('dashboard.regionActions.nameHint') }}</span>
                     </div>
                     <div class="form-group">
                         <label class="form-label">{{ t('dashboard.regionActions.displayName') }}</label>
-                        <input type="text" v-model="createForm.display_name" class="form-input" :placeholder="t('dashboard.forms.placeholder.regionNameExample')" />
+                        <input
+                            type="text"
+                            v-model="createForm.display_name"
+                            class="form-input"
+                            :placeholder="t('dashboard.forms.placeholder.regionNameExample')"
+                        />
                     </div>
                     <div class="form-group">
                         <label class="form-label">{{ t('dashboard.regionActions.internalEndpoint') }} *</label>
-                        <div style="display: flex; gap: 8px;">
-                            <input type="text" v-model="endpointHost" class="form-input" style="flex: 1;" :placeholder="t('dashboard.forms.placeholder.endpointExample')" />
-                            <div style="width: 100px;">
+                        <div style="display: flex; gap: 8px">
+                            <input
+                                type="text"
+                                v-model="endpointHost"
+                                class="form-input"
+                                style="flex: 1"
+                                :placeholder="t('dashboard.forms.placeholder.endpointExample')"
+                            />
+                            <div style="width: 100px">
                                 <input type="text" v-model="endpointPort" class="form-input" placeholder="8255" />
                             </div>
                         </div>
@@ -393,10 +462,18 @@ onMounted(fetchRegions)
                 </div>
 
                 <template #footer>
-                    <button v-if="createdSecret" class="btn btn-primary" @click="closeAndReload">{{ t('actions.close') }}</button>
+                    <button v-if="createdSecret" class="btn btn-primary" @click="closeAndReload">
+                        {{ t('actions.close') }}
+                    </button>
                     <template v-else>
-                        <button class="btn btn-secondary" @click="showCreateModal = false">{{ t('actions.cancel') }}</button>
-                        <button class="btn btn-primary" @click="handleCreate" :disabled="creating || !createForm.name || !endpointHost">
+                        <button class="btn btn-secondary" @click="showCreateModal = false">
+                            {{ t('actions.cancel') }}
+                        </button>
+                        <button
+                            class="btn btn-primary"
+                            @click="handleCreate"
+                            :disabled="creating || !createForm.name || !endpointHost"
+                        >
                             <Loader2 v-if="creating" :size="14" class="spinning" />
                             {{ creating ? t('messages.creating') : t('actions.create') }}
                         </button>
@@ -423,9 +500,9 @@ onMounted(fetchRegions)
                     </div>
                     <div class="form-group">
                         <label class="form-label">{{ t('dashboard.regionActions.internalEndpoint') }} *</label>
-                        <div style="display: flex; gap: 8px;">
-                            <input type="text" v-model="endpointHost" class="form-input" style="flex: 1;" />
-                            <div style="width: 100px;">
+                        <div style="display: flex; gap: 8px">
+                            <input type="text" v-model="endpointHost" class="form-input" style="flex: 1" />
+                            <div style="width: 100px">
                                 <input type="text" v-model="endpointPort" class="form-input" placeholder="8255" />
                             </div>
                         </div>
@@ -435,7 +512,7 @@ onMounted(fetchRegions)
                         <input type="text" v-model="editForm.description" class="form-input" />
                     </div>
                     <div class="form-group">
-                        <label class="form-label" style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                        <label class="form-label" style="display: flex; align-items: center; gap: 8px; cursor: pointer">
                             <input type="checkbox" v-model="editForm.maintenance_mode" />
                             {{ t('dashboard.regionActions.maintenanceMode') }}
                         </label>
@@ -444,7 +521,9 @@ onMounted(fetchRegions)
                 </div>
 
                 <template #footer>
-                    <button type="button" class="btn btn-secondary" @click="showEditModal = false">{{ t('actions.cancel') }}</button>
+                    <button type="button" class="btn btn-secondary" @click="showEditModal = false">
+                        {{ t('actions.cancel') }}
+                    </button>
                     <button type="submit" class="btn btn-primary" :disabled="editing">
                         <Loader2 v-if="editing" :size="14" class="spinning" />
                         {{ editing ? t('messages.saving') : t('actions.save') }}
@@ -461,14 +540,22 @@ onMounted(fetchRegions)
                 :loading="deleting"
                 @close="showDeleteModal = false"
             >
-                <p>{{ t('dashboard.regionActions.deleteConfirm', { name: deletingRegion?.display_name || deletingRegion?.name }) }}</p>
+                <p>
+                    {{
+                        t('dashboard.regionActions.deleteConfirm', {
+                            name: deletingRegion?.display_name || deletingRegion?.name,
+                        })
+                    }}
+                </p>
                 <div class="delete-warning-box">
                     <i class="fas fa-exclamation-triangle"></i>
                     <p>{{ t('dashboard.regionActions.deleteWarning') }}</p>
                 </div>
 
                 <template #footer>
-                    <button class="btn btn-secondary" @click="showDeleteModal = false">{{ t('actions.cancel') }}</button>
+                    <button class="btn btn-secondary" @click="showDeleteModal = false">
+                        {{ t('actions.cancel') }}
+                    </button>
                     <button
                         class="btn btn-danger"
                         @click="handleDelete"
@@ -503,12 +590,22 @@ onMounted(fetchRegions)
                         </button>
                     </div>
                 </div>
-                <p v-else>{{ t('dashboard.regionActions.rotateSecretConfirm', { name: rotatingRegion?.display_name || rotatingRegion?.name }) }}</p>
+                <p v-else>
+                    {{
+                        t('dashboard.regionActions.rotateSecretConfirm', {
+                            name: rotatingRegion?.display_name || rotatingRegion?.name,
+                        })
+                    }}
+                </p>
 
                 <template #footer>
-                    <button v-if="rotatedSecret" class="btn btn-primary" @click="showRotateModal = false">{{ t('actions.close') }}</button>
+                    <button v-if="rotatedSecret" class="btn btn-primary" @click="showRotateModal = false">
+                        {{ t('actions.close') }}
+                    </button>
                     <template v-else>
-                        <button class="btn btn-secondary" @click="showRotateModal = false">{{ t('actions.cancel') }}</button>
+                        <button class="btn btn-secondary" @click="showRotateModal = false">
+                            {{ t('actions.cancel') }}
+                        </button>
                         <button class="btn btn-warning" @click="handleRotate" :disabled="rotating">
                             <Loader2 v-if="rotating" :size="14" class="spinning" />
                             {{ rotating ? '...' : t('dashboard.regionActions.rotateSecret') }}
@@ -542,9 +639,18 @@ onMounted(fetchRegions)
     font-weight: 600;
 }
 
-.status-available { background: rgba(16, 185, 129, 0.1); color: var(--success-color); }
-.status-offline { background: rgba(239, 68, 68, 0.1); color: #ef4444; }
-.status-maintenance { background: rgba(245, 158, 11, 0.1); color: #d97706; }
+.status-available {
+    background: rgba(16, 185, 129, 0.1);
+    color: var(--success-color);
+}
+.status-offline {
+    background: rgba(239, 68, 68, 0.1);
+    color: #ef4444;
+}
+.status-maintenance {
+    background: rgba(245, 158, 11, 0.1);
+    color: #d97706;
+}
 
 .table-actions {
     display: flex;
@@ -566,68 +672,153 @@ onMounted(fetchRegions)
     transition: all 0.2s;
 }
 
-.icon-btn-table:hover { background-color: var(--bg-tertiary); color: var(--primary-500); }
-.icon-btn-table.text-error:hover { background-color: #fef2f2; color: var(--error-dark); }
+.icon-btn-table:hover {
+    background-color: var(--bg-tertiary);
+    color: var(--primary-500);
+}
+.icon-btn-table.text-error:hover {
+    background-color: #fef2f2;
+    color: var(--error-dark);
+}
 
 /* Modals */
-.form-stack { display: flex; flex-direction: column; gap: 16px; }
-.form-group { display: flex; flex-direction: column; }
-.form-label { font-size: 0.8125rem; color: var(--text-secondary); margin-bottom: 4px; font-weight: 500; }
+.form-stack {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+.form-group {
+    display: flex;
+    flex-direction: column;
+}
+.form-label {
+    font-size: 0.8125rem;
+    color: var(--text-secondary);
+    margin-bottom: 4px;
+    font-weight: 500;
+}
 
 .form-input {
-    width: 100%; padding: 8px 12px;
-    border: 1px solid var(--border-light); border-radius: var(--radius-md);
-    font-size: 0.875rem; background: var(--bg-primary); color: var(--text-primary);
+    width: 100%;
+    padding: 8px 12px;
+    border: 1px solid var(--border-light);
+    border-radius: var(--radius-md);
+    font-size: 0.875rem;
+    background: var(--bg-primary);
+    color: var(--text-primary);
 }
 
-.form-input:focus { outline: none; border-color: var(--primary-300); box-shadow: 0 0 0 2px var(--primary-100); }
-.form-hint { color: var(--text-light); font-size: 0.75rem; margin-top: 4px; }
+.form-input:focus {
+    outline: none;
+    border-color: var(--primary-300);
+    box-shadow: 0 0 0 2px var(--primary-100);
+}
+.form-hint {
+    color: var(--text-light);
+    font-size: 0.75rem;
+    margin-top: 4px;
+}
 
 .btn-danger {
-    background: #ef4444; color: white; border: none;
-    padding: 8px 16px; border-radius: var(--radius-md); cursor: pointer; font-weight: 500;
+    background: #ef4444;
+    color: white;
+    border: none;
+    padding: 8px 16px;
+    border-radius: var(--radius-md);
+    cursor: pointer;
+    font-weight: 500;
 }
-.btn-danger:hover { background: #dc2626; }
-.btn-danger:disabled { opacity: 0.5; cursor: not-allowed; }
+.btn-danger:hover {
+    background: #dc2626;
+}
+.btn-danger:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
 
 .btn-warning {
-    background: #f59e0b; color: white; border: none;
-    padding: 8px 16px; border-radius: var(--radius-md); cursor: pointer; font-weight: 500;
+    background: #f59e0b;
+    color: white;
+    border: none;
+    padding: 8px 16px;
+    border-radius: var(--radius-md);
+    cursor: pointer;
+    font-weight: 500;
 }
-.btn-warning:hover { background: #d97706; }
-.btn-warning:disabled { opacity: 0.5; cursor: not-allowed; }
+.btn-warning:hover {
+    background: #d97706;
+}
+.btn-warning:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
 
 /* Secret display */
-.secret-display { display: flex; flex-direction: column; gap: 12px; }
+.secret-display {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
 
 .secret-warning {
-    display: flex; align-items: center; gap: 8px;
-    padding: 12px 16px; background: var(--warning-light); border: 1px solid #fde68a;
-    border-radius: var(--radius-md); color: #92400e; font-size: 0.875rem; font-weight: 500;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 12px 16px;
+    background: var(--warning-light);
+    border: 1px solid #fde68a;
+    border-radius: var(--radius-md);
+    color: #92400e;
+    font-size: 0.875rem;
+    font-weight: 500;
 }
 
 .secret-box {
-    display: flex; align-items: center; gap: 8px;
-    padding: 12px; background: var(--bg-tertiary); border-radius: var(--radius-md);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 12px;
+    background: var(--bg-tertiary);
+    border-radius: var(--radius-md);
     border: 1px solid var(--border-light);
 }
 
 .secret-box code {
-    flex: 1; font-size: 0.8125rem; word-break: break-all;
-    font-family: var(--font-family-mono); color: var(--text-primary);
+    flex: 1;
+    font-size: 0.8125rem;
+    word-break: break-all;
+    font-family: var(--font-family-mono);
+    color: var(--text-primary);
 }
 
 .copy-btn {
-    background: none; border: 1px solid var(--border-light);
-    border-radius: var(--radius-sm); padding: 4px 8px; cursor: pointer;
-    color: var(--text-light); display: inline-flex; align-items: center;
+    background: none;
+    border: 1px solid var(--border-light);
+    border-radius: var(--radius-sm);
+    padding: 4px 8px;
+    cursor: pointer;
+    color: var(--text-light);
+    display: inline-flex;
+    align-items: center;
     transition: all 0.15s;
 }
-.copy-btn:hover { color: var(--primary-color); border-color: var(--primary-200); background: var(--primary-50); }
-.copied-icon { color: var(--success-color); }
+.copy-btn:hover {
+    color: var(--primary-color);
+    border-color: var(--primary-200);
+    background: var(--primary-50);
+}
+.copied-icon {
+    color: var(--success-color);
+}
 
-@keyframes spin { to { transform: rotate(360deg); } }
-.spinning { animation: spin 1s linear infinite; }
+@keyframes spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+.spinning {
+    animation: spin 1s linear infinite;
+}
 
 .delete-warning-box {
     display: flex;

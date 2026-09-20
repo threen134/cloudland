@@ -20,12 +20,12 @@ export const useRegionStore = defineStore('region', () => {
 
     // Current region computed property
     const currentRegion = computed(() => {
-        return regions.value.find(r => r.id === currentRegionId.value) || null
+        return regions.value.find((r) => r.id === currentRegionId.value) || null
     })
 
     // Available regions (filtering by status)
     const availableRegions = computed(() => {
-        return regions.value.filter(r => r.status !== 'offline')
+        return regions.value.filter((r) => r.status !== 'offline')
     })
 
     // Initialize from localStorage
@@ -67,7 +67,7 @@ export const useRegionStore = defineStore('region', () => {
 
             // Auto-select first available region if none selected or current selection no longer valid
             // Use availableRegions to avoid selecting an offline region by default
-            const currentExists = availableRegions.value.some(r => r.id === currentRegionId.value)
+            const currentExists = availableRegions.value.some((r) => r.id === currentRegionId.value)
             if ((!currentRegionId.value || !currentExists) && availableRegions.value.length > 0) {
                 setCurrentRegion(availableRegions.value[0].id)
             }
@@ -107,6 +107,6 @@ export const useRegionStore = defineStore('region', () => {
         error,
         fetchRegions,
         setCurrentRegion,
-        clear
+        clear,
     }
 })

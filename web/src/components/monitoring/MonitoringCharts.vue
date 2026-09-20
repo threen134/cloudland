@@ -38,13 +38,13 @@ const fetchData = async () => {
         id: [props.instanceId],
         start: range.startTs.toString(),
         end: range.endTs.toString(),
-        step: step.value
+        step: step.value,
     }
 
     try {
         const [cpuRes, memRes] = await Promise.all([
             instancesApi.getCPUMetrics(commonPayload),
-            instancesApi.getMemoryMetrics(commonPayload)
+            instancesApi.getMemoryMetrics(commonPayload),
         ])
 
         // Parse CPU
@@ -52,21 +52,27 @@ const fetchData = async () => {
             const result = cpuRes.data.result[0]
             cpuData.value = {
                 labels: result.values.map((v) => formatTimestamp(v.time)),
-                datasets: [{
-                    label: t('dashboard.monitoring.cpuUsage'),
-                    data: result.values.map((v) => parseFloat(v.value)),
-                    borderColor: '#0ea5e9',
-                    backgroundColor: 'rgba(14, 165, 233, 0.1)',
-                    fill: true,
-                }]
+                datasets: [
+                    {
+                        label: t('dashboard.monitoring.cpuUsage'),
+                        data: result.values.map((v) => parseFloat(v.value)),
+                        borderColor: '#0ea5e9',
+                        backgroundColor: 'rgba(14, 165, 233, 0.1)',
+                        fill: true,
+                    },
+                ],
             }
         }
 
         // Parse Memory
         if (memRes.data?.result?.[0]) {
             const result = memRes.data.result[0]
-            if (Array.isArray(result.values) && result.values.length >= 2
-                && Array.isArray(result.values[0]) && result.values[0].length > 0) {
+            if (
+                Array.isArray(result.values) &&
+                result.values.length >= 2 &&
+                Array.isArray(result.values[0]) &&
+                result.values[0].length > 0
+            ) {
                 const labels = result.values[0].map((v) => formatTimestamp(v.time))
                 memData.value = {
                     labels,
@@ -84,8 +90,8 @@ const fetchData = async () => {
                             borderColor: '#10b981',
                             backgroundColor: 'rgba(16, 185, 129, 0.1)',
                             fill: true,
-                        }
-                    ]
+                        },
+                    ],
                 }
             }
         }
@@ -122,8 +128,18 @@ const fetchData = async () => {
                         labels = res.values[0].map((v) => formatTimestamp(v.time))
                     }
                     datasets.push(
-                        { label: `${ifaceName} ${t('dashboard.monitoring.receive')}`, data: res.values[0].map((v) => parseFloat(v.value)), borderColor: colors[colorIdx % colors.length], fill: false },
-                        { label: `${ifaceName} ${t('dashboard.monitoring.transmit')}`, data: res.values[1].map((v) => parseFloat(v.value)), borderColor: colors[(colorIdx + 1) % colors.length], fill: false }
+                        {
+                            label: `${ifaceName} ${t('dashboard.monitoring.receive')}`,
+                            data: res.values[0].map((v) => parseFloat(v.value)),
+                            borderColor: colors[colorIdx % colors.length],
+                            fill: false,
+                        },
+                        {
+                            label: `${ifaceName} ${t('dashboard.monitoring.transmit')}`,
+                            data: res.values[1].map((v) => parseFloat(v.value)),
+                            borderColor: colors[(colorIdx + 1) % colors.length],
+                            fill: false,
+                        }
                     )
                     colorIdx += 2
                 })
@@ -132,7 +148,6 @@ const fetchData = async () => {
                 }
             }
         }
-
     } catch (err) {
         console.error('Failed to fetch metrics:', err)
         error.value = t('dashboard.monitoring.loadError')
@@ -142,8 +157,16 @@ const fetchData = async () => {
 }
 
 const {
-    timeRange, step, customStart, customEnd, loading, error,
-    formatTimestamp, getTimeRange, setRange, toggleCustom,
+    timeRange,
+    step,
+    customStart,
+    customEnd,
+    loading,
+    error,
+    formatTimestamp,
+    getTimeRange,
+    setRange,
+    toggleCustom,
 } = useMonitoring(fetchData)
 
 watch(() => props.instanceId, fetchData)
@@ -166,10 +189,7 @@ watch(() => props.instanceId, fetchData)
                     >
                         {{ t('dashboard.monitoring.ranges.' + r.value) }}
                     </button>
-                    <button
-                        :class="['range-btn', { active: timeRange === 'custom' }]"
-                        @click="toggleCustom"
-                    >
+                    <button :class="['range-btn', { active: timeRange === 'custom' }]" @click="toggleCustom">
                         {{ t('dashboard.monitoring.custom') }}
                     </button>
                 </div>
@@ -188,7 +208,7 @@ watch(() => props.instanceId, fetchData)
                 <label>{{ t('dashboard.monitoring.end') }}</label>
                 <input type="datetime-local" v-model="customEnd" class="range-date-input" />
             </div>
-            <button class="btn btn-primary btn-sm" @click="fetchData" :disabled="loading" style="padding: 4px 16px;">
+            <button class="btn btn-primary btn-sm" @click="fetchData" :disabled="loading" style="padding: 4px 16px">
                 {{ t('actions.apply') }}
             </button>
         </div>
@@ -390,8 +410,12 @@ watch(() => props.instanceId, fetchData)
 }
 
 @keyframes spin {
-    from { transform: rotate(0deg); }
-    to { transform: rotate(360deg); }
+    from {
+        transform: rotate(0deg);
+    }
+    to {
+        transform: rotate(360deg);
+    }
 }
 
 @media (max-width: 768px) {

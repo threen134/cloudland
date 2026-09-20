@@ -2,15 +2,7 @@
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import Navbar from '../components/Navbar.vue'
-import { 
-    Zap, 
-    Globe, 
-    Check, 
-    ArrowRight,
-    Cpu,
-    Headphones,
-    Cloud
-} from 'lucide-vue-next'
+import { Zap, Globe, Check, ArrowRight, Cpu, Headphones, Cloud } from 'lucide-vue-next'
 
 const { t, tm } = useI18n()
 const router = useRouter()
@@ -28,7 +20,7 @@ const plans = [
             { labelKey: 'specs.storage', value: '25 GB SSD' },
             { labelKey: 'specs.bandwidth', value: '1 TB' },
             { labelKey: 'specs.ip', value: '1 IP' },
-        ]
+        ],
     },
     {
         nameKey: 'pricing.advanced',
@@ -41,7 +33,7 @@ const plans = [
             { labelKey: 'specs.storage', value: '80 GB SSD' },
             { labelKey: 'specs.bandwidth', value: '3 TB' },
             { labelKey: 'specs.ip', value: '1 IP' },
-        ]
+        ],
     },
     {
         nameKey: 'pricing.enterprise',
@@ -54,7 +46,7 @@ const plans = [
             { labelKey: 'specs.storage', value: '160 GB NVMe' },
             { labelKey: 'specs.bandwidth', value: '5 TB' },
             { labelKey: 'specs.ip', value: '2 IPs' },
-        ]
+        ],
     },
     {
         nameKey: 'pricing.professional',
@@ -67,7 +59,7 @@ const plans = [
             { labelKey: 'specs.storage', value: '320 GB NVMe' },
             { labelKey: 'specs.bandwidth', value: 'Unlimited' },
             { labelKey: 'specs.ip', value: '3 IPs' },
-        ]
+        ],
     },
 ]
 
@@ -100,192 +92,192 @@ const goToMarketplace = () => {
 </script>
 
 <template>
-  <div class="home-page">
-    <Navbar />
+    <div class="home-page">
+        <Navbar />
 
-    <!-- Hero Section -->
-    <section class="hero">
-      <div class="container">
-        <div class="hero-badge">
-          <span>{{ t('hero.badge') }}</span>
-        </div>
-        
-        <h1 class="hero-title">
-          {{ t('hero.title') }}<br />
-          <span class="text-gradient-blue">{{ t('hero.titleHighlight') }}</span>
-        </h1>
-        
-        <p class="hero-subtitle text-inverse-secondary">
-          {{ t('hero.subtitle') }}
-        </p>
+        <!-- Hero Section -->
+        <section class="hero">
+            <div class="container">
+                <div class="hero-badge">
+                    <span>{{ t('hero.badge') }}</span>
+                </div>
 
-        <div class="hero-actions">
-          <button class="btn btn-white btn-lg" @click="goToMarketplace">
-            {{ t('hero.getStarted') }}
-          </button>
-          <button class="btn btn-secondary-white btn-lg" @click="goToMarketplace">
-            {{ t('hero.viewPlans') }}
-          </button>
-        </div>
+                <h1 class="hero-title">
+                    {{ t('hero.title') }}<br />
+                    <span class="text-gradient-blue">{{ t('hero.titleHighlight') }}</span>
+                </h1>
 
-        <!-- Stats Cards -->
-        <div class="stats-grid">
-          <div v-for="stat in stats" :key="stat.labelKey" class="stat-card glass-panel">
-            <div class="stat-value">{{ stat.value }}</div>
-            <div class="stat-label">{{ t(stat.labelKey) }}</div>
-          </div>
-        </div>
-      </div>
-    </section>
+                <p class="hero-subtitle text-inverse-secondary">
+                    {{ t('hero.subtitle') }}
+                </p>
 
-    <!-- Pricing Section -->
-    <section class="section pricing-section">
-      <div class="container">
-        <div class="section-header">
-          <h2>{{ t('pricing.title') }}</h2>
-          <p>{{ t('pricing.subtitle') }}</p>
-        </div>
+                <div class="hero-actions">
+                    <button class="btn btn-white btn-lg" @click="goToMarketplace">
+                        {{ t('hero.getStarted') }}
+                    </button>
+                    <button class="btn btn-secondary-white btn-lg" @click="goToMarketplace">
+                        {{ t('hero.viewPlans') }}
+                    </button>
+                </div>
 
-        <div class="pricing-grid">
-          <div 
-            v-for="plan in plans" 
-            :key="plan.nameKey" 
-            class="price-card"
-            :class="{ popular: plan.popular }"
-          >
-            <span v-if="plan.popular" class="badge-popular">{{ t('pricing.popular') }}</span>
-            <h3 class="plan-name">{{ t(plan.nameKey) }}</h3>
-            <p class="plan-desc">{{ t(plan.descKey) }}</p>
-            
-            <ul class="spec-list">
-              <li v-for="spec in plan.specs" :key="spec.labelKey">
-                <span class="spec-label">{{ t(spec.labelKey) }}:</span>
-                <span class="spec-value">{{ spec.value }}</span>
-              </li>
-            </ul>
-
-            <div class="price">
-              {{ plan.price }}<span>{{ t('pricing.perMonth') }}</span>
+                <!-- Stats Cards -->
+                <div class="stats-grid">
+                    <div v-for="stat in stats" :key="stat.labelKey" class="stat-card glass-panel">
+                        <div class="stat-value">{{ stat.value }}</div>
+                        <div class="stat-label">{{ t(stat.labelKey) }}</div>
+                    </div>
+                </div>
             </div>
+        </section>
 
-            <button class="btn btn-primary" style="width: 100%;">
-              {{ t('pricing.orderNow') }}
-            </button>
-          </div>
-        </div>
+        <!-- Pricing Section -->
+        <section class="section pricing-section">
+            <div class="container">
+                <div class="section-header">
+                    <h2>{{ t('pricing.title') }}</h2>
+                    <p>{{ t('pricing.subtitle') }}</p>
+                </div>
 
-        <div class="text-center mt-8">
-          <button class="btn btn-secondary btn-lg" @click="goToMarketplace">
-            {{ t('pricing.viewAll') }} <ArrowRight :size="16" />
-          </button>
-        </div>
-      </div>
-    </section>
+                <div class="pricing-grid">
+                    <div
+                        v-for="plan in plans"
+                        :key="plan.nameKey"
+                        class="price-card"
+                        :class="{ popular: plan.popular }"
+                    >
+                        <span v-if="plan.popular" class="badge-popular">{{ t('pricing.popular') }}</span>
+                        <h3 class="plan-name">{{ t(plan.nameKey) }}</h3>
+                        <p class="plan-desc">{{ t(plan.descKey) }}</p>
 
-    <!-- Features Section -->
-    <section class="section section-bg">
-      <div class="container">
-        <div class="section-header">
-          <h2>{{ t('features.title') }}</h2>
-          <p>{{ t('features.subtitle') }}</p>
-        </div>
+                        <ul class="spec-list">
+                            <li v-for="spec in plan.specs" :key="spec.labelKey">
+                                <span class="spec-label">{{ t(spec.labelKey) }}:</span>
+                                <span class="spec-value">{{ spec.value }}</span>
+                            </li>
+                        </ul>
 
-        <div class="features-grid">
-          <div v-for="feature in features" :key="feature.titleKey" class="feature-card">
-            <div class="icon-box">
-              <component :is="feature.icon" :size="28" />
+                        <div class="price">
+                            {{ plan.price }}<span>{{ t('pricing.perMonth') }}</span>
+                        </div>
+
+                        <button class="btn btn-primary" style="width: 100%">
+                            {{ t('pricing.orderNow') }}
+                        </button>
+                    </div>
+                </div>
+
+                <div class="text-center mt-8">
+                    <button class="btn btn-secondary btn-lg" @click="goToMarketplace">
+                        {{ t('pricing.viewAll') }} <ArrowRight :size="16" />
+                    </button>
+                </div>
             </div>
-            <h4>{{ t(feature.titleKey) }}</h4>
-            <ul class="check-list">
-              <li v-for="(item, index) in (tm(feature.itemsKey) as any)" :key="index">
-                <Check :size="16" class="check-icon" />
-                <span>{{ item }}</span>
-              </li>
-            </ul>
-          </div>
-        </div>
-      </div>
-    </section>
+        </section>
 
-    <!-- Use Cases Section -->
-    <section class="section">
-      <div class="container">
-        <div class="section-header">
-          <h2>{{ t('useCases.title') }}</h2>
-          <p>{{ t('useCases.subtitle') }}</p>
-        </div>
+        <!-- Features Section -->
+        <section class="section section-bg">
+            <div class="container">
+                <div class="section-header">
+                    <h2>{{ t('features.title') }}</h2>
+                    <p>{{ t('features.subtitle') }}</p>
+                </div>
 
-        <div class="scenarios-grid">
-          <div v-for="useCase in useCases" :key="useCase.titleKey" class="scenario-card">
-            <div class="card-image">
-              <img :src="useCase.image" :alt="t(useCase.titleKey)" />
+                <div class="features-grid">
+                    <div v-for="feature in features" :key="feature.titleKey" class="feature-card">
+                        <div class="icon-box">
+                            <component :is="feature.icon" :size="28" />
+                        </div>
+                        <h4>{{ t(feature.titleKey) }}</h4>
+                        <ul class="check-list">
+                            <li v-for="(item, index) in tm(feature.itemsKey) as any" :key="index">
+                                <Check :size="16" class="check-icon" />
+                                <span>{{ item }}</span>
+                            </li>
+                        </ul>
+                    </div>
+                </div>
             </div>
-            <div class="card-content">
-              <h4>{{ t(useCase.titleKey) }}</h4>
-              <p>{{ t(useCase.descKey) }}</p>
-            </div>
-          </div>
-        </div>
-      </div>
-    </section>
+        </section>
 
-    <!-- CTA Section -->
-    <section class="cta-section">
-      <div class="container">
-        <div class="cta-content">
-          <h2>{{ t('cta.title') }}</h2>
-          <p>{{ t('cta.subtitle') }}</p>
-          <div class="cta-actions">
-            <button class="btn btn-white btn-lg" @click="goToMarketplace">
-              {{ t('cta.freeTrial') }}
-            </button>
-            <button class="btn btn-white btn-lg" @click="goToMarketplace">
-              {{ t('cta.contactSales') }}
-            </button>
-          </div>
-        </div>
-      </div>
-    </section>
+        <!-- Use Cases Section -->
+        <section class="section">
+            <div class="container">
+                <div class="section-header">
+                    <h2>{{ t('useCases.title') }}</h2>
+                    <p>{{ t('useCases.subtitle') }}</p>
+                </div>
 
-    <!-- Footer -->
-    <footer class="footer">
-      <div class="container">
-        <div class="footer-grid">
-          <div class="footer-brand">
-            <div class="logo">
-              <Cloud :size="24" />
-              <span>CloudLand</span>
+                <div class="scenarios-grid">
+                    <div v-for="useCase in useCases" :key="useCase.titleKey" class="scenario-card">
+                        <div class="card-image">
+                            <img :src="useCase.image" :alt="t(useCase.titleKey)" />
+                        </div>
+                        <div class="card-content">
+                            <h4>{{ t(useCase.titleKey) }}</h4>
+                            <p>{{ t(useCase.descKey) }}</p>
+                        </div>
+                    </div>
+                </div>
             </div>
-            <p>{{ t('footer.tagline') }}</p>
-          </div>
-          <div class="footer-links">
-            <h5>{{ t('footer.products') }}</h5>
-            <a href="/marketplace">{{ t('products.cloudInstances') }}</a>
-            <a href="/marketplace">{{ t('products.blockStorage') }}</a>
-            <a href="/marketplace">{{ t('products.loadBalancers') }}</a>
-            <a href="/marketplace">{{ t('products.floatingIPs') }}</a>
-          </div>
-          <div class="footer-links">
-            <h5>{{ t('footer.resources') }}</h5>
-            <a href="#">{{ t('nav.documentation') }}</a>
-            <a href="#">{{ t('footer.apiReference') }}</a>
-            <a href="#">{{ t('footer.statusPage') }}</a>
-            <a href="#">{{ t('nav.support') }}</a>
-          </div>
-          <div class="footer-links">
-            <h5>{{ t('footer.company') }}</h5>
-            <a href="#">{{ t('footer.aboutUs') }}</a>
-            <a href="#">{{ t('footer.blog') }}</a>
-            <a href="#">{{ t('footer.careers') }}</a>
-            <a href="#">{{ t('footer.contact') }}</a>
-          </div>
-        </div>
-        <div class="footer-bottom">
-          <p>{{ t('footer.copyright') }}</p>
-        </div>
-      </div>
-    </footer>
-  </div>
+        </section>
+
+        <!-- CTA Section -->
+        <section class="cta-section">
+            <div class="container">
+                <div class="cta-content">
+                    <h2>{{ t('cta.title') }}</h2>
+                    <p>{{ t('cta.subtitle') }}</p>
+                    <div class="cta-actions">
+                        <button class="btn btn-white btn-lg" @click="goToMarketplace">
+                            {{ t('cta.freeTrial') }}
+                        </button>
+                        <button class="btn btn-white btn-lg" @click="goToMarketplace">
+                            {{ t('cta.contactSales') }}
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Footer -->
+        <footer class="footer">
+            <div class="container">
+                <div class="footer-grid">
+                    <div class="footer-brand">
+                        <div class="logo">
+                            <Cloud :size="24" />
+                            <span>CloudLand</span>
+                        </div>
+                        <p>{{ t('footer.tagline') }}</p>
+                    </div>
+                    <div class="footer-links">
+                        <h5>{{ t('footer.products') }}</h5>
+                        <a href="/marketplace">{{ t('products.cloudInstances') }}</a>
+                        <a href="/marketplace">{{ t('products.blockStorage') }}</a>
+                        <a href="/marketplace">{{ t('products.loadBalancers') }}</a>
+                        <a href="/marketplace">{{ t('products.floatingIPs') }}</a>
+                    </div>
+                    <div class="footer-links">
+                        <h5>{{ t('footer.resources') }}</h5>
+                        <a href="#">{{ t('nav.documentation') }}</a>
+                        <a href="#">{{ t('footer.apiReference') }}</a>
+                        <a href="#">{{ t('footer.statusPage') }}</a>
+                        <a href="#">{{ t('nav.support') }}</a>
+                    </div>
+                    <div class="footer-links">
+                        <h5>{{ t('footer.company') }}</h5>
+                        <a href="#">{{ t('footer.aboutUs') }}</a>
+                        <a href="#">{{ t('footer.blog') }}</a>
+                        <a href="#">{{ t('footer.careers') }}</a>
+                        <a href="#">{{ t('footer.contact') }}</a>
+                    </div>
+                </div>
+                <div class="footer-bottom">
+                    <p>{{ t('footer.copyright') }}</p>
+                </div>
+            </div>
+        </footer>
+    </div>
 </template>
 
 <style scoped>
@@ -340,7 +332,6 @@ const goToMarketplace = () => {
     background: rgba(255, 255, 255, 0.25);
     border-color: rgba(255, 255, 255, 0.5);
 }
-
 
 .hero {
     padding: var(--spacing-20) 0 var(--spacing-24);
@@ -560,7 +551,10 @@ const goToMarketplace = () => {
 .cta-section::before {
     content: '';
     position: absolute;
-    top: 0; left: 0; right: 0; bottom: 0;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
     background: radial-gradient(ellipse 600px 300px at 50% 50%, rgba(255, 255, 255, 0.08) 0%, transparent 70%);
     pointer-events: none;
 }

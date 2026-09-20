@@ -2,7 +2,15 @@
 import { ref, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
-import { loadBalancersApi, subnetsApi, type LoadBalancer, type Subnet, type ListenerPayload, type Listener, type Backend } from '../../api/networks'
+import {
+    loadBalancersApi,
+    subnetsApi,
+    type LoadBalancer,
+    type Subnet,
+    type ListenerPayload,
+    type Listener,
+    type Backend,
+} from '../../api/networks'
 import { useToast } from '../../composables/useToast'
 import { ArrowLeft, GitFork, Trash2, Plus, ChevronDown, ChevronRight, Pencil } from 'lucide-vue-next'
 import DeleteModal from '../../components/modals/DeleteModal.vue'
@@ -25,8 +33,12 @@ const error = ref('')
 
 // Action dropdown
 const showActionMenu = ref(false)
-const toggleActionMenu = () => { showActionMenu.value = !showActionMenu.value }
-const closeActionMenu = () => { showActionMenu.value = false }
+const toggleActionMenu = () => {
+    showActionMenu.value = !showActionMenu.value
+}
+const closeActionMenu = () => {
+    showActionMenu.value = false
+}
 
 // Edit modal
 const showEditModal = ref(false)
@@ -84,7 +96,9 @@ const deleteModal = ref<{
 const openDeleteModal = (name: string, onConfirm: () => Promise<void>) => {
     deleteModal.value = { visible: true, name, loading: false, error: '', onConfirm }
 }
-const closeDeleteModal = () => { deleteModal.value.visible = false }
+const closeDeleteModal = () => {
+    deleteModal.value.visible = false
+}
 const confirmDelete = async () => {
     deleteModal.value.loading = true
     deleteModal.value.error = ''
@@ -124,7 +138,7 @@ const getHealthLabel = (health?: string) => {
     if (health === 'down') return t('dashboard.loadBalancerDetail.healthDown')
     return t('dashboard.loadBalancerDetail.healthUnknown')
 }
-const countHealthy = (listener: Listener) => (listener.backends || []).filter(b => b.health === 'up').length
+const countHealthy = (listener: Listener) => (listener.backends || []).filter((b) => b.health === 'up').length
 
 // ─── Floating IP ────────────────────────────────────────────────────────────
 
@@ -163,7 +177,7 @@ const handleAddFip = async () => {
             name: fipForm.value.name,
             public_subnet: { id: fipForm.value.subnet_id },
             ...(inbound !== null ? { inbound } : {}),
-            ...(outbound !== null ? { outbound } : {})
+            ...(outbound !== null ? { outbound } : {}),
         })
         showFipModal.value = false
         toast.success(t('messages.createSuccess'))
@@ -207,7 +221,7 @@ const handleAddListener = async () => {
         const payload: ListenerPayload = {
             name: listenerForm.value.name,
             mode: listenerForm.value.mode as 'http' | 'tcp',
-            port: listenerForm.value.port
+            port: listenerForm.value.port,
         }
         if (listenerForm.value.cert) payload.cert = listenerForm.value.cert
         if (listenerForm.value.key) payload.key = listenerForm.value.key
@@ -290,7 +304,7 @@ const openBackendEditModal = (listenerId: string, backend: Backend) => {
         name: backend.name || '',
         address: sep > 0 ? backend.endpoint.slice(0, sep) : backend.endpoint,
         port: sep > 0 ? backend.endpoint.slice(sep + 1) : '',
-        ssl: !!backend.ssl
+        ssl: !!backend.ssl,
     }
     backendError.value = ''
     showBackendModal.value = true
@@ -312,7 +326,7 @@ const handleSaveBackend = async () => {
         const payload = {
             name: backendForm.value.name,
             endpoint: `${backendForm.value.address}:${portNum}`,
-            ssl: backendForm.value.ssl
+            ssl: backendForm.value.ssl,
         }
         if (editingBackendId.value) {
             await loadBalancersApi.patchBackend(lbId, currentListenerId.value, editingBackendId.value, payload)
@@ -343,7 +357,7 @@ onMounted(async () => {
     loadingSubnets.value = true
     try {
         const res = await subnetsApi.list({ limit: 200 })
-        publicSubnets.value = (res.subnets || []).filter(s => s.type === 'public')
+        publicSubnets.value = (res.subnets || []).filter((s) => s.type === 'public')
     } catch {
         // subnets unavailable; FIP binding will be disabled
     } finally {
@@ -410,14 +424,22 @@ onMounted(async () => {
                     <h3>{{ $t('dashboard.loadBalancerDetail.generalInfo') }}</h3>
                     <div class="key-value-list">
                         <InfoRow :label="$t('dashboard.loadBalancerDetail.name')">{{ lb.name }}</InfoRow>
-                        <InfoRow v-if="lb.description" :label="$t('dashboard.forms.description')">{{ lb.description }}</InfoRow>
+                        <InfoRow v-if="lb.description" :label="$t('dashboard.forms.description')">{{
+                            lb.description
+                        }}</InfoRow>
                         <InfoRow :label="$t('dashboard.loadBalancerDetail.vpc')">
-                            <router-link v-if="lb.vpc" :to="{ name: 'vpc-detail', params: { id: lb.vpc.id } }" class="text-link">
+                            <router-link
+                                v-if="lb.vpc"
+                                :to="{ name: 'vpc-detail', params: { id: lb.vpc.id } }"
+                                class="text-link"
+                            >
                                 {{ lb.vpc.name }}
                             </router-link>
                             <span v-else>-</span>
                         </InfoRow>
-                        <InfoRow :label="$t('dashboard.loadBalancerDetail.createdAt')">{{ lb.created_at || '-' }}</InfoRow>
+                        <InfoRow :label="$t('dashboard.loadBalancerDetail.createdAt')">{{
+                            lb.created_at || '-'
+                        }}</InfoRow>
                     </div>
                 </div>
 
@@ -449,8 +471,8 @@ onMounted(async () => {
 
             <!-- Listeners -->
             <div class="card listeners-card">
-                <div class="card-section-header" style="padding: var(--spacing-4) var(--spacing-5);">
-                    <h3 style="margin:0">{{ $t('dashboard.loadBalancerDetail.listeners') }}</h3>
+                <div class="card-section-header" style="padding: var(--spacing-4) var(--spacing-5)">
+                    <h3 style="margin: 0">{{ $t('dashboard.loadBalancerDetail.listeners') }}</h3>
                     <button class="btn btn-primary btn-sm" @click="openListenerModal">
                         <Plus :size="13" /> {{ $t('dashboard.loadBalancerDetail.addListener') }}
                     </button>
@@ -460,7 +482,7 @@ onMounted(async () => {
                     <table class="data-table">
                         <thead>
                             <tr>
-                                <th style="width:32px"></th>
+                                <th style="width: 32px"></th>
                                 <th>{{ $t('dashboard.table.name') }}</th>
                                 <th>{{ $t('dashboard.loadBalancerDetail.protocol') }}</th>
                                 <th>{{ $t('dashboard.table.status') }}</th>
@@ -470,7 +492,7 @@ onMounted(async () => {
                         </thead>
                         <tbody>
                             <tr v-if="!lb.listeners?.length">
-                                <td colspan="6" class="text-center text-secondary" style="padding:32px">
+                                <td colspan="6" class="text-center text-secondary" style="padding: 32px">
                                     {{ $t('messages.noListeners') }}
                                 </td>
                             </tr>
@@ -478,17 +500,28 @@ onMounted(async () => {
                                 <!-- Listener row -->
                                 <tr class="listener-row" @click="toggleListener(listener.id)">
                                     <td>
-                                        <ChevronDown v-if="expandedListeners.has(listener.id)" :size="14" class="text-secondary" />
+                                        <ChevronDown
+                                            v-if="expandedListeners.has(listener.id)"
+                                            :size="14"
+                                            class="text-secondary"
+                                        />
                                         <ChevronRight v-else :size="14" class="text-secondary" />
                                     </td>
                                     <td>{{ listener.name }}</td>
-                                    <td><code class="mono">{{ listener.mode.toUpperCase() }}:{{ listener.port }}</code></td>
+                                    <td>
+                                        <code class="mono">{{ listener.mode.toUpperCase() }}:{{ listener.port }}</code>
+                                    </td>
                                     <td>
                                         <StatusBadge :status="listener.status" :label="listener.status || '-'" />
                                     </td>
                                     <td class="text-secondary text-sm">
-                                        {{ listener.backends?.length || 0 }} {{ $t('dashboard.loadBalancerDetail.backends') }}
-                                        <span v-if="listener.backends?.length">{{ $t('dashboard.loadBalancerDetail.healthyCount', { count: countHealthy(listener) }) }}</span>
+                                        {{ listener.backends?.length || 0 }}
+                                        {{ $t('dashboard.loadBalancerDetail.backends') }}
+                                        <span v-if="listener.backends?.length">{{
+                                            $t('dashboard.loadBalancerDetail.healthyCount', {
+                                                count: countHealthy(listener),
+                                            })
+                                        }}</span>
                                     </td>
                                     <td @click.stop>
                                         <button
@@ -508,15 +541,25 @@ onMounted(async () => {
                                 </tr>
                                 <!-- Backends sub-table -->
                                 <tr v-if="expandedListeners.has(listener.id)" class="backends-row">
-                                    <td colspan="6" style="padding:0">
+                                    <td colspan="6" style="padding: 0">
                                         <div class="backends-panel">
                                             <div class="backends-header">
-                                                <span class="text-secondary text-sm">{{ $t('dashboard.loadBalancerDetail.backends') }}</span>
-                                                <button class="btn btn-secondary btn-sm" @click="openBackendModal(listener.id)">
-                                                    <Plus :size="13" /> {{ $t('dashboard.loadBalancerDetail.addBackend') }}
+                                                <span class="text-secondary text-sm">{{
+                                                    $t('dashboard.loadBalancerDetail.backends')
+                                                }}</span>
+                                                <button
+                                                    class="btn btn-secondary btn-sm"
+                                                    @click="openBackendModal(listener.id)"
+                                                >
+                                                    <Plus :size="13" />
+                                                    {{ $t('dashboard.loadBalancerDetail.addBackend') }}
                                                 </button>
                                             </div>
-                                            <div v-if="!listener.backends?.length" class="empty-hint" style="padding:12px 16px">
+                                            <div
+                                                v-if="!listener.backends?.length"
+                                                class="empty-hint"
+                                                style="padding: 12px 16px"
+                                            >
                                                 {{ $t('dashboard.loadBalancerDetail.noBackends') }}
                                             </div>
                                             <table v-else class="backends-table">
@@ -532,10 +575,21 @@ onMounted(async () => {
                                                 <tbody>
                                                     <tr v-for="backend in listener.backends" :key="backend.id">
                                                         <td>{{ backend.name || '-' }}</td>
-                                                        <td><code class="mono">{{ backend.endpoint }}</code></td>
-                                                        <td>{{ backend.ssl ? $t('dashboard.loadBalancerDetail.sslOn') : $t('dashboard.loadBalancerDetail.sslOff') }}</td>
                                                         <td>
-                                                            <StatusBadge :variant="getHealthVariant(backend.health)" :label="getHealthLabel(backend.health)" />
+                                                            <code class="mono">{{ backend.endpoint }}</code>
+                                                        </td>
+                                                        <td>
+                                                            {{
+                                                                backend.ssl
+                                                                    ? $t('dashboard.loadBalancerDetail.sslOn')
+                                                                    : $t('dashboard.loadBalancerDetail.sslOff')
+                                                            }}
+                                                        </td>
+                                                        <td>
+                                                            <StatusBadge
+                                                                :variant="getHealthVariant(backend.health)"
+                                                                :label="getHealthLabel(backend.health)"
+                                                            />
                                                         </td>
                                                         <td class="backend-actions">
                                                             <button
@@ -547,7 +601,13 @@ onMounted(async () => {
                                                             </button>
                                                             <button
                                                                 class="btn btn-ghost btn-sm text-error"
-                                                                @click="handleDeleteBackend(listener.id, backend.id, backend.name || backend.endpoint)"
+                                                                @click="
+                                                                    handleDeleteBackend(
+                                                                        listener.id,
+                                                                        backend.id,
+                                                                        backend.name || backend.endpoint
+                                                                    )
+                                                                "
                                                             >
                                                                 <Trash2 :size="13" />
                                                             </button>
@@ -574,47 +634,82 @@ onMounted(async () => {
             @close="showFipModal = false"
             @submit="handleAddFip"
         >
-                    <div class="form-group">
-                        <label class="form-label">{{ $t('dashboard.forms.name') }} *</label>
-                        <input v-model="fipForm.name" type="text" class="form-input" :placeholder="$t('dashboard.forms.placeholder.lbFipNameExample')" />
+            <div class="form-group">
+                <label class="form-label">{{ $t('dashboard.forms.name') }} *</label>
+                <input
+                    v-model="fipForm.name"
+                    type="text"
+                    class="form-input"
+                    :placeholder="$t('dashboard.forms.placeholder.lbFipNameExample')"
+                />
+            </div>
+            <div class="form-group">
+                <label class="form-label">{{ $t('dashboard.loadBalancerDetail.publicSubnet') }} *</label>
+                <div v-if="loadingSubnets" class="text-secondary text-sm">{{ $t('messages.loading') }}</div>
+                <div v-else-if="publicSubnets.length === 0" class="text-secondary text-sm">
+                    {{ $t('dashboard.loadBalancerDetail.noPublicSubnets') }}
+                </div>
+                <div v-else class="select-wrapper">
+                    <select v-model="fipForm.subnet_id" class="form-input">
+                        <option v-for="s in publicSubnets" :key="s.id" :value="s.id">
+                            {{ s.name }} ({{ s.network_cidr || s.network }})
+                        </option>
+                    </select>
+                </div>
+            </div>
+            <div class="form-row">
+                <div class="form-group form-group-grow">
+                    <label class="form-label">{{ $t('dashboard.floatingIPDetail.inbound') }}</label>
+                    <div class="input-with-suffix">
+                        <input
+                            v-model.number="fipForm.inbound"
+                            type="number"
+                            min="1"
+                            max="20000"
+                            class="form-input"
+                            :placeholder="$t('dashboard.floatingIPDetail.inboundPlaceholder')"
+                        />
+                        <span class="input-suffix">{{ $t('dashboard.floatingIPDetail.mbps') }}</span>
                     </div>
-                    <div class="form-group">
-                        <label class="form-label">{{ $t('dashboard.loadBalancerDetail.publicSubnet') }} *</label>
-                        <div v-if="loadingSubnets" class="text-secondary text-sm">{{ $t('messages.loading') }}</div>
-                        <div v-else-if="publicSubnets.length === 0" class="text-secondary text-sm">{{ $t('dashboard.loadBalancerDetail.noPublicSubnets') }}</div>
-                        <div v-else class="select-wrapper">
-                            <select v-model="fipForm.subnet_id" class="form-input">
-                                <option v-for="s in publicSubnets" :key="s.id" :value="s.id">
-                                    {{ s.name }} ({{ s.network_cidr || s.network }})
-                                </option>
-                            </select>
-                        </div>
+                </div>
+                <div class="form-group form-group-grow">
+                    <label class="form-label">{{ $t('dashboard.floatingIPDetail.outbound') }}</label>
+                    <div class="input-with-suffix">
+                        <input
+                            v-model.number="fipForm.outbound"
+                            type="number"
+                            min="1"
+                            max="20000"
+                            class="form-input"
+                            :placeholder="$t('dashboard.floatingIPDetail.outboundPlaceholder')"
+                        />
+                        <span class="input-suffix">{{ $t('dashboard.floatingIPDetail.mbps') }}</span>
                     </div>
-                    <div class="form-row">
-                        <div class="form-group form-group-grow">
-                            <label class="form-label">{{ $t('dashboard.floatingIPDetail.inbound') }}</label>
-                            <div class="input-with-suffix">
-                                <input v-model.number="fipForm.inbound" type="number" min="1" max="20000" class="form-input" :placeholder="$t('dashboard.floatingIPDetail.inboundPlaceholder')" />
-                                <span class="input-suffix">{{ $t('dashboard.floatingIPDetail.mbps') }}</span>
-                            </div>
-                        </div>
-                        <div class="form-group form-group-grow">
-                            <label class="form-label">{{ $t('dashboard.floatingIPDetail.outbound') }}</label>
-                            <div class="input-with-suffix">
-                                <input v-model.number="fipForm.outbound" type="number" min="1" max="20000" class="form-input" :placeholder="$t('dashboard.floatingIPDetail.outboundPlaceholder')" />
-                                <span class="input-suffix">{{ $t('dashboard.floatingIPDetail.mbps') }}</span>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="form-hint">{{ $t('dashboard.loadBalancerDetail.bandwidthHint') }}</div>
+                </div>
+            </div>
+            <div class="form-hint">{{ $t('dashboard.loadBalancerDetail.bandwidthHint') }}</div>
 
-                    <div v-if="fipError" class="modal-error">{{ fipError }}</div>
+            <div v-if="fipError" class="modal-error">{{ fipError }}</div>
 
             <template #footer>
-                <button type="button" class="btn btn-secondary" @click="showFipModal = false" :disabled="addingFip">{{ $t('actions.cancel') }}</button>
-                <button type="submit" class="btn btn-primary" :disabled="addingFip || loadingSubnets || publicSubnets.length === 0">
-                    <span v-if="addingFip" class="loading-spinner" style="width:16px;height:16px;border-width:2px"></span>
-                    {{ addingFip ? $t('dashboard.loadBalancerDetail.bindingFloatingIp') : $t('dashboard.loadBalancerDetail.bindFloatingIp') }}
+                <button type="button" class="btn btn-secondary" @click="showFipModal = false" :disabled="addingFip">
+                    {{ $t('actions.cancel') }}
+                </button>
+                <button
+                    type="submit"
+                    class="btn btn-primary"
+                    :disabled="addingFip || loadingSubnets || publicSubnets.length === 0"
+                >
+                    <span
+                        v-if="addingFip"
+                        class="loading-spinner"
+                        style="width: 16px; height: 16px; border-width: 2px"
+                    ></span>
+                    {{
+                        addingFip
+                            ? $t('dashboard.loadBalancerDetail.bindingFloatingIp')
+                            : $t('dashboard.loadBalancerDetail.bindFloatingIp')
+                    }}
                 </button>
             </template>
         </BaseModal>
@@ -628,41 +723,76 @@ onMounted(async () => {
             @close="showListenerModal = false"
             @submit="handleAddListener"
         >
-                    <div class="form-group">
-                        <label class="form-label">{{ $t('dashboard.forms.name') }} *</label>
-                        <input v-model="listenerForm.name" type="text" class="form-input" :placeholder="$t('dashboard.forms.placeholder.lbListenerNameExample')" />
+            <div class="form-group">
+                <label class="form-label">{{ $t('dashboard.forms.name') }} *</label>
+                <input
+                    v-model="listenerForm.name"
+                    type="text"
+                    class="form-input"
+                    :placeholder="$t('dashboard.forms.placeholder.lbListenerNameExample')"
+                />
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label class="form-label">{{ $t('dashboard.loadBalancerDetail.mode') }} *</label>
+                    <div class="select-wrapper">
+                        <select v-model="listenerForm.mode" class="form-input">
+                            <option value="http">HTTP</option>
+                            <option value="tcp">TCP</option>
+                        </select>
                     </div>
-                    <div class="form-row">
-                        <div class="form-group">
-                            <label class="form-label">{{ $t('dashboard.loadBalancerDetail.mode') }} *</label>
-                            <div class="select-wrapper">
-                                <select v-model="listenerForm.mode" class="form-input">
-                                    <option value="http">HTTP</option>
-                                    <option value="tcp">TCP</option>
-                                </select>
-                            </div>
-                        </div>
-                        <div class="form-group">
-                            <label class="form-label">{{ $t('dashboard.loadBalancerDetail.port') }} *</label>
-                            <input v-model.number="listenerForm.port" type="number" min="1" max="65535" class="form-input" placeholder="80" />
-                        </div>
-                    </div>
-                    <div class="form-group">
-                        <label class="form-label">{{ $t('dashboard.loadBalancerDetail.cert') }}</label>
-                        <textarea v-model="listenerForm.cert" class="form-input form-textarea" :placeholder="$t('dashboard.loadBalancerDetail.certHint')"></textarea>
-                    </div>
-                    <div class="form-group">
-                        <label class="form-label">{{ $t('dashboard.loadBalancerDetail.privateKey') }}</label>
-                        <textarea v-model="listenerForm.key" class="form-input form-textarea" :placeholder="$t('dashboard.loadBalancerDetail.privateKeyHint')"></textarea>
-                    </div>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">{{ $t('dashboard.loadBalancerDetail.port') }} *</label>
+                    <input
+                        v-model.number="listenerForm.port"
+                        type="number"
+                        min="1"
+                        max="65535"
+                        class="form-input"
+                        placeholder="80"
+                    />
+                </div>
+            </div>
+            <div class="form-group">
+                <label class="form-label">{{ $t('dashboard.loadBalancerDetail.cert') }}</label>
+                <textarea
+                    v-model="listenerForm.cert"
+                    class="form-input form-textarea"
+                    :placeholder="$t('dashboard.loadBalancerDetail.certHint')"
+                ></textarea>
+            </div>
+            <div class="form-group">
+                <label class="form-label">{{ $t('dashboard.loadBalancerDetail.privateKey') }}</label>
+                <textarea
+                    v-model="listenerForm.key"
+                    class="form-input form-textarea"
+                    :placeholder="$t('dashboard.loadBalancerDetail.privateKeyHint')"
+                ></textarea>
+            </div>
 
-                    <div v-if="listenerError" class="modal-error">{{ listenerError }}</div>
+            <div v-if="listenerError" class="modal-error">{{ listenerError }}</div>
 
             <template #footer>
-                <button type="button" class="btn btn-secondary" @click="showListenerModal = false" :disabled="addingListener">{{ $t('actions.cancel') }}</button>
+                <button
+                    type="button"
+                    class="btn btn-secondary"
+                    @click="showListenerModal = false"
+                    :disabled="addingListener"
+                >
+                    {{ $t('actions.cancel') }}
+                </button>
                 <button type="submit" class="btn btn-primary" :disabled="addingListener">
-                    <span v-if="addingListener" class="loading-spinner" style="width:16px;height:16px;border-width:2px"></span>
-                    {{ addingListener ? $t('dashboard.loadBalancerDetail.addingListener') : $t('dashboard.loadBalancerDetail.addListener') }}
+                    <span
+                        v-if="addingListener"
+                        class="loading-spinner"
+                        style="width: 16px; height: 16px; border-width: 2px"
+                    ></span>
+                    {{
+                        addingListener
+                            ? $t('dashboard.loadBalancerDetail.addingListener')
+                            : $t('dashboard.loadBalancerDetail.addListener')
+                    }}
                 </button>
             </template>
         </BaseModal>
@@ -676,17 +806,28 @@ onMounted(async () => {
             @close="showListenerEditModal = false"
             @submit="handleEditListener"
         >
-                    <div class="form-group">
-                        <label class="form-label">{{ $t('dashboard.forms.name') }} *</label>
-                        <input v-model="listenerEditForm.name" type="text" class="form-input" />
-                    </div>
+            <div class="form-group">
+                <label class="form-label">{{ $t('dashboard.forms.name') }} *</label>
+                <input v-model="listenerEditForm.name" type="text" class="form-input" />
+            </div>
 
-                    <div v-if="listenerEditError" class="modal-error">{{ listenerEditError }}</div>
+            <div v-if="listenerEditError" class="modal-error">{{ listenerEditError }}</div>
 
             <template #footer>
-                <button type="button" class="btn btn-secondary" @click="showListenerEditModal = false" :disabled="savingListener">{{ $t('actions.cancel') }}</button>
+                <button
+                    type="button"
+                    class="btn btn-secondary"
+                    @click="showListenerEditModal = false"
+                    :disabled="savingListener"
+                >
+                    {{ $t('actions.cancel') }}
+                </button>
                 <button type="submit" class="btn btn-primary" :disabled="savingListener || !listenerEditForm.name">
-                    <span v-if="savingListener" class="loading-spinner" style="width:16px;height:16px;border-width:2px"></span>
+                    <span
+                        v-if="savingListener"
+                        class="loading-spinner"
+                        style="width: 16px; height: 16px; border-width: 2px"
+                    ></span>
                     {{ savingListener ? $t('messages.saving') : $t('actions.save') }}
                 </button>
             </template>
@@ -695,42 +836,75 @@ onMounted(async () => {
         <!-- Add / Edit Backend Modal -->
         <BaseModal
             :show="showBackendModal"
-            :title="editingBackendId ? $t('dashboard.loadBalancerDetail.editBackend') : $t('dashboard.loadBalancerDetail.addBackend')"
+            :title="
+                editingBackendId
+                    ? $t('dashboard.loadBalancerDetail.editBackend')
+                    : $t('dashboard.loadBalancerDetail.addBackend')
+            "
             :loading="addingBackend"
             form
             @close="showBackendModal = false"
             @submit="handleSaveBackend"
         >
-                    <div class="form-group">
-                        <label class="form-label">{{ $t('dashboard.forms.name') }} *</label>
-                        <input v-model="backendForm.name" type="text" class="form-input" :placeholder="$t('dashboard.forms.placeholder.lbBackendNameExample')" />
-                    </div>
-                    <div class="form-row">
-                        <div class="form-group form-group-grow">
-                            <label class="form-label">{{ $t('dashboard.loadBalancerDetail.ipAddress') }} *</label>
-                            <input v-model="backendForm.address" type="text" class="form-input" placeholder="192.168.1.10" />
-                        </div>
-                        <div class="form-group form-group-fixed">
-                            <label class="form-label">{{ $t('dashboard.loadBalancerDetail.port') }} *</label>
-                            <input v-model="backendForm.port" type="number" class="form-input" placeholder="8080" min="1" max="65535" />
-                        </div>
-                    </div>
-                    <div class="form-group">
-                        <label class="checkbox-label">
-                            <input v-model="backendForm.ssl" type="checkbox" />
-                            {{ $t('dashboard.loadBalancerDetail.backendSslLabel') }}
-                        </label>
-                        <div class="form-hint">{{ $t('dashboard.loadBalancerDetail.backendSslHint') }}</div>
-                    </div>
+            <div class="form-group">
+                <label class="form-label">{{ $t('dashboard.forms.name') }} *</label>
+                <input
+                    v-model="backendForm.name"
+                    type="text"
+                    class="form-input"
+                    :placeholder="$t('dashboard.forms.placeholder.lbBackendNameExample')"
+                />
+            </div>
+            <div class="form-row">
+                <div class="form-group form-group-grow">
+                    <label class="form-label">{{ $t('dashboard.loadBalancerDetail.ipAddress') }} *</label>
+                    <input v-model="backendForm.address" type="text" class="form-input" placeholder="192.168.1.10" />
+                </div>
+                <div class="form-group form-group-fixed">
+                    <label class="form-label">{{ $t('dashboard.loadBalancerDetail.port') }} *</label>
+                    <input
+                        v-model="backendForm.port"
+                        type="number"
+                        class="form-input"
+                        placeholder="8080"
+                        min="1"
+                        max="65535"
+                    />
+                </div>
+            </div>
+            <div class="form-group">
+                <label class="checkbox-label">
+                    <input v-model="backendForm.ssl" type="checkbox" />
+                    {{ $t('dashboard.loadBalancerDetail.backendSslLabel') }}
+                </label>
+                <div class="form-hint">{{ $t('dashboard.loadBalancerDetail.backendSslHint') }}</div>
+            </div>
 
-                    <div v-if="backendError" class="modal-error">{{ backendError }}</div>
+            <div v-if="backendError" class="modal-error">{{ backendError }}</div>
 
             <template #footer>
-                <button type="button" class="btn btn-secondary" @click="showBackendModal = false" :disabled="addingBackend">{{ $t('actions.cancel') }}</button>
+                <button
+                    type="button"
+                    class="btn btn-secondary"
+                    @click="showBackendModal = false"
+                    :disabled="addingBackend"
+                >
+                    {{ $t('actions.cancel') }}
+                </button>
                 <button type="submit" class="btn btn-primary" :disabled="addingBackend">
-                    <span v-if="addingBackend" class="loading-spinner" style="width:16px;height:16px;border-width:2px"></span>
-                    <template v-if="editingBackendId">{{ addingBackend ? $t('messages.saving') : $t('actions.save') }}</template>
-                    <template v-else>{{ addingBackend ? $t('dashboard.loadBalancerDetail.addingBackend') : $t('dashboard.loadBalancerDetail.addBackend') }}</template>
+                    <span
+                        v-if="addingBackend"
+                        class="loading-spinner"
+                        style="width: 16px; height: 16px; border-width: 2px"
+                    ></span>
+                    <template v-if="editingBackendId">{{
+                        addingBackend ? $t('messages.saving') : $t('actions.save')
+                    }}</template>
+                    <template v-else>{{
+                        addingBackend
+                            ? $t('dashboard.loadBalancerDetail.addingBackend')
+                            : $t('dashboard.loadBalancerDetail.addBackend')
+                    }}</template>
                 </button>
             </template>
         </BaseModal>
@@ -753,21 +927,32 @@ onMounted(async () => {
             @close="showEditModal = false"
             @submit="handleEdit"
         >
-                    <div class="form-group">
-                        <label class="form-label">{{ $t('dashboard.forms.name') }} *</label>
-                        <input v-model="editForm.name" type="text" class="form-input" />
-                    </div>
-                    <div class="form-group">
-                        <label class="form-label">{{ $t('dashboard.forms.description') }}</label>
-                        <input v-model="editForm.description" type="text" class="form-input" :placeholder="$t('messages.placeholderDescription')" />
-                    </div>
+            <div class="form-group">
+                <label class="form-label">{{ $t('dashboard.forms.name') }} *</label>
+                <input v-model="editForm.name" type="text" class="form-input" />
+            </div>
+            <div class="form-group">
+                <label class="form-label">{{ $t('dashboard.forms.description') }}</label>
+                <input
+                    v-model="editForm.description"
+                    type="text"
+                    class="form-input"
+                    :placeholder="$t('messages.placeholderDescription')"
+                />
+            </div>
 
-                    <div v-if="editError" class="modal-error">{{ editError }}</div>
+            <div v-if="editError" class="modal-error">{{ editError }}</div>
 
             <template #footer>
-                <button type="button" class="btn btn-secondary" @click="showEditModal = false" :disabled="editing">{{ $t('actions.cancel') }}</button>
+                <button type="button" class="btn btn-secondary" @click="showEditModal = false" :disabled="editing">
+                    {{ $t('actions.cancel') }}
+                </button>
                 <button type="submit" class="btn btn-primary" :disabled="editing || !editForm.name">
-                    <span v-if="editing" class="loading-spinner" style="width:16px;height:16px;border-width:2px"></span>
+                    <span
+                        v-if="editing"
+                        class="loading-spinner"
+                        style="width: 16px; height: 16px; border-width: 2px"
+                    ></span>
                     {{ editing ? $t('messages.saving') : $t('actions.save') }}
                 </button>
             </template>
@@ -783,7 +968,8 @@ onMounted(async () => {
 .detail-header {
     margin-bottom: var(--spacing-4);
 }
-.loading-container, .error-container {
+.loading-container,
+.error-container {
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -810,7 +996,9 @@ onMounted(async () => {
     justify-content: center;
     flex-shrink: 0;
 }
-.title-info { flex: 1; }
+.title-info {
+    flex: 1;
+}
 .title-info h1 {
     font-size: var(--font-size-xl);
     font-weight: 600;
@@ -835,7 +1023,9 @@ onMounted(async () => {
     gap: var(--spacing-4);
     margin-bottom: var(--spacing-6);
 }
-.info-card { padding: var(--spacing-5); }
+.info-card {
+    padding: var(--spacing-5);
+}
 .info-card h3 {
     font-size: var(--font-size-base);
     font-weight: 600;
@@ -864,7 +1054,9 @@ onMounted(async () => {
     color: var(--primary-600);
     text-decoration: none;
 }
-.text-link:hover { text-decoration: underline; }
+.text-link:hover {
+    text-decoration: underline;
+}
 .empty-hint {
     color: var(--text-tertiary);
     font-size: var(--font-size-sm);
@@ -872,7 +1064,11 @@ onMounted(async () => {
 }
 
 /* Floating IPs */
-.fip-list { display: flex; flex-direction: column; gap: var(--spacing-2); }
+.fip-list {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-2);
+}
 .fip-item {
     display: flex;
     align-items: center;
@@ -886,14 +1082,28 @@ onMounted(async () => {
     font-size: var(--font-size-sm);
     flex-shrink: 0;
 }
-.fip-name { flex: 1; }
+.fip-name {
+    flex: 1;
+}
 
 /* Listeners */
-.listeners-card { padding: 0; overflow: hidden; margin-bottom: var(--spacing-6); }
-.table-responsive { overflow-x: auto; }
-.listener-row { cursor: pointer; }
-.listener-row:hover { background: var(--bg-secondary); }
-.backends-row { background: var(--bg-secondary); }
+.listeners-card {
+    padding: 0;
+    overflow: hidden;
+    margin-bottom: var(--spacing-6);
+}
+.table-responsive {
+    overflow-x: auto;
+}
+.listener-row {
+    cursor: pointer;
+}
+.listener-row:hover {
+    background: var(--bg-secondary);
+}
+.backends-row {
+    background: var(--bg-secondary);
+}
 
 /* Backends panel */
 .backends-panel {
@@ -924,7 +1134,9 @@ onMounted(async () => {
     padding: 6px 12px;
     border-top: 1px solid var(--border-light);
 }
-.backends-table tr:first-child td { border-top: none; }
+.backends-table tr:first-child td {
+    border-top: none;
+}
 
 /* Modals */
 .modal-error {
@@ -939,8 +1151,13 @@ onMounted(async () => {
     display: flex;
     gap: var(--spacing-3);
 }
-.form-group-grow { flex: 1; }
-.form-group-fixed { width: 120px; flex-shrink: 0; }
+.form-group-grow {
+    flex: 1;
+}
+.form-group-fixed {
+    width: 120px;
+    flex-shrink: 0;
+}
 .form-textarea {
     min-height: 80px;
     resize: vertical;
@@ -965,7 +1182,9 @@ onMounted(async () => {
     display: flex;
     align-items: center;
 }
-.input-with-suffix .form-input { padding-right: 52px; }
+.input-with-suffix .form-input {
+    padding-right: 52px;
+}
 .input-suffix {
     position: absolute;
     right: 12px;
@@ -973,11 +1192,20 @@ onMounted(async () => {
     color: var(--text-tertiary);
     pointer-events: none;
 }
-.backend-actions { white-space: nowrap; text-align: right; }
+.backend-actions {
+    white-space: nowrap;
+    text-align: right;
+}
 
 /* Action Dropdown */
-.action-dropdown { position: relative; }
-.dropdown-backdrop { position: fixed; inset: 0; z-index: var(--z-dropdown-backdrop); }
+.action-dropdown {
+    position: relative;
+}
+.dropdown-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: var(--z-dropdown-backdrop);
+}
 .dropdown-menu {
     position: absolute;
     top: calc(100% + 6px);
@@ -986,7 +1214,7 @@ onMounted(async () => {
     background: var(--bg-primary, var(--bg-primary));
     border: 1px solid var(--border-light);
     border-radius: var(--radius-md);
-    box-shadow: 0 4px 16px rgba(0,0,0,.12);
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
     padding: 4px 0;
     z-index: var(--z-dropdown);
 }
@@ -1004,15 +1232,42 @@ onMounted(async () => {
     transition: background 0.15s;
     text-align: left;
 }
-.dropdown-item:hover:not(:disabled) { background: var(--bg-hover, #f3f4f6); }
-.dropdown-item:disabled { opacity: 0.4; cursor: not-allowed; }
-.dropdown-item-danger { color: var(--error-color, #ef4444); }
-.dropdown-item-danger:hover:not(:disabled) { background: #fef2f2; }
-.dropdown-divider { height: 1px; background: var(--border-light); margin: 4px 0; }
-.dropdown-enter-active, .dropdown-leave-active { transition: opacity 0.12s, transform 0.12s; }
-.dropdown-enter-from, .dropdown-leave-to { opacity: 0; transform: translateY(-4px); }
+.dropdown-item:hover:not(:disabled) {
+    background: var(--bg-hover, #f3f4f6);
+}
+.dropdown-item:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
+.dropdown-item-danger {
+    color: var(--error-color, #ef4444);
+}
+.dropdown-item-danger:hover:not(:disabled) {
+    background: #fef2f2;
+}
+.dropdown-divider {
+    height: 1px;
+    background: var(--border-light);
+    margin: 4px 0;
+}
+.dropdown-enter-active,
+.dropdown-leave-active {
+    transition:
+        opacity 0.12s,
+        transform 0.12s;
+}
+.dropdown-enter-from,
+.dropdown-leave-to {
+    opacity: 0;
+    transform: translateY(-4px);
+}
 
 /* Misc */
-.mono { font-family: var(--font-family-mono); }
-.btn-xs { padding: 2px 6px; font-size: 11px; }
+.mono {
+    font-family: var(--font-family-mono);
+}
+.btn-xs {
+    padding: 2px 6px;
+    font-size: 11px;
+}
 </style>

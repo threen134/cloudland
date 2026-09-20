@@ -16,7 +16,7 @@ export function useQuota() {
             const response = await quotaApi.getOrgResourceSummary(orgId)
             quotaSummary.value = response
             editingQuota.value = {}
-            for (const region of (response.regions || [])) {
+            for (const region of response.regions || []) {
                 editingQuota.value[region.region_uuid] = {
                     max_cpu_cores: region.quota.max_cpu_cores,
                     max_ram_gb: region.quota.max_ram_gb,

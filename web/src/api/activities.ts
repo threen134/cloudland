@@ -37,5 +37,5 @@ export const activitiesApi = {
     list: async (params?: ActivityQuery): Promise<ActivityListResponse> => {
         const response = await client.get('/activities', { params })
         return response.data
-    }
+    },
 }

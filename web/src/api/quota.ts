@@ -96,7 +96,11 @@ export const quotaApi = {
     },
 
     // 更新 org 在特定 region 的配额 (superuser only)
-    async updateOrgQuota(orgUuid: string, regionUuid: string, payload: OrgResourceQuotaUpdate): Promise<OrgResourceQuota> {
+    async updateOrgQuota(
+        orgUuid: string,
+        regionUuid: string,
+        payload: OrgResourceQuotaUpdate
+    ): Promise<OrgResourceQuota> {
         const response = await client.put<OrgResourceQuota>(`/resources/quota/${orgUuid}/${regionUuid}`, payload)
         return response.data
     },

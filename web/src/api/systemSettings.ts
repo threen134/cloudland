@@ -3,8 +3,8 @@ import apiClient from './client'
 export interface SystemSetting {
     key: string
     value: any
-    value_type: string  // string | number | boolean | json | secret
-    category: string    // general | quota | notification
+    value_type: string // string | number | boolean | json | secret
+    category: string // general | quota | notification
     description?: string
     is_secret: boolean
     updated_at: string

@@ -23,7 +23,7 @@ export const useTenantStore = defineStore('tenant', () => {
 
     // Current organization computed property
     const currentOrg = computed(() => {
-        return organizations.value.find(org => org.id === currentOrgId.value) || null
+        return organizations.value.find((org) => org.id === currentOrgId.value) || null
     })
 
     // Initialize from localStorage
@@ -50,9 +50,10 @@ export const useTenantStore = defineStore('tenant', () => {
 
             // Ensure we have an org selected and a scoped token
             if (organizations.value.length > 0) {
-                const targetOrgId = currentOrgId.value && organizations.value.some(o => o.id === currentOrgId.value)
-                    ? currentOrgId.value
-                    : organizations.value[0].id
+                const targetOrgId =
+                    currentOrgId.value && organizations.value.some((o) => o.id === currentOrgId.value)
+                        ? currentOrgId.value
+                        : organizations.value[0].id
                 // Switching issues a new token and revokes the current one: only do it when the token is not
                 // scoped to that org yet, so reloading a page does not invalidate the tokens of other windows
                 if (decodeTokenClaims(getToken())?.org_id === targetOrgId) {
@@ -136,6 +137,6 @@ export const useTenantStore = defineStore('tenant', () => {
         fetchOrganizations,
         switchOrg,
         setCurrentOrg,
-        clear
+        clear,
     }
 })

@@ -20,7 +20,7 @@ function addToast(message: string, type: Toast['type'] = 'info', duration = 4000
 }
 
 function removeToast(id: number) {
-    toasts.value = toasts.value.filter(t => t.id !== id)
+    toasts.value = toasts.value.filter((t) => t.id !== id)
 }
 
 export function useToast() {

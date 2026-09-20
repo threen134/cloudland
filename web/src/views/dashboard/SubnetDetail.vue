@@ -71,10 +71,10 @@ const goBack = useGoBack('subnets')
 
 const getTypeBadgeClass = (type: string) => {
     const map: Record<string, string> = {
-        'public': 'badge-success',
-        'internal': 'badge-primary',
-        'private': 'badge-info',
-        'site': 'badge-warning'
+        public: 'badge-success',
+        internal: 'badge-primary',
+        private: 'badge-info',
+        site: 'badge-warning',
     }
     return map[type] || 'badge-gray'
 }
@@ -117,11 +117,17 @@ onMounted(fetchSubnet)
                     <div>
                         <h2 class="resource-title">
                             {{ subnet.name }}
-                            <span :class="['badge', getTypeBadgeClass(subnet.type || 'internal')]">{{ $t('dashboard.subnetTypes.' + (subnet.type || 'internal')) }}</span>
+                            <span :class="['badge', getTypeBadgeClass(subnet.type || 'internal')]">{{
+                                $t('dashboard.subnetTypes.' + (subnet.type || 'internal'))
+                            }}</span>
                         </h2>
                         <div class="resource-id-row">
                             <span class="resource-id-text">{{ subnet.id }}</span>
-                            <button class="copy-btn" @click="copyToClipboard(subnet.id, 'id')" :title="$t('messages.copied')">
+                            <button
+                                class="copy-btn"
+                                @click="copyToClipboard(subnet.id, 'id')"
+                                :title="$t('messages.copied')"
+                            >
                                 <Check v-if="copiedField === 'id'" :size="12" class="copied-icon" />
                                 <Copy v-else :size="12" />
                             </button>
@@ -168,7 +174,9 @@ onMounted(fetchSubnet)
                             <InfoRow :label="$t('dashboard.table.available')">
                                 <span class="text-green">{{ subnet.available_count }}</span>
                             </InfoRow>
-                            <InfoRow :label="$t('dashboard.table.idleReserved')">{{ subnet.idle_count }} / {{ subnet.reserved_count }}</InfoRow>
+                            <InfoRow :label="$t('dashboard.table.idleReserved')"
+                                >{{ subnet.idle_count }} / {{ subnet.reserved_count }}</InfoRow
+                            >
                         </div>
                     </div>
                 </div>
@@ -179,20 +187,37 @@ onMounted(fetchSubnet)
                         <h3>{{ $t('dashboard.table.networkDetails') }}</h3>
                         <div class="key-value-list">
                             <InfoRow v-if="subnet.vpc" :label="$t('dashboard.table.vpc')">
-                                <router-link :to="{name: 'vpc-detail', params: {id: subnet.vpc.id}}" class="text-link">
+                                <router-link
+                                    :to="{ name: 'vpc-detail', params: { id: subnet.vpc.id } }"
+                                    class="text-link"
+                                >
                                     {{ subnet.vpc.name }}
                                 </router-link>
                             </InfoRow>
                             <InfoRow :label="$t('dashboard.table.subnetType')">
-                                <span :class="['type-badge', getTypeBadgeClass(subnet.type || 'internal')]" style="padding: 2px 10px; font-size: 11px;">
+                                <span
+                                    :class="['type-badge', getTypeBadgeClass(subnet.type || 'internal')]"
+                                    style="padding: 2px 10px; font-size: 11px"
+                                >
                                     {{ $t('dashboard.subnetTypes.' + (subnet.type || 'internal')) }}
                                 </span>
                             </InfoRow>
-                            <InfoRow :label="$t('dashboard.table.cidr')" mono>{{ subnet.network || subnet.network_cidr }}</InfoRow>
-                            <InfoRow :label="$t('dashboard.table.networkRange')" mono>{{ subnet.start }} - {{ subnet.end }}</InfoRow>
+                            <InfoRow :label="$t('dashboard.table.cidr')" mono>{{
+                                subnet.network || subnet.network_cidr
+                            }}</InfoRow>
+                            <InfoRow :label="$t('dashboard.table.networkRange')" mono
+                                >{{ subnet.start }} - {{ subnet.end }}</InfoRow
+                            >
                             <InfoRow :label="$t('dashboard.table.gateway')" mono>{{ subnet.gateway || '-' }}</InfoRow>
-                            <InfoRow v-if="subnet.vlan" :label="(subnet.vlan > 4094) ? $t('dashboard.table.vxlan') : $t('dashboard.table.vlan')" mono>{{ subnet.vlan }}</InfoRow>
-                            <InfoRow :label="$t('dashboard.table.dhcp')">{{ subnet.dhcp ? $t('dashboard.alarm.enabled') : $t('dashboard.alarm.disabled') }}</InfoRow>
+                            <InfoRow
+                                v-if="subnet.vlan"
+                                :label="subnet.vlan > 4094 ? $t('dashboard.table.vxlan') : $t('dashboard.table.vlan')"
+                                mono
+                                >{{ subnet.vlan }}</InfoRow
+                            >
+                            <InfoRow :label="$t('dashboard.table.dhcp')">{{
+                                subnet.dhcp ? $t('dashboard.alarm.enabled') : $t('dashboard.alarm.disabled')
+                            }}</InfoRow>
                             <InfoRow :label="$t('dashboard.table.dns')" mono>{{ subnet.dns || '-' }}</InfoRow>
                         </div>
                     </div>
@@ -222,7 +247,8 @@ onMounted(fetchSubnet)
     margin-bottom: var(--spacing-4);
 }
 
-.loading-container, .error-container {
+.loading-container,
+.error-container {
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -232,78 +258,78 @@ onMounted(fetchSubnet)
 
 /* Title Bar */
 .title-bar {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: var(--spacing-5);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: var(--spacing-5);
 }
 
 .title-info {
-  display: flex;
-  align-items: center;
-  gap: var(--spacing-4);
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-4);
 }
 
 .title-icon {
-  width: 52px;
-  height: 52px;
-  border-radius: var(--radius-lg);
-  background: linear-gradient(135deg, var(--primary-50), var(--primary-100));
-  color: var(--primary-color);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
+    width: 52px;
+    height: 52px;
+    border-radius: var(--radius-lg);
+    background: linear-gradient(135deg, var(--primary-50), var(--primary-100));
+    color: var(--primary-color);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
 }
 
 .resource-title {
-  margin: 0 0 4px 0;
-  font-size: var(--font-size-xl);
-  font-weight: var(--font-weight-semibold);
-  color: var(--primary-color);
-  display: flex;
-  align-items: center;
-  gap: var(--spacing-3);
+    margin: 0 0 4px 0;
+    font-size: var(--font-size-xl);
+    font-weight: var(--font-weight-semibold);
+    color: var(--primary-color);
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-3);
 }
 
 .resource-id-row {
-  display: flex;
-  align-items: center;
-  gap: var(--spacing-2);
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-2);
 }
 
 .resource-id-text {
-  font-size: var(--font-size-xs);
-  color: var(--text-light);
-  font-family: var(--font-family-mono);
+    font-size: var(--font-size-xs);
+    color: var(--text-light);
+    font-family: var(--font-family-mono);
 }
 
 .copy-btn {
-  background: none;
-  border: 1px solid var(--border-light);
-  border-radius: var(--radius-sm);
-  padding: 2px 5px;
-  cursor: pointer;
-  color: var(--text-light);
-  display: inline-flex;
-  align-items: center;
-  transition: all 0.15s;
+    background: none;
+    border: 1px solid var(--border-light);
+    border-radius: var(--radius-sm);
+    padding: 2px 5px;
+    cursor: pointer;
+    color: var(--text-light);
+    display: inline-flex;
+    align-items: center;
+    transition: all 0.15s;
 }
 
 .copy-btn:hover {
-  color: var(--primary-color);
-  border-color: var(--primary-200);
-  background: var(--primary-50);
+    color: var(--primary-color);
+    border-color: var(--primary-200);
+    background: var(--primary-50);
 }
 
 .copied-icon {
-  color: var(--success-color);
+    color: var(--success-color);
 }
 
 .title-actions {
-  display: flex;
-  align-items: center;
-  gap: var(--spacing-3);
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-3);
 }
 
 /* Action Dropdown */
@@ -363,28 +389,32 @@ onMounted(fetchSubnet)
     margin: 4px 0;
 }
 
-.dropdown-enter-active, .dropdown-leave-active {
-    transition: opacity 0.15s, transform 0.15s;
+.dropdown-enter-active,
+.dropdown-leave-active {
+    transition:
+        opacity 0.15s,
+        transform 0.15s;
 }
 
-.dropdown-enter-from, .dropdown-leave-to {
+.dropdown-enter-from,
+.dropdown-leave-to {
     opacity: 0;
     transform: translateY(-4px);
 }
 
 /* Two-Column Layout */
 .two-col-layout {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: var(--spacing-4);
-  margin-bottom: var(--spacing-6);
-  align-items: start;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: var(--spacing-4);
+    margin-bottom: var(--spacing-6);
+    align-items: start;
 }
 
 .col-stack {
-  display: flex;
-  flex-direction: column;
-  gap: var(--spacing-4);
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-4);
 }
 
 .info-card {

@@ -19,11 +19,11 @@ export const isTokenSwitchRecent = (): boolean => {
 export const beginTokenSwitch = (): (() => void) => {
     _tokenSwitchCount++
     if (!_tokenSwitchPromise) {
-        _tokenSwitchPromise = new Promise<void>(resolve => {
+        _tokenSwitchPromise = new Promise<void>((resolve) => {
             _tokenSwitchResolve = resolve
         })
     }
-    
+
     let resolved = false
     return () => {
         if (resolved) return
@@ -55,10 +55,7 @@ client.interceptors.request.use(
         // sending any request (except the switch call itself).
         if (_tokenSwitchPromise && !config.url?.startsWith('/auth/')) {
             // Safety timeout: never block a request for more than 15 seconds
-            await Promise.race([
-                _tokenSwitchPromise,
-                new Promise<void>(resolve => setTimeout(resolve, 15000))
-            ])
+            await Promise.race([_tokenSwitchPromise, new Promise<void>((resolve) => setTimeout(resolve, 15000))])
         }
 
         // Add JWT token if available
@@ -87,8 +84,7 @@ client.interceptors.request.use(
     }
 )
 
-const getErrorDetail = (error: AxiosError): string =>
-    (error.response?.data as any)?.detail || 'unknown'
+const getErrorDetail = (error: AxiosError): string => (error.response?.data as any)?.detail || 'unknown'
 
 // 后端响应头 X-Trace-ID：反馈问题时提供给运维，在 Grafana 中按 trace id 查询完整链路
 const traceHint = (error: AxiosError): string => {
@@ -161,7 +157,7 @@ client.interceptors.response.use(
                     if (isTokenSwitchRecent() || (freshToken && usedToken && freshToken !== usedToken)) {
                         const originalConfig = error.config
                         if (freshToken && originalConfig && !(originalConfig as any).__retried) {
-                            (originalConfig as any).__retried = true
+                            ;(originalConfig as any).__retried = true
                             originalConfig.headers.Authorization = `Bearer ${freshToken}`
                             console.warn('401 during token switch — retrying with fresh token')
                             return client.request(originalConfig)
@@ -213,7 +209,9 @@ export const decodeTokenClaims = (token: string | null): Record<string, any> | n
     if (!payload) return null
     try {
         const base64 = payload.replace(/-/g, '+').replace(/_/g, '/')
-        const json = decodeURIComponent(Array.from(atob(base64), c => '%' + c.charCodeAt(0).toString(16).padStart(2, '0')).join(''))
+        const json = decodeURIComponent(
+            Array.from(atob(base64), (c) => '%' + c.charCodeAt(0).toString(16).padStart(2, '0')).join('')
+        )
         return JSON.parse(json)
     } catch {
         return null

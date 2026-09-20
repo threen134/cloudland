@@ -23,23 +23,23 @@ export default {
 
     // 區域
     regions: {
-        'shanghai': '上海 (中國)',
-        'tok': '東京 (亞太)',
-        'osa': '大阪 (亞太)',
-        'sng': '新加坡 (亞太)',
-        'syd': '悉尼 (亞太)',
-        'che': '欽奈 (亞太)',
-        'lon': '倫敦 (歐洲)',
-        'fra': '法蘭克福 (歐洲)',
-        'ams': '阿姆斯特丹 (歐洲)',
-        'par': '巴黎 (歐洲)',
-        'mad': '馬德里 (歐洲)',
-        'wdc': '華盛頓 (北美東)',
-        'tor': '多倫多 (北美東)',
-        'mon': '蒙特利爾 (北美東)',
-        'dal': '達拉斯 (北美南)',
-        'sjc': '聖何塞 (北美西)',
-        'sao': '聖保羅 (南美)',
+        shanghai: '上海 (中國)',
+        tok: '東京 (亞太)',
+        osa: '大阪 (亞太)',
+        sng: '新加坡 (亞太)',
+        syd: '悉尼 (亞太)',
+        che: '欽奈 (亞太)',
+        lon: '倫敦 (歐洲)',
+        fra: '法蘭克福 (歐洲)',
+        ams: '阿姆斯特丹 (歐洲)',
+        par: '巴黎 (歐洲)',
+        mad: '馬德里 (歐洲)',
+        wdc: '華盛頓 (北美東)',
+        tor: '多倫多 (北美東)',
+        mon: '蒙特利爾 (北美東)',
+        dal: '達拉斯 (北美南)',
+        sjc: '聖何塞 (北美西)',
+        sao: '聖保羅 (南美)',
     },
 
     // 產品下拉選單
@@ -122,29 +122,13 @@ export default {
         subtitle: '基於尖端基礎設施，提供企業級可靠性',
         // 優勢專案
         highPerformance: '高效能基礎設施',
-        highPerformanceItems: [
-            'NVMe SSD儲存，速度提升5-10倍',
-            '100%獨享CPU和記憶體資源',
-            '無資源爭搶，效能穩定',
-        ],
+        highPerformanceItems: ['NVMe SSD儲存，速度提升5-10倍', '100%獨享CPU和記憶體資源', '無資源爭搶，效能穩定'],
         flexible: '靈活彈性',
-        flexibleItems: [
-            '60秒內完成部署',
-            '隨時擴容或縮容',
-            '按需付費，用多少付多少',
-        ],
+        flexibleItems: ['60秒內完成部署', '隨時擴容或縮容', '按需付費，用多少付多少'],
         globalNetwork: '全球網路',
-        globalNetworkItems: [
-            '多資料中心節點',
-            '智慧全球路由最佳化',
-            '全球低延遲連線',
-        ],
+        globalNetworkItems: ['多資料中心節點', '智慧全球路由最佳化', '全球低延遲連線'],
         support: '7×24小時專家支援',
-        supportItems: [
-            '全天候技術支援服務',
-            'Web控制台與API接入',
-            '完善的技術文件',
-        ],
+        supportItems: ['全天候技術支援服務', 'Web控制台與API接入', '完善的技術文件'],
     },
 
     // 應用場景區域
@@ -211,8 +195,6 @@ export default {
             privacy: '隱私政策',
         },
     },
-
-
 
     // 雲市場
     marketplace: {
@@ -377,7 +359,8 @@ export default {
             hideKeyboard: '收起鍵盤',
             paste: '貼上為鍵盤輸入',
             pasteTitle: '貼上文字到控制台',
-            pasteHint: '文字會逐字模擬為鍵盤輸入，適用於沒有剪貼簿同步的系統（如 Linux 文字介面、登入框）。僅支援英文字母、數字、常用符號、換行和 Tab；請先在控制台中把游標放到要輸入的位置。',
+            pasteHint:
+                '文字會逐字模擬為鍵盤輸入，適用於沒有剪貼簿同步的系統（如 Linux 文字介面、登入框）。僅支援英文字母、數字、常用符號、換行和 Tab；請先在控制台中把游標放到要輸入的位置。',
             pastePlaceholder: '在此貼上要輸入的文字',
             pasteSend: '開始輸入',
             pasteStop: '停止',
@@ -392,12 +375,13 @@ export default {
                 copy: '複製選取內容（Ctrl+Shift+C）',
                 paste: '貼上（Ctrl+Shift+V）',
                 syncSize: '同步視窗大小',
-                syncSizeHint: '在 Shell 提示字元下向虛擬機傳送 stty rows/cols，讓 vim、top 等全螢幕程式使用目前視窗大小',
+                syncSizeHint:
+                    '在 Shell 提示字元下向虛擬機傳送 stty rows/cols，讓 vim、top 等全螢幕程式使用目前視窗大小',
                 syncSizeNeedsPrompt: '請登入後在 Shell 提示字元下使用（目前輸入會被當作指令或使用者名稱）',
                 hint: '連線虛擬機的第一個序列埠（ttyS0），適用於 Linux；支援複製貼上與中文。連線後如無輸出請按 Enter。',
                 copied: '已複製到剪貼簿',
                 nothingSelected: '請先用滑鼠選取要複製的內容',
-                clipboardDenied: '瀏覽器不允許存取剪貼簿'
+                clipboardDenied: '瀏覽器不允許存取剪貼簿',
             },
             host: {
                 title: '節點終端',
@@ -407,8 +391,8 @@ export default {
                 open: '開啟終端',
                 authFailed: '驗證失敗',
                 hint: '計算節點 root 終端：工作階段輸出會記錄在節點上，閒置 {minutes} 分鐘後自動中斷；中斷後需重新驗證密碼。',
-                idleHint: '閒置 {minutes} 分鐘後中斷'
-            }
+                idleHint: '閒置 {minutes} 分鐘後中斷',
+            },
         },
         instances: '雲伺服器',
         volumes: '雲硬碟',
@@ -670,7 +654,8 @@ export default {
             userDataPlaceholder: '可選。在執行個體啟動時執行的指令碼...',
             vlanConflict: '各網路介面不能使用相同 VLAN 的子網，請重新選擇。',
             passwordSuccess: '密碼一致',
-            quotaExceeded: '限額已超出：資源 {resource} 在區域 {region}，請求數量 {requested}，可用數量 {available}，總限額 {limit}。',
+            quotaExceeded:
+                '限額已超出：資源 {resource} 在區域 {region}，請求數量 {requested}，可用數量 {available}，總限額 {limit}。',
             selectedCount: '已選擇 {count} 個金鑰',
         },
         userDetail: {
@@ -794,7 +779,13 @@ export default {
         activityPage: {
             title: '操作動態',
             timeRange: '時間範圍',
-            ranges: { today: '今天', last7d: '最近 7 天', last30d: '最近 30 天', last90d: '最近 90 天', custom: '自訂' },
+            ranges: {
+                today: '今天',
+                last7d: '最近 7 天',
+                last30d: '最近 30 天',
+                last90d: '最近 90 天',
+                custom: '自訂',
+            },
             start: '開始時間',
             end: '結束時間',
             apply: '套用',
@@ -807,7 +798,23 @@ export default {
             colAction: '操作',
             succeeded: '成功',
             failed: '失敗',
-            resourceTypes: { instance: '雲伺服器', volume: '雲硬碟', backup: '備份', consistency_group: '一致性組', image: '映像', key: '金鑰', flavor: '規格', vpc: 'VPC', subnet: '子網', security_group: '安全組', floating_ip: '彈性 IP', load_balancer: '負載均衡', zone: '可用區', hyper: '計算節點', migration: '遷移' },
+            resourceTypes: {
+                instance: '雲伺服器',
+                volume: '雲硬碟',
+                backup: '備份',
+                consistency_group: '一致性組',
+                image: '映像',
+                key: '金鑰',
+                flavor: '規格',
+                vpc: 'VPC',
+                subnet: '子網',
+                security_group: '安全組',
+                floating_ip: '彈性 IP',
+                load_balancer: '負載均衡',
+                zone: '可用區',
+                hyper: '計算節點',
+                migration: '遷移',
+            },
             empty: '該時間範圍內沒有操作記錄',
             emptyFiltered: '沒有符合篩選條件的操作記錄',
             loadFailed: '操作動態載入失敗',
@@ -821,10 +828,10 @@ export default {
         overview: {
             title: '概覽',
             subtitle: '概覽：雲伺服器 · 雲硬碟 · 映像 · 彈性 IP',
-            welcomeBack: "{username}！歡迎回來，這是您今天雲資源的執行情況。",
-            resourceUsage: "資源使用情況",
-            recentActivity: "最近動態",
-            loadingOverview: "正在載入概覽...",
+            welcomeBack: '{username}！歡迎回來，這是您今天雲資源的執行情況。',
+            resourceUsage: '資源使用情況',
+            recentActivity: '最近動態',
+            loadingOverview: '正在載入概覽...',
             imageActions: {
                 fillRequired: '請填寫名稱和下載地址。',
             },
@@ -850,7 +857,7 @@ export default {
                 disk: '硬碟 已用',
                 volume: '儲存卷 已用',
                 publicIp: '公網 IP 已用',
-                privateIp: '內網 IP 已用'
+                privateIp: '內網 IP 已用',
             },
             usage: '使用率',
             activeCount: '個執行中',
@@ -1095,7 +1102,7 @@ export default {
                 migration: {
                     create: '發起遷移 {name}',
                 },
-            }
+            },
         },
         table: {
             instanceCount: '虛擬機器',
@@ -1385,7 +1392,8 @@ export default {
             zone: '可用區',
             optional: '可選',
             setAsDefault: '設為該 VPC 的預設安全組',
-            setAsDefaultTooltip: '預設安全組會在建立執行個體時未指定安全組的情況下自動應用，每個 VPC 只能有一個預設安全組。',
+            setAsDefaultTooltip:
+                '預設安全組會在建立執行個體時未指定安全組的情況下自動應用，每個 VPC 只能有一個預設安全組。',
             protocol: '協定',
             port: '埠',
             gateway: '閘道器 IP',
@@ -1459,7 +1467,8 @@ export default {
                 secondaryInterface: '擴充網路介面',
                 advancedOptions: '進階選項',
             },
-            dhcpTooltip: 'DHCP 開關決定是否為沒有 cloud-init 的虛擬機器提供自動 IP 分配服務；有 cloud-init 的映像不受影響。',
+            dhcpTooltip:
+                'DHCP 開關決定是否為沒有 cloud-init 的虛擬機器提供自動 IP 分配服務；有 cloud-init 的映像不受影響。',
             startIp: '起始 IP',
             endIp: '結束 IP',
             dns: 'DNS 伺服器',
@@ -1720,7 +1729,7 @@ export default {
 
     acceptInvitation: {
         loading: '正在載入邀請...',
-        invited: "您已獲得邀請！",
+        invited: '您已獲得邀請！',
         organization: '組織',
         role: '角色',
         invitedBy: '邀請人',
@@ -1735,7 +1744,7 @@ export default {
         existingUser: '您已有帳戶 ({email})。點選下方按鈕加入該組織。',
         accept: '接受邀請',
         welcome: '歡迎！',
-        successJoined: "您已成功加入 {orgName}。",
+        successJoined: '您已成功加入 {orgName}。',
         goToLogin: '前往登入',
         invalidInvitation: '無效的邀請',
     },
@@ -1751,7 +1760,15 @@ export default {
         loadBalancers: '負載均衡',
         images: '映像',
         // Labels for the resource field of a quota_exceeded response
-        resources: { cpu_cores: 'CPU 核數', ram_gb: '記憶體 (GB)', disk_gb: '磁碟 (GB)', public_ips: '公網 IP', vpcs: 'VPC', load_balancers: '負載均衡', images: '映像' },
+        resources: {
+            cpu_cores: 'CPU 核數',
+            ram_gb: '記憶體 (GB)',
+            disk_gb: '磁碟 (GB)',
+            public_ips: '公網 IP',
+            vpcs: 'VPC',
+            load_balancers: '負載均衡',
+            images: '映像',
+        },
         region: '區域',
         used: '已使用',
         available: '可用',
@@ -1834,7 +1851,6 @@ export default {
         operationFailed: '操作失敗，請重試。',
     },
 
-
     roles: {
         owner: '所有者',
         admin: '管理員',
@@ -1843,7 +1859,7 @@ export default {
         editor: '編輯者',
         viewer: '觀察者',
         member: '成員',
-        superuser: '超級管理員'
+        superuser: '超級管理員',
     },
     userStatus: {
         active: '活躍',
@@ -1851,13 +1867,13 @@ export default {
         pending: '待定',
         invited: '已邀請',
         dormant: '待啟用',
-        disabled: '已停用'
+        disabled: '已停用',
     },
     languages: {
         en: 'English',
         zh: '中文',
         zh_hans: '简体中文',
-        zh_hant: '繁體中文'
+        zh_hant: '繁體中文',
     },
     common: {
         save: '儲存',
@@ -1907,10 +1923,12 @@ export default {
             network: '網路',
             networkDesc: '控制面內部 DNS 的上游轉發。',
             quotaCompute: '運算與儲存',
-            quotaComputeDesc: '新建組織或新增區域時，為每個組織在每個區域寫入的初始配額。修改後不影響已有配額，單個組織的配額請在組織詳情中調整。',
+            quotaComputeDesc:
+                '新建組織或新增區域時，為每個組織在每個區域寫入的初始配額。修改後不影響已有配額，單個組織的配額請在組織詳情中調整。',
             quotaOther: '網路與映像',
             hostConsole: '計算節點終端',
-            hostConsoleDesc: '允許系統管理員在計算節點頁面開啟節點的 root 命令列。開啟前須再次輸入密碼，工作階段輸出記錄在節點的 /opt/cloudland/log/host_console/ 下（保留 180 天）。',
+            hostConsoleDesc:
+                '允許系統管理員在計算節點頁面開啟節點的 root 命令列。開啟前須再次輸入密碼，工作階段輸出記錄在節點的 /opt/cloudland/log/host_console/ 下（保留 180 天）。',
             other: '其他',
         },
         notificationHint: '用於帳號啟用、成員邀請等系統通知。虛擬機器告警的接收方請在',
@@ -1919,7 +1937,8 @@ export default {
         passwordPrompt: {
             title: '驗證身分',
             descEnable: '開啟後，每次開啟節點終端都要輸入目前帳號的登入密碼。請輸入密碼確認這項修改。',
-            descDisable: '關閉後，任何擁有系統管理員工作階段的人都能直接開啟節點的 root 終端，不再需要密碼。請輸入密碼確認這項修改。',
+            descDisable:
+                '關閉後，任何擁有系統管理員工作階段的人都能直接開啟節點的 root 終端，不再需要密碼。請輸入密碼確認這項修改。',
             placeholder: '目前帳號的登入密碼',
         },
         units: {
@@ -1951,21 +1970,26 @@ export default {
             DEFAULT_LOAD_BALANCERS: '負載均衡',
             DEFAULT_IMAGES: '私有映像',
             ALARM_EVENT_RETENTION_DAYS: 'VM 告警事件保留天數',
-            ALARM_EVENT_RETENTION_DAYS_desc: '虛擬機器告警事件及投遞日誌的保留天數，超過該天數的記錄將被自動清理，預設 30 天。',
+            ALARM_EVENT_RETENTION_DAYS_desc:
+                '虛擬機器告警事件及投遞日誌的保留天數，超過該天數的記錄將被自動清理，預設 30 天。',
             AUDIT_LOG_RETENTION_DAYS: '操作審計日誌保留天數',
-            AUDIT_LOG_RETENTION_DAYS_desc: '操作審計日誌（含概覽頁「最近動態」）的保留天數，各區域每天自動清理超過該天數的記錄。取值 90–3650，預設 365 天。',
+            AUDIT_LOG_RETENTION_DAYS_desc:
+                '操作審計日誌（含概覽頁「最近動態」）的保留天數，各區域每天自動清理超過該天數的記錄。取值 90–3650，預設 365 天。',
             DNS_UPSTREAM: 'DNS 上游轉發',
-            DNS_UPSTREAM_desc: '內部 dnsmasq 未能匹配節點 hostname 時，將 DNS 查詢轉發到此地址。支援逗號分隔多個地址，如 8.8.8.8,8.8.4.4。',
+            DNS_UPSTREAM_desc:
+                '內部 dnsmasq 未能匹配節點 hostname 時，將 DNS 查詢轉發到此地址。支援逗號分隔多個地址，如 8.8.8.8,8.8.4.4。',
             HOST_CONSOLE_ENABLED: '啟用節點終端',
             HOST_CONSOLE_ENABLED_desc: '關閉後所有使用者都無法開啟新的節點終端，已開啟的工作階段不受影響。',
             HOST_CONSOLE_REQUIRE_PASSWORD: '開啟終端需要密碼',
-            HOST_CONSOLE_REQUIRE_PASSWORD_desc: '開啟節點終端前要求再次輸入目前帳號的登入密碼，避免有人用已登入的視窗直接取得節點 root 權限。修改這一項本身也需要輸入密碼。',
+            HOST_CONSOLE_REQUIRE_PASSWORD_desc:
+                '開啟節點終端前要求再次輸入目前帳號的登入密碼，避免有人用已登入的視窗直接取得節點 root 權限。修改這一項本身也需要輸入密碼。',
             HOST_CONSOLE_IDLE_MINUTES: '閒置中斷時間',
             HOST_CONSOLE_IDLE_MINUTES_desc: '終端在該時間內沒有任何輸入輸出時自動中斷。取值 5–240，預設 15 分鐘。',
         },
         infra: {
             readOnlyTitle: '只讀檢視',
-            readOnlyDesc: '這些參數在 clapi / MinIO / compute 節點啟動時載入，無法從 UI 修改。\n修改方式：編輯 deploy/docker/.env 後執行 docker-compose up -d 重建相關容器。',
+            readOnlyDesc:
+                '這些參數在 clapi / MinIO / compute 節點啟動時載入，無法從 UI 修改。\n修改方式：編輯 deploy/docker/.env 後執行 docker-compose up -d 重建相關容器。',
             currentMode: '當前執行模式',
             initialized: '已初始化',
             notInitialized: '未初始化',

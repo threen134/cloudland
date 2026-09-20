@@ -84,5 +84,5 @@ export const regionsApi = {
     async rotateSecret(uuid: string): Promise<RegionSecretRotated> {
         const response = await client.post<RegionSecretRotated>(`/regions/${uuid}/rotate-secret`)
         return response.data
-    }
+    },
 }

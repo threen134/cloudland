@@ -110,7 +110,8 @@ const handleDelete = async () => {
     }
 }
 
-const getStatusInfo = (status: number) => STATUS_MAP[status] || { label: `Unknown(${status})`, class: 'status-disabled' }
+const getStatusInfo = (status: number) =>
+    STATUS_MAP[status] || { label: `Unknown(${status})`, class: 'status-disabled' }
 
 const getUsagePercent = (used: number, total: number) => {
     if (!total) return 0
@@ -124,300 +125,501 @@ onMounted(async () => {
 </script>
 
 <template>
-  <div class="vpc-detail">
-    <!-- Header -->
-    <div class="detail-header">
-      <button class="btn btn-ghost back-btn" @click="goBack">
-        <ArrowLeft :size="18" />
-        <span>{{ t('dashboard.zones') }}</span>
-      </button>
-    </div>
+    <div class="vpc-detail">
+        <!-- Header -->
+        <div class="detail-header">
+            <button class="btn btn-ghost back-btn" @click="goBack">
+                <ArrowLeft :size="18" />
+                <span>{{ t('dashboard.zones') }}</span>
+            </button>
+        </div>
 
-    <!-- Loading -->
-    <div v-if="loading" class="loading-container">
-      <div class="loading-spinner"></div>
-      <p class="loading-text">{{ t('messages.loading') }}</p>
-    </div>
+        <!-- Loading -->
+        <div v-if="loading" class="loading-container">
+            <div class="loading-spinner"></div>
+            <p class="loading-text">{{ t('messages.loading') }}</p>
+        </div>
 
-    <!-- Error -->
-    <div v-else-if="error" class="error-container card">
-      <MapPin :size="48" style="opacity: 0.3; margin-bottom: 16px;" />
-      <p class="text-secondary">{{ error }}</p>
-      <button class="btn btn-primary btn-sm" @click="fetchZoneDetail" style="margin-top: 12px;">
-        {{ t('actions.refresh') }}
-      </button>
-    </div>
+        <!-- Error -->
+        <div v-else-if="error" class="error-container card">
+            <MapPin :size="48" style="opacity: 0.3; margin-bottom: 16px" />
+            <p class="text-secondary">{{ error }}</p>
+            <button class="btn btn-primary btn-sm" @click="fetchZoneDetail" style="margin-top: 12px">
+                {{ t('actions.refresh') }}
+            </button>
+        </div>
 
-    <!-- Zone Detail Content -->
-    <div v-else-if="zone" class="detail-content">
-      <!-- Title Bar -->
-      <div class="title-bar card">
-        <div class="title-info">
-          <div class="title-icon">
-            <MapPin :size="28" />
-          </div>
-          <div>
-            <h2 class="resource-title">{{ zone.name }}</h2>
-            <div class="resource-id-row">
-              <span class="resource-id-text">ID: {{ zone.id || '-' }}</span>
-              <button class="copy-btn" v-if="zone.id" @click="copyToClipboard(String(zone.id), 'id')" :title="t('messages.copied')">
-                <Check v-if="copiedField === 'id'" :size="12" class="copied-icon" />
-                <Copy v-else :size="12" />
-              </button>
+        <!-- Zone Detail Content -->
+        <div v-else-if="zone" class="detail-content">
+            <!-- Title Bar -->
+            <div class="title-bar card">
+                <div class="title-info">
+                    <div class="title-icon">
+                        <MapPin :size="28" />
+                    </div>
+                    <div>
+                        <h2 class="resource-title">{{ zone.name }}</h2>
+                        <div class="resource-id-row">
+                            <span class="resource-id-text">ID: {{ zone.id || '-' }}</span>
+                            <button
+                                class="copy-btn"
+                                v-if="zone.id"
+                                @click="copyToClipboard(String(zone.id), 'id')"
+                                :title="t('messages.copied')"
+                            >
+                                <Check v-if="copiedField === 'id'" :size="12" class="copied-icon" />
+                                <Copy v-else :size="12" />
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                <div class="title-actions">
+                    <span class="badge badge-lg" :class="zone.default ? 'badge-primary' : 'badge-secondary'">
+                        {{ zone.default ? t('dashboard.zoneActions.default') : 'Zone' }}
+                    </span>
+                    <button class="btn btn-secondary btn-sm" @click="openEditModal">
+                        <Settings2 :size="14" />
+                        {{ t('actions.edit') }}
+                    </button>
+                    <button class="btn btn-danger-outline btn-sm" @click="showDeleteModal = true">
+                        <Trash2 :size="14" />
+                        {{ t('actions.delete') }}
+                    </button>
+                </div>
             </div>
-          </div>
-        </div>
-        <div class="title-actions">
-          <span class="badge badge-lg" :class="zone.default ? 'badge-primary' : 'badge-secondary'">
-            {{ zone.default ? t('dashboard.zoneActions.default') : 'Zone' }}
-          </span>
-          <button class="btn btn-secondary btn-sm" @click="openEditModal">
-            <Settings2 :size="14" />
-            {{ t('actions.edit') }}
-          </button>
-          <button class="btn btn-danger-outline btn-sm" @click="showDeleteModal = true">
-            <Trash2 :size="14" />
-            {{ t('actions.delete') }}
-          </button>
-        </div>
-      </div>
 
-      <!-- Info Sections -->
-      <div class="info-grid">
-        <div class="info-card card">
-          <h3 class="card-section-title">{{ t('dashboard.table.overview') }}</h3>
-          <div class="info-rows">
-            <InfoRow :label="t('dashboard.table.name')">{{ zone.name }}</InfoRow>
-            <InfoRow :label="t('dashboard.table.id')" mono>{{ zone.id || '-' }}</InfoRow>
-            <InfoRow :label="t('dashboard.zoneActions.default')">
-              <span class="badge" :class="zone.default ? 'badge-primary' : 'badge-secondary'">
-                {{ zone.default ? 'Yes' : 'No' }}
-              </span>
-            </InfoRow>
-            <InfoRow :label="t('dashboard.zoneActions.remark')">{{ zone.remark || '-' }}</InfoRow>
-          </div>
-        </div>
+            <!-- Info Sections -->
+            <div class="info-grid">
+                <div class="info-card card">
+                    <h3 class="card-section-title">{{ t('dashboard.table.overview') }}</h3>
+                    <div class="info-rows">
+                        <InfoRow :label="t('dashboard.table.name')">{{ zone.name }}</InfoRow>
+                        <InfoRow :label="t('dashboard.table.id')" mono>{{ zone.id || '-' }}</InfoRow>
+                        <InfoRow :label="t('dashboard.zoneActions.default')">
+                            <span class="badge" :class="zone.default ? 'badge-primary' : 'badge-secondary'">
+                                {{ zone.default ? 'Yes' : 'No' }}
+                            </span>
+                        </InfoRow>
+                        <InfoRow :label="t('dashboard.zoneActions.remark')">{{ zone.remark || '-' }}</InfoRow>
+                    </div>
+                </div>
 
-        <div class="info-card card">
-          <h3 class="card-section-title">{{ t('dashboard.zoneActions.associatedHypervisors') }} ({{ hypervisors.length }})</h3>
-          <div v-if="loadingHypers" class="loading-small">
-            <div class="loading-spinner-sm"></div>
-          </div>
-          <div v-else-if="hypervisors.length === 0" class="empty-hypers">
-            <Server :size="32" style="opacity: 0.2; margin-bottom: 8px;" />
-            <p>{{ t('dashboard.zoneActions.noHypervisors') }}</p>
-          </div>
-          <div v-else class="hyper-list">
-            <div v-for="h in hypervisors" :key="h.uuid" class="hyper-item">
-              <div class="hyper-info">
-                <Server :size="14" />
-                <router-link :to="{ name: 'hypervisor-detail', params: { id: h.uuid } }" class="hyper-link">
-                  {{ h.hostname }}
-                </router-link>
-                <span class="status-pill-sm" :class="getStatusInfo(h.status).class">
-                  {{ getStatusInfo(h.status).label }}
-                </span>
-              </div>
-              <div class="hyper-stats">
-                <span class="stat-item">
-                  CPU {{ getUsagePercent(h.cpu, h.cpu_total) }}% 
-                  <span class="avail-badge">{{ t('dashboard.table.available') }}</span>
-                </span>
-                <span class="stat-item">
-                  MEM {{ getUsagePercent(h.memory, h.memory_total) }}% 
-                  <span class="avail-badge">{{ t('dashboard.table.available') }}</span>
-                </span>
-              </div>
+                <div class="info-card card">
+                    <h3 class="card-section-title">
+                        {{ t('dashboard.zoneActions.associatedHypervisors') }} ({{ hypervisors.length }})
+                    </h3>
+                    <div v-if="loadingHypers" class="loading-small">
+                        <div class="loading-spinner-sm"></div>
+                    </div>
+                    <div v-else-if="hypervisors.length === 0" class="empty-hypers">
+                        <Server :size="32" style="opacity: 0.2; margin-bottom: 8px" />
+                        <p>{{ t('dashboard.zoneActions.noHypervisors') }}</p>
+                    </div>
+                    <div v-else class="hyper-list">
+                        <div v-for="h in hypervisors" :key="h.uuid" class="hyper-item">
+                            <div class="hyper-info">
+                                <Server :size="14" />
+                                <router-link
+                                    :to="{ name: 'hypervisor-detail', params: { id: h.uuid } }"
+                                    class="hyper-link"
+                                >
+                                    {{ h.hostname }}
+                                </router-link>
+                                <span class="status-pill-sm" :class="getStatusInfo(h.status).class">
+                                    {{ getStatusInfo(h.status).label }}
+                                </span>
+                            </div>
+                            <div class="hyper-stats">
+                                <span class="stat-item">
+                                    CPU {{ getUsagePercent(h.cpu, h.cpu_total) }}%
+                                    <span class="avail-badge">{{ t('dashboard.table.available') }}</span>
+                                </span>
+                                <span class="stat-item">
+                                    MEM {{ getUsagePercent(h.memory, h.memory_total) }}%
+                                    <span class="avail-badge">{{ t('dashboard.table.available') }}</span>
+                                </span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
             </div>
-          </div>
         </div>
-      </div>
+
+        <!-- Edit Modal -->
+        <BaseModal
+            :show="showEditModal"
+            :title="`${t('dashboard.zoneActions.editTitle')} - ${zone?.name ?? ''}`"
+            :loading="editing"
+            form
+            @close="showEditModal = false"
+            @submit="handleEdit"
+        >
+            <div class="form-stack">
+                <div class="form-group">
+                    <label class="form-label">{{ t('dashboard.zoneActions.remark') }}</label>
+                    <input type="text" v-model="editForm.remark" class="form-input" />
+                </div>
+                <div class="form-group">
+                    <label class="form-label" style="display: flex; align-items: center; gap: 8px; cursor: pointer">
+                        <input type="checkbox" v-model="editForm.default" />
+                        {{ t('dashboard.zoneActions.default') }}
+                    </label>
+                </div>
+            </div>
+
+            <template #footer>
+                <button type="button" class="btn btn-secondary" @click="showEditModal = false">
+                    {{ t('actions.cancel') }}
+                </button>
+                <button type="submit" class="btn btn-primary" :disabled="editing">
+                    <Loader2 v-if="editing" :size="14" class="spinning" />
+                    {{ editing ? t('messages.saving') : t('actions.save') }}
+                </button>
+            </template>
+        </BaseModal>
+
+        <!-- Delete Modal -->
+        <DeleteModal
+            :show="showDeleteModal"
+            :title="t('dashboard.zoneActions.deleteTitle')"
+            :message="t('dashboard.zoneActions.deleteConfirm', { name: zone?.name })"
+            :loading="deleting"
+            @close="showDeleteModal = false"
+            @confirm="handleDelete"
+        />
     </div>
-
-    <!-- Edit Modal -->
-    <BaseModal
-      :show="showEditModal"
-      :title="`${t('dashboard.zoneActions.editTitle')} - ${zone?.name ?? ''}`"
-      :loading="editing"
-      form
-      @close="showEditModal = false"
-      @submit="handleEdit"
-    >
-      <div class="form-stack">
-        <div class="form-group">
-          <label class="form-label">{{ t('dashboard.zoneActions.remark') }}</label>
-          <input type="text" v-model="editForm.remark" class="form-input" />
-        </div>
-        <div class="form-group">
-          <label class="form-label" style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
-            <input type="checkbox" v-model="editForm.default" />
-            {{ t('dashboard.zoneActions.default') }}
-          </label>
-        </div>
-      </div>
-
-      <template #footer>
-        <button type="button" class="btn btn-secondary" @click="showEditModal = false">{{ t('actions.cancel') }}</button>
-        <button type="submit" class="btn btn-primary" :disabled="editing">
-          <Loader2 v-if="editing" :size="14" class="spinning" />
-          {{ editing ? t('messages.saving') : t('actions.save') }}
-        </button>
-      </template>
-    </BaseModal>
-
-    <!-- Delete Modal -->
-    <DeleteModal
-      :show="showDeleteModal"
-      :title="t('dashboard.zoneActions.deleteTitle')"
-      :message="t('dashboard.zoneActions.deleteConfirm', { name: zone?.name })"
-      :loading="deleting"
-      @close="showDeleteModal = false"
-      @confirm="handleDelete"
-    />
-  </div>
 </template>
 
 <style scoped>
-.vpc-detail { max-width: 1100px; }
-.detail-header { margin-bottom: var(--spacing-4); }
+.vpc-detail {
+    max-width: 1100px;
+}
+.detail-header {
+    margin-bottom: var(--spacing-4);
+}
 
 .back-btn {
-  display: inline-flex; align-items: center; gap: var(--spacing-2);
-  font-size: var(--font-size-sm); color: var(--text-secondary);
-  padding: var(--spacing-2) var(--spacing-3); border-radius: var(--radius-md);
-  transition: all 0.2s;
+    display: inline-flex;
+    align-items: center;
+    gap: var(--spacing-2);
+    font-size: var(--font-size-sm);
+    color: var(--text-secondary);
+    padding: var(--spacing-2) var(--spacing-3);
+    border-radius: var(--radius-md);
+    transition: all 0.2s;
 }
-.back-btn:hover { color: var(--primary-color); background: var(--primary-50); }
+.back-btn:hover {
+    color: var(--primary-color);
+    background: var(--primary-50);
+}
 
 .loading-container {
-  display: flex; flex-direction: column; align-items: center;
-  justify-content: center; padding: 80px 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 80px 0;
 }
-.loading-text { margin-top: var(--spacing-3); color: var(--text-secondary); font-size: var(--font-size-sm); }
+.loading-text {
+    margin-top: var(--spacing-3);
+    color: var(--text-secondary);
+    font-size: var(--font-size-sm);
+}
 
 .error-container {
-  display: flex; flex-direction: column; align-items: center;
-  justify-content: center; padding: 60px 20px; text-align: center;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 60px 20px;
+    text-align: center;
 }
 
 .title-bar {
-  display: flex; justify-content: space-between; align-items: center;
-  margin-bottom: var(--spacing-5);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: var(--spacing-5);
 }
-.title-info { display: flex; align-items: center; gap: var(--spacing-4); }
+.title-info {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-4);
+}
 .title-icon {
-  width: 52px; height: 52px; border-radius: var(--radius-lg);
-  background: linear-gradient(135deg, var(--primary-50), var(--primary-100));
-  color: var(--primary-color); display: flex; align-items: center;
-  justify-content: center; flex-shrink: 0;
+    width: 52px;
+    height: 52px;
+    border-radius: var(--radius-lg);
+    background: linear-gradient(135deg, var(--primary-50), var(--primary-100));
+    color: var(--primary-color);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
 }
 .resource-title {
-  margin: 0 0 4px 0; font-size: var(--font-size-xl);
-  font-weight: var(--font-weight-semibold); color: var(--text-primary);
+    margin: 0 0 4px 0;
+    font-size: var(--font-size-xl);
+    font-weight: var(--font-weight-semibold);
+    color: var(--text-primary);
 }
-.resource-id-row { display: flex; align-items: center; gap: var(--spacing-2); }
-.resource-id-text { font-size: var(--font-size-xs); color: var(--text-light); font-family: var(--font-family-mono); }
+.resource-id-row {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-2);
+}
+.resource-id-text {
+    font-size: var(--font-size-xs);
+    color: var(--text-light);
+    font-family: var(--font-family-mono);
+}
 
 .copy-btn {
-  background: none; border: 1px solid var(--border-light);
-  border-radius: var(--radius-sm); padding: 2px 5px; cursor: pointer;
-  color: var(--text-light); display: inline-flex; align-items: center;
-  transition: all 0.15s;
+    background: none;
+    border: 1px solid var(--border-light);
+    border-radius: var(--radius-sm);
+    padding: 2px 5px;
+    cursor: pointer;
+    color: var(--text-light);
+    display: inline-flex;
+    align-items: center;
+    transition: all 0.15s;
 }
-.copy-btn:hover { color: var(--primary-color); border-color: var(--primary-200); background: var(--primary-50); }
-.copied-icon { color: var(--success-color); }
+.copy-btn:hover {
+    color: var(--primary-color);
+    border-color: var(--primary-200);
+    background: var(--primary-50);
+}
+.copied-icon {
+    color: var(--success-color);
+}
 
-.title-actions { display: flex; align-items: center; gap: var(--spacing-3); }
+.title-actions {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-3);
+}
 
-.badge { display: inline-flex; align-items: center; padding: 2px 8px; border-radius: var(--radius-sm); font-size: var(--font-size-xs); font-weight: 500; }
-.badge-lg { font-size: var(--font-size-sm); padding: 6px 14px; }
-.badge-primary { background: rgba(59, 130, 246, 0.1); color: #3b82f6; }
-.badge-secondary { background: var(--gray-100); color: var(--gray-600); }
+.badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 2px 8px;
+    border-radius: var(--radius-sm);
+    font-size: var(--font-size-xs);
+    font-weight: 500;
+}
+.badge-lg {
+    font-size: var(--font-size-sm);
+    padding: 6px 14px;
+}
+.badge-primary {
+    background: rgba(59, 130, 246, 0.1);
+    color: #3b82f6;
+}
+.badge-secondary {
+    background: var(--gray-100);
+    color: var(--gray-600);
+}
 
 .btn-danger-outline {
-  background: transparent; color: #ef4444; border: 1px solid #fca5a5;
-  padding: 6px 12px; border-radius: var(--radius-md); cursor: pointer;
-  font-weight: 500; font-size: 0.8125rem; display: inline-flex;
-  align-items: center; gap: 4px; transition: all 0.2s;
+    background: transparent;
+    color: #ef4444;
+    border: 1px solid #fca5a5;
+    padding: 6px 12px;
+    border-radius: var(--radius-md);
+    cursor: pointer;
+    font-weight: 500;
+    font-size: 0.8125rem;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    transition: all 0.2s;
 }
-.btn-danger-outline:hover { background: #fef2f2; border-color: #ef4444; }
+.btn-danger-outline:hover {
+    background: #fef2f2;
+    border-color: #ef4444;
+}
 
-.btn-sm { font-size: 0.8125rem; padding: 6px 12px; display: inline-flex; align-items: center; gap: 4px; }
+.btn-sm {
+    font-size: 0.8125rem;
+    padding: 6px 12px;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+}
 
 .info-grid {
-  display: grid; grid-template-columns: repeat(2, 1fr);
-  gap: var(--spacing-4); margin-bottom: var(--spacing-5);
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: var(--spacing-4);
+    margin-bottom: var(--spacing-5);
 }
-.info-card { padding: var(--spacing-5); }
+.info-card {
+    padding: var(--spacing-5);
+}
 .card-section-title {
-  margin: 0 0 var(--spacing-4) 0; font-size: var(--font-size-sm);
-  font-weight: var(--font-weight-semibold); color: var(--text-secondary);
-  text-transform: uppercase; letter-spacing: 0.05em;
-  padding-bottom: var(--spacing-3); border-bottom: 1px solid var(--border-light);
+    margin: 0 0 var(--spacing-4) 0;
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-semibold);
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    padding-bottom: var(--spacing-3);
+    border-bottom: 1px solid var(--border-light);
 }
-.info-rows { display: flex; flex-direction: column; gap: var(--spacing-3); }
+.info-rows {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-3);
+}
 
 /* Hypervisors list */
-.loading-small { display: flex; justify-content: center; padding: 24px 0; }
+.loading-small {
+    display: flex;
+    justify-content: center;
+    padding: 24px 0;
+}
 .loading-spinner-sm {
-  width: 24px; height: 24px; border: 2px solid var(--border-light);
-  border-top-color: var(--primary-500); border-radius: 50%;
-  animation: spin 1s linear infinite;
+    width: 24px;
+    height: 24px;
+    border: 2px solid var(--border-light);
+    border-top-color: var(--primary-500);
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
 }
 .empty-hypers {
-  display: flex; flex-direction: column; align-items: center;
-  padding: 24px 0; color: var(--text-tertiary); font-size: var(--font-size-sm);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 24px 0;
+    color: var(--text-tertiary);
+    font-size: var(--font-size-sm);
 }
-.hyper-list { display: flex; flex-direction: column; gap: 8px; }
+.hyper-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
 .hyper-item {
-  display: flex; justify-content: space-between; align-items: center;
-  padding: 8px 12px; background: var(--bg-secondary); border-radius: var(--radius-md);
-  border: 1px solid var(--border-light);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 8px 12px;
+    background: var(--bg-secondary);
+    border-radius: var(--radius-md);
+    border: 1px solid var(--border-light);
 }
-.hyper-info { display: flex; align-items: center; gap: 8px; }
+.hyper-info {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
 .hyper-link {
-  font-size: var(--font-size-sm); font-weight: 500;
-  color: var(--primary-600); text-decoration: none;
+    font-size: var(--font-size-sm);
+    font-weight: 500;
+    color: var(--primary-600);
+    text-decoration: none;
 }
-.hyper-link:hover { text-decoration: underline; }
-.hyper-stats { display: flex; gap: 12px; }
-.stat-item { 
-  font-size: var(--font-size-xs); color: var(--text-secondary); font-family: var(--font-family-mono); 
-  display: flex; align-items: center; gap: 4px;
+.hyper-link:hover {
+    text-decoration: underline;
+}
+.hyper-stats {
+    display: flex;
+    gap: 12px;
+}
+.stat-item {
+    font-size: var(--font-size-xs);
+    color: var(--text-secondary);
+    font-family: var(--font-family-mono);
+    display: flex;
+    align-items: center;
+    gap: 4px;
 }
 .avail-badge {
-  font-family: var(--font-family);
-  background: rgba(16, 185, 129, 0.1);
-  color: var(--success-color);
-  padding: 0 4px; border-radius: 4px; font-size: 0.65rem;
-  font-weight: 500;
+    font-family: var(--font-family);
+    background: rgba(16, 185, 129, 0.1);
+    color: var(--success-color);
+    padding: 0 4px;
+    border-radius: 4px;
+    font-size: 0.65rem;
+    font-weight: 500;
 }
 
 .status-pill-sm {
-  font-size: 0.6875rem; padding: 1px 6px; border-radius: 10px; font-weight: 500;
+    font-size: 0.6875rem;
+    padding: 1px 6px;
+    border-radius: 10px;
+    font-weight: 500;
 }
-.status-active { background: rgba(16, 185, 129, 0.1); color: var(--success-color); }
-.status-disabled { background: var(--gray-100); color: var(--gray-500); }
-.status-maintaining { background: rgba(245, 158, 11, 0.1); color: var(--warning-color); }
-.status-deploying { background: rgba(59, 130, 246, 0.1); color: #3b82f6; }
-.status-failed { background: rgba(239, 68, 68, 0.1); color: #ef4444; }
+.status-active {
+    background: rgba(16, 185, 129, 0.1);
+    color: var(--success-color);
+}
+.status-disabled {
+    background: var(--gray-100);
+    color: var(--gray-500);
+}
+.status-maintaining {
+    background: rgba(245, 158, 11, 0.1);
+    color: var(--warning-color);
+}
+.status-deploying {
+    background: rgba(59, 130, 246, 0.1);
+    color: #3b82f6;
+}
+.status-failed {
+    background: rgba(239, 68, 68, 0.1);
+    color: #ef4444;
+}
 
 /* Modals */
-.form-stack { display: flex; flex-direction: column; gap: 16px; }
-.form-group { display: flex; flex-direction: column; }
-.form-label { font-size: 0.8125rem; color: var(--text-secondary); margin-bottom: 4px; font-weight: 500; }
-.form-input {
-  width: 100%; padding: 8px 12px;
-  border: 1px solid var(--border-light); border-radius: var(--radius-md);
-  font-size: 0.875rem; background: var(--bg-primary); color: var(--text-primary);
+.form-stack {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
 }
-.form-input:focus { outline: none; border-color: var(--primary-300); box-shadow: 0 0 0 2px var(--primary-100); }
+.form-group {
+    display: flex;
+    flex-direction: column;
+}
+.form-label {
+    font-size: 0.8125rem;
+    color: var(--text-secondary);
+    margin-bottom: 4px;
+    font-weight: 500;
+}
+.form-input {
+    width: 100%;
+    padding: 8px 12px;
+    border: 1px solid var(--border-light);
+    border-radius: var(--radius-md);
+    font-size: 0.875rem;
+    background: var(--bg-primary);
+    color: var(--text-primary);
+}
+.form-input:focus {
+    outline: none;
+    border-color: var(--primary-300);
+    box-shadow: 0 0 0 2px var(--primary-100);
+}
 
-.spinning { animation: spin 1s linear infinite; }
-@keyframes spin { to { transform: rotate(360deg); } }
+.spinning {
+    animation: spin 1s linear infinite;
+}
+@keyframes spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
 
 @media (max-width: 768px) {
-  .info-grid { grid-template-columns: 1fr; }
-  .title-bar { flex-direction: column; align-items: flex-start; gap: var(--spacing-3); }
+    .info-grid {
+        grid-template-columns: 1fr;
+    }
+    .title-bar {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: var(--spacing-3);
+    }
 }
 </style>

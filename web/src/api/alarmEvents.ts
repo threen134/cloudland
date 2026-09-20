@@ -106,15 +106,18 @@ export interface AlarmSummaryResponse {
 }
 
 export const alarmEventsApi = {
-    async list(params?: { status?: string; query?: string; page?: number; page_size?: number }): Promise<AlarmEventListResponse> {
+    async list(params?: {
+        status?: string
+        query?: string
+        page?: number
+        page_size?: number
+    }): Promise<AlarmEventListResponse> {
         const response = await client.get<AlarmEventListResponse>('/alarm/events', { params })
         return response.data
     },
 
     async getDeliveryLogs(eventUuid: string): Promise<AlarmDeliveryLogListResponse> {
-        const response = await client.get<AlarmDeliveryLogListResponse>(
-            `/alarm/events/${eventUuid}/delivery-logs`
-        )
+        const response = await client.get<AlarmDeliveryLogListResponse>(`/alarm/events/${eventUuid}/delivery-logs`)
         return response.data
     },
 

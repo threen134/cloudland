@@ -196,5 +196,5 @@ export const hypervisorsApi = {
     async getMemoryMetrics(payload: HyperMetricsPayload): Promise<HyperMemoryMetricsResponse> {
         const response = await client.post<HyperMemoryMetricsResponse>('/metrics/hypers/memory/his_data', payload)
         return response.data
-    }
+    },
 }

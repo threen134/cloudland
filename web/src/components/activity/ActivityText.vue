@@ -52,34 +52,40 @@ const resourceLink = () => {
 </script>
 
 <template>
-  <i18n-t :keypath="textKey()" tag="span">
-    <template #action>{{ activity.action }}</template>
-    <template #name>
-      <router-link v-if="resourceLink()" :to="resourceLink()!" class="activity-resource" :title="resourceLabel()">{{ resourceLabel() }}</router-link>
-      <span v-else class="activity-resource plain" :title="resourceLabel()">{{ resourceLabel() }}</span>
-    </template>
-  </i18n-t>
+    <i18n-t :keypath="textKey()" tag="span">
+        <template #action>{{ activity.action }}</template>
+        <template #name>
+            <router-link
+                v-if="resourceLink()"
+                :to="resourceLink()!"
+                class="activity-resource"
+                :title="resourceLabel()"
+                >{{ resourceLabel() }}</router-link
+            >
+            <span v-else class="activity-resource plain" :title="resourceLabel()">{{ resourceLabel() }}</span>
+        </template>
+    </i18n-t>
 </template>
 
 <style scoped>
 /* Resource names can be long (each resource sets its own limit; the audit column holds up to 255 chars): truncate to one line, full name on hover. */
 .activity-resource {
-  display: inline-block;
-  max-width: min(16em, 100%);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  vertical-align: bottom;
-  font-weight: 500;
-  color: var(--primary-600);
-  text-decoration: none;
+    display: inline-block;
+    max-width: min(16em, 100%);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    vertical-align: bottom;
+    font-weight: 500;
+    color: var(--primary-600);
+    text-decoration: none;
 }
 
 .activity-resource:hover {
-  text-decoration: underline;
+    text-decoration: underline;
 }
 
 .activity-resource.plain {
-  color: var(--gray-900);
+    color: var(--gray-900);
 }
 </style>

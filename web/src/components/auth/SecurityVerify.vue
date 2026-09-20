@@ -32,7 +32,7 @@ const drawCaptcha = (code: string) => {
     if (!ctx) return
 
     ctx.clearRect(0, 0, canvas.width, canvas.height)
-    
+
     // Background with slight gradient
     const gradient = ctx.createLinearGradient(0, 0, canvas.width, canvas.height)
     gradient.addColorStop(0, '#f8fafc')
@@ -65,19 +65,19 @@ const drawCaptcha = (code: string) => {
     for (let i = 0; i < code.length; i++) {
         const char = code[i]
         ctx.save()
-        
+
         // Random placement and rotation
         const x = 20 + i * 25
         const y = canvas.height / 2 + (Math.random() * 10 - 5)
-        const angle = (Math.random() * 40 - 20) * Math.PI / 180
-        
+        const angle = ((Math.random() * 40 - 20) * Math.PI) / 180
+
         ctx.translate(x, y)
         ctx.rotate(angle)
-        
+
         // Random color
         const colors = ['#0f172a', '#1e293b', '#334155', '#475569', '#2563eb', '#7c3aed', '#db2777']
         ctx.fillStyle = colors[Math.floor(Math.random() * colors.length)]
-        
+
         ctx.fillText(char, 0, 0)
         ctx.restore()
     }
@@ -117,31 +117,31 @@ onMounted(() => {
             <ShieldCheck :size="16" class="header-icon" />
             <span>{{ t('auth.securityCheck') }}</span>
         </div>
-        
+
         <div class="captcha-container" :class="{ 'is-verified': isVerified, 'has-error': showError }">
             <div class="captcha-visual">
-                <canvas 
-                    ref="canvasRef" 
-                    width="130" 
-                    height="48" 
+                <canvas
+                    ref="canvasRef"
+                    width="130"
+                    height="48"
                     class="captcha-canvas"
                     @click="generateCaptcha"
                 ></canvas>
-                <button 
-                    type="button" 
-                    class="refresh-btn" 
-                    @click="generateCaptcha" 
+                <button
+                    type="button"
+                    class="refresh-btn"
+                    @click="generateCaptcha"
                     :title="t('actions.refresh')"
                     v-if="!isVerified"
                 >
                     <RefreshCw :size="18" />
                 </button>
             </div>
-            
+
             <div class="input-section">
-                <input 
-                    type="text" 
-                    v-model="userInput" 
+                <input
+                    type="text"
+                    v-model="userInput"
                     :placeholder="t('auth.captchaPlaceholder')"
                     class="captcha-input"
                     maxlength="4"
@@ -155,7 +155,7 @@ onMounted(() => {
                 </div>
             </div>
         </div>
-        
+
         <p v-if="showError" class="error-text">
             {{ t('auth.incorrectCaptcha') }}
         </p>
@@ -170,8 +170,14 @@ onMounted(() => {
 }
 
 @keyframes fadeInScale {
-    from { opacity: 0; transform: scale(0.95); }
-    to { opacity: 1; transform: scale(1); }
+    from {
+        opacity: 0;
+        transform: scale(0.95);
+    }
+    to {
+        opacity: 1;
+        transform: scale(1);
+    }
 }
 
 .verify-header {
@@ -268,14 +274,27 @@ onMounted(() => {
     border-color: var(--error-color);
     background-color: var(--error-light);
     color: var(--error-dark);
-    animation: shake 0.5s cubic-bezier(.36,.07,.19,.97) both;
+    animation: shake 0.5s cubic-bezier(0.36, 0.07, 0.19, 0.97) both;
 }
 
 @keyframes shake {
-    10%, 90% { transform: translate3d(-1px, 0, 0); }
-    20%, 80% { transform: translate3d(2px, 0, 0); }
-    30%, 50%, 70% { transform: translate3d(-4px, 0, 0); }
-    40%, 60% { transform: translate3d(4px, 0, 0); }
+    10%,
+    90% {
+        transform: translate3d(-1px, 0, 0);
+    }
+    20%,
+    80% {
+        transform: translate3d(2px, 0, 0);
+    }
+    30%,
+    50%,
+    70% {
+        transform: translate3d(-4px, 0, 0);
+    }
+    40%,
+    60% {
+        transform: translate3d(4px, 0, 0);
+    }
 }
 
 .is-verified .captcha-input {
@@ -294,8 +313,12 @@ onMounted(() => {
 }
 
 @keyframes popIn {
-    from { transform: translateY(-50%) scale(0); }
-    to { transform: translateY(-50%) scale(1); }
+    from {
+        transform: translateY(-50%) scale(0);
+    }
+    to {
+        transform: translateY(-50%) scale(1);
+    }
 }
 
 .error-text {

@@ -37,9 +37,21 @@ const resourceType = ref('')
 const result = ref<'' | 'success' | 'failed'>('')
 
 const RESOURCE_TYPES = [
-    'instance', 'volume', 'backup', 'consistency_group', 'image', 'key', 'flavor',
-    'vpc', 'subnet', 'security_group', 'floating_ip', 'load_balancer',
-    'zone', 'hyper', 'migration',
+    'instance',
+    'volume',
+    'backup',
+    'consistency_group',
+    'image',
+    'key',
+    'flavor',
+    'vpc',
+    'subnet',
+    'security_group',
+    'floating_ip',
+    'load_balancer',
+    'zone',
+    'hyper',
+    'migration',
 ]
 
 const activities = ref<Activity[]>([])
@@ -177,7 +189,12 @@ watch(rangePreset, (preset) => {
         customEnd.value = toLocalInput(now)
     }
 })
-watch(() => regionStore.currentRegionId, (id) => { if (id) reload() })
+watch(
+    () => regionStore.currentRegionId,
+    (id) => {
+        if (id) reload()
+    }
+)
 onMounted(reload)
 
 const hasFilter = computed(() => resourceType.value !== '' || result.value !== '')
@@ -199,187 +216,231 @@ const loadError = computed(() => rangeError.value || errorMessage.value)
 </script>
 
 <template>
-  <div class="vpc-list-container activity-page">
-    <div class="detail-header">
-      <button class="btn btn-ghost back-btn" @click="goBack">
-        <ArrowLeft :size="18" />
-        <span>{{ $t('dashboard.overview.title') }}</span>
-      </button>
+    <div class="vpc-list-container activity-page">
+        <div class="detail-header">
+            <button class="btn btn-ghost back-btn" @click="goBack">
+                <ArrowLeft :size="18" />
+                <span>{{ $t('dashboard.overview.title') }}</span>
+            </button>
+        </div>
+
+        <PageToolbar :searchable="false">
+            <template #filters>
+                <select
+                    v-model="rangePreset"
+                    class="filter-select"
+                    :aria-label="$t('dashboard.activityPage.timeRange')"
+                >
+                    <option value="today">{{ $t('dashboard.activityPage.ranges.today') }}</option>
+                    <option value="7d">{{ $t('dashboard.activityPage.ranges.last7d') }}</option>
+                    <option value="30d">{{ $t('dashboard.activityPage.ranges.last30d') }}</option>
+                    <option value="90d">{{ $t('dashboard.activityPage.ranges.last90d') }}</option>
+                    <option value="custom">{{ $t('dashboard.activityPage.ranges.custom') }}</option>
+                </select>
+                <template v-if="rangePreset === 'custom'">
+                    <input
+                        v-model="customStart"
+                        type="datetime-local"
+                        class="filter-select"
+                        :aria-label="$t('dashboard.activityPage.start')"
+                        :title="$t('dashboard.activityPage.start')"
+                    />
+                    <span class="range-sep">~</span>
+                    <input
+                        v-model="customEnd"
+                        type="datetime-local"
+                        class="filter-select"
+                        :aria-label="$t('dashboard.activityPage.end')"
+                        :title="$t('dashboard.activityPage.end')"
+                    />
+                    <button class="btn btn-primary btn-sm" @click="reload">
+                        {{ $t('dashboard.activityPage.apply') }}
+                    </button>
+                </template>
+                <select
+                    v-model="resourceType"
+                    class="filter-select"
+                    :aria-label="$t('dashboard.activityPage.resourceType')"
+                >
+                    <option value="">{{ $t('dashboard.activityPage.allResourceTypes') }}</option>
+                    <option v-for="rt in RESOURCE_TYPES" :key="rt" :value="rt">
+                        {{ $t(`dashboard.activityPage.resourceTypes.${rt}`) }}
+                    </option>
+                </select>
+                <select v-model="result" class="filter-select" :aria-label="$t('dashboard.activityPage.result')">
+                    <option value="">{{ $t('dashboard.activityPage.allResults') }}</option>
+                    <option value="success">{{ $t('dashboard.activityPage.succeeded') }}</option>
+                    <option value="failed">{{ $t('dashboard.activityPage.failed') }}</option>
+                </select>
+            </template>
+            <template #actions>
+                <button
+                    class="btn btn-secondary btn-sm btn-icon"
+                    :title="$t('actions.refresh')"
+                    :aria-label="$t('actions.refresh')"
+                    @click="reload"
+                >
+                    <RefreshCw :size="14" :class="{ spinning: loading }" />
+                </button>
+            </template>
+        </PageToolbar>
+
+        <DataTable
+            :columns="columns"
+            :rows="activities"
+            row-key="id"
+            :loading="loading"
+            :error="loadError"
+            @retry="reload"
+        >
+            <template #empty>
+                <div class="empty-state">
+                    <History :size="48" style="opacity: 0.2; margin-bottom: 16px" />
+                    <p>{{ emptyText }}</p>
+                </div>
+            </template>
+
+            <template #cell-time="{ row: a }">
+                <div class="col-time">
+                    <div>{{ relativeTime(a.created_at) }}</div>
+                    <div class="time-absolute">{{ absoluteTime(a.created_at) }}</div>
+                </div>
+            </template>
+
+            <template #cell-actor="{ row: a }">
+                <div class="col-actor">{{ a.actor || $t('dashboard.overview.activityUnknownActor') }}</div>
+            </template>
+
+            <template #cell-action="{ row: a }">
+                <div class="col-action"><ActivityText :activity="a" /></div>
+            </template>
+
+            <template #cell-result="{ row: a }">
+                <StatusBadge
+                    :variant="a.success ? 'success' : 'error'"
+                    :label="a.success ? $t('dashboard.activityPage.succeeded') : $t('dashboard.activityPage.failed')"
+                />
+            </template>
+
+            <template #footer>
+                <div v-if="!loading && !loadError && activities.length > 0" class="table-footer">
+                    <button
+                        v-if="nextCursor"
+                        class="btn btn-secondary btn-sm"
+                        :disabled="loadingMore"
+                        @click="loadMore"
+                    >
+                        {{
+                            loadingMore
+                                ? $t('dashboard.activityPage.loadingMore')
+                                : $t('dashboard.activityPage.loadMore')
+                        }}
+                    </button>
+                    <span v-else class="end-hint">{{
+                        $t('dashboard.activityPage.noMore', { n: activities.length })
+                    }}</span>
+                </div>
+            </template>
+        </DataTable>
     </div>
-
-    <PageToolbar :searchable="false">
-      <template #filters>
-        <select v-model="rangePreset" class="filter-select" :aria-label="$t('dashboard.activityPage.timeRange')">
-          <option value="today">{{ $t('dashboard.activityPage.ranges.today') }}</option>
-          <option value="7d">{{ $t('dashboard.activityPage.ranges.last7d') }}</option>
-          <option value="30d">{{ $t('dashboard.activityPage.ranges.last30d') }}</option>
-          <option value="90d">{{ $t('dashboard.activityPage.ranges.last90d') }}</option>
-          <option value="custom">{{ $t('dashboard.activityPage.ranges.custom') }}</option>
-        </select>
-        <template v-if="rangePreset === 'custom'">
-          <input v-model="customStart" type="datetime-local" class="filter-select" :aria-label="$t('dashboard.activityPage.start')" :title="$t('dashboard.activityPage.start')" />
-          <span class="range-sep">~</span>
-          <input v-model="customEnd" type="datetime-local" class="filter-select" :aria-label="$t('dashboard.activityPage.end')" :title="$t('dashboard.activityPage.end')" />
-          <button class="btn btn-primary btn-sm" @click="reload">{{ $t('dashboard.activityPage.apply') }}</button>
-        </template>
-        <select v-model="resourceType" class="filter-select" :aria-label="$t('dashboard.activityPage.resourceType')">
-          <option value="">{{ $t('dashboard.activityPage.allResourceTypes') }}</option>
-          <option v-for="rt in RESOURCE_TYPES" :key="rt" :value="rt">{{ $t(`dashboard.activityPage.resourceTypes.${rt}`) }}</option>
-        </select>
-        <select v-model="result" class="filter-select" :aria-label="$t('dashboard.activityPage.result')">
-          <option value="">{{ $t('dashboard.activityPage.allResults') }}</option>
-          <option value="success">{{ $t('dashboard.activityPage.succeeded') }}</option>
-          <option value="failed">{{ $t('dashboard.activityPage.failed') }}</option>
-        </select>
-      </template>
-      <template #actions>
-        <button class="btn btn-secondary btn-sm btn-icon" :title="$t('actions.refresh')" :aria-label="$t('actions.refresh')" @click="reload">
-          <RefreshCw :size="14" :class="{ spinning: loading }" />
-        </button>
-      </template>
-    </PageToolbar>
-
-    <DataTable
-      :columns="columns"
-      :rows="activities"
-      row-key="id"
-      :loading="loading"
-      :error="loadError"
-      @retry="reload"
-    >
-      <template #empty>
-        <div class="empty-state">
-          <History :size="48" style="opacity: 0.2; margin-bottom: 16px;" />
-          <p>{{ emptyText }}</p>
-        </div>
-      </template>
-
-      <template #cell-time="{ row: a }">
-        <div class="col-time">
-          <div>{{ relativeTime(a.created_at) }}</div>
-          <div class="time-absolute">{{ absoluteTime(a.created_at) }}</div>
-        </div>
-      </template>
-
-      <template #cell-actor="{ row: a }">
-        <div class="col-actor">{{ a.actor || $t('dashboard.overview.activityUnknownActor') }}</div>
-      </template>
-
-      <template #cell-action="{ row: a }">
-        <div class="col-action"><ActivityText :activity="a" /></div>
-      </template>
-
-      <template #cell-result="{ row: a }">
-        <StatusBadge
-          :variant="a.success ? 'success' : 'error'"
-          :label="a.success ? $t('dashboard.activityPage.succeeded') : $t('dashboard.activityPage.failed')"
-        />
-      </template>
-
-      <template #footer>
-        <div v-if="!loading && !loadError && activities.length > 0" class="table-footer">
-          <button v-if="nextCursor" class="btn btn-secondary btn-sm" :disabled="loadingMore" @click="loadMore">
-            {{ loadingMore ? $t('dashboard.activityPage.loadingMore') : $t('dashboard.activityPage.loadMore') }}
-          </button>
-          <span v-else class="end-hint">{{ $t('dashboard.activityPage.noMore', { n: activities.length }) }}</span>
-        </div>
-      </template>
-    </DataTable>
-  </div>
 </template>
 
 <style scoped>
 /* Header, filters and table follow the other list pages (e.g. AlarmEvents.vue); the back button follows the detail pages */
 .detail-header {
-  margin-bottom: var(--spacing-4);
+    margin-bottom: var(--spacing-4);
 }
 
 .back-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--spacing-2);
-  font-size: var(--font-size-sm);
-  color: var(--text-secondary);
-  padding: var(--spacing-2) var(--spacing-3);
-  border-radius: var(--radius-md);
-  transition: all 0.2s;
+    display: inline-flex;
+    align-items: center;
+    gap: var(--spacing-2);
+    font-size: var(--font-size-sm);
+    color: var(--text-secondary);
+    padding: var(--spacing-2) var(--spacing-3);
+    border-radius: var(--radius-md);
+    transition: all 0.2s;
 }
 
 .back-btn:hover {
-  color: var(--primary-color);
-  background: var(--primary-50);
+    color: var(--primary-color);
+    background: var(--primary-50);
 }
 
 .filter-select {
-  height: 40px;
-  padding: 0 12px;
-  border: 1px solid var(--border-light);
-  border-radius: var(--radius-md);
-  font-size: 0.875rem;
-  background: var(--bg-secondary);
-  color: var(--text-primary);
-  min-width: 120px;
-  transition: border-color 0.2s, box-shadow 0.2s;
+    height: 40px;
+    padding: 0 12px;
+    border: 1px solid var(--border-light);
+    border-radius: var(--radius-md);
+    font-size: 0.875rem;
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+    min-width: 120px;
+    transition:
+        border-color 0.2s,
+        box-shadow 0.2s;
 }
 
 .filter-select:focus {
-  outline: none;
-  border-color: var(--primary-300);
-  box-shadow: 0 0 0 2px var(--primary-100);
+    outline: none;
+    border-color: var(--primary-300);
+    box-shadow: 0 0 0 2px var(--primary-100);
 }
 
 .range-sep {
-  color: var(--gray-400);
+    color: var(--gray-400);
 }
 
 .col-time {
-  width: 190px;
-  white-space: nowrap;
+    width: 190px;
+    white-space: nowrap;
 }
 
 .time-absolute {
-  font-size: 0.75rem;
-  color: var(--gray-400);
+    font-size: 0.75rem;
+    color: var(--gray-400);
 }
 
 .col-actor {
-  width: 160px;
-  font-weight: 500;
-  color: var(--text-primary);
+    width: 160px;
+    font-weight: 500;
+    color: var(--text-primary);
 }
 
 .col-action {
-  color: var(--gray-700);
+    color: var(--gray-700);
 }
 
 .table-footer {
-  display: flex;
-  justify-content: center;
-  padding: 16px;
-  border-top: 1px solid var(--border-light);
+    display: flex;
+    justify-content: center;
+    padding: 16px;
+    border-top: 1px solid var(--border-light);
 }
 
 .end-hint {
-  font-size: 0.8125rem;
-  color: var(--gray-400);
+    font-size: 0.8125rem;
+    color: var(--gray-400);
 }
 
 .empty-state {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
 }
 
 .empty-state p {
-  margin: 0 0 12px;
+    margin: 0 0 12px;
 }
 
 .spinning {
-  animation: spin 1s linear infinite;
+    animation: spin 1s linear infinite;
 }
 
 @keyframes spin {
-  to { transform: rotate(360deg); }
+    to {
+        transform: rotate(360deg);
+    }
 }
 </style>

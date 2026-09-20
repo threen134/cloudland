@@ -21,7 +21,9 @@ export function useCopyId(duration = 2000) {
         }
         if (timer) clearTimeout(timer)
         copiedId.value = key ?? text
-        timer = setTimeout(() => { copiedId.value = null }, duration)
+        timer = setTimeout(() => {
+            copiedId.value = null
+        }, duration)
         return true
     }
 

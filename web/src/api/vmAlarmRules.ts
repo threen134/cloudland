@@ -169,7 +169,10 @@ export const VM_RULE_TYPES = [
 ] as const
 
 export const vmAlarmRulesApi = {
-    async listRules(type: VMRuleType, params?: { page?: number; page_size?: number }): Promise<VMAlarmRuleListResponse> {
+    async listRules(
+        type: VMRuleType,
+        params?: { page?: number; page_size?: number }
+    ): Promise<VMAlarmRuleListResponse> {
         const response = await client.get<VMAlarmRuleListResponse>(`/metrics/alarm/${type}/rules`, { params })
         return response.data
     },
@@ -222,7 +225,10 @@ export const vmAlarmRulesApi = {
         return response.data
     },
 
-    async unlinkRule(groupUuid: string, vmLinks: { vm_uuid: string; interface?: string }[]): Promise<UnlinkRuleResponse> {
+    async unlinkRule(
+        groupUuid: string,
+        vmLinks: { vm_uuid: string; interface?: string }[]
+    ): Promise<UnlinkRuleResponse> {
         const response = await client.post<UnlinkRuleResponse>('/metrics/alarm/unlink', {
             group_uuid: groupUuid,
             vm_links: vmLinks,

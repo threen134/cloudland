@@ -1,11 +1,11 @@
 import { useI18n } from 'vue-i18n'
 
 const typeBadgeClassMap: Record<string, string> = {
-    'floating': 'badge-primary',
-    'site': 'badge-success',
-    'loadbalancer': 'badge-warning',
-    'internal': 'badge-info',
-    'native': 'badge-primary'
+    floating: 'badge-primary',
+    site: 'badge-success',
+    loadbalancer: 'badge-warning',
+    internal: 'badge-info',
+    native: 'badge-primary',
 }
 
 export function useFloatingIP() {

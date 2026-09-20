@@ -22,9 +22,8 @@ const creating = ref(false)
 const createError = ref('')
 const newKeyForm = ref({
     name: '',
-    public_key: ''
+    public_key: '',
 })
-
 
 const { t } = useI18n()
 const toast = useToast()
@@ -59,7 +58,6 @@ const {
     return { items: response.keys || [], total: response.total ?? 0 }
 })
 
-
 const copyFingerprint = async (key: SSHKey) => {
     if (key.finger_print) {
         await navigator.clipboard.writeText(key.finger_print)
@@ -69,7 +67,6 @@ const copyFingerprint = async (key: SSHKey) => {
         }, 2000)
     }
 }
-
 
 const openCreateModal = () => {
     newKeyForm.value = { name: '', public_key: '' }
@@ -92,7 +89,6 @@ const handleCreateKey = async () => {
         return
     }
 
-    
     creating.value = true
     try {
         await keysApi.createKey(newKeyForm.value)
@@ -134,7 +130,8 @@ const confirmDelete = async () => {
         toast.success(t('messages.deleteSuccess'))
     } catch (error) {
         console.error('Failed to delete SSH key:', error)
-        const data = (error as { response?: { data?: { error_code?: number; error_code_str?: string } } })?.response?.data
+        const data = (error as { response?: { data?: { error_code?: number; error_code_str?: string } } })?.response
+            ?.data
         if (data?.error_code === 161006 || data?.error_code_str === 'SSHKeyInUse') {
             deleteError.value = t('messages.sshKeyInUse')
         } else {
@@ -149,221 +146,244 @@ onMounted(fetchKeys)
 </script>
 
 <template>
-  <div>
-    <PageToolbar v-model:search="searchQuery">
-      <template #actions>
-        <button class="btn btn-secondary btn-sm btn-icon" @click="() => fetchKeys()" :title="$t('actions.refresh')">
-          <RefreshCw :size="14" :class="{ spinning: loading }" />
-        </button>
-        <button class="btn btn-primary btn-sm" @click="openCreateModal">
-          <Plus :size="14" /> {{ $t('dashboard.buttons.createKey') }}
-        </button>
-      </template>
-    </PageToolbar>
-
-    <DataTable
-      :columns="columns"
-      :rows="keys"
-      row-key="id"
-      :loading="loading"
-      :error="loadError"
-      :order="order"
-      @update:order="toggleSort"
-      @retry="() => fetchKeys()"
-    >
-      <template #empty>
-        <div v-if="searchQuery">
-          <Search :size="48" style="opacity: 0.3; margin-bottom: 16px;" />
-          <p>{{ $t('messages.noResults') }}</p>
-        </div>
-        <div v-else>
-          <Key :size="48" style="opacity: 0.3; margin-bottom: 16px;" />
-          <p>{{ $t('messages.noSSHKeys') }}</p>
-        </div>
-      </template>
-
-      <template #cell-name="{ row: key }">
-        <div class="resource-link-static">
-          <div class="resource-info">
-            <div class="resource-icon">
-              <Key :size="16" />
-            </div>
-            <div>
-              <div class="resource-name">{{ key.name }}</div>
-              <div class="resource-id-row">
-                <span class="resource-id" :title="key.id">{{ key.id.slice(0, 8) }}...</span>
-                <button class="copy-btn-mini" @click.stop.prevent="copyId(key.id)" :title="t('actions.copy')" :aria-label="t('actions.copy')">
-                  <Check v-if="copiedId === key.id" :size="10" style="color: var(--success-color);" />
-                  <Copy v-else :size="10" />
+    <div>
+        <PageToolbar v-model:search="searchQuery">
+            <template #actions>
+                <button
+                    class="btn btn-secondary btn-sm btn-icon"
+                    @click="() => fetchKeys()"
+                    :title="$t('actions.refresh')"
+                >
+                    <RefreshCw :size="14" :class="{ spinning: loading }" />
                 </button>
-              </div>
+                <button class="btn btn-primary btn-sm" @click="openCreateModal">
+                    <Plus :size="14" /> {{ $t('dashboard.buttons.createKey') }}
+                </button>
+            </template>
+        </PageToolbar>
+
+        <DataTable
+            :columns="columns"
+            :rows="keys"
+            row-key="id"
+            :loading="loading"
+            :error="loadError"
+            :order="order"
+            @update:order="toggleSort"
+            @retry="() => fetchKeys()"
+        >
+            <template #empty>
+                <div v-if="searchQuery">
+                    <Search :size="48" style="opacity: 0.3; margin-bottom: 16px" />
+                    <p>{{ $t('messages.noResults') }}</p>
+                </div>
+                <div v-else>
+                    <Key :size="48" style="opacity: 0.3; margin-bottom: 16px" />
+                    <p>{{ $t('messages.noSSHKeys') }}</p>
+                </div>
+            </template>
+
+            <template #cell-name="{ row: key }">
+                <div class="resource-link-static">
+                    <div class="resource-info">
+                        <div class="resource-icon">
+                            <Key :size="16" />
+                        </div>
+                        <div>
+                            <div class="resource-name">{{ key.name }}</div>
+                            <div class="resource-id-row">
+                                <span class="resource-id" :title="key.id">{{ key.id.slice(0, 8) }}...</span>
+                                <button
+                                    class="copy-btn-mini"
+                                    @click.stop.prevent="copyId(key.id)"
+                                    :title="t('actions.copy')"
+                                    :aria-label="t('actions.copy')"
+                                >
+                                    <Check v-if="copiedId === key.id" :size="10" style="color: var(--success-color)" />
+                                    <Copy v-else :size="10" />
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </template>
+
+            <template #cell-type="{ row: key }">
+                <span class="key-type">
+                    {{ key.public_key?.split(' ')[0] || 'ssh-rsa' }}
+                </span>
+            </template>
+
+            <template #cell-fingerprint="{ row: key }">
+                <div class="fingerprint-cell">
+                    <code class="fingerprint">{{ key.finger_print || '-' }}</code>
+                    <button
+                        class="btn btn-ghost btn-sm copy-btn"
+                        @click="copyFingerprint(key as SSHKey)"
+                        :title="copiedFingerprintId === key.id ? $t('messages.copied') : $t('actions.copy')"
+                    >
+                        <component :is="copiedFingerprintId === key.id ? Check : Copy" :size="14" />
+                    </button>
+                </div>
+            </template>
+
+            <template #cell-actions="{ row: key }">
+                <button
+                    class="btn btn-ghost btn-sm text-error"
+                    :title="$t('actions.delete')"
+                    @click="handleDeleteClick(key as SSHKey)"
+                >
+                    <Trash2 :size="14" />
+                </button>
+            </template>
+
+            <template #footer>
+                <PaginationBar
+                    :page="page"
+                    :page-size="pageSize"
+                    :total="total"
+                    @update:page="page = $event"
+                    @update:page-size="pageSize = $event"
+                />
+            </template>
+        </DataTable>
+
+        <!-- Create Key Modal -->
+        <BaseModal
+            :show="createModalVisible"
+            :title="$t('dashboard.buttons.createKey')"
+            :loading="creating"
+            form
+            @close="closeCreateModal"
+            @submit="handleCreateKey"
+        >
+            <div class="form-group">
+                <label class="form-label" for="name">{{ $t('dashboard.forms.name') }}</label>
+                <input
+                    id="name"
+                    name="name"
+                    v-model="newKeyForm.name"
+                    type="text"
+                    :class="['form-input', { 'input-error': !isNameValid }]"
+                    :placeholder="$t('dashboard.forms.placeholder.sshKeyNameExample')"
+                />
+                <div v-if="!isNameValid" class="text-error text-xs mt-1">
+                    {{ $t('messages.invalidHostname') }}
+                </div>
             </div>
-          </div>
-        </div>
-      </template>
 
-      <template #cell-type="{ row: key }">
-        <span class="key-type">
-          {{ key.public_key?.split(' ')[0] || 'ssh-rsa' }}
-        </span>
-      </template>
+            <div class="form-group">
+                <label class="form-label" for="public_key">{{ $t('dashboard.forms.publicKey') }}</label>
+                <textarea
+                    id="public_key"
+                    name="public_key"
+                    v-model="newKeyForm.public_key"
+                    class="form-input"
+                    rows="5"
+                    :placeholder="$t('dashboard.forms.placeholder.sshPubKeyExample')"
+                    style="font-family: monospace; font-size: 0.8em"
+                ></textarea>
+                <p class="helper-text">{{ $t('dashboard.forms.publicKeyHelp') }}</p>
+            </div>
 
-      <template #cell-fingerprint="{ row: key }">
-        <div class="fingerprint-cell">
-          <code class="fingerprint">{{ key.finger_print || '-' }}</code>
-          <button
-            class="btn btn-ghost btn-sm copy-btn"
-            @click="copyFingerprint(key as SSHKey)"
-            :title="copiedFingerprintId === key.id ? $t('messages.copied') : $t('actions.copy')"
-          >
-            <component :is="copiedFingerprintId === key.id ? Check : Copy" :size="14" />
-          </button>
-        </div>
-      </template>
+            <div v-if="createError" class="text-error modal-error">
+                {{ createError }}
+            </div>
 
-      <template #cell-actions="{ row: key }">
-        <button class="btn btn-ghost btn-sm text-error" :title="$t('actions.delete')" @click="handleDeleteClick(key as SSHKey)">
-          <Trash2 :size="14" />
-        </button>
-      </template>
+            <template #footer>
+                <button type="button" class="btn btn-secondary" @click="closeCreateModal" :disabled="creating">
+                    {{ $t('actions.cancel') }}
+                </button>
+                <button type="submit" class="btn btn-primary" :disabled="creating">
+                    <span
+                        v-if="creating"
+                        class="loading-spinner"
+                        style="width: 16px; height: 16px; border-width: 2px"
+                    ></span>
+                    {{ creating ? $t('messages.creating') : $t('dashboard.buttons.createKey') }}
+                </button>
+            </template>
+        </BaseModal>
 
-      <template #footer>
-        <PaginationBar
-          :page="page"
-          :page-size="pageSize"
-          :total="total"
-          @update:page="page = $event"
-          @update:page-size="pageSize = $event"
+        <!-- Delete Confirmation Modal -->
+        <DeleteModal
+            :show="deleteModalVisible"
+            :resource-name="resourceToDelete?.name"
+            :resource-id="resourceToDelete?.id"
+            :loading="deletingResource"
+            :error="deleteError"
+            @close="closeDeleteModal"
+            @confirm="confirmDelete"
         />
-      </template>
-    </DataTable>
-
-    <!-- Create Key Modal -->
-    <BaseModal
-      :show="createModalVisible"
-      :title="$t('dashboard.buttons.createKey')"
-      :loading="creating"
-      form
-      @close="closeCreateModal"
-      @submit="handleCreateKey"
-    >
-      <div class="form-group">
-        <label class="form-label" for="name">{{ $t('dashboard.forms.name') }}</label>
-        <input
-          id="name"
-          name="name"
-          v-model="newKeyForm.name"
-          type="text"
-          :class="['form-input', { 'input-error': !isNameValid }]"
-          :placeholder="$t('dashboard.forms.placeholder.sshKeyNameExample')"
-        />
-        <div v-if="!isNameValid" class="text-error text-xs mt-1">
-          {{ $t('messages.invalidHostname') }}
-        </div>
-      </div>
-
-      <div class="form-group">
-        <label class="form-label" for="public_key">{{ $t('dashboard.forms.publicKey') }}</label>
-        <textarea
-          id="public_key"
-          name="public_key"
-          v-model="newKeyForm.public_key"
-          class="form-input"
-          rows="5"
-          :placeholder="$t('dashboard.forms.placeholder.sshPubKeyExample')"
-          style="font-family: monospace; font-size: 0.8em;"
-        ></textarea>
-        <p class="helper-text">{{ $t('dashboard.forms.publicKeyHelp') }}</p>
-      </div>
-
-      <div v-if="createError" class="text-error modal-error">
-        {{ createError }}
-      </div>
-
-      <template #footer>
-        <button type="button" class="btn btn-secondary" @click="closeCreateModal" :disabled="creating">{{ $t('actions.cancel') }}</button>
-        <button type="submit" class="btn btn-primary" :disabled="creating">
-          <span v-if="creating" class="loading-spinner" style="width: 16px; height: 16px; border-width: 2px;"></span>
-          {{ creating ? $t('messages.creating') : $t('dashboard.buttons.createKey') }}
-        </button>
-      </template>
-    </BaseModal>
-
-    <!-- Delete Confirmation Modal -->
-    <DeleteModal
-      :show="deleteModalVisible"
-      :resource-name="resourceToDelete?.name"
-      :resource-id="resourceToDelete?.id"
-      :loading="deletingResource"
-      :error="deleteError"
-      @close="closeDeleteModal"
-      @confirm="confirmDelete"
-    />
-  </div>
+    </div>
 </template>
 
 <style scoped>
 .spinning {
-  animation: spin 1s linear infinite;
+    animation: spin 1s linear infinite;
 }
 
 @keyframes spin {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
+    from {
+        transform: rotate(0deg);
+    }
+    to {
+        transform: rotate(360deg);
+    }
 }
 
 /* .resource-info etc. are global from index.css */
 
 .resource-link-static {
-  display: block;
-  padding: 4px 0;
+    display: block;
+    padding: 4px 0;
 }
 
 .key-type {
-  font-family: var(--font-family-mono);
-  font-size: var(--font-size-xs);
-  padding: var(--spacing-1) var(--spacing-2);
-  background: var(--gray-50);
-  border-radius: var(--radius-sm);
+    font-family: var(--font-family-mono);
+    font-size: var(--font-size-xs);
+    padding: var(--spacing-1) var(--spacing-2);
+    background: var(--gray-50);
+    border-radius: var(--radius-sm);
 }
 
 .fingerprint-cell {
-  display: flex;
-  align-items: center;
-  gap: var(--spacing-2);
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-2);
 }
 
 .fingerprint {
-  font-family: var(--font-family-mono);
-  font-size: var(--font-size-xs);
-  color: var(--text-secondary);
+    font-family: var(--font-family-mono);
+    font-size: var(--font-size-xs);
+    color: var(--text-secondary);
 }
 
 .copy-btn {
-  opacity: 0.5;
+    opacity: 0.5;
 }
 
 .copy-btn:hover {
-  opacity: 1;
+    opacity: 1;
 }
 
 .text-error {
-  color: var(--error-color);
+    color: var(--error-color);
 }
 
 /* Modal Styles */
 .helper-text {
-  font-size: var(--font-size-xs);
-  color: var(--text-tertiary);
-  margin-top: var(--spacing-2);
+    font-size: var(--font-size-xs);
+    color: var(--text-tertiary);
+    margin-top: var(--spacing-2);
 }
 
 .modal-error {
-  font-size: var(--font-size-sm);
-  background: var(--error-light);
-  padding: var(--spacing-2);
-  border-radius: var(--radius-sm);
-  margin-top: var(--spacing-2);
+    font-size: var(--font-size-sm);
+    background: var(--error-light);
+    padding: var(--spacing-2);
+    border-radius: var(--radius-sm);
+    margin-top: var(--spacing-2);
 }
 
 /* .resource-link removed */

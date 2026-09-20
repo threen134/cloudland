@@ -23,23 +23,23 @@ export default {
 
     // Regions
     regions: {
-        'shanghai': 'Shanghai (CN)',
-        'tok': 'Tokyo (AP)',
-        'osa': 'Osaka (AP)',
-        'sng': 'Singapore (AP)',
-        'syd': 'Sydney (AP)',
-        'che': 'Chennai (AP)',
-        'lon': 'London (EU)',
-        'fra': 'Frankfurt (EU)',
-        'ams': 'Amsterdam (EU)',
-        'par': 'Paris (EU)',
-        'mad': 'Madrid (EU)',
-        'wdc': 'Washington (NAE)',
-        'tor': 'Toronto (NAE)',
-        'mon': 'Montreal (NAE)',
-        'dal': 'Dallas (NAS)',
-        'sjc': 'San Jose (NAW)',
-        'sao': 'Sao Paulo (SA)',
+        shanghai: 'Shanghai (CN)',
+        tok: 'Tokyo (AP)',
+        osa: 'Osaka (AP)',
+        sng: 'Singapore (AP)',
+        syd: 'Sydney (AP)',
+        che: 'Chennai (AP)',
+        lon: 'London (EU)',
+        fra: 'Frankfurt (EU)',
+        ams: 'Amsterdam (EU)',
+        par: 'Paris (EU)',
+        mad: 'Madrid (EU)',
+        wdc: 'Washington (NAE)',
+        tor: 'Toronto (NAE)',
+        mon: 'Montreal (NAE)',
+        dal: 'Dallas (NAS)',
+        sjc: 'San Jose (NAW)',
+        sao: 'Sao Paulo (SA)',
     },
 
     // Products dropdown
@@ -67,7 +67,8 @@ export default {
         badge: 'Enterprise-Grade Performance · Millisecond Latency · 99.9% Uptime',
         title: 'Next-Generation',
         titleHighlight: 'High-Performance Cloud',
-        subtitle: 'Deploy globally in seconds. Scalable, reliable cloud infrastructure for developers and businesses of all sizes.',
+        subtitle:
+            'Deploy globally in seconds. Scalable, reliable cloud infrastructure for developers and businesses of all sizes.',
         getStarted: 'Get Started Now',
         viewPlans: 'View All Plans',
     },
@@ -128,11 +129,7 @@ export default {
             'No resource contention',
         ],
         flexible: 'Flexible & Scalable',
-        flexibleItems: [
-            'Deploy in under 60 seconds',
-            'Scale up or down instantly',
-            'Pay only for what you use',
-        ],
+        flexibleItems: ['Deploy in under 60 seconds', 'Scale up or down instantly', 'Pay only for what you use'],
         globalNetwork: 'Global Network',
         globalNetworkItems: [
             'Multiple data center locations',
@@ -188,7 +185,8 @@ export default {
     privateCloud: {
         hero: {
             title: 'Cloud for Computing, Power for All',
-            subtitle: 'Your infrastructure, secured by enterprise-grade encryption and intuitive control. Deploy with confidence.',
+            subtitle:
+                'Your infrastructure, secured by enterprise-grade encryption and intuitive control. Deploy with confidence.',
             getStarted: 'Request Access',
             exploreCatalog: 'Go to Console',
         },
@@ -211,8 +209,6 @@ export default {
             privacy: 'Privacy',
         },
     },
-
-
 
     // Marketplace
     marketplace: {
@@ -251,19 +247,21 @@ export default {
         comingSoon: 'Coming Soon',
         apps: {
             mysql: 'MySQL Database',
-            mysqlDesc: 'The world\'s most popular open source relational database, powering web applications and enterprise systems.',
+            mysqlDesc:
+                "The world's most popular open source relational database, powering web applications and enterprise systems.",
             redis: 'Redis',
             redisDesc: 'Lightning-fast in-memory data store for caching, session management, and real-time analytics.',
             mongodb: 'MongoDB',
             mongodbDesc: 'Flexible NoSQL document database for modern applications with rich query capabilities.',
             postgresql: 'PostgreSQL',
-            postgresqlDesc: 'The world\'s most advanced open source relational database with full ACID compliance.',
+            postgresqlDesc: "The world's most advanced open source relational database with full ACID compliance.",
             mariadb: 'MariaDB',
             mariadbDesc: 'Community-developed fork of MySQL with enhanced performance and additional storage engines.',
             elasticsearch: 'Elasticsearch',
             elasticsearchDesc: 'Distributed search and analytics engine for log analysis, full-text search, and more.',
             clickhouse: 'ClickHouse',
-            clickhouseDesc: 'High-performance columnar OLAP database for real-time analytical queries on large datasets.',
+            clickhouseDesc:
+                'High-performance columnar OLAP database for real-time analytical queries on large datasets.',
             ipsec: 'IPSec VPN',
             ipsecDesc: 'Secure encrypted tunnel between networks using industry-standard IPSec protocols.',
             openvpn: 'OpenVPN',
@@ -271,7 +269,7 @@ export default {
             wireguard: 'WireGuard',
             wireguardDesc: 'Modern, high-performance VPN that utilizes state-of-the-art cryptography.',
             certbot: 'Certbot',
-            certbotDesc: 'Automatically obtain and renew free SSL/TLS certificates from Let\'s Encrypt.',
+            certbotDesc: "Automatically obtain and renew free SSL/TLS certificates from Let's Encrypt.",
             bt: 'Baota Panel',
             btDesc: 'Popular Linux server management panel with one-click deployment of LNMP/LAMP environments.',
             onepanel: '1Panel',
@@ -281,7 +279,7 @@ export default {
             nginx: 'Nginx',
             nginxDesc: 'High-performance web server, reverse proxy, and load balancer powering millions of sites.',
             apache: 'Apache HTTP Server',
-            apacheDesc: 'The world\'s most widely used web server software with extensive module support.',
+            apacheDesc: "The world's most widely used web server software with extensive module support.",
             caddy: 'Caddy',
             caddyDesc: 'Modern web server with automatic HTTPS, HTTP/3, and easy configuration.',
             tomcat: 'Apache Tomcat',
@@ -289,9 +287,11 @@ export default {
             openlitespeed: 'OpenLiteSpeed',
             openlitespeedDesc: 'High-performance, lightweight HTTP server with excellent PHP performance.',
             docker: 'Docker CE',
-            dockerDesc: 'Industry-standard container platform for building, shipping, and running distributed applications.',
+            dockerDesc:
+                'Industry-standard container platform for building, shipping, and running distributed applications.',
             kubernetes: 'Kubernetes (K8s)',
-            kubernetesDesc: 'Production-grade container orchestration for automating deployment, scaling, and management.',
+            kubernetesDesc:
+                'Production-grade container orchestration for automating deployment, scaling, and management.',
             portainer: 'Portainer',
             portainerDesc: 'Lightweight container management UI for Docker, Swarm, and Kubernetes environments.',
             jenkins: 'Jenkins',
@@ -377,7 +377,8 @@ export default {
             hideKeyboard: 'Hide keyboard',
             paste: 'Paste as keystrokes',
             pasteTitle: 'Paste text into the console',
-            pasteHint: 'The text is typed as key presses, for systems without clipboard sync (Linux text consoles, login prompts). Only English letters, digits, common symbols, newlines and tabs are supported; place the cursor in the console first.',
+            pasteHint:
+                'The text is typed as key presses, for systems without clipboard sync (Linux text consoles, login prompts). Only English letters, digits, common symbols, newlines and tabs are supported; place the cursor in the console first.',
             pastePlaceholder: 'Paste the text to type here',
             pasteSend: 'Type',
             pasteStop: 'Stop',
@@ -392,23 +393,25 @@ export default {
                 copy: 'Copy selection (Ctrl+Shift+C)',
                 paste: 'Paste (Ctrl+Shift+V)',
                 syncSize: 'Sync window size',
-                syncSizeHint: 'Sends stty rows/cols to the shell prompt so full-screen programs such as vim and top use the window size',
+                syncSizeHint:
+                    'Sends stty rows/cols to the shell prompt so full-screen programs such as vim and top use the window size',
                 syncSizeNeedsPrompt: 'Log in and use it at a shell prompt (it is typed as input)',
                 hint: 'Connected to the first serial port (ttyS0), for Linux; copy, paste and non-ASCII text work. Press Enter if nothing shows up.',
                 copied: 'Copied to clipboard',
                 nothingSelected: 'Select the text to copy first',
-                clipboardDenied: 'The browser denied clipboard access'
+                clipboardDenied: 'The browser denied clipboard access',
             },
             host: {
                 title: 'Host Terminal',
                 passwordTitle: 'Confirm your identity',
-                passwordDesc: 'You are about to open a root shell on hypervisor {name}. Enter your login password to continue.',
+                passwordDesc:
+                    'You are about to open a root shell on hypervisor {name}. Enter your login password to continue.',
                 passwordPlaceholder: 'Password of the current account',
                 open: 'Open terminal',
                 authFailed: 'Verification failed',
                 hint: 'Root shell on the hypervisor: the session output is recorded on the node and the session closes after {minutes} idle minutes; reconnecting asks for the password again.',
-                idleHint: 'Closes after {minutes} idle minutes'
-            }
+                idleHint: 'Closes after {minutes} idle minutes',
+            },
         },
         instances: 'Instances',
         volumes: 'Volumes',
@@ -438,7 +441,8 @@ export default {
             removeMember: 'Remove Member',
             removeMemberConfirm: 'Are you sure you want to remove this member from the organization?',
             transferOwnership: 'Transfer Ownership',
-            transferConfirm: 'Are you sure you want to transfer organization ownership? You will no longer be the owner.',
+            transferConfirm:
+                'Are you sure you want to transfer organization ownership? You will no longer be the owner.',
             selectNewOwner: 'Select New Owner',
             selectMember: 'Select a member',
             pendingInvitations: 'Pending Invitations',
@@ -504,7 +508,8 @@ export default {
             interfaceId: 'Interface ID',
             interfaceIp: 'Interface IP',
             loadError: 'Failed to load Floating IP details.',
-            createDesc: 'Allocate a new public IP address. Configure bandwidth, subnet and optionally bind to an instance.',
+            createDesc:
+                'Allocate a new public IP address. Configure bandwidth, subnet and optionally bind to an instance.',
             subnetPool: 'Subnet Pool',
             publicSubnet: 'Public Subnet',
             namePlaceholder: 'Enter a name for this FIP (2-32 characters)',
@@ -620,12 +625,14 @@ export default {
             securityGroupsUpdated: 'Security groups updated successfully.',
             noSecurityGroupsAvailable: 'No security groups available for this VPC.',
             sgRequiresVpc: 'This instance has no VPC, cannot manage security groups.',
-            sgListTruncated: 'Showing first 200 security groups. Use the search in Security Groups page to find others.',
+            sgListTruncated:
+                'Showing first 200 security groups. Use the search in Security Groups page to find others.',
             sgEmptyWillUseDefault: 'No groups selected — saving will reset to the VPC default security group.',
             primaryVpcSubnetRequired: 'Please select VPC and Subnet for primary interface.',
             isolatedSubnetRequired: 'Please select Subnet for private network primary interface.',
             publicSubnetRequired: 'Please select Public Subnet for auto-allocation.',
-            secondaryPublicSubnetRequired: 'Please select Public Subnet for secondary interface #{index} auto-allocation.',
+            secondaryPublicSubnetRequired:
+                'Please select Public Subnet for secondary interface #{index} auto-allocation.',
             secondaryVpcSubnetRequired: 'Please select VPC and Subnet for secondary interface #{index}.',
             secondaryIface: {
                 title: 'Secondary Interface Limits',
@@ -659,10 +666,12 @@ export default {
             advancedOptions: 'Advanced Options',
             pinHypervisor: 'Pin to Hypervisor (admin only)',
             hypervisorAuto: 'Auto (scheduler chooses)',
-            hypervisorHint: 'Only system admins can pin an instance to a specific hypervisor. The hypervisor must belong to the selected zone.',
+            hypervisorHint:
+                'Only system admins can pin an instance to a specific hypervisor. The hypervisor must belong to the selected zone.',
             loginPort: 'Login Port',
             loginPortPlaceholder: 'Empty: 22 (Linux), 3389 (Windows)',
-            loginPortHint: 'Changing the login port does not open it in security groups. Add an ingress rule for this port to the selected security groups.',
+            loginPortHint:
+                'Changing the login port does not open it in security groups. Add an ingress rule for this port to the selected security groups.',
             nestedVirtualization: 'Enable Nested Virtualization',
             userDataType: 'User Data Type',
             plain: 'Plain Text',
@@ -670,7 +679,8 @@ export default {
             userDataPlaceholder: 'Optional. Script to run at boot...',
             vlanConflict: 'Each network interface should use a subnet from a different VLAN.',
             passwordSuccess: 'Passwords match',
-            quotaExceeded: 'Quota exceeded: Resource {resource} in Region {region}, requested {requested}, available {available}, limit {limit}.',
+            quotaExceeded:
+                'Quota exceeded: Resource {resource} in Region {region}, requested {requested}, available {available}, limit {limit}.',
             selectedCount: '{count} keys selected',
         },
         userDetail: {
@@ -794,7 +804,13 @@ export default {
         activityPage: {
             title: 'Activity',
             timeRange: 'Time range',
-            ranges: { today: 'Today', last7d: 'Last 7 days', last30d: 'Last 30 days', last90d: 'Last 90 days', custom: 'Custom' },
+            ranges: {
+                today: 'Today',
+                last7d: 'Last 7 days',
+                last30d: 'Last 30 days',
+                last90d: 'Last 90 days',
+                custom: 'Custom',
+            },
             start: 'Start',
             end: 'End',
             apply: 'Apply',
@@ -807,7 +823,23 @@ export default {
             colAction: 'Action',
             succeeded: 'Succeeded',
             failed: 'Failed',
-            resourceTypes: { instance: 'Instance', volume: 'Volume', backup: 'Backup', consistency_group: 'Consistency group', image: 'Image', key: 'Key', flavor: 'Flavor', vpc: 'VPC', subnet: 'Subnet', security_group: 'Security group', floating_ip: 'Floating IP', load_balancer: 'Load balancer', zone: 'Zone', hyper: 'Hypervisor', migration: 'Migration' },
+            resourceTypes: {
+                instance: 'Instance',
+                volume: 'Volume',
+                backup: 'Backup',
+                consistency_group: 'Consistency group',
+                image: 'Image',
+                key: 'Key',
+                flavor: 'Flavor',
+                vpc: 'VPC',
+                subnet: 'Subnet',
+                security_group: 'Security group',
+                floating_ip: 'Floating IP',
+                load_balancer: 'Load balancer',
+                zone: 'Zone',
+                hyper: 'Hypervisor',
+                migration: 'Migration',
+            },
             empty: 'No activity in this time range',
             emptyFiltered: 'No activity matches the filters',
             loadFailed: 'Failed to load activity',
@@ -822,9 +854,9 @@ export default {
             title: 'Dashboard',
             subtitle: 'Overview: Instances · Volumes · Images · Floating IPs',
             welcomeBack: "{username}! Welcome back. Here's what's happening with your cloud resources today.",
-            resourceUsage: "Resource Usage",
-            recentActivity: "Recent Activity",
-            loadingOverview: "Loading overview...",
+            resourceUsage: 'Resource Usage',
+            recentActivity: 'Recent Activity',
+            loadingOverview: 'Loading overview...',
             imageActions: {
                 fillRequired: 'Please fill in Name and Download URL.',
             },
@@ -850,7 +882,7 @@ export default {
                 disk: 'Disk Used',
                 volume: 'Volume Storage Used',
                 publicIp: 'Public IP Used',
-                privateIp: 'Private IP Used'
+                privateIp: 'Private IP Used',
             },
             usage: 'Usage',
             activeCount: 'active',
@@ -1095,7 +1127,7 @@ export default {
                 migration: {
                     create: 'failed to start migration {name}',
                 },
-            }
+            },
         },
         table: {
             instanceCount: 'Instances',
@@ -1385,7 +1417,8 @@ export default {
             zone: 'Zone',
             optional: 'Optional',
             setAsDefault: 'Set as default security group for this VPC',
-            setAsDefaultTooltip: 'The default security group is automatically applied to new instances created in this VPC when no security group is explicitly specified. Only one security group can be the default per VPC.',
+            setAsDefaultTooltip:
+                'The default security group is automatically applied to new instances created in this VPC when no security group is explicitly specified. Only one security group can be the default per VPC.',
             protocol: 'Protocol',
             port: 'Port',
             gateway: 'Gateway IP',
@@ -1459,7 +1492,8 @@ export default {
                 secondaryInterface: 'Secondary Interface',
                 advancedOptions: 'Advanced Options',
             },
-            dhcpTooltip: 'DHCP controls automatic IP assignment for VMs without cloud-init. Images with cloud-init are not affected.',
+            dhcpTooltip:
+                'DHCP controls automatic IP assignment for VMs without cloud-init. Images with cloud-init are not affected.',
             startIp: 'Start IP',
             endIp: 'End IP',
             dns: 'DNS Server',
@@ -1526,12 +1560,14 @@ export default {
             exitMaintain: 'Exit Maintenance',
             exitMaintainConfirm: 'Bring hypervisor "{hostname}" out of maintenance and back to active?',
             maintainTitle: 'Enter Maintenance Mode',
-            maintainDesc: 'Put hypervisor {hostname} into maintenance mode. All running instances can be optionally migrated.',
+            maintainDesc:
+                'Put hypervisor {hostname} into maintenance mode. All running instances can be optionally migrated.',
             migrateInstances: 'Migrate all instances before maintenance',
             targetHyper: 'Target Hypervisor',
             targetHyperHint: 'Choose "Auto Select" to let the scheduler pick the best node',
             deleteTitle: 'Delete Hypervisor',
-            deleteConfirm: 'Are you sure you want to delete hypervisor "{hostname}"? This cannot be undone. The node must have no running instances.',
+            deleteConfirm:
+                'Are you sure you want to delete hypervisor "{hostname}"? This cannot be undone. The node must have no running instances.',
         },
         hypervisorDeploy: {
             networkDevice: 'Network Device',
@@ -1576,8 +1612,10 @@ export default {
             createTitle: 'Register New Region',
             editTitle: 'Edit Region',
             deleteTitle: 'Delete Region',
-            deleteConfirm: 'Are you sure you want to delete region "{name}"? This will remove all associated quota records and cannot be undone.',
-            deleteWarning: 'Warning: Only regions in "Maintenance Mode" with no active resources (VMs/Volumes/etc.) can be deleted.',
+            deleteConfirm:
+                'Are you sure you want to delete region "{name}"? This will remove all associated quota records and cannot be undone.',
+            deleteWarning:
+                'Warning: Only regions in "Maintenance Mode" with no active resources (VMs/Volumes/etc.) can be deleted.',
             name: 'Region Name',
             nameHint: 'Lowercase letters, numbers, and hyphens only (min 2 chars)',
             displayName: 'Display Name',
@@ -1591,7 +1629,8 @@ export default {
             maintenanceModeHint: 'When enabled, heartbeat is paused and all API requests to this region return 503.',
             rotateSecret: 'Rotate Secret',
             rotateSecretTitle: 'Rotate Region Secret',
-            rotateSecretConfirm: 'Are you sure you want to rotate the secret for region "{name}"? The new secret must be updated in the Cloudland backend configuration.',
+            rotateSecretConfirm:
+                'Are you sure you want to rotate the secret for region "{name}"? The new secret must be updated in the Cloudland backend configuration.',
             newSecret: 'New Secret',
             secretWarning: 'This secret will only be shown once. Copy it now!',
             createdSuccess: 'Region created successfully',
@@ -1605,7 +1644,8 @@ export default {
             createTitle: 'Create Zone',
             editTitle: 'Edit Zone',
             deleteTitle: 'Delete Zone',
-            deleteConfirm: 'Are you sure you want to delete zone "{name}"? The zone must have no associated hypervisors.',
+            deleteConfirm:
+                'Are you sure you want to delete zone "{name}"? The zone must have no associated hypervisors.',
             remark: 'Remark',
             default: 'Default Zone',
             associatedHypervisors: 'Associated Hypervisors',
@@ -1697,7 +1737,8 @@ export default {
         activationTitle: 'Account Activation',
         activating: 'Activating your account...',
         activatingDesc: 'Please wait while we verify your activation link.',
-        activationErrorDesc: 'The link may have expired or is already used. Please try registering again or contact support.',
+        activationErrorDesc:
+            'The link may have expired or is already used. Please try registering again or contact support.',
         activationSuccess: 'Account activated successfully!',
         invalidCredentials: 'Invalid username or password',
         activationError: 'Activation failed or link expired',
@@ -1751,13 +1792,22 @@ export default {
         loadBalancers: 'Load Balancers',
         images: 'Images',
         // Labels for the resource field of a quota_exceeded response
-        resources: { cpu_cores: 'CPU cores', ram_gb: 'memory (GB)', disk_gb: 'disk (GB)', public_ips: 'public IPs', vpcs: 'VPCs', load_balancers: 'load balancers', images: 'images' },
+        resources: {
+            cpu_cores: 'CPU cores',
+            ram_gb: 'memory (GB)',
+            disk_gb: 'disk (GB)',
+            public_ips: 'public IPs',
+            vpcs: 'VPCs',
+            load_balancers: 'load balancers',
+            images: 'images',
+        },
         region: 'Region',
         used: 'Used',
         available: 'Available',
         limit: 'Quota',
         exceeded: 'Quota Exceeded',
-        exceededMessage: 'Quota exceeded for {resource} in {region}: requested {requested}, available {available} (limit: {limit})',
+        exceededMessage:
+            'Quota exceeded for {resource} in {region}: requested {requested}, available {available} (limit: {limit})',
         noQuota: 'No quota assigned',
         allRegions: 'All Regions',
     },
@@ -1778,7 +1828,8 @@ export default {
         noSecurityGroups: 'No security groups found. Create your first security group to get started.',
         noLoadBalancers: 'No load balancers found. Create your first load balancer to get started.',
         notAttached: 'Not attached',
-        confirmDetach: 'Are you sure you want to detach this floating IP from the instance? The instance will lose its public IP access.',
+        confirmDetach:
+            'Are you sure you want to detach this floating IP from the instance? The instance will lose its public IP access.',
         starting: 'Starting...',
         error: 'An error occurred',
         success: 'Operation successful',
@@ -1793,7 +1844,8 @@ export default {
         no: 'No',
         noResults: 'No results found',
         tryAdjustingFilters: 'Try adjusting your filters or search query',
-        invalidHostname: 'Hostname must start with a letter and can only contain letters, numbers, underscores (_), and hyphens (-).',
+        invalidHostname:
+            'Hostname must start with a letter and can only contain letters, numbers, underscores (_), and hyphens (-).',
         invalidPort: 'Port must be a number between 1 and 65535.',
         sshKeyInUse: 'Key cannot be deleted if there are instances using it.',
         vpcHasFloatingIPs: 'VPC cannot be deleted because it has associated Floating IPs.',
@@ -1841,7 +1893,7 @@ export default {
         admin: 'Administrator',
         writer: 'Writer',
         reader: 'Reader',
-        superuser: 'Superuser'
+        superuser: 'Superuser',
     },
     userStatus: {
         active: 'Active',
@@ -1849,13 +1901,13 @@ export default {
         pending: 'Pending',
         invited: 'Invited',
         dormant: 'Pending Activation',
-        disabled: 'Disabled'
+        disabled: 'Disabled',
     },
     languages: {
         en: 'English',
         zh: '中文',
         zh_hans: '简体中文',
-        zh_hant: '繁體中文'
+        zh_hant: '繁體中文',
     },
     common: {
         save: 'Save',
@@ -1897,7 +1949,8 @@ export default {
         channelEnabled: 'Enabled',
         channelDisabled: 'Disabled',
         enableChannel: 'Enable this channel',
-        enableChannelDesc: 'When off, no system notifications are sent through this channel. The configuration is kept.',
+        enableChannelDesc:
+            'When off, no system notifications are sent through this channel. The configuration is kept.',
         testHint: 'Sends a test message using the saved configuration.',
         sections: {
             access: 'Access',
@@ -1905,19 +1958,24 @@ export default {
             network: 'Network',
             networkDesc: 'Upstream forwarding of the control plane internal DNS.',
             quotaCompute: 'Compute & Storage',
-            quotaComputeDesc: 'Initial quotas written for every organization in every region when an organization or a region is created. Changing them does not affect existing quotas; adjust a single organization in its detail page.',
+            quotaComputeDesc:
+                'Initial quotas written for every organization in every region when an organization or a region is created. Changing them does not affect existing quotas; adjust a single organization in its detail page.',
             quotaOther: 'Network & Images',
             hostConsole: 'Host Terminal',
-            hostConsoleDesc: 'Lets system admins open a root shell of a hypervisor from its page. The password is asked again before opening, and the session output is recorded on the node under /opt/cloudland/log/host_console/ (kept for 180 days).',
+            hostConsoleDesc:
+                'Lets system admins open a root shell of a hypervisor from its page. The password is asked again before opening, and the session output is recorded on the node under /opt/cloudland/log/host_console/ (kept for 180 days).',
             other: 'Other',
         },
-        notificationHint: 'Used for system notifications such as account activation and member invitations. VM alarm recipients are configured in',
+        notificationHint:
+            'Used for system notifications such as account activation and member invitations. VM alarm recipients are configured in',
         notificationHintLink: 'Alarm Notification Channels',
         notificationHintSuffix: '.',
         passwordPrompt: {
             title: 'Confirm your identity',
-            descEnable: 'Once enabled, opening a host terminal asks for the password of the current account every time. Enter your password to confirm this change.',
-            descDisable: 'Once disabled, anyone with a system admin session can open a root terminal on a node without a password. Enter your password to confirm this change.',
+            descEnable:
+                'Once enabled, opening a host terminal asks for the password of the current account every time. Enter your password to confirm this change.',
+            descDisable:
+                'Once disabled, anyone with a system admin session can open a root terminal on a node without a password. Enter your password to confirm this change.',
             placeholder: 'Password of the current account',
         },
         units: {
@@ -1928,7 +1986,8 @@ export default {
         },
         fields: {
             FRONTEND_URL: 'Console URL',
-            FRONTEND_URL_desc: 'Address users open the console at. Links in activation and invitation emails start with it.',
+            FRONTEND_URL_desc:
+                'Address users open the console at. Links in activation and invitation emails start with it.',
             SMTP_HOST: 'SMTP Server',
             SMTP_PORT: 'SMTP Port',
             SMTP_TLS: 'Use TLS',
@@ -1949,21 +2008,28 @@ export default {
             DEFAULT_LOAD_BALANCERS: 'Load Balancers',
             DEFAULT_IMAGES: 'Private Images',
             ALARM_EVENT_RETENTION_DAYS: 'VM Alarm Event Retention Days',
-            ALARM_EVENT_RETENTION_DAYS_desc: 'Retention period (in days) for VM alarm events and delivery logs. Records older than this value will be automatically cleaned up. Default: 30 days.',
+            ALARM_EVENT_RETENTION_DAYS_desc:
+                'Retention period (in days) for VM alarm events and delivery logs. Records older than this value will be automatically cleaned up. Default: 30 days.',
             AUDIT_LOG_RETENTION_DAYS: 'Audit Log Retention Days',
-            AUDIT_LOG_RETENTION_DAYS_desc: 'Retention period (in days) for operation audit logs, including Recent Activity on the overview page. Each region cleans up older records daily. Range 90-3650, default 365 days.',
+            AUDIT_LOG_RETENTION_DAYS_desc:
+                'Retention period (in days) for operation audit logs, including Recent Activity on the overview page. Each region cleans up older records daily. Range 90-3650, default 365 days.',
             DNS_UPSTREAM: 'DNS Upstream',
-            DNS_UPSTREAM_desc: 'Upstream DNS server for queries not matching internal node hostnames. Supports comma-separated multiple addresses, e.g. 8.8.8.8,8.8.4.4.',
+            DNS_UPSTREAM_desc:
+                'Upstream DNS server for queries not matching internal node hostnames. Supports comma-separated multiple addresses, e.g. 8.8.8.8,8.8.4.4.',
             HOST_CONSOLE_ENABLED: 'Enable host terminal',
-            HOST_CONSOLE_ENABLED_desc: 'When disabled nobody can open a new host terminal; open sessions are not affected.',
+            HOST_CONSOLE_ENABLED_desc:
+                'When disabled nobody can open a new host terminal; open sessions are not affected.',
             HOST_CONSOLE_REQUIRE_PASSWORD: 'Ask for the password',
-            HOST_CONSOLE_REQUIRE_PASSWORD_desc: 'Ask for the password of the current account before opening a host terminal, so a logged-in window alone cannot give away root on a node. Changing this setting asks for the password as well.',
+            HOST_CONSOLE_REQUIRE_PASSWORD_desc:
+                'Ask for the password of the current account before opening a host terminal, so a logged-in window alone cannot give away root on a node. Changing this setting asks for the password as well.',
             HOST_CONSOLE_IDLE_MINUTES: 'Idle timeout',
-            HOST_CONSOLE_IDLE_MINUTES_desc: 'A terminal without any input or output for this long is closed. Range 5-240, default 15 minutes.',
+            HOST_CONSOLE_IDLE_MINUTES_desc:
+                'A terminal without any input or output for this long is closed. Range 5-240, default 15 minutes.',
         },
         infra: {
             readOnlyTitle: 'Read-only view',
-            readOnlyDesc: 'These values are loaded at startup by clapi / MinIO / compute nodes and cannot be modified from the UI.\nTo change them: edit deploy/docker/.env and run docker-compose up -d to rebuild the affected containers.',
+            readOnlyDesc:
+                'These values are loaded at startup by clapi / MinIO / compute nodes and cannot be modified from the UI.\nTo change them: edit deploy/docker/.env and run docker-compose up -d to rebuild the affected containers.',
             currentMode: 'Current Runtime Mode',
             initialized: 'Initialized',
             notInitialized: 'Not Initialized',

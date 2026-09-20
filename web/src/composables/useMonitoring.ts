@@ -1,5 +1,15 @@
 import { ref, onMounted, onUnmounted } from 'vue'
-import { Chart as ChartJS, CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend, Filler } from 'chart.js'
+import {
+    Chart as ChartJS,
+    CategoryScale,
+    LinearScale,
+    PointElement,
+    LineElement,
+    Title,
+    Tooltip,
+    Legend,
+    Filler,
+} from 'chart.js'
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend, Filler)
 
@@ -18,29 +28,29 @@ export const CHART_OPTIONS = {
         legend: {
             display: true,
             position: 'bottom' as const,
-            labels: { boxWidth: 12, usePointStyle: true, font: { size: 11 } }
+            labels: { boxWidth: 12, usePointStyle: true, font: { size: 11 } },
         },
         tooltip: {
             mode: 'index' as const,
             intersect: false,
-        }
+        },
     },
     scales: {
         x: {
             display: true,
             grid: { display: false },
-            ticks: { maxRotation: 0, autoSkip: true, maxTicksLimit: 8, font: { size: 10 } }
+            ticks: { maxRotation: 0, autoSkip: true, maxTicksLimit: 8, font: { size: 10 } },
         },
         y: {
             beginAtZero: true,
             grid: { color: 'rgba(0, 0, 0, 0.05)' },
-            ticks: { font: { size: 10 } }
-        }
+            ticks: { font: { size: 10 } },
+        },
     },
     elements: {
         line: { tension: 0.3, borderWidth: 2 },
-        point: { radius: 0, hoverRadius: 4 }
-    }
+        point: { radius: 0, hoverRadius: 4 },
+    },
 }
 
 export function useMonitoring(fetchCallback: () => Promise<void>) {
@@ -56,19 +66,24 @@ export function useMonitoring(fetchCallback: () => Promise<void>) {
         if (timeRange.value === '1h' || timeRange.value === '6h') {
             return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
         }
-        return d.toLocaleDateString([], { month: '2-digit', day: '2-digit' }) + ' ' + d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+        return (
+            d.toLocaleDateString([], { month: '2-digit', day: '2-digit' }) +
+            ' ' +
+            d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+        )
     }
 
     const getDefaultCustomDates = () => {
         const end = new Date()
         const start = new Date(end.getTime() - 3600 * 1000)
         const pad = (n: number) => n.toString().padStart(2, '0')
-        const format = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
+        const format = (d: Date) =>
+            `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
         return { start: format(start), end: format(end) }
     }
 
     /** Calculate start/end unix timestamps from the current time range state */
-    const getTimeRange = (): { startTs: number, endTs: number } | null => {
+    const getTimeRange = (): { startTs: number; endTs: number } | null => {
         let startTs: number
         let endTs: number = Math.floor(Date.now() / 1000)
 
@@ -84,8 +99,11 @@ export function useMonitoring(fetchCallback: () => Promise<void>) {
             else step.value = '6h'
         } else {
             const offsets: Record<string, number> = {
-                '1h': 3600, '6h': 6 * 3600, '24h': 24 * 3600,
-                '7d': 7 * 86400, '30d': 30 * 86400,
+                '1h': 3600,
+                '6h': 6 * 3600,
+                '24h': 24 * 3600,
+                '7d': 7 * 86400,
+                '30d': 30 * 86400,
             }
             startTs = endTs - (offsets[timeRange.value] || 3600)
         }
@@ -93,7 +111,7 @@ export function useMonitoring(fetchCallback: () => Promise<void>) {
         return { startTs, endTs }
     }
 
-    const setRange = (range: { value: string, step: string }) => {
+    const setRange = (range: { value: string; step: string }) => {
         timeRange.value = range.value
         step.value = range.step
         fetchCallback()
@@ -121,7 +139,15 @@ export function useMonitoring(fetchCallback: () => Promise<void>) {
     })
 
     return {
-        timeRange, step, customStart, customEnd, loading, error,
-        formatTimestamp, getTimeRange, setRange, toggleCustom,
+        timeRange,
+        step,
+        customStart,
+        customEnd,
+        loading,
+        error,
+        formatTimestamp,
+        getTimeRange,
+        setRange,
+        toggleCustom,
     }
 }

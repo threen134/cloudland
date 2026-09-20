@@ -9,7 +9,7 @@ export interface InfrastructureConfig {
     s3_enabled: boolean
     s3_endpoint: string
     s3_access_key: string
-    s3_secret_key: string         // always masked ("******" when set, "" when empty)
+    s3_secret_key: string // always masked ("******" when set, "" when empty)
     s3_secret_key_set: boolean
     s3_bucket: string
     s3_region: string
@@ -18,7 +18,7 @@ export interface InfrastructureConfig {
     minio_hostname: string
     clapi_hostname: string
     clapi_internal_url: string
-    capture_upload_secret: string     // always masked
+    capture_upload_secret: string // always masked
     capture_upload_secret_set: boolean
 }
 

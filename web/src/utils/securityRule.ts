@@ -26,7 +26,7 @@ export const newSecurityRuleForm = (): SecurityRuleForm => ({
     port_max: 80,
     icmp_type: '',
     icmp_code: '',
-    remote_cidr: '0.0.0.0/0'
+    remote_cidr: '0.0.0.0/0',
 })
 
 export const securityRuleFormFromRule = (rule: SecurityRule): SecurityRuleForm => {
@@ -39,7 +39,7 @@ export const securityRuleFormFromRule = (rule: SecurityRule): SecurityRuleForm =
         port_max: !isIcmp && rule.port_max && rule.port_max > 0 ? rule.port_max : 65535,
         icmp_type: isIcmp && rule.port_min != null && rule.port_min >= 0 ? rule.port_min : '',
         icmp_code: isIcmp && rule.port_max != null && rule.port_max >= 0 ? rule.port_max : '',
-        remote_cidr: rule.remote_cidr || ''
+        remote_cidr: rule.remote_cidr || '',
     }
 }
 
@@ -82,7 +82,7 @@ export const securityRulePayloadFromForm = (form: SecurityRuleForm): SecurityRul
         name: form.name,
         direction: form.direction,
         protocol: form.protocol,
-        remote_cidr: form.remote_cidr
+        remote_cidr: form.remote_cidr,
     }
     if (form.protocol === 'icmp') {
         payload.port_min = isBlank(form.icmp_type) ? -1 : Number(form.icmp_type)
@@ -119,15 +119,44 @@ export const icmpTypeName = (rule: SecurityRule): string | null => {
 }
 
 const WELL_KNOWN_PORTS: Record<number, string> = {
-    20: 'FTP-Data', 21: 'FTP', 22: 'SSH', 23: 'Telnet', 25: 'SMTP',
-    53: 'DNS', 67: 'DHCP', 68: 'DHCP', 80: 'HTTP', 110: 'POP3',
-    119: 'NNTP', 123: 'NTP', 143: 'IMAP', 161: 'SNMP', 162: 'SNMP-Trap',
-    389: 'LDAP', 443: 'HTTPS', 445: 'SMB', 465: 'SMTPS',
-    514: 'Syslog', 587: 'SMTP', 636: 'LDAPS', 993: 'IMAPS', 995: 'POP3S',
-    1433: 'MSSQL', 1521: 'Oracle', 2049: 'NFS', 3306: 'MySQL',
-    3389: 'RDP', 5432: 'PostgreSQL', 5672: 'AMQP', 5900: 'VNC',
-    6379: 'Redis', 8080: 'HTTP-Alt', 8443: 'HTTPS-Alt',
-    9090: 'Prometheus', 9200: 'Elasticsearch', 27017: 'MongoDB',
+    20: 'FTP-Data',
+    21: 'FTP',
+    22: 'SSH',
+    23: 'Telnet',
+    25: 'SMTP',
+    53: 'DNS',
+    67: 'DHCP',
+    68: 'DHCP',
+    80: 'HTTP',
+    110: 'POP3',
+    119: 'NNTP',
+    123: 'NTP',
+    143: 'IMAP',
+    161: 'SNMP',
+    162: 'SNMP-Trap',
+    389: 'LDAP',
+    443: 'HTTPS',
+    445: 'SMB',
+    465: 'SMTPS',
+    514: 'Syslog',
+    587: 'SMTP',
+    636: 'LDAPS',
+    993: 'IMAPS',
+    995: 'POP3S',
+    1433: 'MSSQL',
+    1521: 'Oracle',
+    2049: 'NFS',
+    3306: 'MySQL',
+    3389: 'RDP',
+    5432: 'PostgreSQL',
+    5672: 'AMQP',
+    5900: 'VNC',
+    6379: 'Redis',
+    8080: 'HTTP-Alt',
+    8443: 'HTTPS-Alt',
+    9090: 'Prometheus',
+    9200: 'Elasticsearch',
+    27017: 'MongoDB',
 }
 
 /** Port column text: port range for tcp/udp, type/code for icmp */
@@ -153,28 +182,44 @@ export const ruleServiceName = (rule: SecurityRule): string | null => {
 }
 
 export type RuleSortKey = 'name' | 'direction' | 'protocol' | 'port' | 'remote_cidr'
-export interface RuleFilter { direction: string; protocol: string; keyword: string }
+export interface RuleFilter {
+    direction: string
+    protocol: string
+    keyword: string
+}
 
 export const filterAndSortRules = (
-    rules: SecurityRule[], filter: RuleFilter, sortKey: RuleSortKey, sortOrder: 'asc' | 'desc'
+    rules: SecurityRule[],
+    filter: RuleFilter,
+    sortKey: RuleSortKey,
+    sortOrder: 'asc' | 'desc'
 ): SecurityRule[] => {
     const kw = filter.keyword.trim().toLowerCase()
-    const filtered = rules.filter(r => {
+    const filtered = rules.filter((r) => {
         if (filter.direction && r.direction !== filter.direction) return false
         if (filter.protocol && r.protocol !== filter.protocol) return false
-        if (kw && ![r.name, r.remote_cidr, r.protocol, r.direction]
-            .filter(Boolean).some(v => v!.toLowerCase().includes(kw))) return false
+        if (
+            kw &&
+            ![r.name, r.remote_cidr, r.protocol, r.direction].filter(Boolean).some((v) => v!.toLowerCase().includes(kw))
+        )
+            return false
         return true
     })
     const dir = sortOrder === 'asc' ? 1 : -1
     return filtered.sort((a, b) => {
         switch (sortKey) {
-            case 'name': return dir * (a.name || '').localeCompare(b.name || '')
-            case 'direction': return dir * a.direction.localeCompare(b.direction)
-            case 'protocol': return dir * a.protocol.localeCompare(b.protocol)
-            case 'port': return dir * ((a.port_min ?? -1) - (b.port_min ?? -1))
-            case 'remote_cidr': return dir * (a.remote_cidr || '').localeCompare(b.remote_cidr || '')
-            default: return 0
+            case 'name':
+                return dir * (a.name || '').localeCompare(b.name || '')
+            case 'direction':
+                return dir * a.direction.localeCompare(b.direction)
+            case 'protocol':
+                return dir * a.protocol.localeCompare(b.protocol)
+            case 'port':
+                return dir * ((a.port_min ?? -1) - (b.port_min ?? -1))
+            case 'remote_cidr':
+                return dir * (a.remote_cidr || '').localeCompare(b.remote_cidr || '')
+            default:
+                return 0
         }
     })
 }

@@ -16,7 +16,7 @@ export function useHostConsole() {
     const load = async () => {
         try {
             const res = await systemSettingsApi.list()
-            const setting = (res.settings || []).find(s => s.key === 'HOST_CONSOLE_ENABLED')
+            const setting = (res.settings || []).find((s) => s.key === 'HOST_CONSOLE_ENABLED')
             enabled.value = setting?.value === true || setting?.value === 'true'
         } catch {
             enabled.value = false

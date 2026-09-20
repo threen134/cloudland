@@ -7,7 +7,16 @@ import { FitAddon } from '@xterm/addon-fit'
 import '@xterm/xterm/css/xterm.css'
 import { instancesApi } from '../../api/instances'
 import { hypervisorsApi } from '../../api/hypervisors'
-import { SquareTerminal, RefreshCw, AlertTriangle, Copy, ClipboardPaste, Scaling, Monitor, LockKeyhole } from 'lucide-vue-next'
+import {
+    SquareTerminal,
+    RefreshCw,
+    AlertTriangle,
+    Copy,
+    ClipboardPaste,
+    Scaling,
+    Monitor,
+    LockKeyhole,
+} from 'lucide-vue-next'
 
 // Text console on the instance's first serial port, or (route host-console) a root shell on a hypervisor. The
 // console proxy relays raw bytes between this websocket and the node, so the terminal emulation happens here
@@ -42,7 +51,9 @@ const showNotice = (text: string, warn = false) => {
     notice.value = text
     noticeWarn.value = warn
     if (noticeTimer) clearTimeout(noticeTimer)
-    noticeTimer = setTimeout(() => { notice.value = '' }, 2500)
+    noticeTimer = setTimeout(() => {
+        notice.value = ''
+    }, 2500)
 }
 
 const send = (text: string) => {
@@ -83,7 +94,9 @@ const pasteClipboard = async () => {
 const atShellPrompt = () => {
     if (!term) return false
     const buffer = term.buffer.active
-    const line = (buffer.getLine(buffer.baseY + buffer.cursorY)?.translateToString(true, 0, buffer.cursorX) ?? '').trim()
+    const line = (
+        buffer.getLine(buffer.baseY + buffer.cursorY)?.translateToString(true, 0, buffer.cursorX) ?? ''
+    ).trim()
     // A bare ">" is the continuation prompt of an unfinished command, not a new prompt
     return /[$#%>]$/.test(line) && line !== '>'
 }
@@ -115,9 +128,9 @@ const setupTerminal = () => {
     term.loadAddon(fitAddon)
     term.open(container.value)
     fitAddon.fit()
-    term.onData(data => send(data))
+    term.onData((data) => send(data))
     // Ctrl+C / Ctrl+V go to the guest; the shifted variants copy and paste like in desktop terminals
-    term.attachCustomKeyEventHandler(e => {
+    term.attachCustomKeyEventHandler((e) => {
         if (e.type === 'keydown' && e.ctrlKey && e.shiftKey && (e.code === 'KeyC' || e.code === 'KeyV')) {
             e.preventDefault()
             if (e.code === 'KeyC') copySelection()
@@ -131,7 +144,10 @@ const setupTerminal = () => {
 }
 
 const apiError = (err: any) =>
-    err.response?.data?.detail || err.response?.data?.error_message || err.message || t('dashboard.console.errorSubtitle')
+    err.response?.data?.detail ||
+    err.response?.data?.error_message ||
+    err.message ||
+    t('dashboard.console.errorSubtitle')
 
 // Drop the current socket: its close event must not mark a new attempt as disconnected
 const detachSocket = () => {
@@ -152,7 +168,7 @@ const openSocket = (url: string) => {
         // A host shell starts fresh and prints its own prompt
         if (!isHost) send('\r')
     }
-    ws.onmessage = ev => {
+    ws.onmessage = (ev) => {
         if (socket !== ws) return
         term?.write(typeof ev.data === 'string' ? ev.data : new Uint8Array(ev.data))
     }
@@ -177,10 +193,13 @@ const connectSerial = async () => {
         const data = await instancesApi.getConsole(instanceId, 'serial')
         instanceName.value = data.instance?.hostname || data.instance?.id || instanceId
         if (!data.instance?.hostname) {
-            instancesApi.getInstance(instanceId).then(res => {
-                const full = res.instance || res
-                if (full.hostname) instanceName.value = full.hostname
-            }).catch(() => {})
+            instancesApi
+                .getInstance(instanceId)
+                .then((res) => {
+                    const full = res.instance || res
+                    if (full.hostname) instanceName.value = full.hostname
+                })
+                .catch(() => {})
         }
         const url = data.console_url
         if (!url) throw new Error('No console URL returned from API')
@@ -270,9 +289,12 @@ onMounted(() => {
         return
     }
     instanceName.value = instanceId
-    hypervisorsApi.getHypervisor(instanceId).then(res => {
-        if (res.hostname) instanceName.value = res.hostname
-    }).catch(() => {})
+    hypervisorsApi
+        .getHypervisor(instanceId)
+        .then((res) => {
+            if (res.hostname) instanceName.value = res.hostname
+        })
+        .catch(() => {})
     connectHostFromStart()
 })
 
@@ -295,25 +317,50 @@ onUnmounted(() => {
                 </div>
                 <div class="instance-info">
                     <h1 class="instance-name">{{ instanceName }}</h1>
-                    <span class="instance-id">{{ t(isHost ? 'dashboard.console.host.title' : 'dashboard.console.serial.title') }} · {{ instanceId }}</span>
+                    <span class="instance-id"
+                        >{{ t(isHost ? 'dashboard.console.host.title' : 'dashboard.console.serial.title') }} ·
+                        {{ instanceId }}</span
+                    >
                 </div>
                 <div :class="['status-indicator', status]">
                     <span class="status-dot"></span>
-                    <span class="status-text">{{ status === 'auth' ? t('dashboard.console.host.passwordTitle') : t(`dashboard.console.${status}`) }}</span>
+                    <span class="status-text">{{
+                        status === 'auth' ? t('dashboard.console.host.passwordTitle') : t(`dashboard.console.${status}`)
+                    }}</span>
                 </div>
                 <span v-if="notice" :class="['notice', { warn: noticeWarn }]">{{ notice }}</span>
             </div>
             <div class="header-right">
-                <button class="btn-console" :disabled="status !== 'connected'" :title="t('dashboard.console.serial.copy')" @click="copySelection">
+                <button
+                    class="btn-console"
+                    :disabled="status !== 'connected'"
+                    :title="t('dashboard.console.serial.copy')"
+                    @click="copySelection"
+                >
                     <Copy :size="16" />
                 </button>
-                <button class="btn-console" :disabled="status !== 'connected'" :title="t('dashboard.console.serial.paste')" @click="pasteClipboard">
+                <button
+                    class="btn-console"
+                    :disabled="status !== 'connected'"
+                    :title="t('dashboard.console.serial.paste')"
+                    @click="pasteClipboard"
+                >
                     <ClipboardPaste :size="16" />
                 </button>
-                <button class="btn-console" :disabled="status !== 'connected'" :title="t('dashboard.console.serial.syncSizeHint')" @click="syncSize">
+                <button
+                    class="btn-console"
+                    :disabled="status !== 'connected'"
+                    :title="t('dashboard.console.serial.syncSizeHint')"
+                    @click="syncSize"
+                >
                     <Scaling :size="16" /> <span class="btn-text">{{ t('dashboard.console.serial.syncSize') }}</span>
                 </button>
-                <button v-if="!isHost" class="btn-console" :title="t('dashboard.console.serial.switchToVnc')" @click="switchToGraphical">
+                <button
+                    v-if="!isHost"
+                    class="btn-console"
+                    :title="t('dashboard.console.serial.switchToVnc')"
+                    @click="switchToGraphical"
+                >
                     <Monitor :size="16" /> <span class="btn-text">{{ t('dashboard.console.serial.switchToVnc') }}</span>
                 </button>
                 <button class="btn-console" :title="t('dashboard.console.reconnect')" @click="connect">
@@ -339,7 +386,13 @@ onUnmounted(() => {
                     <h2>{{ t('dashboard.console.host.passwordTitle') }}</h2>
                     <p>{{ t('dashboard.console.host.passwordDesc', { name: instanceName }) }}</p>
                     <!-- The username field lets password managers fill in the password of the current account -->
-                    <input type="text" autocomplete="username" class="visually-hidden" tabindex="-1" aria-hidden="true" />
+                    <input
+                        type="text"
+                        autocomplete="username"
+                        class="visually-hidden"
+                        tabindex="-1"
+                        aria-hidden="true"
+                    />
                     <input
                         ref="passwordInput"
                         v-model="password"
@@ -348,7 +401,9 @@ onUnmounted(() => {
                         autocomplete="current-password"
                         :placeholder="t('dashboard.console.host.passwordPlaceholder')"
                     />
-                    <p v-if="authError" class="auth-error">{{ t('dashboard.console.host.authFailed') }}: {{ authError }}</p>
+                    <p v-if="authError" class="auth-error">
+                        {{ t('dashboard.console.host.authFailed') }}: {{ authError }}
+                    </p>
                     <button type="submit" class="btn-primary mt-4" :disabled="!password">
                         <SquareTerminal :size="16" /> {{ t('dashboard.console.host.open') }}
                     </button>
@@ -454,9 +509,16 @@ onUnmounted(() => {
     background-color: #94a3b8;
 }
 
-.status-indicator.connecting .status-dot { background-color: #eab308; }
-.status-indicator.connected .status-dot { background-color: #22c55e; box-shadow: 0 0 8px #22c55e; }
-.status-indicator.error .status-dot { background-color: #ef4444; }
+.status-indicator.connecting .status-dot {
+    background-color: #eab308;
+}
+.status-indicator.connected .status-dot {
+    background-color: #22c55e;
+    box-shadow: 0 0 8px #22c55e;
+}
+.status-indicator.error .status-dot {
+    background-color: #ef4444;
+}
 
 .notice {
     font-size: 12px;
@@ -599,7 +661,9 @@ onUnmounted(() => {
 }
 
 @keyframes spin {
-    to { transform: rotate(360deg); }
+    to {
+        transform: rotate(360deg);
+    }
 }
 
 .btn-primary {
@@ -615,7 +679,9 @@ onUnmounted(() => {
     gap: 8px;
 }
 
-.mt-4 { margin-top: 16px; }
+.mt-4 {
+    margin-top: 16px;
+}
 
 .console-footer {
     min-height: 32px;

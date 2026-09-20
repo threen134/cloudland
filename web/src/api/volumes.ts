@@ -15,15 +15,7 @@ export interface BaseReference {
 
 /** model.VolumeStatus（api/src/model/volume.go） */
 export type VolumeStatus =
-    | 'resizing'
-    | 'available'
-    | 'attached'
-    | 'attaching'
-    | 'detaching'
-    | 'restoring'
-    | 'backuping'
-    | 'error'
-    | 'pending'
+    'resizing' | 'available' | 'attached' | 'attaching' | 'detaching' | 'restoring' | 'backuping' | 'error' | 'pending'
 
 /** model.BackupStatus（api/src/model/volume.go） */
 export type BackupStatus = 'pending' | 'available' | 'error' | 'restoring'
@@ -153,7 +145,7 @@ export const volumesApi = {
     // Attach volume to instance
     attach: async (id: string, instanceId: string): Promise<Volume> => {
         const response = await client.patch<Volume>(`/volumes/${id}`, {
-            instance: { id: instanceId }
+            instance: { id: instanceId },
         })
         return response.data
     },
@@ -161,7 +153,7 @@ export const volumesApi = {
     // Detach volume from instance
     detach: async (id: string): Promise<Volume> => {
         const response = await client.patch<Volume>(`/volumes/${id}`, {
-            instance: null
+            instance: null,
         })
         return response.data
     },
@@ -169,19 +161,16 @@ export const volumesApi = {
     // Resize volume
     resize: async (id: string, newSize: number): Promise<Volume> => {
         const response = await client.patch<Volume>(`/volumes/${id}`, {
-            size: newSize
+            size: newSize,
         })
         return response.data
-    }
+    },
 }
 
 // Backup API functions
 export const backupsApi = {
     // List backups
-    list: async (params?: {
-        offset?: number
-        limit?: number
-    }): Promise<BackupListResponse> => {
+    list: async (params?: { offset?: number; limit?: number }): Promise<BackupListResponse> => {
         const response = await client.get<BackupListResponse>('/backups', { params })
         return response.data
     },
@@ -194,7 +183,12 @@ export const backupsApi = {
 
     // Create backup or snapshot from a volume。后端 VolBackupPayload 要的是
     // volume_id 与必填的 type（snapshot / backup），此前发的 volume: { id } 会被 400
-    create: async (volumeId: string, name: string, type: 'snapshot' | 'backup' = 'backup', poolId?: string): Promise<VolumeBackup> => {
+    create: async (
+        volumeId: string,
+        name: string,
+        type: 'snapshot' | 'backup' = 'backup',
+        poolId?: string
+    ): Promise<VolumeBackup> => {
         const response = await client.post<VolumeBackup>('/backups', {
             name,
             volume_id: volumeId,
@@ -213,7 +207,7 @@ export const backupsApi = {
     restore: async (id: string): Promise<VolumeBackup> => {
         const response = await client.post<VolumeBackup>(`/backups/${id}/restore`)
         return response.data
-    }
+    },
 }
 
 export default volumesApi

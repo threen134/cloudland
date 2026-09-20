@@ -56,7 +56,13 @@ export interface ImagePatchPayload {
 
 export const imagesApi = {
     // List images
-    async fetchImages(params?: { offset?: number; limit?: number; order?: string; query?: string; visibility?: string }): Promise<ImageListResponse> {
+    async fetchImages(params?: {
+        offset?: number
+        limit?: number
+        order?: string
+        query?: string
+        visibility?: string
+    }): Promise<ImageListResponse> {
         const response = await client.get<ImageListResponse>('/images', { params })
         return response.data
     },
@@ -83,5 +89,5 @@ export const imagesApi = {
     async deleteImage(id: string): Promise<void> {
         const response = await client.delete<void>(`/images/${id}`)
         return response.data
-    }
+    },
 }

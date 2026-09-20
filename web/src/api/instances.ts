@@ -216,7 +216,13 @@ export interface NetworkMetricsResponse {
 export const instancesApi = {
     // List instances
     // hyper：按所在计算节点过滤（host id）；不传表示不过滤
-    async fetchInstances(params?: { offset?: number; limit?: number; order?: string; query?: string; hyper?: number }): Promise<InstanceListResponse> {
+    async fetchInstances(params?: {
+        offset?: number
+        limit?: number
+        order?: string
+        query?: string
+        hyper?: number
+    }): Promise<InstanceListResponse> {
         const response = await client.get<InstanceListResponse>('/instances', { params })
         return response.data
     },
@@ -294,7 +300,16 @@ export const instancesApi = {
     },
 
     // 后端返回 204 No Content
-    async reinstallInstance(id: string, payload: { image?: BaseReference, password?: string, keys?: BaseReference[], flavor?: string, login_port?: number }): Promise<void> {
+    async reinstallInstance(
+        id: string,
+        payload: {
+            image?: BaseReference
+            password?: string
+            keys?: BaseReference[]
+            flavor?: string
+            login_port?: number
+        }
+    ): Promise<void> {
         const response = await client.post<void>(`/instances/${id}/reinstall`, payload)
         return response.data
     },
@@ -309,30 +324,58 @@ export const instancesApi = {
         return response.data
     },
 
-    async patchInterface(instanceId: string, ifaceId: string, payload: { security_groups?: BaseReference[] }): Promise<InstanceInterface> {
-        const response = await client.patch<InstanceInterface>(`/instances/${instanceId}/interfaces/${ifaceId}`, payload)
+    async patchInterface(
+        instanceId: string,
+        ifaceId: string,
+        payload: { security_groups?: BaseReference[] }
+    ): Promise<InstanceInterface> {
+        const response = await client.patch<InstanceInterface>(
+            `/instances/${instanceId}/interfaces/${ifaceId}`,
+            payload
+        )
         return response.data
     },
 
     // Monitoring Metrics
-    async getCPUMetrics(payload: { id: string[], start: string, end: string, step: string }): Promise<CPUMetricsResponse> {
+    async getCPUMetrics(payload: {
+        id: string[]
+        start: string
+        end: string
+        step: string
+    }): Promise<CPUMetricsResponse> {
         const response = await client.post<CPUMetricsResponse>('/metrics/instances/cpu/his_data', payload)
         return response.data
     },
 
-    async getMemoryMetrics(payload: { id: string[], start: string, end: string, step: string }): Promise<MemoryMetricsResponse> {
+    async getMemoryMetrics(payload: {
+        id: string[]
+        start: string
+        end: string
+        step: string
+    }): Promise<MemoryMetricsResponse> {
         const response = await client.post<MemoryMetricsResponse>('/metrics/instances/memory/his_data', payload)
         return response.data
     },
 
-    async getDiskMetrics(payload: { id: string[], disk: string[], start: string, end: string, step: string }): Promise<DiskMetricsResponse> {
+    async getDiskMetrics(payload: {
+        id: string[]
+        disk: string[]
+        start: string
+        end: string
+        step: string
+    }): Promise<DiskMetricsResponse> {
         const response = await client.post<DiskMetricsResponse>('/metrics/instances/disk/his_data', payload)
         return response.data
     },
 
     // 后端按 interface_ids 顺序返回数组，每个元素是一个网卡的 NetworkResponse
-    async getNetworkMetrics(payload: { interface_ids: string[], start: string, end: string, step: string }): Promise<NetworkMetricsResponse[]> {
+    async getNetworkMetrics(payload: {
+        interface_ids: string[]
+        start: string
+        end: string
+        step: string
+    }): Promise<NetworkMetricsResponse[]> {
         const response = await client.post<NetworkMetricsResponse[]>('/metrics/instances/network/his_data', payload)
         return response.data
-    }
+    },
 }

@@ -18,9 +18,7 @@ const toast = useToast()
 const authStore = useAuthStore()
 const tenantStore = useTenantStore()
 // Writes require org ADMIN or SystemAdmin (enforced by the gateway)
-const canManage = computed(() =>
-    authStore.user?.is_superuser === true || (tenantStore.currentOrg?.org_role ?? 0) >= 3
-)
+const canManage = computed(() => authStore.user?.is_superuser === true || (tenantStore.currentOrg?.org_role ?? 0) >= 3)
 const channels = ref<NotificationChannel[]>([])
 const loading = ref(false)
 const searchQuery = ref('')
@@ -41,9 +39,7 @@ const form = ref<CreateChannelPayload>({
 const filteredChannels = computed(() => {
     if (!searchQuery.value) return channels.value
     const q = searchQuery.value.toLowerCase()
-    return channels.value.filter(ch =>
-        ch.name.toLowerCase().includes(q) || ch.type.toLowerCase().includes(q)
-    )
+    return channels.value.filter((ch) => ch.name.toLowerCase().includes(q) || ch.type.toLowerCase().includes(q))
 })
 
 const columns = computed<Column[]>(() => [
@@ -171,7 +167,7 @@ onMounted(fetchChannels)
         >
             <template #empty>
                 <div class="empty-state">
-                    <Bell :size="48" style="opacity: 0.2; margin-bottom: 16px;" />
+                    <Bell :size="48" style="opacity: 0.2; margin-bottom: 16px" />
                     <p>{{ t('messages.noData') }}</p>
                 </div>
             </template>
@@ -199,7 +195,11 @@ onMounted(fetchChannels)
 
             <template #cell-actions="{ row: ch }">
                 <div v-if="canManage" class="actions-cell">
-                    <button class="icon-btn-table" @click="toggleEnabled(ch)" :title="ch.enabled ? 'Disable' : 'Enable'">
+                    <button
+                        class="icon-btn-table"
+                        @click="toggleEnabled(ch)"
+                        :title="ch.enabled ? 'Disable' : 'Enable'"
+                    >
                         <component :is="ch.enabled ? ToggleRight : ToggleLeft" :size="16" />
                     </button>
                     <button class="icon-btn-table" @click="openEdit(ch)">
@@ -236,16 +236,27 @@ onMounted(fetchChannels)
                     </div>
                     <div class="form-group">
                         <label class="form-label">Webhook URL</label>
-                        <input v-model="form.config[form.type === 'feishu' ? 'webhook_url' : 'url']" class="form-input" :placeholder="$t('dashboard.forms.placeholder.webhookExample')" required />
+                        <input
+                            v-model="form.config[form.type === 'feishu' ? 'webhook_url' : 'url']"
+                            class="form-input"
+                            :placeholder="$t('dashboard.forms.placeholder.webhookExample')"
+                            required
+                        />
                     </div>
                     <div class="form-group" v-if="form.type === 'feishu'">
                         <label class="form-label">{{ t('dashboard.notificationSecret') }}</label>
-                        <input v-model="form.config.secret" class="form-input" :placeholder="t('dashboard.notificationSecretPlaceholder')" />
+                        <input
+                            v-model="form.config.secret"
+                            class="form-input"
+                            :placeholder="t('dashboard.notificationSecretPlaceholder')"
+                        />
                     </div>
                 </div>
 
                 <template #footer>
-                    <button type="button" class="btn btn-secondary" @click="showCreateModal = false">{{ t('actions.cancel') }}</button>
+                    <button type="button" class="btn btn-secondary" @click="showCreateModal = false">
+                        {{ t('actions.cancel') }}
+                    </button>
                     <button type="submit" class="btn btn-primary">{{ t('actions.save') }}</button>
                 </template>
             </BaseModal>
@@ -265,7 +276,12 @@ onMounted(fetchChannels)
 </template>
 
 <style scoped>
-.empty-state { display: flex; flex-direction: column; align-items: center; justify-content: center; }
+.empty-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+}
 
 .url-cell {
     max-width: 300px;
@@ -276,47 +292,115 @@ onMounted(fetchChannels)
     color: var(--text-secondary);
 }
 
-.actions-cell { display: flex; gap: 4px; align-items: center; }
+.actions-cell {
+    display: flex;
+    gap: 4px;
+    align-items: center;
+}
 
 .icon-btn-table {
-    width: 32px; height: 32px; border-radius: 8px; border: none;
-    background: transparent; color: var(--text-tertiary);
-    display: flex; align-items: center; justify-content: center;
-    cursor: pointer; transition: all 0.2s;
+    width: 32px;
+    height: 32px;
+    border-radius: 8px;
+    border: none;
+    background: transparent;
+    color: var(--text-tertiary);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: all 0.2s;
 }
 
-.icon-btn-table:hover { background-color: var(--bg-tertiary); color: var(--primary-color); }
-.icon-btn-table.text-error:hover { background-color: var(--error-light); color: var(--error-dark); }
-.text-error { color: var(--text-tertiary); }
+.icon-btn-table:hover {
+    background-color: var(--bg-tertiary);
+    color: var(--primary-color);
+}
+.icon-btn-table.text-error:hover {
+    background-color: var(--error-light);
+    color: var(--error-dark);
+}
+.text-error {
+    color: var(--text-tertiary);
+}
 
 .status-pill {
-    display: inline-flex; align-items: center; gap: 6px;
-    padding: 4px 10px; border-radius: var(--radius-full);
-    font-size: var(--font-size-xs); font-weight: var(--font-weight-medium);
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 10px;
+    border-radius: var(--radius-full);
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-medium);
 }
 
-.badge-primary { background: var(--primary-light); color: var(--primary-700); }
-.badge-secondary { background: var(--accent-purple-light); color: var(--accent-purple); }
+.badge-primary {
+    background: var(--primary-light);
+    color: var(--primary-700);
+}
+.badge-secondary {
+    background: var(--accent-purple-light);
+    color: var(--accent-purple);
+}
 
-.status-active { background: var(--success-light); color: var(--success-dark); }
-.status-disabled { background: var(--bg-tertiary); color: var(--text-tertiary); }
-.status-dot { width: 6px; height: 6px; background: currentColor; border-radius: 50%; }
+.status-active {
+    background: var(--success-light);
+    color: var(--success-dark);
+}
+.status-disabled {
+    background: var(--bg-tertiary);
+    color: var(--text-tertiary);
+}
+.status-dot {
+    width: 6px;
+    height: 6px;
+    background: currentColor;
+    border-radius: 50%;
+}
 
-.text-danger { color: var(--error-color); }
+.text-danger {
+    color: var(--error-color);
+}
 
 /* Modal */
-.form-stack { display: flex; flex-direction: column; gap: 16px; }
-.form-group { display: flex; flex-direction: column; }
-.form-label { font-size: 0.8125rem; color: var(--text-secondary); margin-bottom: 4px; font-weight: 500; }
-
-.form-input {
-    width: 100%; padding: 8px 12px;
-    border: 1px solid var(--border-light); border-radius: var(--radius-md);
-    font-size: 0.875rem; background: var(--bg-primary); color: var(--text-primary);
+.form-stack {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+.form-group {
+    display: flex;
+    flex-direction: column;
+}
+.form-label {
+    font-size: 0.8125rem;
+    color: var(--text-secondary);
+    margin-bottom: 4px;
+    font-weight: 500;
 }
 
-.form-input:focus { outline: none; border-color: var(--primary-300); box-shadow: 0 0 0 2px var(--primary-100); }
+.form-input {
+    width: 100%;
+    padding: 8px 12px;
+    border: 1px solid var(--border-light);
+    border-radius: var(--radius-md);
+    font-size: 0.875rem;
+    background: var(--bg-primary);
+    color: var(--text-primary);
+}
 
-.spinning { animation: spin 1s linear infinite; }
-@keyframes spin { to { transform: rotate(360deg); } }
+.form-input:focus {
+    outline: none;
+    border-color: var(--primary-300);
+    box-shadow: 0 0 0 2px var(--primary-100);
+}
+
+.spinning {
+    animation: spin 1s linear infinite;
+}
+@keyframes spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
 </style>

@@ -23,23 +23,23 @@ export default {
 
     // 区域
     regions: {
-        'shanghai': '上海 (中国)',
-        'tok': '东京 (亚太)',
-        'osa': '大阪 (亚太)',
-        'sng': '新加坡 (亚太)',
-        'syd': '悉尼 (亚太)',
-        'che': '钦奈 (亚太)',
-        'lon': '伦敦 (欧洲)',
-        'fra': '法兰克福 (欧洲)',
-        'ams': '阿姆斯特丹 (欧洲)',
-        'par': '巴黎 (欧洲)',
-        'mad': '马德里 (欧洲)',
-        'wdc': '华盛顿 (北美东)',
-        'tor': '多伦多 (北美东)',
-        'mon': '蒙特利尔 (北美东)',
-        'dal': '达拉斯 (北美南)',
-        'sjc': '圣何塞 (北美西)',
-        'sao': '圣保罗 (南美)',
+        shanghai: '上海 (中国)',
+        tok: '东京 (亚太)',
+        osa: '大阪 (亚太)',
+        sng: '新加坡 (亚太)',
+        syd: '悉尼 (亚太)',
+        che: '钦奈 (亚太)',
+        lon: '伦敦 (欧洲)',
+        fra: '法兰克福 (欧洲)',
+        ams: '阿姆斯特丹 (欧洲)',
+        par: '巴黎 (欧洲)',
+        mad: '马德里 (欧洲)',
+        wdc: '华盛顿 (北美东)',
+        tor: '多伦多 (北美东)',
+        mon: '蒙特利尔 (北美东)',
+        dal: '达拉斯 (北美南)',
+        sjc: '圣何塞 (北美西)',
+        sao: '圣保罗 (南美)',
     },
 
     // 产品下拉菜单
@@ -122,29 +122,13 @@ export default {
         subtitle: '基于尖端基础设施，提供企业级可靠性',
         // 优势项目
         highPerformance: '高性能基础设施',
-        highPerformanceItems: [
-            'NVMe SSD存储，速度提升5-10倍',
-            '100%独享CPU和内存资源',
-            '无资源争抢，性能稳定',
-        ],
+        highPerformanceItems: ['NVMe SSD存储，速度提升5-10倍', '100%独享CPU和内存资源', '无资源争抢，性能稳定'],
         flexible: '灵活弹性',
-        flexibleItems: [
-            '60秒内完成部署',
-            '随时扩容或缩容',
-            '按需付费，用多少付多少',
-        ],
+        flexibleItems: ['60秒内完成部署', '随时扩容或缩容', '按需付费，用多少付多少'],
         globalNetwork: '全球网络',
-        globalNetworkItems: [
-            '多数据中心节点',
-            '智能全球路由优化',
-            '全球低延迟连接',
-        ],
+        globalNetworkItems: ['多数据中心节点', '智能全球路由优化', '全球低延迟连接'],
         support: '7×24小时专家支持',
-        supportItems: [
-            '全天候技术支持服务',
-            'Web控制台与API接入',
-            '完善的技术文档',
-        ],
+        supportItems: ['全天候技术支持服务', 'Web控制台与API接入', '完善的技术文档'],
     },
 
     // 应用场景区域
@@ -211,8 +195,6 @@ export default {
             privacy: '隐私政策',
         },
     },
-
-
 
     // 云市场
     marketplace: {
@@ -377,7 +359,8 @@ export default {
             hideKeyboard: '收起键盘',
             paste: '粘贴为键盘输入',
             pasteTitle: '粘贴文本到控制台',
-            pasteHint: '文本会逐字模拟为键盘输入，适用于没有剪贴板同步的系统（如 Linux 字符界面、登录框）。仅支持英文字母、数字、常用符号、换行和 Tab；请先在控制台中把光标放到要输入的位置。',
+            pasteHint:
+                '文本会逐字模拟为键盘输入，适用于没有剪贴板同步的系统（如 Linux 字符界面、登录框）。仅支持英文字母、数字、常用符号、换行和 Tab；请先在控制台中把光标放到要输入的位置。',
             pastePlaceholder: '在此粘贴要输入的文本',
             pasteSend: '开始输入',
             pasteStop: '停止',
@@ -397,7 +380,7 @@ export default {
                 hint: '连接虚拟机的第一个串口（ttyS0），适用于 Linux；支持复制粘贴与中文。连接后如无输出请按回车。',
                 copied: '已复制到剪贴板',
                 nothingSelected: '请先用鼠标选中要复制的内容',
-                clipboardDenied: '浏览器不允许访问剪贴板'
+                clipboardDenied: '浏览器不允许访问剪贴板',
             },
             host: {
                 title: '节点终端',
@@ -407,8 +390,8 @@ export default {
                 open: '打开终端',
                 authFailed: '验证失败',
                 hint: '计算节点 root 终端：会话输出会被记录在节点上，空闲 {minutes} 分钟后自动断开；断开后需重新验证密码。',
-                idleHint: '空闲 {minutes} 分钟后断开'
-            }
+                idleHint: '空闲 {minutes} 分钟后断开',
+            },
         },
         instances: '云服务器',
         volumes: '云硬盘',
@@ -670,7 +653,8 @@ export default {
             userDataPlaceholder: '可选。在实例启动时运行的脚本...',
             vlanConflict: '各网络接口不能使用相同 VLAN 的子网，请重新选择。',
             passwordSuccess: '密码一致',
-            quotaExceeded: '限额已超出：资源 {resource} 在区域 {region}，请求数量 {requested}，可用数量 {available}，总限额 {limit}。',
+            quotaExceeded:
+                '限额已超出：资源 {resource} 在区域 {region}，请求数量 {requested}，可用数量 {available}，总限额 {limit}。',
             selectedCount: '已选择 {count} 个密钥',
         },
         userDetail: {
@@ -794,7 +778,13 @@ export default {
         activityPage: {
             title: '操作动态',
             timeRange: '时间范围',
-            ranges: { today: '今天', last7d: '最近 7 天', last30d: '最近 30 天', last90d: '最近 90 天', custom: '自定义' },
+            ranges: {
+                today: '今天',
+                last7d: '最近 7 天',
+                last30d: '最近 30 天',
+                last90d: '最近 90 天',
+                custom: '自定义',
+            },
             start: '开始时间',
             end: '结束时间',
             apply: '应用',
@@ -807,7 +797,23 @@ export default {
             colAction: '操作',
             succeeded: '成功',
             failed: '失败',
-            resourceTypes: { instance: '云服务器', volume: '云硬盘', backup: '备份', consistency_group: '一致性组', image: '镜像', key: '密钥', flavor: '规格', vpc: 'VPC', subnet: '子网', security_group: '安全组', floating_ip: '弹性 IP', load_balancer: '负载均衡', zone: '可用区', hyper: '计算节点', migration: '迁移' },
+            resourceTypes: {
+                instance: '云服务器',
+                volume: '云硬盘',
+                backup: '备份',
+                consistency_group: '一致性组',
+                image: '镜像',
+                key: '密钥',
+                flavor: '规格',
+                vpc: 'VPC',
+                subnet: '子网',
+                security_group: '安全组',
+                floating_ip: '弹性 IP',
+                load_balancer: '负载均衡',
+                zone: '可用区',
+                hyper: '计算节点',
+                migration: '迁移',
+            },
             empty: '该时间范围内没有操作记录',
             emptyFiltered: '没有符合筛选条件的操作记录',
             loadFailed: '操作动态加载失败',
@@ -821,10 +827,10 @@ export default {
         overview: {
             title: '概览',
             subtitle: '概览：云服务器 · 云硬盘 · 镜像 · 弹性 IP',
-            welcomeBack: "{username}！欢迎回来，这是您今天云资源的运行情况。",
-            resourceUsage: "资源使用情况",
-            recentActivity: "最近动态",
-            loadingOverview: "正在加载概览...",
+            welcomeBack: '{username}！欢迎回来，这是您今天云资源的运行情况。',
+            resourceUsage: '资源使用情况',
+            recentActivity: '最近动态',
+            loadingOverview: '正在加载概览...',
             imageActions: {
                 fillRequired: '请填写名称和下载地址。',
             },
@@ -850,7 +856,7 @@ export default {
                 disk: '硬盘 已用',
                 volume: '存储卷 已用',
                 publicIp: '公网 IP 已用',
-                privateIp: '内网 IP 已用'
+                privateIp: '内网 IP 已用',
             },
             usage: '使用率',
             activeCount: '个运行中',
@@ -1095,7 +1101,7 @@ export default {
                 migration: {
                     create: '发起迁移 {name}',
                 },
-            }
+            },
         },
         table: {
             instanceCount: '虚拟机',
@@ -1385,7 +1391,8 @@ export default {
             zone: '可用区',
             optional: '可选',
             setAsDefault: '设为该 VPC 的默认安全组',
-            setAsDefaultTooltip: '默认安全组会在创建实例时未指定安全组的情况下自动应用，每个 VPC 只能有一个默认安全组。',
+            setAsDefaultTooltip:
+                '默认安全组会在创建实例时未指定安全组的情况下自动应用，每个 VPC 只能有一个默认安全组。',
             protocol: '协议',
             port: '端口',
             gateway: '网关 IP',
@@ -1459,7 +1466,8 @@ export default {
                 secondaryInterface: '扩展网络接口',
                 advancedOptions: '高级选项',
             },
-            dhcpTooltip: 'DHCP 开关决定是否为没有 cloud-init 的虚拟机提供自动 IP 分配服务；有 cloud-init 的镜像不受影响。',
+            dhcpTooltip:
+                'DHCP 开关决定是否为没有 cloud-init 的虚拟机提供自动 IP 分配服务；有 cloud-init 的镜像不受影响。',
             startIp: '起始 IP',
             endIp: '结束 IP',
             dns: 'DNS 服务器',
@@ -1720,7 +1728,7 @@ export default {
 
     acceptInvitation: {
         loading: '正在加载邀请...',
-        invited: "您已获得邀请！",
+        invited: '您已获得邀请！',
         organization: '组织',
         role: '角色',
         invitedBy: '邀请人',
@@ -1735,7 +1743,7 @@ export default {
         existingUser: '您已有账户 ({email})。点击下方按钮加入该组织。',
         accept: '接受邀请',
         welcome: '欢迎！',
-        successJoined: "您已成功加入 {orgName}。",
+        successJoined: '您已成功加入 {orgName}。',
         goToLogin: '前往登录',
         invalidInvitation: '无效的邀请',
     },
@@ -1751,7 +1759,15 @@ export default {
         loadBalancers: '负载均衡',
         images: '镜像',
         // Labels for the resource field of a quota_exceeded response
-        resources: { cpu_cores: 'CPU 核数', ram_gb: '内存 (GB)', disk_gb: '磁盘 (GB)', public_ips: '公网 IP', vpcs: 'VPC', load_balancers: '负载均衡', images: '镜像' },
+        resources: {
+            cpu_cores: 'CPU 核数',
+            ram_gb: '内存 (GB)',
+            disk_gb: '磁盘 (GB)',
+            public_ips: '公网 IP',
+            vpcs: 'VPC',
+            load_balancers: '负载均衡',
+            images: '镜像',
+        },
         region: '区域',
         used: '已使用',
         available: '可用',
@@ -1834,7 +1850,6 @@ export default {
         operationFailed: '操作失败，请重试。',
     },
 
-
     roles: {
         owner: '所有者',
         admin: '管理员',
@@ -1843,7 +1858,7 @@ export default {
         editor: '编辑者',
         viewer: '观察者',
         member: '成员',
-        superuser: '超级管理员'
+        superuser: '超级管理员',
     },
     userStatus: {
         active: '活跃',
@@ -1851,13 +1866,13 @@ export default {
         pending: '待定',
         invited: '已邀请',
         dormant: '待激活',
-        disabled: '已禁用'
+        disabled: '已禁用',
     },
     languages: {
         en: 'English',
         zh: '中文',
         zh_hans: '简体中文',
-        zh_hant: '繁體中文'
+        zh_hant: '繁體中文',
     },
     common: {
         save: '保存',
@@ -1907,10 +1922,12 @@ export default {
             network: '网络',
             networkDesc: '控制面内部 DNS 的上游转发。',
             quotaCompute: '计算与存储',
-            quotaComputeDesc: '新建组织或新增区域时，为每个组织在每个区域写入的初始配额。修改后不影响已有配额，单个组织的配额请在组织详情中调整。',
+            quotaComputeDesc:
+                '新建组织或新增区域时，为每个组织在每个区域写入的初始配额。修改后不影响已有配额，单个组织的配额请在组织详情中调整。',
             quotaOther: '网络与镜像',
             hostConsole: '计算节点终端',
-            hostConsoleDesc: '允许系统管理员在计算节点页面打开节点的 root 命令行。打开前须再次输入密码，会话输出记录在节点的 /opt/cloudland/log/host_console/ 下（保留 180 天）。',
+            hostConsoleDesc:
+                '允许系统管理员在计算节点页面打开节点的 root 命令行。打开前须再次输入密码，会话输出记录在节点的 /opt/cloudland/log/host_console/ 下（保留 180 天）。',
             other: '其他',
         },
         notificationHint: '用于账号激活、成员邀请等系统通知。虚拟机告警的接收方请在',
@@ -1919,7 +1936,8 @@ export default {
         passwordPrompt: {
             title: '验证身份',
             descEnable: '开启后，每次打开节点终端都要输入当前账号的登录密码。请输入密码确认这项修改。',
-            descDisable: '关闭后，任何拥有系统管理员会话的人都能直接打开节点的 root 终端，不再需要密码。请输入密码确认这项修改。',
+            descDisable:
+                '关闭后，任何拥有系统管理员会话的人都能直接打开节点的 root 终端，不再需要密码。请输入密码确认这项修改。',
             placeholder: '当前账号的登录密码',
         },
         units: {
@@ -1951,21 +1969,26 @@ export default {
             DEFAULT_LOAD_BALANCERS: '负载均衡',
             DEFAULT_IMAGES: '私有镜像',
             ALARM_EVENT_RETENTION_DAYS: 'VM 告警事件保留天数',
-            ALARM_EVENT_RETENTION_DAYS_desc: '虚拟机告警事件及投递日志的保留天数，超过该天数的记录将被自动清理，默认 30 天。',
+            ALARM_EVENT_RETENTION_DAYS_desc:
+                '虚拟机告警事件及投递日志的保留天数，超过该天数的记录将被自动清理，默认 30 天。',
             AUDIT_LOG_RETENTION_DAYS: '操作审计日志保留天数',
-            AUDIT_LOG_RETENTION_DAYS_desc: '操作审计日志（含概览页「最近动态」）的保留天数，各区域每天自动清理超过该天数的记录。取值 90–3650，默认 365 天。',
+            AUDIT_LOG_RETENTION_DAYS_desc:
+                '操作审计日志（含概览页「最近动态」）的保留天数，各区域每天自动清理超过该天数的记录。取值 90–3650，默认 365 天。',
             DNS_UPSTREAM: 'DNS 上游转发',
-            DNS_UPSTREAM_desc: '内部 dnsmasq 未能匹配节点 hostname 时，将 DNS 查询转发到此地址。支持逗号分隔多个地址，如 8.8.8.8,8.8.4.4。',
+            DNS_UPSTREAM_desc:
+                '内部 dnsmasq 未能匹配节点 hostname 时，将 DNS 查询转发到此地址。支持逗号分隔多个地址，如 8.8.8.8,8.8.4.4。',
             HOST_CONSOLE_ENABLED: '启用节点终端',
             HOST_CONSOLE_ENABLED_desc: '关闭后所有用户都无法打开新的节点终端，已打开的会话不受影响。',
             HOST_CONSOLE_REQUIRE_PASSWORD: '打开终端需要密码',
-            HOST_CONSOLE_REQUIRE_PASSWORD_desc: '打开节点终端前要求再次输入当前账号的登录密码，防止有人用已登录的窗口直接取得节点 root 权限。修改这一项本身也需要输入密码。',
+            HOST_CONSOLE_REQUIRE_PASSWORD_desc:
+                '打开节点终端前要求再次输入当前账号的登录密码，防止有人用已登录的窗口直接取得节点 root 权限。修改这一项本身也需要输入密码。',
             HOST_CONSOLE_IDLE_MINUTES: '空闲断开时间',
             HOST_CONSOLE_IDLE_MINUTES_desc: '终端在该时间内没有任何输入输出时自动断开。取值 5–240，默认 15 分钟。',
         },
         infra: {
             readOnlyTitle: '只读视图',
-            readOnlyDesc: '这些参数在 clapi / MinIO / compute 节点启动时加载，无法从 UI 修改。\n修改方式：编辑 deploy/docker/.env 后执行 docker-compose up -d 重建相关容器。',
+            readOnlyDesc:
+                '这些参数在 clapi / MinIO / compute 节点启动时加载，无法从 UI 修改。\n修改方式：编辑 deploy/docker/.env 后执行 docker-compose up -d 重建相关容器。',
             currentMode: '当前运行模式',
             initialized: '已初始化',
             notInitialized: '未初始化',

@@ -144,7 +144,9 @@ export const orgsApi = {
 
     // Transfer ownership
     async transferOwnership(orgUuid: string, newOwnerUuid: string): Promise<Organization> {
-        const response = await client.post<Organization>(`/orgs/${orgUuid}/transfer-owner`, { new_owner_uuid: newOwnerUuid })
+        const response = await client.post<Organization>(`/orgs/${orgUuid}/transfer-owner`, {
+            new_owner_uuid: newOwnerUuid,
+        })
         return response.data
     },
 

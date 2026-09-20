@@ -82,7 +82,6 @@ export const useAuthStore = defineStore('auth', () => {
             userStorage.setItem(STORAGE_KEYS.user, JSON.stringify(user.value))
             failedAttempts.value = 0
             localStorage.removeItem(STORAGE_KEYS.loginAttempts)
-
         } catch (error) {
             console.error('Login failed:', error)
             failedAttempts.value++

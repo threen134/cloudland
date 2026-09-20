@@ -109,5 +109,5 @@ export const alarmsApi = {
     async syncMappings(): Promise<SyncMappingsResponse> {
         const response = await client.post<SyncMappingsResponse>('/metrics/alarm/sync-mappings')
         return response.data
-    }
+    },
 }

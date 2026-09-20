@@ -4,7 +4,19 @@ import { useRoute, useRouter } from 'vue-router'
 import { vpcsApi, subnetsApi, type VPC, type SubnetPayload } from '../../api/networks'
 import { isValidName } from '../../utils/validation'
 import { useRegionStore } from '../../stores/region'
-import { ArrowLeft, Layers, Network, Trash2, Plus, Copy, Check, Pencil, ChevronDown, CalendarDays, HelpCircle } from 'lucide-vue-next'
+import {
+    ArrowLeft,
+    Layers,
+    Network,
+    Trash2,
+    Plus,
+    Copy,
+    Check,
+    Pencil,
+    ChevronDown,
+    CalendarDays,
+    HelpCircle,
+} from 'lucide-vue-next'
 import { useI18n } from 'vue-i18n'
 import { useToast } from '../../composables/useToast'
 import DeleteModal from '../../components/modals/DeleteModal.vue'
@@ -90,7 +102,7 @@ const confirmEdit = async () => {
     try {
         await vpcsApi.patch(vpc.value!.id, {
             name: editForm.value.name,
-            description: editForm.value.description
+            description: editForm.value.description,
         })
         showEditModal.value = false
         toast.success(t('messages.updateSuccess'))
@@ -203,11 +215,14 @@ const fetchVPC = async () => {
     }
 }
 
-watch(() => region.currentRegionId, (newId) => {
-    if (newId) {
-        fetchVPC()
+watch(
+    () => region.currentRegionId,
+    (newId) => {
+        if (newId) {
+            fetchVPC()
+        }
     }
-})
+)
 
 const toggleActionMenu = () => {
     showActionMenu.value = !showActionMenu.value
@@ -231,443 +246,501 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="detail-page">
-    <!-- Toast Notification removed -->
+    <div class="detail-page">
+        <!-- Toast Notification removed -->
 
-    <!-- Header -->
-    <div class="detail-header">
-      <button class="btn btn-ghost btn-sm" @click="goBack">
-        <ArrowLeft :size="16" />
-        <span>{{ $t('actions.back') }}</span>
-      </button>
-    </div>
-
-    <!-- Loading State -->
-    <div v-if="loading" class="loading-container">
-      <div class="loading-spinner"></div>
-      <p class="loading-text">{{ $t('messages.loading') }}</p>
-    </div>
-
-    <!-- Error State -->
-    <div v-else-if="error" class="error-container card">
-      <Layers :size="48" style="opacity: 0.3; margin-bottom: 16px;" />
-      <p class="text-secondary">{{ error }}</p>
-      <button class="btn btn-primary btn-sm" @click="fetchVPC" style="margin-top: 12px;">
-        {{ $t('actions.refresh') }}
-      </button>
-    </div>
-
-    <!-- VPC Detail Content -->
-    <div v-else-if="vpc" class="detail-content">
-      <!-- Title Bar -->
-      <div class="title-bar card">
-        <div class="title-info">
-          <div class="title-icon">
-            <Layers :size="28" />
-          </div>
-          <div>
-            <h2 class="resource-title">
-              {{ vpc.name }}
-              <StatusBadge :status="vpc.status || 'active'" :label="getStatusText(vpc.status)" />
-            </h2>
-            <div class="resource-id-row">
-              <span class="resource-id-text">{{ vpc.id }}</span>
-              <button class="copy-btn" @click="copyToClipboard(vpc.id, 'id')" :title="$t('messages.copied')">
-                <Check v-if="copiedField === 'id'" :size="12" class="copied-icon" />
-                <Copy v-else :size="12" />
-              </button>
-            </div>
-          </div>
+        <!-- Header -->
+        <div class="detail-header">
+            <button class="btn btn-ghost btn-sm" @click="goBack">
+                <ArrowLeft :size="16" />
+                <span>{{ $t('actions.back') }}</span>
+            </button>
         </div>
-        <div class="title-actions">
-           <div class="action-dropdown">
-                <button class="btn btn-primary" @click="toggleActionMenu">
-                    {{ $t('actions.actions') }} <ChevronDown :size="14" />
-                </button>
-                <Transition name="dropdown">
-                    <div v-if="showActionMenu" class="dropdown-menu">
-                        <button class="dropdown-item" @click="openEditModal">
-                            <Pencil :size="14" /> {{ $t('actions.edit') }}
-                        </button>
-                        <button class="dropdown-item" @click="openCreateSubnetModal">
-                            <Plus :size="14" /> {{ $t('dashboard.buttons.createSubnet') }}
-                        </button>
-                        <div class="dropdown-divider"></div>
-                        <button class="dropdown-item dropdown-item-danger" @click="handleDeleteClick">
-                            <Trash2 :size="14" /> {{ $t('actions.delete') }}
-                        </button>
+
+        <!-- Loading State -->
+        <div v-if="loading" class="loading-container">
+            <div class="loading-spinner"></div>
+            <p class="loading-text">{{ $t('messages.loading') }}</p>
+        </div>
+
+        <!-- Error State -->
+        <div v-else-if="error" class="error-container card">
+            <Layers :size="48" style="opacity: 0.3; margin-bottom: 16px" />
+            <p class="text-secondary">{{ error }}</p>
+            <button class="btn btn-primary btn-sm" @click="fetchVPC" style="margin-top: 12px">
+                {{ $t('actions.refresh') }}
+            </button>
+        </div>
+
+        <!-- VPC Detail Content -->
+        <div v-else-if="vpc" class="detail-content">
+            <!-- Title Bar -->
+            <div class="title-bar card">
+                <div class="title-info">
+                    <div class="title-icon">
+                        <Layers :size="28" />
                     </div>
-                </Transition>
-                <div v-if="showActionMenu" class="dropdown-backdrop" @click="closeActionMenu"></div>
-           </div>
-        </div>
-      </div>
-
-      <!-- Info Sections -->
-      <div class="two-col-layout">
-        <div class="col-stack">
-          <!-- Basic Info Card (Merged with Metadata) -->
-          <div class="card info-card">
-            <h3>{{ $t('dashboard.table.generalInformation') }}</h3>
-            <div class="key-value-list">
-              <InfoRow :label="$t('dashboard.table.name')">{{ vpc.name }}</InfoRow>
-              <InfoRow :label="$t('dashboard.table.status')">
-                <StatusBadge :status="vpc.status || 'active'" :label="getStatusText(vpc.status)" />
-              </InfoRow>
-              <InfoRow :label="$t('dashboard.table.description')">{{ vpc.description || '-' }}</InfoRow>
-            </div>
-          </div>
-        </div>
-
-        <div class="col-stack">
-          <!-- Metadata Card -->
-          <div class="card info-card">
-            <h3>{{ t('dashboard.table.metadata') }}</h3>
-            <div class="key-value-list">
-              <InfoRow :label="t('dashboard.subnets')">{{ vpc.subnets?.length || 0 }}</InfoRow>
-              <InfoRow :label="$t('dashboard.table.owner')">{{ vpc.owner || '-' }}</InfoRow>
-              <InfoRow :label="$t('dashboard.table.created')">
-                <template #label><CalendarDays :size="14" /> {{ $t('dashboard.table.created') }}</template>
-                {{ formatDateTime(vpc.created_at) }}
-              </InfoRow>
-              <InfoRow :label="$t('dashboard.table.updatedAt')">
-                <template #label><CalendarDays :size="14" /> {{ $t('dashboard.table.updatedAt') }}</template>
-                {{ formatDateTime(vpc.updated_at) }}
-              </InfoRow>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- Subnets Section -->
-      <div class="subnets-section card">
-        <div class="subnets-header">
-          <h3>
-            {{ $t('dashboard.subnets') }}
-            <span class="subnet-count">{{ vpc.subnets?.length || 0 }}</span>
-          </h3>
-        </div>
-
-        <div v-if="vpc.subnets && vpc.subnets.length > 0" class="subnet-table-wrap">
-          <table class="data-table">
-            <thead>
-              <tr>
-                <th>{{ $t('dashboard.table.name') }}</th>
-                <th>{{ $t('dashboard.table.cidr') }}</th>
-                <th>{{ $t('dashboard.table.gateway') }}</th>
-                <th>{{ $t('dashboard.table.type') }}</th>
-                <th>{{ $t('dashboard.table.network') }}</th>
-                <th>{{ $t('dashboard.table.dhcp') }}</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="subnet in vpc.subnets" :key="subnet.id">
-                <td>
-                  <router-link :to="{ name: 'subnet-detail', params: { id: subnet.id } }" class="subnet-link">
-                    <div class="text-blue font-medium">{{ subnet.name }}</div>
-                    <div class="text-light mono" style="font-size: 11px;">{{ subnet.id }}</div>
-                  </router-link>
-                </td>
-                <td><span class="mono">{{ (subnet.network || subnet.network_cidr) || '-' }}</span></td>
-                <td><span class="mono">{{ subnet.gateway || '-' }}</span></td>
-                <td>
-                  <span class="badge badge-secondary">{{ $t('dashboard.subnetTypes.' + (subnet.type || 'internal')) }}</span>
-                </td>
-                <td>{{ subnet.vlan ?? '-' }}</td>
-                <td>
-                  <span :class="['badge', subnet.dhcp ? 'status-running' : 'status-stopped']">
-                    {{ subnet.dhcp ? $t('dashboard.alarmActions.enabled') : $t('dashboard.alarmActions.disabled') }}
-                  </span>
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-        <div v-else class="empty-subnets">
-          <Network :size="36" style="opacity: 0.2; margin-bottom: 12px;" />
-          <p class="text-secondary">{{ $t('messages.noData') }}</p>
-        </div>
-      </div>
-
-      <!-- Modals -->
-      <DeleteModal
-        :show="deleteModalVisible"
-        :resource-name="vpc?.name"
-        :resource-id="vpc?.id"
-        :loading="deletingResource"
-        :error="deleteError"
-        @close="closeDeleteModal"
-        @confirm="confirmDelete"
-      />
-
-      <!-- Edit Modal -->
-      <BaseModal
-        :show="showEditModal"
-        :title="t('actions.edit')"
-        :loading="editLoading"
-        form
-        @close="showEditModal = false"
-        @submit="confirmEdit"
-      >
-        <div class="form-group">
-          <label>{{ t('dashboard.table.name') }}</label>
-          <input v-model="editForm.name" type="text" class="form-input" :placeholder="t('dashboard.table.name')" />
-        </div>
-        <div class="form-group">
-          <label>{{ t('dashboard.table.description') }}</label>
-          <textarea v-model="editForm.description" class="form-input" rows="3" :placeholder="t('dashboard.table.description')"></textarea>
-        </div>
-        <p v-if="editError" class="text-error small">{{ editError }}</p>
-
-        <template #footer>
-          <button type="button" class="btn btn-ghost" @click="showEditModal = false" :disabled="editLoading">{{ t('actions.cancel') }}</button>
-          <button type="submit" class="btn btn-primary" :disabled="editLoading">
-            <span v-if="editLoading" class="loading-spinner small"></span>
-            {{ t('actions.confirm') }}
-          </button>
-        </template>
-      </BaseModal>
-
-      <!-- Create Subnet Modal -->
-      <BaseModal
-        :show="createSubnetVisible"
-        :title="$t('dashboard.buttons.createSubnet')"
-        size="lg"
-        :loading="creatingSubnet"
-        form
-        @close="closeCreateSubnetModal"
-        @submit="handleCreateSubnet"
-      >
-            <!-- Network Configuration -->
-            <div class="form-group">
-              <label class="form-label">{{ $t('dashboard.table.name') }} *</label>
-              <input
-                v-model="newSubnetForm.name"
-                type="text"
-                :class="['form-input', { 'input-error': newSubnetForm.name && !isSubnetNameValid }]"
-                :placeholder="$t('dashboard.forms.placeholder.subnetNameExample')"
-              />
-              <div v-if="newSubnetForm.name && !isSubnetNameValid" class="text-error text-xs mt-1">
-                {{ $t('messages.invalidHostname') }}
-              </div>
-            </div>
-
-            <div class="form-group">
-              <label class="form-label">{{ $t('dashboard.forms.cidr') }} *</label>
-              <input
-                v-model="newSubnetForm.network_cidr"
-                type="text"
-                class="form-input"
-                :placeholder="$t('dashboard.forms.placeholder.cidrExample')"
-              />
-            </div>
-
-            <div class="form-row">
-              <div class="form-group flex-1">
-                <label class="form-label">{{ $t('dashboard.forms.gateway') }}</label>
-                <input
-                  v-model="newSubnetForm.gateway"
-                  type="text"
-                  class="form-input"
-                  :placeholder="$t('dashboard.forms.placeholder.gatewayExample')"
-                />
-              </div>
-              <div class="form-group flex-1">
-                <label class="form-label">
-                  {{ $t('dashboard.table.dhcp') }}
-                  <span class="tooltip-wrapper">
-                    <HelpCircle :size="13" class="help-icon" />
-                    <span class="tooltip-text">{{ $t('dashboard.forms.dhcpTooltip') }}</span>
-                  </span>
-                </label>
-                <div class="toggle-group">
-                  <label class="toggle-switch">
-                    <input type="checkbox" v-model="newSubnetForm.dhcp">
-                    <span class="toggle-slider"></span>
-                  </label>
-                  <span class="toggle-label">{{ newSubnetForm.dhcp ? $t('dashboard.alarmActions.enabled') : $t('dashboard.alarmActions.disabled') }}</span>
+                    <div>
+                        <h2 class="resource-title">
+                            {{ vpc.name }}
+                            <StatusBadge :status="vpc.status || 'active'" :label="getStatusText(vpc.status)" />
+                        </h2>
+                        <div class="resource-id-row">
+                            <span class="resource-id-text">{{ vpc.id }}</span>
+                            <button
+                                class="copy-btn"
+                                @click="copyToClipboard(vpc.id, 'id')"
+                                :title="$t('messages.copied')"
+                            >
+                                <Check v-if="copiedField === 'id'" :size="12" class="copied-icon" />
+                                <Copy v-else :size="12" />
+                            </button>
+                        </div>
+                    </div>
                 </div>
-              </div>
+                <div class="title-actions">
+                    <div class="action-dropdown">
+                        <button class="btn btn-primary" @click="toggleActionMenu">
+                            {{ $t('actions.actions') }} <ChevronDown :size="14" />
+                        </button>
+                        <Transition name="dropdown">
+                            <div v-if="showActionMenu" class="dropdown-menu">
+                                <button class="dropdown-item" @click="openEditModal">
+                                    <Pencil :size="14" /> {{ $t('actions.edit') }}
+                                </button>
+                                <button class="dropdown-item" @click="openCreateSubnetModal">
+                                    <Plus :size="14" /> {{ $t('dashboard.buttons.createSubnet') }}
+                                </button>
+                                <div class="dropdown-divider"></div>
+                                <button class="dropdown-item dropdown-item-danger" @click="handleDeleteClick">
+                                    <Trash2 :size="14" /> {{ $t('actions.delete') }}
+                                </button>
+                            </div>
+                        </Transition>
+                        <div v-if="showActionMenu" class="dropdown-backdrop" @click="closeActionMenu"></div>
+                    </div>
+                </div>
             </div>
 
-            <div class="form-row">
-              <div class="form-group flex-1">
-                <label class="form-label">{{ $t('dashboard.forms.dns') }}</label>
-                <input
-                  v-model="newSubnetForm.dns"
-                  type="text"
-                  class="form-input"
-                  :placeholder="$t('dashboard.forms.placeholder.dnsExample')"
-                />
-              </div>
-              <div class="form-group flex-1">
-                <label class="form-label">{{ $t('dashboard.forms.baseDomain') }}</label>
-                <input
-                  v-model="newSubnetForm.base_domain"
-                  type="text"
-                  class="form-input"
-                  :placeholder="$t('dashboard.forms.placeholder.domainExample')"
-                />
-              </div>
+            <!-- Info Sections -->
+            <div class="two-col-layout">
+                <div class="col-stack">
+                    <!-- Basic Info Card (Merged with Metadata) -->
+                    <div class="card info-card">
+                        <h3>{{ $t('dashboard.table.generalInformation') }}</h3>
+                        <div class="key-value-list">
+                            <InfoRow :label="$t('dashboard.table.name')">{{ vpc.name }}</InfoRow>
+                            <InfoRow :label="$t('dashboard.table.status')">
+                                <StatusBadge :status="vpc.status || 'active'" :label="getStatusText(vpc.status)" />
+                            </InfoRow>
+                            <InfoRow :label="$t('dashboard.table.description')">{{ vpc.description || '-' }}</InfoRow>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="col-stack">
+                    <!-- Metadata Card -->
+                    <div class="card info-card">
+                        <h3>{{ t('dashboard.table.metadata') }}</h3>
+                        <div class="key-value-list">
+                            <InfoRow :label="t('dashboard.subnets')">{{ vpc.subnets?.length || 0 }}</InfoRow>
+                            <InfoRow :label="$t('dashboard.table.owner')">{{ vpc.owner || '-' }}</InfoRow>
+                            <InfoRow :label="$t('dashboard.table.created')">
+                                <template #label
+                                    ><CalendarDays :size="14" /> {{ $t('dashboard.table.created') }}</template
+                                >
+                                {{ formatDateTime(vpc.created_at) }}
+                            </InfoRow>
+                            <InfoRow :label="$t('dashboard.table.updatedAt')">
+                                <template #label
+                                    ><CalendarDays :size="14" /> {{ $t('dashboard.table.updatedAt') }}</template
+                                >
+                                {{ formatDateTime(vpc.updated_at) }}
+                            </InfoRow>
+                        </div>
+                    </div>
+                </div>
             </div>
 
-            <!-- Advanced Options -->
-            <div class="form-section">
-              <div class="form-section-title form-section-toggle" @click="showAdvanced = !showAdvanced">
-                {{ $t('dashboard.forms.sections.advanced') }}
-                <ChevronDown :size="14" :class="['chevron-icon', { 'chevron-open': showAdvanced }]" />
-              </div>
-              <div v-if="showAdvanced" class="form-section-body">
-                <div class="form-row">
-                  <div class="form-group flex-1">
-                    <label class="form-label">{{ $t('dashboard.forms.startIp') }}</label>
+            <!-- Subnets Section -->
+            <div class="subnets-section card">
+                <div class="subnets-header">
+                    <h3>
+                        {{ $t('dashboard.subnets') }}
+                        <span class="subnet-count">{{ vpc.subnets?.length || 0 }}</span>
+                    </h3>
+                </div>
+
+                <div v-if="vpc.subnets && vpc.subnets.length > 0" class="subnet-table-wrap">
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>{{ $t('dashboard.table.name') }}</th>
+                                <th>{{ $t('dashboard.table.cidr') }}</th>
+                                <th>{{ $t('dashboard.table.gateway') }}</th>
+                                <th>{{ $t('dashboard.table.type') }}</th>
+                                <th>{{ $t('dashboard.table.network') }}</th>
+                                <th>{{ $t('dashboard.table.dhcp') }}</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr v-for="subnet in vpc.subnets" :key="subnet.id">
+                                <td>
+                                    <router-link
+                                        :to="{ name: 'subnet-detail', params: { id: subnet.id } }"
+                                        class="subnet-link"
+                                    >
+                                        <div class="text-blue font-medium">{{ subnet.name }}</div>
+                                        <div class="text-light mono" style="font-size: 11px">{{ subnet.id }}</div>
+                                    </router-link>
+                                </td>
+                                <td>
+                                    <span class="mono">{{ subnet.network || subnet.network_cidr || '-' }}</span>
+                                </td>
+                                <td>
+                                    <span class="mono">{{ subnet.gateway || '-' }}</span>
+                                </td>
+                                <td>
+                                    <span class="badge badge-secondary">{{
+                                        $t('dashboard.subnetTypes.' + (subnet.type || 'internal'))
+                                    }}</span>
+                                </td>
+                                <td>{{ subnet.vlan ?? '-' }}</td>
+                                <td>
+                                    <span :class="['badge', subnet.dhcp ? 'status-running' : 'status-stopped']">
+                                        {{
+                                            subnet.dhcp
+                                                ? $t('dashboard.alarmActions.enabled')
+                                                : $t('dashboard.alarmActions.disabled')
+                                        }}
+                                    </span>
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+                <div v-else class="empty-subnets">
+                    <Network :size="36" style="opacity: 0.2; margin-bottom: 12px" />
+                    <p class="text-secondary">{{ $t('messages.noData') }}</p>
+                </div>
+            </div>
+
+            <!-- Modals -->
+            <DeleteModal
+                :show="deleteModalVisible"
+                :resource-name="vpc?.name"
+                :resource-id="vpc?.id"
+                :loading="deletingResource"
+                :error="deleteError"
+                @close="closeDeleteModal"
+                @confirm="confirmDelete"
+            />
+
+            <!-- Edit Modal -->
+            <BaseModal
+                :show="showEditModal"
+                :title="t('actions.edit')"
+                :loading="editLoading"
+                form
+                @close="showEditModal = false"
+                @submit="confirmEdit"
+            >
+                <div class="form-group">
+                    <label>{{ t('dashboard.table.name') }}</label>
                     <input
-                      v-model="newSubnetForm.start_ip"
-                      type="text"
-                      class="form-input"
-                      :placeholder="$t('dashboard.forms.placeholder.ipExample')"
+                        v-model="editForm.name"
+                        type="text"
+                        class="form-input"
+                        :placeholder="t('dashboard.table.name')"
                     />
-                  </div>
-                  <div class="form-group flex-1">
-                    <label class="form-label">{{ $t('dashboard.forms.endIp') }}</label>
-                    <input
-                      v-model="newSubnetForm.end_ip"
-                      type="text"
-                      class="form-input"
-                      :placeholder="$t('dashboard.forms.placeholder.ipExample')"
-                    />
-                  </div>
                 </div>
                 <div class="form-group">
-                  <label class="form-label">VXLAN</label>
-                  <input
-                    v-model.number="newSubnetForm.vlan"
-                    type="number"
-                    class="form-input"
-                    :placeholder="$t('dashboard.forms.placeholder.auto')"
-                    min="1"
-                    max="16777215"
-                  />
-                  <div class="form-hint">{{ $t('dashboard.vpcDetail.vlanHint') }}</div>
+                    <label>{{ t('dashboard.table.description') }}</label>
+                    <textarea
+                        v-model="editForm.description"
+                        class="form-input"
+                        rows="3"
+                        :placeholder="t('dashboard.table.description')"
+                    ></textarea>
                 </div>
-              </div>
-            </div>
+                <p v-if="editError" class="text-error small">{{ editError }}</p>
 
-            <div v-if="createSubnetError" class="text-error" style="margin-top:var(--spacing-4);font-size:var(--font-size-sm);background:var(--error-light);padding:var(--spacing-2);border-radius:var(--radius-sm)">
-              {{ createSubnetError }}
-            </div>
+                <template #footer>
+                    <button type="button" class="btn btn-ghost" @click="showEditModal = false" :disabled="editLoading">
+                        {{ t('actions.cancel') }}
+                    </button>
+                    <button type="submit" class="btn btn-primary" :disabled="editLoading">
+                        <span v-if="editLoading" class="loading-spinner small"></span>
+                        {{ t('actions.confirm') }}
+                    </button>
+                </template>
+            </BaseModal>
 
-        <template #footer>
-          <button type="button" class="btn btn-ghost" @click="closeCreateSubnetModal" :disabled="creatingSubnet">{{ $t('actions.cancel') }}</button>
-          <button type="submit" class="btn btn-primary" :disabled="creatingSubnet">
-            <span v-if="creatingSubnet" class="loading-spinner" style="width: 16px; height: 16px; border-width: 2px;"></span>
-            {{ creatingSubnet ? $t('messages.creating') : $t('dashboard.buttons.createSubnet') }}
-          </button>
-        </template>
-      </BaseModal>
+            <!-- Create Subnet Modal -->
+            <BaseModal
+                :show="createSubnetVisible"
+                :title="$t('dashboard.buttons.createSubnet')"
+                size="lg"
+                :loading="creatingSubnet"
+                form
+                @close="closeCreateSubnetModal"
+                @submit="handleCreateSubnet"
+            >
+                <!-- Network Configuration -->
+                <div class="form-group">
+                    <label class="form-label">{{ $t('dashboard.table.name') }} *</label>
+                    <input
+                        v-model="newSubnetForm.name"
+                        type="text"
+                        :class="['form-input', { 'input-error': newSubnetForm.name && !isSubnetNameValid }]"
+                        :placeholder="$t('dashboard.forms.placeholder.subnetNameExample')"
+                    />
+                    <div v-if="newSubnetForm.name && !isSubnetNameValid" class="text-error text-xs mt-1">
+                        {{ $t('messages.invalidHostname') }}
+                    </div>
+                </div>
 
+                <div class="form-group">
+                    <label class="form-label">{{ $t('dashboard.forms.cidr') }} *</label>
+                    <input
+                        v-model="newSubnetForm.network_cidr"
+                        type="text"
+                        class="form-input"
+                        :placeholder="$t('dashboard.forms.placeholder.cidrExample')"
+                    />
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group flex-1">
+                        <label class="form-label">{{ $t('dashboard.forms.gateway') }}</label>
+                        <input
+                            v-model="newSubnetForm.gateway"
+                            type="text"
+                            class="form-input"
+                            :placeholder="$t('dashboard.forms.placeholder.gatewayExample')"
+                        />
+                    </div>
+                    <div class="form-group flex-1">
+                        <label class="form-label">
+                            {{ $t('dashboard.table.dhcp') }}
+                            <span class="tooltip-wrapper">
+                                <HelpCircle :size="13" class="help-icon" />
+                                <span class="tooltip-text">{{ $t('dashboard.forms.dhcpTooltip') }}</span>
+                            </span>
+                        </label>
+                        <div class="toggle-group">
+                            <label class="toggle-switch">
+                                <input type="checkbox" v-model="newSubnetForm.dhcp" />
+                                <span class="toggle-slider"></span>
+                            </label>
+                            <span class="toggle-label">{{
+                                newSubnetForm.dhcp
+                                    ? $t('dashboard.alarmActions.enabled')
+                                    : $t('dashboard.alarmActions.disabled')
+                            }}</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group flex-1">
+                        <label class="form-label">{{ $t('dashboard.forms.dns') }}</label>
+                        <input
+                            v-model="newSubnetForm.dns"
+                            type="text"
+                            class="form-input"
+                            :placeholder="$t('dashboard.forms.placeholder.dnsExample')"
+                        />
+                    </div>
+                    <div class="form-group flex-1">
+                        <label class="form-label">{{ $t('dashboard.forms.baseDomain') }}</label>
+                        <input
+                            v-model="newSubnetForm.base_domain"
+                            type="text"
+                            class="form-input"
+                            :placeholder="$t('dashboard.forms.placeholder.domainExample')"
+                        />
+                    </div>
+                </div>
+
+                <!-- Advanced Options -->
+                <div class="form-section">
+                    <div class="form-section-title form-section-toggle" @click="showAdvanced = !showAdvanced">
+                        {{ $t('dashboard.forms.sections.advanced') }}
+                        <ChevronDown :size="14" :class="['chevron-icon', { 'chevron-open': showAdvanced }]" />
+                    </div>
+                    <div v-if="showAdvanced" class="form-section-body">
+                        <div class="form-row">
+                            <div class="form-group flex-1">
+                                <label class="form-label">{{ $t('dashboard.forms.startIp') }}</label>
+                                <input
+                                    v-model="newSubnetForm.start_ip"
+                                    type="text"
+                                    class="form-input"
+                                    :placeholder="$t('dashboard.forms.placeholder.ipExample')"
+                                />
+                            </div>
+                            <div class="form-group flex-1">
+                                <label class="form-label">{{ $t('dashboard.forms.endIp') }}</label>
+                                <input
+                                    v-model="newSubnetForm.end_ip"
+                                    type="text"
+                                    class="form-input"
+                                    :placeholder="$t('dashboard.forms.placeholder.ipExample')"
+                                />
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">VXLAN</label>
+                            <input
+                                v-model.number="newSubnetForm.vlan"
+                                type="number"
+                                class="form-input"
+                                :placeholder="$t('dashboard.forms.placeholder.auto')"
+                                min="1"
+                                max="16777215"
+                            />
+                            <div class="form-hint">{{ $t('dashboard.vpcDetail.vlanHint') }}</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div
+                    v-if="createSubnetError"
+                    class="text-error"
+                    style="
+                        margin-top: var(--spacing-4);
+                        font-size: var(--font-size-sm);
+                        background: var(--error-light);
+                        padding: var(--spacing-2);
+                        border-radius: var(--radius-sm);
+                    "
+                >
+                    {{ createSubnetError }}
+                </div>
+
+                <template #footer>
+                    <button
+                        type="button"
+                        class="btn btn-ghost"
+                        @click="closeCreateSubnetModal"
+                        :disabled="creatingSubnet"
+                    >
+                        {{ $t('actions.cancel') }}
+                    </button>
+                    <button type="submit" class="btn btn-primary" :disabled="creatingSubnet">
+                        <span
+                            v-if="creatingSubnet"
+                            class="loading-spinner"
+                            style="width: 16px; height: 16px; border-width: 2px"
+                        ></span>
+                        {{ creatingSubnet ? $t('messages.creating') : $t('dashboard.buttons.createSubnet') }}
+                    </button>
+                </template>
+            </BaseModal>
+        </div>
     </div>
-  </div>
 </template>
 
 <style scoped>
 .detail-page {
-  max-width: 1200px;
-  margin: 0 auto;
+    max-width: 1200px;
+    margin: 0 auto;
 }
 
 .detail-header {
-  margin-bottom: var(--spacing-4);
+    margin-bottom: var(--spacing-4);
 }
 
-.loading-container, .error-container {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: 60px;
+.loading-container,
+.error-container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 60px;
 }
 
 .loading-text {
-  margin-top: var(--spacing-3);
-  color: var(--text-secondary);
-  font-size: var(--font-size-sm);
+    margin-top: var(--spacing-3);
+    color: var(--text-secondary);
+    font-size: var(--font-size-sm);
 }
 
 /* Title Bar */
 .title-bar {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: var(--spacing-5);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: var(--spacing-5);
 }
 
 .title-info {
-  display: flex;
-  align-items: center;
-  gap: var(--spacing-4);
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-4);
 }
 
 .title-icon {
-  width: 52px;
-  height: 52px;
-  border-radius: var(--radius-lg);
-  background: linear-gradient(135deg, var(--primary-50), var(--primary-100));
-  color: var(--primary-color);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
+    width: 52px;
+    height: 52px;
+    border-radius: var(--radius-lg);
+    background: linear-gradient(135deg, var(--primary-50), var(--primary-100));
+    color: var(--primary-color);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
 }
 
 .resource-title {
-  margin: 0 0 4px 0;
-  font-size: var(--font-size-xl);
-  font-weight: var(--font-weight-semibold);
-  color: var(--primary-color);
-  display: flex;
-  align-items: center;
-  gap: var(--spacing-3);
+    margin: 0 0 4px 0;
+    font-size: var(--font-size-xl);
+    font-weight: var(--font-weight-semibold);
+    color: var(--primary-color);
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-3);
 }
 
 .resource-id-row {
-  display: flex;
-  align-items: center;
-  gap: var(--spacing-2);
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-2);
 }
 
 .resource-id-text {
-  font-size: var(--font-size-xs);
-  color: var(--text-light);
-  font-family: var(--font-family-mono);
+    font-size: var(--font-size-xs);
+    color: var(--text-light);
+    font-family: var(--font-family-mono);
 }
 
 .copy-btn {
-  background: none;
-  border: 1px solid var(--border-light);
-  border-radius: var(--radius-sm);
-  padding: 2px 5px;
-  cursor: pointer;
-  color: var(--text-light);
-  display: inline-flex;
-  align-items: center;
-  transition: all 0.15s;
+    background: none;
+    border: 1px solid var(--border-light);
+    border-radius: var(--radius-sm);
+    padding: 2px 5px;
+    cursor: pointer;
+    color: var(--text-light);
+    display: inline-flex;
+    align-items: center;
+    transition: all 0.15s;
 }
 
 .copy-btn:hover {
-  color: var(--primary-color);
-  border-color: var(--primary-200);
-  background: var(--primary-50);
+    color: var(--primary-color);
+    border-color: var(--primary-200);
+    background: var(--primary-50);
 }
 
 .copied-icon {
-  color: var(--success-color);
+    color: var(--success-color);
 }
 
 .title-actions {
-  display: flex;
-  align-items: center;
-  gap: var(--spacing-3);
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-3);
 }
 
 /* Action Dropdown */
@@ -727,70 +800,74 @@ onMounted(() => {
     margin: 4px 0;
 }
 
-.dropdown-enter-active, .dropdown-leave-active {
-    transition: opacity 0.15s, transform 0.15s;
+.dropdown-enter-active,
+.dropdown-leave-active {
+    transition:
+        opacity 0.15s,
+        transform 0.15s;
 }
 
-.dropdown-enter-from, .dropdown-leave-to {
+.dropdown-enter-from,
+.dropdown-leave-to {
     opacity: 0;
     transform: translateY(-4px);
 }
 
 /* Two-Column Layout */
 .two-col-layout {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: var(--spacing-4);
-  margin-bottom: var(--spacing-6);
-  align-items: start;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: var(--spacing-4);
+    margin-bottom: var(--spacing-6);
+    align-items: start;
 }
 
 .col-stack {
-  display: flex;
-  flex-direction: column;
-  gap: var(--spacing-4);
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-4);
 }
 
 .subnet-link {
-  text-decoration: none;
-  display: block;
-  border-radius: var(--radius-sm);
-  transition: all 0.2s;
+    text-decoration: none;
+    display: block;
+    border-radius: var(--radius-sm);
+    transition: all 0.2s;
 }
 
 .subnet-link:hover .text-blue {
-  color: var(--primary-600);
-  text-decoration: underline;
+    color: var(--primary-600);
+    text-decoration: underline;
 }
 
 .info-card {
-  padding: var(--spacing-5);
+    padding: var(--spacing-5);
 }
 
 .info-card h3 {
-  font-size: var(--font-size-base);
-  font-weight: 600;
-  margin: 0 0 var(--spacing-4) 0;
-  color: var(--text-primary);
-  border-bottom: 1px solid var(--border-light);
-  padding-bottom: var(--spacing-3);
+    font-size: var(--font-size-base);
+    font-weight: 600;
+    margin: 0 0 var(--spacing-4) 0;
+    color: var(--text-primary);
+    border-bottom: 1px solid var(--border-light);
+    padding-bottom: var(--spacing-3);
 }
 
 .key-value-list {
-  display: flex;
-  flex-direction: column;
-  gap: var(--spacing-3);
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-3);
 }
 
 /* Subnets Section */
 .subnets-section {
-  padding: 0;
-  overflow: hidden;
+    padding: 0;
+    overflow: hidden;
 }
 
 .subnets-header {
-  padding: var(--spacing-4) var(--spacing-5);
-  border-bottom: 1px solid var(--border-light);
+    padding: var(--spacing-4) var(--spacing-5);
+    border-bottom: 1px solid var(--border-light);
 }
 
 .subnets-header h3 {
@@ -800,31 +877,31 @@ onMounted(() => {
 }
 
 .subnet-count {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 20px;
-  height: 20px;
-  padding: 0 6px;
-  border-radius: var(--radius-full);
-  background: var(--primary-100);
-  color: var(--primary-color);
-  font-size: var(--font-size-xs);
-  font-weight: var(--font-weight-semibold);
-  margin-left: var(--spacing-2);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 20px;
+    height: 20px;
+    padding: 0 6px;
+    border-radius: var(--radius-full);
+    background: var(--primary-100);
+    color: var(--primary-color);
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-semibold);
+    margin-left: var(--spacing-2);
 }
 
 .subnet-table-wrap {
-  overflow-x: auto;
+    overflow-x: auto;
 }
 
 .empty-subnets {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: 48px 20px;
-  text-align: center;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 48px 20px;
+    text-align: center;
 }
 
 /* Toast */
@@ -844,191 +921,208 @@ onMounted(() => {
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
 }
 
-.toast-success { background: var(--success-color); }
-.toast-error { background: var(--error-color); }
+.toast-success {
+    background: var(--success-color);
+}
+.toast-error {
+    background: var(--error-color);
+}
 
-.toast-enter-active, .toast-leave-active { transition: all 0.3s ease; }
-.toast-enter-from, .toast-leave-to { opacity: 0; transform: translate(-50%, -20px); }
+.toast-enter-active,
+.toast-leave-active {
+    transition: all 0.3s ease;
+}
+.toast-enter-from,
+.toast-leave-to {
+    opacity: 0;
+    transform: translate(-50%, -20px);
+}
 
 /* Modal content */
 .form-group {
-  margin-bottom: var(--spacing-4);
+    margin-bottom: var(--spacing-4);
 }
 
 .form-group label {
-  display: block;
-  margin-bottom: 6px;
-  font-size: var(--font-size-sm);
-  color: var(--text-secondary);
+    display: block;
+    margin-bottom: 6px;
+    font-size: var(--font-size-sm);
+    color: var(--text-secondary);
 }
 
 .form-input {
-  width: 100%;
-  padding: 8px 12px;
-  border: 1px solid var(--border-light);
-  border-radius: var(--radius-md);
-  font-size: var(--font-size-sm);
+    width: 100%;
+    padding: 8px 12px;
+    border: 1px solid var(--border-light);
+    border-radius: var(--radius-md);
+    font-size: var(--font-size-sm);
 }
 
 /* Form elements for create subnet modal */
 .form-row {
-  display: flex;
-  gap: var(--spacing-4);
+    display: flex;
+    gap: var(--spacing-4);
 }
 
 .flex-1 {
-  flex: 1;
+    flex: 1;
 }
 
 .form-label {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  margin-bottom: 6px;
-  font-size: var(--font-size-sm);
-  color: var(--text-secondary);
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    margin-bottom: 6px;
+    font-size: var(--font-size-sm);
+    color: var(--text-secondary);
 }
 
 .form-hint {
-  font-size: var(--font-size-xs);
-  color: var(--text-light);
-  margin-top: 4px;
+    font-size: var(--font-size-xs);
+    color: var(--text-light);
+    margin-top: 4px;
 }
 
 .input-error {
-  border-color: var(--error-color) !important;
+    border-color: var(--error-color) !important;
 }
 
 .form-section {
-  margin-top: var(--spacing-3);
+    margin-top: var(--spacing-3);
 }
 
 .form-section-title {
-  font-size: var(--font-size-sm);
-  font-weight: 600;
-  color: var(--text-secondary);
-  padding: var(--spacing-2) 0;
-  border-bottom: 1px solid var(--border-light);
-  margin-bottom: var(--spacing-3);
+    font-size: var(--font-size-sm);
+    font-weight: 600;
+    color: var(--text-secondary);
+    padding: var(--spacing-2) 0;
+    border-bottom: 1px solid var(--border-light);
+    margin-bottom: var(--spacing-3);
 }
 
 .form-section-toggle {
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  user-select: none;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    user-select: none;
 }
 
 .form-section-toggle:hover {
-  color: var(--primary-color);
+    color: var(--primary-color);
 }
 
 .form-section-body {
-  padding-top: var(--spacing-3);
+    padding-top: var(--spacing-3);
 }
 
 .chevron-icon {
-  transition: transform 0.2s;
+    transition: transform 0.2s;
 }
 
 .chevron-open {
-  transform: rotate(180deg);
+    transform: rotate(180deg);
 }
 
 /* Toggle switch */
 .toggle-group {
-  display: flex;
-  align-items: center;
-  gap: var(--spacing-2);
-  margin-top: 4px;
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-2);
+    margin-top: 4px;
 }
 
 .toggle-switch {
-  position: relative;
-  display: inline-block;
-  width: 36px;
-  height: 20px;
-  cursor: pointer;
+    position: relative;
+    display: inline-block;
+    width: 36px;
+    height: 20px;
+    cursor: pointer;
 }
 
 .toggle-switch input {
-  opacity: 0;
-  width: 0;
-  height: 0;
+    opacity: 0;
+    width: 0;
+    height: 0;
 }
 
 .toggle-slider {
-  position: absolute;
-  inset: 0;
-  background: var(--gray-300);
-  border-radius: 20px;
-  transition: background 0.2s;
+    position: absolute;
+    inset: 0;
+    background: var(--gray-300);
+    border-radius: 20px;
+    transition: background 0.2s;
 }
 
 .toggle-slider::before {
-  content: '';
-  position: absolute;
-  width: 16px;
-  height: 16px;
-  left: 2px;
-  bottom: 2px;
-  background: white;
-  border-radius: 50%;
-  transition: transform 0.2s;
+    content: '';
+    position: absolute;
+    width: 16px;
+    height: 16px;
+    left: 2px;
+    bottom: 2px;
+    background: white;
+    border-radius: 50%;
+    transition: transform 0.2s;
 }
 
 .toggle-switch input:checked + .toggle-slider {
-  background: var(--primary-color);
+    background: var(--primary-color);
 }
 
 .toggle-switch input:checked + .toggle-slider::before {
-  transform: translateX(16px);
+    transform: translateX(16px);
 }
 
 .toggle-label {
-  font-size: var(--font-size-sm);
-  color: var(--text-secondary);
+    font-size: var(--font-size-sm);
+    color: var(--text-secondary);
 }
 
 /* Tooltip */
 .tooltip-wrapper {
-  position: relative;
-  display: inline-flex;
-  cursor: help;
+    position: relative;
+    display: inline-flex;
+    cursor: help;
 }
 
 .help-icon {
-  color: var(--text-light);
+    color: var(--text-light);
 }
 
 .tooltip-text {
-  display: none;
-  position: absolute;
-  bottom: calc(100% + 6px);
-  left: 50%;
-  transform: translateX(-50%);
-  background: var(--gray-800);
-  color: white;
-  padding: 6px 10px;
-  border-radius: var(--radius-sm);
-  font-size: var(--font-size-xs);
-  white-space: nowrap;
-  z-index: var(--z-tooltip);
+    display: none;
+    position: absolute;
+    bottom: calc(100% + 6px);
+    left: 50%;
+    transform: translateX(-50%);
+    background: var(--gray-800);
+    color: white;
+    padding: 6px 10px;
+    border-radius: var(--radius-sm);
+    font-size: var(--font-size-xs);
+    white-space: nowrap;
+    z-index: var(--z-tooltip);
 }
 
 .tooltip-wrapper:hover .tooltip-text {
-  display: block;
+    display: block;
 }
 
 /* Badge colors */
-.status-running { background: var(--success-light); color: var(--success-dark); }
-.status-stopped { background: var(--gray-100); color: var(--gray-700); }
+.status-running {
+    background: var(--success-light);
+    color: var(--success-dark);
+}
+.status-stopped {
+    background: var(--gray-100);
+    color: var(--gray-700);
+}
 
 /* Responsive */
 @media (max-width: 768px) {
-  .two-col-layout {
-    grid-template-columns: 1fr;
-  }
+    .two-col-layout {
+        grid-template-columns: 1fr;
+    }
 }
 </style>

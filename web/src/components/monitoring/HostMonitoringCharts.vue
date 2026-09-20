@@ -36,13 +36,13 @@ const fetchData = async () => {
         hostname: [props.hostname],
         start: range.startTs.toString(),
         end: range.endTs.toString(),
-        step: step.value
+        step: step.value,
     }
 
     try {
         const [cpuRes, memRes] = await Promise.all([
             hypervisorsApi.getCPUMetrics(commonPayload),
-            hypervisorsApi.getMemoryMetrics(commonPayload)
+            hypervisorsApi.getMemoryMetrics(commonPayload),
         ])
 
         // Parse CPU
@@ -50,13 +50,15 @@ const fetchData = async () => {
         if (cpuResult?.values?.length) {
             cpuData.value = {
                 labels: cpuResult.values.map((v) => formatTimestamp(v.time)),
-                datasets: [{
-                    label: t('dashboard.monitoring.cpuUsage'),
-                    data: cpuResult.values.map((v) => parseFloat(v.value)),
-                    borderColor: '#3b82f6',
-                    backgroundColor: 'rgba(59, 130, 246, 0.1)',
-                    fill: true,
-                }]
+                datasets: [
+                    {
+                        label: t('dashboard.monitoring.cpuUsage'),
+                        data: cpuResult.values.map((v) => parseFloat(v.value)),
+                        borderColor: '#3b82f6',
+                        backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                        fill: true,
+                    },
+                ],
             }
         }
 
@@ -84,12 +86,11 @@ const fetchData = async () => {
                             borderColor: '#10b981',
                             backgroundColor: 'rgba(16, 185, 129, 0.1)',
                             fill: true,
-                        }
-                    ]
+                        },
+                    ],
                 }
             }
         }
-
     } catch (err) {
         console.error('Failed to fetch host metrics:', err)
         error.value = t('dashboard.monitoring.loadError')
@@ -99,8 +100,16 @@ const fetchData = async () => {
 }
 
 const {
-    timeRange, step, customStart, customEnd, loading, error,
-    formatTimestamp, getTimeRange, setRange, toggleCustom,
+    timeRange,
+    step,
+    customStart,
+    customEnd,
+    loading,
+    error,
+    formatTimestamp,
+    getTimeRange,
+    setRange,
+    toggleCustom,
 } = useMonitoring(fetchData)
 
 watch(() => props.hostname, fetchData)
@@ -175,7 +184,8 @@ watch(() => props.hostname, fetchData)
                 <div class="chart-header">
                     <h4>{{ t('dashboard.monitoring.memoryUsage') }}</h4>
                     <span v-if="memData" class="current-value">
-                        {{ memData.datasets[1].data[memData.datasets[1].data.length - 1] }} GB / {{ memData.datasets[0].data[memData.datasets[0].data.length - 1] }} GB
+                        {{ memData.datasets[1].data[memData.datasets[1].data.length - 1] }} GB /
+                        {{ memData.datasets[0].data[memData.datasets[0].data.length - 1] }} GB
                     </span>
                 </div>
                 <div class="chart-body">
@@ -275,7 +285,9 @@ watch(() => props.hostname, fetchData)
        默认的深灰边框（Chrome 约 #767676），在浅色和深色主题下都突兀 */
     border: 1px solid var(--border-light);
     border-radius: var(--radius-sm);
-    transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
+    transition:
+        border-color var(--transition-fast),
+        box-shadow var(--transition-fast);
 }
 
 .filter-group .form-select:hover {
@@ -333,7 +345,8 @@ watch(() => props.hostname, fetchData)
     min-height: 0;
 }
 
-.chart-loading, .chart-empty {
+.chart-loading,
+.chart-empty {
     position: absolute;
     inset: 0;
     display: flex;

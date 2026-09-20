@@ -6,7 +6,17 @@ import { instancesApi } from '../../api/instances'
 import RFB from '@novnc/novnc/lib/rfb'
 import KeyTable from '@novnc/novnc/lib/input/keysym'
 import { traceVncConnection } from '../../tracing'
-import { Terminal, RefreshCw, AlertTriangle, Monitor, Keyboard, ClipboardPaste, ChevronDown, X, SquareTerminal } from 'lucide-vue-next'
+import {
+    Terminal,
+    RefreshCw,
+    AlertTriangle,
+    Monitor,
+    Keyboard,
+    ClipboardPaste,
+    ChevronDown,
+    X,
+    SquareTerminal,
+} from 'lucide-vue-next'
 
 const route = useRoute()
 const router = useRouter()
@@ -24,18 +34,21 @@ const fetchConsoleInfo = async () => {
         status.value = 'connecting'
         const response = await instancesApi.getConsole(instanceId)
         const { console_url, instance } = response
-        
+
         // Try to get hostname from console response or fallback to ID
         instanceName.value = instance?.hostname || instance?.id || instanceId
 
         // If we don't have a good hostname yet, try fetching full instance info
         if (!instance?.hostname) {
-            instancesApi.getInstance(instanceId).then(res => {
-                const fullInstance = res.instance || res
-                if (fullInstance.hostname) {
-                    instanceName.value = fullInstance.hostname
-                }
-            }).catch(e => console.warn('Could not fetch full instance info', e))
+            instancesApi
+                .getInstance(instanceId)
+                .then((res) => {
+                    const fullInstance = res.instance || res
+                    if (fullInstance.hostname) {
+                        instanceName.value = fullInstance.hostname
+                    }
+                })
+                .catch((e) => console.warn('Could not fetch full instance info', e))
         }
 
         let url = console_url
@@ -66,7 +79,7 @@ const connectVnc = (url: string) => {
 
     try {
         rfb.value = new RFB(container.value, url, {
-            credentials: { password: '' }
+            credentials: { password: '' },
         })
         traceVncConnection(rfb.value)
 
@@ -120,8 +133,8 @@ const sendKeysym = (keysym: number, down?: boolean) => {
 
 // Presses the keys in order and releases them in reverse order
 const sendCombo = (keysyms: number[]) => {
-    keysyms.forEach(k => queueKey(k, true))
-    ;[...keysyms].reverse().forEach(k => queueKey(k, false))
+    keysyms.forEach((k) => queueKey(k, true))
+    ;[...keysyms].reverse().forEach((k) => queueKey(k, false))
     showFnMenu.value = false
     rfb.value?.focus()
 }
@@ -129,7 +142,12 @@ const sendCombo = (keysyms: number[]) => {
 // Modifiers stay pressed on the guest while active. Toolbar toggles are sticky (released by clicking again),
 // so shortcuts the browser would intercept (Ctrl+W, Alt+Tab, Win) can be combined with the physical keyboard;
 // modifiers pressed on the virtual keyboard are one-shot and released after the next key.
-const modifierKeysyms = { shift: KeyTable.XK_Shift_L, ctrl: KeyTable.XK_Control_L, alt: KeyTable.XK_Alt_L, meta: KeyTable.XK_Super_L }
+const modifierKeysyms = {
+    shift: KeyTable.XK_Shift_L,
+    ctrl: KeyTable.XK_Control_L,
+    alt: KeyTable.XK_Alt_L,
+    meta: KeyTable.XK_Super_L,
+}
 type Modifier = keyof typeof modifierKeysyms
 const modifiers = reactive<Record<Modifier, boolean>>({ shift: false, ctrl: false, alt: false, meta: false })
 const oneShotModifiers = new Set<Modifier>()
@@ -204,7 +222,7 @@ const typeText = (text: string) => {
                 if (shift) sendKeysym(KeyTable.XK_Shift_L, true)
                 sendKeysym(keysym)
                 if (shift) sendKeysym(KeyTable.XK_Shift_L, false)
-                await new Promise(resolve => setTimeout(resolve, typeDelayMs))
+                await new Promise((resolve) => setTimeout(resolve, typeDelayMs))
             }
             typedCount.value++
         }
@@ -226,7 +244,9 @@ const cancelTyping = () => {
 const showPaste = ref(false)
 const pasteText = ref('')
 const pasteFinished = ref(false)
-const unsupportedCount = computed(() => Array.from(pasteText.value.replace(/\r/g, '')).filter(ch => charKeysym(ch) === null).length)
+const unsupportedCount = computed(
+    () => Array.from(pasteText.value.replace(/\r/g, '')).filter((ch) => charKeysym(ch) === null).length
+)
 
 const openPaste = async () => {
     pasteFinished.value = false
@@ -277,7 +297,7 @@ const chars = (row: string, shiftedRow: string): VKey[] =>
 const vkRows: VKey[][] = [
     [
         { label: 'Esc', keysym: KeyTable.XK_Escape },
-        ...fnKeys.map(k => ({ label: k.label, keysym: k.keysym })),
+        ...fnKeys.map((k) => ({ label: k.label, keysym: k.keysym })),
         { label: 'Ins', keysym: KeyTable.XK_Insert },
         { label: 'Del', keysym: KeyTable.XK_Delete },
         { label: 'Home', keysym: KeyTable.XK_Home },
@@ -287,8 +307,16 @@ const vkRows: VKey[][] = [
     ],
     [...chars('`1234567890-=', '~!@#$%^&*()_+'), { label: '⌫', keysym: KeyTable.XK_BackSpace, width: 2 }],
     [{ label: 'Tab', keysym: KeyTable.XK_Tab, width: 1.5 }, ...chars('qwertyuiop[]\\', 'QWERTYUIOP{}|')],
-    [{ label: 'Caps', caps: true, width: 1.75 }, ...chars("asdfghjkl;'", 'ASDFGHJKL:"'), { label: 'Enter ↵', keysym: KeyTable.XK_Return, width: 2.25 }],
-    [{ label: 'Shift', modifier: 'shift', width: 2.25 }, ...chars('zxcvbnm,./', 'ZXCVBNM<>?'), { label: 'Shift', modifier: 'shift', width: 2.75 }],
+    [
+        { label: 'Caps', caps: true, width: 1.75 },
+        ...chars("asdfghjkl;'", 'ASDFGHJKL:"'),
+        { label: 'Enter ↵', keysym: KeyTable.XK_Return, width: 2.25 },
+    ],
+    [
+        { label: 'Shift', modifier: 'shift', width: 2.25 },
+        ...chars('zxcvbnm,./', 'ZXCVBNM<>?'),
+        { label: 'Shift', modifier: 'shift', width: 2.75 },
+    ],
     [
         { label: 'Ctrl', modifier: 'ctrl', width: 1.5 },
         { label: 'Win', modifier: 'meta', width: 1.25 },
@@ -452,17 +480,27 @@ onUnmounted(() => {
             <div class="header-right">
                 <div class="key-group key-group-extra" :title="t('dashboard.console.stickyHint')">
                     <button
-                        v-for="m in (['ctrl', 'alt', 'meta'] as const)"
+                        v-for="m in ['ctrl', 'alt', 'meta'] as const"
                         :key="m"
                         :class="['btn-console', 'btn-key', { active: modifiers[m] }]"
                         :disabled="!isConnected"
                         :aria-pressed="modifiers[m]"
                         @click="toggleModifier(m)"
-                    >{{ t(`dashboard.console.keys.${m}`) }}</button>
+                    >
+                        {{ t(`dashboard.console.keys.${m}`) }}
+                    </button>
                 </div>
                 <div class="key-group key-group-extra">
-                    <button class="btn-console btn-key" :disabled="!isConnected" @click="sendCombo([KeyTable.XK_Tab])">Tab</button>
-                    <button class="btn-console btn-key" :disabled="!isConnected" @click="sendCombo([KeyTable.XK_Escape])">Esc</button>
+                    <button class="btn-console btn-key" :disabled="!isConnected" @click="sendCombo([KeyTable.XK_Tab])">
+                        Tab
+                    </button>
+                    <button
+                        class="btn-console btn-key"
+                        :disabled="!isConnected"
+                        @click="sendCombo([KeyTable.XK_Escape])"
+                    >
+                        Esc
+                    </button>
                     <div class="fn-dropdown">
                         <button class="btn-console btn-key" :disabled="!isConnected" @click="showFnMenu = !showFnMenu">
                             {{ t('dashboard.console.fnKeys') }} <ChevronDown :size="14" />
@@ -470,7 +508,14 @@ onUnmounted(() => {
                         <div v-if="showFnMenu" class="fn-backdrop" @click="showFnMenu = false"></div>
                         <div v-if="showFnMenu" class="fn-menu">
                             <div class="fn-grid">
-                                <button v-for="k in fnKeys" :key="k.label" class="fn-item" @click="sendCombo([k.keysym])">{{ k.label }}</button>
+                                <button
+                                    v-for="k in fnKeys"
+                                    :key="k.label"
+                                    class="fn-item"
+                                    @click="sendCombo([k.keysym])"
+                                >
+                                    {{ k.label }}
+                                </button>
                             </div>
                             <div class="fn-divider"></div>
                             <div class="fn-grid">
@@ -479,13 +524,20 @@ onUnmounted(() => {
                                     :key="`vt-${k.label}`"
                                     class="fn-item fn-item-wide"
                                     @click="sendCombo([KeyTable.XK_Control_L, KeyTable.XK_Alt_L, k.keysym])"
-                                >Ctrl+Alt+{{ k.label }}</button>
+                                >
+                                    Ctrl+Alt+{{ k.label }}
+                                </button>
                             </div>
                         </div>
                     </div>
                 </div>
                 <div class="key-group">
-                    <button class="btn-console btn-key" :disabled="!isConnected" @click="sendCtrlAltDel" :title="t('dashboard.console.cad')">
+                    <button
+                        class="btn-console btn-key"
+                        :disabled="!isConnected"
+                        @click="sendCtrlAltDel"
+                        :title="t('dashboard.console.cad')"
+                    >
                         Ctrl+Alt+Del
                     </button>
                     <button
@@ -497,10 +549,19 @@ onUnmounted(() => {
                     >
                         <Keyboard :size="16" />
                     </button>
-                    <button class="btn-console" :disabled="!isConnected" :title="t('dashboard.console.paste')" @click="openPaste">
+                    <button
+                        class="btn-console"
+                        :disabled="!isConnected"
+                        :title="t('dashboard.console.paste')"
+                        @click="openPaste"
+                    >
                         <ClipboardPaste :size="16" />
                     </button>
-                    <button class="btn-console" :title="t('dashboard.console.serial.switchToSerial')" @click="switchToSerial">
+                    <button
+                        class="btn-console"
+                        :title="t('dashboard.console.serial.switchToSerial')"
+                        @click="switchToSerial"
+                    >
                         <SquareTerminal :size="16" />
                     </button>
                     <button class="btn-console" @click="reload" :title="t('dashboard.console.reconnect')">
@@ -559,8 +620,15 @@ onUnmounted(() => {
                         :disabled="!isConnected"
                         @mousedown.prevent
                         @click="toggleKeyboard"
-                    >{{ t('dashboard.console.systemKeyboard') }}</button>
-                    <button class="vk-action" @mousedown.prevent @click="toggleVirtualKeyboard" :aria-label="t('dashboard.console.hideKeyboard')">
+                    >
+                        {{ t('dashboard.console.systemKeyboard') }}
+                    </button>
+                    <button
+                        class="vk-action"
+                        @mousedown.prevent
+                        @click="toggleVirtualKeyboard"
+                        :aria-label="t('dashboard.console.hideKeyboard')"
+                    >
                         <ChevronDown :size="16" />
                     </button>
                 </div>
@@ -570,14 +638,23 @@ onUnmounted(() => {
                     <button
                         v-for="(key, i) in row"
                         :key="i"
-                        :class="['vk-key', { active: vkActive(key), 'vk-key-mod': key.modifier || key.caps, 'vk-key-char': key.label === undefined }]"
+                        :class="[
+                            'vk-key',
+                            {
+                                active: vkActive(key),
+                                'vk-key-mod': key.modifier || key.caps,
+                                'vk-key-char': key.label === undefined,
+                            },
+                        ]"
                         :style="{ flexGrow: key.width ?? 1 }"
                         :data-key="key.base ?? key.label"
                         :disabled="!isConnected"
                         :aria-pressed="key.modifier || key.caps ? vkActive(key) : undefined"
                         @mousedown.prevent
                         @click="pressVirtualKey(key)"
-                    >{{ vkLabel(key) }}</button>
+                    >
+                        {{ vkLabel(key) }}
+                    </button>
                 </div>
             </div>
         </section>
@@ -586,7 +663,9 @@ onUnmounted(() => {
             <div class="paste-dialog">
                 <div class="paste-header">
                     <h3>{{ t('dashboard.console.pasteTitle') }}</h3>
-                    <button class="btn-icon" @click="closePaste" :aria-label="t('actions.cancel')"><X :size="18" /></button>
+                    <button class="btn-icon" @click="closePaste" :aria-label="t('actions.cancel')">
+                        <X :size="18" />
+                    </button>
                 </div>
                 <p class="paste-hint">{{ t('dashboard.console.pasteHint') }}</p>
                 <textarea
@@ -597,13 +676,19 @@ onUnmounted(() => {
                     spellcheck="false"
                 ></textarea>
                 <div class="paste-status">
-                    <span v-if="typing">{{ t('dashboard.console.pasteProgress', { done: typedCount, total: typingTotal }) }}</span>
+                    <span v-if="typing">{{
+                        t('dashboard.console.pasteProgress', { done: typedCount, total: typingTotal })
+                    }}</span>
                     <span v-else-if="pasteFinished" class="paste-done">{{ t('dashboard.console.pasteDone') }}</span>
-                    <span v-else-if="unsupportedCount > 0" class="paste-warning">{{ t('dashboard.console.pasteUnsupported', { count: unsupportedCount }) }}</span>
+                    <span v-else-if="unsupportedCount > 0" class="paste-warning">{{
+                        t('dashboard.console.pasteUnsupported', { count: unsupportedCount })
+                    }}</span>
                     <span v-else>{{ t('dashboard.console.pasteCount', { count: Array.from(pasteText).length }) }}</span>
                 </div>
                 <div class="paste-footer">
-                    <button v-if="typing" class="btn-console" @click="cancelTyping">{{ t('dashboard.console.pasteStop') }}</button>
+                    <button v-if="typing" class="btn-console" @click="cancelTyping">
+                        {{ t('dashboard.console.pasteStop') }}
+                    </button>
                     <button v-else class="btn-console" @click="closePaste">{{ t('actions.cancel') }}</button>
                     <button class="btn-primary" :disabled="typing || !pasteText || !isConnected" @click="sendPaste">
                         <ClipboardPaste :size="16" /> {{ t('dashboard.console.pasteSend') }}
@@ -773,7 +858,8 @@ onUnmounted(() => {
     justify-content: center !important;
 }
 
-.error-overlay, .loading-overlay {
+.error-overlay,
+.loading-overlay {
     position: absolute;
     inset: 0;
     background-color: rgba(15, 23, 42, 0.9);
@@ -835,13 +921,21 @@ onUnmounted(() => {
 }
 
 @keyframes spin {
-    to { transform: rotate(360deg); }
+    to {
+        transform: rotate(360deg);
+    }
 }
 
 @keyframes pulse {
-    0% { opacity: 0.6; }
-    50% { opacity: 1; }
-    100% { opacity: 0.6; }
+    0% {
+        opacity: 0.6;
+    }
+    50% {
+        opacity: 1;
+    }
+    100% {
+        opacity: 0.6;
+    }
 }
 
 .btn-primary {
@@ -861,7 +955,9 @@ onUnmounted(() => {
     background-color: #2563eb;
 }
 
-.mt-4 { margin-top: 16px; }
+.mt-4 {
+    margin-top: 16px;
+}
 
 .btn-primary:disabled,
 .btn-console:disabled {

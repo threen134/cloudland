@@ -96,8 +96,7 @@ const activeSortDir = computed<'asc' | 'desc'>(() =>
     serverSorted.value ? ((props.order || '').startsWith('-') ? 'desc' : 'asc') : localSortDir.value
 )
 
-const isSortedBy = (column: Column) =>
-    activeSortField.value === (serverSorted.value ? fieldOf(column) : column.key)
+const isSortedBy = (column: Column) => activeSortField.value === (serverSorted.value ? fieldOf(column) : column.key)
 
 const toggleSort = (column: Column) => {
     if (!column.sortable) return
@@ -143,11 +142,7 @@ const sortedRows = computed(() => {
                         :style="column.width ? { width: column.width } : undefined"
                         :class="[column.align ? `text-${column.align}` : '', { sortable: column.sortable }]"
                         :aria-sort="
-                            isSortedBy(column)
-                                ? activeSortDir === 'asc'
-                                    ? 'ascending'
-                                    : 'descending'
-                                : undefined
+                            isSortedBy(column) ? (activeSortDir === 'asc' ? 'ascending' : 'descending') : undefined
                         "
                         @click="toggleSort(column)"
                     >

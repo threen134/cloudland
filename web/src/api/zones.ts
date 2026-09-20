@@ -32,7 +32,12 @@ export interface UpdateZonePayload {
 
 export const zonesApi = {
     // 分页与搜索都在服务端做
-    async fetchZones(params?: { offset?: number; limit?: number; order?: string; query?: string }): Promise<ZoneListResponse> {
+    async fetchZones(params?: {
+        offset?: number
+        limit?: number
+        order?: string
+        query?: string
+    }): Promise<ZoneListResponse> {
         const response = await client.get<ZoneListResponse>('/zones', { params })
         return response.data
     },
@@ -55,5 +60,5 @@ export const zonesApi = {
     async deleteZone(name: string): Promise<void> {
         const response = await client.delete<void>(`/zones/${name}`)
         return response.data
-    }
+    },
 }
