@@ -158,8 +158,8 @@ func TestPythonParityFlows(t *testing.T) {
 
 	// Admin registers a region pointing at the fake backend and brings it online.
 	adminTok := c.expect("POST", "/api/v1/auth/token/form", "", url.Values{"username": {"admin"}, "password": {"changeme"}}, 200)["access_token"].(string)
-	if list := c.expectList("GET", "/api/v1/regions", "", 200); len(list) != 0 {
-		t.Fatalf("region list should be public and empty: %v", list)
+	if page := c.expect("GET", "/api/v1/regions", "", nil, 200); page["total"] != float64(0) {
+		t.Fatalf("region list should be public and empty: %v", page)
 	}
 	region := c.expect("POST", "/api/v1/regions", adminTok, map[string]interface{}{"name": "r1", "internal_endpoint": backend.URL}, 201)
 	if region["internal_secret"] == "" || region["is_available"] != false {

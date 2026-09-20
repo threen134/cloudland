@@ -1,4 +1,5 @@
 import client from './client'
+import type { ListParams } from './listParams'
 
 // 以下类型对应控制面网关 cpgateway/src/apis/schemas.go 与 region_mgmt.go 的实际响应
 
@@ -55,9 +56,15 @@ export interface RegionSecretRotated {
     new_secret: string
 }
 
+export interface RegionListResponse {
+    total: number
+    regions: RegionPublic[]
+}
+
 export const regionsApi = {
-    async fetchRegions(): Promise<RegionPublic[]> {
-        const response = await client.get<RegionPublic[]>('/regions')
+    /** GET /regions —— 服务端分页 + 名称/描述搜索，返回 { total, regions } */
+    async fetchRegions(params?: ListParams): Promise<RegionListResponse> {
+        const response = await client.get<RegionListResponse>('/regions', { params })
         return response.data
     },
 

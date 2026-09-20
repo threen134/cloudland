@@ -110,21 +110,22 @@ func CreateRegion(c *gin.Context) {
 
 // GET /regions?skip=&limit= — public, no internal endpoint or secret.
 func ListRegions(c *gin.Context) {
-	skip, ok := queryInt(c, "skip", 0)
-	if !ok {
-		return
-	}
-	limit, ok := queryInt(c, "limit", 100)
+	p, ok := parseListParams(c)
 	if !ok {
 		return
 	}
 	var regions []model.Region
-	dbs.DBContext(c.Request.Context()).Order("id ASC").Offset(skip).Limit(limit).Find(&regions)
+	q := dbs.DBContext(c.Request.Context()).Model(&model.Region{}).
+		Scopes(searchScope(p.Query, "name", "description"))
+	total, ok := countAndPage(c, q.Order("id ASC"), p, &regions)
+	if !ok {
+		return
+	}
 	out := make([]regionPublicOut, 0, len(regions))
 	for i := range regions {
 		out = append(out, toRegionPublic(&regions[i]))
 	}
-	c.JSON(http.StatusOK, out)
+	c.JSON(http.StatusOK, gin.H{"total": total, "regions": out})
 }
 
 // GET /regions/:uuid (superuser)

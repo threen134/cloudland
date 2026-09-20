@@ -26,7 +26,12 @@ func findUserOr404(c *gin.Context, uuid, detail string) (*model.User, bool) {
 
 // GET /users?is_active= (superuser)
 func ListUsers(c *gin.Context) {
-	q := dbs.DBContext(c.Request.Context()).Order("id ASC")
+	p, ok := parseListParams(c)
+	if !ok {
+		return
+	}
+	q := dbs.DBContext(c.Request.Context()).Model(&model.User{}).
+		Scopes(searchScope(p.Query, "username", "email"))
 	if v, ok := c.GetQuery("is_active"); ok {
 		b, err := strconv.ParseBool(v)
 		if err != nil {
@@ -36,12 +41,15 @@ func ListUsers(c *gin.Context) {
 		q = q.Where("is_active = ?", b)
 	}
 	var users []model.User
-	q.Find(&users)
+	total, ok := countAndPage(c, q.Order("id ASC"), p, &users)
+	if !ok {
+		return
+	}
 	out := make([]userOut, 0, len(users))
 	for i := range users {
 		out = append(out, toUserOut(&users[i]))
 	}
-	c.JSON(http.StatusOK, out)
+	c.JSON(http.StatusOK, gin.H{"total": total, "users": out})
 }
 
 // GET /users/:uuid (superuser)

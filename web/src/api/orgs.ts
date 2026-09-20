@@ -1,4 +1,5 @@
 import client from './client'
+import type { ListParams } from './listParams'
 
 // 以下类型对应控制面网关 cpgateway/src/apis/schemas.go 与 org_mgmt.go 的实际响应
 
@@ -87,10 +88,20 @@ export const ORG_ROLES: Record<number, string> = {
     3: 'Admin',
 }
 
+export interface MemberListResponse {
+    total: number
+    members: OrgMember[]
+}
+
+export interface OrgListResponse {
+    total: number
+    orgs: Organization[]
+}
+
 export const orgsApi = {
-    // List organizations
-    async fetchOrgs(): Promise<Organization[]> {
-        const response = await client.get<Organization[]>('/orgs')
+    /** GET /orgs —— 服务端分页 + 名称/标识搜索，返回 { total, orgs } */
+    async fetchOrgs(params?: ListParams): Promise<OrgListResponse> {
+        const response = await client.get<OrgListResponse>('/orgs', { params })
         return response.data
     },
 
@@ -120,8 +131,9 @@ export const orgsApi = {
     // --- Member Management ---
 
     // List members of an org
-    async fetchMembers(orgUuid: string): Promise<OrgMember[]> {
-        const response = await client.get<OrgMember[]>(`/orgs/${orgUuid}/members`)
+    /** GET /orgs/:uuid/members —— 服务端分页 + 用户名/邮箱搜索，返回 { total, members } */
+    async fetchMembers(orgUuid: string, params?: ListParams): Promise<MemberListResponse> {
+        const response = await client.get<MemberListResponse>(`/orgs/${orgUuid}/members`, { params })
         return response.data
     },
 

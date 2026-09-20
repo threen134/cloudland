@@ -505,11 +505,16 @@ func TestInvitationRowsDoNotGrantMembership(t *testing.T) {
 	e.c.expect("GET", "/api/v1/resources/info/"+orgA.UUID, tokB, nil, 403)
 	e.c.expect("POST", "/api/v1/orgs/"+orgA.UUID+"/invitations", tokB,
 		map[string]interface{}{"email": e.name("x") + "@example.com"}, 403)
-	for _, path := range []string{"/api/v1/orgs", "/api/v1/auth/me/orgs"} {
-		list := e.c.expectList("GET", path, tokB, 200)
-		if len(list) != 1 || list[0].(map[string]interface{})["uuid"] != orgB.UUID {
-			t.Fatalf("%s must only list formal memberships: %v", path, list)
-		}
+	// GET /orgs 分页后返回 {total, orgs}；/auth/me/orgs 给组织切换器用，仍是完整数组
+	orgsPage := e.c.expect("GET", "/api/v1/orgs", tokB, nil, 200)
+	orgsInPage, _ := orgsPage["orgs"].([]interface{})
+	if orgsPage["total"] != float64(1) || len(orgsInPage) != 1 ||
+		orgsInPage[0].(map[string]interface{})["uuid"] != orgB.UUID {
+		t.Fatalf("/api/v1/orgs must only list formal memberships: %v", orgsPage)
+	}
+	list := e.c.expectList("GET", "/api/v1/auth/me/orgs", tokB, 200)
+	if len(list) != 1 || list[0].(map[string]interface{})["uuid"] != orgB.UUID {
+		t.Fatalf("/api/v1/auth/me/orgs must only list formal memberships: %v", list)
 	}
 
 	ownerTok := e.token(owner, orgA, model.OrgRoleAdmin)

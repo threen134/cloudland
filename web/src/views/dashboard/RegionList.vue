@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, computed } from 'vue'
+import { ref, onMounted, onUnmounted, computed, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import {
@@ -88,23 +88,15 @@ const rotatedSecret = ref<string | null>(null)
 const copiedField = ref<string | null>(null)
 const { copiedId, copyId } = useCopyId()
 
-const filteredRegions = computed(() => {
-    if (!searchQuery.value) return regions.value
-    const q = searchQuery.value.toLowerCase()
-    return regions.value.filter(
-        (r) =>
-            r.name.toLowerCase().includes(q) ||
-            (r.display_name && r.display_name.toLowerCase().includes(q)) ||
-            r.uuid.toLowerCase().includes(q)
-    )
-})
+// 搜索走服务端（cpgateway 的 GET /regions 收 query）；区域是个位数量级，不做分页
 
 const fetchRegions = async () => {
     isLoading.value = true
     loadError.value = ''
     try {
-        const data = await regionsApi.fetchRegions()
-        regions.value = Array.isArray(data) ? data : []
+        // 区域数量很少，这里一次取满上限即可（列表页不再做前端过滤，搜索交给服务端）
+        const data = await regionsApi.fetchRegions({ limit: 500, query: searchQuery.value.trim() || undefined })
+        regions.value = data.regions || []
     } catch (err) {
         console.error('Failed to fetch regions:', err)
         regions.value = []
@@ -278,6 +270,16 @@ const copyToClipboard = (text: string, field: string) => {
     })
 }
 
+// 搜索防抖 400ms 后重新向服务端取
+let searchTimer: ReturnType<typeof setTimeout> | null = null
+watch(searchQuery, () => {
+    if (searchTimer) clearTimeout(searchTimer)
+    searchTimer = setTimeout(fetchRegions, 400)
+})
+onUnmounted(() => {
+    if (searchTimer) clearTimeout(searchTimer)
+})
+
 onMounted(fetchRegions)
 </script>
 
@@ -297,7 +299,7 @@ onMounted(fetchRegions)
 
         <DataTable
             :columns="columns"
-            :rows="filteredRegions"
+            :rows="regions"
             row-key="uuid"
             :loading="isLoading"
             :error="loadError"

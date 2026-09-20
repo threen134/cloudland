@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Plus, Trash2, Bell, Pencil, ToggleLeft, ToggleRight, RefreshCw } from 'lucide-vue-next'
 import { useToast } from '../../composables/useToast'
@@ -36,11 +36,7 @@ const form = ref<CreateChannelPayload>({
     enabled: true,
 })
 
-const filteredChannels = computed(() => {
-    if (!searchQuery.value) return channels.value
-    const q = searchQuery.value.toLowerCase()
-    return channels.value.filter((ch) => ch.name.toLowerCase().includes(q) || ch.type.toLowerCase().includes(q))
-})
+// 搜索走服务端（cpgateway 的 GET /notification-channels 收 query）；渠道数量很少，不做分页
 
 const columns = computed<Column[]>(() => [
     { key: 'name', label: t('dashboard.table.name'), sortable: true },
@@ -55,7 +51,7 @@ const fetchChannels = async () => {
     loading.value = true
     loadError.value = ''
     try {
-        const res = await notificationsApi.list()
+        const res = await notificationsApi.list({ limit: 500, query: searchQuery.value.trim() || undefined })
         channels.value = res.channels || []
     } catch (err) {
         console.error('Failed to fetch channels:', err)
@@ -140,6 +136,16 @@ const toggleEnabled = async (ch: NotificationChannel) => {
     }
 }
 
+// 搜索防抖 400ms 后重新向服务端取
+let searchTimer: ReturnType<typeof setTimeout> | null = null
+watch(searchQuery, () => {
+    if (searchTimer) clearTimeout(searchTimer)
+    searchTimer = setTimeout(fetchChannels, 400)
+})
+onUnmounted(() => {
+    if (searchTimer) clearTimeout(searchTimer)
+})
+
 onMounted(fetchChannels)
 </script>
 
@@ -159,7 +165,7 @@ onMounted(fetchChannels)
 
         <DataTable
             :columns="columns"
-            :rows="filteredChannels"
+            :rows="channels"
             row-key="uuid"
             :loading="loading"
             :error="loadError"

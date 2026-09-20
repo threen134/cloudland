@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, computed, watch } from 'vue'
+import { ref, onMounted, onUnmounted, computed, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { usersApi } from '../../api/users'
 import { orgsApi } from '../../api/orgs'
@@ -13,6 +13,7 @@ import BaseModal from '../../components/modals/BaseModal.vue'
 import DeleteModal from '../../components/modals/DeleteModal.vue'
 import PageToolbar from '../../components/base/PageToolbar.vue'
 import DataTable, { type Column } from '../../components/base/DataTable.vue'
+import PaginationBar from '../../components/base/PaginationBar.vue'
 
 const { t } = useI18n()
 const tenantStore = useTenantStore()
@@ -44,6 +45,10 @@ const users = ref<UserRow[]>([])
 const loading = ref(false)
 const loadError = ref('')
 const searchQuery = ref('')
+// 服务端分页：页码和每页条数变了就重新取，搜索防抖后回到第一页
+const page = ref(1)
+const pageSize = ref(20)
+const total = ref(0)
 const inviteForm = ref({
     email: '',
     org_role: 1,
@@ -86,9 +91,15 @@ const fetchUsers = async () => {
         }
         const orgId = tenantStore.currentOrgId
         if (orgId) {
-            // Fetch org members
-            const response = await orgsApi.fetchMembers(orgId)
-            const members = Array.isArray(response) ? response : []
+            // 成员列表分页与搜索都在服务端；这一页显示的是「当前组织的成员」，
+            // 只有系统管理员在没有组织上下文时才会走下面的全局用户分支
+            const response = await orgsApi.fetchMembers(orgId, {
+                offset: (page.value - 1) * pageSize.value,
+                limit: pageSize.value,
+                query: searchQuery.value.trim() || undefined,
+            })
+            const members = response.members || []
+            total.value = response.total ?? members.length
             users.value = members.map((m) => ({
                 user: {
                     uuid: m.user_uuid,
@@ -112,10 +123,14 @@ const fetchUsers = async () => {
                 created_at: m.created_at,
             }))
         } else {
-            // Fallback: global user list (system admin context)
-            // GET /users 直接返回 userOut 数组，没有 { users: [...] } 外层包装；
-            // 原先写的是 (response as any).users，取到的恒为 undefined，这条分支永远是空列表
-            users.value = await usersApi.fetchUsers()
+            // 没有组织上下文时（系统管理员）列全局用户，同样走服务端分页
+            const res = await usersApi.fetchUsers({
+                offset: (page.value - 1) * pageSize.value,
+                limit: pageSize.value,
+                query: searchQuery.value.trim() || undefined,
+            })
+            users.value = res.users || []
+            total.value = res.total ?? users.value.length
         }
     } catch (error) {
         console.error('Failed to fetch users:', error)
@@ -126,18 +141,18 @@ const fetchUsers = async () => {
     }
 }
 
-const filteredUsers = computed(() => {
-    if (!searchQuery.value) return users.value
-    const query = searchQuery.value.toLowerCase()
-    return users.value.filter(
-        (user) =>
-            user.username?.toLowerCase().includes(query) ||
-            '' ||
-            user.email?.toLowerCase().includes(query) ||
-            '' ||
-            user.uuid?.toLowerCase().includes(query) ||
-            ''
-    )
+// 翻页 / 改每页条数直接重取；搜索防抖 400ms 后回到第一页
+watch([page, pageSize], () => fetchUsers())
+let searchTimer: ReturnType<typeof setTimeout> | null = null
+watch(searchQuery, () => {
+    if (searchTimer) clearTimeout(searchTimer)
+    searchTimer = setTimeout(() => {
+        if (page.value === 1) fetchUsers()
+        else page.value = 1
+    }, 400)
+})
+onUnmounted(() => {
+    if (searchTimer) clearTimeout(searchTimer)
 })
 
 const getUserStatus = (status: string | undefined): string => {
@@ -288,7 +303,7 @@ onMounted(fetchUsers)
 
         <DataTable
             :columns="columns"
-            :rows="filteredUsers"
+            :rows="users"
             row-key="uuid"
             :loading="loading"
             :error="loadError"
@@ -365,6 +380,15 @@ onMounted(fetchUsers)
                         <Trash2 :size="14" />
                     </button>
                 </div>
+            </template>
+            <template #footer>
+                <PaginationBar
+                    :page="page"
+                    :page-size="pageSize"
+                    :total="total"
+                    @update:page="page = $event"
+                    @update:page-size="pageSize = $event"
+                />
             </template>
         </DataTable>
 

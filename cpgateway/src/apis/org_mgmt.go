@@ -125,18 +125,15 @@ func CreateOrg(c *gin.Context) {
 	c.JSON(http.StatusCreated, toOrgOut(&org, me))
 }
 
-// GET /orgs?skip=&limit= — admins list all orgs, other users their own.
+// GET /orgs?offset=&limit=&query= — admins list all orgs, other users their own.
 func ListOrgs(c *gin.Context) {
-	skip, ok := queryInt(c, "skip", 0)
-	if !ok {
-		return
-	}
-	limit, ok := queryInt(c, "limit", 100)
+	p, ok := parseListParams(c)
 	if !ok {
 		return
 	}
 	me := currentUser(c)
-	q := dbs.DBContext(c.Request.Context()).Model(&model.Organization{})
+	q := dbs.DBContext(c.Request.Context()).Model(&model.Organization{}).
+		Scopes(searchScope(p.Query, "organizations.name", "organizations.slug"))
 	if !me.IsAdmin() {
 		q = q.Select("organizations.*").
 			Joins("JOIN members ON members.org_id = organizations.id AND members.deleted_at IS NULL").
@@ -144,7 +141,10 @@ func ListOrgs(c *gin.Context) {
 			Scopes(model.ActiveMembers)
 	}
 	var orgs []model.Organization
-	q.Order("organizations.id ASC").Offset(skip).Limit(limit).Find(&orgs)
+	total, ok := countAndPage(c, q.Order("organizations.id ASC"), p, &orgs)
+	if !ok {
+		return
+	}
 
 	ownerIDs := make([]int64, 0, len(orgs))
 	for _, o := range orgs {
@@ -155,7 +155,7 @@ func ListOrgs(c *gin.Context) {
 	for i := range orgs {
 		out = append(out, toOrgOut(&orgs[i], owners[orgs[i].OwnerUserID]))
 	}
-	c.JSON(http.StatusOK, out)
+	c.JSON(http.StatusOK, gin.H{"total": total, "orgs": out})
 }
 
 // GET /orgs/:uuid
@@ -313,8 +313,22 @@ func ListMembers(c *gin.Context) {
 		common.AbortWithDetail(c, http.StatusForbidden, "Not a member of this organization")
 		return
 	}
+	p, ok := parseListParams(c)
+	if !ok {
+		return
+	}
+	// 成员的用户名和邮箱在 users 表里，搜索要 join 过去；Select("members.*") 是必须的，
+	// 否则 join 之后两张表的列会混在一起扫进 model.Member
 	var members []model.Member
-	dbs.DBContext(c.Request.Context()).Where("org_id = ?", org.ID).Order("id ASC").Find(&members)
+	q := dbs.DBContext(c.Request.Context()).Model(&model.Member{}).
+		Select("members.*").
+		Joins("JOIN users ON users.id = members.user_id").
+		Where("members.org_id = ?", org.ID).
+		Scopes(searchScope(p.Query, "users.username", "users.email"))
+	total, ok := countAndPage(c, q.Order("members.id ASC"), p, &members)
+	if !ok {
+		return
+	}
 
 	userIDs := make([]int64, 0, len(members))
 	for _, m := range members {
@@ -340,7 +354,7 @@ func ListMembers(c *gin.Context) {
 			InvitationStatus: invitationStatus, CreatedAt: m.CreatedAt,
 		})
 	}
-	c.JSON(http.StatusOK, out)
+	c.JSON(http.StatusOK, gin.H{"total": total, "members": out})
 }
 
 // POST /orgs/:uuid/members — direct add, SystemAdmin only (others use invitations).

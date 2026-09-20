@@ -1,4 +1,5 @@
 import client from './client'
+import type { ListParams } from './listParams'
 
 /**
  * 通知渠道配置。
@@ -52,8 +53,9 @@ export interface UpdateChannelPayload {
 }
 
 export const notificationsApi = {
-    async list(): Promise<ChannelListResponse> {
-        const response = await client.get<ChannelListResponse>('/notification-channels')
+    /** GET /notification-channels —— 服务端分页 + 名称/类型搜索 */
+    async list(params?: ListParams): Promise<ChannelListResponse> {
+        const response = await client.get<ChannelListResponse>('/notification-channels', { params })
         return response.data
     },
 

@@ -135,7 +135,8 @@ const fetchMembers = async () => {
     membersLoading.value = true
     try {
         // GET /orgs/:uuid/members 直接返回数组，没有 { members: ... } 外层包装
-        members.value = (await orgsApi.fetchMembers(orgId)) || []
+        // 详情页展示的是这个组织的全部成员，一次取满上限（列表页那边才分页）
+        members.value = (await orgsApi.fetchMembers(orgId, { limit: 500 })).members || []
     } catch (err) {
         console.error('Failed to fetch members:', err)
     } finally {

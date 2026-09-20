@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, computed } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { orgsApi, type Organization } from '../../api/orgs'
 import { QUOTA_ROWS, type OrgResourceQuotaUpdate } from '../../api/quota'
@@ -29,6 +29,8 @@ import PageToolbar from '../../components/base/PageToolbar.vue'
 import BaseModal from '../../components/modals/BaseModal.vue'
 import DeleteModal from '../../components/modals/DeleteModal.vue'
 import DataTable, { type Column } from '../../components/base/DataTable.vue'
+import PaginationBar from '../../components/base/PaginationBar.vue'
+import { useListQuery } from '../../composables/useListQuery'
 
 const authStore = useAuthStore()
 const isSuperuser = computed(() => authStore.user?.is_superuser === true)
@@ -38,10 +40,6 @@ const toast = useToast()
 
 const { copiedId, copyId } = useCopyId()
 
-const orgs = ref<Organization[]>([])
-const loading = ref(false)
-const loadError = ref('')
-const searchQuery = ref('')
 const createModalVisible = ref(false)
 const editing = ref(false)
 const creating = ref(false)
@@ -79,28 +77,23 @@ const columns = computed<Column[]>(() => [
     { key: 'actions', label: t('dashboard.table.actions'), align: 'center' },
 ])
 
-const fetchOrgs = async () => {
-    loading.value = true
-    loadError.value = ''
-    try {
-        // GET /orgs 直接返回数组，这里保留"带 orgs 包装"的兼容分支
-        const data = (await orgsApi.fetchOrgs()) as Organization[] | { orgs?: Organization[] }
-        orgs.value = Array.isArray(data) ? data : data.orgs || []
-    } catch (error) {
-        console.error('Failed to fetch orgs:', error)
-        loadError.value = t('messages.error')
-    } finally {
-        loading.value = false
-    }
-}
-
-const filteredOrgs = computed(() => {
-    if (!searchQuery.value) return orgs.value
-    const query = searchQuery.value.toLowerCase()
-    return orgs.value.filter(
-        (org) => (org.name?.toLowerCase() || '').includes(query) || (org.uuid?.toLowerCase() || '').includes(query)
-    )
+// 分页和搜索都在服务端（cpgateway 的 GET /orgs 收 offset/limit/query）。
+// 原先是一次拉全量再在前端按名称/UUID 过滤
+const {
+    items: orgs,
+    total,
+    page,
+    pageSize,
+    loading,
+    error: loadError,
+    search: searchQuery,
+    load: fetchOrgs,
+    reload: reloadOrgs,
+} = useListQuery<Organization>(async ({ offset, limit, query }) => {
+    const res = await orgsApi.fetchOrgs({ offset, limit, query: query || undefined })
+    return { items: res.orgs || [], total: res.total ?? 0 }
 })
+onMounted(() => fetchOrgs())
 
 const openCreateModal = () => {
     newOrgForm.value = { name: '', slug: '', description: '' }
@@ -137,7 +130,7 @@ const handleCreateOrg = async () => {
     creating.value = true
     try {
         await orgsApi.createOrg(newOrgForm.value)
-        await fetchOrgs()
+        await reloadOrgs()
         closeCreateModal()
         toast.success(t('messages.createSuccess'))
     } catch (err) {
@@ -267,15 +260,17 @@ const handleUpdateStatus = async (orgId: string, status: number) => {
         toast.error(errorMessage(err, t('messages.error')))
     }
 }
-
-onMounted(fetchOrgs)
 </script>
 
 <template>
     <div>
         <PageToolbar v-model:search="searchQuery">
             <template #actions>
-                <button class="btn btn-secondary btn-sm btn-icon" @click="fetchOrgs" :title="$t('actions.refresh')">
+                <button
+                    class="btn btn-secondary btn-sm btn-icon"
+                    @click="() => fetchOrgs()"
+                    :title="$t('actions.refresh')"
+                >
                     <RefreshCw :size="14" :class="{ spinning: loading }" />
                 </button>
                 <button class="btn btn-primary btn-sm" @click="openCreateModal">
@@ -286,11 +281,11 @@ onMounted(fetchOrgs)
 
         <DataTable
             :columns="columns"
-            :rows="filteredOrgs"
+            :rows="orgs"
             row-key="uuid"
             :loading="loading"
             :error="loadError"
-            @retry="fetchOrgs"
+            @retry="() => fetchOrgs()"
         >
             <template #empty>
                 <div v-if="searchQuery">
@@ -436,6 +431,15 @@ onMounted(fetchOrgs)
                         <Trash2 :size="14" />
                     </button>
                 </div>
+            </template>
+            <template #footer>
+                <PaginationBar
+                    :page="page"
+                    :page-size="pageSize"
+                    :total="total"
+                    @update:page="page = $event"
+                    @update:page-size="pageSize = $event"
+                />
             </template>
         </DataTable>
 

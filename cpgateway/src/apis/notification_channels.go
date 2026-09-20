@@ -67,14 +67,25 @@ func getOrgChannelOr404(c *gin.Context, orgID int64) (*model.NotificationChannel
 
 // GET /notification-channels
 func ListChannels(c *gin.Context) {
+	p, ok := parseListParams(c)
+	if !ok {
+		return
+	}
 	org := currentOrg(c)
 	var channels []model.NotificationChannel
-	dbs.DBContext(c.Request.Context()).Where("org_id = ?", org.ID).Order("created_at DESC").Find(&channels)
+	q := dbs.DBContext(c.Request.Context()).Model(&model.NotificationChannel{}).
+		Where("org_id = ?", org.ID).
+		Scopes(searchScope(p.Query, "name", "type"))
+	// total 是过滤后的总数，原先返回的是当前页条数（当时也没有分页，所以看不出区别）
+	total, ok := countAndPage(c, q.Order("created_at DESC"), p, &channels)
+	if !ok {
+		return
+	}
 	out := make([]channelOut, 0, len(channels))
 	for i := range channels {
 		out = append(out, toChannelOut(&channels[i]))
 	}
-	c.JSON(http.StatusOK, gin.H{"total": len(out), "channels": out})
+	c.JSON(http.StatusOK, gin.H{"total": total, "channels": out})
 }
 
 // POST /notification-channels

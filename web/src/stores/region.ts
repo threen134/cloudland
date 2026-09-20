@@ -42,8 +42,9 @@ export const useRegionStore = defineStore('region', () => {
         error.value = null
 
         try {
-            // 走 api 层，不再自己拼 client.get（返回约定统一在 api/regions.ts 里）
-            const data: RegionPublic[] = await regionsApi.fetchRegions()
+            // 走 api 层，不再自己拼 client.get（返回约定统一在 api/regions.ts 里）。
+            // 这里要的是完整列表（顶栏的区域切换器），所以显式顶到上限，不用默认的一页
+            const data: RegionPublic[] = (await regionsApi.fetchRegions({ limit: 500 })).regions || []
 
             // Map API response to Region interface
             // API now returns uuid instead of id

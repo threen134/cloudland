@@ -1,4 +1,5 @@
 import client from './client'
+import type { ListParams } from './listParams'
 
 // 对应控制面网关 cpgateway/src/apis/schemas.go 的 userOut（GET /users、GET /users/:uuid、PUT /users/:uuid）
 export interface User {
@@ -32,10 +33,15 @@ export interface UserActionResponse {
     new_status?: string
 }
 
+export interface UserListResponse {
+    total: number
+    users: User[]
+}
+
 export const usersApi = {
-    // List users（响应是 userOut 数组，不是 { users: [...] } 包装）
-    async fetchUsers(): Promise<User[]> {
-        const response = await client.get<User[]>('/users')
+    /** GET /users —— 服务端分页 + 用户名/邮箱搜索，返回 { total, users } */
+    async fetchUsers(params?: ListParams): Promise<UserListResponse> {
+        const response = await client.get<UserListResponse>('/users', { params })
         return response.data
     },
 
