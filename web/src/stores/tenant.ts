@@ -1,3 +1,4 @@
+import { STORAGE_KEYS } from '../utils/storage'
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import { authApi, type UserOrgItem } from '../api/auth'
@@ -27,7 +28,7 @@ export const useTenantStore = defineStore('tenant', () => {
 
     // Initialize from localStorage
     const init = () => {
-        const storedOrgId = localStorage.getItem('cloudland_org_id')
+        const storedOrgId = localStorage.getItem(STORAGE_KEYS.orgId)
         if (storedOrgId) {
             currentOrgId.value = storedOrgId
         }
@@ -56,7 +57,7 @@ export const useTenantStore = defineStore('tenant', () => {
                 // scoped to that org yet, so reloading a page does not invalidate the tokens of other windows
                 if (decodeTokenClaims(getToken())?.org_id === targetOrgId) {
                     currentOrgId.value = targetOrgId
-                    localStorage.setItem('cloudland_org_id', targetOrgId)
+                    localStorage.setItem(STORAGE_KEYS.orgId, targetOrgId)
                 } else {
                     await switchOrg(targetOrgId)
                 }
@@ -82,7 +83,7 @@ export const useTenantStore = defineStore('tenant', () => {
             if (newToken) {
                 setAuthToken(newToken)
             }
-            localStorage.setItem('cloudland_org_id', orgId)
+            localStorage.setItem(STORAGE_KEYS.orgId, orgId)
         } catch (err) {
             console.error('Failed to switch org:', err)
             error.value = errorMessage(err, 'Failed to switch org')
@@ -112,14 +113,14 @@ export const useTenantStore = defineStore('tenant', () => {
     // Set current organization (local only, no API call)
     const setCurrentOrg = (orgId: string) => {
         currentOrgId.value = orgId
-        localStorage.setItem('cloudland_org_id', orgId)
+        localStorage.setItem(STORAGE_KEYS.orgId, orgId)
     }
 
     // Clear tenant state (on logout)
     const clear = () => {
         organizations.value = []
         currentOrgId.value = null
-        localStorage.removeItem('cloudland_org_id')
+        localStorage.removeItem(STORAGE_KEYS.orgId)
     }
 
     // Initialize on store creation

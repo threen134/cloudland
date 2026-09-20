@@ -1,3 +1,4 @@
+import { STORAGE_KEYS } from '../utils/storage'
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import { authApi } from '../api/auth'
@@ -27,8 +28,8 @@ export const useAuthStore = defineStore('auth', () => {
             // 不是 { message, user } 包装——后者是注册接口的形状
             const userData = await authApi.getUserInfo()
             user.value = userData
-            const userStorage = localStorage.getItem('cloudland_remember') === '1' ? localStorage : sessionStorage
-            userStorage.setItem('cloudland_user', JSON.stringify(user.value))
+            const userStorage = localStorage.getItem(STORAGE_KEYS.remember) === '1' ? localStorage : sessionStorage
+            userStorage.setItem(STORAGE_KEYS.user, JSON.stringify(user.value))
             return userData
         } catch (err) {
             console.error('Failed to refresh user info:', err)
@@ -38,7 +39,7 @@ export const useAuthStore = defineStore('auth', () => {
 
     // Initialize from local/session storage
     const init = () => {
-        const storedUser = sessionStorage.getItem('cloudland_user') || localStorage.getItem('cloudland_user')
+        const storedUser = sessionStorage.getItem(STORAGE_KEYS.user) || localStorage.getItem(STORAGE_KEYS.user)
         if (storedUser) {
             try {
                 user.value = JSON.parse(storedUser)
@@ -46,8 +47,8 @@ export const useAuthStore = defineStore('auth', () => {
                 // 存储里的用户信息损坏：清掉当成未登录处理，
                 // 否则这里抛错会中断 store 初始化（路由守卫里调用），整个页面白屏
                 console.warn('[auth] stored user info is not valid JSON, clearing it')
-                localStorage.removeItem('cloudland_user')
-                sessionStorage.removeItem('cloudland_user')
+                localStorage.removeItem(STORAGE_KEYS.user)
+                sessionStorage.removeItem(STORAGE_KEYS.user)
             }
             // Restore token if needed, or check validity
             const token = getToken()
@@ -58,7 +59,7 @@ export const useAuthStore = defineStore('auth', () => {
             }
         }
 
-        const storedAttempts = localStorage.getItem('cloudland_login_attempts')
+        const storedAttempts = localStorage.getItem(STORAGE_KEYS.loginAttempts)
         if (storedAttempts) {
             failedAttempts.value = parseInt(storedAttempts, 10)
         }
@@ -78,14 +79,14 @@ export const useAuthStore = defineStore('auth', () => {
             const userData = await authApi.getUserInfo()
             user.value = userData
             const userStorage = rememberMe ? localStorage : sessionStorage
-            userStorage.setItem('cloudland_user', JSON.stringify(user.value))
+            userStorage.setItem(STORAGE_KEYS.user, JSON.stringify(user.value))
             failedAttempts.value = 0
-            localStorage.removeItem('cloudland_login_attempts')
+            localStorage.removeItem(STORAGE_KEYS.loginAttempts)
 
         } catch (error) {
             console.error('Login failed:', error)
             failedAttempts.value++
-            localStorage.setItem('cloudland_login_attempts', failedAttempts.value.toString())
+            localStorage.setItem(STORAGE_KEYS.loginAttempts, failedAttempts.value.toString())
             throw error
         } finally {
             isLoading.value = false
@@ -94,8 +95,8 @@ export const useAuthStore = defineStore('auth', () => {
 
     const logout = () => {
         user.value = null
-        localStorage.removeItem('cloudland_user')
-        sessionStorage.removeItem('cloudland_user')
+        localStorage.removeItem(STORAGE_KEYS.user)
+        sessionStorage.removeItem(STORAGE_KEYS.user)
         clearAuthToken()
     }
 

@@ -1,7 +1,7 @@
+import { STORAGE_KEYS } from '../utils/storage'
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
-import client from '../api/client'
-import type { RegionPublic } from '../api/regions'
+import { regionsApi, type RegionPublic } from '../api/regions'
 import { errorMessage } from '../utils/error'
 
 export interface Region {
@@ -30,7 +30,7 @@ export const useRegionStore = defineStore('region', () => {
 
     // Initialize from localStorage
     const init = () => {
-        const storedRegionId = localStorage.getItem('cloudland_region_id')
+        const storedRegionId = localStorage.getItem(STORAGE_KEYS.regionId)
         if (storedRegionId) {
             currentRegionId.value = storedRegionId
         }
@@ -42,10 +42,8 @@ export const useRegionStore = defineStore('region', () => {
         error.value = null
 
         try {
-            const response = await client.get<RegionPublic[] | { regions?: RegionPublic[] }>('/regions')
-            const data: RegionPublic[] = Array.isArray(response.data)
-                ? response.data
-                : (response.data?.regions || [])
+            // 走 api 层，不再自己拼 client.get（返回约定统一在 api/regions.ts 里）
+            const data: RegionPublic[] = await regionsApi.fetchRegions()
 
             // Map API response to Region interface
             // API now returns uuid instead of id
@@ -84,17 +82,17 @@ export const useRegionStore = defineStore('region', () => {
     // Set current region
     const setCurrentRegion = (regionId: string) => {
         currentRegionId.value = regionId
-        localStorage.setItem('cloudland_region_id', regionId)
+        localStorage.setItem(STORAGE_KEYS.regionId, regionId)
         // Also persist as region_uuid for API query parameter usage
-        localStorage.setItem('cloudland_region_uuid', regionId)
+        localStorage.setItem(STORAGE_KEYS.regionUuid, regionId)
     }
 
     // Clear region state (on logout)
     const clear = () => {
         regions.value = []
         currentRegionId.value = null
-        localStorage.removeItem('cloudland_region_id')
-        localStorage.removeItem('cloudland_region_uuid')
+        localStorage.removeItem(STORAGE_KEYS.regionId)
+        localStorage.removeItem(STORAGE_KEYS.regionUuid)
     }
 
     // Initialize on store creation

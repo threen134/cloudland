@@ -1,3 +1,4 @@
+import { STORAGE_KEYS } from '../utils/storage'
 import { createI18n } from 'vue-i18n'
 import en from './en'
 import zh from './zh'
@@ -14,7 +15,7 @@ export const LANGUAGE_LABEL_KEYS: Record<Language, string> = {
     'zh-TW': 'languages.zh_hant',
 }
 
-const STORAGE_KEY = 'cloudland_language'
+const STORAGE_KEY = STORAGE_KEYS.language
 
 // 浏览器语言标签 → 支持的语言；繁体：zh-TW / zh-HK / zh-MO / zh-Hant*，其余 zh-* 为简体
 const matchBrowserLanguage = (tag: string): Language | null => {

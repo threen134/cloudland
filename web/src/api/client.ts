@@ -1,3 +1,4 @@
+import { STORAGE_KEYS, clearAuthStorage } from '../utils/storage'
 import axios from 'axios'
 import type { AxiosError, InternalAxiosRequestConfig, AxiosResponse } from 'axios'
 
@@ -67,13 +68,13 @@ client.interceptors.request.use(
         }
 
         // Add tenant/organization header
-        const orgId = localStorage.getItem('cloudland_org_id')
+        const orgId = localStorage.getItem(STORAGE_KEYS.orgId)
         if (orgId && config.headers) {
             config.headers['X-Organization-ID'] = orgId
         }
 
         // Add region UUID as query parameter (skip for /regions endpoint itself)
-        const regionUuid = localStorage.getItem('cloudland_region_uuid')
+        const regionUuid = localStorage.getItem(STORAGE_KEYS.regionUuid)
         if (regionUuid && config.url && !config.url.endsWith('/regions')) {
             config.params = config.params || {}
             config.params.region = regionUuid
@@ -106,9 +107,9 @@ export const consumeRecentTraceId = (): string | undefined => {
 
 const forceLogout = (reason: string, url?: string) => {
     console.error(`[client] auth failure on ${url ?? '?'} — ${reason}. Clearing session and redirecting to login.`)
-    clearAuthToken()
-    localStorage.removeItem('cloudland_user')
-    sessionStorage.removeItem('cloudland_user')
+    // 清干净再跳：这里原先只删了 token 和 user，组织 / 区域会留到下一个登录的账号
+    // （正常从菜单登出走的是 Layout.handleLogout，由各个 store 自己清）
+    clearAuthStorage()
     if (!window.location.pathname.includes('/login')) {
         window.location.href = '/login'
     }
@@ -198,11 +199,11 @@ client.interceptors.response.use(
 
 // Storage helpers — rememberMe controls persistence across browser sessions
 export const getToken = (): string | null => {
-    return sessionStorage.getItem('cloudland_token') || localStorage.getItem('cloudland_token')
+    return sessionStorage.getItem(STORAGE_KEYS.token) || localStorage.getItem(STORAGE_KEYS.token)
 }
 
 const getStorage = (): Storage => {
-    return localStorage.getItem('cloudland_remember') === '1' ? localStorage : sessionStorage
+    return localStorage.getItem(STORAGE_KEYS.remember) === '1' ? localStorage : sessionStorage
 }
 
 // Reads the claims of a JWT without verifying it: the server verifies tokens, the browser only needs
@@ -221,9 +222,9 @@ export const decodeTokenClaims = (token: string | null): Record<string, any> | n
 
 const storeToken = (token: string) => {
     const storage = getStorage()
-    sessionStorage.removeItem('cloudland_token')
-    localStorage.removeItem('cloudland_token')
-    storage.setItem('cloudland_token', token)
+    sessionStorage.removeItem(STORAGE_KEYS.token)
+    localStorage.removeItem(STORAGE_KEYS.token)
+    storage.setItem(STORAGE_KEYS.token, token)
 }
 
 // cpgateway revokes the previous token whenever it issues a new one (login, org or region switch), while
@@ -247,9 +248,9 @@ authChannel?.addEventListener('message', (event: MessageEvent) => {
 export const setAuthToken = (token: string, remember?: boolean) => {
     if (remember !== undefined) {
         if (remember) {
-            localStorage.setItem('cloudland_remember', '1')
+            localStorage.setItem(STORAGE_KEYS.remember, '1')
         } else {
-            localStorage.removeItem('cloudland_remember')
+            localStorage.removeItem(STORAGE_KEYS.remember)
         }
     }
     storeToken(token)
@@ -258,9 +259,9 @@ export const setAuthToken = (token: string, remember?: boolean) => {
 
 // Helper function to clear auth token
 export const clearAuthToken = () => {
-    sessionStorage.removeItem('cloudland_token')
-    localStorage.removeItem('cloudland_token')
-    localStorage.removeItem('cloudland_remember')
+    sessionStorage.removeItem(STORAGE_KEYS.token)
+    localStorage.removeItem(STORAGE_KEYS.token)
+    localStorage.removeItem(STORAGE_KEYS.remember)
 }
 
 export default client
