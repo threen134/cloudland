@@ -108,7 +108,7 @@ func CreateRegion(c *gin.Context) {
 	c.JSON(http.StatusCreated, regionCreatedOut{toRegionAdmin(&region), region.InternalSecret})
 }
 
-// GET /regions?skip=&limit= — public, no internal endpoint or secret.
+// GET /regions?offset=&limit=&query= — public, no internal endpoint or secret.
 func ListRegions(c *gin.Context) {
 	p, ok := parseListParams(c)
 	if !ok {
