@@ -311,7 +311,7 @@ chmod 600 /root/.ssh/authorized_keys 2>/dev/null || true
 log "5/16 - 编译安装 cloudlet-go 二进制"
 
 # 安装 Go（未安装或低于 api/go.mod 要求的版本时）
-GO_VERSION="1.25.0"
+GO_VERSION="1.26.0"
 export PATH=/usr/local/go/bin:$PATH
 CURRENT_GO=$(go env GOVERSION 2>/dev/null | sed 's/^go//' || true)
 if [ -z "$CURRENT_GO" ] || [ "$(printf '%s\n%s\n' "$GO_VERSION" "$CURRENT_GO" | sort -V | head -1)" != "$GO_VERSION" ]; then

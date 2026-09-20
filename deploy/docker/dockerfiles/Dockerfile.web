@@ -10,7 +10,7 @@
 # ---- Stage 1: Go 编译 ----
 # 使用 1.25：api/go.mod 要求 go 1.25（grpc、OpenTelemetry 依赖）
 # 固定 bookworm（glibc 2.36）：clapi 为 CGO 动态链接，构建镜像 glibc 不能高于运行时 ubuntu:24.04（2.39）
-FROM golang:1.25-bookworm AS builder
+FROM golang:1.26-bookworm AS builder
 
 WORKDIR /build
 
