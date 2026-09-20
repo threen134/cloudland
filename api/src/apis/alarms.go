@@ -2128,6 +2128,48 @@ func (a *AlarmAPI) CreateNodeAlarmRule(c *gin.Context) {
 	})
 }
 
+// @Summary Update node alarm rule
+// @Description Update a node-level alarm rule in place (name, description, config, enabled)
+// @Tags Alarm
+// @Accept json
+// @Produce json
+// @Param uuid path string true "Rule UUID"
+// @Success 200 {object} map[string]interface{} "Rule updated successfully"
+// @Failure 400 {object} map[string]interface{} "Bad request"
+// @Failure 404 {object} map[string]interface{} "Rule not found"
+// @Failure 500 {object} map[string]interface{} "Internal server error"
+// @Router /node-alarm-rules/{uuid} [patch]
+func (a *AlarmAPI) UpdateNodeAlarmRule(c *gin.Context) {
+	// Pointers: every field is optional, and `enabled: false` has to be told apart from
+	// "not sent at all"
+	var req struct {
+		Name        *string              `json:"name"`
+		Description *string              `json:"description"`
+		Config      *model.ConfigWrapper `json:"config"`
+		Enabled     *bool                `json:"enabled"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	rule, err := a.alarmAdmin.UpdateNodeAlarmRule(c.Request.Context(), c.Param("uuid"), req.Name, req.Description, req.Config, req.Enabled)
+	if err != nil {
+		if strings.Contains(err.Error(), "not found") {
+			c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+			return
+		}
+		// A config whose keys do not match the rule template is the caller's mistake
+		if strings.Contains(err.Error(), "config") || strings.Contains(err.Error(), "template") {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		tracing.Logf(c, "Failed to update node alarm rule: error=%v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"status": "success", "data": rule})
+}
+
 // @Summary List node alarm rules
 // @Description List node-level alarm rules, optionally filtered by UUID or rule type
 // @Tags Alarm

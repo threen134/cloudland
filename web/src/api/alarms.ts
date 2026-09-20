@@ -67,6 +67,14 @@ export interface CreateNodeAlarmRulePayload {
     enabled?: boolean
 }
 
+/** PATCH /node-alarm-rules/:uuid —— 只传要改的字段，规则类型不可改（每种类型只能有一条） */
+export interface UpdateNodeAlarmRulePayload {
+    name?: string
+    description?: string
+    config?: Record<string, unknown>
+    enabled?: boolean
+}
+
 export const RULE_TYPES = [
     { value: 'node_available', label: 'Node Available' },
     { value: 'control_node', label: 'Control Node' },
@@ -85,6 +93,11 @@ export const alarmsApi = {
 
     async createAlarmRule(payload: CreateNodeAlarmRulePayload): Promise<CreateNodeAlarmRuleResponse> {
         const response = await client.post<CreateNodeAlarmRuleResponse>('/node-alarm-rules', payload)
+        return response.data
+    },
+
+    async updateAlarmRule(uuid: string, payload: UpdateNodeAlarmRulePayload): Promise<CreateNodeAlarmRuleResponse> {
+        const response = await client.patch<CreateNodeAlarmRuleResponse>(`/node-alarm-rules/${uuid}`, payload)
         return response.data
     },
 

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted, computed, watch } from 'vue'
 import { alarmsApi, RULE_TYPES, type NodeAlarmRule, type NodeAlarmRuleListResponse, type CreateNodeAlarmRulePayload } from '../../api/alarms'
-import { Search as SearchIcon, AlertTriangle, Plus, Trash2, RefreshCw, Loader2, RefreshCcw, Check, Copy } from 'lucide-vue-next'
+import { Search as SearchIcon, AlertTriangle, Plus, Trash2, Pencil, Power, RefreshCw, Loader2, RefreshCcw, Check, Copy } from 'lucide-vue-next'
 import { useI18n } from 'vue-i18n'
 import { useToast } from '../../composables/useToast'
 import { useCopyId } from '../../composables/useCopyId'
@@ -187,6 +187,68 @@ const handleCreate = async () => {
     }
 }
 
+// Edit：规则类型不能改（每种类型只能有一条），所以编辑弹窗只有名称 / 描述 / 配置
+const showEditModal = ref(false)
+const editing = ref(false)
+const editingRule = ref<NodeAlarmRule | null>(null)
+const editForm = ref({ name: '', description: '' })
+const editConfigJsonStr = ref('{}')
+const editConfigError = ref('')
+
+const openEditModal = (rule: NodeAlarmRule) => {
+    editingRule.value = rule
+    editForm.value = { name: rule.name, description: rule.description || '' }
+    editConfigJsonStr.value = JSON.stringify(rule.config ?? {}, null, 2)
+    editConfigError.value = ''
+    showEditModal.value = true
+}
+
+const validateEditConfig = () => {
+    try {
+        JSON.parse(editConfigJsonStr.value)
+        editConfigError.value = ''
+        return true
+    } catch {
+        editConfigError.value = t('dashboard.alarmActions.invalidJson')
+        return false
+    }
+}
+
+const handleEdit = async () => {
+    if (!editingRule.value || !editForm.value.name) return
+    if (!validateEditConfig()) return
+    editing.value = true
+    try {
+        await alarmsApi.updateAlarmRule(editingRule.value.uuid, {
+            name: editForm.value.name,
+            description: editForm.value.description,
+            config: JSON.parse(editConfigJsonStr.value),
+        })
+        showEditModal.value = false
+        toast.success(t('messages.success'))
+        await fetchAlarms()
+    } catch (err) {
+        // 配置的键和规则模板对不上时后端会明确报哪几个变量缺值，原样显示出来
+        toast.error(errorMessage(err, t('messages.error')))
+    } finally {
+        editing.value = false
+    }
+}
+
+// 停用只改数据库行是不够的：后端会同时撤下这条规则的 Prometheus 规则文件
+const togglingUuid = ref('')
+const toggleEnabled = async (rule: NodeAlarmRule) => {
+    togglingUuid.value = rule.uuid
+    try {
+        await alarmsApi.updateAlarmRule(rule.uuid, { enabled: !rule.enabled })
+        await fetchAlarms()
+    } catch (err) {
+        toast.error(errorMessage(err, t('messages.error')))
+    } finally {
+        togglingUuid.value = ''
+    }
+}
+
 // Delete
 const confirmDelete = (rule: NodeAlarmRule) => {
     deletingRule.value = rule
@@ -319,9 +381,23 @@ watch(() => region.currentRegionId, (newId) => {
       </template>
 
       <template #cell-actions="{ row: a }">
-        <button class="icon-btn-table text-error" @click.prevent="confirmDelete(a)" :title="t('actions.delete')">
-          <Trash2 :size="16" />
-        </button>
+        <div class="actions-cell">
+          <button class="icon-btn-table" @click.prevent="openEditModal(a)" :title="t('actions.edit')">
+            <Pencil :size="16" />
+          </button>
+          <button
+            class="icon-btn-table"
+            :class="a.enabled ? 'text-success' : 'text-secondary'"
+            :disabled="togglingUuid === a.uuid"
+            @click.prevent="toggleEnabled(a)"
+            :title="a.enabled ? t('actions.disable') : t('actions.enable')"
+          >
+            <Power :size="14" />
+          </button>
+          <button class="icon-btn-table text-error" @click.prevent="confirmDelete(a)" :title="t('actions.delete')">
+            <Trash2 :size="16" />
+          </button>
+        </div>
       </template>
     </DataTable>
 
@@ -370,6 +446,46 @@ watch(() => region.currentRegionId, (newId) => {
         <button type="submit" class="btn btn-primary" :disabled="creating || !createForm.rule_type || !createForm.name">
           <Loader2 v-if="creating" :size="14" class="spinning" />
           {{ creating ? t('messages.creating') : t('actions.create') }}
+        </button>
+      </template>
+    </BaseModal>
+
+
+    <!-- Edit Modal：规则类型不可改 -->
+    <BaseModal
+      :show="showEditModal"
+      :title="t('dashboard.alarmActions.editTitle')"
+      size="lg"
+      form
+      :loading="editing"
+      @close="showEditModal = false"
+      @submit="handleEdit"
+    >
+      <div class="form-stack">
+        <div class="form-group">
+          <label class="form-label">{{ t('dashboard.alarmActions.ruleType') }}</label>
+          <input type="text" class="form-input" :value="editingRule ? getRuleTypeLabel(editingRule.rule_type) : ''" disabled />
+        </div>
+        <div class="form-group">
+          <label class="form-label">{{ t('dashboard.table.name') }} *</label>
+          <input type="text" v-model="editForm.name" class="form-input" />
+        </div>
+        <div class="form-group">
+          <label class="form-label">{{ t('dashboard.table.description') }}</label>
+          <input type="text" v-model="editForm.description" class="form-input" />
+        </div>
+        <div class="form-group">
+          <label class="form-label">{{ t('dashboard.alarmActions.configLabel') }} *</label>
+          <textarea v-model="editConfigJsonStr" class="form-input config-textarea" rows="8" @blur="validateEditConfig"></textarea>
+          <span v-if="editConfigError" class="form-error">{{ editConfigError }}</span>
+        </div>
+      </div>
+
+      <template #footer>
+        <button type="button" class="btn btn-secondary" @click="showEditModal = false">{{ t('actions.cancel') }}</button>
+        <button type="submit" class="btn btn-primary" :disabled="editing || !editForm.name">
+          <Loader2 v-if="editing" :size="14" class="spinning" />
+          {{ editing ? t('messages.saving') : t('actions.save') }}
         </button>
       </template>
     </BaseModal>

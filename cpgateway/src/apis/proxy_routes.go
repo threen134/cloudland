@@ -143,6 +143,7 @@ var proxyRoutes = []proxyRoute{
 	{"DELETE", "/hypers/:hostid", "/hypers/{hostid}", true},
 	{"GET", "/node-alarm-rules", "/node-alarm-rules", true},
 	{"POST", "/node-alarm-rules", "/node-alarm-rules", true},
+	{"PATCH", "/node-alarm-rules/:uuid", "/node-alarm-rules/{uuid}", true},
 	{"DELETE", "/node-alarm-rules/:uuid", "/node-alarm-rules/{uuid}", true},
 	// alarm.py
 	{"POST", "/metrics/alarm/sync-mappings", "/metrics/alarm/sync-mappings", false},

@@ -17,6 +17,7 @@ import (
 	"os/user"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -2053,6 +2054,21 @@ func (a *AlarmOperator) CreateNodeAlarmRules(ctx context.Context, rule *model.No
 	return nil
 }
 
+// UpdateNodeAlarmRules writes the changed columns. Map, not struct: a struct would skip
+// zero values and silently drop `enabled = false`.
+func (a *AlarmOperator) UpdateNodeAlarmRules(ctx context.Context, uuID string, updates map[string]interface{}) (err error) {
+	ctx, db := common.GetContextDB(ctx)
+	result := db.Model(&model.NodeAlarmRule{}).Where("uuid = ?", uuID).Updates(updates)
+	if result.Error != nil {
+		logger.Ctx(ctx).Errorf("Failed to update node alarm rule: uuid=%s, error=%v", uuID, result.Error)
+		return fmt.Errorf("failed to update node alarm rule: %w", result.Error)
+	}
+	if result.RowsAffected == 0 {
+		return fmt.Errorf("node alarm rule not found: %s", uuID)
+	}
+	return nil
+}
+
 func (a *AlarmOperator) DeleteNodeAlarmRules(ctx context.Context, uuid string) (err error) {
 	logger.Ctx(ctx).Infof("ENTER AlarmOperator.DeleteNodeAlarmRules: uuid=%s", uuid)
 	defer func() {
@@ -2415,6 +2431,137 @@ func validateNodeAlarmRule(rule *model.NodeAlarmRule) error {
 	return nil
 }
 
+// nodeAlarmTemplates returns the Jinja templates a rule type renders into Prometheus rules.
+func nodeAlarmTemplates(ruleType string) []string {
+	switch ruleType {
+	case RuleTypeAvailable:
+		return []string{"node-availability.yml.j2"}
+	case RuleTypeControl:
+		return []string{"management-resources.yml.j2"}
+	case RuleTypeCompute:
+		return []string{"compute-core-resources.yml.j2", "compute-network-resources.yml.j2"}
+	case RuleTypeHypervisorVCPU:
+		return []string{"compute-vcpu-resources.yml.j2"}
+	case RuleTypePacketDrop:
+		return []string{"packet-drop-monitor.yml.j2"}
+	case RuleTypeIPBlock:
+		return []string{"ip-block-monitor.yml.j2"}
+	case "ipgroup_available_ip":
+		return []string{"ipgroup-available-ip-monitor.yml.j2"}
+	case "service_monitoring":
+		return []string{"service_monitoring.yml.j2"}
+	}
+	return nil
+}
+
+// Variables a template reads: `{{ name }}` and `{{ name | default(...) }}`, plus the
+// collection a `{% for k, v in name.items() %}` loop walks
+var templateVarRE = regexp.MustCompile(`{{\s*([a-z][a-z0-9_]*)\s*(?:\||}})`)
+var templateLoopRE = regexp.MustCompile(`{%\s*for\s+[a-z0-9_,\s]+\s+in\s+([a-z][a-z0-9_]*)\.items\(\)`)
+
+// nodeAlarmAllowedKeys reads the rule type's templates and returns the config keys they
+// actually use. A key that is not among them does nothing: the template falls back to its
+// default and the value the user typed is silently ignored — which is how every threshold
+// entered in the UI used to be dropped.
+func nodeAlarmAllowedKeys(ctx context.Context, ruleType string) (map[string]bool, error) {
+	allowed := map[string]bool{}
+	for _, templateFile := range nodeAlarmTemplates(ruleType) {
+		content, err := ReadFile(ctx, filepath.Join(RuleTemplate, templateFile))
+		if err != nil {
+			return nil, fmt.Errorf("failed to read template file %s: %w", templateFile, err)
+		}
+		for _, m := range templateVarRE.FindAllStringSubmatch(string(content), -1) {
+			if !templateKeywords[m[1]] {
+				allowed[m[1]] = true
+			}
+		}
+		for _, m := range templateLoopRE.FindAllStringSubmatch(string(content), -1) {
+			allowed[m[1]] = true
+		}
+	}
+	return allowed, nil
+}
+
+// validateNodeAlarmConfig rejects config keys the rule type's templates never read. Runs on
+// every write, including writes to a disabled rule: without it a rule can be saved with a
+// config that only blows up later, when someone enables it.
+func validateNodeAlarmConfig(ctx context.Context, rule *model.NodeAlarmRule) error {
+	if len(nodeAlarmTemplates(rule.RuleType)) == 0 {
+		return fmt.Errorf("unsupported rule type: %s", rule.RuleType)
+	}
+	allowed, err := nodeAlarmAllowedKeys(ctx, rule.RuleType)
+	if err != nil {
+		return err
+	}
+	var config map[string]interface{}
+	if err := json.Unmarshal(rule.Config.RawMessage, &config); err != nil {
+		return fmt.Errorf("failed to parse config JSON: %v", err)
+	}
+	unknown := []string{}
+	for key := range config {
+		if !allowed[key] {
+			unknown = append(unknown, key)
+		}
+	}
+	if len(unknown) > 0 {
+		sort.Strings(unknown)
+		known := make([]string, 0, len(allowed))
+		for key := range allowed {
+			known = append(known, key)
+		}
+		sort.Strings(known)
+		return fmt.Errorf("config keys not used by %s rules: %s (supported: %s)",
+			rule.RuleType, strings.Join(unknown, ", "), strings.Join(known, ", "))
+	}
+	return nil
+}
+
+// applyNodeAlarmRuleFiles renders a rule's Prometheus rule files. Shared by create and
+// update so both go through the same validation.
+func applyNodeAlarmRuleFiles(ctx context.Context, rule *model.NodeAlarmRule) error {
+	if err := validateNodeAlarmConfig(ctx, rule); err != nil {
+		return err
+	}
+	for _, templateFile := range nodeAlarmTemplates(rule.RuleType) {
+		var configData map[string]interface{}
+		if err := json.Unmarshal(rule.Config.RawMessage, &configData); err != nil {
+			return fmt.Errorf("failed to parse config JSON: %v", err)
+		}
+		if rule.RuleType == RuleTypeAvailable {
+			if nodeDownDuration, ok := configData["node_down_duration"].(string); ok {
+				duration, err := time.ParseDuration(nodeDownDuration)
+				if err != nil {
+					return fmt.Errorf("invalid node_down_duration format: %v", err)
+				}
+				configData["node_down_duration_minutes"] = int(duration.Minutes())
+			} else {
+				configData["node_down_duration_minutes"] = 5
+			}
+		}
+		if err := ProcessTemplate(ctx, templateFile, strings.TrimSuffix(templateFile, ".j2"), configData); err != nil {
+			return fmt.Errorf("failed to process template %s: %v", templateFile, err)
+		}
+	}
+	return nil
+}
+
+// removeNodeAlarmRuleFiles drops a rule type's generated files and the symlinks that
+// enable them. Missing files are not an error: a disabled rule has none.
+func removeNodeAlarmRuleFiles(ctx context.Context, ruleType string) []string {
+	removed := []string{}
+	for _, templateFile := range nodeAlarmTemplates(ruleType) {
+		outputFile := strings.TrimSuffix(templateFile, ".j2")
+		for _, path := range []string{filepath.Join(RulesEnabled, outputFile), filepath.Join(RulesGeneral, outputFile)} {
+			if err := RemoveFile(ctx, path); err != nil {
+				logger.Ctx(ctx).Errorf("Failed to remove rule file: path=%s, error=%v", path, err)
+				continue
+			}
+			removed = append(removed, path)
+		}
+	}
+	return removed
+}
+
 func createNodeAlarmRuleInternal(ctx context.Context, rule *model.NodeAlarmRule) (nr *model.NodeAlarmRule, err error) {
 	logger.Ctx(ctx).Infof("ENTER createNodeAlarmRuleInternal: name=%s, ruleType=%s", rule.Name, rule.RuleType)
 	defer func() {
@@ -2445,66 +2592,101 @@ func createNodeAlarmRuleInternal(ctx context.Context, rule *model.NodeAlarmRule)
 		Owner:       rule.Owner,
 		Enabled:     rule.Enabled,
 	}
+	// Validated before the row is written, disabled rules included
+	if err = validateNodeAlarmConfig(ctx, newRule); err != nil {
+		return nil, err
+	}
 	err = operator.CreateNodeAlarmRules(ctx, newRule)
 	if err != nil {
 		return nil, fmt.Errorf("failed to save rule to database: %v", err)
 	}
 
-	var templateFiles []string
-	switch rule.RuleType {
-	case RuleTypeAvailable:
-		templateFiles = []string{"node-availability.yml.j2"}
-	case RuleTypeControl:
-		templateFiles = []string{"management-resources.yml.j2"}
-	case RuleTypeCompute:
-		templateFiles = []string{"compute-core-resources.yml.j2", "compute-network-resources.yml.j2"}
-	case RuleTypeHypervisorVCPU:
-		templateFiles = []string{"compute-vcpu-resources.yml.j2"}
-	case RuleTypePacketDrop:
-		templateFiles = []string{"packet-drop-monitor.yml.j2"}
-	case RuleTypeIPBlock:
-		templateFiles = []string{"ip-block-monitor.yml.j2"}
-	case "ipgroup_available_ip":
-		templateFiles = []string{"ipgroup-available-ip-monitor.yml.j2"}
-	default:
-		operator.DeleteNodeAlarmRules(ctx, newRule.UUID)
-		return nil, fmt.Errorf("unsupported rule type: %s", rule.RuleType)
-	}
-
-	for _, templateFile := range templateFiles {
-		var configData map[string]interface{}
-		if err = json.Unmarshal(rule.Config.RawMessage, &configData); err != nil {
+	// A disabled rule is only a database row: writing its rule file would make it alert
+	// anyway, which is what "enabled" used to do (the flag was never acted upon)
+	if newRule.Enabled {
+		if err = applyNodeAlarmRuleFiles(ctx, newRule); err != nil {
 			operator.DeleteNodeAlarmRules(ctx, newRule.UUID)
-			return nil, fmt.Errorf("failed to parse config JSON: %v", err)
+			return nil, err
 		}
-
-		if rule.RuleType == RuleTypeAvailable {
-			if nodeDownDuration, ok := configData["node_down_duration"].(string); ok {
-				duration, err := time.ParseDuration(nodeDownDuration)
-				if err != nil {
-					operator.DeleteNodeAlarmRules(ctx, newRule.UUID)
-					return nil, fmt.Errorf("invalid node_down_duration format: %v", err)
-				}
-				configData["node_down_duration_minutes"] = int(duration.Minutes())
-			} else {
-				configData["node_down_duration_minutes"] = 5
-			}
+		if err := ReloadPrometheusViaHTTP(ctx); err != nil {
+			logger.Ctx(ctx).Errorf("Failed to reload Prometheus: %v", err)
 		}
-
-		outputFile := strings.TrimSuffix(templateFile, ".j2")
-
-		err = ProcessTemplate(ctx, templateFile, outputFile, configData)
-		if err != nil {
-			operator.DeleteNodeAlarmRules(ctx, newRule.UUID)
-			return nil, fmt.Errorf("failed to process template %s: %v", templateFile, err)
-		}
-	}
-
-	if err := ReloadPrometheusViaHTTP(ctx); err != nil {
-		logger.Ctx(ctx).Errorf("Failed to reload Prometheus: %v", err)
 	}
 
 	return newRule, nil
+}
+
+// updateNodeAlarmRuleInternal changes an existing rule in place. Without it the only way to
+// fix a threshold was to delete the rule and create it again.
+func updateNodeAlarmRuleInternal(ctx context.Context, uuID string, name, description *string, config *model.ConfigWrapper, enabled *bool) (rule *model.NodeAlarmRule, err error) {
+	logger.Ctx(ctx).Infof("ENTER updateNodeAlarmRuleInternal: uuid=%s", uuID)
+	defer func() {
+		if err != nil {
+			logger.Ctx(ctx).Errorf("EXIT updateNodeAlarmRuleInternal: error=%v", err)
+		} else {
+			logger.Ctx(ctx).Info("EXIT updateNodeAlarmRuleInternal: success")
+		}
+	}()
+	operator := &AlarmOperator{}
+	rules, err := operator.GetNodeAlarmRules(ctx, uuID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get rule information: %v", err)
+	}
+	if len(rules) == 0 {
+		return nil, fmt.Errorf("node alarm rule not found")
+	}
+	rule = &rules[0]
+
+	updates := map[string]interface{}{}
+	if name != nil && *name != "" {
+		rule.Name = *name
+		updates["name"] = *name
+	}
+	if description != nil {
+		rule.Description = *description
+		updates["description"] = *description
+	}
+	if config != nil && len(config.RawMessage) > 0 {
+		var temp interface{}
+		if err = json.Unmarshal(config.RawMessage, &temp); err != nil {
+			return nil, fmt.Errorf("config must be valid JSON: %w", err)
+		}
+		rule.Config = *config
+		updates["config"] = *config
+	}
+	if enabled != nil {
+		rule.Enabled = *enabled
+		updates["enabled"] = *enabled
+	}
+	if len(updates) == 0 {
+		return rule, nil
+	}
+
+	// Rule files first: a config that does not match the template must fail before the
+	// database changes, otherwise the stored config and the running rules drift apart
+	if rule.Enabled {
+		if err = applyNodeAlarmRuleFiles(ctx, rule); err != nil {
+			return nil, err
+		}
+	} else {
+		// Still validate: a disabled rule saved with a bad config only fails later, when
+		// someone enables it
+		if err = validateNodeAlarmConfig(ctx, rule); err != nil {
+			return nil, err
+		}
+		removeNodeAlarmRuleFiles(ctx, rule.RuleType)
+	}
+	if err = operator.UpdateNodeAlarmRules(ctx, uuID, updates); err != nil {
+		return nil, err
+	}
+	if err := ReloadPrometheusViaHTTP(ctx); err != nil {
+		logger.Ctx(ctx).Errorf("Failed to reload Prometheus: %v", err)
+	}
+	return rule, nil
+}
+
+func (a *AlarmAdmin) UpdateNodeAlarmRule(ctx context.Context, uuID string, name, description *string, config *model.ConfigWrapper, enabled *bool) (*model.NodeAlarmRule, error) {
+	return updateNodeAlarmRuleInternal(ctx, uuID, name, description, config, enabled)
 }
 
 func (a *AlarmAdmin) CreateNodeAlarmRule(ctx context.Context, rule *model.NodeAlarmRule) (*model.NodeAlarmRule, error) {
@@ -2556,41 +2738,7 @@ func deleteNodeAlarmRuleInternal(ctx context.Context, uuid string) (deletedFiles
 		return nil, fmt.Errorf("failed to delete rule from database: %v", err)
 	}
 
-	var templateFiles []string
-	switch rule.RuleType {
-	case RuleTypeAvailable:
-		templateFiles = []string{"node-availability.yml"}
-	case RuleTypeControl:
-		templateFiles = []string{"management-resources.yml"}
-	case RuleTypeCompute:
-		templateFiles = []string{"compute-core-resources.yml", "compute-network-resources.yml"}
-	case RuleTypeHypervisorVCPU:
-		templateFiles = []string{"compute-vcpu-resources.yml"}
-	case RuleTypePacketDrop:
-		templateFiles = []string{"packet-drop-monitor.yml"}
-	case RuleTypeIPBlock:
-		templateFiles = []string{"ip-block-monitor.yml"}
-	case "ipgroup_available_ip":
-		templateFiles = []string{"ipgroup-available-ip-monitor.yml"}
-	case "service_monitoring":
-		templateFiles = []string{"service_monitoring.yml"}
-	}
-
-	deletedFiles = []string{}
-	for _, templateFile := range templateFiles {
-		outputPath := filepath.Join(RulesGeneral, templateFile)
-		enabledPath := filepath.Join(RulesEnabled, templateFile)
-		if err := RemoveFile(ctx, enabledPath); err != nil {
-			logger.Ctx(ctx).Errorf("Failed to remove symlink: path=%s, error=%v", enabledPath, err)
-		} else {
-			deletedFiles = append(deletedFiles, enabledPath)
-		}
-		if err := RemoveFile(ctx, outputPath); err != nil {
-			logger.Ctx(ctx).Errorf("Failed to remove rule file: path=%s, error=%v", outputPath, err)
-		} else {
-			deletedFiles = append(deletedFiles, outputPath)
-		}
-	}
+	deletedFiles = removeNodeAlarmRuleFiles(ctx, rule.RuleType)
 
 	if err := ReloadPrometheusViaHTTP(ctx); err != nil {
 		logger.Ctx(ctx).Errorf("Failed to reload Prometheus configuration: error=%v", err)

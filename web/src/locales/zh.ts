@@ -1567,6 +1567,7 @@ export default {
             allTypes: '所有类型',
             selectRuleType: '请选择规则类型',
             createTitle: '创建告警规则',
+            editTitle: '编辑告警规则',
             deleteTitle: '删除告警规则',
             deleteConfirm: '确定要删除告警规则 "{name}" 吗？此操作无法撤销。',
             invalidJson: '配置必须是有效的 JSON',

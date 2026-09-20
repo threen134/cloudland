@@ -369,6 +369,7 @@ func Register() (r *gin.Engine) {
 
 		authGroup.POST("/node-alarm-rules", alarmAPI.CreateNodeAlarmRule)
 		authGroup.GET("/node-alarm-rules", alarmAPI.GetNodeAlarmRules)
+		authGroup.PATCH("/node-alarm-rules/:uuid", alarmAPI.UpdateNodeAlarmRule)
 		authGroup.DELETE("/node-alarm-rules/:uuid", alarmAPI.DeleteNodeAlarmRule)
 
 		// OpenMeter API routes

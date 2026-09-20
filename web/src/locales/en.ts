@@ -1567,6 +1567,7 @@ export default {
             allTypes: 'All Types',
             selectRuleType: 'Select a rule type',
             createTitle: 'Create Alarm Rule',
+            editTitle: 'Edit Alarm Rule',
             deleteTitle: 'Delete Alarm Rule',
             deleteConfirm: 'Are you sure you want to delete alarm rule "{name}"? This cannot be undone.',
             invalidJson: 'Config must be valid JSON',
