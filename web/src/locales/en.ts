@@ -1570,6 +1570,7 @@ export default {
             deleteTitle: 'Delete Alarm Rule',
             deleteConfirm: 'Are you sure you want to delete alarm rule "{name}"? This cannot be undone.',
             invalidJson: 'Config must be valid JSON',
+            configLabel: 'Config (JSON)',
             configHint: 'A template has been pre-filled based on the selected rule type. Adjust values as needed.',
             enabled: 'Enabled',
             disabled: 'Disabled',

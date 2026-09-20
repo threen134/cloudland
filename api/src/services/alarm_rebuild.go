@@ -92,10 +92,7 @@ func rebuildCPURule(ctx context.Context, group *model.RuleGroupV2) error {
 			"region_id":        group.RegionID,
 			"level":            rule.Level,
 			"detail_index":     i,
-			"over":             rule.Over,
 			"duration":         rule.Duration,
-			"down_to":          rule.DownTo,
-			"down_duration":    rule.DownDuration,
 		}
 
 		templateFile := "VM-cpu-rule.yml.j2"
@@ -135,10 +132,7 @@ func rebuildMemoryRule(ctx context.Context, group *model.RuleGroupV2) error {
 			"region_id":        group.RegionID,
 			"level":            rule.Level,
 			"detail_index":     i,
-			"over":             rule.Over,
 			"duration":         rule.Duration,
-			"down_to":          rule.DownTo,
-			"down_duration":    rule.DownDuration,
 		}
 
 		templateFile := "VM-memory-rule.yml.j2"

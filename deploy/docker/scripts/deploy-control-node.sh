@@ -106,6 +106,13 @@ log "执行 Alertmanager 目录权限..."
 mkdir -p volumes/alertmanager
 chown -R 65534:65534 volumes/alertmanager
 
+# Prometheus rule templates: clapi renders node alarm rules from these (mounted read-only
+# at /etc/prometheus/node_templates). Without them every node alarm rule create fails with
+# "File does not exist: <template>.yml.j2".
+log "同步 Prometheus 规则模板..."
+mkdir -p volumes/prometheus/node_templates volumes/prometheus/general_rules volumes/prometheus/rules_enabled
+cp -f ../roles/monitor/templates/*.yml.j2 volumes/prometheus/node_templates/
+
 # 定义需要注入的环境变量
 vars=("PUBLIC_IP" "INTERNAL_IP" "MANAGEMENT_VIP" "NETWORK_DEVICE" "DB_LISTEN_IP" "POSTGRES_USER" "POSTGRES_PASSWORD" "POSTGRES_DB" "ADMIN_PASSWORD" "ADMIN_EMAIL" "COMPOSE_PROFILES" "DB_HOST" "DB_PORT" "CPGATEWAY_SECRET_KEY" "FEISHU_WEBHOOK_URL" "FEISHU_SECRET" "S3_ENDPOINT" "S3_ACCESS_KEY" "S3_SECRET_KEY" "S3_BUCKET" "S3_REGION" "S3_USE_SSL" "S3_UPLOAD_TIMEOUT_MINUTES" "MINIO_HOSTNAME" "CLAPI_HOSTNAME" "CAPTURE_UPLOAD_SECRET" "GRAFANA_ADMIN_PASSWORD" "DNS_UPSTREAM" "MINIO_ROOT_USER" "MINIO_ROOT_PASSWORD" "GRPC_AUTH_TOKEN" "GRPC_LISTEN" "TELEMETRY_LISTEN_IP" "REPO_BRANCH" "DEPLOY_SCRIPT_URL")
 

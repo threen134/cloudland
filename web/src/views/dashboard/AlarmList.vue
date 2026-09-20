@@ -97,15 +97,51 @@ const getRuleTypeClass = (type: string) => {
     return map[type] || 'rt-default'
 }
 
-// Config templates per rule type
+// Config templates per rule type.
+// The keys must match the variables in the Prometheus rule templates under
+// deploy/roles/monitor/templates/*.j2 — anything else is silently ignored (the template
+// falls back to its own default), and for a variable without a default the placeholder
+// ends up verbatim in the rule file, which makes Prometheus reject every rule it has.
+// The values below are each template's own defaults.
 const CONFIG_TEMPLATES: Record<string, object> = {
-    node_available: { duration: "5m", severity: "critical" },
-    control_node: { cpu_threshold: 80, memory_threshold: 80, duration: "5m", severity: "warning" },
-    compute_node: { cpu_threshold: 80, memory_threshold: 80, disk_threshold: 85, duration: "5m", severity: "warning" },
-    hypervisor_vcpu: { vcpu_ratio_threshold: 3.0, duration: "10m", severity: "warning" },
-    packet_drop: { drop_rate_threshold: 0.01, duration: "5m", severity: "critical" },
-    ip_block: { threshold: 80, duration: "10m", severity: "info" },
-    ipgroup_available_ip: { min_available: 5, duration: "10m", severity: "info" },
+    // node-availability.yml.j2
+    node_available: { node_down_duration: '5m' },
+    // management-resources.yml.j2 (thresholds in %, disk is *free* space)
+    control_node: {
+        cpu_usage_threshold: 80,
+        cpu_alert_duration: '10m',
+        memory_usage_threshold: 80,
+        memory_alert_duration: '10m',
+        disk_space_threshold: 20,
+        disk_alert_duration: '10m',
+        network_traffic_threshold_gb: 5,
+        network_alert_duration: '10m',
+    },
+    // compute-core-resources.yml.j2 + compute-network-resources.yml.j2
+    // network_types is required: the network template loops over it (pattern is the
+    // Prometheus device matcher, threshold is in Gbps)
+    compute_node: {
+        cpu_usage_threshold: 80,
+        cpu_alert_duration: '10m',
+        memory_usage_threshold: 80,
+        memory_alert_duration: '10m',
+        disk_space_threshold: 10,
+        disk_alert_duration: '20m',
+        network_traffic_threshold_gb: 25,
+        network_alert_duration: '5m',
+        network_types: {
+            public: { pattern: '=~"bond1"', threshold: 20, duration: '5m' },
+            private: { pattern: '=~"bond0"', threshold: 20, duration: '5m' },
+        },
+    },
+    // compute-vcpu-resources.yml.j2 — neither variable has a default, both are required
+    hypervisor_vcpu: { vcpu_usage_threshold: 85, for_duration: '10m' },
+    // packet-drop-monitor.yml.j2
+    packet_drop: { packet_drop_threshold: 0, for_duration: '1m', severity: 'warning' },
+    // ip-block-monitor.yml.j2
+    ip_block: { for_duration: '30s', severity: 'warning' },
+    // ipgroup-available-ip-monitor.yml.j2
+    ipgroup_available_ip: { threshold: 100, for_duration: '5m', severity: 'warning' },
 }
 
 const onRuleTypeChange = () => {
@@ -316,7 +352,7 @@ watch(() => region.currentRegionId, (newId) => {
           <input type="text" v-model="createForm.description" class="form-input" />
         </div>
         <div class="form-group">
-          <label class="form-label">Config (JSON) *</label>
+          <label class="form-label">{{ t('dashboard.alarmActions.configLabel') }} *</label>
           <textarea v-model="configJsonStr" class="form-input config-textarea" rows="6" @blur="validateConfig" placeholder='{"threshold": 80, "duration": "5m"}'></textarea>
           <span v-if="configError" class="form-error">{{ configError }}</span>
           <span v-else-if="createForm.rule_type" class="form-hint">{{ t('dashboard.alarmActions.configHint') }}</span>

@@ -1570,6 +1570,7 @@ export default {
             deleteTitle: '删除告警规则',
             deleteConfirm: '确定要删除告警规则 "{name}" 吗？此操作无法撤销。',
             invalidJson: '配置必须是有效的 JSON',
+            configLabel: '配置（JSON）',
             configHint: '已根据所选规则类型预填模板，请按需调整参数值。',
             enabled: '启用',
             disabled: '禁用',

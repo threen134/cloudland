@@ -111,9 +111,6 @@ type (
 		Limit        int       `json:"limit" gorm:"column:limit;check:limit >= 1"` // Threshold value
 		Rule         string    `json:"rule" gorm:"type:varchar(8);column:rule"`    // Comparison operator: gt/lt
 		Duration     int       `json:"duration" gorm:"check:duration >= 1"`        // Duration in minutes
-		Over         int       `json:"over" gorm:"check:over >= 1"`
-		DownTo       int       `json:"down_to" gorm:"check:down_to >= 0"`
-		DownDuration int       `json:"down_duration" gorm:"check:down_duration >= 1"`
 		Level        string    `json:"level" binding:"required,oneof=critical warning info"`
 		CreatedAt    time.Time `gorm:"autoCreateTime"`
 	}
@@ -125,9 +122,6 @@ type (
 		Limit        int       `json:"limit" gorm:"column:limit;check:limit >= 1"` // Threshold value
 		Rule         string    `json:"rule" gorm:"type:varchar(8);column:rule"`    // Comparison operator: gt/lt
 		Duration     int       `json:"duration" gorm:"check:duration >= 1"`        // Duration in minutes
-		Over         int       `json:"over" gorm:"check:over >= 1"`
-		DownTo       int       `json:"down_to" gorm:"check:down_to >= 0"`
-		DownDuration int       `json:"down_duration" gorm:"check:down_duration >= 1"`
 		Level        string    `json:"level" binding:"required,oneof=critical warning info"`
 		CreatedAt    time.Time `gorm:"autoCreateTime"`
 	}
@@ -1279,9 +1273,6 @@ func (a *AlarmOperator) CreateCPURules(ctx context.Context, groupUUID string, ru
 				GroupUUID:    groupUUID,
 				Name:         rules[i].Name,
 				Duration:     rules[i].Duration,
-				Over:         rules[i].Over,
-				DownDuration: rules[i].DownDuration,
-				DownTo:       rules[i].DownTo,
 			}
 			if err := tx.Create(rule).Error; err != nil {
 				logger.Ctx(ctx).Errorf("create cpu rule failed: groupUUID=%s, rule=%+v, error=%v", groupUUID, rules[i], err)
@@ -2183,6 +2174,14 @@ func ProcessTemplate(ctx context.Context, templateFile, outputFile string, data 
 		logger.Ctx(ctx).Errorf("Failed to render template: template=%s, error=%v", templateFile, err)
 		return fmt.Errorf("failed to render template %s: %w", templateFile, err)
 	}
+	// A config key that does not match the template leaves the placeholder as-is
+	// (only `{{ x | default(y) }}` forms fall back). The literal `{{ x }}` then lands in
+	// the rule file and Prometheus refuses to load the *whole* rule set, rolling back to
+	// the previous one — one bad rule silently freezes every alarm rule. Fail here instead.
+	if missing := unresolvedPlaceholders(renderedContent); len(missing) > 0 {
+		logger.Ctx(ctx).Errorf("Template %s has unresolved variables: %v", templateFile, missing)
+		return fmt.Errorf("config is missing values for %s: %s", templateFile, strings.Join(missing, ", "))
+	}
 	logger.Ctx(ctx).Debugf("ProcessTemplate templateContent: %s,  outputPath: %s", templateContent, outputPath)
 	// Write rendered content to output file
 	if err := WriteFile(ctx, outputPath, []byte(renderedContent), 0640); err != nil {
@@ -2199,6 +2198,32 @@ func ProcessTemplate(ctx context.Context, templateFile, outputFile string, data 
 	}
 
 	return nil
+}
+
+// Placeholders left over after rendering, e.g. `{{ vcpu_usage_threshold }}`. Prometheus'
+// own templating (`{{ $labels.x }}`, `{{ if ... }}`) is written with a `$` or keywords and
+// is not matched here.
+var placeholderRE = regexp.MustCompile(`{{\s*([a-z][a-z0-9_]*)\s*}}`)
+
+// Go template keywords, which stand alone in a Prometheus annotation ({{ if ... }} ... {{ end }})
+var templateKeywords = map[string]bool{
+	"end": true, "else": true, "if": true, "range": true, "with": true,
+	"break": true, "continue": true, "define": true, "template": true, "block": true,
+}
+
+func unresolvedPlaceholders(content string) []string {
+	seen := map[string]bool{}
+	var names []string
+	for _, m := range placeholderRE.FindAllStringSubmatch(content, -1) {
+		if templateKeywords[m[1]] {
+			continue
+		}
+		if !seen[m[1]] {
+			seen[m[1]] = true
+			names = append(names, m[1])
+		}
+	}
+	return names
 }
 
 func renderNetworkResourcesTemplate(ctx context.Context, data map[string]interface{}) (renderedContent string, err error) {
@@ -2418,7 +2443,7 @@ func createNodeAlarmRuleInternal(ctx context.Context, rule *model.NodeAlarmRule)
 		Config:      rule.Config,
 		Description: rule.Description,
 		Owner:       rule.Owner,
-		Enabled:     true,
+		Enabled:     rule.Enabled,
 	}
 	err = operator.CreateNodeAlarmRules(ctx, newRule)
 	if err != nil {

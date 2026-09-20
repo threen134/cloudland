@@ -54,6 +54,13 @@ fi
 mkdir -p volumes/alertmanager
 chown -R 65534:65534 volumes/alertmanager
 
+# Prometheus rule templates: clapi renders node alarm rules from these (mounted read-only
+# at /etc/prometheus/node_templates). Without them every node alarm rule create fails with
+# "File does not exist: <template>.yml.j2".
+log "同步 Prometheus 规则模板..."
+mkdir -p volumes/prometheus/node_templates volumes/prometheus/general_rules volumes/prometheus/rules_enabled
+cp -f ../roles/monitor/templates/*.yml.j2 volumes/prometheus/node_templates/
+
 vars=("PUBLIC_IP" "INTERNAL_IP" "MANAGEMENT_VIP" "NETWORK_DEVICE" "DB_LISTEN_IP" "POSTGRES_USER" "POSTGRES_PASSWORD" "POSTGRES_DB" "ADMIN_PASSWORD" "HA_ROLE" "PEER_IP" "VRRP_INTERFACE" "DB_HOST" "DB_PORT" "GRPC_AUTH_TOKEN" "CAPTURE_UPLOAD_SECRET" "GRPC_LISTEN" "TELEMETRY_LISTEN_IP" "REPO_BRANCH" "DEPLOY_SCRIPT_URL")
 
 for var in "${vars[@]}"; do

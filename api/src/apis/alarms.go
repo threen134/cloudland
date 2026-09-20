@@ -655,9 +655,6 @@ func (a *AlarmAPI) CreateCPURule(c *gin.Context) {
 			Limit:        rule.Limit,
 			Rule:         rule.Rule,
 			Duration:     rule.Duration,
-			Over:         rule.Over,
-			DownDuration: rule.DownDuration,
-			DownTo:       rule.DownTo,
 			Level:        rule.Level,
 		}
 		if err := a.operator.CreateCPURuleDetail(c.Request.Context(), detail); err != nil {
@@ -698,10 +695,7 @@ func (a *AlarmAPI) CreateCPURule(c *gin.Context) {
 			"region_id":        req.RegionID,
 			"level":            rule.Level,
 			"detail_index":     i,
-			"over":             rule.Over,
 			"duration":         rule.Duration,
-			"down_to":          rule.DownTo,
-			"down_duration":    rule.DownDuration,
 		}
 
 		templateFile := "VM-cpu-rule.yml.j2"
@@ -805,9 +799,6 @@ func (a *AlarmAPI) CreateMemoryRule(c *gin.Context) {
 			Limit:        rule.Limit,
 			Rule:         rule.Rule,
 			Duration:     rule.Duration,
-			Over:         rule.Over,
-			DownDuration: rule.DownDuration,
-			DownTo:       rule.DownTo,
 			Level:        rule.Level,
 		}
 		if err := a.operator.CreateMemoryRuleDetail(c.Request.Context(), detail); err != nil {
@@ -857,10 +848,7 @@ func (a *AlarmAPI) CreateMemoryRule(c *gin.Context) {
 			"region_id":        req.RegionID,
 			"level":            rule.Level,
 			"detail_index":     i,
-			"over":             rule.Over,
 			"duration":         rule.Duration,
-			"down_to":          rule.DownTo,
-			"down_duration":    rule.DownDuration,
 		}
 
 		templateFile := "VM-memory-rule.yml.j2"
@@ -2071,27 +2059,54 @@ func (a *AlarmAPI) DeleteBWRules(c *gin.Context) {
 // @Failure 500 {object} map[string]interface{} "Internal server error"
 // @Router /node-alarm-rules [post]
 func (a *AlarmAPI) CreateNodeAlarmRule(c *gin.Context) {
-	var rule model.NodeAlarmRule
-	if err := c.ShouldBindJSON(&rule); err != nil {
+	// Bind to a request struct instead of the model: owner is taken from the caller's
+	// membership (like the VM rule handlers do), never from the request body. Binding
+	// the model straight made owner a required client field, so every create from the
+	// UI failed with "owner is required".
+	var req struct {
+		RuleType    string              `json:"rule_type"`
+		Name        string              `json:"name"`
+		Config      model.ConfigWrapper `json:"config"`
+		Description string              `json:"description"`
+		Enabled     *bool               `json:"enabled"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	if rule.RuleType == "" {
+	if req.RuleType == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "rule_type is required"})
 		return
 	}
-	if rule.Name == "" {
+	if req.Name == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "name is required"})
 		return
 	}
-	if len(rule.Config.RawMessage) == 0 {
+	if len(req.Config.RawMessage) == 0 {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "config is required"})
 		return
 	}
 	var temp interface{}
-	if err := json.Unmarshal(rule.Config.RawMessage, &temp); err != nil {
+	if err := json.Unmarshal(req.Config.RawMessage, &temp); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "config must be valid JSON"})
 		return
+	}
+	memberShip := common.GetMemberShip(c.Request.Context())
+	if memberShip.OrgID == 0 {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid organization context"})
+		return
+	}
+	enabled := true
+	if req.Enabled != nil {
+		enabled = *req.Enabled
+	}
+	rule := model.NodeAlarmRule{
+		RuleType:    req.RuleType,
+		Name:        req.Name,
+		Config:      req.Config,
+		Description: req.Description,
+		Enabled:     enabled,
+		Owner:       strconv.FormatInt(memberShip.OrgID, 10),
 	}
 
 	rulePtr, err := a.alarmAdmin.CreateNodeAlarmRule(c.Request.Context(), &rule)
@@ -2910,9 +2925,6 @@ func (a *AlarmAPI) getRuleDetails(ctx context.Context, groupUUID, ruleType strin
 				"rule":          d.Rule,
 				"limit":         d.Limit,
 				"duration":      d.Duration,
-				"over":          d.Over,
-				"down_to":       d.DownTo,
-				"down_duration": d.DownDuration,
 			})
 		}
 		return result, nil
@@ -2929,9 +2941,6 @@ func (a *AlarmAPI) getRuleDetails(ctx context.Context, groupUUID, ruleType strin
 				"rule":          d.Rule,
 				"limit":         d.Limit,
 				"duration":      d.Duration,
-				"over":          d.Over,
-				"down_to":       d.DownTo,
-				"down_duration": d.DownDuration,
 			})
 		}
 		return result, nil

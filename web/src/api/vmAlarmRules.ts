@@ -7,7 +7,7 @@ import client from './client'
  * 所以下面的字段严格按 GetCPURules / GetMemoryRules / GetBWRules 的 responseData 写。
  */
 
-/** GetCPURules 的 rules[]；创建时 over/down_to/down_duration 也能传（services.CPURule），但列表不返回 */
+/** GetCPURules 的 rules[] */
 export interface CPURuleDetail {
     name: string
     /** 比较符：gt / lt */
@@ -17,9 +17,6 @@ export interface CPURuleDetail {
     duration: number
     /** critical | warning | info */
     level: string
-    over?: number
-    down_to?: number
-    down_duration?: number
 }
 
 /** GetMemoryRules 的 rules[]（与 CPU 同形，列表也返回 rule 比较符） */
@@ -29,9 +26,6 @@ export interface MemoryRuleDetail {
     limit: number
     duration: number
     level: string
-    over?: number
-    down_to?: number
-    down_duration?: number
 }
 
 /** GetBWRules 的 rules[] */
