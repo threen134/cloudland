@@ -8,7 +8,7 @@
 //   </DataTable>
 // 每列的内容用 #cell-<key> 插槽渲染；不提供插槽时直接取 row[key]。
 import { computed, ref } from 'vue'
-import { RefreshCw } from 'lucide-vue-next'
+import { RefreshCw, ChevronDown, ChevronRight } from 'lucide-vue-next'
 
 // 行数据保留 Record<string, any>：这里是通用表格，各列表页传进来的是 Flavor / Instance 这类
 // 具体接口类型。TypeScript 只允许把它们赋给 `Record<string, any>`，换成 `Record<string, unknown>`
@@ -49,6 +49,11 @@ const props = withDefaults(
          */
         order?: string
         /**
+         * 行可展开：最左侧加一列折叠箭头，点行展开 #expanded 插槽（整行宽度的一格）。
+         * 一次只展开一行——两页用到的都是「看这一条的明细」，同时展开多行反而难读
+         */
+        expandable?: boolean
+        /**
          * 单元格里有下拉菜单、悬浮卡片这类要溢出表格显示的内容时传 true：
          * 容器改为 overflow: visible，并给单元格加定位上下文。
          * 代价是宽表格不再能横向滚动，所以只在确实需要时开
@@ -63,7 +68,18 @@ const props = withDefaults(
 const keyOf = (row: Record<string, any>) =>
     typeof props.rowKey === 'function' ? props.rowKey(row) : String(row[props.rowKey])
 
-const emit = defineEmits<{ retry: []; 'update:order': [order: string] }>()
+const emit = defineEmits<{ retry: []; 'update:order': [order: string]; expand: [key: string] }>()
+
+// 展开态按行 key 记录，翻页/重新加载后行还在就保持展开
+const expandedKey = ref<string | null>(null)
+const isExpanded = (row: Record<string, any>) => expandedKey.value === keyOf(row)
+const toggleExpand = (row: Record<string, any>) => {
+    const key = keyOf(row)
+    expandedKey.value = expandedKey.value === key ? null : key
+    if (expandedKey.value) emit('expand', key)
+}
+// 展开行那一格要横跨所有列（含最左侧的箭头列）
+const colspan = computed(() => props.columns.length + (props.expandable ? 1 : 0))
 
 // 传了 order 就是服务端排序，本地不再重排
 const serverSorted = computed(() => props.order !== undefined)
@@ -120,6 +136,7 @@ const sortedRows = computed(() => {
         <table class="data-table">
             <thead>
                 <tr>
+                    <th v-if="expandable" class="expand-col"></th>
                     <th
                         v-for="column in columns"
                         :key="column.key"
@@ -143,12 +160,12 @@ const sortedRows = computed(() => {
             </thead>
             <tbody>
                 <tr v-if="loading && rows.length === 0">
-                    <td :colspan="columns.length" class="table-state">
+                    <td :colspan="colspan" class="table-state">
                         <span class="loading-spinner"></span>
                     </td>
                 </tr>
                 <tr v-else-if="error">
-                    <td :colspan="columns.length" class="table-state">
+                    <td :colspan="colspan" class="table-state">
                         <p class="table-state-text">{{ error }}</p>
                         <button class="btn btn-secondary btn-sm" @click="$emit('retry')">
                             <RefreshCw :size="14" />
@@ -157,7 +174,7 @@ const sortedRows = computed(() => {
                     </td>
                 </tr>
                 <tr v-else-if="rows.length === 0">
-                    <td :colspan="columns.length" class="table-state">
+                    <td :colspan="colspan" class="table-state">
                         <slot name="empty">
                             <p class="table-state-text">{{ emptyText ?? $t('messages.noData') }}</p>
                         </slot>
@@ -165,15 +182,28 @@ const sortedRows = computed(() => {
                 </tr>
                 <!-- v-for 与 v-else 不能写在同一个元素上，这里用 template 包一层 -->
                 <template v-else>
-                    <tr v-for="row in sortedRows" :key="keyOf(row)">
-                        <td
-                            v-for="column in columns"
-                            :key="column.key"
-                            :class="column.align ? `text-${column.align}` : ''"
+                    <template v-for="row in sortedRows" :key="keyOf(row)">
+                        <tr
+                            :class="{ expandable: expandable, expanded: expandable && isExpanded(row) }"
+                            @click="expandable && toggleExpand(row)"
                         >
-                            <slot :name="`cell-${column.key}`" :row="row">{{ row[column.key] ?? '-' }}</slot>
-                        </td>
-                    </tr>
+                            <td v-if="expandable" class="expand-col">
+                                <component :is="isExpanded(row) ? ChevronDown : ChevronRight" :size="14" />
+                            </td>
+                            <td
+                                v-for="column in columns"
+                                :key="column.key"
+                                :class="column.align ? `text-${column.align}` : ''"
+                            >
+                                <slot :name="`cell-${column.key}`" :row="row">{{ row[column.key] ?? '-' }}</slot>
+                            </td>
+                        </tr>
+                        <tr v-if="expandable && isExpanded(row)" class="expanded-row">
+                            <td :colspan="colspan">
+                                <slot name="expanded" :row="row" />
+                            </td>
+                        </tr>
+                    </template>
                 </template>
             </tbody>
         </table>
@@ -226,6 +256,27 @@ th.sortable:hover {
 .sort-arrow {
     font-size: 10px;
     margin-left: var(--spacing-1);
+}
+
+/* 行展开：箭头列窄一点，展开行的内容自己铺满 */
+.expand-col {
+    width: 36px;
+    text-align: center;
+    color: var(--text-tertiary);
+}
+
+tr.expandable {
+    cursor: pointer;
+}
+
+tr.expanded,
+tr.expandable:hover {
+    background: var(--bg-secondary);
+}
+
+.expanded-row > td {
+    padding: 0;
+    background: var(--bg-secondary);
 }
 
 .table-state {

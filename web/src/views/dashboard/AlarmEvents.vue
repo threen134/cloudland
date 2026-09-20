@@ -1,11 +1,13 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { AlertTriangle, ChevronDown, ChevronRight, CheckCircle, XCircle, RefreshCw, Check, Copy } from 'lucide-vue-next'
+import { AlertTriangle, CheckCircle, XCircle, RefreshCw, Check, Copy } from 'lucide-vue-next'
 import { alarmEventsApi, type AlarmEvent, type AlarmDeliveryLog } from '../../api/alarmEvents'
 import { useCopyId } from '../../composables/useCopyId'
 import { formatDateTime } from '../../utils/format'
 import PageToolbar from '../../components/base/PageToolbar.vue'
+import DataTable, { type Column } from '../../components/base/DataTable.vue'
+import PaginationBar from '../../components/base/PaginationBar.vue'
 import StatusBadge from '../../components/base/StatusBadge.vue'
 
 const { t } = useI18n()
@@ -19,7 +21,6 @@ const page = ref(1)
 const pageSize = ref(20)
 const statusFilter = ref('')
 const searchQuery = ref('')
-const expandedEvent = ref<string | null>(null)
 const deliveryLogs = ref<Record<string, AlarmDeliveryLog[]>>({})
 const loadingLogs = ref<string | null>(null)
 
@@ -43,31 +44,30 @@ const fetchEvents = async () => {
     }
 }
 
-const toggleExpand = async (eventUuid: string) => {
-    if (expandedEvent.value === eventUuid) {
-        expandedEvent.value = null
-        return
-    }
-    expandedEvent.value = eventUuid
-    if (!deliveryLogs.value[eventUuid]) {
-        loadingLogs.value = eventUuid
-        try {
-            const res = await alarmEventsApi.getDeliveryLogs(eventUuid)
-            deliveryLogs.value[eventUuid] = res.delivery_logs || []
-        } catch (err) {
-            console.error('Failed to fetch delivery logs:', err)
-            deliveryLogs.value[eventUuid] = []
-        } finally {
-            loadingLogs.value = null
-        }
+// 展开某一条时才拉它的发送流水（展开态由 DataTable 维护）
+const loadDeliveryLogs = async (eventUuid: string) => {
+    if (deliveryLogs.value[eventUuid]) return
+    loadingLogs.value = eventUuid
+    try {
+        const res = await alarmEventsApi.getDeliveryLogs(eventUuid)
+        deliveryLogs.value[eventUuid] = res.delivery_logs || []
+    } catch (err) {
+        console.error('Failed to fetch delivery logs:', err)
+        deliveryLogs.value[eventUuid] = []
+    } finally {
+        loadingLogs.value = null
     }
 }
 
-const totalPages = computed(() => Math.ceil(total.value / pageSize.value))
-
-const prevPage = () => { if (page.value > 1) page.value-- }
-const nextPage = () => { if (page.value < totalPages.value) page.value++ }
-
+const columns = computed<Column[]>(() => [
+    { key: 'alert_name', label: t('dashboard.alarmAlertName') },
+    { key: 'vm', label: 'VM' },
+    { key: 'severity', label: t('dashboard.alarmSeverity') },
+    { key: 'status', label: t('dashboard.table.status') },
+    { key: 'fired_at', label: t('dashboard.alarmFiredAt') },
+    { key: 'last_fired_at', label: t('dashboard.alarmLastFired') },
+    { key: 'resolved_at', label: t('dashboard.alarmResolvedAt') },
+])
 
 const severityClass = (severity: string) => {
     switch (severity) {
@@ -77,7 +77,8 @@ const severityClass = (severity: string) => {
     }
 }
 
-watch([page, statusFilter], fetchEvents)
+watch([page, statusFilter], () => fetchEvents())
+watch(pageSize, () => { if (page.value === 1) fetchEvents(); else page.value = 1 })
 
 // 搜索走服务端（此前是在当前页的 20 条里前端过滤，翻页后就搜不到别的页了）。
 // 输入防抖 400ms，并回到第一页——换了搜索条件后停留在第 3 页没有意义
@@ -113,123 +114,108 @@ onMounted(fetchEvents)
             </template>
         </PageToolbar>
 
-        <div v-if="errorMsg" class="error-banner" @click="errorMsg = ''">{{ errorMsg }}</div>
+        <DataTable
+            :columns="columns"
+            :rows="events"
+            row-key="uuid"
+            :loading="loading"
+            :error="errorMsg"
+            expandable
+            @expand="loadDeliveryLogs"
+            @retry="() => fetchEvents()"
+        >
+            <template #empty>
+                <AlertTriangle :size="48" style="opacity: 0.2; margin-bottom: 16px;" />
+                <p>{{ searchQuery || statusFilter ? t('messages.noResults') : t('messages.noData') }}</p>
+            </template>
 
-        <div class="card table-card">
-            <table class="data-table">
-                <thead>
-                    <tr>
-                        <th style="width: 30px"></th>
-                        <th>{{ t('dashboard.alarmAlertName') }}</th>
-                        <th>VM</th>
-                        <th>{{ t('dashboard.alarmSeverity') }}</th>
-                        <th>{{ t('dashboard.table.status') }}</th>
-                        <th>{{ t('dashboard.alarmFiredAt') }}</th>
-                        <th>{{ t('dashboard.alarmLastFired') }}</th>
-                        <th>{{ t('dashboard.alarmResolvedAt') }}</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    <tr v-if="loading">
-                        <td colspan="8" class="text-center">
-                            <div class="loading-spinner" style="margin: 20px auto;"></div>
-                        </td>
-                    </tr>
-                    <template v-else-if="events.length > 0" v-for="event in events" :key="event.uuid">
-                        <tr class="event-row" @click="toggleExpand(event.uuid)">
-                            <td>
-                                <component :is="expandedEvent === event.uuid ? ChevronDown : ChevronRight" :size="14" />
-                            </td>
-                            <td>
-                                <span class="alert-name-cell" :data-tooltip="event.alert_name">{{ event.alert_name }}</span>
-                            </td>
-                             <td>
-                                <div v-if="event.vm_name" class="resource-name">{{ event.vm_name }}</div>
-                                <div class="resource-id-row">
-                                    <span class="resource-id" :title="event.vm_uuid">{{ event.vm_uuid.slice(0, 8) + '...' }}</span>
-                                    <button class="copy-btn-mini" @click.stop.prevent="copyId(event.vm_uuid)" :title="t('actions.copy')" :aria-label="t('actions.copy')">
-                                        <Check v-if="copiedId === event.vm_uuid" :size="10" style="color: #10b981;" />
-                                        <Copy v-else :size="10" />
-                                    </button>
-                                </div>
-                            </td>
-                            <td>
-                                <span class="badge" :class="severityClass(event.severity)">
-                                    {{ t('dashboard.vmAlarmRules.levels.' + event.severity) }}
-                                </span>
-                            </td>
-                            <td>
-                                <StatusBadge
-                                    :status="event.status"
-                                    :label="event.status === 'firing' ? t('dashboard.alarmStatusFiring') : t('dashboard.alarmStatusResolved')"
-                                />
-                            </td>
-                            <td>{{ formatDateTime(event.fired_at) }}</td>
-                            <td>{{ formatDateTime(event.last_fired_at) }}</td>
-                            <td>{{ formatDateTime(event.resolved_at) }}</td>
-                        </tr>
-                        <!-- Expanded: Delivery Logs -->
-                        <tr v-if="expandedEvent === event.uuid" class="expanded-row">
-                            <td colspan="8">
-                                <div class="delivery-logs">
-                                    <h4>{{ t('dashboard.alarmDeliveryLogs') }}</h4>
-                                    <div v-if="loadingLogs === event.uuid" class="loading-spinner" style="margin: 12px auto;"></div>
-                                    <table v-else-if="deliveryLogs[event.uuid]?.length" class="data-table nested-table">
-                                        <thead>
-                                            <tr>
-                                                <th>{{ t('dashboard.alarmChannelName') }}</th>
-                                                <th>{{ t('dashboard.notificationChannelType') }}</th>
-                                                <th>{{ t('dashboard.alarmNotifyType') }}</th>
-                                                <th>{{ t('dashboard.table.status') }}</th>
-                                                <th>{{ t('dashboard.alarmSentAt') }}</th>
-                                                <th>{{ t('dashboard.alarmError') }}</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody>
-                                            <tr v-for="log in deliveryLogs[event.uuid]" :key="log.uuid">
-                                                <td>{{ log.channel_name }}</td>
-                                                <td>{{ log.channel_type }}</td>
-                                                <td>
-                                                    <span class="badge" :class="{
-                                                        'badge-notify-trigger': log.notify_type === 'firing_trigger',
-                                                        'badge-notify-remind': log.notify_type === 'repeat_remind',
-                                                        'badge-resolved': log.notify_type === 'resolved',
-                                                        'badge-secondary': !['firing_trigger','repeat_remind','resolved'].includes(log.notify_type)
-                                                    }">{{ t('dashboard.alarmNotifyTypes.' + log.notify_type) }}</span>
-                                                </td>
-                                                <td>
-                                                    <CheckCircle v-if="log.status === 'sent'" :size="16" class="text-success" />
-                                                    <XCircle v-else :size="16" class="text-danger" />
-                                                    <span style="vertical-align: middle; margin-left: 4px;">{{ log.status === 'sent' ? t('messages.success') : t('messages.error') }}</span>
-                                                </td>
-                                                <td>{{ formatDateTime(log.sent_at) }}</td>
-                                                <td class="error-cell">{{ log.error_message || '-' }}</td>
-                                            </tr>
-                                        </tbody>
-                                    </table>
-                                    <p v-else class="text-muted">{{ t('dashboard.alarmNoDeliveryLogs') }}</p>
-                                </div>
-                            </td>
-                        </tr>
-                    </template>
-                    <tr v-else>
-                        <td colspan="8" class="text-center text-secondary" style="padding: 48px;">
-                            <div class="empty-state">
-                                <AlertTriangle :size="48" style="opacity: 0.2; margin-bottom: 16px;" />
-                                <p>{{ t('messages.noData') }}</p>
-                            </div>
-                        </td>
-                    </tr>
-                </tbody>
-            </table>
-        </div>
+            <template #cell-alert_name="{ row: event }">
+                <span class="alert-name-cell" :data-tooltip="event.alert_name">{{ event.alert_name }}</span>
+            </template>
 
-        <!-- Pagination -->
-        <div v-if="totalPages > 1" class="pagination">
-            <button class="btn btn-ghost btn-sm" :disabled="page <= 1" @click="prevPage">{{ t('dashboard.pagination.prev') }}</button>
-            <span class="page-info">{{ page }} / {{ totalPages }} ({{ total }} {{ t('dashboard.overview.total') }})</span>
-            <button class="btn btn-ghost btn-sm" :disabled="page >= totalPages" @click="nextPage">{{ t('dashboard.pagination.next') }}</button>
-        </div>
+            <template #cell-vm="{ row: event }">
+                <template v-if="event.vm_uuid">
+                    <div v-if="event.vm_name" class="resource-name">{{ event.vm_name }}</div>
+                    <div class="resource-id-row">
+                        <span class="resource-id" :title="event.vm_uuid">{{ event.vm_uuid.slice(0, 8) + '...' }}</span>
+                        <button class="copy-btn-mini" @click.stop.prevent="copyId(event.vm_uuid)" :title="t('actions.copy')" :aria-label="t('actions.copy')">
+                            <Check v-if="copiedId === event.vm_uuid" :size="10" style="color: #10b981;" />
+                            <Copy v-else :size="10" />
+                        </button>
+                    </div>
+                </template>
+                <!-- 节点级告警没有虚拟机 -->
+                <span v-else class="text-muted">-</span>
+            </template>
+
+            <template #cell-severity="{ row: event }">
+                <span class="badge" :class="severityClass(event.severity)">
+                    {{ t('dashboard.vmAlarmRules.levels.' + event.severity) }}
+                </span>
+            </template>
+
+            <template #cell-status="{ row: event }">
+                <StatusBadge
+                    :status="event.status"
+                    :label="event.status === 'firing' ? t('dashboard.alarmStatusFiring') : t('dashboard.alarmStatusResolved')"
+                />
+            </template>
+
+            <template #cell-fired_at="{ row: event }">{{ formatDateTime(event.fired_at) }}</template>
+            <template #cell-last_fired_at="{ row: event }">{{ formatDateTime(event.last_fired_at) }}</template>
+            <template #cell-resolved_at="{ row: event }">{{ formatDateTime(event.resolved_at) }}</template>
+
+            <template #expanded="{ row: event }">
+                <div class="delivery-logs">
+                    <h4>{{ t('dashboard.alarmDeliveryLogs') }}</h4>
+                    <div v-if="loadingLogs === event.uuid" class="loading-spinner" style="margin: 12px auto;"></div>
+                    <table v-else-if="deliveryLogs[event.uuid]?.length" class="data-table nested-table">
+                        <thead>
+                            <tr>
+                                <th>{{ t('dashboard.alarmChannelName') }}</th>
+                                <th>{{ t('dashboard.notificationChannelType') }}</th>
+                                <th>{{ t('dashboard.alarmNotifyType') }}</th>
+                                <th>{{ t('dashboard.table.status') }}</th>
+                                <th>{{ t('dashboard.alarmSentAt') }}</th>
+                                <th>{{ t('dashboard.alarmError') }}</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr v-for="log in deliveryLogs[event.uuid]" :key="log.uuid">
+                                <td>{{ log.channel_name }}</td>
+                                <td>{{ log.channel_type }}</td>
+                                <td>
+                                    <span class="badge" :class="{
+                                        'badge-notify-trigger': log.notify_type === 'firing_trigger',
+                                        'badge-notify-remind': log.notify_type === 'repeat_remind',
+                                        'badge-resolved': log.notify_type === 'resolved',
+                                        'badge-secondary': !['firing_trigger','repeat_remind','resolved'].includes(log.notify_type)
+                                    }">{{ t('dashboard.alarmNotifyTypes.' + log.notify_type) }}</span>
+                                </td>
+                                <td>
+                                    <CheckCircle v-if="log.status === 'sent'" :size="16" class="text-success" />
+                                    <XCircle v-else :size="16" class="text-danger" />
+                                    <span style="vertical-align: middle; margin-left: 4px;">{{ log.status === 'sent' ? t('messages.success') : t('messages.error') }}</span>
+                                </td>
+                                <td>{{ formatDateTime(log.sent_at) }}</td>
+                                <td class="error-cell">{{ log.error_message || '-' }}</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                    <p v-else class="text-muted">{{ t('dashboard.alarmNoDeliveryLogs') }}</p>
+                </div>
+            </template>
+
+            <template #footer>
+                <PaginationBar
+                    :page="page"
+                    :page-size="pageSize"
+                    :total="total"
+                    @update:page="page = $event"
+                    @update:page-size="pageSize = $event"
+                />
+            </template>
+        </DataTable>
     </div>
 </template>
 
@@ -245,18 +231,11 @@ onMounted(fetchEvents)
     min-width: 120px;
 }
 
-.table-card { padding: 0; overflow: hidden; }
-
-.event-row { cursor: pointer; }
-.event-row:hover { background: var(--bg-hover, #f3f4f6); }
-.expanded-row td { padding: 0; }
 .delivery-logs { padding: 12px 16px; background: var(--bg-secondary, #f9fafb); }
 .delivery-logs h4 { margin: 0 0 8px 0; font-size: 13px; }
 .nested-table { margin: 0; font-size: 13px; width: 100%; }
 .nested-table th, .nested-table td { text-align: center; }
 
-.pagination { display: flex; align-items: center; justify-content: center; gap: 12px; padding: 16px 0; }
-.page-info { font-size: 13px; color: #6b7280; }
 
 .badge-resolved { background: #22c55e; color: white; }
 .badge-critical { background: #dc2626; color: white; }
@@ -300,13 +279,6 @@ onMounted(fetchEvents)
 .alert-name-cell:hover::after {
     opacity: 1;
 }
-.error-banner {
-    background: #fef2f2; color: #dc2626; border: 1px solid #fecaca;
-    border-radius: 6px; padding: 10px 14px; margin-bottom: 12px;
-    font-size: 13px; cursor: pointer;
-}
-
-.empty-state { display: flex; flex-direction: column; align-items: center; justify-content: center; }
 
 .spinning { animation: spin 1s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
