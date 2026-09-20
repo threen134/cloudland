@@ -22,7 +22,7 @@ const iconMap = {
             <span class="toast-message">{{ toast.message }}</span>
             <span v-if="toast.traceId" class="toast-trace">Trace ID: {{ toast.traceId }}</span>
           </div>
-          <button class="toast-close" @click="removeToast(toast.id)" aria-label="Close">
+          <button class="toast-close" @click="removeToast(toast.id)" :aria-label="$t('actions.close')">
             <X :size="14" />
           </button>
         </div>

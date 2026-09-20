@@ -671,7 +671,7 @@ onBeforeUnmount(() => {
           </div>
           <div class="key-value-list">
             <div class="kv-item">
-              <span class="label">Region</span>
+              <span class="label">{{ t('dashboard.table.region') }}</span>
               <span class="value">{{ infraConfig.region_name }}</span>
             </div>
             <div class="kv-item">

@@ -166,7 +166,7 @@ watch(() => props.hostname, fetchData)
                 </div>
                 <div class="chart-body">
                     <Line v-if="cpuData" :data="cpuData" :options="CHART_OPTIONS" />
-                    <div v-else-if="loading" class="chart-loading">Loading...</div>
+                    <div v-else-if="loading" class="chart-loading">{{ t('messages.loading') }}</div>
                     <div v-else class="chart-empty">{{ t('dashboard.monitoring.noCpuData') }}</div>
                 </div>
             </div>
@@ -180,7 +180,7 @@ watch(() => props.hostname, fetchData)
                 </div>
                 <div class="chart-body">
                     <Line v-if="memData" :data="memData" :options="CHART_OPTIONS" />
-                    <div v-else-if="loading" class="chart-loading">Loading...</div>
+                    <div v-else-if="loading" class="chart-loading">{{ t('messages.loading') }}</div>
                     <div v-else class="chart-empty">{{ t('dashboard.monitoring.noMemoryData') }}</div>
                 </div>
             </div>

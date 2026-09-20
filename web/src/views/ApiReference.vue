@@ -35,7 +35,7 @@ const config = {
         <span>CloudLand</span>
       </router-link>
       <div class="pl-nav-actions">
-        <span class="pl-api-badge">API Reference</span>
+        <span class="pl-api-badge">{{ t('footer.apiReference') }}</span>
         <button class="pl-back-btn" @click="router.push('/dashboard')">
           ← {{ t('nav.dashboard') }}
         </button>

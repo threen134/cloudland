@@ -1276,7 +1276,7 @@ onUnmounted(() => {
                       <select id="flavor_id" name="flavor_id" v-model="newInstanceForm.flavor_id" class="form-select">
                           <option value="" disabled>{{ t('dashboard.forms.placeholder.selectFlavor') }}</option>
                           <option v-for="f in availableFlavors" :key="f.name || f.id" :value="f.name || f.id">
-                              {{ f.name }} ({{ f.vcpus || f.cpu || 0 }} vCPU, {{ formatMemory(f.ram || f.memory || 0) }} RAM, {{ f.disk || 0 }} GB Disk)
+                              {{ f.name }} ({{ f.vcpus || f.cpu || 0 }} vCPU, {{ formatMemory(f.ram || f.memory || 0) }} RAM, {{ f.disk || 0 }} GB {{ t('dashboard.table.disk') }})
                           </option>
                       </select>
                   </div>

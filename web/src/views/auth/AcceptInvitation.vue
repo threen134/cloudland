@@ -108,11 +108,11 @@ onMounted(() => {
 
           <div class="invite-details">
             <div class="invite-detail-row">
-              <span class="label">Organization</span>
+              <span class="label">{{ $t('acceptInvitation.organization') }}</span>
               <span class="value">{{ invitationInfo?.org_name }}</span>
             </div>
             <div class="invite-detail-row">
-              <span class="label">Role</span>
+              <span class="label">{{ $t('acceptInvitation.role') }}</span>
               <span class="value">
                 <span class="role-badge" :class="'role-' + invitationInfo?.org_role">
                   {{ ORG_ROLES[invitationInfo?.org_role || 1] }}
@@ -120,7 +120,7 @@ onMounted(() => {
               </span>
             </div>
             <div class="invite-detail-row">
-              <span class="label">Invited by</span>
+              <span class="label">{{ $t('acceptInvitation.invitedBy') }}</span>
               <span class="value">{{ invitationInfo?.inviter_email }}</span>
             </div>
           </div>
