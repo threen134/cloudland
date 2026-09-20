@@ -6693,6 +6693,43 @@ paths:
       summary: Delete node alarm rule
       tags:
       - Alarm
+    patch:
+      consumes:
+      - application/json
+      description: Update a node-level alarm rule in place (name, description, config,
+        enabled)
+      parameters:
+      - description: Rule UUID
+        in: path
+        name: uuid
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Rule updated successfully
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad request
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: Rule not found
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal server error
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Update node alarm rule
+      tags:
+      - Alarm
   /openmeter/metrics:
     get:
       consumes:
