@@ -519,9 +519,9 @@ const handleDeploy = (app: AppItem) => {
 }
 
 .tag-soon {
-    background: #f8fafc;
-    color: #64748b;
-    border: 1px solid #e2e8f0;
+    background: var(--bg-secondary);
+    color: var(--gray-500);
+    border: 1px solid var(--border-default);
     font-size: 10px;
     font-weight: var(--font-weight-bold);
     letter-spacing: 0.06em;

@@ -205,7 +205,7 @@ onMounted(() => {
               <div class="resource-id-row">
                 <span class="resource-id" :title="flavor.uuid">{{ (flavor.uuid || '').slice(0, 8) }}...</span>
                 <button class="copy-btn-mini" @click.stop.prevent="flavor.uuid && copyId(flavor.uuid)" :title="t('actions.copy')" :aria-label="t('actions.copy')">
-                  <Check v-if="copiedId === flavor.uuid" :size="10" style="color: #10b981;" />
+                  <Check v-if="copiedId === flavor.uuid" :size="10" style="color: var(--success-color);" />
                   <Copy v-else :size="10" />
                 </button>
               </div>

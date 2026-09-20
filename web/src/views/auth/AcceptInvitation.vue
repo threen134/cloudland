@@ -327,8 +327,8 @@ h2 {
   font-weight: var(--font-weight-semibold);
 }
 .role-1 { background: #dbeafe; color: #1d4ed8; }
-.role-2 { background: #d1fae5; color: #065f46; }
-.role-3 { background: #fef3c7; color: #92400e; }
+.role-2 { background: var(--success-light); color: #065f46; }
+.role-3 { background: var(--warning-light); color: #92400e; }
 
 .new-user-form {
   text-align: left;

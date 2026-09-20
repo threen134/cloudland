@@ -18,8 +18,8 @@ const config = {
   },
   customCss: [
     ':root { --scalar-font: "Inter", -apple-system, BlinkMacSystemFont, sans-serif; --scalar-color-1: #1a2332; --scalar-color-2: #475569; --scalar-color-3: #64748b; --scalar-color-accent: #0ea5e9; --scalar-background-1: #ffffff; --scalar-background-2: #f8fafc; --scalar-background-3: #f0f9ff; --scalar-border-color: #e2e8f0; --scalar-radius: 12px; }',
-    '.sidebar { background: linear-gradient(180deg, #e8f4fd 0%, #ffffff 45%) !important; border-right: 1px solid #e2e8f0 !important; }',
-    'a { color: #0ea5e9; }',
+    '.sidebar { background: linear-gradient(180deg, #e8f4fd 0%, var(--bg-primary) 45%) !important; border-right: 1px solid var(--border-default) !important; }',
+    'a { color: var(--primary-color); }',
   ].join(' '),
 }
 </script>
@@ -86,7 +86,7 @@ const config = {
 }
 
 .pl-logo-wrapper {
-  background: #0ea5e9;
+  background: var(--primary-color);
   color: white;
   width: 32px;
   height: 32px;
@@ -120,10 +120,10 @@ const config = {
   align-items: center;
   gap: 6px;
   padding: 8px 16px;
-  border: 1px solid #e2e8f0;
+  border: 1px solid var(--border-default);
   border-radius: 10px;
   background: rgba(255, 255, 255, 0.7);
-  color: #475569;
+  color: var(--text-secondary);
   font-size: 0.8125rem;
   font-weight: 600;
   cursor: pointer;
@@ -131,9 +131,9 @@ const config = {
 }
 
 .pl-back-btn:hover {
-  background: #fff;
-  border-color: #cbd5e1;
-  color: #0ea5e9;
+  background: var(--bg-primary);
+  border-color: var(--border-dark);
+  color: var(--primary-color);
 }
 
 .pl-scalar-wrap {

@@ -300,7 +300,7 @@ onMounted(fetchRegions)
                             {{ region.name }} / {{ region.uuid.slice(0, 8) }}...
                           </span>
                           <button class="copy-btn-mini" @click.stop.prevent="copyId(region.uuid)" :title="t('actions.copy')" :aria-label="t('actions.copy')">
-                            <Check v-if="copiedId === region.uuid" :size="10" style="color: #10b981;" />
+                            <Check v-if="copiedId === region.uuid" :size="10" style="color: var(--success-color);" />
                             <Copy v-else :size="10" />
                           </button>
                         </div>
@@ -542,7 +542,7 @@ onMounted(fetchRegions)
     font-weight: 600;
 }
 
-.status-available { background: rgba(16, 185, 129, 0.1); color: #10b981; }
+.status-available { background: rgba(16, 185, 129, 0.1); color: var(--success-color); }
 .status-offline { background: rgba(239, 68, 68, 0.1); color: #ef4444; }
 .status-maintenance { background: rgba(245, 158, 11, 0.1); color: #d97706; }
 
@@ -602,7 +602,7 @@ onMounted(fetchRegions)
 
 .secret-warning {
     display: flex; align-items: center; gap: 8px;
-    padding: 12px 16px; background: #fef3c7; border: 1px solid #fde68a;
+    padding: 12px 16px; background: var(--warning-light); border: 1px solid #fde68a;
     border-radius: var(--radius-md); color: #92400e; font-size: 0.875rem; font-weight: 500;
 }
 

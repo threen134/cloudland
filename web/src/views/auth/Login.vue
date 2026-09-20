@@ -202,7 +202,7 @@ const handleSubmit = async () => {
   min-height: 100vh;
   display: flex;
   flex-direction: column;
-  background: linear-gradient(180deg, #e0f2fe 0%, #f0f9ff 40%, #f8fafc 100%);
+  background: linear-gradient(180deg, var(--primary-light) 0%, #f0f9ff 40%, var(--bg-secondary) 100%);
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   color: #1a2332;
 }
@@ -229,7 +229,7 @@ const handleSubmit = async () => {
 }
 
 .pl-logo-wrapper {
-  background: #0ea5e9;
+  background: var(--primary-color);
   color: white;
   width: 32px;
   height: 32px;
@@ -249,10 +249,10 @@ const handleSubmit = async () => {
   align-items: center;
   gap: 6px;
   padding: 8px 14px;
-  border: 1px solid #e2e8f0;
+  border: 1px solid var(--border-default);
   border-radius: 10px;
   background: rgba(255, 255, 255, 0.7);
-  color: #475569;
+  color: var(--text-secondary);
   cursor: pointer;
   font-size: 0.8125rem;
   font-weight: 600;
@@ -260,9 +260,9 @@ const handleSubmit = async () => {
 }
 
 .pl-lang-btn:hover {
-  background: #fff;
-  border-color: #cbd5e1;
-  color: #0ea5e9;
+  background: var(--bg-primary);
+  border-color: var(--border-dark);
+  color: var(--primary-color);
 }
 
 /* ── Main Layout ── */
@@ -275,14 +275,14 @@ const handleSubmit = async () => {
 .pl-card {
   display: flex;
   width: 100%;
-  background: #fff;
+  background: var(--bg-primary);
 }
 
 /* ── Left Panel ── */
 .pl-card-left {
   flex: 1.4;
-  background: linear-gradient(135deg, #bae6fd 0%, #0ea5e9 100%);
-  color: #fff;
+  background: linear-gradient(135deg, #bae6fd 0%, var(--primary-color) 100%);
+  color: var(--text-inverse);
   padding: 60px 8%;
   display: flex;
   flex-direction: column;
@@ -302,7 +302,7 @@ const handleSubmit = async () => {
   line-height: 1.2;
   margin-bottom: 20px;
   letter-spacing: -0.01em;
-  color: #fff;
+  color: var(--text-inverse);
   text-shadow: 0 2px 40px rgba(14, 165, 233, 0.3);
 }
 
@@ -330,7 +330,7 @@ const handleSubmit = async () => {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: #fff;
+  background: var(--bg-primary);
 }
 
 .pl-card-right-content {
@@ -349,7 +349,7 @@ const handleSubmit = async () => {
 
 .pl-form-subtitle {
   font-size: 0.9375rem;
-  color: #64748b;
+  color: var(--gray-500);
   margin-bottom: 36px;
 }
 
@@ -392,7 +392,7 @@ const handleSubmit = async () => {
   display: block;
   font-size: 0.875rem;
   font-weight: 600;
-  color: #475569;
+  color: var(--text-secondary);
   margin-bottom: 8px;
 }
 
@@ -405,13 +405,13 @@ const handleSubmit = async () => {
   left: 16px;
   top: 50%;
   transform: translateY(-50%);
-  color: #94a3b8;
+  color: var(--text-tertiary);
 }
 
 .pl-input {
   width: 100%;
   padding: 14px 48px 14px 48px;
-  background: #f1f5f9;
+  background: var(--bg-tertiary);
   border: 2px solid transparent;
   border-radius: 14px;
   font-size: 0.9375rem;
@@ -421,8 +421,8 @@ const handleSubmit = async () => {
 
 .pl-input:focus {
   outline: none;
-  background: #fff;
-  border-color: #0ea5e9;
+  background: var(--bg-primary);
+  border-color: var(--primary-color);
   box-shadow: 0 0 0 4px rgba(14, 165, 233, 0.1);
 }
 
@@ -434,7 +434,7 @@ const handleSubmit = async () => {
   transform: translateY(-50%);
   background: none;
   border: none;
-  color: #94a3b8;
+  color: var(--text-tertiary);
   cursor: pointer;
   padding: 4px;
   display: flex;
@@ -445,7 +445,7 @@ const handleSubmit = async () => {
 }
 
 .pl-password-toggle:hover {
-  color: #64748b;
+  color: var(--gray-500);
   background: rgba(0, 0, 0, 0.04);
 }
 
@@ -471,14 +471,14 @@ const handleSubmit = async () => {
 .pl-checkbox-box {
   width: 20px;
   height: 20px;
-  background: #e2e8f0;
+  background: var(--gray-200);
   border-radius: 6px;
   position: relative;
   transition: all 0.2s;
 }
 
 .pl-checkbox input:checked + .pl-checkbox-box {
-  background: #0ea5e9;
+  background: var(--primary-color);
 }
 
 .pl-checkbox-box::after {
@@ -501,14 +501,14 @@ const handleSubmit = async () => {
 
 .pl-checkbox-label {
   font-size: 0.875rem;
-  color: #64748b;
+  color: var(--gray-500);
   font-weight: 500;
 }
 
 .pl-forgot-link {
   font-size: 0.875rem;
   font-weight: 700;
-  color: #0ea5e9;
+  color: var(--primary-color);
   text-decoration: none;
 }
 
@@ -516,8 +516,8 @@ const handleSubmit = async () => {
   width: 100%;
   height: 54px;
   padding: 0 24px;
-  background: linear-gradient(135deg, #0ea5e9 0%, #06b6d4 100%);
-  color: #fff;
+  background: linear-gradient(135deg, var(--primary-color) 0%, #06b6d4 100%);
+  color: var(--text-inverse);
   border: none;
   border-radius: 14px;
   font-size: 1rem;
@@ -554,24 +554,24 @@ const handleSubmit = async () => {
 .pl-divider {
   width: 100%;
   height: 1px;
-  background: #f1f5f9;
+  background: var(--bg-tertiary);
 }
 
 .pl-divider-text {
   position: absolute;
-  background: #fff;
+  background: var(--bg-primary);
   padding: 0 16px;
   font-size: 0.8125rem;
-  color: #94a3b8;
+  color: var(--text-tertiary);
   font-weight: 500;
 }
 
 .pl-btn-request {
   width: 100%;
   height: 50px;
-  background: #fff;
+  background: var(--bg-primary);
   color: #1a2332;
-  border: 1px solid #e2e8f0;
+  border: 1px solid var(--border-default);
   border-radius: 14px;
   font-size: 0.9375rem;
   font-weight: 700;
@@ -580,8 +580,8 @@ const handleSubmit = async () => {
 }
 
 .pl-btn-request:hover {
-  background: #f8fafc;
-  border-color: #cbd5e1;
+  background: var(--bg-secondary);
+  border-color: var(--border-dark);
 }
 
 .pl-spinner {
@@ -608,7 +608,7 @@ const handleSubmit = async () => {
 
 .pl-copyright {
   font-size: 0.8125rem;
-  color: #94a3b8;
+  color: var(--text-tertiary);
   margin: 0;
 }
 
@@ -619,7 +619,7 @@ const handleSubmit = async () => {
 
 .pl-footer-links a {
   font-size: 0.8125rem;
-  color: #64748b;
+  color: var(--gray-500);
   text-decoration: none;
   font-weight: 500;
   transition: color 0.2s;
@@ -670,7 +670,7 @@ const handleSubmit = async () => {
 
 @media (max-width: 640px) {
   .pl-page {
-    background: #fff;
+    background: var(--bg-primary);
   }
   .pl-nav {
     padding: 0 24px;

@@ -79,7 +79,7 @@ const handleConfirmPayment = async () => {
 <style scoped>
 .payment-page {
   min-height: 100vh;
-  background-color: #f1f5f9;
+  background-color: var(--bg-tertiary);
 }
 
 .payment-container {
@@ -101,7 +101,7 @@ const handleConfirmPayment = async () => {
 }
 
 .order-summary {
-  background-color: #f8fafc;
+  background-color: var(--bg-secondary);
   padding: 24px;
   border-radius: 12px;
   margin-bottom: 24px;
@@ -120,7 +120,7 @@ const handleConfirmPayment = async () => {
 
 .divider {
   border: none;
-  border-top: 1px solid #e2e8f0;
+  border-top: 1px solid var(--border-default);
   margin: 16px 0;
 }
 

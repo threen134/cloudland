@@ -190,7 +190,7 @@ onMounted(() => {
                   {{ (zone.id || '-').slice(0, 8) }}{{ (zone.id || '').length > 8 ? '...' : '' }}
                 </span>
                 <button v-if="zone.id" class="copy-btn-mini" @click.stop.prevent="copyId(zone.id)" :title="t('actions.copy')" :aria-label="t('actions.copy')">
-                  <Check v-if="copiedId === zone.id" :size="10" style="color: #10b981;" />
+                  <Check v-if="copiedId === zone.id" :size="10" style="color: var(--success-color);" />
                   <Copy v-else :size="10" />
                 </button>
               </div>

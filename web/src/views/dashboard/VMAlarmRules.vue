@@ -562,7 +562,7 @@ onMounted(fetchRules)
                 <div class="resource-id-row">
                     <span class="rule-id monospace" :title="rule.uuid">{{ rule.uuid.slice(0, 8) }}...</span>
                     <button class="copy-btn-mini" @click.stop.prevent="copyId(rule.uuid)" :title="t('actions.copy')" :aria-label="t('actions.copy')">
-                        <Check v-if="copiedId === rule.uuid" :size="10" style="color: #10b981;" />
+                        <Check v-if="copiedId === rule.uuid" :size="10" style="color: var(--success-color);" />
                         <Copy v-else :size="10" />
                     </button>
                 </div>

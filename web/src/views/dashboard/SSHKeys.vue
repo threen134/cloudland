@@ -193,7 +193,7 @@ onMounted(fetchKeys)
               <div class="resource-id-row">
                 <span class="resource-id" :title="key.id">{{ key.id.slice(0, 8) }}...</span>
                 <button class="copy-btn-mini" @click.stop.prevent="copyId(key.id)" :title="t('actions.copy')" :aria-label="t('actions.copy')">
-                  <Check v-if="copiedId === key.id" :size="10" style="color: #10b981;" />
+                  <Check v-if="copiedId === key.id" :size="10" style="color: var(--success-color);" />
                   <Copy v-else :size="10" />
                 </button>
               </div>

@@ -627,7 +627,7 @@ onUnmounted(() => {
     flex-direction: column;
     height: 100vh;
     width: 100vw;
-    background-color: #0f172a;
+    background-color: var(--bg-dark);
     color: #f1f5f9;
     overflow: hidden;
 }
@@ -677,7 +677,7 @@ onUnmounted(() => {
 
 .instance-id {
     font-size: 11px;
-    color: #94a3b8;
+    color: var(--text-tertiary);
     font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 }
 
@@ -685,7 +685,7 @@ onUnmounted(() => {
     display: flex;
     align-items: center;
     gap: 8px;
-    background-color: #0f172a;
+    background-color: var(--bg-dark);
     padding: 4px 12px;
     border-radius: 100px;
     font-size: 12px;
@@ -799,7 +799,7 @@ onUnmounted(() => {
 }
 
 .error-content p {
-    color: #94a3b8;
+    color: var(--text-tertiary);
     font-size: 14px;
 }
 
@@ -825,7 +825,7 @@ onUnmounted(() => {
     align-items: center;
     padding: 0 20px;
     font-size: 12px;
-    color: #64748b;
+    color: var(--gray-500);
 }
 
 .footer-hint {
@@ -897,7 +897,7 @@ onUnmounted(() => {
 .btn-console.active {
     background-color: #2563eb;
     border-color: #3b82f6;
-    color: #fff;
+    color: var(--text-inverse);
 }
 
 .fn-dropdown {
@@ -976,7 +976,7 @@ onUnmounted(() => {
     align-items: center;
     gap: 6px;
     font-size: 12px;
-    color: #94a3b8;
+    color: var(--text-tertiary);
 }
 
 .vk-header-actions {
@@ -1053,13 +1053,13 @@ onUnmounted(() => {
 }
 
 .vk-key.vk-key-mod {
-    color: #cbd5e1;
+    color: var(--text-light);
 }
 
 .vk-key.active {
     background-color: #2563eb;
     border-color: #3b82f6;
-    color: #fff;
+    color: var(--text-inverse);
 }
 
 .vk-rows.disabled {
@@ -1151,13 +1151,13 @@ onUnmounted(() => {
 .btn-icon {
     background: none;
     border: none;
-    color: #94a3b8;
+    color: var(--text-tertiary);
     cursor: pointer;
     display: flex;
 }
 
 .paste-hint {
-    color: #94a3b8;
+    color: var(--text-tertiary);
     font-size: 13px;
     margin: 8px 0 12px;
     line-height: 1.5;
@@ -1168,7 +1168,7 @@ onUnmounted(() => {
     min-height: 160px;
     box-sizing: border-box;
     resize: vertical;
-    background-color: #0f172a;
+    background-color: var(--bg-dark);
     color: #f1f5f9;
     border: 1px solid #334155;
     border-radius: 6px;
@@ -1179,7 +1179,7 @@ onUnmounted(() => {
 
 .paste-status {
     font-size: 12px;
-    color: #94a3b8;
+    color: var(--text-tertiary);
     margin-top: 8px;
     min-height: 18px;
 }

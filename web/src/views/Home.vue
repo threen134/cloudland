@@ -304,7 +304,7 @@ const goToMarketplace = () => {
     --primary-800: #075985;
     --primary-900: #0c4a6e;
 
-    --primary-color: #0ea5e9;
+    --primary-color: var(--primary-color);
     --primary-hover: #38bdf8;
     --primary-active: #0284c7;
     --primary-light: #e0f2fe;
@@ -318,7 +318,7 @@ const goToMarketplace = () => {
 }
 
 .text-gradient-blue {
-    background: linear-gradient(135deg, #0ea5e9, #06b6d4);
+    background: linear-gradient(135deg, var(--primary-color), #06b6d4);
     -webkit-background-clip: text;
     background-clip: text;
     -webkit-text-fill-color: transparent;
@@ -345,7 +345,7 @@ const goToMarketplace = () => {
 .hero {
     padding: var(--spacing-20) 0 var(--spacing-24);
     text-align: center;
-    background: linear-gradient(160deg, #0f172a 0%, #0c4a6e 30%, #0ea5e9 70%, #06b6d4 100%);
+    background: linear-gradient(160deg, var(--bg-dark) 0%, #0c4a6e 30%, var(--primary-color) 70%, #06b6d4 100%);
     color: var(--text-inverse);
     position: relative;
     overflow: hidden;
@@ -427,7 +427,7 @@ const goToMarketplace = () => {
 .stat-value {
     font-size: var(--font-size-2xl);
     font-weight: var(--font-weight-bold);
-    color: #ffffff;
+    color: var(--text-inverse);
 }
 
 .stat-label {
@@ -438,26 +438,26 @@ const goToMarketplace = () => {
 
 .btn-white {
     background: rgba(255, 255, 255, 0.95);
-    color: #0ea5e9;
+    color: var(--primary-color);
     border: none;
     border-radius: var(--radius-lg);
     font-weight: var(--font-weight-semibold);
 }
 
 .btn-white:hover {
-    background: #ffffff;
+    background: var(--bg-primary);
     box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
 }
 
 .badge-popular {
-    background: linear-gradient(135deg, #0ea5e9, #06b6d4);
+    background: linear-gradient(135deg, var(--primary-color), #06b6d4);
     color: white;
     border-radius: var(--radius-full);
 }
 
 /* Pricing */
 .pricing-section {
-    background: linear-gradient(180deg, #f0f9ff 0%, #ffffff 100%);
+    background: linear-gradient(180deg, #f0f9ff 0%, var(--bg-primary) 100%);
 }
 
 .pricing-grid {
@@ -493,7 +493,7 @@ const goToMarketplace = () => {
 
 /* Features */
 .section-bg {
-    background: linear-gradient(180deg, #ffffff 0%, #f0f9ff 50%, #ffffff 100%) !important;
+    background: linear-gradient(180deg, var(--bg-primary) 0%, #f0f9ff 50%, var(--bg-primary) 100%) !important;
 }
 
 .features-grid {
@@ -521,7 +521,7 @@ const goToMarketplace = () => {
 
 .feature-card .icon-box {
     background: linear-gradient(135deg, rgba(14, 165, 233, 0.1), rgba(6, 182, 212, 0.1));
-    color: #0ea5e9;
+    color: var(--primary-color);
     border-radius: var(--radius-lg);
 }
 
@@ -551,7 +551,7 @@ const goToMarketplace = () => {
 
 /* CTA */
 .cta-section {
-    background: linear-gradient(160deg, #0c4a6e 0%, #0ea5e9 50%, #06b6d4 100%);
+    background: linear-gradient(160deg, #0c4a6e 0%, var(--primary-color) 50%, #06b6d4 100%);
     padding: var(--spacing-16) 0;
     position: relative;
     overflow: hidden;
@@ -588,7 +588,7 @@ const goToMarketplace = () => {
 
 /* Footer */
 .footer {
-    background: linear-gradient(180deg, #0f172a 0%, #1e293b 100%);
+    background: linear-gradient(180deg, var(--bg-dark) 0%, #1e293b 100%);
     color: var(--text-inverse);
     padding: var(--spacing-16) 0 var(--spacing-8);
 }

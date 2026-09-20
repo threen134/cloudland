@@ -471,7 +471,7 @@ onUnmounted(() => {
               <div class="resource-id-row">
                 <span class="resource-id" :title="h.uuid">{{ h.uuid.slice(0, 8) }}...</span>
                 <button class="copy-btn-mini" @click.stop.prevent="copyId(h.uuid)" :title="t('actions.copy')" :aria-label="t('actions.copy')">
-                  <Check v-if="copiedId === h.uuid" :size="10" style="color: #10b981;" />
+                  <Check v-if="copiedId === h.uuid" :size="10" style="color: var(--success-color);" />
                   <Copy v-else :size="10" />
                 </button>
               </div>
@@ -654,7 +654,7 @@ onUnmounted(() => {
           <div class="deploy-cmd-box">
             <pre>{{ deployResult.deploy_command }}</pre>
             <button type="button" class="copy-cmd-btn" @click="copyDeployCommand">
-              <Check v-if="copiedCmd" :size="14" style="color: #10b981;" />
+              <Check v-if="copiedCmd" :size="14" style="color: var(--success-color);" />
               <Copy v-else :size="14" />
             </button>
           </div>
@@ -870,7 +870,7 @@ onUnmounted(() => {
     max-height: 260px;
     overflow-y: auto;
     padding: 6px 0;
-    background: var(--bg-card, #fff);
+    background: var(--bg-card, var(--bg-primary));
     border: 1px solid var(--border-color, #e5e7eb);
     border-radius: 6px;
     box-shadow: 0 6px 16px rgba(0, 0, 0, 0.12);

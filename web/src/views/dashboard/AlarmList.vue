@@ -354,7 +354,7 @@ watch(() => region.currentRegionId, (newId) => {
               <div class="resource-id-row">
                 <span class="resource-id" :title="a.uuid">{{ a.uuid.slice(0, 8) }}...</span>
                 <button class="copy-btn-mini" @click.stop.prevent="copyId(a.uuid)" :title="t('actions.copy')" :aria-label="t('actions.copy')">
-                  <Check v-if="copiedId === a.uuid" :size="10" style="color: #10b981;" />
+                  <Check v-if="copiedId === a.uuid" :size="10" style="color: var(--success-color);" />
                   <Copy v-else :size="10" />
                 </button>
               </div>
@@ -524,7 +524,7 @@ watch(() => region.currentRegionId, (newId) => {
 }
 
 .rt-critical { background: rgba(239, 68, 68, 0.1); color: #ef4444; border-color: rgba(239, 68, 68, 0.2); }
-.rt-warning { background: rgba(245, 158, 11, 0.1); color: #f59e0b; border-color: rgba(245, 158, 11, 0.2); }
+.rt-warning { background: rgba(245, 158, 11, 0.1); color: var(--warning-color); border-color: rgba(245, 158, 11, 0.2); }
 .rt-info { background: rgba(59, 130, 246, 0.1); color: #3b82f6; border-color: rgba(59, 130, 246, 0.2); }
 .rt-default { background: var(--gray-100); color: var(--gray-600); }
 

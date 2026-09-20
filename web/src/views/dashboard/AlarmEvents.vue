@@ -139,7 +139,7 @@ onMounted(fetchEvents)
                     <div class="resource-id-row">
                         <span class="resource-id" :title="event.vm_uuid">{{ event.vm_uuid.slice(0, 8) + '...' }}</span>
                         <button class="copy-btn-mini" @click.stop.prevent="copyId(event.vm_uuid)" :title="t('actions.copy')" :aria-label="t('actions.copy')">
-                            <Check v-if="copiedId === event.vm_uuid" :size="10" style="color: #10b981;" />
+                            <Check v-if="copiedId === event.vm_uuid" :size="10" style="color: var(--success-color);" />
                             <Copy v-else :size="10" />
                         </button>
                     </div>
@@ -266,7 +266,7 @@ onMounted(fetchEvents)
     top: 100%;
     margin-top: 4px;
     background: rgba(0, 0, 0, 0.75);
-    color: #fff;
+    color: var(--text-inverse);
     padding: 4px 8px;
     border-radius: 4px;
     font-size: 12px;

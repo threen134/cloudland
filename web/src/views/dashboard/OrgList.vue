@@ -291,7 +291,7 @@ onMounted(fetchOrgs)
               <div class="resource-id-row">
                 <span class="resource-id" :title="org.uuid">{{ org.uuid.slice(0, 8) }}...</span>
                 <button class="copy-btn-mini" @click.stop.prevent="copyId(org.uuid)" :title="t('actions.copy')" :aria-label="t('actions.copy')">
-                  <Check v-if="copiedId === org.uuid" :size="10" style="color: #10b981;" />
+                  <Check v-if="copiedId === org.uuid" :size="10" style="color: var(--success-color);" />
                   <Copy v-else :size="10" />
                 </button>
               </div>
@@ -335,7 +335,7 @@ onMounted(fetchOrgs)
           <div class="resource-id-row">
             <span class="resource-id" :title="org.owner_uuid">{{ org.owner_uuid.slice(0, 8) }}...</span>
             <button class="copy-btn-mini" @click.stop.prevent="copyId(org.owner_uuid)" :title="t('actions.copy')" :aria-label="t('actions.copy')">
-              <Check v-if="copiedId === org.owner_uuid" :size="10" style="color: #10b981;" />
+              <Check v-if="copiedId === org.owner_uuid" :size="10" style="color: var(--success-color);" />
               <Copy v-else :size="10" />
             </button>
           </div>

@@ -539,7 +539,7 @@ onUnmounted(() => {
   align-items: center;
   justify-content: space-between;
   padding: 0 18px;
-  background-color: #ffffff; /* White logo area for contrast */
+  background-color: var(--bg-primary); /* White logo area for contrast */
   border-bottom: 1px solid rgba(0, 0, 0, 0.05);
   box-shadow: 0 2px 5px rgba(0,0,0,0.02);
   z-index: 2;
@@ -561,7 +561,7 @@ onUnmounted(() => {
   font-weight: 800;
   font-size: 1.35rem;
   letter-spacing: -0.03em;
-  color: #1e293b;
+  color: var(--gray-800);
   white-space: nowrap;
   transition: opacity 0.2s;
 }
@@ -610,7 +610,7 @@ onUnmounted(() => {
   gap: 12px;
   padding: 10px 16px;
   min-height: 42px;
-  color: #475569; /* Slate 600 */
+  color: var(--text-secondary); /* Slate 600 */
   text-decoration: none;
   transition: all 0.2s ease;
   cursor: pointer;
@@ -634,19 +634,19 @@ onUnmounted(() => {
 }
 
 .nav-item:hover {
-  background-color: #e2e8f0; /* Slight gray/blue hover */
-  color: #1e293b;
+  background-color: var(--gray-200); /* Slight gray/blue hover */
+  color: var(--gray-800);
 }
 
 .nav-item.active {
   background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%); /* CoreUI Primary Blue Gradient */
-  color: #ffffff;
+  color: var(--text-inverse);
   font-weight: 600;
   box-shadow: 0 4px 12px rgba(59, 130, 246, 0.25);
 }
 
 .nav-item.active svg {
-  color: #ffffff; /* Ensure icon is white */
+  color: var(--text-inverse); /* Ensure icon is white */
 }
 
 /* Collapsible Sections */
@@ -664,7 +664,7 @@ onUnmounted(() => {
   margin-bottom: 8px;
   background: none;
   border: none;
-  color: #94a3b8; /* Lighter slate for headers */
+  color: var(--text-tertiary); /* Lighter slate for headers */
   font-size: 0.75rem;
   font-weight: 800;
   text-transform: uppercase;
@@ -678,7 +678,7 @@ onUnmounted(() => {
 }
 
 .section-header:hover {
-  color: #64748b;
+  color: var(--gray-500);
 }
 
 .firing-badge {
@@ -713,7 +713,7 @@ onUnmounted(() => {
 
 .nav-divider {
   height: 1px;
-  background-color: #e2e8f0;
+  background-color: var(--gray-200);
   margin: 16px 16px;
 }
 
@@ -721,11 +721,11 @@ onUnmounted(() => {
 .sidebar-footer {
   padding: 16px;
   border-top: 1px solid rgba(0, 0, 0, 0.05);
-  background-color: #f8fafc;
+  background-color: var(--bg-secondary);
 }
 
 .logout-btn {
-  color: #64748b;
+  color: var(--gray-500);
   width: 100%;
   justify-content: flex-start;
   transition: all 0.2s;

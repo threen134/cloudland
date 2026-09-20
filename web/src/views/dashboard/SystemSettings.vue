@@ -806,7 +806,7 @@ onBeforeUnmount(() => {
 
 .unsaved-text {
   font-size: var(--font-size-xs);
-  color: var(--warning-dark, #b45309);
+  color: var(--warning-dark, var(--warning-dark));
   white-space: nowrap;
 }
 
@@ -936,7 +936,7 @@ onBeforeUnmount(() => {
 }
 
 .setting-row.changed .form-input {
-  border-color: var(--warning-color, #f59e0b);
+  border-color: var(--warning-color, var(--warning-color));
 }
 
 .input-affix {
@@ -1071,7 +1071,7 @@ onBeforeUnmount(() => {
 
 .mode-badge.mode-legacy {
   background: var(--warning-light, #fff7ed);
-  color: var(--warning-dark, #b45309);
+  color: var(--warning-dark, var(--warning-dark));
 }
 
 .mode-desc {

@@ -388,7 +388,7 @@ onMounted(async () => {
 .avail-badge {
   font-family: var(--font-family);
   background: rgba(16, 185, 129, 0.1);
-  color: #10b981;
+  color: var(--success-color);
   padding: 0 4px; border-radius: 4px; font-size: 0.65rem;
   font-weight: 500;
 }
@@ -396,9 +396,9 @@ onMounted(async () => {
 .status-pill-sm {
   font-size: 0.6875rem; padding: 1px 6px; border-radius: 10px; font-weight: 500;
 }
-.status-active { background: rgba(16, 185, 129, 0.1); color: #10b981; }
+.status-active { background: rgba(16, 185, 129, 0.1); color: var(--success-color); }
 .status-disabled { background: var(--gray-100); color: var(--gray-500); }
-.status-maintaining { background: rgba(245, 158, 11, 0.1); color: #f59e0b; }
+.status-maintaining { background: rgba(245, 158, 11, 0.1); color: var(--warning-color); }
 .status-deploying { background: rgba(59, 130, 246, 0.1); color: #3b82f6; }
 .status-failed { background: rgba(239, 68, 68, 0.1); color: #ef4444; }
 

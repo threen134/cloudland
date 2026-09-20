@@ -376,7 +376,7 @@ onUnmounted(() => {
     flex-direction: column;
     height: 100vh;
     width: 100vw;
-    background-color: #0f172a;
+    background-color: var(--bg-dark);
     color: #f1f5f9;
     overflow: hidden;
 }
@@ -409,7 +409,7 @@ onUnmounted(() => {
 .app-icon {
     width: 36px;
     height: 36px;
-    background: linear-gradient(135deg, #10b981, #059669);
+    background: linear-gradient(135deg, var(--success-color), #059669);
     border-radius: 8px;
     display: flex;
     align-items: center;
@@ -432,7 +432,7 @@ onUnmounted(() => {
 
 .instance-id {
     font-size: 11px;
-    color: #94a3b8;
+    color: var(--text-tertiary);
     font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 }
 
@@ -440,7 +440,7 @@ onUnmounted(() => {
     display: flex;
     align-items: center;
     gap: 8px;
-    background-color: #0f172a;
+    background-color: var(--bg-dark);
     padding: 4px 12px;
     border-radius: 100px;
     font-size: 12px;
@@ -530,7 +530,7 @@ onUnmounted(() => {
 }
 
 .error-content p {
-    color: #94a3b8;
+    color: var(--text-tertiary);
     font-size: 14px;
 }
 
@@ -555,7 +555,7 @@ onUnmounted(() => {
     padding: 0 12px;
     border-radius: 6px;
     border: 1px solid #475569;
-    background-color: #0f172a;
+    background-color: var(--bg-dark);
     color: #f1f5f9;
     font-size: 14px;
 }
@@ -592,7 +592,7 @@ onUnmounted(() => {
     width: 48px;
     height: 48px;
     border: 4px solid rgba(16, 185, 129, 0.2);
-    border-top: 4px solid #10b981;
+    border-top: 4px solid var(--success-color);
     border-radius: 50%;
     animation: spin 1s linear infinite;
     margin: 0 auto 16px;
@@ -625,7 +625,7 @@ onUnmounted(() => {
     align-items: center;
     padding: 4px 20px;
     font-size: 12px;
-    color: #64748b;
+    color: var(--gray-500);
 }
 
 @media (max-width: 700px) {

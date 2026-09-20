@@ -612,7 +612,7 @@ onMounted(fetchHypervisorDetail)
   top: calc(100% + 6px);
   right: 0;
   min-width: 180px;
-  background: var(--bg-primary, #fff);
+  background: var(--bg-primary, var(--bg-primary));
   border: 1px solid var(--border-light);
   border-radius: var(--radius-md);
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
@@ -816,7 +816,7 @@ onMounted(fetchHypervisorDetail)
 .avail-badge {
   font-family: var(--font-family);
   background: rgba(16, 185, 129, 0.1);
-  color: #10b981;
+  color: var(--success-color);
   padding: 1px 6px; border-radius: 4px; font-size: 0.65rem;
   font-weight: 600;
   margin-left: 6px;

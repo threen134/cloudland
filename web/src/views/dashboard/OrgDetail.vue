@@ -480,7 +480,7 @@ onUnmounted(() => {
                 </span>
               </td>
               <td>
-                <Crown v-if="member.is_owner" :size="16" style="color: #f59e0b;" />
+                <Crown v-if="member.is_owner" :size="16" style="color: var(--warning-color);" />
                 <span v-else>-</span>
               </td>
               <td>
@@ -788,7 +788,7 @@ onUnmounted(() => {
   top: calc(100% + 6px);
   right: 0;
   min-width: 200px;
-  background: var(--bg-primary, #fff);
+  background: var(--bg-primary, var(--bg-primary));
   border: 1px solid var(--border-light);
   border-radius: var(--radius-md);
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
@@ -859,8 +859,8 @@ onUnmounted(() => {
 
 .role-0 { background: var(--gray-100); color: var(--gray-600); }
 .role-1 { background: #dbeafe; color: #1d4ed8; }
-.role-2 { background: #d1fae5; color: #065f46; }
-.role-3 { background: #fef3c7; color: #92400e; }
+.role-2 { background: var(--success-light); color: #065f46; }
+.role-3 { background: var(--warning-light); color: #92400e; }
 
 .actions {
   display: flex;

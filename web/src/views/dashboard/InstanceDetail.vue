@@ -1163,7 +1163,7 @@ onUnmounted(() => {
     top: calc(100% + 6px);
     right: 0;
     min-width: 180px;
-    background: var(--bg-primary, #fff);
+    background: var(--bg-primary, var(--bg-primary));
     border: 1px solid var(--border-light);
     border-radius: var(--radius-md);
     box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
@@ -1645,7 +1645,7 @@ onUnmounted(() => {
     border: 1px solid var(--border-light);
     border-radius: var(--radius-md);
     font-size: var(--font-size-sm);
-    background: var(--bg-primary, #fff);
+    background: var(--bg-primary, var(--bg-primary));
     color: var(--text-primary);
     box-sizing: border-box;
 }

@@ -317,7 +317,7 @@ onUnmounted(() => {
               <div class="resource-id-row">
                 <span class="resource-id" :title="group.id">{{ group.id.slice(0, 8) }}...</span>
                 <button class="copy-btn-mini" @click.stop.prevent="copyId(group.id)" :title="t('actions.copy')" :aria-label="t('actions.copy')">
-                  <Check v-if="copiedId === group.id" :size="10" style="color: #10b981;" />
+                  <Check v-if="copiedId === group.id" :size="10" style="color: var(--success-color);" />
                   <Copy v-else :size="10" />
                 </button>
               </div>
@@ -643,7 +643,7 @@ onUnmounted(() => {
   left: 50%;
   transform: translateX(-50%);
   background: var(--gray-800, #1f2937);
-  color: #fff;
+  color: var(--text-inverse);
   font-size: var(--font-size-xs);
   font-weight: 400;
   line-height: 1.5;

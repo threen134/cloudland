@@ -219,7 +219,7 @@ onMounted(fetchAlarmDetail)
 .title-actions { display: flex; align-items: center; gap: var(--spacing-3); }
 .badge-lg { font-size: var(--font-size-sm); padding: 6px 14px; }
 
-.badge.status-active, .status-active { background: rgba(16, 185, 129, 0.1); color: #10b981; }
+.badge.status-active, .status-active { background: rgba(16, 185, 129, 0.1); color: var(--success-color); }
 .status-disabled { background: var(--gray-100); color: var(--gray-500); }
 
 .rule-type-badge {
