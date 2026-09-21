@@ -10,6 +10,7 @@ import { alarmEventsApi } from '../../api/alarmEvents'
 import { authApi } from '../../api/auth'
 import { setAuthToken, beginTokenSwitch } from '../../api/client'
 import { useToast } from '../../composables/useToast'
+import { errorMessage } from '../../utils/error'
 import {
     LayoutDashboard,
     Server,
@@ -205,11 +206,8 @@ onMounted(async () => {
         // Must await: switchOrg() issues a new token and revokes the old one.
         // Resources loaded after this point use the org-scoped token.
         await tenant.fetchOrganizations()
-    } catch (err: any) {
-        console.error(
-            '[Layout] fetchOrganizations failed, forcing logout:',
-            err?.response?.data?.detail || err?.message || err
-        )
+    } catch (err) {
+        console.error('[Layout] fetchOrganizations failed, forcing logout:', errorMessage(err, String(err)))
         handleLogout()
         return
     }

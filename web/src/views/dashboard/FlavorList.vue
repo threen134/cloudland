@@ -385,10 +385,6 @@ onMounted(() => {
     gap: var(--spacing-2);
 }
 
-.text-error {
-    color: var(--error-color);
-}
-
 /* Modal Styles */
 .form-grid {
     display: flex;
@@ -460,12 +456,4 @@ onMounted(() => {
     width: 100%;
 }
 
-.spinning {
-    animation: spin 1s linear infinite;
-}
-@keyframes spin {
-    to {
-        transform: rotate(360deg);
-    }
-}
 </style>

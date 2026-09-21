@@ -464,12 +464,4 @@ onMounted(() => {
     box-shadow: 0 0 0 2px var(--primary-100);
 }
 
-.spinning {
-    animation: spin 1s linear infinite;
-}
-@keyframes spin {
-    to {
-        transform: rotate(360deg);
-    }
-}
 </style>

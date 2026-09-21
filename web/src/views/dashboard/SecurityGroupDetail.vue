@@ -936,10 +936,6 @@ onMounted(fetchGroup)
     gap: var(--spacing-2);
 }
 
-.text-error {
-    color: var(--error-color);
-}
-
 .input-error {
     border-color: var(--error-color) !important;
     box-shadow: 0 0 0 3px var(--error-light) !important;

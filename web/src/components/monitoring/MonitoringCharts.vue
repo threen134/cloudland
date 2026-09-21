@@ -405,19 +405,6 @@ watch(() => props.instanceId, fetchData)
     align-items: center;
 }
 
-.spinning {
-    animation: spin 1s linear infinite;
-}
-
-@keyframes spin {
-    from {
-        transform: rotate(0deg);
-    }
-    to {
-        transform: rotate(360deg);
-    }
-}
-
 @media (max-width: 768px) {
     .charts-grid {
         grid-template-columns: 1fr;

@@ -5,7 +5,14 @@ import { useRouter } from 'vue-router'
 import { useToast } from '../../composables/useToast'
 import { useCopyId } from '../../composables/useCopyId'
 import { useListQuery } from '../../composables/useListQuery'
-import { floatingIpsApi, subnetsApi, type FloatingIP, type FloatingIPPayload, type Subnet } from '../../api/networks'
+import {
+    floatingIpsApi,
+    subnetsApi,
+    type FloatingIP,
+    type FloatingIPPayload,
+    type Subnet,
+    type SubnetAddress,
+} from '../../api/networks'
 import { instancesApi, type Instance } from '../../api/instances'
 import {
     Globe2,
@@ -29,13 +36,6 @@ import PaginationBar from '../../components/base/PaginationBar.vue'
 import { useRegionStore } from '../../stores/region'
 import { quotaErrorMessage } from '../../utils/quotaError'
 import { errorMessage } from '../../utils/error'
-
-// GET /addresses/:subnet 的返回项（api/networks.ts 的 listAddresses 尚未定型，这里先声明本页用到的字段）
-interface SubnetAddress {
-    address: string
-    allocated?: boolean
-    reserved?: boolean
-}
 
 const region = useRegionStore()
 
@@ -824,21 +824,8 @@ watch(
     gap: var(--spacing-2);
 }
 
-.text-error {
-    color: var(--error-color);
-}
-
 .monospace {
     font-family: var(--font-family-mono);
-}
-
-.spinning {
-    animation: spin 1s linear infinite;
-}
-@keyframes spin {
-    to {
-        transform: rotate(360deg);
-    }
 }
 
 /* 底部按钮区需要纵向堆叠（错误提示在按钮上方），.modal-footer 属于 BaseModal，这里用一层包裹元素 */

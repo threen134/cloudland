@@ -103,6 +103,19 @@ export interface SubnetPayload {
     priority?: number
 }
 
+// GET /addresses/:subnet 的返回项。allocated / reserved 的地址不能再分配出去，
+// 创建虚拟机与浮动 IP 的下拉都按这两个标记过滤
+export interface SubnetAddress {
+    address: string
+    allocated?: boolean
+    reserved?: boolean
+}
+
+export interface SubnetAddressListResponse {
+    total: number
+    addresses: SubnetAddress[]
+}
+
 export interface SubnetListResponse {
     subnets: Subnet[]
     total: number
@@ -136,7 +149,7 @@ export const subnetsApi = {
     delete: async (id: string): Promise<void> => {
         await client.delete(`/subnets/${id}`)
     },
-    listAddresses: async (subnetId: string): Promise<{ total: number; addresses: any[] }> => {
+    listAddresses: async (subnetId: string): Promise<SubnetAddressListResponse> => {
         const response = await client.get(`/addresses/${subnetId}`)
         return response.data
     },

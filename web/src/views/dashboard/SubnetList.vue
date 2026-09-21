@@ -708,19 +708,6 @@ onMounted(() => {
     flex-direction: column;
 }
 
-.text-error {
-    color: var(--error-color);
-}
-
-.spinning {
-    animation: spin 1s linear infinite;
-}
-@keyframes spin {
-    to {
-        transform: rotate(360deg);
-    }
-}
-
 .form-section {
     margin-bottom: var(--spacing-4);
 }

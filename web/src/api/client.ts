@@ -84,7 +84,30 @@ client.interceptors.request.use(
     }
 )
 
-const getErrorDetail = (error: AxiosError): string => (error.response?.data as any)?.detail || 'unknown'
+// cpgateway 的错误体是 FastAPI 风格的 { detail: ... }：detail 多数是字符串，
+// 配额超限时是一个对象（见下面 429 分支）
+interface GatewayErrorBody {
+    detail?: string | QuotaExceededDetail
+}
+
+interface QuotaExceededDetail {
+    error?: string
+    resource?: string
+    region?: string
+    requested?: number
+    available?: number
+    limit?: number
+}
+
+// 请求配置上打的重试标记：token 切换导致的 401 只重试一次
+interface RetriableConfig extends InternalAxiosRequestConfig {
+    __retried?: boolean
+}
+
+const getErrorDetail = (error: AxiosError): string => {
+    const detail = (error.response?.data as GatewayErrorBody | undefined)?.detail
+    return typeof detail === 'string' ? detail : 'unknown'
+}
 
 // 后端响应头 X-Trace-ID：反馈问题时提供给运维，在 Grafana 中按 trace id 查询完整链路
 const traceHint = (error: AxiosError): string => {
@@ -128,7 +151,8 @@ client.interceptors.response.use(
             switch (status) {
                 case 429: {
                     // Quota exceeded — FastAPI wraps detail in { detail: { ... } }
-                    const detail = (error.response?.data as any)?.detail
+                    const body = error.response?.data as GatewayErrorBody | undefined
+                    const detail = typeof body?.detail === 'object' ? body.detail : undefined
                     if (detail?.error === 'quota_exceeded') {
                         const { resource, region, requested, available, limit } = detail
                         console.error(
@@ -155,9 +179,9 @@ client.interceptors.response.use(
                     const freshToken = getToken()
                     const usedToken = String(error.config?.headers?.Authorization || '').replace(/^Bearer /, '')
                     if (isTokenSwitchRecent() || (freshToken && usedToken && freshToken !== usedToken)) {
-                        const originalConfig = error.config
-                        if (freshToken && originalConfig && !(originalConfig as any).__retried) {
-                            ;(originalConfig as any).__retried = true
+                        const originalConfig = error.config as RetriableConfig | undefined
+                        if (freshToken && originalConfig && !originalConfig.__retried) {
+                            originalConfig.__retried = true
                             originalConfig.headers.Authorization = `Bearer ${freshToken}`
                             console.warn('401 during token switch — retrying with fresh token')
                             return client.request(originalConfig)
@@ -202,9 +226,23 @@ const getStorage = (): Storage => {
     return localStorage.getItem(STORAGE_KEYS.remember) === '1' ? localStorage : sessionStorage
 }
 
+// cpgateway 签发的 access token 声明（`src/services/auth.go`）。浏览器只用到其中几项，
+// 其余保留索引签名以免漏一个就编译不过
+export interface TokenClaims {
+    sub?: string
+    user_id?: number
+    org_id?: string
+    org_name?: string
+    region_uuid?: string
+    jti?: string
+    exp?: number
+    iat?: number
+    [key: string]: unknown
+}
+
 // Reads the claims of a JWT without verifying it: the server verifies tokens, the browser only needs
 // to know whose token it is (sub) and which org / region it is scoped to (org_id, region)
-export const decodeTokenClaims = (token: string | null): Record<string, any> | null => {
+export const decodeTokenClaims = (token: string | null): TokenClaims | null => {
     const payload = token?.split('.')[1]
     if (!payload) return null
     try {

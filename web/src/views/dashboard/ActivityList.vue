@@ -434,13 +434,4 @@ const loadError = computed(() => rangeError.value || errorMessage.value)
     margin: 0 0 12px;
 }
 
-.spinning {
-    animation: spin 1s linear infinite;
-}
-
-@keyframes spin {
-    to {
-        transform: rotate(360deg);
-    }
-}
 </style>

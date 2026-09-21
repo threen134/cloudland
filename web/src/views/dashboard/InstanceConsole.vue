@@ -6,6 +6,7 @@ import { instancesApi } from '../../api/instances'
 import RFB from '@novnc/novnc/lib/rfb'
 import KeyTable from '@novnc/novnc/lib/input/keysym'
 import { traceVncConnection } from '../../tracing'
+import { errorMessage as apiErrorText } from '../../utils/error'
 import {
     Terminal,
     RefreshCw,
@@ -24,7 +25,7 @@ const { t } = useI18n()
 const instanceId = route.params.id as string
 
 const container = ref<HTMLElement | null>(null)
-const rfb = ref<any>(null)
+const rfb = ref<RFB | null>(null)
 const status = ref('connecting') // connecting, connected, disconnected, error
 const errorMessage = ref('')
 const instanceName = ref('')
@@ -61,10 +62,10 @@ const fetchConsoleInfo = async () => {
         }
 
         connectVnc(url)
-    } catch (err: any) {
+    } catch (err) {
         console.error('Failed to get console info:', err)
         status.value = 'error'
-        errorMessage.value = err.response?.data?.error_message || err.message || t('dashboard.console.errorSubtitle')
+        errorMessage.value = apiErrorText(err, t('dashboard.console.errorSubtitle'))
     }
 }
 
@@ -82,7 +83,7 @@ const connectVnc = (url: string) => {
             console.log('VNC Connected')
         })
 
-        rfb.value.addEventListener('disconnect', (e: any) => {
+        rfb.value.addEventListener('disconnect', (e: Event) => {
             // The server side drops pressed keys with the connection
             resetModifiers()
             cancelTyping()
@@ -94,16 +95,16 @@ const connectVnc = (url: string) => {
 
         rfb.value.addEventListener('credentialsrequired', () => {
             // Usually not needed for these proxied consoles as token is in URL
-            rfb.value.sendCredentials({ password: '' })
+            rfb.value?.sendCredentials({ password: '' })
         })
 
         rfb.value.scaleViewport = true
         // QEMU's VNC server rejects resize requests ("Invalid screen layout"); scaling is done locally instead
         rfb.value.resizeSession = false
-    } catch (err: any) {
+    } catch (err) {
         console.error('VNC Connection error:', err)
         status.value = 'error'
-        errorMessage.value = err.message
+        errorMessage.value = apiErrorText(err, t('dashboard.console.errorSubtitle'))
     }
 }
 
@@ -912,12 +913,6 @@ onUnmounted(() => {
     display: flex;
     align-items: center;
     gap: 8px;
-}
-
-@keyframes spin {
-    to {
-        transform: rotate(360deg);
-    }
 }
 
 @keyframes pulse {

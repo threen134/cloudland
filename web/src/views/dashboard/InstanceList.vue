@@ -1168,10 +1168,6 @@ onUnmounted(() => {
     gap: var(--spacing-2);
 }
 
-.text-error {
-    color: var(--error-color);
-}
-
 .btn:disabled {
     opacity: 0.3;
     cursor: not-allowed;
@@ -1273,15 +1269,6 @@ onUnmounted(() => {
     width: 14px;
     height: 14px;
     border-width: 2px;
-}
-
-.spinning {
-    animation: spin 1s linear infinite;
-}
-@keyframes spin {
-    to {
-        transform: rotate(360deg);
-    }
 }
 
 /* Toast Notification removed */

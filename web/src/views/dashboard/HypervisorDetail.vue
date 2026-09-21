@@ -978,15 +978,6 @@ onMounted(fetchHypervisorDetail)
     cursor: not-allowed;
 }
 
-.spinning {
-    animation: spin 1s linear infinite;
-}
-@keyframes spin {
-    to {
-        transform: rotate(360deg);
-    }
-}
-
 .monitor-section {
     animation: fadeIn 0.3s ease-out;
 }

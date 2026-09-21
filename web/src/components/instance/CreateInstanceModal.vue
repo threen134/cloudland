@@ -1787,9 +1787,6 @@ input:checked + .slider:before {
     display: flex;
     align-items: center;
 }
-.text-error {
-    color: var(--error-color);
-}
 .btn:disabled {
     opacity: 0.3;
     cursor: not-allowed;

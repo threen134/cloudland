@@ -914,10 +914,6 @@ onMounted(() => {
     gap: var(--spacing-2);
 }
 
-.text-error {
-    color: var(--error-color);
-}
-
 .mt-6 {
     margin-top: 24px;
 }
@@ -927,15 +923,6 @@ onMounted(() => {
     flex-direction: column;
     align-items: center;
     justify-content: center;
-}
-
-.spinning {
-    animation: spin 1s linear infinite;
-}
-@keyframes spin {
-    to {
-        transform: rotate(360deg);
-    }
 }
 
 /* Form elements for modals */

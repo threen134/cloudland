@@ -156,15 +156,6 @@ const handleConfirmPayment = async () => {
     animation: spin 1s linear infinite;
 }
 
-@keyframes spin {
-    0% {
-        transform: rotate(0deg);
-    }
-    100% {
-        transform: rotate(360deg);
-    }
-}
-
 .success-icon {
     color: var(--success-dark);
     margin-bottom: 24px;

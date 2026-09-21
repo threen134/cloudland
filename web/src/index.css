@@ -691,6 +691,16 @@ button:disabled {
     }
 }
 
+/* 这两个此前在 26 / 17 个单文件组件里各写了一遍（@keyframes 更是 35 份，
+   而且它在 <style scoped> 里也不隔离、本来就是全局的）。统一放这里 */
+.spinning {
+    animation: spin 1s linear infinite;
+}
+
+.text-error {
+    color: var(--error-color);
+}
+
 /* ============================  
    SECTION HEADERS
    ============================ */

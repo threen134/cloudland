@@ -8,6 +8,7 @@ import { FitAddon } from '@xterm/addon-fit'
 import '@xterm/xterm/css/xterm.css'
 import { instancesApi } from '../../api/instances'
 import { hypervisorsApi } from '../../api/hypervisors'
+import { errorMessage as apiErrorText, errorStatus } from '../../utils/error'
 import {
     SquareTerminal,
     RefreshCw,
@@ -144,11 +145,7 @@ const setupTerminal = () => {
     resizeObserver.observe(container.value)
 }
 
-const apiError = (err: any) =>
-    err.response?.data?.detail ||
-    err.response?.data?.error_message ||
-    err.message ||
-    t('dashboard.console.errorSubtitle')
+const apiError = (err: unknown) => apiErrorText(err, t('dashboard.console.errorSubtitle'))
 
 // Drop the current socket: its close event must not mark a new attempt as disconnected
 const detachSocket = () => {
@@ -206,7 +203,7 @@ const connectSerial = async () => {
         await nextTick()
         setupTerminal()
         openSocket(url)
-    } catch (err: any) {
+    } catch (err) {
         status.value = 'error'
         errorMessage.value = apiError(err)
     }
@@ -248,18 +245,18 @@ const connectHost = async () => {
         if (!data.console_url) throw new Error('No console URL returned from API')
         term?.reset()
         openSocket(data.console_url)
-    } catch (err: any) {
-        const status400 = err.response?.status === 400
-        const detail = String(err.response?.data?.detail ?? '')
+    } catch (err) {
+        const httpStatus = errorStatus(err)
+        const body = (err as { response?: { data?: { detail?: unknown; error_code?: unknown } } })?.response?.data
         // The setting asks for the password: show the form without calling it a failure
-        if (status400 && detail.includes('Password is required')) {
+        if (httpStatus === 400 && String(body?.detail ?? '').includes('Password is required')) {
             await requestPassword()
             return
         }
         // A wrong password (403) or too many attempts (429) keep the password form open. A refusal from clapi
         // (the feature was turned off, or the account is not a system admin) is a 403 as well but carries an
         // error code: retyping the password would not help, so it is shown as an error
-        if (!err.response?.data?.error_code && (err.response?.status === 403 || err.response?.status === 429)) {
+        if (!body?.error_code && (httpStatus === 403 || httpStatus === 429)) {
             await requestPassword(apiError(err))
             return
         }
@@ -595,10 +592,6 @@ onUnmounted(() => {
     font-size: 14px;
 }
 
-.text-error {
-    color: var(--error-color);
-}
-
 .text-warn {
     color: var(--warning-color);
 }
@@ -657,12 +650,6 @@ onUnmounted(() => {
     border-radius: 50%;
     animation: spin 1s linear infinite;
     margin: 0 auto 16px;
-}
-
-@keyframes spin {
-    to {
-        transform: rotate(360deg);
-    }
 }
 
 .btn-primary {

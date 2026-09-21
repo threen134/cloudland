@@ -711,10 +711,6 @@ const handleUpdateStatus = async (orgId: string, status: number) => {
     gap: var(--spacing-2);
 }
 
-.text-error {
-    color: var(--error-color);
-}
-
 /* Modal Styles */
 
 .modal-error {
@@ -723,15 +719,6 @@ const handleUpdateStatus = async (orgId: string, status: number) => {
     padding: var(--spacing-2);
     border-radius: var(--radius-sm);
     margin-top: var(--spacing-2);
-}
-
-.spinning {
-    animation: spin 1s linear infinite;
-}
-@keyframes spin {
-    to {
-        transform: rotate(360deg);
-    }
 }
 
 .quota-region-card {

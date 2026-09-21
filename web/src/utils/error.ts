@@ -33,6 +33,12 @@ const firstString = (...values: unknown[]): string | null => {
     return null
 }
 
+/** 取 HTTP 状态码；不是 axios 错误（网络中断、代码抛的普通 Error）时返回 undefined */
+export function errorStatus(err: unknown): number | undefined {
+    const status = (err as { response?: { status?: unknown } })?.response?.status
+    return typeof status === 'number' ? status : undefined
+}
+
 /** 取接口返回的错误文案，取不到时返回 fallback（通常是 t('messages.error')） */
 export function errorMessage(err: unknown, fallback: string): string {
     const data = (err as ApiErrorShape)?.response?.data

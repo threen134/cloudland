@@ -601,12 +601,6 @@ const handleSubmit = async () => {
     animation: spin 0.8s linear infinite;
 }
 
-@keyframes spin {
-    to {
-        transform: rotate(360deg);
-    }
-}
-
 /* ── Footer ── */
 .pl-footer {
     display: flex;

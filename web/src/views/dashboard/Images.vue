@@ -494,27 +494,10 @@ onMounted(async () => {
     color: var(--text-secondary);
 }
 
-.spinning {
-    animation: spin 1s linear infinite;
-}
-
-@keyframes spin {
-    from {
-        transform: rotate(0deg);
-    }
-    to {
-        transform: rotate(360deg);
-    }
-}
-
 .actions {
     display: flex;
     justify-content: center;
     gap: var(--spacing-2);
-}
-
-.text-error {
-    color: var(--error-color);
 }
 
 /* Modal Styles */

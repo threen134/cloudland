@@ -2,7 +2,9 @@ import apiClient from './client'
 
 export interface SystemSetting {
     key: string
-    value: any
+    // 实际类型随 value_type 变（字符串 / 数字 / 布尔 / json 解析出来的数组或对象），
+    // 由读取方按 value_type 在运行时收窄
+    value: unknown
     value_type: string // string | number | boolean | json | secret
     category: string // general | quota | notification
     description?: string
@@ -30,7 +32,7 @@ export const systemSettingsApi = {
         return response.data
     },
 
-    async update(payload: Record<string, any>): Promise<SystemSettingsResponse> {
+    async update(payload: Record<string, unknown>): Promise<SystemSettingsResponse> {
         const response = await apiClient.put('/system/settings', payload)
         return response.data
     },

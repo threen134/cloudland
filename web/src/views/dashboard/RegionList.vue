@@ -813,15 +813,6 @@ onMounted(fetchRegions)
     color: var(--success-color);
 }
 
-@keyframes spin {
-    to {
-        transform: rotate(360deg);
-    }
-}
-.spinning {
-    animation: spin 1s linear infinite;
-}
-
 .delete-warning-box {
     display: flex;
     align-items: center;

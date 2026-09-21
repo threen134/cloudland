@@ -558,18 +558,6 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
-.spinning {
-    animation: spin 1s linear infinite;
-}
-
-@keyframes spin {
-    from {
-        transform: rotate(0deg);
-    }
-    to {
-        transform: rotate(360deg);
-    }
-}
 
 .vpc-filter {
     width: 200px;
@@ -663,10 +651,6 @@ onUnmounted(() => {
 .actions .btn {
     padding-left: 6px;
     padding-right: 6px;
-}
-
-.text-error {
-    color: var(--error-color);
 }
 
 .error-box {

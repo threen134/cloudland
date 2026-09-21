@@ -923,16 +923,6 @@ onBeforeUnmount(() => {
     color: var(--success-dark);
 }
 
-.spinning {
-    animation: spin 1s linear infinite;
-}
-
-@keyframes spin {
-    to {
-        transform: rotate(360deg);
-    }
-}
-
 .loading-container,
 .error-container {
     display: flex;
@@ -1206,9 +1196,6 @@ onBeforeUnmount(() => {
 }
 
 .status-text.nok,
-.text-error {
-    color: var(--error-color);
-}
 
 @media (max-width: 720px) {
     .tab-header {

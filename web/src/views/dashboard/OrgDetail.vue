@@ -1001,10 +1001,6 @@ onUnmounted(() => {
     gap: var(--spacing-2);
 }
 
-.text-error {
-    color: var(--error-color);
-}
-
 /* Invitations */
 .invitations-section {
     margin-bottom: var(--spacing-5);

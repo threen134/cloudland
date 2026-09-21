@@ -319,18 +319,6 @@ onMounted(fetchKeys)
 </template>
 
 <style scoped>
-.spinning {
-    animation: spin 1s linear infinite;
-}
-
-@keyframes spin {
-    from {
-        transform: rotate(0deg);
-    }
-    to {
-        transform: rotate(360deg);
-    }
-}
 
 /* .resource-info etc. are global from index.css */
 
@@ -365,10 +353,6 @@ onMounted(fetchKeys)
 
 .copy-btn:hover {
     opacity: 1;
-}
-
-.text-error {
-    color: var(--error-color);
 }
 
 /* Modal Styles */

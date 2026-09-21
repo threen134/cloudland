@@ -1339,12 +1339,4 @@ onUnmounted(() => {
     background: var(--bg-secondary);
 }
 
-.spinning {
-    animation: spin 1s linear infinite;
-}
-@keyframes spin {
-    to {
-        transform: rotate(360deg);
-    }
-}
 </style>

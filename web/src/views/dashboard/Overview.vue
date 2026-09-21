@@ -698,9 +698,4 @@ a.stat-card:focus-visible {
     margin-bottom: 16px;
 }
 
-@keyframes spin {
-    to {
-        transform: rotate(360deg);
-    }
-}
 </style>

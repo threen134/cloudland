@@ -611,10 +611,6 @@ onMounted(fetchUsers)
     gap: var(--spacing-2);
 }
 
-.text-error {
-    color: var(--error-color);
-}
-
 .resource-link {
     color: var(--primary-600);
     cursor: pointer;
@@ -624,12 +620,4 @@ onMounted(fetchUsers)
     text-decoration: underline;
 }
 
-.spinning {
-    animation: spin 1s linear infinite;
-}
-@keyframes spin {
-    to {
-        transform: rotate(360deg);
-    }
-}
 </style>
