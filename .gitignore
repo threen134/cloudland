@@ -39,7 +39,8 @@ wget-log
 /web/pkg
 /deploy/*.retry
 /deploy/netconf.yml
-/web/conf/config.toml
+/api/conf/config.toml
+/tools/config.toml
 .ssh
 /deploy/.ssh
 *.status

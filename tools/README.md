@@ -47,11 +47,11 @@ admin = "admin"
 password = "xxx"
 
 [cloudland]
-config_path = "../web/conf/config.toml"
+config_path = "../api/conf/config.toml"
 ```
 
 - `[wds]`: WDS 分布式存储服务连接信息
-- `[cloudland].config_path`: CloudLand 配置文件路径，工具从中读取 `[db]` 段获取数据库连接
+- `[cloudland].config_path`: clapi 的配置文件路径（clapi 启动时读的是它工作目录下的 `conf/config.toml`），工具从中读取 `[db]` 段获取数据库连接
 
 WDS 连接信息也可以通过命令行参数指定（优先级高于配置文件）：
 

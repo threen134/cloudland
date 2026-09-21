@@ -5,4 +5,4 @@ password = "xxx"
 
 [cloudland]
 # CloudLand config file path, used to read database connection info
-config_path = "../web/conf/config.toml"
+config_path = "../api/conf/config.toml"
