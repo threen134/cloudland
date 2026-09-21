@@ -583,8 +583,8 @@ onMounted(fetchUsers)
     display: inline-block;
     padding: 2px 6px;
     margin-left: 4px;
-    background: var(--primary-light, #e0e7ff);
-    color: var(--primary-600, #4f46e5);
+    background: var(--primary-light, var(--accent-purple-light));
+    color: var(--primary-600, var(--accent-purple));
     border-radius: var(--radius-full);
     font-size: var(--font-size-xs);
     font-weight: var(--font-weight-medium);
@@ -596,7 +596,7 @@ onMounted(fetchUsers)
 }
 
 .status-invited {
-    color: var(--warning-color, #e6a23c);
+    color: var(--warning-color, var(--warning-color));
     font-weight: var(--font-weight-medium);
 }
 

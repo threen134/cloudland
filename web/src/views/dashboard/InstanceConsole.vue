@@ -707,14 +707,14 @@ onUnmounted(() => {
     height: 100vh;
     width: 100vw;
     background-color: var(--bg-dark);
-    color: #f1f5f9;
+    color: var(--gray-100);
     overflow: hidden;
 }
 
 .console-header {
     height: 60px;
-    background-color: #1e293b;
-    border-bottom: 1px solid #334155;
+    background-color: var(--gray-800);
+    border-bottom: 1px solid var(--gray-700);
     display: flex;
     justify-content: space-between;
     align-items: center;
@@ -732,7 +732,7 @@ onUnmounted(() => {
 .app-icon {
     width: 36px;
     height: 36px;
-    background: linear-gradient(135deg, #3b82f6, #2563eb);
+    background: linear-gradient(135deg, var(--primary-color), var(--primary-hover));
     border-radius: 8px;
     display: flex;
     align-items: center;
@@ -749,7 +749,7 @@ onUnmounted(() => {
     font-size: 16px;
     font-weight: 600;
     /* Global heading colors are meant for the light dashboard theme */
-    color: #f1f5f9;
+    color: var(--gray-100);
     margin: 0;
     line-height: 1.2;
 }
@@ -768,7 +768,7 @@ onUnmounted(() => {
     padding: 4px 12px;
     border-radius: 100px;
     font-size: 12px;
-    border: 1px solid #334155;
+    border: 1px solid var(--gray-700);
 }
 
 .status-dot {
@@ -778,23 +778,23 @@ onUnmounted(() => {
 }
 
 .status-indicator.connecting .status-dot {
-    background-color: #eab308;
-    box-shadow: 0 0 8px #eab308;
+    background-color: var(--warning-color);
+    box-shadow: 0 0 8px var(--warning-color);
     animation: pulse 1.5s infinite;
 }
 
 .status-indicator.connected .status-dot {
-    background-color: #22c55e;
-    box-shadow: 0 0 8px #22c55e;
+    background-color: var(--success-color);
+    box-shadow: 0 0 8px var(--success-color);
 }
 
 .status-indicator.disconnected .status-dot {
-    background-color: #94a3b8;
+    background-color: var(--gray-400);
 }
 
 .status-indicator.error .status-dot {
-    background-color: #ef4444;
-    box-shadow: 0 0 8px #ef4444;
+    background-color: var(--error-color);
+    box-shadow: 0 0 8px var(--error-color);
 }
 
 .header-right {
@@ -804,9 +804,9 @@ onUnmounted(() => {
 }
 
 .btn-console {
-    background-color: #334155;
-    border: 1px solid #475569;
-    color: #f1f5f9;
+    background-color: var(--gray-700);
+    border: 1px solid var(--gray-600);
+    color: var(--gray-100);
     height: 32px;
     padding: 0 12px;
     border-radius: 6px;
@@ -821,8 +821,8 @@ onUnmounted(() => {
 }
 
 .btn-console:hover {
-    background-color: #475569;
-    border-color: #64748b;
+    background-color: var(--gray-600);
+    border-color: var(--gray-500);
 }
 
 .console-main {
@@ -831,7 +831,7 @@ onUnmounted(() => {
     min-height: 0;
     overflow: hidden;
     position: relative;
-    background-color: #000;
+    background-color: var(--text-primary);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -867,15 +867,15 @@ onUnmounted(() => {
     max-width: 400px;
     text-align: center;
     padding: 32px;
-    background-color: #1e293b;
-    border: 1px solid #334155;
+    background-color: var(--gray-800);
+    border: 1px solid var(--gray-700);
     box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.3);
 }
 
 .error-content h2 {
     margin: 16px 0 8px;
     font-size: 20px;
-    color: #f1f5f9;
+    color: var(--gray-100);
 }
 
 .error-content p {
@@ -890,8 +890,8 @@ onUnmounted(() => {
 .loading-spinner-lg {
     width: 48px;
     height: 48px;
-    border: 4px solid rgba(59, 130, 246, 0.2);
-    border-top: 4px solid #3b82f6;
+    border: 4px solid rgba(14, 165, 233, 0.2);
+    border-top: 4px solid var(--primary-color);
     border-radius: 50%;
     animation: spin 1s linear infinite;
     margin: 0 auto 16px;
@@ -899,8 +899,8 @@ onUnmounted(() => {
 
 .console-footer {
     height: 32px;
-    background-color: #1e293b;
-    border-top: 1px solid #334155;
+    background-color: var(--gray-800);
+    border-top: 1px solid var(--gray-700);
     display: flex;
     align-items: center;
     padding: 0 20px;
@@ -933,7 +933,7 @@ onUnmounted(() => {
 }
 
 .btn-primary {
-    background-color: #3b82f6;
+    background-color: var(--primary-color);
     color: white;
     border: none;
     padding: 8px 16px;
@@ -946,7 +946,7 @@ onUnmounted(() => {
 }
 
 .btn-primary:hover {
-    background-color: #2563eb;
+    background-color: var(--primary-hover);
 }
 
 .mt-4 {
@@ -970,7 +970,7 @@ onUnmounted(() => {
     align-items: center;
     gap: 4px;
     padding-left: 8px;
-    border-left: 1px solid #334155;
+    border-left: 1px solid var(--gray-700);
 }
 
 .key-group:first-child {
@@ -985,8 +985,8 @@ onUnmounted(() => {
 }
 
 .btn-console.active {
-    background-color: #2563eb;
-    border-color: #3b82f6;
+    background-color: var(--primary-hover);
+    border-color: var(--primary-color);
     color: var(--text-inverse);
 }
 
@@ -1005,8 +1005,8 @@ onUnmounted(() => {
     top: calc(100% + 6px);
     right: 0;
     z-index: 20;
-    background-color: #1e293b;
-    border: 1px solid #334155;
+    background-color: var(--gray-800);
+    border: 1px solid var(--gray-700);
     border-radius: 8px;
     padding: 8px;
     box-shadow: 0 10px 25px rgba(0, 0, 0, 0.4);
@@ -1023,9 +1023,9 @@ onUnmounted(() => {
 }
 
 .fn-item {
-    background-color: #334155;
-    border: 1px solid #475569;
-    color: #f1f5f9;
+    background-color: var(--gray-700);
+    border: 1px solid var(--gray-600);
+    color: var(--gray-100);
     border-radius: 4px;
     padding: 6px 8px;
     font-size: 12px;
@@ -1035,20 +1035,20 @@ onUnmounted(() => {
 }
 
 .fn-item:hover {
-    background-color: #475569;
+    background-color: var(--gray-600);
 }
 
 .fn-divider {
     height: 1px;
-    background-color: #334155;
+    background-color: var(--gray-700);
     margin: 8px 0;
 }
 
 /* Virtual keyboard */
 .vk-panel {
     flex-shrink: 0;
-    background-color: #1e293b;
-    border-top: 1px solid #334155;
+    background-color: var(--gray-800);
+    border-top: 1px solid var(--gray-700);
     padding: 6px 12px 10px;
     user-select: none;
     -webkit-user-select: none;
@@ -1075,9 +1075,9 @@ onUnmounted(() => {
 }
 
 .vk-action {
-    background-color: #334155;
-    border: 1px solid #475569;
-    color: #f1f5f9;
+    background-color: var(--gray-700);
+    border: 1px solid var(--gray-600);
+    color: var(--gray-100);
     border-radius: 6px;
     height: 26px;
     padding: 0 10px;
@@ -1088,8 +1088,8 @@ onUnmounted(() => {
 }
 
 .vk-action.active {
-    background-color: #2563eb;
-    border-color: #3b82f6;
+    background-color: var(--primary-hover);
+    border-color: var(--primary-color);
 }
 
 .vk-rows {
@@ -1109,10 +1109,10 @@ onUnmounted(() => {
     flex-basis: 0;
     min-width: 0;
     height: 38px;
-    background-color: #334155;
-    border: 1px solid #475569;
+    background-color: var(--gray-700);
+    border: 1px solid var(--gray-600);
     border-bottom-width: 2px;
-    color: #f1f5f9;
+    color: var(--gray-100);
     border-radius: 5px;
     font-size: 13px;
     font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
@@ -1134,11 +1134,11 @@ onUnmounted(() => {
 }
 
 .vk-key:hover:not(:disabled) {
-    background-color: #475569;
+    background-color: var(--gray-600);
 }
 
 .vk-key:active:not(:disabled) {
-    background-color: #64748b;
+    background-color: var(--gray-500);
     transform: translateY(1px);
 }
 
@@ -1147,8 +1147,8 @@ onUnmounted(() => {
 }
 
 .vk-key.active {
-    background-color: #2563eb;
-    border-color: #3b82f6;
+    background-color: var(--primary-hover);
+    border-color: var(--primary-color);
     color: var(--text-inverse);
 }
 
@@ -1219,8 +1219,8 @@ onUnmounted(() => {
 
 .paste-dialog {
     width: min(560px, 100%);
-    background-color: #1e293b;
-    border: 1px solid #334155;
+    background-color: var(--gray-800);
+    border: 1px solid var(--gray-700);
     border-radius: 10px;
     padding: 20px;
     box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.4);
@@ -1235,7 +1235,7 @@ onUnmounted(() => {
 .paste-header h3 {
     margin: 0;
     font-size: 16px;
-    color: #f1f5f9;
+    color: var(--gray-100);
 }
 
 .btn-icon {
@@ -1259,8 +1259,8 @@ onUnmounted(() => {
     box-sizing: border-box;
     resize: vertical;
     background-color: var(--bg-dark);
-    color: #f1f5f9;
-    border: 1px solid #334155;
+    color: var(--gray-100);
+    border: 1px solid var(--gray-700);
     border-radius: 6px;
     padding: 10px;
     font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
@@ -1275,11 +1275,11 @@ onUnmounted(() => {
 }
 
 .paste-warning {
-    color: #eab308;
+    color: var(--warning-color);
 }
 
 .paste-done {
-    color: #22c55e;
+    color: var(--success-color);
 }
 
 .paste-footer {

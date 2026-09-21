@@ -1426,7 +1426,7 @@ onUnmounted(() => {
 }
 
 .dropdown-item:hover:not(:disabled) {
-    background: var(--bg-hover, #f3f4f6);
+    background: var(--bg-hover, var(--gray-100));
 }
 
 .dropdown-item:disabled {
@@ -1435,11 +1435,11 @@ onUnmounted(() => {
 }
 
 .dropdown-item-danger {
-    color: var(--error-color, #ef4444);
+    color: var(--error-color, var(--error-color));
 }
 
 .dropdown-item-danger:hover:not(:disabled) {
-    background: #fef2f2;
+    background: var(--error-light);
 }
 
 .dropdown-divider {
@@ -1866,7 +1866,7 @@ onUnmounted(() => {
 }
 
 .rule-pick-item:hover {
-    background: var(--bg-hover, #f3f4f6);
+    background: var(--bg-hover, var(--gray-100));
 }
 
 .rule-pick-info {
@@ -1920,9 +1920,9 @@ onUnmounted(() => {
 }
 
 .modal-error {
-    background: #fef2f2;
-    color: #dc2626;
-    border: 1px solid #fecaca;
+    background: var(--error-light);
+    color: var(--error-dark);
+    border: 1px solid var(--error-light);
     border-radius: 6px;
     padding: 8px 12px;
     margin-bottom: 12px;

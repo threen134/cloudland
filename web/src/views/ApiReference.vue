@@ -17,8 +17,8 @@ const config = {
         title: 'CloudLand API Reference',
     },
     customCss: [
-        ':root { --scalar-font: "Inter", -apple-system, BlinkMacSystemFont, sans-serif; --scalar-color-1: #1a2332; --scalar-color-2: #475569; --scalar-color-3: #64748b; --scalar-color-accent: #0ea5e9; --scalar-background-1: #ffffff; --scalar-background-2: #f8fafc; --scalar-background-3: #f0f9ff; --scalar-border-color: #e2e8f0; --scalar-radius: 12px; }',
-        '.sidebar { background: linear-gradient(180deg, #e8f4fd 0%, var(--bg-primary) 45%) !important; border-right: 1px solid var(--border-default) !important; }',
+        ':root { --scalar-font: "Inter", -apple-system, BlinkMacSystemFont, sans-serif; --scalar-color-1: var(--gray-800); --scalar-color-2: var(--gray-600); --scalar-color-3: var(--gray-500); --scalar-color-accent: var(--primary-color); --scalar-background-1: var(--bg-primary); --scalar-background-2: var(--gray-50); --scalar-background-3: var(--primary-50); --scalar-border-color: var(--gray-200); --scalar-radius: 12px; }',
+        '.sidebar { background: linear-gradient(180deg, var(--primary-light) 0%, var(--bg-primary) 45%) !important; border-right: 1px solid var(--border-default) !important; }',
         'a { color: var(--primary-color); }',
     ].join(' '),
 }
@@ -58,7 +58,7 @@ const config = {
         'Segoe UI',
         Roboto,
         sans-serif;
-    color: #1a2332;
+    color: var(--gray-800);
 }
 
 /* ── Navbar — identical to Login page ── */
@@ -85,7 +85,7 @@ const config = {
     text-decoration: none;
     font-weight: 700;
     font-size: 1.1875rem;
-    color: #1a2332;
+    color: var(--gray-800);
     letter-spacing: -0.01em;
 }
 
@@ -111,12 +111,12 @@ const config = {
     display: inline-flex;
     align-items: center;
     padding: 5px 12px;
-    background: #f0f9ff;
-    border: 1px solid #bae6fd;
+    background: var(--primary-50);
+    border: 1px solid var(--primary-200);
     border-radius: 100px;
     font-size: 0.8125rem;
     font-weight: 600;
-    color: #0284c7;
+    color: var(--primary-hover);
 }
 
 .pl-back-btn {

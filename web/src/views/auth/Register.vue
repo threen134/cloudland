@@ -325,7 +325,7 @@ const handleSubmit = async () => {
 .decor-2 {
     width: 400px;
     height: 400px;
-    background: #bae6fd;
+    background: var(--primary-200);
     bottom: -100px;
     right: -50px;
 }
@@ -387,7 +387,7 @@ const handleSubmit = async () => {
     display: flex;
     align-items: center;
     justify-content: center;
-    box-shadow: 0 8px 16px rgba(59, 130, 246, 0.2);
+    box-shadow: 0 8px 16px rgba(14, 165, 233, 0.2);
 }
 
 h2 {

@@ -901,7 +901,7 @@ onBeforeUnmount(() => {
     width: 6px;
     height: 6px;
     border-radius: 50%;
-    background: var(--warning-color, #f59e0b);
+    background: var(--warning-color, var(--warning-color));
     flex-shrink: 0;
 }
 
@@ -1160,7 +1160,7 @@ onBeforeUnmount(() => {
 }
 
 .mode-badge.mode-legacy {
-    background: var(--warning-light, #fff7ed);
+    background: var(--warning-light, var(--warning-light));
     color: var(--warning-dark, var(--warning-dark));
 }
 
@@ -1233,7 +1233,7 @@ onBeforeUnmount(() => {
 .password-error {
     margin: var(--spacing-2) 0 0;
     font-size: var(--font-size-xs);
-    color: var(--error, #ef4444);
+    color: var(--error, var(--error-color));
 }
 
 /* Lets password managers fill in the password of the current account */

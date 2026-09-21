@@ -403,15 +403,15 @@ onMounted(fetchFip)
 }
 
 .dropdown-item:hover:not(:disabled) {
-    background: var(--bg-hover, #f3f4f6);
+    background: var(--bg-hover, var(--gray-100));
 }
 
 .dropdown-item-danger {
-    color: var(--error-color, #ef4444);
+    color: var(--error-color, var(--error-color));
 }
 
 .dropdown-item-danger:hover:not(:disabled) {
-    background: #fef2f2;
+    background: var(--error-light);
 }
 
 .dropdown-divider {

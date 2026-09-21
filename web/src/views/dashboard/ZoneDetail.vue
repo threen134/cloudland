@@ -413,8 +413,8 @@ onMounted(async () => {
     padding: 6px 14px;
 }
 .badge-primary {
-    background: rgba(59, 130, 246, 0.1);
-    color: #3b82f6;
+    background: rgba(14, 165, 233, 0.1);
+    color: var(--primary-color);
 }
 .badge-secondary {
     background: var(--gray-100);
@@ -423,8 +423,8 @@ onMounted(async () => {
 
 .btn-danger-outline {
     background: transparent;
-    color: #ef4444;
-    border: 1px solid #fca5a5;
+    color: var(--error-color);
+    border: 1px solid var(--error-light);
     padding: 6px 12px;
     border-radius: var(--radius-md);
     cursor: pointer;
@@ -436,8 +436,8 @@ onMounted(async () => {
     transition: all 0.2s;
 }
 .btn-danger-outline:hover {
-    background: #fef2f2;
-    border-color: #ef4444;
+    background: var(--error-light);
+    border-color: var(--error-color);
 }
 
 .btn-sm {
@@ -564,12 +564,12 @@ onMounted(async () => {
     color: var(--warning-color);
 }
 .status-deploying {
-    background: rgba(59, 130, 246, 0.1);
-    color: #3b82f6;
+    background: rgba(14, 165, 233, 0.1);
+    color: var(--primary-color);
 }
 .status-failed {
-    background: rgba(239, 68, 68, 0.1);
-    color: #ef4444;
+    background: rgba(244, 63, 94, 0.1);
+    color: var(--error-color);
 }
 
 /* Modals */

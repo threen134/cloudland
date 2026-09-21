@@ -596,7 +596,7 @@ onUnmounted(() => {
 /* Sidebar (CoreUI-inspired Light Blue Theme) */
 .sidebar {
     width: var(--sidebar-width);
-    background-color: #f3f6fa; /* very soft blue-gray background */
+    background-color: var(--bg-secondary); /* very soft blue-gray background */
     border-right: 1px solid rgba(0, 0, 0, 0.05);
     display: flex;
     flex-direction: column;
@@ -630,7 +630,7 @@ onUnmounted(() => {
 }
 
 .logo-icon {
-    color: #2563eb; /* Strong Blue */
+    color: var(--primary-hover); /* Strong Blue */
     filter: drop-shadow(0 2px 4px rgba(37, 99, 235, 0.2));
 }
 
@@ -716,10 +716,10 @@ onUnmounted(() => {
 }
 
 .nav-item.active {
-    background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%); /* CoreUI Primary Blue Gradient */
+    background: linear-gradient(135deg, var(--primary-color) 0%, var(--primary-hover) 100%); /* CoreUI Primary Blue Gradient */
     color: var(--text-inverse);
     font-weight: 600;
-    box-shadow: 0 4px 12px rgba(59, 130, 246, 0.25);
+    box-shadow: 0 4px 12px rgba(14, 165, 233, 0.25);
 }
 
 .nav-item.active svg {
@@ -770,7 +770,7 @@ onUnmounted(() => {
     font-weight: 600;
     line-height: 1;
     color: white;
-    background: #ef4444;
+    background: var(--error-color);
     border-radius: 9px;
 }
 
@@ -809,8 +809,8 @@ onUnmounted(() => {
 }
 
 .logout-btn:hover {
-    background-color: #fee2e2;
-    color: #ef4444;
+    background-color: var(--error-light);
+    color: var(--error-color);
 }
 
 /* Main Content Area */

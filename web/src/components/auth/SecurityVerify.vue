@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { cssVar } from '../../utils/cssVar'
 import { ref, onMounted, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ShieldCheck, RefreshCw, CheckCircle2 } from 'lucide-vue-next'
@@ -35,8 +36,8 @@ const drawCaptcha = (code: string) => {
 
     // Background with slight gradient
     const gradient = ctx.createLinearGradient(0, 0, canvas.width, canvas.height)
-    gradient.addColorStop(0, '#f8fafc')
-    gradient.addColorStop(1, '#f1f5f9')
+    gradient.addColorStop(0, cssVar('--gray-50'))
+    gradient.addColorStop(1, cssVar('--gray-100'))
     ctx.fillStyle = gradient
     ctx.fillRect(0, 0, canvas.width, canvas.height)
 
@@ -75,7 +76,7 @@ const drawCaptcha = (code: string) => {
         ctx.rotate(angle)
 
         // Random color
-        const colors = ['#0f172a', '#1e293b', '#334155', '#475569', '#2563eb', '#7c3aed', '#db2777']
+        const colors = [cssVar('--gray-900'), cssVar('--gray-800'), cssVar('--gray-700'), cssVar('--gray-600'), cssVar('--primary-hover'), cssVar('--accent-purple'), cssVar('--accent-rose')]
         ctx.fillStyle = colors[Math.floor(Math.random() * colors.length)]
 
         ctx.fillText(char, 0, 0)
@@ -298,9 +299,9 @@ onMounted(() => {
 }
 
 .is-verified .captcha-input {
-    border-color: var(--success-400, #4ade80);
-    background-color: var(--success-50, #f0fdf4);
-    color: var(--success-700, #15803d);
+    border-color: var(--success-400, var(--success-color));
+    background-color: var(--success-50, var(--success-light));
+    color: var(--success-700, var(--success-dark));
 }
 
 .success-mark {

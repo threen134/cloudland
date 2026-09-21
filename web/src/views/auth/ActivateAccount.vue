@@ -152,7 +152,7 @@ onUnmounted(() => {
 .decor-2 {
     width: 350px;
     height: 350px;
-    background: #bae6fd;
+    background: var(--primary-200);
     bottom: -50px;
     left: -50px;
 }

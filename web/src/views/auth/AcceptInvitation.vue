@@ -267,7 +267,7 @@ onMounted(() => {
 .decor-2 {
     width: 350px;
     height: 350px;
-    background: #bae6fd;
+    background: var(--primary-200);
     bottom: -50px;
     left: -50px;
 }
@@ -405,16 +405,16 @@ h2 {
     font-weight: var(--font-weight-semibold);
 }
 .role-1 {
-    background: #dbeafe;
-    color: #1d4ed8;
+    background: var(--primary-light);
+    color: var(--primary-active);
 }
 .role-2 {
     background: var(--success-light);
-    color: #065f46;
+    color: var(--success-dark);
 }
 .role-3 {
     background: var(--warning-light);
-    color: #92400e;
+    color: var(--warning-dark);
 }
 
 .new-user-form {
@@ -451,7 +451,7 @@ h2 {
 
 .form-input:focus {
     border-color: var(--primary-500);
-    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+    box-shadow: 0 0 0 3px rgba(14, 165, 233, 0.1);
 }
 
 .form-input:disabled {

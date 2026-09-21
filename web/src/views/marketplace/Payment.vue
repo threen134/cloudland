@@ -166,7 +166,7 @@ const handleConfirmPayment = async () => {
 }
 
 .success-icon {
-    color: #16a34a;
+    color: var(--success-dark);
     margin-bottom: 24px;
     display: flex;
     justify-content: center; /* flex center helpful for icon container */

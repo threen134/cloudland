@@ -337,9 +337,9 @@ onMounted(fetchAlarmDetail)
     border-radius: var(--radius-sm);
     font-size: var(--font-size-xs);
     font-weight: 500;
-    background: rgba(59, 130, 246, 0.1);
-    color: #3b82f6;
-    border: 1px solid rgba(59, 130, 246, 0.2);
+    background: rgba(14, 165, 233, 0.1);
+    color: var(--primary-color);
+    border: 1px solid rgba(14, 165, 233, 0.2);
 }
 
 .info-grid {
@@ -387,8 +387,8 @@ onMounted(fetchAlarmDetail)
 
 .btn-danger-outline {
     background: transparent;
-    color: #ef4444;
-    border: 1px solid #ef4444;
+    color: var(--error-color);
+    border: 1px solid var(--error-color);
     padding: 6px 12px;
     border-radius: var(--radius-md);
     cursor: pointer;
@@ -400,7 +400,7 @@ onMounted(fetchAlarmDetail)
 }
 
 .btn-danger-outline:hover {
-    background: #fef2f2;
+    background: var(--error-light);
 }
 
 @media (max-width: 768px) {

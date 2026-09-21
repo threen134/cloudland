@@ -877,7 +877,7 @@ onUnmounted(() => {
     width: 48px;
     height: 48px;
     border-radius: var(--radius-md);
-    background: linear-gradient(135deg, rgba(59, 130, 246, 0.1), rgba(6, 182, 212, 0.1));
+    background: linear-gradient(135deg, rgba(14, 165, 233, 0.1), rgba(6, 182, 212, 0.1));
     color: var(--primary-600);
     display: flex;
     align-items: center;
@@ -930,7 +930,7 @@ onUnmounted(() => {
 }
 
 .dropdown-item:hover:not(:disabled) {
-    background: var(--bg-hover, #f3f4f6);
+    background: var(--bg-hover, var(--gray-100));
 }
 
 .dropdown-divider {
@@ -984,16 +984,16 @@ onUnmounted(() => {
     color: var(--gray-600);
 }
 .role-1 {
-    background: #dbeafe;
-    color: #1d4ed8;
+    background: var(--primary-light);
+    color: var(--primary-active);
 }
 .role-2 {
     background: var(--success-light);
-    color: #065f46;
+    color: var(--success-dark);
 }
 .role-3 {
     background: var(--warning-light);
-    color: #92400e;
+    color: var(--warning-dark);
 }
 
 .actions {
@@ -1150,7 +1150,7 @@ onUnmounted(() => {
     display: inline-block;
     width: 120px;
     height: 8px;
-    background: var(--bg-tertiary, #e5e7eb);
+    background: var(--bg-tertiary, var(--gray-200));
     border-radius: 4px;
     overflow: hidden;
     vertical-align: middle;

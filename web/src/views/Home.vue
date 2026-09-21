@@ -296,7 +296,8 @@ const goToMarketplace = () => {
     --primary-800: #075985;
     --primary-900: #0c4a6e;
 
-    --primary-color: var(--primary-color);
+    /* --primary-color 继承自 :root。原先这里写的是 --primary-color: var(--primary-color)，
+       CSS 自引用构成循环、该自定义属性直接作废，是既有问题 */
     --primary-hover: #38bdf8;
     --primary-active: #0284c7;
     --primary-light: #e0f2fe;
@@ -310,7 +311,7 @@ const goToMarketplace = () => {
 }
 
 .text-gradient-blue {
-    background: linear-gradient(135deg, var(--primary-color), #06b6d4);
+    background: linear-gradient(135deg, var(--primary-color), var(--accent-teal));
     -webkit-background-clip: text;
     background-clip: text;
     -webkit-text-fill-color: transparent;
@@ -336,7 +337,7 @@ const goToMarketplace = () => {
 .hero {
     padding: var(--spacing-20) 0 var(--spacing-24);
     text-align: center;
-    background: linear-gradient(160deg, var(--bg-dark) 0%, #0c4a6e 30%, var(--primary-color) 70%, #06b6d4 100%);
+    background: linear-gradient(160deg, var(--bg-dark) 0%, var(--primary-900) 30%, var(--primary-color) 70%, var(--accent-teal) 100%);
     color: var(--text-inverse);
     position: relative;
     overflow: hidden;
@@ -441,14 +442,14 @@ const goToMarketplace = () => {
 }
 
 .badge-popular {
-    background: linear-gradient(135deg, var(--primary-color), #06b6d4);
+    background: linear-gradient(135deg, var(--primary-color), var(--accent-teal));
     color: white;
     border-radius: var(--radius-full);
 }
 
 /* Pricing */
 .pricing-section {
-    background: linear-gradient(180deg, #f0f9ff 0%, var(--bg-primary) 100%);
+    background: linear-gradient(180deg, var(--primary-50) 0%, var(--bg-primary) 100%);
 }
 
 .pricing-grid {
@@ -484,7 +485,7 @@ const goToMarketplace = () => {
 
 /* Features */
 .section-bg {
-    background: linear-gradient(180deg, var(--bg-primary) 0%, #f0f9ff 50%, var(--bg-primary) 100%) !important;
+    background: linear-gradient(180deg, var(--bg-primary) 0%, var(--primary-50) 50%, var(--bg-primary) 100%) !important;
 }
 
 .features-grid {
@@ -542,7 +543,7 @@ const goToMarketplace = () => {
 
 /* CTA */
 .cta-section {
-    background: linear-gradient(160deg, #0c4a6e 0%, var(--primary-color) 50%, #06b6d4 100%);
+    background: linear-gradient(160deg, var(--primary-900) 0%, var(--primary-color) 50%, var(--accent-teal) 100%);
     padding: var(--spacing-16) 0;
     position: relative;
     overflow: hidden;
@@ -582,7 +583,7 @@ const goToMarketplace = () => {
 
 /* Footer */
 .footer {
-    background: linear-gradient(180deg, var(--bg-dark) 0%, #1e293b 100%);
+    background: linear-gradient(180deg, var(--bg-dark) 0%, var(--gray-800) 100%);
     color: var(--text-inverse);
     padding: var(--spacing-16) 0 var(--spacing-8);
 }

@@ -523,9 +523,9 @@ watch(
 }
 
 .rt-critical {
-    background: rgba(239, 68, 68, 0.1);
-    color: #ef4444;
-    border-color: rgba(239, 68, 68, 0.2);
+    background: rgba(244, 63, 94, 0.1);
+    color: var(--error-color);
+    border-color: rgba(244, 63, 94, 0.2);
 }
 .rt-warning {
     background: rgba(245, 158, 11, 0.1);
@@ -533,9 +533,9 @@ watch(
     border-color: rgba(245, 158, 11, 0.2);
 }
 .rt-info {
-    background: rgba(59, 130, 246, 0.1);
-    color: #3b82f6;
-    border-color: rgba(59, 130, 246, 0.2);
+    background: rgba(14, 165, 233, 0.1);
+    color: var(--primary-color);
+    border-color: rgba(14, 165, 233, 0.2);
 }
 .rt-default {
     background: var(--gray-100);
@@ -577,8 +577,8 @@ watch(
     color: var(--primary-500);
 }
 .icon-btn-table.text-error:hover {
-    background-color: #fef2f2;
-    color: #ef4444;
+    background-color: var(--error-light);
+    color: var(--error-color);
 }
 
 /* Modal */
@@ -621,7 +621,7 @@ watch(
 }
 
 .form-error {
-    color: #ef4444;
+    color: var(--error-color);
     font-size: 0.75rem;
     margin-top: 4px;
 }

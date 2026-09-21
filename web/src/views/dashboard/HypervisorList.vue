@@ -788,7 +788,7 @@ onUnmounted(() => {
             <!-- Deploy Result -->
             <div v-else>
                 <div class="deploy-success">
-                    <Check :size="32" style="color: #10b981; margin-bottom: 12px" />
+                    <Check :size="32" style="color: var(--success-color); margin-bottom: 12px" />
                     <p style="font-weight: 600; margin-bottom: 16px">{{ t('dashboard.hypervisorDeploy.created') }}</p>
                     <p style="font-size: 0.8125rem; color: var(--text-secondary); margin-bottom: 16px">
                         {{ t('dashboard.hypervisorDeploy.runCommand') }}
@@ -1014,15 +1014,15 @@ onUnmounted(() => {
     padding: 2px 8px;
     text-align: center;
     border-radius: 10px;
-    background: var(--primary-50, #eef2ff);
-    color: var(--primary-600, #4f46e5);
+    background: var(--primary-50, var(--accent-purple-light));
+    color: var(--primary-600, var(--accent-purple));
     font-size: 0.8125rem;
     font-weight: 600;
 }
 
 .vm-count-badge.vm-count-zero {
-    background: var(--gray-100, #f3f4f6);
-    color: var(--text-light, #9ca3af);
+    background: var(--gray-100, var(--gray-100));
+    color: var(--text-light, var(--gray-400));
     font-weight: 400;
 }
 
@@ -1037,7 +1037,7 @@ onUnmounted(() => {
     overflow-y: auto;
     padding: 6px 0;
     background: var(--bg-card, var(--bg-primary));
-    border: 1px solid var(--border-color, #e5e7eb);
+    border: 1px solid var(--border-color, var(--gray-200));
     border-radius: 6px;
     box-shadow: 0 6px 16px rgba(0, 0, 0, 0.12);
 }
@@ -1053,18 +1053,18 @@ onUnmounted(() => {
 }
 
 .vm-tooltip-name {
-    color: var(--text-primary, #111827);
+    color: var(--text-primary, var(--gray-900));
 }
 
 .vm-tooltip-status {
-    color: var(--text-secondary, #6b7280);
+    color: var(--text-secondary, var(--gray-500));
     font-size: 0.75rem;
 }
 
 .vm-tooltip-empty {
     padding: 6px 12px;
     font-size: 0.8125rem;
-    color: var(--text-secondary, #6b7280);
+    color: var(--text-secondary, var(--gray-500));
 }
 
 .usage-cell {
@@ -1115,8 +1115,8 @@ onUnmounted(() => {
     color: var(--primary-500);
 }
 .icon-btn-table.text-error:hover {
-    background-color: #fef2f2;
-    color: #ef4444;
+    background-color: var(--error-light);
+    color: var(--error-color);
 }
 
 /* Modal */
@@ -1162,7 +1162,7 @@ onUnmounted(() => {
     position: absolute;
     bottom: calc(100% + 8px);
     left: -10px;
-    background: #1f2937;
+    background: var(--gray-800);
     color: white;
     padding: 8px 12px;
     border-radius: 4px;
@@ -1186,7 +1186,7 @@ onUnmounted(() => {
     margin-left: -5px;
     border-width: 5px;
     border-style: solid;
-    border-color: #1f2937 transparent transparent transparent;
+    border-color: var(--gray-800) transparent transparent transparent;
 }
 
 .tooltip-wrapper:hover .tooltip-text {
@@ -1248,11 +1248,11 @@ onUnmounted(() => {
 }
 
 .dropdown-item.text-error {
-    color: #ef4444;
+    color: var(--error-color);
 }
 
 .dropdown-item.text-error:hover {
-    background: #fef2f2;
+    background: var(--error-light);
 }
 
 .dropdown-divider {
@@ -1273,7 +1273,7 @@ onUnmounted(() => {
 }
 
 .btn-warning {
-    background: #f59e0b;
+    background: var(--warning-color);
     color: white;
     border: none;
     padding: 8px 16px;
@@ -1283,7 +1283,7 @@ onUnmounted(() => {
 }
 
 .btn-warning:hover {
-    background: #d97706;
+    background: var(--warning-dark);
 }
 .btn-warning:disabled {
     opacity: 0.5;

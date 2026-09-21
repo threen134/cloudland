@@ -825,7 +825,7 @@ const handleDeploy = (app: AppItem) => {
 .tag-free {
     background: var(--success-light);
     color: var(--success-dark);
-    border: 1px solid #a7f3d0;
+    border: 1px solid var(--success-light);
 }
 
 .tag-popular {
@@ -840,8 +840,8 @@ const handleDeploy = (app: AppItem) => {
 
 .tag-new {
     background: var(--accent-amber-light);
-    color: #92400e;
-    border: 1px solid #fcd34d;
+    color: var(--warning-dark);
+    border: 1px solid var(--warning-color);
     font-size: 10px;
     font-weight: var(--font-weight-bold);
     letter-spacing: 0.06em;

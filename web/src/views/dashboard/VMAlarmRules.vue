@@ -1355,7 +1355,7 @@ onMounted(fetchRules)
     border-radius: 4px;
 }
 .channel-item:hover {
-    background: var(--bg-hover, #f3f4f6);
+    background: var(--bg-hover, var(--gray-100));
 }
 .channel-item input[type='checkbox'] {
     cursor: pointer;

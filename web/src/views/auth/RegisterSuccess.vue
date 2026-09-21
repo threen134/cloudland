@@ -110,7 +110,7 @@ onUnmounted(() => {
 .decor-2 {
     width: 350px;
     height: 350px;
-    background: #bae6fd;
+    background: var(--primary-200);
     bottom: -50px;
     left: -50px;
 }
@@ -205,7 +205,7 @@ h2 {
     align-items: center;
     justify-content: center;
     border: 2px solid white;
-    box-shadow: 0 8px 24px rgba(59, 130, 246, 0.1);
+    box-shadow: 0 8px 24px rgba(14, 165, 233, 0.1);
 }
 
 .mail-icon {

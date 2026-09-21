@@ -646,12 +646,12 @@ onMounted(fetchRegions)
     color: var(--success-color);
 }
 .status-offline {
-    background: rgba(239, 68, 68, 0.1);
-    color: #ef4444;
+    background: rgba(244, 63, 94, 0.1);
+    color: var(--error-color);
 }
 .status-maintenance {
     background: rgba(245, 158, 11, 0.1);
-    color: #d97706;
+    color: var(--warning-dark);
 }
 
 .table-actions {
@@ -679,7 +679,7 @@ onMounted(fetchRegions)
     color: var(--primary-500);
 }
 .icon-btn-table.text-error:hover {
-    background-color: #fef2f2;
+    background-color: var(--error-light);
     color: var(--error-dark);
 }
 
@@ -722,7 +722,7 @@ onMounted(fetchRegions)
 }
 
 .btn-danger {
-    background: #ef4444;
+    background: var(--error-color);
     color: white;
     border: none;
     padding: 8px 16px;
@@ -731,7 +731,7 @@ onMounted(fetchRegions)
     font-weight: 500;
 }
 .btn-danger:hover {
-    background: #dc2626;
+    background: var(--error-dark);
 }
 .btn-danger:disabled {
     opacity: 0.5;
@@ -739,7 +739,7 @@ onMounted(fetchRegions)
 }
 
 .btn-warning {
-    background: #f59e0b;
+    background: var(--warning-color);
     color: white;
     border: none;
     padding: 8px 16px;
@@ -748,7 +748,7 @@ onMounted(fetchRegions)
     font-weight: 500;
 }
 .btn-warning:hover {
-    background: #d97706;
+    background: var(--warning-dark);
 }
 .btn-warning:disabled {
     opacity: 0.5;
@@ -768,9 +768,9 @@ onMounted(fetchRegions)
     gap: 8px;
     padding: 12px 16px;
     background: var(--warning-light);
-    border: 1px solid #fde68a;
+    border: 1px solid var(--warning-light);
     border-radius: var(--radius-md);
-    color: #92400e;
+    color: var(--warning-dark);
     font-size: 0.875rem;
     font-weight: 500;
 }
@@ -828,10 +828,10 @@ onMounted(fetchRegions)
     gap: 12px;
     margin-top: 1rem;
     padding: 12px 16px;
-    background: rgba(239, 68, 68, 0.05);
-    border: 1px solid rgba(239, 68, 68, 0.2);
+    background: rgba(244, 63, 94, 0.05);
+    border: 1px solid rgba(244, 63, 94, 0.2);
     border-radius: var(--radius-md);
-    color: #ef4444;
+    color: var(--error-color);
 }
 
 .delete-warning-box i {

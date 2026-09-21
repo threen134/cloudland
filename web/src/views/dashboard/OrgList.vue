@@ -764,7 +764,7 @@ const handleUpdateStatus = async (orgId: string, status: number) => {
     display: inline-block;
     width: 120px;
     height: 8px;
-    background: var(--bg-tertiary, #e5e7eb);
+    background: var(--bg-tertiary, var(--gray-200));
     border-radius: 4px;
     overflow: hidden;
     vertical-align: middle;

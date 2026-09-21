@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { cssVar } from '../../utils/cssVar'
 import { ref, watch } from 'vue'
 import { instancesApi, type InstanceInterface, type InstanceVolume } from '../../api/instances'
 import type { ChartData, ChartDataset } from 'chart.js'
@@ -54,7 +55,7 @@ const fetchData = async () => {
                     {
                         label: t('dashboard.monitoring.cpuUsage'),
                         data: result.values.map((v) => parseFloat(v.value)),
-                        borderColor: '#0ea5e9',
+                        borderColor: cssVar('--primary-color'),
                         backgroundColor: 'rgba(14, 165, 233, 0.1)',
                         fill: true,
                     },
@@ -79,14 +80,14 @@ const fetchData = async () => {
                             label: t('dashboard.monitoring.total'),
                             // chart.js 的数据点必须是数字，不能是 toFixed 出来的字符串
                             data: result.values[0].map((v) => Number((parseFloat(v.value) / 1024 / 1024).toFixed(2))),
-                            borderColor: '#94a3b8',
+                            borderColor: cssVar('--gray-400'),
                             borderDash: [5, 5],
                             fill: false,
                         },
                         {
                             label: t('dashboard.monitoring.used'),
                             data: result.values[1].map((v) => Number((parseFloat(v.value) / 1024 / 1024).toFixed(2))),
-                            borderColor: '#10b981',
+                            borderColor: cssVar('--success-color'),
                             backgroundColor: 'rgba(16, 185, 129, 0.1)',
                             fill: true,
                         },
@@ -111,7 +112,7 @@ const fetchData = async () => {
                     if (i.id) ifaceNameById[i.id] = i.name || `eth${idx}`
                 })
 
-                const colors = ['#0ea5e9', '#06b6d4', '#10b981', '#f59e0b', '#8b5cf6', '#f43f5e']
+                const colors = [cssVar('--primary-color'), cssVar('--accent-teal'), cssVar('--success-color'), cssVar('--warning-color'), cssVar('--accent-purple'), cssVar('--error-color')]
                 const datasets: ChartDataset<'line'>[] = []
                 let labels: string[] = []
                 let colorIdx = 0
@@ -393,8 +394,8 @@ watch(() => props.instanceId, fetchData)
 }
 
 .monitor-error {
-    background: #fef2f2;
-    color: #ef4444;
+    background: var(--error-light);
+    color: var(--error-color);
     padding: 8px 12px;
     border-radius: var(--radius-md);
     margin-bottom: 16px;

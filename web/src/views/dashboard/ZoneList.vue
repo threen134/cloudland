@@ -390,8 +390,8 @@ onMounted(() => {
     font-weight: 500;
 }
 .badge-primary {
-    background: rgba(59, 130, 246, 0.1);
-    color: #3b82f6;
+    background: rgba(14, 165, 233, 0.1);
+    color: var(--primary-color);
 }
 .badge-secondary {
     background: var(--gray-100);
@@ -421,8 +421,8 @@ onMounted(() => {
     color: var(--primary-500);
 }
 .icon-btn-table.text-error:hover {
-    background-color: #fef2f2;
-    color: #ef4444;
+    background-color: var(--error-light);
+    color: var(--error-color);
 }
 
 .empty-state {

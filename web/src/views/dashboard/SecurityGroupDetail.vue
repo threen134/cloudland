@@ -695,7 +695,7 @@ onMounted(fetchGroup)
 }
 
 .dropdown-item:hover:not(:disabled) {
-    background: var(--bg-hover, #f3f4f6);
+    background: var(--bg-hover, var(--gray-100));
 }
 
 .dropdown-item:disabled {
@@ -704,11 +704,11 @@ onMounted(fetchGroup)
 }
 
 .dropdown-item-danger {
-    color: var(--error-color, #ef4444);
+    color: var(--error-color, var(--error-color));
 }
 
 .dropdown-item-danger:hover:not(:disabled) {
-    background: #fef2f2;
+    background: var(--error-light);
 }
 
 .dropdown-divider {
@@ -807,7 +807,7 @@ onMounted(fetchGroup)
     gap: var(--spacing-2);
     padding: var(--spacing-3) var(--spacing-5);
     border-bottom: 1px solid var(--border-light);
-    background: var(--bg-secondary, #f9fafb);
+    background: var(--bg-secondary, var(--gray-50));
 }
 
 .filter-select {

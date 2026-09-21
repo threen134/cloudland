@@ -234,7 +234,7 @@ onUnmounted(() => {
 
 .progress-fill {
     height: 100%;
-    background: var(--primary-500, #3b82f6);
+    background: var(--primary-500, var(--primary-color));
     transition: width 0.4s ease;
 }
 
@@ -270,7 +270,7 @@ onUnmounted(() => {
 }
 
 .phase-message {
-    color: var(--danger-600, #dc2626);
+    color: var(--danger-600, var(--error-dark));
 }
 
 .vpc-detail {

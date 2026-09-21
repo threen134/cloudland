@@ -726,7 +726,7 @@ onMounted(fetchHypervisorDetail)
 }
 
 .dropdown-item:hover:not(:disabled) {
-    background: var(--bg-hover, #f3f4f6);
+    background: var(--bg-hover, var(--gray-100));
 }
 
 .dropdown-item:disabled {
@@ -793,8 +793,8 @@ onMounted(fetchHypervisorDetail)
     margin-left: 8px;
     padding: 1px 8px;
     border-radius: 10px;
-    background: var(--primary-50, #eef2ff);
-    color: var(--primary-600, #4f46e5);
+    background: var(--primary-50, var(--accent-purple-light));
+    color: var(--primary-600, var(--accent-purple));
     font-size: 0.75rem;
     font-weight: 600;
 }
@@ -823,7 +823,7 @@ onMounted(fetchHypervisorDetail)
 
 .hyper-vm-head {
     font-size: 0.75rem;
-    color: var(--text-light, #9ca3af);
+    color: var(--text-light, var(--gray-400));
     border-bottom: 1px solid var(--border-default);
     padding-bottom: 6px;
 }
@@ -841,7 +841,7 @@ onMounted(fetchHypervisorDetail)
 }
 
 .hyper-vm-item:hover {
-    background: var(--gray-50, #f9fafb);
+    background: var(--gray-50, var(--gray-50));
 }
 
 /* 每个单元格都要能收缩并省略，否则长内容会把整列撑开、破坏对齐 */
@@ -961,7 +961,7 @@ onMounted(fetchHypervisorDetail)
 
 /* Modal */
 .btn-warning {
-    background: #f59e0b;
+    background: var(--warning-color);
     color: white;
     border: none;
     padding: 8px 16px;
@@ -971,7 +971,7 @@ onMounted(fetchHypervisorDetail)
 }
 
 .btn-warning:hover {
-    background: #d97706;
+    background: var(--warning-dark);
 }
 .btn-warning:disabled {
     opacity: 0.5;

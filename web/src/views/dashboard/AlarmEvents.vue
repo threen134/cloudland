@@ -258,7 +258,7 @@ onMounted(fetchEvents)
 
 .delivery-logs {
     padding: 12px 16px;
-    background: var(--bg-secondary, #f9fafb);
+    background: var(--bg-secondary, var(--gray-50));
 }
 .delivery-logs h4 {
     margin: 0 0 8px 0;
@@ -275,44 +275,44 @@ onMounted(fetchEvents)
 }
 
 .badge-resolved {
-    background: #22c55e;
+    background: var(--success-color);
     color: white;
 }
 .badge-critical {
-    background: #dc2626;
+    background: var(--error-dark);
     color: white;
 }
 .badge-warning {
-    background: #f59e0b;
+    background: var(--warning-color);
     color: white;
 }
 .badge-info {
-    background: #3b82f6;
+    background: var(--primary-color);
     color: white;
 }
 .badge-secondary {
-    background: #6b7280;
+    background: var(--gray-500);
     color: white;
 }
 .badge-notify-trigger {
-    background: #1e3a8a;
+    background: var(--primary-900);
     color: white;
 }
 .badge-notify-remind {
-    background: #60a5fa;
+    background: var(--primary-400);
     color: white;
 }
 .text-success {
-    color: #22c55e;
+    color: var(--success-color);
 }
 .text-danger {
-    color: #ef4444;
+    color: var(--error-color);
 }
 .text-center {
     text-align: center;
 }
 .text-muted {
-    color: #9ca3af;
+    color: var(--gray-400);
 }
 .error-cell {
     max-width: 200px;

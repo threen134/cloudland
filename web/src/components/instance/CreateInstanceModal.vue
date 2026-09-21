@@ -1525,7 +1525,7 @@ watch(
     display: inline-flex;
     align-items: center;
     cursor: pointer;
-    color: var(--text-secondary, #888);
+    color: var(--text-secondary, var(--gray-500));
     transition: all 0.2s;
 }
 .iface-help-icon:hover {

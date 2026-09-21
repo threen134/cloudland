@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { cssVar } from '../../utils/cssVar'
 import { ref, watch } from 'vue'
 import { hypervisorsApi } from '../../api/hypervisors'
 import type { ChartData } from 'chart.js'
@@ -61,8 +62,8 @@ const fetchData = async () => {
                     {
                         label: t('dashboard.monitoring.cpuUsage'),
                         data: cpuResult.values.map((v) => parseFloat(v.value)),
-                        borderColor: '#3b82f6',
-                        backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                        borderColor: cssVar('--primary-color'),
+                        backgroundColor: 'rgba(14, 165, 233, 0.1)',
                         fill: true,
                     },
                 ],
@@ -83,14 +84,14 @@ const fetchData = async () => {
                         {
                             label: t('dashboard.monitoring.total'),
                             data: totalSamples.map((v) => Number((parseFloat(v.value) / 1024 / 1024).toFixed(2))),
-                            borderColor: '#94a3b8',
+                            borderColor: cssVar('--gray-400'),
                             borderDash: [5, 5],
                             fill: false,
                         },
                         {
                             label: t('dashboard.monitoring.used'),
                             data: usedSamples.map((v) => Number((parseFloat(v.value) / 1024 / 1024).toFixed(2))),
-                            borderColor: '#10b981',
+                            borderColor: cssVar('--success-color'),
                             backgroundColor: 'rgba(16, 185, 129, 0.1)',
                             fill: true,
                         },
@@ -286,7 +287,7 @@ watch(() => props.hostname, fetchData)
     color: var(--text-primary);
     background: var(--bg-primary);
     /* .form-select 没有全局定义，这里若不显式指定边框，datetime-local 会退回浏览器
-       默认的深灰边框（Chrome 约 #767676），在浅色和深色主题下都突兀 */
+       默认的深灰边框（Chrome 约 var(--gray-500)），在浅色和深色主题下都突兀 */
     border: 1px solid var(--border-light);
     border-radius: var(--radius-sm);
     transition:
@@ -362,11 +363,11 @@ watch(() => props.hostname, fetchData)
 
 .monitor-error {
     padding: var(--spacing-3);
-    background: #fef2f2;
-    color: #ef4444;
+    background: var(--error-light);
+    color: var(--error-color);
     border-radius: var(--radius-md);
     font-size: 0.85rem;
-    border: 1px solid #fee2e2;
+    border: 1px solid var(--error-light);
 }
 
 @media (max-width: 768px) {

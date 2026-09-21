@@ -727,7 +727,7 @@ onUnmounted(() => {
     bottom: calc(100% + 6px);
     left: 50%;
     transform: translateX(-50%);
-    background: var(--gray-800, #1f2937);
+    background: var(--gray-800, var(--gray-800));
     color: var(--text-inverse);
     font-size: var(--font-size-xs);
     font-weight: 400;
@@ -749,7 +749,7 @@ onUnmounted(() => {
     left: 50%;
     transform: translateX(-50%);
     border: 5px solid transparent;
-    border-top-color: var(--gray-800, #1f2937);
+    border-top-color: var(--gray-800, var(--gray-800));
 }
 
 .help-icon-wrap:hover .help-tooltip {

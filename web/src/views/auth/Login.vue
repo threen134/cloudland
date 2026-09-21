@@ -204,7 +204,7 @@ const handleSubmit = async () => {
     min-height: 100vh;
     display: flex;
     flex-direction: column;
-    background: linear-gradient(180deg, var(--primary-light) 0%, #f0f9ff 40%, var(--bg-secondary) 100%);
+    background: linear-gradient(180deg, var(--primary-light) 0%, var(--primary-50) 40%, var(--bg-secondary) 100%);
     font-family:
         'Inter',
         -apple-system,
@@ -212,7 +212,7 @@ const handleSubmit = async () => {
         'Segoe UI',
         Roboto,
         sans-serif;
-    color: #1a2332;
+    color: var(--gray-800);
 }
 
 /* ── Navbar ── */
@@ -233,7 +233,7 @@ const handleSubmit = async () => {
     text-decoration: none;
     font-weight: 700;
     font-size: 1.25rem;
-    color: #1a2332;
+    color: var(--gray-800);
 }
 
 .pl-logo-wrapper {
@@ -289,7 +289,7 @@ const handleSubmit = async () => {
 /* ── Left Panel ── */
 .pl-card-left {
     flex: 1.4;
-    background: linear-gradient(135deg, #bae6fd 0%, var(--primary-color) 100%);
+    background: linear-gradient(135deg, var(--primary-200) 0%, var(--primary-color) 100%);
     color: var(--text-inverse);
     padding: 60px 8%;
     display: flex;
@@ -350,7 +350,7 @@ const handleSubmit = async () => {
 .pl-form-title {
     font-size: 1.875rem;
     font-weight: 800;
-    color: #1a2332;
+    color: var(--gray-800);
     margin-bottom: 10px;
     letter-spacing: -0.01em;
 }
@@ -362,9 +362,9 @@ const handleSubmit = async () => {
 }
 
 .pl-error-box {
-    background: #fff1f2;
-    border: 1px solid #fecdd3;
-    color: #e11d48;
+    background: var(--error-light);
+    border: 1px solid var(--error-light);
+    color: var(--error-dark);
     padding: 12px;
     border-radius: 12px;
     margin-bottom: 24px;
@@ -375,9 +375,9 @@ const handleSubmit = async () => {
 }
 
 .pl-warning-box {
-    background-color: #fffbeb;
-    border: 1px solid #fef3c7;
-    color: #92400e;
+    background-color: var(--warning-light);
+    border: 1px solid var(--warning-light);
+    color: var(--warning-dark);
     padding: 12px;
     border-radius: 12px;
     margin-bottom: 24px;
@@ -424,7 +424,7 @@ const handleSubmit = async () => {
     border-radius: 14px;
     font-size: 0.9375rem;
     transition: all 0.2s;
-    color: #1a2332;
+    color: var(--gray-800);
 }
 
 .pl-input:focus {
@@ -524,7 +524,7 @@ const handleSubmit = async () => {
     width: 100%;
     height: 54px;
     padding: 0 24px;
-    background: linear-gradient(135deg, var(--primary-color) 0%, #06b6d4 100%);
+    background: linear-gradient(135deg, var(--primary-color) 0%, var(--accent-teal) 100%);
     color: var(--text-inverse);
     border: none;
     border-radius: 14px;
@@ -540,7 +540,7 @@ const handleSubmit = async () => {
 }
 
 .pl-btn-login:hover {
-    background: linear-gradient(135deg, #0284c7 0%, #0891b2 100%);
+    background: linear-gradient(135deg, var(--primary-hover) 0%, var(--accent-teal) 100%);
     transform: translateY(-1px);
     box-shadow: 0 12px 28px rgba(14, 165, 233, 0.3);
 }
@@ -578,7 +578,7 @@ const handleSubmit = async () => {
     width: 100%;
     height: 50px;
     background: var(--bg-primary);
-    color: #1a2332;
+    color: var(--gray-800);
     border: 1px solid var(--border-default);
     border-radius: 14px;
     font-size: 0.9375rem;
@@ -596,7 +596,7 @@ const handleSubmit = async () => {
     width: 20px;
     height: 20px;
     border: 2.5px solid rgba(255, 255, 255, 0.3);
-    border-top-color: #fff;
+    border-top-color: var(--bg-primary);
     border-radius: 50%;
     animation: spin 0.8s linear infinite;
 }
@@ -636,7 +636,7 @@ const handleSubmit = async () => {
 }
 
 .pl-footer-links a:hover {
-    color: #1a2332;
+    color: var(--gray-800);
 }
 
 /* ── Responsive ── */

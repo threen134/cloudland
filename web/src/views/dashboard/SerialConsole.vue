@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { cssVar } from '../../utils/cssVar'
 import { ref, onMounted, onUnmounted, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
@@ -122,7 +123,7 @@ const setupTerminal = () => {
         scrollback: 5000,
         fontSize: 14,
         fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace',
-        theme: { background: '#000000' },
+        theme: { background: cssVar('--text-primary') },
     })
     fitAddon = new FitAddon()
     term.loadAddon(fitAddon)
@@ -430,14 +431,14 @@ onUnmounted(() => {
     height: 100vh;
     width: 100vw;
     background-color: var(--bg-dark);
-    color: #f1f5f9;
+    color: var(--gray-100);
     overflow: hidden;
 }
 
 .console-header {
     min-height: 60px;
-    background-color: #1e293b;
-    border-bottom: 1px solid #334155;
+    background-color: var(--gray-800);
+    border-bottom: 1px solid var(--gray-700);
     display: flex;
     justify-content: space-between;
     align-items: center;
@@ -462,7 +463,7 @@ onUnmounted(() => {
 .app-icon {
     width: 36px;
     height: 36px;
-    background: linear-gradient(135deg, var(--success-color), #059669);
+    background: linear-gradient(135deg, var(--success-color), var(--success-dark));
     border-radius: 8px;
     display: flex;
     align-items: center;
@@ -478,7 +479,7 @@ onUnmounted(() => {
 .instance-name {
     font-size: 16px;
     font-weight: 600;
-    color: #f1f5f9;
+    color: var(--gray-100);
     margin: 0;
     line-height: 1.2;
 }
@@ -497,40 +498,40 @@ onUnmounted(() => {
     padding: 4px 12px;
     border-radius: 100px;
     font-size: 12px;
-    border: 1px solid #334155;
+    border: 1px solid var(--gray-700);
 }
 
 .status-dot {
     width: 8px;
     height: 8px;
     border-radius: 50%;
-    background-color: #94a3b8;
+    background-color: var(--gray-400);
 }
 
 .status-indicator.connecting .status-dot {
-    background-color: #eab308;
+    background-color: var(--warning-color);
 }
 .status-indicator.connected .status-dot {
-    background-color: #22c55e;
-    box-shadow: 0 0 8px #22c55e;
+    background-color: var(--success-color);
+    box-shadow: 0 0 8px var(--success-color);
 }
 .status-indicator.error .status-dot {
-    background-color: #ef4444;
+    background-color: var(--error-color);
 }
 
 .notice {
     font-size: 12px;
-    color: #22c55e;
+    color: var(--success-color);
 }
 
 .notice.warn {
-    color: #eab308;
+    color: var(--warning-color);
 }
 
 .btn-console {
-    background-color: #334155;
-    border: 1px solid #475569;
-    color: #f1f5f9;
+    background-color: var(--gray-700);
+    border: 1px solid var(--gray-600);
+    color: var(--gray-100);
     height: 32px;
     padding: 0 10px;
     border-radius: 6px;
@@ -542,7 +543,7 @@ onUnmounted(() => {
 }
 
 .btn-console:hover:not(:disabled) {
-    background-color: #475569;
+    background-color: var(--gray-600);
 }
 
 .btn-console:disabled {
@@ -554,7 +555,7 @@ onUnmounted(() => {
     flex-grow: 1;
     min-height: 0;
     position: relative;
-    background-color: #000;
+    background-color: var(--text-primary);
     padding: 6px 0 0 8px;
 }
 
@@ -578,15 +579,15 @@ onUnmounted(() => {
     max-width: 420px;
     text-align: center;
     padding: 32px;
-    background-color: #1e293b;
-    border: 1px solid #334155;
+    background-color: var(--gray-800);
+    border: 1px solid var(--gray-700);
     border-radius: 10px;
 }
 
 .error-content h2 {
     margin: 16px 0 8px;
     font-size: 20px;
-    color: #f1f5f9;
+    color: var(--gray-100);
 }
 
 .error-content p {
@@ -595,11 +596,11 @@ onUnmounted(() => {
 }
 
 .text-error {
-    color: #ef4444;
+    color: var(--error-color);
 }
 
 .text-warn {
-    color: #eab308;
+    color: var(--warning-color);
 }
 
 .auth-form {
@@ -614,20 +615,20 @@ onUnmounted(() => {
     height: 38px;
     padding: 0 12px;
     border-radius: 6px;
-    border: 1px solid #475569;
+    border: 1px solid var(--gray-600);
     background-color: var(--bg-dark);
-    color: #f1f5f9;
+    color: var(--gray-100);
     font-size: 14px;
 }
 
 .password-input:focus {
     outline: none;
-    border-color: #3b82f6;
+    border-color: var(--primary-color);
 }
 
 .auth-error {
     margin: 10px 0 0;
-    color: #f87171 !important;
+    color: var(--error-color) !important;
     font-size: 13px !important;
 }
 
@@ -665,7 +666,7 @@ onUnmounted(() => {
 }
 
 .btn-primary {
-    background-color: #3b82f6;
+    background-color: var(--primary-color);
     color: white;
     border: none;
     padding: 8px 16px;
@@ -683,8 +684,8 @@ onUnmounted(() => {
 
 .console-footer {
     min-height: 32px;
-    background-color: #1e293b;
-    border-top: 1px solid #334155;
+    background-color: var(--gray-800);
+    border-top: 1px solid var(--gray-700);
     display: flex;
     align-items: center;
     padding: 4px 20px;
