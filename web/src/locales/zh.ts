@@ -1559,6 +1559,16 @@ export default {
             showing: '第 {from}-{to} 条，共 {total} 条',
             perPage: '每页',
         },
+        // 节点告警的规则类型文案（值见 api/alarms.ts 的 RULE_TYPES）
+        alarmRuleTypes: {
+            node_available: '节点可用性',
+            control_node: '控制节点',
+            compute_node: '计算节点',
+            hypervisor_vcpu: '宿主机 vCPU',
+            packet_drop: '网卡丢包',
+            ip_block: 'IP 段',
+            ipgroup_available_ip: 'IP 组可用地址',
+        },
         alarmActions: {
             ruleType: '规则类型',
             allTypes: '所有类型',

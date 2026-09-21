@@ -1560,6 +1560,16 @@ export default {
             showing: '第 {from}-{to} 條，共 {total} 條',
             perPage: '每頁',
         },
+        // 節點告警的規則類型文案（值見 api/alarms.ts 的 RULE_TYPES）
+        alarmRuleTypes: {
+            node_available: '節點可用性',
+            control_node: '控制節點',
+            compute_node: '計算節點',
+            hypervisor_vcpu: '主機 vCPU',
+            packet_drop: '網路卡丟包',
+            ip_block: 'IP 網段',
+            ipgroup_available_ip: 'IP 組可用位址',
+        },
         alarmActions: {
             ruleType: '規則類型',
             allTypes: '所有類型',

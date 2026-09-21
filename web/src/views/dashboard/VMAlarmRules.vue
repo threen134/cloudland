@@ -327,6 +327,13 @@ const submitCreate = async () => {
             region_id: regionUuid,
         }
 
+        // 每条阈值的 name 既不显示也不参与生成 Prometheus 规则（组名、alert 名、rule_id
+        // 都由「类型_owner_组UUID_序号」推导），所以不让用户填，按组名加序号补一个，
+        // 只为让 clapi 的日志和数据库行可读——原先一直是空串
+        createForm.value.rules.forEach((row, i) => {
+            row.name = `${createForm.value.name}_${i}`
+        })
+
         // 表单行是三种规则类型的并集，提交时按当前类型收窄（见 RuleFormRow）
         let res: CreateVMAlarmRuleResponse | CreateBWRuleResponse | undefined
         if (createForm.value.type === 'cpu') {
@@ -963,7 +970,9 @@ onMounted(fetchRules)
                 <button type="button" class="btn btn-secondary" @click="showCreateModal = false">
                     {{ t('actions.cancel') }}
                 </button>
-                <button type="submit" class="btn btn-primary" :disabled="!createForm.name">
+                <!-- 禁用条件必须与 submitCreate 的守卫一致：原先只判断非空，名字含连字符这类
+                     不合规则时按钮仍可点，而 submitCreate 直接 return，点下去毫无反应 -->
+                <button type="submit" class="btn btn-primary" :disabled="!isNameValid">
                     {{ t('actions.save') }}
                 </button>
             </template>

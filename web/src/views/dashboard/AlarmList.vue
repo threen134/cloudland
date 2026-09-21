@@ -109,10 +109,8 @@ const filteredAlarms = computed(() => {
     )
 })
 
-const getRuleTypeLabel = (type: string) => {
-    const found = RULE_TYPES.find((r) => r.value === type)
-    return found ? found.label : type
-}
+const getRuleTypeLabel = (type: string) =>
+    (RULE_TYPES as readonly string[]).includes(type) ? t('dashboard.alarmRuleTypes.' + type) : type
 
 const getRuleTypeClass = (type: string) => {
     const map: Record<string, string> = {
@@ -298,7 +296,7 @@ watch(
             <template #filters>
                 <select v-model="filterRuleType" @change="fetchAlarms" class="filter-select">
                     <option value="">{{ t('dashboard.alarmActions.allTypes') }}</option>
-                    <option v-for="rt in RULE_TYPES" :key="rt.value" :value="rt.value">{{ rt.label }}</option>
+                    <option v-for="rt in RULE_TYPES" :key="rt" :value="rt">{{ t('dashboard.alarmRuleTypes.' + rt) }}</option>
                 </select>
             </template>
             <template #actions>
@@ -425,7 +423,7 @@ watch(
                     <label class="form-label">{{ t('dashboard.alarmActions.ruleType') }} *</label>
                     <select v-model="createForm.rule_type" @change="onRuleTypeChange" class="form-input">
                         <option value="" disabled>{{ t('dashboard.alarmActions.selectRuleType') }}</option>
-                        <option v-for="rt in RULE_TYPES" :key="rt.value" :value="rt.value">{{ rt.label }}</option>
+                        <option v-for="rt in RULE_TYPES" :key="rt" :value="rt">{{ t('dashboard.alarmRuleTypes.' + rt) }}</option>
                     </select>
                 </div>
                 <div class="form-group">

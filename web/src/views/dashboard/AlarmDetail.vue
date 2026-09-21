@@ -63,10 +63,8 @@ const toggleEnabled = async () => {
     }
 }
 
-const getRuleTypeLabel = (type: string) => {
-    const found = RULE_TYPES.find((r) => r.value === type)
-    return found ? found.label : type
-}
+const getRuleTypeLabel = (type: string) =>
+    (RULE_TYPES as readonly string[]).includes(type) ? t('dashboard.alarmRuleTypes.' + type) : type
 
 const goBack = useGoBack('alarms')
 

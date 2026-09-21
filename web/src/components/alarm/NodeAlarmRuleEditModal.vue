@@ -24,7 +24,8 @@ const form = ref({ name: '', description: '' })
 const configJsonStr = ref('{}')
 const configError = ref('')
 
-const ruleTypeLabel = (type?: string) => RULE_TYPES.find((r) => r.value === type)?.label || type || ''
+const ruleTypeLabel = (type?: string) =>
+    type && (RULE_TYPES as readonly string[]).includes(type) ? t('dashboard.alarmRuleTypes.' + type) : type || ''
 
 watch(
     () => props.show,

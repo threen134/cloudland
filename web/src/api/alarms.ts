@@ -75,14 +75,16 @@ export interface UpdateNodeAlarmRulePayload {
     enabled?: boolean
 }
 
+// 只有值，文案在 i18n 的 dashboard.alarmRuleTypes.<value>（同 VM_RULE_TYPES 的做法）。
+// 原先这里带 label 且是写死的英文，中文界面上「规则类型」一列显示的是 Node Available 这种
 export const RULE_TYPES = [
-    { value: 'node_available', label: 'Node Available' },
-    { value: 'control_node', label: 'Control Node' },
-    { value: 'compute_node', label: 'Compute Node' },
-    { value: 'hypervisor_vcpu', label: 'Hypervisor vCPU' },
-    { value: 'packet_drop', label: 'Packet Drop' },
-    { value: 'ip_block', label: 'IP Block' },
-    { value: 'ipgroup_available_ip', label: 'IP Group Available IP' },
+    'node_available',
+    'control_node',
+    'compute_node',
+    'hypervisor_vcpu',
+    'packet_drop',
+    'ip_block',
+    'ipgroup_available_ip',
 ] as const
 
 export const alarmsApi = {

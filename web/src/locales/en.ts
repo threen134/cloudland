@@ -1587,6 +1587,16 @@ export default {
             showing: 'Showing {from}-{to} of {total}',
             perPage: 'Per page',
         },
+        // Node alarm rule types (values live in RULE_TYPES in api/alarms.ts)
+        alarmRuleTypes: {
+            node_available: 'Node Available',
+            control_node: 'Control Node',
+            compute_node: 'Compute Node',
+            hypervisor_vcpu: 'Hypervisor vCPU',
+            packet_drop: 'Packet Drop',
+            ip_block: 'IP Block',
+            ipgroup_available_ip: 'IP Group Available IP',
+        },
         alarmActions: {
             ruleType: 'Rule Type',
             allTypes: 'All Types',
