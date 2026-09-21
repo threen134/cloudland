@@ -211,7 +211,7 @@ onMounted(fetchChannels)
                     <button class="icon-btn-table" @click="openEdit(ch)">
                         <Pencil :size="16" />
                     </button>
-                    <button class="icon-btn-table text-error" @click="confirmDelete(ch)">
+                    <button class="icon-btn-table icon-danger" @click="confirmDelete(ch)">
                         <Trash2 :size="16" />
                     </button>
                 </div>
@@ -322,11 +322,13 @@ onMounted(fetchChannels)
     background-color: var(--bg-tertiary);
     color: var(--primary-color);
 }
-.icon-btn-table.text-error:hover {
+.icon-btn-table.icon-danger:hover {
     background-color: var(--error-light);
     color: var(--error-dark);
 }
-.text-error {
+/* 删除类图标按钮：静止态灰、hover 变红（见上面的 :hover 规则）。
+   原先这个类叫 .text-error，与全局「错误文字为红色」的语义相反 */
+.icon-danger {
     color: var(--text-tertiary);
 }
 
@@ -362,10 +364,6 @@ onMounted(fetchChannels)
     height: 6px;
     background: currentColor;
     border-radius: 50%;
-}
-
-.text-danger {
-    color: var(--error-color);
 }
 
 /* Modal */

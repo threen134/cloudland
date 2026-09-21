@@ -783,7 +783,7 @@ onMounted(fetchRules)
                         :class="{ 'input-error': nameError }"
                         required
                     />
-                    <div v-if="nameError" class="input-tip text-error">{{ nameError }}</div>
+                    <div v-if="nameError" class="input-tip input-tip-error">{{ nameError }}</div>
                 </div>
                 <div class="rules-section">
                     <div class="rules-header">
@@ -842,7 +842,7 @@ onMounted(fetchRules)
                         <button
                             v-if="createForm.rules.length > 1"
                             type="button"
-                            class="btn btn-ghost btn-icon text-error"
+                            class="btn btn-ghost btn-icon icon-danger"
                             @click="removeRuleRow(idx)"
                         >
                             <Trash2 :size="14" />
@@ -1224,17 +1224,16 @@ onMounted(fetchRules)
     background-color: var(--bg-tertiary);
     color: var(--primary-color);
 }
-.icon-btn-table.text-error:hover {
+.icon-btn-table.icon-danger:hover {
     background-color: var(--error-light);
     color: var(--error-dark);
 }
-.text-error {
+/* 删除类图标按钮：静止态灰、hover 变红（见上面的 :hover 规则）。
+   原先这个类叫 .text-error，与全局「错误文字为红色」的语义相反 */
+.icon-danger {
     color: var(--text-tertiary);
 }
 
-.text-danger {
-    color: var(--error-color);
-}
 .text-center {
     text-align: center;
 }
@@ -1340,6 +1339,13 @@ onMounted(fetchRules)
     font-size: 11px;
     color: var(--text-tertiary);
     line-height: 1.2;
+}
+
+/* 校验失败的提示。原先复用的是本文件里的 .text-error，而那个类在这里被当成
+   「删除按钮静止态的灰」（hover 才变红，见 .icon-btn-table.text-error:hover），
+   加上 .input-tip 本身也是灰的且定义在后面，错误提示一直是灰色的 */
+.input-tip-error {
+    color: var(--error-color);
 }
 
 .channel-list {

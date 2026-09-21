@@ -284,24 +284,14 @@ const goToMarketplace = () => {
 .home-page {
     background: var(--bg-primary);
 
-    /* Scoped CloudLand Theme - Sky Blue (matches Login page) */
-    --primary-50: #f0f9ff;
-    --primary-100: #e0f2fe;
-    --primary-200: #bae6fd;
-    --primary-300: #7dd3fc;
-    --primary-400: #38bdf8;
-    --primary-500: #0ea5e9;
-    --primary-600: #0284c7;
-    --primary-700: #0369a1;
-    --primary-800: #075985;
-    --primary-900: #0c4a6e;
-
-    /* --primary-color 继承自 :root。原先这里写的是 --primary-color: var(--primary-color)，
-       CSS 自引用构成循环、该自定义属性直接作废，是既有问题 */
-    --primary-hover: #38bdf8;
-    --primary-active: #0284c7;
-    --primary-light: #e0f2fe;
-    --primary-gradient: linear-gradient(135deg, #0ea5e9 0%, #06b6d4 100%);
+    /* 落地页对主色的两处局部调整：hover 用更亮的一档、active 用更深的一档，
+       与全局（--primary-hover 是 600、--primary-active 是 700）不同。
+       其余 --primary-* 此前在这里又抄了一遍且与 :root 完全同值，已删；
+       --primary-color 也曾写成 var(--primary-color)，CSS 自引用构成循环、
+       该自定义属性直接作废，一并去掉，继承 :root 即可 */
+    --primary-hover: var(--primary-400);
+    --primary-active: var(--primary-600);
+    --primary-gradient: linear-gradient(135deg, var(--primary-color) 0%, var(--accent-teal) 100%);
 
     --radius-sm: 0.375rem;
     --radius-md: 0.5rem;
