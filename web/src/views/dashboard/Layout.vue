@@ -713,15 +713,28 @@ onUnmounted(() => {
     color: var(--gray-800);
 }
 
+/* 选中项原先是实心蓝渐变块 + 投影，视觉重量比页面上任何元素都大，
+   眼睛总被导航拽走。改为淡主色底 + 左侧 3px 主色条：既能一眼定位，
+   又不和内容抢，语言也和详情页的卡片标题、资源条一致 */
 .nav-item.active {
-    background: linear-gradient(135deg, var(--primary-color) 0%, var(--primary-hover) 100%); /* CoreUI Primary Blue Gradient */
-    color: var(--text-inverse);
+    background: var(--primary-50);
+    color: var(--primary-700);
     font-weight: 600;
-    box-shadow: 0 4px 12px rgba(14, 165, 233, 0.25);
+    box-shadow: inset 3px 0 0 var(--primary-color);
+}
+
+.nav-item.active:hover {
+    background: var(--primary-light);
+    color: var(--primary-700);
 }
 
 .nav-item.active svg {
-    color: var(--text-inverse); /* Ensure icon is white */
+    color: var(--primary-color);
+}
+
+/* 收起时导航项是居中的小方块，左侧竖条会显得突兀，只留淡底 */
+.sidebar.collapsed .nav-item.active {
+    box-shadow: none;
 }
 
 /* Collapsible Sections */

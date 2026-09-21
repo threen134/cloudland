@@ -535,7 +535,9 @@ button:disabled {
     font-weight: var(--font-weight-medium);
     color: var(--text-tertiary);
     background: var(--bg-secondary);
-    border-bottom: 1px solid var(--border-light);
+    /* 比行间的 --border-light 深一档：此前表头和数据行用同一种边框，
+       两者贴在一起分不出哪里是表头 */
+    border-bottom: 1px solid var(--border-default);
 }
 
 .data-table td {
