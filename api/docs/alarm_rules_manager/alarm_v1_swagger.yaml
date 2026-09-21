@@ -1869,8 +1869,6 @@ definitions:
         maxLength: 32
         minLength: 2
         type: string
-    required:
-    - name
     type: object
   apis.SecurityGroupPayload:
     properties:
@@ -2340,6 +2338,10 @@ definitions:
           OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to
           release quota only when the caller's org actually owns the deleted resource
         type: string
+      size:
+        description: Size in GB; the instance detail page shows it next to each attached
+          volume
+        type: integer
       target:
         type: string
       updated_at:

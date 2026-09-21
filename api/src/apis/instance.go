@@ -689,6 +689,7 @@ func (v *InstanceAPI) getInstanceResponse(ctx context.Context, instance *model.I
 				Name: volume.Name,
 			},
 			Target:  volume.Target,
+			Size:    volume.Size,
 			Booting: volume.Booting,
 		}
 	}

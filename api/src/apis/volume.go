@@ -65,8 +65,10 @@ type VolumeResponse struct {
 
 type VolumeInfoResponse struct {
 	*ResourceReference
-	Target  string `json:"target"`
-	Booting bool   `json:"booting"`
+	Target string `json:"target"`
+	// Size in GB; the instance detail page shows it next to each attached volume
+	Size    int32 `json:"size"`
+	Booting bool  `json:"booting"`
 }
 
 type VolumeListResponse struct {

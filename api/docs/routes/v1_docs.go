@@ -10317,9 +10317,6 @@ const docTemplatev1 = `{
         },
         "apis.SecurityGroupPatchPayload": {
             "type": "object",
-            "required": [
-                "name"
-            ],
             "properties": {
                 "description": {
                     "type": "string",
@@ -10997,6 +10994,10 @@ const docTemplatev1 = `{
                 "owner_uuid": {
                     "description": "OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to\nrelease quota only when the caller's org actually owns the deleted resource",
                     "type": "string"
+                },
+                "size": {
+                    "description": "Size in GB; the instance detail page shows it next to each attached volume",
+                    "type": "integer"
                 },
                 "target": {
                     "type": "string"
