@@ -5395,7 +5395,7 @@
         },
         "/metrics/alarm/sync-mappings": {
             "post": {
-                "description": "Perform a full synchronization of all VM rule mappings to ensure matched_vms.json is consistent with the database",
+                "description": "Rebuild matched_vms.json (which VM belongs to which VM alarm / auto-adjust rule group) from the database. clapi also reconciles it automatically in the background; nothing is written if any query fails.",
                 "consumes": [
                     "application/json"
                 ],
@@ -5405,7 +5405,7 @@
                 "tags": [
                     "Alarm"
                 ],
-                "summary": "Synchronize all VM rule mappings",
+                "summary": "Rebuild all VM rule mappings now",
                 "responses": {
                     "200": {
                         "description": "Synchronization successful",

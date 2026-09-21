@@ -38,11 +38,11 @@ const (
 	PrometheusBasePath = "/etc/prometheus"
 	// Note: Use services.RulesGeneral and services.RulesEnabled from routes/alarm.go
 
-	// Template files
-	CPUAdjustRuleTemplate        = "VM-cpu-adjust-rule.yml.j2"
-	ResourceAdjustAlertsTemplate = "resource-adjustment-alerts.yml.j2"
-	InBWAdjustRuleTemplate       = "VM-in-bw-adjust-rule.yml.j2"
-	OutBWAdjustRuleTemplate      = "VM-out-bw-adjust-rule.yml.j2"
+	// Template files (defined in services: the startup rebuild renders them too)
+	CPUAdjustRuleTemplate        = services.CPUAdjustRuleTemplate
+	ResourceAdjustAlertsTemplate = services.ResourceAdjustAlertsTemplate
+	InBWAdjustRuleTemplate       = services.InBWAdjustRuleTemplate
+	OutBWAdjustRuleTemplate      = services.OutBWAdjustRuleTemplate
 )
 
 // CreateCPUAdjustRule creates CPU adjustment rule

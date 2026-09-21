@@ -2811,7 +2811,9 @@ func UpdateMatchedVMsJSON(ctx context.Context, vmUUIDs []string, groupUUID, oper
 			logger.Ctx(ctx).Info("EXIT UpdateMatchedVMsJSON: success")
 		}
 	}()
-	matchedVMsFile := "/etc/prometheus/lists/matched_vms.json"
+	// Same lock as the background reconcile (alarm_mapping.go), which rewrites the whole file
+	matchedVMsMu.Lock()
+	defer matchedVMsMu.Unlock()
 
 	var matchedVMs []map[string]interface{}
 	existingData, err := ReadFile(ctx, matchedVMsFile)
@@ -2859,9 +2861,7 @@ func UpdateMatchedVMsJSON(ctx context.Context, vmUUIDs []string, groupUUID, oper
 				if !ok {
 					continue
 				}
-				domainVal, hasDomain := labels["domain"].(string)
-				existingRuleID, hasRuleID := labels["rule_id"].(string)
-				if hasDomain && hasRuleID && domainVal == domain && existingRuleID == ruleID {
+				if isSameMapping(labels, domain, ruleID, targetDeviceValue) {
 					entryExists = true
 					matchedVMs[i] = newEntry
 					logger.Ctx(ctx).Infof("Updating existing mapping: domain=%s, rule_id=%s, instance_id=%s", domain, ruleID, instanceid)
@@ -2975,11 +2975,8 @@ func UpdateMatchedVMsJSON(ctx context.Context, vmUUIDs []string, groupUUID, oper
 		return err
 	}
 
-	if err := ReloadPrometheusViaHTTP(ctx); err != nil {
-		logger.Ctx(ctx).Warningf("Warning: Failed to reload Prometheus after updating matched_vms.json: %v", err)
-	} else {
-		logger.Ctx(ctx).Infof("Successfully reloaded Prometheus configuration after updating matched_vms.json")
-	}
-
+	// No Prometheus reload here: matched_vms.json is file_sd and re-read every 30s, and every
+	// handler that also changes rule files reloads on its own. The reload used to run under
+	// matchedVMsMu with a 2-minute timeout, serializing link / unlink / instance delete behind it.
 	return nil
 }

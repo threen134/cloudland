@@ -6234,8 +6234,9 @@ paths:
     post:
       consumes:
       - application/json
-      description: Perform a full synchronization of all VM rule mappings to ensure
-        matched_vms.json is consistent with the database
+      description: Rebuild matched_vms.json (which VM belongs to which VM alarm /
+        auto-adjust rule group) from the database. clapi also reconciles it automatically
+        in the background; nothing is written if any query fails.
       produces:
       - application/json
       responses:
@@ -6249,7 +6250,7 @@ paths:
           schema:
             additionalProperties: true
             type: object
-      summary: Synchronize all VM rule mappings
+      summary: Rebuild all VM rule mappings now
       tags:
       - Alarm
   /metrics/current-alarms:

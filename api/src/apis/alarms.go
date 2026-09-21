@@ -2234,59 +2234,12 @@ func (a *AlarmAPI) DeleteNodeAlarmRule(c *gin.Context) {
 	})
 }
 
-// SyncAllVMRuleMappings synchronizes all VM-rule mappings to matched_vms.json
-// This ensures consistency between database and the mapping file
-// processRuleMappings processes rule groups and generates VM mappings
-func (a *AlarmAPI) processRuleMappings(ctx context.Context, groups interface{}, ruleType string, needsInterface bool) []map[string]interface{} {
-	var mappings []map[string]interface{}
-	var groupList []struct{ UUID string }
-
-	// Convert groups to common format
-	switch v := groups.(type) {
-	case []model.RuleGroupV2:
-		for _, g := range v {
-			groupList = append(groupList, struct{ UUID string }{UUID: g.UUID})
-		}
-	case []model.AdjustRuleGroup:
-		for _, g := range v {
-			groupList = append(groupList, struct{ UUID string }{UUID: g.UUID})
-		}
-	}
-
-	for _, group := range groupList {
-		vmLinks, err := a.operator.GetLinkedVMs(ctx, group.UUID)
-		if err != nil {
-			tracing.Logf(ctx, "Failed to get linked VMs for %s group %s: %v", ruleType, group.UUID, err)
-			continue
-		}
-
-		for _, link := range vmLinks {
-			domain, err := services.GetDomainByInstanceUUID(ctx, link.VMUUID)
-			if err != nil {
-				tracing.Logf(ctx, "Failed to get domain for instance %s: %v", link.VMUUID, err)
-				continue
-			}
-
-			labels := map[string]interface{}{
-				"domain":      domain,
-				"rule_id":     fmt.Sprintf("%s-%s-%s", ruleType, domain, group.UUID),
-				"instance_id": link.VMUUID,
-			}
-			if needsInterface {
-				labels["target_device"] = link.Interface
-			}
-
-			mappings = append(mappings, map[string]interface{}{
-				"targets": []string{"localhost:9090"},
-				"labels":  labels,
-			})
-		}
-	}
-	return mappings
-}
-
-// @Summary Synchronize all VM rule mappings
-// @Description Perform a full synchronization of all VM rule mappings to ensure matched_vms.json is consistent with the database
+// SyncAllVMRuleMappings rebuilds matched_vms.json from the database right away.
+// clapi already does this in the background (services.StartVMRuleMappingReconciler: shortly after
+// start, then every 10 minutes); this endpoint is for troubleshooting only and always rewrites.
+//
+// @Summary Rebuild all VM rule mappings now
+// @Description Rebuild matched_vms.json (which VM belongs to which VM alarm / auto-adjust rule group) from the database. clapi also reconciles it automatically in the background; nothing is written if any query fails.
 // @Tags Alarm
 // @Accept json
 // @Produce json
@@ -2300,88 +2253,14 @@ func (a *AlarmAPI) SyncAllVMRuleMappings(c *gin.Context) {
 		c.JSON(http.StatusForbidden, gin.H{"status": "error", "error": "system admin required"})
 		return
 	}
-	tracing.Logf(ctx, "Starting full synchronization of VM rule mappings")
-
-	// Define all rule types to process
-	type ruleConfig struct {
-		name       string
-		ruleType   interface{}
-		isAdjust   bool
-		needsIface bool
-	}
-
-	configs := []ruleConfig{
-		{"alarm-cpu", services.RuleTypeCPU, false, false},
-		{"alarm-memory", services.RuleTypeMemory, false, false},
-		{"alarm-bw", services.RuleTypeBW, false, true},
-		{"adjust-cpu", model.RuleTypeAdjustCPU, true, false},
-		{"adjust-bw", model.RuleTypeAdjustInBW, true, true},
-		{"adjust-bw", model.RuleTypeAdjustOutBW, true, true},
-	}
-
-	var allMappings []map[string]interface{}
-	stats := make(map[string]int)
-	adjustOperator := &services.AdjustOperator{}
-
-	// Process each rule type
-	for _, cfg := range configs {
-		var groups interface{}
-		var count int
-
-		if cfg.isAdjust {
-			g, _, err := adjustOperator.ListAdjustRuleGroups(ctx, services.ListAdjustRuleGroupsParams{
-				RuleType: cfg.ruleType.(string),
-				Page:     1,
-				PageSize: 1000,
-			})
-			if err != nil {
-				tracing.Logf(ctx, "Failed to get %s rule groups: %v", cfg.name, err)
-				continue
-			}
-			groups = g
-			count = len(g)
-		} else {
-			g, _, err := a.operator.ListRuleGroups(ctx, services.ListRuleGroupsParams{
-				RuleType: cfg.ruleType.(string),
-				Page:     1,
-				PageSize: 1000,
-			})
-			if err != nil {
-				tracing.Logf(ctx, "Failed to get %s rule groups: %v", cfg.name, err)
-				continue
-			}
-			groups = g
-			count = len(g)
-		}
-
-		mappings := a.processRuleMappings(ctx, groups, cfg.name, cfg.needsIface)
-		allMappings = append(allMappings, mappings...)
-		stats[cfg.name] += count
-	}
-
-	// Write mappings to file
-	mappingData, err := json.MarshalIndent(allMappings, "", "  ")
+	result, err := services.SyncVMRuleMappings(ctx, true)
 	if err != nil {
-		tracing.Logf(ctx, "Failed to marshal matched_vms.json: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"status": "error", "error": "Failed to marshal mapping data"})
+		tracing.Logf(ctx, "Failed to rebuild VM rule mappings, file left unchanged: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"status": "error", "error": "Failed to rebuild VM rule mappings"})
 		return
 	}
-
-	if err := services.WriteFile(ctx, "/etc/prometheus/lists/matched_vms.json", mappingData, 0644); err != nil {
-		tracing.Logf(ctx, "Failed to write matched_vms.json: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"status": "error", "error": "Failed to write mapping file"})
-		return
-	}
-
-	// Reload Prometheus
-	if err := services.ReloadPrometheusViaHTTP(ctx); err != nil {
-		tracing.Logf(ctx, "Warning: Failed to reload Prometheus: %v", err)
-		c.JSON(http.StatusOK, gin.H{"status": "partial_success", "message": "Mappings synchronized but failed to reload Prometheus", "count": len(allMappings), "stats": stats})
-		return
-	}
-
-	tracing.Logf(ctx, "Successfully synchronized VM mappings: total=%d, stats=%+v", len(allMappings), stats)
-	c.JSON(http.StatusOK, gin.H{"status": "success", "message": "VM rule mappings synchronized successfully", "count": len(allMappings), "stats": stats})
+	tracing.Logf(ctx, "Rebuilt VM rule mappings: total=%d, stats=%+v", result.Count, result.Stats)
+	c.JSON(http.StatusOK, gin.H{"status": "success", "message": "VM rule mappings synchronized successfully", "count": result.Count, "stats": result.Stats})
 }
 
 // VMAlarmMapping is used for serialization to vm_alarm_mapping.yml
