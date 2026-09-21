@@ -1195,7 +1195,11 @@ onBeforeUnmount(() => {
     color: var(--success-dark);
 }
 
-.status-text.nok,
+/* Was `.status-text.nok, .text-error { ... }`: removing the duplicated .text-error left a dangling
+   selector that swallowed the media query below, so neither this color nor the narrow layout applied */
+.status-text.nok {
+    color: var(--error-color);
+}
 
 @media (max-width: 720px) {
     .tab-header {
