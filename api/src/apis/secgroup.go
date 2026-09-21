@@ -49,10 +49,14 @@ type SecurityGroupPayload struct {
 	IsDefault   bool           `json:"is_default" binding:"omitempty"`
 }
 
+// PATCH 是部分更新：三个字段都用指针，才分得清「没传」和「传了空值 / false」。
+// 原先 Name 是 required，详情页只改描述时不带 name，必定 400；IsDefault 是 bool，
+// 不传等于 false，于是对任何默认安全组（系统默认组、组织默认组、VPC native 组）
+// 做任何修改都会被判成「想取消默认」而 400。
 type SecurityGroupPatchPayload struct {
-	Name        string `json:"name" binding:"required,min=2,max=32"`
-	Description string `json:"description" binding:"omitempty,max=256"`
-	IsDefault   bool   `json:"is_default" binding:"omitempty"`
+	Name        *string `json:"name" binding:"omitempty,min=2,max=32"`
+	Description *string `json:"description" binding:"omitempty,max=256"`
+	IsDefault   *bool   `json:"is_default"`
 }
 
 // @Summary get a secgroup
@@ -111,7 +115,8 @@ func (v *SecgroupAPI) Patch(c *gin.Context) {
 		return
 	}
 	logger.Ctx(ctx).Debugf("Patching secgroup %s with %+v", uuID, payload)
-	if payload.IsDefault == false && secgroup.IsDefault {
+	// 只有显式传 is_default=false 才是「想取消默认」，不传就是没打算动它
+	if payload.IsDefault != nil && !*payload.IsDefault && secgroup.IsDefault {
 		logger.Ctx(ctx).Errorf("Not allowed to patch default security group to false")
 		ErrorResponse(c, http.StatusBadRequest, "Not allowed to patch default security group to false", err)
 		return

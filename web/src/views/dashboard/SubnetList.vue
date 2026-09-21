@@ -43,7 +43,8 @@ const newSubnetForm = ref<SubnetPayload>({
 
 const { t } = useI18n()
 const toast = useToast()
-const isNameValid = computed(() => isValidName(newSubnetForm.value.name))
+// 子网名后端是 max=64，比其他资源宽
+const isNameValid = computed(() => isValidName(newSubnetForm.value.name, 64))
 
 const { copiedId, copyId } = useCopyId()
 

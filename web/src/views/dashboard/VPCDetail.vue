@@ -97,6 +97,12 @@ const confirmEdit = async () => {
         editError.value = t('dashboard.instanceDetail.hostnameRequired')
         return
     }
+    // 这里原先只判非空：输入中文或空格会一路发到后端，撞上 binding 校验后
+    // 返回未本地化的 gin 原始报错
+    if (!isValidName(editForm.value.name)) {
+        editError.value = t('messages.invalidHostname')
+        return
+    }
     editLoading.value = true
     editError.value = ''
     try {
@@ -133,7 +139,8 @@ const newSubnetForm = ref<SubnetPayload>({
     base_domain: '',
 })
 
-const isSubnetNameValid = computed(() => isValidName(newSubnetForm.value.name))
+// 子网名后端是 max=64，比其他资源宽
+const isSubnetNameValid = computed(() => isValidName(newSubnetForm.value.name, 64))
 
 const openCreateSubnetModal = () => {
     newSubnetForm.value = {

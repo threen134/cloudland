@@ -1361,6 +1361,7 @@ export default {
             nativeForRouterDescription: 'Native security group of VPC {name}',
             defaultNotDeletable: 'The default security group cannot be deleted',
             portRangeError: 'Minimum port cannot be greater than maximum port',
+            cidrInvalid: 'Remote CIDR is required, e.g. 0.0.0.0/0',
             portValueError: 'Port must be between 1 and 65535',
             icmpType: 'ICMP Type',
             icmpCode: 'ICMP Code',
@@ -1846,7 +1847,7 @@ export default {
         noResults: 'No results found',
         tryAdjustingFilters: 'Try adjusting your filters or search query',
         invalidHostname:
-            'Hostname must start with a letter and can only contain letters, numbers, underscores (_), and hyphens (-).',
+            'Must start with a letter, contain only letters, numbers, underscores (_) and hyphens (-), and be 2 to 32 characters long.',
         invalidPort: 'Port must be a number between 1 and 65535.',
         sshKeyInUse: 'Key cannot be deleted if there are instances using it.',
         vpcHasFloatingIPs: 'VPC cannot be deleted because it has associated Floating IPs.',

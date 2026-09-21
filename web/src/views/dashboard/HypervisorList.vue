@@ -378,7 +378,8 @@ const handleEditSave = async () => {
     try {
         const payload: HyperPatchPayload = {}
         if (editForm.value.status !== editingHyper.value.status) payload.status = editForm.value.status
-        // 保持原行为：下拉框里是 uuid，接口的 zone_id 却是 int64，发过去后端会 400（既有问题，未改）
+        // 只在真的换了可用区时才发。下拉里不再有「-」：后端不支持清空可用区
+        // （zone_id 收的是 UUID，传 0 或空串都是 400），提供这个选项只会让保存必然失败
         if (editForm.value.zone_id !== editingZoneId.value) payload.zone_id = editForm.value.zone_id
         if (editForm.value.cpu_over_rate !== editingHyper.value.cpu_over_rate)
             payload.cpu_over_rate = Number(editForm.value.cpu_over_rate)
@@ -847,7 +848,8 @@ onUnmounted(() => {
                 <div class="form-group">
                     <label class="form-label">{{ t('dashboard.table.zone') }}</label>
                     <select v-model="editForm.zone_id" class="form-input">
-                        <option :value="0">-</option>
+                        <!-- 占位项，不可选：后端不支持清空可用区（zone_id 收 UUID，传 0 或空串都是 400） -->
+                        <option :value="0" disabled>-</option>
                         <option v-for="z in zoneList" :key="z.id" :value="z.id">{{ z.name }}</option>
                     </select>
                 </div>

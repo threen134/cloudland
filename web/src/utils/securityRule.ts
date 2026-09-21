@@ -1,3 +1,4 @@
+import { isValidCIDRv4 } from './validation'
 import type { SecurityRule, SecurityRulePayload } from '../api/networks'
 
 type Translate = (key: string, named?: Record<string, unknown>) => string
@@ -51,6 +52,11 @@ const inRange = (v: number | '', min: number, max: number) =>
 
 /** 返回错误提示，校验通过返回空串 */
 export const validateSecurityRuleForm = (form: SecurityRuleForm, t: Translate): string => {
+    // 后端 POST 规则的 remote_cidr 是 `binding:"cidrv4"`（没有 omitempty），
+    // 留空或漏写掩码都会 400，且把 gin 的原始报错透给用户。先在这里挡住
+    if (!isValidCIDRv4(form.remote_cidr || '')) {
+        return t('dashboard.securityGroupDetail.cidrInvalid')
+    }
     if (form.protocol === 'icmp') {
         const hasType = !isBlank(form.icmp_type)
         const hasCode = !isBlank(form.icmp_code)

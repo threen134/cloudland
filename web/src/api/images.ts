@@ -33,8 +33,6 @@ export interface ImagePayload {
     os_code: 'linux' | 'windows' | 'other'
     os_family: string
     os_version: string
-    // 注意：后端 ImagePayload 里没有 architecture 字段，会被忽略；前端表单仍在传
-    architecture: string
     boot_loader: 'bios' | 'uefi'
     download_url: string
     user: string

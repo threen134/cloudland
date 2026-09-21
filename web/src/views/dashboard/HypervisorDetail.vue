@@ -68,7 +68,7 @@ const STATUS_MAP: Record<number, { label: string; variant: StatusVariant }> = {
 const form = ref({
     status: 0 as number | undefined,
     // ⚠️ 存的是 zone 的 uuid：GET /zones 的 ResourceReference.id 就是 uuid，
-    // 而 PATCH /hypers 的 zone_id 要的是数据库自增 ID（后端 binding `*int64,min=1`），两边对不上
+    // PATCH /hypers 的 zone_id 现在收的也是 UUID（api/src/apis/hyper.go 的 ZoneID *string）
     zone_id: '' as string,
     cpu_over_rate: 1,
     mem_over_rate: 1,
@@ -210,7 +210,7 @@ const handleSave = async () => {
     try {
         const payload: HyperPatchPayload = {}
         if (form.value.status !== hypervisor.value.status) payload.status = form.value.status
-        // 保持原行为：下拉框里是 uuid，接口的 zone_id 却是 int64，发过去后端会 400（既有问题，未改）
+        // 下拉里不再有「-」：后端不支持清空可用区，选它保存必然 400
         if (form.value.zone_id !== currentZoneId.value) payload.zone_id = form.value.zone_id
         if (form.value.cpu_over_rate !== hypervisor.value.cpu_over_rate)
             payload.cpu_over_rate = Number(form.value.cpu_over_rate)
@@ -486,7 +486,6 @@ onMounted(fetchHypervisorDetail)
                 <div class="form-group">
                     <label class="form-label">{{ t('dashboard.table.zone') }}</label>
                     <select v-model="form.zone_id" class="form-select">
-                        <option :value="0">-</option>
                         <option v-for="z in zoneList" :key="z.id" :value="z.id">{{ z.name }}</option>
                     </select>
                 </div>

@@ -40,7 +40,6 @@ const newImageForm = ref<ImagePayload>({
     os_code: 'linux',
     os_family: 'Ubuntu',
     os_version: '22.04',
-    architecture: 'x86_64',
     boot_loader: 'uefi',
     download_url: '',
     user: 'admin',
@@ -95,7 +94,9 @@ const openCreateModal = () => {
         os_code: 'linux',
         os_family: 'Ubuntu',
         os_version: '22.04',
-        architecture: 'x86_64',
+        // 不传 architecture：后端 ImagePayload 不收这个字段，建镜像时固定按 x86_64 存，
+        // 而且这个值全流程都没人用（不参与调度也不影响启动），原先那个 aarch64 下拉
+        // 只会让用户以为自己建了一台 ARM 镜像
         boot_loader: 'uefi',
         download_url: '',
         user: 'admin',
@@ -412,14 +413,6 @@ onMounted(async () => {
                             :placeholder="$t('dashboard.forms.placeholder.osVersionExample')"
                         />
                     </div>
-                </div>
-
-                <div class="form-group">
-                    <label class="form-label">{{ $t('dashboard.forms.architecture') }}</label>
-                    <select v-model="newImageForm.architecture" class="form-input">
-                        <option value="x86_64">x86_64</option>
-                        <option value="aarch64">aarch64 (ARM)</option>
-                    </select>
                 </div>
 
                 <div class="form-group">

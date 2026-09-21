@@ -95,8 +95,10 @@ func (a *SecgroupAdmin) Switch(ctx context.Context, newSg *model.SecurityGroup, 
 	return
 }
 
-func (a *SecgroupAdmin) Update(ctx context.Context, secgroup *model.SecurityGroup, name, description string, isDefault bool) (err error) {
-	logger.Ctx(ctx).Infof("ENTER SecgroupAdmin.Update: secgroupID=%d, name=%s, description=%s, isDefault=%t", secgroup.ID, name, description, isDefault)
+// 三个字段都是指针：nil 表示本次不改。description 传了空串就是要清空（原先 `!= ""`
+// 的写法让「清空描述」静默失败，接口还回 200）
+func (a *SecgroupAdmin) Update(ctx context.Context, secgroup *model.SecurityGroup, name, description *string, isDefault *bool) (err error) {
+	logger.Ctx(ctx).Infof("ENTER SecgroupAdmin.Update: secgroupID=%d", secgroup.ID)
 	defer func() {
 		if err != nil {
 			logger.Ctx(ctx).Errorf("EXIT SecgroupAdmin.Update: error=%v", err)
@@ -110,17 +112,15 @@ func (a *SecgroupAdmin) Update(ctx context.Context, secgroup *model.SecurityGrou
 			EndTransaction(ctx, err)
 		}
 	}()
-	if name != "" && secgroup.Name != name {
-		secgroup.Name = name
+	if name != nil && *name != "" {
+		secgroup.Name = *name
 	}
-	if description != "" && secgroup.Description != description {
-		secgroup.Description = description
+	if description != nil {
+		secgroup.Description = *description
 	}
-	if isDefault && secgroup.IsDefault != isDefault {
-		secgroup.IsDefault = isDefault
-		if isDefault {
-			a.Switch(ctx, secgroup, secgroup.Router)
-		}
+	if isDefault != nil && *isDefault && !secgroup.IsDefault {
+		secgroup.IsDefault = true
+		a.Switch(ctx, secgroup, secgroup.Router)
 	}
 	err = db.Model(&model.SecurityGroup{}).Where("id = ?", secgroup.ID).Updates(map[string]interface{}{"name": secgroup.Name, "description": secgroup.Description, "is_default": secgroup.IsDefault}).Error
 	if err != nil {
