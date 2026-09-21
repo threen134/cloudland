@@ -652,9 +652,9 @@ watch(
                                 <option value="" disabled>
                                     {{ t('dashboard.forms.placeholder.selectFlavor') }}
                                 </option>
-                                <option v-for="f in availableFlavors" :key="f.name || f.id" :value="f.name || f.id">
-                                    {{ f.name }} ({{ f.vcpus || f.cpu || 0 }} vCPU,
-                                    {{ formatMemory(f.ram || f.memory || 0) }} RAM, {{ f.disk || 0 }} GB
+                                <option v-for="f in availableFlavors" :key="f.name" :value="f.name">
+                                    {{ f.name }} ({{ f.cpu }} vCPU,
+                                    {{ formatMemory(f.memory) }} RAM, {{ f.disk || 0 }} GB
                                     {{ t('dashboard.table.disk') }})
                                 </option>
                             </select>

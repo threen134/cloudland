@@ -126,7 +126,7 @@ const confirmDelete = async () => {
     deletingResource.value = true
     deleteError.value = ''
     try {
-        await flavorsApi.deleteFlavor(resourceToDelete.value.name || resourceToDelete.value.id)
+        await flavorsApi.deleteFlavor(resourceToDelete.value.name)
         await fetchFlavors()
         closeDeleteModal()
         toast.success(t('messages.deleteSuccess'))

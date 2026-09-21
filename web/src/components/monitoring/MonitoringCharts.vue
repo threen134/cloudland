@@ -15,9 +15,7 @@ const props = defineProps<{
 
 const { t } = useI18n()
 
-// 内存图的数值是 toFixed(2) 出来的字符串（chart.js 运行时会自己解析），
-// 所以把 ChartData 的数据点类型显式写成 number | string
-type LineData = ChartData<'line', (number | string)[]>
+type LineData = ChartData<'line'>
 
 const cpuData = ref<LineData | null>(null)
 const memData = ref<LineData | null>(null)
@@ -79,14 +77,15 @@ const fetchData = async () => {
                     datasets: [
                         {
                             label: t('dashboard.monitoring.total'),
-                            data: result.values[0].map((v) => (parseFloat(v.value) / 1024 / 1024).toFixed(2)),
+                            // chart.js 的数据点必须是数字，不能是 toFixed 出来的字符串
+                            data: result.values[0].map((v) => Number((parseFloat(v.value) / 1024 / 1024).toFixed(2))),
                             borderColor: '#94a3b8',
                             borderDash: [5, 5],
                             fill: false,
                         },
                         {
                             label: t('dashboard.monitoring.used'),
-                            data: result.values[1].map((v) => (parseFloat(v.value) / 1024 / 1024).toFixed(2)),
+                            data: result.values[1].map((v) => Number((parseFloat(v.value) / 1024 / 1024).toFixed(2))),
                             borderColor: '#10b981',
                             backgroundColor: 'rgba(16, 185, 129, 0.1)',
                             fill: true,
@@ -113,7 +112,7 @@ const fetchData = async () => {
                 })
 
                 const colors = ['#0ea5e9', '#06b6d4', '#10b981', '#f59e0b', '#8b5cf6', '#f43f5e']
-                const datasets: ChartDataset<'line', (number | string)[]>[] = []
+                const datasets: ChartDataset<'line'>[] = []
                 let labels: string[] = []
                 let colorIdx = 0
 

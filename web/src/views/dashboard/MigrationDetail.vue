@@ -102,7 +102,7 @@ onUnmounted(() => {
         <div v-else-if="error" class="error-container card">
             <ArrowRightLeft :size="48" style="opacity: 0.3; margin-bottom: 16px" />
             <p class="text-secondary">{{ error }}</p>
-            <button class="btn btn-primary btn-sm" @click="fetchMigrationDetail" style="margin-top: 12px">
+            <button class="btn btn-primary btn-sm" @click="fetchMigrationDetail()" style="margin-top: 12px">
                 {{ $t('actions.refresh') }}
             </button>
         </div>

@@ -535,7 +535,7 @@ onUnmounted(() => {
                         {{ formatMemory(instance.memory).replace(' GB', 'G').replace(' MB', 'M') }}
                     </div>
                     <div v-if="instance.flavor" class="specs-sub">
-                        {{ typeof instance.flavor === 'string' ? instance.flavor : instance.flavor.name }}
+                        {{ instance.flavor }}
                     </div>
                 </div>
             </template>
@@ -555,8 +555,8 @@ onUnmounted(() => {
                                 <Globe :size="10" />
                                 <code>{{
                                     iface.floating_ips
-                                        .find((f) => f.type?.toLowerCase() !== 'native')
-                                        .fip_address.split('/')[0]
+                                        ?.find((f) => f.type?.toLowerCase() !== 'native')
+                                        ?.fip_address.split('/')[0]
                                 }}</code>
                             </span>
                         </div>

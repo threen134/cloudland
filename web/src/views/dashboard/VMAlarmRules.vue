@@ -297,7 +297,7 @@ const toggleBWVM = async (vmId: string) => {
             const res = await instancesApi.getInterfaces(vmId)
             vmInterfaces.value[vmId] = (res.interfaces || []).map((i) => ({
                 id: i.id,
-                name: i.name,
+                name: i.name || '',
                 ip_address: i.ip_address,
             }))
         } catch {
@@ -662,8 +662,9 @@ onMounted(fetchRules)
                                 <tbody>
                                     <tr v-for="(r, idx) in rule.rules" :key="idx">
                                         <td v-if="rule.type === 'bw'">
+                                            <!-- rules 是 CPU / 内存 / 带宽三种明细的联合类型，只有带宽有 direction -->
                                             {{
-                                                r.direction
+                                                'direction' in r
                                                     ? t('dashboard.vmAlarmRules.directions.' + r.direction)
                                                     : '-'
                                             }}

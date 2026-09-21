@@ -2,7 +2,7 @@
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
-import { orgsApi, ORG_ROLES, type Organization, type OrgMember, type OrgInvitation } from '../../api/orgs'
+import { orgsApi, ORG_ROLES, type OrganizationDetail, type OrgMember, type OrgInvitation } from '../../api/orgs'
 import { QUOTA_ROWS, type OrgResourceQuotaUpdate } from '../../api/quota'
 import {
     ArrowLeft,
@@ -39,7 +39,7 @@ const route = useRoute()
 const goBack = useGoBack('orgs')
 const orgId = route.params.id as string
 
-const org = ref<Organization | null>(null)
+const org = ref<OrganizationDetail | null>(null)
 const members = ref<OrgMember[]>([])
 const loading = ref(true)
 const membersLoading = ref(false)
@@ -523,7 +523,7 @@ onUnmounted(() => {
                                     {{ member.user_uuid }}
                                 </div>
                             </td>
-                            <td>{{ member.email || member.user_email || '-' }}</td>
+                            <td>{{ member.user_email || '-' }}</td>
                             <td>
                                 <span class="role-badge" :class="'role-' + member.org_role">
                                     {{ getRoleName(member.org_role) }}
@@ -776,7 +776,7 @@ onUnmounted(() => {
                             display: block;
                             margin-top: 2px;
                         "
-                        >{{ memberToRemove?.email }}</span
+                        >{{ memberToRemove?.user_email }}</span
                     >
                 </div>
                 <div v-if="removeMemberError" class="text-error modal-error">
@@ -812,7 +812,7 @@ onUnmounted(() => {
                 <select id="transfer_owner_target" v-model="transferTargetId" class="form-input">
                     <option :value="null" disabled>-- {{ $t('dashboard.org.selectMember') }} --</option>
                     <option v-for="m in members.filter((m) => !m.is_owner)" :key="m.user_uuid" :value="m.user_uuid">
-                        {{ m.username }} ({{ m.email }})
+                        {{ m.username }} ({{ m.user_email || '-' }})
                     </option>
                 </select>
             </div>

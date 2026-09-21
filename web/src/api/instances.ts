@@ -64,6 +64,8 @@ export interface InterfaceListResponse {
 // 对应 api/src/apis/volume.go 的 VolumeInfoResponse（内嵌 ResourceReference）
 export interface InstanceVolume extends ResourceReference {
     target: string
+    // GB
+    size: number
     booting: boolean
 }
 

@@ -796,39 +796,26 @@ onUnmounted(() => {
                     <div class="card info-card">
                         <h3>{{ $t('dashboard.instanceDetail.specs') }}</h3>
                         <div class="key-value-list">
+                            <!-- 接口里 flavor 是规格名（字符串），cpu / memory / disk 是平级字段，
+                                 不存在「flavor 是对象、从里面取规格」的情况 -->
                             <InfoRow v-if="instance.flavor" :label="$t('dashboard.table.flavor')">{{
-                                typeof instance.flavor === 'string' ? instance.flavor : instance.flavor.name
+                                instance.flavor
                             }}</InfoRow>
                             <InfoRow :label="$t('dashboard.instanceDetail.cpu')">
                                 <template #label><Cpu :size="14" /> {{ $t('dashboard.instanceDetail.cpu') }}</template>
-                                {{
-                                    instance.cpu ||
-                                    (instance.flavor && typeof instance.flavor === 'object' ? instance.flavor.cpu : '-')
-                                }}
+                                {{ instance.cpu || '-' }}
                             </InfoRow>
                             <InfoRow :label="$t('dashboard.instanceDetail.ram')">
                                 <template #label
                                     ><MemoryStick :size="14" /> {{ $t('dashboard.instanceDetail.ram') }}</template
                                 >
-                                {{
-                                    formatMemory(
-                                        instance.memory ||
-                                            (instance.flavor && typeof instance.flavor === 'object'
-                                                ? instance.flavor.memory
-                                                : undefined)
-                                    )
-                                }}
+                                {{ formatMemory(instance.memory) }}
                             </InfoRow>
                             <InfoRow :label="$t('dashboard.instanceDetail.disk')">
                                 <template #label
                                     ><HardDrive :size="14" /> {{ $t('dashboard.instanceDetail.disk') }}</template
                                 >
-                                {{
-                                    instance.disk ||
-                                    (instance.flavor && typeof instance.flavor === 'object'
-                                        ? instance.flavor.disk
-                                        : '-')
-                                }}
+                                {{ instance.disk || '-' }}
                                 {{ t('specs.gb') }}
                             </InfoRow>
                             <InfoRow :label="$t('dashboard.instanceDetail.image')">

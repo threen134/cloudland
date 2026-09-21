@@ -113,7 +113,7 @@ onMounted(async () => {
         const [instRes, volRes, imgRes, vpcRes, fipRes, lbRes, quotaRes] = await Promise.all([
             instancesApi.fetchInstances().catch((err) => {
                 console.warn('Instances fetch failed:', err)
-                return []
+                return { offset: 0, total: 0, limit: 0, instances: [] }
             }),
             volumesApi.list({ limit: 100, type: 'all' }).catch((err) => {
                 console.warn('Volumes fetch failed:', err)
@@ -121,7 +121,7 @@ onMounted(async () => {
             }),
             imagesApi.fetchImages().catch((err) => {
                 console.warn('Images fetch failed:', err)
-                return []
+                return { offset: 0, total: 0, limit: 0, images: [] }
             }),
             vpcsApi.list({ limit: 100 }).catch((err) => {
                 console.warn('VPCs fetch failed:', err)
@@ -144,9 +144,9 @@ onMounted(async () => {
                 : Promise.resolve(null),
         ])
 
-        const instances = instRes?.instances || instRes || []
+        const instances = instRes.instances || []
         const volumes = volRes.volumes || []
-        const images = imgRes?.images || imgRes || []
+        const images = imgRes.images || []
         const vpcs = vpcRes.vpcs || []
         const fips = fipRes.floating_ips || []
 

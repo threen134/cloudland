@@ -13,9 +13,16 @@ const props = defineProps<{
 
 const { t } = useI18n()
 
-// 内存图的数值是 toFixed(2) 出来的字符串（chart.js 运行时会自己解析），
-// 所以把 ChartData 的数据点类型显式写成 number | string
-type LineData = ChartData<'line', (number | string)[]>
+type LineData = ChartData<'line'>
+
+// 取某条曲线的最新一个点用于图表标题。数据点存的是数字（原先内存图存的是
+// toFixed(2) 出来的字符串，和 <Line> 的 data 类型对不上），小数位在这里补
+const lastValue = (data: LineData | null, index: number, digits?: number) => {
+    const points = data?.datasets[index]?.data
+    const value = points?.[points.length - 1]
+    if (typeof value !== 'number') return '-'
+    return digits === undefined ? String(value) : value.toFixed(digits)
+}
 
 const cpuData = ref<LineData | null>(null)
 const memData = ref<LineData | null>(null)
@@ -75,14 +82,14 @@ const fetchData = async () => {
                     datasets: [
                         {
                             label: t('dashboard.monitoring.total'),
-                            data: totalSamples.map((v) => (parseFloat(v.value) / 1024 / 1024).toFixed(2)),
+                            data: totalSamples.map((v) => Number((parseFloat(v.value) / 1024 / 1024).toFixed(2))),
                             borderColor: '#94a3b8',
                             borderDash: [5, 5],
                             fill: false,
                         },
                         {
                             label: t('dashboard.monitoring.used'),
-                            data: usedSamples.map((v) => (parseFloat(v.value) / 1024 / 1024).toFixed(2)),
+                            data: usedSamples.map((v) => Number((parseFloat(v.value) / 1024 / 1024).toFixed(2))),
                             borderColor: '#10b981',
                             backgroundColor: 'rgba(16, 185, 129, 0.1)',
                             fill: true,
@@ -169,9 +176,7 @@ watch(() => props.hostname, fetchData)
             <div class="chart-box">
                 <div class="chart-header">
                     <h4>{{ t('dashboard.monitoring.cpuUsage') }}</h4>
-                    <span v-if="cpuData" class="current-value">
-                        {{ cpuData.datasets[0].data[cpuData.datasets[0].data.length - 1] }}%
-                    </span>
+                    <span v-if="cpuData" class="current-value"> {{ lastValue(cpuData, 0) }}% </span>
                 </div>
                 <div class="chart-body">
                     <Line v-if="cpuData" :data="cpuData" :options="CHART_OPTIONS" />
@@ -184,8 +189,7 @@ watch(() => props.hostname, fetchData)
                 <div class="chart-header">
                     <h4>{{ t('dashboard.monitoring.memoryUsage') }}</h4>
                     <span v-if="memData" class="current-value">
-                        {{ memData.datasets[1].data[memData.datasets[1].data.length - 1] }} GB /
-                        {{ memData.datasets[0].data[memData.datasets[0].data.length - 1] }} GB
+                        {{ lastValue(memData, 1, 2) }} GB / {{ lastValue(memData, 0, 2) }} GB
                     </span>
                 </div>
                 <div class="chart-body">

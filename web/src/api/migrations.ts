@@ -63,7 +63,8 @@ export interface CreateMigrationPayload {
     instances: { id: string }[]
     // 节点 hostid；省略则由调度器选择
     target_hyper?: number
-    // true 为冷迁移
+    // 源节点已离线时强行迁移（需要共享存储，本地存储下后端直接拒绝）。
+    // 不是冷迁移开关：热 / 冷由后端按虚拟机当前状态自行决定
     force?: boolean
 }
 

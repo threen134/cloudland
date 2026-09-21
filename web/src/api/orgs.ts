@@ -3,7 +3,7 @@ import type { ListParams } from './listParams'
 
 // 以下类型对应控制面网关 cpgateway/src/apis/schemas.go 与 org_mgmt.go 的实际响应
 
-// schemas.go 的 orgOut。注意：organizations 表虽有 description 列，但该响应体不返回它
+// schemas.go 的 orgOut
 export interface Organization {
     uuid: string
     name: string
@@ -14,6 +14,7 @@ export interface Organization {
     owner_uuid: string
     owner_name: string | null
     owner_email: string | null
+    description: string
     created_at: string
 }
 
@@ -28,7 +29,7 @@ export interface CreateOrgPayload {
     slug: string
 }
 
-// org_mgmt.go UpdateOrg 的绑定结构（description 可写入但不会在响应中返回）
+// org_mgmt.go UpdateOrg 的绑定结构
 export interface UpdateOrgPayload {
     name?: string
     description?: string

@@ -579,7 +579,7 @@ onUnmounted(() => {
 
             <!-- Page Content -->
             <div class="page-content">
-                <RouterView :key="`${route.name}-${tenant.currentOrgId}-${region.currentRegionId}`" />
+                <RouterView :key="`${String(route.name)}-${tenant.currentOrgId}-${region.currentRegionId}`" />
             </div>
         </main>
     </div>

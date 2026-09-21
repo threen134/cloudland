@@ -140,6 +140,10 @@ const fetchInstances = async () => {
     }
 }
 
+// 下拉里显示实例的内网地址。原先写的是 inst.ip_address，实例响应上没有这个字段，
+// 括号里一直显示的是 UUID
+const primaryIp = (inst: Instance) => inst.interfaces?.find((iface) => iface.is_primary)?.ip_address || '-'
+
 const openCreateModal = () => {
     newFipForm.value = {
         name: '',
@@ -629,7 +633,7 @@ watch(
                     <select id="instanceId" name="instanceId" v-model="newFipForm.instanceId" class="form-input">
                         <option value="">{{ $t('dashboard.floatingIPDetail.selectInstance') }}</option>
                         <option v-for="inst in instances" :key="inst.id" :value="inst.id">
-                            {{ inst.hostname || inst.name }} ({{ inst.ip_address || inst.id }})
+                            {{ inst.hostname }} ({{ primaryIp(inst) }})
                         </option>
                     </select>
                 </div>
@@ -707,7 +711,7 @@ watch(
                     <select id="attachInstanceId" name="instanceId" v-model="selectedInstanceId" class="form-input">
                         <option value="">{{ $t('dashboard.floatingIPDetail.selectInstance') }}</option>
                         <option v-for="inst in instances" :key="inst.id" :value="inst.id">
-                            {{ inst.hostname || inst.name }} ({{ inst.ip_address || inst.id }})
+                            {{ inst.hostname }} ({{ primaryIp(inst) }})
                         </option>
                     </select>
                 </div>

@@ -386,7 +386,16 @@ const testS3Connection = async () => {
     }
 }
 
-const infraGroups = computed(() => {
+// 显式标注：各组字段的可选项（secret / missing）只有个别行会带上，
+// 不标注的话推断出来的联合类型里没有这些键，模板里读 f.missing 会编译不过
+interface InfraField {
+    label: string
+    value: string
+    secret?: boolean
+    missing?: boolean
+}
+
+const infraGroups = computed<{ title: string; fields: InfraField[] }[]>(() => {
     const c = infraConfig.value
     if (!c) return []
     const unset = t('settings.infra.unset')

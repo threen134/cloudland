@@ -9,6 +9,7 @@ import DeleteModal from '../../components/modals/DeleteModal.vue'
 import StatusBadge from '../../components/base/StatusBadge.vue'
 import InfoRow from '../../components/base/InfoRow.vue'
 import { useGoBack } from '../../composables/useGoBack'
+import { formatDateTime } from '../../utils/format'
 
 const { t } = useI18n()
 const toast = useToast()
@@ -91,7 +92,7 @@ onMounted(fetchUser)
                     <UserIcon :size="32" />
                 </div>
                 <div class="title-info">
-                    <h1>{{ user.username || user.name || $t('dashboard.userDetail.unknownUser') }}</h1>
+                    <h1>{{ user.username || $t('dashboard.userDetail.unknownUser') }}</h1>
                     <div class="subtitle">
                         <span class="id-text">{{ user.uuid }}</span>
                         <StatusBadge
@@ -114,25 +115,23 @@ onMounted(fetchUser)
                 <div class="card info-card">
                     <h3>{{ $t('dashboard.userDetail.generalInfo') }}</h3>
                     <div class="key-value-list">
-                        <InfoRow :label="$t('dashboard.userDetail.username')">{{ user.username || user.name }}</InfoRow>
+                        <InfoRow :label="$t('dashboard.userDetail.username')">{{ user.username }}</InfoRow>
                         <InfoRow :label="$t('dashboard.userDetail.email')">
                             <template #label><Mail :size="14" /> {{ $t('dashboard.userDetail.email') }}</template>
                             {{ user.email || '-' }}
                         </InfoRow>
-                        <InfoRow :label="$t('dashboard.userDetail.role')">
-                            <template #label><Shield :size="14" /> {{ $t('dashboard.userDetail.role') }}</template>
-                            {{ user.role || 'Member' }}
+                        <!-- 接口（cpgateway 的 userOut）只返回系统角色，不返回任何组织内角色；
+                             原先这里写 user.role，该字段从不存在，永远显示回退值 Member -->
+                        <InfoRow :label="$t('dashboard.userDetail.systemRole')">
+                            <template #label
+                                ><Shield :size="14" /> {{ $t('dashboard.userDetail.systemRole') }}</template
+                            >
+                            {{ user.is_superuser ? $t('roles.superuser') : $t('roles.member') }}
                         </InfoRow>
-                        <InfoRow :label="$t('dashboard.userDetail.createdAt')">{{ user.created_at || '-' }}</InfoRow>
-                    </div>
-                </div>
-
-                <!-- Organization Info -->
-                <div class="card info-card">
-                    <h3>{{ $t('dashboard.userDetail.organization') }}</h3>
-                    <div class="key-value-list">
-                        <InfoRow :label="$t('dashboard.userDetail.orgUuid')" mono>{{ user.org?.uuid || '-' }}</InfoRow>
-                        <InfoRow :label="$t('dashboard.userDetail.orgName')">{{ user.org?.name || '-' }}</InfoRow>
+                        <InfoRow :label="$t('dashboard.userDetail.language')">{{ user.language || '-' }}</InfoRow>
+                        <InfoRow :label="$t('dashboard.userDetail.createdAt')">{{
+                            formatDateTime(user.created_at)
+                        }}</InfoRow>
                     </div>
                 </div>
             </div>
@@ -141,7 +140,7 @@ onMounted(fetchUser)
         <DeleteModal
             :show="deleteModalVisible"
             :message="$t('dashboard.userDetail.deleteConfirm')"
-            :resource-name="user?.username || user?.name"
+            :resource-name="user?.username"
             :resource-id="user?.uuid"
             :loading="deleting"
             :error="deleteError"

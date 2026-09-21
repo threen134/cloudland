@@ -59,7 +59,6 @@ const availableHypervisors = ref<Hypervisor[]>([])
 const newMigrationForm = ref({
     instance_id: '',
     target_hyper: '' as number | '',
-    migration_type: 'live',
 })
 
 // 选中实例当前所在节点的主机名（接口返回的 hypervisor 就是 hostname）。
@@ -163,7 +162,6 @@ const openCreateModal = () => {
     newMigrationForm.value = {
         instance_id: '',
         target_hyper: '',
-        migration_type: 'live',
     }
     instanceHyperFilter.value = ''
     createModalVisible.value = true
@@ -201,12 +199,13 @@ const handleCreateMigration = async () => {
 
     creatingMigration.value = true
     try {
-        // 接口要求 name 与 instances 数组；目标节点用 hostid，冷迁移是 force=true
+        // 接口要求 name 与 instances 数组；目标节点用 hostid。
+        // 不传 force：它是「源节点已离线时强行迁移」，不是冷迁移开关，本地存储下还会被直接拒绝。
+        // 热迁移 / 冷迁移由后端按虚拟机当前状态自行决定，不由用户选择
         const inst = availableInstances.value.find((i) => i.id === newMigrationForm.value.instance_id)
         const payload: CreateMigrationPayload = {
             name: `ui-${(inst?.hostname || 'migration').slice(0, 20)}-${Date.now().toString().slice(-6)}`,
             instances: [{ id: newMigrationForm.value.instance_id }],
-            force: newMigrationForm.value.migration_type === 'cold',
         }
         if (newMigrationForm.value.target_hyper !== '') {
             payload.target_hyper = Number(newMigrationForm.value.target_hyper)
@@ -421,11 +420,7 @@ onUnmounted(() => {
                 </div>
 
                 <div class="form-group row-gap">
-                    <label class="form-label">{{ $t('dashboard.migrationForm.migrationType') }}</label>
-                    <select v-model="newMigrationForm.migration_type" class="form-select full-width">
-                        <option value="live">{{ $t('dashboard.migrationForm.liveMigration') }}</option>
-                        <option value="cold">{{ $t('dashboard.migrationForm.coldMigration') }}</option>
-                    </select>
+                    <small class="text-secondary">{{ $t('dashboard.migrationForm.typeAutoHint') }}</small>
                 </div>
             </div>
 

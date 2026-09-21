@@ -35,21 +35,15 @@ const fetchConsoleInfo = async () => {
         const response = await instancesApi.getConsole(instanceId)
         const { console_url, instance } = response
 
-        // Try to get hostname from console response or fallback to ID
-        instanceName.value = instance?.hostname || instance?.id || instanceId
-
-        // If we don't have a good hostname yet, try fetching full instance info
-        if (!instance?.hostname) {
-            instancesApi
-                .getInstance(instanceId)
-                .then((res) => {
-                    const fullInstance = res.instance || res
-                    if (fullInstance.hostname) {
-                        instanceName.value = fullInstance.hostname
-                    }
-                })
-                .catch((e) => console.warn('Could not fetch full instance info', e))
-        }
+        // 控制台接口返回的 instance 只有 id 和 owner（api/src/apis/console.go），拿不到主机名，
+        // 所以先用 id 占位、再单独查一次实例。原先写的是 instance?.hostname，该字段从不存在
+        instanceName.value = instance?.id || instanceId
+        instancesApi
+            .getInstance(instanceId)
+            .then((full) => {
+                if (full.hostname) instanceName.value = full.hostname
+            })
+            .catch((e) => console.warn('Could not fetch full instance info', e))
 
         let url = console_url
         const consoleData = response

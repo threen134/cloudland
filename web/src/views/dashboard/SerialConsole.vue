@@ -191,16 +191,14 @@ const connectSerial = async () => {
     detachSocket()
     try {
         const data = await instancesApi.getConsole(instanceId, 'serial')
-        instanceName.value = data.instance?.hostname || data.instance?.id || instanceId
-        if (!data.instance?.hostname) {
-            instancesApi
-                .getInstance(instanceId)
-                .then((res) => {
-                    const full = res.instance || res
-                    if (full.hostname) instanceName.value = full.hostname
-                })
-                .catch(() => {})
-        }
+        // 控制台接口返回的 instance 只有 id 和 owner，主机名要单独查（同 InstanceConsole.vue）
+        instanceName.value = data.instance?.id || instanceId
+        instancesApi
+            .getInstance(instanceId)
+            .then((full) => {
+                if (full.hostname) instanceName.value = full.hostname
+            })
+            .catch(() => {})
         const url = data.console_url
         if (!url) throw new Error('No console URL returned from API')
 
