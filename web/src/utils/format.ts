@@ -54,6 +54,12 @@ export const formatDateTime = (value?: string | number | Date | null): string =>
     return date.toLocaleString(getCurrentLanguage())
 }
 
+/**
+ * clapi timestamp ("YYYY-MM-DD HH:mm:ss.ffffff") cut to the minute, for list columns.
+ * Pair it with class="cell-time" and put the full value in the title
+ */
+export const formatToMinute = (value?: string | null): string => (value ? value.slice(0, 16) : PLACEHOLDER)
+
 /** 时间戳字符串 → 只取日期部分 */
 export const formatDate = (value?: string | number | Date | null): string => {
     if (!value) return PLACEHOLDER

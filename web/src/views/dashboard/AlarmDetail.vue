@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { alarmsApi, RULE_TYPES, type NodeAlarmRule, type NodeAlarmRuleListResponse } from '../../api/alarms'
 import { errorMessage } from '../../utils/error'
@@ -9,6 +9,7 @@ import { useToast } from '../../composables/useToast'
 import DeleteModal from '../../components/modals/DeleteModal.vue'
 import NodeAlarmRuleEditModal from '../../components/alarm/NodeAlarmRuleEditModal.vue'
 import InfoRow from '../../components/base/InfoRow.vue'
+import StatusBadge from '../../components/base/StatusBadge.vue'
 import { useCopyId } from '../../composables/useCopyId'
 import { useGoBack } from '../../composables/useGoBack'
 
@@ -66,6 +67,26 @@ const toggleEnabled = async () => {
 const getRuleTypeLabel = (type: string) =>
     (RULE_TYPES as readonly string[]).includes(type) ? t('dashboard.alarmRuleTypes.' + type) : type
 
+// Config shown as "key  value" lines instead of raw JSON. Keys stay the template variable names
+// (they are what the edit dialog shows). A nested object, e.g. compute_node's network_types
+// { public: {...}, private: {...} }, gets one line per sub-key
+const inline = (v: unknown) => (v !== null && typeof v === 'object' ? JSON.stringify(v) : String(v))
+const configEntries = computed(() =>
+    Object.entries(alarm.value?.config || {}).map(([key, value]) => ({
+        key,
+        lines:
+            value !== null && typeof value === 'object'
+                ? Object.entries(value as Record<string, unknown>).map(([sub, v]) =>
+                      v !== null && typeof v === 'object'
+                          ? `${sub}: ${Object.entries(v as Record<string, unknown>)
+                                .map(([k, x]) => `${k}=${inline(x)}`)
+                                .join('  ')}`
+                          : `${sub}: ${inline(v)}`
+                  )
+                : [inline(value)],
+    }))
+)
+
 const goBack = useGoBack('alarms')
 
 const handleDelete = async () => {
@@ -89,9 +110,8 @@ onMounted(fetchAlarmDetail)
     <div class="vpc-detail">
         <!-- Header -->
         <div class="detail-header">
-            <button class="btn btn-ghost back-btn" @click="goBack">
-                <ArrowLeft :size="18" />
-                <span>{{ t('dashboard.alarms') }}</span>
+            <button class="btn btn-ghost btn-sm" @click="goBack">
+                <ArrowLeft :size="16" /> {{ $t('actions.back') }}
             </button>
         </div>
 
@@ -113,13 +133,19 @@ onMounted(fetchAlarmDetail)
         <!-- Detail Content -->
         <div v-else-if="alarm" class="detail-content">
             <!-- Title Bar -->
-            <div class="title-bar card">
+            <div class="title-bar">
                 <div class="title-info">
                     <div class="title-icon">
-                        <AlertTriangle :size="28" />
+                        <AlertTriangle :size="20" />
                     </div>
                     <div>
-                        <h2 class="resource-title">{{ alarm.name }}</h2>
+                        <h2 class="resource-title">
+                            {{ alarm.name }}
+                            <StatusBadge
+                                :variant="alarm.enabled ? 'success' : 'neutral'"
+                                :label="alarm.enabled ? t('dashboard.alarm.enabled') : t('dashboard.alarm.disabled')"
+                            />
+                        </h2>
                         <div class="resource-id-row">
                             <span class="resource-id-text">{{ alarm.uuid }}</span>
                             <button
@@ -146,9 +172,6 @@ onMounted(fetchAlarmDetail)
                         <Trash2 :size="14" />
                         {{ t('actions.delete') }}
                     </button>
-                    <span :class="['badge', 'badge-lg', alarm.enabled ? 'status-active' : 'status-disabled']">
-                        {{ alarm.enabled ? t('dashboard.alarm.enabled') : t('dashboard.alarm.disabled') }}
-                    </span>
                 </div>
             </div>
 
@@ -160,7 +183,7 @@ onMounted(fetchAlarmDetail)
                     <div class="info-rows">
                         <InfoRow :label="t('dashboard.table.name')">{{ alarm.name }}</InfoRow>
                         <InfoRow :label="t('dashboard.alarmActions.ruleType')">
-                            <span class="rule-type-badge">{{ getRuleTypeLabel(alarm.rule_type) }}</span>
+                            <span class="badge badge-secondary">{{ getRuleTypeLabel(alarm.rule_type) }}</span>
                         </InfoRow>
                         <!-- 原先这里显示 alarm.owner，那是 clapi 内部的组织自增 ID（界面上就是个 "1"），
                              既不是创建者也不是任何用户能对上的东西，去掉 -->
@@ -173,9 +196,15 @@ onMounted(fetchAlarmDetail)
                 <!-- Configuration Card -->
                 <div class="info-card card">
                     <h3 class="card-section-title">{{ t('dashboard.configuration') }}</h3>
-                    <div class="config-display">
-                        <pre>{{ JSON.stringify(alarm.config, null, 2) }}</pre>
+                    <div v-if="configEntries.length" class="config-list">
+                        <template v-for="entry in configEntries" :key="entry.key">
+                            <code class="config-key">{{ entry.key }}</code>
+                            <div class="config-value">
+                                <div v-for="(line, i) in entry.lines" :key="i">{{ line }}</div>
+                            </div>
+                        </template>
                     </div>
+                    <p v-else class="text-secondary">-</p>
                 </div>
             </div>
         </div>
@@ -200,27 +229,8 @@ onMounted(fetchAlarmDetail)
 </template>
 
 <style scoped>
-.vpc-detail {
-    max-width: 1100px;
-}
 .detail-header {
     margin-bottom: var(--spacing-4);
-}
-
-.back-btn {
-    display: inline-flex;
-    align-items: center;
-    gap: var(--spacing-2);
-    font-size: var(--font-size-sm);
-    color: var(--text-secondary);
-    padding: var(--spacing-2) var(--spacing-3);
-    border-radius: var(--radius-md);
-    transition: all 0.2s;
-}
-
-.back-btn:hover {
-    color: var(--primary-color);
-    background: var(--primary-50);
 }
 
 .loading-container {
@@ -245,101 +255,8 @@ onMounted(fetchAlarmDetail)
     padding: 60px 20px;
     text-align: center;
 }
-
-.title-bar {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: var(--spacing-5);
-}
-
-.title-info {
-    display: flex;
-    align-items: center;
-    gap: var(--spacing-4);
-}
-
-.title-icon {
-    width: 52px;
-    height: 52px;
-    border-radius: var(--radius-lg);
-    background: linear-gradient(135deg, var(--primary-50), var(--primary-100));
-    color: var(--primary-color);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    flex-shrink: 0;
-}
-
-.resource-title {
-    margin: 0 0 4px 0;
-    font-size: var(--font-size-xl);
-    font-weight: var(--font-weight-semibold);
-    color: var(--text-primary);
-}
-
-.resource-id-row {
-    display: flex;
-    align-items: center;
-    gap: var(--spacing-2);
-}
-
-.resource-id-text {
-    font-size: var(--font-size-xs);
-    color: var(--text-light);
-    font-family: var(--font-family-mono);
-}
-
-.copy-btn {
-    background: none;
-    border: 1px solid var(--border-light);
-    border-radius: var(--radius-sm);
-    padding: 2px 5px;
-    cursor: pointer;
-    color: var(--text-light);
-    display: inline-flex;
-    align-items: center;
-    transition: all 0.15s;
-}
-
-.copy-btn:hover {
-    color: var(--primary-color);
-    border-color: var(--primary-200);
-    background: var(--primary-50);
-}
 .copied-icon {
     color: var(--success-color);
-}
-.title-actions {
-    display: flex;
-    align-items: center;
-    gap: var(--spacing-3);
-}
-.badge-lg {
-    font-size: var(--font-size-sm);
-    padding: 6px 14px;
-}
-
-.badge.status-active,
-.status-active {
-    background: rgba(16, 185, 129, 0.1);
-    color: var(--success-color);
-}
-.status-disabled {
-    background: var(--gray-100);
-    color: var(--gray-500);
-}
-
-.rule-type-badge {
-    display: inline-flex;
-    align-items: center;
-    padding: 2px 8px;
-    border-radius: var(--radius-sm);
-    font-size: var(--font-size-xs);
-    font-weight: 500;
-    background: rgba(14, 165, 233, 0.1);
-    color: var(--primary-color);
-    border: 1px solid rgba(14, 165, 233, 0.2);
 }
 
 .info-grid {
@@ -370,47 +287,43 @@ onMounted(fetchAlarmDetail)
     gap: var(--spacing-3);
 }
 
-.config-display {
-    background: var(--bg-tertiary);
-    border-radius: var(--radius-md);
-    padding: 12px;
-    overflow-x: auto;
-}
-
-.config-display pre {
-    margin: 0;
-    font-size: 0.75rem;
-    font-family: var(--font-family-mono);
-    white-space: pre-wrap;
-    color: var(--text-primary);
-}
-
-.btn-danger-outline {
-    background: transparent;
-    color: var(--error-color);
-    border: 1px solid var(--error-color);
-    padding: 6px 12px;
-    border-radius: var(--radius-md);
-    cursor: pointer;
-    font-weight: 500;
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
+/* One grid for all entries so the key column lines up; rows separated like InfoRow */
+.config-list {
+    display: grid;
+    grid-template-columns: max-content minmax(0, 1fr);
+    align-items: baseline;
+    column-gap: var(--spacing-6);
     font-size: var(--font-size-sm);
 }
 
-.btn-danger-outline:hover {
-    background: var(--error-light);
+.config-key,
+.config-value {
+    padding: var(--spacing-2) 0;
+    line-height: 1.6;
+    border-bottom: 1px solid var(--border-light);
+}
+
+.config-list > :nth-last-child(-n + 2) {
+    border-bottom: none;
+}
+
+.config-key {
+    background: none;
+    font-family: var(--font-family-mono);
+    font-size: var(--font-size-xs);
+    color: var(--text-secondary);
+}
+
+.config-value {
+    color: var(--text-primary);
+    font-weight: var(--font-weight-medium);
+    font-variant-numeric: tabular-nums;
+    word-break: break-all;
 }
 
 @media (max-width: 768px) {
     .info-grid {
         grid-template-columns: 1fr;
-    }
-    .title-bar {
-        flex-direction: column;
-        align-items: flex-start;
-        gap: var(--spacing-3);
     }
 }
 </style>

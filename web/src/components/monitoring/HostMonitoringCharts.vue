@@ -149,8 +149,15 @@ watch(() => props.hostname, fetchData)
                         {{ t('dashboard.monitoring.custom') }}
                     </button>
                 </div>
-                <button class="btn btn-ghost btn-xs" @click="fetchData" :disabled="loading">
-                    <RefreshCw :size="14" :class="{ 'animate-spin': loading }" />
+                <button
+                    class="btn btn-ghost btn-xs"
+                    :title="t('actions.refresh')"
+                    :aria-label="t('actions.refresh')"
+                    @click="fetchData"
+                    :disabled="loading"
+                >
+                    <!-- was the Tailwind class animate-spin, which this project does not have: it never spun -->
+                    <RefreshCw :size="14" :class="{ spinning: loading }" />
                 </button>
             </div>
         </div>

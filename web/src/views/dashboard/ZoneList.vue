@@ -393,10 +393,6 @@ onMounted(() => {
     background: rgba(14, 165, 233, 0.1);
     color: var(--primary-color);
 }
-.badge-secondary {
-    background: var(--gray-100);
-    color: var(--gray-600);
-}
 
 .table-actions {
     display: flex;
@@ -463,5 +459,4 @@ onMounted(() => {
     border-color: var(--primary-300);
     box-shadow: 0 0 0 2px var(--primary-100);
 }
-
 </style>

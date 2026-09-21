@@ -1,10 +1,12 @@
 <script setup lang="ts">
-// 详情页信息卡里的一行「标签 — 值」。
+// One "label — value" row of a detail page info card.
 //
-// 这类结构原先每个详情页各写一套，标签的 class 有 label / info-label /
-// detail-label / form-label 四种，字号、颜色、左右布局也各不相同。统一成一个组件。
+// Every detail page used to have its own version, with four label classes (label / info-label /
+// detail-label / form-label) and different sizes, colors and layouts; this unifies them.
 //
-// 标签左、值右对齐；值为空时显示 '-'，不必每处都写 `|| '-'`。
+// An empty value shows '-', no need to write `|| '-'` everywhere.
+// Label in a fixed-width column, value right next to it and left-aligned. It used to be
+// label far left / value far right, which on a wide card left 400-500px to read across.
 defineProps<{
     label: string
     /** 值用等宽字体显示（UUID、IP、MAC 这类） */
@@ -25,13 +27,20 @@ defineProps<{
 
 <style scoped>
 .info-row {
-    display: flex;
+    display: grid;
+    grid-template-columns: 144px minmax(0, 1fr);
     align-items: center;
-    justify-content: space-between;
-    gap: var(--spacing-4);
+    column-gap: var(--spacing-4);
     padding: var(--spacing-2) 0;
     min-height: 32px;
     border-bottom: 1px solid var(--border-light);
+}
+
+/* Detail cards are half the page wide; below 1280px give the value the room instead */
+@media (max-width: 1279px) {
+    .info-row {
+        grid-template-columns: 112px minmax(0, 1fr);
+    }
 }
 
 .info-row:last-child {
@@ -55,7 +64,6 @@ defineProps<{
     font-size: var(--font-size-sm);
     color: var(--text-primary);
     font-weight: var(--font-weight-medium);
-    text-align: right;
     word-break: break-all;
 }
 

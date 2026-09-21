@@ -12,20 +12,26 @@ import {
     type Backend,
 } from '../../api/networks'
 import { useToast } from '../../composables/useToast'
-import { ArrowLeft, GitFork, Trash2, Plus, ChevronDown, ChevronRight, Pencil } from 'lucide-vue-next'
+import { ArrowLeft, GitFork, Trash2, Plus, ChevronDown, ChevronRight, Pencil, Check, Copy } from 'lucide-vue-next'
 import DeleteModal from '../../components/modals/DeleteModal.vue'
 import BaseModal from '../../components/modals/BaseModal.vue'
 import StatusBadge from '../../components/base/StatusBadge.vue'
 import InfoRow from '../../components/base/InfoRow.vue'
 import { useGoBack } from '../../composables/useGoBack'
+import { useCopyId } from '../../composables/useCopyId'
 import { errorMessage } from '../../utils/error'
 
-const { t } = useI18n()
+const { t, te } = useI18n()
 const toast = useToast()
+const { copiedId, copyId } = useCopyId()
 const route = useRoute()
 const router = useRouter()
 const goBack = useGoBack('load-balancers')
 const lbId = route.params.id as string
+
+// Load balancers and listeners share the same states; unknown ones fall back to the raw value
+const statusText = (status?: string) =>
+    status && te(`dashboard.loadBalancerStatus.${status}`) ? t(`dashboard.loadBalancerStatus.${status}`) : status || '-'
 
 const lb = ref<LoadBalancer | null>(null)
 const loading = ref(true)
@@ -385,20 +391,36 @@ onMounted(async () => {
 
         <div v-else-if="lb" class="detail-content">
             <!-- Title Bar -->
-            <div class="title-bar card">
-                <div class="resource-icon-lg">
-                    <GitFork :size="24" />
-                </div>
+            <div class="title-bar">
                 <div class="title-info">
-                    <h1>{{ lb.name }}</h1>
-                    <div class="subtitle">
-                        <span class="id-text">{{ lb.id }}</span>
-                        <StatusBadge :status="lb.status || 'inactive'" />
+                    <div class="title-icon">
+                        <GitFork :size="20" />
+                    </div>
+                    <div>
+                        <h2 class="resource-title">
+                            {{ lb.name }}
+                            <StatusBadge
+                                :status="lb.status || 'inactive'"
+                                :label="statusText(lb.status || 'inactive')"
+                            />
+                        </h2>
+                        <div class="resource-id-row">
+                            <span class="resource-id-text">{{ lb.id }}</span>
+                            <button
+                                class="copy-btn"
+                                :title="$t('actions.copy')"
+                                :aria-label="$t('actions.copy')"
+                                @click="copyId(lb.id)"
+                            >
+                                <Check v-if="copiedId === lb.id" :size="12" class="copied-icon" />
+                                <Copy v-else :size="12" />
+                            </button>
+                        </div>
                     </div>
                 </div>
                 <div class="title-actions">
                     <div class="action-dropdown">
-                        <button class="btn btn-primary" @click="toggleActionMenu">
+                        <button class="btn btn-secondary btn-sm" @click="toggleActionMenu">
                             {{ $t('actions.actions') }} <ChevronDown :size="14" />
                         </button>
                         <Transition name="dropdown">
@@ -512,7 +534,7 @@ onMounted(async () => {
                                         <code class="mono">{{ listener.mode.toUpperCase() }}:{{ listener.port }}</code>
                                     </td>
                                     <td>
-                                        <StatusBadge :status="listener.status" :label="listener.status || '-'" />
+                                        <StatusBadge :status="listener.status" :label="statusText(listener.status)" />
                                     </td>
                                     <td class="text-secondary text-sm">
                                         {{ listener.backends?.length || 0 }}
@@ -961,10 +983,6 @@ onMounted(async () => {
 </template>
 
 <style scoped>
-.detail-page {
-    max-width: 1200px;
-    margin: 0 auto;
-}
 .detail-header {
     margin-bottom: var(--spacing-4);
 }
@@ -975,45 +993,6 @@ onMounted(async () => {
     align-items: center;
     justify-content: center;
     padding: 60px;
-}
-
-/* Title Bar */
-.title-bar {
-    display: flex;
-    align-items: center;
-    gap: var(--spacing-4);
-    padding: var(--spacing-6);
-    margin-bottom: var(--spacing-6);
-}
-.resource-icon-lg {
-    width: 48px;
-    height: 48px;
-    background: var(--bg-tertiary);
-    color: var(--primary-color);
-    border-radius: var(--radius-md);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    flex-shrink: 0;
-}
-.title-info {
-    flex: 1;
-}
-.title-info h1 {
-    font-size: var(--font-size-xl);
-    font-weight: 600;
-    margin: 0 0 4px 0;
-    color: var(--text-primary);
-}
-.subtitle {
-    display: flex;
-    align-items: center;
-    gap: var(--spacing-3);
-    font-size: var(--font-size-sm);
-}
-.id-text {
-    font-family: var(--font-family-mono);
-    color: var(--text-secondary);
 }
 
 /* Info Grid */

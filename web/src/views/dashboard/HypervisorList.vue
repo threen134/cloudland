@@ -1014,8 +1014,8 @@ onUnmounted(() => {
     padding: 2px 8px;
     text-align: center;
     border-radius: 10px;
-    background: var(--primary-50, var(--accent-purple-light));
-    color: var(--primary-600, var(--accent-purple));
+    background: var(--primary-50);
+    color: var(--primary-600);
     font-size: 0.8125rem;
     font-weight: 600;
 }
@@ -1338,5 +1338,4 @@ onUnmounted(() => {
 .copy-cmd-btn:hover {
     background: var(--bg-secondary);
 }
-
 </style>

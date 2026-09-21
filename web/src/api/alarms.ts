@@ -49,16 +49,6 @@ export interface DeleteNodeAlarmRuleResponse {
     deleted_files: string[]
 }
 
-/** POST /metrics/alarm/sync-mappings —— apis/alarms.go SyncAllVMRuleMappings */
-export interface SyncMappingsResponse {
-    /** success | partial_success */
-    status: string
-    message: string
-    count: number
-    /** 按规则类型（alarm-cpu / alarm-memory / alarm-bw / adjust-cpu / adjust-bw）统计的规则组数量 */
-    stats: Record<string, number>
-}
-
 export interface CreateNodeAlarmRulePayload {
     rule_type: string
     name: string
@@ -105,11 +95,6 @@ export const alarmsApi = {
 
     async deleteAlarmRule(uuid: string): Promise<DeleteNodeAlarmRuleResponse> {
         const response = await client.delete<DeleteNodeAlarmRuleResponse>(`/node-alarm-rules/${uuid}`)
-        return response.data
-    },
-
-    async syncMappings(): Promise<SyncMappingsResponse> {
-        const response = await client.post<SyncMappingsResponse>('/metrics/alarm/sync-mappings')
         return response.data
     },
 }

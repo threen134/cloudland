@@ -112,7 +112,14 @@ const fetchData = async () => {
                     if (i.id) ifaceNameById[i.id] = i.name || `eth${idx}`
                 })
 
-                const colors = [cssVar('--primary-color'), cssVar('--accent-teal'), cssVar('--success-color'), cssVar('--warning-color'), cssVar('--accent-purple'), cssVar('--error-color')]
+                const colors = [
+                    cssVar('--primary-color'),
+                    cssVar('--accent-teal'),
+                    cssVar('--success-color'),
+                    cssVar('--warning-color'),
+                    cssVar('--accent-purple'),
+                    cssVar('--error-color'),
+                ]
                 const datasets: ChartDataset<'line'>[] = []
                 let labels: string[] = []
                 let colorIdx = 0
@@ -193,7 +200,13 @@ watch(() => props.instanceId, fetchData)
                         {{ t('dashboard.monitoring.custom') }}
                     </button>
                 </div>
-                <button class="btn btn-ghost btn-sm icon-only" @click="fetchData" :disabled="loading">
+                <button
+                    class="btn btn-ghost btn-sm icon-only"
+                    :title="t('actions.refresh')"
+                    :aria-label="t('actions.refresh')"
+                    @click="fetchData"
+                    :disabled="loading"
+                >
                     <RefreshCw :size="14" :class="{ spinning: loading }" />
                 </button>
             </div>

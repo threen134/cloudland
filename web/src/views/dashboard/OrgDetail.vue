@@ -16,25 +16,37 @@ import {
     XCircle,
     Gauge,
     ChevronDown,
-    CheckCircle,
-    AlertCircle,
-    ShieldAlert,
-    PauseCircle,
+    Check,
+    Copy,
 } from 'lucide-vue-next'
 import BaseModal from '../../components/modals/BaseModal.vue'
 import InfoRow from '../../components/base/InfoRow.vue'
+import StatusBadge from '../../components/base/StatusBadge.vue'
+import { useCopyId } from '../../composables/useCopyId'
 import DetailTabs from '../../components/base/DetailTabs.vue'
 import { useGoBack } from '../../composables/useGoBack'
 import { useAuthStore } from '../../stores/auth'
 import { useTenantStore } from '../../stores/tenant'
 import { useQuota } from '../../composables/useQuota'
 import { useToast } from '../../composables/useToast'
-import { formatDate } from '../../utils/format'
+import { formatDate, formatDateTime } from '../../utils/format'
 import { errorMessage } from '../../utils/error'
 
 const { t } = useI18n()
 const toast = useToast()
+const { copiedId, copyId } = useCopyId()
 const authStore = useAuthStore()
+
+// Org status: 0 pending, 1 active, 2 suspended, 3 disabled (shown next to the name)
+const ORG_STATUS = {
+    0: { key: 'pending', variant: 'pending' },
+    1: { key: 'active', variant: 'success' },
+    2: { key: 'suspended', variant: 'warning' },
+    3: { key: 'disabled', variant: 'error' },
+} as const
+const orgStatus = (status?: number) => ORG_STATUS[(status ?? 0) as keyof typeof ORG_STATUS] ?? ORG_STATUS[0]
+const orgStatusText = (status?: number) => t(`dashboard.org.status.${orgStatus(status).key}`)
+const orgStatusVariant = (status?: number) => orgStatus(status).variant
 const route = useRoute()
 const goBack = useGoBack('orgs')
 const orgId = route.params.id as string
@@ -308,7 +320,7 @@ onUnmounted(() => {
 <template>
     <div>
         <!-- Back button -->
-        <div class="page-header">
+        <div class="detail-header">
             <button class="btn btn-ghost btn-sm" @click="goBack">
                 <ArrowLeft :size="16" /> {{ $t('actions.back') }}
             </button>
@@ -326,25 +338,34 @@ onUnmounted(() => {
         </div>
 
         <template v-else-if="org">
-            <!-- Org Info Card -->
-            <div class="card" style="margin-bottom: var(--spacing-6)">
-                <div class="detail-header">
-                    <div class="detail-title">
-                        <div class="icon-box-lg">
-                            <Building2 :size="24" />
-                        </div>
-                        <div>
-                            <h3>{{ org.name }}</h3>
-                            <div class="detail-meta">
-                                <span class="meta-item">UUID: {{ org.uuid }}</span>
-                                <span class="meta-item" v-if="org.slug"
-                                    >{{ $t('dashboard.table.slug') }}: {{ org.slug }}</span
-                                >
-                            </div>
+            <!-- Title Bar (same structure as every other detail page, styles in index.css) -->
+            <div class="title-bar">
+                <div class="title-info">
+                    <div class="title-icon">
+                        <Building2 :size="20" />
+                    </div>
+                    <div>
+                        <h2 class="resource-title">
+                            {{ org.name }}
+                            <StatusBadge :variant="orgStatusVariant(org.status)" :label="orgStatusText(org.status)" />
+                        </h2>
+                        <div class="resource-id-row">
+                            <span class="resource-id-text">{{ org.uuid }}</span>
+                            <button
+                                class="copy-btn"
+                                :title="$t('actions.copy')"
+                                :aria-label="$t('actions.copy')"
+                                @click="copyId(org.uuid)"
+                            >
+                                <Check v-if="copiedId === org.uuid" :size="12" class="copied-icon" />
+                                <Copy v-else :size="12" />
+                            </button>
                         </div>
                     </div>
+                </div>
+                <div class="title-actions">
                     <div class="action-dropdown">
-                        <button class="btn btn-primary" @click="toggleActionMenu">
+                        <button class="btn btn-secondary btn-sm" @click="toggleActionMenu">
                             {{ $t('actions.actions') }} <ChevronDown :size="14" />
                         </button>
                         <Transition name="dropdown">
@@ -364,35 +385,18 @@ onUnmounted(() => {
                         <div v-if="showActionMenu" class="dropdown-backdrop" @click="closeActionMenu"></div>
                     </div>
                 </div>
+            </div>
 
+            <!-- Org Info Card -->
+            <div class="card" style="margin-bottom: var(--spacing-6)">
                 <div class="detail-grid">
                     <InfoRow :label="$t('dashboard.table.description')">{{ org.description || '-' }}</InfoRow>
                     <InfoRow :label="$t('dashboard.table.owner')">{{
                         org.owner_email || org.owner_uuid || '-'
                     }}</InfoRow>
                     <InfoRow :label="$t('dashboard.org.memberCount')">{{ org.member_count ?? members.length }}</InfoRow>
-                    <InfoRow :label="$t('dashboard.table.status')">
-                        <div class="status-cell" :class="'status-' + (org.status || 0)">
-                            <CheckCircle v-if="org.status === 1" :size="14" />
-                            <PauseCircle v-else-if="org.status === 2" :size="14" />
-                            <ShieldAlert v-else-if="org.status === 3" :size="14" />
-                            <AlertCircle v-else :size="14" />
-                            <span>
-                                {{
-                                    org.status === 0
-                                        ? $t('dashboard.org.status.pending')
-                                        : org.status === 1
-                                          ? $t('dashboard.org.status.active')
-                                          : org.status === 2
-                                            ? $t('dashboard.org.status.suspended')
-                                            : org.status === 3
-                                              ? $t('dashboard.org.status.disabled')
-                                              : $t('dashboard.org.status.pending')
-                                }}
-                            </span>
-                        </div>
-                    </InfoRow>
-                    <InfoRow :label="$t('dashboard.table.created')">{{ org.created_at || '-' }}</InfoRow>
+                    <InfoRow v-if="org.slug" :label="$t('dashboard.table.slug')" mono>{{ org.slug }}</InfoRow>
+                    <InfoRow :label="$t('dashboard.table.created')">{{ formatDateTime(org.created_at) }}</InfoRow>
                 </div>
             </div>
 
@@ -838,56 +842,12 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
-.page-header {
-    margin-bottom: var(--spacing-4);
-}
-
-.detail-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: flex-start;
-    margin-bottom: var(--spacing-6);
-    padding-bottom: var(--spacing-4);
-    border-bottom: 1px solid var(--border-light);
-}
-
-.detail-title {
-    display: flex;
-    align-items: center;
-    gap: var(--spacing-4);
-}
-
-.detail-title h3 {
-    margin: 0 0 var(--spacing-1);
-    font-size: var(--font-size-xl);
-}
-
-.detail-meta {
-    display: flex;
-    gap: var(--spacing-4);
-}
-
-.meta-item {
-    font-size: var(--font-size-xs);
-    color: var(--text-tertiary);
-    font-family: var(--font-family-mono);
-}
-
-.icon-box-lg {
-    width: 48px;
-    height: 48px;
-    border-radius: var(--radius-md);
-    background: linear-gradient(135deg, rgba(14, 165, 233, 0.1), rgba(6, 182, 212, 0.1));
-    color: var(--primary-600);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-}
-
+/* Two columns of label / value rows like the other detail pages. It was auto-fill 200px cells,
+   one row per cell, which left the value ~70px once InfoRow got a fixed label column */
 .detail-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-    gap: var(--spacing-5);
+    grid-template-columns: repeat(auto-fit, minmax(min(360px, 100%), 1fr));
+    column-gap: var(--spacing-8);
 }
 
 .card-header-row {

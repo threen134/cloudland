@@ -23,7 +23,7 @@ const error = ref('')
 const showActionMenu = ref(false)
 const { t } = useI18n()
 const toast = useToast()
-const { getTypeBadgeClass, getTypeLabel } = useFloatingIP()
+const { getTypeLabel } = useFloatingIP()
 
 // --- Delete Confirmation Modal Logic ---
 const deleteModalVisible = ref(false)
@@ -101,19 +101,15 @@ onMounted(fetchFip)
 
         <div v-else-if="fip" class="detail-content">
             <!-- Title Bar -->
-            <div class="title-bar card">
+            <div class="title-bar">
                 <div class="title-info">
                     <div class="title-icon">
-                        <Globe :size="28" />
+                        <Globe :size="20" />
                     </div>
                     <div>
                         <h2 class="resource-title">
                             {{ fip.name || fip.public_ip || fip.ip_address }}
-                            <div class="badge-group">
-                                <span :class="['badge', getTypeBadgeClass(fip.type || '')]">{{
-                                    getTypeLabel(fip.type || '')
-                                }}</span>
-                            </div>
+                            <span class="badge badge-secondary">{{ getTypeLabel(fip.type || '') }}</span>
                         </h2>
                         <div class="resource-id-row">
                             <span class="resource-id-text">{{ fip.id }}</span>
@@ -130,7 +126,11 @@ onMounted(fetchFip)
                 </div>
                 <div class="title-actions">
                     <div class="action-dropdown">
-                        <button class="btn btn-primary" @click="toggleActionMenu" :disabled="fip.type === 'native'">
+                        <button
+                            class="btn btn-secondary btn-sm"
+                            @click="toggleActionMenu"
+                            :disabled="fip.type === 'native'"
+                        >
                             {{ $t('actions.actions') }} <ChevronDown :size="14" />
                         </button>
                         <Transition name="dropdown">
@@ -263,11 +263,6 @@ onMounted(fetchFip)
 </template>
 
 <style scoped>
-.detail-page {
-    max-width: 1200px;
-    margin: 0 auto;
-}
-
 .detail-header {
     margin-bottom: var(--spacing-4);
 }
@@ -282,85 +277,9 @@ onMounted(fetchFip)
 }
 
 /* Title Bar */
-.title-bar {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: var(--spacing-5);
-}
-
-.title-info {
-    display: flex;
-    align-items: center;
-    gap: var(--spacing-4);
-}
-
-.title-icon {
-    width: 52px;
-    height: 52px;
-    border-radius: var(--radius-lg);
-    background: linear-gradient(135deg, var(--primary-50), var(--primary-100));
-    color: var(--primary-color);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    flex-shrink: 0;
-}
-
-.resource-title {
-    margin: 0 0 4px 0;
-    font-size: var(--font-size-xl);
-    font-weight: var(--font-weight-semibold);
-    color: var(--primary-color);
-    display: flex;
-    align-items: center;
-    gap: var(--spacing-3);
-    flex-wrap: wrap;
-}
-
-.badge-group {
-    display: flex;
-    gap: var(--spacing-2);
-}
-
-.resource-id-row {
-    display: flex;
-    align-items: center;
-    gap: var(--spacing-2);
-}
-
-.resource-id-text {
-    font-size: var(--font-size-xs);
-    color: var(--text-light);
-    font-family: var(--font-family-mono);
-}
-
-.copy-btn {
-    background: none;
-    border: 1px solid var(--border-light);
-    border-radius: var(--radius-sm);
-    padding: 2px 5px;
-    cursor: pointer;
-    color: var(--text-light);
-    display: inline-flex;
-    align-items: center;
-    transition: all 0.15s;
-}
-
-.copy-btn:hover {
-    color: var(--primary-color);
-    border-color: var(--primary-200);
-    background: var(--primary-50);
-}
 
 .copied-icon {
     color: var(--success-color);
-}
-
-.title-actions {
-    display: flex;
-    align-items: center;
-    gap: var(--spacing-3);
 }
 
 /* Action Dropdown */

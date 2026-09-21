@@ -7,6 +7,7 @@ import { securityGroupsApi, vpcsApi, type SecurityGroup, type VPC } from '../../
 import { isValidName } from '../../utils/validation'
 import { useRegionStore } from '../../stores/region'
 import { errorMessage } from '../../utils/error'
+import { formatToMinute } from '../../utils/format'
 
 import { Shield, Plus, Trash2, Search, RefreshCw, Edit, HelpCircle, Check, Copy } from 'lucide-vue-next'
 import PageToolbar from '../../components/base/PageToolbar.vue'
@@ -112,9 +113,6 @@ const onVpcFilterChange = () => {
     currentPage.value = 1
     fetchSecurityGroups()
 }
-
-// The API returns "2006-01-02 15:04:05.999999": minutes are precise enough for a list
-const formatCreatedAt = (value?: string) => (value ? value.slice(0, 16) : '-')
 
 const ruleCount = (group: SecurityGroup, direction: 'ingress' | 'egress') =>
     (group.security_rules || []).filter((r) => r.direction === direction).length
@@ -370,9 +368,7 @@ onUnmounted(() => {
             <template #cell-interfaces="{ row: group }">{{ group.target_interfaces?.length || 0 }}</template>
 
             <template #cell-created="{ row: group }">
-                <span class="text-secondary text-sm nowrap" :title="group.created_at">{{
-                    formatCreatedAt(group.created_at)
-                }}</span>
+                <span class="cell-time" :title="group.created_at">{{ formatToMinute(group.created_at) }}</span>
             </template>
 
             <template #cell-actions="{ row: group }">
@@ -558,7 +554,6 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
-
 .vpc-filter {
     width: 200px;
 }

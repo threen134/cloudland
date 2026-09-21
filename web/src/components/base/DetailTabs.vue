@@ -42,12 +42,17 @@ defineEmits<{ 'update:modelValue': [id: string] }>()
 </template>
 
 <style scoped>
+/* The baseline is an inset shadow, not a border the tabs overlap with margin-bottom: -1px.
+   With overflow-x: auto the other axis becomes auto too, so that 1px overlap made the bar
+   vertically scrollable and Windows drew a scrollbar with up/down arrows at its right end.
+   The active tab's own bottom border paints over the shadow. */
 .detail-tabs {
     display: flex;
     gap: var(--spacing-1);
-    border-bottom: 1px solid var(--border-light);
+    box-shadow: inset 0 -1px 0 var(--border-light);
     margin-bottom: var(--spacing-5);
     overflow-x: auto;
+    overflow-y: hidden;
 }
 
 .tab-btn {
@@ -55,7 +60,6 @@ defineEmits<{ 'update:modelValue': [id: string] }>()
     align-items: center;
     gap: var(--spacing-2);
     padding: var(--spacing-3) var(--spacing-4);
-    margin-bottom: -1px;
     background: none;
     border: none;
     border-bottom: 2px solid transparent;

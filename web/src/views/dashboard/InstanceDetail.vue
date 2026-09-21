@@ -588,18 +588,18 @@ onUnmounted(() => {
 
         <div v-else-if="instance" class="detail-content">
             <!-- Title Bar with Actions -->
-            <div class="title-bar card">
+            <div class="title-bar">
                 <div class="title-info">
                     <div class="title-icon">
-                        <Monitor :size="28" />
+                        <Monitor :size="20" />
                     </div>
                     <div>
-                        <h2 class="instance-title">
+                        <h2 class="resource-title">
                             {{ instance.hostname }}
                             <StatusBadge :status="instance.status" :label="getStatusText(instance.status)" />
                         </h2>
-                        <div class="instance-id-row">
-                            <span class="instance-id">{{ instance.id }}</span>
+                        <div class="resource-id-row">
+                            <span class="resource-id-text">{{ instance.id }}</span>
                             <button
                                 class="copy-btn"
                                 @click="copyToClipboard(instance.id, 'id')"
@@ -615,7 +615,7 @@ onUnmounted(() => {
                 </div>
                 <div class="title-actions">
                     <div class="action-dropdown">
-                        <button class="btn btn-primary" @click="toggleActionMenu">
+                        <button class="btn btn-secondary btn-sm" @click="toggleActionMenu">
                             {{ $t('actions.actions') }} <ChevronDown :size="14" />
                         </button>
                         <Transition name="dropdown">
@@ -1306,11 +1306,6 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
-.detail-page {
-    max-width: 1200px;
-    margin: 0 auto;
-}
-
 .detail-header {
     margin-bottom: var(--spacing-4);
 }
@@ -1322,68 +1317,6 @@ onUnmounted(() => {
     align-items: center;
     justify-content: center;
     padding: 60px;
-}
-
-/* Title Bar */
-.title-bar {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: var(--spacing-5);
-    flex-wrap: wrap;
-    gap: var(--spacing-3);
-}
-
-.title-info {
-    display: flex;
-    align-items: center;
-    gap: var(--spacing-4);
-}
-
-.title-icon {
-    width: 52px;
-    height: 52px;
-    border-radius: var(--radius-lg);
-    background: linear-gradient(135deg, var(--primary-50), var(--primary-100));
-    color: var(--primary-color);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    flex-shrink: 0;
-}
-
-.instance-title {
-    margin: 0 0 4px 0;
-    font-size: var(--font-size-xl);
-    font-weight: var(--font-weight-semibold);
-    color: var(--primary-color);
-    display: flex;
-    align-items: center;
-    gap: var(--spacing-3);
-}
-
-.instance-title .badge {
-    font-size: var(--font-size-xs);
-    font-weight: 500;
-    vertical-align: middle;
-}
-
-.instance-id-row {
-    display: flex;
-    align-items: center;
-    gap: var(--spacing-2);
-}
-
-.instance-id {
-    font-size: var(--font-size-xs);
-    color: var(--text-light);
-    font-family: var(--font-family-mono);
-}
-
-.title-actions {
-    display: flex;
-    align-items: center;
-    gap: var(--spacing-3);
 }
 
 /* Action Dropdown */
@@ -1544,24 +1477,6 @@ onUnmounted(() => {
 
 .icon-btn-inline:hover {
     color: var(--primary-color);
-}
-
-.copy-btn {
-    background: none;
-    border: 1px solid var(--border-light);
-    border-radius: var(--radius-sm);
-    padding: 2px 5px;
-    cursor: pointer;
-    color: var(--text-light);
-    display: inline-flex;
-    align-items: center;
-    transition: all 0.15s;
-}
-
-.copy-btn:hover {
-    color: var(--primary-color);
-    border-color: var(--primary-200);
-    background: var(--primary-50);
 }
 
 .copied-icon {
@@ -1737,10 +1652,6 @@ onUnmounted(() => {
 .badge-muted {
     background: var(--bg-tertiary);
     color: var(--text-tertiary);
-}
-.badge-secondary {
-    background: var(--accent-purple-light);
-    color: var(--accent-purple);
 }
 .text-danger {
     color: var(--error-color);

@@ -181,7 +181,7 @@ onMounted(fetchChannels)
             <template #cell-name="{ row: ch }">{{ ch.name }}</template>
 
             <template #cell-type="{ row: ch }">
-                <span class="badge" :class="ch.type === 'feishu' ? 'badge-primary' : 'badge-secondary'">
+                <span class="badge badge-secondary">
                     {{ ch.type === 'feishu' ? t('dashboard.notificationFeishu') : 'Webhook' }}
                 </span>
             </template>
@@ -302,6 +302,8 @@ onMounted(fetchChannels)
     display: flex;
     gap: 4px;
     align-items: center;
+    /* The column is centered; without this the buttons sat left of the header */
+    justify-content: center;
 }
 
 .icon-btn-table {
@@ -340,15 +342,6 @@ onMounted(fetchChannels)
     border-radius: var(--radius-full);
     font-size: var(--font-size-xs);
     font-weight: var(--font-weight-medium);
-}
-
-.badge-primary {
-    background: var(--primary-light);
-    color: var(--primary-700);
-}
-.badge-secondary {
-    background: var(--accent-purple-light);
-    color: var(--accent-purple);
 }
 
 .status-active {
@@ -398,5 +391,4 @@ onMounted(fetchChannels)
     border-color: var(--primary-300);
     box-shadow: 0 0 0 2px var(--primary-100);
 }
-
 </style>

@@ -741,6 +741,7 @@ export default {
             thresholdHint: 'CPU/内存以百分比(%)为单位，带宽以 Mbps 为单位。',
             ruleLevel: '规则级别',
             durationMin: '持续时间(分)',
+            forDuration: '持续 {n} 分钟',
             linkedCount: '已关联 {count} 台云主机',
             ruleId: '规则 ID',
             nameStartLetterError: '名称必须以字母开头',
@@ -1294,6 +1295,11 @@ export default {
             deleting: '删除中',
             error: '错误',
         },
+        loadBalancerStatus: {
+            available: '可用',
+            pending: '创建中',
+            inactive: '未激活',
+        },
         vpcDetail: {
             loadError: '加载 VPC 详情失败。',
             namePlaceholder: '例如：生产环境-VPC',
@@ -1583,9 +1589,6 @@ export default {
             enabled: '启用',
             disabled: '禁用',
             owner: '创建者',
-            syncMappings: '同步映射',
-            syncing: '同步中...',
-            syncSuccess: '告警映射同步成功',
         },
         regionActions: {
             createTitle: '注册新区域',

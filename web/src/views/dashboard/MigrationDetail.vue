@@ -86,9 +86,8 @@ onUnmounted(() => {
     <div class="vpc-detail">
         <!-- Header -->
         <div class="detail-header">
-            <button class="btn btn-ghost back-btn" @click="goBack">
-                <ArrowLeft :size="18" />
-                <span>{{ $t('dashboard.table.migration') }}</span>
+            <button class="btn btn-ghost btn-sm" @click="goBack">
+                <ArrowLeft :size="16" /> {{ $t('actions.back') }}
             </button>
         </div>
 
@@ -110,13 +109,19 @@ onUnmounted(() => {
         <!-- Detail Content -->
         <div v-else-if="migration" class="detail-content">
             <!-- Title Bar -->
-            <div class="title-bar card">
+            <div class="title-bar">
                 <div class="title-info">
                     <div class="title-icon">
-                        <ArrowRightLeft :size="28" />
+                        <ArrowRightLeft :size="20" />
                     </div>
                     <div>
-                        <h2 class="resource-title">{{ $t('dashboard.migrationDetail.title') }}</h2>
+                        <h2 class="resource-title">
+                            {{ $t('dashboard.migrationDetail.title') }}
+                            <StatusBadge
+                                :status="migration.status"
+                                :label="getStatusText(migration.status, migration.progress)"
+                            />
+                        </h2>
                         <div class="resource-id-row">
                             <span class="resource-id-text">{{ migration.id }}</span>
                             <button
@@ -129,12 +134,6 @@ onUnmounted(() => {
                             </button>
                         </div>
                     </div>
-                </div>
-                <div class="title-actions">
-                    <StatusBadge
-                        :status="migration.status"
-                        :label="getStatusText(migration.status, migration.progress)"
-                    />
                 </div>
             </div>
 
@@ -273,28 +272,8 @@ onUnmounted(() => {
     color: var(--danger-600, var(--error-dark));
 }
 
-.vpc-detail {
-    max-width: 1100px;
-}
-
 .detail-header {
     margin-bottom: var(--spacing-4);
-}
-
-.back-btn {
-    display: inline-flex;
-    align-items: center;
-    gap: var(--spacing-2);
-    font-size: var(--font-size-sm);
-    color: var(--text-secondary);
-    padding: var(--spacing-2) var(--spacing-3);
-    border-radius: var(--radius-md);
-    transition: all 0.2s;
-}
-
-.back-btn:hover {
-    color: var(--primary-color);
-    background: var(--primary-50);
 }
 
 /* Loading */
@@ -323,76 +302,9 @@ onUnmounted(() => {
 }
 
 /* Title Bar */
-.title-bar {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: var(--spacing-5);
-}
-
-.title-info {
-    display: flex;
-    align-items: center;
-    gap: var(--spacing-4);
-}
-
-.title-icon {
-    width: 52px;
-    height: 52px;
-    border-radius: var(--radius-lg);
-    background: linear-gradient(135deg, var(--primary-50), var(--primary-100));
-    color: var(--primary-color);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    flex-shrink: 0;
-}
-
-.resource-title {
-    margin: 0 0 4px 0;
-    font-size: var(--font-size-xl);
-    font-weight: var(--font-weight-semibold);
-    color: var(--text-primary);
-}
-
-.resource-id-row {
-    display: flex;
-    align-items: center;
-    gap: var(--spacing-2);
-}
-
-.resource-id-text {
-    font-size: var(--font-size-xs);
-    color: var(--text-light);
-    font-family: var(--font-family-mono);
-}
-
-.copy-btn {
-    background: none;
-    border: 1px solid var(--border-light);
-    border-radius: var(--radius-sm);
-    padding: 2px 5px;
-    cursor: pointer;
-    color: var(--text-light);
-    display: inline-flex;
-    align-items: center;
-    transition: all 0.15s;
-}
-
-.copy-btn:hover {
-    color: var(--primary-color);
-    border-color: var(--primary-200);
-    background: var(--primary-50);
-}
 
 .copied-icon {
     color: var(--success-color);
-}
-
-.title-actions {
-    display: flex;
-    align-items: center;
-    gap: var(--spacing-3);
 }
 
 /* Info Grid */
@@ -427,12 +339,6 @@ onUnmounted(() => {
 @media (max-width: 768px) {
     .info-grid {
         grid-template-columns: 1fr;
-    }
-
-    .title-bar {
-        flex-direction: column;
-        align-items: flex-start;
-        gap: var(--spacing-3);
     }
 }
 </style>

@@ -194,6 +194,19 @@ p {
     color: var(--text-primary);
 }
 
+/* Destructive action next to secondary buttons: same outline shape, red.
+   Was defined locally (twice, differently) in AlarmDetail and ZoneDetail */
+.btn-danger-outline {
+    background: var(--bg-primary);
+    color: var(--error-color);
+    border: 2px solid var(--error-light);
+}
+
+.btn-danger-outline:hover {
+    border-color: var(--error-color);
+    background: var(--error-light);
+}
+
 /* White Button (for dark backgrounds) */
 .btn-white {
     background-color: var(--bg-primary);
@@ -461,7 +474,10 @@ button:disabled {
     color: var(--info-dark);
 }
 
-.badge-gray {
+/* Neutral tag for secondary info (types, short IDs, channel kinds).
+   badge-secondary used to be redefined per page in three different colors, purple included */
+.badge-gray,
+.badge-secondary {
     background: var(--gray-100);
     color: var(--gray-600);
 }
@@ -541,7 +557,9 @@ button:disabled {
 }
 
 .data-table td {
-    padding: var(--spacing-4) var(--spacing-5);
+    /* With 16px top and bottom a row was 80px tall, 32px (40%) of it padding. At 10px rows are
+       about 62-67px: two more rows per screen, nothing removed */
+    padding: 10px var(--spacing-5);
     border-bottom: 1px solid var(--border-light);
     font-size: var(--font-size-sm);
 }
@@ -571,6 +589,14 @@ button:disabled {
 
 .text-secondary {
     color: var(--text-secondary);
+}
+
+/* Timestamp column in lists (see formatToMinute) */
+.cell-time {
+    color: var(--text-secondary);
+    font-size: var(--font-size-sm);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
 }
 
 .text-tertiary {
@@ -717,11 +743,102 @@ button:disabled {
     flex-shrink: 0;
 }
 
-/* 详情页顶部的资源标题条：淡主色底 + 左侧主色竖条，
-   把「当前在看哪个资源」从一堆白卡片里立出来 */
-.title-bar.card {
-    background: linear-gradient(90deg, var(--primary-50) 0%, var(--bg-primary) 55%);
-    border-left: 3px solid var(--primary-color);
+/* Detail page header, shared by all 13 detail pages (each used to carry its own scoped copy).
+   It is the page title, so it sits on the page background instead of being a card: the old
+   white card with a tinted gradient and a 3px left rule was 100px tall and the loudest block
+   on the page. Structure:
+     .title-bar
+       .title-info  > .title-icon + div > (h2.resource-title [name + status], .resource-id-row)
+       .title-actions */
+/* "← Back" above the header (the unified btn-ghost btn-sm button), pulled left by its own 16px padding
+   so the arrow lines up with the title icon. Other ghost buttons here (e.g. ActivityList's back-btn,
+   12px padding) keep their place */
+.detail-header {
+    margin-bottom: var(--spacing-4);
+}
+
+.detail-header > .btn-ghost.btn-sm:first-child {
+    margin-left: calc(var(--spacing-4) * -1);
+}
+
+.title-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: var(--spacing-3) var(--spacing-4);
+    margin-bottom: var(--spacing-5);
+}
+
+.title-bar .title-info {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-3);
+    min-width: 0;
+}
+
+.title-bar .title-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    flex-shrink: 0;
+    border-radius: var(--radius-md);
+    background: var(--primary-50);
+    color: var(--primary-color);
+}
+
+.title-bar .resource-title {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: var(--spacing-2);
+    margin: 0;
+    font-size: var(--font-size-lg);
+    font-weight: var(--font-weight-semibold);
+    line-height: 1.3;
+    color: var(--text-primary);
+    word-break: break-all;
+}
+
+.title-bar .resource-id-row {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-1);
+    margin-top: 2px;
+}
+
+.title-bar .resource-id-text {
+    font-family: var(--font-family-mono);
+    font-size: var(--font-size-xs);
+    color: var(--text-tertiary);
+}
+
+.title-bar .copy-btn {
+    display: inline-flex;
+    align-items: center;
+    padding: 2px;
+    border: none;
+    border-radius: var(--radius-sm);
+    background: none;
+    color: var(--text-light);
+    cursor: pointer;
+}
+
+.title-bar .copy-btn:hover {
+    color: var(--primary-color);
+    background: var(--primary-50);
+}
+
+.title-bar .copied-icon {
+    color: var(--success-color);
+}
+
+.title-bar .title-actions {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-2);
 }
 
 /* 这两个此前在 26 / 17 个单文件组件里各写了一遍（@keyframes 更是 35 份，
@@ -965,12 +1082,17 @@ button:disabled {
     font-weight: var(--font-weight-semibold);
     color: var(--primary-color);
     font-size: var(--font-size-sm);
+    line-height: 1.35;
 }
 
+/* The truncated ID stays in lists: operators match it against logs and tickets, and moving it
+   to the detail page would turn one click into two. It is secondary though: tighter line height,
+   one size smaller */
 .resource-id {
-    font-size: var(--font-size-xs);
+    font-size: 11px;
     color: var(--text-light);
     font-family: var(--font-family-mono);
+    line-height: 1.2;
 }
 
 .resource-link {

@@ -7,6 +7,7 @@ import { useListQuery } from '../../composables/useListQuery'
 import { keysApi, type SSHKey } from '../../api/keys'
 import { isValidName } from '../../utils/validation'
 import { errorMessage } from '../../utils/error'
+import { formatToMinute } from '../../utils/format'
 
 import { Key, Plus, Trash2, Copy, Check, Search, RefreshCw } from 'lucide-vue-next'
 import PageToolbar from '../../components/base/PageToolbar.vue'
@@ -33,10 +34,12 @@ const isNameValid = computed(() => isValidName(newKeyForm.value.name))
 
 // 排序在服务端做（sortField 是数据库列名，和列 key 不一定同名）。
 // 类型是前端从 public_key 里截出来的，数据库没有这一列，不提供排序
+// Fingerprints never wrap (~380px), so below 1280px the created time is hidden to avoid overflow
 const columns = computed<Column[]>(() => [
     { key: 'name', label: t('dashboard.table.nameId'), sortable: true },
     { key: 'type', label: t('dashboard.table.type') },
     { key: 'fingerprint', label: t('dashboard.table.fingerprint'), sortable: true, sortField: 'finger_print' },
+    { key: 'created_at', label: t('dashboard.table.createdAt'), sortable: true, hideBelow: 1280 },
     { key: 'actions', label: t('dashboard.table.actions'), align: 'center' },
 ])
 
@@ -227,6 +230,10 @@ onMounted(fetchKeys)
                 </div>
             </template>
 
+            <template #cell-created_at="{ row: key }">
+                <span class="cell-time" :title="key.created_at">{{ formatToMinute(key.created_at) }}</span>
+            </template>
+
             <template #cell-actions="{ row: key }">
                 <button
                     class="btn btn-ghost btn-sm text-error"
@@ -319,7 +326,6 @@ onMounted(fetchKeys)
 </template>
 
 <style scoped>
-
 /* .resource-info etc. are global from index.css */
 
 .resource-link-static {

@@ -16,7 +16,6 @@ import {
     Power,
     RefreshCw,
     Loader2,
-    RefreshCcw,
     Check,
     Copy,
 } from 'lucide-vue-next'
@@ -111,19 +110,6 @@ const filteredAlarms = computed(() => {
 
 const getRuleTypeLabel = (type: string) =>
     (RULE_TYPES as readonly string[]).includes(type) ? t('dashboard.alarmRuleTypes.' + type) : type
-
-const getRuleTypeClass = (type: string) => {
-    const map: Record<string, string> = {
-        node_available: 'rt-critical',
-        control_node: 'rt-warning',
-        compute_node: 'rt-warning',
-        hypervisor_vcpu: 'rt-info',
-        packet_drop: 'rt-critical',
-        ip_block: 'rt-info',
-        ipgroup_available_ip: 'rt-info',
-    }
-    return map[type] || 'rt-default'
-}
 
 // Config templates per rule type.
 // The keys must match the variables in the Prometheus rule templates under
@@ -259,20 +245,6 @@ const handleDelete = async () => {
     }
 }
 
-// Sync mappings
-const syncing = ref(false)
-const handleSync = async () => {
-    syncing.value = true
-    try {
-        await alarmsApi.syncMappings()
-        toast.success(t('dashboard.alarmActions.syncSuccess'))
-    } catch (err) {
-        toast.error(errorMessage(err, t('messages.error')))
-    } finally {
-        syncing.value = false
-    }
-}
-
 onMounted(() => {
     if (region.currentRegionId) {
         fetchAlarms()
@@ -296,22 +268,12 @@ watch(
             <template #filters>
                 <select v-model="filterRuleType" @change="fetchAlarms" class="filter-select">
                     <option value="">{{ t('dashboard.alarmActions.allTypes') }}</option>
-                    <option v-for="rt in RULE_TYPES" :key="rt" :value="rt">{{ t('dashboard.alarmRuleTypes.' + rt) }}</option>
+                    <option v-for="rt in RULE_TYPES" :key="rt" :value="rt">
+                        {{ t('dashboard.alarmRuleTypes.' + rt) }}
+                    </option>
                 </select>
             </template>
             <template #actions>
-                <button
-                    class="btn btn-secondary btn-sm"
-                    @click="handleSync"
-                    :disabled="syncing"
-                    :title="t('dashboard.alarmActions.syncMappings')"
-                >
-                    <Loader2 v-if="syncing" :size="14" class="spinning" />
-                    <RefreshCcw v-else :size="14" />
-                    <span>{{
-                        syncing ? t('dashboard.alarmActions.syncing') : t('dashboard.alarmActions.syncMappings')
-                    }}</span>
-                </button>
                 <button class="btn btn-secondary btn-sm btn-icon" @click="fetchAlarms" :title="t('actions.refresh')">
                     <RefreshCw :size="14" :class="{ spinning: loading }" />
                 </button>
@@ -367,7 +329,7 @@ watch(
             </template>
 
             <template #cell-ruleType="{ row: a }">
-                <span class="rule-type-badge" :class="getRuleTypeClass(a.rule_type)">
+                <span class="badge badge-secondary">
                     {{ getRuleTypeLabel(a.rule_type) }}
                 </span>
             </template>
@@ -423,7 +385,9 @@ watch(
                     <label class="form-label">{{ t('dashboard.alarmActions.ruleType') }} *</label>
                     <select v-model="createForm.rule_type" @change="onRuleTypeChange" class="form-input">
                         <option value="" disabled>{{ t('dashboard.alarmActions.selectRuleType') }}</option>
-                        <option v-for="rt in RULE_TYPES" :key="rt" :value="rt">{{ t('dashboard.alarmRuleTypes.' + rt) }}</option>
+                        <option v-for="rt in RULE_TYPES" :key="rt" :value="rt">
+                            {{ t('dashboard.alarmRuleTypes.' + rt) }}
+                        </option>
                     </select>
                 </div>
                 <div class="form-group">
@@ -512,36 +476,6 @@ watch(
     text-decoration: underline;
 }
 
-.rule-type-badge {
-    display: inline-flex;
-    align-items: center;
-    padding: 2px 8px;
-    border-radius: var(--radius-sm);
-    font-size: var(--font-size-xs);
-    font-weight: 500;
-    border: 1px solid var(--border-light);
-}
-
-.rt-critical {
-    background: rgba(244, 63, 94, 0.1);
-    color: var(--error-color);
-    border-color: rgba(244, 63, 94, 0.2);
-}
-.rt-warning {
-    background: rgba(245, 158, 11, 0.1);
-    color: var(--warning-color);
-    border-color: rgba(245, 158, 11, 0.2);
-}
-.rt-info {
-    background: rgba(14, 165, 233, 0.1);
-    color: var(--primary-color);
-    border-color: rgba(14, 165, 233, 0.2);
-}
-.rt-default {
-    background: var(--gray-100);
-    color: var(--gray-600);
-}
-
 .desc-cell {
     max-width: 200px;
     overflow: hidden;
@@ -554,6 +488,15 @@ watch(
 .empty-state {
     display: flex;
     flex-direction: column;
+    align-items: center;
+    justify-content: center;
+}
+
+/* Was never defined here: the three buttons stacked vertically and made every row 117px tall.
+   Not global on purpose: SecurityGroupDetail puts .actions-cell on a <td> */
+.actions-cell {
+    display: flex;
+    gap: 4px;
     align-items: center;
     justify-content: center;
 }
@@ -630,5 +573,4 @@ watch(
     font-size: 0.75rem;
     margin-top: 4px;
 }
-
 </style>

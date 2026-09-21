@@ -583,8 +583,8 @@ onMounted(fetchUsers)
     display: inline-block;
     padding: 2px 6px;
     margin-left: 4px;
-    background: var(--primary-light, var(--accent-purple-light));
-    color: var(--primary-600, var(--accent-purple));
+    background: var(--primary-light);
+    color: var(--primary-600);
     border-radius: var(--radius-full);
     font-size: var(--font-size-xs);
     font-weight: var(--font-weight-medium);
@@ -619,5 +619,4 @@ onMounted(fetchUsers)
 .resource-link:hover {
     text-decoration: underline;
 }
-
 </style>

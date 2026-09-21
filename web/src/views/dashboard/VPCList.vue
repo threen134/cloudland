@@ -29,6 +29,7 @@ import DataTable, { type Column } from '../../components/base/DataTable.vue'
 import PaginationBar from '../../components/base/PaginationBar.vue'
 import { quotaErrorMessage } from '../../utils/quotaError'
 import { errorMessage } from '../../utils/error'
+import { formatToMinute } from '../../utils/format'
 
 const region = useRegionStore()
 
@@ -51,7 +52,8 @@ const { copiedId, copyId } = useCopyId()
 const columns = computed<Column[]>(() => [
     { key: 'name', label: t('dashboard.table.nameId'), sortable: true },
     { key: 'status', label: t('dashboard.table.status'), sortable: true },
-    { key: 'subnets', label: t('dashboard.subnets') },
+    { key: 'subnets', label: t('dashboard.subnets'), align: 'center' },
+    { key: 'created_at', label: t('dashboard.table.createdAt'), sortable: true },
     { key: 'actions', label: t('dashboard.table.actions'), align: 'center' },
 ])
 
@@ -361,54 +363,38 @@ onMounted(() => {
             </template>
 
             <template #cell-subnets="{ row: vpc }">
-                <div class="subnets-column-wrapper" v-if="vpc.subnets && vpc.subnets.length > 0">
-                    <div class="subnet-list-vertical">
-                        <div class="subnet-first-row">
-                            <router-link
-                                :to="{ name: 'subnet-detail', params: { id: vpc.subnets[0].id } }"
-                                class="subnet-inline-item"
-                            >
-                                <span class="inline-name">{{ vpc.subnets[0].name }}</span>
-                                <span class="inline-cidr"
-                                    >({{ vpc.subnets[0].network || vpc.subnets[0].network_cidr }})</span
-                                >
-                            </router-link>
-
-                            <div v-if="vpc.subnets.length > 2" class="subnet-more-wrapper">
-                                <button class="badge badge-multi-iface clickable">
-                                    <Network :size="10" />
-                                    +{{ vpc.subnets.length - 2 }}
-                                    {{ $t('dashboard.instanceDetail.more').toLowerCase() }}
-                                </button>
-                                <div class="subnet-popover">
-                                    <div class="subnet-popover-header">{{ $t('dashboard.subnets') }}</div>
-                                    <router-link
-                                        v-for="sub in vpc.subnets.slice(2)"
-                                        :key="sub.id"
-                                        :to="{ name: 'subnet-detail', params: { id: sub.id } }"
-                                        class="subnet-popover-item"
-                                    >
-                                        <Network :size="12" />
-                                        <span class="subnet-popover-name">{{ sub.name }}</span>
-                                        <span class="subnet-popover-cidr">{{ sub.network || sub.network_cidr }}</span>
-                                    </router-link>
-                                </div>
-                            </div>
+                <!-- Count only; the full list opens on hover, keyboard focus or tap (focus-within) -->
+                <div v-if="vpc.subnets?.length" class="subnet-count-wrapper">
+                    <button
+                        type="button"
+                        class="subnet-count"
+                        :aria-label="`${vpc.subnets.length} ${$t('dashboard.subnets')}`"
+                    >
+                        <Network :size="12" />
+                        <span>{{ vpc.subnets.length }}</span>
+                    </button>
+                    <div class="subnet-popover">
+                        <div class="subnet-popover-header">
+                            {{ $t('dashboard.subnets') }} ({{ vpc.subnets.length }})
                         </div>
-
-                        <router-link
-                            v-if="vpc.subnets.length > 1"
-                            :to="{ name: 'subnet-detail', params: { id: vpc.subnets[1].id } }"
-                            class="subnet-inline-item"
-                        >
-                            <span class="inline-name">{{ vpc.subnets[1].name }}</span>
-                            <span class="inline-cidr"
-                                >({{ vpc.subnets[1].network || vpc.subnets[1].network_cidr }})</span
+                        <div class="subnet-popover-list">
+                            <router-link
+                                v-for="sub in vpc.subnets"
+                                :key="sub.id"
+                                :to="{ name: 'subnet-detail', params: { id: sub.id } }"
+                                class="subnet-popover-item"
                             >
-                        </router-link>
+                                <span class="subnet-popover-name">{{ sub.name }}</span>
+                                <code class="subnet-popover-cidr">{{ sub.network || sub.network_cidr }}</code>
+                            </router-link>
+                        </div>
                     </div>
                 </div>
-                <span v-else class="text-secondary">{{ $t('messages.noData') }}</span>
+                <span v-else class="subnet-count-empty">0</span>
+            </template>
+
+            <template #cell-created_at="{ row: vpc }">
+                <span class="cell-time" :title="vpc.created_at">{{ formatToMinute(vpc.created_at) }}</span>
             </template>
 
             <template #cell-actions="{ row: vpc }">
@@ -779,133 +765,125 @@ onMounted(() => {
     text-decoration: underline;
 }
 
-.subnet-list-vertical {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-    align-items: flex-start;
+.subnet-count-wrapper {
+    position: relative;
+    display: inline-block;
 }
 
-.subnet-first-row {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-}
-
-.badge-multi-iface {
+.subnet-count {
     display: inline-flex;
     align-items: center;
-    gap: 2px;
-    background-color: var(--primary-600);
-    color: var(--text-inverse);
-    border: none;
-    border-radius: 4px;
-    font-size: 0.7rem;
-    font-weight: 600;
-    padding: 2px 6px;
-    cursor: pointer;
-    transition: background-color 0.2s;
-}
-
-.badge-multi-iface:hover {
-    background-color: var(--primary-700);
-}
-
-.subnet-inline-item {
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
-    padding: 4px 8px;
+    gap: 6px;
+    min-width: 44px;
+    justify-content: center;
+    padding: 3px 10px;
     background: var(--bg-tertiary);
     border: 1px solid var(--border-light);
-    border-radius: var(--radius-sm);
+    border-radius: var(--radius-full, 999px);
     font-size: var(--font-size-xs);
-    color: var(--primary-600);
-    text-decoration: none;
-    transition: all 0.2s;
-    white-space: nowrap;
-}
-
-.inline-name {
-    font-weight: var(--font-weight-medium);
-}
-
-.inline-cidr {
+    font-weight: var(--font-weight-semibold);
+    font-variant-numeric: tabular-nums;
     color: var(--text-secondary);
-    font-family: var(--font-mono, monospace);
-    font-size: 0.9em;
-    font-weight: 600;
+    cursor: default;
+    transition:
+        background-color 0.15s,
+        border-color 0.15s,
+        color 0.15s;
 }
 
-.subnet-inline-item:hover {
+.subnet-count-wrapper:hover .subnet-count,
+.subnet-count:focus-visible {
     background: var(--primary-50);
     border-color: var(--primary-200);
     color: var(--primary-700);
 }
 
-.subnet-more-wrapper {
-    position: relative;
-    display: inline-block;
+.subnet-count-empty {
+    color: var(--text-light);
+    font-variant-numeric: tabular-nums;
 }
 
 .subnet-popover {
     display: none;
     position: absolute;
-    top: calc(100% + 8px);
-    left: 0;
+    top: calc(100% + 6px);
+    left: 50%;
+    transform: translateX(-50%);
     z-index: var(--z-tooltip);
     min-width: 260px;
+    max-width: 360px;
     background: var(--bg-primary);
     border: 1px solid var(--border-light);
     border-radius: var(--radius-md);
-    box-shadow:
-        0 10px 15px -3px rgba(0, 0, 0, 0.1),
-        0 4px 6px -2px rgba(0, 0, 0, 0.05);
-    padding: 8px 0;
+    box-shadow: var(--shadow-lg);
+    text-align: left;
 }
 
-.subnet-more-wrapper:hover .subnet-popover {
+/* Invisible bridge over the gap so moving the pointer into the popover keeps it open */
+.subnet-popover::before {
+    content: '';
+    position: absolute;
+    top: -8px;
+    left: 0;
+    right: 0;
+    height: 8px;
+}
+
+.subnet-count-wrapper:hover .subnet-popover,
+.subnet-count-wrapper:focus-within .subnet-popover {
     display: block;
 }
 
 .subnet-popover-header {
-    padding: 4px 12px 8px;
+    padding: 8px 12px;
     font-size: var(--font-size-xs);
     font-weight: var(--font-weight-semibold);
-    color: var(--text-light);
+    color: var(--text-secondary);
+    background: var(--bg-secondary);
     border-bottom: 1px solid var(--border-light);
-    margin-bottom: 4px;
+    border-radius: var(--radius-md) var(--radius-md) 0 0;
+}
+
+.subnet-popover-list {
+    max-height: 280px;
+    overflow-y: auto;
+    padding: 4px 0;
 }
 
 .subnet-popover-item {
     display: flex;
     align-items: center;
-    gap: 8px;
-    padding: 8px 12px;
+    gap: 12px;
+    padding: 7px 12px;
     font-size: var(--font-size-xs);
-    color: var(--text-secondary);
     text-decoration: none;
-    transition: all 0.2s;
+    transition: background-color 0.15s;
 }
 
-.subnet-popover-item:hover {
+.subnet-popover-item:hover,
+.subnet-popover-item:focus-visible {
     background: var(--primary-50);
-    color: var(--primary-color);
-}
-
-.subnet-popover-item:hover .subnet-popover-name {
-    color: var(--primary-600);
-    text-decoration: underline;
 }
 
 .subnet-popover-name {
     font-weight: var(--font-weight-medium);
-    color: var(--primary-color);
+    color: var(--primary-600);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.subnet-popover-item:hover .subnet-popover-name {
+    text-decoration: underline;
 }
 
 .subnet-popover-cidr {
-    color: var(--text-light);
     margin-left: auto;
+    flex-shrink: 0;
+    color: var(--text-secondary);
+    font-size: 11px;
+    background: none;
+    padding: 0;
 }
 
 .actions {

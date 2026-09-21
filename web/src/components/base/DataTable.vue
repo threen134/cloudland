@@ -33,6 +33,12 @@ export interface Column {
     sortValue?: (row: Record<string, any>) => string | number | null | undefined
     /** 服务端排序时传给后端的列名，默认取 key（例如列 key 是 name、数据库列是 hostname 时要指定） */
     sortField?: string
+    /**
+     * Hide this column when the viewport is narrower than this. With many columns a narrow screen
+     * makes the table overflow and scroll sideways; hiding secondary columns that the detail page
+     * also shows reads better. Pick one of the standard breakpoints (1280 / 1024 / 768)
+     */
+    hideBelow?: 1280 | 1024 | 768
 }
 
 const props = withDefaults(
@@ -73,8 +79,7 @@ const props = withDefaults(
     }
 )
 
-const keyOf = (row: T) =>
-    typeof props.rowKey === 'function' ? props.rowKey(row) : String(row[props.rowKey])
+const keyOf = (row: T) => (typeof props.rowKey === 'function' ? props.rowKey(row) : String(row[props.rowKey]))
 
 const emit = defineEmits<{ retry: []; 'update:order': [order: string]; expand: [key: string] }>()
 
@@ -105,6 +110,9 @@ const activeSortDir = computed<'asc' | 'desc'>(() =>
 )
 
 const isSortedBy = (column: Column) => activeSortField.value === (serverSorted.value ? fieldOf(column) : column.key)
+
+// Hidden by class + media query rather than a JS viewport listener: resizing the window does not re-render
+const hideClass = (column: Column) => (column.hideBelow ? `hide-below-${column.hideBelow}` : undefined)
 
 const toggleSort = (column: Column) => {
     if (!column.sortable) return
@@ -148,7 +156,11 @@ const sortedRows = computed(() => {
                         v-for="column in columns"
                         :key="column.key"
                         :style="column.width ? { width: column.width } : undefined"
-                        :class="[column.align ? `text-${column.align}` : '', { sortable: column.sortable }]"
+                        :class="[
+                            column.align ? `text-${column.align}` : '',
+                            { sortable: column.sortable },
+                            hideClass(column),
+                        ]"
                         :aria-sort="
                             isSortedBy(column) ? (activeSortDir === 'asc' ? 'ascending' : 'descending') : undefined
                         "
@@ -205,7 +217,7 @@ const sortedRows = computed(() => {
                             <td
                                 v-for="column in columns"
                                 :key="column.key"
-                                :class="column.align ? `text-${column.align}` : ''"
+                                :class="[column.align ? `text-${column.align}` : '', hideClass(column)]"
                             >
                                 <slot :name="`cell-${column.key}`" :row="row">{{ row[column.key] ?? '-' }}</slot>
                             </td>
@@ -268,6 +280,26 @@ th.sortable:hover {
 .sort-arrow {
     font-size: 10px;
     margin-left: var(--spacing-1);
+}
+
+/* Column.hideBelow: secondary columns (also shown on the detail page) are hidden on narrow
+   screens, which reads better than a table scrolling sideways */
+@media (max-width: 1279px) {
+    .data-table :is(th, td).hide-below-1280 {
+        display: none;
+    }
+}
+
+@media (max-width: 1023px) {
+    .data-table :is(th, td).hide-below-1024 {
+        display: none;
+    }
+}
+
+@media (max-width: 767px) {
+    .data-table :is(th, td).hide-below-768 {
+        display: none;
+    }
 }
 
 /* 行展开：箭头列窄一点，展开行的内容自己铺满 */

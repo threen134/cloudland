@@ -11,12 +11,15 @@ const props = defineProps<{
     status?: string | null
     /** 覆盖按状态推导出的语义 */
     variant?: StatusVariant
-    /** 显示文案，默认直接显示 status */
-    label?: string
+    /**
+     * Translated text. Required on purpose: falling back to the raw status showed backend
+     * strings such as "available" untranslated, and vue-tsc now catches a missing label
+     */
+    label: string
 }>()
 
 const variantClass = computed(() => `status-${props.variant ?? statusVariant(props.status)}`)
-const text = computed(() => props.label ?? props.status ?? '-')
+const text = computed(() => props.label || '-')
 </script>
 
 <template>

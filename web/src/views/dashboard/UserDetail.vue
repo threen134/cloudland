@@ -4,15 +4,17 @@ import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { useToast } from '../../composables/useToast'
 import { usersApi, type User } from '../../api/users'
-import { ArrowLeft, User as UserIcon, Trash2, Mail, Shield } from 'lucide-vue-next'
+import { ArrowLeft, User as UserIcon, Trash2, Mail, Shield, Check, Copy } from 'lucide-vue-next'
 import DeleteModal from '../../components/modals/DeleteModal.vue'
 import StatusBadge from '../../components/base/StatusBadge.vue'
 import InfoRow from '../../components/base/InfoRow.vue'
 import { useGoBack } from '../../composables/useGoBack'
+import { useCopyId } from '../../composables/useCopyId'
 import { formatDateTime } from '../../utils/format'
 
 const { t } = useI18n()
 const toast = useToast()
+const { copiedId, copyId } = useCopyId()
 const route = useRoute()
 const router = useRouter()
 const userId = route.params.id as string
@@ -87,23 +89,36 @@ onMounted(fetchUser)
 
         <div v-else-if="user" class="detail-content">
             <!-- Title Bar -->
-            <div class="title-bar card">
-                <div class="resource-icon">
-                    <UserIcon :size="32" />
-                </div>
+            <div class="title-bar">
                 <div class="title-info">
-                    <h1>{{ user.username || $t('dashboard.userDetail.unknownUser') }}</h1>
-                    <div class="subtitle">
-                        <span class="id-text">{{ user.uuid }}</span>
-                        <StatusBadge
-                            :status="user.status || 'active'"
-                            :label="$t('userStatus.' + (user.status || 'active'))"
-                        />
+                    <div class="title-icon">
+                        <UserIcon :size="20" />
+                    </div>
+                    <div>
+                        <h2 class="resource-title">
+                            {{ user.username || $t('dashboard.userDetail.unknownUser') }}
+                            <StatusBadge
+                                :status="user.status || 'active'"
+                                :label="$t('userStatus.' + (user.status || 'active'))"
+                            />
+                        </h2>
+                        <div class="resource-id-row">
+                            <span class="resource-id-text">{{ user.uuid }}</span>
+                            <button
+                                class="copy-btn"
+                                :title="$t('actions.copy')"
+                                :aria-label="$t('actions.copy')"
+                                @click="copyId(user.uuid)"
+                            >
+                                <Check v-if="copiedId === user.uuid" :size="12" class="copied-icon" />
+                                <Copy v-else :size="12" />
+                            </button>
+                        </div>
                     </div>
                 </div>
                 <div class="title-actions">
-                    <button class="btn btn-danger" @click="handleDeleteClick" :disabled="deleting">
-                        <Trash2 :size="16" />
+                    <button class="btn btn-danger-outline btn-sm" @click="handleDeleteClick" :disabled="deleting">
+                        <Trash2 :size="14" />
                         {{ deleting ? $t('dashboard.userDetail.deleting') : $t('dashboard.userDetail.deleteUser') }}
                     </button>
                 </div>
@@ -151,11 +166,6 @@ onMounted(fetchUser)
 </template>
 
 <style scoped>
-.detail-page {
-    max-width: 1200px;
-    margin: 0 auto;
-}
-
 .detail-header {
     margin-bottom: var(--spacing-4);
 }
@@ -167,49 +177,6 @@ onMounted(fetchUser)
     align-items: center;
     justify-content: center;
     padding: 60px;
-}
-
-/* Title Bar */
-.title-bar {
-    display: flex;
-    align-items: center;
-    gap: var(--spacing-4);
-    padding: var(--spacing-6);
-    margin-bottom: var(--spacing-6);
-}
-
-.resource-icon {
-    width: 64px;
-    height: 64px;
-    background: var(--bg-tertiary);
-    color: var(--primary-color);
-    border-radius: 50%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-}
-
-.title-info {
-    flex: 1;
-}
-
-.title-info h1 {
-    font-size: var(--font-size-xl);
-    font-weight: 600;
-    margin: 0 0 4px 0;
-    color: var(--text-primary);
-}
-
-.subtitle {
-    display: flex;
-    align-items: center;
-    gap: var(--spacing-3);
-    font-size: var(--font-size-sm);
-}
-
-.id-text {
-    font-family: var(--font-family-mono);
-    color: var(--text-secondary);
 }
 
 /* Info Grid */
@@ -237,26 +204,5 @@ onMounted(fetchUser)
     display: flex;
     flex-direction: column;
     gap: var(--spacing-3);
-}
-
-.btn-danger {
-    background: var(--error-color);
-    color: white;
-    border: none;
-    padding: 8px 20px;
-    border-radius: var(--radius-md);
-    font-size: var(--font-size-sm);
-    font-weight: var(--font-weight-medium);
-    cursor: pointer;
-    display: inline-flex;
-    align-items: center;
-    gap: var(--spacing-2);
-}
-.btn-danger:hover {
-    background: var(--error-dark);
-}
-.btn-danger:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
 }
 </style>

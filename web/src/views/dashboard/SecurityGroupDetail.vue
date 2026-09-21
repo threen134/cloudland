@@ -19,6 +19,7 @@ import DeleteModal from '../../components/modals/DeleteModal.vue'
 import InfoRow from '../../components/base/InfoRow.vue'
 import DetailTabs from '../../components/base/DetailTabs.vue'
 import { useGoBack } from '../../composables/useGoBack'
+import { useCopyId } from '../../composables/useCopyId'
 import { errorMessage } from '../../utils/error'
 import {
     ArrowLeft,
@@ -34,12 +35,15 @@ import {
     Server,
     ChevronDown,
     Search,
+    Check,
+    Copy,
 } from 'lucide-vue-next'
 
 const route = useRoute()
 const router = useRouter()
 const { t } = useI18n()
 const toast = useToast()
+const { copiedId, copyId } = useCopyId()
 const { translateDescription } = useSecurityGroup()
 const goBack = useGoBack('security-groups')
 const groupId = route.params.id as string
@@ -279,20 +283,35 @@ onMounted(fetchGroup)
 
         <div v-else-if="group" class="detail-content">
             <!-- Title Bar -->
-            <div class="title-bar card">
-                <div class="resource-icon">
-                    <Shield :size="24" />
-                </div>
+            <div class="title-bar">
                 <div class="title-info">
-                    <h1>{{ group.name }}</h1>
-                    <div class="subtitle">
-                        <span class="id-text">{{ group.id }}</span>
-                        <span v-if="group.is_default" class="badge">{{ $t('dashboard.table.default') }}</span>
+                    <div class="title-icon">
+                        <Shield :size="20" />
+                    </div>
+                    <div>
+                        <h2 class="resource-title">
+                            {{ group.name }}
+                            <span v-if="group.is_default" class="badge badge-secondary">{{
+                                $t('dashboard.table.default')
+                            }}</span>
+                        </h2>
+                        <div class="resource-id-row">
+                            <span class="resource-id-text">{{ group.id }}</span>
+                            <button
+                                class="copy-btn"
+                                :title="$t('actions.copy')"
+                                :aria-label="$t('actions.copy')"
+                                @click="copyId(group.id)"
+                            >
+                                <Check v-if="copiedId === group.id" :size="12" class="copied-icon" />
+                                <Copy v-else :size="12" />
+                            </button>
+                        </div>
                     </div>
                 </div>
                 <div class="title-actions">
                     <div class="action-dropdown">
-                        <button class="btn btn-primary" @click="toggleActionMenu">
+                        <button class="btn btn-secondary btn-sm" @click="toggleActionMenu">
                             {{ $t('actions.actions') }} <ChevronDown :size="14" />
                         </button>
                         <div v-if="showActionMenu" class="dropdown-backdrop" @click="closeActionMenu" />
@@ -581,11 +600,6 @@ onMounted(fetchGroup)
 </template>
 
 <style scoped>
-.detail-page {
-    max-width: 1200px;
-    margin: 0 auto;
-}
-
 .detail-header {
     margin-bottom: var(--spacing-4);
 }
@@ -597,62 +611,6 @@ onMounted(fetchGroup)
     align-items: center;
     justify-content: center;
     padding: 60px;
-}
-
-/* Title Bar */
-.title-bar {
-    display: flex;
-    align-items: center;
-    gap: var(--spacing-4);
-    padding: var(--spacing-6);
-    margin-bottom: var(--spacing-6);
-}
-
-.resource-icon {
-    width: 48px;
-    height: 48px;
-    background: var(--bg-tertiary);
-    color: var(--primary-color);
-    border-radius: var(--radius-md);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    flex-shrink: 0;
-}
-
-.title-info {
-    flex: 1;
-    min-width: 0;
-}
-
-.title-info h1 {
-    font-size: var(--font-size-xl);
-    font-weight: 600;
-    margin: 0 0 4px 0;
-    color: var(--text-primary);
-}
-
-.subtitle {
-    display: flex;
-    align-items: center;
-    gap: var(--spacing-3);
-    font-size: var(--font-size-sm);
-    flex-wrap: wrap;
-}
-
-.id-text {
-    font-family: var(--font-family-mono);
-    color: var(--text-secondary);
-    word-break: break-all;
-}
-
-.badge {
-    background: var(--primary-50);
-    color: var(--primary-700);
-    padding: 2px 8px;
-    border-radius: 12px;
-    font-size: 11px;
-    font-weight: 600;
 }
 
 /* Action Dropdown */

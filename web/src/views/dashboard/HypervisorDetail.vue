@@ -273,9 +273,8 @@ onMounted(fetchHypervisorDetail)
     <div class="vpc-detail">
         <!-- Header -->
         <div class="detail-header">
-            <button class="btn btn-ghost back-btn" @click="goBack">
-                <ArrowLeft :size="18" />
-                <span>{{ t('dashboard.hypervisors') }}</span>
+            <button class="btn btn-ghost btn-sm" @click="goBack">
+                <ArrowLeft :size="16" /> {{ $t('actions.back') }}
             </button>
         </div>
 
@@ -296,10 +295,10 @@ onMounted(fetchHypervisorDetail)
 
         <!-- Detail Content -->
         <div v-else-if="hypervisor" class="detail-content">
-            <div class="title-bar card">
+            <div class="title-bar">
                 <div class="title-info">
                     <div class="title-icon">
-                        <Server :size="28" />
+                        <Server :size="20" />
                     </div>
                     <div>
                         <h2 class="resource-title">
@@ -329,7 +328,7 @@ onMounted(fetchHypervisorDetail)
                 </div>
                 <div class="title-actions">
                     <div class="action-dropdown">
-                        <button class="btn btn-primary" @click="toggleActionMenu">
+                        <button class="btn btn-secondary btn-sm" @click="toggleActionMenu">
                             {{ t('actions.actions') }} <ChevronDown :size="14" />
                         </button>
                         <Transition name="dropdown">
@@ -563,27 +562,8 @@ onMounted(fetchHypervisorDetail)
 </template>
 
 <style scoped>
-.vpc-detail {
-    max-width: 1100px;
-}
 .detail-header {
     margin-bottom: var(--spacing-4);
-}
-
-.back-btn {
-    display: inline-flex;
-    align-items: center;
-    gap: var(--spacing-2);
-    font-size: var(--font-size-sm);
-    color: var(--text-secondary);
-    padding: var(--spacing-2) var(--spacing-3);
-    border-radius: var(--radius-md);
-    transition: all 0.2s;
-}
-
-.back-btn:hover {
-    color: var(--primary-color);
-    background: var(--primary-50);
 }
 
 .loading-container {
@@ -608,82 +588,8 @@ onMounted(fetchHypervisorDetail)
     padding: 60px 20px;
     text-align: center;
 }
-
-.title-bar {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: var(--spacing-5);
-}
-
-.title-info {
-    display: flex;
-    align-items: center;
-    gap: var(--spacing-4);
-}
-
-.title-icon {
-    width: 52px;
-    height: 52px;
-    border-radius: var(--radius-lg);
-    background: linear-gradient(135deg, var(--primary-50), var(--primary-100));
-    color: var(--primary-color);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    flex-shrink: 0;
-}
-
-.resource-title {
-    margin: 0;
-    font-size: var(--font-size-xl);
-    font-weight: var(--font-weight-semibold);
-    color: var(--text-primary);
-    display: flex;
-    align-items: center;
-    gap: var(--spacing-3);
-}
-
-.resource-id-row {
-    display: flex;
-    align-items: center;
-    gap: var(--spacing-2);
-}
-
-.resource-id-text {
-    font-size: var(--font-size-xs);
-    color: var(--text-light);
-    font-family: var(--font-family-mono);
-}
-
-.copy-btn {
-    background: none;
-    border: 1px solid var(--border-light);
-    border-radius: var(--radius-sm);
-    padding: 2px 5px;
-    cursor: pointer;
-    color: var(--text-light);
-    display: inline-flex;
-    align-items: center;
-    transition: all 0.15s;
-}
-
-.copy-btn:hover {
-    color: var(--primary-color);
-    border-color: var(--primary-200);
-    background: var(--primary-50);
-}
 .copied-icon {
     color: var(--success-color);
-}
-.title-actions {
-    display: flex;
-    align-items: center;
-    gap: var(--spacing-3);
-}
-.badge-lg {
-    font-size: var(--font-size-sm);
-    padding: 6px 14px;
 }
 
 /* Action Dropdown */
@@ -793,8 +699,8 @@ onMounted(fetchHypervisorDetail)
     margin-left: 8px;
     padding: 1px 8px;
     border-radius: 10px;
-    background: var(--primary-50, var(--accent-purple-light));
-    color: var(--primary-600, var(--accent-purple));
+    background: var(--primary-50);
+    color: var(--primary-600);
     font-size: 0.75rem;
     font-weight: 600;
 }
@@ -997,11 +903,6 @@ onMounted(fetchHypervisorDetail)
     .info-grid,
     .form-grid {
         grid-template-columns: 1fr;
-    }
-    .title-bar {
-        flex-direction: column;
-        align-items: flex-start;
-        gap: var(--spacing-3);
     }
 }
 </style>

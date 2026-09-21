@@ -742,6 +742,7 @@ export default {
             thresholdHint: 'CPU/記憶體以百分比(%)為單位，頻寬以 Mbps 為單位。',
             ruleLevel: '規則級別',
             durationMin: '持續時間(分)',
+            forDuration: '持續 {n} 分鐘',
             linkedCount: '已關聯 {count} 臺雲主機',
             ruleId: '規則 ID',
             nameStartLetterError: '名稱必須以字母開頭',
@@ -1295,6 +1296,11 @@ export default {
             deleting: '刪除中',
             error: '錯誤',
         },
+        loadBalancerStatus: {
+            available: '可用',
+            pending: '建立中',
+            inactive: '未啟用',
+        },
         vpcDetail: {
             loadError: '載入 VPC 詳情失敗。',
             namePlaceholder: '例如：生產環境-VPC',
@@ -1584,9 +1590,6 @@ export default {
             enabled: '啟用',
             disabled: '停用',
             owner: '建立者',
-            syncMappings: '同步對映',
-            syncing: '同步中...',
-            syncSuccess: '告警對映同步成功',
         },
         regionActions: {
             createTitle: '註冊新區域',

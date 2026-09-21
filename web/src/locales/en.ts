@@ -767,6 +767,7 @@ export default {
             thresholdHint: 'CPU/Memory in percentage (%), Bandwidth in Mbps.',
             ruleLevel: 'Rule Level',
             durationMin: 'Duration (min)',
+            forDuration: 'for {n} min',
             linkedCount: 'Linked {count} VMs',
             nameStartLetterError: 'Name must start with a letter',
             nameCharsetError: 'Name can only contain letters, numbers, and underscores',
@@ -1320,6 +1321,11 @@ export default {
             deleting: 'Deleting',
             error: 'Error',
         },
+        loadBalancerStatus: {
+            available: 'Available',
+            pending: 'Creating',
+            inactive: 'Inactive',
+        },
         vpcDetail: {
             loadError: 'Failed to load VPC details.',
             namePlaceholder: 'e.g. production-vpc',
@@ -1532,7 +1538,8 @@ export default {
             filterByNode: 'Filter by Node',
             allNodes: 'All Nodes',
             noInstanceOnNode: 'No instances on this node',
-            typeAutoHint: 'Live or cold migration is decided automatically from the instance state; no choice is needed.',
+            typeAutoHint:
+                'Live or cold migration is decided automatically from the instance state; no choice is needed.',
             starting: 'Starting...',
         },
         hypervisorStatus: {
@@ -1611,9 +1618,6 @@ export default {
             enabled: 'Enabled',
             disabled: 'Disabled',
             owner: 'Owner',
-            syncMappings: 'Sync Mappings',
-            syncing: 'Syncing...',
-            syncSuccess: 'Alarm mappings synced successfully',
         },
         regionActions: {
             createTitle: 'Register New Region',

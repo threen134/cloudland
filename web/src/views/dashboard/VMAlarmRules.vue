@@ -16,6 +16,7 @@ import {
     type CPURuleDetail,
     type MemoryRuleDetail,
     type BWRuleDetail,
+    type VMAlarmRuleDetail,
     type CreateVMAlarmRuleResponse,
     type CreateBWRuleResponse,
 } from '../../api/vmAlarmRules'
@@ -126,6 +127,26 @@ const getVMName = (id: string) => {
 
 const getLinkedVMId = (entry: string | { instance_id: string; target_device: string }) =>
     typeof entry === 'string' ? entry : entry.instance_id
+
+// NIC of a bandwidth rule link ('' for CPU / memory rules, whose links are plain VM ids)
+const getLinkedVMDevice = (entry: string | { instance_id: string; target_device: string }) =>
+    typeof entry === 'string' ? '' : entry.target_device || ''
+
+const channelTypeText = (type: string) =>
+    type === 'feishu'
+        ? t('dashboard.notificationFeishu')
+        : type === 'webhook'
+          ? t('dashboard.notificationCustomWebhook')
+          : type
+
+// e.g. "> 70%" or "Inbound > 100 Mbps". Only CPU / memory details carry a comparator (gt / lt):
+// the form always sends gt, lt is only reachable through the API. Bandwidth rules are always ">"
+const thresholdText = (rule: VMAlarmRuleGroup, detail: VMAlarmRuleDetail) => {
+    const op = 'rule' in detail && detail.rule === 'lt' ? '<' : '>'
+    const unit = rule.type === 'bw' ? ` ${t('specs.mbps')}` : '%'
+    const direction = 'direction' in detail ? `${t('dashboard.vmAlarmRules.directions.' + detail.direction)} ` : ''
+    return `${direction}${op} ${detail.limit}${unit}`
+}
 
 const filteredRules = computed(() => {
     if (!searchQuery.value) return rules.value
@@ -653,92 +674,71 @@ onMounted(fetchRules)
             </template>
 
             <template #expanded="{ row: rule }">
-                <div class="rule-body-content">
-                    <div v-if="rule.rules && rule.rules.length > 0" class="thresholds-section">
-                        <div class="section-label">{{ t('dashboard.vmAlarmRules.thresholds') }}</div>
-                        <div class="inner-table-wrapper">
-                            <table class="inner-table">
-                                <thead>
-                                    <tr>
-                                        <th v-if="rule.type === 'bw'">{{ t('dashboard.table.direction') }}</th>
-                                        <th>{{ t('dashboard.vmAlarmRules.ruleLevel') }}</th>
-                                        <th>{{ t('dashboard.vmAlarmRules.thresholdLimit') }}</th>
-                                        <th>{{ t('dashboard.vmAlarmRules.durationMin') }}</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    <tr v-for="(r, idx) in rule.rules" :key="idx">
-                                        <td v-if="rule.type === 'bw'">
-                                            <!-- rules 是 CPU / 内存 / 带宽三种明细的联合类型，只有带宽有 direction -->
-                                            {{
-                                                'direction' in r
-                                                    ? t('dashboard.vmAlarmRules.directions.' + r.direction)
-                                                    : '-'
-                                            }}
-                                        </td>
-                                        <td>
-                                            <span class="badge" :class="levelBadgeClass(r.level)">
-                                                {{ t('dashboard.vmAlarmRules.levels.' + r.level) }}
-                                            </span>
-                                        </td>
-                                        <td>{{ r.limit }}{{ rule.type === 'bw' ? ' ' + t('specs.mbps') : '%' }}</td>
-                                        <td>{{ r.duration }}</td>
-                                    </tr>
-                                </tbody>
-                            </table>
+                <!-- One card with three columns of plain lines (no nested table, no chips inside chips) -->
+                <div class="rule-detail">
+                    <section class="rule-detail-col">
+                        <h4 class="rule-detail-heading">
+                            {{ t('dashboard.vmAlarmRules.thresholds') }}
+                            <span class="rule-detail-count">{{ rule.rules?.length || 0 }}</span>
+                        </h4>
+                        <div v-for="(r, idx) in rule.rules" :key="idx" class="rule-detail-line">
+                            <span class="badge" :class="levelBadgeClass(r.level)">
+                                {{ t('dashboard.vmAlarmRules.levels.' + r.level) }}
+                            </span>
+                            <span class="threshold-value">{{ thresholdText(rule, r) }}</span>
+                            <span class="rule-detail-muted">
+                                {{ t('dashboard.vmAlarmRules.forDuration', { n: r.duration }) }}
+                            </span>
                         </div>
-                    </div>
+                    </section>
 
-                    <div class="vms-section">
-                        <div class="section-label">
-                            {{ t('dashboard.vmAlarmRules.linkedVMs') }} ({{ rule.linkedvms?.length || 0 }})
-                        </div>
-                        <div class="linked-vms-chips">
-                            <div
-                                v-for="entry in rule.linkedvms"
-                                :key="getLinkedVMId(entry)"
-                                class="vm-chip"
-                                :title="getLinkedVMId(entry)"
+                    <section class="rule-detail-col">
+                        <h4 class="rule-detail-heading">
+                            {{ t('dashboard.vmAlarmRules.linkedVMs') }}
+                            <span class="rule-detail-count">{{ rule.linkedvms?.length || 0 }}</span>
+                        </h4>
+                        <!-- Bandwidth rules link a VM per NIC: the same VM can appear once per interface -->
+                        <div
+                            v-for="entry in rule.linkedvms"
+                            :key="`${getLinkedVMId(entry)}-${getLinkedVMDevice(entry)}`"
+                            class="rule-detail-line"
+                        >
+                            <router-link
+                                :to="{ name: 'instance-detail', params: { id: getLinkedVMId(entry) } }"
+                                class="rule-detail-link"
+                                >{{ getVMName(getLinkedVMId(entry)) }}</router-link
                             >
-                                {{ getVMName(getLinkedVMId(entry)) }}
-                                <span class="badge badge-secondary" style="margin-left: 4px; font-size: 10px">{{
-                                    getLinkedVMId(entry).substring(0, 8)
-                                }}</span>
-                            </div>
-                            <div
-                                v-if="!rule.linkedvms || rule.linkedvms.length === 0"
-                                class="text-secondary"
-                                style="font-size: 12px"
-                            >
-                                {{ t('dashboard.vmAlarmRules.noLinkedVMs') }}
-                            </div>
+                            <span v-if="getLinkedVMDevice(entry)" class="rule-detail-muted">{{
+                                getLinkedVMDevice(entry)
+                            }}</span>
+                            <span class="rule-detail-id" :title="getLinkedVMId(entry)">{{
+                                getLinkedVMId(entry).substring(0, 8)
+                            }}</span>
                         </div>
-                    </div>
+                        <div v-if="!rule.linkedvms?.length" class="rule-detail-empty">
+                            <span>{{ t('dashboard.vmAlarmRules.noLinkedVMs') }}</span>
+                            <button type="button" class="rule-detail-action" @click="openBindVMs(rule)">
+                                {{ t('dashboard.vmAlarmRules.bindVMs') }}
+                            </button>
+                        </div>
+                    </section>
 
-                    <div class="vms-section">
-                        <div class="section-label">
-                            {{ t('dashboard.vmAlarmRules.linkedChannels') }} ({{
-                                (ruleChannels[rule.uuid] || []).length
-                            }})
+                    <section class="rule-detail-col">
+                        <h4 class="rule-detail-heading">
+                            {{ t('dashboard.vmAlarmRules.linkedChannels') }}
+                            <span class="rule-detail-count">{{ ruleChannels[rule.uuid]?.length ?? '…' }}</span>
+                        </h4>
+                        <div v-for="ch in ruleChannels[rule.uuid]" :key="ch.uuid" class="rule-detail-line">
+                            <span class="rule-detail-name" :title="ch.uuid">{{ ch.name }}</span>
+                            <span class="rule-detail-muted">{{ channelTypeText(ch.type) }}</span>
                         </div>
-                        <div class="linked-vms-chips">
-                            <div v-for="ch in ruleChannels[rule.uuid]" :key="ch.uuid" class="vm-chip" :title="ch.uuid">
-                                {{ ch.name }}
-                                <span
-                                    class="badge badge-secondary"
-                                    style="margin-left: 4px; font-size: 10px; text-transform: uppercase"
-                                    >{{ ch.type }}</span
-                                >
-                            </div>
-                            <div
-                                v-if="!ruleChannels[rule.uuid] || ruleChannels[rule.uuid].length === 0"
-                                class="text-secondary"
-                                style="font-size: 12px"
-                            >
-                                {{ t('dashboard.vmAlarmRules.noLinkedChannels') }}
-                            </div>
+                        <div v-if="ruleChannels[rule.uuid]?.length === 0" class="rule-detail-empty">
+                            <span>{{ t('dashboard.vmAlarmRules.noLinkedChannels') }}</span>
+                            <button type="button" class="rule-detail-action" @click="openBindChannels(rule)">
+                                {{ t('dashboard.vmAlarmRules.bindChannels') }}
+                            </button>
                         </div>
-                    </div>
+                    </section>
                 </div>
             </template>
 
@@ -1005,14 +1005,8 @@ onMounted(fetchRules)
                         @change="toggleChannel(ch.uuid)"
                     />
                     <span class="channel-name">{{ ch.name }}</span>
-                    <span class="badge" :class="ch.type === 'feishu' ? 'badge-info' : 'badge-secondary'">
-                        {{
-                            ch.type === 'feishu'
-                                ? t('dashboard.notificationFeishu')
-                                : ch.type === 'webhook'
-                                  ? t('dashboard.notificationCustomWebhook')
-                                  : ch.type
-                        }}
+                    <span class="badge badge-secondary">
+                        {{ channelTypeText(ch.type) }}
                     </span>
                 </label>
             </div>
@@ -1128,65 +1122,112 @@ onMounted(fetchRules)
     margin-top: 2px;
 }
 
-.rule-body-content {
-    padding: 16px;
-    display: flex;
-    flex-direction: column;
-    gap: 20px;
-}
-
-.section-label {
-    font-size: 12px;
-    font-weight: 600;
-    color: var(--text-tertiary);
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    margin-bottom: 8px;
-}
-
-.inner-table-wrapper {
-    border: 1px solid var(--border-light);
-    border-radius: 8px;
-    overflow: hidden;
+/* Expanded row: a white card on the grey expanded band, left edge lined up with the name
+   column (54px is the expander column), three columns that stack on narrow screens */
+.rule-detail {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: var(--spacing-8);
+    margin: 0 var(--spacing-5) var(--spacing-4) 54px;
+    padding: var(--spacing-4) var(--spacing-5);
     background: var(--bg-primary);
+    border: 1px solid var(--border-light);
+    border-radius: var(--radius-md);
 }
 
-.inner-table {
-    width: 100%;
-    border-collapse: collapse;
-    font-size: 13px;
+@media (max-width: 1023px) {
+    .rule-detail {
+        grid-template-columns: minmax(0, 1fr);
+        gap: var(--spacing-4);
+        margin-left: var(--spacing-5);
+    }
 }
 
-.inner-table th {
-    text-align: left;
-    padding: 8px 12px;
-    background: var(--bg-tertiary);
+.rule-detail-heading {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-2);
+    margin: 0 0 var(--spacing-2);
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-semibold);
     color: var(--text-secondary);
-    font-weight: 500;
-    border-bottom: 1px solid var(--border-light);
 }
 
-.inner-table td {
-    padding: 8px 12px;
-    border-bottom: 1px solid var(--border-light);
+.rule-detail-count {
+    font-weight: var(--font-weight-medium);
+    color: var(--text-light);
+    font-variant-numeric: tabular-nums;
 }
 
-.inner-table tr:last-child td {
-    border-bottom: none;
-}
-
-.linked-vms-chips {
+.rule-detail-line {
     display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
+    align-items: center;
+    gap: var(--spacing-3);
+    min-height: 30px;
+    font-size: var(--font-size-sm);
+    color: var(--text-primary);
 }
 
-.vm-chip {
-    background: var(--bg-primary);
-    border: 1px solid var(--border-light);
-    padding: 2px 10px;
-    border-radius: 4px;
-    font-size: 12px;
+.rule-detail-line .badge {
+    flex-shrink: 0;
+}
+
+.threshold-value {
+    font-weight: var(--font-weight-medium);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+
+.rule-detail-muted {
+    color: var(--text-tertiary);
+    white-space: nowrap;
+}
+
+.rule-detail-link,
+.rule-detail-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.rule-detail-link {
+    color: var(--primary-600);
+    text-decoration: none;
+}
+
+.rule-detail-link:hover {
+    text-decoration: underline;
+}
+
+/* Right after the name: pushing it to the column edge left a 300px+ gap to read across */
+.rule-detail-id {
+    flex-shrink: 0;
+    font-family: var(--font-family-mono);
+    font-size: 11px;
+    color: var(--text-tertiary);
+}
+
+.rule-detail-empty {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: var(--spacing-2);
+    min-height: 30px;
+    font-size: var(--font-size-sm);
+    color: var(--text-tertiary);
+}
+
+.rule-detail-action {
+    padding: 0;
+    border: none;
+    background: none;
+    font-size: inherit;
+    color: var(--primary-600);
+    cursor: pointer;
+}
+
+.rule-detail-action:hover {
+    text-decoration: underline;
 }
 
 .actions-cell {
@@ -1239,11 +1280,6 @@ onMounted(fetchRules)
 }
 .text-muted {
     color: var(--text-tertiary);
-}
-
-.badge-secondary {
-    background: var(--accent-purple-light);
-    color: var(--accent-purple);
 }
 
 .error-banner {
@@ -1369,5 +1405,4 @@ onMounted(fetchRules)
 .channel-name {
     flex: 1;
 }
-
 </style>

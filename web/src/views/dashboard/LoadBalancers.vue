@@ -34,6 +34,10 @@ const newLBForm = ref({
 const { t, te } = useI18n()
 const toast = useToast()
 
+// Unknown states fall back to the raw value rather than showing an i18n key
+const statusText = (status?: string) =>
+    status && te(`dashboard.loadBalancerStatus.${status}`) ? t(`dashboard.loadBalancerStatus.${status}`) : status || '-'
+
 const { copiedId, copyId } = useCopyId()
 const region = useRegionStore()
 const isNameValid = computed(() => isValidName(newLBForm.value.name))
@@ -316,7 +320,7 @@ onUnmounted(() => {
             </template>
 
             <template #cell-status="{ row: lb }">
-                <StatusBadge :status="lb.status" />
+                <StatusBadge :status="lb.status" :label="statusText(lb.status)" />
             </template>
 
             <template #cell-ip="{ row: lb }">
@@ -501,7 +505,6 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
-
 /* .resource-info etc. are global from index.css */
 
 .resource-link {

@@ -66,7 +66,10 @@ const router = useRouter()
 const { t, te } = useI18n()
 const toast = useToast()
 
-const instanceMetrics = ref<Record<string, { cpu: number; memory: number }>>({})
+// A value is left undefined when Prometheus has no series for the VM (shown as "-", not 0%)
+const instanceMetrics = ref<Record<string, { cpu?: number; memory?: number }>>({})
+// "-" until the metrics arrive (or when their request failed): a made-up 0% reads as an idle VM
+const usageText = (value: number | undefined, digits = 0) => (value === undefined ? '-' : `${value.toFixed(digits)}%`)
 let metricsTimer: ReturnType<typeof setInterval> | null = null
 // 电源操作后的状态轮询：可能同时有多台，统一在 onUnmounted 停止
 const statusPollTimers = new Set<ReturnType<typeof setTimeout>>()
@@ -88,22 +91,22 @@ const fetchUsageMetrics = async () => {
             instancesApi.getMemoryMetrics({ id: ids, start, end, step: '60s' }),
         ])
 
-        const newMetrics: Record<string, { cpu: number; memory: number }> = {}
+        const newMetrics: Record<string, { cpu?: number; memory?: number }> = {}
         ids.forEach((id) => {
             // CPU: match by metric.uuid, one-dimensional values array [{time, value}]
             const cpuResult = cpuRes?.data?.result?.find((r) => r.metric?.uuid === id)
             const cpuValues = cpuResult?.values || []
-            const lastCpu = cpuValues.length ? parseFloat(cpuValues[cpuValues.length - 1].value || '0') : 0
+            const lastCpu = cpuValues.length ? parseFloat(cpuValues[cpuValues.length - 1].value || '0') : undefined
 
             // Memory: match by metric.uuid, two-dimensional values array [totalValues[], usedValues[]]
             const memResult = memRes?.data?.result?.find((r) => r.metric?.uuid === id)
-            let lastMem = 0
+            let lastMem: number | undefined
             if ((memResult?.values?.length ?? 0) >= 2) {
                 const totalValues = memResult!.values[0]
                 const usedValues = memResult!.values[1]
                 const total = totalValues.length ? parseFloat(totalValues[totalValues.length - 1].value || '0') : 0
                 const used = usedValues.length ? parseFloat(usedValues[usedValues.length - 1].value || '0') : 0
-                lastMem = total > 0 ? (used / total) * 100 : 0
+                lastMem = total > 0 ? (used / total) * 100 : undefined
             }
 
             newMetrics[id] = { cpu: lastCpu, memory: lastMem }
@@ -156,10 +159,11 @@ const fetchInstances = async (showLoading: boolean = true) => {
 const columns = computed<Column[]>(() => [
     { key: 'name', label: t('dashboard.table.nameId'), sortable: true, sortField: 'hostname' },
     { key: 'flavor', label: t('dashboard.table.flavor') },
-    { key: 'image', label: t('dashboard.table.image') },
-    { key: 'ip', label: t('dashboard.table.ipAddress') },
+    // Image and usage are also on the detail page: they give way first on narrow screens so the table does not scroll sideways
+    { key: 'image', label: t('dashboard.table.image'), hideBelow: 1280 },
+    { key: 'ip', label: t('dashboard.table.ipAddress'), width: '200px' },
     { key: 'status', label: t('dashboard.table.status'), sortable: true },
-    { key: 'usage', label: t('dashboard.overview.resourceUsage') },
+    { key: 'usage', label: t('dashboard.overview.resourceUsage'), hideBelow: 1280 },
     { key: 'actions', label: t('dashboard.table.actions'), align: 'center' },
 ])
 
@@ -634,10 +638,7 @@ onUnmounted(() => {
                     class="instance-usage-summary"
                     v-if="['running', 'active'].includes(instance.status?.toLowerCase())"
                 >
-                    <div
-                        class="usage-mini-item"
-                        :title="'CPU: ' + (instanceMetrics[instance.id]?.cpu || 0).toFixed(1) + '%'"
-                    >
+                    <div class="usage-mini-item" :title="'CPU: ' + usageText(instanceMetrics[instance.id]?.cpu, 1)">
                         <span class="usage-label">CPU</span>
                         <div class="usage-progress-bg">
                             <div
@@ -648,11 +649,9 @@ onUnmounted(() => {
                                 }"
                             ></div>
                         </div>
+                        <span class="usage-value">{{ usageText(instanceMetrics[instance.id]?.cpu) }}</span>
                     </div>
-                    <div
-                        class="usage-mini-item"
-                        :title="'MEM: ' + (instanceMetrics[instance.id]?.memory || 0).toFixed(1) + '%'"
-                    >
+                    <div class="usage-mini-item" :title="'MEM: ' + usageText(instanceMetrics[instance.id]?.memory, 1)">
                         <span class="usage-label">MEM</span>
                         <div class="usage-progress-bg">
                             <div
@@ -663,6 +662,7 @@ onUnmounted(() => {
                                 }"
                             ></div>
                         </div>
+                        <span class="usage-value">{{ usageText(instanceMetrics[instance.id]?.memory) }}</span>
                     </div>
                 </div>
                 <span v-else class="text-secondary text-xs">-</span>
@@ -1301,6 +1301,17 @@ onUnmounted(() => {
     flex-shrink: 0;
 }
 
+/* The percentage used to be only in the hover title, yet it is the actual information; the bar
+   just shows high / low at a glance. Show the number, the bar becomes secondary */
+.usage-value {
+    font-size: 11px;
+    color: var(--text-secondary);
+    font-variant-numeric: tabular-nums;
+    width: 30px;
+    text-align: right;
+    flex-shrink: 0;
+}
+
 .usage-progress-bg {
     flex: 1;
     height: 4px;
@@ -1314,7 +1325,6 @@ onUnmounted(() => {
     border-radius: 2px;
     transition: width 0.3s ease;
 }
-
 
 .text-xs {
     font-size: 11px;
