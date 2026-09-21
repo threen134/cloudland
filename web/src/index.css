@@ -691,6 +691,37 @@ button:disabled {
     }
 }
 
+/* ============================
+   详情页的视觉层次
+   ============================ */
+
+/* 卡片标题左侧的强调竖条。详情页往往是七八张白底卡片叠在一起，只靠
+   标题字重区分，扫视时没有落点。这里统一加，13 个详情页都用的是
+   .info-card h3 / .card-section-title，不必逐个文件改 */
+.info-card h3,
+.card-section-title {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-2);
+}
+
+.info-card h3::before,
+.card-section-title::before {
+    content: '';
+    width: 3px;
+    height: 14px;
+    border-radius: 2px;
+    background: var(--primary-color);
+    flex-shrink: 0;
+}
+
+/* 详情页顶部的资源标题条：淡主色底 + 左侧主色竖条，
+   把「当前在看哪个资源」从一堆白卡片里立出来 */
+.title-bar.card {
+    background: linear-gradient(90deg, var(--primary-50) 0%, var(--bg-primary) 55%);
+    border-left: 3px solid var(--primary-color);
+}
+
 /* 这两个此前在 26 / 17 个单文件组件里各写了一遍（@keyframes 更是 35 份，
    而且它在 <style scoped> 里也不隔离、本来就是全局的）。统一放这里 */
 .spinning {

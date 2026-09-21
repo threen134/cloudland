@@ -8,7 +8,7 @@
 //   </DataTable>
 // 每列的内容用 #cell-<key> 插槽渲染；不提供插槽时直接取 row[key]。
 import { computed, ref } from 'vue'
-import { RefreshCw, ChevronDown, ChevronRight } from 'lucide-vue-next'
+import { RefreshCw, ChevronDown, ChevronRight, Inbox } from 'lucide-vue-next'
 
 // 泛型组件：行类型由调用方传进来的 rows 推断，#cell-* 插槽里的 row 就是 Flavor / Instance
 // 这类具体接口类型，而不是 Record<string, any>。此前插槽里拿到的是 Record<string, any>，
@@ -178,8 +178,14 @@ const sortedRows = computed(() => {
                 </tr>
                 <tr v-else-if="rows.length === 0">
                     <td :colspan="colspan" class="table-state">
+                        <!-- 默认空态：图标 + 文案 + 可选的行动按钮（#empty-action）。
+                             页面想完全自定义就用 #empty 覆盖整块 -->
                         <slot name="empty">
-                            <p class="table-state-text">{{ emptyText ?? $t('messages.noData') }}</p>
+                            <div class="table-empty">
+                                <Inbox :size="40" class="table-empty-icon" />
+                                <p class="table-state-text">{{ emptyText ?? $t('messages.noData') }}</p>
+                                <slot name="empty-action"></slot>
+                            </div>
                         </slot>
                     </td>
                 </tr>
@@ -294,5 +300,17 @@ tr.expandable:hover {
     margin: 0 0 var(--spacing-3);
     color: var(--text-tertiary);
     font-size: var(--font-size-sm);
+}
+
+.table-empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--spacing-1);
+}
+
+.table-empty-icon {
+    color: var(--gray-300);
+    margin-bottom: var(--spacing-2);
 }
 </style>
