@@ -62,6 +62,11 @@ const props = withDefaults(
          * 代价是宽表格不再能横向滚动，所以只在确实需要时开
          */
         allowOverflow?: boolean
+        /**
+         * 按行内容附加的 class（如把已恢复的告警整行调淡）。
+         * 返回值直接交给 :class，所以字符串、数组、对象都行
+         */
+        rowClass?: (row: T) => string | string[] | Record<string, boolean> | undefined
     }>(),
     {
         rowKey: 'id',
@@ -182,7 +187,10 @@ const sortedRows = computed(() => {
                 <template v-else>
                     <template v-for="row in sortedRows" :key="keyOf(row)">
                         <tr
-                            :class="{ expandable: expandable, expanded: expandable && isExpanded(row) }"
+                            :class="[
+                                { expandable: expandable, expanded: expandable && isExpanded(row) },
+                                rowClass?.(row),
+                            ]"
                             @click="expandable && toggleExpand(row)"
                         >
                             <td v-if="expandable" class="expand-col">

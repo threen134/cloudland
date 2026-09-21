@@ -38,6 +38,7 @@ import DataTable, { type Column } from '../../components/base/DataTable.vue'
 import PaginationBar from '../../components/base/PaginationBar.vue'
 import { useRegionStore } from '../../stores/region'
 import { errorMessage } from '../../utils/error'
+import { usageColor } from '../../utils/usageColor'
 import { formatMemory } from '../../utils/format'
 
 const region = useRegionStore()
@@ -640,8 +641,11 @@ onUnmounted(() => {
                         <span class="usage-label">CPU</span>
                         <div class="usage-progress-bg">
                             <div
-                                class="usage-progress-bar cpu-bar"
-                                :style="{ width: (instanceMetrics[instance.id]?.cpu || 0) + '%' }"
+                                class="usage-progress-bar"
+                                :style="{
+                                    width: (instanceMetrics[instance.id]?.cpu || 0) + '%',
+                                    background: usageColor(instanceMetrics[instance.id]?.cpu || 0),
+                                }"
                             ></div>
                         </div>
                     </div>
@@ -652,8 +656,11 @@ onUnmounted(() => {
                         <span class="usage-label">MEM</span>
                         <div class="usage-progress-bg">
                             <div
-                                class="usage-progress-bar mem-bar"
-                                :style="{ width: (instanceMetrics[instance.id]?.memory || 0) + '%' }"
+                                class="usage-progress-bar"
+                                :style="{
+                                    width: (instanceMetrics[instance.id]?.memory || 0) + '%',
+                                    background: usageColor(instanceMetrics[instance.id]?.memory || 0),
+                                }"
                             ></div>
                         </div>
                     </div>
@@ -1308,12 +1315,6 @@ onUnmounted(() => {
     transition: width 0.3s ease;
 }
 
-.cpu-bar {
-    background: var(--primary-color);
-}
-.mem-bar {
-    background: var(--accent-purple);
-}
 
 .text-xs {
     font-size: 11px;

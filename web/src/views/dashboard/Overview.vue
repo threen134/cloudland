@@ -11,6 +11,7 @@ import { volumesApi, type Volume } from '../../api/volumes'
 import { imagesApi } from '../../api/images'
 import { vpcsApi, floatingIpsApi, loadBalancersApi } from '../../api/networks'
 import { quotaApi, type QuotaFields } from '../../api/quota'
+import { usageColor } from '../../utils/usageColor'
 import { useToast } from '../../composables/useToast'
 import { useI18n } from 'vue-i18n'
 
@@ -310,13 +311,7 @@ onMounted(loadActivities)
 
 // Over quota (a lowered limit, a quota of 0, or usage recorded before enforcement) is always red
 const getBarColor = (bar: UsageBar) =>
-    bar.total !== null && bar.used > bar.total ? 'var(--error-color)' : getPercentColor(bar.percentage)
-
-const getPercentColor = (percent: number) => {
-    if (percent > 90) return 'var(--error-color)'
-    if (percent > 75) return 'var(--warning-color)'
-    return 'var(--primary-color)'
-}
+    bar.total !== null && bar.used > bar.total ? 'var(--error-color)' : usageColor(bar.percentage)
 </script>
 
 <template>

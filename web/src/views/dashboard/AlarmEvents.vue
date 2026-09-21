@@ -8,7 +8,6 @@ import { formatDateTime } from '../../utils/format'
 import PageToolbar from '../../components/base/PageToolbar.vue'
 import DataTable, { type Column } from '../../components/base/DataTable.vue'
 import PaginationBar from '../../components/base/PaginationBar.vue'
-import StatusBadge from '../../components/base/StatusBadge.vue'
 
 const { t } = useI18n()
 const events = ref<AlarmEvent[]>([])
@@ -127,6 +126,7 @@ onMounted(fetchEvents)
             :loading="loading"
             :error="errorMsg"
             expandable
+            :row-class="(event) => (event.status === 'resolved' ? 'row-resolved' : undefined)"
             @expand="loadDeliveryLogs"
             @retry="() => fetchEvents()"
         >
@@ -165,15 +165,17 @@ onMounted(fetchEvents)
                 </span>
             </template>
 
+            <!-- 状态只用一个小圆点 + 灰字：一屏里「严重级别」已经在用色了，
+                 状态再用彩色胶囊会和它抢注意力，扫一眼分不出该先看哪条 -->
             <template #cell-status="{ row: event }">
-                <StatusBadge
-                    :status="event.status"
-                    :label="
+                <span class="event-status" :class="{ firing: event.status === 'firing' }">
+                    <span class="event-status-dot"></span>
+                    {{
                         event.status === 'firing'
                             ? t('dashboard.alarmStatusFiring')
                             : t('dashboard.alarmStatusResolved')
-                    "
-                />
+                    }}
+                </span>
             </template>
 
             <template #cell-fired_at="{ row: event }">{{ formatDateTime(event.fired_at) }}</template>
@@ -245,6 +247,41 @@ onMounted(fetchEvents)
 </template>
 
 <style scoped>
+/* 状态：圆点 + 灰字。触发中的点用错误色，已恢复的点用浅灰 */
+.event-status {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: var(--font-size-sm);
+    color: var(--text-tertiary);
+    white-space: nowrap;
+}
+
+.event-status.firing {
+    color: var(--text-secondary);
+}
+
+.event-status-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--gray-300);
+    flex-shrink: 0;
+}
+
+.event-status.firing .event-status-dot {
+    background: var(--error-color);
+}
+
+/* 已恢复的整行调淡，让还在触发的条目先被看到；hover 时恢复正常便于阅读 */
+:deep(tr.row-resolved) {
+    opacity: 0.55;
+}
+
+:deep(tr.row-resolved:hover) {
+    opacity: 1;
+}
+
 .filter-select {
     height: 40px;
     padding: 0 12px;
