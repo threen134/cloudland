@@ -1,4 +1,4 @@
-<script setup lang="ts">
+<script setup lang="ts" generic="T extends Record<string, any>">
 // 列表页的表格：表头、加载态、空态、错误态、列排序都在这里实现一次。
 // 原先 20 多个列表页各写一遍 `<tr v-if="loading">` + 空态文案，且只有一个页面提供了失败重试。
 //
@@ -10,10 +10,13 @@
 import { computed, ref } from 'vue'
 import { RefreshCw, ChevronDown, ChevronRight } from 'lucide-vue-next'
 
-// 行数据保留 Record<string, any>：这里是通用表格，各列表页传进来的是 Flavor / Instance 这类
-// 具体接口类型。TypeScript 只允许把它们赋给 `Record<string, any>`，换成 `Record<string, unknown>`
-// 会报 "Index signature is missing"，所有调用方都编译不过；要真正定型得把组件改成泛型组件，
-// 那会连带改掉 20 多个列表页的插槽签名，超出本次清理范围。
+// 泛型组件：行类型由调用方传进来的 rows 推断，#cell-* 插槽里的 row 就是 Flavor / Instance
+// 这类具体接口类型，而不是 Record<string, any>。此前插槽里拿到的是 Record<string, any>，
+// 传给形参是具体类型的函数会编译报错——但项目的 build 脚本用的是 tsc（不解析 .vue），
+// 这些错误一直没暴露出来。
+//
+// Column 不跟着泛型化：它被 20 多个列表页按 `type Column` 直接引用，泛型化会连带改掉所有
+// 引用点，而列定义里唯一用到行类型的只有 sortValue 一个回调。
 
 export interface Column {
     key: string
@@ -35,9 +38,9 @@ export interface Column {
 const props = withDefaults(
     defineProps<{
         columns: Column[]
-        rows: Record<string, any>[]
+        rows: T[]
         /** 行的唯一标识：字段名，或从行数据算出 key 的函数 */
-        rowKey?: string | ((row: Record<string, any>) => string)
+        rowKey?: string | ((row: T) => string)
         loading?: boolean
         /** 加载失败时的提示文案，传了就显示错误态和重试按钮 */
         error?: string
@@ -65,15 +68,15 @@ const props = withDefaults(
     }
 )
 
-const keyOf = (row: Record<string, any>) =>
+const keyOf = (row: T) =>
     typeof props.rowKey === 'function' ? props.rowKey(row) : String(row[props.rowKey])
 
 const emit = defineEmits<{ retry: []; 'update:order': [order: string]; expand: [key: string] }>()
 
 // 展开态按行 key 记录，翻页/重新加载后行还在就保持展开
 const expandedKey = ref<string | null>(null)
-const isExpanded = (row: Record<string, any>) => expandedKey.value === keyOf(row)
-const toggleExpand = (row: Record<string, any>) => {
+const isExpanded = (row: T) => expandedKey.value === keyOf(row)
+const toggleExpand = (row: T) => {
     const key = keyOf(row)
     expandedKey.value = expandedKey.value === key ? null : key
     if (expandedKey.value) emit('expand', key)
