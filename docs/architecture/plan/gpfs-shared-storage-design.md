@@ -4,7 +4,7 @@
 - **日期**：2026-09-22，基于 `stage-01` 分支 `53dceb82`（文中行号均以此为准）
 - **涉及**：clapi（`api/`）、节点脚本（`scripts/`）、cpgateway 代理白名单、前端（`web/`）
 - **相关文档**：`storage-gpfs-ceph-integration-plan.md`、`gpfs-deployment-plan.md`，两者与本文的关系见 §13
-- **执行顺序**：`local-multi-disk-storage-plan.md`（本地多盘存储池）**先于本文实施**。本文阶段 0 中与本地存储有关的部分由它的阶段 L0 完成（`storage_pools` 等表和存储池接口也由它先建出来），本文在其基础上增加 `gpfs` 驱动，见 §14 阶段 0 的说明
+- **执行顺序**：`local-multi-disk-storage-plan.md`（本地多盘存储池）**先于本文实施**。本文阶段 0 中与本地存储有关的部分由它的阶段 L0a / L0b 完成（`storage_pools`、`hyper_storage_pools` 和存储池接口也由它先建出来），本文在其基础上增加 `gpfs` 驱动，见 §14 阶段 0 的说明。两份文档对同一张表、同一个脚本的描述不一致时，**以本地方案为准**，本文只增加 GPFS 专用的部分（§3.3、§4.2、§6.2 已加注）
 
 ---
 
@@ -154,7 +154,9 @@ mmsetquota fs1:cl_ssd --block 50T:50T
 
 驱动取值：`local`、`gpfs`（为 Ceph 预留 `ceph_rbd`）。
 
-`volumes.path` 存**相对于存储池根目录的路径**，绝对路径 = 池根目录 + `/` + `path`。本地池的根目录固定为 `/opt/cloudland/cache`。
+`volumes.path` 存**相对于存储池根目录的路径**，绝对路径 = 池根目录 + `/` + `path`。内置本地池的根目录固定为 `/opt/cloudland/cache`。
+
+> 本地方案实施后还会有非内置的本地池（根目录 `/opt/cloudland/pools/<池UUID>`，池内布局与 gpfs 池相同，见本地方案 §2.3）。下表的「local 池」一列指内置本地池。
 
 | 磁盘 | local 池（根目录 `/opt/cloudland/cache`） | gpfs 池（根目录 = `mount_path`） |
 |---|---|---|
@@ -220,7 +222,8 @@ type HyperStoragePool struct {
 
 - 超过 15 分钟没有收到上报，按 `unavailable` 处理。
 - 删除节点时同时删除该节点的记录。
-- 本地池不需要这张表：每个节点对它都是 ready。
+
+> **以本地方案 §3.2 为准**：这张表由本地方案 L1 先建出来，本地池（包括内置池）同样有记录，并且多出布局、盘、容量等字段和 `creating`、`degraded`、`lost` 等状态。GPFS 池的记录只用其中的 `ready` / `unavailable`，其余字段留空。原先「本地池不需要这张表」的说法作废。删除节点时：这台节点上有本地池记录或本地卷时拒绝删除（本地方案 §5.9），GPFS 池的记录照旧随节点一起删除。
 
 ### 4.3 `volumes` 的变更
 
@@ -324,7 +327,7 @@ GPFS 卷创建时就落盘，不像本地卷那样等到首次挂载：它不依
 - **挂载前的校验**：
   - 本地卷：沿用现在的规则，已落盘的卷只能挂给同一节点上的虚拟机。
   - GPFS 卷：虚拟机所在节点对这个池必须是 `ready`，否则返回 400，说明哪个存储池在哪个节点上不可用。
-- **下发**：`inter=<虚拟机所在节点>`，`attach_volume_<驱动>.sh '<实例ID>' '<卷ID>' '<绝对路径>' '<池UUID>' [大小]`。
+- **下发**：`inter=<虚拟机所在节点>`，`attach_volume_<驱动>.sh '<实例ID>' '<卷ID>' '<绝对路径>' '<卷UUID>' '<大小>' '<池UUID>'`。参数顺序以本地方案 §5.2 为准：保留现有的前四个参数，大小与池 UUID 追加在后面。
 - **脚本**：
   - `attach_volume_local.sh` 把 `vol_path=$volume_dir/$3` 改成直接使用传入的绝对路径。
   - `attach_volume_gpfs.sh` 与本地版共用 `cloudrc` 里的通用函数，额外先做 `pool_guard`；磁盘 XML 的 `<driver>` 用 `cache='none' error_policy='stop'`。
@@ -685,7 +688,7 @@ GPFS 自带隔离机制：失联的节点会被集群驱逐，磁盘租约过期
 
 ### 阶段 0：存储池抽象（只有 local，行为不变）
 
-> **执行顺序调整**：本地多盘方案（`local-multi-disk-storage-plan.md`）先实施，它的阶段 L0 会完成下面范围里除 GPFS 专用部分以外的全部内容。另外，它的 L1 会建好 `hyper_storage_pools` 和存储池接口，后续阶段还会给 `storage_pools` 增加 `Media` 等字段。执行本文时，阶段 0 只需补上 GPFS 专用的字段（`FsName`、`Fileset`、`FsType`、`CloneMode`）以及 `image_storages` 的改造，再从阶段 1 开始。
+> **执行顺序调整**：本地多盘方案（`local-multi-disk-storage-plan.md`）先实施。它的阶段 L0a（数据盘部分）与 L0b（系统盘、救援、重装、捕获镜像、WDS 清理）合起来完成下面范围里除 GPFS 专用部分以外的全部内容；附录 B 第 3 条的 `du -x` 在 L0a 做，第 4 条（磁盘需求单位）因为会改变调度结果，在本地方案里也列为单独评估，不随阶段 0 顺带修。它的 L1 还会建好 `hyper_storage_pools`、存储池接口与 `pool_guard`，并给 `storage_pools` 增加 `Media`、`FallbackGroup` 字段。执行本文时，阶段 0 只需补上 GPFS 专用的字段（`FsName`、`Fileset`、`FsType`、`CloneMode`，以及 `volumes.BaseImageStorageID`）和 `image_storages` 的改造，再从阶段 1 开始。
 
 **范围**：
 
