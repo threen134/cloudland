@@ -598,6 +598,24 @@ func (a *VolumeAdmin) Resize(ctx context.Context, volume *model.Volume, size int
 		err = NewCLError(ErrVolumeIsBusy, "Volume is busy", nil)
 		return
 	}
+	// The node resizes the image of a live VM through inst-N. During these states the disk is held by
+	// something else (the inst-N-rescue domain, a migration copying it, a disk being rebuilt) or the VM
+	// is being torn down, and resizing it would fail or corrupt the copy
+	if volume.InstanceID > 0 {
+		instance := &model.Instance{Model: model.Model{ID: volume.InstanceID}}
+		if err = db.Take(instance).Error; err != nil {
+			logger.Ctx(ctx).Error("DB: query instance failed", err)
+			err = NewCLError(ErrInstanceNotFound, "Instance not found", err)
+			return
+		}
+		switch instance.Status {
+		case model.InstanceStatusProvisioning, model.InstanceStatusMigrating, model.InstanceStatusRollback,
+			model.InstanceStatusReinstalling, model.InstanceStatusResizing, model.InstanceStatusDeleting,
+			model.InstanceStatusRescuing:
+			err = NewCLError(ErrInstanceInvalidState, fmt.Sprintf("Cannot resize the volume while its instance is %s", instance.Status), nil)
+			return
+		}
+	}
 
 	if size <= volume.Size {
 		logger.Ctx(ctx).Error("The size must be greater than the original size")
