@@ -81,11 +81,12 @@ type SubnetPayload struct {
 }
 
 type SubnetPatchPayload struct {
-	Name     string         `json:"name" binding:"omitempty,min=2,max=64"`
-	Group    *BaseReference `json:"group" binding:"omitempty"`
-	Type     SubnetType     `json:"type" binding:"omitempty,oneof=public internal private site"`
-	Priority int32          `json:"priority" binding:"omitempty,gte=0,lte=100000"`
-	Dhcp     *bool          `json:"dhcp" binding:"omitempty"`
+	Name  string         `json:"name" binding:"omitempty,min=2,max=64"`
+	Group *BaseReference `json:"group" binding:"omitempty"`
+	Type  SubnetType     `json:"type" binding:"omitempty,oneof=public internal private site"`
+	// Omitted keeps the current priority (0 is a valid value, so it cannot be the "not set" marker)
+	Priority *int32 `json:"priority" binding:"omitempty,gte=0,lte=100000"`
+	Dhcp     *bool  `json:"dhcp" binding:"omitempty"`
 }
 
 // @Summary get a subnet
@@ -141,34 +142,39 @@ func (v *SubnetAPI) Patch(c *gin.Context) {
 		ErrorResponse(c, http.StatusBadRequest, "Invalid subnet query", err)
 		return
 	}
+	// Collect the new values first: Update checks permissions against the subnet as it is now
+	name, subnetType, group, priority, dhcp := subnet.Name, subnet.Type, subnet.Group, subnet.Priority, subnet.Dhcp
 	if payload.Name != "" {
-		subnet.Name = payload.Name
+		name = payload.Name
 	}
 	if payload.Type != "" {
-		subnet.Type = string(payload.Type)
+		subnetType = string(payload.Type)
 	}
 	if payload.Group != nil {
 		if payload.Group.ID != "" {
-			subnet.Group, err = ipGroupAdmin.GetIpGroupByUUID(ctx, payload.Group.ID)
+			group, err = ipGroupAdmin.GetIpGroupByUUID(ctx, payload.Group.ID)
 			if err != nil {
 				logger.Ctx(ctx).Errorf("Failed to get ipGroup by UUID %s, %+v", payload.Group.ID, err)
 				ErrorResponse(c, http.StatusBadRequest, "Invalid group ID", err)
 				return
 			}
 		} else {
-			subnet.Group = nil
+			group = nil
 		}
 	}
 	if payload.Dhcp != nil {
-		subnet.Dhcp = *payload.Dhcp
+		dhcp = *payload.Dhcp
 	}
-	subnet.Priority = payload.Priority
-	err = subnetAdmin.Update(ctx, subnet.ID, subnet.Name, subnet.Type, subnet.Group, payload.Priority, subnet.Dhcp)
+	if payload.Priority != nil {
+		priority = *payload.Priority
+	}
+	err = subnetAdmin.Update(ctx, subnet, name, subnetType, group, priority, dhcp)
 	if err != nil {
 		logger.Ctx(ctx).Errorf("Failed to update subnet %s, %+v", uuID, err)
 		ErrorResponse(c, http.StatusBadRequest, "Failed to update subnet", err)
 		return
 	}
+	subnet.Name, subnet.Type, subnet.Group, subnet.Priority, subnet.Dhcp = name, subnetType, group, priority, dhcp
 	subnetResp, err := v.getSubnetResponse(ctx, subnet)
 	if err != nil {
 		ErrorResponse(c, http.StatusInternalServerError, "Failed to update subnet response", err)

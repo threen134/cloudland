@@ -9,6 +9,7 @@ package apis
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"strconv"
@@ -18,6 +19,7 @@ import (
 	"api/src/services"
 
 	"github.com/gin-gonic/gin"
+	"github.com/gin-gonic/gin/binding"
 )
 
 var volumeAPI = &VolumeAPI{}
@@ -41,9 +43,10 @@ type VolumeQosPayload struct {
 	BpsLimit  int32 `json:"bps_limit" binding:"omitempty,gte=0,lte=102400"` // in MB/s
 }
 
+// VolumePatchPayload renames and/or attaches a volume. Capacity changes go through POST /volumes/{id}/resize.
 type VolumePatchPayload struct {
-	Name     string  `json:"name" binding:"omitempty"`
-	Size     int32   `json:"size" binding:"omitempty"`
+	Name string `json:"name" binding:"omitempty"`
+	// Attach to this instance; null detaches, and leaving the field out keeps the attachment as it is
 	Instance *BaseID `json:"instance" binding:"omitempty"`
 }
 
@@ -161,23 +164,36 @@ func (v *VolumeAPI) Patch(c *gin.Context) {
 	ctx := c.Request.Context()
 	uuID := c.Param("id")
 	payload := &VolumePatchPayload{}
-	err := c.ShouldBindJSON(payload)
+	// Keep the body: "instance": null (detach) and an omitted instance both bind to nil
+	err := c.ShouldBindBodyWith(payload, binding.JSON)
 	if err != nil {
 		logger.Ctx(ctx).Errorf("Failed to bind json: %+v", err)
 		ErrorResponse(c, http.StatusBadRequest, "Invalid input JSON", err)
 		return
 	}
 	logger.Ctx(ctx).Debugf("Patching volume %s with %+v", uuID, payload)
-	instanceID := int64(0)
-	if payload.Instance != nil {
-		var instance *model.Instance
-		instance, err = instanceAdmin.GetInstanceByUUID(ctx, payload.Instance.ID)
-		if err != nil {
-			logger.Ctx(ctx).Errorf("Failed to get instance, %+v", err)
-			ErrorResponse(c, http.StatusBadRequest, "Failed to get instance", err)
-			return
+	var fields map[string]json.RawMessage
+	if raw, ok := c.Get(gin.BodyBytesKey); ok {
+		_ = json.Unmarshal(raw.([]byte), &fields)
+	}
+	// nil keeps the attachment, 0 detaches, anything else attaches to that instance
+	var instanceID *int64
+	if _, set := fields["instance"]; set {
+		id := int64(0)
+		if payload.Instance != nil {
+			SetAuditAction(c, "volume.attach")
+			var instance *model.Instance
+			instance, err = instanceAdmin.GetInstanceByUUID(ctx, payload.Instance.ID)
+			if err != nil {
+				logger.Ctx(ctx).Errorf("Failed to get instance, %+v", err)
+				ErrorResponse(c, http.StatusBadRequest, "Failed to get instance", err)
+				return
+			}
+			id = instance.ID
+		} else {
+			SetAuditAction(c, "volume.detach")
 		}
-		instanceID = instance.ID
+		instanceID = &id
 	}
 
 	volume, err := volumeAdmin.UpdateByUUID(ctx, uuID, payload.Name, instanceID)

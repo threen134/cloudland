@@ -2036,6 +2036,8 @@ definitions:
         minLength: 2
         type: string
       priority:
+        description: Omitted keeps the current priority (0 is a valid value, so it
+          cannot be the "not set" marker)
         maximum: 100000
         minimum: 0
         type: integer
@@ -2363,11 +2365,12 @@ definitions:
   apis.VolumePatchPayload:
     properties:
       instance:
-        $ref: '#/definitions/common.BaseID'
+        allOf:
+        - $ref: '#/definitions/common.BaseID'
+        description: Attach to this instance; null detaches, and leaving the field
+          out keeps the attachment as it is
       name:
         type: string
-      size:
-        type: integer
     type: object
   apis.VolumePayload:
     properties:

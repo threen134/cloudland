@@ -274,7 +274,10 @@ func (a *SubnetAdmin) GetSubnet(ctx context.Context, reference *BaseReference) (
 	return
 }
 
-func (a *SubnetAdmin) Update(ctx context.Context, id int64, name, subnetType string, ipGroup *model.IpGroup, priority int32, dhcp bool) (err error) {
+// Update writes the new values over subnet, which must be the record as currently stored:
+// permissions are checked against its current type and owner.
+func (a *SubnetAdmin) Update(ctx context.Context, subnet *model.Subnet, name, subnetType string, ipGroup *model.IpGroup, priority int32, dhcp bool) (err error) {
+	id := subnet.ID
 	logger.Ctx(ctx).Infof("ENTER SubnetAdmin.Update: id=%d, name=%s, subnetType=%s, ipGroup=%+v, priority=%d, dhcp=%t", id, name, subnetType, ipGroup, priority, dhcp)
 	defer func() {
 		if err != nil {
@@ -283,6 +286,26 @@ func (a *SubnetAdmin) Update(ctx context.Context, id int64, name, subnetType str
 			logger.Ctx(ctx).Info("EXIT SubnetAdmin.Update: success")
 		}
 	}()
+	// Same rule as Delete: VLAN subnets (public/private) are shared infrastructure, the others belong to an org
+	memberShip := GetMemberShip(ctx)
+	var permit bool
+	if subnet.Type == "public" || subnet.Type == "private" {
+		permit = memberShip.IsSystemAdmin()
+	} else {
+		permit = memberShip.CheckResourceOrg(model.OrgWriter, subnet.Owner)
+	}
+	if !permit {
+		logger.Ctx(ctx).Error("Not authorized to update the subnet")
+		err = NewCLError(ErrPermissionDenied, "Not authorized to update the subnet", nil)
+		return
+	}
+	// A type change can turn an org's subnet into a shared VLAN subnet (or back)
+	if subnetType != subnet.Type && !memberShip.IsSystemAdmin() {
+		logger.Ctx(ctx).Error("Only system admins can change the subnet type")
+		err = NewCLError(ErrPermissionDenied, "Only system admins can change the subnet type", nil)
+		return
+	}
+
 	ctx, db, newTransaction := StartTransaction(ctx)
 	defer func() {
 		if newTransaction {

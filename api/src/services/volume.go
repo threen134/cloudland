@@ -9,6 +9,7 @@ package services
 import (
 	"context"
 	"fmt"
+	"strconv"
 
 	. "api/src/common"
 	"api/src/dbs"
@@ -213,8 +214,18 @@ func (a *VolumeAdmin) Create(ctx context.Context, name string, size int32,
 	return
 }
 
-func (a *VolumeAdmin) UpdateByUUID(ctx context.Context, uuid string, name string, instID int64) (volume *model.Volume, err error) {
-	logger.Ctx(ctx).Infof("ENTER VolumeAdmin.UpdateByUUID: uuid=%s, name=%s, instID=%d", uuid, name, instID)
+// attachTarget renders Update's instID for logs: "keep" when the attachment is left alone
+func attachTarget(instID *int64) string {
+	if instID == nil {
+		return "keep"
+	}
+	return strconv.FormatInt(*instID, 10)
+}
+
+// UpdateByUUID renames the volume (when name is not empty) and changes its attachment:
+// instID nil leaves it alone, 0 detaches, any other value attaches to that instance.
+func (a *VolumeAdmin) UpdateByUUID(ctx context.Context, uuid string, name string, instID *int64) (volume *model.Volume, err error) {
+	logger.Ctx(ctx).Infof("ENTER VolumeAdmin.UpdateByUUID: uuid=%s, name=%s, instID=%s", uuid, name, attachTarget(instID))
 	defer func() {
 		if err != nil {
 			logger.Ctx(ctx).Errorf("EXIT VolumeAdmin.UpdateByUUID: error=%v", err)
@@ -222,7 +233,7 @@ func (a *VolumeAdmin) UpdateByUUID(ctx context.Context, uuid string, name string
 			logger.Ctx(ctx).Info("EXIT VolumeAdmin.UpdateByUUID: success")
 		}
 	}()
-	logger.Ctx(ctx).Debugf("Update volume by UUID %s, name: %s, instID: %d", uuid, name, instID)
+	logger.Ctx(ctx).Debugf("Update volume by UUID %s, name: %s, instID: %s", uuid, name, attachTarget(instID))
 	ctx, db := GetContextDB(ctx)
 	volume = &model.Volume{}
 	if err = db.Where("uuid = ?", uuid).Take(volume).Error; err != nil {
@@ -327,8 +338,9 @@ func (a *VolumeAdmin) UpdateQos(ctx context.Context, id int64, iopsLimit int32, 
 	return
 }
 
-func (a *VolumeAdmin) Update(ctx context.Context, id int64, name string, instID int64) (volume *model.Volume, err error) {
-	logger.Ctx(ctx).Infof("ENTER VolumeAdmin.Update: id=%d, name=%s, instID=%d", id, name, instID)
+// Update: see UpdateByUUID for the meaning of instIDArg
+func (a *VolumeAdmin) Update(ctx context.Context, id int64, name string, instIDArg *int64) (volume *model.Volume, err error) {
+	logger.Ctx(ctx).Infof("ENTER VolumeAdmin.Update: id=%d, name=%s, instID=%s", id, name, attachTarget(instIDArg))
 	defer func() {
 		if err != nil {
 			logger.Ctx(ctx).Errorf("EXIT VolumeAdmin.Update: error=%v", err)
@@ -336,7 +348,6 @@ func (a *VolumeAdmin) Update(ctx context.Context, id int64, name string, instID 
 			logger.Ctx(ctx).Info("EXIT VolumeAdmin.Update: success")
 		}
 	}()
-	logger.Ctx(ctx).Debugf("Update volume %d, name: %s, instID: %d", id, name, instID)
 	ctx, db, newTransaction := StartTransaction(ctx)
 	defer func() {
 		if newTransaction {
@@ -348,6 +359,11 @@ func (a *VolumeAdmin) Update(ctx context.Context, id int64, name string, instID 
 		logger.Ctx(ctx).Error("DB: query volume failed", err)
 		err = NewCLError(ErrVolumeNotFound, "Volume not found", err)
 		return
+	}
+	// No instance in the request keeps the current attachment, so a rename never detaches
+	instID := volume.InstanceID
+	if instIDArg != nil {
+		instID = *instIDArg
 	}
 	// check the permission
 	memberShip := GetMemberShip(ctx)
@@ -445,7 +461,8 @@ func (a *VolumeAdmin) Update(ctx context.Context, id int64, name string, instID 
 		//volume.InstanceID = instID
 		//volume.Instance = nil
 	}
-	if err = db.Model(&model.Volume{}).Where("id = ?", volume.ID).Updates(map[string]interface{}{"status": volume.Status, "target": volume.Target}).Error; err != nil {
+	// name used to be set on the struct only and never written
+	if err = db.Model(&model.Volume{}).Where("id = ?", volume.ID).Updates(map[string]interface{}{"name": volume.Name, "status": volume.Status, "target": volume.Target}).Error; err != nil {
 		logger.Ctx(ctx).Error("DB: update volume failed", err)
 		err = NewCLError(ErrVolumeUpdateFailed, "Failed to update volume", err)
 		return
@@ -559,7 +576,9 @@ func (a *VolumeAdmin) Resize(ctx context.Context, volume *model.Volume, size int
 	ctx, db, newTransaction := StartTransaction(ctx)
 	defer func() {
 		if newTransaction {
-			EndTransaction(ctx, nil)
+			// Roll back when the command could not be sent, otherwise the volume is left
+			// in "resizing" with the new size and no request ever resets it
+			EndTransaction(ctx, err)
 		}
 	}()
 	memberShip := GetMemberShip(ctx)

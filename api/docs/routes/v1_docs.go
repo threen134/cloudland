@@ -10561,6 +10561,7 @@ const docTemplatev1 = `{
                     "minLength": 2
                 },
                 "priority": {
+                    "description": "Omitted keeps the current priority (0 is a valid value, so it cannot be the \"not set\" marker)",
                     "type": "integer",
                     "maximum": 100000,
                     "minimum": 0
@@ -11031,13 +11032,15 @@ const docTemplatev1 = `{
             "type": "object",
             "properties": {
                 "instance": {
-                    "$ref": "#/definitions/common.BaseID"
+                    "description": "Attach to this instance; null detaches, and leaving the field out keeps the attachment as it is",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/common.BaseID"
+                        }
+                    ]
                 },
                 "name": {
                     "type": "string"
-                },
-                "size": {
-                    "type": "integer"
                 }
             }
         },
