@@ -1084,6 +1084,7 @@ definitions:
       hostname:
         type: string
       hypervisor:
+        description: system admins only
         type: string
       image:
         $ref: '#/definitions/common.BaseReference'
@@ -4463,6 +4464,10 @@ paths:
             $ref: '#/definitions/common.APIError'
         "401":
           description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "403":
+          description: Hypervisor specified by a non system admin
           schema:
             $ref: '#/definitions/common.APIError'
       summary: create a instance

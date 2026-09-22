@@ -130,6 +130,10 @@ func (a *InstanceAdmin) Create(ctx context.Context, count int, prefix, userdata 
 	}
 	zoneID := zone.ID
 	if hyperID >= 0 {
+		if !memberShip.CheckSystemPermission() {
+			err = NewCLError(ErrPermissionDenied, "Only system admins can specify a hypervisor", nil)
+			return
+		}
 		hyper := &model.Hyper{}
 		err = db.Where("hostid = ?", hyperID).Take(hyper).Error
 		if err != nil {

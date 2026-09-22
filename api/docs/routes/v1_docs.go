@@ -2785,6 +2785,12 @@ const docTemplatev1 = `{
                         "schema": {
                             "$ref": "#/definitions/common.APIError"
                         }
+                    },
+                    "403": {
+                        "description": "Hypervisor specified by a non system admin",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
                     }
                 }
             }
@@ -9221,6 +9227,7 @@ const docTemplatev1 = `{
                     "type": "string"
                 },
                 "hypervisor": {
+                    "description": "system admins only",
                     "type": "string"
                 },
                 "image": {

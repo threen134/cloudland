@@ -54,7 +54,7 @@ type InstanceRescuePayload struct {
 
 type InstancePayload struct {
 	Count               int                 `json:"count" binding:"omitempty,gte=1,lte=16"`
-	Hypervisor          *string             `json:"hypervisor" binding:"omitempty,uuid"`
+	Hypervisor          *string             `json:"hypervisor" binding:"omitempty,uuid"` // system admins only
 	Hostname            string              `json:"hostname" binding:"required,hostname|fqdn"`
 	Keys                []*BaseReference    `json:"keys" binding:"omitempty,gte=0,lte=16"`
 	RootPasswd          string              `json:"root_passwd" binding:"omitempty,min=8,max=32"`
@@ -500,6 +500,7 @@ func (v *InstanceAPI) Delete(c *gin.Context) {
 // @Success 200 {array} InstanceResponse
 // @Failure 400 {object} common.APIError "Bad request"
 // @Failure 401 {object} common.APIError "Not authorized"
+// @Failure 403 {object} common.APIError "Hypervisor specified by a non system admin"
 // @Router /instances [post]
 func (v *InstanceAPI) Create(c *gin.Context) {
 	logger.Ctx(c).Debug("Create instance")
@@ -512,6 +513,12 @@ func (v *InstanceAPI) Create(c *gin.Context) {
 		return
 	}
 	logger.Ctx(ctx).Debugf("Creating instance with payload: %+v", payload)
+	// Pinning to a hypervisor bypasses the scheduler and reveals which hosts exist: system admins only.
+	// Checked before the hypervisor lookup so other users cannot probe host UUIDs by the error they get
+	if payload.Hypervisor != nil && !GetMemberShip(ctx).CheckSystemPermission() {
+		ErrorResponse(c, http.StatusForbidden, "Only system admins can specify a hypervisor", nil)
+		return
+	}
 	hostname := payload.Hostname
 	rootPasswd := payload.RootPasswd
 	userdata := payload.Userdata
