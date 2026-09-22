@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { AlertTriangle, CheckCircle, XCircle, RefreshCw, Check, Copy } from 'lucide-vue-next'
+import { BellRing, CheckCircle, XCircle, RefreshCw, Check, Copy } from 'lucide-vue-next'
 import { alarmEventsApi, type AlarmEvent, type AlarmDeliveryLog } from '../../api/alarmEvents'
 import { useCopyId } from '../../composables/useCopyId'
 import { formatDateTime } from '../../utils/format'
@@ -131,7 +131,7 @@ onMounted(fetchEvents)
             @retry="() => fetchEvents()"
         >
             <template #empty>
-                <AlertTriangle :size="48" style="opacity: 0.2; margin-bottom: 16px" />
+                <BellRing :size="48" style="opacity: 0.2; margin-bottom: 16px" />
                 <p>{{ searchQuery || statusFilter ? t('messages.noResults') : t('messages.noData') }}</p>
             </template>
 
@@ -387,5 +387,4 @@ onMounted(fetchEvents)
 .alert-name-cell:hover::after {
     opacity: 1;
 }
-
 </style>

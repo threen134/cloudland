@@ -8,8 +8,10 @@ import { useRegionStore } from '../../stores/region'
 import {
     ArrowLeft,
     HardDrive,
-    Paperclip,
-    Maximize,
+    Link,
+    Unlink,
+    Maximize2,
+    FileType,
     Trash2,
     Copy,
     Check,
@@ -20,6 +22,8 @@ import {
 } from 'lucide-vue-next'
 import { formatDisk, formatDateTime } from '../../utils/format'
 import DeleteModal from '../../components/modals/DeleteModal.vue'
+import VolumeActionModals from '../../components/volume/VolumeActionModals.vue'
+import { useVolumeActionGuards, usePollBusyVolumes } from '../../composables/useVolumeActions'
 import StatusBadge from '../../components/base/StatusBadge.vue'
 import InfoRow from '../../components/base/InfoRow.vue'
 import { useCopyId } from '../../composables/useCopyId'
@@ -46,21 +50,35 @@ const closeActionMenu = () => {
     showActionMenu.value = false
 }
 
-const fetchVolume = async () => {
+// silent: refresh in place (after an action / while polling) without the full-page spinner,
+// keeping the current data if the request fails
+const fetchVolume = async (silent = false) => {
     const id = route.params.id as string
     if (!id) return
 
-    loading.value = true
-    error.value = null
+    if (!silent) {
+        loading.value = true
+        error.value = null
+    }
     try {
         const response = await volumesApi.get(id)
         volume.value = response
     } catch (err) {
         console.error('Failed to fetch volume:', err)
-        error.value = errorMessage(err, 'Failed to load volume details')
+        if (!silent) error.value = errorMessage(err, t('messages.error'))
     } finally {
-        loading.value = false
+        if (!silent) loading.value = false
     }
+}
+
+const volumeActions = ref<InstanceType<typeof VolumeActionModals> | null>(null)
+const { attachBlocked, detachBlocked, resizeBlocked } = useVolumeActionGuards()
+usePollBusyVolumes(volume, () => fetchVolume(true))
+
+// Menu items close the menu before opening their dialog
+const runAction = (action: 'openAttach' | 'openDetach' | 'openResize') => {
+    closeActionMenu()
+    if (volume.value) volumeActions.value?.[action](volume.value)
 }
 
 watch(
@@ -141,7 +159,7 @@ onMounted(() => {
         <div v-else-if="error" class="error-container card">
             <HardDrive :size="48" style="opacity: 0.3; margin-bottom: 16px" />
             <p class="text-secondary">{{ error }}</p>
-            <button class="btn btn-primary btn-sm" @click="fetchVolume" style="margin-top: 12px">
+            <button class="btn btn-primary btn-sm" @click="fetchVolume()" style="margin-top: 12px">
                 {{ $t('actions.refresh') }}
             </button>
         </div>
@@ -179,11 +197,31 @@ onMounted(() => {
                         </button>
                         <Transition name="dropdown">
                             <div v-if="showActionMenu" class="dropdown-menu">
-                                <button class="dropdown-item">
-                                    <Paperclip :size="14" /> {{ $t('actions.attach') }} / {{ $t('actions.detach') }}
+                                <button
+                                    v-if="volume.instance"
+                                    class="dropdown-item"
+                                    :disabled="!!detachBlocked(volume)"
+                                    :title="detachBlocked(volume)"
+                                    @click="runAction('openDetach')"
+                                >
+                                    <Unlink :size="14" /> {{ $t('actions.detach') }}
                                 </button>
-                                <button class="dropdown-item">
-                                    <Maximize :size="14" /> {{ $t('actions.resize') }}
+                                <button
+                                    v-else
+                                    class="dropdown-item"
+                                    :disabled="!!attachBlocked(volume)"
+                                    :title="attachBlocked(volume)"
+                                    @click="runAction('openAttach')"
+                                >
+                                    <Link :size="14" /> {{ $t('actions.attach') }}
+                                </button>
+                                <button
+                                    class="dropdown-item"
+                                    :disabled="!!resizeBlocked(volume)"
+                                    :title="resizeBlocked(volume)"
+                                    @click="runAction('openResize')"
+                                >
+                                    <Maximize2 :size="14" /> {{ $t('actions.resize') }}
                                 </button>
                                 <div class="dropdown-divider"></div>
                                 <button class="dropdown-item dropdown-item-danger" @click.stop="handleDeleteClick">
@@ -208,7 +246,7 @@ onMounted(() => {
                                 {{ formatDisk(volume.size) }}
                             </InfoRow>
                             <InfoRow :label="$t('dashboard.table.format')">
-                                <template #label><Maximize :size="14" /> {{ $t('dashboard.table.format') }}</template>
+                                <template #label><FileType :size="14" /> {{ $t('dashboard.table.format') }}</template>
                                 <span style="text-transform: uppercase">{{ volume.format || '-' }}</span>
                             </InfoRow>
                             <InfoRow :label="$t('dashboard.table.boot')">
@@ -284,6 +322,8 @@ onMounted(() => {
                 </div>
             </div>
         </div>
+
+        <VolumeActionModals ref="volumeActions" @changed="() => fetchVolume(true)" />
 
         <DeleteModal
             :show="deleteModalVisible"
@@ -364,6 +404,11 @@ onMounted(() => {
 
 .dropdown-item:hover:not(:disabled) {
     background: var(--bg-hover, var(--gray-100));
+}
+
+.dropdown-item:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
 }
 
 .dropdown-item-danger {

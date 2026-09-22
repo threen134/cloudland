@@ -27,7 +27,7 @@ import {
     Trash2,
     Plus,
     X,
-    Edit,
+    Pencil,
     ArrowUpDown,
     ArrowUp,
     ArrowDown,
@@ -318,7 +318,7 @@ onMounted(fetchGroup)
                         <Transition name="dropdown">
                             <div v-if="showActionMenu" class="dropdown-menu">
                                 <button class="dropdown-item" @click="openEditModal">
-                                    <Edit :size="14" /> {{ $t('actions.edit') }}
+                                    <Pencil :size="14" /> {{ $t('actions.edit') }}
                                 </button>
                                 <div class="dropdown-divider" />
                                 <button
@@ -460,18 +460,18 @@ onMounted(fetchGroup)
                                 <td class="mono">{{ rule.remote_cidr || '-' }}</td>
                                 <td class="actions-cell">
                                     <button
-                                        class="btn btn-ghost btn-sm"
+                                        class="icon-btn-table"
                                         :title="$t('actions.edit')"
                                         @click="openEditRuleModal(rule)"
                                     >
-                                        <Edit :size="14" />
+                                        <Pencil :size="16" />
                                     </button>
                                     <button
-                                        class="btn btn-ghost btn-sm text-error"
+                                        class="icon-btn-table icon-danger"
                                         :title="$t('actions.delete')"
                                         @click="handleDeleteRule(rule)"
                                     >
-                                        <Trash2 :size="14" />
+                                        <Trash2 :size="16" />
                                     </button>
                                 </td>
                             </tr>

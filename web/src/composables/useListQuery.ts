@@ -62,6 +62,9 @@ export function useListQuery<T>(
      * 后台每几秒刷一次的场景下，一次网络抖动不该把用户正在看的列表清空。
      */
     const load = async (silent = false) => {
+        // A poll must not supersede a load the user started (page / sort / search): the newer
+        // generation would drop that response and its finally would never clear `loading`
+        if (silent && loading.value) return
         const current = ++generation
         if (!silent) {
             loading.value = true

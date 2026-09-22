@@ -236,11 +236,11 @@ onMounted(fetchKeys)
 
             <template #cell-actions="{ row: key }">
                 <button
-                    class="btn btn-ghost btn-sm text-error"
+                    class="icon-btn-table icon-danger"
                     :title="$t('actions.delete')"
                     @click="handleDeleteClick(key as SSHKey)"
                 >
-                    <Trash2 :size="14" />
+                    <Trash2 :size="16" />
                 </button>
             </template>
 

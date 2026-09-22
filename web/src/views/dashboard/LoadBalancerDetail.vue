@@ -547,17 +547,18 @@ onMounted(async () => {
                                     </td>
                                     <td @click.stop>
                                         <button
-                                            class="btn btn-ghost btn-sm"
+                                            class="icon-btn-table"
                                             :title="$t('actions.edit')"
                                             @click="openListenerEditModal(listener)"
                                         >
-                                            <Pencil :size="14" />
+                                            <Pencil :size="16" />
                                         </button>
                                         <button
-                                            class="btn btn-ghost btn-sm text-error"
+                                            class="icon-btn-table icon-danger"
+                                            :title="$t('actions.delete')"
                                             @click="handleDeleteListener(listener.id, listener.name)"
                                         >
-                                            <Trash2 :size="14" />
+                                            <Trash2 :size="16" />
                                         </button>
                                     </td>
                                 </tr>
@@ -615,14 +616,15 @@ onMounted(async () => {
                                                         </td>
                                                         <td class="backend-actions">
                                                             <button
-                                                                class="btn btn-ghost btn-sm"
+                                                                class="icon-btn-table"
                                                                 :title="$t('actions.edit')"
                                                                 @click="openBackendEditModal(listener.id, backend)"
                                                             >
-                                                                <Pencil :size="13" />
+                                                                <Pencil :size="16" />
                                                             </button>
                                                             <button
-                                                                class="btn btn-ghost btn-sm text-error"
+                                                                class="icon-btn-table icon-danger"
+                                                                :title="$t('actions.delete')"
                                                                 @click="
                                                                     handleDeleteBackend(
                                                                         listener.id,
@@ -631,7 +633,7 @@ onMounted(async () => {
                                                                     )
                                                                 "
                                                             >
-                                                                <Trash2 :size="13" />
+                                                                <Trash2 :size="16" />
                                                             </button>
                                                         </td>
                                                     </tr>

@@ -311,23 +311,23 @@ onMounted(async () => {
             </template>
 
             <template #cell-actions="{ row: image }">
-                <div class="actions">
+                <div class="row-actions">
                     <button
                         v-if="isSuperuser"
-                        class="btn btn-ghost btn-sm"
+                        class="icon-btn-table"
                         :title="image.public ? $t('dashboard.table.setPrivate') : $t('dashboard.table.setPublic')"
                         @click="toggleVisibility(image)"
                     >
-                        <EyeOff v-if="image.public" :size="14" />
-                        <Eye v-else :size="14" />
+                        <EyeOff v-if="image.public" :size="16" />
+                        <Eye v-else :size="16" />
                     </button>
                     <button
                         v-if="canDelete(image)"
-                        class="btn btn-ghost btn-sm text-error"
+                        class="icon-btn-table icon-danger"
                         :title="$t('actions.delete')"
                         @click="handleDeleteClick(image)"
                     >
-                        <Trash2 :size="14" />
+                        <Trash2 :size="16" />
                     </button>
                 </div>
             </template>
@@ -492,12 +492,6 @@ onMounted(async () => {
 .format-text {
     font-weight: 500;
     color: var(--text-secondary);
-}
-
-.actions {
-    display: flex;
-    justify-content: center;
-    gap: var(--spacing-2);
 }
 
 /* Modal Styles */

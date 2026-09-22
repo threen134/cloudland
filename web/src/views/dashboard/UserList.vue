@@ -6,7 +6,7 @@ import { orgsApi } from '../../api/orgs'
 import { useTenantStore } from '../../stores/tenant'
 import { useToast } from '../../composables/useToast'
 import { useCopyId } from '../../composables/useCopyId'
-import { User as UserIcon, Plus, Trash2, Edit, Search, RefreshCw, Check, Copy } from 'lucide-vue-next'
+import { User as UserIcon, Plus, Trash2, Pencil, Search, RefreshCw, Check, Copy } from 'lucide-vue-next'
 import { formatDate } from '../../utils/format'
 import { errorMessage } from '../../utils/error'
 import BaseModal from '../../components/modals/BaseModal.vue'
@@ -364,20 +364,16 @@ onMounted(fetchUsers)
             <template #cell-created="{ row: user }">{{ formatDate(user.created_at || new Date()) }}</template>
 
             <template #cell-actions="{ row: user }">
-                <div class="actions">
-                    <button
-                        class="btn btn-ghost btn-sm"
-                        :title="$t('actions.edit')"
-                        @click="openEditModal(user as UserRow)"
-                    >
-                        <Edit :size="14" />
+                <div class="row-actions">
+                    <button class="icon-btn-table" :title="$t('actions.edit')" @click="openEditModal(user as UserRow)">
+                        <Pencil :size="16" />
                     </button>
                     <button
-                        class="btn btn-ghost btn-sm text-error"
+                        class="icon-btn-table icon-danger"
                         :title="$t('actions.delete')"
                         @click="handleDeleteClick(user as UserRow)"
                     >
-                        <Trash2 :size="14" />
+                        <Trash2 :size="16" />
                     </button>
                 </div>
             </template>
@@ -603,12 +599,6 @@ onMounted(fetchUsers)
 .status-inactive {
     color: var(--text-light);
     font-weight: var(--font-weight-medium);
-}
-
-.actions {
-    display: flex;
-    justify-content: center;
-    gap: var(--spacing-2);
 }
 
 .resource-link {

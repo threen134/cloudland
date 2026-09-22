@@ -4,7 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { zonesApi, type Zone } from '../../api/zones'
 import { hypervisorsApi, type Hypervisor } from '../../api/hypervisors'
-import { ArrowLeft, MapPin, Copy, Check, Settings2, Trash2, Loader2, Server } from 'lucide-vue-next'
+import { ArrowLeft, MapPin, Copy, Check, Pencil, Trash2, Loader2, Server } from 'lucide-vue-next'
 import { useToast } from '../../composables/useToast'
 import BaseModal from '../../components/modals/BaseModal.vue'
 import DeleteModal from '../../components/modals/DeleteModal.vue'
@@ -179,7 +179,7 @@ onMounted(async () => {
                 </div>
                 <div class="title-actions">
                     <button class="btn btn-secondary btn-sm" @click="openEditModal">
-                        <Settings2 :size="14" />
+                        <Pencil :size="14" />
                         {{ t('actions.edit') }}
                     </button>
                     <button class="btn btn-danger-outline btn-sm" @click="showDeleteModal = true">

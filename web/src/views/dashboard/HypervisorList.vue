@@ -1096,29 +1096,6 @@ onUnmounted(() => {
     justify-content: center;
 }
 
-.icon-btn-table {
-    width: 32px;
-    height: 32px;
-    border-radius: 8px;
-    border: none;
-    background: transparent;
-    color: var(--text-tertiary);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    cursor: pointer;
-    transition: all 0.2s;
-}
-
-.icon-btn-table:hover {
-    background-color: var(--bg-tertiary);
-    color: var(--primary-500);
-}
-.icon-btn-table.text-error:hover {
-    background-color: var(--error-light);
-    color: var(--error-color);
-}
-
 /* Modal */
 .form-grid {
     display: grid;

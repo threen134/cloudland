@@ -346,21 +346,21 @@ watch(
             </template>
 
             <template #cell-actions="{ row: a }">
-                <div class="actions-cell">
+                <div class="row-actions">
                     <button class="icon-btn-table" @click.prevent="openEditModal(a)" :title="t('actions.edit')">
                         <Pencil :size="16" />
                     </button>
                     <button
                         class="icon-btn-table"
-                        :class="a.enabled ? 'text-success' : 'text-secondary'"
+                        :class="{ 'is-active': a.enabled }"
                         :disabled="togglingUuid === a.uuid"
                         @click.prevent="toggleEnabled(a)"
                         :title="a.enabled ? t('actions.disable') : t('actions.enable')"
                     >
-                        <Power :size="14" />
+                        <Power :size="16" />
                     </button>
                     <button
-                        class="icon-btn-table text-error"
+                        class="icon-btn-table icon-danger"
                         @click.prevent="confirmDelete(a)"
                         :title="t('actions.delete')"
                     >
@@ -490,38 +490,6 @@ watch(
     flex-direction: column;
     align-items: center;
     justify-content: center;
-}
-
-/* Was never defined here: the three buttons stacked vertically and made every row 117px tall.
-   Not global on purpose: SecurityGroupDetail puts .actions-cell on a <td> */
-.actions-cell {
-    display: flex;
-    gap: 4px;
-    align-items: center;
-    justify-content: center;
-}
-
-.icon-btn-table {
-    width: 32px;
-    height: 32px;
-    border-radius: 8px;
-    border: none;
-    background: transparent;
-    color: var(--text-tertiary);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    cursor: pointer;
-    transition: all 0.2s;
-}
-
-.icon-btn-table:hover {
-    background-color: var(--bg-tertiary);
-    color: var(--primary-500);
-}
-.icon-btn-table.text-error:hover {
-    background-color: var(--error-light);
-    color: var(--error-color);
 }
 
 /* Modal */

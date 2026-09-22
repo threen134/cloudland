@@ -7,7 +7,7 @@ import {
     Plus,
     Search,
     RefreshCw,
-    Settings2,
+    Pencil,
     Trash2,
     CheckCircle2,
     AlertCircle,
@@ -370,9 +370,9 @@ onMounted(fetchRegions)
             </template>
 
             <template #cell-actions="{ row: region }">
-                <div class="table-actions">
+                <div class="row-actions">
                     <button class="icon-btn-table" @click="openEditModal(region)" :title="t('actions.edit')">
-                        <Settings2 :size="16" />
+                        <Pencil :size="16" />
                     </button>
                     <button
                         class="icon-btn-table"
@@ -382,7 +382,7 @@ onMounted(fetchRegions)
                         <KeyRound :size="16" />
                     </button>
                     <button
-                        class="icon-btn-table text-error"
+                        class="icon-btn-table icon-danger"
                         @click="confirmDelete(region)"
                         :title="t('actions.delete')"
                     >
@@ -652,35 +652,6 @@ onMounted(fetchRegions)
 .status-maintenance {
     background: rgba(245, 158, 11, 0.1);
     color: var(--warning-dark);
-}
-
-.table-actions {
-    display: flex;
-    justify-content: center;
-    gap: 8px;
-}
-
-.icon-btn-table {
-    width: 32px;
-    height: 32px;
-    border-radius: 8px;
-    border: none;
-    background: transparent;
-    color: var(--text-tertiary);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    cursor: pointer;
-    transition: all 0.2s;
-}
-
-.icon-btn-table:hover {
-    background-color: var(--bg-tertiary);
-    color: var(--primary-500);
-}
-.icon-btn-table.text-error:hover {
-    background-color: var(--error-light);
-    color: var(--error-dark);
 }
 
 /* Modals */

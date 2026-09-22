@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Plus, Trash2, Bell, Pencil, ToggleLeft, ToggleRight, RefreshCw } from 'lucide-vue-next'
+import { Plus, Trash2, MessageSquare, Pencil, Power, RefreshCw } from 'lucide-vue-next'
 import { useToast } from '../../composables/useToast'
 import { notificationsApi, type NotificationChannel, type CreateChannelPayload } from '../../api/notifications'
 import { useAuthStore } from '../../stores/auth'
@@ -173,7 +173,7 @@ onMounted(fetchChannels)
         >
             <template #empty>
                 <div class="empty-state">
-                    <Bell :size="48" style="opacity: 0.2; margin-bottom: 16px" />
+                    <MessageSquare :size="48" style="opacity: 0.2; margin-bottom: 16px" />
                     <p>{{ t('messages.noData') }}</p>
                 </div>
             </template>
@@ -200,18 +200,19 @@ onMounted(fetchChannels)
             <template #cell-created_at="{ row: ch }">{{ formatDateTime(ch.created_at) }}</template>
 
             <template #cell-actions="{ row: ch }">
-                <div v-if="canManage" class="actions-cell">
+                <div v-if="canManage" class="row-actions">
                     <button
                         class="icon-btn-table"
+                        :class="{ 'is-active': ch.enabled }"
                         @click="toggleEnabled(ch)"
-                        :title="ch.enabled ? 'Disable' : 'Enable'"
+                        :title="ch.enabled ? t('actions.disable') : t('actions.enable')"
                     >
-                        <component :is="ch.enabled ? ToggleRight : ToggleLeft" :size="16" />
+                        <Power :size="16" />
                     </button>
-                    <button class="icon-btn-table" @click="openEdit(ch)">
+                    <button class="icon-btn-table" @click="openEdit(ch)" :title="t('actions.edit')">
                         <Pencil :size="16" />
                     </button>
-                    <button class="icon-btn-table icon-danger" @click="confirmDelete(ch)">
+                    <button class="icon-btn-table icon-danger" @click="confirmDelete(ch)" :title="t('actions.delete')">
                         <Trash2 :size="16" />
                     </button>
                 </div>
@@ -296,42 +297,6 @@ onMounted(fetchChannels)
     white-space: nowrap;
     font-size: 0.8125rem;
     color: var(--text-secondary);
-}
-
-.actions-cell {
-    display: flex;
-    gap: 4px;
-    align-items: center;
-    /* The column is centered; without this the buttons sat left of the header */
-    justify-content: center;
-}
-
-.icon-btn-table {
-    width: 32px;
-    height: 32px;
-    border-radius: 8px;
-    border: none;
-    background: transparent;
-    color: var(--text-tertiary);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    cursor: pointer;
-    transition: all 0.2s;
-}
-
-.icon-btn-table:hover {
-    background-color: var(--bg-tertiary);
-    color: var(--primary-color);
-}
-.icon-btn-table.icon-danger:hover {
-    background-color: var(--error-light);
-    color: var(--error-dark);
-}
-/* 删除类图标按钮：静止态灰、hover 变红（见上面的 :hover 规则）。
-   原先这个类叫 .text-error，与全局「错误文字为红色」的语义相反 */
-.icon-danger {
-    color: var(--text-tertiary);
 }
 
 .status-pill {

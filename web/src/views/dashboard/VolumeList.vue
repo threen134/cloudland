@@ -8,11 +8,13 @@ import { volumesApi, type Volume, type VolumePayload } from '../../api/volumes'
 import { useRegionStore } from '../../stores/region'
 import { isValidName } from '../../utils/validation'
 import { errorMessage } from '../../utils/error'
+import { useVolumeActionGuards, usePollBusyVolumes } from '../../composables/useVolumeActions'
 
-import { HardDrive, Plus, Paperclip, Trash2, Maximize, Search, Check, Copy, RefreshCw } from 'lucide-vue-next'
+import { HardDrive, Plus, Link, Unlink, Trash2, Maximize2, Search, Check, Copy, RefreshCw } from 'lucide-vue-next'
 import { formatDisk } from '../../utils/format'
 import BaseModal from '../../components/modals/BaseModal.vue'
 import DeleteModal from '../../components/modals/DeleteModal.vue'
+import VolumeActionModals from '../../components/volume/VolumeActionModals.vue'
 import PageToolbar from '../../components/base/PageToolbar.vue'
 import StatusBadge from '../../components/base/StatusBadge.vue'
 import DataTable, { type Column } from '../../components/base/DataTable.vue'
@@ -69,6 +71,11 @@ const {
     },
     { watchSources: [computed(() => region.currentRegionId)] }
 )
+
+// Attach / detach / resize dialogs; rows in a transitional state are refreshed quietly until they settle
+const volumeActions = ref<InstanceType<typeof VolumeActionModals> | null>(null)
+const { attachBlocked, detachBlocked, resizeBlocked } = useVolumeActionGuards()
+usePollBusyVolumes(volumes, () => fetchVolumes(true))
 
 const getStatusText = (status: string) => {
     const key = status?.toLowerCase().replace(/ /g, '_')
@@ -252,19 +259,39 @@ onMounted(() => {
             </template>
 
             <template #cell-actions="{ row: volume }">
-                <div class="actions">
-                    <button class="btn btn-ghost btn-sm" :title="$t('actions.attach')">
-                        <Paperclip :size="14" />
-                    </button>
-                    <button class="btn btn-ghost btn-sm" :title="$t('actions.resize')">
-                        <Maximize :size="14" />
+                <div class="row-actions">
+                    <button
+                        v-if="volume.instance"
+                        class="icon-btn-table"
+                        :title="detachBlocked(volume) || $t('actions.detach')"
+                        :disabled="!!detachBlocked(volume)"
+                        @click="volumeActions?.openDetach(volume)"
+                    >
+                        <Unlink :size="16" />
                     </button>
                     <button
-                        class="btn btn-ghost btn-sm text-error"
+                        v-else
+                        class="icon-btn-table"
+                        :title="attachBlocked(volume) || $t('actions.attach')"
+                        :disabled="!!attachBlocked(volume)"
+                        @click="volumeActions?.openAttach(volume)"
+                    >
+                        <Link :size="16" />
+                    </button>
+                    <button
+                        class="icon-btn-table"
+                        :title="resizeBlocked(volume) || $t('actions.resize')"
+                        :disabled="!!resizeBlocked(volume)"
+                        @click="volumeActions?.openResize(volume)"
+                    >
+                        <Maximize2 :size="16" />
+                    </button>
+                    <button
+                        class="icon-btn-table icon-danger"
                         :title="$t('actions.delete')"
                         @click="handleDeleteClick(volume)"
                     >
-                        <Trash2 :size="14" />
+                        <Trash2 :size="16" />
                     </button>
                 </div>
             </template>
@@ -327,6 +354,8 @@ onMounted(() => {
             </template>
         </BaseModal>
 
+        <VolumeActionModals ref="volumeActions" @changed="() => fetchVolumes(true)" />
+
         <DeleteModal
             :show="deleteModalVisible"
             :resource-name="resourceToDelete?.name"
@@ -355,12 +384,6 @@ onMounted(() => {
     text-decoration: underline;
 }
 
-.actions {
-    display: flex;
-    justify-content: center;
-    gap: var(--spacing-2);
-}
-
 /* Modal Styles */
 .checkbox-label {
     display: flex;
@@ -369,5 +392,4 @@ onMounted(() => {
     font-size: var(--font-size-sm);
     cursor: pointer;
 }
-
 </style>

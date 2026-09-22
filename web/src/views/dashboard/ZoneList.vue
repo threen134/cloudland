@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted, computed } from 'vue'
 import { zonesApi, type Zone, type CreateZonePayload } from '../../api/zones'
-import { Search as SearchIcon, MapPin, Plus, RefreshCw, Trash2, Settings2, Loader2, Check, Copy } from 'lucide-vue-next'
+import { Search as SearchIcon, MapPin, Plus, RefreshCw, Trash2, Pencil, Loader2, Check, Copy } from 'lucide-vue-next'
 import { useI18n } from 'vue-i18n'
 import { useToast } from '../../composables/useToast'
 import { useCopyId } from '../../composables/useCopyId'
@@ -221,12 +221,12 @@ onMounted(() => {
             </template>
 
             <template #cell-actions="{ row: zone }">
-                <div class="table-actions">
+                <div class="row-actions">
                     <button class="icon-btn-table" @click.prevent="openEditModal(zone)" :title="t('actions.edit')">
-                        <Settings2 :size="16" />
+                        <Pencil :size="16" />
                     </button>
                     <button
-                        class="icon-btn-table text-error"
+                        class="icon-btn-table icon-danger"
                         @click.prevent="confirmDelete(zone)"
                         :title="t('actions.delete')"
                     >
@@ -392,33 +392,6 @@ onMounted(() => {
 .badge-primary {
     background: rgba(14, 165, 233, 0.1);
     color: var(--primary-color);
-}
-
-.table-actions {
-    display: flex;
-    gap: 8px;
-}
-
-.icon-btn-table {
-    width: 32px;
-    height: 32px;
-    border-radius: 8px;
-    border: none;
-    background: transparent;
-    color: var(--text-tertiary);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    cursor: pointer;
-    transition: all 0.2s;
-}
-.icon-btn-table:hover {
-    background-color: var(--bg-tertiary);
-    color: var(--primary-500);
-}
-.icon-btn-table.text-error:hover {
-    background-color: var(--error-light);
-    color: var(--error-color);
 }
 
 .empty-state {

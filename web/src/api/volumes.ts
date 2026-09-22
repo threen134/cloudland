@@ -62,12 +62,24 @@ export interface VolumePayload {
     bps_burst?: number
 }
 
-/** PATCH /volumes/:id 的请求体 —— apis/volume.go VolumePatchPayload（instance 传 null 表示卸载） */
+/**
+ * PATCH /volumes/:id body (apis/volume.go VolumePatchPayload). Capacity goes through `resize`, not here.
+ * `instance: null` detaches; leaving `instance` out keeps the attachment (e.g. a rename).
+ */
 export interface VolumePatchPayload {
     name?: string
-    size?: number
     instance?: { id: string } | null
 }
+
+/** Statuses during which the backend refuses another attach / detach / resize (model.Volume.IsBusy) */
+export const BUSY_VOLUME_STATUSES: VolumeStatus[] = [
+    'pending',
+    'resizing',
+    'attaching',
+    'detaching',
+    'restoring',
+    'backuping',
+]
 
 export interface VolumeListResponse {
     offset: number
@@ -158,12 +170,10 @@ export const volumesApi = {
         return response.data
     },
 
-    // Resize volume
-    resize: async (id: string, newSize: number): Promise<Volume> => {
-        const response = await client.patch<Volume>(`/volumes/${id}`, {
-            size: newSize,
-        })
-        return response.data
+    // Resize volume (grow only). PATCH ignores `size`; the resize endpoint is the one the gateway
+    // meters against the disk quota. The response body is empty: re-fetch the volume afterwards.
+    resize: async (id: string, newSize: number): Promise<void> => {
+        await client.post(`/volumes/${id}/resize`, { size: newSize })
     },
 }
 

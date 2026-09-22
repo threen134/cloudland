@@ -398,23 +398,23 @@ onMounted(() => {
             </template>
 
             <template #cell-actions="{ row: vpc }">
-                <div class="actions">
-                    <button class="btn btn-ghost btn-sm" :title="$t('actions.edit')" @click="openEditModal(vpc)">
-                        <Pencil :size="14" />
+                <div class="row-actions">
+                    <button class="icon-btn-table" :title="$t('actions.edit')" @click="openEditModal(vpc)">
+                        <Pencil :size="16" />
                     </button>
                     <button
-                        class="btn btn-ghost btn-sm"
+                        class="icon-btn-table"
                         :title="$t('dashboard.buttons.createSubnet')"
                         @click="openCreateSubnetModal(vpc)"
                     >
-                        <Plus :size="14" />
+                        <Plus :size="16" />
                     </button>
                     <button
-                        class="btn btn-ghost btn-sm text-error"
+                        class="icon-btn-table icon-danger"
                         :title="$t('actions.delete')"
                         @click="handleDeleteClick(vpc)"
                     >
-                        <Trash2 :size="14" />
+                        <Trash2 :size="16" />
                     </button>
                 </div>
             </template>
@@ -884,12 +884,6 @@ onMounted(() => {
     font-size: 11px;
     background: none;
     padding: 0;
-}
-
-.actions {
-    display: flex;
-    justify-content: center;
-    gap: var(--spacing-2);
 }
 
 .mt-6 {

@@ -12,7 +12,7 @@ import { useRegionStore } from '../../stores/region'
 
 const region = useRegionStore()
 
-import { Network, Plus, Trash2, Edit, Search, RefreshCw, Check, Copy, ChevronDown, HelpCircle } from 'lucide-vue-next'
+import { Network, Plus, Trash2, Pencil, Search, RefreshCw, Check, Copy, ChevronDown, HelpCircle } from 'lucide-vue-next'
 import DeleteModal from '../../components/modals/DeleteModal.vue'
 import BaseModal from '../../components/modals/BaseModal.vue'
 import PageToolbar from '../../components/base/PageToolbar.vue'
@@ -185,6 +185,86 @@ const getTypeClass = (type: string) => {
         site: 'badge-warning',
     }
     return map[type] || 'badge-gray'
+}
+
+// --- Edit Modal ---
+// Only the name (and the priority of public subnets) is editable here: the type, IP group and DHCP
+// switches of PATCH /subnets are not re-applied to the nodes, so changing them would only edit the record.
+const editModalVisible = ref(false)
+const editing = ref(false)
+const editError = ref('')
+const editTarget = ref<Subnet | null>(null)
+// priority is '' while the input is empty (v-model.number)
+const editForm = ref<{ name: string; priority: number | '' }>({ name: '', priority: 0 })
+const nameChanged = computed(() => editForm.value.name.trim() !== editTarget.value?.name)
+// The create-time name rule only applies to a new name: subnets created through the API may carry
+// names it rejects (e.g. with a dot), and they must stay editable
+const isEditNameValid = computed(
+    () => !!editForm.value.name.trim() && (!nameChanged.value || isValidName(editForm.value.name.trim(), 64))
+)
+const showPriority = computed(() => editTarget.value?.type === 'public')
+const isEditPriorityValid = computed(
+    () =>
+        !showPriority.value ||
+        (typeof editForm.value.priority === 'number' &&
+            Number.isInteger(editForm.value.priority) &&
+            editForm.value.priority >= 0 &&
+            editForm.value.priority <= 100000)
+)
+const priorityChanged = computed(
+    () => showPriority.value && editForm.value.priority !== (editTarget.value?.priority ?? 0)
+)
+
+// Same rule as the backend (services/subnet.go Update): shared VLAN subnets are for system admins only
+const editBlocked = (subnet: Subnet) =>
+    (subnet.type === 'public' || subnet.type === 'private') && !isSystemAdmin.value
+        ? t('dashboard.subnetEdit.adminOnly')
+        : ''
+
+const openEditModal = (subnet: Subnet) => {
+    editTarget.value = subnet
+    editForm.value = { name: subnet.name, priority: subnet.priority ?? 0 }
+    editError.value = ''
+    editModalVisible.value = true
+}
+
+const closeEditModal = () => {
+    editModalVisible.value = false
+    editTarget.value = null
+    editError.value = ''
+}
+
+const handleEditSubnet = async () => {
+    if (!editTarget.value) return
+    if (!isEditNameValid.value) {
+        editError.value = t('messages.invalidHostname')
+        return
+    }
+    if (!isEditPriorityValid.value) {
+        editError.value = t('dashboard.forms.priorityHint')
+        return
+    }
+    // Send only what was changed, so a stale row does not overwrite someone else's edit
+    const payload: Partial<SubnetPayload> = {}
+    if (nameChanged.value) payload.name = editForm.value.name.trim()
+    if (priorityChanged.value) payload.priority = editForm.value.priority as number
+    if (!payload.name && payload.priority === undefined) {
+        closeEditModal()
+        return
+    }
+    editing.value = true
+    editError.value = ''
+    try {
+        await subnetsApi.patch(editTarget.value.id, payload)
+        await fetchSubnets(true)
+        closeEditModal()
+        toast.success(t('messages.updateSuccess'))
+    } catch (err) {
+        console.error('Failed to update subnet:', err)
+        editError.value = errorMessage(err, t('messages.error'))
+    } finally {
+        editing.value = false
+    }
 }
 
 // --- Delete Confirmation Modal ---
@@ -363,16 +443,21 @@ onMounted(() => {
             </template>
 
             <template #cell-actions="{ row: subnet }">
-                <div class="actions">
-                    <button class="btn btn-ghost btn-sm" :title="$t('actions.edit')">
-                        <Edit :size="14" />
+                <div class="row-actions">
+                    <button
+                        class="icon-btn-table"
+                        :title="editBlocked(subnet) || $t('actions.edit')"
+                        :disabled="!!editBlocked(subnet)"
+                        @click="openEditModal(subnet)"
+                    >
+                        <Pencil :size="16" />
                     </button>
                     <button
-                        class="btn btn-ghost btn-sm text-error"
+                        class="icon-btn-table icon-danger"
                         :title="$t('actions.delete')"
                         @click="handleDeleteClick(subnet)"
                     >
-                        <Trash2 :size="14" />
+                        <Trash2 :size="16" />
                     </button>
                 </div>
             </template>
@@ -614,6 +699,76 @@ onMounted(() => {
             </template>
         </BaseModal>
 
+        <!-- Edit Subnet Modal -->
+        <BaseModal
+            :show="editModalVisible"
+            :title="$t('dashboard.subnetEdit.title', { name: editTarget?.name || '' })"
+            :loading="editing"
+            form
+            @close="closeEditModal"
+            @submit="handleEditSubnet"
+        >
+            <div class="form-group">
+                <label class="form-label" for="subnet-edit-name">{{ $t('dashboard.table.name') }} *</label>
+                <input
+                    id="subnet-edit-name"
+                    v-model="editForm.name"
+                    type="text"
+                    :class="['form-input', { 'input-error': !isEditNameValid }]"
+                />
+                <div v-if="!isEditNameValid" class="text-error text-xs mt-1">
+                    {{ $t('messages.invalidHostname') }}
+                </div>
+            </div>
+            <div v-if="showPriority" class="form-group">
+                <label class="form-label" for="subnet-edit-priority">{{ $t('dashboard.forms.priority') }}</label>
+                <input
+                    id="subnet-edit-priority"
+                    v-model.number="editForm.priority"
+                    type="number"
+                    :class="['form-input', { 'input-error': !isEditPriorityValid }]"
+                    min="0"
+                    max="100000"
+                    step="1"
+                    required
+                />
+                <div :class="['form-hint', { 'form-hint-error': !isEditPriorityValid }]">
+                    {{ $t('dashboard.forms.priorityHint') }}
+                </div>
+            </div>
+
+            <div
+                v-if="editError"
+                class="text-error"
+                style="
+                    font-size: var(--font-size-sm);
+                    background: var(--error-light);
+                    padding: var(--spacing-2);
+                    border-radius: var(--radius-sm);
+                "
+            >
+                {{ editError }}
+            </div>
+
+            <template #footer>
+                <button type="button" class="btn btn-secondary" @click="closeEditModal" :disabled="editing">
+                    {{ $t('actions.cancel') }}
+                </button>
+                <button
+                    type="submit"
+                    class="btn btn-primary"
+                    :disabled="editing || !isEditNameValid || !isEditPriorityValid"
+                >
+                    <span
+                        v-if="editing"
+                        class="loading-spinner"
+                        style="width: 16px; height: 16px; border-width: 2px"
+                    ></span>
+                    {{ $t('actions.save') }}
+                </button>
+            </template>
+        </BaseModal>
+
         <DeleteModal
             :show="deleteModalVisible"
             :resource-name="resourceToDelete?.name"
@@ -655,12 +810,6 @@ onMounted(() => {
 
 .text-success {
     color: var(--success-color);
-}
-
-.actions {
-    display: flex;
-    justify-content: center;
-    gap: var(--spacing-2);
 }
 
 .cidr-group {
@@ -756,6 +905,10 @@ onMounted(() => {
     font-size: 0.7rem;
     color: var(--text-light);
     margin-top: 4px;
+}
+
+.form-hint-error {
+    color: var(--error-color);
 }
 
 .tooltip-wrapper {

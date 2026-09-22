@@ -9,10 +9,11 @@ import { instancesApi, type Instance } from '../../api/instances'
 import {
     Play,
     Square,
+    Pause,
     RotateCw,
     Trash2,
     Plus,
-    Terminal,
+    SquareTerminal,
     MoreVertical,
     Search,
     Check,
@@ -669,7 +670,7 @@ onUnmounted(() => {
             </template>
 
             <template #cell-actions="{ row: instance }">
-                <div class="actions">
+                <div class="row-actions">
                     <!-- 菜单展开时把这一格抬到上层：原先是给整行加 .active-row -->
                     <div
                         class="action-dropdown"
@@ -677,11 +678,11 @@ onUnmounted(() => {
                         :class="{ 'active-row': activeActionMenuId === instance.id }"
                     >
                         <button
-                            class="btn btn-ghost btn-sm"
+                            class="icon-btn-table"
                             @click.stop="toggleActionMenu(instance.id)"
                             :title="t('dashboard.instanceDetail.more')"
                         >
-                            <MoreVertical :size="14" />
+                            <MoreVertical :size="16" />
                         </button>
                         <Transition name="dropdown">
                             <div
@@ -718,10 +719,10 @@ onUnmounted(() => {
                                 </button>
 
                                 <button class="dropdown-item" @click="openConsole(instance)">
-                                    <Terminal :size="14" /> {{ t('dashboard.instanceDetail.console') }}
+                                    <Monitor :size="14" /> {{ t('dashboard.instanceDetail.console') }}
                                 </button>
                                 <button class="dropdown-item" @click="openConsole(instance, 'serial')">
-                                    <Terminal :size="14" /> {{ t('dashboard.console.serial.title') }}
+                                    <SquareTerminal :size="14" /> {{ t('dashboard.console.serial.title') }}
                                 </button>
 
                                 <div class="dropdown-divider"></div>
@@ -756,11 +757,7 @@ onUnmounted(() => {
                                         !!actionLoading[instance.id] || instance.status?.toLowerCase() !== 'running'
                                     "
                                 >
-                                    <span
-                                        style="font-size: 14px; width: 14px; display: inline-block; text-align: center"
-                                        >⏸</span
-                                    >
-                                    {{ t('dashboard.instanceDetail.pause') }}
+                                    <Pause :size="14" /> {{ t('dashboard.instanceDetail.pause') }}
                                 </button>
                                 <button
                                     v-else
@@ -1167,12 +1164,6 @@ onUnmounted(() => {
 .fade-leave-to {
     opacity: 0;
     transform: translateY(-5px);
-}
-
-.actions {
-    display: flex;
-    justify-content: center;
-    gap: var(--spacing-2);
 }
 
 .btn:disabled {

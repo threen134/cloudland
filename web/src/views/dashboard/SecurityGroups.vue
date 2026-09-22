@@ -9,7 +9,7 @@ import { useRegionStore } from '../../stores/region'
 import { errorMessage } from '../../utils/error'
 import { formatToMinute } from '../../utils/format'
 
-import { Shield, Plus, Trash2, Search, RefreshCw, Edit, HelpCircle, Check, Copy } from 'lucide-vue-next'
+import { Shield, Plus, Trash2, Search, RefreshCw, Pencil, HelpCircle, Check, Copy } from 'lucide-vue-next'
 import PageToolbar from '../../components/base/PageToolbar.vue'
 import BaseModal from '../../components/modals/BaseModal.vue'
 import DeleteModal from '../../components/modals/DeleteModal.vue'
@@ -372,16 +372,16 @@ onUnmounted(() => {
             </template>
 
             <template #cell-actions="{ row: group }">
-                <div class="actions">
+                <div class="row-actions">
                     <button
-                        class="btn btn-ghost btn-sm"
+                        class="icon-btn-table"
                         :title="$t('actions.edit')"
                         @click="handleEditClick(group as SecurityGroup)"
                     >
-                        <Edit :size="14" />
+                        <Pencil :size="16" />
                     </button>
                     <button
-                        class="btn btn-ghost btn-sm text-error"
+                        class="icon-btn-table icon-danger"
                         :title="
                             group.is_default
                                 ? $t('dashboard.securityGroupDetail.defaultNotDeletable')
@@ -390,7 +390,7 @@ onUnmounted(() => {
                         :disabled="group.is_default"
                         @click="handleDeleteClick(group as SecurityGroup)"
                     >
-                        <Trash2 :size="14" />
+                        <Trash2 :size="16" />
                     </button>
                 </div>
             </template>
@@ -635,17 +635,6 @@ onUnmounted(() => {
 .direction-badge.egress {
     background: var(--info-light);
     color: var(--info-dark);
-}
-
-.actions {
-    display: flex;
-    justify-content: center;
-    gap: 2px;
-}
-
-.actions .btn {
-    padding-left: 6px;
-    padding-right: 6px;
 }
 
 .error-box {

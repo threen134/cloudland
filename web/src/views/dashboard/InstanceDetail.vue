@@ -17,6 +17,7 @@ import {
     ArrowLeft,
     Play,
     Square,
+    Pause,
     RotateCw,
     Trash2,
     Server,
@@ -703,7 +704,7 @@ onUnmounted(() => {
                                     :disabled="!!actionLoading || instance.status?.toLowerCase() !== 'running'"
                                 >
                                     <span v-if="actionLoading === 'pause'" class="loading-spinner small"></span>
-                                    <span v-else style="font-size: 14px">⏸</span>
+                                    <Pause v-else :size="14" />
                                     {{
                                         actionLoading === 'pause'
                                             ? $t('dashboard.instanceDetail.pausing')
@@ -726,8 +727,7 @@ onUnmounted(() => {
                                 </button>
                                 <div class="dropdown-divider"></div>
                                 <button class="dropdown-item" @click="openConsole()">
-                                    <img src="/images/vnc.svg" alt="VNC" width="14" height="14" />
-                                    {{ $t('actions.console') }}
+                                    <Monitor :size="14" /> {{ $t('actions.console') }}
                                 </button>
                                 <button class="dropdown-item" data-console="serial" @click="openConsole('serial')">
                                     <SquareTerminal :size="14" /> {{ $t('dashboard.console.serial.title') }}
@@ -740,7 +740,7 @@ onUnmounted(() => {
                                     <KeyRound :size="14" /> {{ $t('dashboard.instanceDetail.resetPassword') }}
                                 </button>
                                 <button class="dropdown-item" @click="openResizeModal">
-                                    <Maximize2 :size="14" /> {{ $t('actions.resize') }}
+                                    <Maximize2 :size="14" /> {{ $t('dashboard.instanceDetail.resize') }}
                                 </button>
                                 <div class="dropdown-divider"></div>
                                 <button class="dropdown-item dropdown-item-danger" @click="handleDeleteClick">

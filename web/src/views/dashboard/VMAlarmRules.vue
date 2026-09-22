@@ -644,7 +644,7 @@ onMounted(fetchRules)
             <template #cell-channels="{ row: rule }">{{ ruleChannelCounts[rule.uuid] ?? '…' }}</template>
 
             <template #cell-actions="{ row: rule }">
-                <div class="actions-cell">
+                <div class="row-actions">
                     <button
                         class="icon-btn-table"
                         @click.stop="openBindVMs(rule)"
@@ -661,13 +661,17 @@ onMounted(fetchRules)
                     </button>
                     <button
                         class="icon-btn-table"
-                        :class="rule.enable ? 'text-success' : 'text-secondary'"
+                        :class="{ 'is-active': rule.enable }"
                         @click.stop="toggleRuleStatus(rule)"
                         :title="rule.enable ? t('actions.disable') : t('actions.enable')"
                     >
-                        <Power :size="14" />
+                        <Power :size="16" />
                     </button>
-                    <button class="icon-btn-table" @click.stop="confirmDelete(rule)" :title="t('actions.delete')">
+                    <button
+                        class="icon-btn-table icon-danger"
+                        @click.stop="confirmDelete(rule)"
+                        :title="t('actions.delete')"
+                    >
                         <Trash2 :size="16" />
                     </button>
                 </div>
@@ -1230,13 +1234,6 @@ onMounted(fetchRules)
     text-decoration: underline;
 }
 
-.actions-cell {
-    display: flex;
-    gap: 4px;
-    align-items: center;
-    justify-content: center;
-}
-
 .clickable-name {
     color: var(--primary-600);
     cursor: pointer;
@@ -1245,34 +1242,6 @@ onMounted(fetchRules)
 
 .clickable-name:hover {
     text-decoration: underline;
-}
-
-.icon-btn-table {
-    width: 32px;
-    height: 32px;
-    border-radius: 8px;
-    border: none;
-    background: transparent;
-    color: var(--text-tertiary);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    cursor: pointer;
-    transition: all 0.2s;
-}
-
-.icon-btn-table:hover {
-    background-color: var(--bg-tertiary);
-    color: var(--primary-color);
-}
-.icon-btn-table.icon-danger:hover {
-    background-color: var(--error-light);
-    color: var(--error-dark);
-}
-/* 删除类图标按钮：静止态灰、hover 变红（见上面的 :hover 规则）。
-   原先这个类叫 .text-error，与全局「错误文字为红色」的语义相反 */
-.icon-danger {
-    color: var(--text-tertiary);
 }
 
 .text-center {
@@ -1377,9 +1346,7 @@ onMounted(fetchRules)
     line-height: 1.2;
 }
 
-/* 校验失败的提示。原先复用的是本文件里的 .text-error，而那个类在这里被当成
-   「删除按钮静止态的灰」（hover 才变红，见 .icon-btn-table.text-error:hover），
-   加上 .input-tip 本身也是灰的且定义在后面，错误提示一直是灰色的 */
+/* Validation error under an input; .input-tip is grey and must not be reused for it */
 .input-tip-error {
     color: var(--error-color);
 }

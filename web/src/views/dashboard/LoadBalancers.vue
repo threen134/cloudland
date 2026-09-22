@@ -7,7 +7,7 @@ import { useRegionStore } from '../../stores/region'
 import { loadBalancersApi, vpcsApi, type LoadBalancer, type VPC, type LoadBalancerPayload } from '../../api/networks'
 import { isValidName } from '../../utils/validation'
 
-import { GitFork, Plus, Trash2, Search, Edit, RefreshCw, Check, Copy } from 'lucide-vue-next'
+import { GitFork, Plus, Trash2, Search, Pencil, RefreshCw, Check, Copy } from 'lucide-vue-next'
 import { quotaErrorMessage } from '../../utils/quotaError'
 import { errorMessage } from '../../utils/error'
 import BaseModal from '../../components/modals/BaseModal.vue'
@@ -334,20 +334,20 @@ onUnmounted(() => {
             </template>
 
             <template #cell-actions="{ row: lb }">
-                <div class="actions">
+                <div class="row-actions">
                     <button
-                        class="btn btn-ghost btn-sm"
+                        class="icon-btn-table"
                         :title="$t('actions.edit')"
                         @click="handleEditClick(lb as LoadBalancer)"
                     >
-                        <Edit :size="14" />
+                        <Pencil :size="16" />
                     </button>
                     <button
-                        class="btn btn-ghost btn-sm text-error"
+                        class="icon-btn-table icon-danger"
                         :title="$t('actions.delete')"
                         @click="handleDeleteClick(lb as LoadBalancer)"
                     >
-                        <Trash2 :size="14" />
+                        <Trash2 :size="16" />
                     </button>
                 </div>
             </template>
@@ -518,12 +518,6 @@ onUnmounted(() => {
 .resource-link:hover .resource-name {
     color: var(--primary-600);
     text-decoration: underline;
-}
-
-.actions {
-    display: flex;
-    justify-content: center;
-    gap: var(--spacing-2);
 }
 
 /* Modal Styles */

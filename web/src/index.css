@@ -1138,6 +1138,59 @@ button:disabled {
     padding: 4px 0;
 }
 
+/* Row actions in every table (lists and detail sub-tables): icon-only 32px buttons, name in title.
+   Grey at rest so a column of rows does not turn into a wall of red trash cans; destructive
+   buttons (.icon-danger) only turn red on hover. .is-active marks an on/off toggle that is on.
+   Pages must not redefine these: a scoped copy outranks the global rule. */
+.row-actions {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+}
+
+.icon-btn-table {
+    width: 32px;
+    height: 32px;
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    border: none;
+    border-radius: var(--radius-sm);
+    background: transparent;
+    color: var(--text-tertiary);
+    cursor: pointer;
+    transition:
+        background-color 0.15s,
+        color 0.15s;
+}
+
+.icon-btn-table:hover:not(:disabled) {
+    background-color: var(--bg-tertiary);
+    color: var(--primary-color);
+}
+
+.icon-btn-table.icon-danger:hover:not(:disabled) {
+    background-color: var(--error-light);
+    color: var(--error-dark);
+}
+
+.icon-btn-table.is-active {
+    color: var(--success-color);
+}
+
+.icon-btn-table:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
+
+.icon-btn-table:focus-visible {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 1px;
+}
+
 /* Common Specc/Arch/Tag styles */
 /* Compact & Softened Specs Style */
 .specs-display {

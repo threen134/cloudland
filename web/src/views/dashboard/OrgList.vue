@@ -12,7 +12,7 @@ import {
     Plus,
     Building2,
     Trash2,
-    Edit2,
+    Pencil,
     User,
     Search,
     Gauge,
@@ -381,54 +381,54 @@ const handleUpdateStatus = async (orgId: string, status: number) => {
             <template #cell-created="{ row: org }">{{ org.created_at || '-' }}</template>
 
             <template #cell-actions="{ row: org }">
-                <div class="actions">
+                <div class="row-actions">
                     <button
-                        class="btn btn-ghost btn-sm"
+                        class="icon-btn-table"
                         :title="$t('actions.edit')"
                         @click="openEditModal(org as Organization)"
                     >
-                        <Edit2 :size="14" />
+                        <Pencil :size="16" />
                     </button>
                     <button
-                        class="btn btn-ghost btn-sm"
+                        class="icon-btn-table"
                         :title="$t('quota.manage')"
                         @click="openQuotaModal(org as Organization)"
                     >
-                        <Gauge :size="14" />
+                        <Gauge :size="16" />
                     </button>
                     <!-- Admin Status Actions -->
                     <template v-if="isSuperuser">
                         <button
                             v-if="org.status !== 1"
-                            class="btn btn-ghost btn-sm text-success"
+                            class="icon-btn-table"
                             :title="$t('actions.enable')"
                             @click="handleUpdateStatus(org.uuid, 1)"
                         >
-                            <PlayCircle :size="14" />
+                            <PlayCircle :size="16" />
                         </button>
                         <button
                             v-if="org.status === 1"
-                            class="btn btn-ghost btn-sm text-warning"
-                            :title="$t('dashboard.org.status.suspended')"
+                            class="icon-btn-table"
+                            :title="$t('actions.suspend')"
                             @click="handleUpdateStatus(org.uuid, 2)"
                         >
-                            <PauseCircle :size="14" />
+                            <PauseCircle :size="16" />
                         </button>
                         <button
                             v-if="org.status !== 3"
-                            class="btn btn-ghost btn-sm text-error"
+                            class="icon-btn-table icon-danger"
                             :title="$t('actions.disable')"
                             @click="handleUpdateStatus(org.uuid, 3)"
                         >
-                            <ShieldAlert :size="14" />
+                            <ShieldAlert :size="16" />
                         </button>
                     </template>
                     <button
-                        class="btn btn-ghost btn-sm text-error"
+                        class="icon-btn-table icon-danger"
                         :title="$t('actions.delete')"
                         @click="handleDeleteClick(org as Organization)"
                     >
-                        <Trash2 :size="14" />
+                        <Trash2 :size="16" />
                     </button>
                 </div>
             </template>
@@ -703,12 +703,6 @@ const handleUpdateStatus = async (orgId: string, status: number) => {
     color: var(--text-tertiary);
     font-size: var(--font-size-tiny);
     padding-left: 16px;
-}
-
-.actions {
-    display: flex;
-    justify-content: center;
-    gap: var(--spacing-2);
 }
 
 /* Modal Styles */

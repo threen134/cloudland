@@ -15,7 +15,7 @@ import {
 } from '../../api/networks'
 import { instancesApi, type Instance } from '../../api/instances'
 import {
-    Globe2,
+    Globe,
     Plus,
     Link,
     Unlink,
@@ -36,6 +36,7 @@ import PaginationBar from '../../components/base/PaginationBar.vue'
 import { useRegionStore } from '../../stores/region'
 import { quotaErrorMessage } from '../../utils/quotaError'
 import { errorMessage } from '../../utils/error'
+import { primaryIp } from '../../utils/instance'
 
 const region = useRegionStore()
 
@@ -142,7 +143,7 @@ const fetchInstances = async () => {
 
 // 下拉里显示实例的内网地址。原先写的是 inst.ip_address，实例响应上没有这个字段，
 // 括号里一直显示的是 UUID
-const primaryIp = (inst: Instance) => inst.interfaces?.find((iface) => iface.is_primary)?.ip_address || '-'
+const instanceIp = (inst: Instance) => primaryIp(inst) || '-'
 
 const openCreateModal = () => {
     newFipForm.value = {
@@ -398,7 +399,7 @@ watch(
                     <p>{{ $t('messages.noResults') }}</p>
                 </div>
                 <div v-else>
-                    <Globe2 :size="48" style="opacity: 0.3; margin-bottom: 16px" />
+                    <Globe :size="48" style="opacity: 0.3; margin-bottom: 16px" />
                     <p>{{ $t('messages.noFloatingIPs') }}</p>
                 </div>
             </template>
@@ -407,7 +408,7 @@ watch(
                 <router-link :to="{ name: 'floating-ip-detail', params: { id: fip.id } }" class="resource-link">
                     <div class="resource-info">
                         <div class="resource-icon">
-                            <Globe2 :size="16" />
+                            <Globe :size="16" />
                         </div>
                         <div>
                             <div class="resource-name">{{ fip.name || $t('messages.unnamed') }}</div>
@@ -450,32 +451,32 @@ watch(
             </template>
 
             <template #cell-actions="{ row: fip }">
-                <div class="actions">
+                <div class="row-actions">
                     <button
                         v-if="!fip.target_interface"
-                        class="btn btn-ghost btn-sm"
+                        class="icon-btn-table"
                         :title="$t('actions.attach')"
                         :disabled="fip.type !== 'floating' && fip.type !== 'site'"
                         @click="(fip.type === 'floating' || fip.type === 'site') && handleAttachClick(fip)"
                     >
-                        <Link :size="14" /> {{ $t('actions.attach') }}
+                        <Link :size="16" />
                     </button>
                     <button
                         v-else
-                        class="btn btn-ghost btn-sm"
+                        class="icon-btn-table"
                         :title="$t('actions.detach')"
                         :disabled="fip.type !== 'floating' && fip.type !== 'site'"
                         @click="(fip.type === 'floating' || fip.type === 'site') && handleDetachClick(fip)"
                     >
-                        <Unlink :size="14" /> {{ $t('actions.detach') }}
+                        <Unlink :size="16" />
                     </button>
                     <button
-                        class="btn btn-ghost btn-sm text-error"
+                        class="icon-btn-table icon-danger"
                         :title="$t('actions.release')"
                         :disabled="fip.type !== 'floating' && fip.type !== 'loadbalancer'"
                         @click="(fip.type === 'floating' || fip.type === 'loadbalancer') && handleDeleteClick(fip)"
                     >
-                        <Trash2 :size="14" />
+                        <Trash2 :size="16" />
                     </button>
                 </div>
             </template>
@@ -633,7 +634,7 @@ watch(
                     <select id="instanceId" name="instanceId" v-model="newFipForm.instanceId" class="form-input">
                         <option value="">{{ $t('dashboard.floatingIPDetail.selectInstance') }}</option>
                         <option v-for="inst in instances" :key="inst.id" :value="inst.id">
-                            {{ inst.hostname }} ({{ primaryIp(inst) }})
+                            {{ inst.hostname }} ({{ instanceIp(inst) }})
                         </option>
                     </select>
                 </div>
@@ -711,7 +712,7 @@ watch(
                     <select id="attachInstanceId" name="instanceId" v-model="selectedInstanceId" class="form-input">
                         <option value="">{{ $t('dashboard.floatingIPDetail.selectInstance') }}</option>
                         <option v-for="inst in instances" :key="inst.id" :value="inst.id">
-                            {{ inst.hostname }} ({{ primaryIp(inst) }})
+                            {{ inst.hostname }} ({{ instanceIp(inst) }})
                         </option>
                     </select>
                 </div>
@@ -816,12 +817,6 @@ watch(
 .resource-link:hover .resource-name {
     color: var(--primary-600);
     text-decoration: underline;
-}
-
-.actions {
-    display: flex;
-    justify-content: center;
-    gap: var(--spacing-2);
 }
 
 .monospace {

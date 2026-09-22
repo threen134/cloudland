@@ -540,19 +540,19 @@ onUnmounted(() => {
                             <td>
                                 <div class="actions">
                                     <button
-                                        class="btn btn-ghost btn-sm"
+                                        class="icon-btn-table"
                                         :title="$t('dashboard.org.changeRole')"
                                         @click="openChangeRole(member)"
                                     >
-                                        <Shield :size="14" />
+                                        <Shield :size="16" />
                                     </button>
                                     <button
-                                        class="btn btn-ghost btn-sm text-error"
+                                        class="icon-btn-table icon-danger"
                                         :title="$t('dashboard.org.removeMember')"
                                         @click="openRemoveMember(member)"
                                         :disabled="member.is_owner"
                                     >
-                                        <Trash2 :size="14" />
+                                        <Trash2 :size="16" />
                                     </button>
                                 </div>
                             </td>

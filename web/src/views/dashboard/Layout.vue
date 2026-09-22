@@ -33,7 +33,7 @@ import {
     Monitor,
     Users,
     Globe,
-    Link,
+    Languages,
     PanelLeftClose,
     PanelLeftOpen,
     HelpCircle,
@@ -327,7 +327,7 @@ onUnmounted(() => {
                             <span>{{ $t('dashboard.subnets') }}</span>
                         </RouterLink>
                         <RouterLink to="/dashboard/floating-ips" class="nav-item" active-class="active">
-                            <Link :size="18" />
+                            <Globe :size="18" />
                             <span>{{ $t('dashboard.floatingIPs') }}</span>
                         </RouterLink>
                         <RouterLink to="/dashboard/security-groups" class="nav-item" active-class="active">
@@ -496,7 +496,7 @@ onUnmounted(() => {
                         @mouseleave="activeDropdown = null"
                     >
                         <button class="lang-toggle-btn">
-                            <Globe :size="16" />
+                            <Languages :size="16" />
                             <span>{{ $t(LANGUAGE_LABEL_KEYS[currentLang]) }}</span>
                             <ChevronDown :size="14" />
                         </button>
