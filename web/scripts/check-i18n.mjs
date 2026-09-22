@@ -110,7 +110,7 @@ const TECH_WORDS = new Set([
 
 // Allowed when the whole string matches: brand names, symbols, terms left untranslated
 const ALLOW_EXACT = new Set([
-    'CloudLand', 'Trace ID:', 'N/A', '···', '••••••••',
+    'CloudLand', 'Trace ID:', 'N/A', '···', '••••••••', 'Linux', 'Windows',
 ])
 
 // Allowed when the whole string matches: symbols and digits only, sample values, snippets

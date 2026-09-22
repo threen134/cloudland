@@ -1331,10 +1331,27 @@ export default {
             resizeTitle: 'Resize volume {name}',
             currentSize: 'Current size',
             newSize: 'New size (GB)',
-            resizeHint: 'Volumes can only grow. Extend the partition and file system inside the instance afterwards.',
-            resizeAttachedWarning:
-                'This volume is attached to instance {instance}: if it is running, it is force-stopped during the resize and started again afterwards; a stopped instance stays stopped.',
             resizeTooSmall: 'The new size must be larger than the current {size} GB',
+            resizeHint: 'Volumes can only grow.',
+            resizeOnline:
+                'Instance {instance} does not need to stop. Afterwards, grow the partition and file system inside it:',
+            resizeDetached: 'If the volume already holds a file system, grow it inside the instance after attaching:',
+            guideLinuxFind:
+                'Find the disk that grew with {cmd}; the commands below take the device name the instance shows{target}',
+            guideTargetRef: ' (the platform lists it as {target}, which may differ inside the instance)',
+            guideLinuxBootAuto: 'Images with cloud-init grow the root partition and file system on the next reboot.',
+            guideLinuxBootManual:
+                'Without a reboot: find the root partition number with {lsblk}, run {growpart}, then {ext4} or {xfs} depending on the file system',
+            guideLinuxLvm: 'With the root on LVM, run {cmd} and {lvextend} after growpart instead',
+            phDevice: 'device',
+            phPart: 'N',
+            phLv: 'lv-path',
+            guideLinuxData: 'ext4: {ext4}; xfs: {xfs}',
+            guideLinuxPartition: 'With a partition on the disk, run {cmd} first, then the step above on that partition',
+            guideWindows: 'Disk Management → Action → Rescan Disks, then right-click the volume → Extend Volume',
+            guideWindowsBoot:
+                'Disk Management → Action → Rescan Disks, then right-click C: → Extend Volume; a recovery partition right after C: has to be removed first',
+            mountPoint: 'mountpoint',
             resizeSubmitted: 'Resize request submitted',
             unavailableInStatus: 'Not available while the volume is {status}',
         },

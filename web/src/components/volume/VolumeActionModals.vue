@@ -4,7 +4,7 @@
 // the backend only queues the node command, so the volume passes through attaching / detaching / resizing.
 import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { AlertTriangle } from 'lucide-vue-next'
+import { AlertTriangle, Info } from 'lucide-vue-next'
 import BaseModal from '../modals/BaseModal.vue'
 import { volumesApi, type Volume } from '../../api/volumes'
 import { instancesApi, type Instance } from '../../api/instances'
@@ -93,6 +93,23 @@ const openResize = (volume: Volume) => {
     newSize.value = volume.size + 10
 }
 const resizeTooSmall = computed(() => !!target.value && !(newSize.value > target.value.size))
+
+// What the guest still has to do once the disk has grown (a running VM is resized online).
+// The guest names disks in the order it sees them, so a data disk's device inside the VM is not
+// necessarily the platform's target (vdb, vdc ...): the steps start from lsblk and use placeholders,
+// with the target only as a reference. The boot disk is the first virtio disk (vda), but which
+// partition holds the root and on what file system depends on the image.
+const targetRef = computed(() =>
+    target.value?.instance && target.value.target
+        ? t('dashboard.volumeActions.guideTargetRef', { target: target.value.target })
+        : ''
+)
+const placeholder = computed(() => ({
+    dev: t('dashboard.volumeActions.phDevice'),
+    part: t('dashboard.volumeActions.phPart'),
+    mount: t('dashboard.volumeActions.mountPoint'),
+    lv: t('dashboard.volumeActions.phLv'),
+}))
 const submitResize = async () => {
     if (!target.value || resizeTooSmall.value) return
     await submit(() => volumesApi.resize(target.value!.id, newSize.value), 'dashboard.volumeActions.resizeSubmitted')
@@ -175,7 +192,7 @@ defineExpose({ openAttach, openDetach, openResize })
         <p class="modal-text">
             {{ t('dashboard.volumeActions.detachConfirm', { name: volumeName, instance: instanceName }) }}
         </p>
-        <p class="modal-note">
+        <p class="modal-note icon-row">
             <AlertTriangle :size="16" />
             <span>{{ t('dashboard.volumeActions.detachHint') }}</span>
         </p>
@@ -220,10 +237,93 @@ defineExpose({ openAttach, openDetach, openResize })
             </p>
             <p v-else class="form-hint">{{ t('dashboard.volumeActions.resizeHint') }}</p>
         </div>
-        <p v-if="target?.instance" class="modal-note">
-            <AlertTriangle :size="16" />
-            <span>{{ t('dashboard.volumeActions.resizeAttachedWarning', { instance: instanceName }) }}</span>
-        </p>
+        <div class="guest-steps">
+            <p class="guest-steps-title icon-row">
+                <Info :size="16" />
+                <span>{{
+                    target?.instance
+                        ? t('dashboard.volumeActions.resizeOnline', { instance: instanceName })
+                        : t('dashboard.volumeActions.resizeDetached')
+                }}</span>
+            </p>
+            <dl>
+                <dt>Linux</dt>
+                <template v-if="target?.booting">
+                    <dd>{{ t('dashboard.volumeActions.guideLinuxBootAuto') }}</dd>
+                    <dd>
+                        <i18n-t keypath="dashboard.volumeActions.guideLinuxBootManual" tag="span" scope="global">
+                            <template #lsblk><code>lsblk</code></template>
+                            <template #growpart>
+                                <code
+                                    >growpart /dev/vda <var>{{ placeholder.part }}</var></code
+                                >
+                            </template>
+                            <template #ext4>
+                                <code
+                                    >resize2fs /dev/vda<var>{{ placeholder.part }}</var></code
+                                >
+                            </template>
+                            <template #xfs><code>xfs_growfs /</code></template>
+                        </i18n-t>
+                    </dd>
+                    <dd>
+                        <i18n-t keypath="dashboard.volumeActions.guideLinuxLvm" tag="span" scope="global">
+                            <template #cmd>
+                                <code
+                                    >pvresize /dev/vda<var>{{ placeholder.part }}</var></code
+                                >
+                            </template>
+                            <template #lvextend>
+                                <code
+                                    >lvextend -r -l +100%FREE <var>{{ placeholder.lv }}</var></code
+                                >
+                            </template>
+                        </i18n-t>
+                    </dd>
+                </template>
+                <template v-else>
+                    <dd>
+                        <i18n-t keypath="dashboard.volumeActions.guideLinuxFind" tag="span" scope="global">
+                            <template #cmd><code>lsblk</code></template>
+                            <template #target>{{ targetRef }}</template>
+                        </i18n-t>
+                    </dd>
+                    <dd>
+                        <i18n-t keypath="dashboard.volumeActions.guideLinuxData" tag="span" scope="global">
+                            <template #ext4>
+                                <code
+                                    >resize2fs /dev/<var>{{ placeholder.dev }}</var></code
+                                >
+                            </template>
+                            <template #xfs>
+                                <code
+                                    >xfs_growfs <var>{{ placeholder.mount }}</var></code
+                                >
+                            </template>
+                        </i18n-t>
+                    </dd>
+                    <dd>
+                        <i18n-t keypath="dashboard.volumeActions.guideLinuxPartition" tag="span" scope="global">
+                            <template #cmd>
+                                <!-- the space goes through an expression: Vue drops whitespace that contains a line break between two elements -->
+                                <code
+                                    >growpart /dev/<var>{{ placeholder.dev }}</var
+                                    >{{ ' ' }}<var>{{ placeholder.part }}</var></code
+                                >
+                            </template>
+                        </i18n-t>
+                    </dd>
+                </template>
+                <dt>Windows</dt>
+                <dd>
+                    {{
+                        target?.booting
+                            ? t('dashboard.volumeActions.guideWindowsBoot')
+                            : t('dashboard.volumeActions.guideWindows')
+                    }}
+                </dd>
+            </dl>
+        </div>
         <div v-if="error" class="modal-error">{{ error }}</div>
 
         <template #footer>
@@ -263,10 +363,19 @@ defineExpose({ openAttach, openDetach, openResize })
     line-height: 1.6;
 }
 
-.modal-note {
+/* Icon + text on one row: the warning note and the guidance title */
+.icon-row {
     display: flex;
     gap: var(--spacing-2);
     align-items: flex-start;
+}
+
+.icon-row > svg {
+    flex-shrink: 0;
+    margin-top: 3px;
+}
+
+.modal-note {
     margin: 0 0 var(--spacing-3);
     padding: var(--spacing-3);
     border-radius: var(--radius-sm);
@@ -276,9 +385,53 @@ defineExpose({ openAttach, openDetach, openResize })
     line-height: 1.5;
 }
 
-.modal-note svg {
-    flex-shrink: 0;
-    margin-top: 2px;
+.guest-steps {
+    margin: 0 0 var(--spacing-3);
+    padding: var(--spacing-3);
+    border-radius: var(--radius-sm);
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-light);
+    font-size: var(--font-size-sm);
+    line-height: 1.6;
+    color: var(--text-secondary);
+}
+
+.guest-steps-title {
+    margin: 0 0 var(--spacing-2);
+    color: var(--text-primary);
+}
+
+.guest-steps-title svg {
+    color: var(--primary-color);
+}
+
+.guest-steps dl {
+    display: grid;
+    grid-template-columns: 64px minmax(0, 1fr);
+    gap: var(--spacing-1) var(--spacing-2);
+    margin: 0 0 0 24px;
+}
+
+.guest-steps dt {
+    font-weight: 500;
+    color: var(--text-primary);
+}
+
+/* A Linux entry can take two lines; they all belong to the one dt */
+.guest-steps dd {
+    grid-column: 2;
+    margin: 0;
+}
+
+.guest-steps code {
+    padding: 1px 5px;
+    border-radius: 4px;
+    background: var(--bg-tertiary);
+    font-family: var(--font-family-mono);
+    font-size: var(--font-size-xs);
+    color: var(--text-primary);
+    /* break long commands only where they must, not in the middle of every word */
+    overflow-wrap: anywhere;
 }
 
 .modal-error {
