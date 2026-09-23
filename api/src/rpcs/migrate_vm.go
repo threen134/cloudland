@@ -15,17 +15,11 @@ import (
 
 	. "api/src/common"
 	"api/src/model"
+	"api/src/services"
 )
 
 func init() {
 	Add("migrate_vm", MigrateVM)
-}
-
-type VolumeInfo struct {
-	ID      int64  `json:"id"`
-	UUID    string `json:"uuid"`
-	Device  string `json:"device"`
-	Booting bool   `json:"booting"`
 }
 
 func execSourceMigrate(ctx context.Context, instance *model.Instance, migration *model.Migration, taskID int64, migrationScript, migrationType string) (err error) {
@@ -42,36 +36,21 @@ func execSourceMigrate(ctx context.Context, instance *model.Instance, migration 
 		logger.Ctx(ctx).Error("Failed to query source hyper", err)
 		return
 	}
-	volumes := []*VolumeInfo{}
-	if len(instance.Volumes) == 0 {
-		err = db.Where("instance_id = ?", instance.ID).Find(&instance.Volumes).Error
-		if err != nil {
-			logger.Ctx(ctx).Error("Failed to query source hyper", err)
-			return
-		}
-	}
-	for _, volume := range instance.Volumes {
-		volumes = append(volumes, &VolumeInfo{
-			ID:      volume.ID,
-			UUID:    volume.GetOriginVolumeID(),
-			Device:  volume.Target,
-			Booting: volume.Booting,
-		})
-	}
-	volumesJson, err := json.Marshal(volumes)
+	// The scripts work from the disk plan: which file goes where on the target
+	planJson, err := json.Marshal(services.MigrationPlan(migration))
 	if err != nil {
-		logger.Ctx(ctx).Error("Failed to marshal instance json data", err)
+		logger.Ctx(ctx).Error("Failed to marshal the disk plan", err)
 		return
 	}
 	if sourceHyper.Status != 10 {
-		// source_migration.sh 经 ssh / qemu+ssh 连接目标节点，用内网 IP：主机名不一定可解析，known_hosts 通常也只记录 IP
-		// 其他脚本仍传主机名（回滚时 WDS 按节点主机名查 USS 网关）
+		// source_migration.sh reaches the target over ssh / qemu+ssh by its internal IP: host names may not resolve,
+		// and known_hosts usually records the IP only
 		targetAddr := targetHyper.Hostname
-		if strings.HasSuffix(migrationScript, "/source_migration.sh") && targetHyper.HostIP != "" {
+		if targetHyper.HostIP != "" {
 			targetAddr = targetHyper.HostIP
 		}
 		control := fmt.Sprintf("inter=%d", migration.SourceHyper)
-		command := fmt.Sprintf("%s '%d' '%d' '%d' '%d' '%s' '%s' <<'EOF'\n%s\nEOF", migrationScript, migration.ID, taskID, instance.ID, instance.RouterID, ShellEscape(targetAddr), ShellEscape(migrationType), volumesJson)
+		command := fmt.Sprintf("%s '%d' '%d' '%d' '%d' '%s' '%s' '%d' <<'EOF'\n%s\nEOF", migrationScript, migration.ID, taskID, instance.ID, instance.RouterID, ShellEscape(targetAddr), ShellEscape(migrationType), targetHyper.Hostid, planJson)
 		err = HyperExecute(ctx, control, command)
 		if err != nil {
 			logger.Ctx(ctx).Error("Source migration command execution failed", err)
@@ -190,10 +169,19 @@ func clearSourceAddresses(ctx context.Context, instance *model.Instance, migrati
 
 func MigrateVM(ctx context.Context, args []string) (status string, err error) {
 	//|:-COMMAND-:| migrate_vm.sh '12' '2' '127' '3' 'state'
+	outerCtx := ctx
 	ctx, db, newTransaction := StartTransaction(ctx)
+	// The reservations of a migration that ended are dropped after the transaction: a failure rolls the transaction
+	// back, which would undo the release and leave the migration in a non-terminal state, so the periodic cleanup
+	// (which matches the terminal ones) would not catch them either and the space would stay reserved until the
+	// reservations expire a day later
+	releaseMigration := int64(0)
 	defer func() {
 		if newTransaction {
 			EndTransaction(ctx, err)
+		}
+		if releaseMigration > 0 {
+			services.ReleaseReservations(outerCtx, releaseMigration, 0, model.ReservationMigration)
 		}
 	}()
 	argn := len(args)
@@ -253,6 +241,7 @@ func MigrateVM(ctx context.Context, args []string) (status string, err error) {
 		if err != nil {
 			logger.Ctx(ctx).Error("Failed to update migration", err)
 		}
+		releaseMigration = migration.ID
 		return
 	}
 
@@ -281,6 +270,9 @@ func MigrateVM(ctx context.Context, args []string) (status string, err error) {
 		if updateErr = db.Model(migration).Updates(map[string]interface{}{"status": status}).Error; updateErr != nil {
 			logger.Ctx(ctx).Error("Failed to update migration", updateErr)
 		}
+		if taskStatus == "failed" {
+			releaseMigration = migration.ID
+		}
 	}()
 
 	if status == "completed" {
@@ -303,10 +295,9 @@ func MigrateVM(ctx context.Context, args []string) (status string, err error) {
 			logger.Ctx(ctx).Error("Failed to update migration progress", err)
 			return
 		}
-		// 本地卷文件随迁移复制到了目标节点
-		err = db.Model(&model.Volume{}).Where("instance_id = ?", instID).Update("hyper", int32(hyperID)).Error
-		if err != nil {
-			logger.Ctx(ctx).Error("Failed to update volume hyper", err)
+		// The disks were copied to the target: they take the pool, path and host of the plan
+		if err = services.ApplyMigrationPlan(ctx, migration, instID, int32(hyperID)); err != nil {
+			logger.Ctx(ctx).Error("Failed to update the volumes of the migrated instance", err)
 			return
 		}
 		// LaunchVM sync 在目标节点重建网卡、浮动 IP 后，再清理源节点上的浮动 IP 和辅助 IP
@@ -338,38 +329,7 @@ func MigrateVM(ctx context.Context, args []string) (status string, err error) {
 			return
 		}
 	} else if status == "source_rollback" {
-		err = db.Model(&model.Instance{Model: model.Model{ID: instID}}).Updates(map[string]interface{}{"status": model.InstanceStatusRollback}).Error
-		if err != nil {
-			logger.Ctx(ctx).Error("Failed to update instance status to unknown, %v", err)
-			return
-		}
-		task3 := &model.Task{
-			Name:    "Source_Rollback",
-			Mission: migration.ID,
-			Summary: "Clean up target hypervisor",
-			Status:  "in_progress",
-		}
-		err = db.Model(task3).Create(task3).Error
-		if err != nil {
-			logger.Ctx(ctx).Error("Failed to create task2", err)
-			return
-		}
-		// 目标节点准备阶段已按网卡建了安全组链、VPC 路由器，回滚时一并清理
-		var ifaces []*model.Interface
-		err = db.Where("instance = ?", instID).Find(&ifaces).Error
-		if err != nil {
-			logger.Ctx(ctx).Error("Failed to get interfaces", err)
-			return
-		}
-		macs := make([]string, 0, len(ifaces))
-		for _, iface := range ifaces {
-			macs = append(macs, iface.MacAddr)
-		}
-		control := fmt.Sprintf("inter=%d", migration.TargetHyper)
-		command := fmt.Sprintf("/opt/cloudland/scripts/backend/clear_target_migration.sh '%d' '%d' '%d' '%d' '%s'", migration.ID, task3.ID, instance.ID, instance.RouterID, ShellEscape(strings.Join(macs, " ")))
-		err = HyperExecute(ctx, control, command)
-		if err != nil {
-			logger.Ctx(ctx).Error("Execute clear target failed", err)
+		if err = rollbackTarget(ctx, migration, instance); err != nil {
 			return
 		}
 	} else if status == "not_supported" {
@@ -429,6 +389,17 @@ func MigrateVM(ctx context.Context, args []string) (status string, err error) {
 			err = fmt.Errorf("target hypervisor %d is not active (status %d)", hyperID, targetHyper.Status)
 			return
 		}
+		// The target is known now: plan where the disks go, check the space and reserve it before copying anything.
+		// If that fails, undo what target_migration.sh prepared.
+		if _, perr := services.PlanMigrationTarget(ctx, migration, instance, int32(hyperID)); perr != nil {
+			logger.Ctx(ctx).Errorf("Disk plan of migration %d on host %d failed: %v", migration.ID, hyperID, perr)
+			status = "source_rollback"
+			message = perr.Error()
+			if err = rollbackTarget(ctx, migration, instance); err != nil {
+				return
+			}
+			return
+		}
 		task2 := &model.Task{
 			Name:    "Prepare_Source",
 			Mission: migration.ID,
@@ -471,5 +442,43 @@ func MigrateVM(ctx context.Context, args []string) (status string, err error) {
 		}
 	}
 	logger.Ctx(ctx).Infof("Migration condition: %s, new status: %s", migration.Status, status)
+	return
+}
+
+// rollbackTarget undoes on the target what target_migration.sh and source_migration.sh prepared there:
+// network resources, and the disk files and placeholders of the plan
+func rollbackTarget(ctx context.Context, migration *model.Migration, instance *model.Instance) (err error) {
+	ctx, db := GetContextDB(ctx)
+	err = db.Model(&model.Instance{Model: model.Model{ID: instance.ID}}).Updates(map[string]interface{}{"status": model.InstanceStatusRollback}).Error
+	if err != nil {
+		logger.Ctx(ctx).Error("Failed to update instance status to rollback, %v", err)
+		return
+	}
+	task3 := &model.Task{
+		Name:    "Source_Rollback",
+		Mission: migration.ID,
+		Summary: "Clean up target hypervisor",
+		Status:  "in_progress",
+	}
+	if err = db.Model(task3).Create(task3).Error; err != nil {
+		logger.Ctx(ctx).Error("Failed to create task3", err)
+		return
+	}
+	// target_migration.sh built security group chains and the VPC router for the interfaces
+	var ifaces []*model.Interface
+	if err = db.Where("instance = ?", instance.ID).Find(&ifaces).Error; err != nil {
+		logger.Ctx(ctx).Error("Failed to get interfaces", err)
+		return
+	}
+	macs := make([]string, 0, len(ifaces))
+	for _, iface := range ifaces {
+		macs = append(macs, iface.MacAddr)
+	}
+	planJson, _ := json.Marshal(services.MigrationPlan(migration))
+	control := fmt.Sprintf("inter=%d", migration.TargetHyper)
+	command := fmt.Sprintf("/opt/cloudland/scripts/backend/clear_target_migration.sh '%d' '%d' '%d' '%d' '%s'<<'EOF'\n%s\nEOF", migration.ID, task3.ID, instance.ID, instance.RouterID, ShellEscape(strings.Join(macs, " ")), planJson)
+	if err = HyperExecute(ctx, control, command); err != nil {
+		logger.Ctx(ctx).Error("Execute clear target failed", err)
+	}
 	return
 }

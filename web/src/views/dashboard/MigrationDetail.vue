@@ -172,6 +172,36 @@ onUnmounted(() => {
                     </div>
                 </div>
 
+                <!-- Disk plan -->
+                <div class="info-card card">
+                    <h3 class="card-section-title">{{ $t('storage.diskPlan') }}</h3>
+                    <table v-if="(migration.disk_plan || []).length" class="data-table">
+                        <thead>
+                            <tr>
+                                <th>{{ $t('storage.volume') }}</th>
+                                <th>{{ $t('dashboard.table.target') }}</th>
+                                <th>{{ $t('storage.sourcePool') }}</th>
+                                <th>{{ $t('storage.targetPool') }}</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr v-for="d in migration.disk_plan" :key="d.volume.id">
+                                <td>{{ d.volume.name || d.volume.id }} ({{ d.size_gb }} GB)</td>
+                                <td class="mono">{{ d.device || '-' }}</td>
+                                <td>{{ d.source_pool.name || '-' }}</td>
+                                <td>
+                                    {{ d.target_pool.name || '-' }}
+                                    <span v-if="d.auto" class="badge badge-warning">{{
+                                        $t('storage.autoChosen')
+                                    }}</span>
+                                    <div v-if="d.reason" class="text-secondary plan-reason">{{ d.reason }}</div>
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                    <p v-else class="text-secondary" style="margin: 0">{{ $t('storage.diskPlanPending') }}</p>
+                </div>
+
                 <!-- Progress & Phases -->
                 <div class="info-card card phases-card">
                     <h3 class="card-section-title">
@@ -209,6 +239,11 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
+.plan-reason {
+    font-size: var(--font-size-xs);
+    margin-top: 2px;
+}
+
 .phases-card {
     grid-column: 1 / -1;
 }

@@ -26,16 +26,6 @@ const (
 // OSCodes is a list of supported operating systems
 var OSCodes = []string{OS_LINUX, OS_WINDOWS, OS_OTHER}
 
-type StorageStatus string
-
-const (
-	StorageStatusSynced   StorageStatus = "synced"
-	StorageStatusError    StorageStatus = "error"
-	StorageStatusUnknown  StorageStatus = "unknown"
-	StorageStatusSyncing  StorageStatus = "syncing"
-	StorageStatusNotFound StorageStatus = "not_found"
-)
-
 type Image struct {
 	Model
 	Owner                 int64     `gorm:"default:1"` /* The organization ID of the resource */
@@ -63,21 +53,11 @@ type Image struct {
 	CaptureFromInstance   *Instance `gorm:"foreignKey:CaptureFromInstanceID"`
 	IsRescue              bool      `gorm:"default:false"`
 	RescueImage           int64     `gorm:"default:0"`
-	StorageType           string    `gorm:"type:varchar(36);"`
 	OsFamily              string    `gorm:"type:varchar(128);"`
 }
 
-type ImageStorage struct {
-	Model
-	ImageID  int64         `gorm:"default:0"`
-	Image    *Image        `gorm:"foreignkey:ImageID"`
-	VolumeID string        `gorm:"type:varchar(128)"`
-	PoolID   string        `gorm:"type:varchar(128)"`
-	Status   StorageStatus `gorm:"type:varchar(128);default:'syncing'"` // syncing, synced, error, not-found
-}
-
 func init() {
-	dbs.AutoMigrate(&Image{}, &ImageStorage{})
+	dbs.AutoMigrate(&Image{})
 	dbs.AutoUpgrade("image_visibility_default", func(db *gorm.DB) error {
 		// Set visibility to 'public' for system org images that have no visibility set yet
 		if err := db.Exec(
@@ -121,7 +101,6 @@ func (i *Image) Clone() *Image {
 		QAEnabled:             i.QAEnabled,
 		CaptureFromInstanceID: i.CaptureFromInstanceID,
 		CaptureFromInstance:   i.CaptureFromInstance,
-		StorageType:           i.StorageType,
 		OsFamily:              i.OsFamily,
 	}
 }

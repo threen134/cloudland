@@ -8,6 +8,7 @@ SPDX-License-Identifier: Apache-2.0
 package apis
 
 import (
+	"context"
 	"net/http"
 	"strconv"
 
@@ -44,9 +45,13 @@ type HyperResponse struct {
 	CpuTotal      int64   `json:"cpu_total"`
 	Memory        int64   `json:"memory"`
 	MemoryTotal   int64   `json:"memory_total"`
-	Disk          int64   `json:"disk"`
-	DiskTotal     int64   `json:"disk_total"`
-	DeployCommand string  `json:"deploy_command,omitempty"`
+	// Disks: sum of the storage pools of the host, raw capacity in GB, never multiplied by an over-commit ratio
+	DiskTotal         int64                       `json:"disk_total"`
+	DiskAllocated     int64                       `json:"disk_allocated"`
+	DiskUsed          int64                       `json:"disk_used"`
+	DiskMaxUsageRatio float64                     `json:"disk_max_usage_ratio"`
+	StoragePools      []*services.HostPoolFigures `json:"storage_pools"`
+	DeployCommand     string                      `json:"deploy_command,omitempty"`
 }
 
 type HyperListResponse struct {
@@ -105,7 +110,7 @@ func (v *HyperAPI) Get(c *gin.Context) {
 		return
 	}
 
-	hyperResp := convertHyperToResponse(hyper)
+	hyperResp := withStorage(c.Request.Context(), convertHyperToResponse(hyper))
 	c.JSON(http.StatusOK, hyperResp)
 }
 
@@ -160,9 +165,15 @@ func (v *HyperAPI) List(c *gin.Context) {
 		logger.Ctx(c).Errorf("Failed to count instances per hypervisor: %+v", cErr)
 		instanceCounts = map[int32]int64{}
 	}
+	// The disk figures of the whole page at once: the page is polled, one query per host and pool would add up
+	hostids := make([]int32, len(hypers))
+	for i, hyper := range hypers {
+		hostids[i] = hyper.Hostid
+	}
+	summaries := services.StorageSummaryOfHosts(c.Request.Context(), hostids)
 	hyperResponses := make([]*HyperResponse, len(hypers))
 	for i, hyper := range hypers {
-		hyperResponses[i] = convertHyperToResponse(hyper)
+		hyperResponses[i] = withSummary(convertHyperToResponse(hyper), summaries[hyper.Hostid])
 		hyperResponses[i].InstanceCount = instanceCounts[hyper.Hostid]
 	}
 
@@ -245,7 +256,7 @@ func (v *HyperAPI) Patch(c *gin.Context) {
 		return
 	}
 
-	hyperResp := convertHyperToResponse(updatedHyper)
+	hyperResp := withStorage(c.Request.Context(), convertHyperToResponse(updatedHyper))
 	c.JSON(http.StatusOK, hyperResp)
 }
 
@@ -309,7 +320,7 @@ func (v *HyperAPI) Deploy(c *gin.Context) {
 // @Produce json
 // @Param uuid path string true "Hypervisor UUID"
 // @Param body body HyperMaintainPayload false "Maintenance options"
-// @Success 200 {object} map[string]string
+// @Success 200 {object} HyperMaintainResponse
 // @Failure 400 {object} common.APIError "Bad request"
 // @Failure 401 {object} common.APIError "Not authorized"
 // @Failure 500 {object} common.APIError "Internal server error"
@@ -332,11 +343,40 @@ func (v *HyperAPI) Maintain(c *gin.Context) {
 		ErrorResponse(c, http.StatusNotFound, "Hypervisor not found", err)
 		return
 	}
-	if err := hyperAdmin.Maintain(c.Request.Context(), hyper.Hostid, payload.Migrate, targetHyper); err != nil {
+	results, err := hyperAdmin.Maintain(c.Request.Context(), hyper.Hostid, payload.Migrate, targetHyper)
+	if err != nil {
 		ErrorResponse(c, http.StatusInternalServerError, "Failed to maintain hypervisor", err)
 		return
 	}
-	c.JSON(http.StatusOK, map[string]string{"result": "success"})
+	resp := &HyperMaintainResponse{Result: "success", Instances: []*MaintainInstanceResult{}}
+	for _, r := range results {
+		item := &MaintainInstanceResult{Instance: &ResourceReference{ID: r.Instance.UUID, Name: r.Instance.Hostname}, Status: "migrating"}
+		if r.Migration != nil {
+			item.Migration = r.Migration.UUID
+			if r.Migration.Status == "not_doing" {
+				item.Status = "not_doing"
+			}
+		}
+		if r.Error != nil {
+			item.Status = "not_doing"
+			item.Reason = r.Error.Error()
+		}
+		resp.Instances = append(resp.Instances, item)
+	}
+	c.JSON(http.StatusOK, resp)
+}
+
+// HyperMaintainResponse tells, for every instance of the host, whether it is being migrated away and why not
+type HyperMaintainResponse struct {
+	Result    string                    `json:"result"`
+	Instances []*MaintainInstanceResult `json:"instances"`
+}
+
+type MaintainInstanceResult struct {
+	Instance  *ResourceReference `json:"instance"`
+	Migration string             `json:"migration,omitempty"`
+	Status    string             `json:"status"`
+	Reason    string             `json:"reason,omitempty"`
 }
 
 // @Summary delete a hypervisor
@@ -345,6 +385,7 @@ func (v *HyperAPI) Maintain(c *gin.Context) {
 // @Accept json
 // @Produce json
 // @Param uuid path string true "Hypervisor UUID"
+// @Param keep_pools query bool false "Keep the local storage pools of the host for adoption by the host registered again"
 // @Success 204 "No content"
 // @Failure 400 {object} common.APIError "Bad request"
 // @Failure 401 {object} common.APIError "Not authorized"
@@ -359,8 +400,8 @@ func (v *HyperAPI) Delete(c *gin.Context) {
 		ErrorResponse(c, http.StatusNotFound, "Hypervisor not found", err)
 		return
 	}
-	if err := hyperAdmin.Delete(c.Request.Context(), hyper.Hostid); err != nil {
-		ErrorResponse(c, http.StatusInternalServerError, "Failed to delete hypervisor", err)
+	if err := hyperAdmin.Delete(c.Request.Context(), hyper.Hostid, c.Query("keep_pools") == "true"); err != nil {
+		ErrorResponse(c, http.StatusBadRequest, "Failed to delete hypervisor", err)
 		return
 	}
 	c.Status(http.StatusNoContent)
@@ -391,11 +432,29 @@ func convertHyperToResponse(hyper *model.Hyper) *HyperResponse {
 	if hyper.Resource != nil {
 		resp.Cpu = hyper.Resource.Cpu
 		resp.CpuTotal = hyper.Resource.CpuTotal
-		resp.Memory = hyper.Resource.Memory / 1024                       // Convert KB to MB
-		resp.MemoryTotal = hyper.Resource.MemoryTotal / 1024             // Convert KB to MB
-		resp.Disk = hyper.Resource.Disk / (1024 * 1024 * 1024)           // Convert B to GB
-		resp.DiskTotal = hyper.Resource.DiskTotal / (1024 * 1024 * 1024) // Convert B to GB
+		resp.Memory = hyper.Resource.Memory / 1024           // Convert KB to MB
+		resp.MemoryTotal = hyper.Resource.MemoryTotal / 1024 // Convert KB to MB
 	}
 
 	return resp
 }
+
+// withStorage fills the disk figures of a host from its storage pools
+func withStorage(ctx context.Context, resp *HyperResponse) *HyperResponse {
+	return withSummary(resp, services.StorageSummaryOfHost(ctx, resp.Hostid))
+}
+
+// withSummary fills the disk figures of a host from a summary built beforehand
+func withSummary(resp *HyperResponse, s *services.HostStorageSummary) *HyperResponse {
+	if s == nil {
+		return resp
+	}
+	resp.DiskTotal = s.TotalBytes / gib
+	resp.DiskAllocated = s.AllocatedBytes / gib
+	resp.DiskUsed = s.UsedBytes / gib
+	resp.DiskMaxUsageRatio = s.MaxUsageRatio
+	resp.StoragePools = s.Pools
+	return resp
+}
+
+const gib = int64(1024 * 1024 * 1024)

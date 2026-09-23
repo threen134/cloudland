@@ -4,13 +4,10 @@ import (
 	"api/src/services"
 	"api/src/utils/tracing"
 	"context"
-	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
-	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -18,7 +15,6 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/spf13/viper"
-	"go.opentelemetry.io/otel/trace"
 	"gorm.io/gorm"
 )
 
@@ -47,17 +43,6 @@ var (
 	prometheusIP   string
 	prometheusPort int
 
-	volemonitorIP    string
-	volemonitorIPort int
-
-	WdsPrometheusURL      string
-	WdsPrometheusRangeURL string
-
-	volemonitorUser    string
-	volemonitorPasswd  string
-	WDSLoginPath       string
-	WDSAuthURL         string
-	WDSVolumeDetailURL string
 	// query range metrics
 	rangeQueries = map[string]string{
 		"cpu":              `100 * rate(libvirt_domain_info_cpu_time_seconds_total{domain=~"%s"}[2m]) / on(domain) libvirt_domain_info_virtual_cpus{domain=~"%s"}`,
@@ -92,14 +77,6 @@ func init() {
 		prometheusPort = viper.GetInt("monitor.port")
 		logger.Info("prometheusIP: %s,  prometheusPort: %d", prometheusIP, prometheusPort)
 
-		fmt.Printf("wngzhe prometheusIP: %s,  prometheusPort: %d", prometheusIP, prometheusPort)
-		volemonitorIP = viper.GetString("WDS.host")
-		volemonitorIPort = viper.GetInt("WDS.port")
-		volemonitorUser = viper.GetString("WDS.admin")
-		volemonitorPasswd = viper.GetString("WDS.password")
-		logger.Info("volemonitorIP: %s,  volemonitorIPort: %d volemonitorUser: %s, volemonitorPasswd: %s",
-			volemonitorIP, volemonitorIPort, volemonitorUser, volemonitorPasswd)
-
 		SwitchAPIEndpoint = viper.GetString("switch_api.endpoint")
 		SwitchAPIHouse = viper.GetString("switch_api.house")
 		logger.Info("Switch API Endpoint: %s, House: %s", SwitchAPIEndpoint, SwitchAPIHouse)
@@ -114,18 +91,7 @@ func init() {
 	// init Prometheus URL
 	PrometheusURL = fmt.Sprintf("http://%s:%d%s", prometheusIP, prometheusPort, PrometheusQueryPath)
 	PrometheusRangeURL = fmt.Sprintf("http://%s:%d%s", prometheusIP, prometheusPort, PrometheusQueryRangePath)
-	WdsPrometheusURL = fmt.Sprintf("http://%s:%d%s", volemonitorIP, volemonitorIPort, PrometheusQueryPath)
-	WdsPrometheusRangeURL = fmt.Sprintf("http://%s:%d%s", volemonitorIP, volemonitorIPort, PrometheusQueryRangePath)
-	WDSLoginPath = "/api/v1/login"
-	WDSAuthURL = fmt.Sprintf("https://%s%s", volemonitorIP, WDSLoginPath)
-	WDSVolumeDetailURL = fmt.Sprintf("https://%s/api/v2/block/volumes/%%s", volemonitorIP)
 }
-
-var (
-	wdsToken    string
-	wdsTokenExp time.Time
-	tokenMutex  sync.Mutex
-)
 
 type PrometheusResponse struct {
 	Status string `json:"status"`
@@ -154,14 +120,6 @@ type NetworkMetricsRequest struct {
 	End          string   `json:"end" binding:"required"`
 	Step         string   `json:"step" binding:"required"`
 	InterfaceIDs []string `json:"interface_ids" binding:"required,min=1"`
-}
-
-type WDSVolumeResponse struct {
-	RetCode      string `json:"ret_code"`
-	Message      string `json:"message"`
-	VolumeDetail struct {
-		VolumeName string `json:"volume_name"`
-	} `json:"volume_detail"`
 }
 
 // 1. CPU monitor - single metric
@@ -269,26 +227,6 @@ type TrafficResponse struct {
 				TargetDevice string `json:"target_device"`
 			} `json:"metric"`
 			Values []struct { // one-dimensional array
-				Time  string `json:"time"`
-				Value string `json:"value"`
-			} `json:"values"`
-		} `json:"result"`
-	} `json:"data"`
-}
-
-// 6. volume monitor - single metric
-type VolumeMonResponse struct {
-	Status string `json:"status"`
-	Data   struct {
-		ChartType string   `json:"chart_type"`
-		Label     []string `json:"label"`
-		Unit      string   `json:"unit"`
-		Result    []struct {
-			Metric struct {
-				VolName string `json:"volName"`
-				Job     string `json:"job"`
-			} `json:"metric"`
-			Values [][]struct {
 				Time  string `json:"time"`
 				Value string `json:"value"`
 			} `json:"values"`
@@ -832,343 +770,6 @@ func (api *MonitorAPI) GetHyperMemory(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, mergeMemoryResults(freeResult, totalResult))
-}
-
-func getWDSToken(ctx context.Context) (token string, err error) {
-	tokenMutex.Lock()
-	defer tokenMutex.Unlock()
-	if time.Now().Before(wdsTokenExp) && wdsToken != "" {
-		logger.Ctx(ctx).Info("Using cached token")
-		return wdsToken, nil
-	}
-
-	// WDS 为外部存储服务：只建 span，不注入 trace 头
-	ctx, span := tracing.StartChild(ctx, "wds.auth", trace.WithSpanKind(trace.SpanKindClient))
-	defer func() { tracing.EndSpan(span, err) }()
-
-	authBody := fmt.Sprintf(`{"name":"%s","password":"%s"}`, volemonitorUser, volemonitorPasswd)
-	req, err := http.NewRequestWithContext(ctx, "POST", WDSAuthURL, strings.NewReader(authBody))
-	if err != nil {
-		return "", fmt.Errorf("failed to create request: %v", err)
-	}
-
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Accept", "application/json")
-	client := &http.Client{
-		Timeout: 5 * time.Second,
-		Transport: &http.Transport{
-			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
-		},
-	}
-
-	resp, err := client.Do(req)
-	if err != nil {
-		return "", fmt.Errorf("WDS auth request failed: %v", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode == http.StatusUnauthorized {
-		wdsToken = ""
-		wdsTokenExp = time.Now().Add(-1 * time.Hour)
-		return "", fmt.Errorf("token expired, will retry")
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("WDS auth failed with status: %d", resp.StatusCode)
-	}
-
-	var authResponse struct {
-		AccessToken string `json:"access_token"`
-		ExpiresIn   int    `json:"expires_in"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&authResponse); err != nil {
-		return "", fmt.Errorf("failed to decode auth response: %v", err)
-	}
-	if authResponse.AccessToken == "" {
-		return "", errors.New("empty access_token in auth response")
-	}
-	wdsToken = authResponse.AccessToken
-	if authResponse.ExpiresIn > 0 {
-		wdsTokenExp = time.Now().Add(time.Duration(authResponse.ExpiresIn) * time.Second)
-	} else {
-		wdsTokenExp = time.Now().Add(5 * time.Minute)
-	}
-	logger.Ctx(ctx).Debug("token expires at: %s\n", wdsTokenExp.Format(time.RFC3339))
-	return authResponse.AccessToken, nil
-}
-
-func convertVolNames(ctx context.Context, volIDs []string, token string) []string {
-	ctx, span := tracing.StartChild(ctx, "wds.volume_details", trace.WithSpanKind(trace.SpanKindClient))
-	defer span.End()
-	var names []string
-
-	client := &http.Client{
-		Timeout: 5 * time.Second,
-		Transport: &http.Transport{
-			TLSClientConfig: &tls.Config{
-				InsecureSkipVerify: true, // Skip certificate verification
-			},
-		},
-	}
-
-	for _, volID := range volIDs {
-		detailURL := fmt.Sprintf(WDSVolumeDetailURL, volID)
-		req, _ := http.NewRequestWithContext(ctx, "GET", detailURL, nil)
-		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", token))
-		resp, err := client.Do(req)
-		if err != nil {
-			logger.Ctx(ctx).Error("Failed to get volume detail for %s: %v", volID, err)
-			continue
-		}
-		if resp.StatusCode == http.StatusUnauthorized {
-			logger.Ctx(ctx).Error("Received 401 for volume %s, invalidating token", volID)
-			wdsToken = ""
-			wdsTokenExp = time.Now().Add(-1 * time.Hour)
-		}
-		body, _ := io.ReadAll(resp.Body)
-		resp.Body.Close()
-
-		var wdsResp WDSVolumeResponse
-		if err := json.Unmarshal(body, &wdsResp); err != nil {
-			logger.Ctx(ctx).Warning("Failed to decode JSON for %s: %v\nRaw JSON: %s", volID, err, string(body))
-			continue
-		}
-
-		if wdsResp.RetCode == "0" && wdsResp.VolumeDetail.VolumeName != "" {
-			names = append(names, wdsResp.VolumeDetail.VolumeName)
-		} else {
-			logger.Ctx(ctx).Error("Invalid response for volume %s: ret_code=%s, message=%s",
-				volID, wdsResp.RetCode, wdsResp.Message)
-		}
-	}
-	return names
-}
-
-func GetLastUUIDFromVolumeUUID(ctx context.Context, volumeUUID string) (string, error) {
-	volumeAdmin := &services.VolumeAdmin{}
-	volume, err := volumeAdmin.GetVolumeByUUID(ctx, volumeUUID)
-	if err != nil {
-		return "", err
-	}
-
-	return volume.GetOriginVolumeID(), nil
-}
-
-// @Summary Get volume metrics
-// @Description Query volume read/write historical data from WDS storage monitoring
-// @Tags Monitoring
-// @Accept json
-// @Produce json
-// @Param message body MetricsRequest true "Metrics query request"
-// @Success 200 {object} map[string]interface{} "Volume metrics data"
-// @Failure 400 {object} map[string]interface{} "Bad request"
-// @Failure 500 {object} map[string]interface{} "Internal server error"
-// @Router /metrics/instances/volume/his_data [post]
-func (api *MonitorAPI) GetVolume(c *gin.Context) {
-	// check volemonitorIP and volemonitorIPort
-	if volemonitorIP == "" || volemonitorIPort == 0 || volemonitorUser == "" || volemonitorPasswd == "" {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"status":  "error",
-			"message": "Incomplete WDS configuration",
-			"details": map[string]interface{}{
-				"volemonitorIP":     volemonitorIP,
-				"volemonitorIPort":  volemonitorIPort,
-				"volemonitorUser":   volemonitorUser,
-				"volemonitorPasswd": strings.Repeat("*", len(volemonitorPasswd)),
-			},
-		})
-		return
-	}
-	var request MetricsRequest
-	if err := c.BindJSON(&request); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"status": "error", "message": "Invalid request body"})
-		return
-	}
-
-	if len(request.VolName) == 0 {
-		c.JSON(http.StatusBadRequest, gin.H{"status": "error", "message": "Volume name is required"})
-		return
-	}
-
-	// validate time params
-	start, end, err := validateAndParseTimeParams(request.Start, request.End, request.Step)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"status": "error", "message": err.Error()})
-		return
-	}
-	var lastUUIDs []string
-	for _, volUUID := range request.VolName {
-		lastUUID, err := GetLastUUIDFromVolumeUUID(c.Request.Context(), volUUID)
-		if err != nil {
-			logger.Ctx(c).Errorf("Failed to convert volume UUID: %v", err)
-			c.JSON(http.StatusInternalServerError, gin.H{
-				"status":  "error",
-				"message": "Invalid volume UUID format",
-			})
-			return
-		}
-		lastUUIDs = append(lastUUIDs, lastUUID)
-	}
-	token, err := getWDSToken(c.Request.Context())
-	if err != nil {
-		logger.Ctx(c).Errorf("WDS authentication failed: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"status":  "error",
-			"message": "get wds token failed",
-		})
-		return
-	}
-	actualVolNames := convertVolNames(c.Request.Context(), lastUUIDs, token)
-	if len(actualVolNames) == 0 {
-		logger.Ctx(c).Error("All volume conversions failed")
-		c.JSON(http.StatusBadRequest, gin.H{"status": "error", "message": "no valid volume founded"})
-		return
-	}
-	// build read and write query
-	readQuery := fmt.Sprintf(rangeQueries["volume_read"], strings.Join(actualVolNames, "|"))
-	writeQuery := fmt.Sprintf(rangeQueries["volume_write"], strings.Join(actualVolNames, "|"))
-	if readQuery == "" || writeQuery == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"status": "error", "message": "Invalid metric type"})
-		return
-	}
-
-	// execute query
-	readResult, err := queryPrometheus(c.Request.Context(), WdsPrometheusRangeURL, readQuery, fmt.Sprintf("%d", start), fmt.Sprintf("%d", end), request.Step)
-	if err != nil {
-		logger.Ctx(c).Error("Failed to query disk read metrics: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"status": "error", "message": "Failed to query metrics"})
-		return
-	}
-
-	writeResult, err := queryPrometheus(c.Request.Context(), WdsPrometheusRangeURL, writeQuery, fmt.Sprintf("%d", start), fmt.Sprintf("%d", end), request.Step)
-	if err != nil {
-		logger.Ctx(c).Error("Failed to query disk write metrics: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"status": "error", "message": "Failed to query metrics"})
-		return
-	}
-	// merge results
-	result := mergeVolumeResults(readResult, writeResult, request.VolName, actualVolNames)
-	c.JSON(http.StatusOK, result)
-}
-
-func mergeVolumeResults(readRes, writeRes *PrometheusResponse, originalVolNames []string, convertedVolNames []string) *VolumeMonResponse {
-	response := &VolumeMonResponse{
-		Status: "success",
-		Data: struct {
-			ChartType string   `json:"chart_type"`
-			Label     []string `json:"label"`
-			Unit      string   `json:"unit"`
-			Result    []struct {
-				Metric struct {
-					VolName string `json:"volName"`
-					Job     string `json:"job"`
-				} `json:"metric"`
-				Values [][]struct {
-					Time  string `json:"time"`
-					Value string `json:"value"`
-				} `json:"values"`
-			} `json:"result"`
-		}{
-			ChartType: "line",
-			Label:     []string{"read (KB/s)", "write (KB/s)"},
-			Unit:      "KB/s",
-		},
-	}
-
-	volMapping := make(map[string]string)
-	for i := range originalVolNames {
-		volMapping[originalVolNames[i]] = convertedVolNames[i]
-		volMapping[convertedVolNames[i]] = originalVolNames[i]
-	}
-
-	for _, convertedVol := range convertedVolNames {
-		originalVol := volMapping[convertedVol]
-		entry := struct {
-			Metric struct {
-				VolName string `json:"volName"`
-				Job     string `json:"job"`
-			} `json:"metric"`
-			Values [][]struct {
-				Time  string `json:"time"`
-				Value string `json:"value"`
-			} `json:"values"`
-		}{
-			Metric: struct {
-				VolName string `json:"volName"`
-				Job     string `json:"job"`
-			}{
-				VolName: originalVol, // Preserve original volume identifier format
-				Job:     "tianshu",
-			},
-		}
-
-		var readValues, writeValues []struct {
-			Time  string `json:"time"`
-			Value string `json:"value"`
-		}
-		for _, series := range readRes.Data.Result {
-			if vol, ok := series.Metric["volName"]; ok && vol == convertedVol {
-				for _, point := range series.Values {
-					if len(point) != 2 {
-						continue
-					}
-					timestamp, _ := strconv.ParseFloat(fmt.Sprintf("%v", point[0]), 64)
-					value, _ := strconv.ParseFloat(fmt.Sprintf("%v", point[1]), 64)
-					readValues = append(readValues, struct {
-						Time  string `json:"time"`
-						Value string `json:"value"`
-					}{
-						Time:  fmt.Sprintf("%d", int64(timestamp)),
-						Value: fmt.Sprintf("%.2f", value/1024),
-					})
-				}
-			}
-		}
-
-		for _, series := range writeRes.Data.Result {
-			if vol, ok := series.Metric["volName"]; ok && vol == convertedVol {
-				for _, point := range series.Values {
-					if len(point) != 2 {
-						continue
-					}
-					timestamp, _ := strconv.ParseFloat(fmt.Sprintf("%v", point[0]), 64)
-					value, _ := strconv.ParseFloat(fmt.Sprintf("%v", point[1]), 64)
-					writeValues = append(writeValues, struct {
-						Time  string `json:"time"`
-						Value string `json:"value"`
-					}{
-						Time:  fmt.Sprintf("%d", int64(timestamp)),
-						Value: fmt.Sprintf("%.2f", value/1024),
-					})
-				}
-			}
-		}
-
-		mergedValues := make([][]struct {
-			Time  string `json:"time"`
-			Value string `json:"value"`
-		}, 2)
-
-		sort.Slice(readValues, func(i, j int) bool {
-			ti, _ := strconv.ParseInt(readValues[i].Time, 10, 64)
-			tj, _ := strconv.ParseInt(readValues[j].Time, 10, 64)
-			return ti < tj
-		})
-
-		sort.Slice(writeValues, func(i, j int) bool {
-			ti, _ := strconv.ParseInt(writeValues[i].Time, 10, 64)
-			tj, _ := strconv.ParseInt(writeValues[j].Time, 10, 64)
-			return ti < tj
-		})
-
-		mergedValues[0] = readValues
-		mergedValues[1] = writeValues
-
-		entry.Values = mergedValues
-		response.Data.Result = append(response.Data.Result, entry)
-	}
-
-	return response
 }
 
 // @Summary Get instance network metrics

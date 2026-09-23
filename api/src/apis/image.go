@@ -23,7 +23,6 @@ import (
 
 var imageAPI = &ImageAPI{}
 var imageAdmin = services.ImageAdmin
-var imageStorageAdmin = &services.ImageStorageAdmin{}
 
 type ImageAPI struct{}
 
@@ -63,28 +62,13 @@ type ImagePayload struct {
 }
 
 type ImagePatchPayload struct {
-	Name      string   `json:"name" binding:"omitempty,min=2,max=32"`
-	OSCode    string   `json:"os_code" binding:"omitempty,oneof=linux windows other"`
-	OSVersion string   `json:"os_version" binding:"omitempty,min=2,max=32"`
-	User      string   `json:"user" binding:"omitempty,min=2,max=32"`
-	Pools     []string `json:"pools" binding:"omitempty"`
-	OsFamily  string   `json:"os_family" binding:"omitempty"`
-	UUID      string   `json:"uuid,omitempty" binding:"omitempty"`
-	Public    *bool    `json:"public" binding:"omitempty"`
-}
-
-type ImageStorageResponse struct {
-	*ResourceReference
-	VolumeID string `json:"volume_id"`
-	PoolID   string `json:"pool_id"`
-	Status   string `json:"status"`
-}
-
-type ImageStorageListResponse struct {
-	Offset   int                     `json:"offset"`
-	Total    int                     `json:"total"`
-	Limit    int                     `json:"limit"`
-	Storages []*ImageStorageResponse `json:"storages"`
+	Name      string `json:"name" binding:"omitempty,min=2,max=32"`
+	OSCode    string `json:"os_code" binding:"omitempty,oneof=linux windows other"`
+	OSVersion string `json:"os_version" binding:"omitempty,min=2,max=32"`
+	User      string `json:"user" binding:"omitempty,min=2,max=32"`
+	OsFamily  string `json:"os_family" binding:"omitempty"`
+	UUID      string `json:"uuid,omitempty" binding:"omitempty"`
+	Public    *bool  `json:"public" binding:"omitempty"`
 }
 
 // @Summary get a image
@@ -143,7 +127,7 @@ func (v *ImageAPI) Patch(c *gin.Context) {
 		ErrorResponse(c, http.StatusBadRequest, "Invalid input JSON", err)
 		return
 	}
-	err = imageAdmin.Update(ctx, image, payload.OSCode, payload.Name, payload.OSVersion, payload.User, payload.Pools, payload.OsFamily, payload.UUID, payload.Public)
+	err = imageAdmin.Update(ctx, image, payload.OSCode, payload.Name, payload.OSVersion, payload.User, payload.OsFamily, payload.UUID, payload.Public)
 	if err != nil {
 		logger.Ctx(ctx).Errorf("Patch image failed, %+v", err)
 		ErrorResponse(c, http.StatusBadRequest, "Patch image failed", err)
@@ -345,85 +329,4 @@ func (v *ImageAPI) List(c *gin.Context) {
 	}
 	logger.Ctx(ctx).Debugf("List images success, response: %+v", imageListResp)
 	c.JSON(http.StatusOK, imageListResp)
-}
-
-// @Summary list image storages
-// @Description list image storages
-// @tags Image
-// @Accept  json
-// @Produce json
-// @Success 200 {object} ImageStorageResponse
-// @Failure 401 {object} common.APIError "Not authorized"
-// @Router /images/{id}/storages [get]
-func (v *ImageAPI) ListStorages(c *gin.Context) {
-	ctx := c.Request.Context()
-	offsetStr := c.DefaultQuery("offset", "0")
-	limitStr := c.DefaultQuery("limit", "50")
-	queryStr := c.DefaultQuery("query", "")
-	imageUUID := c.Param("id")
-	if imageUUID == "" {
-		logger.Ctx(ctx).Error("Missing image ID")
-		ErrorResponse(c, http.StatusBadRequest, "Missing image ID", nil)
-		return
-	}
-	logger.Ctx(ctx).Debugf("List images with offset %s, limit %s, query %s", offsetStr, limitStr, queryStr)
-	offset, err := strconv.Atoi(offsetStr)
-	if err != nil {
-		logger.Ctx(ctx).Errorf("Invalid query offset %s, %+v", offsetStr, err)
-		ErrorResponse(c, http.StatusBadRequest, "Invalid query offset: "+offsetStr, err)
-		return
-	}
-	limit, err := strconv.Atoi(limitStr)
-	if err != nil {
-		logger.Ctx(ctx).Errorf("Invalid query limit %s, %+v", limitStr, err)
-		ErrorResponse(c, http.StatusBadRequest, "Invalid query limit: "+limitStr, err)
-		return
-	}
-	if offset < 0 || limit < 0 {
-		logger.Ctx(ctx).Errorf("Invalid query offset or limit %d, %d", offset, limit)
-		ErrorResponse(c, http.StatusBadRequest, "Invalid query offset or limit", err)
-		return
-	}
-	image, err := imageAdmin.GetImageByUUID(ctx, imageUUID)
-	if err != nil {
-		logger.Ctx(ctx).Errorf("Failed to get image %s, %+v", imageUUID, err)
-		ErrorResponse(c, http.StatusBadRequest, "Invalid image query", err)
-		return
-	}
-	total, storages, err := imageStorageAdmin.List(int64(offset), int64(limit), "-created_at", image, queryStr)
-	if err != nil {
-		logger.Ctx(ctx).Errorf("Failed to list storages %+v", err)
-		ErrorResponse(c, http.StatusBadRequest, "Failed to list storages", err)
-		return
-	}
-	storageListResp := &ImageStorageListResponse{
-		Total:  int(total),
-		Offset: offset,
-		Limit:  len(storages),
-	}
-	storageListResp.Storages = make([]*ImageStorageResponse, storageListResp.Limit)
-	for i, storage := range storages {
-		storageListResp.Storages[i], err = v.getImageStorageResponse(ctx, storage)
-		if err != nil {
-			logger.Ctx(ctx).Errorf("Failed to create storage response %+v", err)
-			ErrorResponse(c, http.StatusInternalServerError, "Internal error", err)
-			return
-		}
-	}
-	logger.Ctx(ctx).Debugf("List storage success, response: %+v", storageListResp)
-	c.JSON(http.StatusOK, storageListResp)
-}
-
-func (v *ImageAPI) getImageStorageResponse(_ context.Context, storage *model.ImageStorage) (storageResp *ImageStorageResponse, err error) {
-	storageResp = &ImageStorageResponse{
-		ResourceReference: &ResourceReference{
-			ID:        storage.UUID,
-			CreatedAt: storage.CreatedAt.Format(TimeStringForMat),
-			UpdatedAt: storage.UpdatedAt.Format(TimeStringForMat),
-		},
-		Status:   string(storage.Status),
-		PoolID:   storage.PoolID,
-		VolumeID: storage.VolumeID,
-	}
-	return
 }

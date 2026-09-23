@@ -23,10 +23,27 @@ export interface Hypervisor {
     cpu_total: number
     memory: number
     memory_total: number
-    disk: number
+    // Disks: sum of the storage pools of the host (built-in one included), GB, never multiplied by an over-commit ratio
     disk_total: number
+    disk_allocated: number
+    disk_used: number
+    // Use of the fullest pool, 0-1: colours the disk bar so one full pool is not hidden by a big empty one
+    disk_max_usage_ratio: number
+    storage_pools: HostPoolFigures[]
     // 仅 POST /hypers 返回（omitempty）
     deploy_command?: string
+}
+
+// One pool of a host in the disk summary (services.HostPoolFigures)
+export interface HostPoolFigures {
+    uuid: string
+    name: string
+    builtin: boolean
+    status: string
+    capacity_bytes: number
+    used_bytes: number
+    allocated_bytes: number
+    usage_ratio: number
 }
 
 // 对应 hyper.go 的 HyperListResponse
@@ -94,9 +111,15 @@ export interface HyperMaintainPayload {
     migrate: boolean
 }
 
-// POST /hypers/{uuid}/maintain 返回 map[string]string{"result": "success"}
+// POST /hypers/{uuid}/maintain: what happened to every instance of the host
 export interface HyperMaintainResponse {
     result: string
+    instances: {
+        instance: { id: string; name: string }
+        migration?: string
+        status: 'migrating' | 'not_doing'
+        reason?: string
+    }[]
 }
 
 // 对应 api/src/apis/monitor.go 的 MetricsRequest（节点监控只用 hostname）

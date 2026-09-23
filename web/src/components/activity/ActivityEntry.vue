@@ -15,7 +15,7 @@ import {
     Key,
     ArrowRightLeft,
     Network,
-    Archive,
+    Database,
     MapPin,
     Box,
 } from 'lucide-vue-next'
@@ -30,8 +30,7 @@ const { relativeTime, absoluteTime } = useActivityTime()
 const icons: Record<string, Component> = {
     instance: Server,
     volume: HardDrive,
-    backup: Archive,
-    consistency_group: HardDrive,
+    storage_pool: Database,
     vpc: Layers,
     subnet: GitFork,
     security_group: Shield,
@@ -47,8 +46,7 @@ const icons: Record<string, Component> = {
 const iconClass: Record<string, string> = {
     instance: 'bg-blue-light text-blue',
     volume: 'bg-teal-light text-teal',
-    backup: 'bg-teal-light text-teal',
-    consistency_group: 'bg-teal-light text-teal',
+    storage_pool: 'bg-teal-light text-teal',
     vpc: 'bg-purple-light text-purple',
     subnet: 'bg-purple-light text-purple',
     security_group: 'bg-rose-light text-rose',

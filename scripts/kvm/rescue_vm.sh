@@ -2,8 +2,9 @@
 
 cd $(dirname $0)
 source ../cloudrc
+source ./storage_lib.sh
 
-[ $# -lt 9 ] && die "$0 <vm_ID> <image> <name> <cpu> <memory> <disk_size> <disk_id> <boot_loader> <instance_uuid> <image_download_url_b64>"
+[ $# -lt 11 ] && die "$0 <vm_ID> <image> <name> <cpu> <memory> <disk_size> <disk_id> <boot_loader> <instance_uuid> <image_download_url_b64> <boot_disk_path>"
 
 ID=$1
 vm_ID=inst-$ID
@@ -15,8 +16,10 @@ disk_size=$6
 disk_ID=$7
 boot_loader=$8
 instance_uuid=${9:-$ID}
-# ${10} 是 base64 编码的 S3 presigned GET URL；S3 未启用时 clapi 传空串
+# presigned GET URL of S3 (base64), empty when S3 is not configured
 image_download_url_b64=${10}
+# the boot disk of the instance, attached to the rescue system as vdb
+boot_disk=${11}
 image_download_url=""
 if [ -n "$image_download_url_b64" ]; then
     image_download_url=$(echo "$image_download_url_b64" | base64 -d 2>/dev/null || echo "")
@@ -27,6 +30,7 @@ vol_state=error
 snapshot=1
 vm_rescue=$vm_ID-rescue
 
+pending_start_remove $ID
 ./action_vm.sh $ID stop
 ./action_vm.sh $ID hard_stop
 md=$(cat)
@@ -38,65 +42,21 @@ template=$template_dir/template_with_qa.xml
 if [ "$boot_loader" = "uefi" ]; then
     template=$template_dir/template_uefi_with_qa.xml
 fi
-if [ -z "$wds_address" ]; then
-    vm_img=$volume_dir/$vm_rescue.disk
-    if [ ! -f "$vm_img" ]; then
-        vm_img=$image_dir/$vm_rescue.disk
-        # 本地缓存未命中则通过 clapi 下发的 presigned URL 从 S3/MinIO 拉取
-        if ! ensure_image_cached "$img_name" "$image_download_url"; then
-            echo "Image is not available!"
-            echo "|:-COMMAND-:| $(basename $0) '$ID' '$state' '$NODE_ID' 'failed'"
-            exit -1
-        fi
-        # 更新 mtime，供 GC 判断"最近使用"
-        touch "$image_cache/$img_name"
-        format=$(qemu-img info $image_cache/$img_name | grep 'file format' | cut -d' ' -f3)
-        cmd="qemu-img convert -f $format -O qcow2 $image_cache/$img_name $vm_img"
-        result=$(eval "$cmd")
-        vol_state=attached
-    fi
-    disk_template=$template_dir/volume.xml
-else
-    get_wds_token
-    image=$(basename $img_name .raw)
-    vhost_name=instance-$ID-volume-rescue-$RANDOM
-    snapshot_name=${image}-${snapshot}
-    read -d'\n' -r snapshot_id volume_size <<< $(wds_curl GET "api/v2/sync/block/snaps?name=$snapshot_name" | jq -r '.snaps[0] | "\(.id) \(.snap_size)"')
-    if [ -z "$snapshot_id" -o "$snapshot_id" = null ]; then
-        image_volume_id=$(wds_curl GET "api/v2/sync/block/volumes?name=$image" | jq -r '.volumes[0].id')
-        snapshot_ret=$(wds_curl POST "api/v2/sync/block/snaps" "{\"name\": \"$snapshot_name\", \"description\": \"$snapshot_name\", \"volume_id\": \"$image_volume_id\"}")
-        read -d'\n' -r snapshot_id volume_size <<< $(wds_curl GET "api/v2/sync/block/snaps?name=$snapshot_name" | jq -r '.snaps[0] | "\(.id) \(.snap_size)"')
-        if [ -z "$snapshot_id" -o "$snapshot_id" = null ]; then
-            echo "|:-COMMAND-:| $(basename $0) '$ID' '$state' '$NODE_ID' 'failed'"
-            exit -1
-        fi
-        wds_curl DELETE "api/v2/sync/block/snaps/$image-$(($snapshot-1))?force=false"
-    fi
-    volume_ret=$(wds_curl POST "api/v2/sync/block/snaps/$snapshot_id/clone" "{\"name\": \"$vhost_name\"}")
-    volume_id=$(echo $volume_ret | jq -r .id)
-    if [ -z "$volume_id" -o "$volume_id" = null ]; then
-        echo "|:-COMMAND-:| $(basename $0) '$ID' '$state' '$NODE_ID' 'failed'"
-        exit -1
-    fi
-    uss_id=$(get_uss_gateway)
-    vhost_ret=$(wds_curl POST "api/v2/sync/block/vhost" "{\"name\": \"$vhost_name\"}")
-    vhost_id=$(echo $vhost_ret | jq -r .id)
-    uss_ret=$(wds_curl PUT "api/v2/sync/block/vhost/bind_uss" "{\"vhost_id\": \"$vhost_id\", \"uss_gw_id\": \"$uss_id\", \"lun_id\": \"$volume_id\", \"is_snapshot\": false}")
-    ret_code=$(echo $uss_ret | jq -r .ret_code)
-    if [ "$ret_code" != "0" ]; then
-        echo "|:-COMMAND-:| create_volume_wds_vhost '$vol_ID' '$vol_state' 'wds_vhost://$wds_pool_id/$volume_id' 'failed to create wds vhost for boot volume, $vhost_ret, $uss_ret!'"
-        echo "|:-COMMAND-:| $(basename $0) '$ID' '$state' '$NODE_ID' 'failed'"
-        exit -1
-    fi
-    vol_state=attached
-    ux_sock=/var/run/wds/$vhost_name
-    template=$template_dir/wds_template_with_qa.xml
-    if [ "$boot_loader" = "uefi" ]; then
-        template=$template_dir/wds_template_uefi_with_qa.xml
-    fi
-    disk_vhost=$(ls /var/run/wds/instance-$ID-volume-$disk_ID-*)
-    disk_template=$template_dir/wds_volume.xml
+vm_img=$image_dir/$vm_rescue.disk
+if ! ensure_image_cached "$img_name" "$image_download_url"; then
+    echo "|:-COMMAND-:| $(basename $0) '$ID' '$state' '$NODE_ID' 'failed'"
+    exit -1
 fi
+# Mark the cached image as recently used for the cache cleanup
+touch "$image_cache/$img_name"
+format=$(qemu-img info $image_cache/$img_name | grep 'file format' | cut -d' ' -f3)
+if ! qemu-img convert -f $format -O qcow2 $image_cache/$img_name $vm_img >/dev/null 2>&1; then
+    rm -f $vm_img
+    echo "|:-COMMAND-:| $(basename $0) '$ID' '$state' '$NODE_ID' 'failed'"
+    exit -1
+fi
+vol_state=attached
+disk_template=$template_dir/volume.xml
 
 [ -z "$vm_mem" ] && vm_mem='1024m'
 [ -z "$vm_cpu" ] && vm_cpu=1
@@ -110,10 +70,6 @@ if [ "$cpu_vendor" = "GenuineIntel" ]; then
 else
     vm_virt_feature="svm"
 fi
-vhost_queue_num=1
-if [ "$vm_cpu" -gt 2 ]; then
-    vhost_queue_num=2
-fi
 os_code=$(jq -r '.os_code' <<< $metadata)
 vm_nested=disable
 vm_nvram="$image_dir/${vm_rescue}_VARS.fd"
@@ -123,9 +79,7 @@ if [ "$boot_loader" = "uefi" ]; then
     -e "s/VM_ID/$vm_rescue/g" \
     -e "s/VM_MEM/$vm_mem/g" \
     -e "s/VM_CPU/$vm_cpu/g" \
-    -e "s/VHOST_QUEUE_NUM/$vhost_queue_num/g" \
     -e "s#VM_IMG#$vm_img#g" \
-    -e "s#VM_UNIX_SOCK#$ux_sock#g" \
     -e "s#VM_META#$vm_meta#g" \
     -e "s#VM_AGENT#$vm_QA#g" \
     -e "s/VM_NESTED/$vm_nested/g" \
@@ -139,9 +93,7 @@ else
     -e "s/VM_ID/$vm_rescue/g" \
     -e "s/VM_MEM/$vm_mem/g" \
     -e "s/VM_CPU/$vm_cpu/g" \
-    -e "s/VHOST_QUEUE_NUM/$vhost_queue_num/g" \
     -e "s#VM_IMG#$vm_img#g" \
-    -e "s#VM_UNIX_SOCK#$ux_sock#g" \
     -e "s#VM_META#$vm_meta#g" \
     -e "s#VM_AGENT#$vm_QA#g" \
     -e "s/VM_NESTED/$vm_nested/g" \
@@ -156,7 +108,7 @@ virsh define $vm_xml
 disk_xml=$xml_dir/$vm_ID/disk-${disk_ID}-rescue.xml
 cp $disk_template $disk_xml
 
-sed -i "s#VM_UNIX_SOCK#$disk_vhost#g;s#VOLUME_TARGET#vdb#g;s/VHOST_QUEUE_NUM/$vhost_queue_num/g" $disk_xml
+sed -i "s#VOLUME_SOURCE#$boot_disk#g;s#VOLUME_TARGET#vdb#g" $disk_xml
 
 virsh attach-device $vm_rescue $disk_xml --config --persistent
 
@@ -170,12 +122,7 @@ for vol_xml in $xml_dir/$vm_ID/disk-*.xml; do
     [[ "$(basename $vol_xml)" == *-rescue* ]] && continue
     vid=$(basename "$vol_xml" .xml | sed 's/disk-//')
     [ "$vid" = "$disk_ID" ] && continue
-    # Extract source path: WDS disks use path=, local disks use file=
-    if [ -n "$wds_address" ]; then
-        src_path=$(grep -oP "path='[^']+'" "$vol_xml" | head -1 | cut -d"'" -f2)
-    else
-        src_path=$(grep -oP "file='[^']+'" "$vol_xml" | head -1 | cut -d"'" -f2)
-    fi
+    src_path=$(grep -oP "file='[^']+'" "$vol_xml" | head -1 | cut -d"'" -f2)
     if [ -z "$src_path" ] || ! echo "$original_xml" | grep -q "$src_path"; then
         log_debug $ID "Data volume $vid not found in dumpxml, skipping (likely detached)"
         continue

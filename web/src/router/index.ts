@@ -242,6 +242,18 @@ const router = createRouter({
                     meta: { requiresSuperAdmin: true },
                 },
                 {
+                    path: 'storage-pools',
+                    name: 'storage-pools',
+                    component: () => import('../views/dashboard/StoragePools.vue'),
+                    meta: { requiresSuperAdmin: true },
+                },
+                {
+                    path: 'storage-pools/:id',
+                    name: 'storage-pool-detail',
+                    component: () => import('../views/dashboard/StoragePoolDetail.vue'),
+                    meta: { requiresSuperAdmin: true },
+                },
+                {
                     path: 'migrations',
                     name: 'migrations',
                     component: () => import('../views/dashboard/MigrationList.vue'),

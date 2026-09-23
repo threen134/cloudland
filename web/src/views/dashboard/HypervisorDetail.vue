@@ -1,7 +1,13 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
-import { hypervisorsApi, type Hypervisor, type HyperPatchPayload, type HyperListResponse } from '../../api/hypervisors'
+import {
+    hypervisorsApi,
+    type Hypervisor,
+    type HyperPatchPayload,
+    type HyperListResponse,
+    type HyperMaintainResponse,
+} from '../../api/hypervisors'
 import { instancesApi, type Instance, type InstanceListResponse } from '../../api/instances'
 import { zonesApi, type Zone, type ZoneListResponse } from '../../api/zones'
 import { errorMessage } from '../../utils/error'
@@ -17,12 +23,14 @@ import {
     Info,
     Activity,
     SquareTerminal,
+    HardDrive,
 } from 'lucide-vue-next'
 import HostMonitoringCharts from '../../components/monitoring/HostMonitoringCharts.vue'
+import HostStorageTab from '../../components/storage/HostStorageTab.vue'
 import { useI18n } from 'vue-i18n'
 import { useToast } from '../../composables/useToast'
 import { useHostConsole } from '../../composables/useHostConsole'
-import { formatMemory, formatDisk } from '../../utils/format'
+import { formatMemory, formatDisk, formatBytes } from '../../utils/format'
 import type { StatusVariant } from '../../utils/status'
 import BaseModal from '../../components/modals/BaseModal.vue'
 import StatusBadge from '../../components/base/StatusBadge.vue'
@@ -87,6 +95,7 @@ const maintainForm = ref({
 const activeTab = ref('overview')
 const tabs = computed(() => [
     { id: 'overview', label: t('dashboard.table.overview'), icon: Info },
+    { id: 'storage', label: t('storage.title'), icon: HardDrive },
     { id: 'monitor', label: t('dashboard.instanceDetail.resourceMonitoring'), icon: Activity },
 ])
 
@@ -251,13 +260,18 @@ const openMaintainModal = async () => {
     }
 }
 
+const maintainResults = ref<HyperMaintainResponse['instances']>([])
+
 const handleMaintain = async () => {
     if (!hypervisor.value) return
     maintaining.value = true
     try {
-        await hypervisorsApi.maintainHypervisor(hypervisor.value.uuid, maintainForm.value)
+        const resp = await hypervisorsApi.maintainHypervisor(hypervisor.value.uuid, maintainForm.value)
         showMaintainModal.value = false
-        toast.success(t('messages.success'))
+        maintainResults.value = resp.instances || []
+        const skipped = maintainResults.value.filter((r) => r.status === 'not_doing').length
+        if (skipped) toast.warning(t('storage.maintainSkipped', { n: skipped }))
+        else toast.success(t('messages.success'))
         await fetchHypervisorDetail()
     } catch (err) {
         toast.error(errorMessage(err, t('messages.error')))
@@ -395,11 +409,40 @@ onMounted(fetchHypervisorDetail)
                             </InfoRow>
                             <InfoRow :label="t('dashboard.table.disk')">
                                 <span>
-                                    {{ formatDisk(hypervisor.disk) }} / {{ formatDisk(hypervisor.disk_total) }}
-                                    <span class="avail-badge">{{ t('dashboard.table.available') }}</span>
+                                    {{ formatDisk(hypervisor.disk_allocated) }} /
+                                    {{ formatDisk(hypervisor.disk_total) }}
+                                    <span class="avail-badge">{{ t('storage.allocatedOfTotal') }}</span>
                                 </span>
                             </InfoRow>
+                            <InfoRow v-for="p in hypervisor.storage_pools || []" :key="p.uuid" :label="`  · ${p.name}`">
+                                <button type="button" class="link-btn" @click="activeTab = 'storage'">
+                                    {{ p.allocated_bytes ? formatBytes(p.allocated_bytes) : '0 B' }} /
+                                    {{ formatBytes(p.capacity_bytes) }} ({{ t('storage.used') }}
+                                    {{ Math.round(p.usage_ratio * 100) }}%) ·
+                                    {{
+                                        te(`storage.hostPoolStatus.${p.status}`)
+                                            ? t(`storage.hostPoolStatus.${p.status}`)
+                                            : p.status
+                                    }}
+                                </button>
+                            </InfoRow>
                         </div>
+                    </div>
+                </div>
+
+                <div v-if="maintainResults.length" class="info-card card" style="margin-bottom: var(--spacing-5)">
+                    <h3 class="card-section-title">{{ t('storage.maintainResults') }}</h3>
+                    <div v-for="r in maintainResults" :key="r.instance.id" class="maintain-row">
+                        <span class="maintain-name">{{ r.instance.name }}</span>
+                        <StatusBadge
+                            :variant="r.status === 'migrating' ? 'pending' : 'error'"
+                            :label="
+                                r.status === 'migrating'
+                                    ? t('dashboard.instanceStatus.migrating')
+                                    : t('dashboard.migrationStatus.not_doing')
+                            "
+                        />
+                        <span v-if="r.reason" class="text-secondary maintain-reason">{{ r.reason }}</span>
                     </div>
                 </div>
 
@@ -458,6 +501,8 @@ onMounted(fetchHypervisorDetail)
                     </div>
                 </div>
             </div>
+
+            <HostStorageTab v-else-if="activeTab === 'storage'" :hypervisor="hypervisor" />
 
             <!-- Monitoring Content -->
             <div v-else-if="activeTab === 'monitor'" class="monitor-section">
@@ -562,6 +607,32 @@ onMounted(fetchHypervisorDetail)
 </template>
 
 <style scoped>
+.maintain-row {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-3);
+    padding: 6px 0;
+    font-size: var(--font-size-sm);
+}
+
+.maintain-name {
+    min-width: 160px;
+    font-weight: var(--font-weight-medium);
+}
+
+.maintain-reason {
+    font-size: var(--font-size-xs);
+}
+
+.link-btn {
+    background: none;
+    border: none;
+    padding: 0;
+    color: var(--primary-color);
+    cursor: pointer;
+    font-size: inherit;
+}
+
 .detail-header {
     margin-bottom: var(--spacing-4);
 }

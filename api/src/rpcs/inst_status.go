@@ -16,6 +16,7 @@ import (
 
 	. "api/src/common"
 	"api/src/model"
+	"api/src/services"
 
 	"gorm.io/gorm"
 )
@@ -56,7 +57,7 @@ func InstanceStatus(ctx context.Context, args []string) (status string, err erro
 			logger.Ctx(ctx).Error("Invalid instance ID", err)
 			continue
 		}
-		status := statusList[i+1]
+		status, reason := instanceStatusReason(statusList[i+1])
 		instance := &model.Instance{Model: model.Model{ID: instID}}
 		err = db.Unscoped().Take(instance).Error
 		if err != nil {
@@ -88,10 +89,12 @@ func InstanceStatus(ctx context.Context, args []string) (status string, err erro
 				continue
 			}
 		}
-		if instance.Status.String() != status {
-			err = db.Model(instance).Updates(map[string]interface{}{
-				"status": status,
-			}).Error
+		if instance.Status.String() != status || storageReasonChanged(instance.Reason, reason) {
+			updates := map[string]interface{}{"status": status}
+			if storageReasonChanged(instance.Reason, reason) {
+				updates["reason"] = reason
+			}
+			err = db.Model(instance).Updates(updates).Error
 			if err != nil {
 				logger.Ctx(ctx).Error("Failed to update status", err)
 			}
@@ -128,4 +131,28 @@ func InstanceStatus(ctx context.Context, args []string) (status string, err erro
 		}
 	}
 	return
+}
+
+// instanceStatusReason maps the states only the storage code reports to an instance status and reason:
+// paused_nospace is paused because a local pool ran out of space, pending_storage is shut off until its pool is back
+func instanceStatusReason(reported string) (status, reason string) {
+	switch reported {
+	case "paused_nospace":
+		return string(model.InstanceStatusPaused), services.InstanceReasonStorageFull
+	case "pending_storage":
+		return string(model.InstanceStatusShutoff), services.InstanceReasonStoragePending
+	case "start_failed":
+		return string(model.InstanceStatusShutoff), services.InstanceReasonStartFailed
+	}
+	return reported, ""
+}
+
+// storageReasonChanged tells whether the storage reason of an instance has to be set or cleared;
+// reasons set by other code are left alone
+func storageReasonChanged(current, reason string) bool {
+	if reason != "" {
+		return current != reason
+	}
+	return current == services.InstanceReasonStorageFull || current == services.InstanceReasonStoragePending ||
+		current == services.InstanceReasonStartFailed
 }

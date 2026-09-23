@@ -5,9 +5,5 @@ cpu_over_ratio: 1
 mem_over_ratio: 1
 disk_over_ratio: 1
 proxy_mode: true
-wds_address:
-wds_admin:
-wds_pass:
-wds_pool_id:
 # cloudlet-go 连接的 cland-go 地址：默认 cland 组第一台主机，HA 部署在 netconf.yml 中覆盖为管理 VIP
 cland_endpoint: "{{ hostvars[groups['cland'][0]]['ansible_host'] | default(groups['cland'][0]) }}:5006"

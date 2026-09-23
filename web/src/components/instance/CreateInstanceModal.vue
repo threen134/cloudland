@@ -24,6 +24,7 @@ import { keysApi, type SSHKey } from '../../api/keys'
 import { flavorsApi, type Flavor } from '../../api/flavors'
 import { zonesApi, type Zone } from '../../api/zones'
 import { hypervisorsApi, type Hypervisor } from '../../api/hypervisors'
+import { storagePoolsApi, type StoragePool } from '../../api/storagePools'
 import { isValidName } from '../../utils/validation'
 import { quotaErrorMessage } from '../../utils/quotaError'
 import { errorMessage } from '../../utils/error'
@@ -39,6 +40,16 @@ const { t, te } = useI18n()
 const toast = useToast()
 const authStore = useAuthStore()
 const isSystemAdmin = computed(() => authStore.user?.role === 'admin' || authStore.user?.is_superuser === true)
+const availablePools = ref<StoragePool[]>([])
+// With a host given, only the pools of that host (their names are listed in its disk summary)
+const poolsForHost = computed(() => {
+    const hyper = availableHypers.value.find((h) => h.uuid === newInstanceForm.value.hypervisor)
+    if (!hyper) return availablePools.value
+    const onHost = new Set(
+        (hyper.storage_pools || []).filter((p) => ['ready', 'degraded'].includes(p.status)).map((p) => p.uuid)
+    )
+    return availablePools.value.filter((p) => onHost.has(p.id))
+})
 
 const creatingInstance = ref(false)
 const createError = ref('')
@@ -119,6 +130,8 @@ const newInstanceForm = ref({
     userdata: '',
     nested_enable: false,
     hypervisor: null as string | null,
+    // Pool of the boot disk; empty keeps the default pool
+    storage_pool: '' as string,
     primary_interface: {
         network_type: 'vpc' as const,
         vpc_id: '',
@@ -169,6 +182,7 @@ const resetForm = () => {
         userdata: '',
         nested_enable: false,
         hypervisor: null,
+        storage_pool: '',
         primary_interface: {
             network_type: 'vpc',
             vpc_id: '',
@@ -245,6 +259,14 @@ const fetchResources = async () => {
         // Set default zone if available
         if (availableZones.value.length > 0) {
             newInstanceForm.value.zone = String(availableZones.value[0].name || availableZones.value[0].id)
+        }
+
+        try {
+            availablePools.value = (await storagePoolsApi.list({ limit: 200 })).storage_pools.filter(
+                (p) => !p.status || p.status === 'active'
+            )
+        } catch {
+            availablePools.value = []
         }
 
         if (isSystemAdmin.value) {
@@ -544,6 +566,9 @@ const handleCreateInstance = async () => {
         if (isSystemAdmin.value && form.hypervisor != null) {
             payload.hypervisor = form.hypervisor
         }
+        if (form.storage_pool) {
+            payload.storage_pool = { id: form.storage_pool }
+        }
         await instancesApi.createInstance(payload)
         // 列表按创建时间倒序，新建的在第一页
         emit('created')
@@ -653,9 +678,8 @@ watch(
                                     {{ t('dashboard.forms.placeholder.selectFlavor') }}
                                 </option>
                                 <option v-for="f in availableFlavors" :key="f.name" :value="f.name">
-                                    {{ f.name }} ({{ f.cpu }} vCPU,
-                                    {{ formatMemory(f.memory) }} RAM, {{ f.disk || 0 }} GB
-                                    {{ t('dashboard.table.disk') }})
+                                    {{ f.name }} ({{ f.cpu }} vCPU, {{ formatMemory(f.memory) }} RAM,
+                                    {{ f.disk || 0 }} GB {{ t('dashboard.table.disk') }})
                                 </option>
                             </select>
                         </div>
@@ -1296,6 +1320,18 @@ watch(
                             </option>
                         </select>
                         <small class="form-hint">{{ t('dashboard.instanceDetail.hypervisorHint') }}</small>
+                    </div>
+
+                    <div class="form-group" v-if="availablePools.length > 1">
+                        <label class="form-label">{{ t('storage.bootPool') }}</label>
+                        <select v-model="newInstanceForm.storage_pool" class="form-select">
+                            <option value="">{{ t('storage.bootPoolDefault') }}</option>
+                            <option v-for="p in poolsForHost" :key="p.id" :value="p.id">
+                                {{ p.name }}{{ p.media ? ` · ${p.media.toUpperCase()}` : '' }} ·
+                                {{ t('storage.availableHostsCount', { n: p.available_hosts }) }}
+                            </option>
+                        </select>
+                        <small class="form-hint">{{ t('storage.bootPoolHint') }}</small>
                     </div>
 
                     <div class="form-group">

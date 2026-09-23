@@ -156,6 +156,8 @@ const CONFIG_TEMPLATES: Record<string, object> = {
     ip_block: { for_duration: '30s', severity: 'warning' },
     // ipgroup-available-ip-monitor.yml.j2
     ipgroup_available_ip: { threshold: 100, for_duration: '5m', severity: 'warning' },
+    // local-pool-monitor.yml.j2: status of the local storage pools and their use in percent
+    local_pool: { usage_threshold: 85, for_duration: '5m', severity: 'warning' },
 }
 
 const onRuleTypeChange = () => {

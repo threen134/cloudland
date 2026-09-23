@@ -15,7 +15,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/spf13/viper"
 	"go.opentelemetry.io/otel/trace"
 
 	. "api/src/common"
@@ -45,10 +44,8 @@ func (a *ImageAdminService) Create(ctx context.Context, osCode, name, osVersion,
 	logger.Ctx(ctx).Debugf("Creating image %s %s %s %s %s %s %s %s %t %d %s %s", osCode, name, osVersion, virtType, userName, url, architecture, bootLoader, isRescue, instID, uuid, osFamily)
 	// 配置了 S3 但不可用（初始化中或配置错误）：直接报错，不能退回 legacy 本地路径，
 	// 否则镜像落到计算节点缓存，与 S3 模式的下载/删除流程对不上
-	if viper.GetString("volume.default_wds_pool_id") == "" {
-		if err = S3NotReadyError(ErrImageCreateFailed); err != nil {
-			return nil, err
-		}
+	if err = S3NotReadyError(ErrImageCreateFailed); err != nil {
+		return nil, err
 	}
 	memberShip := GetMemberShip(ctx)
 	ctx, db, newTransaction := StartTransaction(ctx)
@@ -109,7 +106,6 @@ func (a *ImageAdminService) Create(ctx context.Context, osCode, name, osVersion,
 	if rescueImage != nil {
 		image.RescueImage = rescueImage.ID
 	}
-	image.StorageType = GetVolumeDriver()
 	logger.Ctx(ctx).Debugf("Creating image %+v", image)
 	err = db.Create(image).Error
 	if err != nil {
@@ -117,29 +113,28 @@ func (a *ImageAdminService) Create(ctx context.Context, osCode, name, osVersion,
 		return nil, NewCLError(ErrImageCreateFailed, "Failed to create image record", err)
 	}
 
-	// create default storage
-	defaultPool := viper.GetString("volume.default_wds_pool_id")
-	storageID := int64(0)
-	if defaultPool != "" {
-		storage := &model.ImageStorage{
-			ImageID: image.ID,
-			Image:   image,
-			PoolID:  defaultPool,
-			Status:  model.StorageStatusUnknown,
+	prefix := strings.Split(image.UUID, "-")[0]
+	// A capture reads the boot disk of the instance on its host
+	bootDiskPath := ""
+	if instance != nil {
+		for _, volume := range instance.Volumes {
+			if volume.Booting {
+				var pool *model.StoragePool
+				if pool, err = VolumePool(ctx, volume); err != nil {
+					return
+				}
+				bootDiskPath = VolumeAbsPath(pool, volume)
+				break
+			}
 		}
-		if err = db.Create(storage).Error; err != nil {
-			logger.Ctx(ctx).Error("Failed to create default image storage", err)
-			return nil, NewCLError(ErrImageStorageCreateFailed, "Failed to create default image storage", err)
+		if bootDiskPath == "" {
+			err = NewCLError(ErrBootVolumeNotFound, "Instance has no boot volume", nil)
+			return
 		}
-		storageID = storage.ID
 	}
 
-	// create with default pool id
-	prefix := strings.Split(image.UUID, "-")[0]
-
-	// Non-WDS with S3 enabled: uploads go straight to MinIO from clapi; a capture runs on the node and uploads back through clapi
-	// WDS 路径（defaultPool != ""）保持原 shell 行为
-	if defaultPool == "" && S3Enabled() {
+	// With S3 enabled uploads go straight to MinIO from clapi; a capture runs on the node and uploads back through clapi
+	if S3Enabled() {
 		if instID == 0 {
 			// 普通上传：在独立 goroutine 里异步拉远端 URL → PutObject，立即返回
 			// WithoutCancel 保留 trace 上下文，但不随请求结束而取消上传
@@ -152,15 +147,6 @@ func (a *ImageAdminService) Create(ctx context.Context, osCode, name, osVersion,
 			return
 		}
 		// capture：派发给该 VM 所在 hyper 执行脚本，脚本完成后 POST 回 clapi
-		bootVolumeUUID := ""
-		if instance.Volumes != nil {
-			for _, volume := range instance.Volumes {
-				if volume.Booting {
-					bootVolumeUUID = volume.GetOriginVolumeID()
-					break
-				}
-			}
-		}
 		token, expiry := GenerateCaptureToken(image.ID)
 		uploadURL := BuildCaptureUploadURL(image.ID, expiry)
 		if uploadURL == "" {
@@ -169,8 +155,8 @@ func (a *ImageAdminService) Create(ctx context.Context, osCode, name, osVersion,
 			return
 		}
 		control := fmt.Sprintf("inter=%d", instance.Hyper)
-		command := fmt.Sprintf("/opt/cloudland/scripts/backend/capture_image.sh '%d' '%s' '%d' '%s' '%d' '%s' '%s'",
-			image.ID, ShellEscape(prefix), instance.ID, ShellEscape(bootVolumeUUID), storageID, ShellEscape(uploadURL), ShellEscape(token))
+		command := fmt.Sprintf("/opt/cloudland/scripts/backend/capture_image.sh '%d' '%s' '%d' '%s' '%s' '%s'",
+			image.ID, ShellEscape(prefix), instance.ID, ShellEscape(bootDiskPath), ShellEscape(uploadURL), ShellEscape(token))
 		err = HyperExecute(ctx, control, command)
 		if err != nil {
 			logger.Ctx(ctx).Error("Capture image command execution failed", err)
@@ -179,21 +165,12 @@ func (a *ImageAdminService) Create(ctx context.Context, osCode, name, osVersion,
 		return
 	}
 
-	// WDS 路径 / legacy 本地路径：保持原 shell 派发
+	// Legacy local mode (no S3): the image is downloaded to, or captured into, a node cache
 	control := "select="
-	command := fmt.Sprintf("/opt/cloudland/scripts/backend/create_image.sh '%d' '%s' '%s' '%d'", image.ID, ShellEscape(prefix), ShellEscape(url), storageID)
+	command := fmt.Sprintf("/opt/cloudland/scripts/backend/create_image.sh '%d' '%s' '%s'", image.ID, ShellEscape(prefix), ShellEscape(url))
 	if instID > 0 {
-		bootVolumeUUID := ""
-		if instance.Volumes != nil {
-			for _, volume := range instance.Volumes {
-				if volume.Booting {
-					bootVolumeUUID = volume.GetOriginVolumeID()
-					break
-				}
-			}
-		}
 		control = fmt.Sprintf("inter=%d", instance.Hyper)
-		command = fmt.Sprintf("/opt/cloudland/scripts/backend/capture_image.sh '%d' '%s' '%d' '%s' '%d'", image.ID, ShellEscape(prefix), instance.ID, ShellEscape(bootVolumeUUID), storageID)
+		command = fmt.Sprintf("/opt/cloudland/scripts/backend/capture_image.sh '%d' '%s' '%d' '%s' '' ''", image.ID, ShellEscape(prefix), instance.ID, ShellEscape(bootDiskPath))
 	}
 	err = HyperExecute(ctx, control, command)
 	if err != nil {
@@ -320,8 +297,9 @@ func S3ObjectNameFor(image *model.Image) string {
 	return s3ObjectName(image)
 }
 
-// S3NotReadyError 配置了 S3 但当前不可用时返回对外错误：初始化中提示稍后重试，配置错误给出原因（重试无意义）；
-// 未配置 S3 或已就绪时返回 nil。调用方负责先排除不走 S3 的镜像（WDS 等）
+// S3NotReadyError returns the error shown to the caller when S3 is configured but not usable right now: still
+// initializing asks for a retry, a configuration error gives the reason (retrying is pointless).
+// It returns nil when S3 is not configured at all, or when it is ready.
 func S3NotReadyError(code ErrCode) error {
 	if !S3Configured() || S3Enabled() {
 		return nil
@@ -332,18 +310,16 @@ func S3NotReadyError(code ErrCode) error {
 	return NewCLError(code, "Image store (S3) is not ready yet, please retry later", nil)
 }
 
-// BuildImageDownloadURLParam 供 launch/rescue/reinstall dispatch 生成 base64 编码的 presigned URL 参数。
-// 未配置 S3（legacy / WDS 模式）时返回空串；配置了 S3 但不可用、或签名失败时返回错误，
-// 让请求直接失败，而不是把空 URL 下发到计算节点、在节点上找不到镜像才报错
+// BuildImageDownloadURLParam builds the base64 encoded presigned URL that launch / rescue / reinstall pass to the
+// node. It returns an empty string when S3 is not configured (the legacy node-local image mode); when S3 is
+// configured but unusable, or signing fails, it returns an error so the request fails here instead of sending an
+// empty URL to the node and failing there with a missing image.
 func BuildImageDownloadURLParam(ctx context.Context, image *model.Image) (string, error) {
 	if image == nil || image.Status != "available" {
 		return "", nil
 	}
 	if !S3Enabled() {
-		if viper.GetString("volume.default_wds_pool_id") == "" {
-			return "", S3NotReadyError(ErrImageNotAvailable)
-		}
-		return "", nil
+		return "", S3NotReadyError(ErrImageNotAvailable)
 	}
 	u, err := GenerateDownloadURL(ctx, image)
 	if err != nil {
@@ -505,55 +481,34 @@ func (a *ImageAdminService) Delete(ctx context.Context, image *model.Image) (err
 	}
 	prefix := strings.Split(image.UUID, "-")[0]
 	control := "inter=0"
-	total, storages, _ := imageStorageAdmin.List(0, -1, "", image, "")
 
-	// 非 WDS 镜像且配置了 S3 但不可用（初始化中或配置错误）：拒绝删除。
-	// 否则会跳过 S3 对象清理、删掉 DB 记录，镜像文件永久残留在 bucket 里
-	if total == 0 {
-		if err = S3NotReadyError(ErrImageDeleteFailed); err != nil {
-			return
-		}
+	// S3 configured but unusable (initializing or misconfigured): refuse the deletion. Going ahead would skip the
+	// object cleanup and drop the record, leaving the image file in the bucket for good
+	if err = S3NotReadyError(ErrImageDeleteFailed); err != nil {
+		return
 	}
 
 	// S3 对象清理不受 Status 门控：覆盖 creating/error 状态下已落盘对象的孤儿场景
 	// （uploadImageToS3 detect-fail、UploadCapture 检测失败、goroutine-delete 竞态等）
 	// RemoveObject 对不存在对象幂等，空跑无害
-	if total == 0 && S3Enabled() {
+	if S3Enabled() {
 		if rmErr := S3RemoveObject(ctx, s3ObjectName(image)); rmErr != nil {
 			logger.Ctx(ctx).Errorf("S3 delete: RemoveObject failed for image %d: %v", image.ID, rmErr)
 			// 不阻塞 DB 记录删除 —— S3 侧可由 lifecycle 规则兜底
 		}
 	}
 
-	if image.Status == "available" {
-		if total > 0 {
-			// WDS: clear_image.sh removes the volume from every storage pool
-			for _, storage := range storages {
-				if storage.Status != model.StorageStatusSynced {
-					continue
-				}
-				command := fmt.Sprintf("/opt/cloudland/scripts/backend/clear_image.sh '%d' '%s' '%s' '%s'", image.ID, ShellEscape(prefix), ShellEscape(image.Format), ShellEscape(storage.VolumeID))
-				err = HyperExecute(ctx, control, command)
-				if err != nil {
-					logger.Ctx(ctx).Error("Clear image storage command execution failed", err)
-					return
-				}
-			}
-		} else if !S3Configured() {
-			// Legacy local mode (S3 not configured): clear_image.sh removes the node-local copies
-			command := fmt.Sprintf("/opt/cloudland/scripts/backend/clear_image.sh '%d' '%s' '%s' '%s'", image.ID, ShellEscape(prefix), ShellEscape(image.Format), ShellEscape(""))
-			err = HyperExecute(ctx, control, command)
-			if err != nil {
-				logger.Ctx(ctx).Error("Clear image command execution failed", err)
-				return
-			}
+	if image.Status == "available" && !S3Configured() {
+		// Legacy local mode (S3 not configured): clear_image.sh removes the node-local copies
+		command := fmt.Sprintf("/opt/cloudland/scripts/backend/clear_image.sh '%d' '%s' '%s'", image.ID, ShellEscape(prefix), ShellEscape(image.Format))
+		err = HyperExecute(ctx, control, command)
+		if err != nil {
+			logger.Ctx(ctx).Error("Clear image command execution failed", err)
+			return
 		}
 	}
 	if err = db.Delete(image).Error; err != nil {
 		return NewCLError(ErrImageDeleteFailed, "Failed to delete image record", err)
-	}
-	if err = db.Where("image_id = ?", image.ID).Delete(&model.ImageStorage{}).Error; err != nil {
-		return NewCLError(ErrImageStorageDeleteFailed, "Failed to delete image storage records", err)
 	}
 	return
 }
@@ -624,7 +579,7 @@ func (a *ImageAdminService) List(ctx context.Context, offset, limit int64, order
 	return
 }
 
-func (a *ImageAdminService) Update(ctx context.Context, image *model.Image, osCode, name, osVersion, userName string, pools []string, osFamily, uuid string, public *bool) (err error) {
+func (a *ImageAdminService) Update(ctx context.Context, image *model.Image, osCode, name, osVersion, userName string, osFamily, uuid string, public *bool) (err error) {
 	logger.Ctx(ctx).Infof("ENTER ImageAdmin.Update: id=%d, name=%s, osCode=%s", image.ID, name, osCode)
 	defer func() {
 		if err != nil {
@@ -693,54 +648,6 @@ func (a *ImageAdminService) Update(ctx context.Context, image *model.Image, osCo
 	if err != nil {
 		logger.Ctx(ctx).Error("Failed to save image", err)
 		return NewCLError(ErrImageUpdateFailed, "Failed to save image", err)
-	}
-
-	driver := GetVolumeDriver()
-	if driver == "local" {
-		return
-	}
-
-	defaultPoolID := viper.GetString("volume.default_wds_pool_id")
-	storages, err := imageStorageAdmin.InitStorages(ctx, image, pools)
-	if err != nil {
-		logger.Ctx(ctx).Error("Failed to initialize image storages", err)
-		return
-	}
-
-	logger.Ctx(ctx).Debugf("Image %s storages: %+v", image.UUID, storages)
-
-	sourceVolumeID := ""
-	for _, storage := range storages {
-		if storage.PoolID == defaultPoolID {
-			sourceVolumeID = storage.VolumeID
-			break
-		}
-	}
-	if sourceVolumeID == "" {
-		logger.Ctx(ctx).Error("Source volume ID not found for image")
-		return NewCLError(ErrImageStorageNotFound, "Source volume ID not found for image", err)
-	}
-	for _, storage := range storages {
-		// ignore already synced or syncing storages
-		if storage.Status == model.StorageStatusSynced || storage.Status == model.StorageStatusSyncing {
-			logger.Ctx(ctx).Debugf("Image %s storage %s is already synced or syncing, skipping", image.UUID, storage.PoolID)
-			continue
-		}
-		prefix := strings.Split(image.UUID, "-")[0]
-		control := "inter="
-		command := fmt.Sprintf("/opt/cloudland/scripts/backend/clone_image.sh '%d' '%s' '%s' '%d' '%s'", image.ID, ShellEscape(prefix), ShellEscape(storage.PoolID), storage.ID, ShellEscape(sourceVolumeID))
-		if storage.PoolID == defaultPoolID {
-			command = fmt.Sprintf("/opt/cloudland/scripts/backend/sync_image_info.sh '%d' '%s' '%s' '%d'", image.ID, ShellEscape(prefix), ShellEscape(storage.PoolID), storage.ID)
-		}
-		storage.Status = model.StorageStatusSyncing
-		if err = db.Model(&model.ImageStorage{}).Where("id = ?", storage.ID).Updates(map[string]interface{}{"status": storage.Status}).Error; err != nil {
-			logger.Ctx(ctx).Error("Failed to update image storage status", err)
-			return NewCLError(ErrImageStorageUpdateFailed, "Failed to update image storage status", err)
-		}
-		err = HyperExecute(ctx, control, command)
-		if err != nil {
-			logger.Ctx(ctx).Error("Sync remote info command execution failed", err)
-		}
 	}
 	return
 }

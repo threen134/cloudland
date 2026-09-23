@@ -13,6 +13,7 @@ import { useToast } from '../../composables/useToast'
 import { errorMessage } from '../../utils/error'
 import {
     LayoutDashboard,
+    Database,
     Server,
     HardDrive,
     Network,
@@ -163,6 +164,8 @@ const pageTitle = computed(() => {
         'zone-detail': t('dashboard.zones'),
         hypervisors: t('dashboard.hypervisors'),
         'hypervisor-detail': t('dashboard.hypervisors'),
+        'storage-pools': t('storage.poolsPage'),
+        'storage-pool-detail': t('storage.poolsPage'),
         migrations: t('dashboard.migrations'),
         'migration-detail': t('dashboard.migrations'),
         alarms: t('dashboard.alarms'),
@@ -392,6 +395,10 @@ onUnmounted(() => {
                         <RouterLink to="/dashboard/hypervisors" class="nav-item" active-class="active">
                             <Server :size="18" />
                             <span>{{ $t('dashboard.hypervisors') }}</span>
+                        </RouterLink>
+                        <RouterLink to="/dashboard/storage-pools" class="nav-item" active-class="active">
+                            <Database :size="18" />
+                            <span>{{ $t('storage.poolsPage') }}</span>
                         </RouterLink>
                         <RouterLink to="/dashboard/migrations" class="nav-item" active-class="active">
                             <ArrowRightLeft :size="18" />

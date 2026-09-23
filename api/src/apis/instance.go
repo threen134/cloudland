@@ -62,8 +62,6 @@ type InstancePayload struct {
 	Cpu                 int32               `json:"cpu" binding:"omitempty,gte=1"`
 	Memory              int32               `json:"memory" binding:"omitempty,gte=1"`
 	Disk                int32               `json:"disk" binding:"omitempty,gte=1"`
-	DiskIopsLimit       int32               `json:"disk_iops_limit" binding:"omitempty,gte=0,lte=10000000"`
-	DiskBpsLimit        int32               `json:"disk_bps_limit" binding:"omitempty,gte=0,lte=102400"` // in MB/s
 	Flavor              string              `json:"flavor" binding:"omitempty,min=1,max=32"`
 	Image               *BaseReference      `json:"image" binding:"required"`
 	PrimaryInterface    *InterfacePayload   `json:"primary_interface" binding:"required"`
@@ -73,7 +71,7 @@ type InstancePayload struct {
 	Userdata            string              `json:"userdata,omitempty"`
 	UserdataType        string              `json:"userdata_type,omitempty"`
 	NestedEnable        bool                `json:"nested_enable,omitempty"`
-	PoolID              string              `json:"pool_id" binding:"omitempty"`
+	StoragePool         *BaseReference      `json:"storage_pool" binding:"omitempty"` // pool of the boot disk; the default pool when left out
 	Vendordata          string              `json:"vendordata,omitempty"`
 	Vendordatatype      string              `json:"vendordatatype,omitempty"`
 }
@@ -97,6 +95,8 @@ type InstanceResponse struct {
 	VPC         *ResourceReference    `json:"vpc,omitempty"`
 	Hypervisor  string                `json:"hypervisor,omitempty"`
 	Reason      string                `json:"reason"`
+	// Pools usable on the host of the instance: a volume not created yet can only be attached when its pool is one of them
+	AvailableStoragePools []string `json:"available_storage_pools"`
 }
 
 type InstanceListResponse struct {
@@ -125,7 +125,7 @@ func (v *InstanceAPI) Get(c *gin.Context) {
 		ErrorResponse(c, http.StatusBadRequest, "Invalid instance query", err)
 		return
 	}
-	instanceResp, err := v.getInstanceResponse(ctx, instance)
+	instanceResp, err := v.getInstanceResponse(ctx, instance, hostPools{})
 	if err != nil {
 		ErrorResponse(c, http.StatusInternalServerError, "Internal error", err)
 		return
@@ -178,7 +178,7 @@ func (v *InstanceAPI) Patch(c *gin.Context) {
 		ErrorResponse(c, http.StatusBadRequest, "Patch instance failed", err)
 		return
 	}
-	instanceResp, err := v.getInstanceResponse(ctx, instance)
+	instanceResp, err := v.getInstanceResponse(ctx, instance, hostPools{})
 	if err != nil {
 		logger.Ctx(ctx).Errorf("Failed to create instance response, %+v", err)
 		ErrorResponse(c, http.StatusInternalServerError, "Internal error", err)
@@ -626,9 +626,14 @@ func (v *InstanceAPI) Create(c *gin.Context) {
 		return
 	}
 
-	logger.Ctx(ctx).Debugf("Creating %d instances with hostname %s, userdata %s, userdata_type %s, vendordata %s, vendordatatype %s, image %s, zone %s, router %d, primaryIface %v, secondaryIfaces %v, keys %v, login_port %d, hypervisor %d, cpu %d, memory %d, disk %d, disk_iops_limit %d, disk_bps_limit %d, nestedEnable %v, poolID: %s",
-		count, hostname, userdata, userdataType, vendorData, vendorDataType, image.Name, zone.Name, routerID, primaryIface, secondaryIfaces, keys, payload.LoginPort, hypervisor, payload.Cpu, payload.Memory, payload.Disk, payload.DiskIopsLimit, payload.DiskBpsLimit, payload.NestedEnable, payload.PoolID)
-	instances, err := instanceAdmin.Create(ctx, count, hostname, userdata, userdataType, vendorData, vendorDataType, image, zone, routerID, primaryIface, secondaryIfaces, keys, rootPasswd, payload.LoginPort, hypervisor, payload.Cpu, payload.Memory, payload.Disk, payload.DiskIopsLimit, payload.DiskBpsLimit, payload.NestedEnable, payload.PoolID)
+	logger.Ctx(ctx).Debugf("Creating %d instances with hostname %s, userdata %s, userdata_type %s, vendordata %s, vendordatatype %s, image %s, zone %s, router %d, primaryIface %v, secondaryIfaces %v, keys %v, login_port %d, hypervisor %d, cpu %d, memory %d, disk %d, nestedEnable %v, storage pool: %v",
+		count, hostname, userdata, userdataType, vendorData, vendorDataType, image.Name, zone.Name, routerID, primaryIface, secondaryIfaces, keys, payload.LoginPort, hypervisor, payload.Cpu, payload.Memory, payload.Disk, payload.NestedEnable, payload.StoragePool)
+	bootPool, err := storagePoolAdmin.Resolve(ctx, payload.StoragePool)
+	if err != nil {
+		ErrorResponse(c, http.StatusBadRequest, "Invalid storage pool", err)
+		return
+	}
+	instances, err := instanceAdmin.Create(ctx, count, hostname, userdata, userdataType, vendorData, vendorDataType, image, zone, routerID, primaryIface, secondaryIfaces, keys, rootPasswd, payload.LoginPort, hypervisor, payload.Cpu, payload.Memory, payload.Disk, payload.NestedEnable, bootPool)
 	if err != nil {
 		logger.Ctx(ctx).Errorf("Failed to create instances, %+v", err)
 		ErrorResponse(c, http.StatusBadRequest, "Failed to create instances", err)
@@ -636,8 +641,9 @@ func (v *InstanceAPI) Create(c *gin.Context) {
 	}
 	logger.Ctx(ctx).Debugf("Created %d instances, %+v", len(instances), instances)
 	instancesResp := make([]*InstanceResponse, len(instances))
+	pools := hostPools{}
 	for i, instance := range instances {
-		instancesResp[i], err = v.getInstanceResponse(ctx, instance)
+		instancesResp[i], err = v.getInstanceResponse(ctx, instance, pools)
 		if err != nil {
 			logger.Ctx(ctx).Errorf("Failed to create instance response, %+v", err)
 			ErrorResponse(c, http.StatusInternalServerError, "Failed to create instances", err)
@@ -648,7 +654,20 @@ func (v *InstanceAPI) Create(c *gin.Context) {
 	c.JSON(http.StatusOK, instancesResp)
 }
 
-func (v *InstanceAPI) getInstanceResponse(ctx context.Context, instance *model.Instance) (instanceResp *InstanceResponse, err error) {
+// hostPools remembers the usable pools of the hosts met in one request: the figure depends on the host only, and
+// the instance list is polled, so it is queried once per host instead of once per instance
+type hostPools map[int32][]string
+
+func (p hostPools) of(ctx context.Context, hostid int32) []string {
+	if pools, ok := p[hostid]; ok {
+		return pools
+	}
+	pools := services.AvailablePoolUUIDs(ctx, hostid)
+	p[hostid] = pools
+	return pools
+}
+
+func (v *InstanceAPI) getInstanceResponse(ctx context.Context, instance *model.Instance, pools hostPools) (instanceResp *InstanceResponse, err error) {
 	logger.Ctx(ctx).Debugf("Create instance response for instance %+v", instance)
 	owner := orgAdmin.GetOrgName(ctx, instance.Owner)
 	instanceResp = &InstanceResponse{
@@ -659,14 +678,20 @@ func (v *InstanceAPI) getInstanceResponse(ctx context.Context, instance *model.I
 			CreatedAt: instance.CreatedAt.Format(TimeStringForMat),
 			UpdatedAt: instance.UpdatedAt.Format(TimeStringForMat),
 		},
-		Hostname:   instance.Hostname,
-		LoginPort:  int(instance.LoginPort),
-		Status:     instance.Status.String(),
-		Reason:     instance.Reason,
-		RootPasswd: instance.RootPasswd,
-		Cpu:        instance.Cpu,
-		Memory:     instance.Memory,
-		Disk:       instance.Disk,
+		Hostname:              instance.Hostname,
+		LoginPort:             int(instance.LoginPort),
+		Status:                instance.Status.String(),
+		Reason:                instance.Reason,
+		AvailableStoragePools: []string{},
+		RootPasswd:            instance.RootPasswd,
+		Cpu:                   instance.Cpu,
+		Memory:                instance.Memory,
+		Disk:                  instance.Disk,
+	}
+	if instance.Hyper >= 0 {
+		if usable := pools.of(ctx, instance.Hyper); usable != nil {
+			instanceResp.AvailableStoragePools = usable
+		}
 	}
 	if instance.Image != nil {
 		instanceResp.Image = &ResourceReference{
@@ -797,8 +822,9 @@ func (v *InstanceAPI) List(c *gin.Context) {
 		Limit:  len(instances),
 	}
 	instanceList := make([]*InstanceResponse, instanceListResp.Limit)
+	pools := hostPools{}
 	for i, instance := range instances {
-		instanceList[i], err = v.getInstanceResponse(ctx, instance)
+		instanceList[i], err = v.getInstanceResponse(ctx, instance, pools)
 		if err != nil {
 			logger.Ctx(ctx).Errorf("Failed to create instance response, %+v", err)
 			ErrorResponse(c, http.StatusInternalServerError, "Internal error", err)

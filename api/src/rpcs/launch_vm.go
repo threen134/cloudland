@@ -136,10 +136,17 @@ func sendFdbRules(ctx context.Context, instance *model.Instance, vrrpInstance *m
 
 func LaunchVM(ctx context.Context, args []string) (status string, err error) {
 	//|:-COMMAND-:| launch_vm.sh '127' 'running' '3' 'reason'
+	outerCtx := ctx
 	ctx, db, newTransaction := StartTransaction(ctx)
+	// Released after the transaction: a failure rolls it back, and the room held for a boot disk that was never
+	// created would then stay reserved until the reservation expires a day later
+	releaseBootVolume := int64(0)
 	defer func() {
 		if newTransaction {
 			EndTransaction(ctx, err)
+		}
+		if releaseBootVolume > 0 {
+			services.ReleaseReservations(outerCtx, 0, releaseBootVolume, model.ReservationBoot)
 		}
 	}()
 	argn := len(args)
@@ -163,6 +170,11 @@ func LaunchVM(ctx context.Context, args []string) (status string, err error) {
 			"reason": reason}).Error
 		if err != nil {
 			logger.Ctx(ctx).Error("Failed to update instance", err)
+		}
+		// The boot disk was never created: give back the room held for it in its pool
+		bootVolume := &model.Volume{}
+		if db.Where("instance_id = ? AND booting = ?", instID, true).Take(bootVolume).Error == nil {
+			releaseBootVolume = bootVolume.ID
 		}
 		return
 	}
@@ -188,6 +200,12 @@ func LaunchVM(ctx context.Context, args []string) (status string, err error) {
 		return
 	}
 	reason = args[4]
+	// "sync" is how the host reports an instance it found or started after a boot, not a reason to keep on the
+	// instance: the column gets cleared instead, which also drops start_failed or storage_pending once it runs
+	storedReason := reason
+	if reason == "sync" {
+		storedReason = ""
+	}
 	instance.Hyper = int32(hyperID)
 	hyper := &model.Hyper{}
 	err = db.Where("hostid = ?", hyperID).Take(hyper).Error
@@ -201,7 +219,7 @@ func LaunchVM(ctx context.Context, args []string) (status string, err error) {
 			"status": serverStatus,
 			"hyper":  int32(hyperID),
 			"zoneID": hyper.ZoneID,
-			"reason": reason}).Error
+			"reason": storedReason}).Error
 		if err != nil {
 			logger.Ctx(ctx).Error("Failed to update instance", err)
 			return

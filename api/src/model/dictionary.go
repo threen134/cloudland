@@ -11,9 +11,8 @@ import (
 )
 
 const (
-	DICT_CATEGORY_OS_FAMILY    = "os_family"
-	DICT_CATEGORY_STORAGE_POOL = "storage_pool"
-	DICT_CATEGORY_IPGROUP      = "ipgroup"
+	DICT_CATEGORY_OS_FAMILY = "os_family"
+	DICT_CATEGORY_IPGROUP   = "ipgroup"
 )
 
 type Dictionary struct {

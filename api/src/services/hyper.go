@@ -16,6 +16,8 @@ import (
 	. "api/src/common"
 	"api/src/dbs"
 	"api/src/model"
+
+	"gorm.io/gorm"
 )
 
 // clandPubKeyPath is the path inside the clapi container where cland.key.pub
@@ -300,21 +302,25 @@ func (a *HyperAdmin) AllocateHostID(ctx context.Context) (hostID int32, err erro
 		}
 	}()
 	_, db := GetContextDB(ctx)
+	// A host id is never given again: hosts are deleted for good, but volumes kept for adoption still name the old
+	// id (and the pool disks carry it in their tags), so the id of a deleted host must not come back with a new one.
+	// The ids ever used are taken from the hosts and from everything that remembers a host, deleted rows included.
 	var maxID int32
-	if err = db.Model(&model.Hyper{}).Select("max(hostid)").Row().Scan(&maxID); err != nil {
-		// If no records exist, Row().Scan might return an error or maxID will be 0.
-		// We ensure it starts from 1 if it's currently unset/0.
-		logger.Ctx(ctx).Info("No existing hypervisors found, starting hostID from 1")
-		return 1, nil // Start from 1 if no records or error
+	for _, q := range []*gorm.DB{
+		db.Model(&model.Hyper{}).Select("COALESCE(MAX(hostid), 0)"),
+		db.Unscoped().Model(&model.Volume{}).Select("COALESCE(MAX(hyper), 0)"),
+		db.Unscoped().Model(&model.Instance{}).Select("COALESCE(MAX(hyper), 0)"),
+		db.Unscoped().Model(&model.HyperDisk{}).Select("COALESCE(MAX(owner_hostid), 0)"),
+	} {
+		var id int32
+		if err = q.Row().Scan(&id); err != nil {
+			return 0, NewCLError(ErrSQLSyntaxError, "Failed to allocate a host id", err)
+		}
+		if id > maxID {
+			maxID = id
+		}
 	}
-	// If maxID is 0 (e.g., table is empty and max() returns 0), start from 1.
-	// Otherwise, increment the maxID found.
-	if maxID < 1 {
-		hostID = 1
-	} else {
-		hostID = maxID + 1
-	}
-	return hostID, nil
+	return maxID + 1, nil
 }
 
 func (a *HyperAdmin) Deploy(ctx context.Context, ip, hostname, networkDevice, vlanDevice, privateVlanDevice, dnsServer, domain, zoneName, virtType string) (hyper *model.Hyper, deployCmd string, err error) {
@@ -398,6 +404,10 @@ func (a *HyperAdmin) Deploy(ctx context.Context, ip, hostname, networkDevice, vl
 			return nil, "", NewCLError(ErrSQLSyntaxError, "Failed to create hypervisor record", err)
 		}
 		logger.Ctx(ctx).Infof("Created new hypervisor record for %s (HostID: %d, IP: %s, Zone: %s)", hostname, hostID, ip, zoneName)
+		// Every host has the built-in pool; its capacity comes with the first report of the host
+		if perr := EnsureBuiltinHyperPool(ctx, hostID); perr != nil {
+			logger.Ctx(ctx).Errorf("Failed to add the built-in storage pool of host %d: %v", hostID, perr)
+		}
 		RegisterHostInDns(hostname, ip)
 	}
 
@@ -468,7 +478,7 @@ func (a *HyperAdmin) Deploy(ctx context.Context, ip, hostname, networkDevice, vl
 	return hyper, deployCmd, nil
 }
 
-func (a *HyperAdmin) Maintain(ctx context.Context, hostID int32, migrate bool, targetHyper int32) (err error) {
+func (a *HyperAdmin) Maintain(ctx context.Context, hostID int32, migrate bool, targetHyper int32) (results []*MigrationResult, err error) {
 	logger.Ctx(ctx).Infof("ENTER HyperAdmin.Maintain: hostID=%d, migrate=%v, targetHyper=%d", hostID, migrate, targetHyper)
 	defer func() {
 		if err != nil {
@@ -480,16 +490,16 @@ func (a *HyperAdmin) Maintain(ctx context.Context, hostID int32, migrate bool, t
 	memberShip := GetMemberShip(ctx)
 	permit := memberShip.CheckSystemPermission()
 	if !permit {
-		return NewCLError(ErrPermissionDenied, "Not authorized for this operation", nil)
+		return nil, NewCLError(ErrPermissionDenied, "Not authorized for this operation", nil)
 	}
 	ctx, db := GetContextDB(ctx)
 
 	hyper := &model.Hyper{}
 	if err = db.Where("hostid = ?", hostID).Take(hyper).Error; err != nil {
-		return NewCLError(ErrHypervisorNotFound, "Specified hypervisor not found", err)
+		return nil, NewCLError(ErrHypervisorNotFound, "Specified hypervisor not found", err)
 	}
 	if hyper.Status != 1 && hyper.Status != 0 {
-		return NewCLError(ErrHypervisorInvalidState, "Hypervisor must be active or disabled to maintain", nil)
+		return nil, NewCLError(ErrHypervisorInvalidState, "Hypervisor must be active or disabled to maintain", nil)
 	}
 
 	// 有虚拟机正在迁入时拒绝进入维护：这些虚拟机此刻的 instances.hyper 仍指向源节点，
@@ -499,18 +509,18 @@ func (a *HyperAdmin) Maintain(ctx context.Context, hostID int32, migrate bool, t
 	var incoming int64
 	if err = db.Model(&model.Migration{}).Where("target_hyper = ? and status in ?", hostID,
 		[]string{"in_progress", "target_prepared", "source_prepared"}).Count(&incoming).Error; err != nil {
-		return NewCLError(ErrSQLSyntaxError, "Failed to count incoming migrations", err)
+		return nil, NewCLError(ErrSQLSyntaxError, "Failed to count incoming migrations", err)
 	}
 	if incoming > 0 {
 		logger.Ctx(ctx).Errorf("Hypervisor %d has %d incoming migration(s), refusing maintenance", hostID, incoming)
-		return NewCLError(ErrHypervisorInvalidState,
+		return nil, NewCLError(ErrHypervisorInvalidState,
 			fmt.Sprintf("%d instance(s) are migrating to this hypervisor, please retry after they finish", incoming), nil)
 	}
 
 	originalStatus := hyper.Status
 	// Set status to maintaining
 	if err = db.Model(hyper).Update("status", 2).Error; err != nil {
-		return NewCLError(ErrSQLSyntaxError, "Failed to update hypervisor status", err)
+		return nil, NewCLError(ErrSQLSyntaxError, "Failed to update hypervisor status", err)
 	}
 	// 后续失败时把节点状态改回去，否则节点停在"维护中"。心跳上报恰好会把它覆盖回来，
 	// 但那是巧合，不能依赖
@@ -527,25 +537,25 @@ func (a *HyperAdmin) Maintain(ctx context.Context, hostID int32, migrate bool, t
 		// 必须预加载 Volumes：迁移要用引导卷判断存储类型，不加载则 migrationAdmin.Create
 		// 一律报 "Instance has no boot volume"，维护模式的自动迁移对任何实例都无法成功
 		instances := []*model.Instance{}
-		if err = db.Preload("Volumes").Where("hyper = ?", hostID).Find(&instances).Error; err != nil {
-			return NewCLError(ErrSQLSyntaxError, "Failed to query instances", err)
+		if err = db.Preload("Volumes").Preload("Image").Preload("Flavor").Where("hyper = ?", hostID).Find(&instances).Error; err != nil {
+			return nil, NewCLError(ErrSQLSyntaxError, "Failed to query instances", err)
 		}
 
 		if len(instances) > 0 {
-			// Migrate all instances
-			_, err = migrationAdmin.Create(ctx, fmt.Sprintf("maintenance-hyper-%d", hostID), instances, false, targetHyper)
+			// Each instance migrates in its own transaction; one that can not move is recorded and the others go on
+			_, results, err = migrationAdmin.Create(ctx, fmt.Sprintf("maintenance-hyper-%d", hostID), instances, false, targetHyper, nil, true)
 			if err != nil {
 				logger.Ctx(ctx).Errorf("Failed to create migrations for maintenance: %v", err)
-				return err
+				return results, err
 			}
 		}
 	}
 
 	logger.Ctx(ctx).Infof("Hypervisor %d entered maintenance mode (status=%d, migrate=%v, target=%d)", hostID, hyper.Status, migrate, targetHyper)
-	return nil
+	return results, nil
 }
 
-func (a *HyperAdmin) Delete(ctx context.Context, hostID int32) (err error) {
+func (a *HyperAdmin) Delete(ctx context.Context, hostID int32, keepPools bool) (err error) {
 	logger.Ctx(ctx).Infof("ENTER HyperAdmin.Delete: hostID=%d", hostID)
 	defer func() {
 		if err != nil {
@@ -573,6 +583,9 @@ func (a *HyperAdmin) Delete(ctx context.Context, hostID int32) (err error) {
 	}
 	if count > 0 {
 		return NewCLError(ErrHypervisorInvalidState, fmt.Sprintf("Hypervisor still has %d instances, cannot delete", count), nil)
+	}
+	if err = a.releaseStorage(db, hostID, keepPools); err != nil {
+		return
 	}
 
 	// Clean up related records
@@ -605,5 +618,49 @@ func (a *HyperAdmin) Delete(ctx context.Context, hostID int32) (err error) {
 
 	RemoveHostFromDns(hyper.Hostname)
 	logger.Ctx(ctx).Infof("Hypervisor %d deleted successfully from database (Hostname: %s)", hostID, hyper.Hostname)
+	return nil
+}
+
+// releaseStorage handles the storage of a host being deleted (§5.9 of the local storage plan). Pools other than the
+// built-in one and volumes still on the host block the deletion, unless they were declared lost or keepPools asks to
+// keep them for adoption by the host that will come back: volumes of other pools wait as orphaned under the old host
+// id, volumes of the built-in pool are lost (the root file system does not survive a reinstall).
+func (a *HyperAdmin) releaseStorage(db *gorm.DB, hostID int32, keepPools bool) (err error) {
+	var pools, volumes int64
+	if err = db.Model(&model.HyperStoragePool{}).Joins("JOIN storage_pools ON storage_pools.id = hyper_storage_pools.pool_id").
+		Where("hyper_storage_pools.hostid = ? AND storage_pools.builtin = ? AND hyper_storage_pools.status <> ?", hostID, false, model.HyperPoolLost).
+		Count(&pools).Error; err != nil {
+		return NewCLError(ErrSQLSyntaxError, "Failed to count the storage pools of the host", err)
+	}
+	if err = db.Model(&model.Volume{}).Where("hyper = ? AND status NOT IN ?", hostID,
+		[]model.VolumeStatus{model.VolumeStatusLost, model.VolumeStatusOrphaned}).Count(&volumes).Error; err != nil {
+		return NewCLError(ErrSQLSyntaxError, "Failed to count the volumes of the host", err)
+	}
+	if (pools > 0 || volumes > 0) && !keepPools {
+		return NewCLError(ErrHypervisorInvalidState, fmt.Sprintf("Hypervisor still has %d storage pools and %d volumes: move or delete them, "+
+			"declare the pools lost, or delete the hypervisor keeping its pools for adoption", pools, volumes), nil)
+	}
+	if keepPools {
+		builtin := &model.StoragePool{}
+		if err = db.Where("builtin = ?", true).Take(builtin).Error; err != nil {
+			return NewCLError(ErrStoragePoolNotFound, "Built-in storage pool not found", err)
+		}
+		if err = db.Model(&model.Volume{}).Where("hyper = ? AND storage_pool_id = ? AND status <> ?", hostID, builtin.ID, model.VolumeStatusLost).
+			Updates(map[string]interface{}{"status": model.VolumeStatusLost, "reason": "its host was deleted", "instance_id": 0, "target": ""}).Error; err != nil {
+			return NewCLError(ErrVolumeUpdateFailed, "Failed to mark the volumes of the built-in pool lost", err)
+		}
+		if err = db.Model(&model.Volume{}).Where("hyper = ? AND storage_pool_id <> ? AND status NOT IN ?", hostID, builtin.ID,
+			[]model.VolumeStatus{model.VolumeStatusLost, model.VolumeStatusOrphaned}).
+			Updates(map[string]interface{}{"status": model.VolumeStatusOrphaned, "reason": "waiting for its pool to be adopted", "instance_id": 0, "target": ""}).Error; err != nil {
+			return NewCLError(ErrVolumeUpdateFailed, "Failed to keep the volumes for adoption", err)
+		}
+	}
+	if err = db.Where("hostid = ?", hostID).Delete(&model.HyperStoragePool{}).Error; err != nil {
+		return NewCLError(ErrSQLSyntaxError, "Failed to delete the storage pools of the host", err)
+	}
+	if err = db.Where("hostid = ?", hostID).Delete(&model.HyperDisk{}).Error; err != nil {
+		return NewCLError(ErrSQLSyntaxError, "Failed to delete the disks of the host", err)
+	}
+	db.Where("hostid = ?", hostID).Delete(&model.StorageReservation{})
 	return nil
 }

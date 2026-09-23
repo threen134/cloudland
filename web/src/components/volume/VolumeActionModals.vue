@@ -48,6 +48,24 @@ const selectedInstanceId = ref('')
 
 const instanceLabel = (inst: Instance) => [inst.hostname, primaryIp(inst), inst.hypervisor].filter(Boolean).join(' · ')
 
+// Why an instance can not take the volume: its host lacks the pool of the volume, or the volume file is already on
+// another host (§5.2, §5.3 of the storage plan)
+const attachBlockedFor = (inst: Instance) => {
+    const v = target.value
+    if (!v) return ''
+    if (v.hypervisor?.name && inst.hypervisor && inst.hypervisor !== v.hypervisor.name) {
+        return t('storage.volumeOnOtherHost', { host: v.hypervisor.name })
+    }
+    if (
+        v.storage_pool?.id &&
+        inst.available_storage_pools &&
+        !inst.available_storage_pools.includes(v.storage_pool.id)
+    ) {
+        return t('storage.poolNotOnHost', { pool: v.storage_pool.name || '' })
+    }
+    return ''
+}
+
 // Bumped on every open: a slow fetch from an earlier open must not write into the dialog shown now
 let openSeq = 0
 
@@ -163,7 +181,9 @@ defineExpose({ openAttach, openDetach, openResize })
                               : t('dashboard.volumeActions.noInstances')
                     }}
                 </option>
-                <option v-for="inst in instances" :key="inst.id" :value="inst.id">{{ instanceLabel(inst) }}</option>
+                <option v-for="inst in instances" :key="inst.id" :value="inst.id" :disabled="!!attachBlockedFor(inst)">
+                    {{ instanceLabel(inst) }}{{ attachBlockedFor(inst) ? ` — ${attachBlockedFor(inst)}` : '' }}
+                </option>
             </select>
             <p class="form-hint">{{ t('dashboard.volumeActions.attachHint') }}</p>
         </div>

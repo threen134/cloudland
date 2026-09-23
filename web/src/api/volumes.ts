@@ -1,65 +1,76 @@
 import client from './client'
 
 /**
- * 云硬盘与备份/快照。
- * 依据：api/src/apis/volume.go 的 VolumeResponse / VolumeListResponse，
- *      api/src/apis/backup.go 的 VolBackupResponse / VolBackupListResponse，
- *      内嵌的 ResourceReference / BaseReference 见 api/src/common/http.go。
+ * Volumes. Mirrors api/src/apis/volume.go (VolumeResponse / VolumeListResponse);
+ * the embedded ResourceReference / BaseReference are in api/src/common/http.go.
  */
 
-/** api/src/common/http.go 的 BaseReference */
+/** api/src/common/http.go BaseReference */
 export interface BaseReference {
     id: string
     name: string
 }
 
-/** model.VolumeStatus（api/src/model/volume.go） */
-export type VolumeStatus =
-    'resizing' | 'available' | 'attached' | 'attaching' | 'detaching' | 'restoring' | 'backuping' | 'error' | 'pending'
+/** common/http.go ResourceReference: every field is omitempty */
+export interface ResourceRef {
+    id?: string
+    name?: string
+}
 
-/** model.BackupStatus（api/src/model/volume.go） */
-export type BackupStatus = 'pending' | 'available' | 'error' | 'restoring'
+/** model.VolumeStatus (api/src/model/volume.go) */
+export type VolumeStatus =
+    | 'resizing'
+    | 'available'
+    | 'attached'
+    | 'attaching'
+    | 'detaching'
+    | 'error'
+    | 'pending'
+    // The host is deleting the file; the volume goes away when it reports back (§5.5 of the storage plan)
+    | 'deleting'
+    // Deleting timed out: only another delete is allowed
+    | 'delete_failed'
+    // Its storage pool was declared lost: delete the record or detach it by force
+    | 'lost'
+    // Its host was deleted with the pools kept: waits for the pool to be adopted
+    | 'orphaned'
 
 export interface Volume {
-    // --- ResourceReference（字段都是 omitempty，实际由 getVolumeResponse 填满） ---
+    // --- ResourceReference (omitempty, filled by getVolumeResponse) ---
     id: string
     name: string
-    /** 组织名；查不到组织时可能缺省 */
     owner?: string
     owner_uuid?: string
     created_at: string
     updated_at: string
-    // --- VolumeResponse 本体 ---
+    // --- VolumeResponse ---
+    /** Path of the file relative to the root of its pool */
     path: string
     /** GB */
     size: number
     format: string
     status: VolumeStatus
-    /** 挂载到虚拟机内的盘符，如 vdb */
+    /** Why the last operation failed, or why the volume is lost */
+    reason: string
+    /** Device name in the guest, e.g. vdb */
     target: string
     href: string
-    /** 是否系统盘 */
     booting: boolean
-    /** 未挂载时为 null */
+    /** null when not attached */
     instance: BaseReference | null
-    iops_limit: number
-    iops_burst: number
-    /** MB/s */
-    bps_limit: number
-    bps_burst: number
+    storage_pool: ResourceRef | null
+    /** Host holding the file (system admins only); missing until the first attach */
+    hypervisor?: ResourceRef
 }
 
-/** POST /volumes 的请求体 —— apis/volume.go VolumePayload */
+/** POST /volumes body (apis/volume.go VolumePayload) */
 export interface VolumePayload {
     name: string
     /** GB */
     size: number
     count?: number
-    pool_id?: string
-    iops_limit?: number
-    iops_burst?: number
-    bps_limit?: number
-    bps_burst?: number
+    /** Default pool when left out */
+    storage_pool?: { id: string }
 }
 
 /**
@@ -71,90 +82,55 @@ export interface VolumePatchPayload {
     instance?: { id: string } | null
 }
 
-/** Statuses during which the backend refuses another attach / detach / resize (model.Volume.IsBusy) */
-export const BUSY_VOLUME_STATUSES: VolumeStatus[] = [
-    'pending',
-    'resizing',
-    'attaching',
-    'detaching',
-    'restoring',
-    'backuping',
-]
+/** Statuses during which the backend refuses another operation on the volume (model.Volume.IsBusy) */
+export const BUSY_VOLUME_STATUSES: VolumeStatus[] = ['pending', 'resizing', 'attaching', 'detaching', 'deleting']
 
 export interface VolumeListResponse {
     offset: number
     total: number
-    /** 本页实际条数（后端用 len(volumes) 填充，不是请求的 limit） */
+    /** Rows of this page (the backend fills len(volumes), not the requested limit) */
     limit: number
     volumes: Volume[]
 }
 
-export interface VolumeBackup {
-    // --- ResourceReference ---
-    id: string
-    name: string
-    owner?: string
-    owner_uuid?: string
-    created_at: string
-    updated_at: string
-    // --- VolBackupResponse 本体 ---
-    /** GB */
-    size: number
-    /** 源卷，缺失时为 null */
-    volume: BaseReference | null
-    status: BackupStatus
-    path?: string
-    task?: BaseReference
-}
-
-export interface BackupListResponse {
-    offset: number
-    total: number
-    /** 本页实际条数 */
-    limit: number
-    backups: VolumeBackup[]
-}
-
-// Volume API functions
 export const volumesApi = {
-    // List volumes
     list: async (params?: {
         offset?: number
         limit?: number
         order?: string
         name?: string
         status?: string
-        // 后端默认 data（只含数据盘）；要同时列出系统盘须传 all
+        // The backend defaults to data (data volumes only); pass all to include boot volumes
         type?: 'data' | 'boot' | 'all'
     }): Promise<VolumeListResponse> => {
         const response = await client.get<VolumeListResponse>('/volumes', { params })
         return response.data
     },
 
-    // Get single volume
     get: async (id: string): Promise<Volume> => {
         const response = await client.get<Volume>(`/volumes/${id}`)
         return response.data
     },
 
-    // Create volume
     create: async (payload: VolumePayload): Promise<Volume> => {
         const response = await client.post<Volume>('/volumes', payload)
         return response.data
     },
 
-    // Update volume
     patch: async (id: string, payload: VolumePatchPayload): Promise<Volume> => {
         const response = await client.patch<Volume>(`/volumes/${id}`, payload)
         return response.data
     },
 
-    // Delete volume（后端返回 204 No Content）
-    delete: async (id: string): Promise<void> => {
-        await client.delete(`/volumes/${id}`)
+    /**
+     * 202: the host deletes the file and the volume stays in `deleting` until it reports back;
+     * 204: the record is gone (a volume not created yet, or a lost one)
+     */
+    delete: async (id: string): Promise<{ deferred: boolean }> => {
+        const response = await client.delete(`/volumes/${id}`)
+        return { deferred: response.status === 202 }
     },
 
-    // Attach volume to instance
     attach: async (id: string, instanceId: string): Promise<Volume> => {
         const response = await client.patch<Volume>(`/volumes/${id}`, {
             instance: { id: instanceId },
@@ -162,7 +138,6 @@ export const volumesApi = {
         return response.data
     },
 
-    // Detach volume from instance
     detach: async (id: string): Promise<Volume> => {
         const response = await client.patch<Volume>(`/volumes/${id}`, {
             instance: null,
@@ -170,53 +145,15 @@ export const volumesApi = {
         return response.data
     },
 
-    // Resize volume (grow only). PATCH ignores `size`; the resize endpoint is the one the gateway
-    // meters against the disk quota. The response body is empty: re-fetch the volume afterwards.
+    // Grow only. PATCH ignores `size`; the resize endpoint is the one the gateway meters against the disk quota.
+    // The response body is empty: re-fetch the volume afterwards.
     resize: async (id: string, newSize: number): Promise<void> => {
         await client.post(`/volumes/${id}/resize`, { size: newSize })
     },
-}
 
-// Backup API functions
-export const backupsApi = {
-    // List backups
-    list: async (params?: { offset?: number; limit?: number }): Promise<BackupListResponse> => {
-        const response = await client.get<BackupListResponse>('/backups', { params })
-        return response.data
-    },
-
-    // Get single backup
-    get: async (id: string): Promise<VolumeBackup> => {
-        const response = await client.get<VolumeBackup>(`/backups/${id}`)
-        return response.data
-    },
-
-    // Create backup or snapshot from a volume。后端 VolBackupPayload 要的是
-    // volume_id 与必填的 type（snapshot / backup），此前发的 volume: { id } 会被 400
-    create: async (
-        volumeId: string,
-        name: string,
-        type: 'snapshot' | 'backup' = 'backup',
-        poolId?: string
-    ): Promise<VolumeBackup> => {
-        const response = await client.post<VolumeBackup>('/backups', {
-            name,
-            volume_id: volumeId,
-            type,
-            ...(poolId ? { pool_id: poolId } : {}),
-        })
-        return response.data
-    },
-
-    // Delete backup
-    delete: async (id: string): Promise<void> => {
-        await client.delete(`/backups/${id}`)
-    },
-
-    // Restore backup。后端按 id 恢复、不读请求体，返回的是备份对象本身而非新卷
-    restore: async (id: string): Promise<VolumeBackup> => {
-        const response = await client.post<VolumeBackup>(`/backups/${id}/restore`)
-        return response.data
+    // A volume of a lost pool: drop it from the definition of its instance without touching the file
+    forceDetach: async (id: string): Promise<void> => {
+        await client.post(`/volumes/${id}/force_detach`)
     },
 }
 

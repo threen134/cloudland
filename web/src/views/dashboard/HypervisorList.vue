@@ -32,7 +32,7 @@ import { useI18n } from 'vue-i18n'
 import { useToast } from '../../composables/useToast'
 import { useCopyId } from '../../composables/useCopyId'
 import { useHostConsole } from '../../composables/useHostConsole'
-import { formatMemory, formatDisk } from '../../utils/format'
+import { formatMemory, formatDisk, formatBytes } from '../../utils/format'
 import type { StatusVariant } from '../../utils/status'
 import BaseModal from '../../components/modals/BaseModal.vue'
 import DeleteModal from '../../components/modals/DeleteModal.vue'
@@ -103,7 +103,7 @@ const columns = computed<Column[]>(() => [
     { key: 'instanceCount', label: t('dashboard.table.instanceCount') },
     { key: 'cpu', label: `${t('dashboard.table.vcpus')} (${t('dashboard.table.available')})` },
     { key: 'memory', label: `${t('dashboard.table.memory')} (${t('dashboard.table.available')})` },
-    { key: 'disk', label: `${t('dashboard.table.disk')} (${t('dashboard.table.available')})` },
+    { key: 'disk', label: `${t('dashboard.table.disk')} (${t('storage.allocatedOfTotal')})` },
     { key: 'zone', label: t('dashboard.table.zone') },
     { key: 'actions', label: t('dashboard.table.actions'), width: '80px', align: 'center' },
 ])
@@ -260,6 +260,16 @@ const usagePercent = (used: number, total: number) => {
     if (total <= 0) return 0
     return Math.round((used / total) * 100)
 }
+
+// Disk bar: coloured by the fullest pool of the host (80% warning, 90% danger), details per pool on hover
+const usageLevelClass = (ratio: number) => (ratio >= 0.9 ? 'usage-danger' : ratio >= 0.8 ? 'usage-warning' : '')
+const poolBreakdown = (h: Hypervisor) =>
+    (h.storage_pools || [])
+        .map(
+            (p) =>
+                `${p.name}: ${formatBytes(p.allocated_bytes)} / ${formatBytes(p.capacity_bytes)} (${t('storage.used')} ${Math.round(p.usage_ratio * 100)}%)`
+        )
+        .join('\n')
 
 // Deploy
 const openDeployModal = async () => {
@@ -418,9 +428,12 @@ const handleMaintain = async () => {
     if (!maintainingHyper.value) return
     maintaining.value = true
     try {
-        await hypervisorsApi.maintainHypervisor(maintainingHyper.value.uuid, maintainForm.value)
+        const resp = await hypervisorsApi.maintainHypervisor(maintainingHyper.value.uuid, maintainForm.value)
         showMaintainModal.value = false
-        toast.success(t('messages.success'))
+        // Instances that can not move stay; the detail page lists them with the reason
+        const skipped = (resp.instances || []).filter((r) => r.status === 'not_doing').length
+        if (skipped) toast.warning(t('storage.maintainSkipped', { n: skipped }))
+        else toast.success(t('messages.success'))
         await fetchHypervisors()
     } catch (err) {
         toast.error(errorMessage(err, t('messages.error')))
@@ -598,10 +611,14 @@ onUnmounted(() => {
             </template>
 
             <template #cell-disk="{ row: h }">
-                <div class="usage-cell">
-                    <span>{{ formatDisk(h.disk) }} / {{ formatDisk(h.disk_total) }}</span>
+                <div class="usage-cell" :title="poolBreakdown(h)">
+                    <span>{{ formatDisk(h.disk_allocated) }} / {{ formatDisk(h.disk_total) }}</span>
                     <div class="usage-bar">
-                        <div class="usage-fill" :style="{ width: usagePercent(h.disk, h.disk_total) + '%' }"></div>
+                        <div
+                            class="usage-fill"
+                            :class="usageLevelClass(h.disk_max_usage_ratio)"
+                            :style="{ width: Math.round((h.disk_max_usage_ratio || 0) * 100) + '%' }"
+                        ></div>
                     </div>
                 </div>
             </template>
@@ -1087,6 +1104,14 @@ onUnmounted(() => {
     background: var(--primary-color);
     border-radius: 2px;
     transition: width 0.3s;
+}
+
+.usage-fill.usage-warning {
+    background: var(--warning-color);
+}
+
+.usage-fill.usage-danger {
+    background: var(--error-color);
 }
 
 .empty-state {

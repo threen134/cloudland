@@ -2,6 +2,7 @@
 import { ref, onMounted, onUnmounted, computed, watch } from 'vue'
 import {
     migrationsApi,
+    type MigrationTarget,
     MIGRATION_ACTIVE_STATUSES,
     type Migration,
     type CreateMigrationPayload,
@@ -14,7 +15,7 @@ import { useCopyId } from '../../composables/useCopyId'
 import { useListQuery } from '../../composables/useListQuery'
 import { useI18n } from 'vue-i18n'
 import { useRegionStore } from '../../stores/region'
-import { formatDateTime } from '../../utils/format'
+import { formatDateTime, formatBytes } from '../../utils/format'
 import { errorMessage } from '../../utils/error'
 import BaseModal from '../../components/modals/BaseModal.vue'
 import PageToolbar from '../../components/base/PageToolbar.vue'
@@ -59,6 +60,48 @@ const availableHypervisors = ref<Hypervisor[]>([])
 const newMigrationForm = ref({
     instance_id: '',
     target_hyper: '' as number | '',
+})
+
+// Where the disks of the chosen instance can go on each host (§7.1 of the storage plan)
+const targets = ref<MigrationTarget[]>([])
+const targetsLoading = ref(false)
+// Target pool per volume uuid; the source pool means "stay"
+const diskPools = ref<Record<string, string>>({})
+const allowFallback = ref(true)
+const ignoreCapacity = ref(false)
+const selectedTarget = computed(() =>
+    newMigrationForm.value.target_hyper === ''
+        ? null
+        : targets.value.find((x) => x.hostid === newMigrationForm.value.target_hyper) || null
+)
+const targetBlocked = (hostid: number) => {
+    const target = targets.value.find((x) => x.hostid === hostid)
+    return target && !target.usable ? target.reason || '' : ''
+}
+watch(
+    () => newMigrationForm.value.instance_id,
+    async (id) => {
+        targets.value = []
+        diskPools.value = {}
+        if (!id) return
+        targetsLoading.value = true
+        try {
+            targets.value = await migrationsApi.migrationTargets(id)
+        } catch {
+            targets.value = []
+        } finally {
+            targetsLoading.value = false
+        }
+    }
+)
+// Preselect for each disk: stay in its pool when it can, otherwise the pool of its fallback group
+watch(selectedTarget, (target) => {
+    const pools: Record<string, string> = {}
+    for (const d of target?.disks || []) {
+        const stay = d.choices.find((c) => c.name === d.source_pool)
+        pools[d.volume_uuid] = d.can_stay && stay ? stay.uuid : d.fallback?.uuid || ''
+    }
+    diskPools.value = pools
 })
 
 // 选中实例当前所在节点的主机名（接口返回的 hypervisor 就是 hostname）。
@@ -209,8 +252,22 @@ const handleCreateMigration = async () => {
         }
         if (newMigrationForm.value.target_hyper !== '') {
             payload.target_hyper = Number(newMigrationForm.value.target_hyper)
+            // Only the disks leaving their pool are named; the others stay or follow the fallback rules
+            const moved = (selectedTarget.value?.disks || []).filter((d) => {
+                const chosen = diskPools.value[d.volume_uuid]
+                const stay = d.choices.find((c) => c.name === d.source_pool)
+                return chosen && (!stay || chosen !== stay.uuid) && chosen !== d.fallback?.uuid
+            })
+            if (moved.length) {
+                payload.disks = moved.map((d) => ({
+                    volume: { id: d.volume_uuid },
+                    storage_pool: { id: diskPools.value[d.volume_uuid] },
+                }))
+            }
         }
 
+        payload.allow_pool_fallback = allowFallback.value
+        if (ignoreCapacity.value) payload.ignore_capacity = true
         await migrationsApi.createMigration(payload)
         // 列表按创建时间倒序，新建的在第一页
         await reloadMigrations()
@@ -405,18 +462,51 @@ onUnmounted(() => {
                             v-for="hyp in availableHypervisors"
                             :key="hyp.uuid"
                             :value="hyp.hostid"
-                            :disabled="!!selectedInstanceHyper && hyp.hostname === selectedInstanceHyper"
+                            :disabled="
+                                (!!selectedInstanceHyper && hyp.hostname === selectedInstanceHyper) ||
+                                !!targetBlocked(hyp.hostid)
+                            "
                         >
                             {{ hyp.hostname }} ({{ hyp.hostid }})<template
                                 v-if="hyp.hostname === selectedInstanceHyper"
                             >
                                 — {{ $t('dashboard.migrationForm.currentNode') }}</template
+                            ><template v-else-if="targetBlocked(hyp.hostid)">
+                                — {{ targetBlocked(hyp.hostid) }}</template
                             >
                         </option>
                     </select>
                     <small class="text-secondary" style="display: block; margin-top: 4px">{{
                         $t('messages.placementRouteHint')
                     }}</small>
+                </div>
+
+                <div v-if="selectedTarget && selectedTarget.disks.length" class="form-group row-gap">
+                    <label class="form-label">{{ $t('storage.diskTargets') }}</label>
+                    <div v-for="d in selectedTarget.disks" :key="d.volume_uuid" class="disk-target">
+                        <span class="disk-target-name" :title="d.volume_name"
+                            >{{ d.volume_name }} ({{ d.size_gb }} GB)</span
+                        >
+                        <select v-model="diskPools[d.volume_uuid]" class="form-input">
+                            <option v-for="c in d.choices" :key="c.uuid" :value="c.uuid" :disabled="!c.fits">
+                                {{ c.name === d.source_pool ? $t('storage.stayInPool', { pool: c.name }) : c.name }}
+                                <template v-if="d.fallback?.uuid === c.uuid">
+                                    · {{ $t('storage.autoChosen') }}</template
+                                >
+                                · {{ $t('storage.freeSpace', { size: formatBytes(c.avail_bytes) })
+                                }}<template v-if="!c.fits"> · {{ $t('storage.noRoom') }}</template>
+                            </option>
+                        </select>
+                    </div>
+                </div>
+                <div v-if="targetsLoading" class="text-secondary">{{ $t('messages.loading') }}</div>
+                <div class="form-group row-gap">
+                    <label class="checkbox-inline">
+                        <input v-model="allowFallback" type="checkbox" /> {{ $t('storage.allowFallback') }}
+                    </label>
+                    <label class="checkbox-inline">
+                        <input v-model="ignoreCapacity" type="checkbox" /> {{ $t('storage.ignoreCapacity') }}
+                    </label>
                 </div>
 
                 <div class="form-group row-gap">
@@ -453,6 +543,30 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
+.disk-target {
+    display: grid;
+    grid-template-columns: minmax(120px, 1fr) 2fr;
+    gap: 8px;
+    align-items: center;
+    margin-bottom: 6px;
+}
+
+.disk-target-name {
+    font-size: var(--font-size-sm);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.checkbox-inline {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: var(--font-size-sm);
+    cursor: pointer;
+    margin-bottom: 4px;
+}
+
 /* .resource-info etc. are global from index.css */
 
 .resource-link {
@@ -493,5 +607,4 @@ onUnmounted(() => {
     background: transparent;
     color: var(--text-primary);
 }
-
 </style>

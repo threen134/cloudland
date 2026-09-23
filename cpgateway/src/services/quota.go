@@ -606,7 +606,9 @@ func FinishQuota(orgID, regionID int64, plan *QuotaPlan, status int, respBody []
 	if plan == nil {
 		return
 	}
-	if status == http.StatusOK || status == http.StatusCreated || status == http.StatusNoContent {
+	// 202: clapi accepted a deletion the node finishes later (a volume on its host); the few that fail there are
+	// corrected by the next consumption sync
+	if status == http.StatusOK || status == http.StatusCreated || status == http.StatusAccepted || status == http.StatusNoContent {
 		switch {
 		case plan.Action == "release" && len(plan.Amount) > 0:
 			Release(orgID, regionID, plan.Amount)

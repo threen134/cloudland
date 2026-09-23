@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useStorageReason } from '../../composables/useStorageReason'
 import { ref, onMounted, computed, watch, onUnmounted, type DirectiveBinding } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
@@ -64,6 +65,7 @@ const vClickOutside = {
 const actionLoading = ref<Record<string, string | null>>({})
 
 const router = useRouter()
+const { storageReason } = useStorageReason()
 const { t, te } = useI18n()
 const toast = useToast()
 
@@ -632,6 +634,13 @@ onUnmounted(() => {
 
             <template #cell-status="{ row: instance }">
                 <StatusBadge :status="instance.status" :label="getStatusText(instance.status)" />
+                <div
+                    v-if="storageReason(instance.reason)"
+                    class="storage-reason"
+                    :title="storageReason(instance.reason)?.hint"
+                >
+                    {{ storageReason(instance.reason)?.text }}
+                </div>
             </template>
 
             <template #cell-usage="{ row: instance }">
@@ -954,6 +963,12 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
+.storage-reason {
+    margin-top: 2px;
+    font-size: var(--font-size-xs);
+    color: var(--warning-dark, var(--warning-color));
+}
+
 .dropdown-menu {
     position: absolute;
     top: 100%;

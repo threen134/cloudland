@@ -44,7 +44,6 @@ function ensure_fip_table()
     done
     echo "$rtID $table" >>$rt_file
 }
-wds_bps_factor=1048576 # 1024 * 1024 
 function die()
 {
     echo $1
@@ -175,84 +174,6 @@ function sql_exec()
     sqlite3 $vxlan_db "$*"
 }
 
-function get_wds_token()
-{
-    [ -z "$wds_token" ] && wds_token="bearer $(curl -L -XPOST -k "$wds_address/api/v1/login" -H "Content-Type: application/json" -d "{\"name\": \"$wds_admin\",\"password\": \"$wds_pass\"}" | jq -r .access_token)"
-}
-
-function wds_curl()
-{
-    action=$1
-    path=$2
-    data=$3
-    [ -z "$data" ] && data='{}'
-    get_wds_token
-    curl -s -L -X$action -H 'Content-Type: application/json' -H "Authorization: $wds_token" -k "$wds_address/$path" -d "$data"
-    echo
-}
-
-function get_uss_gateway()
-{
-    uss_hname=$1
-    [ -z "$uss_hname" ] && uss_hname=$(hostname -s)
-    uss_id=$(wds_curl GET "api/v2/wds/uss" | jq --arg hname $uss_hname -r '.uss_gateways | .[] | select(.server_name == $hname) | .id')
-    [ -n "$uss_id" ] && echo $uss_id
-}
-
-function delete_vhost()
-{
-    [ $# -lt 2 ] && return
-    local vol_ID=$1
-    local vhost_id=$2
-    local uss_unbinded="true"
-    local uss_id
-    [ $# -eq 3 ] && uss_id=$3 && uss_unbinded="false"
-
-    if [ "$uss_unbinded" == "false" ]; then
-        # add retry logic
-        local i
-        for i in {1..5}; do
-            log_debug $vol_ID "Attempting to unbind volume($vol_ID)'s vhost $vhost_id from uss $uss_id"
-            local unbind_ret=$(wds_curl PUT "api/v2/sync/block/vhost/unbind_uss" "{\"vhost_id\": \"$vhost_id\", \"uss_gw_id\": \"$uss_id\", \"is_snapshot\": false}")
-            local ret_code=$(echo $unbind_ret | jq -r '.ret_code')
-            if [ "$ret_code" == "0" ]; then
-                log_debug $vol_ID "Successfully unbound volume($vol_ID)'s vhost $vhost_id from uss $uss_id"
-                uss_unbinded="true"
-                break
-            else
-                local err_message=$(echo $unbind_ret | jq -r '.message')
-                log_debug $vol_ID "Failed to unbind volume($vol_ID)'s vhost $vhost_id from uss $uss_id, error message: $err_message"
-            fi
-            sleep 1
-        done
-    fi
-    if [ "$uss_unbinded" == "true" ]; then
-        local vhost_deleted="false"
-        log_debug $vol_ID "Proceeding to delete volume($vol_ID)'s vhost $vhost_id"
-        local i
-        for i in {1..5}; do
-            local delete_ret=$(wds_curl DELETE "api/v2/sync/block/vhost/$vhost_id")
-            local ret_code=$(echo $delete_ret | jq -r '.ret_code')
-            if [ "$ret_code" == "0" ]; then
-                log_debug $vol_ID "Successfully deleted volume($vol_ID)'s vhost $vhost_id"
-                vhost_deleted="true"
-                break
-            else
-                local err_message=$(echo $delete_ret | jq -r '.message')
-                log_debug $vol_ID "Failed to delete volume($vol_ID)'s vhost $vhost_id, error message: $err_message"
-            fi
-            sleep 1
-        done
-        if [ "$vhost_deleted" == "true" ]; then
-            log_debug $vol_ID "Successfully deleted volume($vol_ID)'s vhost $vhost_id"
-        else
-            log_debug $vol_ID "Failed to delete volume($vol_ID)'s vhost $vhost_id after multiple attempts"
-        fi
-    else
-        log_debug $vol_ID "Failed to unbind volume($vol_ID)'s vhost $vhost_id from uss $uss_id after multiple attempts; skipping deletion of vhost"
-    fi
-}
-
 function async_exec()
 {
     exec 3<&0
@@ -369,14 +290,6 @@ function inet_access()
         ip netns exec router-0 iptables -A INPUT -m state --state RELATED,ESTABLISHED -j ACCEPT
     # 最后一条命令即被执行的命令，函数返回它的退出码（如 curl 下载失败）
     ip netns exec router-0 $*
-}
-
-function get_uuid_prefix()
-{
-    [ $# -lt 1 ] && return
-    uuid=$1
-    prefix=${uuid%%-*}
-    echo "$prefix"
 }
 
 function wait_qemu_ping()

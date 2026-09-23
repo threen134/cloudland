@@ -75,6 +75,7 @@ export const RULE_TYPES = [
     'packet_drop',
     'ip_block',
     'ipgroup_available_ip',
+    'local_pool',
 ] as const
 
 export const alarmsApi = {

@@ -637,823 +637,6 @@ const docTemplatev1 = `{
                 }
             }
         },
-        "/backups": {
-            "get": {
-                "description": "list volume backups/snapshots by volume UUID and backup type",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Backup"
-                ],
-                "summary": "list volumes backups/snapshots",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "Volume UUID",
-                        "name": "id",
-                        "in": "query",
-                        "required": true
-                    },
-                    {
-                        "type": "string",
-                        "description": "Backup type: empty or snapshot or backup",
-                        "name": "backup_type",
-                        "in": "query",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/apis.VolBackupListResponse"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad request",
-                        "schema": {
-                            "$ref": "#/definitions/common.APIError"
-                        }
-                    },
-                    "401": {
-                        "description": "Not authorized",
-                        "schema": {
-                            "$ref": "#/definitions/common.APIError"
-                        }
-                    }
-                }
-            },
-            "post": {
-                "description": "create a volume backup/snapshot",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Backup"
-                ],
-                "summary": "create a volume backup/snapshot",
-                "parameters": [
-                    {
-                        "description": "Volume backup/snapshot create payload",
-                        "name": "message",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/apis.VolBackupPayload"
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/apis.VolBackupResponse"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad request",
-                        "schema": {
-                            "$ref": "#/definitions/common.APIError"
-                        }
-                    },
-                    "401": {
-                        "description": "Not authorized",
-                        "schema": {
-                            "$ref": "#/definitions/common.APIError"
-                        }
-                    }
-                }
-            }
-        },
-        "/backups/{id}": {
-            "get": {
-                "description": "get a volume backup/snapshot by UUID",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Backup"
-                ],
-                "summary": "get a volume backup/snapshot",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "Volume backup/snapshot UUID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/apis.VolBackupResponse"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad request",
-                        "schema": {
-                            "$ref": "#/definitions/common.APIError"
-                        }
-                    },
-                    "401": {
-                        "description": "Not authorized",
-                        "schema": {
-                            "$ref": "#/definitions/common.APIError"
-                        }
-                    }
-                }
-            },
-            "delete": {
-                "description": "delete a volume backup/snapshot by UUID",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Backup"
-                ],
-                "summary": "delete a volume backup/snapshot",
-                "responses": {
-                    "204": {
-                        "description": "No Content"
-                    },
-                    "400": {
-                        "description": "Bad request",
-                        "schema": {
-                            "$ref": "#/definitions/common.APIError"
-                        }
-                    },
-                    "401": {
-                        "description": "Not authorized",
-                        "schema": {
-                            "$ref": "#/definitions/common.APIError"
-                        }
-                    }
-                }
-            }
-        },
-        "/backups/{id}/restore": {
-            "post": {
-                "description": "restore volume from a backup/snapshot",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Backup"
-                ],
-                "summary": "restore volume from a backup/snapshot",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "Volume backup/snapshot UUID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/apis.VolBackupResponse"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad request",
-                        "schema": {
-                            "$ref": "#/definitions/common.APIError"
-                        }
-                    },
-                    "401": {
-                        "description": "Not authorized",
-                        "schema": {
-                            "$ref": "#/definitions/common.APIError"
-                        }
-                    }
-                }
-            }
-        },
-        "/consistency_groups": {
-            "get": {
-                "description": "List consistency groups with pagination",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Consistency Group"
-                ],
-                "summary": "List consistency groups",
-                "parameters": [
-                    {
-                        "type": "integer",
-                        "description": "Offset",
-                        "name": "offset",
-                        "in": "query"
-                    },
-                    {
-                        "type": "integer",
-                        "description": "Limit",
-                        "name": "limit",
-                        "in": "query"
-                    },
-                    {
-                        "type": "string",
-                        "description": "Order",
-                        "name": "order",
-                        "in": "query"
-                    },
-                    {
-                        "type": "string",
-                        "description": "Name filter",
-                        "name": "name",
-                        "in": "query"
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/apis.ConsistencyGroupListResponse"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad request",
-                        "schema": {
-                            "$ref": "#/definitions/common.APIError"
-                        }
-                    },
-                    "401": {
-                        "description": "Not authorized",
-                        "schema": {
-                            "$ref": "#/definitions/common.APIError"
-                        }
-                    }
-                }
-            },
-            "post": {
-                "description": "Create a new consistency group with volumes",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Consistency Group"
-                ],
-                "summary": "Create a consistency group",
-                "parameters": [
-                    {
-                        "description": "Consistency Group Payload",
-                        "name": "payload",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/apis.ConsistencyGroupPayload"
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/apis.ConsistencyGroupResponse"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad request",
-                        "schema": {
-                            "$ref": "#/definitions/common.APIError"
-                        }
-                    },
-                    "401": {
-                        "description": "Not authorized",
-                        "schema": {
-                            "$ref": "#/definitions/common.APIError"
-                        }
-                    }
-                }
-            }
-        },
-        "/consistency_groups/{id}": {
-            "get": {
-                "description": "Get a consistency group by UUID",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Consistency Group"
-                ],
-                "summary": "Get a consistency group",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "Consistency Group UUID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/apis.ConsistencyGroupResponse"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad request",
-                        "schema": {
-                            "$ref": "#/definitions/common.APIError"
-                        }
-                    },
-                    "401": {
-                        "description": "Not authorized",
-                        "schema": {
-                            "$ref": "#/definitions/common.APIError"
-                        }
-                    }
-                }
-            },
-            "delete": {
-                "description": "Delete a consistency group",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Consistency Group"
-                ],
-                "summary": "Delete a consistency group",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "Consistency Group UUID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "204": {
-                        "description": "No Content"
-                    },
-                    "400": {
-                        "description": "Bad request",
-                        "schema": {
-                            "$ref": "#/definitions/common.APIError"
-                        }
-                    },
-                    "401": {
-                        "description": "Not authorized",
-                        "schema": {
-                            "$ref": "#/definitions/common.APIError"
-                        }
-                    }
-                }
-            },
-            "patch": {
-                "description": "Update a consistency group's name and description",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Consistency Group"
-                ],
-                "summary": "Update a consistency group",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "Consistency Group UUID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "description": "Update Payload",
-                        "name": "payload",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/apis.ConsistencyGroupPatchPayload"
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/apis.ConsistencyGroupResponse"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad request",
-                        "schema": {
-                            "$ref": "#/definitions/common.APIError"
-                        }
-                    },
-                    "401": {
-                        "description": "Not authorized",
-                        "schema": {
-                            "$ref": "#/definitions/common.APIError"
-                        }
-                    }
-                }
-            }
-        },
-        "/consistency_groups/{id}/snapshots": {
-            "get": {
-                "description": "List snapshots for a consistency group with pagination",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Consistency Group"
-                ],
-                "summary": "List consistency group snapshots",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "Consistency Group UUID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "type": "integer",
-                        "description": "Offset",
-                        "name": "offset",
-                        "in": "query"
-                    },
-                    {
-                        "type": "integer",
-                        "description": "Limit",
-                        "name": "limit",
-                        "in": "query"
-                    },
-                    {
-                        "type": "string",
-                        "description": "Order",
-                        "name": "order",
-                        "in": "query"
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/apis.ConsistencyGroupSnapshotListResponse"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad request",
-                        "schema": {
-                            "$ref": "#/definitions/common.APIError"
-                        }
-                    },
-                    "401": {
-                        "description": "Not authorized",
-                        "schema": {
-                            "$ref": "#/definitions/common.APIError"
-                        }
-                    }
-                }
-            },
-            "post": {
-                "description": "Create a snapshot for a consistency group",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Consistency Group"
-                ],
-                "summary": "Create a consistency group snapshot",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "Consistency Group UUID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "description": "Snapshot Payload",
-                        "name": "payload",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/apis.ConsistencyGroupSnapshotPayload"
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/apis.ConsistencyGroupSnapshotResponse"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad request",
-                        "schema": {
-                            "$ref": "#/definitions/common.APIError"
-                        }
-                    },
-                    "401": {
-                        "description": "Not authorized",
-                        "schema": {
-                            "$ref": "#/definitions/common.APIError"
-                        }
-                    }
-                }
-            }
-        },
-        "/consistency_groups/{id}/snapshots/{snap_id}": {
-            "get": {
-                "description": "Get a consistency group snapshot by UUID",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Consistency Group"
-                ],
-                "summary": "Get a consistency group snapshot",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "Consistency Group UUID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "type": "string",
-                        "description": "Snapshot UUID",
-                        "name": "snap_id",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/apis.ConsistencyGroupSnapshotResponse"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad request",
-                        "schema": {
-                            "$ref": "#/definitions/common.APIError"
-                        }
-                    },
-                    "401": {
-                        "description": "Not authorized",
-                        "schema": {
-                            "$ref": "#/definitions/common.APIError"
-                        }
-                    }
-                }
-            },
-            "delete": {
-                "description": "Delete a snapshot from a consistency group",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Consistency Group"
-                ],
-                "summary": "Delete a consistency group snapshot",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "Consistency Group UUID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "type": "string",
-                        "description": "Snapshot UUID",
-                        "name": "snap_id",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "204": {
-                        "description": "No Content"
-                    },
-                    "400": {
-                        "description": "Bad request",
-                        "schema": {
-                            "$ref": "#/definitions/common.APIError"
-                        }
-                    },
-                    "401": {
-                        "description": "Not authorized",
-                        "schema": {
-                            "$ref": "#/definitions/common.APIError"
-                        }
-                    }
-                }
-            }
-        },
-        "/consistency_groups/{id}/snapshots/{snap_id}/restore": {
-            "post": {
-                "description": "Restore all volumes in a consistency group from a snapshot",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Consistency Group"
-                ],
-                "summary": "Restore a consistency group from snapshot",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "Consistency Group UUID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "type": "string",
-                        "description": "Snapshot UUID",
-                        "name": "snap_id",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/apis.ConsistencyGroupRestoreResponse"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad request",
-                        "schema": {
-                            "$ref": "#/definitions/common.APIError"
-                        }
-                    },
-                    "401": {
-                        "description": "Not authorized",
-                        "schema": {
-                            "$ref": "#/definitions/common.APIError"
-                        }
-                    }
-                }
-            }
-        },
-        "/consistency_groups/{id}/volumes": {
-            "post": {
-                "description": "Add volumes to an existing consistency group",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Consistency Group"
-                ],
-                "summary": "Add volumes to a consistency group",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "Consistency Group UUID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "description": "Volumes Payload",
-                        "name": "payload",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/apis.ConsistencyGroupVolumesPayload"
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/apis.ConsistencyGroupResponse"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad request",
-                        "schema": {
-                            "$ref": "#/definitions/common.APIError"
-                        }
-                    },
-                    "401": {
-                        "description": "Not authorized",
-                        "schema": {
-                            "$ref": "#/definitions/common.APIError"
-                        }
-                    }
-                }
-            }
-        },
-        "/consistency_groups/{id}/volumes/{volume_id}": {
-            "delete": {
-                "description": "Remove a volume from an existing consistency group",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Consistency Group"
-                ],
-                "summary": "Remove a volume from a consistency group",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "Consistency Group UUID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "type": "string",
-                        "description": "Volume UUID",
-                        "name": "volume_id",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/apis.ConsistencyGroupResponse"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad request",
-                        "schema": {
-                            "$ref": "#/definitions/common.APIError"
-                        }
-                    },
-                    "401": {
-                        "description": "Not authorized",
-                        "schema": {
-                            "$ref": "#/definitions/common.APIError"
-                        }
-                    }
-                }
-            }
-        },
         "/dictionaries": {
             "get": {
                 "description": "list dictionaries",
@@ -2217,6 +1400,12 @@ const docTemplatev1 = `{
                         "name": "uuid",
                         "in": "path",
                         "required": true
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "Keep the local storage pools of the host for adoption by the host registered again",
+                        "name": "keep_pools",
+                        "in": "query"
                     }
                 ],
                 "responses": {
@@ -2318,6 +1507,108 @@ const docTemplatev1 = `{
                 }
             }
         },
+        "/hypers/{uuid}/disks": {
+            "get": {
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "HostStorage"
+                ],
+                "summary": "list the disks of a host",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Hypervisor UUID",
+                        "name": "uuid",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/apis.HostDiskResponse"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/hypers/{uuid}/disks/scan": {
+            "post": {
+                "description": "the host scans its disks in the background; read the result with GET /hypers/{uuid}/disks",
+                "tags": [
+                    "HostStorage"
+                ],
+                "summary": "scan the disks of a host",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Hypervisor UUID",
+                        "name": "uuid",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "202": {
+                        "description": "Accepted"
+                    }
+                }
+            }
+        },
+        "/hypers/{uuid}/disks/{id}": {
+            "patch": {
+                "description": "an empty media goes back to the detected one",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "HostStorage"
+                ],
+                "summary": "set the media of a disk",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Hypervisor UUID",
+                        "name": "uuid",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Disk record id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Media",
+                        "name": "message",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/apis.DiskMediaPayload"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apis.HostDiskResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/hypers/{uuid}/maintain": {
             "post": {
                 "description": "start maintenance for a hypervisor, optionally migrating all instances",
@@ -2353,10 +1644,7 @@ const docTemplatev1 = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
+                            "$ref": "#/definitions/apis.HyperMaintainResponse"
                         }
                     },
                     "400": {
@@ -2376,6 +1664,407 @@ const docTemplatev1 = `{
                         "schema": {
                             "$ref": "#/definitions/common.APIError"
                         }
+                    }
+                }
+            }
+        },
+        "/hypers/{uuid}/storage_pools": {
+            "get": {
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "HostStorage"
+                ],
+                "summary": "list the storage pools of a host",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Hypervisor UUID",
+                        "name": "uuid",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apis.HostPoolListResponse"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "description": "formats the selected disks. Type the host name in confirm",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "HostStorage"
+                ],
+                "summary": "set a storage pool up on a host",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Hypervisor UUID",
+                        "name": "uuid",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Pool, layout and disks",
+                        "name": "message",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/apis.HostPoolPayload"
+                        }
+                    }
+                ],
+                "responses": {
+                    "202": {
+                        "description": "Accepted"
+                    }
+                }
+            }
+        },
+        "/hypers/{uuid}/storage_pools/adopt": {
+            "post": {
+                "consumes": [
+                    "application/json"
+                ],
+                "tags": [
+                    "HostStorage"
+                ],
+                "summary": "adopt a storage pool found on the disks of a host",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Hypervisor UUID",
+                        "name": "uuid",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Pool and host name to confirm",
+                        "name": "message",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/apis.AdoptPayload"
+                        }
+                    }
+                ],
+                "responses": {
+                    "202": {
+                        "description": "Accepted"
+                    }
+                }
+            }
+        },
+        "/hypers/{uuid}/storage_pools/{pool_id}": {
+            "delete": {
+                "description": "force deletes leftover files of an empty pool; a lost pool is only unmounted and its data kept",
+                "consumes": [
+                    "application/json"
+                ],
+                "tags": [
+                    "HostStorage"
+                ],
+                "summary": "remove a storage pool from a host",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Hypervisor UUID",
+                        "name": "uuid",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Storage pool UUID",
+                        "name": "pool_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "Delete leftover files",
+                        "name": "force",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Host name to confirm",
+                        "name": "confirm",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "202": {
+                        "description": "Accepted"
+                    }
+                }
+            }
+        },
+        "/hypers/{uuid}/storage_pools/{pool_id}/extend": {
+            "post": {
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "HostStorage"
+                ],
+                "summary": "add disks to a storage pool of a host",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Hypervisor UUID",
+                        "name": "uuid",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Storage pool UUID",
+                        "name": "pool_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Disks",
+                        "name": "message",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/apis.HostPoolExtendPayload"
+                        }
+                    }
+                ],
+                "responses": {
+                    "202": {
+                        "description": "Accepted"
+                    }
+                }
+            }
+        },
+        "/hypers/{uuid}/storage_pools/{pool_id}/lost": {
+            "post": {
+                "consumes": [
+                    "application/json"
+                ],
+                "tags": [
+                    "HostStorage"
+                ],
+                "summary": "declare a storage pool of a host lost",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Hypervisor UUID",
+                        "name": "uuid",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Storage pool UUID",
+                        "name": "pool_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Host name to confirm; node_offline_ack when the host is offline",
+                        "name": "message",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/apis.ConfirmPayload"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK"
+                    }
+                }
+            }
+        },
+        "/hypers/{uuid}/storage_pools/{pool_id}/maintenance": {
+            "post": {
+                "consumes": [
+                    "application/json"
+                ],
+                "tags": [
+                    "HostStorage"
+                ],
+                "summary": "put a storage pool of a host in or out of maintenance",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Hypervisor UUID",
+                        "name": "uuid",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Storage pool UUID",
+                        "name": "pool_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Enable or disable",
+                        "name": "message",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/apis.MaintenancePayload"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK"
+                    }
+                }
+            }
+        },
+        "/hypers/{uuid}/storage_pools/{pool_id}/replace_disk": {
+            "post": {
+                "consumes": [
+                    "application/json"
+                ],
+                "tags": [
+                    "HostStorage"
+                ],
+                "summary": "replace a failed disk of a RAID1 pool",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Hypervisor UUID",
+                        "name": "uuid",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Storage pool UUID",
+                        "name": "pool_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Failed and new disk",
+                        "name": "message",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/apis.HostPoolReplacePayload"
+                        }
+                    }
+                ],
+                "responses": {
+                    "202": {
+                        "description": "Accepted"
+                    }
+                }
+            }
+        },
+        "/hypers/{uuid}/storage_pools/{pool_id}/restore": {
+            "post": {
+                "description": "only when the host reports the pool healthy again; volumes whose file is found become usable",
+                "tags": [
+                    "HostStorage"
+                ],
+                "summary": "restore a storage pool declared lost",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Hypervisor UUID",
+                        "name": "uuid",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Storage pool UUID",
+                        "name": "pool_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK"
+                    }
+                }
+            }
+        },
+        "/hypers/{uuid}/storage_pools/{pool_id}/usage": {
+            "get": {
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "HostStorage"
+                ],
+                "summary": "read the last usage report of a storage pool on a host",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Hypervisor UUID",
+                        "name": "uuid",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Storage pool UUID",
+                        "name": "pool_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK"
+                    }
+                }
+            },
+            "post": {
+                "description": "POST asks the host for a fresh report, GET returns the last one inside the pool listing",
+                "tags": [
+                    "HostStorage"
+                ],
+                "summary": "list the largest files of a storage pool on a host",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Hypervisor UUID",
+                        "name": "uuid",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Storage pool UUID",
+                        "name": "pool_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "202": {
+                        "description": "Accepted"
                     }
                 }
             }
@@ -2565,35 +2254,6 @@ const docTemplatev1 = `{
                         "description": "Bad request",
                         "schema": {
                             "$ref": "#/definitions/common.APIError"
-                        }
-                    },
-                    "401": {
-                        "description": "Not authorized",
-                        "schema": {
-                            "$ref": "#/definitions/common.APIError"
-                        }
-                    }
-                }
-            }
-        },
-        "/images/{id}/storages": {
-            "get": {
-                "description": "list image storages",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Image"
-                ],
-                "summary": "list image storages",
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/apis.ImageStorageResponse"
                         }
                     },
                     "401": {
@@ -3128,6 +2788,39 @@ const docTemplatev1 = `{
                         "description": "Not authorized",
                         "schema": {
                             "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            }
+        },
+        "/instances/{id}/migration_targets": {
+            "get": {
+                "description": "for every host of the zone, whether each local disk can stay in its pool, the pool of its fallback group that would replace it, and all usable pools with their free space",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Administration",
+                    "Migration"
+                ],
+                "summary": "list the hosts an instance can migrate to",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Instance UUID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/services.MigrationTarget"
+                            }
                         }
                     }
                 }
@@ -5742,55 +5435,6 @@ const docTemplatev1 = `{
                 }
             }
         },
-        "/metrics/instances/volume/his_data": {
-            "post": {
-                "description": "Query volume read/write historical data from WDS storage monitoring",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Monitoring"
-                ],
-                "summary": "Get volume metrics",
-                "parameters": [
-                    {
-                        "description": "Metrics query request",
-                        "name": "message",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/apis.MetricsRequest"
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "Volume metrics data",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "400": {
-                        "description": "Bad request",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "500": {
-                        "description": "Internal server error",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    }
-                }
-            }
-        },
         "/metrics/rules/batch": {
             "post": {
                 "description": "Batch retrieve alarm and adjustment rules by identifiers (rule_id or UUID)",
@@ -6698,6 +6342,207 @@ const docTemplatev1 = `{
                 }
             }
         },
+        "/storage_pools": {
+            "get": {
+                "description": "list storage pools. Members see the active pools with their media and how many hosts can use them; system admins see everything",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "StoragePool"
+                ],
+                "summary": "list storage pools",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apis.StoragePoolListResponse"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "description": "create a local storage pool. Its directory on every host is /opt/cloudland/pools/\u003cuuid\u003e; nothing is written on any host until the pool is set up there",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "StoragePool"
+                ],
+                "summary": "create a storage pool",
+                "parameters": [
+                    {
+                        "description": "Storage pool",
+                        "name": "message",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/apis.StoragePoolPayload"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apis.StoragePoolResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/storage_pools/{id}": {
+            "get": {
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "StoragePool"
+                ],
+                "summary": "get a storage pool",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Storage pool UUID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apis.StoragePoolResponse"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "tags": [
+                    "StoragePool"
+                ],
+                "summary": "delete a storage pool",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Storage pool UUID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    }
+                }
+            },
+            "patch": {
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "StoragePool"
+                ],
+                "summary": "update a storage pool",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Storage pool UUID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Fields to change",
+                        "name": "message",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/apis.StoragePoolPatchPayload"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apis.StoragePoolResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/storage_pools/{id}/hypers": {
+            "get": {
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "StoragePool"
+                ],
+                "summary": "list the hosts of a storage pool",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Storage pool UUID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apis.HostPoolListResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/storage_pools/{id}/orphans/abandon": {
+            "post": {
+                "description": "the volumes of the pool left by a deleted host become lost and can then be deleted",
+                "consumes": [
+                    "application/json"
+                ],
+                "tags": [
+                    "StoragePool"
+                ],
+                "summary": "abandon the volumes of a pool that wait for adoption",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Storage pool UUID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Old host id and the pool name to confirm",
+                        "name": "message",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/apis.AbandonPayload"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK"
+                    }
+                }
+            }
+        },
         "/subnets": {
             "get": {
                 "description": "list subnets",
@@ -7134,7 +6979,7 @@ const docTemplatev1 = `{
                 }
             },
             "delete": {
-                "description": "delete a volume",
+                "description": "delete a volume. A volume written on a host is deleted by the host first: the request returns 202 and the volume stays \"deleting\" until the host confirms.",
                 "consumes": [
                     "application/json"
                 ],
@@ -7146,6 +6991,9 @@ const docTemplatev1 = `{
                 ],
                 "summary": "delete a volume",
                 "responses": {
+                    "202": {
+                        "description": "Accepted"
+                    },
                     "204": {
                         "description": "No Content"
                     },
@@ -7208,9 +7056,9 @@ const docTemplatev1 = `{
                 }
             }
         },
-        "/volumes/{id}/qos": {
-            "put": {
-                "description": "update iops and bps limit of a volume",
+        "/volumes/{id}/force_detach": {
+            "post": {
+                "description": "remove a volume whose storage pool was declared lost from its instance, without touching the file",
                 "consumes": [
                     "application/json"
                 ],
@@ -7220,18 +7068,7 @@ const docTemplatev1 = `{
                 "tags": [
                     "Volume"
                 ],
-                "summary": "update qos of a volume",
-                "parameters": [
-                    {
-                        "description": "Volume qos payload",
-                        "name": "message",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/apis.VolumeQosPayload"
-                        }
-                    }
-                ],
+                "summary": "detach a volume of a lost pool by force",
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -7666,6 +7503,23 @@ const docTemplatev1 = `{
         }
     },
     "definitions": {
+        "apis.AbandonPayload": {
+            "type": "object",
+            "required": [
+                "confirm",
+                "old_hostid"
+            ],
+            "properties": {
+                "confirm": {
+                    "type": "string"
+                },
+                "old_hostid": {
+                    "description": "Host id the volumes waiting for adoption still name; 0 is a valid host id",
+                    "type": "integer",
+                    "minimum": 0
+                }
+            }
+        },
         "apis.ActivityListResponse": {
             "type": "object",
             "properties": {
@@ -7820,6 +7674,21 @@ const docTemplatev1 = `{
                 },
                 "lock": {
                     "type": "boolean"
+                }
+            }
+        },
+        "apis.AdoptPayload": {
+            "type": "object",
+            "required": [
+                "confirm",
+                "storage_pool"
+            ],
+            "properties": {
+                "confirm": {
+                    "type": "string"
+                },
+                "storage_pool": {
+                    "$ref": "#/definitions/common.BaseReference"
                 }
             }
         },
@@ -8072,199 +7941,17 @@ const docTemplatev1 = `{
                 }
             }
         },
-        "apis.ConsistencyGroupListResponse": {
-            "type": "object",
-            "properties": {
-                "consistency_groups": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/apis.ConsistencyGroupResponse"
-                    }
-                },
-                "limit": {
-                    "type": "integer"
-                },
-                "offset": {
-                    "type": "integer"
-                },
-                "total": {
-                    "type": "integer"
-                }
-            }
-        },
-        "apis.ConsistencyGroupPatchPayload": {
-            "type": "object",
-            "properties": {
-                "description": {
-                    "type": "string"
-                },
-                "name": {
-                    "type": "string"
-                }
-            }
-        },
-        "apis.ConsistencyGroupPayload": {
+        "apis.ConfirmPayload": {
             "type": "object",
             "required": [
-                "name",
-                "volumes"
+                "confirm"
             ],
             "properties": {
-                "description": {
+                "confirm": {
                     "type": "string"
                 },
-                "name": {
-                    "type": "string"
-                },
-                "volumes": {
-                    "description": "Volume UUIDs",
-                    "type": "array",
-                    "minItems": 1,
-                    "items": {
-                        "type": "string"
-                    }
-                }
-            }
-        },
-        "apis.ConsistencyGroupResponse": {
-            "type": "object",
-            "properties": {
-                "created_at": {
-                    "type": "string"
-                },
-                "description": {
-                    "type": "string"
-                },
-                "id": {
-                    "type": "string"
-                },
-                "name": {
-                    "type": "string"
-                },
-                "owner": {
-                    "type": "string"
-                },
-                "owner_uuid": {
-                    "description": "OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to\nrelease quota only when the caller's org actually owns the deleted resource",
-                    "type": "string"
-                },
-                "status": {
-                    "type": "string"
-                },
-                "updated_at": {
-                    "type": "string"
-                },
-                "volumes": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/common.BaseReference"
-                    }
-                },
-                "wds_cg_id": {
-                    "type": "string"
-                }
-            }
-        },
-        "apis.ConsistencyGroupRestoreResponse": {
-            "type": "object",
-            "properties": {
-                "status": {
-                    "type": "string"
-                },
-                "task_id": {
-                    "type": "string"
-                },
-                "task_uuid": {
-                    "type": "string"
-                }
-            }
-        },
-        "apis.ConsistencyGroupSnapshotListResponse": {
-            "type": "object",
-            "properties": {
-                "limit": {
-                    "type": "integer"
-                },
-                "offset": {
-                    "type": "integer"
-                },
-                "snapshots": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/apis.ConsistencyGroupSnapshotResponse"
-                    }
-                },
-                "total": {
-                    "type": "integer"
-                }
-            }
-        },
-        "apis.ConsistencyGroupSnapshotPayload": {
-            "type": "object",
-            "required": [
-                "name"
-            ],
-            "properties": {
-                "description": {
-                    "type": "string"
-                },
-                "name": {
-                    "type": "string"
-                }
-            }
-        },
-        "apis.ConsistencyGroupSnapshotResponse": {
-            "type": "object",
-            "properties": {
-                "cg_id": {
-                    "type": "string"
-                },
-                "created_at": {
-                    "type": "string"
-                },
-                "description": {
-                    "type": "string"
-                },
-                "id": {
-                    "type": "string"
-                },
-                "name": {
-                    "type": "string"
-                },
-                "owner": {
-                    "type": "string"
-                },
-                "owner_uuid": {
-                    "description": "OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to\nrelease quota only when the caller's org actually owns the deleted resource",
-                    "type": "string"
-                },
-                "size": {
-                    "type": "integer"
-                },
-                "status": {
-                    "type": "string"
-                },
-                "updated_at": {
-                    "type": "string"
-                },
-                "wds_snap_id": {
-                    "type": "string"
-                }
-            }
-        },
-        "apis.ConsistencyGroupVolumesPayload": {
-            "type": "object",
-            "required": [
-                "volumes"
-            ],
-            "properties": {
-                "volumes": {
-                    "description": "Volume UUIDs",
-                    "type": "array",
-                    "minItems": 1,
-                    "items": {
-                        "type": "string"
-                    }
+                "node_offline_ack": {
+                    "type": "boolean"
                 }
             }
         },
@@ -8426,6 +8113,48 @@ const docTemplatev1 = `{
                 },
                 "value": {
                     "type": "string"
+                }
+            }
+        },
+        "apis.DiskMediaPayload": {
+            "type": "object",
+            "properties": {
+                "media": {
+                    "type": "string",
+                    "enum": [
+                        "ssd",
+                        "hdd",
+                        "nvme"
+                    ]
+                }
+            }
+        },
+        "apis.DiskPlanResponse": {
+            "type": "object",
+            "properties": {
+                "auto": {
+                    "type": "boolean"
+                },
+                "booting": {
+                    "type": "boolean"
+                },
+                "device": {
+                    "type": "string"
+                },
+                "reason": {
+                    "type": "string"
+                },
+                "size_gb": {
+                    "type": "integer"
+                },
+                "source_pool": {
+                    "$ref": "#/definitions/common.ResourceReference"
+                },
+                "target_pool": {
+                    "$ref": "#/definitions/common.ResourceReference"
+                },
+                "volume": {
+                    "$ref": "#/definitions/common.ResourceReference"
                 }
             }
         },
@@ -8760,6 +8489,265 @@ const docTemplatev1 = `{
                 }
             }
         },
+        "apis.HostDiskResponse": {
+            "type": "object",
+            "properties": {
+                "detail": {
+                    "type": "string"
+                },
+                "detected_media": {
+                    "type": "string"
+                },
+                "disk_id": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "media": {
+                    "type": "string"
+                },
+                "media_source": {
+                    "type": "string"
+                },
+                "model": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "orphan_count": {
+                    "type": "integer"
+                },
+                "owner_hostid": {
+                    "type": "integer"
+                },
+                "pool_name": {
+                    "type": "string"
+                },
+                "pool_uuid": {
+                    "type": "string"
+                },
+                "scanned_at": {
+                    "type": "string"
+                },
+                "serial": {
+                    "type": "string"
+                },
+                "size_bytes": {
+                    "type": "integer"
+                },
+                "state": {
+                    "type": "string"
+                },
+                "transport": {
+                    "type": "string"
+                }
+            }
+        },
+        "apis.HostPoolExtendPayload": {
+            "type": "object",
+            "required": [
+                "confirm",
+                "disks"
+            ],
+            "properties": {
+                "allow_media_mismatch": {
+                    "type": "boolean"
+                },
+                "confirm": {
+                    "type": "string"
+                },
+                "disks": {
+                    "type": "array",
+                    "maxItems": 32,
+                    "minItems": 1,
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "wipe": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "apis.HostPoolListResponse": {
+            "type": "object",
+            "properties": {
+                "pending_instances": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/common.BaseReference"
+                    }
+                },
+                "storage_pools": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/apis.HostPoolResponse"
+                    }
+                }
+            }
+        },
+        "apis.HostPoolPayload": {
+            "type": "object",
+            "required": [
+                "confirm",
+                "disks",
+                "layout",
+                "storage_pool"
+            ],
+            "properties": {
+                "allow_media_mismatch": {
+                    "type": "boolean"
+                },
+                "confirm": {
+                    "type": "string"
+                },
+                "destroy_pools": {
+                    "type": "array",
+                    "maxItems": 8,
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "disks": {
+                    "type": "array",
+                    "maxItems": 32,
+                    "minItems": 1,
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "layout": {
+                    "type": "string",
+                    "enum": [
+                        "single",
+                        "linear",
+                        "raid1"
+                    ]
+                },
+                "storage_pool": {
+                    "$ref": "#/definitions/common.BaseReference"
+                },
+                "wipe": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "apis.HostPoolReplacePayload": {
+            "type": "object",
+            "required": [
+                "confirm",
+                "failed_disk",
+                "new_disk"
+            ],
+            "properties": {
+                "allow_media_mismatch": {
+                    "type": "boolean"
+                },
+                "confirm": {
+                    "type": "string"
+                },
+                "failed_disk": {
+                    "type": "string"
+                },
+                "new_disk": {
+                    "type": "string"
+                },
+                "wipe": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "apis.HostPoolResponse": {
+            "type": "object",
+            "properties": {
+                "allocated_bytes": {
+                    "type": "integer"
+                },
+                "avail_bytes": {
+                    "type": "integer"
+                },
+                "builtin": {
+                    "type": "boolean"
+                },
+                "capacity_at": {
+                    "type": "string"
+                },
+                "capacity_bytes": {
+                    "type": "integer"
+                },
+                "checked_at": {
+                    "type": "string"
+                },
+                "devices": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/services.PoolDevice"
+                    }
+                },
+                "hypervisor": {
+                    "$ref": "#/definitions/common.ResourceReference"
+                },
+                "last_op": {
+                    "type": "string"
+                },
+                "layout": {
+                    "type": "string"
+                },
+                "maintenance": {
+                    "type": "boolean"
+                },
+                "media": {
+                    "type": "string"
+                },
+                "own_bytes": {
+                    "type": "integer"
+                },
+                "reason": {
+                    "type": "string"
+                },
+                "reported_reason": {
+                    "type": "string"
+                },
+                "reported_status": {
+                    "type": "string"
+                },
+                "reserved_bytes": {
+                    "type": "integer"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "storage_full_paused": {
+                    "type": "integer"
+                },
+                "storage_pool": {
+                    "$ref": "#/definitions/common.ResourceReference"
+                },
+                "sync_percent": {
+                    "type": "integer"
+                },
+                "usage": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/services.UsageEntry"
+                    }
+                },
+                "usage_at": {
+                    "type": "string"
+                },
+                "usage_ratio": {
+                    "type": "number"
+                },
+                "used_bytes": {
+                    "type": "integer"
+                },
+                "volume_count": {
+                    "type": "integer"
+                }
+            }
+        },
         "apis.HyperDeployPayload": {
             "type": "object",
             "required": [
@@ -8830,6 +8818,20 @@ const docTemplatev1 = `{
                 }
             }
         },
+        "apis.HyperMaintainResponse": {
+            "type": "object",
+            "properties": {
+                "instances": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/apis.MaintainInstanceResult"
+                    }
+                },
+                "result": {
+                    "type": "string"
+                }
+            }
+        },
         "apis.HyperResponse": {
             "type": "object",
             "properties": {
@@ -8848,13 +8850,20 @@ const docTemplatev1 = `{
                 "deploy_command": {
                     "type": "string"
                 },
-                "disk": {
+                "disk_allocated": {
                     "type": "integer"
+                },
+                "disk_max_usage_ratio": {
+                    "type": "number"
                 },
                 "disk_over_rate": {
                     "type": "number"
                 },
                 "disk_total": {
+                    "description": "Disks: sum of the storage pools of the host, raw capacity in GB, never multiplied by an over-commit ratio",
+                    "type": "integer"
+                },
+                "disk_used": {
                     "type": "integer"
                 },
                 "host_ip": {
@@ -8890,6 +8899,12 @@ const docTemplatev1 = `{
                 },
                 "status_name": {
                     "type": "string"
+                },
+                "storage_pools": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/services.HostPoolFigures"
+                    }
                 },
                 "uuid": {
                     "type": "string"
@@ -8945,12 +8960,6 @@ const docTemplatev1 = `{
                     "type": "string",
                     "maxLength": 32,
                     "minLength": 2
-                },
-                "pools": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    }
                 },
                 "public": {
                     "type": "boolean"
@@ -9081,39 +9090,6 @@ const docTemplatev1 = `{
                 }
             }
         },
-        "apis.ImageStorageResponse": {
-            "type": "object",
-            "properties": {
-                "created_at": {
-                    "type": "string"
-                },
-                "id": {
-                    "type": "string"
-                },
-                "name": {
-                    "type": "string"
-                },
-                "owner": {
-                    "type": "string"
-                },
-                "owner_uuid": {
-                    "description": "OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to\nrelease quota only when the caller's org actually owns the deleted resource",
-                    "type": "string"
-                },
-                "pool_id": {
-                    "type": "string"
-                },
-                "status": {
-                    "type": "string"
-                },
-                "updated_at": {
-                    "type": "string"
-                },
-                "volume_id": {
-                    "type": "string"
-                }
-            }
-        },
         "apis.InstanceInfo": {
             "type": "object",
             "properties": {
@@ -9207,17 +9183,6 @@ const docTemplatev1 = `{
                     "type": "integer",
                     "minimum": 1
                 },
-                "disk_bps_limit": {
-                    "description": "in MB/s",
-                    "type": "integer",
-                    "maximum": 102400,
-                    "minimum": 0
-                },
-                "disk_iops_limit": {
-                    "type": "integer",
-                    "maximum": 10000000,
-                    "minimum": 0
-                },
                 "flavor": {
                     "type": "string",
                     "maxLength": 32,
@@ -9253,9 +9218,6 @@ const docTemplatev1 = `{
                 "nested_enable": {
                     "type": "boolean"
                 },
-                "pool_id": {
-                    "type": "string"
-                },
                 "primary_interface": {
                     "$ref": "#/definitions/apis.InterfacePayload"
                 },
@@ -9271,6 +9233,14 @@ const docTemplatev1 = `{
                     "items": {
                         "$ref": "#/definitions/apis.InterfacePayload"
                     }
+                },
+                "storage_pool": {
+                    "description": "pool of the boot disk; the default pool when left out",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/common.BaseReference"
+                        }
+                    ]
                 },
                 "userdata": {
                     "type": "string"
@@ -9355,6 +9325,13 @@ const docTemplatev1 = `{
         "apis.InstanceResponse": {
             "type": "object",
             "properties": {
+                "available_storage_pools": {
+                    "description": "Pools usable on the host of the instance: a volume not created yet can only be attached when its pool is one of them",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
                 "cpu": {
                     "type": "integer"
                 },
@@ -10026,6 +10003,31 @@ const docTemplatev1 = `{
                 }
             }
         },
+        "apis.MaintainInstanceResult": {
+            "type": "object",
+            "properties": {
+                "instance": {
+                    "$ref": "#/definitions/common.ResourceReference"
+                },
+                "migration": {
+                    "type": "string"
+                },
+                "reason": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                }
+            }
+        },
+        "apis.MaintenancePayload": {
+            "type": "object",
+            "properties": {
+                "enable": {
+                    "type": "boolean"
+                }
+            }
+        },
         "apis.MetricsRequest": {
             "type": "object",
             "required": [
@@ -10075,6 +10077,21 @@ const docTemplatev1 = `{
                 }
             }
         },
+        "apis.MigrationDiskPayload": {
+            "type": "object",
+            "required": [
+                "storage_pool",
+                "volume"
+            ],
+            "properties": {
+                "storage_pool": {
+                    "$ref": "#/definitions/common.BaseReference"
+                },
+                "volume": {
+                    "$ref": "#/definitions/common.BaseReference"
+                }
+            }
+        },
         "apis.MigrationListResponse": {
             "type": "object",
             "properties": {
@@ -10102,7 +10119,23 @@ const docTemplatev1 = `{
                 "name"
             ],
             "properties": {
+                "allow_pool_fallback": {
+                    "description": "Replace a pool the target lacks by one of the same fallback group (default true)",
+                    "type": "boolean"
+                },
+                "disks": {
+                    "description": "Target pool per disk; needs target_hyper and a single instance",
+                    "type": "array",
+                    "maxItems": 32,
+                    "items": {
+                        "$ref": "#/definitions/apis.MigrationDiskPayload"
+                    }
+                },
                 "force": {
+                    "type": "boolean"
+                },
+                "ignore_capacity": {
+                    "description": "Skip the capacity checks of the target, to evacuate a host when every other one is nearly full",
                     "type": "boolean"
                 },
                 "instances": {
@@ -10127,6 +10160,9 @@ const docTemplatev1 = `{
         "apis.MigrationResponse": {
             "type": "object",
             "properties": {
+                "allow_pool_fallback": {
+                    "type": "boolean"
+                },
                 "created_at": {
                     "type": "string"
                 },
@@ -10137,11 +10173,21 @@ const docTemplatev1 = `{
                 "creater_uuid": {
                     "type": "string"
                 },
+                "disk_plan": {
+                    "description": "Where every disk goes on the target, fixed once the target is known",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/apis.DiskPlanResponse"
+                    }
+                },
                 "force": {
                     "type": "boolean"
                 },
                 "id": {
                     "type": "string"
+                },
+                "ignore_capacity": {
+                    "type": "boolean"
                 },
                 "instance": {
                     "$ref": "#/definitions/apis.InstanceInfo"
@@ -10533,6 +10579,168 @@ const docTemplatev1 = `{
                 }
             }
         },
+        "apis.StoragePoolListResponse": {
+            "type": "object",
+            "properties": {
+                "limit": {
+                    "type": "integer"
+                },
+                "offset": {
+                    "type": "integer"
+                },
+                "storage_pools": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/apis.StoragePoolResponse"
+                    }
+                },
+                "total": {
+                    "type": "integer"
+                }
+            }
+        },
+        "apis.StoragePoolPatchPayload": {
+            "type": "object",
+            "properties": {
+                "description": {
+                    "type": "string",
+                    "maxLength": 256
+                },
+                "fallback_group": {
+                    "type": "string",
+                    "maxLength": 64
+                },
+                "is_default": {
+                    "type": "boolean"
+                },
+                "media": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string",
+                    "maxLength": 64,
+                    "minLength": 2
+                },
+                "over_ratio": {
+                    "type": "number",
+                    "maximum": 20,
+                    "minimum": 0
+                },
+                "status": {
+                    "type": "string",
+                    "enum": [
+                        "active",
+                        "disabled"
+                    ]
+                }
+            }
+        },
+        "apis.StoragePoolPayload": {
+            "type": "object",
+            "required": [
+                "name"
+            ],
+            "properties": {
+                "description": {
+                    "type": "string",
+                    "maxLength": 256
+                },
+                "fallback_group": {
+                    "type": "string",
+                    "maxLength": 64
+                },
+                "is_default": {
+                    "type": "boolean"
+                },
+                "media": {
+                    "type": "string",
+                    "enum": [
+                        "ssd",
+                        "hdd",
+                        "nvme"
+                    ]
+                },
+                "name": {
+                    "type": "string",
+                    "maxLength": 64,
+                    "minLength": 2
+                },
+                "over_ratio": {
+                    "type": "number",
+                    "maximum": 20,
+                    "minimum": 0
+                }
+            }
+        },
+        "apis.StoragePoolResponse": {
+            "type": "object",
+            "properties": {
+                "allocated_bytes": {
+                    "type": "integer"
+                },
+                "available_hosts": {
+                    "type": "integer"
+                },
+                "builtin": {
+                    "type": "boolean"
+                },
+                "capacity_bytes": {
+                    "type": "integer"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "driver": {
+                    "type": "string"
+                },
+                "fallback_group": {
+                    "type": "string"
+                },
+                "hosts": {
+                    "type": "integer"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "is_default": {
+                    "type": "boolean"
+                },
+                "media": {
+                    "type": "string"
+                },
+                "mount_path": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "over_ratio": {
+                    "type": "number"
+                },
+                "owner": {
+                    "type": "string"
+                },
+                "owner_uuid": {
+                    "description": "OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to\nrelease quota only when the caller's org actually owns the deleted resource",
+                    "type": "string"
+                },
+                "shared": {
+                    "type": "boolean"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "used_bytes": {
+                    "type": "integer"
+                }
+            }
+        },
         "apis.SubnetListResponse": {
             "type": "object",
             "properties": {
@@ -10896,91 +11104,6 @@ const docTemplatev1 = `{
                 }
             }
         },
-        "apis.VolBackupListResponse": {
-            "type": "object",
-            "properties": {
-                "backups": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/apis.VolBackupResponse"
-                    }
-                },
-                "limit": {
-                    "type": "integer"
-                },
-                "offset": {
-                    "type": "integer"
-                },
-                "total": {
-                    "type": "integer"
-                }
-            }
-        },
-        "apis.VolBackupPayload": {
-            "type": "object",
-            "required": [
-                "name",
-                "type",
-                "volume_id"
-            ],
-            "properties": {
-                "name": {
-                    "type": "string"
-                },
-                "pool_id": {
-                    "type": "string"
-                },
-                "type": {
-                    "type": "string",
-                    "enum": [
-                        "snapshot",
-                        "backup"
-                    ]
-                },
-                "volume_id": {
-                    "type": "string"
-                }
-            }
-        },
-        "apis.VolBackupResponse": {
-            "type": "object",
-            "properties": {
-                "created_at": {
-                    "type": "string"
-                },
-                "id": {
-                    "type": "string"
-                },
-                "name": {
-                    "type": "string"
-                },
-                "owner": {
-                    "type": "string"
-                },
-                "owner_uuid": {
-                    "description": "OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to\nrelease quota only when the caller's org actually owns the deleted resource",
-                    "type": "string"
-                },
-                "path": {
-                    "type": "string"
-                },
-                "size": {
-                    "type": "integer"
-                },
-                "status": {
-                    "$ref": "#/definitions/model.BackupStatus"
-                },
-                "task": {
-                    "$ref": "#/definitions/common.BaseReference"
-                },
-                "updated_at": {
-                    "type": "string"
-                },
-                "volume": {
-                    "$ref": "#/definitions/common.BaseReference"
-                }
-            }
-        },
         "apis.VolumeInfoResponse": {
             "type": "object",
             "properties": {
@@ -11058,54 +11181,24 @@ const docTemplatev1 = `{
                 "size"
             ],
             "properties": {
-                "bps_burst": {
-                    "type": "integer",
-                    "minimum": 0
-                },
-                "bps_limit": {
-                    "description": "in MB/s",
-                    "type": "integer",
-                    "maximum": 102400,
-                    "minimum": 0
-                },
                 "count": {
                     "type": "integer",
                     "maximum": 16,
                     "minimum": 1
                 },
-                "iops_burst": {
-                    "type": "integer",
-                    "minimum": 0
-                },
-                "iops_limit": {
-                    "type": "integer",
-                    "maximum": 10000000,
-                    "minimum": 0
-                },
                 "name": {
-                    "type": "string"
-                },
-                "pool_id": {
                     "type": "string"
                 },
                 "size": {
                     "type": "integer"
-                }
-            }
-        },
-        "apis.VolumeQosPayload": {
-            "type": "object",
-            "properties": {
-                "bps_limit": {
-                    "description": "in MB/s",
-                    "type": "integer",
-                    "maximum": 102400,
-                    "minimum": 0
                 },
-                "iops_limit": {
-                    "type": "integer",
-                    "maximum": 10000000,
-                    "minimum": 0
+                "storage_pool": {
+                    "description": "Storage pool of the volume; the default pool when left out",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/common.BaseReference"
+                        }
+                    ]
                 }
             }
         },
@@ -11127,12 +11220,6 @@ const docTemplatev1 = `{
                 "booting": {
                     "type": "boolean"
                 },
-                "bps_burst": {
-                    "type": "integer"
-                },
-                "bps_limit": {
-                    "type": "integer"
-                },
                 "created_at": {
                     "type": "string"
                 },
@@ -11142,17 +11229,19 @@ const docTemplatev1 = `{
                 "href": {
                     "type": "string"
                 },
+                "hypervisor": {
+                    "description": "Host holding the file of the volume, for system admins; empty until the volume is attached the first time",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/common.ResourceReference"
+                        }
+                    ]
+                },
                 "id": {
                     "type": "string"
                 },
                 "instance": {
                     "$ref": "#/definitions/common.BaseReference"
-                },
-                "iops_burst": {
-                    "type": "integer"
-                },
-                "iops_limit": {
-                    "type": "integer"
                 },
                 "name": {
                     "type": "string"
@@ -11167,11 +11256,17 @@ const docTemplatev1 = `{
                 "path": {
                     "type": "string"
                 },
+                "reason": {
+                    "type": "string"
+                },
                 "size": {
                     "type": "integer"
                 },
                 "status": {
                     "type": "string"
+                },
+                "storage_pool": {
+                    "$ref": "#/definitions/common.ResourceReference"
                 },
                 "target": {
                     "type": "string"
@@ -11363,20 +11458,167 @@ const docTemplatev1 = `{
                 "Vrrp"
             ]
         },
-        "model.BackupStatus": {
-            "type": "string",
-            "enum": [
-                "pending",
-                "available",
-                "error",
-                "restoring"
-            ],
-            "x-enum-varnames": [
-                "BackupStatusPending",
-                "BackupStatusReady",
-                "BackupStatusError",
-                "BackupStatusRestoring"
-            ]
+        "services.DiskTarget": {
+            "type": "object",
+            "properties": {
+                "booting": {
+                    "type": "boolean"
+                },
+                "can_stay": {
+                    "type": "boolean"
+                },
+                "choices": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/services.PoolChoice"
+                    }
+                },
+                "fallback": {
+                    "$ref": "#/definitions/services.PoolChoice"
+                },
+                "size_gb": {
+                    "type": "integer"
+                },
+                "source_pool": {
+                    "type": "string"
+                },
+                "volume_name": {
+                    "type": "string"
+                },
+                "volume_uuid": {
+                    "type": "string"
+                }
+            }
+        },
+        "services.HostPoolFigures": {
+            "type": "object",
+            "properties": {
+                "allocated_bytes": {
+                    "type": "integer"
+                },
+                "builtin": {
+                    "type": "boolean"
+                },
+                "capacity_bytes": {
+                    "type": "integer"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "usage_ratio": {
+                    "type": "number"
+                },
+                "used_bytes": {
+                    "type": "integer"
+                },
+                "uuid": {
+                    "type": "string"
+                }
+            }
+        },
+        "services.MigrationTarget": {
+            "type": "object",
+            "properties": {
+                "disks": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/services.DiskTarget"
+                    }
+                },
+                "hostid": {
+                    "type": "integer"
+                },
+                "hostname": {
+                    "type": "string"
+                },
+                "reason": {
+                    "type": "string"
+                },
+                "usable": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "services.PoolChoice": {
+            "type": "object",
+            "properties": {
+                "avail_bytes": {
+                    "type": "integer"
+                },
+                "fits": {
+                    "type": "boolean"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "reason": {
+                    "type": "string"
+                },
+                "uuid": {
+                    "type": "string"
+                }
+            }
+        },
+        "services.PoolDevice": {
+            "type": "object",
+            "properties": {
+                "array": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "media": {
+                    "type": "string"
+                },
+                "model": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "pair": {
+                    "type": "integer"
+                },
+                "serial": {
+                    "type": "string"
+                },
+                "size_bytes": {
+                    "type": "integer"
+                }
+            }
+        },
+        "services.UsageEntry": {
+            "type": "object",
+            "properties": {
+                "bytes": {
+                    "type": "integer"
+                },
+                "instance": {
+                    "type": "string"
+                },
+                "instance_uuid": {
+                    "type": "string"
+                },
+                "owner": {
+                    "type": "string"
+                },
+                "path": {
+                    "type": "string"
+                },
+                "size": {
+                    "type": "integer"
+                },
+                "volume_name": {
+                    "type": "string"
+                },
+                "volume_uuid": {
+                    "type": "string"
+                }
+            }
         }
     }
 }`

@@ -135,13 +135,22 @@ func deleteInterfaces(ctx context.Context, instance *model.Instance, vrrpInstanc
 
 func updateAttachedVolumes(ctx context.Context, instanceID int64) (err error) {
 	_, db := GetContextDB(ctx)
+	// Volumes of a lost pool or waiting for adoption keep their status: their file is not usable
 	err = db.Model(&model.Volume{}).
-		Where("instance_id = ? and booting = ?", instanceID, false).
+		Where("instance_id = ? AND booting = ? AND status NOT IN ?", instanceID, false,
+			[]model.VolumeStatus{model.VolumeStatusLost, model.VolumeStatusOrphaned, model.VolumeStatusDeleting, model.VolumeStatusDeleteFailed}).
 		Updates(map[string]interface{}{
 			"instance_id": 0,
 			"target":      "",
 			"status":      model.VolumeStatusAvailable,
 		}).Error
+	if err != nil {
+		logger.Ctx(ctx).Error("Failed to update attached data volumes", err)
+		return
+	}
+	err = db.Model(&model.Volume{}).
+		Where("instance_id = ? AND booting = ?", instanceID, false).
+		Updates(map[string]interface{}{"instance_id": 0, "target": ""}).Error
 	if err != nil {
 		logger.Ctx(ctx).Error("Failed to update attached data volumes", err)
 		return

@@ -68,10 +68,6 @@ CLOUDLAND_DIR="${CLOUDLAND_DIR:-/opt/cloudland}"      # CloudLand 安装目录
 DEPLOY_DIR="$CLOUDLAND_DIR/deploy/docker"
 
 # ============ 可选配置 ============
-WDS_ADDRESS="${WDS_ADDRESS:-}"                      # WDS 存储地址（留空则不使用）
-WDS_ADMIN="${WDS_ADMIN:-}"                          # WDS 管理员
-WDS_PASS="${WDS_PASS:-}"                            # WDS 密码
-WDS_POOL_ID="${WDS_POOL_ID:-}"                      # WDS 存储池 ID
 
 # 其他计算节点列表（用于 /etc/hosts，格式: "IP HOSTNAME" 每行一条）
 # 如只有本机则留空
@@ -236,6 +232,8 @@ apt-get install -y qemu-system-x86 qemu-utils bridge-utils ipcalc ipset \
     keepalived haproxy iputils-arping libvirt-daemon libvirt-daemon-system \
     libvirt-daemon-system-systemd libvirt-clients dnsmasq-base dnsmasq-utils \
     conntrack cloud-utils socat
+# Local storage pools: LVM, RAID1, XFS, and rsync keeping sparse files when shut-off instances migrate
+apt-get install -y lvm2 mdadm xfsprogs rsync libxml2-utils
 # 负载均衡的 haproxy 由 create_haproxy_conf.sh 在路由器 netns 内按实例启动，不需要系统自带的服务
 systemctl disable --now haproxy 2>/dev/null || true
 
@@ -343,7 +341,8 @@ log "6/16 - 创建目录结构"
 
 mkdir -p "$CLOUDLAND_DIR"/{log,run,cache} "$CLOUDLAND_DIR/run/async_job"
 mkdir -p "$CLOUDLAND_DIR/cache"/{backup,image,instance,meta,router,volume,dnsmasq,xml,qemu_agent}
-chown -R cland:cland "$CLOUDLAND_DIR"
+# -xdev: never walk into mounted storage pools (instance disks there belong to libvirt while they run)
+find "$CLOUDLAND_DIR" -xdev -exec chown cland:cland {} +
 
 # ============ 7. 创建 backend 软链接 ============
 log "7/16 - 创建 scripts/backend → kvm 软链接"
@@ -370,10 +369,6 @@ vlan_interface=${VLAN_DEVICE:-$NETWORK_DEVICE}
 private_vlan_interface=${PRIVATE_VLAN_DEVICE:-${VLAN_DEVICE:-$NETWORK_DEVICE}}
 use_lb=true
 proxy_mode=true
-wds_address=$WDS_ADDRESS
-wds_admin=$WDS_ADMIN
-wds_pass=$WDS_PASS
-wds_pool_id=$WDS_POOL_ID
 EOF
 chown cland:cland "$CLOUDLAND_DIR/scripts/cloudrc.local"
 

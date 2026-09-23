@@ -27,6 +27,7 @@ func Init() {
 	AdminInit()
 	RebuildAlarmRulesOnStartup()
 	StartVMRuleMappingReconciler()
+	StartStorageMaintainer()
 	// CLAPI_INTERNAL_URL 默认拼装必须在 goroutine 启动前完成，
 	// 否则 capture 分支拿到空 URL 直接报错；不依赖 DNS，做纯字符串拼接。
 	fillClapiInternalURL()

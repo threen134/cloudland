@@ -22,6 +22,15 @@ export function useVolumeActionGuards() {
         detachBlocked: (volume: Volume) =>
             volume.booting ? t('dashboard.volumeActions.bootNotDetachable') : unless(volume, ['attached']),
         resizeBlocked: (volume: Volume) => unless(volume, ['available', 'attached']),
+        // Orphaned volumes wait for their pool to be adopted; deleting ones are already on their way
+        deleteBlocked: (volume: Volume) =>
+            volume.status === 'orphaned'
+                ? t('storage.orphanedWaiting')
+                : ['deleting', 'attaching', 'detaching', 'resizing', 'pending'].includes(volume.status)
+                  ? t('dashboard.volumeActions.unavailableInStatus', { status: statusText(volume.status) })
+                  : '',
+        // A volume of a lost pool still attached: drop it from the definition of its instance
+        canForceDetach: (volume: Volume) => volume.status === 'lost' && !!volume.instance,
     }
 }
 

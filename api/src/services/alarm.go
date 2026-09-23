@@ -40,6 +40,7 @@ const (
 	RuleTypeHypervisorVCPU = "hypervisor_vcpu"
 	RuleTypePacketDrop     = "packet_drop"
 	RuleTypeIPBlock        = "ip_block"
+	RuleTypeLocalPool      = "local_pool"
 	RulesEnabled           = "/etc/prometheus/rules_enabled"
 	RulesGeneral           = "/etc/prometheus/general_rules"
 	RulesSpecial           = "/etc/prometheus/special_rules"
@@ -106,25 +107,25 @@ type (
 	}
 
 	CPURule struct {
-		ID           int       `gorm:"primaryKey;autoIncrement"`
-		GroupUUID    string    `gorm:"column:group_uuid;type:varchar(36);index"`
-		Name         string    `json:"name" gorm:"size:255"`
-		Limit        int       `json:"limit" gorm:"column:limit;check:limit >= 1"` // Threshold value
-		Rule         string    `json:"rule" gorm:"type:varchar(8);column:rule"`    // Comparison operator: gt/lt
-		Duration     int       `json:"duration" gorm:"check:duration >= 1"`        // Duration in minutes
-		Level        string    `json:"level" binding:"required,oneof=critical warning info"`
-		CreatedAt    time.Time `gorm:"autoCreateTime"`
+		ID        int       `gorm:"primaryKey;autoIncrement"`
+		GroupUUID string    `gorm:"column:group_uuid;type:varchar(36);index"`
+		Name      string    `json:"name" gorm:"size:255"`
+		Limit     int       `json:"limit" gorm:"column:limit;check:limit >= 1"` // Threshold value
+		Rule      string    `json:"rule" gorm:"type:varchar(8);column:rule"`    // Comparison operator: gt/lt
+		Duration  int       `json:"duration" gorm:"check:duration >= 1"`        // Duration in minutes
+		Level     string    `json:"level" binding:"required,oneof=critical warning info"`
+		CreatedAt time.Time `gorm:"autoCreateTime"`
 	}
 
 	MemoryRule struct {
-		ID           int       `gorm:"primaryKey;autoIncrement"`
-		GroupUUID    string    `gorm:"column:group_uuid;type:varchar(36);index"`
-		Name         string    `json:"name" gorm:"size:255"`
-		Limit        int       `json:"limit" gorm:"column:limit;check:limit >= 1"` // Threshold value
-		Rule         string    `json:"rule" gorm:"type:varchar(8);column:rule"`    // Comparison operator: gt/lt
-		Duration     int       `json:"duration" gorm:"check:duration >= 1"`        // Duration in minutes
-		Level        string    `json:"level" binding:"required,oneof=critical warning info"`
-		CreatedAt    time.Time `gorm:"autoCreateTime"`
+		ID        int       `gorm:"primaryKey;autoIncrement"`
+		GroupUUID string    `gorm:"column:group_uuid;type:varchar(36);index"`
+		Name      string    `json:"name" gorm:"size:255"`
+		Limit     int       `json:"limit" gorm:"column:limit;check:limit >= 1"` // Threshold value
+		Rule      string    `json:"rule" gorm:"type:varchar(8);column:rule"`    // Comparison operator: gt/lt
+		Duration  int       `json:"duration" gorm:"check:duration >= 1"`        // Duration in minutes
+		Level     string    `json:"level" binding:"required,oneof=critical warning info"`
+		CreatedAt time.Time `gorm:"autoCreateTime"`
 	}
 
 	BWRule struct {
@@ -1271,9 +1272,9 @@ func (a *AlarmOperator) CreateCPURules(ctx context.Context, groupUUID string, ru
 	return db.Transaction(func(tx *gorm.DB) error {
 		for i := range rules {
 			rule := &CPURule{
-				GroupUUID:    groupUUID,
-				Name:         rules[i].Name,
-				Duration:     rules[i].Duration,
+				GroupUUID: groupUUID,
+				Name:      rules[i].Name,
+				Duration:  rules[i].Duration,
 			}
 			if err := tx.Create(rule).Error; err != nil {
 				logger.Ctx(ctx).Errorf("create cpu rule failed: groupUUID=%s, rule=%+v, error=%v", groupUUID, rules[i], err)
@@ -2446,6 +2447,8 @@ func nodeAlarmTemplates(ruleType string) []string {
 		return []string{"packet-drop-monitor.yml.j2"}
 	case RuleTypeIPBlock:
 		return []string{"ip-block-monitor.yml.j2"}
+	case RuleTypeLocalPool:
+		return []string{"local-pool-monitor.yml.j2"}
 	case "ipgroup_available_ip":
 		return []string{"ipgroup-available-ip-monitor.yml.j2"}
 	case "service_monitoring":

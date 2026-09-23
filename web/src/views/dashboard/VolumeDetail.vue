@@ -72,7 +72,7 @@ const fetchVolume = async (silent = false) => {
 }
 
 const volumeActions = ref<InstanceType<typeof VolumeActionModals> | null>(null)
-const { attachBlocked, detachBlocked, resizeBlocked } = useVolumeActionGuards()
+const { attachBlocked, detachBlocked, resizeBlocked, deleteBlocked, canForceDetach } = useVolumeActionGuards()
 usePollBusyVolumes(volume, () => fetchVolume(true))
 
 // Menu items close the menu before opening their dialog
@@ -121,14 +121,26 @@ const confirmDelete = async () => {
     deletingResource.value = true
     deleteError.value = ''
     try {
-        await volumesApi.delete(route.params.id as string)
-        toast.success(t('messages.deleteSuccess'))
+        const { deferred } = await volumesApi.delete(route.params.id as string)
+        toast.success(deferred ? t('storage.deleteAccepted') : t('messages.deleteSuccess'))
         router.push({ name: 'volumes' })
     } catch (err) {
         console.error('Failed to delete volume:', err)
         deleteError.value = errorMessage(err, t('messages.error'))
     } finally {
         deletingResource.value = false
+    }
+}
+
+const forceDetach = async () => {
+    if (!volume.value) return
+    closeActionMenu()
+    try {
+        await volumesApi.forceDetach(volume.value.id)
+        toast.success(t('storage.forceDetachDone'))
+        await fetchVolume()
+    } catch (err) {
+        toast.error(errorMessage(err, t('messages.error')))
     }
 }
 
@@ -197,8 +209,11 @@ onMounted(() => {
                         </button>
                         <Transition name="dropdown">
                             <div v-if="showActionMenu" class="dropdown-menu">
+                                <button v-if="canForceDetach(volume)" class="dropdown-item" @click="forceDetach">
+                                    <Unlink :size="14" /> {{ $t('storage.forceDetach') }}
+                                </button>
                                 <button
-                                    v-if="volume.instance"
+                                    v-else-if="volume.instance"
                                     class="dropdown-item"
                                     :disabled="!!detachBlocked(volume)"
                                     :title="detachBlocked(volume)"
@@ -224,8 +239,14 @@ onMounted(() => {
                                     <Maximize2 :size="14" /> {{ $t('actions.resize') }}
                                 </button>
                                 <div class="dropdown-divider"></div>
-                                <button class="dropdown-item dropdown-item-danger" @click.stop="handleDeleteClick">
-                                    <Trash2 :size="14" /> {{ $t('actions.delete') }}
+                                <button
+                                    class="dropdown-item dropdown-item-danger"
+                                    :disabled="!!deleteBlocked(volume)"
+                                    :title="deleteBlocked(volume)"
+                                    @click.stop="handleDeleteClick"
+                                >
+                                    <Trash2 :size="14" />
+                                    {{ volume.status === 'lost' ? $t('storage.deleteRecord') : $t('actions.delete') }}
                                 </button>
                             </div>
                         </Transition>
@@ -307,17 +328,26 @@ onMounted(() => {
                         </div>
                     </div>
 
-                    <!-- QoS Info Card -->
+                    <!-- Storage -->
                     <div class="card info-card">
-                        <h3>{{ $t('dashboard.table.performance') }}</h3>
+                        <h3>{{ $t('storage.title') }}</h3>
                         <div class="key-value-list">
-                            <InfoRow :label="$t('dashboard.table.iopsLimitBurst')"
-                                >{{ volume.iops_limit ?? '-' }} / {{ volume.iops_burst ?? '-' }}</InfoRow
-                            >
-                            <InfoRow :label="$t('dashboard.table.bpsLimitBurst')"
-                                >{{ volume.bps_limit ?? '-' }} / {{ volume.bps_burst ?? '-' }}</InfoRow
-                            >
+                            <InfoRow :label="$t('storage.pool')">{{ volume.storage_pool?.name || '-' }}</InfoRow>
+                            <InfoRow v-if="volume.hypervisor" :label="$t('dashboard.hypervisors')">{{
+                                volume.hypervisor.name || '-'
+                            }}</InfoRow>
+                            <InfoRow v-if="!volume.hypervisor && !volume.instance" :label="$t('storage.fileState')">{{
+                                $t('storage.notCreatedYet')
+                            }}</InfoRow>
+                            <InfoRow v-if="volume.reason" :label="$t('storage.reason')">{{ volume.reason }}</InfoRow>
                         </div>
+                        <p v-if="volume.status === 'lost'" class="storage-note">{{ $t('storage.lostVolumeNote') }}</p>
+                        <p v-else-if="volume.status === 'orphaned'" class="storage-note">
+                            {{ $t('storage.orphanedWaiting') }}
+                        </p>
+                        <p v-else-if="volume.status === 'delete_failed'" class="storage-note">
+                            {{ $t('storage.deleteFailedNote') }}
+                        </p>
                     </div>
                 </div>
             </div>
@@ -338,6 +368,12 @@ onMounted(() => {
 </template>
 
 <style scoped>
+.storage-note {
+    margin-top: var(--spacing-3);
+    font-size: var(--font-size-sm);
+    color: var(--text-secondary);
+}
+
 .detail-header {
     margin-bottom: var(--spacing-4);
 }

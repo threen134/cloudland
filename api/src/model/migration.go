@@ -30,6 +30,31 @@ type Migration struct {
 	Progress    int32
 	Transferred int64
 	Total       int64
+	// DiskPlan is fixed once the target host is known and then used unchanged by every later step (JSON, []DiskPlanItem)
+	DiskPlan string `gorm:"type:text"`
+	// Per-disk target pools asked for in the request (JSON, map of volume id to pool id)
+	DiskRequests      string `gorm:"type:text"`
+	AllowPoolFallback bool   // no gorm default tag, false is meaningful
+	IgnoreCapacity    bool
+}
+
+// DiskPlanItem is where one local disk of a migrating instance goes
+type DiskPlanItem struct {
+	VolumeID   int64  `json:"volume_id"`
+	Device     string `json:"device"`
+	Booting    bool   `json:"booting"`
+	SizeGB     int32  `json:"size_gb"`
+	SrcPoolID  int64  `json:"src_pool_id"`
+	SrcPath    string `json:"src_path"` // absolute
+	DstPoolID  int64  `json:"dst_pool_id"`
+	DstPath    string `json:"dst_path"` // absolute
+	DstRelPath string `json:"dst_rel_path"`
+	// Pool of the target as the node scripts name it: the pool uuid, or the literal "builtin"
+	DstPoolUUID string `json:"dst_pool_uuid"`
+	DstPoolRoot string `json:"dst_pool_root"`
+	Auto        bool   `json:"auto"`
+	Reason      string `json:"reason"`
+	NVRAM       bool   `json:"nvram,omitempty"`
 }
 
 func init() {

@@ -32,7 +32,7 @@ groups:
       alert_type: "node-disk"
     annotations:
       summary: "Compute node {{ $labels.instance }} low disk space"
-      description: "Compute node {{ $labels.instance }} device {{ $labels.device }} space remaining less than {{ disk_space_threshold | default(10) }}% for {{ disk_alert_duration | default(20) }} minutes"
+      description: "Compute node {{ $labels.instance }} device {{ $labels.device }} at {{ $labels.mountpoint }} space remaining less than {{ disk_space_threshold | default(10) }}% for {{ disk_alert_duration | default(20) }} minutes"
 
   - alert: ComputeHighNetworkTraffic
     expr: rate(node_network_receive_bytes_total{device!~"lo|bond.*|vnet.*|virbr.*|docker.*", node_type="compute"}[1m]) * 8 / 1024 / 1024 / 1024 > {{ network_traffic_threshold_gb | default(25) }} or

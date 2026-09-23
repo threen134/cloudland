@@ -89,6 +89,8 @@ export interface Instance extends ResourceReference {
     vpc?: ResourceReference
     hypervisor?: string
     reason: string
+    // Pools usable on the host of the instance (uuids): a volume in another pool can not be attached to it
+    available_storage_pools?: string[]
 }
 
 export interface InstanceListResponse {
@@ -125,6 +127,8 @@ export interface CreateInstancePayload {
     count?: number
     /** 宿主机 uuid（后端 binding:"omitempty,uuid"） */
     hypervisor?: string
+    /** Pool of the boot disk; the default pool when left out */
+    storage_pool?: { id: string }
     hostname: string
     keys?: BaseReference[]
     root_passwd?: string

@@ -18,16 +18,16 @@ func init() {
 	Add("create_image", CreateImage)
 }
 
+// CreateImage records the result of create_image.sh (legacy local mode without S3)
 func CreateImage(ctx context.Context, args []string) (status string, err error) {
-	//|:-COMMAND-:| create_image.sh '5' 'available' 'qcow2' '1024000' 'volume_ID' 'storage_ID'
+	//|:-COMMAND-:| create_image.sh '<image id>' '<available|error>' '<format>' '<size bytes>'
 	ctx, db, newTransaction := StartTransaction(ctx)
 	defer func() {
 		if newTransaction {
 			EndTransaction(ctx, err)
 		}
 	}()
-	argn := len(args)
-	if argn < 5 {
+	if len(args) < 5 {
 		err = fmt.Errorf("Wrong params")
 		logger.Ctx(ctx).Error("Invalid args", err)
 		return
@@ -38,58 +38,22 @@ func CreateImage(ctx context.Context, args []string) (status string, err error) 
 		return
 	}
 	image := &model.Image{Model: model.Model{ID: imgID}}
-	err = db.Take(image).Error
-	if err != nil {
+	if err = db.Take(image).Error; err != nil {
 		logger.Ctx(ctx).Error("Invalid image ID", err)
 		return
 	}
-	state := args[2]
-	image.Status = state
-	image.Format = args[3]
-	imageSize, err := strconv.Atoi(args[4])
+	imageSize, err := strconv.ParseInt(args[4], 10, 64)
 	if err != nil {
 		logger.Ctx(ctx).Error("Invalid image size", err)
 		return
 	}
-	image.Size = int64(imageSize)
 	err = db.Model(&model.Image{}).Where("id = ?", image.ID).Updates(map[string]interface{}{
-		"status": image.Status,
-		"format": image.Format,
-		"size":   image.Size,
+		"status": args[2],
+		"format": args[3],
+		"size":   imageSize,
 	}).Error
 	if err != nil {
 		logger.Ctx(ctx).Error("Update image failed", err)
-		return
-	}
-	if argn < 7 {
-		return
-	}
-	storageID, err := strconv.ParseInt(args[6], 10, 64)
-	if err != nil {
-		logger.Ctx(ctx).Error("Invalid storage ID", err)
-		return
-	}
-	if storageID > 0 {
-		storage := &model.ImageStorage{Model: model.Model{ID: storageID}}
-		err = db.Take(storage).Error
-		if err != nil {
-			logger.Ctx(ctx).Error("Invalid storage ID", err)
-			return
-		}
-		storage.VolumeID = args[5]
-		if state == "available" {
-			storage.Status = model.StorageStatusSynced
-		} else {
-			storage.Status = model.StorageStatusError
-		}
-		err = db.Model(&model.ImageStorage{}).Where("id = ?", storage.ID).Updates(map[string]interface{}{
-			"status":    storage.Status,
-			"volume_id": storage.VolumeID,
-		}).Error
-		if err != nil {
-			logger.Ctx(ctx).Error("Update image storage failed", err)
-			return
-		}
 	}
 	return
 }

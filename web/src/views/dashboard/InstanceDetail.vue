@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useStorageReason } from '../../composables/useStorageReason'
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
@@ -58,6 +59,7 @@ import { errorMessage } from '../../utils/error'
 const route = useRoute()
 const router = useRouter()
 const { t } = useI18n()
+const { storageReason } = useStorageReason()
 const instanceId = route.params.id as string
 const { copiedId: copiedField, copyId: copyToClipboard } = useCopyId()
 
@@ -598,6 +600,12 @@ onUnmounted(() => {
                         <h2 class="resource-title">
                             {{ instance.hostname }}
                             <StatusBadge :status="instance.status" :label="getStatusText(instance.status)" />
+                            <span
+                                v-if="storageReason(instance.reason)"
+                                class="badge badge-warning"
+                                :title="storageReason(instance.reason)?.hint"
+                                >{{ storageReason(instance.reason)?.text }}</span
+                            >
                         </h2>
                         <div class="resource-id-row">
                             <span class="resource-id-text">{{ instance.id }}</span>

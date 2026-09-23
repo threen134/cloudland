@@ -23,8 +23,6 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/spf13/viper"
-
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )
@@ -83,8 +81,6 @@ type InstanceData struct {
 	RootPasswd     string             `json:"root_passwd"`
 	LoginPort      int                `json:"login_port"`
 	OSCode         string             `json:"os_code"`
-	DiskIopsLimit  int32              `json:"disk_iops_limit"`
-	DiskBpsLimit   int32              `json:"disk_bps_limit"`
 }
 
 type InstancesData struct {
@@ -94,7 +90,7 @@ type InstancesData struct {
 
 func (a *InstanceAdmin) Create(ctx context.Context, count int, prefix, userdata string, userdataType string, vendorData string, vendorDataType string, image *model.Image,
 	zone *model.Zone, routerID int64, primaryIface *InterfaceInfo, secondaryIfaces []*InterfaceInfo,
-	keys []*model.Key, rootPasswd string, loginPort, hyperID int, cpu int32, memory int32, disk int32, diskIopsLimit int32, diskBpsLimit int32, nestedEnable bool, poolID string) (instances []*model.Instance, err error) {
+	keys []*model.Key, rootPasswd string, loginPort, hyperID int, cpu int32, memory int32, disk int32, nestedEnable bool, bootPool *model.StoragePool) (instances []*model.Instance, err error) {
 	logger.Ctx(ctx).Infof("ENTER InstanceAdmin.Create: count=%d, prefix=%s, image=%s, zone=%s, routerID=%d", count, prefix, image.Name, zone.Name, routerID)
 	defer func() {
 		if err != nil {
@@ -154,11 +150,6 @@ func (a *InstanceAdmin) Create(ctx context.Context, count int, prefix, userdata 
 			loginPort = 3389
 		}
 	}
-	hyperGroup, err := GetHyperGroup(ctx, zoneID, -1)
-	if err != nil {
-		logger.Ctx(ctx).Error("No valid hypervisor", err)
-		return
-	}
 	if rootPasswd == "" {
 		rootPasswd, err = generateRandomPassword(16)
 		if err != nil {
@@ -169,22 +160,26 @@ func (a *InstanceAdmin) Create(ctx context.Context, count int, prefix, userdata 
 	}
 	passwdLogin := true
 
-	driver := GetVolumeDriver()
-	imageVolumeID := ""
-	if driver != "local" {
-		defaultPoolID := viper.GetString("volume.default_wds_pool_id")
-		if poolID == "" {
-			poolID = defaultPoolID
-		}
-		storage := model.ImageStorage{}
-		err = db.Where("image_id = ? and pool_id = ? and status = ?", image.ID, poolID, model.StorageStatusSynced).First(&storage).Error
-		if err != nil {
-			logger.Ctx(ctx).Errorf("Failed to query image storage %d, %v", image.ID, err)
-			err = NewCLError(ErrImageStorageNotFound, "Image storage not found", err)
+	if bootPool == nil {
+		if bootPool, err = BuiltinPool(ctx); err != nil {
 			return
 		}
-		imageVolumeID = storage.VolumeID
-		logger.Ctx(ctx).Debugf("Using volume driver %s with pool ID %s", driver, poolID)
+	}
+	if bootPool.Status != model.StoragePoolActive {
+		return nil, NewCLError(ErrStoragePoolUnavailable, fmt.Sprintf("Storage pool %s is disabled", bootPool.Name), nil)
+	}
+	// Boot disks in the built-in pool: cland picks among the hosts whose built-in pool is not too full.
+	// A host given by the admin is checked against the pool like any other allocation (§6).
+	hyperGroup := ""
+	if bootPool.Builtin {
+		if hyperID >= 0 {
+			if _, err = admitLocked(db, bootPool, int32(hyperID), int64(disk)*int64(count)); err != nil {
+				return
+			}
+		} else if hyperGroup, err = instanceHyperGroup(db, zoneID); err != nil {
+			logger.Ctx(ctx).Error("No valid hypervisor", err)
+			return
+		}
 	}
 
 	// 镜像下载地址对本次创建的所有实例相同：在建实例/卷/网卡之前生成，S3 不可用时直接失败，避免白做一轮再回滚
@@ -200,21 +195,9 @@ func (a *InstanceAdmin) Create(ctx context.Context, count int, prefix, userdata 
 			hostname = fmt.Sprintf("%s-%d", prefix, i+1)
 		}
 		var total int64
-
-		if driver == "local" {
-			if err = db.Unscoped().Model(&model.Instance{}).Where("image_id = ?", image.ID).Count(&total).Error; err != nil {
-				logger.Ctx(ctx).Error("Failed to query total instances with the image", err)
-				return nil, NewCLError(ErrSQLSyntaxError, "Failed to query total instances with the image", err)
-			}
-		} else {
-			if err = db.Model(&model.Instance{}).
-				Unscoped().
-				Joins("LEFT JOIN volumes v ON instances.id = v.instance_id AND v.booting = ?", true).
-				Where("v.pool_id = ?", poolID).
-				Where("instances.image_id = ?", image.ID).
-				Count(&total).Error; err != nil {
-				logger.Ctx(ctx).Error("Failed to count instances with volumes matching pool_id", err)
-			}
+		if err = db.Unscoped().Model(&model.Instance{}).Where("image_id = ?", image.ID).Count(&total).Error; err != nil {
+			logger.Ctx(ctx).Error("Failed to query total instances with the image", err)
+			return nil, NewCLError(ErrSQLSyntaxError, "Failed to query total instances with the image", err)
 		}
 		snapshot := total/MaxmumSnapshot + 1 // Same snapshot reference can not be over 128, so use 96 here
 		instance := &model.Instance{
@@ -248,7 +231,7 @@ func (a *InstanceAdmin) Create(ctx context.Context, count int, prefix, userdata 
 		var bootVolume *model.Volume
 		imagePrefix := fmt.Sprintf("image-%d-%s", image.ID, strings.Split(image.UUID, "-")[0])
 		// boot volume name format: instance-15-boot-volume-10
-		bootVolume, err = volumeAdmin.CreateVolume(ctx, fmt.Sprintf("instance-%d-boot-volume", instance.ID), instance.Disk, instance.ID, true, diskIopsLimit, 0, diskBpsLimit, 0, poolID)
+		bootVolume, err = volumeAdmin.CreateVolume(ctx, fmt.Sprintf("instance-%d-boot-volume", instance.ID), instance.Disk, instance.ID, true, bootPool)
 		if err != nil {
 			logger.Ctx(ctx).Error("Failed to create boot volume", err)
 			return
@@ -271,18 +254,38 @@ func (a *InstanceAdmin) Create(ctx context.Context, count int, prefix, userdata 
 			return nil, NewCLError(ErrInterfaceInvalidSubnet, "Invalid or duplicate subnets for interfaces", err)
 		}
 
-		ifaces, metadata, err = a.buildMetadata(ctx, primaryIface, secondaryIfaces, instancePasswd, loginPort, keys, instance, diskIopsLimit, diskBpsLimit, "")
+		ifaces, metadata, err = a.buildMetadata(ctx, primaryIface, secondaryIfaces, instancePasswd, loginPort, keys, instance, "")
 		if err != nil {
 			logger.Ctx(ctx).Error("Build instance metadata failed", err)
 			return nil, NewCLError(ErrInvalidMetadata, "Failed to build instance metadata", err)
 		}
 		instance.Interfaces = ifaces
-		rcNeeded := fmt.Sprintf("cpu=%d memory=%d disk=%d network=%d", instance.Cpu, instance.Memory*1024, int64(instance.Disk)*1024*1024, 0)
+		builtinGB := int64(0)
+		if bootPool.Builtin {
+			builtinGB = int64(instance.Disk)
+		}
+		rcNeeded := schedulerResources(instance.Cpu, instance.Memory, builtinGB)
 		control := "select=" + hyperGroup + " " + rcNeeded
-		if i == 0 && hyperID >= 0 {
+		if !bootPool.Builtin {
+			// Boot disk in a local pool (L4): clapi picks the host and holds the room until the disk is created
+			var host int32
+			if host, err = bootHost(db, bootPool, zoneID, hyperID, instance.Disk, instance.Cpu, instance.Memory); err != nil {
+				return
+			}
+			if _, err = reserve(db, host, bootPool.ID, bootVolume.ID, 0, model.ReservationBoot, instance.Disk, reservationTTL); err != nil {
+				return nil, NewCLError(ErrSQLSyntaxError, "Failed to reserve storage for the boot disk", err)
+			}
+			control = fmt.Sprintf("select=%s %s", hyperGroupOf(zoneID, []int32{host}), rcNeeded)
+		} else if hyperID >= 0 {
+			// Every instance of the batch goes to the given host, not only the first one. cland checks nothing for
+			// inter=, and the boot volume has no host until the node created the disk, so the room is held meanwhile
+			// like it is for the other pools
+			if _, err = reserve(db, int32(hyperID), bootPool.ID, bootVolume.ID, 0, model.ReservationBoot, instance.Disk, reservationTTL); err != nil {
+				return nil, NewCLError(ErrSQLSyntaxError, "Failed to reserve storage for the boot disk", err)
+			}
 			control = fmt.Sprintf("inter=%d %s", hyperID, rcNeeded)
 		}
-		command := fmt.Sprintf("/opt/cloudland/scripts/backend/launch_vm.sh '%d' '%s.%s' '%t' '%d' '%s' '%d' '%d' '%d' '%d' '%t' '%s' '%s' '%s' '%s' '%s'<<'EOF'\n%s\nEOF", instance.ID, ShellEscape(imagePrefix), ShellEscape(image.Format), image.QAEnabled, snapshot, ShellEscape(hostname), instance.Cpu, instance.Memory, instance.Disk, bootVolume.ID, nestedEnable, ShellEscape(image.BootLoader), ShellEscape(poolID), ShellEscape(instance.UUID), ShellEscape(imageVolumeID), ShellEscape(imageDownloadURLB64), base64.StdEncoding.EncodeToString([]byte(metadata)))
+		command := fmt.Sprintf("/opt/cloudland/scripts/backend/launch_vm.sh '%d' '%s.%s' '%t' '%d' '%s' '%d' '%d' '%d' '%d' '%t' '%s' '%s' '%s' '%s' '%s'<<'EOF'\n%s\nEOF", instance.ID, ShellEscape(imagePrefix), ShellEscape(image.Format), image.QAEnabled, snapshot, ShellEscape(hostname), instance.Cpu, instance.Memory, instance.Disk, bootVolume.ID, nestedEnable, ShellEscape(image.BootLoader), ShellEscape(instance.UUID), ShellEscape(imageDownloadURLB64), ShellEscape(PoolScriptID(bootPool)), ShellEscape(bootVolume.Path), base64.StdEncoding.EncodeToString([]byte(metadata)))
 		execCommands = append(execCommands, &ExecutionCommand{
 			Control: control,
 			Command: command,
@@ -312,11 +315,6 @@ func (a *InstanceAdmin) Rescue(ctx context.Context, instance *model.Instance, re
 		err = NewCLError(ErrInstanceInvalidState, "Instance is already in rescue status", nil)
 		return
 	}
-	err = a.CheckVolumeIsRestoring(ctx, instance.ID)
-	if err != nil {
-		logger.Ctx(ctx).Error("Instance has volume restoring", err)
-		return
-	}
 	image := instance.Image
 	if rescueImage == nil {
 		if image.RescueImage <= 0 {
@@ -340,6 +338,13 @@ func (a *InstanceAdmin) Rescue(ctx context.Context, instance *model.Instance, re
 		logger.Ctx(ctx).Error("Failed to query boot volume, %v", err)
 		return NewCLError(ErrBootVolumeNotFound, "Failed to query boot volume", err)
 	}
+	bootPool, err := VolumePool(ctx, bootVolume)
+	if err != nil {
+		return
+	}
+	if _, err = poolUsableOn(db, bootPool, instance.Hyper, false); err != nil {
+		return
+	}
 	metadata := ""
 	metadata, err = a.GetMetadata(ctx, instance, rootPasswd)
 	if err != nil {
@@ -352,7 +357,7 @@ func (a *InstanceAdmin) Rescue(ctx context.Context, instance *model.Instance, re
 	if err != nil {
 		return
 	}
-	command := fmt.Sprintf("/opt/cloudland/scripts/backend/rescue_vm.sh '%d' '%s.%s' '%s' '%d' '%d' '%d' '%d' '%s' '%s' '%s' <<'EOF'\n%s\nEOF", instance.ID, ShellEscape(imagePrefix), ShellEscape(rescueImage.Format), ShellEscape(instance.Hostname), instance.Cpu, instance.Memory, instance.Disk, bootVolume.ID, ShellEscape(rescueImage.BootLoader), ShellEscape(instance.UUID), ShellEscape(imageDownloadURLB64), base64.StdEncoding.EncodeToString([]byte(metadata)))
+	command := fmt.Sprintf("/opt/cloudland/scripts/backend/rescue_vm.sh '%d' '%s.%s' '%s' '%d' '%d' '%d' '%d' '%s' '%s' '%s' '%s' <<'EOF'\n%s\nEOF", instance.ID, ShellEscape(imagePrefix), ShellEscape(rescueImage.Format), ShellEscape(instance.Hostname), instance.Cpu, instance.Memory, instance.Disk, bootVolume.ID, ShellEscape(rescueImage.BootLoader), ShellEscape(instance.UUID), ShellEscape(imageDownloadURLB64), ShellEscape(VolumeAbsPath(bootPool, bootVolume)), base64.StdEncoding.EncodeToString([]byte(metadata)))
 	err = HyperExecute(ctx, control, command)
 	if err != nil {
 		logger.Ctx(ctx).Error("Delete vm command execution failed", err)
@@ -391,27 +396,6 @@ func (a *InstanceAdmin) EndRescue(ctx context.Context, instance *model.Instance)
 	if err != nil {
 		logger.Ctx(ctx).Error("Delete vm command execution failed", err)
 		return
-	}
-	return
-}
-
-func (a *InstanceAdmin) CheckVolumeIsRestoring(ctx context.Context, instanceID int64) (err error) {
-	logger.Ctx(ctx).Infof("ENTER InstanceAdmin.CheckVolumeIsRestoring: instanceID=%d", instanceID)
-	defer func() {
-		if err != nil {
-			logger.Ctx(ctx).Errorf("EXIT InstanceAdmin.CheckVolumeIsRestoring: error=%v", err)
-		} else {
-			logger.Ctx(ctx).Info("EXIT InstanceAdmin.CheckVolumeIsRestoring: none restoring")
-		}
-	}()
-	vols, err := volumeAdmin.GetVolumesByInstanceID(ctx, instanceID)
-	if err != nil {
-		return
-	}
-	for _, vol := range vols {
-		if vol.Status == model.VolumeStatusRestoring {
-			return NewCLError(ErrVolumeIsRestoring, fmt.Sprintf("Volume %d is restoring", vol.ID), nil)
-		}
 	}
 	return
 }
@@ -540,11 +524,6 @@ func (a *InstanceAdmin) Resize(ctx context.Context, instance *model.Instance, cp
 		err = NewCLError(ErrInstanceInvalidState, "Instance is already resizing", nil)
 		return
 	}
-	err = a.CheckVolumeIsRestoring(ctx, instance.ID)
-	if err != nil {
-		logger.Ctx(ctx).Error("Instance has volume restoring", err)
-		return
-	}
 	instance.Status = status
 	instance.Cpu = cpu
 	instance.Memory = memory
@@ -600,11 +579,6 @@ func (a *InstanceAdmin) Reinstall(ctx context.Context, instance *model.Instance,
 		err = NewCLError(ErrPermissionDenied, "Not authorized to reinstall the instance", nil)
 		return
 	}
-	err = a.CheckVolumeIsRestoring(ctx, instance.ID)
-	if err != nil {
-		logger.Ctx(ctx).Error("Instance has volume restoring, cannot proceed", err)
-		return
-	}
 	var bootVolume *model.Volume
 	for _, volume := range instance.Volumes {
 		if volume.Booting {
@@ -618,32 +592,21 @@ func (a *InstanceAdmin) Reinstall(ctx context.Context, instance *model.Instance,
 		return
 	}
 	imagePrefix := fmt.Sprintf("image-%d-%s", image.ID, strings.Split(image.UUID, "-")[0])
-	driver := GetVolumeDriver()
-	poolID := bootVolume.GetVolumePoolID()
-	imageVolumeID := ""
 	var total int64
-	if driver == "local" {
-		if err = db.Unscoped().Model(&model.Instance{}).Where("image_id = ?", image.ID).Count(&total).Error; err != nil {
-			logger.Ctx(ctx).Error("Failed to query total instances with the image", err)
-			return NewCLError(ErrInstanceNotFound, "Failed to query total instances with the image", err)
-		}
-	} else {
-		storage := model.ImageStorage{}
-		err = db.Where("image_id = ? and pool_id = ? and status = ?", image.ID, poolID, model.StorageStatusSynced).First(&storage).Error
-		if err != nil {
-			logger.Ctx(ctx).Errorf("Failed to query image storage %d, %v", image.ID, err)
-			err = NewCLError(ErrImageStorageNotFound, "Image storage not found", err)
+	if err = db.Unscoped().Model(&model.Instance{}).Where("image_id = ?", image.ID).Count(&total).Error; err != nil {
+		logger.Ctx(ctx).Error("Failed to query total instances with the image", err)
+		return NewCLError(ErrInstanceNotFound, "Failed to query total instances with the image", err)
+	}
+	bootPool, err := VolumePool(ctx, bootVolume)
+	if err != nil {
+		return
+	}
+	if disk > bootVolume.Size {
+		if _, err = admitLocked(db, bootPool, instance.Hyper, int64(disk-bootVolume.Size)); err != nil {
 			return
 		}
-		imageVolumeID = storage.VolumeID
-		if err = db.Model(&model.Instance{}).
-			Unscoped().
-			Joins("LEFT JOIN volumes v ON instances.id = v.instance_id AND v.booting = ?", true).
-			Where("v.pool_id = ?", poolID).
-			Where("instances.image_id = ?", image.ID).
-			Count(&total).Error; err != nil {
-			logger.Ctx(ctx).Error("Failed to count instances with volumes matching pool_id", err)
-		}
+	} else if _, err = poolUsableOn(db, bootPool, instance.Hyper, false); err != nil {
+		return
 	}
 	if image.Size > int64(disk)*1024*1024*1024 {
 		err = NewCLError(ErrDiskTooSmall, "Flavor disk size is not enough for the image", nil)
@@ -732,7 +695,7 @@ func (a *InstanceAdmin) Reinstall(ctx context.Context, instance *model.Instance,
 	if err != nil {
 		return
 	}
-	command := fmt.Sprintf("/opt/cloudland/scripts/backend/reinstall_vm.sh '%d' '%s.%s' '%d' '%d' '%s' '%s' '%d' '%d' '%d' '%s' '%s' '%s' '%s' '%s'<<'EOF'\n%s\nEOF", instance.ID, ShellEscape(imagePrefix), ShellEscape(image.Format), snapshot, bootVolume.ID, ShellEscape(poolID), ShellEscape(bootVolume.GetOriginVolumeID()), cpu, memory, disk, ShellEscape(instance.Hostname), ShellEscape(image.BootLoader), ShellEscape(instance.UUID), ShellEscape(imageVolumeID), ShellEscape(imageDownloadURLB64), base64.StdEncoding.EncodeToString([]byte(metadata)))
+	command := fmt.Sprintf("/opt/cloudland/scripts/backend/reinstall_vm.sh '%d' '%s.%s' '%d' '%d' '%d' '%d' '%d' '%s' '%s' '%s' '%s' '%s' '%s'<<'EOF'\n%s\nEOF", instance.ID, ShellEscape(imagePrefix), ShellEscape(image.Format), snapshot, bootVolume.ID, cpu, memory, disk, ShellEscape(instance.Hostname), ShellEscape(image.BootLoader), ShellEscape(instance.UUID), ShellEscape(imageDownloadURLB64), ShellEscape(PoolScriptID(bootPool)), ShellEscape(bootVolume.Path), base64.StdEncoding.EncodeToString([]byte(metadata)))
 	err = HyperExecute(ctx, control, command)
 	if err != nil {
 		logger.Ctx(ctx).Error("Reinstall remote exec failed", err)
@@ -934,8 +897,7 @@ func (a *InstanceAdmin) createInterface(ctx context.Context, ifaceInfo *Interfac
 }
 
 func (a *InstanceAdmin) buildMetadata(ctx context.Context, primaryIface *InterfaceInfo, secondaryIfaces []*InterfaceInfo,
-	rootPasswd string, loginPort int, keys []*model.Key, instance *model.Instance, diskIopsLimit int32, diskBpsLimit int32,
-	service string) (interfaces []*model.Interface, metadata string, err error) {
+	rootPasswd string, loginPort int, keys []*model.Key, instance *model.Instance, service string) (interfaces []*model.Interface, metadata string, err error) {
 	logger.Ctx(ctx).Infof("ENTER InstanceAdmin.buildMetadata: instanceID=%d, loginPort=%d, service=%s", instance.ID, loginPort, service)
 	defer func() {
 		if err != nil {
@@ -1035,8 +997,6 @@ func (a *InstanceAdmin) buildMetadata(ctx context.Context, primaryIface *Interfa
 		RootPasswd:     rootPasswd,
 		LoginPort:      loginPort,
 		OSCode:         GetImageOSCode(ctx, instance),
-		DiskIopsLimit:  diskIopsLimit,
-		DiskBpsLimit:   diskBpsLimit,
 	}
 	jsonData, err := json.Marshal(instData)
 	if err != nil {
@@ -1064,19 +1024,13 @@ func (a *InstanceAdmin) GetMetadata(ctx context.Context, instance *model.Instanc
 	for _, key := range instance.Keys {
 		instKeys = append(instKeys, key.PublicKey)
 	}
-	diskIopsLimit := int32(0)
-	diskBpsLimit := int32(0)
 	for _, volume := range instance.Volumes {
 		volumes = append(volumes, &VolumeInfo{
 			ID:      volume.ID,
-			UUID:    volume.GetOriginVolumeID(),
+			UUID:    volume.UUID,
 			Device:  volume.Target,
 			Booting: volume.Booting,
 		})
-		if volume.Booting {
-			diskIopsLimit = volume.IopsLimit
-			diskBpsLimit = volume.BpsLimit
-		}
 	}
 	dns := ""
 	instNetworks, moreAddresses, err = GetInstanceNetworks(ctx, instance, nil)
@@ -1132,8 +1086,6 @@ func (a *InstanceAdmin) GetMetadata(ctx context.Context, instance *model.Instanc
 		RootPasswd:     rootPasswd,
 		LoginPort:      int(instance.LoginPort),
 		OSCode:         GetImageOSCode(ctx, instance),
-		DiskIopsLimit:  diskIopsLimit,
-		DiskBpsLimit:   diskBpsLimit,
 	}
 	jsonData, err := json.Marshal(instData)
 	if err != nil {
@@ -1274,26 +1226,16 @@ func (a *InstanceAdmin) Delete(ctx context.Context, instance *model.Instance) (e
 		return NewCLError(ErrSQLSyntaxError, "Failed to query volumes for instance", err)
 	}
 
-	// Check if any attached volume is in a consistency group
-	// 检查是否有任何已挂载的卷在一致性组中
-	if instance.Volumes != nil {
-		for _, volume := range instance.Volumes {
-			inCG, cgErr := consistencyGroupAdmin.IsVolumeInCG(ctx, volume.ID)
-			if cgErr != nil {
-				return cgErr
-			}
-			if inCG {
-				logger.Ctx(ctx).Errorf("Volume %s is in a consistency group, cannot delete instance", volume.UUID)
-				return NewCLError(ErrVolumeInConsistencyGroup, fmt.Sprintf("Volume %s is in a consistency group, please remove it from the CG first before deleting the instance", volume.UUID), nil)
-			}
-		}
-	}
-
-	bootVolumeUUID := ""
+	// The node deletes the boot disk file; none is passed when its pool was declared lost
+	bootPoolID, bootPath := "-", ""
 	if instance.Volumes != nil {
 		for _, volume := range instance.Volumes {
 			if volume.Booting {
-				bootVolumeUUID = volume.GetOriginVolumeID()
+				if volume.Status != model.VolumeStatusLost {
+					if pool, perr := VolumePool(ctx, volume); perr == nil {
+						bootPoolID, bootPath = PoolScriptID(pool), volume.Path
+					}
+				}
 				// delete the boot volume directly
 				if err = db.Delete(volume).Error; err != nil {
 					logger.Ctx(ctx).Error("DB: delete boot volume failed", err)
@@ -1307,12 +1249,6 @@ func (a *InstanceAdmin) Delete(ctx context.Context, instance *model.Instance) (e
 	// Cleanup rule links and matched_vms.json
 	if cleanupErr := instanceAdmin.CleanupInstanceRuleLinks(ctx, instance.UUID); cleanupErr != nil {
 		logger.Ctx(ctx).Error("Failed to cleanup rule links", cleanupErr)
-	}
-
-	// Build imagePrefix for async snapshot cleanup (same rule as Create)
-	imagePrefix := ""
-	if instance.Image != nil {
-		imagePrefix = fmt.Sprintf("image-%d-%s", instance.Image.ID, strings.Split(instance.Image.UUID, "-")[0])
 	}
 
 	control := fmt.Sprintf("inter=%d", instance.Hyper)
@@ -1330,7 +1266,7 @@ func (a *InstanceAdmin) Delete(ctx context.Context, instance *model.Instance) (e
 		logger.Ctx(ctx).Errorf("Failed to marshal sites info, %v", err)
 		return NewCLError(ErrJSONMarshalFailed, "Failed to marshal sites info", err)
 	}
-	command := fmt.Sprintf("/opt/cloudland/scripts/backend/clear_vm.sh '%d' '%d' '%s' '%s'<<'EOF'\n%s\nEOF", instance.ID, instance.RouterID, ShellEscape(bootVolumeUUID), ShellEscape(imagePrefix), moreAddrsJson)
+	command := fmt.Sprintf("/opt/cloudland/scripts/backend/clear_vm.sh '%d' '%d' '%s' '%s'<<'EOF'\n%s\nEOF", instance.ID, instance.RouterID, ShellEscape(bootPoolID), ShellEscape(bootPath), moreAddrsJson)
 	err = HyperExecute(ctx, control, command)
 	if err != nil {
 		logger.Ctx(ctx).Error("Delete vm command execution failed ", err)

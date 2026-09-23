@@ -1,0 +1,38 @@
+groups:
+- name: local-pool-monitor
+  rules:
+    # cloudland_pool_status comes from the pool probe of every compute node (textfile collector):
+    # 0 ready, 1 degraded, 2 unavailable, 3 maintenance
+    - alert: LocalPoolDegraded
+      expr: cloudland_pool_status == 1
+      for: {{ for_duration | default("5m") }}
+      labels:
+        severity: {{ severity | default("warning") }}
+        component: storage
+        alert_type: local_pool
+        pool: "{{ $labels.pool }}"
+      annotations:
+        summary: "Local storage pool {{ $labels.pool }} on {{ $labels.instance }} is degraded"
+        description: "A RAID1 array of local storage pool {{ $labels.pool }} on {{ $labels.instance }} lost a disk or is syncing."
+    - alert: LocalPoolUnavailable
+      expr: cloudland_pool_status == 2
+      for: {{ for_duration | default("5m") }}
+      labels:
+        severity: critical
+        component: storage
+        alert_type: local_pool
+        pool: "{{ $labels.pool }}"
+      annotations:
+        summary: "Local storage pool {{ $labels.pool }} on {{ $labels.instance }} is unavailable"
+        description: "Local storage pool {{ $labels.pool }} on {{ $labels.instance }} is not mounted, failed its check, or its array failed."
+    - alert: LocalPoolNearlyFull
+      expr: cloudland_pool_usage_ratio * 100 > {{ usage_threshold | default(85) }}
+      for: {{ for_duration | default("5m") }}
+      labels:
+        severity: {{ severity | default("warning") }}
+        component: storage
+        alert_type: local_pool
+        pool: "{{ $labels.pool }}"
+      annotations:
+        summary: "Local storage pool {{ $labels.pool }} on {{ $labels.instance }} is nearly full"
+        description: "Local storage pool {{ $labels.pool }} on {{ $labels.instance }} is {{ $value | printf \"%.0f\" }}% used (threshold {{ usage_threshold | default(85) }}%). Instances writing to a full pool are paused."

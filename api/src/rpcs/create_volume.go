@@ -7,32 +7,25 @@ SPDX-License-Identifier: Apache-2.0
 package rpcs
 
 import (
-	. "api/src/common"
-	"api/src/model"
 	"context"
 	"fmt"
 	"strconv"
+
+	. "api/src/common"
+	"api/src/model"
+	"api/src/services"
 )
 
 func init() {
 	Add("create_volume_local", CreateVolumeLocal)
-	Add("create_volume_wds_vhost", CreateVolumeWDSVhost)
 }
 
 func updateInstance(ctx context.Context, volume *model.Volume, status string, reason string) (err error) {
 	ctx, db := GetContextDB(ctx)
 	if volume.Booting && status == "error" {
-		instance := &model.Instance{Model: model.Model{ID: volume.InstanceID}}
-		if err = db.Take(&instance).Error; err != nil {
-			logger.Ctx(ctx).Error("Invalid instance ID", err)
-			return err
-		}
-
-		instance.Status = model.InstanceStatus(status)
-		instance.Reason = reason
-		err = db.Model(&model.Instance{}).Where("id = ?", instance.ID).Updates(map[string]interface{}{
-			"status": instance.Status,
-			"reason": instance.Reason,
+		err = db.Model(&model.Instance{}).Where("id = ?", volume.InstanceID).Updates(map[string]interface{}{
+			"status": model.InstanceStatus(status),
+			"reason": reason,
 		}).Error
 		if err != nil {
 			logger.Ctx(ctx).Error("Update instance status failed", err)
@@ -42,8 +35,12 @@ func updateInstance(ctx context.Context, volume *model.Volume, status string, re
 	return
 }
 
+// CreateVolumeLocal handles the boot disk created by launch_vm.sh / reinstall_vm.sh:
+//
+//	|:-COMMAND-:| create_volume_local '<volume ID>' '<path in pool>' 'attached|error' '<reason>'
+//
+// The path is decided by clapi and not taken from the callback; the host is the one that ran the script.
 func CreateVolumeLocal(ctx context.Context, args []string) (status string, err error) {
-	//|:-COMMAND-:| create_volume.sh 5 /volume-12.disk available reason
 	ctx, db, newTransaction := StartTransaction(ctx)
 	defer func() {
 		if newTransaction {
@@ -52,7 +49,7 @@ func CreateVolumeLocal(ctx context.Context, args []string) (status string, err e
 	}()
 	logger.Ctx(ctx).Debug("CreateVolumeLocal", args)
 	argn := len(args)
-	if argn < 5 {
+	if argn < 4 {
 		err = fmt.Errorf("Wrong params")
 		logger.Ctx(ctx).Error("Invalid args", err)
 		return
@@ -63,61 +60,33 @@ func CreateVolumeLocal(ctx context.Context, args []string) (status string, err e
 		return
 	}
 	volume := &model.Volume{Model: model.Model{ID: volID}}
-	err = db.Where(volume).Take(volume).Error
-	if err != nil {
+	if err = db.Take(volume).Error; err != nil {
 		logger.Ctx(ctx).Error("Invalid volume ID", err)
 		return
 	}
-	path := args[2]
 	status = args[3]
-	err = db.Model(&volume).Updates(map[string]interface{}{"path": path, "status": status}).Error
-	if err != nil {
-		logger.Ctx(ctx).Error("Update volume status failed", err)
-		return
+	reason := ""
+	if argn > 4 {
+		reason = args[4]
 	}
-	if err = updateInstance(ctx, volume, status, args[4]); err != nil {
-		logger.Ctx(ctx).Error("Update instance status failed", err)
-		return
-	}
-	return
-}
-
-func CreateVolumeWDSVhost(ctx context.Context, args []string) (status string, err error) {
-	//|:-COMMAND-:| create_volume_wds_vhost.sh 5 available wds_vhost://1/2 reason
-	ctx, db, newTransaction := StartTransaction(ctx)
-	defer func() {
-		if newTransaction {
-			EndTransaction(ctx, err)
+	updates := map[string]interface{}{"status": status}
+	if status == string(model.VolumeStatusError) {
+		updates["reason"] = reason
+	} else {
+		updates["reason"] = ""
+		if hostid, _ := ctx.Value("hostid").(int32); hostid > 0 {
+			updates["hyper"] = hostid
 		}
-	}()
-	logger.Ctx(ctx).Debug("CreateVolumeWDSVhost", args)
-	argn := len(args)
-	if argn < 5 {
-		err = fmt.Errorf("Wrong params")
-		logger.Ctx(ctx).Error("Invalid args", err)
-		return
 	}
-	volID, err := strconv.ParseInt(args[1], 10, 64)
-	if err != nil {
-		logger.Ctx(ctx).Error("Invalid volume ID", err)
-		return
-	}
-	volume := &model.Volume{Model: model.Model{ID: volID}}
-	err = db.Where(volume).Take(volume).Error
-	if err != nil {
-		logger.Ctx(ctx).Error("Invalid volume ID", err)
-		return
-	}
-	status = args[2]
-	path := args[3]
-	err = db.Model(&volume).Updates(map[string]interface{}{"path": path, "status": status}).Error
-	if err != nil {
+	if err = db.Model(&model.Volume{}).Where("id = ?", volume.ID).Updates(updates).Error; err != nil {
 		logger.Ctx(ctx).Error("Update volume status failed", err)
 		return
 	}
-	if err = updateInstance(ctx, volume, status, args[4]); err != nil {
+	if err = updateInstance(ctx, volume, status, reason); err != nil {
 		logger.Ctx(ctx).Error("Update instance status failed", err)
 		return
 	}
+	// The boot disk is counted by its size from now on, or it is not there at all
+	services.ReleaseReservations(ctx, 0, volume.ID, model.ReservationBoot)
 	return
 }

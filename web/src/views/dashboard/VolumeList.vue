@@ -10,7 +10,21 @@ import { isValidName } from '../../utils/validation'
 import { errorMessage } from '../../utils/error'
 import { useVolumeActionGuards, usePollBusyVolumes } from '../../composables/useVolumeActions'
 
-import { HardDrive, Plus, Link, Unlink, Trash2, Maximize2, Search, Check, Copy, RefreshCw } from 'lucide-vue-next'
+import {
+    HardDrive,
+    Plus,
+    Link,
+    Unlink,
+    Trash2,
+    Maximize2,
+    Search,
+    Check,
+    Copy,
+    RefreshCw,
+    Scissors,
+} from 'lucide-vue-next'
+import { storagePoolsApi, type StoragePool } from '../../api/storagePools'
+import { useAuthStore } from '../../stores/auth'
 import { formatDisk } from '../../utils/format'
 import BaseModal from '../../components/modals/BaseModal.vue'
 import DeleteModal from '../../components/modals/DeleteModal.vue'
@@ -31,6 +45,22 @@ const newVolumeForm = ref<VolumePayload>({
     name: '',
     size: 10,
 })
+// Pools a volume can be created in; the default pool is preselected
+const poolOptions = ref<StoragePool[]>([])
+const selectedPool = ref('')
+const loadPools = async () => {
+    try {
+        poolOptions.value = (await storagePoolsApi.list({ limit: 200 })).storage_pools.filter(
+            (p) => !p.status || p.status === 'active'
+        )
+    } catch {
+        poolOptions.value = []
+    }
+    selectedPool.value = poolOptions.value.find((p) => p.is_default)?.id || poolOptions.value[0]?.id || ''
+}
+const selectedPoolInfo = computed(() => poolOptions.value.find((p) => p.id === selectedPool.value))
+const auth = useAuthStore()
+const isSystemAdmin = computed(() => auth.user?.role === 'admin' || auth.user?.is_superuser === true)
 
 const { t } = useI18n()
 const toast = useToast()
@@ -45,7 +75,7 @@ const columns = computed<Column[]>(() => [
     { key: 'status', label: t('dashboard.table.status'), sortable: true },
     { key: 'size', label: t('dashboard.table.size'), sortable: true },
     { key: 'boot', label: t('dashboard.table.boot'), sortable: true, sortField: 'booting' },
-    { key: 'format', label: t('dashboard.table.format'), sortable: true },
+    { key: 'pool', label: t('storage.pool') },
     { key: 'attachedTo', label: t('dashboard.table.attachedTo') },
     { key: 'actions', label: t('dashboard.table.actions'), align: 'center' },
 ])
@@ -74,7 +104,7 @@ const {
 
 // Attach / detach / resize dialogs; rows in a transitional state are refreshed quietly until they settle
 const volumeActions = ref<InstanceType<typeof VolumeActionModals> | null>(null)
-const { attachBlocked, detachBlocked, resizeBlocked } = useVolumeActionGuards()
+const { attachBlocked, detachBlocked, resizeBlocked, deleteBlocked, canForceDetach } = useVolumeActionGuards()
 usePollBusyVolumes(volumes, () => fetchVolumes(true))
 
 const getStatusText = (status: string) => {
@@ -86,6 +116,7 @@ const getStatusText = (status: string) => {
 const openCreateModal = () => {
     newVolumeForm.value = { name: '', size: 10 }
     createModalVisible.value = true
+    loadPools()
 }
 
 const closeCreateModal = () => {
@@ -106,7 +137,10 @@ const handleCreateVolume = async () => {
 
     creating.value = true
     try {
-        await volumesApi.create(newVolumeForm.value)
+        await volumesApi.create({
+            ...newVolumeForm.value,
+            storage_pool: selectedPool.value ? { id: selectedPool.value } : undefined,
+        })
         // 列表按创建时间倒序，新建的在第一页
         await reloadVolumes()
         closeCreateModal()
@@ -116,6 +150,16 @@ const handleCreateVolume = async () => {
         createError.value = errorMessage(err, t('messages.error'))
     } finally {
         creating.value = false
+    }
+}
+
+const forceDetach = async (volume: Volume) => {
+    try {
+        await volumesApi.forceDetach(volume.id)
+        toast.success(t('storage.forceDetachDone'))
+        await fetchVolumes(true)
+    } catch (err) {
+        toast.error(errorMessage(err, t('messages.error')))
     }
 }
 
@@ -139,10 +183,11 @@ const confirmDelete = async () => {
     deletingResource.value = true
     deleteError.value = ''
     try {
-        await volumesApi.delete(resourceToDelete.value.id)
+        const { deferred } = await volumesApi.delete(resourceToDelete.value.id)
         await fetchVolumes()
         closeDeleteModal()
-        toast.success(t('messages.deleteSuccess'))
+        // 202: the host deletes the file, the volume shows "deleting" until it reports back
+        toast.success(deferred ? t('storage.deleteAccepted') : t('messages.deleteSuccess'))
     } catch (error) {
         console.error('Failed to delete volume:', error)
         deleteError.value = errorMessage(error, t('messages.error'))
@@ -239,6 +284,7 @@ onMounted(() => {
 
             <template #cell-status="{ row: volume }">
                 <StatusBadge :status="volume.status" :label="getStatusText(volume.status)" />
+                <div v-if="volume.reason" class="cell-sub cell-reason" :title="volume.reason">{{ volume.reason }}</div>
             </template>
 
             <template #cell-size="{ row: volume }">{{ formatDisk(volume.size) }}</template>
@@ -249,7 +295,10 @@ onMounted(() => {
                 </span>
             </template>
 
-            <template #cell-format="{ row: volume }">{{ volume.format || '-' }}</template>
+            <template #cell-pool="{ row: volume }">
+                <span>{{ volume.storage_pool?.name || '-' }}</span>
+                <div v-if="volume.hypervisor?.name" class="cell-sub">{{ volume.hypervisor.name }}</div>
+            </template>
 
             <template #cell-attachedTo="{ row: volume }">
                 <span v-if="volume.instance" class="text-primary">
@@ -261,7 +310,15 @@ onMounted(() => {
             <template #cell-actions="{ row: volume }">
                 <div class="row-actions">
                     <button
-                        v-if="volume.instance"
+                        v-if="canForceDetach(volume)"
+                        class="icon-btn-table icon-danger"
+                        :title="$t('storage.forceDetach')"
+                        @click="forceDetach(volume)"
+                    >
+                        <Scissors :size="16" />
+                    </button>
+                    <button
+                        v-else-if="volume.instance"
                         class="icon-btn-table"
                         :title="detachBlocked(volume) || $t('actions.detach')"
                         :disabled="!!detachBlocked(volume)"
@@ -288,7 +345,11 @@ onMounted(() => {
                     </button>
                     <button
                         class="icon-btn-table icon-danger"
-                        :title="$t('actions.delete')"
+                        :title="
+                            deleteBlocked(volume) ||
+                            (volume.status === 'lost' ? $t('storage.deleteRecord') : $t('actions.delete'))
+                        "
+                        :disabled="!!deleteBlocked(volume)"
                         @click="handleDeleteClick(volume)"
                     >
                         <Trash2 :size="16" />
@@ -319,6 +380,24 @@ onMounted(() => {
                 </div>
             </div>
 
+            <div class="form-group">
+                <label class="form-label">{{ $t('storage.pool') }}</label>
+                <select v-model="selectedPool" class="form-input">
+                    <option v-for="p in poolOptions" :key="p.id" :value="p.id">
+                        {{ p.name }} · {{ p.shared ? $t('storage.shared') : $t('storage.local')
+                        }}{{ p.media ? ` · ${p.media.toUpperCase()}` : '' }}
+                    </option>
+                </select>
+                <div v-if="selectedPoolInfo" class="text-secondary text-xs mt-1">
+                    <template v-if="!selectedPoolInfo.available_hosts">{{ $t('storage.noHostHasPool') }}</template>
+                    <template v-else>{{
+                        $t('storage.availableHostsCount', { n: selectedPoolInfo.available_hosts })
+                    }}</template>
+                    <template v-if="isSystemAdmin && selectedPoolInfo.hosts !== undefined">
+                        ({{ selectedPoolInfo.available_hosts }} / {{ selectedPoolInfo.hosts }})</template
+                    >
+                </div>
+            </div>
             <div class="grid-2">
                 <div class="form-group">
                     <label class="form-label">{{ $t('dashboard.forms.size') }}</label>
@@ -382,6 +461,19 @@ onMounted(() => {
 .resource-link:hover .resource-name {
     color: var(--primary-600);
     text-decoration: underline;
+}
+
+.cell-sub {
+    font-size: var(--font-size-xs);
+    color: var(--text-secondary);
+    margin-top: 2px;
+}
+
+.cell-reason {
+    max-width: 220px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 /* Modal Styles */

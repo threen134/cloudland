@@ -39,8 +39,7 @@ const result = ref<'' | 'success' | 'failed'>('')
 const RESOURCE_TYPES = [
     'instance',
     'volume',
-    'backup',
-    'consistency_group',
+    'storage_pool',
     'image',
     'key',
     'flavor',
@@ -433,5 +432,4 @@ const loadError = computed(() => rangeError.value || errorMessage.value)
 .empty-state p {
     margin: 0 0 12px;
 }
-
 </style>
