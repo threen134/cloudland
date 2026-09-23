@@ -128,6 +128,8 @@ export CLAND_PUBKEY='...' GRPC_AUTH_TOKEN='...' CONTROLLER_IP=10.0.0.100 HOSTNAM
     -H "Authorization: Bearer $TOKEN" | jq .
   ```
 
+节点上线后，磁盘默认只有系统盘所在的**内置池 `local`**（`/opt/cloudland/cache`）。要用上这台机器的其他硬盘，见[配置本地存储池](./08-storage-pools.md)。
+
 ---
 
 ## 网络设备说明
