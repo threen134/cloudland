@@ -1,11 +1,29 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Plus, Trash2, Search, ShieldAlert, Link, RefreshCw, X, ChevronDown, ChevronRight, Monitor, Power, Check, Copy } from 'lucide-vue-next'
-import { vmAlarmRulesApi, VM_RULE_TYPES, type VMAlarmRuleGroup, type VMRuleType } from '../../api/vmAlarmRules'
+import { Plus, Trash2, Search, ShieldAlert, Link, RefreshCw, Monitor, Power, Check, Copy } from 'lucide-vue-next'
+import BaseModal from '../../components/modals/BaseModal.vue'
+import DeleteModal from '../../components/modals/DeleteModal.vue'
+import PageToolbar from '../../components/base/PageToolbar.vue'
+import DataTable, { type Column } from '../../components/base/DataTable.vue'
+import PaginationBar from '../../components/base/PaginationBar.vue'
+import StatusBadge from '../../components/base/StatusBadge.vue'
+import {
+    vmAlarmRulesApi,
+    VM_RULE_TYPES,
+    type VMAlarmRuleGroup,
+    type VMRuleType,
+    type CPURuleDetail,
+    type MemoryRuleDetail,
+    type BWRuleDetail,
+    type VMAlarmRuleDetail,
+    type CreateVMAlarmRuleResponse,
+    type CreateBWRuleResponse,
+} from '../../api/vmAlarmRules'
 import { alarmEventsApi } from '../../api/alarmEvents'
 import { notificationsApi, type NotificationChannel } from '../../api/notifications'
-import { instancesApi, type Instance } from '../../api/instances'
+import { instancesApi, type Instance, type InstanceListResponse } from '../../api/instances'
+import { errorMessage } from '../../utils/error'
 import { useRegionStore } from '../../stores/region'
 import { useToast } from '../../composables/useToast'
 import { useCopyId } from '../../composables/useCopyId'
@@ -18,18 +36,29 @@ const loading = ref(false)
 const errorMsg = ref('')
 const searchQuery = ref('')
 const page = ref(1)
-const pageSize = ref(100)
-const totalPages = ref(1)
-const total = ref(0)
+const pageSize = ref(20)
 
 const { copiedId, copyId } = useCopyId()
+
+/**
+ * 创建表单里的一行阈值。三种规则类型共用同一张表单：CPU / 内存用 rule（比较符），
+ * 带宽用 direction，其余字段相同，所以这里是并集而不是 VMAlarmRuleDetail 那个判别联合。
+ */
+interface RuleFormRow {
+    name: string
+    limit: number
+    duration: number
+    level: string
+    rule?: string
+    direction?: 'in' | 'out'
+}
 
 // Create modal
 const showCreateModal = ref(false)
 const createForm = ref({
     name: '',
     type: 'cpu' as VMRuleType,
-    rules: [{ name: '', limit: 80, duration: 5, rule: 'gt', level: 'warning' }] as Record<string, any>[],
+    rules: [{ name: '', limit: 80, duration: 5, rule: 'gt', level: 'warning' }] as RuleFormRow[],
     linkedvms: [] as string[],
     bwLinkedVMs: [] as { instance_id: string; target_device: string }[],
     linkedchannels: [] as string[],
@@ -61,37 +90,27 @@ const vmInterfaces = ref<Record<string, { id: string; name: string; ip_address?:
 const vmInterfacesLoading = ref<Record<string, boolean>>({})
 const expandedBWVMs = ref<string[]>([])
 
-// Expansion logic
-const expandedRules = ref<string[]>([])
+// 展开某一行时才去拉它绑定的通知渠道（展开态由 DataTable 维护）
 const ruleChannels = ref<Record<string, NotificationChannel[]>>({})
 const ruleChannelCounts = ref<Record<string, number>>({})
 
-const toggleRule = async (id: string) => {
-    const idx = expandedRules.value.indexOf(id)
-    if (idx === -1) {
-        expandedRules.value.push(id)
-        if (!(id in ruleChannels.value)) {
-            try {
-                const [channelsRes, bindingsRes] = await Promise.all([
-                    notificationsApi.list(),
-                    alarmEventsApi.getRuleChannels(id),
-                ])
-                const allCh: NotificationChannel[] = channelsRes.data.channels || []
-                const bindings = (bindingsRes.data as any).bindings || []
-                const boundUuids: string[] = bindings.map((b: any) => b.channel_uuid)
-                ruleChannels.value[id] = allCh.filter(c => boundUuids.includes(c.uuid))
-                ruleChannelCounts.value[id] = ruleChannels.value[id].length
-            } catch (err) {
-                console.error('Failed to load rule channels:', err)
-                ruleChannels.value[id] = []
-                ruleChannelCounts.value[id] = 0
-            }
-        }
-    } else {
-        expandedRules.value.splice(idx, 1)
+const onExpandRule = async (id: string) => {
+    if (id in ruleChannels.value) return
+    try {
+        const [channelsRes, bindingsRes] = await Promise.all([
+            notificationsApi.list(),
+            alarmEventsApi.getRuleChannels(id),
+        ])
+        const allCh: NotificationChannel[] = channelsRes.channels || []
+        const boundUuids: string[] = (bindingsRes.bindings || []).map((b) => b.channel_uuid)
+        ruleChannels.value[id] = allCh.filter((c) => boundUuids.includes(c.uuid))
+        ruleChannelCounts.value[id] = ruleChannels.value[id].length
+    } catch (err) {
+        console.error('Failed to load rule channels:', err)
+        ruleChannels.value[id] = []
+        ruleChannelCounts.value[id] = 0
     }
 }
-const isExpanded = (id: string) => expandedRules.value.includes(id)
 const isNameValid = computed(() => /^[a-zA-Z][a-zA-Z0-9_]*$/.test(createForm.value.name))
 const nameError = computed(() => {
     if (!createForm.value.name) return ''
@@ -101,7 +120,7 @@ const nameError = computed(() => {
 })
 
 const getVMName = (id: string) => {
-    const vm = allVMs.value.find(v => v.id === id)
+    const vm = allVMs.value.find((v) => v.id === id)
     if (!vm) return id.substring(0, 8)
     return vm.hostname || vm.name || id.substring(0, 8)
 }
@@ -109,26 +128,88 @@ const getVMName = (id: string) => {
 const getLinkedVMId = (entry: string | { instance_id: string; target_device: string }) =>
     typeof entry === 'string' ? entry : entry.instance_id
 
+// NIC of a bandwidth rule link ('' for CPU / memory rules, whose links are plain VM ids)
+const getLinkedVMDevice = (entry: string | { instance_id: string; target_device: string }) =>
+    typeof entry === 'string' ? '' : entry.target_device || ''
+
+const channelTypeText = (type: string) =>
+    type === 'feishu'
+        ? t('dashboard.notificationFeishu')
+        : type === 'webhook'
+          ? t('dashboard.notificationCustomWebhook')
+          : type
+
+// e.g. "> 70%" or "Inbound > 100 Mbps". Only CPU / memory details carry a comparator (gt / lt):
+// the form always sends gt, lt is only reachable through the API. Bandwidth rules are always ">"
+const thresholdText = (rule: VMAlarmRuleGroup, detail: VMAlarmRuleDetail) => {
+    const op = 'rule' in detail && detail.rule === 'lt' ? '<' : '>'
+    const unit = rule.type === 'bw' ? ` ${t('specs.mbps')}` : '%'
+    const direction = 'direction' in detail ? `${t('dashboard.vmAlarmRules.directions.' + detail.direction)} ` : ''
+    return `${direction}${op} ${detail.limit}${unit}`
+}
+
 const filteredRules = computed(() => {
     if (!searchQuery.value) return rules.value
     const q = searchQuery.value.toLowerCase()
-    return rules.value.filter(r => {
+    return rules.value.filter((r) => {
         if (r.name.toLowerCase().includes(q) || r.uuid.toLowerCase().includes(q)) return true
         if (r.linkedvms) {
-            return r.linkedvms.some(entry => getVMName(getLinkedVMId(entry as any)).toLowerCase().includes(q))
+            return r.linkedvms.some((entry) => getVMName(getLinkedVMId(entry)).toLowerCase().includes(q))
         }
         return false
     })
 })
 
+const total = computed(() => filteredRules.value.length)
+const pagedRules = computed(() =>
+    filteredRules.value.slice((page.value - 1) * pageSize.value, page.value * pageSize.value)
+)
+// 搜索或每页条数变了，当前页可能已经越界
+watch([searchQuery, pageSize], () => {
+    page.value = 1
+})
+
+const columns = computed<Column[]>(() => [
+    { key: 'name', label: t('dashboard.table.nameId') },
+    { key: 'type', label: t('dashboard.table.type') },
+    { key: 'status', label: t('dashboard.table.status') },
+    { key: 'thresholds', label: t('dashboard.vmAlarmRules.thresholds'), align: 'center' },
+    { key: 'vms', label: t('dashboard.vmAlarmRules.linkedVMs'), align: 'center' },
+    { key: 'channels', label: t('dashboard.vmAlarmRules.linkedChannels'), align: 'center' },
+    { key: 'actions', label: t('dashboard.table.actions'), align: 'center' },
+])
+
+const levelBadgeClass = (level: string) =>
+    'badge-' + (level === 'critical' ? 'error' : level === 'warning' ? 'warning' : 'primary')
+
 const fetchAllVMs = async () => {
     try {
         const res = await instancesApi.fetchInstances()
-        const data = res.data as any
-        allVMs.value = Array.isArray(data) ? data : (data.instances || [])
+        const data = res as InstanceListResponse | Instance[]
+        allVMs.value = Array.isArray(data) ? data : data.instances || []
     } catch (err) {
         console.error('Failed to fetch instances:', err)
     }
+}
+
+/**
+ * 取某一类规则组的全部页。
+ * CPU / 内存 / 带宽是三个独立的接口，没有合并接口，所以这一页做不到服务端分页——
+ * 原先不传分页参数、又把 totalPages 写死成 1，结果每类只显示后端默认的前 20 条，
+ * 多出来的规则组在界面上直接消失且没有任何提示。现在按页拉全，再在前端分页和搜索
+ * （搜索覆盖的是全集，不是当前页）。规则组是每组织几十条的量级，拉全可以接受
+ */
+const PAGE_SIZE = 100
+const MAX_PAGES = 20
+const fetchAllOfType = async (type: VMRuleType): Promise<VMAlarmRuleGroup[]> => {
+    const collected: VMAlarmRuleGroup[] = []
+    for (let p = 1; p <= MAX_PAGES; p++) {
+        const res = await vmAlarmRulesApi.listRules(type, { page: p, page_size: PAGE_SIZE })
+        collected.push(...(res.data || []).map((r: VMAlarmRuleGroup) => ({ ...r, type })))
+        const totalPages = res.meta?.total_pages ?? 1
+        if (p >= totalPages || (res.data || []).length === 0) break
+    }
+    return collected
 }
 
 const fetchRules = async () => {
@@ -138,30 +219,26 @@ const fetchRules = async () => {
         const types: VMRuleType[] = ['cpu', 'memory', 'bw']
         const [, ...ruleResults] = await Promise.allSettled([
             allVMs.value.length === 0 ? fetchAllVMs() : Promise.resolve(),
-            ...types.map(type => vmAlarmRulesApi.listRules(type)),
+            ...types.map((type) => fetchAllOfType(type)),
         ])
 
         const allRules: VMAlarmRuleGroup[] = []
         ruleResults.forEach((result, idx) => {
-            const type = types[idx]
             if (result.status === 'fulfilled') {
-                const typeRules = (result.value.data.data || []).map((r: any) => ({ ...r, type }))
-                allRules.push(...typeRules)
+                allRules.push(...(result.value as VMAlarmRuleGroup[]))
             } else {
-                console.error(`Failed to fetch ${type} alarm rules:`, result.reason)
+                console.error(`Failed to fetch ${types[idx]} alarm rules:`, result.reason)
             }
         })
 
         rules.value = allRules
-        total.value = allRules.length
-        totalPages.value = 1
 
         // Pre-fetch channel counts for all rules in background
-        Promise.allSettled(allRules.map(r => alarmEventsApi.getRuleChannels(r.uuid))).then(results => {
+        Promise.allSettled(allRules.map((r) => alarmEventsApi.getRuleChannels(r.uuid))).then((results) => {
             results.forEach((result, idx) => {
                 const uuid = allRules[idx].uuid
                 if (result.status === 'fulfilled') {
-                    const bindings = (result.value.data as any).bindings || []
+                    const bindings = result.value.bindings || []
                     ruleChannelCounts.value[uuid] = bindings.length
                 } else {
                     ruleChannelCounts.value[uuid] = 0
@@ -190,8 +267,8 @@ const openCreate = async () => {
         vmsLoading.value = true
         try {
             const res = await instancesApi.fetchInstances()
-            const data = res.data as any
-            allVMs.value = Array.isArray(data) ? data : (data.instances || [])
+            const data = res as InstanceListResponse | Instance[]
+            allVMs.value = Array.isArray(data) ? data : data.instances || []
         } catch (err) {
             console.error('Failed to fetch instances:', err)
         } finally {
@@ -202,7 +279,7 @@ const openCreate = async () => {
         createChannelsLoading.value = true
         try {
             const res = await notificationsApi.list()
-            allChannels.value = res.data.channels || []
+            allChannels.value = res.channels || []
         } catch (err) {
             console.error('Failed to fetch channels:', err)
         } finally {
@@ -220,18 +297,17 @@ const onTypeChange = () => {
     }
 }
 
-const isBWVMChecked = (vmId: string) =>
-    createForm.value.bwLinkedVMs.some(v => v.instance_id === vmId)
+const isBWVMChecked = (vmId: string) => createForm.value.bwLinkedVMs.some((v) => v.instance_id === vmId)
 
 const isBWNICChecked = (vmId: string, nicName: string) =>
-    createForm.value.bwLinkedVMs.some(v => v.instance_id === vmId && v.target_device === nicName)
+    createForm.value.bwLinkedVMs.some((v) => v.instance_id === vmId && v.target_device === nicName)
 
 const toggleBWVM = async (vmId: string) => {
     const expanded = expandedBWVMs.value.includes(vmId)
     if (expanded) {
         // 收起：移除展开状态及该 VM 所有已选网卡
-        expandedBWVMs.value = expandedBWVMs.value.filter(id => id !== vmId)
-        createForm.value.bwLinkedVMs = createForm.value.bwLinkedVMs.filter(v => v.instance_id !== vmId)
+        expandedBWVMs.value = expandedBWVMs.value.filter((id) => id !== vmId)
+        createForm.value.bwLinkedVMs = createForm.value.bwLinkedVMs.filter((v) => v.instance_id !== vmId)
         return
     }
     // 展开：拉取网卡列表（缓存），不自动选中任何网卡
@@ -240,7 +316,11 @@ const toggleBWVM = async (vmId: string) => {
         vmInterfacesLoading.value[vmId] = true
         try {
             const res = await instancesApi.getInterfaces(vmId)
-            vmInterfaces.value[vmId] = (res.data.interfaces || []).map(i => ({ id: i.id, name: i.name, ip_address: i.ip_address }))
+            vmInterfaces.value[vmId] = (res.interfaces || []).map((i) => ({
+                id: i.id,
+                name: i.name || '',
+                ip_address: i.ip_address,
+            }))
         } catch {
             vmInterfaces.value[vmId] = []
         } finally {
@@ -250,14 +330,13 @@ const toggleBWVM = async (vmId: string) => {
 }
 
 const toggleBWNIC = (vmId: string, nicName: string) => {
-    const idx = createForm.value.bwLinkedVMs.findIndex(v => v.instance_id === vmId && v.target_device === nicName)
+    const idx = createForm.value.bwLinkedVMs.findIndex((v) => v.instance_id === vmId && v.target_device === nicName)
     if (idx >= 0) {
         createForm.value.bwLinkedVMs.splice(idx, 1)
     } else {
         createForm.value.bwLinkedVMs.push({ instance_id: vmId, target_device: nicName })
     }
 }
-
 
 const submitCreate = async () => {
     try {
@@ -269,26 +348,47 @@ const submitCreate = async () => {
             region_id: regionUuid,
         }
 
-        let res: any
+        // 每条阈值的 name 既不显示也不参与生成 Prometheus 规则（组名、alert 名、rule_id
+        // 都由「类型_owner_组UUID_序号」推导），所以不让用户填，按组名加序号补一个，
+        // 只为让 clapi 的日志和数据库行可读——原先一直是空串
+        createForm.value.rules.forEach((row, i) => {
+            row.name = `${createForm.value.name}_${i}`
+        })
+
+        // 表单行是三种规则类型的并集，提交时按当前类型收窄（见 RuleFormRow）
+        let res: CreateVMAlarmRuleResponse | CreateBWRuleResponse | undefined
         if (createForm.value.type === 'cpu') {
-            res = await vmAlarmRulesApi.createCPURule({ ...base, rules: createForm.value.rules as any })
+            res = await vmAlarmRulesApi.createCPURule({ ...base, rules: createForm.value.rules as CPURuleDetail[] })
         } else if (createForm.value.type === 'memory') {
-            res = await vmAlarmRulesApi.createMemoryRule({ ...base, rules: createForm.value.rules as any })
+            res = await vmAlarmRulesApi.createMemoryRule({
+                ...base,
+                rules: createForm.value.rules as MemoryRuleDetail[],
+            })
         } else if (createForm.value.type === 'bw') {
             res = await vmAlarmRulesApi.createBWRule({
                 ...base,
                 enable: true,
-                rules: createForm.value.rules as any,
+                rules: createForm.value.rules as BWRuleDetail[],
                 linkedvms: createForm.value.bwLinkedVMs.length > 0 ? createForm.value.bwLinkedVMs : undefined,
             })
         }
 
-        const ruleUuid = res.data?.data?.uuid || res.data?.data?.group_uuid
+        // 带宽接口返回 uuid，CPU / 内存接口返回 group_uuid
+        const resData = res?.data
+        const ruleUuid = resData && ('uuid' in resData ? resData.uuid : resData.group_uuid)
 
         // Link VMs if selected (cpu/memory only; bw links are handled in createBWRule)
-        if (createForm.value.type !== 'bw' && createForm.value.linkedvms && createForm.value.linkedvms.length > 0 && ruleUuid) {
+        if (
+            createForm.value.type !== 'bw' &&
+            createForm.value.linkedvms &&
+            createForm.value.linkedvms.length > 0 &&
+            ruleUuid
+        ) {
             try {
-                await vmAlarmRulesApi.linkRule(ruleUuid, createForm.value.linkedvms.map(id => ({ vm_uuid: id })))
+                await vmAlarmRulesApi.linkRule(
+                    ruleUuid,
+                    createForm.value.linkedvms.map((id) => ({ vm_uuid: id }))
+                )
             } catch (err) {
                 console.error('Failed to link VMs after creation:', err)
                 toast.warning(t('dashboard.vmAlarmRules.ruleCreatedButLinkFailed'))
@@ -306,9 +406,9 @@ const submitCreate = async () => {
 
         showCreateModal.value = false
         await fetchRules()
-    } catch (err: any) {
+    } catch (err) {
         console.error('Failed to create rule:', err)
-        errorMsg.value = err.response?.data?.error || t('messages.error')
+        errorMsg.value = errorMessage(err, t('messages.error'))
     }
 }
 
@@ -328,8 +428,8 @@ const toggleRuleStatus = async (rule: VMAlarmRuleGroup) => {
             rule.enable = true
             toast.success(t('messages.enabledSuccess'))
         }
-    } catch (err: any) {
-        toast.error(err.response?.data?.error || t('messages.operationFailed'))
+    } catch (err) {
+        toast.error(errorMessage(err, t('messages.operationFailed')))
     }
 }
 
@@ -340,9 +440,9 @@ const executeDelete = async () => {
         showDeleteModal.value = false
         deleteTarget.value = null
         await fetchRules()
-    } catch (err: any) {
+    } catch (err) {
         console.error('Failed to delete rule:', err)
-        errorMsg.value = err.response?.data?.error || t('messages.error')
+        errorMsg.value = errorMessage(err, t('messages.error'))
     }
 }
 
@@ -356,9 +456,9 @@ const openBindChannels = async (rule: VMAlarmRuleGroup) => {
             notificationsApi.list(),
             alarmEventsApi.getRuleChannels(rule.uuid),
         ])
-        allChannels.value = channelsRes.data.channels || []
-        const bindings = (bindingsRes.data as any).bindings || []
-        selectedChannelUuids.value = bindings.map((b: any) => b.channel_uuid)
+        allChannels.value = channelsRes.channels || []
+        const bindings = bindingsRes.bindings || []
+        selectedChannelUuids.value = bindings.map((b) => b.channel_uuid)
     } catch (err) {
         console.error('Failed to load channels:', err)
         allChannels.value = []
@@ -373,15 +473,15 @@ const saveChannelBindings = async () => {
     try {
         await alarmEventsApi.bindRuleChannels(bindTarget.value.uuid, selectedChannelUuids.value)
         const uuid = bindTarget.value.uuid
-        const bound = allChannels.value.filter(c => selectedChannelUuids.value.includes(c.uuid))
+        const bound = allChannels.value.filter((c) => selectedChannelUuids.value.includes(c.uuid))
         ruleChannels.value[uuid] = bound
         ruleChannelCounts.value[uuid] = bound.length
         showBindModal.value = false
         toast.success(t('messages.success'))
-    } catch (err: any) {
-        const errCode = err.response?.data?.error
+    } catch (err) {
+        const errCode = (err as { response?: { data?: { error?: string } } })?.response?.data?.error
         if (errCode === 'channel_not_synced') {
-            alert(t('dashboard.vmAlarmRules.channelNotSynced'))
+            toast.error(t('dashboard.vmAlarmRules.channelNotSynced'))
         } else {
             console.error('Failed to bind channels:', err)
         }
@@ -400,14 +500,14 @@ const toggleChannel = (uuid: string) => {
 // --- VM Binding ---
 const openBindVMs = async (rule: VMAlarmRuleGroup) => {
     bindVMsTarget.value = rule
-    selectedVMUuids.value = rule.linkedvms ? rule.linkedvms.map((e: any) => getLinkedVMId(e)) : []
+    selectedVMUuids.value = rule.linkedvms ? rule.linkedvms.map((e) => getLinkedVMId(e)) : []
     showBindVMsModal.value = true
     vmsLoading.value = true
     vmSearchQuery.value = ''
     try {
         const res = await instancesApi.fetchInstances()
-        const data = res.data as any
-        allVMs.value = Array.isArray(data) ? data : (data.instances || [])
+        const data = res as InstanceListResponse | Instance[]
+        allVMs.value = Array.isArray(data) ? data : data.instances || []
     } catch (err) {
         console.error('Failed to fetch instances:', err)
         allVMs.value = []
@@ -425,9 +525,8 @@ const toggleVMSelection = (uuid: string) => {
 const filteredVMs = computed(() => {
     if (!vmSearchQuery.value) return allVMs.value
     const q = vmSearchQuery.value.toLowerCase()
-    return allVMs.value.filter(vm => 
-        (vm.hostname || vm.name || '').toLowerCase().includes(q) || 
-        vm.id.toLowerCase().includes(q)
+    return allVMs.value.filter(
+        (vm) => (vm.hostname || vm.name || '').toLowerCase().includes(q) || vm.id.toLowerCase().includes(q)
     )
 })
 
@@ -436,24 +535,30 @@ const saveVMBindings = async () => {
     linkVMsLoading.value = true
     try {
         const groupUuid = bindVMsTarget.value.uuid
-        const currentVMIds = (bindVMsTarget.value.linkedvms || []).map((e: any) => getLinkedVMId(e))
+        const currentVMIds = (bindVMsTarget.value.linkedvms || []).map((e) => getLinkedVMId(e))
 
-        const toLink = selectedVMUuids.value.filter(id => !currentVMIds.includes(id))
-        const toUnlink = currentVMIds.filter(id => !selectedVMUuids.value.includes(id))
+        const toLink = selectedVMUuids.value.filter((id) => !currentVMIds.includes(id))
+        const toUnlink = currentVMIds.filter((id) => !selectedVMUuids.value.includes(id))
 
         if (toLink.length > 0) {
-            await vmAlarmRulesApi.linkRule(groupUuid, toLink.map(id => ({ vm_uuid: id })))
+            await vmAlarmRulesApi.linkRule(
+                groupUuid,
+                toLink.map((id) => ({ vm_uuid: id }))
+            )
         }
         if (toUnlink.length > 0) {
-            await vmAlarmRulesApi.unlinkRule(groupUuid, toUnlink.map(id => ({ vm_uuid: id })))
+            await vmAlarmRulesApi.unlinkRule(
+                groupUuid,
+                toUnlink.map((id) => ({ vm_uuid: id }))
+            )
         }
-        
+
         toast.success(t('dashboard.vmAlarmRules.bindSuccess'))
         showBindVMsModal.value = false
         await fetchRules()
-    } catch (err: any) {
+    } catch (err) {
         console.error('Failed to save VM bindings:', err)
-        toast.error(err.response?.data?.error || t('messages.error'))
+        toast.error(errorMessage(err, t('messages.error')))
     } finally {
         linkVMsLoading.value = false
     }
@@ -473,23 +578,13 @@ const removeRuleRow = (index: number) => {
     }
 }
 
-const prevPage = () => { if (page.value > 1) page.value-- }
-const nextPage = () => { if (page.value < totalPages.value) page.value++ }
-
-watch([page], fetchRules)
 onMounted(fetchRules)
 </script>
 
 <template>
     <div class="vpc-list-container">
-        <div class="page-header">
-            <div class="search-wrapper">
-                <div class="search-box">
-                    <Search :size="16" class="search-icon" />
-                    <input v-model="searchQuery" :placeholder="t('actions.search') + '...'" class="search-input" />
-                </div>
-            </div>
-            <div class="header-actions">
+        <PageToolbar v-model:search="searchQuery">
+            <template #actions>
                 <button class="btn btn-secondary btn-sm btn-icon" @click="fetchRules" :title="t('actions.refresh')">
                     <RefreshCw :size="14" :class="{ spinning: loading }" />
                 </button>
@@ -497,365 +592,473 @@ onMounted(fetchRules)
                     <Plus :size="14" />
                     <span>{{ t('actions.create') }}</span>
                 </button>
-            </div>
-        </div>
+            </template>
+        </PageToolbar>
 
         <div v-if="errorMsg" class="error-banner" @click="errorMsg = ''">{{ errorMsg }}</div>
 
-        <div v-if="loading" class="text-center" style="padding: 48px;">
-            <div class="loading-spinner" style="margin: 0 auto;"></div>
-        </div>
+        <DataTable
+            :columns="columns"
+            :rows="pagedRules"
+            row-key="uuid"
+            :loading="loading"
+            expandable
+            @expand="onExpandRule"
+        >
+            <template #empty>
+                <ShieldAlert :size="48" style="opacity: 0.2; margin-bottom: 16px" />
+                <p>{{ searchQuery ? t('messages.noResults') : t('messages.noData') }}</p>
+            </template>
 
-        <div v-else-if="filteredRules.length === 0" class="text-center text-secondary" style="padding: 48px;">
-            <div class="empty-state">
-                <ShieldAlert :size="48" style="opacity: 0.2; margin-bottom: 16px;" />
-                <p>{{ t('messages.noData') }}</p>
-            </div>
-        </div>
-
-        <div v-else class="rules-list">
-                <div v-for="rule in filteredRules" :key="rule.uuid" class="card rule-card" :class="{ 'rule-card-expanded': isExpanded(rule.uuid) }">
-                <div class="rule-header" @click="toggleRule(rule.uuid)">
-                    <div class="rule-header-left">
-                        <component :is="isExpanded(rule.uuid) ? ChevronDown : ChevronRight" :size="16" class="expand-icon" />
-                        <div class="rule-info">
-                            <div class="rule-name-row">
-                                <span class="rule-name-text">{{ rule.name }}</span>
-                            </div>
-                            <div class="resource-id-row">
-                                <span class="rule-id monospace" :title="rule.uuid">{{ rule.uuid.slice(0, 8) }}...</span>
-                                <button class="copy-btn-mini" @click.stop.prevent="copyId(rule.uuid)" :title="t('actions.copy')" :aria-label="t('actions.copy')">
-                                    <Check v-if="copiedId === rule.uuid" :size="10" style="color: #10b981;" />
-                                    <Copy v-else :size="10" />
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="rule-header-right">
-                        <div class="rule-summary-stats">
-                            <div class="rule-status-badges">
-                                <span class="badge badge-secondary" style="text-transform: uppercase;">
-                                    {{ rule.type ? t('dashboard.vmAlarmRules.ruleTypes.' + rule.type) : '-' }}
-                                </span>
-                                <span class="badge" :class="rule.enable ? 'badge-success' : 'status-stopped'">
-                                    {{ rule.enable ? t('dashboard.alarm.enabled') : t('dashboard.alarm.disabled') }}
-                                </span>
-                            </div>
-                            <span class="linked-badge">{{ t('dashboard.vmAlarmRules.linkedVMs') }} ({{ rule.linkedvms?.length || 0 }})</span>
-                            <span class="linked-badge">{{ t('dashboard.vmAlarmRules.linkedChannels') }} ({{ ruleChannelCounts[rule.uuid] ?? '…' }})</span>
-                        </div>
-                        <div class="rule-actions">
-                            <button class="icon-btn-table" @click.stop="openBindVMs(rule)" :title="t('dashboard.vmAlarmRules.bindVMs')">
-                                <Monitor :size="16" />
-                            </button>
-                            <button class="icon-btn-table" @click.stop="openBindChannels(rule)" :title="t('dashboard.vmAlarmRules.bindChannels')">
-                                <Link :size="16" />
-                            </button>
-                            <button class="icon-btn-table" :class="{ 'text-success': rule.enable, 'text-secondary': !rule.enable }" @click.stop="toggleRuleStatus(rule)" :title="rule.enable ? t('actions.disable') : t('actions.enable')">
-                                <Power :size="14" />
-                            </button>
-                            <button class="icon-btn-table" @click.stop="confirmDelete(rule)">
-                                <Trash2 :size="16" />
-                            </button>
-                        </div>
-                    </div>
+            <template #cell-name="{ row: rule }">
+                <div class="rule-name-text">{{ rule.name }}</div>
+                <div class="resource-id-row">
+                    <span class="rule-id monospace" :title="rule.uuid">{{ rule.uuid.slice(0, 8) }}...</span>
+                    <button
+                        class="copy-btn-mini"
+                        @click.stop.prevent="copyId(rule.uuid)"
+                        :title="t('actions.copy')"
+                        :aria-label="t('actions.copy')"
+                    >
+                        <Check v-if="copiedId === rule.uuid" :size="10" style="color: var(--success-color)" />
+                        <Copy v-else :size="10" />
+                    </button>
                 </div>
+            </template>
 
-                <div v-show="isExpanded(rule.uuid)" class="rule-body">
-                    <div class="rule-body-content">
-                        <div v-if="rule.rules && rule.rules.length > 0" class="thresholds-section">
-                            <div class="section-label">{{ t('dashboard.vmAlarmRules.thresholds') }}</div>
-                            <div class="inner-table-wrapper">
-                                <table class="inner-table">
-                                    <thead>
-                                        <tr>
-                                            <th v-if="rule.type === 'bw'">{{ t('dashboard.table.direction') }}</th>
-                                            <th>{{ t('dashboard.vmAlarmRules.ruleLevel') }}</th>
-                                            <th>{{ t('dashboard.vmAlarmRules.thresholdLimit') }}</th>
-                                            <th>{{ t('dashboard.vmAlarmRules.durationMin') }}</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        <tr v-for="(r, idx) in rule.rules" :key="idx">
-                                            <td v-if="rule.type === 'bw'">
-                                                {{ r.direction ? t('dashboard.vmAlarmRules.directions.' + r.direction) : '-' }}
-                                            </td>
-                                            <td>
-                                                <span class="badge" :class="'badge-' + (r.level === 'critical' ? 'error' : (r.level === 'warning' ? 'warning' : 'primary'))">
-                                                    {{ t('dashboard.vmAlarmRules.levels.' + r.level) }}
-                                                </span>
-                                            </td>
-                                            <td>{{ r.limit }}{{ rule.type === 'bw' ? ' ' + t('specs.mbps') : '%' }}</td>
-                                            <td>{{ r.duration }}</td>
-                                        </tr>
-                                    </tbody>
-                                </table>
-                            </div>
-                        </div>
+            <template #cell-type="{ row: rule }">
+                <span class="badge badge-secondary" style="text-transform: uppercase">
+                    {{ rule.type ? t('dashboard.vmAlarmRules.ruleTypes.' + rule.type) : '-' }}
+                </span>
+            </template>
 
-                        <div class="vms-section">
-                            <div class="section-label">{{ t('dashboard.vmAlarmRules.linkedVMs') }} ({{ rule.linkedvms?.length || 0 }})</div>
-                            <div class="linked-vms-chips">
-                                <div v-for="entry in rule.linkedvms" :key="getLinkedVMId(entry as any)" class="vm-chip" :title="getLinkedVMId(entry as any)">
-                                    {{ getVMName(getLinkedVMId(entry as any)) }}
-                                    <span class="badge badge-secondary" style="margin-left: 4px; font-size: 10px;">{{ getLinkedVMId(entry as any).substring(0, 8) }}</span>
-                                </div>
-                                <div v-if="!rule.linkedvms || rule.linkedvms.length === 0" class="text-secondary" style="font-size: 12px;">
-                                    {{ t('dashboard.vmAlarmRules.noLinkedVMs') }}
-                                </div>
-                            </div>
-                        </div>
+            <template #cell-status="{ row: rule }">
+                <StatusBadge
+                    :status="rule.enable ? 'enabled' : 'disabled'"
+                    :label="rule.enable ? t('dashboard.alarm.enabled') : t('dashboard.alarm.disabled')"
+                />
+            </template>
 
-                        <div class="vms-section">
-                            <div class="section-label">{{ t('dashboard.vmAlarmRules.linkedChannels') }} ({{ (ruleChannels[rule.uuid] || []).length }})</div>
-                            <div class="linked-vms-chips">
-                                <div v-for="ch in ruleChannels[rule.uuid]" :key="ch.uuid" class="vm-chip" :title="ch.uuid">
-                                    {{ ch.name }}
-                                    <span class="badge badge-secondary" style="margin-left: 4px; font-size: 10px; text-transform: uppercase;">{{ ch.type }}</span>
-                                </div>
-                                <div v-if="!ruleChannels[rule.uuid] || ruleChannels[rule.uuid].length === 0" class="text-secondary" style="font-size: 12px;">
-                                    {{ t('dashboard.vmAlarmRules.noLinkedChannels') }}
-                                </div>
-                            </div>
-                        </div>
-                    </div>
+            <template #cell-thresholds="{ row: rule }">{{ rule.rules?.length || 0 }}</template>
+            <template #cell-vms="{ row: rule }">{{ rule.linkedvms?.length || 0 }}</template>
+            <template #cell-channels="{ row: rule }">{{ ruleChannelCounts[rule.uuid] ?? '…' }}</template>
+
+            <template #cell-actions="{ row: rule }">
+                <div class="row-actions">
+                    <button
+                        class="icon-btn-table"
+                        @click.stop="openBindVMs(rule)"
+                        :title="t('dashboard.vmAlarmRules.bindVMs')"
+                    >
+                        <Monitor :size="16" />
+                    </button>
+                    <button
+                        class="icon-btn-table"
+                        @click.stop="openBindChannels(rule)"
+                        :title="t('dashboard.vmAlarmRules.bindChannels')"
+                    >
+                        <Link :size="16" />
+                    </button>
+                    <button
+                        class="icon-btn-table"
+                        :class="{ 'is-active': rule.enable }"
+                        @click.stop="toggleRuleStatus(rule)"
+                        :title="rule.enable ? t('actions.disable') : t('actions.enable')"
+                    >
+                        <Power :size="16" />
+                    </button>
+                    <button
+                        class="icon-btn-table icon-danger"
+                        @click.stop="confirmDelete(rule)"
+                        :title="t('actions.delete')"
+                    >
+                        <Trash2 :size="16" />
+                    </button>
                 </div>
-            </div>
-        </div>
+            </template>
 
-        <div v-if="totalPages > 1" class="pagination">
-            <button class="btn btn-ghost btn-sm" :disabled="page <= 1" @click="prevPage">{{ t('dashboard.pagination.prev') }}</button>
-            <span class="page-info">{{ page }} / {{ totalPages }} ({{ total }} {{ t('dashboard.overview.total') }})</span>
-            <button class="btn btn-ghost btn-sm" :disabled="page >= totalPages" @click="nextPage">{{ t('dashboard.pagination.next') }}</button>
-        </div>
+            <template #expanded="{ row: rule }">
+                <!-- One card with three columns of plain lines (no nested table, no chips inside chips) -->
+                <div class="rule-detail">
+                    <section class="rule-detail-col">
+                        <h4 class="rule-detail-heading">
+                            {{ t('dashboard.vmAlarmRules.thresholds') }}
+                            <span class="rule-detail-count">{{ rule.rules?.length || 0 }}</span>
+                        </h4>
+                        <div v-for="(r, idx) in rule.rules" :key="idx" class="rule-detail-line">
+                            <span class="badge" :class="levelBadgeClass(r.level)">
+                                {{ t('dashboard.vmAlarmRules.levels.' + r.level) }}
+                            </span>
+                            <span class="threshold-value">{{ thresholdText(rule, r) }}</span>
+                            <span class="rule-detail-muted">
+                                {{ t('dashboard.vmAlarmRules.forDuration', { n: r.duration }) }}
+                            </span>
+                        </div>
+                    </section>
+
+                    <section class="rule-detail-col">
+                        <h4 class="rule-detail-heading">
+                            {{ t('dashboard.vmAlarmRules.linkedVMs') }}
+                            <span class="rule-detail-count">{{ rule.linkedvms?.length || 0 }}</span>
+                        </h4>
+                        <!-- Bandwidth rules link a VM per NIC: the same VM can appear once per interface -->
+                        <div
+                            v-for="entry in rule.linkedvms"
+                            :key="`${getLinkedVMId(entry)}-${getLinkedVMDevice(entry)}`"
+                            class="rule-detail-line"
+                        >
+                            <router-link
+                                :to="{ name: 'instance-detail', params: { id: getLinkedVMId(entry) } }"
+                                class="rule-detail-link"
+                                >{{ getVMName(getLinkedVMId(entry)) }}</router-link
+                            >
+                            <span v-if="getLinkedVMDevice(entry)" class="rule-detail-muted">{{
+                                getLinkedVMDevice(entry)
+                            }}</span>
+                            <span class="rule-detail-id" :title="getLinkedVMId(entry)">{{
+                                getLinkedVMId(entry).substring(0, 8)
+                            }}</span>
+                        </div>
+                        <div v-if="!rule.linkedvms?.length" class="rule-detail-empty">
+                            <span>{{ t('dashboard.vmAlarmRules.noLinkedVMs') }}</span>
+                            <button type="button" class="rule-detail-action" @click="openBindVMs(rule)">
+                                {{ t('dashboard.vmAlarmRules.bindVMs') }}
+                            </button>
+                        </div>
+                    </section>
+
+                    <section class="rule-detail-col">
+                        <h4 class="rule-detail-heading">
+                            {{ t('dashboard.vmAlarmRules.linkedChannels') }}
+                            <span class="rule-detail-count">{{ ruleChannels[rule.uuid]?.length ?? '…' }}</span>
+                        </h4>
+                        <div v-for="ch in ruleChannels[rule.uuid]" :key="ch.uuid" class="rule-detail-line">
+                            <span class="rule-detail-name" :title="ch.uuid">{{ ch.name }}</span>
+                            <span class="rule-detail-muted">{{ channelTypeText(ch.type) }}</span>
+                        </div>
+                        <div v-if="ruleChannels[rule.uuid]?.length === 0" class="rule-detail-empty">
+                            <span>{{ t('dashboard.vmAlarmRules.noLinkedChannels') }}</span>
+                            <button type="button" class="rule-detail-action" @click="openBindChannels(rule)">
+                                {{ t('dashboard.vmAlarmRules.bindChannels') }}
+                            </button>
+                        </div>
+                    </section>
+                </div>
+            </template>
+
+            <template #footer>
+                <PaginationBar
+                    :page="page"
+                    :page-size="pageSize"
+                    :total="total"
+                    @update:page="page = $event"
+                    @update:page-size="pageSize = $event"
+                />
+            </template>
+        </DataTable>
 
         <!-- Create Modal -->
-        <Teleport to="body">
-            <div v-if="showCreateModal" class="modal-overlay" @click.self="showCreateModal = false">
-                <div class="modal-content card" style="max-width: 600px;">
-                    <div class="modal-header">
-                        <h3>{{ t('dashboard.vmAlarmRules.createTitle', { type: t('dashboard.vmAlarmRules.ruleTypes.' + createForm.type) }) }}</h3>
-                        <button class="btn btn-ghost btn-icon" @click="showCreateModal = false"><X :size="18" /></button>
-                    </div>
-                    <div class="modal-body">
-                        <div class="form-stack">
-                            <div class="form-group">
-                                <label class="form-label">{{ t('dashboard.table.type') }}</label>
-                                <select v-model="createForm.type" class="form-input" @change="onTypeChange">
-                                    <option v-for="rt in VM_RULE_TYPES" :key="rt.value" :value="rt.value">
-                                        {{ t('dashboard.vmAlarmRules.ruleTypes.' + rt.value) }}
-                                    </option>
-                                </select>
-                            </div>
-                            <div class="form-group">
-                                <label class="form-label">{{ t('dashboard.table.name') }}</label>
-                                <input v-model="createForm.name" class="form-input" :class="{ 'input-error': nameError }" required />
-                                <div v-if="nameError" class="input-tip text-error">{{ nameError }}</div>
-                            </div>
-                            <div class="rules-section">
-                                <div class="rules-header">
-                                    <div class="rules-header-left">
-                                        <label class="form-label mb-0">{{ t('dashboard.vmAlarmRules.thresholds') }}</label>
-                                        <span class="input-tip ml-2">{{ t('dashboard.vmAlarmRules.thresholdHint') }}</span>
-                                    </div>
-                                    <button class="btn btn-ghost btn-sm" @click="addRuleRow">
-                                        <Plus :size="14" /> {{ t('actions.add') }}
-                                    </button>
-                                </div>
-                                <div class="rule-labels-row">
-                                    <span v-if="createForm.type === 'bw'" class="rule-label-item" style="width: 120px;">{{ t('dashboard.table.direction') }}</span>
-                                    <span class="rule-label-item" style="width: 120px;">{{ t('dashboard.vmAlarmRules.thresholdLimit') }}</span>
-                                    <span class="rule-label-item" style="width: 120px;">{{ t('dashboard.vmAlarmRules.durationMin') }}</span>
-                                    <span class="rule-label-item" style="width: 120px;">{{ t('dashboard.vmAlarmRules.ruleLevel') }}</span>
-                                    <span class="rule-label-item" style="width: 32px;"></span>
-                                </div>
-                                <div v-for="(rule, idx) in createForm.rules" :key="idx" class="rule-row">
-                                    <select v-if="createForm.type === 'bw'" v-model="rule.direction" class="form-input rule-input-sm">
-                                        <option value="in">{{ t('dashboard.vmAlarmRules.directions.in') }}</option>
-                                        <option value="out">{{ t('dashboard.vmAlarmRules.directions.out') }}</option>
-                                    </select>
-                                    <input v-model.number="rule.limit" type="number" class="form-input rule-input-sm" :placeholder="t('dashboard.forms.placeholder.limitPercentExample')" min="1" max="100" />
-                                    <input v-model.number="rule.duration" type="number" class="form-input rule-input-sm" :placeholder="t('dashboard.vmAlarmRules.durationMin')" min="1" />
-                                    <select v-model="rule.level" class="form-input rule-input-sm">
-                                        <option value="critical">{{ t('dashboard.vmAlarmRules.levels.critical') }}</option>
-                                        <option value="warning">{{ t('dashboard.vmAlarmRules.levels.warning') }}</option>
-                                        <option value="info">{{ t('dashboard.vmAlarmRules.levels.info') }}</option>
-                                    </select>
-                                    <button v-if="createForm.rules.length > 1" class="btn btn-ghost btn-icon text-error" @click="removeRuleRow(idx)">
-                                        <Trash2 :size="14" />
-                                    </button>
-                                </div>
-                            </div>
-                            <div class="form-group mt-2">
-                                <label class="form-label">{{ t('dashboard.vmAlarmRules.bindVMs') }} ({{ t('dashboard.forms.optional') }})</label>
-                                <div class="vm-create-selection">
-                                    <div v-if="vmsLoading" class="loading-spinner small"></div>
-                                    <!-- BW 类型：每个 VM 展开选择网卡 -->
-                                    <div v-else-if="createForm.type === 'bw'" class="channel-list" style="max-height: 260px; border: 1px solid var(--border-light); border-radius: 6px; padding: 4px;">
-                                        <div v-for="vm in allVMs" :key="vm.id">
-                                            <!-- VM 行 -->
-                                            <div class="channel-item" style="gap: 8px;">
-                                                <input type="checkbox" :checked="expandedBWVMs.includes(vm.id)" @change="toggleBWVM(vm.id)" />
-                                                <span class="channel-name" style="flex:1;">{{ vm.hostname || vm.name }}</span>
-                                                <span v-if="isBWVMChecked(vm.id)" class="badge badge-primary" style="font-size:10px;">{{ createForm.bwLinkedVMs.filter(v => v.instance_id === vm.id).length }} NIC</span>
-                                                <span v-if="vmInterfacesLoading[vm.id]" class="loading-spinner" style="width:12px;height:12px;"></span>
-                                            </div>
-                                            <!-- 网卡子列表 -->
-                                            <div v-if="expandedBWVMs.includes(vm.id) && vmInterfaces[vm.id]" style="padding-left: 24px;">
-                                                <label
-                                                    v-for="nic in vmInterfaces[vm.id]"
-                                                    :key="nic.name"
-                                                    class="channel-item"
-                                                    style="gap: 8px; font-size: 12px;"
-                                                >
-                                                    <input type="checkbox" :checked="isBWNICChecked(vm.id, nic.name)" @change="toggleBWNIC(vm.id, nic.name)" />
-                                                    <span class="channel-name">{{ nic.name }}</span>
-                                                    <span v-if="nic.ip_address" class="badge badge-secondary">{{ nic.ip_address }}</span>
-                                                </label>
-                                            </div>
-                                        </div>
-                                        <div v-if="allVMs.length === 0" class="text-muted p-2">{{ t('messages.noNics') }}</div>
-                                    </div>
-                                    <!-- CPU / Memory 类型 -->
-                                    <div v-else class="channel-list" style="max-height: 160px; border: 1px solid var(--border-light); border-radius: 6px; padding: 4px;">
-                                        <label v-for="vm in allVMs" :key="vm.id" class="channel-item">
-                                            <input type="checkbox" :value="vm.id" v-model="createForm.linkedvms" />
-                                            <span class="channel-name">{{ vm.hostname || vm.name }}</span>
-                                            <span class="badge badge-secondary">{{ vm.id.substring(0, 8) }}</span>
-                                        </label>
-                                        <div v-if="allVMs.length === 0" class="text-muted p-2">{{ t('messages.noNics') }}</div>
-                                    </div>
-                                </div>
-                            </div>
-                            <div class="form-group mt-2">
-                                <label class="form-label">{{ t('dashboard.vmAlarmRules.linkedChannels') }} ({{ t('dashboard.forms.optional') }})</label>
-                                <div class="vm-create-selection">
-                                    <div v-if="createChannelsLoading" class="loading-spinner small"></div>
-                                    <div v-else class="channel-list" style="max-height: 160px; border: 1px solid var(--border-light); border-radius: 6px; padding: 4px;">
-                                        <label v-for="ch in allChannels" :key="ch.uuid" class="channel-item">
-                                            <input type="checkbox" :value="ch.uuid" v-model="createForm.linkedchannels" />
-                                            <span class="channel-name">{{ ch.name }}</span>
-                                            <span class="badge badge-secondary" style="text-transform: uppercase;">{{ ch.type }}</span>
-                                        </label>
-                                        <div v-if="allChannels.length === 0" class="text-muted p-2">{{ t('dashboard.vmAlarmRules.noLinkedChannels') }}</div>
-                                    </div>
-                                </div>
-                            </div>
+        <BaseModal
+            :show="showCreateModal"
+            :title="
+                t('dashboard.vmAlarmRules.createTitle', {
+                    type: t('dashboard.vmAlarmRules.ruleTypes.' + createForm.type),
+                })
+            "
+            size="lg"
+            form
+            @close="showCreateModal = false"
+            @submit="submitCreate"
+        >
+            <div class="form-stack">
+                <div class="form-group">
+                    <label class="form-label">{{ t('dashboard.table.type') }}</label>
+                    <select v-model="createForm.type" class="form-input" @change="onTypeChange">
+                        <option v-for="rt in VM_RULE_TYPES" :key="rt.value" :value="rt.value">
+                            {{ t('dashboard.vmAlarmRules.ruleTypes.' + rt.value) }}
+                        </option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">{{ t('dashboard.table.name') }}</label>
+                    <input
+                        v-model="createForm.name"
+                        class="form-input"
+                        :class="{ 'input-error': nameError }"
+                        required
+                    />
+                    <div v-if="nameError" class="input-tip input-tip-error">{{ nameError }}</div>
+                </div>
+                <div class="rules-section">
+                    <div class="rules-header">
+                        <div class="rules-header-left">
+                            <label class="form-label mb-0">{{ t('dashboard.vmAlarmRules.thresholds') }}</label>
+                            <span class="input-tip ml-2">{{ t('dashboard.vmAlarmRules.thresholdHint') }}</span>
                         </div>
+                        <button type="button" class="btn btn-ghost btn-sm" @click="addRuleRow">
+                            <Plus :size="14" /> {{ t('actions.add') }}
+                        </button>
                     </div>
-                    <div class="modal-footer">
-                        <button class="btn btn-secondary" @click="showCreateModal = false">{{ t('actions.cancel') }}</button>
-                        <button class="btn btn-primary" @click="submitCreate" :disabled="!createForm.name">{{ t('actions.save') }}</button>
+                    <div class="rule-labels-row">
+                        <span v-if="createForm.type === 'bw'" class="rule-label-item" style="width: 120px">{{
+                            t('dashboard.table.direction')
+                        }}</span>
+                        <span class="rule-label-item" style="width: 120px">{{
+                            t('dashboard.vmAlarmRules.thresholdLimit')
+                        }}</span>
+                        <span class="rule-label-item" style="width: 120px">{{
+                            t('dashboard.vmAlarmRules.durationMin')
+                        }}</span>
+                        <span class="rule-label-item" style="width: 120px">{{
+                            t('dashboard.vmAlarmRules.ruleLevel')
+                        }}</span>
+                        <span class="rule-label-item" style="width: 32px"></span>
+                    </div>
+                    <div v-for="(rule, idx) in createForm.rules" :key="idx" class="rule-row">
+                        <select
+                            v-if="createForm.type === 'bw'"
+                            v-model="rule.direction"
+                            class="form-input rule-input-sm"
+                        >
+                            <option value="in">{{ t('dashboard.vmAlarmRules.directions.in') }}</option>
+                            <option value="out">{{ t('dashboard.vmAlarmRules.directions.out') }}</option>
+                        </select>
+                        <input
+                            v-model.number="rule.limit"
+                            type="number"
+                            class="form-input rule-input-sm"
+                            :placeholder="t('dashboard.forms.placeholder.limitPercentExample')"
+                            min="1"
+                            max="100"
+                        />
+                        <input
+                            v-model.number="rule.duration"
+                            type="number"
+                            class="form-input rule-input-sm"
+                            :placeholder="t('dashboard.vmAlarmRules.durationMin')"
+                            min="1"
+                        />
+                        <select v-model="rule.level" class="form-input rule-input-sm">
+                            <option value="critical">{{ t('dashboard.vmAlarmRules.levels.critical') }}</option>
+                            <option value="warning">{{ t('dashboard.vmAlarmRules.levels.warning') }}</option>
+                            <option value="info">{{ t('dashboard.vmAlarmRules.levels.info') }}</option>
+                        </select>
+                        <button
+                            v-if="createForm.rules.length > 1"
+                            type="button"
+                            class="btn btn-ghost btn-icon icon-danger"
+                            @click="removeRuleRow(idx)"
+                        >
+                            <Trash2 :size="14" />
+                        </button>
                     </div>
                 </div>
-            </div>
-        </Teleport>
-
-        <!-- Delete Modal -->
-        <Teleport to="body">
-            <div v-if="showDeleteModal" class="modal-overlay" @click.self="showDeleteModal = false">
-                <div class="modal-content card" style="max-width: 440px;">
-                    <div class="modal-header">
-                        <h3>{{ t('actions.confirmDelete') }}</h3>
-                        <button class="btn btn-ghost btn-icon" @click="showDeleteModal = false"><X :size="18" /></button>
-                    </div>
-                    <div class="modal-body">
-                        <p>{{ t('dashboard.vmAlarmRules.deleteConfirm', { name: deleteTarget?.name }) }}</p>
-                    </div>
-                    <div class="modal-footer">
-                        <button class="btn btn-secondary" @click="showDeleteModal = false">{{ t('actions.cancel') }}</button>
-                        <button class="btn btn-danger" @click="executeDelete">{{ t('actions.delete') }}</button>
-                    </div>
-                </div>
-            </div>
-        </Teleport>
-
-        <!-- Bind Channels Modal -->
-        <Teleport to="body">
-            <div v-if="showBindModal" class="modal-overlay" @click.self="showBindModal = false">
-                <div class="modal-content card" style="max-width: 480px;">
-                    <div class="modal-header">
-                        <h3>{{ t('dashboard.vmAlarmRules.bindChannels') }} - {{ bindTarget?.name }}</h3>
-                        <button class="btn btn-ghost btn-icon" @click="showBindModal = false"><X :size="18" /></button>
-                    </div>
-                    <div class="modal-body">
-                        <div v-if="bindLoading" class="loading-spinner" style="margin: 20px auto;"></div>
-                        <div v-else-if="allChannels.length === 0" class="text-muted">
-                            {{ t('dashboard.vmAlarmRules.noChannels') }}
+                <div class="form-group mt-2">
+                    <label class="form-label"
+                        >{{ t('dashboard.vmAlarmRules.bindVMs') }} ({{ t('dashboard.forms.optional') }})</label
+                    >
+                    <div class="vm-create-selection">
+                        <div v-if="vmsLoading" class="loading-spinner small"></div>
+                        <!-- BW 类型：每个 VM 展开选择网卡 -->
+                        <div
+                            v-else-if="createForm.type === 'bw'"
+                            class="channel-list"
+                            style="
+                                max-height: 260px;
+                                border: 1px solid var(--border-light);
+                                border-radius: 6px;
+                                padding: 4px;
+                            "
+                        >
+                            <div v-for="vm in allVMs" :key="vm.id">
+                                <!-- VM 行 -->
+                                <div class="channel-item" style="gap: 8px">
+                                    <input
+                                        type="checkbox"
+                                        :checked="expandedBWVMs.includes(vm.id)"
+                                        @change="toggleBWVM(vm.id)"
+                                    />
+                                    <span class="channel-name" style="flex: 1">{{ vm.hostname || vm.name }}</span>
+                                    <span
+                                        v-if="isBWVMChecked(vm.id)"
+                                        class="badge badge-primary"
+                                        style="font-size: 10px"
+                                        >{{
+                                            createForm.bwLinkedVMs.filter((v) => v.instance_id === vm.id).length
+                                        }}
+                                        NIC</span
+                                    >
+                                    <span
+                                        v-if="vmInterfacesLoading[vm.id]"
+                                        class="loading-spinner"
+                                        style="width: 12px; height: 12px"
+                                    ></span>
+                                </div>
+                                <!-- 网卡子列表 -->
+                                <div
+                                    v-if="expandedBWVMs.includes(vm.id) && vmInterfaces[vm.id]"
+                                    style="padding-left: 24px"
+                                >
+                                    <label
+                                        v-for="nic in vmInterfaces[vm.id]"
+                                        :key="nic.name"
+                                        class="channel-item"
+                                        style="gap: 8px; font-size: 12px"
+                                    >
+                                        <input
+                                            type="checkbox"
+                                            :checked="isBWNICChecked(vm.id, nic.name)"
+                                            @change="toggleBWNIC(vm.id, nic.name)"
+                                        />
+                                        <span class="channel-name">{{ nic.name }}</span>
+                                        <span v-if="nic.ip_address" class="badge badge-secondary">{{
+                                            nic.ip_address
+                                        }}</span>
+                                    </label>
+                                </div>
+                            </div>
+                            <div v-if="allVMs.length === 0" class="text-muted p-2">{{ t('messages.noNics') }}</div>
                         </div>
-                        <div v-else class="channel-list">
-                            <label v-for="ch in allChannels" :key="ch.uuid" class="channel-item">
-                                <input type="checkbox" :checked="selectedChannelUuids.includes(ch.uuid)" @change="toggleChannel(ch.uuid)" />
-                                <span class="channel-name">{{ ch.name }}</span>
-                                <span class="badge" :class="ch.type === 'feishu' ? 'badge-info' : 'badge-secondary'">
-                                    {{ ch.type === 'feishu' ? t('dashboard.notificationFeishu') : (ch.type === 'webhook' ? t('dashboard.notificationCustomWebhook') : ch.type) }}
-                                </span>
-                            </label>
-                        </div>
-                    </div>
-                    <div class="modal-footer">
-                        <button class="btn btn-secondary" @click="showBindModal = false">{{ t('actions.cancel') }}</button>
-                        <button class="btn btn-primary" @click="saveChannelBindings" :disabled="bindLoading">{{ t('actions.save') }}</button>
-                    </div>
-                </div>
-            </div>
-        </Teleport>
-
-        <!-- Bind VMs Modal -->
-        <Teleport to="body">
-            <div v-if="showBindVMsModal" class="modal-overlay" @click.self="showBindVMsModal = false">
-                <div class="modal-content card" style="max-width: 480px;">
-                    <div class="modal-header">
-                        <h3>{{ t('dashboard.vmAlarmRules.bindVMs') }}</h3>
-                        <button class="btn btn-ghost btn-icon" @click="showBindVMsModal = false"><X :size="18" /></button>
-                    </div>
-                    <div class="modal-body">
-                        <p class="text-secondary mb-4">{{ t('dashboard.vmAlarmRules.selectVMsToBind') }}</p>
-                        <div class="search-box mb-4">
-                            <Search :size="16" class="search-icon" />
-                            <input v-model="vmSearchQuery" :placeholder="t('dashboard.vmAlarmRules.searchVMs')" class="search-input" />
-                        </div>
-                        <div v-if="vmsLoading" class="loading-spinner" style="margin: 20px auto;"></div>
-                        <div v-else class="channel-list">
-                            <label v-for="vm in filteredVMs" :key="vm.id" class="channel-item" @click="toggleVMSelection(vm.id)">
-                                <input type="checkbox" :checked="selectedVMUuids.includes(vm.id)" />
+                        <!-- CPU / Memory 类型 -->
+                        <div
+                            v-else
+                            class="channel-list"
+                            style="
+                                max-height: 160px;
+                                border: 1px solid var(--border-light);
+                                border-radius: 6px;
+                                padding: 4px;
+                            "
+                        >
+                            <label v-for="vm in allVMs" :key="vm.id" class="channel-item">
+                                <input type="checkbox" :value="vm.id" v-model="createForm.linkedvms" />
                                 <span class="channel-name">{{ vm.hostname || vm.name }}</span>
                                 <span class="badge badge-secondary">{{ vm.id.substring(0, 8) }}</span>
                             </label>
+                            <div v-if="allVMs.length === 0" class="text-muted p-2">{{ t('messages.noNics') }}</div>
                         </div>
                     </div>
-                    <div class="modal-footer">
-                        <button class="btn btn-secondary" @click="showBindVMsModal = false">{{ t('actions.cancel') }}</button>
-                        <button class="btn btn-primary" @click="saveVMBindings" :disabled="linkVMsLoading">{{ t('actions.save') }}</button>
+                </div>
+                <div class="form-group mt-2">
+                    <label class="form-label"
+                        >{{ t('dashboard.vmAlarmRules.linkedChannels') }} ({{ t('dashboard.forms.optional') }})</label
+                    >
+                    <div class="vm-create-selection">
+                        <div v-if="createChannelsLoading" class="loading-spinner small"></div>
+                        <div
+                            v-else
+                            class="channel-list"
+                            style="
+                                max-height: 160px;
+                                border: 1px solid var(--border-light);
+                                border-radius: 6px;
+                                padding: 4px;
+                            "
+                        >
+                            <label v-for="ch in allChannels" :key="ch.uuid" class="channel-item">
+                                <input type="checkbox" :value="ch.uuid" v-model="createForm.linkedchannels" />
+                                <span class="channel-name">{{ ch.name }}</span>
+                                <span class="badge badge-secondary" style="text-transform: uppercase">{{
+                                    ch.type
+                                }}</span>
+                            </label>
+                            <div v-if="allChannels.length === 0" class="text-muted p-2">
+                                {{ t('dashboard.vmAlarmRules.noLinkedChannels') }}
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
-        </Teleport>
+
+            <template #footer>
+                <button type="button" class="btn btn-secondary" @click="showCreateModal = false">
+                    {{ t('actions.cancel') }}
+                </button>
+                <!-- 禁用条件必须与 submitCreate 的守卫一致：原先只判断非空，名字含连字符这类
+                     不合规则时按钮仍可点，而 submitCreate 直接 return，点下去毫无反应 -->
+                <button type="submit" class="btn btn-primary" :disabled="!isNameValid">
+                    {{ t('actions.save') }}
+                </button>
+            </template>
+        </BaseModal>
+
+        <!-- Delete Modal -->
+        <DeleteModal
+            :show="showDeleteModal"
+            :title="t('actions.confirmDelete')"
+            :message="t('dashboard.vmAlarmRules.deleteConfirm', { name: deleteTarget?.name })"
+            @close="showDeleteModal = false"
+            @confirm="executeDelete"
+        />
+
+        <!-- Bind Channels Modal -->
+        <BaseModal
+            :show="showBindModal"
+            :title="`${t('dashboard.vmAlarmRules.bindChannels')} - ${bindTarget?.name ?? ''}`"
+            @close="showBindModal = false"
+        >
+            <div v-if="bindLoading" class="loading-spinner" style="margin: 20px auto"></div>
+            <div v-else-if="allChannels.length === 0" class="text-muted">
+                {{ t('dashboard.vmAlarmRules.noChannels') }}
+            </div>
+            <div v-else class="channel-list">
+                <label v-for="ch in allChannels" :key="ch.uuid" class="channel-item">
+                    <input
+                        type="checkbox"
+                        :checked="selectedChannelUuids.includes(ch.uuid)"
+                        @change="toggleChannel(ch.uuid)"
+                    />
+                    <span class="channel-name">{{ ch.name }}</span>
+                    <span class="badge badge-secondary">
+                        {{ channelTypeText(ch.type) }}
+                    </span>
+                </label>
+            </div>
+
+            <template #footer>
+                <button class="btn btn-secondary" @click="showBindModal = false">{{ t('actions.cancel') }}</button>
+                <button class="btn btn-primary" @click="saveChannelBindings" :disabled="bindLoading">
+                    {{ t('actions.save') }}
+                </button>
+            </template>
+        </BaseModal>
+
+        <!-- Bind VMs Modal -->
+        <BaseModal
+            :show="showBindVMsModal"
+            :title="t('dashboard.vmAlarmRules.bindVMs')"
+            @close="showBindVMsModal = false"
+        >
+            <p class="text-secondary mb-4">{{ t('dashboard.vmAlarmRules.selectVMsToBind') }}</p>
+            <div class="search-box mb-4">
+                <Search :size="16" class="search-icon" />
+                <input
+                    v-model="vmSearchQuery"
+                    :placeholder="t('dashboard.vmAlarmRules.searchVMs')"
+                    class="search-input"
+                />
+            </div>
+            <div v-if="vmsLoading" class="loading-spinner" style="margin: 20px auto"></div>
+            <div v-else class="channel-list">
+                <label v-for="vm in filteredVMs" :key="vm.id" class="channel-item" @click="toggleVMSelection(vm.id)">
+                    <input type="checkbox" :checked="selectedVMUuids.includes(vm.id)" />
+                    <span class="channel-name">{{ vm.hostname || vm.name }}</span>
+                    <span class="badge badge-secondary">{{ vm.id.substring(0, 8) }}</span>
+                </label>
+            </div>
+
+            <template #footer>
+                <button class="btn btn-secondary" @click="showBindVMsModal = false">{{ t('actions.cancel') }}</button>
+                <button class="btn btn-primary" @click="saveVMBindings" :disabled="linkVMsLoading">
+                    {{ t('actions.save') }}
+                </button>
+            </template>
+        </BaseModal>
     </div>
 </template>
 
 <style scoped>
-.page-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 0;
-    padding-right: 20px;
-}
-
-.search-wrapper {
-    display: flex;
-    gap: 8px;
-    flex: 1;
-    max-width: 560px;
-}
-
-.header-actions {
-    display: flex;
-    gap: 8px;
-    align-items: center;
-}
-
+/* 绑定虚拟机弹窗里的搜索框 */
 .search-box {
     display: flex;
     align-items: center;
@@ -874,7 +1077,9 @@ onMounted(fetchRules)
     box-shadow: 0 0 0 2px var(--primary-100);
 }
 
-.search-icon { color: var(--gray-400); }
+.search-icon {
+    color: var(--gray-400);
+}
 
 .search-input {
     border: none;
@@ -885,7 +1090,9 @@ onMounted(fetchRules)
     color: var(--text-primary);
 }
 
-.search-input:focus { outline: none; }
+.search-input:focus {
+    outline: none;
+}
 
 .filter-select {
     height: 40px;
@@ -898,62 +1105,14 @@ onMounted(fetchRules)
     min-width: 130px;
 }
 
-.table-card { padding: 0; overflow: hidden; }
-
-.empty-state { display: flex; flex-direction: column; align-items: center; justify-content: center; }
-
-.monospace { font-family: var(--font-family-mono, monospace); font-size: 12px; }
-
-.rules-list {
-    display: flex;
-    flex-direction: column;
-    gap: 12px;
-}
-
-.rule-card {
+.table-card {
     padding: 0;
     overflow: hidden;
-    transition: all 0.2s;
 }
 
-.rule-card-expanded {
-    border-color: var(--primary-color);
-    box-shadow: var(--shadow-lg);
-}
-
-.rule-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 12px 16px;
-    cursor: pointer;
-    user-select: none;
-}
-
-.rule-header:hover {
-    background: var(--bg-secondary);
-}
-
-.rule-header-left {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    min-width: 0;
-}
-
-.expand-icon {
-    color: var(--text-tertiary);
-    transition: transform 0.2s;
-}
-
-.rule-info {
-    min-width: 0;
-}
-
-.rule-name-row {
-    display: flex;
-    align-items: center;
-    gap: 8px;
+.monospace {
+    font-family: var(--font-family-mono, monospace);
+    font-size: 12px;
 }
 
 .rule-name-text {
@@ -967,104 +1126,113 @@ onMounted(fetchRules)
     margin-top: 2px;
 }
 
-.rule-header-right {
+/* Expanded row: a white card on the grey expanded band, left edge lined up with the name
+   column (54px is the expander column), three columns that stack on narrow screens */
+.rule-detail {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: var(--spacing-8);
+    margin: 0 var(--spacing-5) var(--spacing-4) 54px;
+    padding: var(--spacing-4) var(--spacing-5);
+    background: var(--bg-primary);
+    border: 1px solid var(--border-light);
+    border-radius: var(--radius-md);
+}
+
+@media (max-width: 1023px) {
+    .rule-detail {
+        grid-template-columns: minmax(0, 1fr);
+        gap: var(--spacing-4);
+        margin-left: var(--spacing-5);
+    }
+}
+
+.rule-detail-heading {
     display: flex;
     align-items: center;
-    gap: 20px;
+    gap: var(--spacing-2);
+    margin: 0 0 var(--spacing-2);
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-semibold);
+    color: var(--text-secondary);
 }
 
-.rule-summary-stats {
+.rule-detail-count {
+    font-weight: var(--font-weight-medium);
+    color: var(--text-light);
+    font-variant-numeric: tabular-nums;
+}
+
+.rule-detail-line {
     display: flex;
     align-items: center;
-    gap: 16px;
+    gap: var(--spacing-3);
+    min-height: 30px;
+    font-size: var(--font-size-sm);
+    color: var(--text-primary);
 }
 
-.rule-status-badges {
-    display: flex;
-    gap: 4px;
+.rule-detail-line .badge {
+    flex-shrink: 0;
 }
 
-.linked-badge {
-    font-size: 12px;
-    color: var(--text-tertiary);
-    background: var(--bg-secondary);
-    padding: 2px 8px;
-    border-radius: 12px;
+.threshold-value {
+    font-weight: var(--font-weight-medium);
+    font-variant-numeric: tabular-nums;
     white-space: nowrap;
 }
 
-.rule-actions {
-    display: flex;
-    gap: 4px;
-}
-
-.rule-body {
-    border-top: 1px solid var(--border-light);
-    background: var(--bg-secondary);
-}
-
-.rule-body-content {
-    padding: 16px;
-    display: flex;
-    flex-direction: column;
-    gap: 20px;
-}
-
-.section-label {
-    font-size: 12px;
-    font-weight: 600;
+.rule-detail-muted {
     color: var(--text-tertiary);
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    margin-bottom: 8px;
+    white-space: nowrap;
 }
 
-.inner-table-wrapper {
-    border: 1px solid var(--border-light);
-    border-radius: 8px;
+.rule-detail-link,
+.rule-detail-name {
     overflow: hidden;
-    background: var(--bg-primary);
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
-.inner-table {
-    width: 100%;
-    border-collapse: collapse;
-    font-size: 13px;
+.rule-detail-link {
+    color: var(--primary-600);
+    text-decoration: none;
 }
 
-.inner-table th {
-    text-align: left;
-    padding: 8px 12px;
-    background: var(--bg-tertiary);
-    color: var(--text-secondary);
-    font-weight: 500;
-    border-bottom: 1px solid var(--border-light);
+.rule-detail-link:hover {
+    text-decoration: underline;
 }
 
-.inner-table td {
-    padding: 8px 12px;
-    border-bottom: 1px solid var(--border-light);
+/* Right after the name: pushing it to the column edge left a 300px+ gap to read across */
+.rule-detail-id {
+    flex-shrink: 0;
+    font-family: var(--font-family-mono);
+    font-size: 11px;
+    color: var(--text-tertiary);
 }
 
-.inner-table tr:last-child td {
-    border-bottom: none;
-}
-
-.linked-vms-chips {
+.rule-detail-empty {
     display: flex;
+    align-items: center;
     flex-wrap: wrap;
-    gap: 8px;
+    gap: var(--spacing-2);
+    min-height: 30px;
+    font-size: var(--font-size-sm);
+    color: var(--text-tertiary);
 }
 
-.vm-chip {
-    background: var(--bg-primary);
-    border: 1px solid var(--border-light);
-    padding: 2px 10px;
-    border-radius: 4px;
-    font-size: 12px;
+.rule-detail-action {
+    padding: 0;
+    border: none;
+    background: none;
+    font-size: inherit;
+    color: var(--primary-600);
+    cursor: pointer;
 }
 
-.actions-cell { display: flex; gap: 4px; align-items: center; }
+.rule-detail-action:hover {
+    text-decoration: underline;
+}
 
 .clickable-name {
     color: var(--primary-600);
@@ -1076,71 +1244,132 @@ onMounted(fetchRules)
     text-decoration: underline;
 }
 
-.icon-btn-table {
-    width: 32px; height: 32px; border-radius: 8px; border: none;
-    background: transparent; color: var(--text-tertiary);
-    display: flex; align-items: center; justify-content: center;
-    cursor: pointer; transition: all 0.2s;
+.text-center {
+    text-align: center;
+}
+.text-muted {
+    color: var(--text-tertiary);
 }
 
-.icon-btn-table:hover { background-color: var(--bg-tertiary); color: var(--primary-color); }
-.icon-btn-table.text-error:hover { background-color: var(--error-light); color: var(--error-dark); }
-.text-error { color: var(--text-tertiary); }
-
-.pagination { display: flex; align-items: center; justify-content: center; gap: 12px; padding: 16px 0; }
-.page-info { font-size: 13px; color: var(--text-tertiary); }
-
-.text-danger { color: var(--error-color); }
-.text-center { text-align: center; }
-.text-muted { color: var(--text-tertiary); }
-
-.badge-secondary { background: var(--accent-purple-light); color: var(--accent-purple); }
-
 .error-banner {
-    background: var(--error-light); color: var(--error-dark); border: 1px solid var(--error-color);
-    border-radius: var(--radius-sm); padding: 10px 14px; margin-bottom: var(--spacing-4);
-    font-size: var(--font-size-sm); cursor: pointer;
+    background: var(--error-light);
+    color: var(--error-dark);
+    border: 1px solid var(--error-color);
+    border-radius: var(--radius-sm);
+    padding: 10px 14px;
+    margin-bottom: var(--spacing-4);
+    font-size: var(--font-size-sm);
+    cursor: pointer;
 }
 
 /* Modal */
-.modal-lg { max-width: 600px; }
-.form-stack { display: flex; flex-direction: column; gap: 16px; }
-.form-group { display: flex; flex-direction: column; }
-.form-label { font-size: 0.8125rem; color: var(--text-secondary); margin-bottom: 4px; font-weight: 500; }
+.form-stack {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+.form-group {
+    display: flex;
+    flex-direction: column;
+}
+.form-label {
+    font-size: 0.8125rem;
+    color: var(--text-secondary);
+    margin-bottom: 4px;
+    font-weight: 500;
+}
 
 .form-input {
-    width: 100%; padding: 8px 12px;
-    border: 1px solid var(--border-light); border-radius: var(--radius-md);
-    font-size: 0.875rem; background: var(--bg-primary); color: var(--text-primary);
+    width: 100%;
+    padding: 8px 12px;
+    border: 1px solid var(--border-light);
+    border-radius: var(--radius-md);
+    font-size: 0.875rem;
+    background: var(--bg-primary);
+    color: var(--text-primary);
 }
 
-.form-input:focus { outline: none; border-color: var(--primary-300); box-shadow: 0 0 0 2px var(--primary-100); }
-
-.rules-section { margin-top: 4px; }
-.rules-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
-.rules-header-left { display: flex; align-items: center; gap: 8px; }
-.rule-labels-row { display: flex; gap: 8px; margin-bottom: 4px; padding: 0 4px; }
-.rule-label-item { font-size: 11px; color: var(--text-tertiary); font-weight: 600; text-transform: uppercase; letter-spacing: 0.02em; }
-.rule-row { display: flex; gap: 8px; margin-bottom: 6px; align-items: center; }
-.rule-input-sm { width: 120px; }
-.ml-2 { margin-left: 8px; }
-.mb-0 { margin-bottom: 0; }
-.mb-1 { margin-bottom: 4px; }
-.input-tip { font-size: 11px; color: var(--text-tertiary); line-height: 1.2; }
-
-
-.channel-list { max-height: 300px; overflow-y: auto; }
-.channel-item { display: flex; align-items: center; gap: 8px; padding: 8px; cursor: pointer; border-radius: 4px; }
-.channel-item:hover { background: var(--bg-hover, #f3f4f6); }
-.channel-item input[type="checkbox"] { cursor: pointer; }
-.channel-name { flex: 1; }
-
-.btn-danger {
-    background: var(--error-color); color: white; border: none;
-    padding: 8px 16px; border-radius: var(--radius-md); cursor: pointer; font-weight: 500;
+.form-input:focus {
+    outline: none;
+    border-color: var(--primary-300);
+    box-shadow: 0 0 0 2px var(--primary-100);
 }
-.btn-danger:hover { background: var(--error-dark); }
 
-.spinning { animation: spin 1s linear infinite; }
-@keyframes spin { to { transform: rotate(360deg); } }
+.rules-section {
+    margin-top: 4px;
+}
+.rules-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+}
+.rules-header-left {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+.rule-labels-row {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 4px;
+    padding: 0 4px;
+}
+.rule-label-item {
+    font-size: 11px;
+    color: var(--text-tertiary);
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.02em;
+}
+.rule-row {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 6px;
+    align-items: center;
+}
+.rule-input-sm {
+    width: 120px;
+}
+.ml-2 {
+    margin-left: 8px;
+}
+.mb-0 {
+    margin-bottom: 0;
+}
+.mb-1 {
+    margin-bottom: 4px;
+}
+.input-tip {
+    font-size: 11px;
+    color: var(--text-tertiary);
+    line-height: 1.2;
+}
+
+/* Validation error under an input; .input-tip is grey and must not be reused for it */
+.input-tip-error {
+    color: var(--error-color);
+}
+
+.channel-list {
+    max-height: 300px;
+    overflow-y: auto;
+}
+.channel-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px;
+    cursor: pointer;
+    border-radius: 4px;
+}
+.channel-item:hover {
+    background: var(--bg-hover, var(--gray-100));
+}
+.channel-item input[type='checkbox'] {
+    cursor: pointer;
+}
+.channel-name {
+    flex: 1;
+}
 </style>

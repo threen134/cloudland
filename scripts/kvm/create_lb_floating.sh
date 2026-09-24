@@ -19,18 +19,8 @@ outbound=$7
 ip netns list | grep -q $router
 [ $? -ne 0 ] && echo "Router $router does not exist" && exit -1
 
-rtID=$(( $ext_vlan % 250 + 2 ))
 table=fip-$ext_vlan
-rt_file=/etc/iproute2/rt_tables
-grep "^$rtID $table" $rt_file
-if [ $? -ne 0 ]; then
-    for i in {1..250}; do
-        grep "^$rtID\s" $rt_file
-	[ $? -ne 0 ] && break
-        rtID=$(( ($rtID + 17) % 250 + 2 ))
-    done
-    echo "$rtID $table" >>$rt_file
-fi
+ensure_fip_table $ext_vlan
 suffix=${ID}-${ext_vlan}
 ext_dev=te-$suffix
 ./create_veth.sh $router ext-$suffix te-$suffix

@@ -12,6 +12,15 @@ exec > >(tee -a "$DEPLOY_LOG") 2>&1
 CLOUDLAND_DIR="${CLOUDLAND_DIR:-/opt/cloudland}"
 REPO_URL="${REPO_URL:-https://github.com/threen134/cloudland.git}"
 DEPLOY_DIR="$CLOUDLAND_DIR/deploy/docker"
+# 部署分支优先级：显式指定 > 已部署 .env 中的值 > 已有仓库当前检出的分支 > staging，
+# 避免在旧 .env（无 REPO_BRANCH）的环境上重跑脚本时被悄悄切到默认分支
+if [ -z "${REPO_BRANCH:-}" ] && [ -f "$DEPLOY_DIR/.env" ]; then
+    REPO_BRANCH=$(grep '^REPO_BRANCH=' "$DEPLOY_DIR/.env" | cut -d'=' -f2- || true)
+fi
+if [ -z "${REPO_BRANCH:-}" ] && [ -d "$CLOUDLAND_DIR/.git" ]; then
+    REPO_BRANCH=$(git -c safe.directory="$CLOUDLAND_DIR" -C "$CLOUDLAND_DIR" branch --show-current 2>/dev/null || true)
+fi
+REPO_BRANCH="${REPO_BRANCH:-staging}"
 
 log() { echo -e "\n\033[1;32m[$(date '+%H:%M:%S')] $1\033[0m"; }
 warn() { echo -e "\033[1;33m[WARN] $1\033[0m"; }
@@ -21,7 +30,7 @@ if [[ $EUID -ne 0 ]]; then
    exit 1
 fi
 
-# 检查操作系统版本 (必须为 Ubuntu 22)
+# 检查操作系统版本（支持 Ubuntu 24.04 / 26.04）
 if [ -f /etc/os-release ]; then
     . /etc/os-release
     if [ "$ID" != "ubuntu" ]; then
@@ -29,6 +38,10 @@ if [ -f /etc/os-release ]; then
         echo "当前系统: ${NAME:-未知} ${VERSION_ID:-未知}"
         exit 1
     fi
+    case "$VERSION_ID" in
+        24.04|26.04) ;;
+        *) warn "未验证的 Ubuntu 版本 ${VERSION_ID:-未知}，仅支持 24.04 / 26.04，继续执行可能失败" ;;
+    esac
 else
     echo "错误: 无法识别操作系统。本脚本仅支持 Ubuntu 系统。"
     exit 1
@@ -52,8 +65,23 @@ if [ ! -d "$CLOUDLAND_DIR" ]; then
         warn "未检测到 git，尝试安装..."
         apt-get update && apt-get install -y git
     fi
-    log "正在克隆 CloudLand 仓库..."
-    git clone "$REPO_URL" "$CLOUDLAND_DIR"
+    log "正在克隆 CloudLand 仓库 (分支 $REPO_BRANCH)..."
+    git clone -b "$REPO_BRANCH" "$REPO_URL" "$CLOUDLAND_DIR"
+elif [ -d "$CLOUDLAND_DIR/.git" ]; then
+    # 同机部署计算节点后仓库属主为 cland，root 执行 git 需声明 safe.directory；
+    # 计算节点脚本会 chmod 脚本目录，忽略权限位变化，只把内容改动视为未提交修改
+    git_repo=(git -c safe.directory="$CLOUDLAND_DIR" -c core.fileMode=false -C "$CLOUDLAND_DIR")
+    if [ "$("${git_repo[@]}" branch --show-current)" != "$REPO_BRANCH" ]; then
+        # api/.version 由 make 构建时重写，属编译产物，不算未提交改动
+        if [ -n "$("${git_repo[@]}" status --porcelain --untracked-files=no -- . ':!api/.version')" ]; then
+            echo "错误: $CLOUDLAND_DIR 有未提交的改动，无法切换到分支 $REPO_BRANCH，请先提交或还原后重试。"
+            exit 1
+        fi
+        log "切换仓库分支到 $REPO_BRANCH..."
+        "${git_repo[@]}" fetch origin "+refs/heads/$REPO_BRANCH:refs/remotes/origin/$REPO_BRANCH"
+        # 以远端为准重置本地分支，避免沿用过期的同名本地分支
+        "${git_repo[@]}" checkout -B "$REPO_BRANCH" "origin/$REPO_BRANCH"
+    fi
 fi
 
 if [ ! -d "$DEPLOY_DIR" ]; then
@@ -78,8 +106,15 @@ log "执行 Alertmanager 目录权限..."
 mkdir -p volumes/alertmanager
 chown -R 65534:65534 volumes/alertmanager
 
+# Prometheus rule templates: clapi renders node alarm rules from these (mounted read-only
+# at /etc/prometheus/node_templates). Without them every node alarm rule create fails with
+# "File does not exist: <template>.yml.j2".
+log "同步 Prometheus 规则模板..."
+mkdir -p volumes/prometheus/node_templates volumes/prometheus/general_rules volumes/prometheus/rules_enabled
+cp -f ../roles/monitor/templates/*.yml.j2 volumes/prometheus/node_templates/
+
 # 定义需要注入的环境变量
-vars=("PUBLIC_IP" "INTERNAL_IP" "MANAGEMENT_VIP" "NETWORK_DEVICE" "DB_LISTEN_IP" "POSTGRES_USER" "POSTGRES_PASSWORD" "POSTGRES_DB" "ADMIN_PASSWORD" "ADMIN_EMAIL" "COMPOSE_PROFILES" "DB_HOST" "DB_PORT" "CPGATEWAY_SECRET_KEY" "NOTIFICATION_METHOD" "FEISHU_WEBHOOK_URL" "FEISHU_SECRET" "S3_ENDPOINT" "S3_ACCESS_KEY" "S3_SECRET_KEY" "S3_BUCKET" "S3_REGION" "S3_USE_SSL" "S3_UPLOAD_TIMEOUT_MINUTES" "MINIO_HOSTNAME" "CLAPI_HOSTNAME" "SCI_SHARED_SECRET" "GRAFANA_ADMIN_PASSWORD" "DNS_UPSTREAM" "MINIO_ROOT_USER" "MINIO_ROOT_PASSWORD")
+vars=("PUBLIC_IP" "INTERNAL_IP" "MANAGEMENT_VIP" "NETWORK_DEVICE" "DB_LISTEN_IP" "POSTGRES_USER" "POSTGRES_PASSWORD" "POSTGRES_DB" "ADMIN_PASSWORD" "ADMIN_EMAIL" "COMPOSE_PROFILES" "DB_HOST" "DB_PORT" "CPGATEWAY_SECRET_KEY" "FEISHU_WEBHOOK_URL" "FEISHU_SECRET" "S3_ENDPOINT" "S3_ACCESS_KEY" "S3_SECRET_KEY" "S3_BUCKET" "S3_REGION" "S3_USE_SSL" "S3_UPLOAD_TIMEOUT_MINUTES" "MINIO_HOSTNAME" "CLAPI_HOSTNAME" "CAPTURE_UPLOAD_SECRET" "VPN_SECRET_KEY" "GRAFANA_ADMIN_PASSWORD" "DNS_UPSTREAM" "MINIO_ROOT_USER" "MINIO_ROOT_PASSWORD" "GRPC_AUTH_TOKEN" "GRPC_LISTEN" "TELEMETRY_LISTEN_IP" "REPO_BRANCH" "DEPLOY_SCRIPT_URL")
 
 # 注入环境变量到 .env (如果当前 Shell 环境中有定义)
 for var in "${vars[@]}"; do
@@ -113,8 +148,9 @@ done
 
 if [ ${#missing_vars[@]} -ne 0 ]; then
     warn "缺少关键配置项: ${missing_vars[*]}"
-    echo "请在使用 curl | bash 部署时通过环境变量传入 (并确保使用 sudo -E)，例如："
-    echo "  PUBLIC_IP=x.x.x.x ADMIN_PASSWORD=xxxx curl -sSL ... | sudo -E bash"
+    echo "请以 root 身份导出环境变量后再执行（Ubuntu 26.04 默认的 sudo-rs 会忽略 sudo -E），例如："
+    echo "  sudo -i"
+    echo "  export PUBLIC_IP=x.x.x.x ADMIN_PASSWORD=xxxx; curl -sSL ... | bash"
     echo "或者手动编辑 $DEPLOY_DIR/.env 文件。"
     exit 1
 fi
@@ -134,6 +170,35 @@ if [[ "$compose_profiles" == *minio* ]]; then
         warn "启用了 minio profile，但缺少必填参数: ${minio_missing[*]}"
         exit 1
     fi
+    # 内置 MinIO：S3_ENDPOINT 未配置时指向 MinIO 内部域名（未启用 minio 时保持为空，即 legacy 本地镜像模式）
+    if [ -z "$(grep '^S3_ENDPOINT=' .env | cut -d'=' -f2- || true)" ]; then
+        minio_host=$(grep '^MINIO_HOSTNAME=' .env | cut -d'=' -f2- || true)
+        sed -i '/^S3_ENDPOINT=/d' .env
+        echo "S3_ENDPOINT=${minio_host:-images.cloudland.internal}:9000" >> .env
+        log "已按内置 MinIO 设置 S3_ENDPOINT=${minio_host:-images.cloudland.internal}:9000"
+    fi
+fi
+
+# cland-go 强制要求 gRPC 共享令牌：未提供时自动生成（重复部署沿用 .env 中已有的值）
+if [ -z "$(grep '^GRPC_AUTH_TOKEN=' .env | cut -d'=' -f2- || true)" ]; then
+    sed -i '/^GRPC_AUTH_TOKEN=/d' .env
+    echo "GRPC_AUTH_TOKEN=$(openssl rand -hex 32)" >> .env
+    log "已生成 GRPC_AUTH_TOKEN 并写入 .env"
+fi
+
+# 从虚拟机创建镜像时上传凭证的签名密钥：为空时 clapi 拒绝所有上传，同样自动生成
+if [ -z "$(grep '^CAPTURE_UPLOAD_SECRET=' .env | cut -d'=' -f2- || true)" ]; then
+    sed -i '/^CAPTURE_UPLOAD_SECRET=/d' .env
+    echo "CAPTURE_UPLOAD_SECRET=$(openssl rand -hex 32)" >> .env
+    log "已生成 CAPTURE_UPLOAD_SECRET 并写入 .env"
+fi
+
+# VPN 网关凭据（IPsec PSK、WireGuard 密钥）的加密密钥：只在从未设置过时生成一次；
+# 一旦库里有了密文，这个值丢失就再也解不开，所以不要删掉 .env 里的这一行
+if ! grep -q '^VPN_SECRET_KEY=' .env || [ -z "$(grep '^VPN_SECRET_KEY=' .env | cut -d'=' -f2- || true)" ]; then
+    sed -i '/^VPN_SECRET_KEY=/d' .env
+    echo "VPN_SECRET_KEY=$(openssl rand -hex 32)" >> .env
+    log "已生成 VPN_SECRET_KEY 并写入 .env（请妥善备份，丢失后已存储的 VPN 凭据无法解密）"
 fi
 
 # 显示当前使用的关键配置摘要 (脱敏)
@@ -196,7 +261,7 @@ DNS_UPSTREAM_VAL=$(grep '^DNS_UPSTREAM=' .env | cut -d'=' -f2- || echo "")
 mkdir -p ../dns/hosts ../dns/conf.d
 [ -f ../dns/hosts/hyper-hosts ] || touch ../dns/hosts/hyper-hosts
 # 注册控制节点自身 hostname 到 dnsmasq
-# SCI frontend 初始化时需要通过 DNS 解析自身 hostname，否则会启动失败
+# 同时注册 MinIO、clapi 的内部域名，计算节点经本机 dnsmasq 解析
 CTRL_HOSTNAME=$(hostname)
 INTERNAL_IP_VAL=$(grep '^INTERNAL_IP=' .env | cut -d'=' -f2-)
 if [ -n "$CTRL_HOSTNAME" ] && [ -n "$INTERNAL_IP_VAL" ]; then

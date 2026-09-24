@@ -1,3 +1,10 @@
+# cloudlet-go 向 cland-go 注册需要 gRPC 共享令牌
+- name: check grpc auth token
+  assert:
+    that: grpc_auth_token is defined and grpc_auth_token | length > 0
+    fail_msg: "grpc_auth_token 未设置：cloudlet-go 将被 cland-go 拒绝（见 netconf.yml.example）"
+  tags: [always]
+
 - name: install common packages
   apt:
     name:
@@ -17,6 +24,17 @@
         "ipcalc",
         "ipset",
         "keepalived",
+        "haproxy",
+        "socat",
+        "strongswan-swanctl",
+        "strongswan-charon",
+        "wireguard-tools",
+        "frr",
+        "lvm2",
+        "mdadm",
+        "xfsprogs",
+        "rsync",
+        "libxml2-utils",
         "iputils-arping",
         "libvirt-daemon",
         "libvirt-daemon-system",
@@ -30,6 +48,77 @@
     state: present
   ignore_errors: yes
   tags: [be_pkg]
+
+# VPN gateways: strongSwan, WireGuard and FRR run per gateway inside the router netns, started by the
+# vpn scripts; the packaged services would grab /etc/swanctl, /run/frr and the IKE ports
+- name: disable packaged vpn services
+  systemd:
+    name: "{{ item }}"
+    enabled: false
+    state: stopped
+  with_items:
+    - "strongswan-starter"
+    - "strongswan"
+    - "ipsec"
+    - "frr"
+  ignore_errors: yes
+  when: not ansible_check_mode
+  tags: [be_pkg, vpn]
+
+# Ubuntu confines charon, swanctl, bgpd, staticd and wg with AppArmor to their packaged paths; allow the
+# per-gateway directories (same overrides as deploy-compute-node.sh)
+- name: apparmor overrides for vpn gateways
+  copy:
+    dest: "/etc/apparmor.d/local/{{ item.name }}"
+    content: "{{ item.content }}"
+    owner: root
+    group: root
+    mode: "0644"
+  with_items:
+    - name: usr.lib.ipsec.charon
+      content: |
+        # CloudLand VPN gateways: one charon per VPC router netns, config and logs under the router cache dir
+          /opt/cloudland/cache/router/router-*/vpn-*/ r,
+          /opt/cloudland/cache/router/router-*/vpn-*/** rwk,
+    - name: usr.sbin.swanctl
+      content: |
+        # CloudLand VPN gateways: per-gateway swanctl.conf and vici socket
+          /opt/cloudland/cache/router/router-*/vpn-*/ r,
+          /opt/cloudland/cache/router/router-*/vpn-*/** rw,
+    - name: bgpd
+      content: |
+        # CloudLand VPN gateways: one FRR pathspace per gateway (-N vpn-<id>)
+          @{run}/frr/vpn-*/ rw,
+          @{run}/frr/vpn-*/** rwk,
+          /etc/frr/vpn-*/ r,
+          /etc/frr/vpn-*/* rw,
+          owner @{PROC}/@{pid}/task/@{tid}/comm rw,
+    - name: staticd
+      content: |
+        # CloudLand VPN gateways: one FRR pathspace per gateway (-N vpn-<id>)
+          @{run}/frr/vpn-*/ rw,
+          @{run}/frr/vpn-*/** rwk,
+          /etc/frr/vpn-*/ r,
+          /etc/frr/vpn-*/* rw,
+          owner @{PROC}/@{pid}/task/@{tid}/comm rw,
+    - name: wg
+      content: |
+        # CloudLand VPN gateways: wg reads the per-gateway configuration and key
+          /opt/cloudland/cache/router/router-*/vpn-*/ r,
+          /opt/cloudland/cache/router/router-*/vpn-*/** r,
+  tags: [be_pkg, vpn]
+
+- name: reload apparmor profiles for vpn gateways
+  shell: "[ -f /etc/apparmor.d/{{ item }} ] && apparmor_parser -r /etc/apparmor.d/{{ item }} || true"
+  with_items:
+    - usr.lib.ipsec.charon
+    - usr.sbin.swanctl
+    - bgpd
+    - staticd
+    - wg
+  ignore_errors: yes
+  when: not ansible_check_mode
+  tags: [be_pkg, vpn]
 
 - name: install pyparsing
   apt:
@@ -79,22 +168,6 @@
     owner: root
     group: root
   tags: [be_srv, cloudlet]
-
-- name: copy sci binaries
-  copy:
-    src: /opt/sci
-    dest: /opt
-    mode: preserve
-  tags: [sci]
-
-- name: copy sci service file
-  copy:
-    src: "{{ item.src }}"
-    dest: "{{ item.dest }}"
-    mode: preserve
-  with_items:
-    - { src: "scid.service", dest: "/lib/systemd/system", owner: "root" }
-  tags: [be_srv, sci]
 
 - name: copy scripts
   synchronize:
@@ -150,6 +223,7 @@
   when: virt_type == 'kvm-x86_64'
   tags: [be_conf, scripts]
 
+# 同步 /opt/cloudland/bin（含 build.sh 编译的 cloudlet-go）
 - name: synchronize cloudlet
   synchronize:
     src: "{{ item.src }}"
@@ -163,22 +237,21 @@
       }
   tags: [sync, cloudlet]
 
-- name: create cloudlet environment file
+# 环境文件含令牌，仅 root 可读（systemd 以 root 读取 EnvironmentFile）
+- name: create cloudlet-go environment file
   template:
-    src: "{{ item.src }}"
-    dest: "{{ item.dest }}"
-    owner: "{{ item.owner }}"
-  with_items:
-    - { src: "cloudlet.j2", dest: "/etc/sysconfig/cloudlet", owner: "root" }
+    src: cloudlet.j2
+    dest: /etc/sysconfig/cloudlet
+    owner: root
+    group: root
+    mode: "0600"
   tags: [be_srv, cloudlet]
 
-- name: copy cloudlet service file
+- name: copy cloudlet-go service file
   copy:
-    src: "{{ item.src }}"
-    dest: "{{ item.dest }}"
-    mode: preserve
-  with_items:
-    - { src: "cloudlet.service", dest: "/lib/systemd/system", owner: "root" }
+    src: cloudlet-go.service
+    dest: /lib/systemd/system/cloudlet-go.service
+    mode: "0644"
   tags: [be_srv, cloudlet]
 
 - name: copy compute service file
@@ -190,25 +263,12 @@
     - { src: "kvm-nested.conf", dest: "/etc/modprobe.d", owner: "root" }
   tags: [be_srv]
 
-- name: start scid services
+- name: start cloudlet-go service
   systemd:
-    name: "{{ item }}"
+    name: cloudlet-go
     enabled: yes
     daemon_reload: yes
     state: restarted
-  with_items:
-    - "scid"
-  when: not ansible_check_mode
-  tags: [be_srv, sci, start_sci]
-
-- name: start cloudlet services
-  systemd:
-    name: "{{ item }}"
-    enabled: yes
-    daemon_reload: yes
-    state: restarted
-  with_items:
-    - "cloudlet"
   when: not ansible_check_mode
   tags: [be_srv, cloudlet]
 

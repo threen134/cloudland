@@ -17,7 +17,8 @@ interface AppItem {
     free?: boolean
 }
 
-type FilterCategory = 'all' | 'database' | 'web' | 'container' | 'devops' | 'security' | 'panel' | 'messaging' | 'monitoring' | 'ai'
+type FilterCategory =
+    'all' | 'database' | 'web' | 'container' | 'devops' | 'security' | 'panel' | 'messaging' | 'monitoring' | 'ai'
 
 const { t } = useI18n()
 const router = useRouter()
@@ -41,55 +42,384 @@ const filterCategories: { key: FilterCategory; labelKey: string; count?: number 
 // Application catalog — all apps
 const apps: AppItem[] = [
     // Databases
-    { id: 'mysql', nameKey: 'marketplace.apps.mysql', descKey: 'marketplace.apps.mysqlDesc', icon: '🐬', provider: 'Oracle', categories: ['database'], version: '8.0 / 5.7', popular: true, free: true },
-    { id: 'redis', nameKey: 'marketplace.apps.redis', descKey: 'marketplace.apps.redisDesc', icon: '⚡', provider: 'Redis Ltd.', categories: ['database'], version: '7.2', popular: true, free: true },
-    { id: 'mongodb', nameKey: 'marketplace.apps.mongodb', descKey: 'marketplace.apps.mongodbDesc', icon: '🍃', provider: 'MongoDB Inc.', categories: ['database'], version: '7.0', free: true },
-    { id: 'postgresql', nameKey: 'marketplace.apps.postgresql', descKey: 'marketplace.apps.postgresqlDesc', icon: '🐘', provider: 'PostgreSQL', categories: ['database'], version: '16', popular: true, free: true },
-    { id: 'mariadb', nameKey: 'marketplace.apps.mariadb', descKey: 'marketplace.apps.mariadbDesc', icon: '🦭', provider: 'MariaDB Foundation', categories: ['database'], version: '11.2', free: true },
-    { id: 'elasticsearch', nameKey: 'marketplace.apps.elasticsearch', descKey: 'marketplace.apps.elasticsearchDesc', icon: '🔎', provider: 'Elastic', categories: ['database', 'monitoring'], version: '8.12', free: true },
-    { id: 'clickhouse', nameKey: 'marketplace.apps.clickhouse', descKey: 'marketplace.apps.clickhouseDesc', icon: '🏠', provider: 'ClickHouse Inc.', categories: ['database'], version: '24.1', isNew: true, free: true },
+    {
+        id: 'mysql',
+        nameKey: 'marketplace.apps.mysql',
+        descKey: 'marketplace.apps.mysqlDesc',
+        icon: '🐬',
+        provider: 'Oracle',
+        categories: ['database'],
+        version: '8.0 / 5.7',
+        popular: true,
+        free: true,
+    },
+    {
+        id: 'redis',
+        nameKey: 'marketplace.apps.redis',
+        descKey: 'marketplace.apps.redisDesc',
+        icon: '⚡',
+        provider: 'Redis Ltd.',
+        categories: ['database'],
+        version: '7.2',
+        popular: true,
+        free: true,
+    },
+    {
+        id: 'mongodb',
+        nameKey: 'marketplace.apps.mongodb',
+        descKey: 'marketplace.apps.mongodbDesc',
+        icon: '🍃',
+        provider: 'MongoDB Inc.',
+        categories: ['database'],
+        version: '7.0',
+        free: true,
+    },
+    {
+        id: 'postgresql',
+        nameKey: 'marketplace.apps.postgresql',
+        descKey: 'marketplace.apps.postgresqlDesc',
+        icon: '🐘',
+        provider: 'PostgreSQL',
+        categories: ['database'],
+        version: '16',
+        popular: true,
+        free: true,
+    },
+    {
+        id: 'mariadb',
+        nameKey: 'marketplace.apps.mariadb',
+        descKey: 'marketplace.apps.mariadbDesc',
+        icon: '🦭',
+        provider: 'MariaDB Foundation',
+        categories: ['database'],
+        version: '11.2',
+        free: true,
+    },
+    {
+        id: 'elasticsearch',
+        nameKey: 'marketplace.apps.elasticsearch',
+        descKey: 'marketplace.apps.elasticsearchDesc',
+        icon: '🔎',
+        provider: 'Elastic',
+        categories: ['database', 'monitoring'],
+        version: '8.12',
+        free: true,
+    },
+    {
+        id: 'clickhouse',
+        nameKey: 'marketplace.apps.clickhouse',
+        descKey: 'marketplace.apps.clickhouseDesc',
+        icon: '🏠',
+        provider: 'ClickHouse Inc.',
+        categories: ['database'],
+        version: '24.1',
+        isNew: true,
+        free: true,
+    },
 
     // Web Servers
-    { id: 'nginx', nameKey: 'marketplace.apps.nginx', descKey: 'marketplace.apps.nginxDesc', icon: '🌐', provider: 'F5 / Nginx Inc.', categories: ['web'], version: '1.25', popular: true, free: true },
-    { id: 'apache', nameKey: 'marketplace.apps.apache', descKey: 'marketplace.apps.apacheDesc', icon: '🪶', provider: 'Apache Foundation', categories: ['web'], version: '2.4', free: true },
-    { id: 'caddy', nameKey: 'marketplace.apps.caddy', descKey: 'marketplace.apps.caddyDesc', icon: '🔒', provider: 'Caddy', categories: ['web', 'security'], version: '2.7', isNew: true, free: true },
-    { id: 'tomcat', nameKey: 'marketplace.apps.tomcat', descKey: 'marketplace.apps.tomcatDesc', icon: '🐱', provider: 'Apache Foundation', categories: ['web'], version: '10.1', free: true },
-    { id: 'openlitespeed', nameKey: 'marketplace.apps.openlitespeed', descKey: 'marketplace.apps.openlitespeedDesc', icon: '⚡', provider: 'LiteSpeed', categories: ['web'], version: '1.7', free: true },
+    {
+        id: 'nginx',
+        nameKey: 'marketplace.apps.nginx',
+        descKey: 'marketplace.apps.nginxDesc',
+        icon: '🌐',
+        provider: 'F5 / Nginx Inc.',
+        categories: ['web'],
+        version: '1.25',
+        popular: true,
+        free: true,
+    },
+    {
+        id: 'apache',
+        nameKey: 'marketplace.apps.apache',
+        descKey: 'marketplace.apps.apacheDesc',
+        icon: '🪶',
+        provider: 'Apache Foundation',
+        categories: ['web'],
+        version: '2.4',
+        free: true,
+    },
+    {
+        id: 'caddy',
+        nameKey: 'marketplace.apps.caddy',
+        descKey: 'marketplace.apps.caddyDesc',
+        icon: '🔒',
+        provider: 'Caddy',
+        categories: ['web', 'security'],
+        version: '2.7',
+        isNew: true,
+        free: true,
+    },
+    {
+        id: 'tomcat',
+        nameKey: 'marketplace.apps.tomcat',
+        descKey: 'marketplace.apps.tomcatDesc',
+        icon: '🐱',
+        provider: 'Apache Foundation',
+        categories: ['web'],
+        version: '10.1',
+        free: true,
+    },
+    {
+        id: 'openlitespeed',
+        nameKey: 'marketplace.apps.openlitespeed',
+        descKey: 'marketplace.apps.openlitespeedDesc',
+        icon: '⚡',
+        provider: 'LiteSpeed',
+        categories: ['web'],
+        version: '1.7',
+        free: true,
+    },
 
     // Containers & DevOps
-    { id: 'docker', nameKey: 'marketplace.apps.docker', descKey: 'marketplace.apps.dockerDesc', icon: '🐳', provider: 'Docker Inc.', categories: ['container', 'devops'], version: 'CE 25.0', popular: true, free: true },
-    { id: 'kubernetes', nameKey: 'marketplace.apps.kubernetes', descKey: 'marketplace.apps.kubernetesDesc', icon: '☸️', provider: 'CNCF', categories: ['container', 'devops'], version: '1.29', popular: true, free: true },
-    { id: 'portainer', nameKey: 'marketplace.apps.portainer', descKey: 'marketplace.apps.portainerDesc', icon: '📦', provider: 'Portainer.io', categories: ['container', 'panel'], version: 'CE 2.19', free: true },
-    { id: 'jenkins', nameKey: 'marketplace.apps.jenkins', descKey: 'marketplace.apps.jenkinsDesc', icon: '🔧', provider: 'Jenkins Project', categories: ['devops'], version: '2.440', free: true },
-    { id: 'gitlab', nameKey: 'marketplace.apps.gitlab', descKey: 'marketplace.apps.gitlabDesc', icon: '🦊', provider: 'GitLab Inc.', categories: ['devops'], version: 'CE 16.8', free: true },
-    { id: 'ansible', nameKey: 'marketplace.apps.ansible', descKey: 'marketplace.apps.ansibleDesc', icon: '🤖', provider: 'Red Hat', categories: ['devops'], version: '2.16', free: true },
-    { id: 'terraform', nameKey: 'marketplace.apps.terraform', descKey: 'marketplace.apps.terraformDesc', icon: '🏗️', provider: 'HashiCorp', categories: ['devops'], version: '1.7', free: true },
+    {
+        id: 'docker',
+        nameKey: 'marketplace.apps.docker',
+        descKey: 'marketplace.apps.dockerDesc',
+        icon: '🐳',
+        provider: 'Docker Inc.',
+        categories: ['container', 'devops'],
+        version: 'CE 25.0',
+        popular: true,
+        free: true,
+    },
+    {
+        id: 'kubernetes',
+        nameKey: 'marketplace.apps.kubernetes',
+        descKey: 'marketplace.apps.kubernetesDesc',
+        icon: '☸️',
+        provider: 'CNCF',
+        categories: ['container', 'devops'],
+        version: '1.29',
+        popular: true,
+        free: true,
+    },
+    {
+        id: 'portainer',
+        nameKey: 'marketplace.apps.portainer',
+        descKey: 'marketplace.apps.portainerDesc',
+        icon: '📦',
+        provider: 'Portainer.io',
+        categories: ['container', 'panel'],
+        version: 'CE 2.19',
+        free: true,
+    },
+    {
+        id: 'jenkins',
+        nameKey: 'marketplace.apps.jenkins',
+        descKey: 'marketplace.apps.jenkinsDesc',
+        icon: '🔧',
+        provider: 'Jenkins Project',
+        categories: ['devops'],
+        version: '2.440',
+        free: true,
+    },
+    {
+        id: 'gitlab',
+        nameKey: 'marketplace.apps.gitlab',
+        descKey: 'marketplace.apps.gitlabDesc',
+        icon: '🦊',
+        provider: 'GitLab Inc.',
+        categories: ['devops'],
+        version: 'CE 16.8',
+        free: true,
+    },
+    {
+        id: 'ansible',
+        nameKey: 'marketplace.apps.ansible',
+        descKey: 'marketplace.apps.ansibleDesc',
+        icon: '🤖',
+        provider: 'Red Hat',
+        categories: ['devops'],
+        version: '2.16',
+        free: true,
+    },
+    {
+        id: 'terraform',
+        nameKey: 'marketplace.apps.terraform',
+        descKey: 'marketplace.apps.terraformDesc',
+        icon: '🏗️',
+        provider: 'HashiCorp',
+        categories: ['devops'],
+        version: '1.7',
+        free: true,
+    },
 
     // Security & Network
-    { id: 'ipsec', nameKey: 'marketplace.apps.ipsec', descKey: 'marketplace.apps.ipsecDesc', icon: '🔐', provider: 'CloudLand', categories: ['security'], version: 'Latest', free: true },
-    { id: 'openvpn', nameKey: 'marketplace.apps.openvpn', descKey: 'marketplace.apps.openvpnDesc', icon: '🛡️', provider: 'OpenVPN Inc.', categories: ['security'], version: '2.6', free: true },
-    { id: 'wireguard', nameKey: 'marketplace.apps.wireguard', descKey: 'marketplace.apps.wireguardDesc', icon: '🔑', provider: 'WireGuard', categories: ['security'], version: '1.0', isNew: true, free: true },
-    { id: 'certbot', nameKey: 'marketplace.apps.certbot', descKey: 'marketplace.apps.certbotDesc', icon: '📜', provider: "Let's Encrypt", categories: ['security', 'web'], version: '2.8', free: true },
+    {
+        id: 'ipsec',
+        nameKey: 'marketplace.apps.ipsec',
+        descKey: 'marketplace.apps.ipsecDesc',
+        icon: '🔐',
+        provider: 'CloudLand',
+        categories: ['security'],
+        version: 'Latest',
+        free: true,
+    },
+    {
+        id: 'openvpn',
+        nameKey: 'marketplace.apps.openvpn',
+        descKey: 'marketplace.apps.openvpnDesc',
+        icon: '🛡️',
+        provider: 'OpenVPN Inc.',
+        categories: ['security'],
+        version: '2.6',
+        free: true,
+    },
+    {
+        id: 'wireguard',
+        nameKey: 'marketplace.apps.wireguard',
+        descKey: 'marketplace.apps.wireguardDesc',
+        icon: '🔑',
+        provider: 'WireGuard',
+        categories: ['security'],
+        version: '1.0',
+        isNew: true,
+        free: true,
+    },
+    {
+        id: 'certbot',
+        nameKey: 'marketplace.apps.certbot',
+        descKey: 'marketplace.apps.certbotDesc',
+        icon: '📜',
+        provider: "Let's Encrypt",
+        categories: ['security', 'web'],
+        version: '2.8',
+        free: true,
+    },
 
     // Control Panels
-    { id: 'bt', nameKey: 'marketplace.apps.bt', descKey: 'marketplace.apps.btDesc', icon: '🐧', provider: 'Baota', categories: ['panel'], version: 'Linux 8.x', popular: true, free: true },
-    { id: 'onepanel', nameKey: 'marketplace.apps.onepanel', descKey: 'marketplace.apps.onepanelDesc', icon: '🎛️', provider: '1Panel', categories: ['panel'], version: '1.9', isNew: true, free: true },
-    { id: 'webmin', nameKey: 'marketplace.apps.webmin', descKey: 'marketplace.apps.webminDesc', icon: '🖥️', provider: 'Webmin', categories: ['panel'], version: '2.105', free: true },
+    {
+        id: 'bt',
+        nameKey: 'marketplace.apps.bt',
+        descKey: 'marketplace.apps.btDesc',
+        icon: '🐧',
+        provider: 'Baota',
+        categories: ['panel'],
+        version: 'Linux 8.x',
+        popular: true,
+        free: true,
+    },
+    {
+        id: 'onepanel',
+        nameKey: 'marketplace.apps.onepanel',
+        descKey: 'marketplace.apps.onepanelDesc',
+        icon: '🎛️',
+        provider: '1Panel',
+        categories: ['panel'],
+        version: '1.9',
+        isNew: true,
+        free: true,
+    },
+    {
+        id: 'webmin',
+        nameKey: 'marketplace.apps.webmin',
+        descKey: 'marketplace.apps.webminDesc',
+        icon: '🖥️',
+        provider: 'Webmin',
+        categories: ['panel'],
+        version: '2.105',
+        free: true,
+    },
 
     // Messaging & Queue
-    { id: 'rabbitmq', nameKey: 'marketplace.apps.rabbitmq', descKey: 'marketplace.apps.rabbitmqDesc', icon: '🐰', provider: 'VMware', categories: ['messaging'], version: '3.13', free: true },
-    { id: 'kafka', nameKey: 'marketplace.apps.kafka', descKey: 'marketplace.apps.kafkaDesc', icon: '📡', provider: 'Apache Foundation', categories: ['messaging'], version: '3.6', popular: true, free: true },
-    { id: 'rocketmq', nameKey: 'marketplace.apps.rocketmq', descKey: 'marketplace.apps.rocketmqDesc', icon: '🚀', provider: 'Apache Foundation', categories: ['messaging'], version: '5.1', free: true },
+    {
+        id: 'rabbitmq',
+        nameKey: 'marketplace.apps.rabbitmq',
+        descKey: 'marketplace.apps.rabbitmqDesc',
+        icon: '🐰',
+        provider: 'VMware',
+        categories: ['messaging'],
+        version: '3.13',
+        free: true,
+    },
+    {
+        id: 'kafka',
+        nameKey: 'marketplace.apps.kafka',
+        descKey: 'marketplace.apps.kafkaDesc',
+        icon: '📡',
+        provider: 'Apache Foundation',
+        categories: ['messaging'],
+        version: '3.6',
+        popular: true,
+        free: true,
+    },
+    {
+        id: 'rocketmq',
+        nameKey: 'marketplace.apps.rocketmq',
+        descKey: 'marketplace.apps.rocketmqDesc',
+        icon: '🚀',
+        provider: 'Apache Foundation',
+        categories: ['messaging'],
+        version: '5.1',
+        free: true,
+    },
 
     // Monitoring
-    { id: 'prometheus', nameKey: 'marketplace.apps.prometheus', descKey: 'marketplace.apps.prometheusDesc', icon: '🔥', provider: 'CNCF', categories: ['monitoring'], version: '2.49', free: true },
-    { id: 'grafana', nameKey: 'marketplace.apps.grafana', descKey: 'marketplace.apps.grafanaDesc', icon: '📊', provider: 'Grafana Labs', categories: ['monitoring'], version: '10.3', popular: true, free: true },
-    { id: 'zabbix', nameKey: 'marketplace.apps.zabbix', descKey: 'marketplace.apps.zabbixDesc', icon: '📈', provider: 'Zabbix LLC', categories: ['monitoring'], version: '6.4', free: true },
+    {
+        id: 'prometheus',
+        nameKey: 'marketplace.apps.prometheus',
+        descKey: 'marketplace.apps.prometheusDesc',
+        icon: '🔥',
+        provider: 'CNCF',
+        categories: ['monitoring'],
+        version: '2.49',
+        free: true,
+    },
+    {
+        id: 'grafana',
+        nameKey: 'marketplace.apps.grafana',
+        descKey: 'marketplace.apps.grafanaDesc',
+        icon: '📊',
+        provider: 'Grafana Labs',
+        categories: ['monitoring'],
+        version: '10.3',
+        popular: true,
+        free: true,
+    },
+    {
+        id: 'zabbix',
+        nameKey: 'marketplace.apps.zabbix',
+        descKey: 'marketplace.apps.zabbixDesc',
+        icon: '📈',
+        provider: 'Zabbix LLC',
+        categories: ['monitoring'],
+        version: '6.4',
+        free: true,
+    },
 
     // AI / ML
-    { id: 'ollama', nameKey: 'marketplace.apps.ollama', descKey: 'marketplace.apps.ollamaDesc', icon: '🦙', provider: 'Ollama', categories: ['ai'], version: '0.1', isNew: true, free: true },
-    { id: 'jupyterlab', nameKey: 'marketplace.apps.jupyterlab', descKey: 'marketplace.apps.jupyterlabDesc', icon: '📓', provider: 'Project Jupyter', categories: ['ai', 'devops'], version: '4.1', free: true },
-    { id: 'tensorflow', nameKey: 'marketplace.apps.tensorflow', descKey: 'marketplace.apps.tensorflowDesc', icon: '🧠', provider: 'Google', categories: ['ai'], version: '2.15', free: true },
+    {
+        id: 'ollama',
+        nameKey: 'marketplace.apps.ollama',
+        descKey: 'marketplace.apps.ollamaDesc',
+        icon: '🦙',
+        provider: 'Ollama',
+        categories: ['ai'],
+        version: '0.1',
+        isNew: true,
+        free: true,
+    },
+    {
+        id: 'jupyterlab',
+        nameKey: 'marketplace.apps.jupyterlab',
+        descKey: 'marketplace.apps.jupyterlabDesc',
+        icon: '📓',
+        provider: 'Project Jupyter',
+        categories: ['ai', 'devops'],
+        version: '4.1',
+        free: true,
+    },
+    {
+        id: 'tensorflow',
+        nameKey: 'marketplace.apps.tensorflow',
+        descKey: 'marketplace.apps.tensorflowDesc',
+        icon: '🧠',
+        provider: 'Google',
+        categories: ['ai'],
+        version: '2.15',
+        free: true,
+    },
 ]
 
 // Compute category counts
@@ -97,7 +427,7 @@ const categoryCounts = computed(() => {
     const counts: Record<string, number> = { all: apps.length }
     for (const cat of filterCategories) {
         if (cat.key !== 'all') {
-            counts[cat.key] = apps.filter(a => a.categories.includes(cat.key)).length
+            counts[cat.key] = apps.filter((a) => a.categories.includes(cat.key)).length
         }
     }
     return counts
@@ -107,11 +437,11 @@ const categoryCounts = computed(() => {
 const filteredApps = computed(() => {
     let result = apps
     if (activeFilter.value !== 'all') {
-        result = result.filter(a => a.categories.includes(activeFilter.value))
+        result = result.filter((a) => a.categories.includes(activeFilter.value))
     }
     if (searchQuery.value.trim()) {
         const q = searchQuery.value.trim().toLowerCase()
-        result = result.filter(a => {
+        result = result.filter((a) => {
             const name = t(a.nameKey).toLowerCase()
             const desc = t(a.descKey).toLowerCase()
             const provider = a.provider.toLowerCase()
@@ -123,7 +453,11 @@ const filteredApps = computed(() => {
 
 const getCategoryLabel = (cat: string): string => {
     const key = `marketplace.filters.${cat}` as string
-    try { return t(key) } catch { return cat }
+    try {
+        return t(key)
+    } catch {
+        return cat
+    }
 }
 
 const handleDeploy = (app: AppItem) => {
@@ -132,95 +466,88 @@ const handleDeploy = (app: AppItem) => {
 </script>
 
 <template>
-  <div class="catalog-page">
-    <!-- Catalog Header -->
-    <section class="catalog-header">
-      <div class="catalog-header-content">
-        <h1 class="catalog-title">{{ t('marketplace.title') }}</h1>
-        <p class="catalog-subtitle">{{ t('marketplace.subtitle') }}</p>
-        <div class="catalog-search-wrapper">
-          <Search :size="20" class="search-icon" />
-          <input
-            v-model="searchQuery"
-            type="text"
-            class="catalog-search-input"
-            :placeholder="t('marketplace.searchPlaceholder')"
-          />
-        </div>
-      </div>
-    </section>
-
-    <!-- Filter Tabs -->
-    <section class="catalog-filters">
-      <div class="filter-tabs-wrapper">
-        <div class="filter-tabs">
-          <button
-            v-for="cat in filterCategories"
-            :key="cat.key"
-            :class="['filter-tab', { active: activeFilter === cat.key }]"
-            @click="activeFilter = cat.key"
-          >
-            {{ t(cat.labelKey) }}
-            <span class="filter-count">{{ categoryCounts[cat.key] }}</span>
-          </button>
-        </div>
-      </div>
-    </section>
-
-    <!-- Results Info -->
-    <section class="catalog-body">
-      <div class="catalog-container">
-        <p class="results-info">
-          {{ t('marketplace.viewingProducts', { count: filteredApps.length }) }}
-        </p>
-
-        <!-- Cards Grid -->
-        <div class="catalog-grid">
-          <div
-            v-for="app in filteredApps"
-            :key="app.id"
-            class="catalog-card"
-            @click="handleDeploy(app)"
-          >
-            <!-- Card Header -->
-            <div class="card-top">
-              <div class="card-icon">{{ app.icon }}</div>
-              <div class="card-title-section">
-                <h3 class="card-name">{{ t(app.nameKey) }}</h3>
-                <span class="card-provider">{{ app.provider }}</span>
-              </div>
+    <div class="catalog-page">
+        <!-- Catalog Header -->
+        <section class="catalog-header">
+            <div class="catalog-header-content">
+                <h1 class="catalog-title">{{ t('marketplace.title') }}</h1>
+                <p class="catalog-subtitle">{{ t('marketplace.subtitle') }}</p>
+                <div class="catalog-search-wrapper">
+                    <Search :size="20" class="search-icon" />
+                    <input
+                        v-model="searchQuery"
+                        type="text"
+                        class="catalog-search-input"
+                        :placeholder="t('marketplace.searchPlaceholder')"
+                    />
+                </div>
             </div>
+        </section>
 
-            <!-- Description -->
-            <p class="card-desc">{{ t(app.descKey) }}</p>
-
-            <!-- Version if present -->
-            <div v-if="app.version" class="card-version">
-              v{{ app.version }}
+        <!-- Filter Tabs -->
+        <section class="catalog-filters">
+            <div class="filter-tabs-wrapper">
+                <div class="filter-tabs">
+                    <button
+                        v-for="cat in filterCategories"
+                        :key="cat.key"
+                        :class="['filter-tab', { active: activeFilter === cat.key }]"
+                        @click="activeFilter = cat.key"
+                    >
+                        {{ t(cat.labelKey) }}
+                        <span class="filter-count">{{ categoryCounts[cat.key] }}</span>
+                    </button>
+                </div>
             </div>
+        </section>
 
-            <!-- Tags -->
-            <div class="card-tags">
-              <span v-for="cat in app.categories" :key="cat" class="tag tag-category">
-                {{ getCategoryLabel(cat) }}
-              </span>
-              <span v-if="app.free" class="tag tag-free">{{ t('marketplace.free') }}</span>
-              <span v-if="app.popular" class="tag tag-popular">{{ t('pricing.popular') }}</span>
-              <span v-if="app.isNew" class="tag tag-new">NEW</span>
-              <span class="tag tag-soon">{{ t('marketplace.comingSoon') }}</span>
+        <!-- Results Info -->
+        <section class="catalog-body">
+            <div class="catalog-container">
+                <p class="results-info">
+                    {{ t('marketplace.viewingProducts', { count: filteredApps.length }) }}
+                </p>
+
+                <!-- Cards Grid -->
+                <div class="catalog-grid">
+                    <div v-for="app in filteredApps" :key="app.id" class="catalog-card" @click="handleDeploy(app)">
+                        <!-- Card Header -->
+                        <div class="card-top">
+                            <div class="card-icon">{{ app.icon }}</div>
+                            <div class="card-title-section">
+                                <h3 class="card-name">{{ t(app.nameKey) }}</h3>
+                                <span class="card-provider">{{ app.provider }}</span>
+                            </div>
+                        </div>
+
+                        <!-- Description -->
+                        <p class="card-desc">{{ t(app.descKey) }}</p>
+
+                        <!-- Version if present -->
+                        <div v-if="app.version" class="card-version">v{{ app.version }}</div>
+
+                        <!-- Tags -->
+                        <div class="card-tags">
+                            <span v-for="cat in app.categories" :key="cat" class="tag tag-category">
+                                {{ getCategoryLabel(cat) }}
+                            </span>
+                            <span v-if="app.free" class="tag tag-free">{{ t('marketplace.free') }}</span>
+                            <span v-if="app.popular" class="tag tag-popular">{{ t('pricing.popular') }}</span>
+                            <span v-if="app.isNew" class="tag tag-new">NEW</span>
+                            <span class="tag tag-soon">{{ t('marketplace.comingSoon') }}</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Empty State -->
+                <div v-if="filteredApps.length === 0" class="empty-state">
+                    <div class="empty-icon">🔍</div>
+                    <h3>{{ t('messages.noData') }}</h3>
+                    <p>{{ t('marketplace.noResults') }}</p>
+                </div>
             </div>
-          </div>
-        </div>
-
-        <!-- Empty State -->
-        <div v-if="filteredApps.length === 0" class="empty-state">
-          <div class="empty-icon">🔍</div>
-          <h3>{{ t('messages.noData') }}</h3>
-          <p>{{ t('marketplace.noResults') }}</p>
-        </div>
-      </div>
-    </section>
-  </div>
+        </section>
+    </div>
 </template>
 
 <style scoped>
@@ -283,7 +610,9 @@ const handleDeploy = (app: AppItem) => {
     border: 1px solid var(--border-default);
     border-radius: var(--radius-sm);
     outline: none;
-    transition: border-color var(--transition-base), box-shadow var(--transition-base);
+    transition:
+        border-color var(--transition-base),
+        box-shadow var(--transition-base);
 }
 
 .catalog-search-input::placeholder {
@@ -496,7 +825,7 @@ const handleDeploy = (app: AppItem) => {
 .tag-free {
     background: var(--success-light);
     color: var(--success-dark);
-    border: 1px solid #a7f3d0;
+    border: 1px solid var(--success-light);
 }
 
 .tag-popular {
@@ -511,17 +840,17 @@ const handleDeploy = (app: AppItem) => {
 
 .tag-new {
     background: var(--accent-amber-light);
-    color: #92400e;
-    border: 1px solid #fcd34d;
+    color: var(--warning-dark);
+    border: 1px solid var(--warning-color);
     font-size: 10px;
     font-weight: var(--font-weight-bold);
     letter-spacing: 0.06em;
 }
 
 .tag-soon {
-    background: #f8fafc;
-    color: #64748b;
-    border: 1px solid #e2e8f0;
+    background: var(--bg-secondary);
+    color: var(--gray-500);
+    border: 1px solid var(--border-default);
     font-size: 10px;
     font-weight: var(--font-weight-bold);
     letter-spacing: 0.06em;

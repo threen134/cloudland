@@ -227,6 +227,7 @@ func (a *NotificationAPI) ListAlarmEvents(c *gin.Context) {
 	memberShip := GetMemberShip(ctx)
 
 	statusFilter := c.Query("status")
+	searchStr := c.Query("query")
 	countOnly := c.Query("count_only")
 
 	// count_only 模式：只返回数量（按当前组织过滤）
@@ -250,7 +251,7 @@ func (a *NotificationAPI) ListAlarmEvents(c *gin.Context) {
 	}
 
 	// 按当前用户的组织 ID 过滤，实现租户隔离（owner 字段存储的是 OrgID 字符串）
-	total, events, err := a.admin.ListAlarmEvents(ctx, strconv.FormatInt(memberShip.OrgID, 10), statusFilter, page, pageSize)
+	total, events, err := a.admin.ListAlarmEvents(ctx, strconv.FormatInt(memberShip.OrgID, 10), statusFilter, searchStr, page, pageSize)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -351,7 +352,7 @@ func (a *NotificationAPI) InternalListAlarmEvents(c *gin.Context) {
 	if pageSize < 1 || pageSize > 100 {
 		pageSize = 20
 	}
-	total, events, err := a.admin.ListAlarmEvents(ctx, owner, statusFilter, page, pageSize)
+	total, events, err := a.admin.ListAlarmEvents(ctx, owner, statusFilter, "", page, pageSize)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -398,7 +399,7 @@ func (a *NotificationAPI) ProcessAlertWebhookV2(c *gin.Context) {
 
 	for _, alert := range notification.Alerts {
 		if alert.Fingerprint == "" {
-			logger.Warningf("Alert missing fingerprint, skipping")
+			logger.Ctx(ctx).Warningf("Alert missing fingerprint, skipping")
 			continue
 		}
 
@@ -416,7 +417,7 @@ func (a *NotificationAPI) ProcessAlertWebhookV2(c *gin.Context) {
 			ctx, alert.Fingerprint, alertData, alert.Status, alert.StartsAt,
 		)
 		if err != nil {
-			logger.Errorf("Failed to upsert alarm event (fingerprint=%s): %v", alert.Fingerprint, err)
+			logger.Ctx(ctx).Errorf("Failed to upsert alarm event (fingerprint=%s): %v", alert.Fingerprint, err)
 			continue
 		}
 
@@ -437,7 +438,7 @@ func (a *NotificationAPI) ProcessAlertWebhookV2(c *gin.Context) {
 				"reason":     "Block IP for detect attack",
 				"comments":   alert.Annotations["summary"],
 			}
-			go alarmAPI.sendSwitchAPIRequest(reqBody)
+			go alarmAPI.sendSwitchAPIRequest(context.WithoutCancel(ctx), reqBody)
 		}
 	}
 
@@ -460,7 +461,7 @@ func (a *NotificationAPI) sendNotifications(event *model.AlarmEvent, notifyType 
 	ctx = SetContextDB(ctx, DB())
 	channels, err := a.admin.GetBoundChannels(ctx, event.RuleGroupUUID)
 	if err != nil {
-		logger.Errorf("Failed to get bound channels for rule %s: %v", event.RuleGroupUUID, err)
+		logger.Ctx(ctx).Errorf("Failed to get bound channels for rule %s: %v", event.RuleGroupUUID, err)
 		return
 	}
 	if len(channels) == 0 {
@@ -468,7 +469,7 @@ func (a *NotificationAPI) sendNotifications(event *model.AlarmEvent, notifyType 
 	}
 
 	for _, channel := range channels {
-		result := a.notifier.SendNotification(channel, event, notifyType)
+		result := a.notifier.SendNotification(ctx, channel, event, notifyType)
 
 		// 记录发送流水
 		deliveryLog := &model.AlarmDeliveryLog{
@@ -482,7 +483,7 @@ func (a *NotificationAPI) sendNotifications(event *model.AlarmEvent, notifyType 
 			SentAt:       time.Now(),
 		}
 		if err := a.admin.CreateDeliveryLog(ctx, deliveryLog); err != nil {
-			logger.Errorf("Failed to create delivery log: %v", err)
+			logger.Ctx(ctx).Errorf("Failed to create delivery log: %v", err)
 		}
 	}
 }

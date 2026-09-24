@@ -30,17 +30,17 @@ func SetVncPasswd(ctx context.Context, args []string) (status string, err error)
 	argn := len(args)
 	if argn < 3 {
 		err = fmt.Errorf("Wrong params")
-		logger.Error("Invalid args", err)
+		logger.Ctx(ctx).Error("Invalid args", err)
 		return
 	}
 	instID, err := strconv.ParseInt(args[1], 10, 64)
 	if err != nil {
-		logger.Error("Invalid instance ID", err)
+		logger.Ctx(ctx).Error("Invalid instance ID", err)
 		return
 	}
 	portN, err := strconv.Atoi(args[2])
 	if err != nil {
-		logger.Error("Invalid port number", err)
+		logger.Ctx(ctx).Error("Invalid port number", err)
 		return
 	}
 	hyperip := args[3]
@@ -51,7 +51,7 @@ func SetVncPasswd(ctx context.Context, args []string) (status string, err error)
 	}
 	err = db.Where("instance_id = ?", instID).Assign(vnc).FirstOrCreate(&model.Vnc{}).Error
 	if err != nil {
-		logger.Error("Failed to update vnc", err)
+		logger.Ctx(ctx).Error("Failed to update vnc", err)
 		return
 	}
 	return

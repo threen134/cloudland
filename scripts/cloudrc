@@ -26,11 +26,29 @@ debug_log_file=/opt/cloudland/log/script.log
 debug_flag_file=/opt/cloudland/run/debug
 uefi_boot_loader=/usr/share/OVMF/OVMF_CODE_4M.fd
 nvram_template=/usr/share/OVMF/OVMF_VARS_4M.fd
-wds_bps_factor=1048576 # 1024 * 1024 
-#export JAEGER_SERVICE_NAME="SCI-Backend"
+# 浮动 IP 策略路由表名（fip-<vlan>）登记在 rt_tables.d：Ubuntu 26.04 的 iproute2 默认配置移到 /usr/share/iproute2，
+# /etc/iproute2/rt_tables 不再存在；rt_tables.d/*.conf 在 24.04 与 26.04 上都会被 ip 命令读取
+rt_file=/etc/iproute2/rt_tables.d/cloudland.conf
+
+# 登记浮动 IP 策略路由表 fip-<vlan>：按表名判断是否已登记（ID 可能是之前探测得到的其他值），
+# 未登记时从 vlan%250+2 开始探测空闲 ID；浮动 IP 与 LB 浮动 IP 共用，保证同一 VLAN 只登记一次
+function ensure_fip_table()
+{
+    local table=fip-$1
+    local rtID=$(( $1 % 250 + 2 ))
+    mkdir -p $(dirname $rt_file) && touch $rt_file
+    grep -qE "^[0-9]+[[:space:]]+$table$" $rt_file && return 0
+    for i in {1..250}; do
+        grep -qE "^$rtID[[:space:]]" $rt_file || break
+        rtID=$(( ($rtID + 17) % 250 + 2 ))
+    done
+    echo "$rtID $table" >>$rt_file
+}
 function die()
 {
     echo $1
+    # 调试日志开启时同时记录失败原因，带上 cloudlet 注入的 trace id 便于与链路关联
+    log_debug "$(basename $0)" "die: $1"
     exit -1
 }
 
@@ -98,7 +116,18 @@ function apply_bridge()
 {
     action=$1
     mybr=$2
-    apply_fw $action FORWARD -i $mybr -o $mybr -j ACCEPT
+    if [ "$action" = '-I' -o "$action" = '-A' ]; then
+        # 网桥内部放行必须排在安全组跳转之后（apply_fw 把安全组跳转插在 FORWARD 第 3 条），
+        # 排在前面会让该网桥上所有虚拟机的安全组失效；追加到链尾并把兜底 REJECT 重新挪到最后
+        iptables -C FORWARD -i $mybr -o $mybr -j ACCEPT 2>/dev/null && return
+        iptables -A FORWARD -i $mybr -o $mybr -j ACCEPT
+        if iptables -C FORWARD -j REJECT --reject-with icmp-host-prohibited 2>/dev/null; then
+            iptables -D FORWARD -j REJECT --reject-with icmp-host-prohibited
+            iptables -A FORWARD -j REJECT --reject-with icmp-host-prohibited
+        fi
+        return
+    fi
+    iptables $action FORWARD -i $mybr -o $mybr -j ACCEPT 2>/dev/null || true
 }
 
 function sync_target()
@@ -145,84 +174,6 @@ function sql_exec()
     sqlite3 $vxlan_db "$*"
 }
 
-function get_wds_token()
-{
-    [ -z "$wds_token" ] && wds_token="bearer $(curl -L -XPOST -k "$wds_address/api/v1/login" -H "Content-Type: application/json" -d "{\"name\": \"$wds_admin\",\"password\": \"$wds_pass\"}" | jq -r .access_token)"
-}
-
-function wds_curl()
-{
-    action=$1
-    path=$2
-    data=$3
-    [ -z "$data" ] && data='{}'
-    get_wds_token
-    curl -s -L -X$action -H 'Content-Type: application/json' -H "Authorization: $wds_token" -k "$wds_address/$path" -d "$data"
-    echo
-}
-
-function get_uss_gateway()
-{
-    uss_hname=$1
-    [ -z "$uss_hname" ] && uss_hname=$(hostname -s)
-    uss_id=$(wds_curl GET "api/v2/wds/uss" | jq --arg hname $uss_hname -r '.uss_gateways | .[] | select(.server_name == $hname) | .id')
-    [ -n "$uss_id" ] && echo $uss_id
-}
-
-function delete_vhost()
-{
-    [ $# -lt 2 ] && return
-    local vol_ID=$1
-    local vhost_id=$2
-    local uss_unbinded="true"
-    local uss_id
-    [ $# -eq 3 ] && uss_id=$3 && uss_unbinded="false"
-
-    if [ "$uss_unbinded" == "false" ]; then
-        # add retry logic
-        local i
-        for i in {1..5}; do
-            log_debug $vol_ID "Attempting to unbind volume($vol_ID)'s vhost $vhost_id from uss $uss_id"
-            local unbind_ret=$(wds_curl PUT "api/v2/sync/block/vhost/unbind_uss" "{\"vhost_id\": \"$vhost_id\", \"uss_gw_id\": \"$uss_id\", \"is_snapshot\": false}")
-            local ret_code=$(echo $unbind_ret | jq -r '.ret_code')
-            if [ "$ret_code" == "0" ]; then
-                log_debug $vol_ID "Successfully unbound volume($vol_ID)'s vhost $vhost_id from uss $uss_id"
-                uss_unbinded="true"
-                break
-            else
-                local err_message=$(echo $unbind_ret | jq -r '.message')
-                log_debug $vol_ID "Failed to unbind volume($vol_ID)'s vhost $vhost_id from uss $uss_id, error message: $err_message"
-            fi
-            sleep 1
-        done
-    fi
-    if [ "$uss_unbinded" == "true" ]; then
-        local vhost_deleted="false"
-        log_debug $vol_ID "Proceeding to delete volume($vol_ID)'s vhost $vhost_id"
-        local i
-        for i in {1..5}; do
-            local delete_ret=$(wds_curl DELETE "api/v2/sync/block/vhost/$vhost_id")
-            local ret_code=$(echo $delete_ret | jq -r '.ret_code')
-            if [ "$ret_code" == "0" ]; then
-                log_debug $vol_ID "Successfully deleted volume($vol_ID)'s vhost $vhost_id"
-                vhost_deleted="true"
-                break
-            else
-                local err_message=$(echo $delete_ret | jq -r '.message')
-                log_debug $vol_ID "Failed to delete volume($vol_ID)'s vhost $vhost_id, error message: $err_message"
-            fi
-            sleep 1
-        done
-        if [ "$vhost_deleted" == "true" ]; then
-            log_debug $vol_ID "Successfully deleted volume($vol_ID)'s vhost $vhost_id"
-        else
-            log_debug $vol_ID "Failed to delete volume($vol_ID)'s vhost $vhost_id after multiple attempts"
-        fi
-    else
-        log_debug $vol_ID "Failed to unbind volume($vol_ID)'s vhost $vhost_id from uss $uss_id after multiple attempts; skipping deletion of vhost"
-    fi
-}
-
 function async_exec()
 {
     exec 3<&0
@@ -231,10 +182,89 @@ function async_exec()
         delayed_log=$async_job_dir/$(date +%s.%N)
         exec 0<&3
         exec >${delayed_log}.in_progress 2>&1
-        $*
+        "$@"
         mv ${delayed_log}.in_progress ${delayed_log}.done
     ) &
     exec 3<&-
+}
+
+# 子网网关口（路由器 netns 内 ns-<vlan>）的 MAC：52:<vlan>:<hostid 低 16 位>，由 set_subnet_gw.sh 按此生成；
+# set_vrrp_ip.sh 据此识别“只被当作普通网关口建出来、还不是 VRRP 网卡”的设备
+function subnet_gw_mac()
+{
+    local mac_map=$(printf "%06x" $1)
+    local hyper_map=$(printf "%04x" $(($NODE_ID & 0xffff)))
+    echo 52:${mac_map:0:2}:${mac_map:2:2}:${mac_map:4:2}:${hyper_map:0:2}:${hyper_map:2:2}
+}
+
+# 负载均衡进程的锁：配置脚本（create_keepalived_conf.sh / create_haproxy_conf.sh）与心跳里的 check_lb_process.sh
+# 并发执行，“判断进程是否存活 → 替换配置 → 启动/重载”必须互斥，否则两边会各起一个进程。
+# 持锁时启动的守护进程会继承锁的文件描述符并一直占着锁，启动命令必须带 9>&- 关闭它
+lb_lock_file=$run_dir/lb_process.lock
+
+# 负载均衡进程是否在运行：<pid 文件> <配置文件路径>
+# pid 文件在进程异常退出、节点重启后会残留，按 cmdline 核对配置路径，避免把信号发给复用了该 pid 的无关进程
+function lb_proc_alive()
+{
+    local pid=$(cat $1 2>/dev/null)
+    [ -n "$pid" ] && [ -r /proc/$pid/cmdline ] && tr '\0' ' ' </proc/$pid/cmdline | grep -qF "$2"
+}
+
+# 在路由器 netns 内启动负载均衡的 keepalived：<router> <vrrp 目录>
+# notify_master（set_route_table.sh）依赖 ROUTES_FILE / KEEPALIVE_CONF 恢复 fip 路由表，必须随进程传入
+function start_keepalived()
+{
+    local router=$1 vrrp_dir=$2
+    rm -f $vrrp_dir/keepalived.pid $vrrp_dir/vrrp.pid
+    ROUTES_FILE=$vrrp_dir/routes KEEPALIVE_CONF=$vrrp_dir/keepalived.conf \
+        ip netns exec $router keepalived -p $vrrp_dir/keepalived.pid -r $vrrp_dir/vrrp.pid -f $vrrp_dir/keepalived.conf 9>&-
+}
+
+# Addresses for a console bridge (console_bridge.sh): <console_proxy_source>
+# Sets console_listen_ip, the address this node uses to reach the controller, and console_sources, the addresses
+# allowed to connect: the controller endpoint (MANAGEMENT_VIP); the host of the console proxy as reported by
+# clapi, which differs from the VIP in an HA control plane because outgoing connections use the node's primary
+# address; and the proxy container itself when it runs on this node (its traffic to a local address is not masqueraded)
+function console_bridge_addrs()
+{
+    local proxy_source=$1 cland_ip proxy_ip
+    [ -z "$proxy_source" ] || [[ "$proxy_source" =~ ^[0-9]{1,3}(\.[0-9]{1,3}){3}$ ]] || die "Invalid console proxy source"
+    command -v socat >/dev/null || die "socat is not installed"
+    cland_ip=$(sed -n 's/^CLAND_ENDPOINT=\([^:]*\):.*/\1/p' /etc/sysconfig/cloudlet 2>/dev/null)
+    [ -n "$cland_ip" ] || die "CLAND_ENDPOINT is not configured"
+    console_sources=$cland_ip
+    [ -n "$proxy_source" ] && [ "$proxy_source" != "$cland_ip" ] && console_sources="$console_sources $proxy_source"
+    proxy_ip=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}} {{end}}' cloudland-consoleproxy 2>/dev/null)
+    [ -n "$proxy_ip" ] && console_sources="$console_sources $proxy_ip"
+    console_listen_ip=$(ip -4 route get $cland_ip 2>/dev/null | sed -n 's/.* src \([0-9.]*\).*/\1/p' | head -1)
+    [ -n "$console_listen_ip" ] || die "Unable to determine the local address towards $cland_ip"
+}
+
+# Start console_bridge.sh on a free port and wait until it listens: <name> <idle_seconds> <socat_address> <log file>
+# Prints the port; fails when no bridge could be started
+function start_console_bridge()
+{
+    local name=$1 idle=$2 address=$3 log=$4 port pid i died=0
+    for port in $(shuf -i 16000-16999 -n 20); do
+        ss -Htln "sport = :$port" | grep -q . && continue
+        setsid /opt/cloudland/scripts/backend/console_bridge.sh "$name" "$idle" "$address" $console_listen_ip $port $console_sources </dev/null >>$log 2>&1 &
+        pid=$!
+        # Report the port only once it accepts connections
+        for i in $(seq 1 30); do
+            ss -Htln "sport = :$port" | grep -q . && break
+            kill -0 $pid 2>/dev/null || break
+            sleep 0.1
+        done
+        if ss -Htln "sport = :$port" | grep -q .; then
+            echo $port
+            return 0
+        fi
+        # The port was free, so a bridge that exited failed for another reason (a firewall rule it could not
+        # insert): give up instead of retrying it on twenty ports
+        kill -0 $pid 2>/dev/null || died=$((died + 1))
+        [ $died -ge 3 ] && return 1
+    done
+    return 1
 }
 
 function log_debug()
@@ -245,8 +275,8 @@ function log_debug()
     shift
     # check if debug file exists
     if [ -f $debug_flag_file ]; then
-        # write log and timestamp to debug log file
-        echo "[$(date -u +%Y%m%d%H%M%S)] $vm_ID $*" >> $debug_log_file
+        # write log and timestamp to debug log file; TRACEPARENT 由 cloudlet 注入，截取其中 32 位 trace id
+        echo "[$(date -u +%Y%m%d%H%M%S)] $vm_ID ${TRACEPARENT:+trace=${TRACEPARENT:3:32} }$*" >> $debug_log_file
     fi
 }
 
@@ -254,18 +284,12 @@ function inet_access()
 {
     mkdir -p /etc/netns/router-0
     echo "nameserver $dns_server" >/etc/netns/router-0/resolv.conf
-    ip netns exec router-0 iptables -D INPUT -m state --state RELATED,ESTABLISHED -j ACCEPT
-    ip netns exec router-0 iptables -A INPUT -m state --state RELATED,ESTABLISHED -j ACCEPT
+    # router-0 的 INPUT 默认 DROP：放行本 netns 主动发起连接的回包。规则常驻、只加不删——
+    # 按调用增删时，并发调用（如同一节点同时导入多个镜像）会把别人还在用的规则删掉，导致下载卡住
+    ip netns exec router-0 iptables -C INPUT -m state --state RELATED,ESTABLISHED -j ACCEPT 2>/dev/null || \
+        ip netns exec router-0 iptables -A INPUT -m state --state RELATED,ESTABLISHED -j ACCEPT
+    # 最后一条命令即被执行的命令，函数返回它的退出码（如 curl 下载失败）
     ip netns exec router-0 $*
-    ip netns exec router-0 iptables -D INPUT -m state --state RELATED,ESTABLISHED -j ACCEPT
-}
-
-function get_uuid_prefix()
-{
-    [ $# -lt 1 ] && return
-    uuid=$1
-    prefix=${uuid%%-*}
-    echo "$prefix"
 }
 
 function wait_qemu_ping()

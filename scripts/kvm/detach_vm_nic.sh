@@ -35,4 +35,4 @@ if [ -f "$meta_file" ]; then
     # delete file if empty
     [ ! -s "$meta_file" ] && rm -f "$meta_file"
 fi
-echo "|:-COMMAND-:| $(basename $0) '$ID' '$iface_ID' '$SCI_CLIENT_ID'"
+echo "|:-COMMAND-:| $(basename $0) '$ID' '$iface_ID' '$NODE_ID'"

@@ -17,11 +17,13 @@ import (
 
 func init() {
 	Add("attach_volume_local", AttachVolume)
-	Add("attach_volume_wds_vhost", AttachVolume)
 }
 
+// AttachVolume handles the result of attach_volume_local.sh:
+//
+//	|:-COMMAND-:| attach_volume_local.sh '<instance ID>' '<volume ID>' '<device>'
+//	|:-COMMAND-:| attach_volume_local.sh '<instance ID>' '<volume ID>' '-' '<new|existing>' '<reason>'
 func AttachVolume(ctx context.Context, args []string) (status string, err error) {
-	//|:-COMMAND-:| attach_volume.sh 5 7 vdb
 	ctx, db, newTransaction := StartTransaction(ctx)
 	defer func() {
 		if newTransaction {
@@ -29,49 +31,61 @@ func AttachVolume(ctx context.Context, args []string) (status string, err error)
 		}
 	}()
 	argn := len(args)
-
-	logger.Debugf("AttachVolume called with args: %v, length: %d", args, argn)
-
-	if argn < 4 {
-		volID, parseErr := strconv.ParseInt(args[2], 10, 64)
-		if parseErr != nil {
-			err = fmt.Errorf("Invalid volume ID: %w", parseErr)
-			logger.Error("Invalid volume ID", err)
-			return
+	logger.Ctx(ctx).Debugf("AttachVolume called with args: %v, length: %d", args, argn)
+	if argn < 3 {
+		err = fmt.Errorf("Wrong params")
+		logger.Ctx(ctx).Error("Invalid args", err)
+		return
+	}
+	volID, err := strconv.ParseInt(args[2], 10, 64)
+	if err != nil {
+		logger.Ctx(ctx).Error("Invalid volume ID", err)
+		return
+	}
+	volume := &model.Volume{Model: model.Model{ID: volID}}
+	if err = db.Take(volume).Error; err != nil {
+		logger.Ctx(ctx).Error("Failed to query volume", err)
+		return
+	}
+	// A repeated callback of an attach already handled changes nothing
+	if volume.Status != model.VolumeStatusAttaching {
+		logger.Ctx(ctx).Warningf("Volume %d is %s, not attaching, ignore the callback", volume.ID, volume.Status)
+		return
+	}
+	hostid, _ := ctx.Value("hostid").(int32)
+	if argn < 4 || args[3] == "" || args[3] == "-" {
+		mode, reason := "", ""
+		if argn > 4 {
+			mode = args[4]
 		}
-		volume := &model.Volume{Model: model.Model{ID: volID}}
-		err = db.Where(volume).Take(volume).Error
-		if err != nil {
-			logger.Error("Failed to query volume", err)
-			return
+		if argn > 5 {
+			reason = args[5]
 		}
-		err = db.Model(&model.Volume{}).Where("id = ?", volume.ID).Update("status", model.VolumeStatusAvailable).Error
+		updates := map[string]interface{}{"status": model.VolumeStatusAvailable, "instance_id": 0, "target": "", "reason": reason}
+		// The node removed the file it had just created, so the volume is again not created anywhere
+		if mode == "new" {
+			updates["hyper"] = 0
+		}
+		logger.Ctx(ctx).Errorf("Attaching volume %d failed on host %d: %s", volume.ID, hostid, reason)
+		err = db.Model(&model.Volume{}).Where("id = ?", volume.ID).Updates(updates).Error
 		if err != nil {
-			logger.Error("Update volume status failed", err)
-			return
+			logger.Ctx(ctx).Error("Update volume status failed", err)
 		}
 		return
 	}
 	instanceID, err := strconv.ParseInt(args[1], 10, 64)
 	if err != nil {
-		logger.Error("Invalid instance ID", err)
+		logger.Ctx(ctx).Error("Invalid instance ID", err)
 		return
 	}
-	volID, err := strconv.ParseInt(args[2], 10, 64)
-	if err != nil {
-		logger.Error("Invalid volume ID", err)
-		return
+	updates := map[string]interface{}{"instance_id": instanceID, "target": args[3], "status": model.VolumeStatusAttached, "reason": ""}
+	// The file is on the host that ran the script, whatever instances.hyper says at this moment
+	if hostid > 0 {
+		updates["hyper"] = hostid
 	}
-	target := args[3]
-	volume := &model.Volume{Model: model.Model{ID: volID}}
-	err = db.Where(volume).Take(volume).Error
+	err = db.Model(&model.Volume{}).Where("id = ?", volume.ID).Updates(updates).Error
 	if err != nil {
-		logger.Error("Failed to query volume", err)
-		return
-	}
-	err = db.Model(&model.Volume{}).Where("id = ?", volume.ID).Updates(map[string]interface{}{"instance_id": instanceID, "target": target, "status": model.VolumeStatusAttached}).Error
-	if err != nil {
-		logger.Error("Update volume status failed", err)
+		logger.Ctx(ctx).Error("Update volume status failed", err)
 		return
 	}
 	return

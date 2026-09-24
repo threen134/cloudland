@@ -1,5 +1,47 @@
 basePath: /api/v1
 definitions:
+  apis.AbandonPayload:
+    properties:
+      confirm:
+        type: string
+      old_hostid:
+        description: Host id the volumes waiting for adoption still name; 0 is a valid
+          host id
+        minimum: 0
+        type: integer
+    required:
+    - confirm
+    - old_hostid
+    type: object
+  apis.ActivityListResponse:
+    properties:
+      activities:
+        items:
+          $ref: '#/definitions/apis.ActivityResponse'
+        type: array
+      next_cursor:
+        description: NextCursor 非空表示还有更早的记录，作为下一页的 cursor 参数传回
+        type: string
+    type: object
+  apis.ActivityResponse:
+    properties:
+      action:
+        type: string
+      actor:
+        type: string
+      created_at:
+        type: string
+      id:
+        type: string
+      resource_id:
+        type: string
+      resource_name:
+        type: string
+      resource_type:
+        type: string
+      success:
+        type: boolean
+    type: object
   apis.AddressInfo:
     properties:
       ip_address:
@@ -49,6 +91,11 @@ definitions:
         type: string
       owner:
         type: string
+      owner_uuid:
+        description: |-
+          OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to
+          release quota only when the caller's org actually owns the deleted resource
+        type: string
       remark:
         type: string
       reserved:
@@ -72,6 +119,60 @@ definitions:
     required:
     - addresses
     type: object
+  apis.AdoptPayload:
+    properties:
+      confirm:
+        type: string
+      storage_pool:
+        $ref: '#/definitions/common.BaseReference'
+    required:
+    - confirm
+    - storage_pool
+    type: object
+  apis.AuditLogListResponse:
+    properties:
+      limit:
+        type: integer
+      logs:
+        items:
+          $ref: '#/definitions/apis.AuditLogResponse'
+        type: array
+      offset:
+        type: integer
+      total:
+        type: integer
+    type: object
+  apis.AuditLogResponse:
+    properties:
+      action:
+        type: string
+      actor:
+        type: string
+      actor_uuid:
+        type: string
+      created_at:
+        type: string
+      detail:
+        type: string
+      id:
+        type: string
+      latency_ms:
+        type: integer
+      method:
+        type: string
+      path:
+        type: string
+      resource_id:
+        type: string
+      resource_name:
+        type: string
+      resource_type:
+        type: string
+      status:
+        type: integer
+      trace_id:
+        type: string
+    type: object
   apis.BackendListResponse:
     properties:
       backends:
@@ -87,11 +188,6 @@ definitions:
     type: object
   apis.BackendPatchPayload:
     properties:
-      action:
-        enum:
-        - enable
-        - disable
-        type: string
       endpoint:
         maxLength: 128
         minLength: 8
@@ -100,6 +196,8 @@ definitions:
         maxLength: 32
         minLength: 2
         type: string
+      ssl:
+        type: boolean
     required:
     - name
     type: object
@@ -113,6 +211,8 @@ definitions:
         maxLength: 32
         minLength: 2
         type: string
+      ssl:
+        type: boolean
     required:
     - endpoint
     - name
@@ -123,12 +223,23 @@ definitions:
         type: string
       endpoint:
         type: string
+      health:
+        description: 'Health check result from the master haproxy: up, down, or unknown
+          when not reported yet'
+        type: string
       id:
         type: string
       name:
         type: string
       owner:
         type: string
+      owner_uuid:
+        description: |-
+          OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to
+          release quota only when the caller's org actually owns the deleted resource
+        type: string
+      ssl:
+        type: boolean
       status:
         type: string
       updated_at:
@@ -174,6 +285,11 @@ definitions:
         type: string
       owner:
         type: string
+      owner_uuid:
+        description: |-
+          OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to
+          release quota only when the caller's org actually owns the deleted resource
+        type: string
       resources:
         type: string
       source:
@@ -185,129 +301,24 @@ definitions:
       updated_at:
         type: string
     type: object
-  apis.ConsistencyGroupListResponse:
+  apis.ConfirmPayload:
     properties:
-      consistency_groups:
-        items:
-          $ref: '#/definitions/apis.ConsistencyGroupResponse'
-        type: array
-      limit:
-        type: integer
-      offset:
-        type: integer
-      total:
-        type: integer
-    type: object
-  apis.ConsistencyGroupPatchPayload:
-    properties:
-      description:
+      confirm:
         type: string
-      name:
-        type: string
-    type: object
-  apis.ConsistencyGroupPayload:
-    properties:
-      description:
-        type: string
-      name:
-        type: string
-      volumes:
-        description: Volume UUIDs
-        items:
-          type: string
-        minItems: 1
-        type: array
+      node_offline_ack:
+        type: boolean
     required:
-    - name
-    - volumes
+    - confirm
     type: object
-  apis.ConsistencyGroupResponse:
+  apis.ConsolePayload:
     properties:
-      created_at:
+      type:
+        description: vnc (graphical, default) or serial (text console on the first
+          serial port)
+        enum:
+        - vnc
+        - serial
         type: string
-      description:
-        type: string
-      id:
-        type: string
-      name:
-        type: string
-      owner:
-        type: string
-      status:
-        type: string
-      updated_at:
-        type: string
-      volumes:
-        items:
-          $ref: '#/definitions/common.BaseReference'
-        type: array
-      wds_cg_id:
-        type: string
-    type: object
-  apis.ConsistencyGroupRestoreResponse:
-    properties:
-      status:
-        type: string
-      task_id:
-        type: string
-      task_uuid:
-        type: string
-    type: object
-  apis.ConsistencyGroupSnapshotListResponse:
-    properties:
-      limit:
-        type: integer
-      offset:
-        type: integer
-      snapshots:
-        items:
-          $ref: '#/definitions/apis.ConsistencyGroupSnapshotResponse'
-        type: array
-      total:
-        type: integer
-    type: object
-  apis.ConsistencyGroupSnapshotPayload:
-    properties:
-      description:
-        type: string
-      name:
-        type: string
-    required:
-    - name
-    type: object
-  apis.ConsistencyGroupSnapshotResponse:
-    properties:
-      cg_id:
-        type: string
-      created_at:
-        type: string
-      description:
-        type: string
-      id:
-        type: string
-      name:
-        type: string
-      owner:
-        type: string
-      size:
-        type: integer
-      status:
-        type: string
-      updated_at:
-        type: string
-      wds_snap_id:
-        type: string
-    type: object
-  apis.ConsistencyGroupVolumesPayload:
-    properties:
-      volumes:
-        description: Volume UUIDs
-        items:
-          type: string
-        minItems: 1
-        type: array
-    required:
-    - volumes
     type: object
   apis.ConsoleResponse:
     properties:
@@ -383,6 +394,11 @@ definitions:
         type: string
       owner:
         type: string
+      owner_uuid:
+        description: |-
+          OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to
+          release quota only when the caller's org actually owns the deleted resource
+        type: string
       shortname:
         type: string
       subtype1:
@@ -408,6 +424,34 @@ definitions:
         type: string
       value:
         type: string
+    type: object
+  apis.DiskMediaPayload:
+    properties:
+      media:
+        enum:
+        - ssd
+        - hdd
+        - nvme
+        type: string
+    type: object
+  apis.DiskPlanResponse:
+    properties:
+      auto:
+        type: boolean
+      booting:
+        type: boolean
+      device:
+        type: string
+      reason:
+        type: string
+      size_gb:
+        type: integer
+      source_pool:
+        $ref: '#/definitions/common.ResourceReference'
+      target_pool:
+        $ref: '#/definitions/common.ResourceReference'
+      volume:
+        $ref: '#/definitions/common.ResourceReference'
     type: object
   apis.FlavorListResponse:
     properties:
@@ -453,6 +497,8 @@ definitions:
         type: integer
       name:
         type: string
+      uuid:
+        type: string
     type: object
   apis.FloatingIpInfo:
     properties:
@@ -469,6 +515,11 @@ definitions:
       name:
         type: string
       owner:
+        type: string
+      owner_uuid:
+        description: |-
+          OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to
+          release quota only when the caller's org actually owns the deleted resource
         type: string
       type:
         type: string
@@ -562,6 +613,11 @@ definitions:
         type: integer
       owner:
         type: string
+      owner_uuid:
+        description: |-
+          OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to
+          release quota only when the caller's org actually owns the deleted resource
+        type: string
       public_ip:
         type: string
       subnet:
@@ -602,6 +658,205 @@ definitions:
       type:
         type: string
       vlan:
+        type: integer
+    type: object
+  apis.HostConsolePayload:
+    properties:
+      cols:
+        maximum: 1000
+        minimum: 1
+        type: integer
+      rows:
+        description: Terminal size the shell starts with
+        maximum: 500
+        minimum: 1
+        type: integer
+    type: object
+  apis.HostConsoleResponse:
+    properties:
+      console_url:
+        type: string
+      hyper:
+        $ref: '#/definitions/common.ResourceReference'
+      idle_timeout:
+        description: Seconds without traffic after which the node closes the session
+        type: integer
+      token:
+        type: string
+    type: object
+  apis.HostDiskResponse:
+    properties:
+      detail:
+        type: string
+      detected_media:
+        type: string
+      disk_id:
+        type: string
+      id:
+        type: integer
+      media:
+        type: string
+      media_source:
+        type: string
+      model:
+        type: string
+      name:
+        type: string
+      orphan_count:
+        type: integer
+      owner_hostid:
+        type: integer
+      pool_name:
+        type: string
+      pool_uuid:
+        type: string
+      scanned_at:
+        type: string
+      serial:
+        type: string
+      size_bytes:
+        type: integer
+      state:
+        type: string
+      transport:
+        type: string
+    type: object
+  apis.HostPoolExtendPayload:
+    properties:
+      allow_media_mismatch:
+        type: boolean
+      confirm:
+        type: string
+      disks:
+        items:
+          type: string
+        maxItems: 32
+        minItems: 1
+        type: array
+      wipe:
+        type: boolean
+    required:
+    - confirm
+    - disks
+    type: object
+  apis.HostPoolListResponse:
+    properties:
+      pending_instances:
+        items:
+          $ref: '#/definitions/common.BaseReference'
+        type: array
+      storage_pools:
+        items:
+          $ref: '#/definitions/apis.HostPoolResponse'
+        type: array
+    type: object
+  apis.HostPoolPayload:
+    properties:
+      allow_media_mismatch:
+        type: boolean
+      confirm:
+        type: string
+      destroy_pools:
+        items:
+          type: string
+        maxItems: 8
+        type: array
+      disks:
+        items:
+          type: string
+        maxItems: 32
+        minItems: 1
+        type: array
+      layout:
+        enum:
+        - single
+        - linear
+        - raid1
+        type: string
+      storage_pool:
+        $ref: '#/definitions/common.BaseReference'
+      wipe:
+        type: boolean
+    required:
+    - confirm
+    - disks
+    - layout
+    - storage_pool
+    type: object
+  apis.HostPoolReplacePayload:
+    properties:
+      allow_media_mismatch:
+        type: boolean
+      confirm:
+        type: string
+      failed_disk:
+        type: string
+      new_disk:
+        type: string
+      wipe:
+        type: boolean
+    required:
+    - confirm
+    - failed_disk
+    - new_disk
+    type: object
+  apis.HostPoolResponse:
+    properties:
+      allocated_bytes:
+        type: integer
+      avail_bytes:
+        type: integer
+      builtin:
+        type: boolean
+      capacity_at:
+        type: string
+      capacity_bytes:
+        type: integer
+      checked_at:
+        type: string
+      devices:
+        items:
+          $ref: '#/definitions/services.PoolDevice'
+        type: array
+      hypervisor:
+        $ref: '#/definitions/common.ResourceReference'
+      last_op:
+        type: string
+      layout:
+        type: string
+      maintenance:
+        type: boolean
+      media:
+        type: string
+      own_bytes:
+        type: integer
+      reason:
+        type: string
+      reported_reason:
+        type: string
+      reported_status:
+        type: string
+      reserved_bytes:
+        type: integer
+      status:
+        type: string
+      storage_full_paused:
+        type: integer
+      storage_pool:
+        $ref: '#/definitions/common.ResourceReference'
+      sync_percent:
+        type: integer
+      usage:
+        items:
+          $ref: '#/definitions/services.UsageEntry'
+        type: array
+      usage_at:
+        type: string
+      usage_ratio:
+        type: number
+      used_bytes:
+        type: integer
+      volume_count:
         type: integer
     type: object
   apis.HyperDeployPayload:
@@ -646,7 +901,21 @@ definitions:
       migrate:
         type: boolean
       target_hyper:
+        description: |-
+          用指针而非值类型：值类型时客户端漏传 target_hyper 会得到零值 0，而 0 不是合法 hostid，
+          会被当作"迁往 hostid 0"从而报 HypervisorNotFound。约定 nil / -1 表示由调度器自选
+        maximum: 65535
+        minimum: -1
         type: integer
+    type: object
+  apis.HyperMaintainResponse:
+    properties:
+      instances:
+        items:
+          $ref: '#/definitions/apis.MaintainInstanceResult'
+        type: array
+      result:
+        type: string
     type: object
   apis.HyperResponse:
     properties:
@@ -660,27 +929,32 @@ definitions:
         type: integer
       deploy_command:
         type: string
-      disk:
+      disk_allocated:
         type: integer
+      disk_max_usage_ratio:
+        type: number
       disk_over_rate:
         type: number
       disk_total:
+        description: 'Disks: sum of the storage pools of the host, raw capacity in
+          GB, never multiplied by an over-commit ratio'
+        type: integer
+      disk_used:
         type: integer
       host_ip:
         type: string
       hostid:
+        description: 节点编号：迁移接口的 target_hyper、实例的 hyper 字段用的都是它
         type: integer
       hostname:
         type: string
-      id:
+      instance_count:
         type: integer
       mem_over_rate:
         type: number
       memory:
         type: integer
       memory_total:
-        type: integer
-      parentid:
         type: integer
       remark:
         type: string
@@ -690,12 +964,14 @@ definitions:
         type: integer
       status_name:
         type: string
+      storage_pools:
+        items:
+          $ref: '#/definitions/services.HostPoolFigures'
+        type: array
       uuid:
         type: string
       virt_type:
         type: string
-      zone_id:
-        type: integer
       zone_name:
         type: string
     type: object
@@ -730,10 +1006,6 @@ definitions:
         maxLength: 32
         minLength: 2
         type: string
-      pools:
-        items:
-          type: string
-        type: array
       public:
         type: boolean
       user:
@@ -754,7 +1026,7 @@ definitions:
         type: string
       instance_uuid:
         type: string
-      is_resque:
+      is_rescue:
         type: boolean
       name:
         maxLength: 32
@@ -811,6 +1083,11 @@ definitions:
         type: string
       owner:
         type: string
+      owner_uuid:
+        description: |-
+          OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to
+          release quota only when the caller's org actually owns the deleted resource
+        type: string
       public:
         type: boolean
       size:
@@ -820,25 +1097,6 @@ definitions:
       updated_at:
         type: string
       user:
-        type: string
-    type: object
-  apis.ImageStorageResponse:
-    properties:
-      created_at:
-        type: string
-      id:
-        type: string
-      name:
-        type: string
-      owner:
-        type: string
-      pool_id:
-        type: string
-      status:
-        type: string
-      updated_at:
-        type: string
-      volume_id:
         type: string
     type: object
   apis.InstanceInfo:
@@ -852,6 +1110,11 @@ definitions:
       name:
         type: string
       owner:
+        type: string
+      owner_uuid:
+        description: |-
+          OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to
+          release quota only when the caller's org actually owns the deleted resource
         type: string
       updated_at:
         type: string
@@ -897,15 +1160,6 @@ definitions:
       disk:
         minimum: 1
         type: integer
-      disk_bps_limit:
-        description: in MB/s
-        maximum: 102400
-        minimum: 0
-        type: integer
-      disk_iops_limit:
-        maximum: 10000000
-        minimum: 0
-        type: integer
       flavor:
         maxLength: 32
         minLength: 1
@@ -913,9 +1167,8 @@ definitions:
       hostname:
         type: string
       hypervisor:
-        maximum: 65535
-        minimum: 0
-        type: integer
+        description: system admins only
+        type: string
       image:
         $ref: '#/definitions/common.BaseReference'
       keys:
@@ -933,8 +1186,6 @@ definitions:
         type: integer
       nested_enable:
         type: boolean
-      pool_id:
-        type: string
       primary_interface:
         $ref: '#/definitions/apis.InterfacePayload'
       root_passwd:
@@ -947,6 +1198,10 @@ definitions:
         maxItems: 7
         minItems: 0
         type: array
+      storage_pool:
+        allOf:
+        - $ref: '#/definitions/common.BaseReference'
+        description: pool of the boot disk; the default pool when left out
       userdata:
         type: string
       userdata_type:
@@ -984,14 +1239,20 @@ definitions:
         minimum: 1
         type: integer
       password:
+        maxLength: 64
+        minLength: 8
         type: string
     type: object
   apis.InstanceRescuePayload:
     properties:
       password:
+        maxLength: 64
+        minLength: 8
         type: string
       rescue_image:
         $ref: '#/definitions/common.BaseReference'
+    required:
+    - password
     type: object
   apis.InstanceResizePayload:
     properties:
@@ -1004,6 +1265,12 @@ definitions:
     type: object
   apis.InstanceResponse:
     properties:
+      available_storage_pools:
+        description: 'Pools usable on the host of the instance: a volume not created
+          yet can only be attached when its pool is one of them'
+        items:
+          type: string
+        type: array
       cpu:
         type: integer
       created_at:
@@ -1035,6 +1302,11 @@ definitions:
       name:
         type: string
       owner:
+        type: string
+      owner_uuid:
+        description: |-
+          OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to
+          release quota only when the caller's org actually owns the deleted resource
         type: string
       passwd_login:
         type: boolean
@@ -1254,6 +1526,11 @@ definitions:
         type: string
       owner:
         type: string
+      owner_uuid:
+        description: |-
+          OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to
+          release quota only when the caller's org actually owns the deleted resource
+        type: string
       subnet_names:
         type: string
       subnets:
@@ -1306,6 +1583,11 @@ definitions:
         type: string
       owner:
         type: string
+      owner_uuid:
+        description: |-
+          OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to
+          release quota only when the caller's org actually owns the deleted resource
+        type: string
       public_key:
         type: string
       updated_at:
@@ -1326,11 +1608,6 @@ definitions:
     type: object
   apis.ListenerPatchPayload:
     properties:
-      action:
-        enum:
-        - enable
-        - disable
-        type: string
       name:
         maxLength: 32
         minLength: 2
@@ -1378,6 +1655,11 @@ definitions:
         type: string
       owner:
         type: string
+      owner_uuid:
+        description: |-
+          OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to
+          release quota only when the caller's org actually owns the deleted resource
+        type: string
       port:
         type: integer
       status:
@@ -1400,11 +1682,6 @@ definitions:
     type: object
   apis.LoadBalancerPatchPayload:
     properties:
-      action:
-        enum:
-        - enable
-        - disable
-        type: string
       description:
         maxLength: 255
         type: string
@@ -1454,12 +1731,33 @@ definitions:
         type: string
       owner:
         type: string
+      owner_uuid:
+        description: |-
+          OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to
+          release quota only when the caller's org actually owns the deleted resource
+        type: string
       status:
         type: string
       updated_at:
         type: string
       vpc:
         $ref: '#/definitions/common.ResourceReference'
+    type: object
+  apis.MaintainInstanceResult:
+    properties:
+      instance:
+        $ref: '#/definitions/common.ResourceReference'
+      migration:
+        type: string
+      reason:
+        type: string
+      status:
+        type: string
+    type: object
+  apis.MaintenancePayload:
+    properties:
+      enable:
+        type: boolean
     type: object
   apis.MetricsRequest:
     properties:
@@ -1469,6 +1767,10 @@ definitions:
         type: array
       end:
         type: string
+      hostname:
+        items:
+          type: string
+        type: array
       id:
         items:
           type: string
@@ -1490,6 +1792,16 @@ definitions:
     - start
     - step
     type: object
+  apis.MigrationDiskPayload:
+    properties:
+      storage_pool:
+        $ref: '#/definitions/common.BaseReference'
+      volume:
+        $ref: '#/definitions/common.BaseReference'
+    required:
+    - storage_pool
+    - volume
+    type: object
   apis.MigrationListResponse:
     properties:
       limit:
@@ -1505,7 +1817,21 @@ definitions:
     type: object
   apis.MigrationPayload:
     properties:
+      allow_pool_fallback:
+        description: Replace a pool the target lacks by one of the same fallback group
+          (default true)
+        type: boolean
+      disks:
+        description: Target pool per disk; needs target_hyper and a single instance
+        items:
+          $ref: '#/definitions/apis.MigrationDiskPayload'
+        maxItems: 32
+        type: array
       force:
+        type: boolean
+      ignore_capacity:
+        description: Skip the capacity checks of the target, to evacuate a host when
+          every other one is nearly full
         type: boolean
       instances:
         items:
@@ -1526,27 +1852,59 @@ definitions:
     type: object
   apis.MigrationResponse:
     properties:
+      allow_pool_fallback:
+        type: boolean
       created_at:
         type: string
+      creater_name:
+        description: 发起迁移的用户名，创建时快照下来
+        type: string
+      creater_uuid:
+        type: string
+      disk_plan:
+        description: Where every disk goes on the target, fixed once the target is
+          known
+        items:
+          $ref: '#/definitions/apis.DiskPlanResponse'
+        type: array
       force:
         type: boolean
       id:
         type: string
+      ignore_capacity:
+        type: boolean
       instance:
         $ref: '#/definitions/apis.InstanceInfo'
       name:
         type: string
       owner:
         type: string
+      owner_uuid:
+        description: |-
+          OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to
+          release quota only when the caller's org actually owns the deleted resource
+        type: string
       phases:
         items:
           $ref: '#/definitions/apis.TaskResponse'
         type: array
+      progress:
+        description: 迁移进度：百分比与已传输 / 总字节数（内存 + 本地磁盘合计），由源节点上报
+        type: integer
       source_hyper:
         type: integer
+      source_hyper_name:
+        description: 节点名称，便于界面直接展示；目标节点由调度器自选（-1）时为空
+        type: string
       status:
         type: string
       target_hyper:
+        type: integer
+      target_hyper_name:
+        type: string
+      total:
+        type: integer
+      transferred:
         type: integer
       type:
         type: string
@@ -1579,17 +1937,20 @@ definitions:
         type: string
       port_max:
         maximum: 65535
-        minimum: 1
+        minimum: -1
         type: integer
       port_min:
+        description: 含义同 SecurityRulePayload；不传表示保持原值（协议变更时重置为新协议的默认值）
         maximum: 65535
-        minimum: 1
+        minimum: -1
         type: integer
       protocol:
         enum:
         - tcp
         - udp
         - icmp
+        - gre
+        - ipv6
         type: string
       remote_cidr:
         type: string
@@ -1607,6 +1968,11 @@ definitions:
       name:
         type: string
       owner:
+        type: string
+      owner_uuid:
+        description: |-
+          OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to
+          release quota only when the caller's org actually owns the deleted resource
         type: string
       port_max:
         type: integer
@@ -1645,8 +2011,6 @@ definitions:
         maxLength: 32
         minLength: 2
         type: string
-    required:
-    - name
     type: object
   apis.SecurityGroupPayload:
     properties:
@@ -1678,6 +2042,11 @@ definitions:
         type: string
       owner:
         type: string
+      owner_uuid:
+        description: |-
+          OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to
+          release quota only when the caller's org actually owns the deleted resource
+        type: string
       security_rules:
         items:
           $ref: '#/definitions/apis.SecruleResponse'
@@ -1703,18 +2072,26 @@ definitions:
         minLength: 2
         type: string
       port_max:
+        description: |-
+          结束端口 / ICMP code。tcp/udp：1-65535，只传一个端口时表示单端口；
+          icmp：ICMP code 0-255，不传或 -1 表示任意，指定 code 时必须指定 type；gre/ipv6：忽略
         maximum: 65535
-        minimum: 1
+        minimum: -1
         type: integer
       port_min:
+        description: |-
+          起始端口 / ICMP type。tcp/udp：1-65535，port_min、port_max 都不传表示全部端口；
+          icmp：ICMP type 0-254，不传或 -1 表示任意；gre/ipv6：忽略。用指针区分“未传”与 0（ICMP type 可以为 0）
         maximum: 65535
-        minimum: 1
+        minimum: -1
         type: integer
       protocol:
         enum:
         - tcp
         - udp
         - icmp
+        - gre
+        - ipv6
         type: string
       remote_cidr:
         type: string
@@ -1765,11 +2142,130 @@ definitions:
         type: string
       owner:
         type: string
+      owner_uuid:
+        description: |-
+          OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to
+          release quota only when the caller's org actually owns the deleted resource
+        type: string
       start:
         type: string
       updated_at:
         type: string
       vlan:
+        type: integer
+    type: object
+  apis.StoragePoolListResponse:
+    properties:
+      limit:
+        type: integer
+      offset:
+        type: integer
+      storage_pools:
+        items:
+          $ref: '#/definitions/apis.StoragePoolResponse'
+        type: array
+      total:
+        type: integer
+    type: object
+  apis.StoragePoolPatchPayload:
+    properties:
+      description:
+        maxLength: 256
+        type: string
+      fallback_group:
+        maxLength: 64
+        type: string
+      is_default:
+        type: boolean
+      media:
+        type: string
+      name:
+        maxLength: 64
+        minLength: 2
+        type: string
+      over_ratio:
+        maximum: 20
+        minimum: 0
+        type: number
+      status:
+        enum:
+        - active
+        - disabled
+        type: string
+    type: object
+  apis.StoragePoolPayload:
+    properties:
+      description:
+        maxLength: 256
+        type: string
+      fallback_group:
+        maxLength: 64
+        type: string
+      is_default:
+        type: boolean
+      media:
+        enum:
+        - ssd
+        - hdd
+        - nvme
+        type: string
+      name:
+        maxLength: 64
+        minLength: 2
+        type: string
+      over_ratio:
+        maximum: 20
+        minimum: 0
+        type: number
+    required:
+    - name
+    type: object
+  apis.StoragePoolResponse:
+    properties:
+      allocated_bytes:
+        type: integer
+      available_hosts:
+        type: integer
+      builtin:
+        type: boolean
+      capacity_bytes:
+        type: integer
+      created_at:
+        type: string
+      description:
+        type: string
+      driver:
+        type: string
+      fallback_group:
+        type: string
+      hosts:
+        type: integer
+      id:
+        type: string
+      is_default:
+        type: boolean
+      media:
+        type: string
+      mount_path:
+        type: string
+      name:
+        type: string
+      over_ratio:
+        type: number
+      owner:
+        type: string
+      owner_uuid:
+        description: |-
+          OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to
+          release quota only when the caller's org actually owns the deleted resource
+        type: string
+      shared:
+        type: boolean
+      status:
+        type: string
+      updated_at:
+        type: string
+      used_bytes:
         type: integer
     type: object
   apis.SubnetListResponse:
@@ -1796,6 +2292,8 @@ definitions:
         minLength: 2
         type: string
       priority:
+        description: Omitted keeps the current priority (0 is a valid value, so it
+          cannot be the "not set" marker)
         maximum: 100000
         minimum: 0
         type: integer
@@ -1876,6 +2374,11 @@ definitions:
         type: string
       owner:
         type: string
+      owner_uuid:
+        description: |-
+          OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to
+          release quota only when the caller's org actually owns the deleted resource
+        type: string
       priority:
         type: integer
       reserved_count:
@@ -1930,11 +2433,18 @@ definitions:
         type: string
       owner:
         type: string
+      owner_uuid:
+        description: |-
+          OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to
+          release quota only when the caller's org actually owns the deleted resource
+        type: string
       updated_at:
         type: string
     type: object
   apis.TaskResponse:
     properties:
+      message:
+        type: string
       name:
         type: string
       source:
@@ -1993,6 +2503,11 @@ definitions:
         type: string
       owner:
         type: string
+      owner_uuid:
+        description: |-
+          OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to
+          release quota only when the caller's org actually owns the deleted resource
+        type: string
       subnets:
         items:
           $ref: '#/definitions/apis.SubnetResponse'
@@ -2004,60 +2519,6 @@ definitions:
     properties:
       version:
         type: string
-    type: object
-  apis.VolBackupListResponse:
-    properties:
-      backups:
-        items:
-          $ref: '#/definitions/apis.VolBackupResponse'
-        type: array
-      limit:
-        type: integer
-      offset:
-        type: integer
-      total:
-        type: integer
-    type: object
-  apis.VolBackupPayload:
-    properties:
-      name:
-        type: string
-      pool_id:
-        type: string
-      type:
-        enum:
-        - snapshot
-        - backup
-        type: string
-      volume_id:
-        type: string
-    required:
-    - name
-    - type
-    - volume_id
-    type: object
-  apis.VolBackupResponse:
-    properties:
-      created_at:
-        type: string
-      id:
-        type: string
-      name:
-        type: string
-      owner:
-        type: string
-      path:
-        type: string
-      size:
-        type: integer
-      status:
-        $ref: '#/definitions/model.BackupStatus'
-      task:
-        $ref: '#/definitions/common.BaseReference'
-      updated_at:
-        type: string
-      volume:
-        $ref: '#/definitions/common.BaseReference'
     type: object
   apis.VolumeInfoResponse:
     properties:
@@ -2071,6 +2532,15 @@ definitions:
         type: string
       owner:
         type: string
+      owner_uuid:
+        description: |-
+          OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to
+          release quota only when the caller's org actually owns the deleted resource
+        type: string
+      size:
+        description: Size in GB; the instance detail page shows it next to each attached
+          volume
+        type: integer
       target:
         type: string
       updated_at:
@@ -2092,54 +2562,30 @@ definitions:
   apis.VolumePatchPayload:
     properties:
       instance:
-        $ref: '#/definitions/common.BaseID'
+        allOf:
+        - $ref: '#/definitions/common.BaseID'
+        description: Attach to this instance; null detaches, and leaving the field
+          out keeps the attachment as it is
       name:
         type: string
-      size:
-        type: integer
     type: object
   apis.VolumePayload:
     properties:
-      bps_burst:
-        minimum: 0
-        type: integer
-      bps_limit:
-        description: in MB/s
-        maximum: 102400
-        minimum: 0
-        type: integer
       count:
         maximum: 16
         minimum: 1
         type: integer
-      iops_burst:
-        minimum: 0
-        type: integer
-      iops_limit:
-        maximum: 10000000
-        minimum: 0
-        type: integer
       name:
-        type: string
-      pool_id:
         type: string
       size:
         type: integer
+      storage_pool:
+        allOf:
+        - $ref: '#/definitions/common.BaseReference'
+        description: Storage pool of the volume; the default pool when left out
     required:
     - name
     - size
-    type: object
-  apis.VolumeQosPayload:
-    properties:
-      bps_limit:
-        description: in MB/s
-        maximum: 102400
-        minimum: 0
-        type: integer
-      iops_limit:
-        maximum: 10000000
-        minimum: 0
-        type: integer
     type: object
   apis.VolumeResizePayload:
     properties:
@@ -2153,37 +2599,635 @@ definitions:
     properties:
       booting:
         type: boolean
-      bps_burst:
-        type: integer
-      bps_limit:
-        type: integer
       created_at:
         type: string
       format:
         type: string
       href:
         type: string
+      hypervisor:
+        allOf:
+        - $ref: '#/definitions/common.ResourceReference'
+        description: Host holding the file of the volume, for system admins; empty
+          until the volume is attached the first time
       id:
         type: string
       instance:
         $ref: '#/definitions/common.BaseReference'
-      iops_burst:
-        type: integer
-      iops_limit:
-        type: integer
       name:
         type: string
       owner:
         type: string
+      owner_uuid:
+        description: |-
+          OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to
+          release quota only when the caller's org actually owns the deleted resource
+        type: string
       path:
+        type: string
+      reason:
         type: string
       size:
         type: integer
       status:
         type: string
+      storage_pool:
+        $ref: '#/definitions/common.ResourceReference'
       target:
         type: string
       updated_at:
+        type: string
+    type: object
+  apis.VpnClientConfigResponse:
+    properties:
+      config:
+        type: string
+    type: object
+  apis.VpnClientCreateResponse:
+    properties:
+      bytes_in:
+        type: integer
+      bytes_out:
+        type: integer
+      config:
+        type: string
+      created_at:
+        type: string
+      description:
+        type: string
+      enabled:
+        type: boolean
+      id:
+        type: string
+      ip_address:
+        type: string
+      last_handshake_at:
+        type: string
+      name:
+        type: string
+      owner:
+        type: string
+      owner_uuid:
+        description: |-
+          OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to
+          release quota only when the caller's org actually owns the deleted resource
+        type: string
+      preshared_key_set:
+        type: boolean
+      private_key:
+        type: string
+      protocol:
+        type: string
+      public_key:
+        type: string
+      updated_at:
+        type: string
+    type: object
+  apis.VpnClientListResponse:
+    properties:
+      clients:
+        items:
+          $ref: '#/definitions/apis.VpnClientResponse'
+        type: array
+      total:
+        type: integer
+    type: object
+  apis.VpnClientPatchPayload:
+    properties:
+      description:
+        maxLength: 255
+        type: string
+      enabled:
+        type: boolean
+      name:
+        maxLength: 32
+        minLength: 2
+        type: string
+    type: object
+  apis.VpnClientPayload:
+    properties:
+      description:
+        maxLength: 255
+        type: string
+      enabled:
+        type: boolean
+      name:
+        maxLength: 32
+        minLength: 2
+        type: string
+      preshared_key:
+        type: boolean
+      public_key:
+        maxLength: 64
+        type: string
+    required:
+    - name
+    type: object
+  apis.VpnClientResponse:
+    properties:
+      bytes_in:
+        type: integer
+      bytes_out:
+        type: integer
+      created_at:
+        type: string
+      description:
+        type: string
+      enabled:
+        type: boolean
+      id:
+        type: string
+      ip_address:
+        type: string
+      last_handshake_at:
+        type: string
+      name:
+        type: string
+      owner:
+        type: string
+      owner_uuid:
+        description: |-
+          OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to
+          release quota only when the caller's org actually owns the deleted resource
+        type: string
+      preshared_key_set:
+        type: boolean
+      protocol:
+        type: string
+      public_key:
+        type: string
+      updated_at:
+        type: string
+    type: object
+  apis.VpnConnectionListResponse:
+    properties:
+      connections:
+        items:
+          $ref: '#/definitions/apis.VpnConnectionResponse'
+        type: array
+      total:
+        type: integer
+    type: object
+  apis.VpnConnectionPatchPayload:
+    properties:
+      bgp_hold:
+        maximum: 10800
+        minimum: 3
+        type: integer
+      bgp_keepalive:
+        maximum: 3600
+        minimum: 1
+        type: integer
+      bgp_password:
+        maxLength: 80
+        type: string
+      description:
+        maxLength: 255
+        type: string
+      dpd_action:
+        enum:
+        - restart
+        - clear
+        - none
+        type: string
+      dpd_delay:
+        maximum: 3600
+        minimum: 5
+        type: integer
+      esp_lifetime:
+        maximum: 86400
+        minimum: 300
+        type: integer
+      esp_proposal:
+        maxLength: 128
+        type: string
+      ike_lifetime:
+        maximum: 604800
+        minimum: 300
+        type: integer
+      ike_proposal:
+        maxLength: 128
+        type: string
+      initiator:
+        type: boolean
+      local_asn:
+        maximum: 4294967295
+        minimum: 1
+        type: integer
+      local_cidrs:
+        maxLength: 512
+        type: string
+      local_id:
+        maxLength: 128
+        type: string
+      max_prefixes:
+        maximum: 100000
+        minimum: 1
+        type: integer
+      name:
+        maxLength: 32
+        minLength: 2
+        type: string
+      peer_asn:
+        maximum: 4294967295
+        minimum: 1
+        type: integer
+      psk:
+        maxLength: 128
+        type: string
+      remote_cidrs:
+        maxLength: 512
+        type: string
+      remote_gateway:
+        maxLength: 64
+        type: string
+      remote_id:
+        maxLength: 128
+        type: string
+      remote_summary_cidrs:
+        maxLength: 512
+        type: string
+      route_mode:
+        enum:
+        - static
+        - bgp
+        type: string
+      tunnel_local_ip:
+        maxLength: 64
+        type: string
+      tunnel_peer_ip:
+        maxLength: 64
+        type: string
+    type: object
+  apis.VpnConnectionPayload:
+    properties:
+      bgp_hold:
+        maximum: 10800
+        minimum: 3
+        type: integer
+      bgp_keepalive:
+        maximum: 3600
+        minimum: 1
+        type: integer
+      bgp_password:
+        maxLength: 80
+        type: string
+      description:
+        maxLength: 255
+        type: string
+      dpd_action:
+        enum:
+        - restart
+        - clear
+        - none
+        type: string
+      dpd_delay:
+        maximum: 3600
+        minimum: 5
+        type: integer
+      esp_lifetime:
+        maximum: 86400
+        minimum: 300
+        type: integer
+      esp_proposal:
+        maxLength: 128
+        type: string
+      ike_lifetime:
+        maximum: 604800
+        minimum: 300
+        type: integer
+      ike_proposal:
+        maxLength: 128
+        type: string
+      initiator:
+        type: boolean
+      local_asn:
+        maximum: 4294967295
+        minimum: 1
+        type: integer
+      local_cidrs:
+        maxLength: 512
+        type: string
+      local_id:
+        maxLength: 128
+        type: string
+      max_prefixes:
+        maximum: 100000
+        minimum: 1
+        type: integer
+      name:
+        maxLength: 32
+        minLength: 2
+        type: string
+      peer_asn:
+        maximum: 4294967295
+        minimum: 1
+        type: integer
+      psk:
+        maxLength: 128
+        type: string
+      remote_cidrs:
+        maxLength: 512
+        type: string
+      remote_gateway:
+        type: string
+      remote_id:
+        maxLength: 128
+        type: string
+      remote_summary_cidrs:
+        maxLength: 512
+        type: string
+      route_mode:
+        enum:
+        - static
+        - bgp
+        type: string
+      tunnel_local_ip:
+        type: string
+      tunnel_peer_ip:
+        type: string
+    required:
+    - name
+    type: object
+  apis.VpnConnectionResponse:
+    properties:
+      auth_method:
+        type: string
+      bgp:
+        $ref: '#/definitions/services.VpnBgpReport'
+      bgp_hold:
+        type: integer
+      bgp_keepalive:
+        type: integer
+      bgp_password_set:
+        type: boolean
+      bgp_reported_at:
+        type: string
+      bytes_in:
+        type: integer
+      bytes_out:
+        type: integer
+      created_at:
+        type: string
+      description:
+        type: string
+      dpd_action:
+        type: string
+      dpd_delay:
+        type: integer
+      effective_local_cidrs:
+        items:
+          type: string
+        type: array
+      esp_lifetime:
+        type: integer
+      esp_proposal:
+        type: string
+      established_at:
+        type: string
+      id:
+        type: string
+      if_id:
+        type: integer
+      ike_lifetime:
+        type: integer
+      ike_proposal:
+        type: string
+      ike_version:
+        type: integer
+      initiator:
+        type: boolean
+      last_error:
+        type: string
+      local_asn:
+        type: integer
+      local_cidrs:
+        type: string
+      local_id:
+        type: string
+      max_prefixes:
+        type: integer
+      name:
+        type: string
+      owner:
+        type: string
+      owner_uuid:
+        description: |-
+          OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to
+          release quota only when the caller's org actually owns the deleted resource
+        type: string
+      peer_asn:
+        type: integer
+      psk_set:
+        type: boolean
+      remote_cidrs:
+        type: string
+      remote_gateway:
+        type: string
+      remote_id:
+        type: string
+      remote_summary_cidrs:
+        type: string
+      route_mode:
+        type: string
+      status:
+        type: string
+      tunnel_local_ip:
+        type: string
+      tunnel_peer_ip:
+        type: string
+      updated_at:
+        type: string
+    type: object
+  apis.VpnGatewayListResponse:
+    properties:
+      limit:
+        type: integer
+      offset:
+        type: integer
+      total:
+        type: integer
+      vpn_gateways:
+        items:
+          $ref: '#/definitions/apis.VpnGatewayResponse'
+        type: array
+    type: object
+  apis.VpnGatewayPatchPayload:
+    properties:
+      client_cidr:
+        maxLength: 64
+        type: string
+      client_dns:
+        maxLength: 128
+        type: string
+      client_enabled:
+        type: boolean
+      client_port:
+        maximum: 65535
+        minimum: 1
+        type: integer
+      client_routes:
+        maxLength: 512
+        type: string
+      description:
+        maxLength: 255
+        type: string
+      enabled:
+        description: 'false pauses the whole gateway (tunnels, BGP, WireGuard) while keeping its public IP and configuration'
+        type: boolean
+      ipsec_enabled:
+        type: boolean
+      name:
+        maxLength: 32
+        minLength: 2
+        type: string
+    type: object
+  apis.VpnGatewayPayload:
+    properties:
+      client_cidr:
+        maxLength: 64
+        type: string
+      client_dns:
+        maxLength: 128
+        type: string
+      client_enabled:
+        type: boolean
+      client_port:
+        maximum: 65535
+        minimum: 1
+        type: integer
+      client_routes:
+        maxLength: 512
+        type: string
+      description:
+        maxLength: 255
+        type: string
+      inbound:
+        maximum: 20000
+        minimum: 1
+        type: integer
+      ipsec_enabled:
+        type: boolean
+      name:
+        maxLength: 32
+        minLength: 2
+        type: string
+      outbound:
+        maximum: 20000
+        minimum: 1
+        type: integer
+      public_ip:
+        type: string
+      public_subnet:
+        $ref: '#/definitions/common.BaseReference'
+      vpc:
+        $ref: '#/definitions/common.BaseReference'
+      zone:
+        maxLength: 32
+        minLength: 1
+        type: string
+    required:
+    - name
+    - vpc
+    type: object
+  apis.VpnGatewayResponse:
+    properties:
+      client_cidr:
+        type: string
+      client_count:
+        type: integer
+      client_dns:
+        type: string
+      client_enabled:
+        type: boolean
+      client_port:
+        type: integer
+      client_protocol:
+        type: string
+      client_public_key:
+        type: string
+      client_routes:
+        type: string
+      clients:
+        items:
+          $ref: '#/definitions/apis.VpnClientResponse'
+        type: array
+      connection_count:
+        type: integer
+      connections:
+        items:
+          $ref: '#/definitions/apis.VpnConnectionResponse'
+        type: array
+      created_at:
+        type: string
+      description:
+        type: string
+      effective_client_routes:
+        items:
+          type: string
+        type: array
+      enabled:
+        type: boolean
+      floating_ips:
+        items:
+          $ref: '#/definitions/apis.FloatingIpInfo'
+        type: array
+      id:
+        type: string
+      ipsec_enabled:
+        type: boolean
+      master_hostname:
+        type: string
+      master_hyper:
+        type: integer
+      master_reported_at:
+        type: string
+      name:
+        type: string
+      nodes:
+        items:
+          $ref: '#/definitions/apis.VpnNodeInfo'
+        type: array
+      owner:
+        type: string
+      owner_uuid:
+        description: |-
+          OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to
+          release quota only when the caller's org actually owns the deleted resource
+        type: string
+      public_ip:
+        type: string
+      remote_prefixes:
+        items:
+          $ref: '#/definitions/apis.VpnPrefixResponse'
+        type: array
+      status:
+        type: string
+      updated_at:
+        type: string
+      vpc:
+        $ref: '#/definitions/common.ResourceReference'
+      zone:
+        type: string
+    type: object
+  apis.VpnNodeInfo:
+    properties:
+      hostid:
+        type: integer
+      hostname:
+        type: string
+      master:
+        type: boolean
+      role:
+        type: string
+    type: object
+  apis.VpnPrefixResponse:
+    properties:
+      cidr:
+        type: string
+      ref_id:
+        type: integer
+      source:
         type: string
     type: object
   apis.ZoneListResponse:
@@ -2232,6 +3276,11 @@ definitions:
       name:
         type: string
       owner:
+        type: string
+      owner_uuid:
+        description: |-
+          OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to
+          release quota only when the caller's org actually owns the deleted resource
         type: string
       remark:
         type: string
@@ -2291,6 +3340,11 @@ definitions:
         type: string
       owner:
         type: string
+      owner_uuid:
+        description: |-
+          OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to
+          release quota only when the caller's org actually owns the deleted resource
+        type: string
       updated_at:
         type: string
     type: object
@@ -2308,18 +3362,139 @@ definitions:
     - Private
     - Site
     - Vrrp
-  model.BackupStatus:
-    enum:
-    - pending
-    - available
-    - error
-    - restoring
-    type: string
-    x-enum-varnames:
-    - BackupStatusPending
-    - BackupStatusReady
-    - BackupStatusError
-    - BackupStatusRestoring
+  services.DiskTarget:
+    properties:
+      booting:
+        type: boolean
+      can_stay:
+        type: boolean
+      choices:
+        items:
+          $ref: '#/definitions/services.PoolChoice'
+        type: array
+      fallback:
+        $ref: '#/definitions/services.PoolChoice'
+      size_gb:
+        type: integer
+      source_pool:
+        type: string
+      volume_name:
+        type: string
+      volume_uuid:
+        type: string
+    type: object
+  services.HostPoolFigures:
+    properties:
+      allocated_bytes:
+        type: integer
+      builtin:
+        type: boolean
+      capacity_bytes:
+        type: integer
+      name:
+        type: string
+      status:
+        type: string
+      usage_ratio:
+        type: number
+      used_bytes:
+        type: integer
+      uuid:
+        type: string
+    type: object
+  services.MigrationTarget:
+    properties:
+      disks:
+        items:
+          $ref: '#/definitions/services.DiskTarget'
+        type: array
+      hostid:
+        type: integer
+      hostname:
+        type: string
+      reason:
+        type: string
+      usable:
+        type: boolean
+    type: object
+  services.PoolChoice:
+    properties:
+      avail_bytes:
+        type: integer
+      fits:
+        type: boolean
+      name:
+        type: string
+      reason:
+        type: string
+      uuid:
+        type: string
+    type: object
+  services.PoolDevice:
+    properties:
+      array:
+        type: string
+      id:
+        type: string
+      media:
+        type: string
+      model:
+        type: string
+      name:
+        type: string
+      pair:
+        type: integer
+      serial:
+        type: string
+      size_bytes:
+        type: integer
+    type: object
+  services.UsageEntry:
+    properties:
+      bytes:
+        type: integer
+      instance:
+        type: string
+      instance_uuid:
+        type: string
+      owner:
+        type: string
+      path:
+        type: string
+      size:
+        type: integer
+      volume_name:
+        type: string
+      volume_uuid:
+        type: string
+    type: object
+  services.VpnBgpReport:
+    properties:
+      accepted:
+        items:
+          type: string
+        type: array
+      advertised:
+        items:
+          type: string
+        type: array
+      name:
+        type: string
+      prefixes_received:
+        type: integer
+      prefixes_sent:
+        type: integer
+      rejected:
+        items:
+          type: string
+        type: array
+      state:
+        type: string
+      truncated:
+        type: boolean
+      uptime:
+        type: string
+    type: object
 info:
   contact: {}
   description: APIs for CloudLand Functions
@@ -2329,6 +3504,58 @@ info:
   title: CloudLand API
   version: "1.0"
 paths:
+  /activities:
+    get:
+      consumes:
+      - application/json
+      description: 当前组织在本区域的操作动态，按时间倒序、游标分页，组织内所有成员可见
+      parameters:
+      - description: default 20, max 100
+        in: query
+        name: limit
+        type: integer
+      - description: next_cursor from previous page
+        in: query
+        name: cursor
+        type: string
+      - description: RFC3339, inclusive; default 7 days before end
+        in: query
+        name: start
+        type: string
+      - description: RFC3339, exclusive; default now; range must not exceed 90 days
+        in: query
+        name: end
+        type: string
+      - description: resource type, such as instance
+        in: query
+        name: resource_type
+        type: string
+      - description: resource uuid
+        in: query
+        name: resource_uuid
+        type: string
+      - description: 'true: only succeeded, false: only failed'
+        in: query
+        name: success
+        type: boolean
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.ActivityListResponse'
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: list activities of current organization
+      tags:
+      - Activity
   /addresses/{uuid}:
     get:
       consumes:
@@ -2418,6 +3645,33 @@ paths:
       tags:
       - Administration
       - Address Admin
+  /adjust/regenerate-bandwidth-metrics:
+    post:
+      consumes:
+      - application/json
+      description: Regenerate bandwidth configuration metrics for all active VMs or
+        a specific hyper node
+      parameters:
+      - description: Specific hyper node ID
+        in: query
+        name: hyper_id
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Regeneration result
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal server error
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Regenerate bandwidth config metrics
+      tags:
+      - Auto Scaling
   /alarm/events:
     get:
       consumes:
@@ -2610,349 +3864,47 @@ paths:
       summary: Process resource adjustment webhook
       tags:
       - Auto Scaling
-  /api/v1/metrics/alarm/sync-mappings:
-    post:
-      consumes:
-      - application/json
-      description: Perform a full synchronization of all VM rule mappings to ensure
-        matched_vms.json is consistent with the database
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: Synchronization successful
-          schema:
-            additionalProperties: true
-            type: object
-        "500":
-          description: Internal server error
-          schema:
-            additionalProperties: true
-            type: object
-      summary: Synchronize all VM rule mappings
-      tags:
-      - Alarm
-  /backups:
+  /audit_logs:
     get:
       consumes:
       - application/json
-      description: list volume backups/snapshots by volume UUID and backup type
+      description: 按时间倒序返回改动型操作的审计记录，仅系统管理员可见
       parameters:
-      - description: Volume UUID
-        in: query
-        name: id
-        required: true
-        type: string
-      - description: 'Backup type: empty or snapshot or backup'
-        in: query
-        name: backup_type
-        required: true
-        type: string
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/apis.VolBackupListResponse'
-        "400":
-          description: Bad request
-          schema:
-            $ref: '#/definitions/common.APIError'
-        "401":
-          description: Not authorized
-          schema:
-            $ref: '#/definitions/common.APIError'
-      summary: list volumes backups/snapshots
-      tags:
-      - Backup
-    post:
-      consumes:
-      - application/json
-      description: create a volume backup/snapshot
-      parameters:
-      - description: Volume backup/snapshot create payload
-        in: body
-        name: message
-        required: true
-        schema:
-          $ref: '#/definitions/apis.VolBackupPayload'
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/apis.VolBackupResponse'
-        "400":
-          description: Bad request
-          schema:
-            $ref: '#/definitions/common.APIError'
-        "401":
-          description: Not authorized
-          schema:
-            $ref: '#/definitions/common.APIError'
-      summary: create a volume backup/snapshot
-      tags:
-      - Backup
-  /backups/{id}:
-    delete:
-      consumes:
-      - application/json
-      description: delete a volume backup/snapshot by UUID
-      produces:
-      - application/json
-      responses:
-        "204":
-          description: No Content
-        "400":
-          description: Bad request
-          schema:
-            $ref: '#/definitions/common.APIError'
-        "401":
-          description: Not authorized
-          schema:
-            $ref: '#/definitions/common.APIError'
-      summary: delete a volume backup/snapshot
-      tags:
-      - Backup
-    get:
-      consumes:
-      - application/json
-      description: get a volume backup/snapshot by UUID
-      parameters:
-      - description: Volume backup/snapshot UUID
-        in: path
-        name: id
-        required: true
-        type: string
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/apis.VolBackupResponse'
-        "400":
-          description: Bad request
-          schema:
-            $ref: '#/definitions/common.APIError'
-        "401":
-          description: Not authorized
-          schema:
-            $ref: '#/definitions/common.APIError'
-      summary: get a volume backup/snapshot
-      tags:
-      - Backup
-  /backups/{id}/restore:
-    post:
-      consumes:
-      - application/json
-      description: restore volume from a backup/snapshot
-      parameters:
-      - description: Volume backup/snapshot UUID
-        in: path
-        name: id
-        required: true
-        type: string
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/apis.VolBackupResponse'
-        "400":
-          description: Bad request
-          schema:
-            $ref: '#/definitions/common.APIError'
-        "401":
-          description: Not authorized
-          schema:
-            $ref: '#/definitions/common.APIError'
-      summary: restore volume from a backup/snapshot
-      tags:
-      - Backup
-  /consistency_groups:
-    get:
-      consumes:
-      - application/json
-      description: List consistency groups with pagination
-      parameters:
-      - description: Offset
+      - description: offset
         in: query
         name: offset
         type: integer
-      - description: Limit
+      - description: limit, default 50
         in: query
         name: limit
         type: integer
-      - description: Order
+      - description: username
         in: query
-        name: order
+        name: actor
         type: string
-      - description: Name filter
+      - description: user uuid
         in: query
-        name: name
+        name: actor_uuid
         type: string
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/apis.ConsistencyGroupListResponse'
-        "400":
-          description: Bad request
-          schema:
-            $ref: '#/definitions/common.APIError'
-        "401":
-          description: Not authorized
-          schema:
-            $ref: '#/definitions/common.APIError'
-      summary: List consistency groups
-      tags:
-      - Consistency Group
-    post:
-      consumes:
-      - application/json
-      description: Create a new consistency group with volumes
-      parameters:
-      - description: Consistency Group Payload
-        in: body
-        name: payload
-        required: true
-        schema:
-          $ref: '#/definitions/apis.ConsistencyGroupPayload'
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/apis.ConsistencyGroupResponse'
-        "400":
-          description: Bad request
-          schema:
-            $ref: '#/definitions/common.APIError'
-        "401":
-          description: Not authorized
-          schema:
-            $ref: '#/definitions/common.APIError'
-      summary: Create a consistency group
-      tags:
-      - Consistency Group
-  /consistency_groups/{id}:
-    delete:
-      consumes:
-      - application/json
-      description: Delete a consistency group
-      parameters:
-      - description: Consistency Group UUID
-        in: path
-        name: id
-        required: true
-        type: string
-      produces:
-      - application/json
-      responses:
-        "204":
-          description: No Content
-        "400":
-          description: Bad request
-          schema:
-            $ref: '#/definitions/common.APIError'
-        "401":
-          description: Not authorized
-          schema:
-            $ref: '#/definitions/common.APIError'
-      summary: Delete a consistency group
-      tags:
-      - Consistency Group
-    get:
-      consumes:
-      - application/json
-      description: Get a consistency group by UUID
-      parameters:
-      - description: Consistency Group UUID
-        in: path
-        name: id
-        required: true
-        type: string
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/apis.ConsistencyGroupResponse'
-        "400":
-          description: Bad request
-          schema:
-            $ref: '#/definitions/common.APIError'
-        "401":
-          description: Not authorized
-          schema:
-            $ref: '#/definitions/common.APIError'
-      summary: Get a consistency group
-      tags:
-      - Consistency Group
-    patch:
-      consumes:
-      - application/json
-      description: Update a consistency group's name and description
-      parameters:
-      - description: Consistency Group UUID
-        in: path
-        name: id
-        required: true
-        type: string
-      - description: Update Payload
-        in: body
-        name: payload
-        required: true
-        schema:
-          $ref: '#/definitions/apis.ConsistencyGroupPatchPayload'
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/apis.ConsistencyGroupResponse'
-        "400":
-          description: Bad request
-          schema:
-            $ref: '#/definitions/common.APIError'
-        "401":
-          description: Not authorized
-          schema:
-            $ref: '#/definitions/common.APIError'
-      summary: Update a consistency group
-      tags:
-      - Consistency Group
-  /consistency_groups/{id}/snapshots:
-    get:
-      consumes:
-      - application/json
-      description: List snapshots for a consistency group with pagination
-      parameters:
-      - description: Consistency Group UUID
-        in: path
-        name: id
-        required: true
-        type: string
-      - description: Offset
+      - description: request path contains
         in: query
-        name: offset
-        type: integer
-      - description: Limit
+        name: path
+        type: string
+      - description: resource type, such as instance
         in: query
-        name: limit
-        type: integer
-      - description: Order
+        name: resource_type
+        type: string
+      - description: resource uuid
         in: query
-        name: order
+        name: resource_uuid
+        type: string
+      - description: RFC3339, inclusive
+        in: query
+        name: start
+        type: string
+      - description: RFC3339, exclusive; range must not exceed 90 days
+        in: query
+        name: end
         type: string
       produces:
       - application/json
@@ -2960,7 +3912,7 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/apis.ConsistencyGroupSnapshotListResponse'
+            $ref: '#/definitions/apis.AuditLogListResponse'
         "400":
           description: Bad request
           schema:
@@ -2969,211 +3921,9 @@ paths:
           description: Not authorized
           schema:
             $ref: '#/definitions/common.APIError'
-      summary: List consistency group snapshots
+      summary: list audit logs
       tags:
-      - Consistency Group
-    post:
-      consumes:
-      - application/json
-      description: Create a snapshot for a consistency group
-      parameters:
-      - description: Consistency Group UUID
-        in: path
-        name: id
-        required: true
-        type: string
-      - description: Snapshot Payload
-        in: body
-        name: payload
-        required: true
-        schema:
-          $ref: '#/definitions/apis.ConsistencyGroupSnapshotPayload'
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/apis.ConsistencyGroupSnapshotResponse'
-        "400":
-          description: Bad request
-          schema:
-            $ref: '#/definitions/common.APIError'
-        "401":
-          description: Not authorized
-          schema:
-            $ref: '#/definitions/common.APIError'
-      summary: Create a consistency group snapshot
-      tags:
-      - Consistency Group
-  /consistency_groups/{id}/snapshots/{snap_id}:
-    delete:
-      consumes:
-      - application/json
-      description: Delete a snapshot from a consistency group
-      parameters:
-      - description: Consistency Group UUID
-        in: path
-        name: id
-        required: true
-        type: string
-      - description: Snapshot UUID
-        in: path
-        name: snap_id
-        required: true
-        type: string
-      produces:
-      - application/json
-      responses:
-        "204":
-          description: No Content
-        "400":
-          description: Bad request
-          schema:
-            $ref: '#/definitions/common.APIError'
-        "401":
-          description: Not authorized
-          schema:
-            $ref: '#/definitions/common.APIError'
-      summary: Delete a consistency group snapshot
-      tags:
-      - Consistency Group
-    get:
-      consumes:
-      - application/json
-      description: Get a consistency group snapshot by UUID
-      parameters:
-      - description: Consistency Group UUID
-        in: path
-        name: id
-        required: true
-        type: string
-      - description: Snapshot UUID
-        in: path
-        name: snap_id
-        required: true
-        type: string
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/apis.ConsistencyGroupSnapshotResponse'
-        "400":
-          description: Bad request
-          schema:
-            $ref: '#/definitions/common.APIError'
-        "401":
-          description: Not authorized
-          schema:
-            $ref: '#/definitions/common.APIError'
-      summary: Get a consistency group snapshot
-      tags:
-      - Consistency Group
-  /consistency_groups/{id}/snapshots/{snap_id}/restore:
-    post:
-      consumes:
-      - application/json
-      description: Restore all volumes in a consistency group from a snapshot
-      parameters:
-      - description: Consistency Group UUID
-        in: path
-        name: id
-        required: true
-        type: string
-      - description: Snapshot UUID
-        in: path
-        name: snap_id
-        required: true
-        type: string
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/apis.ConsistencyGroupRestoreResponse'
-        "400":
-          description: Bad request
-          schema:
-            $ref: '#/definitions/common.APIError'
-        "401":
-          description: Not authorized
-          schema:
-            $ref: '#/definitions/common.APIError'
-      summary: Restore a consistency group from snapshot
-      tags:
-      - Consistency Group
-  /consistency_groups/{id}/volumes:
-    post:
-      consumes:
-      - application/json
-      description: Add volumes to an existing consistency group
-      parameters:
-      - description: Consistency Group UUID
-        in: path
-        name: id
-        required: true
-        type: string
-      - description: Volumes Payload
-        in: body
-        name: payload
-        required: true
-        schema:
-          $ref: '#/definitions/apis.ConsistencyGroupVolumesPayload'
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/apis.ConsistencyGroupResponse'
-        "400":
-          description: Bad request
-          schema:
-            $ref: '#/definitions/common.APIError'
-        "401":
-          description: Not authorized
-          schema:
-            $ref: '#/definitions/common.APIError'
-      summary: Add volumes to a consistency group
-      tags:
-      - Consistency Group
-  /consistency_groups/{id}/volumes/{volume_id}:
-    delete:
-      consumes:
-      - application/json
-      description: Remove a volume from an existing consistency group
-      parameters:
-      - description: Consistency Group UUID
-        in: path
-        name: id
-        required: true
-        type: string
-      - description: Volume UUID
-        in: path
-        name: volume_id
-        required: true
-        type: string
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/apis.ConsistencyGroupResponse'
-        "400":
-          description: Bad request
-          schema:
-            $ref: '#/definitions/common.APIError'
-        "401":
-          description: Not authorized
-          schema:
-            $ref: '#/definitions/common.APIError'
-      summary: Remove a volume from a consistency group
-      tags:
-      - Consistency Group
+      - Administration
   /dictionaries:
     get:
       consumes:
@@ -3666,6 +4416,11 @@ paths:
         name: uuid
         required: true
         type: string
+      - description: Keep the local storage pools of the host for adoption by the
+          host registered again
+        in: query
+        name: keep_pools
+        type: boolean
       produces:
       - application/json
       responses:
@@ -3713,6 +4468,112 @@ paths:
       tags:
       - Administration
       - Hypervisor
+  /hypers/{uuid}/console:
+    post:
+      consumes:
+      - application/json
+      description: create a single-use token for a root shell on a hypervisor (system
+        admins only, when enabled in system settings). Through the gateway the body
+        must also carry "password", the caller's login password, which the gateway
+        checks and removes
+      parameters:
+      - description: Hypervisor UUID
+        in: path
+        name: uuid
+        required: true
+        type: string
+      - description: Terminal size
+        in: body
+        name: message
+        schema:
+          $ref: '#/definitions/apis.HostConsolePayload'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.HostConsoleResponse'
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "403":
+          description: Not authorized or host console disabled
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: create a host console
+      tags:
+      - Administration
+      - Hypervisor
+  /hypers/{uuid}/disks:
+    get:
+      parameters:
+      - description: Hypervisor UUID
+        in: path
+        name: uuid
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/apis.HostDiskResponse'
+            type: array
+      summary: list the disks of a host
+      tags:
+      - HostStorage
+  /hypers/{uuid}/disks/{id}:
+    patch:
+      consumes:
+      - application/json
+      description: an empty media goes back to the detected one
+      parameters:
+      - description: Hypervisor UUID
+        in: path
+        name: uuid
+        required: true
+        type: string
+      - description: Disk record id
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Media
+        in: body
+        name: message
+        required: true
+        schema:
+          $ref: '#/definitions/apis.DiskMediaPayload'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.HostDiskResponse'
+      summary: set the media of a disk
+      tags:
+      - HostStorage
+  /hypers/{uuid}/disks/scan:
+    post:
+      description: the host scans its disks in the background; read the result with
+        GET /hypers/{uuid}/disks
+      parameters:
+      - description: Hypervisor UUID
+        in: path
+        name: uuid
+        required: true
+        type: string
+      responses:
+        "202":
+          description: Accepted
+      summary: scan the disks of a host
+      tags:
+      - HostStorage
   /hypers/{uuid}/maintain:
     post:
       consumes:
@@ -3735,9 +4596,7 @@ paths:
         "200":
           description: OK
           schema:
-            additionalProperties:
-              type: string
-            type: object
+            $ref: '#/definitions/apis.HyperMaintainResponse'
         "400":
           description: Bad request
           schema:
@@ -3754,11 +4613,289 @@ paths:
       tags:
       - Administration
       - Hypervisor
+  /hypers/{uuid}/storage_pools:
+    get:
+      parameters:
+      - description: Hypervisor UUID
+        in: path
+        name: uuid
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.HostPoolListResponse'
+      summary: list the storage pools of a host
+      tags:
+      - HostStorage
+    post:
+      consumes:
+      - application/json
+      description: formats the selected disks. Type the host name in confirm
+      parameters:
+      - description: Hypervisor UUID
+        in: path
+        name: uuid
+        required: true
+        type: string
+      - description: Pool, layout and disks
+        in: body
+        name: message
+        required: true
+        schema:
+          $ref: '#/definitions/apis.HostPoolPayload'
+      produces:
+      - application/json
+      responses:
+        "202":
+          description: Accepted
+      summary: set a storage pool up on a host
+      tags:
+      - HostStorage
+  /hypers/{uuid}/storage_pools/{pool_id}:
+    delete:
+      consumes:
+      - application/json
+      description: force deletes leftover files of an empty pool; a lost pool is only
+        unmounted and its data kept
+      parameters:
+      - description: Hypervisor UUID
+        in: path
+        name: uuid
+        required: true
+        type: string
+      - description: Storage pool UUID
+        in: path
+        name: pool_id
+        required: true
+        type: string
+      - description: Delete leftover files
+        in: query
+        name: force
+        type: boolean
+      - description: Host name to confirm
+        in: query
+        name: confirm
+        required: true
+        type: string
+      responses:
+        "202":
+          description: Accepted
+      summary: remove a storage pool from a host
+      tags:
+      - HostStorage
+  /hypers/{uuid}/storage_pools/{pool_id}/extend:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Hypervisor UUID
+        in: path
+        name: uuid
+        required: true
+        type: string
+      - description: Storage pool UUID
+        in: path
+        name: pool_id
+        required: true
+        type: string
+      - description: Disks
+        in: body
+        name: message
+        required: true
+        schema:
+          $ref: '#/definitions/apis.HostPoolExtendPayload'
+      produces:
+      - application/json
+      responses:
+        "202":
+          description: Accepted
+      summary: add disks to a storage pool of a host
+      tags:
+      - HostStorage
+  /hypers/{uuid}/storage_pools/{pool_id}/lost:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Hypervisor UUID
+        in: path
+        name: uuid
+        required: true
+        type: string
+      - description: Storage pool UUID
+        in: path
+        name: pool_id
+        required: true
+        type: string
+      - description: Host name to confirm; node_offline_ack when the host is offline
+        in: body
+        name: message
+        required: true
+        schema:
+          $ref: '#/definitions/apis.ConfirmPayload'
+      responses:
+        "200":
+          description: OK
+      summary: declare a storage pool of a host lost
+      tags:
+      - HostStorage
+  /hypers/{uuid}/storage_pools/{pool_id}/maintenance:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Hypervisor UUID
+        in: path
+        name: uuid
+        required: true
+        type: string
+      - description: Storage pool UUID
+        in: path
+        name: pool_id
+        required: true
+        type: string
+      - description: Enable or disable
+        in: body
+        name: message
+        required: true
+        schema:
+          $ref: '#/definitions/apis.MaintenancePayload'
+      responses:
+        "200":
+          description: OK
+      summary: put a storage pool of a host in or out of maintenance
+      tags:
+      - HostStorage
+  /hypers/{uuid}/storage_pools/{pool_id}/replace_disk:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Hypervisor UUID
+        in: path
+        name: uuid
+        required: true
+        type: string
+      - description: Storage pool UUID
+        in: path
+        name: pool_id
+        required: true
+        type: string
+      - description: Failed and new disk
+        in: body
+        name: message
+        required: true
+        schema:
+          $ref: '#/definitions/apis.HostPoolReplacePayload'
+      responses:
+        "202":
+          description: Accepted
+      summary: replace a failed disk of a RAID1 pool
+      tags:
+      - HostStorage
+  /hypers/{uuid}/storage_pools/{pool_id}/restore:
+    post:
+      description: only when the host reports the pool healthy again; volumes whose
+        file is found become usable
+      parameters:
+      - description: Hypervisor UUID
+        in: path
+        name: uuid
+        required: true
+        type: string
+      - description: Storage pool UUID
+        in: path
+        name: pool_id
+        required: true
+        type: string
+      responses:
+        "200":
+          description: OK
+      summary: restore a storage pool declared lost
+      tags:
+      - HostStorage
+  /hypers/{uuid}/storage_pools/{pool_id}/usage:
+    get:
+      parameters:
+      - description: Hypervisor UUID
+        in: path
+        name: uuid
+        required: true
+        type: string
+      - description: Storage pool UUID
+        in: path
+        name: pool_id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+      summary: read the last usage report of a storage pool on a host
+      tags:
+      - HostStorage
+    post:
+      description: POST asks the host for a fresh report, GET returns the last one
+        inside the pool listing
+      parameters:
+      - description: Hypervisor UUID
+        in: path
+        name: uuid
+        required: true
+        type: string
+      - description: Storage pool UUID
+        in: path
+        name: pool_id
+        required: true
+        type: string
+      responses:
+        "202":
+          description: Accepted
+      summary: list the largest files of a storage pool on a host
+      tags:
+      - HostStorage
+  /hypers/{uuid}/storage_pools/adopt:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Hypervisor UUID
+        in: path
+        name: uuid
+        required: true
+        type: string
+      - description: Pool and host name to confirm
+        in: body
+        name: message
+        required: true
+        schema:
+          $ref: '#/definitions/apis.AdoptPayload'
+      responses:
+        "202":
+          description: Accepted
+      summary: adopt a storage pool found on the disks of a host
+      tags:
+      - HostStorage
   /images:
     get:
       consumes:
       - application/json
       description: list images
+      parameters:
+      - description: 'true: only images owned by the current org, regardless of system
+          role'
+        in: query
+        name: owned
+        type: boolean
+      - description: public or private
+        in: query
+        name: visibility
+        type: string
       produces:
       - application/json
       responses:
@@ -3872,25 +5009,6 @@ paths:
           schema:
             $ref: '#/definitions/common.APIError'
       summary: patch a image
-      tags:
-      - Image
-  /images/{id}/storages:
-    get:
-      consumes:
-      - application/json
-      description: list image storages
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/apis.ImageStorageResponse'
-        "401":
-          description: Not authorized
-          schema:
-            $ref: '#/definitions/common.APIError'
-      summary: list image storages
       tags:
       - Image
   /instance/{id}/interfaces:
@@ -4011,6 +5129,10 @@ paths:
           description: Not authorized
           schema:
             $ref: '#/definitions/common.APIError'
+        "403":
+          description: Hypervisor specified by a non system admin
+          schema:
+            $ref: '#/definitions/common.APIError'
       summary: create a instance
       tags:
       - Instance
@@ -4018,13 +5140,19 @@ paths:
     post:
       consumes:
       - application/json
-      description: create a console
+      description: create a console access token; type vnc (graphical, default) or
+        serial (text)
       parameters:
       - description: Instance ID
         in: path
         name: id
         required: true
         type: integer
+      - description: Console type
+        in: body
+        name: message
+        schema:
+          $ref: '#/definitions/apis.ConsolePayload'
       produces:
       - application/json
       responses:
@@ -4206,6 +5334,30 @@ paths:
       summary: patch a interface
       tags:
       - Interface
+  /instances/{id}/migration_targets:
+    get:
+      description: for every host of the zone, whether each local disk can stay in
+        its pool, the pool of its fallback group that would replace it, and all usable
+        pools with their free space
+      parameters:
+      - description: Instance UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/services.MigrationTarget'
+            type: array
+      summary: list the hosts an instance can migrate to
+      tags:
+      - Administration
+      - Migration
   /instances/{id}/reinstall:
     post:
       consumes:
@@ -4368,12 +5520,16 @@ paths:
     get:
       consumes:
       - application/json
-      description: Internal endpoint for CPGateway to query alarm events without owner
-        filtering
+      description: Internal endpoint for CPGateway to query alarm events, filtered
+        by org_uuid when provided
       parameters:
       - description: If 'true', only return firing event count
         in: query
         name: count_only
+        type: string
+      - description: Filter by organization UUID
+        in: query
+        name: org_uuid
         type: string
       - description: Filter by status
         in: query
@@ -4432,6 +5588,33 @@ paths:
       summary: Sync notification channels
       tags:
       - Notification
+  /internal/system-settings/sync:
+    post:
+      consumes:
+      - application/json
+      description: Internal endpoint for CPGateway to push system settings (full sync
+        with version check)
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Sync successful
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad request
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal server error
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Sync system settings
+      tags:
+      - SystemSettings
   /ip_groups:
     get:
       consumes:
@@ -4902,46 +6085,6 @@ paths:
       summary: create a listener
       tags:
       - Load Balancer
-  /load_balancers/{id}/listeners/:listener_id/backends:
-    get:
-      consumes:
-      - application/json
-      description: list backends
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/apis.BackendListResponse'
-        "401":
-          description: Not authorized
-          schema:
-            $ref: '#/definitions/common.APIError'
-      summary: list backends
-      tags:
-      - Load Balancer
-  /load_balancers/{id}/listeners/:listener_id/backends/{backend_id}:
-    delete:
-      consumes:
-      - application/json
-      description: delete a backend
-      produces:
-      - application/json
-      responses:
-        "204":
-          description: No Content
-        "400":
-          description: Bad request
-          schema:
-            $ref: '#/definitions/common.APIError'
-        "401":
-          description: Not authorized
-          schema:
-            $ref: '#/definitions/common.APIError'
-      summary: delete a backend
-      tags:
-      - Load Balancer
   /load_balancers/{id}/listeners/{listener_id}:
     delete:
       consumes:
@@ -5015,6 +6158,24 @@ paths:
       tags:
       - Load Balancer
   /load_balancers/{id}/listeners/{listener_id}/backends:
+    get:
+      consumes:
+      - application/json
+      description: list backends
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.BackendListResponse'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: list backends
+      tags:
+      - Load Balancer
     post:
       consumes:
       - application/json
@@ -5045,6 +6206,26 @@ paths:
       tags:
       - Load Balancer
   /load_balancers/{id}/listeners/{listener_id}/backends/{backend_id}:
+    delete:
+      consumes:
+      - application/json
+      description: delete a backend
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: delete a backend
+      tags:
+      - Load Balancer
     get:
       consumes:
       - application/json
@@ -5744,22 +6925,18 @@ paths:
       summary: Create memory alarm rule
       tags:
       - Alarm
-  /metrics/api/v1/adjust/regenerate-bandwidth-metrics:
+  /metrics/alarm/sync-mappings:
     post:
       consumes:
       - application/json
-      description: Regenerate bandwidth configuration metrics for all active VMs or
-        a specific hyper node
-      parameters:
-      - description: Specific hyper node ID
-        in: query
-        name: hyper_id
-        type: string
+      description: Rebuild matched_vms.json (which VM belongs to which VM alarm /
+        auto-adjust rule group) from the database. clapi also reconciles it automatically
+        in the background; nothing is written if any query fails.
       produces:
       - application/json
       responses:
         "200":
-          description: Regeneration result
+          description: Synchronization successful
           schema:
             additionalProperties: true
             type: object
@@ -5768,10 +6945,10 @@ paths:
           schema:
             additionalProperties: true
             type: object
-      summary: Regenerate bandwidth config metrics
+      summary: Rebuild all VM rule mappings now
       tags:
-      - Auto Scaling
-  /metrics/api/v1/current-alarms:
+      - Alarm
+  /metrics/current-alarms:
     get:
       consumes:
       - application/json
@@ -5792,7 +6969,7 @@ paths:
       summary: Get current active alarms
       tags:
       - Alarm
-  /metrics/api/v1/history-alarms:
+  /metrics/history-alarms:
     get:
       consumes:
       - application/json
@@ -5834,39 +7011,6 @@ paths:
       summary: Get historical alarms
       tags:
       - Alarm
-  /metrics/api/v1/rules/links:
-    get:
-      consumes:
-      - application/json
-      description: Get VM link information for alarm or adjustment rules by rule_id
-        or UUID
-      parameters:
-      - description: Rule ID or UUID
-        in: query
-        name: rule_id
-        required: true
-        type: string
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: Rule links
-          schema:
-            additionalProperties: true
-            type: object
-        "400":
-          description: Bad request
-          schema:
-            additionalProperties: true
-            type: object
-        "404":
-          description: Rule not found
-          schema:
-            additionalProperties: true
-            type: object
-      summary: Get rule VM links
-      tags:
-      - Auto Scaling
   /metrics/instances/cpu/his_data:
     post:
       consumes:
@@ -6008,39 +7152,6 @@ paths:
             additionalProperties: true
             type: object
       summary: Get instance traffic metrics
-      tags:
-      - Monitoring
-  /metrics/instances/volume/his_data:
-    post:
-      consumes:
-      - application/json
-      description: Query volume read/write historical data from WDS storage monitoring
-      parameters:
-      - description: Metrics query request
-        in: body
-        name: message
-        required: true
-        schema:
-          $ref: '#/definitions/apis.MetricsRequest'
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: Volume metrics data
-          schema:
-            additionalProperties: true
-            type: object
-        "400":
-          description: Bad request
-          schema:
-            additionalProperties: true
-            type: object
-        "500":
-          description: Internal server error
-          schema:
-            additionalProperties: true
-            type: object
-      summary: Get volume metrics
       tags:
       - Monitoring
   /metrics/rules/batch:
@@ -6247,6 +7358,43 @@ paths:
       summary: Delete node alarm rule
       tags:
       - Alarm
+    patch:
+      consumes:
+      - application/json
+      description: Update a node-level alarm rule in place (name, description, config,
+        enabled)
+      parameters:
+      - description: Rule UUID
+        in: path
+        name: uuid
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Rule updated successfully
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad request
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: Rule not found
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal server error
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Update node alarm rule
+      tags:
+      - Alarm
   /openmeter/metrics:
     get:
       consumes:
@@ -6349,6 +7497,39 @@ paths:
       summary: Get available metric subjects
       tags:
       - OpenMeter
+  /rules/links:
+    get:
+      consumes:
+      - application/json
+      description: Get VM link information for alarm or adjustment rules by rule_id
+        or UUID
+      parameters:
+      - description: Rule ID or UUID
+        in: query
+        name: rule_id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Rule links
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad request
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: Rule not found
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Get rule VM links
+      tags:
+      - Auto Scaling
   /security_groups:
     get:
       consumes:
@@ -6589,6 +7770,140 @@ paths:
       summary: patch a secrule
       tags:
       - Security Group
+  /storage_pools:
+    get:
+      description: list storage pools. Members see the active pools with their media
+        and how many hosts can use them; system admins see everything
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.StoragePoolListResponse'
+      summary: list storage pools
+      tags:
+      - StoragePool
+    post:
+      consumes:
+      - application/json
+      description: create a local storage pool. Its directory on every host is /opt/cloudland/pools/<uuid>;
+        nothing is written on any host until the pool is set up there
+      parameters:
+      - description: Storage pool
+        in: body
+        name: message
+        required: true
+        schema:
+          $ref: '#/definitions/apis.StoragePoolPayload'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.StoragePoolResponse'
+      summary: create a storage pool
+      tags:
+      - StoragePool
+  /storage_pools/{id}:
+    delete:
+      parameters:
+      - description: Storage pool UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      responses:
+        "204":
+          description: No Content
+      summary: delete a storage pool
+      tags:
+      - StoragePool
+    get:
+      parameters:
+      - description: Storage pool UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.StoragePoolResponse'
+      summary: get a storage pool
+      tags:
+      - StoragePool
+    patch:
+      consumes:
+      - application/json
+      parameters:
+      - description: Storage pool UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Fields to change
+        in: body
+        name: message
+        required: true
+        schema:
+          $ref: '#/definitions/apis.StoragePoolPatchPayload'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.StoragePoolResponse'
+      summary: update a storage pool
+      tags:
+      - StoragePool
+  /storage_pools/{id}/hypers:
+    get:
+      parameters:
+      - description: Storage pool UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.HostPoolListResponse'
+      summary: list the hosts of a storage pool
+      tags:
+      - StoragePool
+  /storage_pools/{id}/orphans/abandon:
+    post:
+      consumes:
+      - application/json
+      description: the volumes of the pool left by a deleted host become lost and
+        can then be deleted
+      parameters:
+      - description: Storage pool UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Old host id and the pool name to confirm
+        in: body
+        name: message
+        required: true
+        schema:
+          $ref: '#/definitions/apis.AbandonPayload'
+      responses:
+        "200":
+          description: OK
+      summary: abandon the volumes of a pool that wait for adoption
+      tags:
+      - StoragePool
   /subnets:
     get:
       consumes:
@@ -6853,10 +8168,14 @@ paths:
     delete:
       consumes:
       - application/json
-      description: delete a volume
+      description: 'delete a volume. A volume written on a host is deleted by the
+        host first: the request returns 202 and the volume stays "deleting" until
+        the host confirms.'
       produces:
       - application/json
       responses:
+        "202":
+          description: Accepted
         "204":
           description: No Content
         "400":
@@ -6927,18 +8246,12 @@ paths:
       summary: patch a volume
       tags:
       - Volume
-  /volumes/{id}/qos:
-    put:
+  /volumes/{id}/force_detach:
+    post:
       consumes:
       - application/json
-      description: update iops and bps limit of a volume
-      parameters:
-      - description: Volume qos payload
-        in: body
-        name: message
-        required: true
-        schema:
-          $ref: '#/definitions/apis.VolumeQosPayload'
+      description: remove a volume whose storage pool was declared lost from its instance,
+        without touching the file
       produces:
       - application/json
       responses:
@@ -6954,7 +8267,7 @@ paths:
           description: Not authorized
           schema:
             $ref: '#/definitions/common.APIError'
-      summary: update qos of a volume
+      summary: detach a volume of a lost pool by force
       tags:
       - Volume
   /volumes/{id}/resize:
@@ -7105,6 +8418,414 @@ paths:
       summary: patch a vpc
       tags:
       - VPC
+  /vpn_gateways:
+    get:
+      consumes:
+      - application/json
+      description: list VPN gateways
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.VpnGatewayListResponse'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: list VPN gateways
+      tags:
+      - VPN Gateway
+    post:
+      consumes:
+      - application/json
+      description: create a VPN gateway in a VPC with a public address
+      parameters:
+      - description: VPN gateway create payload
+        in: body
+        name: message
+        required: true
+        schema:
+          $ref: '#/definitions/apis.VpnGatewayPayload'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.VpnGatewayResponse'
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: create a VPN gateway
+      tags:
+      - VPN Gateway
+  /vpn_gateways/{id}:
+    delete:
+      consumes:
+      - application/json
+      description: delete a VPN gateway with its connections and clients
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: delete a VPN gateway
+      tags:
+      - VPN Gateway
+    get:
+      consumes:
+      - application/json
+      description: get a VPN gateway with its connections, clients and routed prefixes
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.VpnGatewayResponse'
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: get a VPN gateway
+      tags:
+      - VPN Gateway
+    patch:
+      consumes:
+      - application/json
+      description: patch a VPN gateway
+      parameters:
+      - description: VPN gateway patch payload
+        in: body
+        name: message
+        required: true
+        schema:
+          $ref: '#/definitions/apis.VpnGatewayPatchPayload'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.VpnGatewayResponse'
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: patch a VPN gateway
+      tags:
+      - VPN Gateway
+  /vpn_gateways/{id}/clients:
+    get:
+      consumes:
+      - application/json
+      description: list the WireGuard clients of a VPN gateway
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.VpnClientListResponse'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: list VPN clients
+      tags:
+      - VPN Gateway
+    post:
+      consumes:
+      - application/json
+      description: create a WireGuard client; the response carries the generated private
+        key and full config exactly once
+      parameters:
+      - description: VPN client create payload
+        in: body
+        name: message
+        required: true
+        schema:
+          $ref: '#/definitions/apis.VpnClientPayload'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.VpnClientCreateResponse'
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: create a VPN client
+      tags:
+      - VPN Gateway
+  /vpn_gateways/{id}/clients/{client_id}:
+    delete:
+      consumes:
+      - application/json
+      description: delete a WireGuard client and release its address
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: delete a VPN client
+      tags:
+      - VPN Gateway
+    get:
+      consumes:
+      - application/json
+      description: get a WireGuard client (never includes a private key)
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.VpnClientResponse'
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: get a VPN client
+      tags:
+      - VPN Gateway
+    patch:
+      consumes:
+      - application/json
+      description: rename, describe or enable/disable a WireGuard client
+      parameters:
+      - description: VPN client patch payload
+        in: body
+        name: message
+        required: true
+        schema:
+          $ref: '#/definitions/apis.VpnClientPatchPayload'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.VpnClientResponse'
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: patch a VPN client
+      tags:
+      - VPN Gateway
+  /vpn_gateways/{id}/clients/{client_id}/config:
+    get:
+      consumes:
+      - application/json
+      description: WireGuard configuration of a client without the private key
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.VpnClientConfigResponse'
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: get a VPN client configuration template
+      tags:
+      - VPN Gateway
+  /vpn_gateways/{id}/connections:
+    get:
+      consumes:
+      - application/json
+      description: list the site-to-site connections of a VPN gateway
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.VpnConnectionListResponse'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: list VPN connections
+      tags:
+      - VPN Gateway
+    post:
+      consumes:
+      - application/json
+      description: create a site-to-site IPsec connection (static or BGP routed)
+      parameters:
+      - description: VPN connection create payload
+        in: body
+        name: message
+        required: true
+        schema:
+          $ref: '#/definitions/apis.VpnConnectionPayload'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.VpnConnectionResponse'
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: create a VPN connection
+      tags:
+      - VPN Gateway
+  /vpn_gateways/{id}/connections/{conn_id}:
+    delete:
+      consumes:
+      - application/json
+      description: delete a site-to-site connection
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: delete a VPN connection
+      tags:
+      - VPN Gateway
+    get:
+      consumes:
+      - application/json
+      description: get a site-to-site connection
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.VpnConnectionResponse'
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: get a VPN connection
+      tags:
+      - VPN Gateway
+    patch:
+      consumes:
+      - application/json
+      description: patch a site-to-site connection; changed fields are pushed to the
+        gateway
+      parameters:
+      - description: VPN connection patch payload
+        in: body
+        name: message
+        required: true
+        schema:
+          $ref: '#/definitions/apis.VpnConnectionPatchPayload'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.VpnConnectionResponse'
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: patch a VPN connection
+      tags:
+      - VPN Gateway
+  /vpn_gateways/{id}/connections/{conn_id}/restart:
+    post:
+      consumes:
+      - application/json
+      description: terminate and re-initiate the IKE SA of a connection
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.VpnConnectionResponse'
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: restart a VPN connection
+      tags:
+      - VPN Gateway
   /zones:
     get:
       consumes:

@@ -1,13 +1,19 @@
 <script setup lang="ts">
-import { ref, onMounted, computed, watch } from 'vue'
+import { ref, onMounted, onUnmounted, computed, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { useRouter } from 'vue-router'
-import { usersApi, type User } from '../../api/users'
+import { usersApi } from '../../api/users'
 import { orgsApi } from '../../api/orgs'
 import { useTenantStore } from '../../stores/tenant'
 import { useToast } from '../../composables/useToast'
 import { useCopyId } from '../../composables/useCopyId'
-import { User as UserIcon, Plus, Trash2, Edit, Search, X, RefreshCw, Check, Copy } from 'lucide-vue-next'
+import { User as UserIcon, Plus, Trash2, Pencil, Search, RefreshCw, Check, Copy } from 'lucide-vue-next'
+import { formatDate } from '../../utils/format'
+import { errorMessage } from '../../utils/error'
+import BaseModal from '../../components/modals/BaseModal.vue'
+import DeleteModal from '../../components/modals/DeleteModal.vue'
+import PageToolbar from '../../components/base/PageToolbar.vue'
+import DataTable, { type Column } from '../../components/base/DataTable.vue'
+import PaginationBar from '../../components/base/PaginationBar.vue'
 
 const { t } = useI18n()
 const tenantStore = useTenantStore()
@@ -15,14 +21,38 @@ const toast = useToast()
 
 const { copiedId, copyId } = useCopyId()
 
-const users = ref<User[]>([])
+/**
+ * 列表里的一行。两个来源拼出来的形状不一样，后端也没有对应的统一模型，所以在这里定义：
+ * 有当前组织时由 OrgMember 拼出（带 role / member_uuid），系统管理员无组织上下文时直接用 User。
+ */
+interface UserRow {
+    uuid: string
+    username: string
+    email: string
+    is_superuser: boolean
+    /** invited | active */
+    status: string
+    created_at: string
+    /** owner / admin / writer / reader / member；全局用户列表里没有 */
+    role?: string
+    /** 邀请中的成员才有：取消邀请用的是 membership 的 uuid */
+    member_uuid?: string
+    /** 兼容旧写法保留的嵌套引用 */
+    user?: { uuid: string; name: string }
+}
+
+const users = ref<UserRow[]>([])
 const loading = ref(false)
+const loadError = ref('')
 const searchQuery = ref('')
-const router = useRouter()
+// 服务端分页：页码和每页条数变了就重新取，搜索防抖后回到第一页
+const page = ref(1)
+const pageSize = ref(20)
+const total = ref(0)
 const inviteForm = ref({
     email: '',
     org_role: 1,
-    is_superuser: false
+    is_superuser: false,
 })
 
 const isSystemOrg = computed(() => {
@@ -35,73 +65,109 @@ const editUserForm = ref({
     uuid: '',
     username: '',
     email: '',
-    role: 'user'
+    role: 'user',
 })
-const editingResource = ref(false)
 const creatingResource = ref(false)
 const editModalVisible = ref(false)
 const editError = ref('')
 
 const fetchUsers = async () => {
     loading.value = true
+    loadError.value = ''
     try {
         // Wait for tenant store to finish loading if needed
         if (tenantStore.isLoading) {
-            await new Promise<void>(resolve => {
-                const unwatch = watch(() => tenantStore.isLoading, (val) => {
-                    if (!val) { unwatch(); resolve() }
-                })
+            await new Promise<void>((resolve) => {
+                const unwatch = watch(
+                    () => tenantStore.isLoading,
+                    (val) => {
+                        if (!val) {
+                            unwatch()
+                            resolve()
+                        }
+                    }
+                )
             })
         }
         const orgId = tenantStore.currentOrgId
         if (orgId) {
-            // Fetch org members
-            const response = await orgsApi.fetchMembers(orgId)
-            const members = Array.isArray(response.data) ? response.data : []
-            users.value = members.map((m: any) => ({
+            // 成员列表分页与搜索都在服务端；这一页显示的是「当前组织的成员」，
+            // 只有系统管理员在没有组织上下文时才会走下面的全局用户分支
+            const response = await orgsApi.fetchMembers(orgId, {
+                offset: (page.value - 1) * pageSize.value,
+                limit: pageSize.value,
+                query: searchQuery.value.trim() || undefined,
+            })
+            const members = response.members || []
+            total.value = response.total ?? members.length
+            users.value = members.map((m) => ({
                 user: {
                     uuid: m.user_uuid,
                     name: m.user_email || m.user_uuid,
                 },
                 uuid: m.user_uuid,
                 member_uuid: m.uuid,
-                username: m.user_email?.split('@')[0] || m.user_uuid,
+                username: m.username || m.user_email?.split('@')[0] || m.user_uuid,
                 email: m.user_email || '',
-                role: m.is_owner ? 'owner' : m.org_role === 3 ? 'admin' : m.org_role === 2 ? 'writer' : m.org_role === 1 ? 'reader' : 'member',
+                role: m.is_owner
+                    ? 'owner'
+                    : m.org_role === 3
+                      ? 'admin'
+                      : m.org_role === 2
+                        ? 'writer'
+                        : m.org_role === 1
+                          ? 'reader'
+                          : 'member',
                 is_superuser: !!m.is_superuser,
                 status: m.invitation_status === 0 ? 'invited' : 'active',
                 created_at: m.created_at,
             }))
         } else {
-            // Fallback: global user list (system admin context)
-            const response = await usersApi.fetchUsers()
-            users.value = (response.data as any).users || []
+            // 没有组织上下文时（系统管理员）列全局用户，同样走服务端分页
+            const res = await usersApi.fetchUsers({
+                offset: (page.value - 1) * pageSize.value,
+                limit: pageSize.value,
+                query: searchQuery.value.trim() || undefined,
+            })
+            users.value = res.users || []
+            total.value = res.total ?? users.value.length
         }
     } catch (error) {
         console.error('Failed to fetch users:', error)
         users.value = []
+        loadError.value = t('messages.error')
     } finally {
         loading.value = false
     }
 }
 
-const filteredUsers = computed(() => {
-    if (!searchQuery.value) return users.value
-    const query = searchQuery.value.toLowerCase()
-    return users.value.filter(user => 
-        (user.username?.toLowerCase().includes(query) || '') || 
-        (user.email?.toLowerCase().includes(query) || '') ||
-        (user.uuid?.toLowerCase().includes(query) || '')
-    )
+// 翻页 / 改每页条数直接重取；搜索防抖 400ms 后回到第一页
+watch([page, pageSize], () => fetchUsers())
+let searchTimer: ReturnType<typeof setTimeout> | null = null
+watch(searchQuery, () => {
+    if (searchTimer) clearTimeout(searchTimer)
+    searchTimer = setTimeout(() => {
+        if (page.value === 1) fetchUsers()
+        else page.value = 1
+    }, 400)
+})
+onUnmounted(() => {
+    if (searchTimer) clearTimeout(searchTimer)
 })
 
 const getUserStatus = (status: string | undefined): string => {
     return status || 'active'
 }
 
-const navigateToDetail = (user: User) => {
-    router.push({ name: 'user-detail', params: { id: user.uuid } })
-}
+// 创建时间列显示的是格式化后的文案，排序要按原始值；状态列空值按 active 处理
+const columns = computed<Column[]>(() => [
+    { key: 'username', label: t('dashboard.table.userName'), sortable: true },
+    { key: 'email', label: t('dashboard.table.email'), sortable: true },
+    { key: 'role', label: t('dashboard.table.role'), sortable: true, sortValue: (u) => u.role || 'member' },
+    { key: 'status', label: t('dashboard.table.status'), sortable: true, sortValue: (u) => getUserStatus(u.status) },
+    { key: 'created', label: t('dashboard.table.created'), sortable: true, sortValue: (u) => u.created_at || '' },
+    { key: 'actions', label: t('dashboard.table.actions'), align: 'center' },
+])
 
 const openCreateModal = () => {
     inviteForm.value = { email: '', org_role: 1, is_superuser: false }
@@ -128,20 +194,20 @@ const handleInviteUser = async () => {
         await fetchUsers()
         closeCreateModal()
         toast.success(t('messages.createSuccess'))
-    } catch (err: any) {
+    } catch (err) {
         console.error('Failed to invite user:', err)
-        createError.value = err.response?.data?.error_message || err.response?.data?.detail || err.message || t('messages.error')
+        createError.value = errorMessage(err, t('messages.error'))
     } finally {
         creatingResource.value = false
     }
 }
 
-const openEditModal = (user: User) => {
+const openEditModal = (user: UserRow) => {
     editUserForm.value = {
         uuid: user.uuid,
         username: user.username,
         email: user.email || '',
-        role: user.role || 'user'
+        role: user.role || 'user',
     }
     editModalVisible.value = true
 }
@@ -163,14 +229,14 @@ const handleEditUser = async () => {
         await usersApi.updateUser(editUserForm.value.uuid, {
             username: editUserForm.value.username,
             email: editUserForm.value.email,
-            role: editUserForm.value.role
+            role: editUserForm.value.role,
         })
         await fetchUsers()
         closeEditModal()
         toast.success(t('messages.updateSuccess'))
-    } catch (err: any) {
+    } catch (err) {
         console.error('Failed to update user:', err)
-        editError.value = err.response?.data?.error_message || err.message || t('messages.error')
+        editError.value = errorMessage(err, t('messages.error'))
     } finally {
         creatingResource.value = false
     }
@@ -180,11 +246,11 @@ const handleEditUser = async () => {
 const deleteModalVisible = ref(false)
 const deletingResource = ref(false)
 const deleteError = ref('')
-const resourceToDelete = ref<User | null>(null)
+const resourceToDelete = ref<UserRow | null>(null)
 
-const isInvitedUser = computed(() => (resourceToDelete.value as any)?.status === 'invited')
+const isInvitedUser = computed(() => resourceToDelete.value?.status === 'invited')
 
-const handleDeleteClick = (item: User) => {
+const handleDeleteClick = (item: UserRow) => {
     resourceToDelete.value = item
     deleteModalVisible.value = true
 }
@@ -198,7 +264,7 @@ const confirmDelete = async () => {
     deletingResource.value = true
     deleteError.value = ''
     try {
-        const item = resourceToDelete.value as any
+        const item = resourceToDelete.value
         if (item.status === 'invited' && item.member_uuid) {
             // Cancel invitation
             const orgId = tenantStore.currentOrgId
@@ -211,9 +277,9 @@ const confirmDelete = async () => {
         await fetchUsers()
         closeDeleteModal()
         toast.success(t('messages.deleteSuccess'))
-    } catch (error: any) {
+    } catch (error) {
         console.error('Failed to delete user:', error)
-        deleteError.value = error.response?.data?.error_message || error.message || t('messages.error')
+        deleteError.value = errorMessage(error, t('messages.error'))
     } finally {
         deletingResource.value = false
     }
@@ -223,385 +289,324 @@ onMounted(fetchUsers)
 </script>
 
 <template>
-  <div>
-    <div class="page-header">
-      <div class="search-wrapper">
-        <label class="search-box">
-          <Search :size="16" class="search-icon" />
-          <input 
-            id="searchQuery"
-            name="searchQuery"
-            type="text" 
-            v-model="searchQuery"
-            :placeholder="$t('actions.search') + '...'" 
-            class="search-input"
-          />
-        </label>
-      </div>
-      <div class="header-actions">
-        <button class="btn btn-secondary btn-sm btn-icon" @click="fetchUsers" :title="$t('actions.refresh')">
-          <RefreshCw :size="14" :class="{ spinning: loading }" />
-        </button>
-        <button class="btn btn-primary btn-sm" @click="openCreateModal">
-          <Plus :size="14" /> {{ $t('dashboard.buttons.createUser') }}
-        </button>
-      </div>
-    </div>
+    <div>
+        <PageToolbar v-model:search="searchQuery">
+            <template #actions>
+                <button class="btn btn-secondary btn-sm btn-icon" @click="fetchUsers" :title="$t('actions.refresh')">
+                    <RefreshCw :size="14" :class="{ spinning: loading }" />
+                </button>
+                <button class="btn btn-primary btn-sm" @click="openCreateModal">
+                    <Plus :size="14" /> {{ $t('dashboard.buttons.createUser') }}
+                </button>
+            </template>
+        </PageToolbar>
 
-    <div class="card table-card">
-      <table class="data-table">
-        <thead>
-          <tr>
-            <th>{{ $t('dashboard.table.userName') }}</th>
-            <th>{{ $t('dashboard.table.email') }}</th>
-            <th>{{ $t('dashboard.table.role') }}</th>
-            <th>{{ $t('dashboard.table.status') }}</th>
-            <th>{{ $t('dashboard.table.created') }}</th>
-            <th>{{ $t('dashboard.table.actions') }}</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-if="loading">
-            <td colspan="6" class="text-center">
-              <div class="loading-spinner" style="margin: 20px auto;"></div>
-            </td>
-          </tr>
-          <tr v-else-if="filteredUsers.length === 0">
-            <td colspan="6" class="text-center text-secondary" style="padding: 48px;">
-               <div v-if="searchQuery">
-                  <Search :size="48" style="opacity: 0.3; margin-bottom: 16px;" />
-                  <p>{{ $t('messages.noResults') }}</p>
-               </div>
-               <div v-else>
-                  <p>{{ $t('messages.noUsers') }}</p>
-               </div>
-            </td>
-          </tr>
-          <tr v-else v-for="user in filteredUsers" :key="user.uuid">
-            <td>
-              <router-link :to="{ name: 'user-detail', params: { id: user.uuid } }" class="resource-link">
-                <div class="resource-info">
-                  <div class="resource-icon">
-                    <UserIcon :size="16" />
-                  </div>
-                  <div>
-                    <div class="resource-name">{{ user.username }}</div>
-                    <div class="resource-id-row">
-                      <span class="resource-id" :title="user.uuid">{{ user.uuid.slice(0, 8) }}...</span>
-                      <button class="copy-btn-mini" @click.stop.prevent="copyId(user.uuid)" :title="t('actions.copy')" :aria-label="t('actions.copy')">
-                        <Check v-if="copiedId === user.uuid" :size="10" style="color: #10b981;" />
-                        <Copy v-else :size="10" />
-                      </button>
-                    </div>
-                  </div>
+        <DataTable
+            :columns="columns"
+            :rows="users"
+            row-key="uuid"
+            :loading="loading"
+            :error="loadError"
+            @retry="fetchUsers"
+        >
+            <template #empty>
+                <div v-if="searchQuery">
+                    <Search :size="48" style="opacity: 0.3; margin-bottom: 16px" />
+                    <p>{{ $t('messages.noResults') }}</p>
                 </div>
-              </router-link>
-            </td>
-            <td>{{ user.email }}</td>
-            <td>
-               <span class="role-badge">{{ $t('roles.' + (user.role?.toLowerCase() || 'member')) }}</span>
-               <span v-if="isSystemOrg && user.is_superuser" class="superuser-tag">{{ $t('roles.superuser') }}</span>
-            </td>
-            <td>
-               <span :class="'status-' + getUserStatus(user.status)">{{ $t('userStatus.' + getUserStatus(user.status)) }}</span>
-            </td>
-            <td>{{ user.created_at ? new Date(user.created_at).toLocaleDateString() : new Date().toLocaleDateString() }}</td>
-            <td>
-              <div class="actions">
-                <button class="btn btn-ghost btn-sm" :title="$t('actions.edit')" @click="openEditModal(user)">
-                  <Edit :size="14" />
-                </button>
-                <button class="btn btn-ghost btn-sm text-error" :title="$t('actions.delete')" @click="handleDeleteClick(user)">
-                  <Trash2 :size="14" />
-                </button>
-              </div>
-            </td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
+                <div v-else>
+                    <p>{{ $t('messages.noUsers') }}</p>
+                </div>
+            </template>
 
-    <!-- Create User Modal -->
-    <div v-if="createModalVisible" class="modal-overlay" @click.self="closeCreateModal">
-      <div class="modal-content card" style="max-width: 500px;">
-        <div class="modal-header">
-          <h3>{{ $t('dashboard.buttons.createUser') }}</h3>
-          <button class="btn btn-ghost btn-sm icon-btn" @click="closeCreateModal"><X :size="20" /></button>
-        </div>
-        <div class="modal-body" style="padding: var(--spacing-6);">
-          <div class="form-group">
-            <label class="form-label" for="user_email">{{ $t('dashboard.table.email') }}</label>
-            <input
-              id="user_email"
-              name="email"
-              v-model="inviteForm.email"
-              type="email"
-              class="form-input"
-              :placeholder="$t('dashboard.table.email')"
-              autocomplete="email"
-            />
-          </div>
-          <div class="form-group">
-            <label class="form-label" for="user_role">{{ $t('dashboard.table.role') }}</label>
-            <select id="user_role" name="role" v-model="inviteForm.org_role" class="form-input" :disabled="inviteForm.is_superuser">
-              <option :value="1">{{ $t('roles.reader') }}</option>
-              <option :value="2">{{ $t('roles.writer') }}</option>
-              <option :value="3">{{ $t('roles.admin') }}</option>
-            </select>
-          </div>
-          <div v-if="isSystemOrg" class="form-group">
-            <label class="form-check-label">
-              <input type="checkbox" v-model="inviteForm.is_superuser" class="form-check-input"
-                @change="inviteForm.org_role = inviteForm.is_superuser ? 3 : inviteForm.org_role" />
-              {{ $t('roles.superuser') }}
-            </label>
-          </div>
-        </div>
-        <div class="modal-footer" style="flex-direction: column; align-items: stretch; gap: var(--spacing-2);">
-          <div v-if="createError" class="text-error" style="font-size:var(--font-size-sm);background:var(--error-light);padding:var(--spacing-2);border-radius:var(--radius-sm)">
-            {{ createError }}
-          </div>
-          <div style="display: flex; justify-content: flex-end; gap: var(--spacing-2);">
-            <button class="btn btn-secondary" @click="closeCreateModal" :disabled="creatingResource">{{ $t('actions.cancel') }}</button>
-            <button class="btn btn-primary" @click="handleInviteUser" :disabled="creatingResource">
-              <span v-if="creatingResource" class="loading-spinner" style="width: 16px; height: 16px; border-width: 2px;"></span>
-              {{ creatingResource ? $t('messages.loading') : $t('actions.confirm') }}
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
+            <template #cell-username="{ row: user }">
+                <router-link :to="{ name: 'user-detail', params: { id: user.uuid } }" class="resource-link">
+                    <div class="resource-info">
+                        <div class="resource-icon">
+                            <UserIcon :size="16" />
+                        </div>
+                        <div>
+                            <div class="resource-name">{{ user.username }}</div>
+                            <div class="resource-id-row">
+                                <span class="resource-id" :title="user.uuid">{{ user.uuid.slice(0, 8) }}...</span>
+                                <button
+                                    class="copy-btn-mini"
+                                    @click.stop.prevent="copyId(user.uuid)"
+                                    :title="t('actions.copy')"
+                                    :aria-label="t('actions.copy')"
+                                >
+                                    <Check
+                                        v-if="copiedId === user.uuid"
+                                        :size="10"
+                                        style="color: var(--success-color)"
+                                    />
+                                    <Copy v-else :size="10" />
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </router-link>
+            </template>
 
-    <!-- Edit User Modal -->
-    <div v-if="editModalVisible" class="modal-overlay" @click.self="closeEditModal">
-      <div class="modal-content card" style="max-width: 500px;">
-        <div class="modal-header">
-          <h3>{{ $t('actions.edit') }}</h3>
-          <button class="btn btn-ghost btn-sm icon-btn" @click="closeEditModal"><X :size="20" /></button>
-        </div>
-        <div class="modal-body" style="padding: var(--spacing-6);">
-          <div class="form-group">
-            <label class="form-label" for="edit_user_name">{{ $t('dashboard.table.userName') }}</label>
-            <input 
-              id="edit_user_name"
-              name="username"
-              v-model="editUserForm.username" 
-              type="text" 
-              class="form-input" 
-              :placeholder="$t('dashboard.table.userName')" 
-              autocomplete="username"
-            />
-          </div>
-          <div class="form-group">
-            <label class="form-label" for="edit_user_email">{{ $t('dashboard.table.email') }}</label>
-            <input 
-              id="edit_user_email"
-              name="email"
-              v-model="editUserForm.email" 
-              type="email" 
-              class="form-input" 
-              :placeholder="$t('dashboard.table.email')" 
-              autocomplete="email"
-            />
-          </div>
-          <div class="form-group">
-            <label class="form-label" for="edit_user_role">{{ $t('dashboard.table.role') }}</label>
-            <select id="edit_user_role" name="role" v-model="editUserForm.role" class="form-input">
-              <option value="user">{{ $t('roles.member') }}</option>
-              <option value="admin">{{ $t('roles.admin') }}</option>
-            </select>
-          </div>
-        </div>
-        <div v-if="editError" class="text-error" style="margin: 0 var(--spacing-6) var(--spacing-4); font-size:var(--font-size-sm);background:var(--error-light);padding:var(--spacing-2);border-radius:var(--radius-sm)">
-          {{ editError }}
-        </div>
-        <div class="modal-footer">
-          <button class="btn btn-secondary" @click="closeEditModal" :disabled="creatingResource">{{ $t('actions.cancel') }}</button>
-          <button class="btn btn-primary" @click="handleEditUser" :disabled="creatingResource">
-            <span v-if="creatingResource" class="loading-spinner" style="width: 16px; height: 16px; border-width: 2px;"></span>
-            {{ creatingResource ? $t('messages.loading') : $t('actions.confirm') }}
-          </button>
-        </div>
-      </div>
-    </div>
+            <template #cell-email="{ row: user }">{{ user.email }}</template>
 
-    <!-- Delete Confirmation Modal -->
-    <div v-if="deleteModalVisible" class="modal-overlay" @click.self="closeDeleteModal">
-      <div class="modal-content card" style="max-width: 460px;">
-        <div class="modal-header">
-          <h3>{{ isInvitedUser ? $t('actions.cancelInvitation') : $t('actions.delete') }}</h3>
-          <button class="btn btn-ghost btn-sm icon-btn" @click="closeDeleteModal"><X :size="20" /></button>
-        </div>
-        <div class="modal-body">
-          <div style="text-align:center;padding:var(--spacing-4) 0">
-            <div style="width:64px;height:64px;border-radius:50%;background:var(--error-light);display:flex;align-items:center;justify-content:center;margin:0 auto var(--spacing-4);color:var(--error-color)"><Trash2 :size="32" /></div>
-            <p style="color:var(--text-secondary);margin:0 0 var(--spacing-4)">{{ isInvitedUser ? $t('messages.confirmCancelInvitation') : $t('dashboard.deleteConfirm.message') }}</p>
-            <div style="background:var(--bg-secondary);border:1px solid var(--border-light);border-radius:var(--radius-md);padding:var(--spacing-3) var(--spacing-4);text-align:left">
-              <span style="font-size:var(--font-size-xs);color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.05em;display:block;margin-bottom:var(--spacing-1)">{{ $t('dashboard.deleteConfirm.resource') }}</span>
-              <span style="font-weight:var(--font-weight-semibold);display:block">{{ resourceToDelete?.username }}</span>
-              <span style="font-size:var(--font-size-xs);color:var(--text-light);font-family:var(--font-family-mono);display:block;margin-top:2px">{{ resourceToDelete?.uuid }}</span>
+            <template #cell-role="{ row: user }">
+                <span class="role-badge">{{ $t('roles.' + (user.role?.toLowerCase() || 'member')) }}</span>
+                <span v-if="isSystemOrg && user.is_superuser" class="superuser-tag">{{ $t('roles.superuser') }}</span>
+            </template>
+
+            <template #cell-status="{ row: user }">
+                <span :class="'status-' + getUserStatus(user.status)">{{
+                    $t('userStatus.' + getUserStatus(user.status))
+                }}</span>
+            </template>
+
+            <template #cell-created="{ row: user }">{{ formatDate(user.created_at || new Date()) }}</template>
+
+            <template #cell-actions="{ row: user }">
+                <div class="row-actions">
+                    <button class="icon-btn-table" :title="$t('actions.edit')" @click="openEditModal(user as UserRow)">
+                        <Pencil :size="16" />
+                    </button>
+                    <button
+                        class="icon-btn-table icon-danger"
+                        :title="$t('actions.delete')"
+                        @click="handleDeleteClick(user as UserRow)"
+                    >
+                        <Trash2 :size="16" />
+                    </button>
+                </div>
+            </template>
+            <template #footer>
+                <PaginationBar
+                    :page="page"
+                    :page-size="pageSize"
+                    :total="total"
+                    @update:page="page = $event"
+                    @update:page-size="pageSize = $event"
+                />
+            </template>
+        </DataTable>
+
+        <!-- Create User Modal -->
+        <BaseModal
+            :show="createModalVisible"
+            :title="$t('dashboard.buttons.createUser')"
+            :loading="creatingResource"
+            form
+            @close="closeCreateModal"
+            @submit="handleInviteUser"
+        >
+            <div class="form-group">
+                <label class="form-label" for="user_email">{{ $t('dashboard.table.email') }}</label>
+                <input
+                    id="user_email"
+                    name="email"
+                    v-model="inviteForm.email"
+                    type="email"
+                    class="form-input"
+                    :placeholder="$t('dashboard.table.email')"
+                    autocomplete="email"
+                />
             </div>
-            <div v-if="deleteError" class="text-error" style="margin-top:var(--spacing-4);font-size:var(--font-size-sm);background:var(--error-light);padding:var(--spacing-2);border-radius:var(--radius-sm)">
-              {{ deleteError }}
+            <div class="form-group">
+                <label class="form-label" for="user_role">{{ $t('dashboard.table.role') }}</label>
+                <select
+                    id="user_role"
+                    name="role"
+                    v-model="inviteForm.org_role"
+                    class="form-input"
+                    :disabled="inviteForm.is_superuser"
+                >
+                    <option :value="1">{{ $t('roles.reader') }}</option>
+                    <option :value="2">{{ $t('roles.writer') }}</option>
+                    <option :value="3">{{ $t('roles.admin') }}</option>
+                </select>
             </div>
-          </div>
-        </div>
-        <div class="modal-footer">
-          <button class="btn btn-secondary" @click="closeDeleteModal" :disabled="deletingResource">{{ $t('actions.cancel') }}</button>
-          <button class="btn btn-danger" @click="confirmDelete" :disabled="deletingResource">
-            <span v-if="deletingResource" class="loading-spinner" style="width:16px;height:16px;border-width:2px"></span>
-            <Trash2 v-else :size="14" />
-            {{ deletingResource ? $t('dashboard.deleteConfirm.deleting') : (isInvitedUser ? $t('actions.cancelInvitation') : $t('actions.delete')) }}
-          </button>
-        </div>
-      </div>
-    </div>
+            <div v-if="isSystemOrg" class="form-group">
+                <label class="form-check-label">
+                    <input
+                        type="checkbox"
+                        v-model="inviteForm.is_superuser"
+                        class="form-check-input"
+                        @change="inviteForm.org_role = inviteForm.is_superuser ? 3 : inviteForm.org_role"
+                    />
+                    {{ $t('roles.superuser') }}
+                </label>
+            </div>
 
-    <!-- Quota Management Modal -->
-  </div>
+            <div
+                v-if="createError"
+                class="text-error"
+                style="
+                    font-size: var(--font-size-sm);
+                    background: var(--error-light);
+                    padding: var(--spacing-2);
+                    border-radius: var(--radius-sm);
+                "
+            >
+                {{ createError }}
+            </div>
+
+            <template #footer>
+                <button type="button" class="btn btn-secondary" @click="closeCreateModal" :disabled="creatingResource">
+                    {{ $t('actions.cancel') }}
+                </button>
+                <button type="submit" class="btn btn-primary" :disabled="creatingResource">
+                    <span
+                        v-if="creatingResource"
+                        class="loading-spinner"
+                        style="width: 16px; height: 16px; border-width: 2px"
+                    ></span>
+                    {{ creatingResource ? $t('messages.loading') : $t('actions.confirm') }}
+                </button>
+            </template>
+        </BaseModal>
+
+        <!-- Edit User Modal -->
+        <BaseModal
+            :show="editModalVisible"
+            :title="$t('actions.edit')"
+            :loading="creatingResource"
+            form
+            @close="closeEditModal"
+            @submit="handleEditUser"
+        >
+            <div class="form-group">
+                <label class="form-label" for="edit_user_name">{{ $t('dashboard.table.userName') }}</label>
+                <input
+                    id="edit_user_name"
+                    name="username"
+                    v-model="editUserForm.username"
+                    type="text"
+                    class="form-input"
+                    :placeholder="$t('dashboard.table.userName')"
+                    autocomplete="username"
+                />
+            </div>
+            <div class="form-group">
+                <label class="form-label" for="edit_user_email">{{ $t('dashboard.table.email') }}</label>
+                <input
+                    id="edit_user_email"
+                    name="email"
+                    v-model="editUserForm.email"
+                    type="email"
+                    class="form-input"
+                    :placeholder="$t('dashboard.table.email')"
+                    autocomplete="email"
+                />
+            </div>
+            <div class="form-group">
+                <label class="form-label" for="edit_user_role">{{ $t('dashboard.table.role') }}</label>
+                <select id="edit_user_role" name="role" v-model="editUserForm.role" class="form-input">
+                    <option value="user">{{ $t('roles.member') }}</option>
+                    <option value="admin">{{ $t('roles.admin') }}</option>
+                </select>
+            </div>
+
+            <div
+                v-if="editError"
+                class="text-error"
+                style="
+                    font-size: var(--font-size-sm);
+                    background: var(--error-light);
+                    padding: var(--spacing-2);
+                    border-radius: var(--radius-sm);
+                "
+            >
+                {{ editError }}
+            </div>
+
+            <template #footer>
+                <button type="button" class="btn btn-secondary" @click="closeEditModal" :disabled="creatingResource">
+                    {{ $t('actions.cancel') }}
+                </button>
+                <button type="submit" class="btn btn-primary" :disabled="creatingResource">
+                    <span
+                        v-if="creatingResource"
+                        class="loading-spinner"
+                        style="width: 16px; height: 16px; border-width: 2px"
+                    ></span>
+                    {{ creatingResource ? $t('messages.loading') : $t('actions.confirm') }}
+                </button>
+            </template>
+        </BaseModal>
+
+        <!-- Delete Confirmation Modal -->
+        <DeleteModal
+            :show="deleteModalVisible"
+            :title="isInvitedUser ? $t('actions.cancelInvitation') : $t('actions.delete')"
+            :message="isInvitedUser ? $t('messages.confirmCancelInvitation') : $t('dashboard.deleteConfirm.message')"
+            :confirm-label="isInvitedUser ? $t('actions.cancelInvitation') : undefined"
+            :resource-name="resourceToDelete?.username"
+            :resource-id="resourceToDelete?.uuid"
+            :loading="deletingResource"
+            :error="deleteError"
+            @close="closeDeleteModal"
+            @confirm="confirmDelete"
+        />
+
+        <!-- Quota Management Modal -->
+    </div>
 </template>
 
 <style scoped>
-.page-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 0;
-  padding-right: 20px;
-}
-
-.search-wrapper {
-  flex: 1;
-  max-width: 400px;
-}
-
-.search-box {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  background: var(--bg-secondary);
-  padding: 0 12px;
-  height: 40px;
-  border-radius: var(--radius-md);
-  border: 1px solid var(--border-light);
-  transition: all 0.2s;
-}
-
-.search-box:focus-within {
-  border-color: var(--primary-300);
-  box-shadow: 0 0 0 2px var(--primary-100);
-}
-
-.search-icon {
-  color: var(--gray-400);
-}
-
-.search-input {
-  border: none;
-  background: transparent;
-  width: 100%;
-  height: 100%;
-  font-size: 0.875rem;
-  color: var(--text-primary);
-}
-
-.search-input:focus {
-  outline: none;
-}
-
-.table-card {
-  padding: 0;
-  overflow: hidden;
-}
-
 /* .resource-info etc. are global from index.css */
 
 .resource-link {
-  text-decoration: none;
-  display: block;
-  padding: 4px 0;
-  border-radius: var(--radius-sm);
-  transition: all 0.15s;
+    text-decoration: none;
+    display: block;
+    padding: 4px 0;
+    border-radius: var(--radius-sm);
+    transition: all 0.15s;
 }
 
 .resource-link:hover .resource-name {
-  color: var(--primary-600);
-  text-decoration: underline;
+    color: var(--primary-600);
+    text-decoration: underline;
 }
 
 .role-badge {
-  display: inline-block;
-  padding: 2px 8px;
-  background: var(--gray-10);
-  border-radius: var(--radius-full);
-  font-size: var(--font-size-xs);
-  color: var(--text-secondary);
+    display: inline-block;
+    padding: 2px 8px;
+    background: var(--gray-50);
+    border-radius: var(--radius-full);
+    font-size: var(--font-size-xs);
+    color: var(--text-secondary);
 }
 
 .superuser-tag {
-  display: inline-block;
-  padding: 2px 6px;
-  margin-left: 4px;
-  background: var(--primary-light, #e0e7ff);
-  color: var(--primary-600, #4f46e5);
-  border-radius: var(--radius-full);
-  font-size: var(--font-size-xs);
-  font-weight: var(--font-weight-medium);
+    display: inline-block;
+    padding: 2px 6px;
+    margin-left: 4px;
+    background: var(--primary-light);
+    color: var(--primary-600);
+    border-radius: var(--radius-full);
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-medium);
 }
 
 .status-active {
-  color: var(--success-color);
-  font-weight: var(--font-weight-medium);
+    color: var(--success-color);
+    font-weight: var(--font-weight-medium);
 }
 
 .status-invited {
-  color: var(--warning-color, #e6a23c);
-  font-weight: var(--font-weight-medium);
+    color: var(--warning-color, var(--warning-color));
+    font-weight: var(--font-weight-medium);
 }
 
 .status-inactive {
-  color: var(--text-light);
-  font-weight: var(--font-weight-medium);
-}
-
-.actions {
-  display: flex;
-  gap: var(--spacing-2);
-}
-
-.text-error {
-  color: var(--error-color);
-}
-
-/* Modal Styles */
-
-.btn-danger {
-    background: var(--error-color);
-    color: white;
-    border: none;
-    padding: 8px 20px;
-    border-radius: var(--radius-md);
-    font-size: var(--font-size-sm);
+    color: var(--text-light);
     font-weight: var(--font-weight-medium);
-    cursor: pointer;
-    display: inline-flex;
-    align-items: center;
-    gap: var(--spacing-2);
-    transition: background var(--transition-base);
 }
-.btn-danger:hover { background: var(--error-dark); }
-.btn-danger:disabled { opacity: 0.5; cursor: not-allowed; }
 
 .resource-link {
-  color: var(--primary-600);
-  cursor: pointer;
+    color: var(--primary-600);
+    cursor: pointer;
 }
 
 .resource-link:hover {
-  text-decoration: underline;
+    text-decoration: underline;
 }
-
-.header-actions { display: flex; gap: 8px; align-items: center; }
-.spinning { animation: spin 1s linear infinite; }
-@keyframes spin { to { transform: rotate(360deg); } }
 </style>

@@ -52,12 +52,6 @@
   roles:
     - {role: database, become: yes, tags: [database]}
 
-# deploy wds storage
-- name: install wds
-  hosts: wds
-  become_user: root
-  roles:
-    - {role: wds, become: yes, tags: [wds]}
 
 # deploy monitor 
 - name: install monitor

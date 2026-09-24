@@ -5,7 +5,7 @@
 # 一、脚本初始化与参数校验
 # 切换到脚本所在目录
 cd $(dirname $0) 
-# 加载外部环境变量/配置文件（如 SCI_CLIENT_ID、HOSTNAME 等）
+# 加载外部环境变量/配置文件（如 NODE_ID、HOSTNAME 等）
 source ../cloudrc 
 
 # 校验参数：必须传入至少1个参数（router名称）
@@ -37,7 +37,7 @@ suffix=${router/router-/}
 # 检查默认路由器router-0的默认路由：若不存在，调用system_router.sh重建
 def_route=$(ip netns exec router-0 ip route | grep default)
 if [ -z "$def_route" ]; then
-    echo "|:-COMMAND-:| system_router.sh '$SCI_CLIENT_ID' '$HOSTNAME'"
+    echo "|:-COMMAND-:| system_router.sh '$NODE_ID' '$HOSTNAME'"
 fi
 
 # 网络命名空间（netns）：Linux 内核特性，每个 netns 有独立的网卡、IP、路由表、iptables 规则，实现网络隔离（类似 “独立的网络环境”）。
@@ -94,6 +94,11 @@ ip netns exec $router iptables -t nat -C POSTROUTING -m set --match-set nonat sr
 
 # 开启内核IP转发（核心：允许router netns转发IP数据包）
 ip netns exec $router bash -c "echo 1 >/proc/sys/net/ipv4/ip_forward"
+# Loose reverse path filtering: a VPN gateway master receives traffic of instances on other nodes over
+# ns-<vrrp vlan> while their source route points to ns-<vni>; strict mode would drop it. New netns copy
+# the host values, this makes the router independent of them. Redirects are noise on that path.
+ip netns exec $router sysctl -qw net.ipv4.conf.all.rp_filter=2 net.ipv4.conf.default.rp_filter=2 \
+    net.ipv4.conf.all.send_redirects=0 net.ipv4.conf.default.send_redirects=0 >/dev/null 2>&1
 
 # ipset（nonat）：Linux 内核的 IP 集合工具，用于批量管理 IP / 网段，这里标记 “不需要 NAT 的地址”。
 # SNAT（源地址转换）：修改出站数据包的源 IP 为 local_ip，确保外部网络能正确回包；脚本中仅对 “源在 nonat、目标不在 nonat” 的流量做 SNAT，实现精准的 NAT 控制。

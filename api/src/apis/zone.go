@@ -60,20 +60,20 @@ type ZonePatchPayload struct {
 func (v *ZoneAPI) Get(c *gin.Context) {
 	ctx := c.Request.Context()
 	name := c.Param("name")
-	logger.Debugf("Get zone %s", name)
+	logger.Ctx(ctx).Debugf("Get zone %s", name)
 	zone, err := zoneAdmin.GetZoneByName(ctx, name)
 	if err != nil {
-		logger.Errorf("Failed to get zone %s, %+v", name, err)
+		logger.Ctx(ctx).Errorf("Failed to get zone %s, %+v", name, err)
 		ErrorResponse(c, http.StatusBadRequest, "Invalid zone query", err)
 		return
 	}
 	zoneResp, err := v.getZoneResponse(ctx, zone)
 	if err != nil {
-		logger.Errorf("Failed to create zone response %s, %+v", name, err)
+		logger.Ctx(ctx).Errorf("Failed to create zone response %s, %+v", name, err)
 		ErrorResponse(c, http.StatusInternalServerError, "Internal error", err)
 		return
 	}
-	logger.Debugf("Get zone %s success, response: %+v", name, zoneResp)
+	logger.Ctx(ctx).Debugf("Get zone %s success, response: %+v", name, zoneResp)
 	c.JSON(http.StatusOK, zoneResp)
 }
 
@@ -89,28 +89,29 @@ func (v *ZoneAPI) List(c *gin.Context) {
 	ctx := c.Request.Context()
 	offsetStr := c.DefaultQuery("offset", "0")
 	limitStr := c.DefaultQuery("limit", "50")
+	orderStr := c.DefaultQuery("order", "name")
 	queryStr := c.DefaultQuery("query", "")
-	logger.Debugf("List zones with offset %s, limit %s, query %s", offsetStr, limitStr, queryStr)
+	logger.Ctx(ctx).Debugf("List zones with offset %s, limit %s, query %s", offsetStr, limitStr, queryStr)
 	offset, err := strconv.Atoi(offsetStr)
 	if err != nil {
-		logger.Errorf("Invalid query offset %s, %+v", offsetStr, err)
+		logger.Ctx(ctx).Errorf("Invalid query offset %s, %+v", offsetStr, err)
 		ErrorResponse(c, http.StatusBadRequest, "Invalid query offset: "+offsetStr, err)
 		return
 	}
 	limit, err := strconv.Atoi(limitStr)
 	if err != nil {
-		logger.Errorf("Invalid query limit %s, %+v", limitStr, err)
+		logger.Ctx(ctx).Errorf("Invalid query limit %s, %+v", limitStr, err)
 		ErrorResponse(c, http.StatusBadRequest, "Invalid query limit: "+limitStr, err)
 		return
 	}
 	if offset < 0 || limit < 0 {
-		logger.Errorf("Invalid query offset or limit %d, %d", offset, limit)
+		logger.Ctx(ctx).Errorf("Invalid query offset or limit %d, %d", offset, limit)
 		ErrorResponse(c, http.StatusBadRequest, "Invalid query offset or limit", err)
 		return
 	}
-	total, zones, err := zoneAdmin.List(ctx, int64(offset), int64(limit), "name", queryStr)
+	total, zones, err := zoneAdmin.List(ctx, int64(offset), int64(limit), orderStr, queryStr)
 	if err != nil {
-		logger.Errorf("Failed to list zones %+v", err)
+		logger.Ctx(ctx).Errorf("Failed to list zones %+v", err)
 		ErrorResponse(c, http.StatusBadRequest, "Failed to list zones", err)
 		return
 	}
@@ -123,12 +124,12 @@ func (v *ZoneAPI) List(c *gin.Context) {
 	for i, zone := range zones {
 		zoneListResp.Zones[i], err = v.getZoneResponse(ctx, zone)
 		if err != nil {
-			logger.Errorf("Failed to create zone response %+v", err)
+			logger.Ctx(ctx).Errorf("Failed to create zone response %+v", err)
 			ErrorResponse(c, http.StatusInternalServerError, "Internal error", err)
 			return
 		}
 	}
-	logger.Debugf("List zones success, response: %+v", zoneListResp)
+	logger.Ctx(ctx).Debugf("List zones success, response: %+v", zoneListResp)
 	c.JSON(http.StatusOK, zoneListResp)
 }
 
@@ -143,29 +144,29 @@ func (v *ZoneAPI) List(c *gin.Context) {
 // @Failure 401 {object} common.APIError "Not authorized"
 // @Router /zones [post]
 func (v *ZoneAPI) Create(c *gin.Context) {
-	logger.Debugf("Create zone")
+	logger.Ctx(c).Debugf("Create zone")
 	ctx := c.Request.Context()
 	payload := &ZonePayload{}
 	err := c.ShouldBindJSON(payload)
 	if err != nil {
-		logger.Errorf("Invalid input JSON %+v", err)
+		logger.Ctx(ctx).Errorf("Invalid input JSON %+v", err)
 		ErrorResponse(c, http.StatusBadRequest, "Invalid input JSON", err)
 		return
 	}
-	logger.Debugf("Creating zone with payload %+v", payload)
+	logger.Ctx(ctx).Debugf("Creating zone with payload %+v", payload)
 	zone, err := zoneAdmin.Create(ctx, payload.Name, payload.Default, payload.Remark)
 	if err != nil {
-		logger.Errorf("Not able to create zone %+v", err)
+		logger.Ctx(ctx).Errorf("Not able to create zone %+v", err)
 		ErrorResponse(c, http.StatusBadRequest, "Not able to create", err)
 		return
 	}
 	zoneResp, err := v.getZoneResponse(ctx, zone)
 	if err != nil {
-		logger.Errorf("Failed to create zone response %+v", err)
+		logger.Ctx(ctx).Errorf("Failed to create zone response %+v", err)
 		ErrorResponse(c, http.StatusInternalServerError, "Internal error", err)
 		return
 	}
-	logger.Debugf("Create zone success, response: %+v", zoneResp)
+	logger.Ctx(ctx).Debugf("Create zone success, response: %+v", zoneResp)
 	c.JSON(http.StatusOK, zoneResp)
 }
 
@@ -181,16 +182,16 @@ func (v *ZoneAPI) Create(c *gin.Context) {
 func (v *ZoneAPI) Delete(c *gin.Context) {
 	ctx := c.Request.Context()
 	name := c.Param("name")
-	logger.Debugf("Delete zone %s", name)
+	logger.Ctx(ctx).Debugf("Delete zone %s", name)
 	zone, err := zoneAdmin.GetZoneByName(ctx, name)
 	if err != nil {
-		logger.Errorf("Failed to get zone %s, %+v", name, err)
+		logger.Ctx(ctx).Errorf("Failed to get zone %s, %+v", name, err)
 		ErrorResponse(c, http.StatusBadRequest, "Invalid query", err)
 		return
 	}
 	err = zoneAdmin.Delete(ctx, zone)
 	if err != nil {
-		logger.Errorf("Failed to delete zone %s, %+v", name, err)
+		logger.Ctx(ctx).Errorf("Failed to delete zone %s, %+v", name, err)
 		ErrorResponse(c, http.StatusBadRequest, "Not able to delete", err)
 		return
 	}
@@ -213,30 +214,30 @@ func (v *ZoneAPI) Patch(c *gin.Context) {
 	payload := &ZonePatchPayload{}
 	err := c.ShouldBindJSON(payload)
 	if err != nil {
-		logger.Errorf("Invalid input JSON %+v", err)
+		logger.Ctx(ctx).Errorf("Invalid input JSON %+v", err)
 		ErrorResponse(c, http.StatusBadRequest, "Invalid input JSON", err)
 		return
 	}
 	zone, err := zoneAdmin.GetZoneByName(ctx, name)
 	if err != nil {
-		logger.Errorf("Failed to get zone %s, %+v", name, err)
+		logger.Ctx(ctx).Errorf("Failed to get zone %s, %+v", name, err)
 		ErrorResponse(c, http.StatusBadRequest, "Invalid query", err)
 		return
 	}
-	logger.Debugf("Patch zone with payload %+v", payload)
+	logger.Ctx(ctx).Debugf("Patch zone with payload %+v", payload)
 	err = zoneAdmin.Update(ctx, zone, payload.Default, payload.Remark)
 	if err != nil {
-		logger.Errorf("Patch zone failed, %+v", err)
+		logger.Ctx(ctx).Errorf("Patch zone failed, %+v", err)
 		ErrorResponse(c, http.StatusBadRequest, "Patch zone failed", err)
 		return
 	}
 	zoneResp, err := v.getZoneResponse(ctx, zone)
 	if err != nil {
-		logger.Errorf("Failed to create zone response %+v", err)
+		logger.Ctx(ctx).Errorf("Failed to create zone response %+v", err)
 		ErrorResponse(c, http.StatusInternalServerError, "Internal error", err)
 		return
 	}
-	logger.Debugf("Patch zone success, response: %+v", zoneResp)
+	logger.Ctx(ctx).Debugf("Patch zone success, response: %+v", zoneResp)
 	c.JSON(http.StatusOK, zoneResp)
 }
 

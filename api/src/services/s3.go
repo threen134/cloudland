@@ -6,44 +6,62 @@ SPDX-License-Identifier: Apache-2.0
 package services
 
 import (
+	"bytes"
 	"context"
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/binary"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"net/url"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
 	"github.com/spf13/viper"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 
 	"api/src/model"
+	"api/src/utils/tracing"
 )
 
 var (
-	s3Client *minio.Client
+	// 启动后由重试 goroutine 写入、请求并发读取，用原子指针
+	s3Client atomic.Pointer[minio.Client]
 	s3Bucket string
 )
 
-// InitS3 构造 MinIO/S3 客户端，失败时不 fatal —— S3Enabled() 返回 false，走 legacy 模式
-func InitS3() {
+// errS3Config 表示 S3 配置本身有误（如 endpoint 格式非法），重试无意义
+var errS3Config = errors.New("invalid S3 config")
+
+// InitS3 构造 MinIO/S3 客户端并校验 bucket。未配置 S3_ENDPOINT 时返回 nil（不启用 S3）；
+// endpoint/凭据/bucket 暂不可用时返回错误，由调用方重试；配置错误返回包装了 errS3Config 的错误
+func InitS3() error {
 	endpoint := viper.GetString("s3.endpoint")
 	if endpoint == "" {
 		logger.Info("S3_ENDPOINT not set, image S3 store disabled")
-		return
+		return nil
 	}
 
 	accessKey := viper.GetString("s3.access_key")
 	secretKey := viper.GetString("s3.secret_key")
 	useSSL := viper.GetBool("s3.use_ssl")
+	// 兼容带 scheme 的写法（minio-go 只接受 host:port，否则报 fully qualified paths），并据此决定是否使用 SSL
+	if strings.HasPrefix(endpoint, "https://") {
+		endpoint, useSSL = strings.TrimPrefix(endpoint, "https://"), true
+	} else if strings.HasPrefix(endpoint, "http://") {
+		endpoint, useSSL = strings.TrimPrefix(endpoint, "http://"), false
+	}
+	endpoint = strings.TrimSuffix(endpoint, "/")
 	region := viper.GetString("s3.region")
-	s3Bucket = viper.GetString("s3.bucket")
-	if s3Bucket == "" {
-		s3Bucket = "images"
+	bucket := viper.GetString("s3.bucket")
+	if bucket == "" {
+		bucket = "images"
 	}
 
 	client, err := minio.New(endpoint, &minio.Options{
@@ -52,30 +70,34 @@ func InitS3() {
 		Region: region,
 	})
 	if err != nil {
-		logger.Errorf("Failed to init S3 client: %v (falling back to legacy mode)", err)
-		return
+		return fmt.Errorf("%w: %v", errS3Config, err)
 	}
 
 	// minio.New 不发网络请求；BucketExists ping 一下验证 endpoint/凭据/bucket 均可用
 	pingCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	exists, err := client.BucketExists(pingCtx, s3Bucket)
+	exists, err := client.BucketExists(pingCtx, bucket)
 	if err != nil {
-		logger.Errorf("S3 bucket check failed (endpoint=%s bucket=%s): %v (falling back to legacy mode)", endpoint, s3Bucket, err)
-		return
+		return fmt.Errorf("S3 bucket check failed (endpoint=%s bucket=%s): %w", endpoint, bucket, err)
 	}
 	if !exists {
-		logger.Errorf("S3 bucket %q does not exist on %s (falling back to legacy mode)", s3Bucket, endpoint)
-		return
+		return fmt.Errorf("S3 bucket %q does not exist on %s", bucket, endpoint)
 	}
 
-	s3Client = client
-	logger.Infof("S3 image store initialized: endpoint=%s bucket=%s ssl=%v", endpoint, s3Bucket, useSSL)
+	s3Bucket = bucket
+	s3Client.Store(client)
+	logger.Infof("S3 image store initialized: endpoint=%s bucket=%s ssl=%v", endpoint, bucket, useSSL)
+	return nil
 }
 
-// S3Enabled 指示当前是否启用了 S3 镜像仓库
+// S3Configured 指示是否配置了 S3 镜像仓库（不代表已连通）
+func S3Configured() bool {
+	return viper.GetString("s3.endpoint") != ""
+}
+
+// S3Enabled 指示 S3 镜像仓库是否已初始化可用
 func S3Enabled() bool {
-	return s3Client != nil
+	return s3Client.Load() != nil
 }
 
 // S3Bucket 返回已启用的 bucket 名称（外部调用者用）
@@ -106,39 +128,69 @@ type ImageInfo struct {
 	VirtualSize uint64
 }
 
-// detectImageFormat 读对象前 32 字节，识别 qcow2 magic 并提取 virtual size
-// qcow2 失败时回退为 raw，virtual size 取对象实际大小
+// detectImageFormat 读对象头部 512 字节识别镜像格式，规则见 classifyImageHeader
 func detectImageFormat(ctx context.Context, bucket, objectName string) (*ImageInfo, error) {
-	obj, err := s3Client.GetObject(ctx, bucket, objectName, minio.GetObjectOptions{})
+	obj, err := s3Client.Load().GetObject(ctx, bucket, objectName, minio.GetObjectOptions{})
 	if err != nil {
 		return nil, err
 	}
 	defer obj.Close()
 
-	header := make([]byte, 32)
-	if _, err := io.ReadFull(obj, header); err != nil {
+	header := make([]byte, 512)
+	n, err := io.ReadFull(obj, header)
+	if err != nil && !errors.Is(err, io.EOF) && !errors.Is(err, io.ErrUnexpectedEOF) {
 		return nil, err
 	}
-	// qcow2 magic: 0x514649fb ("QFI\xfb")
-	if binary.BigEndian.Uint32(header[0:4]) == 0x514649fb {
-		virtualSize := binary.BigEndian.Uint64(header[24:32])
-		return &ImageInfo{Format: "qcow2", VirtualSize: virtualSize}, nil
-	}
-	// 非 qcow2 视为 raw
 	stat, err := obj.Stat()
 	if err != nil {
 		return nil, err
 	}
-	return &ImageInfo{Format: "raw", VirtualSize: uint64(stat.Size)}, nil
+	return classifyImageHeader(header[:n], stat.Size)
+}
+
+// unsupportedImageMagics 常见的非磁盘镜像/需先转换的格式，给出明确报错
+var unsupportedImageMagics = []struct {
+	magic []byte
+	desc  string
+}{
+	{[]byte{0x1f, 0x8b}, "gzip compressed, decompress it first"},
+	{[]byte{0xfd, '7', 'z', 'X', 'Z', 0x00}, "xz compressed, decompress it first"},
+	{[]byte("BZh"), "bzip2 compressed, decompress it first"},
+	{[]byte{0x28, 0xb5, 0x2f, 0xfd}, "zstd compressed, decompress it first"},
+	{[]byte("PK\x03\x04"), "zip archive"},
+	{[]byte("KDMV"), "vmdk, convert it to qcow2 first"},
+	{[]byte("# Disk DescriptorFile"), "vmdk descriptor, convert it to qcow2 first"},
+	{[]byte("vhdxfile"), "vhdx, convert it to qcow2 first"},
+	{[]byte("conectix"), "vhd, convert it to qcow2 first"},
+}
+
+// classifyImageHeader 按文件头部判断镜像格式：qcow2 取头部中的 virtual size；
+// raw 必须在 510-511 字节带 MBR 引导签名 0x55AA（GPT 的保护性 MBR、hybrid ISO 同样有），virtual size 取文件大小。
+// HTML 错误页、压缩包、vmdk/vhd 等一律报错，避免被当成 raw 登记为可用镜像
+func classifyImageHeader(header []byte, size int64) (*ImageInfo, error) {
+	// qcow2 magic: 0x514649fb ("QFI\xfb")
+	if len(header) >= 32 && binary.BigEndian.Uint32(header[0:4]) == 0x514649fb {
+		return &ImageInfo{Format: "qcow2", VirtualSize: binary.BigEndian.Uint64(header[24:32])}, nil
+	}
+	for _, m := range unsupportedImageMagics {
+		if bytes.HasPrefix(header, m.magic) {
+			return nil, fmt.Errorf("unsupported image format: %s", m.desc)
+		}
+	}
+	if len(header) < 512 || header[510] != 0x55 || header[511] != 0xAA {
+		return nil, fmt.Errorf("not a qcow2 or bootable raw disk image (no MBR/GPT boot signature)")
+	}
+	return &ImageInfo{Format: "raw", VirtualSize: uint64(size)}, nil
 }
 
 // GenerateDownloadURL 生成 presigned GET URL，供 compute node 下载镜像
 // 有效期 2h，compute 侧不需要 S3 凭据
 func GenerateDownloadURL(ctx context.Context, image *model.Image) (string, error) {
-	if !S3Enabled() {
+	client := s3Client.Load()
+	if client == nil {
 		return "", fmt.Errorf("s3 not enabled")
 	}
-	u, err := s3Client.PresignedGetObject(ctx, s3Bucket, s3ObjectName(image), 2*time.Hour, nil)
+	u, err := client.PresignedGetObject(ctx, s3Bucket, s3ObjectName(image), 2*time.Hour, nil)
 	if err != nil {
 		return "", err
 	}
@@ -146,8 +198,10 @@ func GenerateDownloadURL(ctx context.Context, image *model.Image) (string, error
 }
 
 // S3PutObject 将 reader 写入 S3，size=-1 触发 multipart，上限 ~640GB
-func S3PutObject(ctx context.Context, objectName string, reader io.Reader) error {
-	_, err := s3Client.PutObject(ctx, s3Bucket, objectName, reader, -1, minio.PutObjectOptions{
+func S3PutObject(ctx context.Context, objectName string, reader io.Reader) (err error) {
+	ctx, span := startS3Span(ctx, "PutObject", objectName)
+	defer func() { tracing.EndSpan(span, err) }()
+	_, err = s3Client.Load().PutObject(ctx, s3Bucket, objectName, reader, -1, minio.PutObjectOptions{
 		ContentType: "application/octet-stream",
 		PartSize:    64 * 1024 * 1024, // 64MB × 10000 part ≈ 640GB 上限
 	})
@@ -155,13 +209,27 @@ func S3PutObject(ctx context.Context, objectName string, reader io.Reader) error
 }
 
 // S3RemoveObject 删除 S3 中的对象；对不存在对象幂等
-func S3RemoveObject(ctx context.Context, objectName string) error {
-	return s3Client.RemoveObject(ctx, s3Bucket, objectName, minio.RemoveObjectOptions{})
+func S3RemoveObject(ctx context.Context, objectName string) (err error) {
+	ctx, span := startS3Span(ctx, "RemoveObject", objectName)
+	defer func() { tracing.EndSpan(span, err) }()
+	return s3Client.Load().RemoveObject(ctx, s3Bucket, objectName, minio.RemoveObjectOptions{})
 }
 
 // S3DetectImage 只暴露给外部调用的封装，内部走 detectImageFormat
-func S3DetectImage(ctx context.Context, objectName string) (*ImageInfo, error) {
+func S3DetectImage(ctx context.Context, objectName string) (info *ImageInfo, err error) {
+	ctx, span := startS3Span(ctx, "GetObject", objectName)
+	defer func() { tracing.EndSpan(span, err) }()
 	return detectImageFormat(ctx, s3Bucket, objectName)
+}
+
+// startS3Span 为 S3 操作创建子 span（仅在 ctx 带上游 span 时）；不在 HTTP 层注入 trace 头，避免外发到第三方对象存储
+func startS3Span(ctx context.Context, op, objectName string) (context.Context, trace.Span) {
+	return tracing.StartChild(ctx, "s3."+op,
+		trace.WithSpanKind(trace.SpanKindClient),
+		trace.WithAttributes(
+			attribute.String("aws.s3.bucket", s3Bucket),
+			attribute.String("aws.s3.key", objectName),
+		))
 }
 
 // ---- capture 上传 HMAC token ----
@@ -172,7 +240,7 @@ func S3DetectImage(ctx context.Context, objectName string) (*ImageInfo, error) {
 // GenerateCaptureToken 派发 capture_image.sh 时调用，返回 token 和过期 unix 时间戳
 func GenerateCaptureToken(imageID int64) (token string, expiry int64) {
 	expiry = time.Now().Add(2 * time.Hour).Unix()
-	mac := hmac.New(sha256.New, []byte(viper.GetString("sci.shared_secret")))
+	mac := hmac.New(sha256.New, []byte(viper.GetString("capture.upload_secret")))
 	fmt.Fprintf(mac, "%d|%d", imageID, expiry)
 	token = hex.EncodeToString(mac.Sum(nil))
 	return
@@ -183,7 +251,7 @@ func VerifyCaptureToken(token string, imageID, expiry int64) bool {
 	if time.Now().Unix() > expiry {
 		return false
 	}
-	secret := viper.GetString("sci.shared_secret")
+	secret := viper.GetString("capture.upload_secret")
 	if secret == "" {
 		return false
 	}

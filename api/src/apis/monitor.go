@@ -1,23 +1,21 @@
 package apis
 
 import (
+	"api/src/services"
+	"api/src/utils/tracing"
 	"context"
-	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
-	"sort"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
-	"api/src/services"
 
 	"github.com/gin-gonic/gin"
-	"github.com/jinzhu/gorm"
 	"github.com/spf13/viper"
+	"gorm.io/gorm"
 )
 
 type MonitorAPI struct{}
@@ -45,17 +43,6 @@ var (
 	prometheusIP   string
 	prometheusPort int
 
-	volemonitorIP    string
-	volemonitorIPort int
-
-	WdsPrometheusURL      string
-	WdsPrometheusRangeURL string
-
-	volemonitorUser    string
-	volemonitorPasswd  string
-	WDSLoginPath       string
-	WDSAuthURL         string
-	WDSVolumeDetailURL string
 	// query range metrics
 	rangeQueries = map[string]string{
 		"cpu":              `100 * rate(libvirt_domain_info_cpu_time_seconds_total{domain=~"%s"}[2m]) / on(domain) libvirt_domain_info_virtual_cpus{domain=~"%s"}`,
@@ -90,14 +77,6 @@ func init() {
 		prometheusPort = viper.GetInt("monitor.port")
 		logger.Info("prometheusIP: %s,  prometheusPort: %d", prometheusIP, prometheusPort)
 
-		fmt.Printf("wngzhe prometheusIP: %s,  prometheusPort: %d", prometheusIP, prometheusPort)
-		volemonitorIP = viper.GetString("WDS.host")
-		volemonitorIPort = viper.GetInt("WDS.port")
-		volemonitorUser = viper.GetString("WDS.admin")
-		volemonitorPasswd = viper.GetString("WDS.password")
-		logger.Info("volemonitorIP: %s,  volemonitorIPort: %d volemonitorUser: %s, volemonitorPasswd: %s",
-			volemonitorIP, volemonitorIPort, volemonitorUser, volemonitorPasswd)
-
 		SwitchAPIEndpoint = viper.GetString("switch_api.endpoint")
 		SwitchAPIHouse = viper.GetString("switch_api.house")
 		logger.Info("Switch API Endpoint: %s, House: %s", SwitchAPIEndpoint, SwitchAPIHouse)
@@ -112,18 +91,7 @@ func init() {
 	// init Prometheus URL
 	PrometheusURL = fmt.Sprintf("http://%s:%d%s", prometheusIP, prometheusPort, PrometheusQueryPath)
 	PrometheusRangeURL = fmt.Sprintf("http://%s:%d%s", prometheusIP, prometheusPort, PrometheusQueryRangePath)
-	WdsPrometheusURL = fmt.Sprintf("http://%s:%d%s", volemonitorIP, volemonitorIPort, PrometheusQueryPath)
-	WdsPrometheusRangeURL = fmt.Sprintf("http://%s:%d%s", volemonitorIP, volemonitorIPort, PrometheusQueryRangePath)
-	WDSLoginPath = "/api/v1/login"
-	WDSAuthURL = fmt.Sprintf("https://%s%s", volemonitorIP, WDSLoginPath)
-	WDSVolumeDetailURL = fmt.Sprintf("https://%s/api/v2/block/volumes/%%s", volemonitorIP)
 }
-
-var (
-	wdsToken    string
-	wdsTokenExp time.Time
-	tokenMutex  sync.Mutex
-)
 
 type PrometheusResponse struct {
 	Status string `json:"status"`
@@ -152,14 +120,6 @@ type NetworkMetricsRequest struct {
 	End          string   `json:"end" binding:"required"`
 	Step         string   `json:"step" binding:"required"`
 	InterfaceIDs []string `json:"interface_ids" binding:"required,min=1"`
-}
-
-type WDSVolumeResponse struct {
-	RetCode      string `json:"ret_code"`
-	Message      string `json:"message"`
-	VolumeDetail struct {
-		VolumeName string `json:"volume_name"`
-	} `json:"volume_detail"`
 }
 
 // 1. CPU monitor - single metric
@@ -274,26 +234,6 @@ type TrafficResponse struct {
 	} `json:"data"`
 }
 
-// 6. volume monitor - single metric
-type VolumeMonResponse struct {
-	Status string `json:"status"`
-	Data   struct {
-		ChartType string   `json:"chart_type"`
-		Label     []string `json:"label"`
-		Unit      string   `json:"unit"`
-		Result    []struct {
-			Metric struct {
-				VolName string `json:"volName"`
-				Job     string `json:"job"`
-			} `json:"metric"`
-			Values [][]struct {
-				Time  string `json:"time"`
-				Value string `json:"value"`
-			} `json:"values"`
-		} `json:"result"`
-	} `json:"data"`
-}
-
 func getInstanceIDFromCache(uuid string) (int, bool) {
 	if time.Since(lastAccess) > cacheExpire {
 		cacheList = cacheList[:0]
@@ -392,7 +332,7 @@ func (api *MonitorAPI) GetTraffic(c *gin.Context) {
 	}
 
 	if len(request.Network) == 0 {
-		logger.Warning("Network interface not provided in request")
+		logger.Ctx(c).Warning("Network interface not provided in request")
 		c.JSON(http.StatusBadRequest, gin.H{"status": "error", "message": "Network interface is required"})
 		return
 	}
@@ -404,7 +344,7 @@ func (api *MonitorAPI) GetTraffic(c *gin.Context) {
 
 	var instanceIDs []string
 	for _, uuid := range request.ID {
-		logger.Debug("Attempting to convert UUID: %s\n", uuid)
+		logger.Ctx(c).Debug("Attempting to convert UUID: %s\n", uuid)
 		if instanceID, ok := getInstanceIDFromCache(uuid); ok {
 			instanceIDs = append(instanceIDs, "inst-"+strconv.Itoa(instanceID))
 			continue
@@ -415,11 +355,11 @@ func (api *MonitorAPI) GetTraffic(c *gin.Context) {
 				c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
 				return
 			}
-			logger.Errorf("failed to get instance: %v", err)
+			logger.Ctx(c).Errorf("failed to get instance: %v", err)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Internal Server Error"})
 			return
 		}
-		logger.Debug("Successfully converted UUID %s to instanceID %d\n", uuid, instanceID)
+		logger.Ctx(c).Debug("Successfully converted UUID %s to instanceID %d\n", uuid, instanceID)
 		instanceIDs = append(instanceIDs, "inst-"+strconv.Itoa(instanceID))
 		addToCache(uuid, instanceID)
 	}
@@ -444,9 +384,9 @@ func (api *MonitorAPI) GetTraffic(c *gin.Context) {
 		}
 
 		// execute Prometheus query
-		result, err := queryPrometheus(PrometheusRangeURL, query, fmt.Sprintf("%d", start), fmt.Sprintf("%d", end), request.Step)
+		result, err := queryPrometheus(c.Request.Context(), PrometheusRangeURL, query, fmt.Sprintf("%d", start), fmt.Sprintf("%d", end), request.Step)
 		if err != nil {
-			logger.Error("Failed to query traffic for %s (%s): %v", convertedID, networkDevice, err)
+			logger.Ctx(c).Error("Failed to query traffic for %s (%s): %v", convertedID, networkDevice, err)
 			c.JSON(http.StatusInternalServerError, gin.H{"status": "error", "message": "Failed to query metrics"})
 			return
 		}
@@ -498,7 +438,7 @@ func (api *MonitorAPI) GetCPU(c *gin.Context) {
 	var instanceIDs []string
 	domainToUUID := make(map[string]string)
 	for _, uuid := range request.ID {
-		logger.Debug("Attempting to convert UUID: %s\n", uuid)
+		logger.Ctx(c).Debug("Attempting to convert UUID: %s\n", uuid)
 		if instanceID, ok := getInstanceIDFromCache(uuid); ok {
 			domain := "inst-" + strconv.Itoa(instanceID)
 			instanceIDs = append(instanceIDs, domain)
@@ -511,11 +451,11 @@ func (api *MonitorAPI) GetCPU(c *gin.Context) {
 				c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
 				return
 			}
-			logger.Errorf("failed to get instance: %v", err)
+			logger.Ctx(c).Errorf("failed to get instance: %v", err)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Internal Server Error"})
 			return
 		}
-		logger.Debug("Successfully converted UUID %s to instanceID %d\n", uuid, instanceID)
+		logger.Ctx(c).Debug("Successfully converted UUID %s to instanceID %d\n", uuid, instanceID)
 		domain := "inst-" + strconv.Itoa(instanceID)
 		instanceIDs = append(instanceIDs, domain)
 		domainToUUID[domain] = uuid
@@ -537,9 +477,9 @@ func (api *MonitorAPI) GetCPU(c *gin.Context) {
 	}
 
 	// execute query
-	result, err := queryPrometheus(PrometheusRangeURL, query, fmt.Sprintf("%d", start), fmt.Sprintf("%d", end), request.Step)
+	result, err := queryPrometheus(c.Request.Context(), PrometheusRangeURL, query, fmt.Sprintf("%d", start), fmt.Sprintf("%d", end), request.Step)
 	if err != nil {
-		logger.Error("Failed to query CPU: %v", err)
+		logger.Ctx(c).Error("Failed to query CPU: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"status": "error", "message": "Failed to query metrics"})
 		return
 	}
@@ -591,7 +531,7 @@ func (api *MonitorAPI) GetMemory(c *gin.Context) {
 	var instanceIDs []string
 	domainToUUID := make(map[string]string)
 	for _, uuid := range request.ID {
-		logger.Debug("Attempting to convert UUID: %s\n", uuid)
+		logger.Ctx(c).Debug("Attempting to convert UUID: %s\n", uuid)
 		if instanceID, ok := getInstanceIDFromCache(uuid); ok {
 			domain := "inst-" + strconv.Itoa(instanceID)
 			instanceIDs = append(instanceIDs, domain)
@@ -604,11 +544,11 @@ func (api *MonitorAPI) GetMemory(c *gin.Context) {
 				c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
 				return
 			}
-			logger.Errorf("failed to get instance: %v", err)
+			logger.Ctx(c).Errorf("failed to get instance: %v", err)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Internal Server Error"})
 			return
 		}
-		logger.Debug("Successfully converted UUID %s to instanceID %d\n", uuid, instanceID)
+		logger.Ctx(c).Debug("Successfully converted UUID %s to instanceID %d\n", uuid, instanceID)
 		domain := "inst-" + strconv.Itoa(instanceID)
 		instanceIDs = append(instanceIDs, domain)
 		domainToUUID[domain] = uuid
@@ -631,16 +571,16 @@ func (api *MonitorAPI) GetMemory(c *gin.Context) {
 	}
 
 	// execute query
-	unusedResult, err := queryPrometheus(PrometheusRangeURL, unusedQuery, fmt.Sprintf("%d", start), fmt.Sprintf("%d", end), request.Step)
+	unusedResult, err := queryPrometheus(c.Request.Context(), PrometheusRangeURL, unusedQuery, fmt.Sprintf("%d", start), fmt.Sprintf("%d", end), request.Step)
 	if err != nil {
-		logger.Error("Failed to query memory unused: %v", err)
+		logger.Ctx(c).Error("Failed to query memory unused: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"status": "error", "message": "Failed to query metrics"})
 		return
 	}
 
-	totalResult, err := queryPrometheus(PrometheusRangeURL, totalQuery, fmt.Sprintf("%d", start), fmt.Sprintf("%d", end), request.Step)
+	totalResult, err := queryPrometheus(c.Request.Context(), PrometheusRangeURL, totalQuery, fmt.Sprintf("%d", start), fmt.Sprintf("%d", end), request.Step)
 	if err != nil {
-		logger.Error("Failed to query memory total: %v", err)
+		logger.Ctx(c).Error("Failed to query memory total: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"status": "error", "message": "Failed to query metrics"})
 		return
 	}
@@ -686,14 +626,14 @@ func (api *MonitorAPI) GetDisk(c *gin.Context) {
 	}
 
 	if len(request.Disk) == 0 {
-		logger.Warning("Disk ID not provided in request")
+		logger.Ctx(c).Warning("Disk ID not provided in request")
 		c.JSON(http.StatusBadRequest, gin.H{"status": "error", "message": "Disk ID is required"})
 		return
 	}
 
 	var instanceIDs []string
 	for _, uuid := range request.ID {
-		logger.Debug("Attempting to convert UUID: %s\n", uuid)
+		logger.Ctx(c).Debug("Attempting to convert UUID: %s\n", uuid)
 		if instanceID, ok := getInstanceIDFromCache(uuid); ok {
 			instanceIDs = append(instanceIDs, "inst-"+strconv.Itoa(instanceID))
 			continue
@@ -704,11 +644,11 @@ func (api *MonitorAPI) GetDisk(c *gin.Context) {
 				c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
 				return
 			}
-			logger.Errorf("failed to get instance: %v", err)
+			logger.Ctx(c).Errorf("failed to get instance: %v", err)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Internal Server Error"})
 			return
 		}
-		logger.Debug("Successfully converted UUID %s to instanceID %d\n", uuid, instanceID)
+		logger.Ctx(c).Debug("Successfully converted UUID %s to instanceID %d\n", uuid, instanceID)
 		instanceIDs = append(instanceIDs, "inst-"+strconv.Itoa(instanceID))
 		addToCache(uuid, instanceID)
 	}
@@ -723,24 +663,24 @@ func (api *MonitorAPI) GetDisk(c *gin.Context) {
 	// build read and write query
 	readQuery := api.getRangeQuery("disk_read", instanceIDs, request.Disk)
 	writeQuery := api.getRangeQuery("disk_write", instanceIDs, request.Disk)
-	logger.Debug("Read Query:", readQuery)
-	logger.Debug("Write Query:", writeQuery)
+	logger.Ctx(c).Debug("Read Query:", readQuery)
+	logger.Ctx(c).Debug("Write Query:", writeQuery)
 	if readQuery == "" || writeQuery == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"status": "error", "message": "Invalid metric type"})
 		return
 	}
 
 	// execute query
-	readResult, err := queryPrometheus(PrometheusRangeURL, readQuery, fmt.Sprintf("%d", start), fmt.Sprintf("%d", end), request.Step)
+	readResult, err := queryPrometheus(c.Request.Context(), PrometheusRangeURL, readQuery, fmt.Sprintf("%d", start), fmt.Sprintf("%d", end), request.Step)
 	if err != nil {
-		logger.Error("Failed to query disk read metrics: %v", err)
+		logger.Ctx(c).Error("Failed to query disk read metrics: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"status": "error", "message": "Failed to query metrics"})
 		return
 	}
 
-	writeResult, err := queryPrometheus(PrometheusRangeURL, writeQuery, fmt.Sprintf("%d", start), fmt.Sprintf("%d", end), request.Step)
+	writeResult, err := queryPrometheus(c.Request.Context(), PrometheusRangeURL, writeQuery, fmt.Sprintf("%d", start), fmt.Sprintf("%d", end), request.Step)
 	if err != nil {
-		logger.Error("Failed to query disk write metrics: %v", err)
+		logger.Ctx(c).Error("Failed to query disk write metrics: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"status": "error", "message": "Failed to query metrics"})
 		return
 	}
@@ -785,7 +725,7 @@ func (api *MonitorAPI) GetHyperCPU(c *gin.Context) {
 	hostnameFilter := strings.Join(request.Hostname, "|")
 	query := fmt.Sprintf(rangeQueries["host_cpu"], hostnameFilter)
 
-	result, err := queryPrometheus(PrometheusRangeURL, query, fmt.Sprintf("%d", start), fmt.Sprintf("%d", end), request.Step)
+	result, err := queryPrometheus(c.Request.Context(), PrometheusRangeURL, query, fmt.Sprintf("%d", start), fmt.Sprintf("%d", end), request.Step)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"status": "error", "message": "Failed to query metrics"})
 		return
@@ -817,350 +757,19 @@ func (api *MonitorAPI) GetHyperMemory(c *gin.Context) {
 	totalQuery := fmt.Sprintf(rangeQueries["host_mem_total"], hostnameFilter)
 	freeQuery := fmt.Sprintf(rangeQueries["host_mem_free"], hostnameFilter)
 
-	totalResult, err := queryPrometheus(PrometheusRangeURL, totalQuery, fmt.Sprintf("%d", start), fmt.Sprintf("%d", end), request.Step)
+	totalResult, err := queryPrometheus(c.Request.Context(), PrometheusRangeURL, totalQuery, fmt.Sprintf("%d", start), fmt.Sprintf("%d", end), request.Step)
 	if err != nil || totalResult.Status != "success" {
 		c.JSON(http.StatusInternalServerError, gin.H{"status": "error", "message": "Failed to query total memory"})
 		return
 	}
 
-	freeResult, err := queryPrometheus(PrometheusRangeURL, freeQuery, fmt.Sprintf("%d", start), fmt.Sprintf("%d", end), request.Step)
+	freeResult, err := queryPrometheus(c.Request.Context(), PrometheusRangeURL, freeQuery, fmt.Sprintf("%d", start), fmt.Sprintf("%d", end), request.Step)
 	if err != nil || freeResult.Status != "success" {
 		c.JSON(http.StatusInternalServerError, gin.H{"status": "error", "message": "Failed to query free memory"})
 		return
 	}
 
 	c.JSON(http.StatusOK, mergeMemoryResults(freeResult, totalResult))
-}
-
-func getWDSToken() (string, error) {
-	tokenMutex.Lock()
-	defer tokenMutex.Unlock()
-	if time.Now().Before(wdsTokenExp) && wdsToken != "" {
-		logger.Info("Using cached token")
-		return wdsToken, nil
-	}
-
-	authBody := fmt.Sprintf(`{"name":"%s","password":"%s"}`, volemonitorUser, volemonitorPasswd)
-	req, err := http.NewRequest("POST", WDSAuthURL, strings.NewReader(authBody))
-	if err != nil {
-		return "", fmt.Errorf("failed to create request: %v", err)
-	}
-
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Accept", "application/json")
-	client := &http.Client{
-		Timeout: 5 * time.Second,
-		Transport: &http.Transport{
-			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
-		},
-	}
-
-	resp, err := client.Do(req)
-	if err != nil {
-		return "", fmt.Errorf("WDS auth request failed: %v", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode == http.StatusUnauthorized {
-		wdsToken = ""
-		wdsTokenExp = time.Now().Add(-1 * time.Hour)
-		return "", fmt.Errorf("token expired, will retry")
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("WDS auth failed with status: %d", resp.StatusCode)
-	}
-
-	var authResponse struct {
-		AccessToken string `json:"access_token"`
-		ExpiresIn   int    `json:"expires_in"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&authResponse); err != nil {
-		return "", fmt.Errorf("failed to decode auth response: %v", err)
-	}
-	if authResponse.AccessToken == "" {
-		return "", errors.New("empty access_token in auth response")
-	}
-	wdsToken = authResponse.AccessToken
-	if authResponse.ExpiresIn > 0 {
-		wdsTokenExp = time.Now().Add(time.Duration(authResponse.ExpiresIn) * time.Second)
-	} else {
-		wdsTokenExp = time.Now().Add(5 * time.Minute)
-	}
-	logger.Debug("token expires at: %s\n", wdsTokenExp.Format(time.RFC3339))
-	return authResponse.AccessToken, nil
-}
-
-func convertVolNames(volIDs []string, token string) []string {
-	var names []string
-
-	client := &http.Client{
-		Timeout: 5 * time.Second,
-		Transport: &http.Transport{
-			TLSClientConfig: &tls.Config{
-				InsecureSkipVerify: true, // Skip certificate verification
-			},
-		},
-	}
-
-	for _, volID := range volIDs {
-		detailURL := fmt.Sprintf(WDSVolumeDetailURL, volID)
-		req, _ := http.NewRequest("GET", detailURL, nil)
-		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", token))
-		resp, err := client.Do(req)
-		if err != nil {
-			logger.Error("Failed to get volume detail for %s: %v", volID, err)
-			continue
-		}
-		if resp.StatusCode == http.StatusUnauthorized {
-			logger.Error("Received 401 for volume %s, invalidating token", volID)
-			wdsToken = ""
-			wdsTokenExp = time.Now().Add(-1 * time.Hour)
-		}
-		body, _ := io.ReadAll(resp.Body)
-		resp.Body.Close()
-
-		var wdsResp WDSVolumeResponse
-		if err := json.Unmarshal(body, &wdsResp); err != nil {
-			logger.Warning("Failed to decode JSON for %s: %v\nRaw JSON: %s", volID, err, string(body))
-			continue
-		}
-
-		if wdsResp.RetCode == "0" && wdsResp.VolumeDetail.VolumeName != "" {
-			names = append(names, wdsResp.VolumeDetail.VolumeName)
-		} else {
-			logger.Error("Invalid response for volume %s: ret_code=%s, message=%s",
-				volID, wdsResp.RetCode, wdsResp.Message)
-		}
-	}
-	return names
-}
-
-func GetLastUUIDFromVolumeUUID(ctx context.Context, volumeUUID string) (string, error) {
-	volumeAdmin := &services.VolumeAdmin{}
-	volume, err := volumeAdmin.GetVolumeByUUID(ctx, volumeUUID)
-	if err != nil {
-		return "", err
-	}
-
-	return volume.GetOriginVolumeID(), nil
-}
-
-// @Summary Get volume metrics
-// @Description Query volume read/write historical data from WDS storage monitoring
-// @Tags Monitoring
-// @Accept json
-// @Produce json
-// @Param message body MetricsRequest true "Metrics query request"
-// @Success 200 {object} map[string]interface{} "Volume metrics data"
-// @Failure 400 {object} map[string]interface{} "Bad request"
-// @Failure 500 {object} map[string]interface{} "Internal server error"
-// @Router /metrics/instances/volume/his_data [post]
-func (api *MonitorAPI) GetVolume(c *gin.Context) {
-	// check volemonitorIP and volemonitorIPort
-	if volemonitorIP == "" || volemonitorIPort == 0 || volemonitorUser == "" || volemonitorPasswd == "" {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"status":  "error",
-			"message": "Incomplete WDS configuration",
-			"details": map[string]interface{}{
-				"volemonitorIP":     volemonitorIP,
-				"volemonitorIPort":  volemonitorIPort,
-				"volemonitorUser":   volemonitorUser,
-				"volemonitorPasswd": strings.Repeat("*", len(volemonitorPasswd)),
-			},
-		})
-		return
-	}
-	var request MetricsRequest
-	if err := c.BindJSON(&request); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"status": "error", "message": "Invalid request body"})
-		return
-	}
-
-	if len(request.VolName) == 0 {
-		c.JSON(http.StatusBadRequest, gin.H{"status": "error", "message": "Volume name is required"})
-		return
-	}
-
-	// validate time params
-	start, end, err := validateAndParseTimeParams(request.Start, request.End, request.Step)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"status": "error", "message": err.Error()})
-		return
-	}
-	var lastUUIDs []string
-	for _, volUUID := range request.VolName {
-		lastUUID, err := GetLastUUIDFromVolumeUUID(c.Request.Context(), volUUID)
-		if err != nil {
-			logger.Errorf("Failed to convert volume UUID: %v", err)
-			c.JSON(http.StatusInternalServerError, gin.H{
-				"status":  "error",
-				"message": "Invalid volume UUID format",
-			})
-			return
-		}
-		lastUUIDs = append(lastUUIDs, lastUUID)
-	}
-	token, err := getWDSToken()
-	if err != nil {
-		logger.Errorf("WDS authentication failed: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"status":  "error",
-			"message": "get wds token failed",
-		})
-		return
-	}
-	actualVolNames := convertVolNames(lastUUIDs, token)
-	if len(actualVolNames) == 0 {
-		logger.Error("All volume conversions failed")
-		c.JSON(http.StatusBadRequest, gin.H{"status": "error", "message": "no valid volume founded"})
-		return
-	}
-	// build read and write query
-	readQuery := fmt.Sprintf(rangeQueries["volume_read"], strings.Join(actualVolNames, "|"))
-	writeQuery := fmt.Sprintf(rangeQueries["volume_write"], strings.Join(actualVolNames, "|"))
-	if readQuery == "" || writeQuery == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"status": "error", "message": "Invalid metric type"})
-		return
-	}
-
-	// execute query
-	readResult, err := queryPrometheus(WdsPrometheusRangeURL, readQuery, fmt.Sprintf("%d", start), fmt.Sprintf("%d", end), request.Step)
-	if err != nil {
-		logger.Error("Failed to query disk read metrics: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"status": "error", "message": "Failed to query metrics"})
-		return
-	}
-
-	writeResult, err := queryPrometheus(WdsPrometheusRangeURL, writeQuery, fmt.Sprintf("%d", start), fmt.Sprintf("%d", end), request.Step)
-	if err != nil {
-		logger.Error("Failed to query disk write metrics: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"status": "error", "message": "Failed to query metrics"})
-		return
-	}
-	// merge results
-	result := mergeVolumeResults(readResult, writeResult, request.VolName, actualVolNames)
-	c.JSON(http.StatusOK, result)
-}
-
-func mergeVolumeResults(readRes, writeRes *PrometheusResponse, originalVolNames []string, convertedVolNames []string) *VolumeMonResponse {
-	response := &VolumeMonResponse{
-		Status: "success",
-		Data: struct {
-			ChartType string   `json:"chart_type"`
-			Label     []string `json:"label"`
-			Unit      string   `json:"unit"`
-			Result    []struct {
-				Metric struct {
-					VolName string `json:"volName"`
-					Job     string `json:"job"`
-				} `json:"metric"`
-				Values [][]struct {
-					Time  string `json:"time"`
-					Value string `json:"value"`
-				} `json:"values"`
-			} `json:"result"`
-		}{
-			ChartType: "line",
-			Label:     []string{"read (KB/s)", "write (KB/s)"},
-			Unit:      "KB/s",
-		},
-	}
-
-	volMapping := make(map[string]string)
-	for i := range originalVolNames {
-		volMapping[originalVolNames[i]] = convertedVolNames[i]
-		volMapping[convertedVolNames[i]] = originalVolNames[i]
-	}
-
-	for _, convertedVol := range convertedVolNames {
-		originalVol := volMapping[convertedVol]
-		entry := struct {
-			Metric struct {
-				VolName string `json:"volName"`
-				Job     string `json:"job"`
-			} `json:"metric"`
-			Values [][]struct {
-				Time  string `json:"time"`
-				Value string `json:"value"`
-			} `json:"values"`
-		}{
-			Metric: struct {
-				VolName string `json:"volName"`
-				Job     string `json:"job"`
-			}{
-				VolName: originalVol, // Preserve original volume identifier format
-				Job:     "tianshu",
-			},
-		}
-
-		var readValues, writeValues []struct {
-			Time  string `json:"time"`
-			Value string `json:"value"`
-		}
-		for _, series := range readRes.Data.Result {
-			if vol, ok := series.Metric["volName"]; ok && vol == convertedVol {
-				for _, point := range series.Values {
-					if len(point) != 2 {
-						continue
-					}
-					timestamp, _ := strconv.ParseFloat(fmt.Sprintf("%v", point[0]), 64)
-					value, _ := strconv.ParseFloat(fmt.Sprintf("%v", point[1]), 64)
-					readValues = append(readValues, struct {
-						Time  string `json:"time"`
-						Value string `json:"value"`
-					}{
-						Time:  fmt.Sprintf("%d", int64(timestamp)),
-						Value: fmt.Sprintf("%.2f", value/1024),
-					})
-				}
-			}
-		}
-
-		for _, series := range writeRes.Data.Result {
-			if vol, ok := series.Metric["volName"]; ok && vol == convertedVol {
-				for _, point := range series.Values {
-					if len(point) != 2 {
-						continue
-					}
-					timestamp, _ := strconv.ParseFloat(fmt.Sprintf("%v", point[0]), 64)
-					value, _ := strconv.ParseFloat(fmt.Sprintf("%v", point[1]), 64)
-					writeValues = append(writeValues, struct {
-						Time  string `json:"time"`
-						Value string `json:"value"`
-					}{
-						Time:  fmt.Sprintf("%d", int64(timestamp)),
-						Value: fmt.Sprintf("%.2f", value/1024),
-					})
-				}
-			}
-		}
-
-		mergedValues := make([][]struct {
-			Time  string `json:"time"`
-			Value string `json:"value"`
-		}, 2)
-
-		sort.Slice(readValues, func(i, j int) bool {
-			ti, _ := strconv.ParseInt(readValues[i].Time, 10, 64)
-			tj, _ := strconv.ParseInt(readValues[j].Time, 10, 64)
-			return ti < tj
-		})
-
-		sort.Slice(writeValues, func(i, j int) bool {
-			ti, _ := strconv.ParseInt(writeValues[i].Time, 10, 64)
-			tj, _ := strconv.ParseInt(writeValues[j].Time, 10, 64)
-			return ti < tj
-		})
-
-		mergedValues[0] = readValues
-		mergedValues[1] = writeValues
-
-		entry.Values = mergedValues
-		response.Data.Result = append(response.Data.Result, entry)
-	}
-
-	return response
 }
 
 // @Summary Get instance network metrics
@@ -1188,27 +797,27 @@ func (api *MonitorAPI) GetNetwork(c *gin.Context) {
 	// batch fetch all interfaces, skip any not found (don't fail the whole request)
 	ifaces, err := services.InterfaceAdmin.GetInterfacesByUUIDs(c, request.InterfaceIDs)
 	if err != nil {
-		logger.Errorf("failed to batch fetch interfaces: %v", err)
+		logger.Ctx(c).Errorf("failed to batch fetch interfaces: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"status": "error", "message": "Failed to fetch interfaces"})
 		return
 	}
 
 	// build tap→ifaceUUID map, group tap names by instance domain
 	type ifaceInfo struct {
-		tapName     string
-		ifaceUUID   string
-		domainName  string
+		tapName    string
+		ifaceUUID  string
+		domainName string
 	}
 	var validIfaces []ifaceInfo
 
 	for _, iface := range ifaces {
 		if iface.Instance == 0 {
-			logger.Warningf("skipping interface %s: not attached to an instance", iface.UUID)
+			logger.Ctx(c).Warningf("skipping interface %s: not attached to an instance", iface.UUID)
 			continue
 		}
 		mac := strings.ReplaceAll(iface.MacAddr, ":", "")
 		if len(mac) < 6 {
-			logger.Warningf("skipping interface %s: invalid MAC %s", iface.UUID, iface.MacAddr)
+			logger.Ctx(c).Warningf("skipping interface %s: invalid MAC %s", iface.UUID, iface.MacAddr)
 			continue
 		}
 		tapName := "tap" + mac[len(mac)-6:]
@@ -1255,6 +864,8 @@ func (api *MonitorAPI) GetNetwork(c *gin.Context) {
 	}
 
 	resultCh := make(chan queryResult, len(domainOrder))
+	// goroutine 内不直接读 c：gin 会在 handler 返回后复用 *gin.Context
+	reqCtx := c.Request.Context()
 
 	// concurrently query Prometheus per instance (2 queries each)
 	var wg sync.WaitGroup
@@ -1270,12 +881,12 @@ func (api *MonitorAPI) GetNetwork(c *gin.Context) {
 			receiveQuery := api.getRangeQuery("network_receive", []string{grp.domainName}, tapNames)
 			transmitQuery := api.getRangeQuery("network_transmit", []string{grp.domainName}, tapNames)
 
-			recv, err := queryPrometheus(PrometheusRangeURL, receiveQuery, fmt.Sprintf("%d", start), fmt.Sprintf("%d", end), request.Step)
+			recv, err := queryPrometheus(reqCtx, PrometheusRangeURL, receiveQuery, fmt.Sprintf("%d", start), fmt.Sprintf("%d", end), request.Step)
 			if err != nil {
 				resultCh <- queryResult{domainName: grp.domainName, err: err}
 				return
 			}
-			trans, err := queryPrometheus(PrometheusRangeURL, transmitQuery, fmt.Sprintf("%d", start), fmt.Sprintf("%d", end), request.Step)
+			trans, err := queryPrometheus(reqCtx, PrometheusRangeURL, transmitQuery, fmt.Sprintf("%d", start), fmt.Sprintf("%d", end), request.Step)
 			if err != nil {
 				resultCh <- queryResult{domainName: grp.domainName, err: err}
 				return
@@ -1295,7 +906,7 @@ func (api *MonitorAPI) GetNetwork(c *gin.Context) {
 	ifaceResults := map[string]*NetworkResponse{}
 	for qr := range resultCh {
 		if qr.err != nil {
-			logger.Errorf("prometheus query failed for %s: %v", qr.domainName, qr.err)
+			logger.Ctx(c).Errorf("prometheus query failed for %s: %v", qr.domainName, qr.err)
 			continue // skip failed instances, don't abort
 		}
 		merged := mergeNetworkResults(qr.receiveResult, qr.transmitResult)
@@ -1358,12 +969,12 @@ func validateAndParseTimeParams(startStr, endStr, step string) (int64, int64, er
 	return start, end, nil
 }
 
-func queryPrometheus(baseURL, query string, start, end, step string) (*PrometheusResponse, error) {
+func queryPrometheus(ctx context.Context, baseURL, query string, start, end, step string) (*PrometheusResponse, error) {
 	// record query params
-	logger.Info("Prometheus url: %s query: %s, start: %s, end: %s, step: %s", baseURL, query, start, end, step)
+	logger.Ctx(ctx).Info("Prometheus url: %s query: %s, start: %s, end: %s, step: %s", baseURL, query, start, end, step)
 
-	client := &http.Client{Timeout: 10 * time.Second}
-	req, err := http.NewRequest("GET", baseURL, nil)
+	client := &http.Client{Timeout: 10 * time.Second, Transport: tracing.HTTPTransport(nil)}
+	req, err := http.NewRequestWithContext(ctx, "GET", baseURL, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -1375,7 +986,7 @@ func queryPrometheus(baseURL, query string, start, end, step string) (*Prometheu
 	req.URL.RawQuery = q.Encode()
 
 	// record full request URL
-	logger.Info("Prometheus request URL: %s", req.URL.String())
+	logger.Ctx(ctx).Info("Prometheus request URL: %s", req.URL.String())
 
 	resp, err := client.Do(req)
 	if err != nil {

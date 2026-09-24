@@ -8,6 +8,7 @@ package common
 
 // BackendConfig represents a backend server configuration
 type BackendConfig struct {
+	ID         int64  `json:"id"`
 	BackendURL string `json:"backend_url"`
 	Status     string `json:"status"`
 	SSL        bool   `json:"ssl"`

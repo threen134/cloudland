@@ -25,7 +25,7 @@
 #
 # 服务清单:
 #   postgres        - PostgreSQL 数据库 (profile: dev)
-#   cloudland       - 主控服务 (SCI 通信) (profile: region)
+#   cloudland       - 主控服务 cland-go (gRPC :5006，计算节点接入) (profile: region)
 #   clapi           - REST API (统一 API 服务) (profile: region)
 #   consoleproxy    - VNC 控制台代理 (profile: region)
 #   cpgateway       - 控制平面网关 (认证/代理/Region管理) (profile: dev, full)
@@ -35,6 +35,8 @@
 #   grafana         - 监控仪表盘 (profile: region)
 #   loki            - 日志聚合 (profile: region)
 #   promtail        - 日志采集 (profile: region)
+#   otel-collector  - 链路数据接收、RED 指标与尾部采样 (profile: region, full)
+#   tempo           - 链路追踪存储 (profile: region, full)
 #   alarm-rules-mgr - 告警规则管理 (profile: region)
 #   region-gateway  - Region VNC WebSocket 边缘网关 (profile: region-gateway)
 # =============================================================================
@@ -78,13 +80,17 @@ services:
       - NET_ADMIN
     volumes:
       - ../dns/hosts:/etc/dnsmasq.hosts:ro   # hosts 专用目录，inotify 监听
-      - ../dns/conf.d:/etc/dnsmasq.conf.d:ro # 上游配置目录，SIGHUP 重载
+      - ../dns/conf.d:/etc/dnsmasq.conf.d:ro # upstream.conf 由 clapi 写入
+    # --conf-file=/dev/null：不加载镜像自带配置；上游用 --servers-file 加载，SIGHUP 时重读
+    # （conf-dir 里的 server= 只在启动时读取）。clapi 通过 docker exec kill -HUP 1 重载，
+    # 不能用 docker kill -s HUP：会把容器标记为手动停止，unless-stopped 在重启后不再拉起
     command: >
       --keep-in-foreground
+      --conf-file=/dev/null
       --no-resolv
       --no-hosts
       --hostsdir=/etc/dnsmasq.hosts
-      --conf-dir=/etc/dnsmasq.conf.d,*.conf
+      --servers-file=/etc/dnsmasq.conf.d/upstream.conf
       --listen-address=${INTERNAL_IP:-127.0.0.1}
       --bind-interfaces
       --port=53
@@ -97,31 +103,33 @@ services:
       retries: 5
       start_period: 3s
 
-  # ---------- CloudLand 主控 ----------
+  # ---------- CloudLand 主控 (Go gRPC) ----------
   cloudland:
     build:
       context: ../../
-      dockerfile: deploy/docker/dockerfiles/Dockerfile.cloudland
-    image: cloudland-cland:latest
+      dockerfile: deploy/docker/dockerfiles/Dockerfile.cland-go
+    image: cloudland-cland-go:latest
     container_name: cloudland-cland
     restart: unless-stopped
     profiles:
       - region
-    # 使用 host 网络以便与外部 hyper 节点通信 (SCI 协议)
+    # 使用 host 网络以便与计算节点 gRPC 通信
     network_mode: host
-    # 覆盖容器内 /etc/resolv.conf，指向本机 dnsmasq（host 网络下 INTERNAL_IP 直连）
-    # 目的：SCI_BE_add 解析 worknode-XX 时走 dnsmasq 的 hyper-hosts，而非宿主云平台 DNS
     dns:
       - ${INTERNAL_IP:-127.0.0.1}
     environment:
-      SCI_DEVICE_NAME: ${NETWORK_DEVICE:-eth0}
-      MANAGEMENT_VIP: ${MANAGEMENT_VIP:-127.0.0.1}
-      SCI_LISTENER_PORT: "9988"
-      RPC_SERVER_ENDPOINT: "${INTERNAL_IP:-0.0.0.0}:5006"
-      RPC_REMOTE_ENDPOINT: "${INTERNAL_IP:-0.0.0.0}:5005"
-      LD_LIBRARY_PATH: /opt/sci/lib64
-      SCI_ENABLE_FAILOVER: ${SCI_ENABLE_FAILOVER:-no}
-      SCI_LOG_DIRECTORY: "" # 空字符串触发 stdout JSON 模式
+      # 同一端口服务 clapi 与计算节点 cloudlet；计算节点经 MANAGEMENT_VIP 连入（HA 下 VIP 会漂移），
+      # 因此默认监听全部地址；未配置 GRPC_AUTH_TOKEN 时 cland-go 拒绝启动。
+      # 部署脚本未对 5006 做来源限制（loki 3100、otel-collector 4317 同），依赖令牌鉴权 + 内网隔离
+      GRPC_LISTEN: "${GRPC_LISTEN:-0.0.0.0:5006}"
+      GRPC_AUTH_TOKEN: ${GRPC_AUTH_TOKEN:-}
+      GRPC_AUTH_DISABLED: ${GRPC_AUTH_DISABLED:-}
+      CLAPI_ENDPOINT: "http://${INTERNAL_IP:-127.0.0.1}:5005"
+      CLOUDLAND_SSH_KEY_DIR: /opt/cloudland/deploy/.ssh
+      # 链路追踪：host 网络下经 INTERNAL_IP 访问 OTel Collector 的 OTLP 端口
+      OTEL_EXPORTER_OTLP_ENDPOINT: "http://${INTERNAL_IP:-127.0.0.1}:4317"
+      TRACING_SAMPLE_RATIO: ${TRACING_SAMPLE_RATIO:-1}
+      TRACING_BACKGROUND_SAMPLE_RATIO: ${TRACING_BACKGROUND_SAMPLE_RATIO:-0.01}
     volumes:
       - ../.ssh:/opt/cloudland/deploy/.ssh:ro
       - cland_log:/opt/cloudland/log
@@ -150,6 +158,9 @@ services:
       # 用于生成发往前端的 VNC Console 代理地址，不控制本容器物理监听 IP
       PUBLIC_IP: ${PUBLIC_IP:-127.0.0.1}
       MANAGEMENT_VIP: ${MANAGEMENT_VIP:-127.0.0.1}
+      # Address of this host: compute nodes allow serial console connections from it, since the console
+      # proxy on this host connects from here (in an HA control plane that is not MANAGEMENT_VIP)
+      INTERNAL_IP: ${INTERNAL_IP:-127.0.0.1}
       DB_HOST: ${DB_HOST:-postgres}
       DB_PORT: "${DB_PORT:-5432}"
       DB_USER: ${POSTGRES_USER:-postgres}
@@ -179,7 +190,18 @@ services:
       # compute → clapi → MinIO 转发配置（capture 上传路径用）
       CLAPI_HOSTNAME: ${CLAPI_HOSTNAME:-clapi.cloudland.internal}
       CLAPI_INTERNAL_URL: ${CLAPI_INTERNAL_URL:-}
-      SCI_SHARED_SECRET: ${SCI_SHARED_SECRET:-}
+      CAPTURE_UPLOAD_SECRET: ${CAPTURE_UPLOAD_SECRET:-}
+      # VPN gateway credentials (IPsec PSKs, WireGuard keys) are encrypted at rest with a key derived from this
+      VPN_SECRET_KEY: ${VPN_SECRET_KEY:-}
+      # 访问 cland-go 的共享令牌，同时写入计算节点 deploy_command
+      GRPC_AUTH_TOKEN: ${GRPC_AUTH_TOKEN:-}
+      # 计算节点 deploy_command 使用的代码分支与脚本地址（DEPLOY_SCRIPT_URL 为空时按 REPO_BRANCH 拼接）
+      REPO_BRANCH: ${REPO_BRANCH:-staging}
+      DEPLOY_SCRIPT_URL: ${DEPLOY_SCRIPT_URL:-}
+      # 链路追踪：OTLP 导出到本 Region 的 OTel Collector
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
+      TRACING_SAMPLE_RATIO: ${TRACING_SAMPLE_RATIO:-1}
+      TRACING_BACKGROUND_SAMPLE_RATIO: ${TRACING_BACKGROUND_SAMPLE_RATIO:-0.01}
     volumes:
       - ./volumes/certs:/certs:ro
       - ./volumes/certs/cland/selfsigned.crt:/etc/ssl/certs/alarm_rules_manager.crt:ro
@@ -229,13 +251,17 @@ services:
       - dev
       - full
     environment:
-      DATABASE_URL: "postgresql+asyncpg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-d6Passwd}@${DB_HOST:-postgres}:${DB_PORT:-5432}/${CPGATEWAY_DB:-cloudland_cpgateway}"
-      SECRET_KEY: ${CPGATEWAY_SECRET_KEY:-change-me-in-production}
-      FIRST_SUPERUSER_EMAIL: ${ADMIN_EMAIL:-admin@cloudland.local}
-      FIRST_SUPERUSER_USERNAME: ${CPGATEWAY_ADMIN_USER:-admin}
-      FIRST_SUPERUSER_PASSWORD: ${ADMIN_PASSWORD:-passw0rd}
+      # 环境变量覆盖 cpgateway/conf/config.toml 中的键: db.uri → DB_URI, auth.secret_key → AUTH_SECRET_KEY
+      # SMTP_* / FEISHU_* / FRONTEND_URL / DNS_UPSTREAM 仅作兜底，系统设置页面保存的值优先
+      DB_TYPE: postgres
+      DB_URI: "postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-d6Passwd}@${DB_HOST:-postgres}:${DB_PORT:-5432}/${CPGATEWAY_DB:-cloudland_cpgateway}"
+      AUTH_SECRET_KEY: ${CPGATEWAY_SECRET_KEY:-change-me-in-production}
+      AUTH_RSA_PRIVATE_KEY_PATH: /app/keys/private.pem
+      AUTH_RSA_PUBLIC_KEY_PATH: /app/keys/public.pem
+      SUPERUSER_EMAIL: ${ADMIN_EMAIL:-admin@cloudland.local}
+      SUPERUSER_USERNAME: ${CPGATEWAY_ADMIN_USER:-admin}
+      SUPERUSER_PASSWORD: ${ADMIN_PASSWORD:-passw0rd}
       FRONTEND_URL: "https://${PUBLIC_IP:-127.0.0.1}"
-      NOTIFICATION_METHOD: ${NOTIFICATION_METHOD:-email}
       SMTP_HOST: ${SMTP_HOST:-localhost}
       SMTP_PORT: ${SMTP_PORT:-587}
       SMTP_TLS: ${SMTP_TLS:-True}
@@ -246,10 +272,15 @@ services:
       FEISHU_WEBHOOK_URL: ${FEISHU_WEBHOOK_URL:-}
       FEISHU_SECRET: ${FEISHU_SECRET:-}
       DNS_UPSTREAM: ${DNS_UPSTREAM:-8.8.8.8}
-      LISTEN_ADDR: "0.0.0.0"
-      LISTEN_PORT: "8000"
+      SERVER_LISTEN_ADDR: "0.0.0.0"
+      SERVER_LISTEN_PORT: "8000"
+      # 链路追踪：导出到本机 OTel Collector；在 .env 设 CPGATEWAY_OTLP_ENDPOINT= 可关闭导出
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${CPGATEWAY_OTLP_ENDPOINT-http://otel-collector:4317}
+      # 前端浏览器上报的 span 经网关（需登录）转发到 Collector OTLP/HTTP；设为空则丢弃
+      TRACING_BROWSER_OTLP_ENDPOINT: ${CPGATEWAY_OTLP_HTTP_ENDPOINT-http://otel-collector:4318}
+      TRACING_SAMPLE_RATIO: ${TRACING_SAMPLE_RATIO:-1}
+      TRACING_BACKGROUND_SAMPLE_RATIO: ${TRACING_BACKGROUND_SAMPLE_RATIO:-0.01}
     volumes:
-      - cpgateway_data:/app/data
       - cpgateway_keys:/app/keys
     ports:
       - "${INTERNAL_IP:-127.0.0.1}:8000:8000"
@@ -280,7 +311,9 @@ services:
     ports:
       - "80:80"
       - "443:443"
-      - "4000:4000"
+      # Image cache directory. Compute nodes fetch over the internal network;
+      # on 0.0.0.0 it was an open file server on the public internet
+      - "${INTERNAL_IP:-127.0.0.1}:4000:4000"
     networks:
       cloudland:
         ipv4_address: 172.28.0.50
@@ -306,6 +339,7 @@ services:
       - ./volumes/prometheus/general_rules:/etc/prometheus/general_rules
       - ./volumes/prometheus/rules_enabled:/etc/prometheus/rules_enabled
       - ./volumes/prometheus/lists:/etc/prometheus/lists:ro
+      - ./config/prometheus/tracing_rules:/etc/prometheus/tracing_rules:ro
       - prometheus_data:/prometheus
     entrypoint: ["/bin/sh", "-c"]
     command:
@@ -318,7 +352,9 @@ services:
           --storage.tsdb.path=/prometheus \
           --web.enable-lifecycle
     ports:
-      - "9090:9090"
+      # No authentication: anyone reaching it can query every metric, which is a
+      # full inventory of hosts, instances and resource usage
+      - "${INTERNAL_IP:-127.0.0.1}:9090:9090"
     networks:
       cloudland:
         ipv4_address: 172.28.0.60
@@ -353,7 +389,9 @@ services:
       - "--storage.path=/data"
       - "--data.retention=720h"
     ports:
-      - "9093:9093"
+      # No authentication: its API exposes the receiver config and lets anyone
+      # silence every alert
+      - "${INTERNAL_IP:-127.0.0.1}:9093:9093"
     networks:
       cloudland:
         ipv4_address: 172.28.0.70
@@ -373,18 +411,25 @@ services:
 
   # ---------- Grafana ----------
   grafana:
-    image: grafana/grafana-oss:10.2.0
+    image: grafana/grafana-oss:12.4.3
     container_name: cloudland-grafana
     restart: unless-stopped
     profiles:
       - region
     environment:
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+      # Tempo 查询地址：多 Region 统一存储时指向中央 Tempo（http://<中央内网IP>:3200）
+      TEMPO_QUERY_URL: ${TEMPO_QUERY_URL:-http://tempo:3200}
     volumes:
       - grafana_data:/var/lib/grafana
       - ./config/grafana/provisioning/datasources:/etc/grafana/provisioning/datasources:ro
+      - ./config/grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards:ro
+      - ./config/grafana/dashboards:/etc/grafana/dashboards:ro
     ports:
-      - "3000:3000"
+      # Not proxied by nginx, so it was only ever reachable on this port directly.
+      # Login is required, but there is no reason to offer it to the internet:
+      # reach it over an SSH tunnel (ssh -L 3000:<INTERNAL_IP>:3000 <host>)
+      - "${INTERNAL_IP:-127.0.0.1}:3000:3000"
     networks:
       cloudland:
         ipv4_address: 172.28.0.80
@@ -404,7 +449,11 @@ services:
       - loki_data:/loki
     command: -config.file=/etc/loki/local-config.yaml
     ports:
-      - "3100:3100"
+      # 计算节点 promtail-agent 经 CONTROLLER_IP（= MANAGEMENT_VIP）推送日志。与 cland 5006 同策略默认绑定全部地址：
+      # HA 下 VIP 可能不在本机，Docker 绑定本机不存在的 IP 会启动失败。Loki 写入无鉴权，且 Docker 映射端口绕过宿主
+      # INPUT 链，部署脚本未对 5006/3100/4317 做来源限制，依赖内网隔离（安全组/外部防火墙禁止公网访问）；
+      # 非 HA 部署可设 TELEMETRY_LISTEN_IP=INTERNAL_IP 缩小暴露面
+      - "${TELEMETRY_LISTEN_IP:-0.0.0.0}:3100:3100"
     networks:
       cloudland:
         ipv4_address: 172.28.0.81
@@ -427,6 +476,62 @@ services:
     depends_on:
       - loki
 
+  # ---------- OTel Collector 链路数据接收 ----------
+  # 接收服务、计算节点与浏览器的 span：计算服务拓扑与 RED 指标（:8889 供 Prometheus 抓取），尾部采样后导出到 Tempo
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.160.0
+    container_name: cloudland-otel-collector
+    restart: unless-stopped
+    profiles:
+      - region
+      - full
+    command: ["--config=/etc/otelcol/config.yaml"]
+    environment:
+      # 多 Region 统一存储时指向中央节点 Collector（<中央内网IP>:4317）
+      TRACING_BACKEND_ENDPOINT: ${TRACING_BACKEND_ENDPOINT:-tempo:4317}
+      TAIL_SAMPLING_PERCENT: ${TAIL_SAMPLING_PERCENT:-100}
+      TAIL_SAMPLING_LATENCY_MS: ${TAIL_SAMPLING_LATENCY_MS:-2000}
+    volumes:
+      - ./config/otel-collector/config.yaml:/etc/otelcol/config.yaml:ro
+    ports:
+      # OTLP gRPC：计算节点 cloudlet 经 CONTROLLER_IP（= MANAGEMENT_VIP）、host 网络下的 cland 经 INTERNAL_IP、
+      # 其他 Region 的 Collector 经内网地址导出。与 cland 5006 同策略默认绑定全部地址（HA 下 VIP 可能不在本机）；
+      # OTLP 接收无鉴权，依赖内网隔离，同 loki 3100 的说明；非 HA 部署可设 TELEMETRY_LISTEN_IP=INTERNAL_IP
+      - "${TELEMETRY_LISTEN_IP:-0.0.0.0}:4317:4317"
+    networks:
+      cloudland:
+        ipv4_address: 172.28.0.84
+    depends_on:
+      - tempo
+
+  # ---------- Tempo 链路追踪 ----------
+  # 镜像以 10001 用户运行且 /var/tempo 属主为 10001，命名卷首次挂载时继承该属主
+  tempo:
+    image: grafana/tempo:2.10.8
+    container_name: cloudland-tempo
+    restart: unless-stopped
+    profiles:
+      - region
+      - full
+    command: -config.file=/etc/tempo/tempo.yaml -config.expand-env=true
+    environment:
+      TEMPO_RETENTION: ${TEMPO_RETENTION:-168h}
+      TEMPO_STORAGE_BACKEND: ${TEMPO_STORAGE_BACKEND:-local}
+      TEMPO_S3_ENDPOINT: ${TEMPO_S3_ENDPOINT:-}
+      TEMPO_S3_BUCKET: ${TEMPO_S3_BUCKET:-tempo}
+      TEMPO_S3_ACCESS_KEY: ${TEMPO_S3_ACCESS_KEY:-}
+      TEMPO_S3_SECRET_KEY: ${TEMPO_S3_SECRET_KEY:-}
+      TEMPO_S3_INSECURE: ${TEMPO_S3_INSECURE:-true}
+    volumes:
+      - ./config/tempo/tempo.yaml:/etc/tempo/tempo.yaml:ro
+      - tempo_data:/var/tempo
+    ports:
+      # 查询 API：多 Region 统一存储时，其他 Region 的 Grafana 通过 TEMPO_QUERY_URL 访问；仅绑定内网
+      - "${INTERNAL_IP:-127.0.0.1}:3200:3200"
+    networks:
+      cloudland:
+        ipv4_address: 172.28.0.83
+
   # ---------- Alarm Rules Manager ----------
   alarm-rules-mgr:
     build:
@@ -442,6 +547,9 @@ services:
       ALARM_RULES_LISTEN: "0.0.0.0:8256"
       ALARM_RULES_CERT: "/certs/cland/selfsigned.crt"
       ALARM_RULES_KEY: "/certs/cland/selfsigned.key"
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
+      TRACING_SAMPLE_RATIO: ${TRACING_SAMPLE_RATIO:-1}
+      TRACING_BACKGROUND_SAMPLE_RATIO: ${TRACING_BACKGROUND_SAMPLE_RATIO:-0.01}
     volumes:
       - ./volumes/certs:/certs:ro
       - ./volumes/prometheus/general_rules:/etc/prometheus/general_rules
@@ -449,7 +557,13 @@ services:
       - ./volumes/prometheus/node_templates:/etc/prometheus/node_templates:ro
       - ./volumes/prometheus/lists:/etc/prometheus/lists
     ports:
-      - "8256:8256"
+      # Bind to the internal address only, like clapi's 8255. This service has no
+      # authentication and its API reads, writes, chowns and deletes files on the
+      # Prometheus host, so publishing it on 0.0.0.0 exposed arbitrary file access
+      # to the public internet. clapi reaches it by container name over the compose
+      # network and does not need the published port at all; it is kept on the
+      # internal address only for the Swagger UI.
+      - "${INTERNAL_IP:-127.0.0.1}:8256:8256"
     networks:
       cloudland:
         ipv4_address: 172.28.0.90
@@ -460,7 +574,7 @@ services:
   # ---------- MinIO 镜像仓库（内置模式，profile: minio）----------
   # 外部 S3 模式不加 minio profile，容器不启动
   minio:
-    image: minio/minio:latest
+    image: quay.io/minio/minio:latest
     container_name: cloudland-minio
     restart: unless-stopped
     profiles:
@@ -485,7 +599,7 @@ services:
 
   # ---------- MinIO Bucket 初始化（一次性作业）----------
   minio-init:
-    image: minio/mc:latest
+    image: quay.io/minio/mc:latest
     container_name: cloudland-minio-init
     profiles:
       - minio
@@ -552,11 +666,11 @@ volumes:
     name: cloudland-cland-cache
   image_cache:
     name: cloudland-image-cache
-  cpgateway_data:
-    name: cloudland-cpgateway-data
   cpgateway_keys:
     name: cloudland-cpgateway-keys
   loki_data:
     name: cloudland-loki-data
+  tempo_data:
+    name: cloudland-tempo-data
   minio_data:
     name: cloudland-minio-data

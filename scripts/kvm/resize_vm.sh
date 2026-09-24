@@ -23,16 +23,15 @@ vm_xml=$xml_dir/$vm_ID/${vm_ID}.xml
 mv $vm_xml $vm_xml-$(date +'%s.%N')
 virsh dumpxml $vm_ID >$vm_xml
 
-virsh undefine --nvram $vm_ID
-if [ $? -ne 0 ]; then
-    echo "Warning: Failed to undefine domain $vm_ID, continuing anyway..."
-fi
+# --keep-nvram: the definition is written again right below, the UEFI variables (boot entries) must survive it
+virsh undefine --keep-nvram $vm_ID >/dev/null 2>&1 || virsh undefine $vm_ID >/dev/null 2>&1
 
 # edit vm xml
 sed_cmd="s#>.*</memory>#>$vm_mem</memory>#g; s#>.*</currentMemory>#>$vm_mem</currentMemory>#g; s#>.*</vcpu>#>$vm_cpu</vcpu>#g; s#\(<topology[^>]*\)cores='[0-9]*'#\1cores='$vm_cpu'#g"
 sed -i "$sed_cmd" $vm_xml
 virsh define $vm_xml
-virsh autostart $vm_ID
+# Never autostart: after a host reboot report_rc.sh starts instances once their pools are checked
+virsh autostart $vm_ID --disable
 virsh start $vm_ID
 [ $? -eq 0 ] && state=running
-echo "|:-COMMAND-:| inst_status.sh '$SCI_CLIENT_ID' '$ID $state'"
+echo "|:-COMMAND-:| inst_status.sh '$NODE_ID' '$ID $state'"

@@ -1,3 +1,9 @@
+- name: check grpc auth token
+  assert:
+    that: grpc_auth_token is defined and grpc_auth_token | length > 0
+    fail_msg: "grpc_auth_token 未设置：clapi 访问 cland-go 需要该令牌（见 netconf.yml.example）"
+  tags: [always]
+
 - name: create conf directory
   file:
     path: /opt/cloudland/web/conf
@@ -64,7 +70,7 @@
   tags: [web_srv]
 
 # 配置 virt-console-proxy 服务 VNC  服务
-- name: copy sci binaries
+- name: copy libvirt-console-proxy
   copy:
     src: /opt/libvirt-console-proxy
     dest: /opt

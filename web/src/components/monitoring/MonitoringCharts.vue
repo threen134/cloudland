@@ -1,6 +1,8 @@
 <script setup lang="ts">
+import { cssVar } from '../../utils/cssVar'
 import { ref, watch } from 'vue'
-import { instancesApi } from '../../api/instances'
+import { instancesApi, type InstanceInterface, type InstanceVolume } from '../../api/instances'
+import type { ChartData, ChartDataset } from 'chart.js'
 import { Line } from 'vue-chartjs'
 import { useI18n } from 'vue-i18n'
 import { Activity, RefreshCw } from 'lucide-vue-next'
@@ -8,15 +10,17 @@ import { useMonitoring, TIME_RANGES, CHART_OPTIONS } from '../../composables/use
 
 const props = defineProps<{
     instanceId: string
-    interfaces: any[]
-    volumes: any[]
+    interfaces: InstanceInterface[]
+    volumes: InstanceVolume[]
 }>()
 
 const { t } = useI18n()
 
-const cpuData = ref<any>(null)
-const memData = ref<any>(null)
-const netData = ref<any>(null)
+type LineData = ChartData<'line'>
+
+const cpuData = ref<LineData | null>(null)
+const memData = ref<LineData | null>(null)
+const netData = ref<LineData | null>(null)
 
 const fetchData = async () => {
     loading.value = true
@@ -33,61 +37,68 @@ const fetchData = async () => {
         id: [props.instanceId],
         start: range.startTs.toString(),
         end: range.endTs.toString(),
-        step: step.value
+        step: step.value,
     }
 
     try {
         const [cpuRes, memRes] = await Promise.all([
             instancesApi.getCPUMetrics(commonPayload),
-            instancesApi.getMemoryMetrics(commonPayload)
+            instancesApi.getMemoryMetrics(commonPayload),
         ])
 
         // Parse CPU
-        if (cpuRes.data?.data?.result?.[0]) {
-            const result = cpuRes.data.data.result[0]
+        if (cpuRes.data?.result?.[0]) {
+            const result = cpuRes.data.result[0]
             cpuData.value = {
-                labels: result.values.map((v: any) => formatTimestamp(v.time)),
-                datasets: [{
-                    label: t('dashboard.monitoring.cpuUsage'),
-                    data: result.values.map((v: any) => parseFloat(v.value)),
-                    borderColor: '#0ea5e9',
-                    backgroundColor: 'rgba(14, 165, 233, 0.1)',
-                    fill: true,
-                }]
+                labels: result.values.map((v) => formatTimestamp(v.time)),
+                datasets: [
+                    {
+                        label: t('dashboard.monitoring.cpuUsage'),
+                        data: result.values.map((v) => parseFloat(v.value)),
+                        borderColor: cssVar('--primary-color'),
+                        backgroundColor: 'rgba(14, 165, 233, 0.1)',
+                        fill: true,
+                    },
+                ],
             }
         }
 
         // Parse Memory
-        if (memRes.data?.data?.result?.[0]) {
-            const result = memRes.data.data.result[0]
-            if (Array.isArray(result.values) && result.values.length >= 2
-                && Array.isArray(result.values[0]) && result.values[0].length > 0) {
-                const labels = result.values[0].map((v: any) => formatTimestamp(v.time))
+        if (memRes.data?.result?.[0]) {
+            const result = memRes.data.result[0]
+            if (
+                Array.isArray(result.values) &&
+                result.values.length >= 2 &&
+                Array.isArray(result.values[0]) &&
+                result.values[0].length > 0
+            ) {
+                const labels = result.values[0].map((v) => formatTimestamp(v.time))
                 memData.value = {
                     labels,
                     datasets: [
                         {
                             label: t('dashboard.monitoring.total'),
-                            data: result.values[0].map((v: any) => (parseFloat(v.value) / 1024 / 1024).toFixed(2)),
-                            borderColor: '#94a3b8',
+                            // chart.js 的数据点必须是数字，不能是 toFixed 出来的字符串
+                            data: result.values[0].map((v) => Number((parseFloat(v.value) / 1024 / 1024).toFixed(2))),
+                            borderColor: cssVar('--gray-400'),
                             borderDash: [5, 5],
                             fill: false,
                         },
                         {
                             label: t('dashboard.monitoring.used'),
-                            data: result.values[1].map((v: any) => (parseFloat(v.value) / 1024 / 1024).toFixed(2)),
-                            borderColor: '#10b981',
+                            data: result.values[1].map((v) => Number((parseFloat(v.value) / 1024 / 1024).toFixed(2))),
+                            borderColor: cssVar('--success-color'),
                             backgroundColor: 'rgba(16, 185, 129, 0.1)',
                             fill: true,
-                        }
-                    ]
+                        },
+                    ],
                 }
             }
         }
 
         // Network
         if (props.interfaces?.length > 0) {
-            const interfaceIDs: string[] = props.interfaces.map((i: any) => i.id).filter(Boolean)
+            const interfaceIDs: string[] = props.interfaces.map((i) => i.id).filter(Boolean)
             if (interfaceIDs.length > 0) {
                 const netRes = await instancesApi.getNetworkMetrics({
                     interface_ids: interfaceIDs,
@@ -97,28 +108,45 @@ const fetchData = async () => {
                 })
                 // build interface_id → name lookup
                 const ifaceNameById: Record<string, string> = {}
-                props.interfaces.forEach((i: any, idx: number) => {
+                props.interfaces.forEach((i, idx) => {
                     if (i.id) ifaceNameById[i.id] = i.name || `eth${idx}`
                 })
 
-                const colors = ['#0ea5e9', '#06b6d4', '#10b981', '#f59e0b', '#8b5cf6', '#f43f5e']
-                const datasets: any[] = []
+                const colors = [
+                    cssVar('--primary-color'),
+                    cssVar('--accent-teal'),
+                    cssVar('--success-color'),
+                    cssVar('--warning-color'),
+                    cssVar('--accent-purple'),
+                    cssVar('--error-color'),
+                ]
+                const datasets: ChartDataset<'line'>[] = []
                 let labels: string[] = []
                 let colorIdx = 0
 
-                const perIfaceResults: any[] = netRes.data || []
-                perIfaceResults.forEach((ifaceResult: any) => {
+                const perIfaceResults = netRes || []
+                perIfaceResults.forEach((ifaceResult) => {
                     const res = ifaceResult?.data?.result?.[0]
                     if (!res?.values || res.values.length < 2) return
                     // match by interface_id from metric, not by array index
                     const ifaceUUID: string = res.metric?.interface_id || ''
                     const ifaceName = ifaceNameById[ifaceUUID] || ifaceUUID.slice(0, 8)
                     if (labels.length === 0) {
-                        labels = res.values[0].map((v: any) => formatTimestamp(v.time))
+                        labels = res.values[0].map((v) => formatTimestamp(v.time))
                     }
                     datasets.push(
-                        { label: `${ifaceName} ${t('dashboard.monitoring.receive')}`, data: res.values[0].map((v: any) => parseFloat(v.value)), borderColor: colors[colorIdx % colors.length], fill: false },
-                        { label: `${ifaceName} ${t('dashboard.monitoring.transmit')}`, data: res.values[1].map((v: any) => parseFloat(v.value)), borderColor: colors[(colorIdx + 1) % colors.length], fill: false }
+                        {
+                            label: `${ifaceName} ${t('dashboard.monitoring.receive')}`,
+                            data: res.values[0].map((v) => parseFloat(v.value)),
+                            borderColor: colors[colorIdx % colors.length],
+                            fill: false,
+                        },
+                        {
+                            label: `${ifaceName} ${t('dashboard.monitoring.transmit')}`,
+                            data: res.values[1].map((v) => parseFloat(v.value)),
+                            borderColor: colors[(colorIdx + 1) % colors.length],
+                            fill: false,
+                        }
                     )
                     colorIdx += 2
                 })
@@ -127,8 +155,7 @@ const fetchData = async () => {
                 }
             }
         }
-
-    } catch (err: any) {
+    } catch (err) {
         console.error('Failed to fetch metrics:', err)
         error.value = t('dashboard.monitoring.loadError')
     } finally {
@@ -137,8 +164,16 @@ const fetchData = async () => {
 }
 
 const {
-    timeRange, step, customStart, customEnd, loading, error,
-    formatTimestamp, getTimeRange, setRange, toggleCustom,
+    timeRange,
+    step,
+    customStart,
+    customEnd,
+    loading,
+    error,
+    formatTimestamp,
+    getTimeRange,
+    setRange,
+    toggleCustom,
 } = useMonitoring(fetchData)
 
 watch(() => props.instanceId, fetchData)
@@ -161,14 +196,17 @@ watch(() => props.instanceId, fetchData)
                     >
                         {{ t('dashboard.monitoring.ranges.' + r.value) }}
                     </button>
-                    <button
-                        :class="['range-btn', { active: timeRange === 'custom' }]"
-                        @click="toggleCustom"
-                    >
+                    <button :class="['range-btn', { active: timeRange === 'custom' }]" @click="toggleCustom">
                         {{ t('dashboard.monitoring.custom') }}
                     </button>
                 </div>
-                <button class="btn btn-ghost btn-sm icon-only" @click="fetchData" :disabled="loading">
+                <button
+                    class="btn btn-ghost btn-sm icon-only"
+                    :title="t('actions.refresh')"
+                    :aria-label="t('actions.refresh')"
+                    @click="fetchData"
+                    :disabled="loading"
+                >
                     <RefreshCw :size="14" :class="{ spinning: loading }" />
                 </button>
             </div>
@@ -183,7 +221,7 @@ watch(() => props.instanceId, fetchData)
                 <label>{{ t('dashboard.monitoring.end') }}</label>
                 <input type="datetime-local" v-model="customEnd" class="range-date-input" />
             </div>
-            <button class="btn btn-primary btn-sm" @click="fetchData" :disabled="loading" style="padding: 4px 16px;">
+            <button class="btn btn-primary btn-sm" @click="fetchData" :disabled="loading" style="padding: 4px 16px">
                 {{ t('actions.apply') }}
             </button>
         </div>
@@ -247,7 +285,7 @@ watch(() => props.instanceId, fetchData)
 
 .monitor-title h3 {
     margin: 0;
-    font-size: var(--font-size-md);
+    font-size: var(--font-size-base);
     font-weight: 600;
 }
 
@@ -369,8 +407,8 @@ watch(() => props.instanceId, fetchData)
 }
 
 .monitor-error {
-    background: #fef2f2;
-    color: #ef4444;
+    background: var(--error-light);
+    color: var(--error-color);
     padding: 8px 12px;
     border-radius: var(--radius-md);
     margin-bottom: 16px;
@@ -378,15 +416,6 @@ watch(() => props.instanceId, fetchData)
     display: flex;
     justify-content: space-between;
     align-items: center;
-}
-
-.spinning {
-    animation: spin 1s linear infinite;
-}
-
-@keyframes spin {
-    from { transform: rotate(0deg); }
-    to { transform: rotate(360deg); }
 }
 
 @media (max-width: 768px) {

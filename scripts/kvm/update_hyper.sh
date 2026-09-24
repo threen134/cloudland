@@ -18,7 +18,7 @@ CLOUDLET_CONF="/etc/sysconfig/cloudlet"
 if [ $hyper_status -eq 0 ]; then
     # disble hypervisor
     if [ -f "$run_dir/disabled" ]; then
-        log_debug "$SCI_CLIENT_ID" "Hypervisor is already disabled"
+        log_debug "$NODE_ID" "Hypervisor is already disabled"
     else
         touch "$run_dir/disabled"
     fi
@@ -32,16 +32,16 @@ fi
 # then restart cloudlet service at the end of this script
 if [ $restart_clet -eq 1 ]; then
     if [ -z "$zone_name" ]; then
-        log_debug "$SCI_CLIENT_ID" "Zone name is empty, not updating hypervisor zone"
+        log_debug "$NODE_ID" "Zone name is empty, not updating hypervisor zone"
         restart_clet=0
     else
         # update hypervisor zone
         # replace the line that starts with "ZONE_NAME=" in the cloudlet config file
         if [ -f "$CLOUDLET_CONF" ]; then
             sed -i "s/^ZONE_NAME=.*/ZONE_NAME=\"$zone_name\"/" "$CLOUDLET_CONF"
-            log_debug "$SCI_CLIENT_ID" "Updated hypervisor zone to $zone_name"
+            log_debug "$NODE_ID" "Updated hypervisor zone to $zone_name"
         else
-            log_debug "$SCI_CLIENT_ID" "Cloudlet config file not found, cannot update zone name"
+            log_debug "$NODE_ID" "Cloudlet config file not found, cannot update zone name"
             restart_clet=0
         fi
     fi
@@ -56,8 +56,9 @@ fi
 
 # restart cloudlet service if needed
 if [ $restart_clet -eq 1 ]; then
-    log_debug "$SCI_CLIENT_ID" "Restarting cloudlet service"
-    systemctl restart cloudlet
+    log_debug "$NODE_ID" "Restarting cloudlet service"
+    # 服务已改名为 cloudlet-go；本脚本由 cloudlet-go 执行，--no-block 让脚本先正常结束，重启在后台进行
+    systemctl restart --no-block cloudlet-go
 else
-    log_debug "$SCI_CLIENT_ID" "No need to restart cloudlet service"
+    log_debug "$NODE_ID" "No need to restart cloudlet service"
 fi

@@ -16,6 +16,8 @@ type Console struct {
 	Instance   int64
 	HashSecret string `gorm:"type:varchar(256)"`
 	Type       string
+	// Hypervisor of a host console (type host); Instance is 0 for those
+	HostID int32
 }
 
 func init() {

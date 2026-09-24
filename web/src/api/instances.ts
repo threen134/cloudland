@@ -1,54 +1,113 @@
 import client from './client'
 
-export interface Instance {
-    id: string
-    name: string
-    hostname?: string
-    status: string
-    ip_address?: string
-    image?: { id: string, name: string }
-    flavor?: {
-        id: string
-        name: string
-        cpu: number
-        memory: number
-        disk?: number
-    }
-    vpc?: { id: string, name: string }
-    zone?: string
-    owner?: string
-    hypervisor?: string
-    root_passwd?: string
-    login_port?: number
-    created_at?: string
-    keys?: any[]
-    interfaces?: {
-        id: string
-        name?: string
-        ip_address?: string
-        mac_address?: string
-        subnet?: { id: string, name: string }
-        is_primary?: boolean
-        floating_ips?: any[]
-        security_groups?: { id: string, name: string }[]
-    }[]
-    volumes?: {
-        id: string
-        name?: string
-        size?: number
-        device?: string
-        target?: string
-        booting?: boolean
-        boot_index?: number
-        volume_type?: string
-        created_at?: string
-    }[]
-    [key: string]: any
-}
-
+// 对应 api/src/common/http.go 的 BaseReference
 export interface BaseReference {
     id: string
     name?: string
+}
+
+// 对应 api/src/common/http.go 的 ResourceReference（所有字段都是 omitempty）
+export interface ResourceReference {
+    id: string
+    name?: string
+    owner?: string
+    owner_uuid?: string
+    created_at?: string
+    updated_at?: string
+}
+
+// 对应 api/src/apis/interface.go 的 AddressInfo
+export interface AddressInfo {
+    ip_address: string
+    subnet: ResourceReference
+}
+
+// 对应 api/src/apis/floatingip.go 的 FloatingIpInfo
+export interface FloatingIpInfo extends ResourceReference {
+    ip_address: string
+    fip_address: string
+    group?: BaseReference
+    vlan?: number
+    type?: string
+}
+
+// 对应 api/src/apis/subnet.go 的 SiteSubnetInfo
+export interface SiteSubnetInfo extends ResourceReference {
+    network: string
+    netmask: string
+    gateway: string
+    start: string
+    end: string
+    group?: BaseReference
+    vlan: number
+}
+
+// 对应 api/src/apis/interface.go 的 InterfaceResponse（内嵌 BaseReference + AddressInfo）
+export interface InstanceInterface extends BaseReference, AddressInfo {
+    secondary_addresses?: AddressInfo[]
+    mac_address: string
+    is_primary: boolean
+    inbound: number
+    outbound: number
+    site_subnets?: SiteSubnetInfo[]
+    floating_ips?: FloatingIpInfo[]
+    security_groups?: ResourceReference[]
+}
+
+export interface InterfaceListResponse {
+    offset: number
+    total: number
+    limit: number
+    interfaces: InstanceInterface[]
+}
+
+// 对应 api/src/apis/volume.go 的 VolumeInfoResponse（内嵌 ResourceReference）
+export interface InstanceVolume extends ResourceReference {
+    target: string
+    // GB
+    size: number
+    booting: boolean
+}
+
+// 对应 api/src/apis/instance.go 的 InstanceResponse（内嵌 ResourceReference）
+export interface Instance extends ResourceReference {
+    hostname: string
+    status: string
+    login_port: number
+    interfaces: InstanceInterface[]
+    volumes: InstanceVolume[]
+    cpu: number
+    memory: number
+    disk: number
+    // 后端返回的是规格名字符串，不是对象
+    flavor: string
+    image: ResourceReference | null
+    keys: ResourceReference[]
+    root_passwd?: string
+    passwd_login: boolean
+    zone: string
+    vpc?: ResourceReference
+    hypervisor?: string
+    reason: string
+    // Pools usable on the host of the instance (uuids): a volume in another pool can not be attached to it
+    available_storage_pools?: string[]
+}
+
+export interface InstanceListResponse {
+    offset: number
+    total: number
+    limit: number
+    instances: Instance[]
+}
+
+// 对应 api/src/apis/console.go 的 ConsoleResponse
+export interface ConsoleResponse {
+    instance: ResourceReference
+    token: string
+    console_url: string
+    console_host: string
+    console_port: number
+    console_path: string
 }
 
 export interface InterfacePayload {
@@ -66,7 +125,10 @@ export interface InterfacePayload {
 
 export interface CreateInstancePayload {
     count?: number
-    hypervisor?: number
+    /** 宿主机 uuid（后端 binding:"omitempty,uuid"） */
+    hypervisor?: string
+    /** Pool of the boot disk; the default pool when left out */
+    storage_pool?: { id: string }
     hostname: string
     keys?: BaseReference[]
     root_passwd?: string
@@ -88,99 +150,238 @@ export interface CreateInstancePayload {
     pool_id?: string
 }
 
+// 监控指标：对应 api/src/apis/monitor.go 的 CPUResponse / MemoryResponse / DiskResponse / NetworkResponse
+export interface MetricValue {
+    time: string
+    value: string
+}
+
+export interface CPUMetricsResponse {
+    status: string
+    data: {
+        resultType: string
+        label: string
+        unit: string
+        result: {
+            metric: { domain: string; instance: string; job: string; uuid?: string }
+            values: MetricValue[]
+        }[]
+    }
+}
+
+export interface MemoryMetricsResponse {
+    status: string
+    data: {
+        resultType: string
+        chart_type: string
+        label: string[]
+        unit: string
+        result: {
+            metric: { domain: string; instance: string; job: string; uuid?: string }
+            // 二维数组 [total, used]
+            values: MetricValue[][]
+        }[]
+    }
+}
+
+export interface DiskMetricsResponse {
+    status: string
+    data: {
+        chart_type: string
+        label: string[]
+        unit: string
+        result: {
+            metric: { domain: string; instance: string; job: string; target_device: string }
+            // 二维数组 [read, write]
+            values: MetricValue[][]
+        }[]
+    }
+}
+
+export interface NetworkMetricsResponse {
+    status: string
+    data: {
+        chart_type: string
+        label: string[]
+        unit: string
+        resultType: string
+        result: {
+            metric: {
+                domain: string
+                instance: string
+                job: string
+                target_device: string
+                interface_id: string
+            }
+            // 二维数组 [receive, transmit]
+            values: MetricValue[][]
+        }[]
+    }
+}
 
 export const instancesApi = {
     // List instances
-    fetchInstances() {
-        return client.get('/instances')
+    // hyper：按所在计算节点过滤（host id）；不传表示不过滤
+    async fetchInstances(params?: {
+        offset?: number
+        limit?: number
+        order?: string
+        query?: string
+        hyper?: number
+    }): Promise<InstanceListResponse> {
+        const response = await client.get<InstanceListResponse>('/instances', { params })
+        return response.data
     },
 
     // Get single instance
-    getInstance(id: string) {
-        return client.get(`/instances/${id}`)
+    async getInstance(id: string): Promise<Instance> {
+        const response = await client.get<Instance>(`/instances/${id}`)
+        return response.data
     },
 
-    // Create instance
-    createInstance(payload: CreateInstancePayload) {
-        return client.post('/instances', payload)
+    // Create instance —— 后端返回的是实例数组（支持 count 批量创建）
+    async createInstance(payload: CreateInstancePayload): Promise<Instance[]> {
+        const response = await client.post<Instance[]>('/instances', payload)
+        return response.data
     },
 
     // Delete instance
-    deleteInstance(id: string) {
-        return client.delete(`/instances/${id}`)
+    async deleteInstance(id: string): Promise<void> {
+        const response = await client.delete<void>(`/instances/${id}`)
+        return response.data
     },
 
     // Instance Actions
-    startInstance(id: string, hostname: string = '') {
-        return client.patch(`/instances/${id}`, { hostname, power_action: 'start' })
+    async startInstance(id: string, hostname: string = ''): Promise<Instance> {
+        const response = await client.patch<Instance>(`/instances/${id}`, { hostname, power_action: 'start' })
+        return response.data
     },
 
-    stopInstance(id: string, hostname: string = '') {
-        return client.patch(`/instances/${id}`, { hostname, power_action: 'stop' })
+    async stopInstance(id: string, hostname: string = ''): Promise<Instance> {
+        const response = await client.patch<Instance>(`/instances/${id}`, { hostname, power_action: 'stop' })
+        return response.data
     },
 
-    rebootInstance(id: string, hostname: string = '') {
-        return client.patch(`/instances/${id}`, { hostname, power_action: 'restart' })
+    async rebootInstance(id: string, hostname: string = ''): Promise<Instance> {
+        const response = await client.patch<Instance>(`/instances/${id}`, { hostname, power_action: 'restart' })
+        return response.data
     },
 
-    hardStopInstance(id: string, hostname: string = '') {
-        return client.patch(`/instances/${id}`, { hostname, power_action: 'hard_stop' })
+    async hardStopInstance(id: string, hostname: string = ''): Promise<Instance> {
+        const response = await client.patch<Instance>(`/instances/${id}`, { hostname, power_action: 'hard_stop' })
+        return response.data
     },
 
-    hardRebootInstance(id: string, hostname: string = '') {
-        return client.patch(`/instances/${id}`, { hostname, power_action: 'hard_restart' })
+    async hardRebootInstance(id: string, hostname: string = ''): Promise<Instance> {
+        const response = await client.patch<Instance>(`/instances/${id}`, { hostname, power_action: 'hard_restart' })
+        return response.data
     },
 
-    pauseInstance(id: string, hostname: string = '') {
-        return client.patch(`/instances/${id}`, { hostname, power_action: 'pause' })
+    async pauseInstance(id: string, hostname: string = ''): Promise<Instance> {
+        const response = await client.patch<Instance>(`/instances/${id}`, { hostname, power_action: 'pause' })
+        return response.data
     },
 
-    resumeInstance(id: string, hostname: string = '') {
-        return client.patch(`/instances/${id}`, { hostname, power_action: 'resume' })
+    async resumeInstance(id: string, hostname: string = ''): Promise<Instance> {
+        const response = await client.patch<Instance>(`/instances/${id}`, { hostname, power_action: 'resume' })
+        return response.data
     },
 
-    resizeInstance(id: string, cpu: number, memory: number) {
-        return client.post(`/instances/${id}/resize`, { cpu, memory })
+    // 后端返回 200 + null
+    async resizeInstance(id: string, cpu: number, memory: number): Promise<void> {
+        const response = await client.post<void>(`/instances/${id}/resize`, { cpu, memory })
+        return response.data
     },
 
-    getConsole(id: string) {
-        return client.post(`/instances/${id}/console`)
+    // type: vnc (graphical, default) or serial (text console)
+    async getConsole(id: string, type?: 'vnc' | 'serial'): Promise<ConsoleResponse> {
+        const response = await client.post<ConsoleResponse>(`/instances/${id}/console`, type ? { type } : undefined)
+        return response.data
     },
 
-    setUserPassword(id: string, user_name: string, password: string) {
-        return client.post(`/instances/${id}/set_user_password`, { user_name, password })
+    // 后端返回 200 + null
+    async setUserPassword(id: string, user_name: string, password: string): Promise<void> {
+        const response = await client.post<void>(`/instances/${id}/set_user_password`, { user_name, password })
+        return response.data
     },
 
-    reinstallInstance(id: string, payload: { image?: { id: string }, password?: string, keys?: { id: string }[], flavor?: string, login_port?: number }) {
-        return client.post(`/instances/${id}/reinstall`, payload)
+    // 后端返回 204 No Content
+    async reinstallInstance(
+        id: string,
+        payload: {
+            image?: BaseReference
+            password?: string
+            keys?: BaseReference[]
+            flavor?: string
+            login_port?: number
+        }
+    ): Promise<void> {
+        const response = await client.post<void>(`/instances/${id}/reinstall`, payload)
+        return response.data
     },
 
-    renameInstance(id: string, hostname: string) {
-        return client.patch(`/instances/${id}`, { hostname })
+    async renameInstance(id: string, hostname: string): Promise<Instance> {
+        const response = await client.patch<Instance>(`/instances/${id}`, { hostname })
+        return response.data
     },
 
-    getInterfaces(instanceId: string) {
-        return client.get<{ interfaces: { id: string; name: string; ip_address?: string; is_primary?: boolean }[] }>(`/instances/${instanceId}/interfaces`)
+    async getInterfaces(instanceId: string): Promise<InterfaceListResponse> {
+        const response = await client.get<InterfaceListResponse>(`/instances/${instanceId}/interfaces`)
+        return response.data
     },
 
-    patchInterface(instanceId: string, ifaceId: string, payload: { security_groups?: BaseReference[] }) {
-        return client.patch(`/instances/${instanceId}/interfaces/${ifaceId}`, payload)
+    async patchInterface(
+        instanceId: string,
+        ifaceId: string,
+        payload: { security_groups?: BaseReference[] }
+    ): Promise<InstanceInterface> {
+        const response = await client.patch<InstanceInterface>(
+            `/instances/${instanceId}/interfaces/${ifaceId}`,
+            payload
+        )
+        return response.data
     },
 
     // Monitoring Metrics
-    getCPUMetrics(payload: { id: string[], start: string, end: string, step: string }) {
-        return client.post('/metrics/instances/cpu/his_data', payload)
+    async getCPUMetrics(payload: {
+        id: string[]
+        start: string
+        end: string
+        step: string
+    }): Promise<CPUMetricsResponse> {
+        const response = await client.post<CPUMetricsResponse>('/metrics/instances/cpu/his_data', payload)
+        return response.data
     },
 
-    getMemoryMetrics(payload: { id: string[], start: string, end: string, step: string }) {
-        return client.post('/metrics/instances/memory/his_data', payload)
+    async getMemoryMetrics(payload: {
+        id: string[]
+        start: string
+        end: string
+        step: string
+    }): Promise<MemoryMetricsResponse> {
+        const response = await client.post<MemoryMetricsResponse>('/metrics/instances/memory/his_data', payload)
+        return response.data
     },
 
-    getDiskMetrics(payload: { id: string[], disk: string[], start: string, end: string, step: string }) {
-        return client.post('/metrics/instances/disk/his_data', payload)
+    async getDiskMetrics(payload: {
+        id: string[]
+        disk: string[]
+        start: string
+        end: string
+        step: string
+    }): Promise<DiskMetricsResponse> {
+        const response = await client.post<DiskMetricsResponse>('/metrics/instances/disk/his_data', payload)
+        return response.data
     },
 
-    getNetworkMetrics(payload: { interface_ids: string[], start: string, end: string, step: string }) {
-        return client.post('/metrics/instances/network/his_data', payload)
-    }
+    // 后端按 interface_ids 顺序返回数组，每个元素是一个网卡的 NetworkResponse
+    async getNetworkMetrics(payload: {
+        interface_ids: string[]
+        start: string
+        end: string
+        step: string
+    }): Promise<NetworkMetricsResponse[]> {
+        const response = await client.post<NetworkMetricsResponse[]>('/metrics/instances/network/his_data', payload)
+        return response.data
+    },
 }

@@ -1,12 +1,22 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount, watch, type Component } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { onBeforeRouteLeave } from 'vue-router'
 import {
-    Save, Send, RefreshCw, ChevronRight,
-    Settings2, Lightbulb, Bell, Layers, Shield,
-    Globe, Mail, MessageSquare, Webhook,
-    Server, Database, HardDrive, CheckCircle2, XCircle, Info
+    Save,
+    Send,
+    RefreshCw,
+    Settings2,
+    Bell,
+    Layers,
+    Server,
+    Mail,
+    MessageSquare,
+    CheckCircle2,
+    XCircle,
+    Shield,
 } from 'lucide-vue-next'
+import BaseModal from '../../components/modals/BaseModal.vue'
 import { useToast } from '../../composables/useToast'
 import { systemSettingsApi, type SystemSetting } from '../../api/systemSettings'
 import { infrastructureApi, type InfrastructureConfig, type TestS3Response } from '../../api/infrastructure'
@@ -14,144 +24,339 @@ import { infrastructureApi, type InfrastructureConfig, type TestS3Response } fro
 const { t, te } = useI18n()
 const toast = useToast()
 
+type Category = 'general' | 'quota' | 'notification' | 'infrastructure'
+type Channel = 'email' | 'feishu'
+
+const categories: Array<{ key: Category; icon: Component }> = [
+    { key: 'general', icon: Settings2 },
+    { key: 'quota', icon: Layers },
+    { key: 'notification', icon: Bell },
+    { key: 'infrastructure', icon: Server },
+]
+const channels: Array<{ key: Channel; icon: Component; prefix: string }> = [
+    { key: 'email', icon: Mail, prefix: 'SMTP_' },
+    { key: 'feishu', icon: MessageSquare, prefix: 'FEISHU_' },
+]
+
+// Editable settings are shown in titled sections; keys missing here fall into a trailing "other" section
+const sectionLayout: Record<'general' | 'quota', Array<{ key: string; fields: string[] }>> = {
+    general: [
+        { key: 'access', fields: ['FRONTEND_URL'] },
+        { key: 'retention', fields: ['ALARM_EVENT_RETENTION_DAYS', 'AUDIT_LOG_RETENTION_DAYS'] },
+        { key: 'network', fields: ['DNS_UPSTREAM'] },
+        {
+            key: 'hostConsole',
+            fields: ['HOST_CONSOLE_ENABLED', 'HOST_CONSOLE_REQUIRE_PASSWORD', 'HOST_CONSOLE_IDLE_MINUTES'],
+        },
+    ],
+    quota: [
+        { key: 'quotaCompute', fields: ['DEFAULT_CPU_CORES', 'DEFAULT_RAM_GB', 'DEFAULT_DISK_GB'] },
+        {
+            key: 'quotaOther',
+            fields: [
+                'DEFAULT_PUBLIC_IPS',
+                'DEFAULT_VPCS',
+                'DEFAULT_LOAD_BALANCERS',
+                'DEFAULT_VPN_GATEWAYS',
+                'DEFAULT_IMAGES',
+            ],
+        },
+    ],
+}
+
+const activeTab = ref<Category>('general')
+const activeChannel = ref<Channel>('email')
+
 const loading = ref(false)
 const saving = ref(false)
 const settings = ref<SystemSetting[]>([])
-const editValues = ref<Record<string, any>>({})
-const testingChannel = ref<string | null>(null)
+// Values bound to the inputs, and the normalized values last loaded from the server
+// value 的实际类型随 value_type 变（string / number / boolean / json 解析出来的数组或对象），
+// 用 unknown 由 normalize / saveSettings 里的运行时判断收窄
+const editValues = ref<Record<string, unknown>>({})
+const savedValues = ref<Record<string, string>>({})
 
-// Helper to get translated field labels and descriptions
-const getFieldLabel = (key: string): string => {
-    const translationKey = `settings.fields.${key}`
-    return te(translationKey) ? t(translationKey) : key
+// Numeric settings with an allowed range; keep in sync with settingRanges in cpgateway (the backend validates too)
+const numberRanges: Record<string, { min: number; max: number; integer: boolean }> = {
+    AUDIT_LOG_RETENTION_DAYS: { min: 90, max: 3650, integer: true },
+    HOST_CONSOLE_IDLE_MINUTES: { min: 5, max: 240, integer: true },
+    DEFAULT_CPU_CORES: { min: 0, max: 1e6, integer: false },
+    DEFAULT_RAM_GB: { min: 0, max: 1e7, integer: false },
+    DEFAULT_DISK_GB: { min: 0, max: 1e9, integer: false },
+    DEFAULT_PUBLIC_IPS: { min: 0, max: 1e5, integer: true },
+    DEFAULT_VPCS: { min: 0, max: 1e5, integer: true },
+    DEFAULT_LOAD_BALANCERS: { min: 0, max: 1e5, integer: true },
+    DEFAULT_VPN_GATEWAYS: { min: 0, max: 1e5, integer: true },
+    DEFAULT_IMAGES: { min: 0, max: 1e5, integer: true },
 }
 
-const getFieldDesc = (setting: SystemSetting): string => {
-    const descKey = `settings.fields.${setting.key}_desc`
-    return te(descKey) ? t(descKey) : (setting.description || '')
+const fieldUnits: Record<string, 'cores' | 'gb' | 'days' | 'minutes'> = {
+    DEFAULT_CPU_CORES: 'cores',
+    DEFAULT_RAM_GB: 'gb',
+    DEFAULT_DISK_GB: 'gb',
+    ALARM_EVENT_RETENTION_DAYS: 'days',
+    AUDIT_LOG_RETENTION_DAYS: 'days',
+    HOST_CONSOLE_IDLE_MINUTES: 'minutes',
 }
 
-// Categories configuration
-const categories = ['general', 'quota', 'notification', 'infrastructure']
-const activeMainTab = ref('general')
-const activeChannelTab = ref('email')
+// NOTIFICATION_CHANNELS is edited through the channel switches, not as a field
+const CHANNELS_KEY = 'NOTIFICATION_CHANNELS'
 
-const categoryIconsMap: Record<string, any> = {
-    general: Settings2,
-    quota: Layers,
-    notification: Bell,
-    infrastructure: Server,
+const fieldLabel = (setting: SystemSetting) => {
+    const key = `settings.fields.${setting.key}`
+    return te(key) ? t(key) : setting.description || setting.key
 }
 
-const getCategoryIcon = (category: string) => {
-    return categoryIconsMap[category.toLowerCase()] || Lightbulb
+const fieldDesc = (setting: SystemSetting) => {
+    const key = `settings.fields.${setting.key}_desc`
+    return te(key) ? t(key) : ''
 }
 
-const getCategoryLabel = (category: string): string => {
-    const cat = category.toLowerCase()
-    const key = `settings.category.${cat}`
-    const translated = t(key)
-    return translated === key ? (category.charAt(0).toUpperCase() + category.slice(1)) : translated
+const unitLabel = (key: string) => {
+    const unit = fieldUnits[key]
+    return unit ? t(`settings.units.${unit}`) : ''
 }
 
-const groupedSettings = computed(() => {
-    const groups: Record<string, SystemSetting[]> = {}
-    for (const s of settings.value) {
-        const cat = s.category.toLowerCase()
-        if (!groups[cat]) groups[cat] = []
-        groups[cat].push(s)
+// Comparable form of a value: inputs hand back strings or numbers, and a list of channel names is a set
+const normalize = (setting: SystemSetting, value: unknown): string => {
+    switch (setting.value_type) {
+        case 'json':
+            return JSON.stringify(
+                Array.isArray(value) && value.every((v) => typeof v === 'string') ? [...value].sort() : (value ?? null)
+            )
+        case 'number':
+            return value === '' || value == null ? '' : String(Number(value))
+        case 'boolean':
+            return String(Boolean(value))
+        default:
+            return String(value ?? '')
     }
-    return groups
-})
+}
 
-const currentSettings = computed(() => {
-    return groupedSettings.value[activeMainTab.value] || []
-})
+const loadValues = (list: SystemSetting[]) => {
+    settings.value = list
+    const edits: Record<string, unknown> = {}
+    const saved: Record<string, string> = {}
+    for (const s of list) {
+        let value = s.value
+        if (s.value_type === 'json' && typeof value === 'string') {
+            try {
+                value = JSON.parse(value)
+            } catch {
+                /* keep the raw string */
+            }
+        }
+        edits[s.key] = value ?? ''
+        saved[s.key] = normalize(s, edits[s.key])
+    }
+    editValues.value = edits
+    savedValues.value = saved
+}
 
-const getSettingsByChannel = (channel: string) => {
-    const items = groupedSettings.value['notification'] || []
-    if (channel === 'email') return items.filter(s => s.key.startsWith('SMTP_'))
-    if (channel === 'feishu') return items.filter(s => s.key.startsWith('FEISHU_'))
-    if (channel === 'slack') return items.filter(s => s.key.startsWith('SLACK_'))
-    if (channel === 'webhook') return items.filter(s => s.key.startsWith('CUSTOM_WEBHOOK_'))
-    return []
+const dirtySettings = computed(() =>
+    settings.value.filter((s) => normalize(s, editValues.value[s.key]) !== savedValues.value[s.key])
+)
+
+const dirtyKeys = computed(() => new Set(dirtySettings.value.map((s) => s.key)))
+
+const categoryDirty = (category: Category) => dirtySettings.value.some((s) => s.category === category)
+
+const channelDirty = (channel: Channel) => {
+    const prefix = channels.find((c) => c.key === channel)!.prefix
+    return dirtySettings.value.some((s) => s.key.startsWith(prefix))
 }
 
 const fetchSettings = async () => {
     loading.value = true
     try {
         const res = await systemSettingsApi.list()
-        settings.value = res.data.settings || []
-        for (const s of settings.value) {
-            if (s.value_type === 'json') {
-                editValues.value[s.key] = typeof s.value === 'object'
-                    ? JSON.stringify(s.value, null, 2)
-                    : (s.value ?? '')
-            } else {
-                editValues.value[s.key] = s.value ?? ''
-            }
-        }
+        loadValues(res.settings || [])
     } catch (err) {
+        console.error('Failed to load system settings:', err)
         toast.error(t('messages.error'))
     } finally {
         loading.value = false
     }
 }
 
-const saveSettings = async () => {
+// Turning the host console password prompt on or off asks for the password itself, so that setting is saved
+// through a password dialog
+const PASSWORD_GUARDED_KEY = 'HOST_CONSOLE_REQUIRE_PASSWORD'
+const showPasswordPrompt = ref(false)
+const confirmPassword = ref('')
+const passwordError = ref('')
+
+// Set while the dialog belongs to the toggle itself: confirming saves only that setting, cancelling puts the
+// switch back. Empty when the dialog was opened by the save button.
+const promptFromToggle = ref(false)
+
+const askPassword = async (fromToggle = false) => {
+    confirmPassword.value = ''
+    passwordError.value = ''
+    promptFromToggle.value = fromToggle
+    showPasswordPrompt.value = true
+}
+
+const cancelPasswordPrompt = () => {
+    // The switch was flipped before the dialog opened: put it back
+    if (promptFromToggle.value) {
+        editValues.value[PASSWORD_GUARDED_KEY] = savedValues.value[PASSWORD_GUARDED_KEY] === 'true'
+    }
+    showPasswordPrompt.value = false
+    promptFromToggle.value = false
+    confirmPassword.value = ''
+    passwordError.value = ''
+}
+
+// Flipping the host console password switch asks for the password right away, instead of waiting for the save
+const onToggle = (key: string, checked: boolean) => {
+    editValues.value[key] = checked
+    if (key === PASSWORD_GUARDED_KEY) askPassword(true)
+}
+
+const saveSettings = async (password?: string) => {
+    if (!password && dirtyKeys.value.has(PASSWORD_GUARDED_KEY)) {
+        await askPassword()
+        return
+    }
+    // The dialog opened by the switch saves that one setting, leaving other pending edits alone
+    const pending = promptFromToggle.value
+        ? dirtySettings.value.filter((s) => s.key === PASSWORD_GUARDED_KEY)
+        : dirtySettings.value
+    const payload: Record<string, unknown> = {}
+    if (password) payload.password = password
+    for (const s of pending) {
+        const raw = editValues.value[s.key]
+        if (s.value_type === 'number') {
+            const range = numberRanges[s.key]
+            const num = Number(raw)
+            if (
+                raw === '' ||
+                Number.isNaN(num) ||
+                (range && ((range.integer && !Number.isInteger(num)) || num < range.min || num > range.max))
+            ) {
+                activeTab.value = s.category as Category
+                toast.error(
+                    range
+                        ? t(range.integer ? 'settings.rangeError' : 'settings.rangeErrorNumber', {
+                              label: fieldLabel(s),
+                              min: range.min,
+                              max: range.max,
+                          })
+                        : t('messages.error')
+                )
+                return
+            }
+            payload[s.key] = num
+        } else if (s.value_type === 'boolean') {
+            payload[s.key] = Boolean(raw)
+        } else {
+            payload[s.key] = raw
+        }
+    }
+    if (Object.keys(payload).length === 0) return
+
+    // Saving just the switch must not drop edits of other fields, which the reloaded values would overwrite
+    const otherEdits = promptFromToggle.value
+        ? Object.fromEntries(
+              dirtySettings.value
+                  .filter((s) => s.key !== PASSWORD_GUARDED_KEY)
+                  .map((s) => [s.key, editValues.value[s.key]])
+          )
+        : null
+
     saving.value = true
     try {
-        const payload: Record<string, any> = {}
-        for (const s of settings.value) {
-            const raw = editValues.value[s.key]
-            if (s.value_type === 'json') {
-                try {
-                    payload[s.key] = typeof raw === 'string' ? JSON.parse(raw) : raw
-                } catch {
-                    toast.error(t('settings.jsonParseError', { key: s.key }))
-                    saving.value = false
-                    return
-                }
-            } else if (s.value_type === 'number') {
-                payload[s.key] = Number(raw)
-            } else if (s.value_type === 'boolean') {
-                payload[s.key] = Boolean(raw)
-            } else {
-                payload[s.key] = raw
-            }
-        }
-        await systemSettingsApi.update(payload)
-        await fetchSettings() // Fetch latest data FIRST to ensure UI is perfectly synced
+        const res = await systemSettingsApi.update(payload)
+        loadValues(res.settings || [])
+        if (otherEdits) Object.assign(editValues.value, otherEdits)
+        promptFromToggle.value = false
+        cancelPasswordPrompt()
         toast.success(t('settings.saveSuccess'))
     } catch (err) {
-        toast.error(t('messages.error'))
+        // Show the backend reason when validation fails (e.g. a value out of range)
+        const response = (err as { response?: { status?: number; data?: { detail?: unknown } } })?.response
+        const detail = response?.data?.detail
+        const message = typeof detail === 'string' ? detail : t('messages.error')
+        // A wrong password keeps the dialog open with the reason next to the input
+        if (password && (response?.status === 403 || response?.status === 429)) {
+            passwordError.value = message
+            confirmPassword.value = ''
+            return
+        }
+        toast.error(message)
     } finally {
         saving.value = false
     }
 }
 
-const testChannel = async (channel: string) => {
+// The loaded list still holds the server values: reloading from it drops every edit
+const discardChanges = () => loadValues(settings.value)
+
+const sections = computed(() => {
+    const tab = activeTab.value
+    if (tab !== 'general' && tab !== 'quota') return []
+    const byKey = new Map(settings.value.filter((s) => s.category === tab).map((s) => [s.key, s]))
+    const placed = new Set<string>()
+    const result = sectionLayout[tab]
+        .map((section) => {
+            const fields = section.fields.map((k) => byKey.get(k)).filter((s): s is SystemSetting => !!s)
+            fields.forEach((s) => placed.add(s.key))
+            return { key: section.key, fields }
+        })
+        .filter((section) => section.fields.length)
+    const rest = [...byKey.values()].filter((s) => !placed.has(s.key) && s.key !== CHANNELS_KEY)
+    if (rest.length) result.push({ key: 'other', fields: rest })
+    return result
+})
+
+// --- Notification channels ---
+const enabledChannels = computed<string[]>(() => {
+    const value = editValues.value[CHANNELS_KEY]
+    return Array.isArray(value) ? value : []
+})
+
+const toggleChannel = (channel: Channel) => {
+    const current = enabledChannels.value.filter((c) => c !== channel)
+    if (!enabledChannels.value.includes(channel)) current.push(channel)
+    editValues.value[CHANNELS_KEY] = current
+}
+
+const channelFields = computed(() => {
+    const prefix = channels.find((c) => c.key === activeChannel.value)!.prefix
+    return settings.value.filter((s) => s.category === 'notification' && s.key.startsWith(prefix))
+})
+
+const testingChannel = ref<Channel | null>(null)
+
+const testChannel = async (channel: Channel) => {
     testingChannel.value = channel
     try {
         const res = await systemSettingsApi.testNotification(channel)
-        if (res.data.success) {
-            toast.success(t('settings.testSuccess', { channel }))
+        if (res.success) {
+            toast.success(t('settings.testSuccess', { channel: t(`settings.channel.${channel}`) }))
         } else {
-            toast.error(t('settings.testFailed', { message: res.data.message }))
+            toast.error(t('settings.testFailed', { message: res.message }))
         }
     } catch (err) {
+        console.error('Notification test failed:', err)
         toast.error(t('messages.error'))
     } finally {
         testingChannel.value = null
     }
 }
 
-// --- Infrastructure tab state ---
+// --- Infrastructure tab (read-only runtime config of the current region) ---
 const infraConfig = ref<InfrastructureConfig | null>(null)
 const infraLoading = ref(false)
-const infraError = ref<string>('')
+const infraError = ref('')
 const testingS3 = ref(false)
 const s3TestResult = ref<TestS3Response | null>(null)
+
+const errorMessage = (err: unknown, fallback: string) => {
+    const e = err as { response?: { data?: { detail?: string } }; message?: string }
+    return e?.response?.data?.detail || e?.message || fallback
+}
 
 const fetchInfrastructure = async () => {
     infraLoading.value = true
@@ -159,9 +364,9 @@ const fetchInfrastructure = async () => {
     s3TestResult.value = null
     try {
         const res = await infrastructureApi.get()
-        infraConfig.value = res.data
-    } catch (err: any) {
-        infraError.value = err?.response?.data?.detail || err?.message || 'Failed to load'
+        infraConfig.value = res
+    } catch (err) {
+        infraError.value = errorMessage(err, t('messages.error'))
         infraConfig.value = null
     } finally {
         infraLoading.value = false
@@ -173,14 +378,14 @@ const testS3Connection = async () => {
     s3TestResult.value = null
     try {
         const res = await infrastructureApi.testS3()
-        s3TestResult.value = res.data
-        if (res.data.success) {
+        s3TestResult.value = res
+        if (res.success) {
             toast.success(t('settings.infra.testS3Success'))
         } else {
-            toast.error(t('settings.infra.testS3Failed', { message: res.data.message }))
+            toast.error(t('settings.infra.testS3Failed', { message: res.message }))
         }
-    } catch (err: any) {
-        const msg = err?.response?.data?.detail || err?.message || 'Unknown error'
+    } catch (err) {
+        const msg = errorMessage(err, t('messages.error'))
         s3TestResult.value = { success: false, message: msg }
         toast.error(t('settings.infra.testS3Failed', { message: msg }))
     } finally {
@@ -188,1167 +393,853 @@ const testS3Connection = async () => {
     }
 }
 
-// infrastructure 字段分组（只读展示）
-const infraGroups = computed(() => {
-    if (!infraConfig.value) return []
+// 显式标注：各组字段的可选项（secret / missing）只有个别行会带上，
+// 不标注的话推断出来的联合类型里没有这些键，模板里读 f.missing 会编译不过
+interface InfraField {
+    label: string
+    value: string
+    secret?: boolean
+    missing?: boolean
+}
+
+const infraGroups = computed<{ title: string; fields: InfraField[] }[]>(() => {
     const c = infraConfig.value
+    if (!c) return []
+    const unset = t('settings.infra.unset')
     return [
         {
-            icon: Database,
             title: t('settings.infra.groupS3'),
             fields: [
-                { label: 'S3_ENDPOINT', value: c.s3_endpoint || '—' },
-                { label: 'S3_ACCESS_KEY', value: c.s3_access_key || '—' },
-                { label: 'S3_SECRET_KEY', value: c.s3_secret_key_set ? c.s3_secret_key : t('settings.infra.unset'), secret: true },
-                { label: 'S3_BUCKET', value: c.s3_bucket || '—' },
-                { label: 'S3_REGION', value: c.s3_region || '—' },
+                { label: 'S3_ENDPOINT', value: c.s3_endpoint },
+                { label: 'S3_ACCESS_KEY', value: c.s3_access_key },
+                { label: 'S3_SECRET_KEY', value: c.s3_secret_key_set ? c.s3_secret_key : unset, secret: true },
+                { label: 'S3_BUCKET', value: c.s3_bucket },
+                { label: 'S3_REGION', value: c.s3_region },
                 { label: 'S3_USE_SSL', value: String(c.s3_use_ssl) },
-                { label: 'S3_UPLOAD_TIMEOUT_MINUTES', value: String(c.s3_upload_timeout_minutes || '—') },
+                {
+                    label: 'S3_UPLOAD_TIMEOUT_MINUTES',
+                    value: c.s3_upload_timeout_minutes ? String(c.s3_upload_timeout_minutes) : '',
+                },
             ],
         },
         {
-            icon: HardDrive,
             title: t('settings.infra.groupMinio'),
-            fields: [
-                { label: 'MINIO_HOSTNAME', value: c.minio_hostname || '—' },
-            ],
+            fields: [{ label: 'MINIO_HOSTNAME', value: c.minio_hostname }],
         },
         {
-            icon: Server,
             title: t('settings.infra.groupCapture'),
             fields: [
-                { label: 'CLAPI_HOSTNAME', value: c.clapi_hostname || '—' },
+                { label: 'CLAPI_HOSTNAME', value: c.clapi_hostname },
                 { label: 'CLAPI_INTERNAL_URL', value: c.clapi_internal_url || t('settings.infra.autoDerived') },
-                { label: 'SCI_SHARED_SECRET', value: c.sci_shared_secret_set ? c.sci_shared_secret : t('settings.infra.unset'), secret: true },
+                {
+                    label: 'CAPTURE_UPLOAD_SECRET',
+                    value: c.capture_upload_secret_set ? c.capture_upload_secret : unset,
+                    secret: true,
+                    missing: !c.capture_upload_secret_set,
+                },
             ],
         },
     ]
 })
 
-watch(activeMainTab, (tab) => {
+watch(activeTab, (tab) => {
     if (tab === 'infrastructure' && !infraConfig.value && !infraLoading.value) {
         fetchInfrastructure()
     }
 })
 
-const enabledChannels = computed<string[]>(() => {
-    const raw = editValues.value['NOTIFICATION_CHANNELS']
-    if (!raw) return []
-    try {
-        const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw
-        return Array.isArray(parsed) ? parsed : []
-    } catch {
-        return []
+const refresh = () => {
+    if (activeTab.value === 'infrastructure') {
+        fetchInfrastructure()
+    } else if (!dirtySettings.value.length || confirm(t('settings.leaveConfirm'))) {
+        fetchSettings()
     }
+}
+
+// --- Unsaved changes guard ---
+const onBeforeUnload = (event: BeforeUnloadEvent) => {
+    if (dirtySettings.value.length) {
+        event.preventDefault()
+        event.returnValue = ''
+    }
+}
+
+onBeforeRouteLeave(() => {
+    if (dirtySettings.value.length && !confirm(t('settings.leaveConfirm'))) return false
 })
-
-const toggleChannel = (channel: string) => {
-    const current = [...enabledChannels.value]
-    const idx = current.indexOf(channel)
-    if (idx === -1) current.push(channel)
-    else current.splice(idx, 1)
-    editValues.value['NOTIFICATION_CHANNELS'] = JSON.stringify(current)
-}
-
-const isScrolled = ref(false)
-const scrollContainerRef = ref<HTMLElement | null>(null)
-const handleScroll = (e: Event) => {
-    const target = e.target as HTMLElement
-    isScrolled.value = target.scrollTop > 20
-}
 
 onMounted(() => {
     fetchSettings()
-    const container = document.querySelector('.page-content') as HTMLElement | null
-    if (container) {
-        scrollContainerRef.value = container
-        container.addEventListener('scroll', handleScroll)
-    }
+    window.addEventListener('beforeunload', onBeforeUnload)
 })
 
-onUnmounted(() => {
-    scrollContainerRef.value?.removeEventListener('scroll', handleScroll)
+onBeforeUnmount(() => {
+    window.removeEventListener('beforeunload', onBeforeUnload)
 })
 </script>
 
 <template>
-  <div class="settings-premium-view">
-    <!-- Combined Header & Tabs Card -->
-    <div class="page-header-card card card-bordered" :class="{ 'is-scrolled': isScrolled }">
-        <div class="header-top">
-            <div class="header-info">
-                <div class="breadcrumb-nav">
-                    <span>{{ $t('nav.dashboard') }}</span>
-                    <ChevronRight :size="12" />
-                    <span class="active">{{ $t('settings.title') }}</span>
+    <div class="settings-page">
+        <!-- Tabs and actions, laid out like the tab bar of the resource detail pages -->
+        <div class="card tab-card">
+            <div class="tab-header">
+                <div class="tab-nav" role="tablist">
+                    <button
+                        v-for="cat in categories"
+                        :key="cat.key"
+                        type="button"
+                        role="tab"
+                        :class="['tab-btn', { active: activeTab === cat.key }]"
+                        :aria-selected="activeTab === cat.key"
+                        @click="activeTab = cat.key"
+                    >
+                        <component :is="cat.icon" :size="16" />
+                        {{ $t(`settings.category.${cat.key}`) }}
+                        <span v-if="categoryDirty(cat.key)" class="dirty-dot" />
+                    </button>
                 </div>
-                <h2>{{ $t('settings.title') }}</h2>
-            </div>
-            <div class="header-apps">
-                <button type="button" class="btn btn-secondary btn-icon-only" @click.stop.prevent="activeMainTab === 'infrastructure' ? fetchInfrastructure() : fetchSettings()" :disabled="loading || infraLoading" :title="$t('common.refresh')" :aria-label="$t('common.refresh')">
-                    <RefreshCw :size="18" :class="{ spin: loading || infraLoading }" />
-                </button>
-                <button v-if="activeMainTab !== 'infrastructure'" type="button" class="btn btn-primary btn-save-main" @click.stop.prevent="saveSettings" :disabled="saving || loading">
-                    <Save :size="18" />
-                    <span>{{ saving ? $t('common.saving') : $t('common.save') }}</span>
-                </button>
+                <div class="tab-header-actions">
+                    <template v-if="dirtySettings.length">
+                        <span class="unsaved-text">{{
+                            $t('settings.unsavedChanges', { n: dirtySettings.length }, dirtySettings.length)
+                        }}</span>
+                        <button type="button" class="btn btn-ghost btn-sm" :disabled="saving" @click="discardChanges">
+                            {{ $t('settings.discardChanges') }}
+                        </button>
+                    </template>
+                    <button
+                        type="button"
+                        class="btn btn-secondary btn-sm btn-icon"
+                        :disabled="loading || infraLoading"
+                        :title="$t('actions.refresh')"
+                        :aria-label="$t('actions.refresh')"
+                        @click="refresh"
+                    >
+                        <RefreshCw :size="14" :class="{ spinning: loading || infraLoading }" />
+                    </button>
+                    <button
+                        v-if="activeTab !== 'infrastructure' || dirtySettings.length"
+                        type="button"
+                        class="btn btn-primary btn-sm"
+                        :disabled="saving || loading || !dirtySettings.length"
+                        @click="saveSettings()"
+                    >
+                        <RefreshCw v-if="saving" :size="14" class="spinning" />
+                        <Save v-else :size="14" />
+                        {{ saving ? $t('common.saving') : $t('common.save') }}
+                    </button>
+                </div>
             </div>
         </div>
 
-        <div class="header-tabs">
-            <button 
-                v-for="cat in categories" 
-                :key="cat" 
-                @click="activeMainTab = cat"
-                class="main-tab-item"
-                :class="{ active: activeMainTab === cat }"
-            >
-                <div class="icon-box">
-                    <component :is="getCategoryIcon(cat)" :size="18" />
-                </div>
-                <span class="label">{{ getCategoryLabel(cat) }}</span>
-                <div class="tab-indicator"></div>
-            </button>
+        <div v-if="loading && !settings.length" class="loading-container">
+            <div class="loading-spinner"></div>
         </div>
-    </div>
 
-    <!-- Workspace Area -->
-    <div class="workspace-area">
-        <transition name="view-fade" mode="out-in">
-            <div :key="activeMainTab" class="view-panel" :class="{ 'card card-bordered': activeMainTab !== 'notification' }">
-                <!-- Notification Layout (Unified Split-Card) -->
-                <div v-if="activeMainTab === 'notification'" class="unified-split-card card card-bordered">
-                    <aside class="sidebar-nav">
-                        <div class="nav-section-title">{{ $t('settings.notificationChannels') }}</div>
-                        <div class="nav-list">
-                            <button 
-                                v-for="ch in ['email', 'feishu', 'slack', 'webhook']" 
-                                :key="ch"
-                                class="side-item"
-                                :class="{ active: activeChannelTab === ch, enabled: enabledChannels.includes(ch) }"
-                                @click="activeChannelTab = ch"
-                            >
-                                <div class="side-icon-wrap">
-                                    <Mail v-if="ch === 'email'" :size="18" />
-                                    <MessageSquare v-else-if="ch === 'feishu'" :size="18" />
-                                    <Globe v-else-if="ch === 'slack'" :size="18" />
-                                    <Webhook v-else-if="ch === 'webhook'" :size="18" />
-                                </div>
-                                <div class="side-text">
-                                    <span class="name">{{ $t(`settings.channel.${ch}`) }}</span>
-                                    <span class="status">{{ enabledChannels.includes(ch) ? $t('common.on') : $t('common.off') }}</span>
-                                </div>
-                                <div class="pill-active"></div>
-                            </button>
+        <!-- General / quota: one card per section -->
+        <template v-else-if="activeTab === 'general' || activeTab === 'quota'">
+            <div v-for="section in sections" :key="section.key" class="card info-card">
+                <h3>{{ $t(`settings.sections.${section.key}`) }}</h3>
+                <p v-if="$te(`settings.sections.${section.key}Desc`)" class="card-desc">
+                    {{ $t(`settings.sections.${section.key}Desc`) }}
+                </p>
+                <div class="setting-list">
+                    <div
+                        v-for="setting in section.fields"
+                        :key="setting.key"
+                        class="setting-row"
+                        :class="{ changed: dirtyKeys.has(setting.key) }"
+                    >
+                        <div class="row-info">
+                            <label class="row-label" :for="setting.key" :title="setting.key">
+                                {{ fieldLabel(setting) }}
+                                <span v-if="dirtyKeys.has(setting.key)" class="dirty-dot" />
+                            </label>
+                            <p v-if="fieldDesc(setting)" class="row-desc">{{ fieldDesc(setting) }}</p>
                         </div>
-                    </aside>
-
-                    <div class="pane-content">
-                        <div class="activation-hero">
-                            <div class="hero-desc">
-                                <h3>{{ $t('settings.channelActivation') }}</h3>
-                                <p>{{ $t('settings.enableHint') }}</p>
+                        <div class="row-control">
+                            <div v-if="setting.value_type === 'number'" class="input-affix narrow">
+                                <input
+                                    :id="setting.key"
+                                    v-model.number="editValues[setting.key]"
+                                    type="number"
+                                    class="form-input"
+                                    :min="numberRanges[setting.key]?.min"
+                                    :max="numberRanges[setting.key]?.max"
+                                    :step="numberRanges[setting.key]?.integer ? 1 : 'any'"
+                                />
+                                <span v-if="unitLabel(setting.key)" class="affix">{{ unitLabel(setting.key) }}</span>
                             </div>
-                            <div class="hero-action">
-                                <label class="custom-toggle">
+                            <label v-else-if="setting.value_type === 'boolean'" class="toggle-row">
+                                <span class="custom-toggle">
                                     <input
+                                        :id="setting.key"
                                         type="checkbox"
-                                        :checked="enabledChannels.includes(activeChannelTab)"
-                                        @change="toggleChannel(activeChannelTab)"
+                                        :checked="!!editValues[setting.key]"
+                                        @change="onToggle(setting.key, ($event.target as HTMLInputElement).checked)"
                                     />
                                     <span class="toggle-slider"></span>
-                                </label>
-                            </div>
-                        </div>
-
-                        <div class="settings-form-body" :class="{ disabled: !enabledChannels.includes(activeChannelTab) }">
-                            <div v-for="setting in getSettingsByChannel(activeChannelTab)" :key="setting.key" class="form-row">
-                                <div class="form-info">
-                                    <label class="item-label" :for="setting.key">{{ getFieldLabel(setting.key) }}</label>
-                                    <p class="item-desc">{{ getFieldDesc(setting) }}</p>
-                                </div>
-                                <div class="form-control">
-                                    <div v-if="setting.value_type === 'boolean'" class="bool-wrap">
-                                        <label class="custom-toggle sm">
-                                            <input :id="setting.key" :name="setting.key" type="checkbox" :disabled="!enabledChannels.includes(activeChannelTab)" :checked="!!editValues[setting.key]" @change="editValues[setting.key] = ($event.target as HTMLInputElement).checked" />
-                                            <span class="toggle-slider"></span>
-                                        </label>
-                                        <span class="bool-status-text">{{ !!editValues[setting.key] ? $t('common.on') : $t('common.off') }}</span>
-                                    </div>
-                                    <div v-else-if="setting.value_type === 'number'" class="input-wrap">
-                                        <input :id="setting.key" :name="setting.key" type="number" class="form-input" :disabled="!enabledChannels.includes(activeChannelTab)" v-model.number="editValues[setting.key]" />
-                                    </div>
-                                    <div v-else-if="setting.value_type === 'secret'" class="input-wrap">
-                                        <input :id="setting.key" :name="setting.key" type="password" class="form-input" :disabled="!enabledChannels.includes(activeChannelTab)" v-model="editValues[setting.key]" :placeholder="$t('settings.secretPlaceholder')" autocomplete="new-password" />
-                                        <Shield class="icon-inner" :size="16" />
-                                    </div>
-                                    <div v-else-if="setting.value_type === 'json'" class="input-wrap">
-                                        <textarea :id="setting.key" :name="setting.key" class="form-input code-area" :disabled="!enabledChannels.includes(activeChannelTab)" v-model="editValues[setting.key]" rows="4" spellcheck="false" />
-                                        <div class="type-tag">JSON</div>
-                                    </div>
-                                    <div v-else class="input-wrap">
-                                        <input :id="setting.key" :name="setting.key" type="text" class="form-input" :disabled="!enabledChannels.includes(activeChannelTab)" v-model="editValues[setting.key]" />
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-
-                        <!-- Panel Footer (Only Connectivity Test) -->
-                        <div class="pane-footer center-align">
-                            <button
-                                class="btn btn-secondary btn-sm connectivity-btn"
-                                :disabled="testingChannel !== null || !enabledChannels.includes(activeChannelTab)"
-                                @click="testChannel(activeChannelTab)"
-                            >
-                                <RefreshCw v-if="testingChannel === activeChannelTab" :size="14" class="spin" />
-                                <Send v-else :size="14" />
-                                {{ $t('settings.testConnectivity') }}
-                            </button>
-                            <div class="footer-hint-box simple">
-                                <Lightbulb :size="14" />
-                                <span>{{ $t('settings.testHint') }}</span>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Infrastructure Context (read-only runtime config) -->
-                <div v-else-if="activeMainTab === 'infrastructure'" class="focused-panel pc-24 infrastructure">
-                    <!-- Modify hint banner -->
-                    <div class="infra-hint-banner">
-                        <Info :size="16" class="hint-icon" />
-                        <div class="hint-text">
-                            <div class="hint-title">{{ $t('settings.infra.readOnlyTitle') }}</div>
-                            <div class="hint-desc">{{ $t('settings.infra.readOnlyDesc') }}</div>
-                        </div>
-                    </div>
-
-                    <!-- Loading / Error states -->
-                    <div v-if="infraLoading" class="infra-state-box">
-                        <div class="loading-spinner sm"></div>
-                        <span>{{ $t('common.loading') }}</span>
-                    </div>
-                    <div v-else-if="infraError" class="infra-state-box error">
-                        <XCircle :size="18" />
-                        <span>{{ infraError }}</span>
-                        <button class="btn btn-sm btn-secondary" @click="fetchInfrastructure">
-                            <RefreshCw :size="14" />
-                            {{ $t('actions.retry') }}
-                        </button>
-                    </div>
-
-                    <template v-else-if="infraConfig">
-                        <!-- Mode Card -->
-                        <div class="infra-mode-card" :class="`mode-${infraConfig.mode}`">
-                            <div class="mode-header">
-                                <div class="mode-badge">
-                                    <span class="dot"></span>
-                                    {{ $t(`settings.infra.mode.${infraConfig.mode}`) }}
-                                </div>
-                                <div class="mode-title">{{ $t('settings.infra.currentMode') }}</div>
-                            </div>
-                            <p class="mode-desc">{{ $t(`settings.infra.modeDesc.${infraConfig.mode}`) }}</p>
-                            <div class="mode-meta">
-                                <span class="meta-item">
-                                    <span class="meta-label">Region:</span>
-                                    <span class="meta-value">{{ infraConfig.region_name }}</span>
                                 </span>
-                                <span class="meta-item">
-                                    <span class="meta-label">S3 Client:</span>
-                                    <span class="meta-value" :class="{ 'ok': infraConfig.s3_enabled, 'nok': !infraConfig.s3_enabled }">
-                                        <CheckCircle2 v-if="infraConfig.s3_enabled" :size="14" />
-                                        <XCircle v-else :size="14" />
-                                        {{ infraConfig.s3_enabled ? $t('settings.infra.initialized') : $t('settings.infra.notInitialized') }}
-                                    </span>
-                                </span>
-                            </div>
-                        </div>
-
-                        <!-- Test S3 action -->
-                        <div class="infra-test-section">
-                            <button
-                                class="btn btn-primary btn-sm"
-                                :disabled="testingS3 || infraConfig.mode === 'legacy'"
-                                @click="testS3Connection"
-                            >
-                                <RefreshCw v-if="testingS3" :size="14" class="spin" />
-                                <Send v-else :size="14" />
-                                {{ $t('settings.infra.testS3') }}
-                            </button>
-                            <div v-if="s3TestResult" class="test-result" :class="{ success: s3TestResult.success, failure: !s3TestResult.success }">
-                                <CheckCircle2 v-if="s3TestResult.success" :size="16" />
-                                <XCircle v-else :size="16" />
-                                <span>{{ s3TestResult.message }}</span>
-                                <span v-if="s3TestResult.latency_ms !== undefined" class="latency">
-                                    {{ s3TestResult.latency_ms }}ms
-                                </span>
-                            </div>
-                        </div>
-
-                        <!-- Config groups (read-only) -->
-                        <div v-for="group in infraGroups" :key="group.title" class="infra-group">
-                            <div class="group-header">
-                                <component :is="group.icon" :size="16" />
-                                <span>{{ group.title }}</span>
-                            </div>
-                            <div class="group-fields">
-                                <div v-for="f in group.fields" :key="f.label" class="infra-field">
-                                    <div class="field-key">{{ f.label }}</div>
-                                    <div class="field-value" :class="{ 'is-secret': f.secret, 'is-empty': f.value === '—' || !f.value }">
-                                        <Shield v-if="f.secret" :size="12" class="secret-icon" />
-                                        {{ f.value }}
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    </template>
-                </div>
-
-                <!-- Generic Settings Context (General, Quota) -->
-                <div v-else class="focused-panel pc-24" :class="activeMainTab">
-                    <div class="settings-form-body">
-                        <div v-for="setting in currentSettings" :key="setting.key" class="form-row">
-                            <div class="form-info">
-                                <label class="item-label" :for="setting.key">{{ getFieldLabel(setting.key) }}</label>
-                                <p class="item-desc">{{ getFieldDesc(setting) }}</p>
-                            </div>
-                            <div class="form-control">
-                                <div v-if="setting.value_type === 'boolean'" class="bool-wrap">
-                                    <label class="custom-toggle sm">
-                                        <input :id="setting.key" :name="setting.key" type="checkbox" :checked="!!editValues[setting.key]" @change="editValues[setting.key] = ($event.target as HTMLInputElement).checked" />
-                                        <span class="toggle-slider"></span>
-                                    </label>
-                                    <span class="bool-status-text">{{ !!editValues[setting.key] ? $t('common.on') : $t('common.off') }}</span>
-                                </div>
-                                <div v-else-if="setting.value_type === 'number'" class="input-wrap">
-                                    <input :id="setting.key" :name="setting.key" type="number" class="form-input" v-model.number="editValues[setting.key]" />
-                                </div>
-                                <div v-else-if="setting.value_type === 'secret'" class="input-wrap">
-                                    <input :id="setting.key" :name="setting.key" type="password" class="form-input" v-model="editValues[setting.key]" :placeholder="$t('settings.secretPlaceholder')" autocomplete="new-password" />
-                                    <Shield class="icon-inner" :size="16" />
-                                </div>
-                                <div v-else-if="setting.value_type === 'json'" class="input-wrap">
-                                    <textarea :id="setting.key" :name="setting.key" class="form-input code-area" v-model="editValues[setting.key]" rows="6" spellcheck="false" />
-                                    <div class="type-tag">JSON</div>
-                                </div>
-                                <div v-else class="input-wrap">
-                                    <input :id="setting.key" :name="setting.key" type="text" class="form-input" v-model="editValues[setting.key]" />
-                                </div>
-                            </div>
+                            </label>
+                            <input
+                                v-else
+                                :id="setting.key"
+                                v-model="editValues[setting.key]"
+                                :type="setting.value_type === 'secret' ? 'password' : 'text'"
+                                class="form-input wide"
+                                :placeholder="setting.value_type === 'secret' ? $t('settings.secretPlaceholder') : ''"
+                                :autocomplete="setting.value_type === 'secret' ? 'new-password' : 'off'"
+                            />
                         </div>
                     </div>
                 </div>
             </div>
-        </transition>
+        </template>
 
-        <!-- Spinner -->
-        <div v-if="loading" class="workspace-spinner">
-            <div class="loading-spinner"></div>
-            <span>{{ $t('common.loading') }}</span>
+        <!-- Notification: channels as second-level tabs inside one card -->
+        <div v-else-if="activeTab === 'notification'" class="card tab-card">
+            <div class="tab-header">
+                <div class="tab-nav" role="tablist">
+                    <button
+                        v-for="ch in channels"
+                        :key="ch.key"
+                        type="button"
+                        role="tab"
+                        :class="['tab-btn', { active: activeChannel === ch.key }]"
+                        :aria-selected="activeChannel === ch.key"
+                        @click="activeChannel = ch.key"
+                    >
+                        <component :is="ch.icon" :size="16" />
+                        {{ $t(`settings.channel.${ch.key}`) }}
+                        <span :class="['status-badge', { on: enabledChannels.includes(ch.key) }]">
+                            {{
+                                enabledChannels.includes(ch.key)
+                                    ? $t('settings.channelEnabled')
+                                    : $t('settings.channelDisabled')
+                            }}
+                        </span>
+                        <span v-if="channelDirty(ch.key)" class="dirty-dot" />
+                    </button>
+                </div>
+                <div class="tab-header-actions">
+                    <button
+                        type="button"
+                        class="btn btn-secondary btn-sm"
+                        :disabled="testingChannel !== null || channelDirty(activeChannel)"
+                        :title="channelDirty(activeChannel) ? $t('settings.testUsesSaved') : $t('settings.testHint')"
+                        @click="testChannel(activeChannel)"
+                    >
+                        <RefreshCw v-if="testingChannel === activeChannel" :size="14" class="spinning" />
+                        <Send v-else :size="14" />
+                        {{ $t('settings.testConnectivity') }}
+                    </button>
+                </div>
+            </div>
+
+            <div class="tab-body">
+                <p class="card-desc">
+                    {{ $t('settings.notificationHint') }}
+                    <router-link :to="{ name: 'notification-channels' }" class="text-link">{{
+                        $t('settings.notificationHintLink')
+                    }}</router-link
+                    >{{ $t('settings.notificationHintSuffix') }}
+                </p>
+                <div class="setting-list">
+                    <div class="setting-row" :class="{ changed: dirtyKeys.has(CHANNELS_KEY) }">
+                        <div class="row-info">
+                            <span class="row-label">
+                                {{ $t('settings.enableChannel') }}
+                                <span v-if="dirtyKeys.has(CHANNELS_KEY)" class="dirty-dot" />
+                            </span>
+                            <p class="row-desc">{{ $t('settings.enableChannelDesc') }}</p>
+                        </div>
+                        <div class="row-control">
+                            <label class="toggle-row">
+                                <span class="custom-toggle">
+                                    <input
+                                        type="checkbox"
+                                        :checked="enabledChannels.includes(activeChannel)"
+                                        :aria-label="$t('settings.enableChannel')"
+                                        @change="toggleChannel(activeChannel)"
+                                    />
+                                    <span class="toggle-slider"></span>
+                                </span>
+                            </label>
+                        </div>
+                    </div>
+
+                    <div
+                        v-for="setting in channelFields"
+                        :key="setting.key"
+                        class="setting-row"
+                        :class="{ changed: dirtyKeys.has(setting.key) }"
+                    >
+                        <div class="row-info">
+                            <label class="row-label" :for="setting.key" :title="setting.key">
+                                {{ fieldLabel(setting) }}
+                                <span v-if="dirtyKeys.has(setting.key)" class="dirty-dot" />
+                            </label>
+                            <p v-if="fieldDesc(setting)" class="row-desc">{{ fieldDesc(setting) }}</p>
+                        </div>
+                        <div class="row-control">
+                            <label v-if="setting.value_type === 'boolean'" class="toggle-row">
+                                <span class="custom-toggle">
+                                    <input
+                                        :id="setting.key"
+                                        type="checkbox"
+                                        :checked="!!editValues[setting.key]"
+                                        @change="onToggle(setting.key, ($event.target as HTMLInputElement).checked)"
+                                    />
+                                    <span class="toggle-slider"></span>
+                                </span>
+                            </label>
+                            <input
+                                v-else-if="setting.value_type === 'number'"
+                                :id="setting.key"
+                                v-model.number="editValues[setting.key]"
+                                type="number"
+                                class="form-input narrow plain-number"
+                            />
+                            <input
+                                v-else
+                                :id="setting.key"
+                                v-model="editValues[setting.key]"
+                                :type="setting.value_type === 'secret' ? 'password' : 'text'"
+                                class="form-input wide"
+                                :placeholder="setting.value_type === 'secret' ? $t('settings.secretPlaceholder') : ''"
+                                :autocomplete="setting.value_type === 'secret' ? 'new-password' : 'off'"
+                            />
+                        </div>
+                    </div>
+                </div>
+            </div>
         </div>
+
+        <!-- Infrastructure (read-only) -->
+        <template v-else>
+            <div v-if="infraLoading" class="loading-container">
+                <div class="loading-spinner"></div>
+            </div>
+            <div v-else-if="infraError" class="card error-container">
+                <p class="text-error">{{ infraError }}</p>
+                <button type="button" class="btn btn-primary btn-sm" @click="fetchInfrastructure">
+                    {{ $t('actions.retry') }}
+                </button>
+            </div>
+
+            <template v-else-if="infraConfig">
+                <div class="card info-card">
+                    <h3>{{ $t('settings.infra.currentMode') }}</h3>
+                    <p class="card-desc">{{ $t('settings.infra.readOnlyDesc') }}</p>
+                    <div class="mode-row">
+                        <div class="mode-info">
+                            <span :class="['mode-badge', `mode-${infraConfig.mode}`]">{{
+                                $t(`settings.infra.mode.${infraConfig.mode}`)
+                            }}</span>
+                            <span class="mode-desc">{{ $t(`settings.infra.modeDesc.${infraConfig.mode}`) }}</span>
+                        </div>
+                        <button
+                            type="button"
+                            class="btn btn-secondary btn-sm"
+                            :disabled="testingS3 || infraConfig.mode === 'legacy'"
+                            @click="testS3Connection"
+                        >
+                            <RefreshCw v-if="testingS3" :size="14" class="spinning" />
+                            <Send v-else :size="14" />
+                            {{ $t('settings.infra.testS3') }}
+                        </button>
+                    </div>
+                    <div class="key-value-list">
+                        <div class="kv-item">
+                            <span class="label">{{ t('dashboard.table.region') }}</span>
+                            <span class="value">{{ infraConfig.region_name }}</span>
+                        </div>
+                        <div class="kv-item">
+                            <span class="label">S3</span>
+                            <span :class="['value', 'status-text', infraConfig.s3_enabled ? 'ok' : 'nok']">
+                                <CheckCircle2 v-if="infraConfig.s3_enabled" :size="14" />
+                                <XCircle v-else :size="14" />
+                                {{
+                                    infraConfig.s3_enabled
+                                        ? $t('settings.infra.initialized')
+                                        : $t('settings.infra.notInitialized')
+                                }}
+                            </span>
+                        </div>
+                        <div v-if="s3TestResult" class="kv-item">
+                            <span class="label">{{ $t('settings.infra.testS3') }}</span>
+                            <span :class="['value', 'status-text', s3TestResult.success ? 'ok' : 'nok']">
+                                {{ s3TestResult.message
+                                }}<template v-if="s3TestResult.latency_ms !== undefined">
+                                    · {{ s3TestResult.latency_ms }}ms</template
+                                >
+                            </span>
+                        </div>
+                    </div>
+                </div>
+
+                <div v-for="group in infraGroups" :key="group.title" class="card info-card">
+                    <h3>{{ group.title }}</h3>
+                    <div class="key-value-list">
+                        <div v-for="f in group.fields" :key="f.label" class="kv-item">
+                            <span class="label mono">{{ f.label }}</span>
+                            <span :class="['value', 'mono', { 'text-secondary': !f.value, 'text-error': f.missing }]">
+                                <Shield v-if="f.secret" :size="12" />
+                                {{ f.value || '-' }}
+                            </span>
+                        </div>
+                    </div>
+                </div>
+            </template>
+        </template>
+
+        <!-- Turning the host console password prompt on or off asks for the password itself -->
+        <BaseModal
+            :show="showPasswordPrompt"
+            :title="$t('settings.passwordPrompt.title')"
+            :loading="saving"
+            form
+            @close="cancelPasswordPrompt"
+            @submit="saveSettings(confirmPassword)"
+        >
+            <p class="card-desc">
+                {{
+                    editValues[PASSWORD_GUARDED_KEY]
+                        ? $t('settings.passwordPrompt.descEnable')
+                        : $t('settings.passwordPrompt.descDisable')
+                }}
+            </p>
+            <input type="text" autocomplete="username" class="visually-hidden" tabindex="-1" aria-hidden="true" />
+            <input
+                v-model="confirmPassword"
+                type="password"
+                class="form-input"
+                style="width: 100%"
+                autocomplete="current-password"
+                :placeholder="$t('settings.passwordPrompt.placeholder')"
+            />
+            <p v-if="passwordError" class="password-error">{{ passwordError }}</p>
+
+            <template #footer>
+                <button type="button" class="btn btn-secondary" @click="cancelPasswordPrompt">
+                    {{ $t('actions.cancel') }}
+                </button>
+                <button type="submit" class="btn btn-primary" :disabled="saving || !confirmPassword">
+                    <RefreshCw v-if="saving" :size="14" class="spinning" />
+                    {{ saving ? $t('common.saving') : $t('common.save') }}
+                </button>
+            </template>
+        </BaseModal>
     </div>
-  </div>
 </template>
 
 <style scoped>
-.settings-premium-view {
-  max-width: 1200px;
-  margin: 0 auto;
-  padding: 0 0 60px;
-}
-
-/* Page Header Card (Combined) */
-.page-header-card {
-  position: sticky;
-  top: 0;
-  z-index: 20; /* Lowered from 100 to avoid covering global Layout header dropdowns */
-  display: flex;
-  flex-direction: column;
-  padding: 0;
-  border-radius: var(--radius-xl);
-  margin-bottom: var(--spacing-6);
-  background: var(--bg-secondary); /* Changed to slightly darker secondary bg */
-  border: 1px solid var(--border-light);
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-  overflow: hidden;
-}
-
-.page-header-card.is-scrolled {
-  margin: var(--spacing-4) 0 var(--spacing-8);
-  top: var(--spacing-2); 
-  border-radius: var(--radius-xl);
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.08);
-  background: var(--bg-primary); /* Uses theme variable instead of hardcoded white */
-  opacity: 0.98;
-  backdrop-filter: blur(12px);
-  border: 1px solid var(--border-default);
-}
-
-.header-top {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: var(--spacing-6) var(--spacing-6) var(--spacing-4);
-}
-
-.breadcrumb-nav {
-  display: flex;
-  align-items: center;
-  gap: var(--spacing-2);
-  font-size: var(--font-size-xs);
-  font-weight: var(--font-weight-bold);
-  color: var(--text-tertiary);
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  margin-bottom: 4px;
-}
-
-.breadcrumb-nav .active {
-  color: var(--primary-color);
-}
-
-.header-info h2 {
-  font-size: var(--font-size-3xl);
-  font-weight: var(--font-weight-bold);
-  margin: 0;
-  letter-spacing: -0.025em;
-  line-height: 1.2;
-}
-
-.header-apps {
-  display: flex;
-  gap: var(--spacing-3);
-}
-
-.btn-icon-only {
-  width: 38px;
-  height: 38px;
-  padding: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: var(--radius-md);
-}
-
-.btn-save-main {
-  height: 38px;
-  padding: 0 var(--spacing-4);
-  border-radius: var(--radius-md);
-  font-size: var(--font-size-sm);
-  font-weight: var(--font-weight-bold);
-  gap: var(--spacing-2);
-}
-
-/* Tabs inside Header Card */
-.header-tabs {
-  display: flex;
-  padding: 0 var(--spacing-6);
-  border-top: 1px solid var(--border-light);
-  gap: var(--spacing-10);
-}
-
-.main-tab-item {
-  display: flex;
-  align-items: center;
-  gap: var(--spacing-2);
-  padding: var(--spacing-4) 0;
-  background: transparent;
-  border: none;
-  cursor: pointer;
-  position: relative;
-  color: var(--text-tertiary);
-  font-weight: var(--font-weight-bold);
-  transition: all 0.2s;
-}
-
-.main-tab-item:hover {
-  color: var(--text-primary);
-}
-
-.main-tab-item.active {
-  color: var(--primary-color);
-}
-
-.icon-box {
-  width: 30px;
-  height: 30px;
-  border-radius: var(--radius-md);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: var(--bg-tertiary); /* Darker icon box for contrast on secondary bg */
-  transition: all 0.2s;
-}
-
-.main-tab-item.active .icon-box {
-  background: var(--bg-primary); /* Pop out when active */
-  color: var(--primary-color);
-  box-shadow: var(--shadow-sm);
-}
-
-.tab-indicator {
-  position: absolute;
-  bottom: -1px;
-  left: -4px;
-  right: -4px;
-  height: 3px;
-  background: var(--primary-color);
-  border-radius: 3px 3px 0 0;
-  transform: scaleX(0);
-  transition: transform 0.3s;
-}
-
-.main-tab-item.active .tab-indicator {
-  transform: scaleX(1);
-}
-
-.workspace-area {
-  position: relative;
-}
-
-/* Workspace panel logic */
-.view-panel {
-    background: transparent;
-}
-
-.view-panel.card {
-  overflow: hidden;
-  background: var(--bg-primary);
-}
-
-/* Unified Split Card (Notification View) */
-.unified-split-card {
-  display: flex;
-  background: var(--bg-primary);
-  border-radius: var(--radius-xl);
-  overflow: hidden;
-  min-height: 600px;
-}
-
-.sidebar-nav {
-  width: 260px;
-  background: var(--bg-secondary);
-  padding: var(--spacing-8) var(--spacing-4);
-  flex-shrink: 0;
-  margin: var(--spacing-4);
-  border-radius: var(--radius-xl);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
-}
-
-.nav-section-title {
-  font-size: var(--font-size-xs);
-  font-weight: var(--font-weight-bold);
-  color: var(--text-tertiary);
-  text-transform: uppercase;
-  padding: 0 var(--spacing-4) var(--spacing-6);
-  letter-spacing: 0.1em;
-}
-
-.nav-list {
-  display: flex;
-  flex-direction: column;
-  gap: var(--spacing-1);
-}
-
-.side-item {
-  width: 100%;
-  display: flex;
-  align-items: center;
-  gap: var(--spacing-4);
-  padding: var(--spacing-4) var(--spacing-4);
-  background: transparent;
-  border: none;
-  cursor: pointer;
-  border-radius: var(--radius-lg);
-  position: relative;
-  text-align: left;
-  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-.side-item:hover {
-  background: var(--bg-hover);
-}
-
-.side-item.active {
-  background: var(--primary-50);
-}
-
-.side-icon-wrap {
-  color: var(--text-tertiary);
-}
-
-.side-item.active .side-icon-wrap {
-  color: var(--primary-color);
-}
-
-.side-text {
-  display: flex;
-  flex-direction: column;
-}
-
-.side-text .name {
-  font-size: var(--font-size-sm);
-  font-weight: var(--font-weight-bold);
-  color: var(--text-primary);
-}
-
-.side-text .status {
-  font-size: 10px;
-  font-weight: var(--font-weight-bold);
-  color: var(--text-tertiary);
-  text-transform: uppercase;
-}
-
-.side-item.enabled .status {
-  color: var(--success-dark);
-}
-
-.pill-active {
-  position: absolute;
-  left: 0;
-  top: var(--spacing-3);
-  bottom: var(--spacing-3);
-  width: 3px;
-  background: var(--primary-color);
-  border-radius: 0 4px 4px 0;
-  transform: scaleX(0);
-  transition: transform 0.2s;
-}
-
-.side-item.active .pill-active {
-  transform: scaleX(1);
-}
-
-.pane-content {
-  flex: 1;
-  padding: var(--spacing-10);
-  background: var(--bg-primary);
-}
-
-.pc-24 {
-    padding: var(--spacing-6) var(--spacing-10);
-}
-
-/* Hero Section */
-.activation-hero {
-  background: var(--bg-secondary);
-  padding: var(--spacing-6) var(--spacing-8);
-  border-radius: var(--radius-xl);
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  border: 1px dashed var(--border-default);
-  margin-bottom: var(--spacing-10);
-}
-
-.hero-desc h3 {
-  margin: 0;
-  font-size: var(--font-size-base);
-  font-weight: var(--font-weight-bold);
-}
-
-.hero-desc p {
-  margin: 4px 0 0;
-  font-size: var(--font-size-sm);
-}
-
-/* Settings Form */
-.settings-form-body {
-  display: flex;
-  flex-direction: column;
-}
-
-.settings-form-body.disabled {
-  opacity: 0.5;
-  pointer-events: none;
-  filter: grayscale(0.2);
-}
-
-.form-row {
-  display: flex;
-  align-items: flex-start;
-  padding: var(--spacing-8) 0;
-  border-bottom: 1px solid var(--border-light);
-  gap: var(--spacing-12);
-}
-
-.form-row:last-child {
-  border-bottom: none;
-}
-
-.form-info {
-  flex: 0 0 320px;
-}
-
-.item-label {
-  font-size: var(--font-size-sm);
-  font-weight: var(--font-weight-bold);
-  color: var(--text-primary);
-  display: block;
-  margin-bottom: 4px;
-}
-
-.item-desc {
-  font-size: var(--font-size-xs);
-  line-height: 1.5;
-  color: var(--text-tertiary);
-  margin: 0;
-}
-
-.form-control {
-  flex: 1;
-  max-width: 500px;
-}
-
-.input-wrap {
-  position: relative;
-}
-
-.icon-inner {
-  position: absolute;
-  right: var(--spacing-3);
-  top: 50%;
-  transform: translateY(-50%);
-  color: var(--text-tertiary);
-  pointer-events: none;
-}
-
-.form-input {
-  width: 100%;
-  padding: var(--spacing-3) var(--spacing-4);
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-lg);
-  background: var(--bg-primary);
-  color: var(--text-primary);
-  font-size: var(--font-size-sm);
-  transition: all 0.2s;
-}
-
-.form-input:focus {
-  outline: none;
-  border-color: var(--primary-color);
-  box-shadow: 0 0 0 3px var(--primary-100);
-}
-
-.code-area {
-  font-family: var(--font-family-mono);
-  font-size: var(--font-size-sm);
-  line-height: 1.6;
-}
-
-.type-tag {
-  position: absolute;
-  bottom: var(--spacing-2);
-  right: var(--spacing-3);
-  font-size: 10px;
-  font-weight: var(--font-weight-bold);
-  color: var(--text-light);
-  opacity: 0.4;
-}
-
-.bool-wrap {
-  display: flex;
-  align-items: center;
-  gap: var(--spacing-3);
-}
-
-.bool-status-text {
-  font-size: var(--font-size-xs);
-  font-weight: var(--font-weight-bold);
-  color: var(--text-tertiary);
-  text-transform: uppercase;
-}
-
-/* Custom Toggle Switch */
-.custom-toggle {
-  position: relative;
-  display: inline-block;
-  width: 52px;
-  height: 28px;
-  cursor: pointer;
-}
-
-.custom-toggle.sm {
-  width: 44px;
-  height: 24px;
-}
-
-.custom-toggle input {
-  opacity: 0;
-  width: 0;
-  height: 0;
-}
-
-.toggle-slider {
-  position: absolute;
-  inset: 0;
-  background: var(--bg-tertiary);
-  border: 1px solid var(--border-default);
-  border-radius: 30px;
-  transition: all 0.35s cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-.toggle-slider::before {
-  content: '';
-  position: absolute;
-  height: 22px;
-  width: 22px;
-  left: 2px;
-  top: 2px;
-  background: white;
-  border-radius: 50%;
-  transition: all 0.35s cubic-bezier(0.4, 0, 0.2, 1);
-  box-shadow: var(--shadow-sm);
-}
-
-.custom-toggle.sm .toggle-slider::before {
-  height: 18px;
-  width: 18px;
-}
-
-.custom-toggle input:checked + .toggle-slider {
-  background: var(--primary-color);
-  border-color: var(--primary-600);
-}
-
-.custom-toggle input:checked + .toggle-slider::before {
-  transform: translateX(24px);
-}
-
-.custom-toggle.sm input:checked + .toggle-slider::before {
-  transform: translateX(20px);
-}
-
-/* Pane Footer */
-.pane-footer {
-  display: flex;
-  align-items: center;
-  gap: var(--spacing-4);
-  margin-top: var(--spacing-10);
-  padding-top: var(--spacing-8);
-  border-top: 1px solid var(--border-light);
-}
-
-.pane-footer.center-align {
-  justify-content: flex-start;
-}
-
-.connectivity-btn {
-  padding: 0 var(--spacing-6);
-  height: 38px;
-  border-radius: var(--radius-lg);
-  font-weight: var(--font-weight-bold);
-}
-
-.footer-hint-box.simple {
-  background: transparent;
-  padding: 0;
-  display: flex;
-  align-items: center;
-  gap: var(--spacing-2);
-  font-size: var(--font-size-xs);
-  color: var(--text-tertiary);
-}
-
-/* Spinner Overlay */
-.workspace-spinner {
-  position: absolute;
-  inset: 0;
-  background: var(--bg-overlay, rgba(255, 255, 255, 0.8));
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: var(--spacing-4);
-  z-index: 100;
-  backdrop-filter: blur(4px);
-}
-
-.spin {
-  animation: spin 1s linear infinite;
-}
-
-@keyframes spin {
-  to { transform: rotate(360deg); }
-}
-
-/* Infrastructure Tab */
-.infra-hint-banner {
-    display: flex;
-    gap: var(--spacing-3);
-    padding: var(--spacing-4) var(--spacing-5);
-    background: var(--warning-50, #fff7ed);
-    border: 1px solid var(--warning-200, #fed7aa);
-    border-radius: var(--radius-lg);
+/* Tab card: same look as the tab bar of the resource detail pages */
+.tab-card {
+    padding: 0;
+    overflow: hidden;
     margin-bottom: var(--spacing-6);
 }
 
-.infra-hint-banner .hint-icon {
-    color: var(--warning-dark, #b45309);
-    flex-shrink: 0;
-    margin-top: 2px;
+.tab-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: var(--spacing-2);
+    padding: 0 var(--spacing-5);
 }
 
-.hint-title {
+.tab-nav {
+    display: flex;
+    gap: 0;
+    overflow-x: auto;
+    scrollbar-width: none;
+}
+
+.tab-btn {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-2);
+    padding: var(--spacing-4);
+    background: none;
+    border: none;
+    border-bottom: 2px solid transparent;
     font-size: var(--font-size-sm);
-    font-weight: var(--font-weight-bold);
+    font-weight: 500;
+    color: var(--text-secondary);
+    white-space: nowrap;
+    cursor: pointer;
+    transition:
+        color 0.15s,
+        border-color 0.15s;
+}
+
+.tab-btn:hover {
     color: var(--text-primary);
-    margin-bottom: 2px;
 }
 
-.hint-desc {
-    font-size: var(--font-size-xs);
-    color: var(--text-secondary);
-    line-height: 1.5;
-    white-space: pre-wrap;
-    font-family: var(--font-family-mono);
-}
-
-.infra-state-box {
-    display: flex;
-    align-items: center;
-    gap: var(--spacing-3);
-    padding: var(--spacing-6);
-    background: var(--bg-secondary);
-    border-radius: var(--radius-lg);
-    color: var(--text-secondary);
-    font-size: var(--font-size-sm);
-}
-
-.infra-state-box.error {
-    color: var(--danger-dark);
-    background: var(--danger-50, #fef2f2);
-}
-
-.infra-state-box .loading-spinner.sm {
-    width: 18px;
-    height: 18px;
-}
-
-.infra-mode-card {
-    padding: var(--spacing-6);
-    border-radius: var(--radius-xl);
-    background: var(--bg-secondary);
-    border: 1px solid var(--border-light);
-    margin-bottom: var(--spacing-6);
-    transition: all 0.2s;
-}
-
-.infra-mode-card.mode-minio {
-    background: linear-gradient(135deg, var(--primary-50), var(--bg-secondary));
-    border-color: var(--primary-200, #bfdbfe);
-}
-
-.infra-mode-card.mode-external_s3 {
-    background: linear-gradient(135deg, var(--success-50, #ecfdf5), var(--bg-secondary));
-    border-color: var(--success-200, #bbf7d0);
-}
-
-.infra-mode-card.mode-legacy {
-    background: linear-gradient(135deg, var(--warning-50, #fff7ed), var(--bg-secondary));
-    border-color: var(--warning-200, #fed7aa);
-}
-
-.mode-header {
-    display: flex;
-    align-items: center;
-    gap: var(--spacing-3);
-    margin-bottom: var(--spacing-2);
-}
-
-.mode-badge {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    padding: 4px 12px;
-    border-radius: 999px;
-    background: var(--bg-primary);
-    font-size: var(--font-size-xs);
-    font-weight: var(--font-weight-bold);
+.tab-btn.active {
     color: var(--primary-color);
-    border: 1px solid var(--border-default);
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
+    border-bottom-color: var(--primary-color);
 }
 
-.mode-badge .dot {
+.tab-header-actions {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-2);
+    padding: var(--spacing-2) 0;
+    margin-left: auto;
+}
+
+.tab-body {
+    padding: var(--spacing-5);
+    border-top: 1px solid var(--border-light);
+}
+
+.unsaved-text {
+    font-size: var(--font-size-xs);
+    color: var(--warning-dark, var(--warning-dark));
+    white-space: nowrap;
+}
+
+.dirty-dot {
+    display: inline-block;
     width: 6px;
     height: 6px;
     border-radius: 50%;
-    background: var(--primary-color);
-    animation: pulse 1.8s infinite;
+    background: var(--warning-color, var(--warning-color));
+    flex-shrink: 0;
 }
 
-.mode-minio .mode-badge .dot { background: var(--primary-color); }
-.mode-external_s3 .mode-badge .dot { background: var(--success-color); }
-.mode-legacy .mode-badge .dot { background: var(--warning-color); }
-
-@keyframes pulse {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0.4; }
+.status-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    height: 18px;
+    padding: 0 6px;
+    border-radius: 9px;
+    font-size: 11px;
+    font-weight: 600;
+    background: var(--bg-tertiary);
+    color: var(--text-secondary);
 }
 
-.mode-title {
+.status-badge.on {
+    background: var(--success-light);
+    color: var(--success-dark);
+}
+
+.loading-container,
+.error-container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: var(--spacing-3);
+    padding: 60px;
+}
+
+/* Section cards: same look as the "General Information" card of the detail pages */
+.info-card {
+    padding: var(--spacing-5);
+    margin-bottom: var(--spacing-6);
+}
+
+.info-card h3 {
+    font-size: var(--font-size-base);
+    font-weight: 600;
+    margin: 0 0 var(--spacing-4) 0;
+    color: var(--text-primary);
+    border-bottom: 1px solid var(--border-light);
+    padding-bottom: var(--spacing-3);
+}
+
+.card-desc {
+    margin: calc(-1 * var(--spacing-2)) 0 var(--spacing-3);
     font-size: var(--font-size-xs);
+    line-height: 1.6;
     color: var(--text-tertiary);
-    font-weight: var(--font-weight-bold);
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
+    white-space: pre-line;
+}
+
+.tab-body .card-desc {
+    margin-top: 0;
+}
+
+.setting-list {
+    display: flex;
+    flex-direction: column;
+}
+
+.setting-row {
+    display: grid;
+    grid-template-columns: minmax(0, 320px) minmax(0, 1fr);
+    gap: var(--spacing-6);
+    align-items: center;
+    padding: var(--spacing-3) 0;
+}
+
+.row-info {
+    min-width: 0;
+}
+
+.row-label {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--spacing-2);
+    font-size: var(--font-size-sm);
+    color: var(--text-secondary);
+}
+
+.row-desc {
+    margin: 2px 0 0;
+    font-size: var(--font-size-xs);
+    line-height: 1.5;
+    color: var(--text-tertiary);
+}
+
+.row-control {
+    display: flex;
+    align-items: center;
+    min-width: 0;
+}
+
+.form-input {
+    width: 100%;
+    padding: 8px 12px;
+    font-size: var(--font-size-sm);
+}
+
+.form-input.wide {
+    max-width: 420px;
+}
+
+.narrow {
+    width: 160px;
+    max-width: 100%;
+}
+
+.setting-row.changed .form-input {
+    border-color: var(--warning-color, var(--warning-color));
+}
+
+.input-affix {
+    position: relative;
+}
+
+.input-affix .form-input {
+    padding-right: 44px;
+}
+
+.input-affix input[type='number'],
+.plain-number {
+    appearance: textfield;
+    -moz-appearance: textfield;
+}
+
+.input-affix input[type='number']::-webkit-inner-spin-button,
+.input-affix input[type='number']::-webkit-outer-spin-button,
+.plain-number::-webkit-inner-spin-button,
+.plain-number::-webkit-outer-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+}
+
+.affix {
+    position: absolute;
+    right: 12px;
+    top: 50%;
+    transform: translateY(-50%);
+    font-size: var(--font-size-sm);
+    color: var(--text-secondary);
+    pointer-events: none;
+}
+
+/* Toggle */
+.toggle-row {
+    display: inline-flex;
+    align-items: center;
+    min-height: 36px;
+    cursor: pointer;
+}
+
+.custom-toggle {
+    position: relative;
+    display: inline-block;
+    width: 40px;
+    height: 22px;
+}
+
+.custom-toggle input {
+    opacity: 0;
+    width: 0;
+    height: 0;
+}
+
+.toggle-slider {
+    position: absolute;
+    inset: 0;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-default);
+    border-radius: 999px;
+    transition:
+        background 0.2s,
+        border-color 0.2s;
+}
+
+.toggle-slider::before {
+    content: '';
+    position: absolute;
+    width: 16px;
+    height: 16px;
+    left: 2px;
+    top: 2px;
+    background: white;
+    border-radius: 50%;
+    box-shadow: var(--shadow-sm);
+    transition: transform 0.2s;
+}
+
+.custom-toggle input:checked + .toggle-slider {
+    background: var(--primary-color);
+    border-color: var(--primary-600);
+}
+
+.custom-toggle input:checked + .toggle-slider::before {
+    transform: translateX(18px);
+}
+
+.custom-toggle input:focus-visible + .toggle-slider {
+    box-shadow: 0 0 0 3px var(--primary-100);
+}
+
+.text-link {
+    color: var(--primary-600);
+    text-decoration: none;
+}
+
+.text-link:hover {
+    text-decoration: underline;
+}
+
+/* Infrastructure: key-value rows like the detail pages */
+.mode-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: var(--spacing-3);
+    padding: var(--spacing-2) 0 var(--spacing-4);
+}
+
+.mode-info {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: var(--spacing-3);
+    min-width: 0;
+}
+
+.mode-badge {
+    background: var(--primary-50);
+    color: var(--primary-700);
+    padding: 2px 8px;
+    border-radius: 12px;
+    font-size: 11px;
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+.mode-badge.mode-external_s3 {
+    background: var(--success-light);
+    color: var(--success-dark);
+}
+
+.mode-badge.mode-legacy {
+    background: var(--warning-light, var(--warning-light));
+    color: var(--warning-dark, var(--warning-dark));
 }
 
 .mode-desc {
-    margin: 0 0 var(--spacing-4);
     font-size: var(--font-size-sm);
     color: var(--text-secondary);
-    line-height: 1.6;
 }
 
-.mode-meta {
+.key-value-list {
     display: flex;
-    flex-wrap: wrap;
+    flex-direction: column;
+    gap: var(--spacing-3);
+}
+
+.kv-item {
+    display: flex;
+    justify-content: space-between;
     gap: var(--spacing-4);
-    font-size: var(--font-size-xs);
-}
-
-.meta-item {
-    display: inline-flex;
-    align-items: center;
-    gap: var(--spacing-2);
-}
-
-.meta-label {
-    color: var(--text-tertiary);
-    font-weight: var(--font-weight-bold);
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-}
-
-.meta-value {
-    color: var(--text-primary);
-    font-weight: var(--font-weight-bold);
-    font-family: var(--font-family-mono);
-}
-
-.meta-value.ok {
-    color: var(--success-dark);
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
-}
-
-.meta-value.nok {
-    color: var(--danger-dark);
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
-}
-
-.infra-test-section {
-    display: flex;
-    align-items: center;
-    gap: var(--spacing-4);
-    padding: var(--spacing-4) 0;
-    margin-bottom: var(--spacing-2);
-    flex-wrap: wrap;
-}
-
-.test-result {
-    display: inline-flex;
-    align-items: center;
-    gap: var(--spacing-2);
-    padding: 6px 12px;
-    border-radius: var(--radius-md);
-    font-size: var(--font-size-xs);
-    font-family: var(--font-family-mono);
-}
-
-.test-result.success {
-    background: var(--success-50, #ecfdf5);
-    color: var(--success-dark);
-}
-
-.test-result.failure {
-    background: var(--danger-50, #fef2f2);
-    color: var(--danger-dark);
-}
-
-.test-result .latency {
-    opacity: 0.7;
-    margin-left: 4px;
-}
-
-.infra-group {
-    margin-top: var(--spacing-6);
-    border: 1px solid var(--border-light);
-    border-radius: var(--radius-lg);
-    overflow: hidden;
-}
-
-.group-header {
-    display: flex;
-    align-items: center;
-    gap: var(--spacing-2);
-    padding: var(--spacing-3) var(--spacing-4);
-    background: var(--bg-secondary);
-    border-bottom: 1px solid var(--border-light);
     font-size: var(--font-size-sm);
-    font-weight: var(--font-weight-bold);
-    color: var(--text-primary);
 }
 
-.group-fields {
-    background: var(--bg-primary);
+.kv-item .label {
+    color: var(--text-secondary);
+    flex-shrink: 0;
 }
 
-.infra-field {
-    display: grid;
-    grid-template-columns: 280px 1fr;
-    gap: var(--spacing-4);
-    padding: var(--spacing-3) var(--spacing-4);
-    border-bottom: 1px solid var(--border-light);
-    align-items: center;
-}
-
-.infra-field:last-child {
-    border-bottom: none;
-}
-
-.field-key {
-    font-size: var(--font-size-xs);
-    font-weight: var(--font-weight-bold);
-    color: var(--text-tertiary);
-    font-family: var(--font-family-mono);
-    letter-spacing: 0.02em;
-}
-
-.field-value {
-    font-size: var(--font-size-sm);
-    color: var(--text-primary);
-    font-family: var(--font-family-mono);
-    word-break: break-all;
+.kv-item .value {
     display: inline-flex;
     align-items: center;
     gap: 6px;
+    color: var(--text-primary);
+    font-weight: 500;
+    text-align: right;
+    overflow-wrap: anywhere;
 }
 
-.field-value.is-secret {
-    color: var(--text-secondary);
-    letter-spacing: 0.1em;
+.mono {
+    font-family: var(--font-family-mono);
 }
 
-.field-value.is-empty {
-    color: var(--text-tertiary);
-    font-style: italic;
+.status-text.ok {
+    color: var(--success-dark);
 }
 
-.secret-icon {
-    color: var(--text-tertiary);
+/* Was `.status-text.nok, .text-error { ... }`: removing the duplicated .text-error left a dangling
+   selector that swallowed the media query below, so neither this color nor the narrow layout applied */
+.status-text.nok {
+    color: var(--error-color);
 }
 
-/* Transitions */
-.view-fade-enter-active, .view-fade-leave-active {
-  transition: all 0.3s ease;
+@media (max-width: 720px) {
+    .tab-header {
+        padding: 0 var(--spacing-3);
+    }
+
+    .setting-row {
+        grid-template-columns: minmax(0, 1fr);
+        gap: var(--spacing-2);
+    }
+
+    .kv-item {
+        flex-direction: column;
+        gap: 2px;
+    }
+
+    .kv-item .value {
+        text-align: left;
+    }
 }
-.view-fade-enter-from { opacity: 0; transform: translateY(10px); }
-.view-fade-leave-to { opacity: 0; transform: translateY(-10px); }
+
+.password-error {
+    margin: var(--spacing-2) 0 0;
+    font-size: var(--font-size-xs);
+    color: var(--error, var(--error-color));
+}
+
+/* Lets password managers fill in the password of the current account */
+.visually-hidden {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    opacity: 0;
+    pointer-events: none;
+}
 </style>

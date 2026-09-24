@@ -1,6 +1,8 @@
+import { STORAGE_KEYS } from '../utils/storage'
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
-import client from '../api/client'
+import { regionsApi, type RegionPublic } from '../api/regions'
+import { errorMessage } from '../utils/error'
 
 export interface Region {
     id: string
@@ -18,17 +20,17 @@ export const useRegionStore = defineStore('region', () => {
 
     // Current region computed property
     const currentRegion = computed(() => {
-        return regions.value.find(r => r.id === currentRegionId.value) || null
+        return regions.value.find((r) => r.id === currentRegionId.value) || null
     })
 
     // Available regions (filtering by status)
     const availableRegions = computed(() => {
-        return regions.value.filter(r => r.status !== 'offline')
+        return regions.value.filter((r) => r.status !== 'offline')
     })
 
     // Initialize from localStorage
     const init = () => {
-        const storedRegionId = localStorage.getItem('cloudland_region_id')
+        const storedRegionId = localStorage.getItem(STORAGE_KEYS.regionId)
         if (storedRegionId) {
             currentRegionId.value = storedRegionId
         }
@@ -40,12 +42,13 @@ export const useRegionStore = defineStore('region', () => {
         error.value = null
 
         try {
-            const response = await client.get('/regions')
-            const data = Array.isArray(response.data) ? response.data : (response.data?.regions || [])
+            // 走 api 层，不再自己拼 client.get（返回约定统一在 api/regions.ts 里）。
+            // 这里要的是完整列表（顶栏的区域切换器），所以显式顶到上限，不用默认的一页
+            const data: RegionPublic[] = (await regionsApi.fetchRegions({ limit: 500 })).regions || []
 
             // Map API response to Region interface
             // API now returns uuid instead of id
-            regions.value = data.map((r: any) => {
+            regions.value = data.map((r) => {
                 let status: 'available' | 'maintenance' | 'offline' = 'available'
                 if (r.maintenance_mode) {
                     status = 'maintenance'
@@ -58,19 +61,20 @@ export const useRegionStore = defineStore('region', () => {
                     name: r.name,
                     label: r.description || r.name,
                     status,
-                    endpoint: r.endpoint_url,
+                    // 注：GET /regions 的 regionPublicOut 里没有 endpoint_url（公开视图不含地址），
+                    // 原先的 endpoint: r.endpoint_url 恒为 undefined 且全站无人读取，去掉赋值
                 }
             })
 
             // Auto-select first available region if none selected or current selection no longer valid
             // Use availableRegions to avoid selecting an offline region by default
-            const currentExists = availableRegions.value.some(r => r.id === currentRegionId.value)
+            const currentExists = availableRegions.value.some((r) => r.id === currentRegionId.value)
             if ((!currentRegionId.value || !currentExists) && availableRegions.value.length > 0) {
                 setCurrentRegion(availableRegions.value[0].id)
             }
-        } catch (err: any) {
+        } catch (err) {
             console.warn('Failed to fetch regions:', err)
-            error.value = err.message
+            error.value = errorMessage(err, 'Failed to fetch regions')
         } finally {
             isLoading.value = false
         }
@@ -79,17 +83,17 @@ export const useRegionStore = defineStore('region', () => {
     // Set current region
     const setCurrentRegion = (regionId: string) => {
         currentRegionId.value = regionId
-        localStorage.setItem('cloudland_region_id', regionId)
+        localStorage.setItem(STORAGE_KEYS.regionId, regionId)
         // Also persist as region_uuid for API query parameter usage
-        localStorage.setItem('cloudland_region_uuid', regionId)
+        localStorage.setItem(STORAGE_KEYS.regionUuid, regionId)
     }
 
     // Clear region state (on logout)
     const clear = () => {
         regions.value = []
         currentRegionId.value = null
-        localStorage.removeItem('cloudland_region_id')
-        localStorage.removeItem('cloudland_region_uuid')
+        localStorage.removeItem(STORAGE_KEYS.regionId)
+        localStorage.removeItem(STORAGE_KEYS.regionUuid)
     }
 
     // Initialize on store creation
@@ -104,6 +108,6 @@ export const useRegionStore = defineStore('region', () => {
         error,
         fetchRegions,
         setCurrentRegion,
-        clear
+        clear,
     }
 })

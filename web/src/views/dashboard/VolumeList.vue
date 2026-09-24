@@ -1,29 +1,66 @@
 <script setup lang="ts">
-import { ref, onMounted, computed, watch } from 'vue'
+import { ref, onMounted, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useToast } from '../../composables/useToast'
 import { useCopyId } from '../../composables/useCopyId'
-import { volumesApi, type Volume } from '../../api/volumes'
+import { useListQuery } from '../../composables/useListQuery'
+import { volumesApi, type Volume, type VolumePayload } from '../../api/volumes'
 import { useRegionStore } from '../../stores/region'
 import { isValidName } from '../../utils/validation'
+import { errorMessage } from '../../utils/error'
+import { useVolumeActionGuards, usePollBusyVolumes } from '../../composables/useVolumeActions'
 
-import { HardDrive, Plus, MoreVertical, Paperclip, Trash2, Maximize, Search, X, Check, Copy, RefreshCw } from 'lucide-vue-next'
+import {
+    HardDrive,
+    Plus,
+    Link,
+    Unlink,
+    Trash2,
+    Maximize2,
+    Search,
+    Check,
+    Copy,
+    RefreshCw,
+    Scissors,
+} from 'lucide-vue-next'
+import { storagePoolsApi, type StoragePool } from '../../api/storagePools'
+import { useAuthStore } from '../../stores/auth'
+import { formatDisk } from '../../utils/format'
+import BaseModal from '../../components/modals/BaseModal.vue'
+import DeleteModal from '../../components/modals/DeleteModal.vue'
+import VolumeActionModals from '../../components/volume/VolumeActionModals.vue'
+import PageToolbar from '../../components/base/PageToolbar.vue'
+import StatusBadge from '../../components/base/StatusBadge.vue'
+import DataTable, { type Column } from '../../components/base/DataTable.vue'
+import PaginationBar from '../../components/base/PaginationBar.vue'
 
 const region = useRegionStore()
 
-const volumes = ref<Volume[]>([])
-const loading = ref(false)
-const error = ref<string | null>(null)
-const searchQuery = ref('')
 const createModalVisible = ref(false)
 const creating = ref(false)
 const createError = ref('')
-const newVolumeForm = ref({
+// 只有名称和容量：后端建卷时格式固定为 raw，booting 只在虚拟机创建系统盘时为真，
+// 界面上原来的「格式」下拉和「可启动」勾选实际都不生效（apis/volume.go 的 VolumePayload 不收）
+const newVolumeForm = ref<VolumePayload>({
     name: '',
     size: 10,
-    format: 'qcow2',
-    bootable: false
 })
+// Pools a volume can be created in; the default pool is preselected
+const poolOptions = ref<StoragePool[]>([])
+const selectedPool = ref('')
+const loadPools = async () => {
+    try {
+        poolOptions.value = (await storagePoolsApi.list({ limit: 200 })).storage_pools.filter(
+            (p) => !p.status || p.status === 'active'
+        )
+    } catch {
+        poolOptions.value = []
+    }
+    selectedPool.value = poolOptions.value.find((p) => p.is_default)?.id || poolOptions.value[0]?.id || ''
+}
+const selectedPoolInfo = computed(() => poolOptions.value.find((p) => p.id === selectedPool.value))
+const auth = useAuthStore()
+const isSystemAdmin = computed(() => auth.user?.role === 'admin' || auth.user?.is_superuser === true)
 
 const { t } = useI18n()
 const toast = useToast()
@@ -31,39 +68,44 @@ const isNameValid = computed(() => isValidName(newVolumeForm.value.name))
 
 const { copiedId, copyId } = useCopyId()
 
-const fetchVolumes = async () => {
+// 排序在服务端做（sortField 是 volumes 表的真实列名）；
+// 「挂载到」显示的是虚拟机名，在 instances 表里，后端没有 join 排序，所以不给排序
+const columns = computed<Column[]>(() => [
+    { key: 'name', label: t('dashboard.table.nameId'), sortable: true },
+    { key: 'status', label: t('dashboard.table.status'), sortable: true },
+    { key: 'size', label: t('dashboard.table.size'), sortable: true },
+    { key: 'boot', label: t('dashboard.table.boot'), sortable: true, sortField: 'booting' },
+    { key: 'pool', label: t('storage.pool') },
+    { key: 'attachedTo', label: t('dashboard.table.attachedTo') },
+    { key: 'actions', label: t('dashboard.table.actions'), align: 'center' },
+])
 
-    loading.value = true
-    error.value = null
-    try {
-        const response = await volumesApi.list()
-        volumes.value = response.volumes || (Array.isArray(response) ? response : [])
-    } catch (err: any) {
-        console.error('Failed to fetch volumes:', err)
-        error.value = err.message
-        volumes.value = []
-    } finally {
-        loading.value = false
-    }
-}
+// 分页、搜索、排序都在服务端做（卷列表的搜索参数是 name，不是通用的 query）
+const {
+    items: volumes,
+    total,
+    page,
+    pageSize,
+    loading,
+    error: loadError,
+    search: searchQuery,
+    order,
+    toggleSort,
+    load: fetchVolumes,
+    reload: reloadVolumes,
+} = useListQuery<Volume>(
+    async ({ offset, limit, query, order }) => {
+        // 列表页有「启动盘」一列，系统盘与数据盘都要显示
+        const response = await volumesApi.list({ offset, limit, order, type: 'all', name: query || undefined })
+        return { items: response.volumes || [], total: response.total ?? 0 }
+    },
+    { watchSources: [computed(() => region.currentRegionId)] }
+)
 
-// Re-fetch when region changes
-watch(() => region.currentRegionId, (newId) => {
-    if (newId) {
-        fetchVolumes()
-    }
-})
-
-const filteredVolumes = computed(() => {
-    if (!searchQuery.value) return volumes.value
-    const query = searchQuery.value.toLowerCase()
-    return volumes.value.filter(vol => {
-        const nameMatch = (vol.name?.toLowerCase() || '').includes(query)
-        const idMatch = (vol.id?.toLowerCase() || '').includes(query)
-        const instanceMatch = (vol.instance?.name?.toLowerCase() || '').includes(query)
-        return nameMatch || idMatch || instanceMatch
-    })
-})
+// Attach / detach / resize dialogs; rows in a transitional state are refreshed quietly until they settle
+const volumeActions = ref<InstanceType<typeof VolumeActionModals> | null>(null)
+const { attachBlocked, detachBlocked, resizeBlocked, deleteBlocked, canForceDetach } = useVolumeActionGuards()
+usePollBusyVolumes(volumes, () => fetchVolumes(true))
 
 const getStatusText = (status: string) => {
     const key = status?.toLowerCase().replace(/ /g, '_')
@@ -71,30 +113,10 @@ const getStatusText = (status: string) => {
     return translated === `dashboard.volumeStatus.${key}` ? status : translated
 }
 
-const formatSize = (size: number) => {
-    if (size >= 1000) {
-        return `${(size / 1000).toFixed(1)} ${t('specs.tb')}`
-    }
-    return `${size} ${t('specs.gb')}`
-}
-
-const getStatusClass = (status: string) => {
-    const statusMap: Record<string, string> = {
-        'available': 'status-active',
-        'attached': 'status-running',
-        'in-use': 'status-running',
-        'creating': 'status-pending',
-        'deleting': 'status-pending',
-        'detaching': 'status-pending',
-        'attaching': 'status-pending',
-        'error': 'status-error'
-    }
-    return statusMap[status] || 'status-pending'
-}
-
 const openCreateModal = () => {
-    newVolumeForm.value = { name: '', size: 10, format: 'qcow2', bootable: false }
+    newVolumeForm.value = { name: '', size: 10 }
     createModalVisible.value = true
+    loadPools()
 }
 
 const closeCreateModal = () => {
@@ -113,18 +135,31 @@ const handleCreateVolume = async () => {
         return
     }
 
-    
     creating.value = true
     try {
-        await volumesApi.create(newVolumeForm.value)
-        await fetchVolumes()
+        await volumesApi.create({
+            ...newVolumeForm.value,
+            storage_pool: selectedPool.value ? { id: selectedPool.value } : undefined,
+        })
+        // 列表按创建时间倒序，新建的在第一页
+        await reloadVolumes()
         closeCreateModal()
         toast.success(t('messages.createSuccess'))
-    } catch (err: any) {
+    } catch (err) {
         console.error('Failed to create volume:', err)
-        createError.value = err.response?.data?.error_message || err.message || t('messages.error')
+        createError.value = errorMessage(err, t('messages.error'))
     } finally {
         creating.value = false
+    }
+}
+
+const forceDetach = async (volume: Volume) => {
+    try {
+        await volumesApi.forceDetach(volume.id)
+        toast.success(t('storage.forceDetachDone'))
+        await fetchVolumes(true)
+    } catch (err) {
+        toast.error(errorMessage(err, t('messages.error')))
     }
 }
 
@@ -148,13 +183,14 @@ const confirmDelete = async () => {
     deletingResource.value = true
     deleteError.value = ''
     try {
-        await volumesApi.delete(resourceToDelete.value.id)
+        const { deferred } = await volumesApi.delete(resourceToDelete.value.id)
         await fetchVolumes()
         closeDeleteModal()
-        toast.success(t('messages.deleteSuccess'))
-    } catch (error: any) {
+        // 202: the host deletes the file, the volume shows "deleting" until it reports back
+        toast.success(deferred ? t('storage.deleteAccepted') : t('messages.deleteSuccess'))
+    } catch (error) {
         console.error('Failed to delete volume:', error)
-        deleteError.value = error.response?.data?.error_message || error.message || t('messages.error')
+        deleteError.value = errorMessage(error, t('messages.error'))
     } finally {
         deletingResource.value = false
     }
@@ -170,294 +206,274 @@ onMounted(() => {
 </script>
 
 <template>
-  <div>
-    <div class="page-header">
-      <div class="search-wrapper">
-        <div class="search-box">
-          <Search :size="16" class="search-icon" />
-          <input 
-            type="text" 
-            v-model="searchQuery"
-            :placeholder="$t('actions.search') + '...'" 
-            class="search-input"
-          />
-        </div>
-      </div>
-      <div class="header-actions">
-        <button class="btn btn-secondary btn-sm btn-icon" @click="fetchVolumes" :title="$t('actions.refresh')">
-          <RefreshCw :size="14" :class="{ spinning: loading }" />
-        </button>
-        <button class="btn btn-primary btn-sm" @click="openCreateModal">
-          <Plus :size="14" /> {{ $t('dashboard.buttons.createVolume') }}
-        </button>
-      </div>
-    </div>
+    <div>
+        <PageToolbar v-model:search="searchQuery">
+            <template #actions>
+                <button
+                    class="btn btn-secondary btn-sm btn-icon"
+                    @click="() => fetchVolumes()"
+                    :title="$t('actions.refresh')"
+                >
+                    <RefreshCw :size="14" :class="{ spinning: loading }" />
+                </button>
+                <button class="btn btn-primary btn-sm" @click="openCreateModal">
+                    <Plus :size="14" /> {{ $t('dashboard.buttons.createVolume') }}
+                </button>
+            </template>
+        </PageToolbar>
 
-    <div class="card table-card">
-      <table class="data-table">
-        <thead>
-          <tr>
-            <th>{{ $t('dashboard.table.nameId') }}</th>
-            <th>{{ $t('dashboard.table.status') }}</th>
-            <th>{{ $t('dashboard.table.size') }}</th>
-            <th>{{ $t('dashboard.table.boot') }}</th>
-            <th>{{ $t('dashboard.table.format') }}</th>
-            <th>{{ $t('dashboard.table.attachedTo') }}</th>
-            <th>{{ $t('dashboard.table.actions') }}</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-if="loading">
-            <td colspan="7" class="text-center">
-              <div class="loading-spinner" style="margin: 20px auto;"></div>
-            </td>
-          </tr>
-          <tr v-else-if="filteredVolumes.length === 0">
-            <td colspan="7" class="text-center text-secondary" style="padding: 48px;">
-               <div v-if="searchQuery">
-                  <Search :size="48" style="opacity: 0.3; margin-bottom: 16px;" />
-                  <p>{{ $t('messages.noResults') }}</p>
-               </div>
-               <div v-else>
-                  <HardDrive :size="48" style="opacity: 0.3; margin-bottom: 16px;" />
-                  <p>{{ $t('messages.noVolumes') }}</p>
-               </div>
-            </td>
-          </tr>
-          <tr v-else v-for="volume in filteredVolumes" :key="volume.id">
-            <td>
-              <router-link :to="{ name: 'volume-detail', params: { id: volume.id } }" class="resource-link">
-                <div class="resource-info">
-                  <div class="resource-icon">
-                    <HardDrive :size="16" />
-                  </div>
-                  <div>
-                    <div class="resource-name">{{ volume.name }}</div>
-                    <div class="resource-id-row">
-                      <span class="resource-id" :title="volume.id">{{ volume.id.slice(0, 8) }}...</span>
-                      <button class="copy-btn-mini" @click.stop.prevent="copyId(volume.id)" :title="t('actions.copy')" :aria-label="t('actions.copy')">
-                        <Check v-if="copiedId === volume.id" :size="10" style="color: #10b981;" />
-                        <Copy v-else :size="10" />
-                      </button>
-                    </div>
-                  </div>
+        <DataTable
+            :columns="columns"
+            :rows="volumes"
+            row-key="id"
+            :loading="loading"
+            :error="loadError"
+            :order="order"
+            @update:order="toggleSort"
+            @retry="() => fetchVolumes()"
+        >
+            <template #empty>
+                <div v-if="searchQuery">
+                    <Search :size="48" style="opacity: 0.3; margin-bottom: 16px" />
+                    <p>{{ $t('messages.noResults') }}</p>
                 </div>
-              </router-link>
-            </td>
-            <td>
-              <span :class="['badge', getStatusClass(volume.status)]">
-                {{ getStatusText(volume.status) }}
-              </span>
-            </td>
-            <td>{{ formatSize(volume.size) }}</td>
-            <td>
-              <span :class="['badge', volume.booting ? 'status-running' : 'status-pending']">
-                {{ volume.booting ? $t('messages.yes') : $t('messages.no') }}
-              </span>
-            </td>
-            <td>{{ volume.format || '-' }}</td>
-            <td>
-              <span v-if="volume.instance" class="text-primary">
-                {{ volume.instance.name }}
-              </span>
-              <span v-else class="text-light">{{ $t('messages.notAttached') }}</span>
-            </td>
-            <td>
-              <div class="actions">
-                <button class="btn btn-ghost btn-sm" :title="$t('actions.attach')">
-                  <Paperclip :size="14" />
-                </button>
-                <button class="btn btn-ghost btn-sm" :title="$t('actions.resize')">
-                  <Maximize :size="14" />
-                </button>
-                <button class="btn btn-ghost btn-sm text-error" :title="$t('actions.delete')" @click="handleDeleteClick(volume)">
-                  <Trash2 :size="14" />
-                </button>
-              </div>
-            </td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
+                <div v-else>
+                    <HardDrive :size="48" style="opacity: 0.3; margin-bottom: 16px" />
+                    <p>{{ $t('messages.noVolumes') }}</p>
+                </div>
+            </template>
 
-    <!-- Create Volume Modal -->
-    <div v-if="createModalVisible" class="modal-overlay" @click.self="closeCreateModal">
-      <div class="modal-content card">
-        <div class="modal-header">
-          <h3>{{ $t('dashboard.buttons.createVolume') }}</h3>
-          <button class="btn btn-ghost btn-sm icon-btn" @click="closeCreateModal">
-            <X :size="20" />
-          </button>
-        </div>
-        
-        <div class="modal-body">
-          <div class="form-group">
-            <label class="form-label">{{ $t('dashboard.forms.name') }}</label>
-            <input 
-              v-model="newVolumeForm.name" 
-              type="text" 
-              :class="['form-input', { 'input-error': !isNameValid }]" 
-              :placeholder="$t('dashboard.forms.placeholder.volumeNameExample')" 
-            />
-            <div v-if="!isNameValid" class="text-error text-xs mt-1">
-              {{ $t('messages.invalidHostname') }}
+            <template #cell-name="{ row: volume }">
+                <router-link :to="{ name: 'volume-detail', params: { id: volume.id } }" class="resource-link">
+                    <div class="resource-info">
+                        <div class="resource-icon">
+                            <HardDrive :size="16" />
+                        </div>
+                        <div>
+                            <div class="resource-name">{{ volume.name }}</div>
+                            <div class="resource-id-row">
+                                <span class="resource-id" :title="volume.id">{{ volume.id.slice(0, 8) }}...</span>
+                                <button
+                                    class="copy-btn-mini"
+                                    @click.stop.prevent="copyId(volume.id)"
+                                    :title="t('actions.copy')"
+                                    :aria-label="t('actions.copy')"
+                                >
+                                    <Check
+                                        v-if="copiedId === volume.id"
+                                        :size="10"
+                                        style="color: var(--success-color)"
+                                    />
+                                    <Copy v-else :size="10" />
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </router-link>
+            </template>
+
+            <template #footer>
+                <PaginationBar
+                    :page="page"
+                    :page-size="pageSize"
+                    :total="total"
+                    @update:page="page = $event"
+                    @update:page-size="pageSize = $event"
+                />
+            </template>
+
+            <template #cell-status="{ row: volume }">
+                <StatusBadge :status="volume.status" :label="getStatusText(volume.status)" />
+                <div v-if="volume.reason" class="cell-sub cell-reason" :title="volume.reason">{{ volume.reason }}</div>
+            </template>
+
+            <template #cell-size="{ row: volume }">{{ formatDisk(volume.size) }}</template>
+
+            <template #cell-boot="{ row: volume }">
+                <span :class="['badge', volume.booting ? 'status-running' : 'status-pending']">
+                    {{ volume.booting ? $t('messages.yes') : $t('messages.no') }}
+                </span>
+            </template>
+
+            <template #cell-pool="{ row: volume }">
+                <span>{{ volume.storage_pool?.name || '-' }}</span>
+                <div v-if="volume.hypervisor?.name" class="cell-sub">{{ volume.hypervisor.name }}</div>
+            </template>
+
+            <template #cell-attachedTo="{ row: volume }">
+                <span v-if="volume.instance" class="text-primary">
+                    {{ volume.instance.name }}
+                </span>
+                <span v-else class="text-light">{{ $t('messages.notAttached') }}</span>
+            </template>
+
+            <template #cell-actions="{ row: volume }">
+                <div class="row-actions">
+                    <button
+                        v-if="canForceDetach(volume)"
+                        class="icon-btn-table icon-danger"
+                        :title="$t('storage.forceDetach')"
+                        @click="forceDetach(volume)"
+                    >
+                        <Scissors :size="16" />
+                    </button>
+                    <button
+                        v-else-if="volume.instance"
+                        class="icon-btn-table"
+                        :title="detachBlocked(volume) || $t('actions.detach')"
+                        :disabled="!!detachBlocked(volume)"
+                        @click="volumeActions?.openDetach(volume)"
+                    >
+                        <Unlink :size="16" />
+                    </button>
+                    <button
+                        v-else
+                        class="icon-btn-table"
+                        :title="attachBlocked(volume) || $t('actions.attach')"
+                        :disabled="!!attachBlocked(volume)"
+                        @click="volumeActions?.openAttach(volume)"
+                    >
+                        <Link :size="16" />
+                    </button>
+                    <button
+                        class="icon-btn-table"
+                        :title="resizeBlocked(volume) || $t('actions.resize')"
+                        :disabled="!!resizeBlocked(volume)"
+                        @click="volumeActions?.openResize(volume)"
+                    >
+                        <Maximize2 :size="16" />
+                    </button>
+                    <button
+                        class="icon-btn-table icon-danger"
+                        :title="
+                            deleteBlocked(volume) ||
+                            (volume.status === 'lost' ? $t('storage.deleteRecord') : $t('actions.delete'))
+                        "
+                        :disabled="!!deleteBlocked(volume)"
+                        @click="handleDeleteClick(volume)"
+                    >
+                        <Trash2 :size="16" />
+                    </button>
+                </div>
+            </template>
+        </DataTable>
+
+        <!-- Create Volume Modal -->
+        <BaseModal
+            :show="createModalVisible"
+            :title="$t('dashboard.buttons.createVolume')"
+            :loading="creating"
+            form
+            @close="closeCreateModal"
+            @submit="handleCreateVolume"
+        >
+            <div class="form-group">
+                <label class="form-label">{{ $t('dashboard.forms.name') }}</label>
+                <input
+                    v-model="newVolumeForm.name"
+                    type="text"
+                    :class="['form-input', { 'input-error': !isNameValid }]"
+                    :placeholder="$t('dashboard.forms.placeholder.volumeNameExample')"
+                />
+                <div v-if="!isNameValid" class="text-error text-xs mt-1">
+                    {{ $t('messages.invalidHostname') }}
+                </div>
             </div>
 
-          </div>
-          
-          <div class="grid-2">
             <div class="form-group">
-              <label class="form-label">{{ $t('dashboard.forms.size') }}</label>
-              <input 
-                v-model.number="newVolumeForm.size" 
-                type="number" 
-                min="1"
-                class="form-input" 
-              />
-            </div>
-            
-            <div class="form-group">
-              <label class="form-label">{{ $t('dashboard.forms.format') }}</label>
-              <div class="select-wrapper">
-                <select v-model="newVolumeForm.format" class="form-input">
-                  <option value="qcow2">QCOW2</option>
-                  <option value="raw">RAW</option>
+                <label class="form-label">{{ $t('storage.pool') }}</label>
+                <select v-model="selectedPool" class="form-input">
+                    <option v-for="p in poolOptions" :key="p.id" :value="p.id">
+                        {{ p.name }} · {{ p.shared ? $t('storage.shared') : $t('storage.local')
+                        }}{{ p.media ? ` · ${p.media.toUpperCase()}` : '' }}
+                    </option>
                 </select>
-              </div>
+                <div v-if="selectedPoolInfo" class="text-secondary text-xs mt-1">
+                    <template v-if="!selectedPoolInfo.available_hosts">{{ $t('storage.noHostHasPool') }}</template>
+                    <template v-else>{{
+                        $t('storage.availableHostsCount', { n: selectedPoolInfo.available_hosts })
+                    }}</template>
+                    <template v-if="isSystemAdmin && selectedPoolInfo.hosts !== undefined">
+                        ({{ selectedPoolInfo.available_hosts }} / {{ selectedPoolInfo.hosts }})</template
+                    >
+                </div>
             </div>
-          </div>
+            <div class="grid-2">
+                <div class="form-group">
+                    <label class="form-label">{{ $t('dashboard.forms.size') }}</label>
+                    <input v-model.number="newVolumeForm.size" type="number" min="1" class="form-input" />
+                </div>
+            </div>
 
-          <div class="form-group">
-            <label class="checkbox-label">
-              <input type="checkbox" v-model="newVolumeForm.bootable" />
-              <span>{{ $t('dashboard.forms.bootable') }}</span>
-            </label>
-          </div>
-        </div>
-        <div class="modal-footer" style="flex-direction: column; align-items: stretch; gap: var(--spacing-2);">
-          <div v-if="createError" class="text-error" style="font-size:var(--font-size-sm);background:var(--error-light);padding:var(--spacing-2);border-radius:var(--radius-sm)">
-            {{ createError }}
-          </div>
-          <div style="display: flex; justify-content: flex-end; gap: var(--spacing-2);">
-            <button class="btn btn-secondary" @click="closeCreateModal" :disabled="creating">{{ $t('actions.cancel') }}</button>
-            <button class="btn btn-primary" @click="handleCreateVolume" :disabled="creating">
-              <span v-if="creating" class="loading-spinner" style="width: 16px; height: 16px; border-width: 2px;"></span>
-              {{ creating ? $t('messages.creating') : $t('dashboard.buttons.createVolume') }}
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
+            <div
+                v-if="createError"
+                class="text-error"
+                style="
+                    font-size: var(--font-size-sm);
+                    background: var(--error-light);
+                    padding: var(--spacing-2);
+                    border-radius: var(--radius-sm);
+                "
+            >
+                {{ createError }}
+            </div>
 
-    <!-- Delete Confirmation Modal -->
-    <div v-if="deleteModalVisible" class="modal-overlay" @click.self="closeDeleteModal">
-      <div class="modal-content card" style="max-width: 460px;">
-        <div class="modal-header">
-          <h3>{{ $t('actions.delete') }}</h3>
-          <button class="btn btn-ghost btn-sm icon-btn" @click="closeDeleteModal"><X :size="20" /></button>
-        </div>
-        <div class="modal-body">
-          <div style="text-align:center;padding:var(--spacing-4) 0">
-            <div style="width:64px;height:64px;border-radius:50%;background:var(--error-light);display:flex;align-items:center;justify-content:center;margin:0 auto var(--spacing-4);color:var(--error-color)"><Trash2 :size="32" /></div>
-            <p style="color:var(--text-secondary);margin:0 0 var(--spacing-4)">{{ $t('dashboard.deleteConfirm.message') }}</p>
-            <div style="background:var(--bg-secondary);border:1px solid var(--border-light);border-radius:var(--radius-md);padding:var(--spacing-3) var(--spacing-4);text-align:left">
-              <span style="font-size:var(--font-size-xs);color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.05em;display:block;margin-bottom:var(--spacing-1)">{{ $t('dashboard.deleteConfirm.resource') }}</span>
-              <span style="font-weight:var(--font-weight-semibold);display:block">{{ resourceToDelete?.name }}</span>
-              <span style="font-size:var(--font-size-xs);color:var(--text-light);font-family:var(--font-family-mono);display:block;margin-top:2px">{{ resourceToDelete?.id }}</span>
-            </div>
-            <div v-if="deleteError" class="text-error" style="margin-top:var(--spacing-4);font-size:var(--font-size-sm);background:var(--error-light);padding:var(--spacing-2);border-radius:var(--radius-sm)">
-              {{ deleteError }}
-            </div>
-          </div>
-        </div>
-        <div class="modal-footer">
-          <button class="btn btn-secondary" @click="closeDeleteModal" :disabled="deletingResource">{{ $t('actions.cancel') }}</button>
-          <button class="btn btn-danger" @click="confirmDelete" :disabled="deletingResource">
-            <span v-if="deletingResource" class="loading-spinner" style="width:16px;height:16px;border-width:2px"></span>
-            <Trash2 v-else :size="14" />
-            {{ deletingResource ? $t('dashboard.deleteConfirm.deleting') : $t('actions.delete') }}
-          </button>
-        </div>
-      </div>
+            <template #footer>
+                <button type="button" class="btn btn-secondary" @click="closeCreateModal" :disabled="creating">
+                    {{ $t('actions.cancel') }}
+                </button>
+                <button type="submit" class="btn btn-primary" :disabled="creating">
+                    <span
+                        v-if="creating"
+                        class="loading-spinner"
+                        style="width: 16px; height: 16px; border-width: 2px"
+                    ></span>
+                    {{ creating ? $t('messages.creating') : $t('dashboard.buttons.createVolume') }}
+                </button>
+            </template>
+        </BaseModal>
+
+        <VolumeActionModals ref="volumeActions" @changed="() => fetchVolumes(true)" />
+
+        <DeleteModal
+            :show="deleteModalVisible"
+            :resource-name="resourceToDelete?.name"
+            :resource-id="resourceToDelete?.id"
+            :loading="deletingResource"
+            :error="deleteError"
+            @close="closeDeleteModal"
+            @confirm="confirmDelete"
+        />
     </div>
-  </div>
 </template>
 
 <style scoped>
-.page-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 0px;
-  padding-right: 20px;
-}
-
-.search-wrapper {
-  flex: 1;
-  max-width: 400px;
-}
-
-.search-box {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  background: var(--bg-secondary);
-  padding: 0 12px;
-  height: 40px;
-  border-radius: var(--radius-md);
-  border: 1px solid var(--border-light);
-  transition: all 0.2s;
-}
-
-.search-box:focus-within {
-  border-color: var(--primary-300);
-  box-shadow: 0 0 0 2px var(--primary-100);
-}
-
-.search-icon {
-  color: var(--gray-400);
-}
-
-.search-input {
-  border: none;
-  background: transparent;
-  width: 100%;
-  height: 100%;
-  font-size: 0.875rem;
-  color: var(--text-primary);
-}
-
-.search-input:focus {
-  outline: none;
-}
-
-.table-card {
-  padding: 0;
-  overflow: visible;
-}
-
 /* .resource-info etc. are global from index.css */
 
 .resource-link {
-  text-decoration: none;
-  display: block;
-  padding: 4px 0;
-  border-radius: var(--radius-sm);
-  transition: all 0.15s;
+    text-decoration: none;
+    display: block;
+    padding: 4px 0;
+    border-radius: var(--radius-sm);
+    transition: all 0.15s;
 }
 
 .resource-link:hover .resource-name {
-  color: var(--primary-600);
-  text-decoration: underline;
+    color: var(--primary-600);
+    text-decoration: underline;
 }
 
-.actions {
-  display: flex;
-  gap: var(--spacing-02);
+.cell-sub {
+    font-size: var(--font-size-xs);
+    color: var(--text-secondary);
+    margin-top: 2px;
 }
 
-.text-error {
-  color: var(--error-color);
+.cell-reason {
+    max-width: 220px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 /* Modal Styles */
@@ -468,25 +484,4 @@ onMounted(() => {
     font-size: var(--font-size-sm);
     cursor: pointer;
 }
-
-.btn-danger {
-    background: var(--error-color);
-    color: white;
-    border: none;
-    padding: 8px 20px;
-    border-radius: var(--radius-md);
-    font-size: var(--font-size-sm);
-    font-weight: var(--font-weight-medium);
-    cursor: pointer;
-    display: inline-flex;
-    align-items: center;
-    gap: var(--spacing-2);
-    transition: background var(--transition-base);
-}
-.btn-danger:hover { background: var(--error-dark); }
-.btn-danger:disabled { opacity: 0.5; cursor: not-allowed; }
-
-.header-actions { display: flex; gap: 8px; align-items: center; }
-.spinning { animation: spin 1s linear infinite; }
-@keyframes spin { to { transform: rotate(360deg); } }
 </style>

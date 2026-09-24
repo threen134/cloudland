@@ -14,8 +14,9 @@ interface=$2
 
 # 检查 /proc/net/dev（系统网络设备状态文件）中是否已存在该网桥；
 # grep -q 静默匹配，若网桥已存在（退出码 $? 为 0），脚本直接退出（避免重复创建）。
-cat /proc/net/dev | grep -q "\<$vm_br\>:"
-[ $? -eq 0 ] && exit 0
+# 网桥已存在时跳过创建，但不能直接退出脚本：上联口（v-$vlan）可能没建成（首次创建失败会留下只有网桥的半成品），
+# 后面按设备是否存在单独补建，否则该节点的虚拟机在二层上与其他节点隔离
+if ! cat /proc/net/dev | grep -q "\<$vm_br\>:"; then
 
 # 使用 nmcli 命令创建网桥连接：
 # con-name $vm_br：连接名称与网桥名一致；
@@ -23,7 +24,9 @@ cat /proc/net/dev | grep -q "\<$vm_br\>:"
 # ifname $vm_br：网桥设备名；
 # ipv4.method static：IPv4 为静态配置；
 # ipv4.addresses 169.254.169.254/32：配置链路本地地址（仅用于网桥自身标识，无路由功能）。
-nmcli connection add con-name $vm_br type bridge ifname $vm_br ipv4.method static ipv4.addresses 169.254.169.254/32
+# ipv4.dad-timeout 0：关闭地址冲突检测。每个计算节点的 br$vlan 都配置同一个地址，同 VLAN 上先建好网桥的节点会应答 ARP，
+# 后加入的节点 NM 判定地址冲突，激活失败后会删除网桥及 v-$vlan，system router 的外网口随之断开。
+nmcli connection add con-name $vm_br type bridge ifname $vm_br ipv4.method static ipv4.addresses 169.254.169.254/32 ipv4.dad-timeout 0
 # 修改网桥参数（优化桥接性能）：
 # bridge.stp no：关闭 STP（生成树协议，避免虚拟机网络不必要的拓扑检测）；
 # bridge.forward-delay 0：转发延迟设为 0（立即转发，减少网络延迟）。
@@ -32,6 +35,7 @@ nmcli connection modify $vm_br bridge.forward-delay 0
 nmcli connection up $vm_br
 # 启用该网桥连接（使网桥生效）。
 # 调用自定义工具 apply_bridge（大概率是云环境的网桥配置脚本），传入网桥名，完成网桥的额外配置（如 iptables 规则、转发策略等）。
+fi
 apply_bridge -I $vm_br
 cat /proc/net/dev | grep -q "\<v-$vlan\>:"
 # 检查是否已存在 v-VLAN编号 格式的虚拟接口（如 VLAN 100 对应 v-100），若不存在则进入创建逻辑。
@@ -76,5 +80,18 @@ if [ $? -ne 0 ]; then
         nmcli connection add con-name v-$vlan type vlan id $vlan ifname v-$vlan dev $interface ipv4.method disabled master $vm_br
     fi
     nmcli connection up v-$vlan
+    # NM 兜底：新节点上 netplan 生成的 udev 规则（/run/udev/rules.d/90-netplan.rules）还没包含这个新设备时，
+    # NM 判定为 unmanaged，激活必然失败（Activation failed because the device is unmanaged）。
+    # 此时直接用 iproute2 建，保证上联口一定存在，否则本节点虚拟机与其他节点二层不通
+    if ! cat /proc/net/dev | grep -q "\<v-$vlan\>:"; then
+        if [ $vlan -ge 4095 ]; then
+            # dstport 必须与 nmcli 建出来的保持一致（nmcli 的 vxlan 默认是 8472，不是 IANA 的 4789），否则跨节点不通
+            ip link add v-$vlan type vxlan id $vlan dev $interface dstport 8472 ${proxy_mode:+proxy}
+        else
+            ip link add link $interface name v-$vlan type vlan id $vlan
+        fi
+        ip link set v-$vlan master $vm_br
+        ip link set v-$vlan up
+    fi
 fi
 udevadm settle

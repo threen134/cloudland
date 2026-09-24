@@ -150,6 +150,8 @@ func (v *FlavorAPI) List(c *gin.Context) {
 	ctx := c.Request.Context()
 	offsetStr := c.DefaultQuery("offset", "0")
 	limitStr := c.DefaultQuery("limit", "50")
+	orderStr := c.DefaultQuery("order", "-created_at")
+	queryStr := c.DefaultQuery("query", "")
 	offset, err := strconv.Atoi(offsetStr)
 	if err != nil {
 		ErrorResponse(c, http.StatusBadRequest, "Invalid query offset: "+offsetStr, err)
@@ -164,7 +166,7 @@ func (v *FlavorAPI) List(c *gin.Context) {
 		ErrorResponse(c, http.StatusBadRequest, "Invalid query offset or limit", err)
 		return
 	}
-	total, flavors, err := flavorAdmin.List(ctx, int64(offset), int64(limit), "-created_at", "")
+	total, flavors, err := flavorAdmin.List(ctx, int64(offset), int64(limit), orderStr, queryStr)
 	if err != nil {
 		ErrorResponse(c, http.StatusBadRequest, "Failed to list flavors", err)
 		return

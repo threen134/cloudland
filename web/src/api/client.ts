@@ -1,3 +1,4 @@
+import { STORAGE_KEYS, clearAuthStorage } from '../utils/storage'
 import axios from 'axios'
 import type { AxiosError, InternalAxiosRequestConfig, AxiosResponse } from 'axios'
 
@@ -18,11 +19,11 @@ export const isTokenSwitchRecent = (): boolean => {
 export const beginTokenSwitch = (): (() => void) => {
     _tokenSwitchCount++
     if (!_tokenSwitchPromise) {
-        _tokenSwitchPromise = new Promise<void>(resolve => {
+        _tokenSwitchPromise = new Promise<void>((resolve) => {
             _tokenSwitchResolve = resolve
         })
     }
-    
+
     let resolved = false
     return () => {
         if (resolved) return
@@ -54,10 +55,7 @@ client.interceptors.request.use(
         // sending any request (except the switch call itself).
         if (_tokenSwitchPromise && !config.url?.startsWith('/auth/')) {
             // Safety timeout: never block a request for more than 15 seconds
-            await Promise.race([
-                _tokenSwitchPromise,
-                new Promise<void>(resolve => setTimeout(resolve, 15000))
-            ])
+            await Promise.race([_tokenSwitchPromise, new Promise<void>((resolve) => setTimeout(resolve, 15000))])
         }
 
         // Add JWT token if available
@@ -67,13 +65,13 @@ client.interceptors.request.use(
         }
 
         // Add tenant/organization header
-        const orgId = localStorage.getItem('cloudland_org_id')
+        const orgId = localStorage.getItem(STORAGE_KEYS.orgId)
         if (orgId && config.headers) {
             config.headers['X-Organization-ID'] = orgId
         }
 
         // Add region UUID as query parameter (skip for /regions endpoint itself)
-        const regionUuid = localStorage.getItem('cloudland_region_uuid')
+        const regionUuid = localStorage.getItem(STORAGE_KEYS.regionUuid)
         if (regionUuid && config.url && !config.url.endsWith('/regions')) {
             config.params = config.params || {}
             config.params.region = regionUuid
@@ -86,14 +84,51 @@ client.interceptors.request.use(
     }
 )
 
-const getErrorDetail = (error: AxiosError): string =>
-    (error.response?.data as any)?.detail || 'unknown'
+// cpgateway 的错误体是 FastAPI 风格的 { detail: ... }：detail 多数是字符串，
+// 配额超限时是一个对象（见下面 429 分支）
+interface GatewayErrorBody {
+    detail?: string | QuotaExceededDetail
+}
+
+interface QuotaExceededDetail {
+    error?: string
+    resource?: string
+    region?: string
+    requested?: number
+    available?: number
+    limit?: number
+}
+
+// 请求配置上打的重试标记：token 切换导致的 401 只重试一次
+interface RetriableConfig extends InternalAxiosRequestConfig {
+    __retried?: boolean
+}
+
+const getErrorDetail = (error: AxiosError): string => {
+    const detail = (error.response?.data as GatewayErrorBody | undefined)?.detail
+    return typeof detail === 'string' ? detail : 'unknown'
+}
+
+// 后端响应头 X-Trace-ID：反馈问题时提供给运维，在 Grafana 中按 trace id 查询完整链路
+const traceHint = (error: AxiosError): string => {
+    const traceId = error.response?.headers?.['x-trace-id']
+    return traceId ? `(trace ${traceId})` : ''
+}
+
+// 最近一次 API 错误的 trace id，供错误提示展示（3 秒内有效，读取后清除）
+let lastErrorTrace: { id: string; at: number } | null = null
+
+export const consumeRecentTraceId = (): string | undefined => {
+    const recent = lastErrorTrace
+    lastErrorTrace = null
+    return recent && Date.now() - recent.at < 3000 ? recent.id : undefined
+}
 
 const forceLogout = (reason: string, url?: string) => {
     console.error(`[client] auth failure on ${url ?? '?'} — ${reason}. Clearing session and redirecting to login.`)
-    clearAuthToken()
-    localStorage.removeItem('cloudland_user')
-    sessionStorage.removeItem('cloudland_user')
+    // 清干净再跳：这里原先只删了 token 和 user，组织 / 区域会留到下一个登录的账号
+    // （正常从菜单登出走的是 Layout.handleLogout，由各个 store 自己清）
+    clearAuthStorage()
     if (!window.location.pathname.includes('/login')) {
         window.location.href = '/login'
     }
@@ -108,11 +143,16 @@ client.interceptors.response.use(
         // Handle common error cases
         if (error.response) {
             const status = error.response.status
+            const traceId = error.response.headers?.['x-trace-id']
+            if (traceId) {
+                lastErrorTrace = { id: String(traceId), at: Date.now() }
+            }
 
             switch (status) {
                 case 429: {
                     // Quota exceeded — FastAPI wraps detail in { detail: { ... } }
-                    const detail = (error.response?.data as any)?.detail
+                    const body = error.response?.data as GatewayErrorBody | undefined
+                    const detail = typeof body?.detail === 'object' ? body.detail : undefined
                     if (detail?.error === 'quota_exceeded') {
                         const { resource, region, requested, available, limit } = detail
                         console.error(
@@ -134,11 +174,14 @@ client.interceptors.response.use(
                     // likely means the request used a stale/revoked token.
                     // Retry once with the current (fresh) token instead of
                     // nuking the session.
-                    if (isTokenSwitchRecent()) {
-                        const freshToken = getToken()
-                        const originalConfig = error.config
-                        if (freshToken && originalConfig && !(originalConfig as any).__retried) {
-                            (originalConfig as any).__retried = true
+                    // The same applies when another window switched the token and this window has
+                    // received the new one after sending the request.
+                    const freshToken = getToken()
+                    const usedToken = String(error.config?.headers?.Authorization || '').replace(/^Bearer /, '')
+                    if (isTokenSwitchRecent() || (freshToken && usedToken && freshToken !== usedToken)) {
+                        const originalConfig = error.config as RetriableConfig | undefined
+                        if (freshToken && originalConfig && !originalConfig.__retried) {
+                            originalConfig.__retried = true
                             originalConfig.headers.Authorization = `Bearer ${freshToken}`
                             console.warn('401 during token switch — retrying with fresh token')
                             return client.request(originalConfig)
@@ -155,15 +198,15 @@ client.interceptors.response.use(
                     if (typeof detail403 === 'string' && detail403.toLowerCase().includes('credentials')) {
                         forceLogout(`403 detail: ${detail403}`, error.config?.url)
                     } else {
-                        console.error('Access forbidden:', detail403)
+                        console.error('Access forbidden:', detail403, traceHint(error))
                     }
                     break
                 }
                 case 404:
-                    console.error('Resource not found')
+                    console.error('Resource not found', traceHint(error))
                     break
                 case 500:
-                    console.error('Server error')
+                    console.error('Server error', traceHint(error))
                     break
             }
         } else if (error.request) {
@@ -176,33 +219,85 @@ client.interceptors.response.use(
 
 // Storage helpers — rememberMe controls persistence across browser sessions
 export const getToken = (): string | null => {
-    return sessionStorage.getItem('cloudland_token') || localStorage.getItem('cloudland_token')
+    return sessionStorage.getItem(STORAGE_KEYS.token) || localStorage.getItem(STORAGE_KEYS.token)
 }
 
 const getStorage = (): Storage => {
-    return localStorage.getItem('cloudland_remember') === '1' ? localStorage : sessionStorage
+    return localStorage.getItem(STORAGE_KEYS.remember) === '1' ? localStorage : sessionStorage
 }
+
+// cpgateway 签发的 access token 声明（`src/services/auth.go`）。浏览器只用到其中几项，
+// 其余保留索引签名以免漏一个就编译不过
+export interface TokenClaims {
+    sub?: string
+    user_id?: number
+    org_id?: string
+    org_name?: string
+    region_uuid?: string
+    jti?: string
+    exp?: number
+    iat?: number
+    [key: string]: unknown
+}
+
+// Reads the claims of a JWT without verifying it: the server verifies tokens, the browser only needs
+// to know whose token it is (sub) and which org / region it is scoped to (org_id, region)
+export const decodeTokenClaims = (token: string | null): TokenClaims | null => {
+    const payload = token?.split('.')[1]
+    if (!payload) return null
+    try {
+        const base64 = payload.replace(/-/g, '+').replace(/_/g, '/')
+        const json = decodeURIComponent(
+            Array.from(atob(base64), (c) => '%' + c.charCodeAt(0).toString(16).padStart(2, '0')).join('')
+        )
+        return JSON.parse(json)
+    } catch {
+        return null
+    }
+}
+
+const storeToken = (token: string) => {
+    const storage = getStorage()
+    sessionStorage.removeItem(STORAGE_KEYS.token)
+    localStorage.removeItem(STORAGE_KEYS.token)
+    storage.setItem(STORAGE_KEYS.token, token)
+}
+
+// cpgateway revokes the previous token whenever it issues a new one (login, org or region switch), while
+// without "remember me" every window keeps its own copy in sessionStorage. New tokens are therefore passed to
+// the other windows of the same user (console windows, other tabs), which would otherwise be logged out on
+// their next request.
+const authChannel = typeof BroadcastChannel !== 'undefined' ? new BroadcastChannel('cloudland-auth') : null
+
+authChannel?.addEventListener('message', (event: MessageEvent) => {
+    const { type, token } = event.data || {}
+    if (type !== 'token' || typeof token !== 'string') return
+    const current = getToken()
+    // A logged-out window stays logged out, and a window of another user keeps its own session
+    if (!current || current === token) return
+    const sub = decodeTokenClaims(current)?.sub
+    if (!sub || sub !== decodeTokenClaims(token)?.sub) return
+    storeToken(token)
+})
 
 // Helper function to set auth token
 export const setAuthToken = (token: string, remember?: boolean) => {
     if (remember !== undefined) {
         if (remember) {
-            localStorage.setItem('cloudland_remember', '1')
+            localStorage.setItem(STORAGE_KEYS.remember, '1')
         } else {
-            localStorage.removeItem('cloudland_remember')
+            localStorage.removeItem(STORAGE_KEYS.remember)
         }
     }
-    const storage = getStorage()
-    sessionStorage.removeItem('cloudland_token')
-    localStorage.removeItem('cloudland_token')
-    storage.setItem('cloudland_token', token)
+    storeToken(token)
+    authChannel?.postMessage({ type: 'token', token })
 }
 
 // Helper function to clear auth token
 export const clearAuthToken = () => {
-    sessionStorage.removeItem('cloudland_token')
-    localStorage.removeItem('cloudland_token')
-    localStorage.removeItem('cloudland_remember')
+    sessionStorage.removeItem(STORAGE_KEYS.token)
+    localStorage.removeItem(STORAGE_KEYS.token)
+    localStorage.removeItem(STORAGE_KEYS.remember)
 }
 
 export default client

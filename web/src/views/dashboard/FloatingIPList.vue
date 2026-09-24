@@ -4,24 +4,48 @@ import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import { useToast } from '../../composables/useToast'
 import { useCopyId } from '../../composables/useCopyId'
-import { floatingIpsApi, subnetsApi, type FloatingIP, type FloatingIPPayload, type Subnet } from '../../api/networks'
+import { useListQuery } from '../../composables/useListQuery'
+import {
+    floatingIpsApi,
+    subnetsApi,
+    type FloatingIP,
+    type FloatingIPPayload,
+    type Subnet,
+    type SubnetAddress,
+} from '../../api/networks'
 import { instancesApi, type Instance } from '../../api/instances'
-import { Globe2, Plus, Link, Unlink, Trash2, Search, X, RefreshCw, Check, Copy, ChevronDown, ChevronUp } from 'lucide-vue-next'
+import {
+    Globe,
+    Plus,
+    Link,
+    Unlink,
+    Trash2,
+    Search,
+    RefreshCw,
+    Check,
+    Copy,
+    ChevronDown,
+    ChevronUp,
+} from 'lucide-vue-next'
 import { useFloatingIP } from '../../composables/useFloatingIP'
+import BaseModal from '../../components/modals/BaseModal.vue'
 import DeleteModal from '../../components/modals/DeleteModal.vue'
+import PageToolbar from '../../components/base/PageToolbar.vue'
+import DataTable, { type Column } from '../../components/base/DataTable.vue'
+import PaginationBar from '../../components/base/PaginationBar.vue'
 import { useRegionStore } from '../../stores/region'
+import { quotaErrorMessage } from '../../utils/quotaError'
+import { errorMessage } from '../../utils/error'
+import { primaryIp } from '../../utils/instance'
 
 const region = useRegionStore()
 
-const { t } = useI18n()
+const { t, te } = useI18n()
 const toast = useToast()
 const { getTypeBadgeClass, getTypeLabel } = useFloatingIP()
 const router = useRouter()
 
 const { copiedId, copyId } = useCopyId()
-const floatingIps = ref<FloatingIP[]>([])
-const loading = ref(false)
-const searchQuery = ref('')
 const createModalVisible = ref(false)
 const creating = ref(false)
 const createError = ref('')
@@ -41,7 +65,7 @@ const newFipForm = ref({
 const siteSubnets = ref<Subnet[]>([])
 const publicSubnets = ref<Subnet[]>([])
 const instances = ref<Instance[]>([])
-const subnetAddresses = ref<Record<string, any[]>>({})
+const subnetAddresses = ref<Record<string, SubnetAddress[]>>({})
 const addressesLoading = ref<Record<string, boolean>>({})
 
 const fetchSubnetAddresses = async (subnetId: string) => {
@@ -49,7 +73,9 @@ const fetchSubnetAddresses = async (subnetId: string) => {
     addressesLoading.value[subnetId] = true
     try {
         const response = await subnetsApi.listAddresses(subnetId)
-        subnetAddresses.value[subnetId] = (response.addresses || []).filter((a: any) => !a.allocated && !a.reserved)
+        subnetAddresses.value[subnetId] = (response.addresses || []).filter(
+            (a: SubnetAddress) => !a.allocated && !a.reserved
+        )
     } catch (err) {
         console.error('Failed to fetch subnet addresses:', err)
     } finally {
@@ -57,39 +83,67 @@ const fetchSubnetAddresses = async (subnetId: string) => {
     }
 }
 
-const fetchFloatingIPs = async () => {
-    loading.value = true
-    try {
-        const [ipResponse, subnetsResponse] = await Promise.all([
-            floatingIpsApi.list(),
-            subnetsApi.list()
-        ])
-        floatingIps.value = ipResponse.floating_ips || []
+// 排序在服务端做（sortField 是数据库列名，和列 key 不一定同名）。
+// 「挂载到」的虚拟机名在 instances 表里，浮动 IP 表上没有对应列，不提供排序
+const columns = computed<Column[]>(() => [
+    { key: 'name', label: t('dashboard.table.userName'), sortable: true },
+    { key: 'ip', label: t('dashboard.table.ipAddress'), sortable: true, sortField: 'fip_address' },
+    { key: 'type', label: t('dashboard.table.type'), sortable: true },
+    { key: 'attachedTo', label: t('dashboard.table.attachedTo') },
+    { key: 'actions', label: t('dashboard.table.actions'), align: 'center' },
+])
 
+// 分页与搜索都在服务端做
+const {
+    items: floatingIps,
+    total,
+    page,
+    pageSize,
+    loading,
+    error: loadError,
+    search: searchQuery,
+    order,
+    toggleSort,
+    load: fetchFloatingIPs,
+    reload: reloadFloatingIPs,
+} = useListQuery<FloatingIP>(
+    async ({ offset, limit, query, order }) => {
+        const response = await floatingIpsApi.list({ offset, limit, order, query: query || undefined })
+        return { items: response.floating_ips || [], total: response.total ?? 0 }
+    },
+    { watchSources: [computed(() => region.currentRegionId)] }
+)
+
+// 新建弹窗里的子网下拉；原先随列表一起拉，分页后改为挂载时和打开弹窗时各拉一次
+const fetchSubnetOptions = async () => {
+    try {
+        const subnetsResponse = await subnetsApi.list()
         const allSubnets = subnetsResponse.subnets || []
-        siteSubnets.value = allSubnets.filter(s => s.type === 'site')
-        publicSubnets.value = allSubnets.filter(s => s.type === 'public')
+        siteSubnets.value = allSubnets.filter((s) => s.type === 'site')
+        publicSubnets.value = allSubnets.filter((s) => s.type === 'public')
     } catch (err) {
-        console.error('API fetch failed:', err)
-        floatingIps.value = []
+        console.error('Failed to fetch subnets:', err)
         siteSubnets.value = []
         publicSubnets.value = []
-    } finally {
-        loading.value = false
     }
 }
 
 const fetchInstances = async () => {
     try {
         const response = await instancesApi.fetchInstances()
-        instances.value = (response.data?.instances || []).filter((inst: Instance) =>
-            inst.vpc && inst.status !== 'provisioning' && inst.interfaces?.some(iface => iface.is_primary)
+        instances.value = (response?.instances || []).filter(
+            (inst: Instance) =>
+                inst.vpc && inst.status !== 'provisioning' && inst.interfaces?.some((iface) => iface.is_primary)
         )
     } catch (err) {
         console.error('Failed to fetch instances:', err)
         instances.value = []
     }
 }
+
+// 下拉里显示实例的内网地址。原先写的是 inst.ip_address，实例响应上没有这个字段，
+// 括号里一直显示的是 UUID
+const instanceIp = (inst: Instance) => primaryIp(inst) || '-'
 
 const openCreateModal = () => {
     newFipForm.value = {
@@ -107,6 +161,7 @@ const openCreateModal = () => {
     createError.value = ''
     createModalVisible.value = true
     fetchInstances()
+    fetchSubnetOptions()
 }
 
 const closeCreateModal = () => {
@@ -158,31 +213,17 @@ const handleCreateIP = async () => {
 
         await floatingIpsApi.create(payload)
 
-        const response = await floatingIpsApi.list()
-        floatingIps.value = response.floating_ips || []
+        // 列表按创建时间倒序，新建的在第一页
+        await reloadFloatingIPs()
 
         closeCreateModal()
         toast.success(t('messages.createSuccess'))
-    } catch (err: any) {
+    } catch (err) {
         console.error('Failed to create floating IP:', err)
-        createError.value = err.response?.data?.error_message || err.message || t('messages.error')
+        createError.value = quotaErrorMessage(err, t, te) || errorMessage(err, t('messages.error'))
     } finally {
         creating.value = false
     }
-}
-
-const filteredFloatingIPs = computed(() => {
-    if (!searchQuery.value) return floatingIps.value
-    const query = searchQuery.value.toLowerCase()
-    return floatingIps.value.filter(fip => 
-        (fip.name?.toLowerCase() || '').includes(query) ||
-        (fip.public_ip || fip.ip_address || '').toLowerCase().includes(query) || 
-        (fip.id?.toLowerCase() || '').includes(query)
-    )
-})
-
-const navigateToDetail = (fip: FloatingIP) => {
-    router.push({ name: 'floating-ip-detail', params: { id: fip.id } })
 }
 
 const navigateToInstance = (instanceId: string) => {
@@ -213,9 +254,9 @@ const confirmDelete = async () => {
         await fetchFloatingIPs()
         closeDeleteModal()
         toast.success(t('messages.deleteSuccess'))
-    } catch (error: any) {
+    } catch (error) {
         console.error('Failed to delete floating IP:', error)
-        deleteError.value = error.response?.data?.error_message || error.message || t('messages.error')
+        deleteError.value = errorMessage(error, t('messages.error'))
     } finally {
         deletingResource.value = false
     }
@@ -254,9 +295,9 @@ const confirmAttach = async () => {
         await fetchFloatingIPs()
         closeAttachModal()
         toast.success(t('messages.attachSuccess') || t('messages.updateSuccess'))
-    } catch (err: any) {
+    } catch (err) {
         console.error('Failed to attach floating IP:', err)
-        attachError.value = err.response?.data?.error_message || err.message || t('messages.error')
+        attachError.value = errorMessage(err, t('messages.error'))
     } finally {
         attaching.value = false
     }
@@ -289,9 +330,9 @@ const confirmDetach = async () => {
         await fetchFloatingIPs()
         closeDetachModal()
         toast.success(t('messages.detachSuccess') || t('messages.updateSuccess'))
-    } catch (err: any) {
+    } catch (err) {
         console.error('Failed to detach floating IP:', err)
-        detachError.value = err.response?.data?.error_message || err.message || t('messages.error')
+        detachError.value = errorMessage(err, t('messages.error'))
     } finally {
         detaching.value = false
     }
@@ -300,520 +341,542 @@ const confirmDetach = async () => {
 onMounted(() => {
     if (region.currentRegionId) {
         fetchFloatingIPs()
+        fetchSubnetOptions()
     }
 })
 
-// Re-fetch when region changes
-watch(() => region.currentRegionId, (newId) => {
-    if (newId) {
-        fetchFloatingIPs()
+watch(
+    () => newFipForm.value.selectedSiteSubnetId,
+    (newId) => {
+        if (newId) {
+            newFipForm.value.selectedPublicSubnetId = ''
+            fetchSubnetAddresses(newId)
+        }
     }
-})
+)
 
-watch(() => newFipForm.value.selectedSiteSubnetId, (newId) => {
-    if (newId) {
-        newFipForm.value.selectedPublicSubnetId = ''
-        fetchSubnetAddresses(newId)
+watch(
+    () => newFipForm.value.selectedPublicSubnetId,
+    (newId) => {
+        if (newId) {
+            newFipForm.value.selectedSiteSubnetId = ''
+            fetchSubnetAddresses(newId)
+        }
     }
-})
-
-watch(() => newFipForm.value.selectedPublicSubnetId, (newId) => {
-    if (newId) {
-        newFipForm.value.selectedSiteSubnetId = ''
-        fetchSubnetAddresses(newId)
-    }
-})
+)
 </script>
 
 <template>
-  <div>
-    <div class="page-header">
-      <div class="search-wrapper">
-        <div class="search-box">
-          <Search :size="16" class="search-icon" />
-          <input 
-            id="searchQuery"
-            name="searchQuery"
-            type="text" 
-            v-model="searchQuery"
-            :placeholder="$t('actions.search') + '...'" 
-            class="search-input"
-          />
-        </div>
-      </div>
-      <div class="header-actions">
-        <button class="btn btn-secondary btn-sm btn-icon" @click="fetchFloatingIPs" :title="$t('actions.refresh')">
-          <RefreshCw :size="14" :class="{ spinning: loading }" />
-        </button>
-        <button class="btn btn-primary btn-sm" @click="openCreateModal">
-          <Plus :size="14" /> {{ $t('dashboard.buttons.createIp') }}
-        </button>
-      </div>
-    </div>
+    <div>
+        <PageToolbar v-model:search="searchQuery">
+            <template #actions>
+                <button
+                    class="btn btn-secondary btn-sm btn-icon"
+                    @click="() => fetchFloatingIPs()"
+                    :title="$t('actions.refresh')"
+                >
+                    <RefreshCw :size="14" :class="{ spinning: loading }" />
+                </button>
+                <button class="btn btn-primary btn-sm" @click="openCreateModal">
+                    <Plus :size="14" /> {{ $t('dashboard.buttons.createIp') }}
+                </button>
+            </template>
+        </PageToolbar>
 
-    <div class="card table-card">
-      <table class="data-table">
-        <thead>
-          <tr>
-            <th>{{ $t('dashboard.table.userName') }}</th>
-            <th>{{ $t('dashboard.table.ipAddress') }}</th>
-            <th>{{ $t('dashboard.table.type') }}</th>
-            <th>{{ $t('dashboard.table.attachedTo') }}</th>
-            <th>{{ $t('dashboard.table.actions') }}</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-if="loading">
-            <td colspan="5" class="text-center">
-              <div class="loading-spinner" style="margin: 20px auto;"></div>
-            </td>
-          </tr>
-          <tr v-else-if="filteredFloatingIPs.length === 0">
-            <td colspan="5" class="text-center text-secondary" style="padding: 48px;">
-               <div v-if="searchQuery">
-                  <Search :size="48" style="opacity: 0.3; margin-bottom: 16px;" />
-                  <p>{{ $t('messages.noResults') }}</p>
-               </div>
-               <div v-else>
-                  <Globe2 :size="48" style="opacity: 0.3; margin-bottom: 16px;" />
-                  <p>{{ $t('messages.noFloatingIPs') }}</p>
-               </div>
-            </td>
-          </tr>
-          <tr v-else v-for="fip in filteredFloatingIPs" :key="fip.id">
-            <td>
-              <router-link :to="{ name: 'floating-ip-detail', params: { id: fip.id } }" class="resource-link">
-                <div class="resource-info">
-                  <div class="resource-icon">
-                    <Globe2 :size="16" />
-                  </div>
-                  <div>
-                    <div class="resource-name">{{ fip.name || $t('messages.unnamed') }}</div>
-                    <div class="resource-id-row">
-                      <span class="resource-id" :title="fip.id">{{ fip.id.slice(0, 8) }}...</span>
-                      <button class="copy-btn-mini" @click.stop.prevent="copyId(fip.id)" :title="t('actions.copy')" :aria-label="t('actions.copy')">
-                        <Check v-if="copiedId === fip.id" :size="10" style="color: #10b981;" />
-                        <Copy v-else :size="10" />
-                      </button>
-                    </div>
-                  </div>
+        <DataTable
+            :columns="columns"
+            :rows="floatingIps"
+            row-key="id"
+            :loading="loading"
+            :error="loadError"
+            :order="order"
+            @update:order="toggleSort"
+            @retry="() => fetchFloatingIPs()"
+        >
+            <template #empty>
+                <div v-if="searchQuery">
+                    <Search :size="48" style="opacity: 0.3; margin-bottom: 16px" />
+                    <p>{{ $t('messages.noResults') }}</p>
                 </div>
-              </router-link>
-            </td>
-            <td>
-              <div class="ip-address monospace">{{ fip.public_ip || fip.ip_address }}</div>
-            </td>
-            <td>
-              <span :class="['badge', getTypeBadgeClass(fip.type || '')]">
-                {{ getTypeLabel(fip.type || '') }}
-              </span>
-            </td>
-            <td>
-              <span 
-                v-if="fip.target_interface?.from_instance" 
-                class="resource-link"
-                @click="navigateToInstance(fip.target_interface.from_instance.id)"
-              >
-                {{ fip.target_interface.from_instance.hostname || $t('messages.unnamed') }}
-              </span>
-              <span v-else class="text-light">{{ $t('messages.notAttached') }}</span>
-            </td>
-            <td>
-              <div class="actions">
-                <button v-if="!fip.target_interface" class="btn btn-ghost btn-sm" :title="$t('actions.attach')"
-                  :disabled="fip.type !== 'floating' && fip.type !== 'site'"
-                  @click="(fip.type === 'floating' || fip.type === 'site') && handleAttachClick(fip)">
-                  <Link :size="14" /> {{ $t('actions.attach') }}
-                </button>
-                <button v-else class="btn btn-ghost btn-sm" :title="$t('actions.detach')"
-                  :disabled="fip.type !== 'floating' && fip.type !== 'site'"
-                  @click="(fip.type === 'floating' || fip.type === 'site') && handleDetachClick(fip)">
-                  <Unlink :size="14" /> {{ $t('actions.detach') }}
-                </button>
-                <button class="btn btn-ghost btn-sm text-error" :title="$t('actions.release')"
-                  :disabled="fip.type !== 'floating' && fip.type !== 'loadbalancer'"
-                  @click="(fip.type === 'floating' || fip.type === 'loadbalancer') && handleDeleteClick(fip)">
-                  <Trash2 :size="14" />
-                </button>
-              </div>
-            </td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
+                <div v-else>
+                    <Globe :size="48" style="opacity: 0.3; margin-bottom: 16px" />
+                    <p>{{ $t('messages.noFloatingIPs') }}</p>
+                </div>
+            </template>
 
-    <!-- Create Floating IP Modal -->
-    <div v-if="createModalVisible" class="modal-overlay" @click.self="closeCreateModal">
-      <div class="modal-content card modal-wide">
-        <div class="modal-header">
-          <h3>{{ $t('dashboard.buttons.createIp') }}</h3>
-          <button class="btn btn-ghost btn-sm icon-btn" @click="closeCreateModal">
-            <X :size="20" />
-          </button>
-        </div>
+            <template #cell-name="{ row: fip }">
+                <router-link :to="{ name: 'floating-ip-detail', params: { id: fip.id } }" class="resource-link">
+                    <div class="resource-info">
+                        <div class="resource-icon">
+                            <Globe :size="16" />
+                        </div>
+                        <div>
+                            <div class="resource-name">{{ fip.name || $t('messages.unnamed') }}</div>
+                            <div class="resource-id-row">
+                                <span class="resource-id" :title="fip.id">{{ fip.id.slice(0, 8) }}...</span>
+                                <button
+                                    class="copy-btn-mini"
+                                    @click.stop.prevent="copyId(fip.id)"
+                                    :title="t('actions.copy')"
+                                    :aria-label="t('actions.copy')"
+                                >
+                                    <Check v-if="copiedId === fip.id" :size="10" style="color: var(--success-color)" />
+                                    <Copy v-else :size="10" />
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </router-link>
+            </template>
 
-        <div class="modal-body">
-          <p class="text-secondary mb-4">
-            {{ $t('dashboard.floatingIPDetail.createDesc') }}
-          </p>
+            <template #cell-ip="{ row: fip }">
+                <div class="ip-address monospace">{{ fip.public_ip || fip.ip_address }}</div>
+            </template>
 
-          <!-- Name (required) -->
-          <div class="form-group">
-            <label class="form-label">{{ $t('dashboard.forms.name') }} <span class="text-error">*</span></label>
-            <input
-              id="ipName"
-              name="ipName"
-              v-model="newFipForm.name"
-              type="text"
-              class="form-input"
-              maxlength="32"
-              :placeholder="$t('dashboard.floatingIPDetail.namePlaceholder')"
-            />
-          </div>
+            <template #cell-type="{ row: fip }">
+                <span :class="['badge', getTypeBadgeClass(fip.type || '')]">
+                    {{ getTypeLabel(fip.type || '') }}
+                </span>
+            </template>
 
-          <!-- Bandwidth -->
-          <div class="form-row">
-            <div class="form-group form-group-half">
-              <label class="form-label">{{ $t('dashboard.floatingIPDetail.inbound') }}</label>
-              <div class="input-with-suffix">
-                <input
-                  id="inbound"
-                  name="inbound"
-                  v-model.number="newFipForm.inbound"
-                  type="number"
-                  class="form-input"
-                  min="1" max="20000"
-                  :placeholder="$t('dashboard.floatingIPDetail.inboundPlaceholder')"
+            <template #cell-attachedTo="{ row: fip }">
+                <span
+                    v-if="fip.target_interface?.from_instance"
+                    class="resource-link"
+                    @click="navigateToInstance(fip.target_interface.from_instance.id)"
+                >
+                    {{ fip.target_interface.from_instance.hostname || $t('messages.unnamed') }}
+                </span>
+                <span v-else class="text-light">{{ $t('messages.notAttached') }}</span>
+            </template>
+
+            <template #cell-actions="{ row: fip }">
+                <div class="row-actions">
+                    <button
+                        v-if="!fip.target_interface"
+                        class="icon-btn-table"
+                        :title="$t('actions.attach')"
+                        :disabled="fip.type !== 'floating' && fip.type !== 'site'"
+                        @click="(fip.type === 'floating' || fip.type === 'site') && handleAttachClick(fip)"
+                    >
+                        <Link :size="16" />
+                    </button>
+                    <button
+                        v-else
+                        class="icon-btn-table"
+                        :title="$t('actions.detach')"
+                        :disabled="fip.type !== 'floating' && fip.type !== 'site'"
+                        @click="(fip.type === 'floating' || fip.type === 'site') && handleDetachClick(fip)"
+                    >
+                        <Unlink :size="16" />
+                    </button>
+                    <button
+                        class="icon-btn-table icon-danger"
+                        :title="$t('actions.release')"
+                        :disabled="fip.type !== 'floating' && fip.type !== 'loadbalancer'"
+                        @click="(fip.type === 'floating' || fip.type === 'loadbalancer') && handleDeleteClick(fip)"
+                    >
+                        <Trash2 :size="16" />
+                    </button>
+                </div>
+            </template>
+
+            <template #footer>
+                <PaginationBar
+                    :page="page"
+                    :page-size="pageSize"
+                    :total="total"
+                    @update:page="page = $event"
+                    @update:page-size="pageSize = $event"
                 />
-                <span class="input-suffix">{{ $t('dashboard.floatingIPDetail.mbps') }}</span>
-              </div>
-            </div>
-            <div class="form-group form-group-half">
-              <label class="form-label">{{ $t('dashboard.floatingIPDetail.outbound') }}</label>
-              <div class="input-with-suffix">
-                <input
-                  id="outbound"
-                  name="outbound"
-                  v-model.number="newFipForm.outbound"
-                  type="number"
-                  class="form-input"
-                  min="1" max="20000"
-                  :placeholder="$t('dashboard.floatingIPDetail.outboundPlaceholder')"
-                />
-                <span class="input-suffix">{{ $t('dashboard.floatingIPDetail.mbps') }}</span>
-              </div>
-            </div>
-          </div>
+            </template>
+        </DataTable>
 
-          <!-- Site Subnet -->
-          <div class="form-group" v-if="siteSubnets.length > 0">
-            <label class="form-label">{{ $t('dashboard.floatingIPDetail.subnetPool') }}</label>
-            <div class="select-wrapper">
-              <select id="siteSubnet" name="siteSubnet" v-model="newFipForm.selectedSiteSubnetId" class="form-input">
-                <option value="">{{ $t('dashboard.floatingIPDetail.selectSubnet') }}</option>
-                <option v-for="subnet in siteSubnets" :key="subnet.id" :value="subnet.id">
-                  {{ subnet.name }} ({{ subnet.network || subnet.network_cidr }})
-                </option>
-              </select>
-            </div>
-          </div>
+        <!-- Create Floating IP Modal -->
+        <BaseModal
+            :show="createModalVisible"
+            :title="$t('dashboard.buttons.createIp')"
+            size="lg"
+            form
+            :loading="creating"
+            @close="closeCreateModal"
+            @submit="handleCreateIP"
+        >
+            <p class="text-secondary mb-4">
+                {{ $t('dashboard.floatingIPDetail.createDesc') }}
+            </p>
 
-          <!-- Public Subnet -->
-          <div class="form-group" v-if="publicSubnets.length > 0">
-            <label class="form-label">{{ $t('dashboard.floatingIPDetail.publicSubnet') }}</label>
-            <div class="select-wrapper">
-              <select id="publicSubnet" name="publicSubnet" v-model="newFipForm.selectedPublicSubnetId" class="form-input">
-                <option value="">{{ $t('dashboard.floatingIPDetail.selectSubnet') }}</option>
-                <option v-for="subnet in publicSubnets" :key="subnet.id" :value="subnet.id">
-                  {{ subnet.name }} ({{ subnet.network || subnet.network_cidr }})
-                </option>
-              </select>
-            </div>
-          </div>
-
-          <!-- Public IP -->
-          <div class="form-group">
-            <label class="form-label">{{ $t('dashboard.floatingIPDetail.publicIp') }}</label>
-            <div class="select-wrapper" v-if="newFipForm.selectedSiteSubnetId || newFipForm.selectedPublicSubnetId">
-              <select id="publicIpSelect" name="publicIp" v-model="newFipForm.publicIp" class="form-input" :disabled="addressesLoading[newFipForm.selectedSiteSubnetId || newFipForm.selectedPublicSubnetId]">
-                <option value="">{{ $t('dashboard.floatingIPDetail.autoAllocate') || '自动分配' }}</option>
-                <option v-for="addr in (subnetAddresses[newFipForm.selectedSiteSubnetId || newFipForm.selectedPublicSubnetId] || [])" :key="addr.address" :value="addr.address.split('/')[0]">
-                  {{ addr.address.split('/')[0] }}
-                </option>
-              </select>
-            </div>
-            <input
-              id="publicIpInput"
-              name="publicIp"
-              v-model="newFipForm.publicIp"
-              type="text"
-              class="form-input"
-              :placeholder="$t('dashboard.floatingIPDetail.publicIpPlaceholder')"
-            />
-          </div>
-
-          <!-- Bind Instance -->
-          <div class="form-group">
-            <label class="form-label">{{ $t('dashboard.floatingIPDetail.bindInstance') }}</label>
-            <div class="select-wrapper">
-              <select id="instanceId" name="instanceId" v-model="newFipForm.instanceId" class="form-input">
-                <option value="">{{ $t('dashboard.floatingIPDetail.selectInstance') }}</option>
-                <option v-for="inst in instances" :key="inst.id" :value="inst.id">
-                  {{ inst.hostname || inst.name }} ({{ inst.ip_address || inst.id }})
-                </option>
-              </select>
-            </div>
-          </div>
-
-          <!-- Advanced Options -->
-          <div class="advanced-toggle" @click="showAdvanced = !showAdvanced">
-            <span>{{ $t('dashboard.floatingIPDetail.advancedOptions') }}</span>
-            <ChevronDown v-if="!showAdvanced" :size="16" />
-            <ChevronUp v-else :size="16" />
-          </div>
-
-          <div v-if="showAdvanced" class="advanced-section">
-            <!-- Activation Count -->
+            <!-- Name (required) -->
             <div class="form-group">
-              <label class="form-label">{{ $t('dashboard.floatingIPDetail.activationCount') }}</label>
-              <input
-                id="activationCount"
-                name="activationCount"
-                v-model.number="newFipForm.activationCount"
-                type="number"
-                class="form-input"
-                min="1" max="64"
-                :placeholder="$t('dashboard.floatingIPDetail.activationCountPlaceholder')"
-              />
+                <label class="form-label">{{ $t('dashboard.forms.name') }} <span class="text-error">*</span></label>
+                <input
+                    id="ipName"
+                    name="ipName"
+                    v-model="newFipForm.name"
+                    type="text"
+                    class="form-input"
+                    maxlength="32"
+                    :placeholder="$t('dashboard.floatingIPDetail.namePlaceholder')"
+                />
             </div>
-          </div>
-        </div>
 
-        <div class="modal-footer" style="flex-direction: column; align-items: stretch; gap: var(--spacing-2);">
-          <div v-if="createError" class="text-error" style="font-size:var(--font-size-sm);background:var(--error-light);padding:var(--spacing-2);border-radius:var(--radius-sm)">
-            {{ createError }}
-          </div>
-          <div style="display: flex; justify-content: flex-end; gap: var(--spacing-2);">
-            <button class="btn btn-secondary" @click="closeCreateModal" :disabled="creating">{{ $t('actions.cancel') }}</button>
-            <button class="btn btn-primary" @click="handleCreateIP" :disabled="creating">
-              <span v-if="creating" class="loading-spinner" style="width: 16px; height: 16px; border-width: 2px;"></span>
-              {{ creating ? $t('messages.creating') : $t('dashboard.buttons.createIp') }}
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Attach Floating IP Modal -->
-    <div v-if="attachModalVisible" class="modal-overlay" @click.self="closeAttachModal">
-      <div class="modal-content card">
-        <div class="modal-header">
-          <h3>{{ $t('actions.attach') }} - {{ fipToAttach?.name || fipToAttach?.public_ip }}</h3>
-          <button class="btn btn-ghost btn-sm icon-btn" @click="closeAttachModal">
-            <X :size="20" />
-          </button>
-        </div>
-        <div class="modal-body">
-          <div class="form-group">
-            <label class="form-label">{{ $t('dashboard.floatingIPDetail.bindInstance') }} <span class="text-error">*</span></label>
-            <div class="select-wrapper">
-              <select id="attachInstanceId" name="instanceId" v-model="selectedInstanceId" class="form-input">
-                <option value="">{{ $t('dashboard.floatingIPDetail.selectInstance') }}</option>
-                <option v-for="inst in instances" :key="inst.id" :value="inst.id">
-                  {{ inst.hostname || inst.name }} ({{ inst.ip_address || inst.id }})
-                </option>
-              </select>
+            <!-- Bandwidth -->
+            <div class="form-row">
+                <div class="form-group form-group-half">
+                    <label class="form-label">{{ $t('dashboard.floatingIPDetail.inbound') }}</label>
+                    <div class="input-with-suffix">
+                        <input
+                            id="inbound"
+                            name="inbound"
+                            v-model.number="newFipForm.inbound"
+                            type="number"
+                            class="form-input"
+                            min="1"
+                            max="20000"
+                            :placeholder="$t('dashboard.floatingIPDetail.inboundPlaceholder')"
+                        />
+                        <span class="input-suffix">{{ $t('dashboard.floatingIPDetail.mbps') }}</span>
+                    </div>
+                </div>
+                <div class="form-group form-group-half">
+                    <label class="form-label">{{ $t('dashboard.floatingIPDetail.outbound') }}</label>
+                    <div class="input-with-suffix">
+                        <input
+                            id="outbound"
+                            name="outbound"
+                            v-model.number="newFipForm.outbound"
+                            type="number"
+                            class="form-input"
+                            min="1"
+                            max="20000"
+                            :placeholder="$t('dashboard.floatingIPDetail.outboundPlaceholder')"
+                        />
+                        <span class="input-suffix">{{ $t('dashboard.floatingIPDetail.mbps') }}</span>
+                    </div>
+                </div>
             </div>
-          </div>
-        </div>
-        <div v-if="attachError" class="text-error" style="margin: 0 var(--spacing-6) var(--spacing-4); font-size:var(--font-size-sm);background:var(--error-light);padding:var(--spacing-2);border-radius:var(--radius-sm)">
-          {{ attachError }}
-        </div>
-        <div class="modal-footer">
-          <button class="btn btn-secondary" @click="closeAttachModal" :disabled="attaching">{{ $t('actions.cancel') }}</button>
-          <button class="btn btn-primary" @click="confirmAttach" :disabled="attaching || !selectedInstanceId">
-            <span v-if="attaching" class="loading-spinner" style="width: 16px; height: 16px; border-width: 2px;"></span>
-            {{ attaching ? $t('messages.loading') : $t('actions.attach') }}
-          </button>
-        </div>
-      </div>
-    </div>
 
-    <!-- Detach Confirmation Modal -->
-    <div v-if="detachModalVisible" class="modal-overlay" @click.self="closeDetachModal">
-      <div class="modal-content card">
-        <div class="modal-header">
-          <h3>{{ $t('actions.detach') }} - {{ fipToDetach?.name || fipToDetach?.public_ip }}</h3>
-          <button class="btn btn-ghost btn-sm icon-btn" @click="closeDetachModal">
-            <X :size="20" />
-          </button>
-        </div>
-        <div class="modal-body">
-          <p class="text-secondary">
-            {{ $t('messages.confirmDetach') }}
-          </p>
-        </div>
-        <div v-if="detachError" class="text-error" style="margin: 0 var(--spacing-6) var(--spacing-4); font-size:var(--font-size-sm);background:var(--error-light);padding:var(--spacing-2);border-radius:var(--radius-sm)">
-          {{ detachError }}
-        </div>
-        <div class="modal-footer">
-          <button class="btn btn-secondary" @click="closeDetachModal" :disabled="detaching">{{ $t('actions.cancel') }}</button>
-          <button class="btn btn-primary" @click="confirmDetach" :disabled="detaching">
-            <span v-if="detaching" class="loading-spinner" style="width: 16px; height: 16px; border-width: 2px;"></span>
-            {{ detaching ? $t('messages.loading') : $t('actions.detach') }}
-          </button>
-        </div>
-      </div>
-    </div>
+            <!-- Site Subnet -->
+            <div class="form-group" v-if="siteSubnets.length > 0">
+                <label class="form-label">{{ $t('dashboard.floatingIPDetail.subnetPool') }}</label>
+                <div class="select-wrapper">
+                    <select
+                        id="siteSubnet"
+                        name="siteSubnet"
+                        v-model="newFipForm.selectedSiteSubnetId"
+                        class="form-input"
+                    >
+                        <option value="">{{ $t('dashboard.floatingIPDetail.selectSubnet') }}</option>
+                        <option v-for="subnet in siteSubnets" :key="subnet.id" :value="subnet.id">
+                            {{ subnet.name }} ({{ subnet.network || subnet.network_cidr }})
+                        </option>
+                    </select>
+                </div>
+            </div>
 
-    <DeleteModal
-      :show="deleteModalVisible"
-      :resource-name="resourceToDelete?.public_ip || resourceToDelete?.ip_address"
-      :resource-id="resourceToDelete?.id"
-      :loading="deletingResource"
-      :error="deleteError"
-      @close="closeDeleteModal"
-      @confirm="confirmDelete"
-    />
-  </div>
+            <!-- Public Subnet -->
+            <div class="form-group" v-if="publicSubnets.length > 0">
+                <label class="form-label">{{ $t('dashboard.floatingIPDetail.publicSubnet') }}</label>
+                <div class="select-wrapper">
+                    <select
+                        id="publicSubnet"
+                        name="publicSubnet"
+                        v-model="newFipForm.selectedPublicSubnetId"
+                        class="form-input"
+                    >
+                        <option value="">{{ $t('dashboard.floatingIPDetail.selectSubnet') }}</option>
+                        <option v-for="subnet in publicSubnets" :key="subnet.id" :value="subnet.id">
+                            {{ subnet.name }} ({{ subnet.network || subnet.network_cidr }})
+                        </option>
+                    </select>
+                </div>
+            </div>
+
+            <!-- Public IP -->
+            <div class="form-group">
+                <label class="form-label">{{ $t('dashboard.floatingIPDetail.publicIp') }}</label>
+                <div class="select-wrapper" v-if="newFipForm.selectedSiteSubnetId || newFipForm.selectedPublicSubnetId">
+                    <select
+                        id="publicIpSelect"
+                        name="publicIp"
+                        v-model="newFipForm.publicIp"
+                        class="form-input"
+                        :disabled="
+                            addressesLoading[newFipForm.selectedSiteSubnetId || newFipForm.selectedPublicSubnetId]
+                        "
+                    >
+                        <option value="">{{ $t('dashboard.floatingIPDetail.autoAllocate') || '自动分配' }}</option>
+                        <option
+                            v-for="addr in subnetAddresses[
+                                newFipForm.selectedSiteSubnetId || newFipForm.selectedPublicSubnetId
+                            ] || []"
+                            :key="addr.address"
+                            :value="addr.address.split('/')[0]"
+                        >
+                            {{ addr.address.split('/')[0] }}
+                        </option>
+                    </select>
+                </div>
+                <input
+                    id="publicIpInput"
+                    name="publicIp"
+                    v-model="newFipForm.publicIp"
+                    type="text"
+                    class="form-input"
+                    :placeholder="$t('dashboard.floatingIPDetail.publicIpPlaceholder')"
+                />
+            </div>
+
+            <!-- Bind Instance -->
+            <div class="form-group">
+                <label class="form-label">{{ $t('dashboard.floatingIPDetail.bindInstance') }}</label>
+                <div class="select-wrapper">
+                    <select id="instanceId" name="instanceId" v-model="newFipForm.instanceId" class="form-input">
+                        <option value="">{{ $t('dashboard.floatingIPDetail.selectInstance') }}</option>
+                        <option v-for="inst in instances" :key="inst.id" :value="inst.id">
+                            {{ inst.hostname }} ({{ instanceIp(inst) }})
+                        </option>
+                    </select>
+                </div>
+            </div>
+
+            <!-- Advanced Options -->
+            <div class="advanced-toggle" @click="showAdvanced = !showAdvanced">
+                <span>{{ $t('dashboard.floatingIPDetail.advancedOptions') }}</span>
+                <ChevronDown v-if="!showAdvanced" :size="16" />
+                <ChevronUp v-else :size="16" />
+            </div>
+
+            <div v-if="showAdvanced" class="advanced-section">
+                <!-- Activation Count -->
+                <div class="form-group">
+                    <label class="form-label">{{ $t('dashboard.floatingIPDetail.activationCount') }}</label>
+                    <input
+                        id="activationCount"
+                        name="activationCount"
+                        v-model.number="newFipForm.activationCount"
+                        type="number"
+                        class="form-input"
+                        min="1"
+                        max="64"
+                        :placeholder="$t('dashboard.floatingIPDetail.activationCountPlaceholder')"
+                    />
+                </div>
+            </div>
+
+            <template #footer>
+                <div class="modal-footer-stack">
+                    <div
+                        v-if="createError"
+                        class="text-error"
+                        style="
+                            font-size: var(--font-size-sm);
+                            background: var(--error-light);
+                            padding: var(--spacing-2);
+                            border-radius: var(--radius-sm);
+                        "
+                    >
+                        {{ createError }}
+                    </div>
+                    <div style="display: flex; justify-content: flex-end; gap: var(--spacing-2)">
+                        <button type="button" class="btn btn-secondary" @click="closeCreateModal" :disabled="creating">
+                            {{ $t('actions.cancel') }}
+                        </button>
+                        <button type="submit" class="btn btn-primary" :disabled="creating">
+                            <span
+                                v-if="creating"
+                                class="loading-spinner"
+                                style="width: 16px; height: 16px; border-width: 2px"
+                            ></span>
+                            {{ creating ? $t('messages.creating') : $t('dashboard.buttons.createIp') }}
+                        </button>
+                    </div>
+                </div>
+            </template>
+        </BaseModal>
+
+        <!-- Attach Floating IP Modal -->
+        <BaseModal
+            :show="attachModalVisible"
+            :title="$t('actions.attach') + ' - ' + (fipToAttach?.name || fipToAttach?.public_ip || '')"
+            form
+            :loading="attaching"
+            @close="closeAttachModal"
+            @submit="confirmAttach"
+        >
+            <div class="form-group">
+                <label class="form-label"
+                    >{{ $t('dashboard.floatingIPDetail.bindInstance') }} <span class="text-error">*</span></label
+                >
+                <div class="select-wrapper">
+                    <select id="attachInstanceId" name="instanceId" v-model="selectedInstanceId" class="form-input">
+                        <option value="">{{ $t('dashboard.floatingIPDetail.selectInstance') }}</option>
+                        <option v-for="inst in instances" :key="inst.id" :value="inst.id">
+                            {{ inst.hostname }} ({{ instanceIp(inst) }})
+                        </option>
+                    </select>
+                </div>
+            </div>
+
+            <template #footer>
+                <div class="modal-footer-stack">
+                    <div
+                        v-if="attachError"
+                        class="text-error"
+                        style="
+                            font-size: var(--font-size-sm);
+                            background: var(--error-light);
+                            padding: var(--spacing-2);
+                            border-radius: var(--radius-sm);
+                        "
+                    >
+                        {{ attachError }}
+                    </div>
+                    <div style="display: flex; justify-content: flex-end; gap: var(--spacing-2)">
+                        <button type="button" class="btn btn-secondary" @click="closeAttachModal" :disabled="attaching">
+                            {{ $t('actions.cancel') }}
+                        </button>
+                        <button type="submit" class="btn btn-primary" :disabled="attaching || !selectedInstanceId">
+                            <span
+                                v-if="attaching"
+                                class="loading-spinner"
+                                style="width: 16px; height: 16px; border-width: 2px"
+                            ></span>
+                            {{ attaching ? $t('messages.loading') : $t('actions.attach') }}
+                        </button>
+                    </div>
+                </div>
+            </template>
+        </BaseModal>
+
+        <!-- Detach Confirmation Modal -->
+        <BaseModal
+            :show="detachModalVisible"
+            :title="$t('actions.detach') + ' - ' + (fipToDetach?.name || fipToDetach?.public_ip || '')"
+            :loading="detaching"
+            @close="closeDetachModal"
+        >
+            <p class="text-secondary">
+                {{ $t('messages.confirmDetach') }}
+            </p>
+
+            <template #footer>
+                <div class="modal-footer-stack">
+                    <div
+                        v-if="detachError"
+                        class="text-error"
+                        style="
+                            font-size: var(--font-size-sm);
+                            background: var(--error-light);
+                            padding: var(--spacing-2);
+                            border-radius: var(--radius-sm);
+                        "
+                    >
+                        {{ detachError }}
+                    </div>
+                    <div style="display: flex; justify-content: flex-end; gap: var(--spacing-2)">
+                        <button class="btn btn-secondary" @click="closeDetachModal" :disabled="detaching">
+                            {{ $t('actions.cancel') }}
+                        </button>
+                        <button class="btn btn-primary" @click="confirmDetach" :disabled="detaching">
+                            <span
+                                v-if="detaching"
+                                class="loading-spinner"
+                                style="width: 16px; height: 16px; border-width: 2px"
+                            ></span>
+                            {{ detaching ? $t('messages.loading') : $t('actions.detach') }}
+                        </button>
+                    </div>
+                </div>
+            </template>
+        </BaseModal>
+
+        <DeleteModal
+            :show="deleteModalVisible"
+            :resource-name="resourceToDelete?.public_ip || resourceToDelete?.ip_address"
+            :resource-id="resourceToDelete?.id"
+            :loading="deletingResource"
+            :error="deleteError"
+            @close="closeDeleteModal"
+            @confirm="confirmDelete"
+        />
+    </div>
 </template>
 
 <style scoped>
-.page-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 0px;
-  padding-right: 20px;
-}
-
-.search-wrapper {
-  flex: 1;
-  max-width: 400px;
-}
-
-.search-box {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  background: var(--bg-secondary);
-  padding: 0 12px;
-  height: 40px;
-  border-radius: var(--radius-md);
-  border: 1px solid var(--border-light);
-  transition: all 0.2s;
-}
-
-.search-box:focus-within {
-  border-color: var(--primary-300);
-  box-shadow: 0 0 0 2px var(--primary-100);
-}
-
-.search-icon {
-  color: var(--gray-400);
-}
-
-.search-input {
-  border: none;
-  background: transparent;
-  width: 100%;
-  height: 100%;
-  font-size: 0.875rem;
-  color: var(--text-primary);
-}
-
-.search-input:focus {
-  outline: none;
-}
-
-.table-card {
-  padding: 0;
-  overflow: visible;
-}
-
 /* .resource-info etc. are global from index.css */
 
 .resource-link {
-  text-decoration: none;
-  display: block;
-  padding: 4px 0;
-  border-radius: var(--radius-sm);
-  transition: all 0.15s;
+    text-decoration: none;
+    display: block;
+    padding: 4px 0;
+    border-radius: var(--radius-sm);
+    transition: all 0.15s;
 }
 
 .resource-link:hover .resource-name {
-  color: var(--primary-600);
-  text-decoration: underline;
+    color: var(--primary-600);
+    text-decoration: underline;
 }
 
-.actions {
-  display: flex;
-  gap: var(--spacing-02);
+.monospace {
+    font-family: var(--font-family-mono);
 }
 
-.text-error {
-  color: var(--error-color);
-}
-
-.monospace { font-family: var(--font-family-mono); }
-
-.btn-danger:hover { background: var(--error-dark); }
-.btn-danger:disabled { opacity: 0.5; cursor: not-allowed; }
-
-.header-actions { display: flex; gap: 8px; align-items: center; }
-.spinning { animation: spin 1s linear infinite; }
-@keyframes spin { to { transform: rotate(360deg); } }
-
-.modal-wide {
-  width: 560px;
-  max-width: 90vw;
+/* 底部按钮区需要纵向堆叠（错误提示在按钮上方），.modal-footer 属于 BaseModal，这里用一层包裹元素 */
+.modal-footer-stack {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: var(--spacing-2);
+    width: 100%;
 }
 
 .form-row {
-  display: flex;
-  gap: var(--spacing-4);
+    display: flex;
+    gap: var(--spacing-4);
 }
 
 .form-group-half {
-  flex: 1;
+    flex: 1;
 }
 
 .input-with-suffix {
-  position: relative;
-  display: flex;
-  align-items: center;
+    position: relative;
+    display: flex;
+    align-items: center;
 }
 
 .input-with-suffix .form-input {
-  padding-right: 50px;
+    padding-right: 50px;
 }
 
 .input-suffix {
-  position: absolute;
-  right: 12px;
-  color: var(--gray-400);
-  font-size: var(--font-size-sm);
-  pointer-events: none;
+    position: absolute;
+    right: 12px;
+    color: var(--gray-400);
+    font-size: var(--font-size-sm);
+    pointer-events: none;
 }
 
 .advanced-toggle {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  cursor: pointer;
-  color: var(--primary-600);
-  font-size: var(--font-size-sm);
-  padding: var(--spacing-2) 0;
-  user-select: none;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    cursor: pointer;
+    color: var(--primary-600);
+    font-size: var(--font-size-sm);
+    padding: var(--spacing-2) 0;
+    user-select: none;
 }
 
 .advanced-toggle:hover {
-  color: var(--primary-700);
+    color: var(--primary-700);
 }
 
 .advanced-section {
-  padding-top: var(--spacing-2);
-  border-top: 1px solid var(--border-light);
-  margin-top: var(--spacing-2);
+    padding-top: var(--spacing-2);
+    border-top: 1px solid var(--border-light);
+    margin-top: var(--spacing-2);
 }
 </style>

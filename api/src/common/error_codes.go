@@ -103,55 +103,30 @@ const (
 	ErrMigrationInProgress   ErrCode = 111805
 
 	// Volume related errors (121xxx)
-	ErrVolumeNotFound           ErrCode = 121001
-	ErrVolumeCreationFailed     ErrCode = 121002
-	ErrVolumeUpdateFailed       ErrCode = 121003
-	ErrVolumeDeleteFailed       ErrCode = 121004
-	ErrVolumeAttachFailed       ErrCode = 121005
-	ErrVolumeDetachFailed       ErrCode = 121006
-	ErrVolumeInvalidState       ErrCode = 121007
-	ErrVolumeInvalidSize        ErrCode = 121008
-	ErrBootVolumeNotFound       ErrCode = 121009
-	ErrBootVolumeUpdateFailed   ErrCode = 121010
-	ErrBootVolumeDeleteFailed   ErrCode = 121011
-	ErrVolumeIsInUse            ErrCode = 121012
-	ErrBootVolumeCannotDetach   ErrCode = 121013
-	ErrVolumeIsBusy             ErrCode = 121014
-	ErrVolumeIsRestoring        ErrCode = 121015
-	ErrVolumeInConsistencyGroup ErrCode = 121016 // volume is in a consistency group, cannot be deleted
+	ErrVolumeNotFound         ErrCode = 121001
+	ErrVolumeCreationFailed   ErrCode = 121002
+	ErrVolumeUpdateFailed     ErrCode = 121003
+	ErrVolumeDeleteFailed     ErrCode = 121004
+	ErrVolumeAttachFailed     ErrCode = 121005
+	ErrVolumeDetachFailed     ErrCode = 121006
+	ErrVolumeInvalidState     ErrCode = 121007
+	ErrVolumeInvalidSize      ErrCode = 121008
+	ErrBootVolumeNotFound     ErrCode = 121009
+	ErrBootVolumeUpdateFailed ErrCode = 121010
+	ErrBootVolumeDeleteFailed ErrCode = 121011
+	ErrVolumeIsInUse          ErrCode = 121012
+	ErrBootVolumeCannotDetach ErrCode = 121013
+	ErrVolumeIsBusy           ErrCode = 121014
 
-	// Snapshot/Backup related errors (1251xx)
-	ErrBackupNotFound                      ErrCode = 125100
-	ErrBackupCreationFailed                ErrCode = 125101
-	ErrBackupUpdateFailed                  ErrCode = 125102
-	ErrBackupDeleteFailed                  ErrCode = 125103
-	ErrBackupInUse                         ErrCode = 125104
-	ErrCannotRestoreWhileInstanceIsRunning ErrCode = 125105
-	ErrCannotRestoreFromBackup             ErrCode = 125106
-	ErrBackupInvalidState                  ErrCode = 125107
-
-	// Consistency Group related errors (1252xx)
-	ErrCGNotFound                  ErrCode = 125200
-	ErrCGCreationFailed            ErrCode = 125201
-	ErrCGUpdateFailed              ErrCode = 125202
-	ErrCGDeleteFailed              ErrCode = 125203
-	ErrCGInvalidState              ErrCode = 125204
-	ErrCGIsBusy                    ErrCode = 125205
-	ErrCGSnapshotExists            ErrCode = 125206
-	ErrCGVolumeNotInSamePool       ErrCode = 125207
-	ErrCGVolumeIsBusy              ErrCode = 125208
-	ErrCGVolumeInvalidState        ErrCode = 125209
-	ErrCGSnapshotNotFound          ErrCode = 125210
-	ErrCGSnapshotCreationFailed    ErrCode = 125211
-	ErrCGSnapshotDeleteFailed      ErrCode = 125212
-	ErrCGSnapshotRestoreFailed     ErrCode = 125213
-	ErrCGSnapshotIsBusy            ErrCode = 125214
-	ErrCGCannotModifyWithSnapshots ErrCode = 125215
-	ErrCGInstanceNotShutoff        ErrCode = 125216 // instance must be shutoff before restoring CG snapshot
-	ErrCGNoVolumes                 ErrCode = 125217 // consistency group has no volumes
-	ErrCGVolumeAttachedNoInstance  ErrCode = 125218 // volume status is attached but has no instance ID
-	ErrCGSnapshotCannotRestore     ErrCode = 125219 // snapshot cannot be restored (invalid state)
-	ErrCGSnapshotRestoreInProgress ErrCode = 125220 // a restore operation is already in progress for this snapshot
+	// Storage pool related errors (122xxx)
+	ErrStoragePoolNotFound     ErrCode = 122001
+	ErrStoragePoolUnavailable  ErrCode = 122002 // the pool is not usable on the host (missing, unavailable, disabled)
+	ErrStorageCapacityExceeded ErrCode = 122003 // admission refused: not enough room in the pool on the host
+	ErrStoragePoolInUse        ErrCode = 122004 // the pool still holds volumes, reservations or migrations
+	ErrStorageDiskNotAllowed   ErrCode = 122005 // a selected disk may not be used (system, shared, unknown member, ...)
+	ErrStorageMediaMismatch    ErrCode = 122006 // media of the selected disks differ; confirm with allow_media_mismatch
+	ErrStoragePoolInvalidState ErrCode = 122007
+	ErrStorageConfirmMismatch  ErrCode = 122008 // the typed confirmation does not match the host or pool name
 
 	// Network related errors (131xxx)
 	// IP Address related errors (1310xx)
@@ -237,6 +212,28 @@ const (
 	ErrBackendUpdateFailed      = 131518
 	ErrBackendDeleteFailed      = 131519
 
+	// VPN gateway related errors (1320xx)
+	ErrVpnGatewayNotFound        ErrCode = 132001
+	ErrVpnGatewayCreateFailed    ErrCode = 132002
+	ErrVpnGatewayUpdateFailed    ErrCode = 132003
+	ErrVpnGatewayDeleteFailed    ErrCode = 132004
+	ErrVpnGatewayExists          ErrCode = 132005 // the VPC already has a gateway
+	ErrVpnGatewayNotReady        ErrCode = 132006 // the gateway is still being built or is in error
+	ErrVpnGatewayInUse           ErrCode = 132007 // connections or clients still exist
+	ErrVpnGatewayDisabled        ErrCode = 132008 // the gateway is disabled
+	ErrVpnConnectionNotFound     ErrCode = 132011
+	ErrVpnConnectionCreateFailed ErrCode = 132012
+	ErrVpnConnectionUpdateFailed ErrCode = 132013
+	ErrVpnConnectionDeleteFailed ErrCode = 132014
+	ErrVpnClientNotFound         ErrCode = 132021
+	ErrVpnClientCreateFailed     ErrCode = 132022
+	ErrVpnClientUpdateFailed     ErrCode = 132023
+	ErrVpnClientDeleteFailed     ErrCode = 132024
+	ErrVpnClientPoolExhausted    ErrCode = 132025
+	ErrVpnSecretUnavailable      ErrCode = 132031 // VPN_SECRET_KEY missing or cannot decrypt stored credentials
+	ErrVpnCidrConflict           ErrCode = 132032 // overlaps a VPC subnet, the VRRP subnet, the router links or another prefix
+	ErrRouterHasVpnGateway       ErrCode = 132033
+
 	// Security related errors (141xxx)
 	ErrSecurityGroupNotFound       ErrCode = 141001
 	ErrSecurityGroupCreateFailed   ErrCode = 141002
@@ -253,18 +250,14 @@ const (
 	ErrSecurityRuleUpdateFailed    ErrCode = 141013
 
 	// Image related errors (151xxx)
-	ErrImageNotFound            ErrCode = 151000
-	ErrImageInUse               ErrCode = 151001
-	ErrImageNoQA                ErrCode = 151002
-	ErrImageCreateFailed        ErrCode = 151003
-	ErrImageUpdateFailed        ErrCode = 151004
-	ErrImageDeleteFailed        ErrCode = 151005
-	ErrImageNotAvailable        ErrCode = 151006
-	ErrImageStorageCreateFailed ErrCode = 151007
-	ErrImageStorageDeleteFailed ErrCode = 151008
-	ErrImageStorageUpdateFailed ErrCode = 151009
-	ErrImageStorageNotFound     ErrCode = 151010
-	ErrRescueImageNotFound      ErrCode = 151011
+	ErrImageNotFound       ErrCode = 151000
+	ErrImageInUse          ErrCode = 151001
+	ErrImageNoQA           ErrCode = 151002
+	ErrImageCreateFailed   ErrCode = 151003
+	ErrImageUpdateFailed   ErrCode = 151004
+	ErrImageDeleteFailed   ErrCode = 151005
+	ErrImageNotAvailable   ErrCode = 151006
+	ErrRescueImageNotFound ErrCode = 151011
 
 	// ssh key related errors (161xxx)
 	ErrSSHKeyNotFound       ErrCode = 161001
@@ -305,8 +298,18 @@ func (c ErrCode) ToHTTPStatus() int {
 		return 400
 	case c == ErrCannotRemoveOwner || c == ErrLastSystemAdmin || c == ErrCannotSelfDemote || c == ErrMissingOrgContext || c == ErrSlugImmutable || c == ErrSlugInvalid:
 		return 400
-	case c == ErrResourceNotFound || (c >= 100200 && c <= 100207 && c%2 == 0) || c == ErrZoneNotFound || c == ErrHypervisorNotFound:
+	case c == ErrResourceNotFound || (c >= 100200 && c <= 100207 && c%2 == 0) || c == ErrZoneNotFound || c == ErrHypervisorNotFound || c == ErrStoragePoolNotFound:
 		return 404
+	case c == ErrVpnGatewayNotFound || c == ErrVpnConnectionNotFound || c == ErrVpnClientNotFound:
+		return 404
+	case c == ErrVpnGatewayExists || c == ErrVpnGatewayInUse || c == ErrVpnClientPoolExhausted || c == ErrRouterHasVpnGateway:
+		return 409
+	case c == ErrVpnCidrConflict || c == ErrVpnGatewayNotReady || c == ErrVpnGatewayDisabled:
+		return 400
+	case c == ErrVpnSecretUnavailable:
+		return 503
+	case c == ErrStorageCapacityExceeded || c == ErrStoragePoolInUse:
+		return 409
 	case c == ErrInsufficientResource || c == ErrInsufficientAddress || c == ErrEmailConflict || c == ErrOrgHasResources || c == ErrOrgHasMembers || c == ErrSlugConflict || c == ErrSlugReserved:
 		return 409
 	default:

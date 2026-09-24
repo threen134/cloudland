@@ -2,22 +2,23 @@
 
 cd $(dirname $0)
 source ../cloudrc
+source ./storage_lib.sh
 
-[ $# -lt 4 ] && die "$0 <vm_ID> <router> <boot_volume> <image>"
+[ $# -lt 3 ] && die "$0 <vm_ID> <router> <boot_pool_uuid|builtin|-> [boot_disk_relpath]"
 
 ID=$1
 vm_ID=inst-$ID
 router=$2
-boot_volume=$3
-image=$4
+boot_pool=$3
+boot_relpath=$4
 vm_xml=$(virsh dumpxml $vm_ID)
 
+pending_start_remove $ID
 # Call generate_vm_instance_map.sh to remove mapping before VM deletion
 ./generate_vm_instance_map.sh remove $vm_ID
 
-virsh undefine --nvram $vm_ID
-cmd="virsh destroy $vm_ID"
-result=$(eval "$cmd")
+virsh undefine --nvram $vm_ID >/dev/null 2>&1
+virsh destroy $vm_ID >/dev/null 2>&1
 
 # Clean up VM adjust custom metrics
 ./cleanup_vm_custom_metrics.sh $ID
@@ -43,42 +44,23 @@ for (( i=1; i <= $count; i++ )); do
 done
 ./clear_local_router.sh $router
 
-if [ -f ${image_dir}/${vm_ID}_VARS.fd ]; then
-    rm -f ${image_dir}/${vm_ID}_VARS.fd
-fi
+rm -f ${image_dir}/${vm_ID}_VARS.fd
 rm -f ${cache_dir}/meta/${vm_ID}.iso
 rm -rf $xml_dir/$vm_ID
 
 ./end_rescue.sh $ID
-if [ -z "$wds_address" ]; then	
-    rm -f ${image_dir}/${vm_ID}.*
-else
-    get_wds_token
-    vhosts=$(ls /var/run/wds/instance-${ID}-*)
-    for vhost in $vhosts; do
-	    vhost_name=$(basename $vhost)
-        if [ -S "/var/run/wds/$vhost_name" ]; then
-           vhost_id=$(wds_curl GET "api/v2/sync/block/vhost?name=$vhost_name" | jq -r '.vhosts[0].id')
-           uss_id=$(get_uss_gateway)
-           # get volume ID from vhost name
-           vol_ID=$(echo $vhost_name | awk -F'-' '{print $4}')
-           async_exec ./async_job/delete_wds_vhost.sh  $vol_ID $vhost_id $uss_id
-        fi
-    done
-    if [ -n "$boot_volume" ]; then
-        vhost_paths=$(wds_curl GET "api/v2/sync/block/volumes/$boot_volume/bind_status" | jq -r .path)
-  	nvpaths=$(jq length <<< $vhost_paths)
-	j=0
-	while [ $j -lt $nvpaths ]; do
-	    vhost_path=$(jq -r .[$j] <<<$vhost_paths)
-            wds_curl DELETE "api/v2/failure_domain/black_list" "{\"path\": \"$vhost_path\"}"
-            let j=$j+1
-	done
-        wds_curl DELETE "api/v2/sync/block/volumes/$boot_volume?force=false"
+# The boot disk and the NVRAM of a pool other than the builtin one are deleted only after the pool is checked:
+# an unmounted pool must not be written, and a lost pool (no pool passed) keeps its files
+if [ "$boot_pool" != "-" ] && [ -n "$boot_relpath" ]; then
+    root=$(pool_root "$boot_pool")
+    if [ -n "$root" ] && pool_enter "$boot_pool" "$NODE_ID" "$root/$boot_relpath"; then
+        rm -f "$root/$boot_relpath"
+        [ "$boot_pool" != "builtin" ] && rm -f "$root/nvram/${vm_ID}_VARS.fd"
+    else
+        log_debug $ID "boot disk $boot_relpath of pool $boot_pool is kept: $guard_error"
     fi
-    # async cleanup of image snapshots
-    if [ -n "$image" ]; then
-        async_exec ./async_job/clear_image_snaps.sh $ID $image
-    fi
+    exec 8>&-
 fi
+# Leftovers of the builtin pool from before the pools (meta, rescue copies)
+rm -f ${image_dir}/${vm_ID}.*
 echo "|:-COMMAND-:| $(basename $0) '$ID'"

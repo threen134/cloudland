@@ -1,5 +1,9 @@
 import client from './client'
+import type { ListParams } from './listParams'
 
+// 以下类型对应控制面网关 cpgateway/src/apis/schemas.go 与 region_mgmt.go 的实际响应
+
+// schemas.go 的 regionPublicOut（GET /regions，公开视图，不含 internal_endpoint / secret）
 export interface RegionPublic {
     uuid: string
     name: string
@@ -7,61 +11,85 @@ export interface RegionPublic {
     is_available: boolean
     maintenance_mode: boolean
     description: string | null
+    last_check_at: string | null
+    status_message: string | null
 }
 
+// schemas.go 的 regionAdminOut
 export interface RegionAdmin extends RegionPublic {
     internal_endpoint: string
+    fail_count: number
     created_at: string
     updated_at: string
 }
 
+// schemas.go 的 regionCreatedOut，internal_secret 只在创建时返回一次
 export interface RegionCreated extends RegionAdmin {
     internal_secret: string
 }
 
+// region_mgmt.go CreateRegion 的绑定结构
 export interface CreateRegionPayload {
+    // 必须匹配 ^[a-z0-9][a-z0-9-]*[a-z0-9]$
     name: string
     display_name?: string
+    // 必须以 http:// 或 https:// 开头
     internal_endpoint: string
+    // 省略或传 "auto-generate" 表示由后端生成
     internal_secret?: string
     description?: string
 }
 
+// region_mgmt.go UpdateRegion 实际解析的字段（按 raw JSON 逐个取值，显式 null 表示清空）
 export interface UpdateRegionPayload {
-    display_name?: string
-    internal_endpoint?: string
+    display_name?: string | null
+    internal_endpoint?: string | null
+    description?: string | null
+    is_available?: boolean
     maintenance_mode?: boolean
-    description?: string
 }
 
+// region_mgmt.go RotateRegionSecret 返回的 gin.H
 export interface RegionSecretRotated {
     region_uuid: string
     name: string
     new_secret: string
 }
 
+export interface RegionListResponse {
+    total: number
+    regions: RegionPublic[]
+}
+
 export const regionsApi = {
-    fetchRegions() {
-        return client.get<RegionPublic[]>('/regions')
+    /** GET /regions —— 服务端分页 + 名称/描述搜索，返回 { total, regions } */
+    async fetchRegions(params?: ListParams): Promise<RegionListResponse> {
+        const response = await client.get<RegionListResponse>('/regions', { params })
+        return response.data
     },
 
-    getRegion(uuid: string) {
-        return client.get<RegionAdmin>(`/regions/${uuid}`)
+    async getRegion(uuid: string): Promise<RegionAdmin> {
+        const response = await client.get<RegionAdmin>(`/regions/${uuid}`)
+        return response.data
     },
 
-    createRegion(payload: CreateRegionPayload) {
-        return client.post<RegionCreated>('/regions', payload)
+    async createRegion(payload: CreateRegionPayload): Promise<RegionCreated> {
+        const response = await client.post<RegionCreated>('/regions', payload)
+        return response.data
     },
 
-    updateRegion(uuid: string, payload: UpdateRegionPayload) {
-        return client.patch<RegionAdmin>(`/regions/${uuid}`, payload)
+    async updateRegion(uuid: string, payload: UpdateRegionPayload): Promise<RegionAdmin> {
+        const response = await client.patch<RegionAdmin>(`/regions/${uuid}`, payload)
+        return response.data
     },
 
-    deleteRegion(uuid: string) {
-        return client.delete(`/regions/${uuid}`)
+    // 后端返回 204 No Content
+    async deleteRegion(uuid: string): Promise<void> {
+        await client.delete(`/regions/${uuid}`)
     },
 
-    rotateSecret(uuid: string) {
-        return client.post<RegionSecretRotated>(`/regions/${uuid}/rotate-secret`)
-    }
+    async rotateSecret(uuid: string): Promise<RegionSecretRotated> {
+        const response = await client.post<RegionSecretRotated>(`/regions/${uuid}/rotate-secret`)
+        return response.data
+    },
 }

@@ -7,12 +7,13 @@ import (
 	"fmt"
 	"time"
 
+	"api/src/dbs"
 	"api/src/model"
 
 	. "api/src/common"
 
 	"github.com/google/uuid"
-	"github.com/jinzhu/gorm"
+	"gorm.io/gorm"
 )
 
 // 通知渠道校验错误（sentinel errors，避免字符串比较）
@@ -31,7 +32,9 @@ func (n *NotificationAdmin) UpsertChannel(ctx context.Context, ch *model.Notific
 	ctx, db := GetContextDB(ctx)
 
 	var existing model.NotificationChannel
-	err := db.Where("uuid = ?", ch.UUID).First(&existing).Error
+	// uuid 有唯一索引（告警绑定外键依赖），查找需包含软删除记录，重新下发时恢复原记录而非新建；
+	// 优先取未删除、最新的一行，避免恢复旧的软删除行
+	err := db.Unscoped().Where("uuid = ?", ch.UUID).Order("deleted_at IS NOT NULL, id DESC").Take(&existing).Error
 	if err == gorm.ErrRecordNotFound {
 		return db.Create(ch).Error
 	}
@@ -39,12 +42,13 @@ func (n *NotificationAdmin) UpsertChannel(ctx context.Context, ch *model.Notific
 		return err
 	}
 
-	return db.Model(&existing).Updates(map[string]interface{}{
-		"org_id":  ch.OrgID,
-		"name":    ch.Name,
-		"type":    ch.Type,
-		"config":  ch.Config,
-		"enabled": ch.Enabled,
+	return db.Unscoped().Model(&existing).Updates(map[string]interface{}{
+		"org_id":     ch.OrgID,
+		"name":       ch.Name,
+		"type":       ch.Type,
+		"config":     ch.Config,
+		"enabled":    ch.Enabled,
+		"deleted_at": nil,
 	}).Error
 }
 
@@ -73,7 +77,7 @@ func (n *NotificationAdmin) BulkSyncChannels(ctx context.Context, channels []mod
 			syncedUUIDs = append(syncedUUIDs, ch.UUID)
 
 			var existing model.NotificationChannel
-			err := tx.Where("uuid = ?", ch.UUID).First(&existing).Error
+			err := tx.Unscoped().Where("uuid = ?", ch.UUID).Order("deleted_at IS NOT NULL, id DESC").Take(&existing).Error
 			if err == gorm.ErrRecordNotFound {
 				if err := tx.Create(&ch).Error; err != nil {
 					return err
@@ -81,12 +85,13 @@ func (n *NotificationAdmin) BulkSyncChannels(ctx context.Context, channels []mod
 			} else if err != nil {
 				return err
 			} else {
-				if err := tx.Model(&existing).Updates(map[string]interface{}{
-					"org_id":  ch.OrgID,
-					"name":    ch.Name,
-					"type":    ch.Type,
-					"config":  ch.Config,
-					"enabled": ch.Enabled,
+				if err := tx.Unscoped().Model(&existing).Updates(map[string]interface{}{
+					"org_id":     ch.OrgID,
+					"name":       ch.Name,
+					"type":       ch.Type,
+					"config":     ch.Config,
+					"enabled":    ch.Enabled,
+					"deleted_at": nil,
 				}).Error; err != nil {
 					return err
 				}
@@ -297,7 +302,7 @@ func (n *NotificationAdmin) UpsertAlarmEvent(ctx context.Context, fingerprint st
 }
 
 // ListAlarmEvents 分页查询告警事件（支持按 owner 过滤，实现租户隔离）
-func (n *NotificationAdmin) ListAlarmEvents(ctx context.Context, owner string, status string, page, pageSize int) (int64, []*model.AlarmEvent, error) {
+func (n *NotificationAdmin) ListAlarmEvents(ctx context.Context, owner string, status string, search string, page, pageSize int) (int64, []*model.AlarmEvent, error) {
 	ctx, db := GetContextDB(ctx)
 
 	query := db.Model(&model.AlarmEvent{})
@@ -307,6 +312,9 @@ func (n *NotificationAdmin) ListAlarmEvents(ctx context.Context, owner string, s
 	if status != "" {
 		query = query.Where("status = ?", status)
 	}
+	// 按告警名与虚拟机名搜索。此前后端不支持搜索，前端只能在当前页的 20 条里过滤，
+	// 翻到下一页搜的又是另外 20 条
+	query = query.Scopes(dbs.Contains(search, "alert_name", "vm_name"))
 
 	var total int64
 	if err := query.Count(&total).Error; err != nil {
@@ -387,4 +395,3 @@ func (n *NotificationAdmin) CleanupExpiredAlarmEvents(ctx context.Context, reten
 	})
 	return deleted, err
 }
-

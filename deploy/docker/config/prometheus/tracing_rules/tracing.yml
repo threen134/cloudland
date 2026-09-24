@@ -1,0 +1,60 @@
+# 链路追踪告警：基于 OTel Collector 在尾部采样前计算的 spanmetrics / servicegraph 指标
+# 属于平台运维告警（source=tracing），Alertmanager 中单独路由，不进入租户告警事件
+# 指标只包含被头部采样保留的 span：调低 TRACING_SAMPLE_RATIO 时速率会按比例偏低，但错误率与延迟分位数不受影响
+groups:
+  - name: tracing
+    rules:
+      - alert: TracingServiceHighErrorRate
+        expr: |
+          (
+            sum by (service_name) (rate(traces_span_metrics_calls_total{span_kind="SPAN_KIND_SERVER", status_code="STATUS_CODE_ERROR"}[5m]))
+              /
+            sum by (service_name) (rate(traces_span_metrics_calls_total{span_kind="SPAN_KIND_SERVER"}[5m]))
+          ) > 0.05
+          and on (service_name)
+          sum by (service_name) (rate(traces_span_metrics_calls_total{span_kind="SPAN_KIND_SERVER"}[5m])) > 0.05
+        for: 5m
+        labels:
+          severity: critical
+          source: tracing
+        annotations:
+          summary: "服务 {{ $labels.service_name }} 请求错误率 {{ $value | humanizePercentage }}（5 分钟）"
+          description: "在 Grafana「CloudLand 链路追踪」看板的出错接口表中定位接口，再到 Tempo 按 status=error 查询链路"
+
+      - alert: TracingServiceHighLatency
+        expr: |
+          histogram_quantile(0.95,
+            sum by (service_name, le) (rate(traces_span_metrics_duration_milliseconds_bucket{span_kind="SPAN_KIND_SERVER"}[5m]))
+          ) > 2000
+        for: 10m
+        labels:
+          severity: warning
+          source: tracing
+        annotations:
+          summary: "服务 {{ $labels.service_name }} P95 延迟 {{ $value | humanize }}ms（超过 2s）"
+          description: "慢链路会被尾部采样全部保留，可在 Tempo 中按 duration>2s 查询"
+
+      - alert: TracingDependencyHighFailureRate
+        expr: |
+          (
+            sum by (client, server) (rate(traces_service_graph_request_failed_total[5m]))
+              /
+            sum by (client, server) (rate(traces_service_graph_request_total[5m]))
+          ) > 0.05
+          and on (client, server)
+          sum by (client, server) (rate(traces_service_graph_request_total[5m])) > 0.05
+        for: 5m
+        labels:
+          severity: warning
+          source: tracing
+        annotations:
+          summary: "{{ $labels.client }} 调用 {{ $labels.server }} 失败率 {{ $value | humanizePercentage }}（5 分钟）"
+
+      - alert: TracingCollectorDown
+        expr: up{job="otel-collector"} == 0
+        for: 5m
+        labels:
+          severity: critical
+          source: tracing
+        annotations:
+          summary: "OTel Collector 指标端点不可达，链路数据与追踪指标可能中断"

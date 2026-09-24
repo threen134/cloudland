@@ -1,4 +1,8 @@
 network_device: eth0
+# clapi、cland-go、cloudlet-go 共用的 gRPC 令牌，必填；build.sh 在为空时用 openssl rand -hex 32 生成并写入 netconf.yml
+grpc_auth_token: ""
+# 计算节点 cloudlet-go 连接的 cland-go 地址；默认取 cland 组第一台主机，HA 部署改为管理 VIP，如 "10.0.0.100:5006"
+#cland_endpoint: "10.0.0.100:5006"
 vnc_device: eth0
 admin_passwd: passw0rd
 db_passwd: passw0rd

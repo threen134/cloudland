@@ -1,170 +1,160 @@
 import client from './client'
 
-// Types based on actual API response
-export interface Volume {
+/**
+ * Volumes. Mirrors api/src/apis/volume.go (VolumeResponse / VolumeListResponse);
+ * the embedded ResourceReference / BaseReference are in api/src/common/http.go.
+ */
+
+/** api/src/common/http.go BaseReference */
+export interface BaseReference {
     id: string
     name: string
-    status: string
-    size: number  // in GB
-    format?: string
-    booting?: boolean
-    instance?: {
-        id: string
-        name: string
-    }
-    owner?: string
-    target?: string
-    path?: string
-    href?: string
-    created_at?: string
-    updated_at?: string
-    iops_limit?: number
-    iops_burst?: number
-    bps_limit?: number
-    bps_burst?: number
 }
 
+/** common/http.go ResourceReference: every field is omitempty */
+export interface ResourceRef {
+    id?: string
+    name?: string
+}
+
+/** model.VolumeStatus (api/src/model/volume.go) */
+export type VolumeStatus =
+    | 'resizing'
+    | 'available'
+    | 'attached'
+    | 'attaching'
+    | 'detaching'
+    | 'error'
+    | 'pending'
+    // The host is deleting the file; the volume goes away when it reports back (§5.5 of the storage plan)
+    | 'deleting'
+    // Deleting timed out: only another delete is allowed
+    | 'delete_failed'
+    // Its storage pool was declared lost: delete the record or detach it by force
+    | 'lost'
+    // Its host was deleted with the pools kept: waits for the pool to be adopted
+    | 'orphaned'
+
+export interface Volume {
+    // --- ResourceReference (omitempty, filled by getVolumeResponse) ---
+    id: string
+    name: string
+    owner?: string
+    owner_uuid?: string
+    created_at: string
+    updated_at: string
+    // --- VolumeResponse ---
+    /** Path of the file relative to the root of its pool */
+    path: string
+    /** GB */
+    size: number
+    format: string
+    status: VolumeStatus
+    /** Why the last operation failed, or why the volume is lost */
+    reason: string
+    /** Device name in the guest, e.g. vdb */
+    target: string
+    href: string
+    booting: boolean
+    /** null when not attached */
+    instance: BaseReference | null
+    storage_pool: ResourceRef | null
+    /** Host holding the file (system admins only); missing until the first attach */
+    hypervisor?: ResourceRef
+}
+
+/** POST /volumes body (apis/volume.go VolumePayload) */
 export interface VolumePayload {
     name: string
+    /** GB */
     size: number
-    format?: string
-    bootable?: boolean
-    zone?: string
+    count?: number
+    /** Default pool when left out */
+    storage_pool?: { id: string }
 }
 
+/**
+ * PATCH /volumes/:id body (apis/volume.go VolumePatchPayload). Capacity goes through `resize`, not here.
+ * `instance: null` detaches; leaving `instance` out keeps the attachment (e.g. a rename).
+ */
 export interface VolumePatchPayload {
     name?: string
-    action?: 'enable' | 'disable'
-    size?: number  // for resize
-    instance?: { id: string }  // for attach/detach
+    instance?: { id: string } | null
 }
+
+/** Statuses during which the backend refuses another operation on the volume (model.Volume.IsBusy) */
+export const BUSY_VOLUME_STATUSES: VolumeStatus[] = ['pending', 'resizing', 'attaching', 'detaching', 'deleting']
 
 export interface VolumeListResponse {
+    offset: number
+    total: number
+    /** Rows of this page (the backend fills len(volumes), not the requested limit) */
+    limit: number
     volumes: Volume[]
-    total: number
-    limit: number
-    offset: number
 }
 
-export interface VolumeBackup {
-    id: string
-    name: string
-    status: string
-    volume?: {
-        id: string
-        name: string
-    }
-    size?: number
-    created_at?: string
-    owner?: string
-}
-
-export interface BackupListResponse {
-    backups: VolumeBackup[]
-    total: number
-    limit: number
-    offset: number
-}
-
-// Volume API functions
 export const volumesApi = {
-    // List volumes
     list: async (params?: {
         offset?: number
         limit?: number
+        order?: string
         name?: string
         status?: string
+        // The backend defaults to data (data volumes only); pass all to include boot volumes
+        type?: 'data' | 'boot' | 'all'
     }): Promise<VolumeListResponse> => {
-        const response = await client.get('/volumes', { params })
+        const response = await client.get<VolumeListResponse>('/volumes', { params })
         return response.data
     },
 
-    // Get single volume
     get: async (id: string): Promise<Volume> => {
-        const response = await client.get(`/volumes/${id}`)
+        const response = await client.get<Volume>(`/volumes/${id}`)
         return response.data
     },
 
-    // Create volume
     create: async (payload: VolumePayload): Promise<Volume> => {
-        const response = await client.post('/volumes', payload)
+        const response = await client.post<Volume>('/volumes', payload)
         return response.data
     },
 
-    // Update volume
     patch: async (id: string, payload: VolumePatchPayload): Promise<Volume> => {
-        const response = await client.patch(`/volumes/${id}`, payload)
+        const response = await client.patch<Volume>(`/volumes/${id}`, payload)
         return response.data
     },
 
-    // Delete volume
-    delete: async (id: string): Promise<void> => {
-        await client.delete(`/volumes/${id}`)
+    /**
+     * 202: the host deletes the file and the volume stays in `deleting` until it reports back;
+     * 204: the record is gone (a volume not created yet, or a lost one)
+     */
+    delete: async (id: string): Promise<{ deferred: boolean }> => {
+        const response = await client.delete(`/volumes/${id}`)
+        return { deferred: response.status === 202 }
     },
 
-    // Attach volume to instance
     attach: async (id: string, instanceId: string): Promise<Volume> => {
-        const response = await client.patch(`/volumes/${id}`, {
-            instance: { id: instanceId }
+        const response = await client.patch<Volume>(`/volumes/${id}`, {
+            instance: { id: instanceId },
         })
         return response.data
     },
 
-    // Detach volume from instance
     detach: async (id: string): Promise<Volume> => {
-        const response = await client.patch(`/volumes/${id}`, {
-            instance: null
+        const response = await client.patch<Volume>(`/volumes/${id}`, {
+            instance: null,
         })
         return response.data
     },
 
-    // Resize volume
-    resize: async (id: string, newSize: number): Promise<Volume> => {
-        const response = await client.patch(`/volumes/${id}`, {
-            size: newSize
-        })
-        return response.data
-    }
-}
-
-// Backup API functions
-export const backupsApi = {
-    // List backups
-    list: async (params?: {
-        offset?: number
-        limit?: number
-    }): Promise<BackupListResponse> => {
-        const response = await client.get('/backups', { params })
-        return response.data
+    // Grow only. PATCH ignores `size`; the resize endpoint is the one the gateway meters against the disk quota.
+    // The response body is empty: re-fetch the volume afterwards.
+    resize: async (id: string, newSize: number): Promise<void> => {
+        await client.post(`/volumes/${id}/resize`, { size: newSize })
     },
 
-    // Get single backup
-    get: async (id: string): Promise<VolumeBackup> => {
-        const response = await client.get(`/backups/${id}`)
-        return response.data
+    // A volume of a lost pool: drop it from the definition of its instance without touching the file
+    forceDetach: async (id: string): Promise<void> => {
+        await client.post(`/volumes/${id}/force_detach`)
     },
-
-    // Create backup from volume
-    create: async (volumeId: string, name: string): Promise<VolumeBackup> => {
-        const response = await client.post('/backups', {
-            name,
-            volume: { id: volumeId }
-        })
-        return response.data
-    },
-
-    // Delete backup
-    delete: async (id: string): Promise<void> => {
-        await client.delete(`/backups/${id}`)
-    },
-
-    // Restore backup to new volume
-    restore: async (id: string, volumeName: string): Promise<Volume> => {
-        const response = await client.post(`/backups/${id}/restore`, {
-            name: volumeName
-        })
-        return response.data
-    }
 }
 
 export default volumesApi

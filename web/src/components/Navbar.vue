@@ -1,16 +1,14 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref } from 'vue'
 import { RouterLink, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
-import { Cloud, Menu, X, ChevronDown, Phone, Mail, Globe } from 'lucide-vue-next'
+import { Cloud, Menu, X, ChevronDown, Phone, Mail, Languages } from 'lucide-vue-next'
 import { useAuthStore } from '../stores/auth'
-import { useTenantStore } from '../stores/tenant'
-import { setLanguage, getCurrentLanguage } from '../locales'
+import { setLanguage, getCurrentLanguage, SUPPORTED_LANGUAGES, LANGUAGE_LABEL_KEYS, type Language } from '../locales'
 
-const { t, locale } = useI18n()
+const { t } = useI18n()
 const router = useRouter()
 const auth = useAuthStore()
-const tenant = useTenantStore()
 
 const docsUrl = '/docs/'
 
@@ -23,16 +21,12 @@ const closeMenu = () => {
     activeDropdown.value = null
 }
 
-const toggleDropdown = (name: string) => {
-    activeDropdown.value = activeDropdown.value === name ? null : name
-}
-
 const navigateTo = (path: string) => {
     router.push(path)
     closeMenu()
 }
 
-const switchLanguage = (lang: 'en' | 'zh') => {
+const switchLanguage = (lang: Language) => {
     setLanguage(lang)
     currentLang.value = lang
     activeDropdown.value = null
@@ -54,113 +48,137 @@ const solutionLinks = [
 </script>
 
 <template>
-  <header class="header">
-    <!-- Top bar -->
-    <div class="top-bar">
-      <div class="container">
-        <div class="top-bar-content">
-          <div class="contact-info">
-            <a href="mailto:support@cloudland.com"><Mail :size="14" /> support@cloudland.com</a>
-            <a href="tel:+1-800-000-0000"><Phone :size="14" /> +1-800-CLOUD</a>
-          </div>
-          <div class="top-links">
-            <a :href="docsUrl" target="_blank" rel="noopener">{{ t('nav.documentation') }}</a>
-            <RouterLink to="/support">{{ t('nav.support') }}</RouterLink>
-          </div>
+    <header class="header">
+        <!-- Top bar -->
+        <div class="top-bar">
+            <div class="container">
+                <div class="top-bar-content">
+                    <div class="contact-info">
+                        <a href="mailto:support@cloudland.com"><Mail :size="14" /> support@cloudland.com</a>
+                        <a href="tel:+1-800-000-0000"><Phone :size="14" /> +1-800-CLOUD</a>
+                    </div>
+                    <div class="top-links">
+                        <a :href="docsUrl" target="_blank" rel="noopener">{{ t('nav.documentation') }}</a>
+                        <RouterLink to="/support">{{ t('nav.support') }}</RouterLink>
+                    </div>
+                </div>
+            </div>
         </div>
-      </div>
-    </div>
 
-    <!-- Main navbar -->
-    <nav class="navbar">
-      <div class="container">
-        <div class="navbar-inner">
-          <!-- Logo -->
-          <RouterLink to="/" class="logo">
-            <Cloud :size="28" class="logo-icon" />
-            <span class="logo-text">CloudLand</span>
-          </RouterLink>
+        <!-- Main navbar -->
+        <nav class="navbar">
+            <div class="container">
+                <div class="navbar-inner">
+                    <!-- Logo -->
+                    <RouterLink to="/" class="logo">
+                        <Cloud :size="28" class="logo-icon" />
+                        <span class="logo-text">CloudLand</span>
+                    </RouterLink>
 
-          <!-- Mobile toggle -->
-          <button class="menu-toggle" @click="isMenuOpen = !isMenuOpen">
-            <component :is="isMenuOpen ? X : Menu" :size="24" />
-          </button>
+                    <!-- Mobile toggle -->
+                    <button class="menu-toggle" @click="isMenuOpen = !isMenuOpen">
+                        <component :is="isMenuOpen ? X : Menu" :size="24" />
+                    </button>
 
-          <!-- Desktop Navigation -->
-          <nav class="nav-menu" :class="{ open: isMenuOpen }">
-            <!-- Products Dropdown -->
-            <div class="nav-item dropdown" @mouseenter="activeDropdown = 'products'" @mouseleave="activeDropdown = null">
-              <button class="nav-link" :class="{ active: activeDropdown === 'products' }">
-                {{ t('nav.products') }} <ChevronDown :size="14" />
-              </button>
-              <div class="dropdown-menu" v-show="activeDropdown === 'products'">
-                <RouterLink 
-                  v-for="link in productLinks" 
-                  :key="link.nameKey" 
-                  :to="link.path" 
-                  class="dropdown-item"
-                  @click="closeMenu"
-                >
-                  <span class="dropdown-item-title">{{ t(link.nameKey) }}</span>
-                  <span class="dropdown-item-desc">{{ t(link.descKey) }}</span>
-                </RouterLink>
-              </div>
+                    <!-- Desktop Navigation -->
+                    <nav class="nav-menu" :class="{ open: isMenuOpen }">
+                        <!-- Products Dropdown -->
+                        <div
+                            class="nav-item dropdown"
+                            @mouseenter="activeDropdown = 'products'"
+                            @mouseleave="activeDropdown = null"
+                        >
+                            <button class="nav-link" :class="{ active: activeDropdown === 'products' }">
+                                {{ t('nav.products') }} <ChevronDown :size="14" />
+                            </button>
+                            <div class="dropdown-menu" v-show="activeDropdown === 'products'">
+                                <RouterLink
+                                    v-for="link in productLinks"
+                                    :key="link.nameKey"
+                                    :to="link.path"
+                                    class="dropdown-item"
+                                    @click="closeMenu"
+                                >
+                                    <span class="dropdown-item-title">{{ t(link.nameKey) }}</span>
+                                    <span class="dropdown-item-desc">{{ t(link.descKey) }}</span>
+                                </RouterLink>
+                            </div>
+                        </div>
+
+                        <!-- Solutions Dropdown -->
+                        <div
+                            class="nav-item dropdown"
+                            @mouseenter="activeDropdown = 'solutions'"
+                            @mouseleave="activeDropdown = null"
+                        >
+                            <button class="nav-link" :class="{ active: activeDropdown === 'solutions' }">
+                                {{ t('nav.solutions') }} <ChevronDown :size="14" />
+                            </button>
+                            <div class="dropdown-menu dropdown-compact" v-show="activeDropdown === 'solutions'">
+                                <RouterLink
+                                    v-for="link in solutionLinks"
+                                    :key="link.nameKey"
+                                    :to="link.path"
+                                    class="dropdown-item"
+                                    @click="closeMenu"
+                                >
+                                    {{ t(link.nameKey) }}
+                                </RouterLink>
+                            </div>
+                        </div>
+
+                        <!-- Regular Links -->
+                        <RouterLink to="/marketplace" class="nav-link" @click="closeMenu">{{
+                            t('nav.pricing')
+                        }}</RouterLink>
+                        <RouterLink to="/about" class="nav-link" @click="closeMenu">{{ t('nav.about') }}</RouterLink>
+                    </nav>
+
+                    <!-- Auth & Language -->
+                    <div class="nav-actions">
+                        <!-- Language Switcher -->
+                        <div
+                            class="nav-item dropdown"
+                            @mouseenter="activeDropdown = 'lang'"
+                            @mouseleave="activeDropdown = null"
+                        >
+                            <button class="nav-link lang-btn">
+                                <Languages :size="16" />
+                                {{ t(LANGUAGE_LABEL_KEYS[currentLang]) }}
+                                <ChevronDown :size="14" />
+                            </button>
+                            <div
+                                class="dropdown-menu dropdown-compact dropdown-right"
+                                v-show="activeDropdown === 'lang'"
+                            >
+                                <button
+                                    v-for="lang in SUPPORTED_LANGUAGES"
+                                    :key="lang"
+                                    class="dropdown-item"
+                                    :class="{ active: currentLang === lang }"
+                                    @click="switchLanguage(lang)"
+                                >
+                                    {{ t(LANGUAGE_LABEL_KEYS[lang]) }}
+                                </button>
+                            </div>
+                        </div>
+
+                        <template v-if="!auth.user">
+                            <RouterLink to="/login" class="nav-link">{{ t('nav.login') }}</RouterLink>
+                            <button class="btn btn-primary" @click="navigateTo('/login')">
+                                {{ t('nav.dashboard') }}
+                            </button>
+                        </template>
+                        <template v-else>
+                            <button class="btn btn-primary" @click="navigateTo('/dashboard')">
+                                {{ t('nav.dashboard') }}
+                            </button>
+                        </template>
+                    </div>
+                </div>
             </div>
-
-            <!-- Solutions Dropdown -->
-            <div class="nav-item dropdown" @mouseenter="activeDropdown = 'solutions'" @mouseleave="activeDropdown = null">
-              <button class="nav-link" :class="{ active: activeDropdown === 'solutions' }">
-                {{ t('nav.solutions') }} <ChevronDown :size="14" />
-              </button>
-              <div class="dropdown-menu dropdown-compact" v-show="activeDropdown === 'solutions'">
-                <RouterLink 
-                  v-for="link in solutionLinks" 
-                  :key="link.nameKey" 
-                  :to="link.path" 
-                  class="dropdown-item"
-                  @click="closeMenu"
-                >
-                  {{ t(link.nameKey) }}
-                </RouterLink>
-              </div>
-            </div>
-
-            <!-- Regular Links -->
-            <RouterLink to="/marketplace" class="nav-link" @click="closeMenu">{{ t('nav.pricing') }}</RouterLink>
-            <RouterLink to="/about" class="nav-link" @click="closeMenu">{{ t('nav.about') }}</RouterLink>
-          </nav>
-
-          <!-- Auth & Language -->
-          <div class="nav-actions">
-            <!-- Language Switcher -->
-            <div class="nav-item dropdown" @mouseenter="activeDropdown = 'lang'" @mouseleave="activeDropdown = null">
-              <button class="nav-link lang-btn">
-                <Globe :size="16" />
-                {{ locale === 'zh' ? t('languages.zh') : t('languages.en') }}
-                <ChevronDown :size="14" />
-              </button>
-              <div class="dropdown-menu dropdown-compact dropdown-right" v-show="activeDropdown === 'lang'">
-                <button class="dropdown-item" :class="{ active: currentLang === 'en' }" @click="switchLanguage('en')">
-                  {{ t('languages.en') }}
-                </button>
-                <button class="dropdown-item" :class="{ active: currentLang === 'zh' }" @click="switchLanguage('zh')">
-                  {{ t('languages.zh_hans') }}
-                </button>
-              </div>
-            </div>
-
-            <template v-if="!auth.user">
-              <RouterLink to="/login" class="nav-link">{{ t('nav.login') }}</RouterLink>
-              <button class="btn btn-primary" @click="navigateTo('/login')">{{ t('nav.dashboard') }}</button>
-            </template>
-            <template v-else>
-              <button class="btn btn-primary" @click="navigateTo('/dashboard')">{{ t('nav.dashboard') }}</button>
-            </template>
-          </div>
-        </div>
-      </div>
-    </nav>
-  </header>
+        </nav>
+    </header>
 </template>
 
 <style scoped>
@@ -176,7 +194,7 @@ const solutionLinks = [
 
 /* Top bar */
 .top-bar {
-    background: linear-gradient(90deg, #0f172a, #1e3a5f);
+    background: linear-gradient(90deg, var(--bg-dark), var(--primary-900));
     color: var(--text-inverse);
     font-size: var(--font-size-sm);
     padding: var(--spacing-2) 0;
@@ -368,7 +386,7 @@ const solutionLinks = [
 
     .nav-menu {
         position: absolute;
-        top: var(--header-height);
+        top: var(--height-header);
         left: 0;
         right: 0;
         flex-direction: column;

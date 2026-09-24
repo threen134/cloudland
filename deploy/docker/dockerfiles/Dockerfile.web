@@ -8,8 +8,9 @@
 # =============================================================================
 
 # ---- Stage 1: Go 编译 ----
-# 使用 1.24：minio-go v7 及其传递依赖（golang.org/x/crypto 等）要求 go 1.24+
-FROM golang:1.24 AS builder
+# 使用 1.25：api/go.mod 要求 go 1.25（grpc、OpenTelemetry 依赖）
+# 固定 bookworm（glibc 2.36）：clapi 为 CGO 动态链接，构建镜像 glibc 不能高于运行时 ubuntu:24.04（2.39）
+FROM golang:1.26-bookworm AS builder
 
 WORKDIR /build
 
@@ -31,7 +32,7 @@ RUN cd cmds/api && go build -o /out/clapi -ldflags "-X \"main.Version=$(cat /bui
 RUN cd cmds/alarm_rules_manager && CGO_ENABLED=0 go build -o /out/alarm_rules_manager
 
 # ---- Stage 2: clapi 运行时 ----
-FROM ubuntu:22.04 AS clapi
+FROM ubuntu:24.04 AS clapi
 
 ENV DEBIAN_FRONTEND=noninteractive
 

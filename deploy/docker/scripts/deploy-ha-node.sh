@@ -11,6 +11,15 @@ exec > >(tee -a "$DEPLOY_LOG") 2>&1
 CLOUDLAND_DIR="${CLOUDLAND_DIR:-/opt/cloudland}"
 REPO_URL="${REPO_URL:-https://github.com/threen134/cloudland.git}"
 DEPLOY_DIR="$CLOUDLAND_DIR/deploy/docker"
+# 部署分支优先级：显式指定 > 已部署 .env 中的值 > 已有仓库当前检出的分支 > staging，
+# 避免在旧 .env（无 REPO_BRANCH）的环境上重跑脚本时把 .env 与 deploy_command 改到默认分支
+if [ -z "${REPO_BRANCH:-}" ] && [ -f "$DEPLOY_DIR/.env" ]; then
+    REPO_BRANCH=$(grep '^REPO_BRANCH=' "$DEPLOY_DIR/.env" | cut -d'=' -f2- || true)
+fi
+if [ -z "${REPO_BRANCH:-}" ] && [ -d "$CLOUDLAND_DIR/.git" ]; then
+    REPO_BRANCH=$(git -c safe.directory="$CLOUDLAND_DIR" -C "$CLOUDLAND_DIR" branch --show-current 2>/dev/null || true)
+fi
+REPO_BRANCH="${REPO_BRANCH:-staging}"
 
 log() { echo -e "\n\033[1;32m[$(date '+%H:%M:%S')] $1\033[0m"; }
 warn() { echo -e "\033[1;33m[WARN] $1\033[0m"; }
@@ -30,7 +39,7 @@ if [ ! -d "$CLOUDLAND_DIR" ]; then
     if ! command -v git &>/dev/null; then
         apt-get update && apt-get install -y git
     fi
-    git clone "$REPO_URL" "$CLOUDLAND_DIR"
+    git clone -b "$REPO_BRANCH" "$REPO_URL" "$CLOUDLAND_DIR"
 fi
 
 cd "$DEPLOY_DIR"
@@ -45,7 +54,14 @@ fi
 mkdir -p volumes/alertmanager
 chown -R 65534:65534 volumes/alertmanager
 
-vars=("PUBLIC_IP" "INTERNAL_IP" "MANAGEMENT_VIP" "NETWORK_DEVICE" "DB_LISTEN_IP" "POSTGRES_USER" "POSTGRES_PASSWORD" "POSTGRES_DB" "ADMIN_PASSWORD" "HA_ROLE" "PEER_IP" "VRRP_INTERFACE" "DB_HOST" "DB_PORT")
+# Prometheus rule templates: clapi renders node alarm rules from these (mounted read-only
+# at /etc/prometheus/node_templates). Without them every node alarm rule create fails with
+# "File does not exist: <template>.yml.j2".
+log "同步 Prometheus 规则模板..."
+mkdir -p volumes/prometheus/node_templates volumes/prometheus/general_rules volumes/prometheus/rules_enabled
+cp -f ../roles/monitor/templates/*.yml.j2 volumes/prometheus/node_templates/
+
+vars=("PUBLIC_IP" "INTERNAL_IP" "MANAGEMENT_VIP" "NETWORK_DEVICE" "DB_LISTEN_IP" "POSTGRES_USER" "POSTGRES_PASSWORD" "POSTGRES_DB" "ADMIN_PASSWORD" "HA_ROLE" "PEER_IP" "VRRP_INTERFACE" "DB_HOST" "DB_PORT" "GRPC_AUTH_TOKEN" "CAPTURE_UPLOAD_SECRET" "VPN_SECRET_KEY" "GRPC_LISTEN" "TELEMETRY_LISTEN_IP" "REPO_BRANCH" "DEPLOY_SCRIPT_URL")
 
 for var in "${vars[@]}"; do
     val="${!var:-}"
@@ -60,8 +76,6 @@ for var in "${vars[@]}"; do
 done
 
 # Force HA vars in .env
-sed -i '/^SCI_ENABLE_FAILOVER=/d' .env
-echo "SCI_ENABLE_FAILOVER=yes" >> .env
 sed -i '/^COMPOSE_PROFILES=/d' .env
 echo "COMPOSE_PROFILES=full,region" >> .env # 全量 + 区域控制面，使用外部 DB（不启用 dev）
 
@@ -111,15 +125,38 @@ log "4/6 - 处理证书和 SSH 密钥"
 mkdir -p "$CLOUDLAND_DIR/deploy/.ssh"
 mkdir -p "$DEPLOY_DIR/volumes/certs"
 
+# 两台控制节点必须一致的共享密钥，MASTER 未提供时自动生成，BACKUP 始终以 MASTER 的值为准：
+# GRPC_AUTH_TOKEN（计算节点 deploy_command 中只下发一份）、
+# CAPTURE_UPLOAD_SECRET（上传凭证可能由一台 clapi 签发、另一台校验）、
+# VPN_SECRET_KEY（VPN 凭据由任一台 clapi 加密、另一台解密下发）
+SHARED_SECRETS=("GRPC_AUTH_TOKEN" "CAPTURE_UPLOAD_SECRET" "VPN_SECRET_KEY")
 if [[ "$HA_ROLE" == "MASTER" ]]; then
     if [ ! -f "$CLOUDLAND_DIR/deploy/.ssh/cland.key" ]; then
         ssh-keygen -t rsa -f "$CLOUDLAND_DIR/deploy/.ssh/cland.key" -N ""
     fi
     bash scripts/init-certs.sh
+    for name in "${SHARED_SECRETS[@]}"; do
+        if [ -z "$(grep "^${name}=" .env | cut -d'=' -f2- || true)" ]; then
+            sed -i "/^${name}=/d" .env
+            echo "${name}=$(openssl rand -hex 32)" >> .env
+            log "已生成 ${name} 并写入 .env"
+        fi
+    done
 else
     log "正在从 MASTER ($PEER_IP) 同步证书和 SSH 密钥..."
     rsync -avz "$PEER_IP:$CLOUDLAND_DIR/deploy/.ssh/" "$CLOUDLAND_DIR/deploy/.ssh/"
     rsync -avz "$PEER_IP:$DEPLOY_DIR/volumes/certs/" "$DEPLOY_DIR/volumes/certs/"
+
+    for name in "${SHARED_SECRETS[@]}"; do
+        log "正在从 MASTER ($PEER_IP) 同步 ${name}..."
+        master_value=$(ssh -o BatchMode=yes root@"$PEER_IP" "grep '^${name}=' $DEPLOY_DIR/.env | cut -d'=' -f2-" || true)
+        if [ -z "$master_value" ]; then
+            warn "无法从 MASTER 读取 ${name}，请先完成 MASTER 节点部署"
+            exit 1
+        fi
+        sed -i "/^${name}=/d" .env
+        echo "${name}=${master_value}" >> .env
+    done
 fi
 
 # ============ 5. 检查 Docker 并启动服务 ============

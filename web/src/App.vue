@@ -4,10 +4,6 @@ import ToastContainer from './components/ToastContainer.vue'
 </script>
 
 <template>
-  <RouterView />
-  <ToastContainer />
+    <RouterView />
+    <ToastContainer />
 </template>
-
-<style>
-/* Global styles move to styles/main.css or similar */
-</style>

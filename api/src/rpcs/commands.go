@@ -66,6 +66,6 @@ func DecodeCommand(content string) (cmd string, args []string) {
 }
 
 func AppendAttachment(command string, attachment string) (content string) {
-	content = fmt.Sprintf("%s <<EOF\n%s\nEOF\n", command, attachment)
+	content = fmt.Sprintf("%s <<'EOF'\n%s\nEOF\n", command, attachment)
 	return
 }

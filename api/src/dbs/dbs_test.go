@@ -15,7 +15,7 @@ package dbs
 import (
 	"testing"
 
-	"github.com/jinzhu/gorm"
+	"gorm.io/gorm"
 )
 
 func TestQuery(t *testing.T) {
@@ -34,22 +34,20 @@ func TestQuery(t *testing.T) {
 	})
 	rs := []TestQuery01{}
 	err := db.Find(&rs).Error
-	if err != nil || len(rs) != 3 {
+	if err != nil || len(rs) != 2 {
 		t.Fatal(rs, err)
 	}
-	db.Model(&TestQuery01{}).Update("age", 10)
-	affected := db.RowsAffected
-	if affected != 2 {
-		t.Fatal(affected)
+	result := db.Model(&TestQuery01{}).Where("1 = 1").Update("age", 10)
+	if result.RowsAffected != 2 {
+		t.Fatal(result.RowsAffected)
 	}
-	db.Where("age = 10").Delete(&TestQuery01{})
-	affected = db.RowsAffected
-	if affected != 2 {
-		t.Fatal(affected)
+	result = db.Where("age = 10").Delete(&TestQuery01{})
+	if result.RowsAffected != 2 {
+		t.Fatal(result.RowsAffected)
 	}
 	rs = []TestQuery01{}
 	err = db.Find(&rs).Error
-	if err != nil || len(rs) != 1 {
+	if err != nil || len(rs) != 0 {
 		t.Fatal(rs, err)
 	}
 }

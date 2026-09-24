@@ -1,14 +1,14 @@
 package model
 
 import (
+	"api/src/dbs"
 	"database/sql/driver"
 	"encoding/json"
 	"fmt"
 	"log"
-	"api/src/dbs"
 
-	"github.com/jinzhu/gorm"
 	_ "github.com/lib/pq"
+	"gorm.io/gorm"
 )
 
 func init() {
@@ -96,22 +96,24 @@ type RuleGroupV2 struct {
 	Name            string `gorm:"type:varchar(128);unique_index:idx_rule_group_name;column:name"`
 	Type            string `gorm:"type:varchar(32)"`
 	Owner           int64  `gorm:"type:bigint;index"`
-	Enabled         bool   `gorm:"default:true"`
+	Enabled         bool   // no gorm default: it would swap a deliberate false for the column default
 	TriggerCnt      int    `gorm:"default:0"`
 	RegionID        string `gorm:"type:varchar(64)"`
 	DurationMinutes int
 }
 
+// CPURuleDetail and MemoryRuleDetail no longer carry over / down_to / down_duration:
+// alarm rule templates never used them (they belong to the auto-adjust rules), yet their
+// `>= 1` check constraints rejected every rule created from the UI, which sends no such
+// values. The columns are still in the database; inserts now leave them NULL, which the
+// check constraints accept.
 type CPURuleDetail struct {
 	Model
 	GroupUUID    string `gorm:"column:group_uuid;type:varchar(36);index;not null;references:rule_group_v2(uuid)"`
 	Name         string `gorm:"type:varchar(128);column:name"`
-	Limit        int    `gorm:"column:limit;check:limit >= 1"`
+	Limit        int    `gorm:"column:limit;check:\"limit\" >= 1"`
 	Rule         string `gorm:"type:varchar(8);column:rule"`
 	Duration     int    `gorm:"check:duration >= 1"`
-	Over         int    `gorm:"column:over;check:over >= 1"`
-	DownDuration int    `gorm:"column:down_duration;check:down_duration >= 1"`
-	DownTo       int    `gorm:"column:down_to;check:down_to <= 100"`
 	Level        string `gorm:"type:varchar(32);column:level" json:"level"`
 }
 
@@ -119,12 +121,9 @@ type MemoryRuleDetail struct {
 	Model
 	GroupUUID    string `gorm:"column:group_uuid;type:varchar(36);index;not null;references:rule_group_v2(uuid)"`
 	Name         string `gorm:"type:varchar(128);column:name"`
-	Limit        int    `gorm:"column:limit;check:limit >= 1"`
+	Limit        int    `gorm:"column:limit;check:\"limit\" >= 1"`
 	Rule         string `gorm:"type:varchar(8);column:rule"`
 	Duration     int    `gorm:"check:duration >= 1"`
-	Over         int    `gorm:"column:over;check:over >= 1"`
-	DownDuration int    `gorm:"column:down_duration;check:down_duration >= 1"`
-	DownTo       int    `gorm:"column:down_to;check:down_to <= 100"`
 	Level        string `gorm:"type:varchar(32);column:level" json:"level"`
 }
 
@@ -135,7 +134,7 @@ type BWRuleDetail struct {
 
 	// New single-direction fields for API v2
 	Direction string `gorm:"type:varchar(8);check:direction IN ('in','out')"`
-	Limit     int    `gorm:"check:limit >= 1 AND limit <= 100"`
+	Limit     int    `gorm:"check:\"limit\" >= 1 AND \"limit\" <= 100"`
 	Duration  int    `gorm:"check:duration >= 1"`
 
 	Level string `gorm:"type:varchar(32);column:level" json:"level"`
@@ -169,7 +168,7 @@ type NodeAlarmRule struct {
 	Name        string        `gorm:"type:varchar(64);index;not null" json:"name"`
 	Config      ConfigWrapper `gorm:"type:text;not null;column:config" json:"config"`
 	Description string        `gorm:"type:varchar(255)" json:"description"`
-	Enabled     bool          `gorm:"default:true" json:"enabled"`
+	Enabled     bool          `json:"enabled"` // no gorm default: see RuleGroupV2.Enabled
 	Owner       string        `gorm:"column:owner;type:varchar(64);index;not null" json:"owner"`
 }
 

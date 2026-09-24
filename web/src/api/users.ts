@@ -1,51 +1,65 @@
 import client from './client'
+import type { ListParams } from './listParams'
 
+// 对应控制面网关 cpgateway/src/apis/schemas.go 的 userOut（GET /users、GET /users/:uuid、PUT /users/:uuid）
 export interface User {
-    user: {
-        uuid: string
-        name: string
-        updated_at?: string
-    }
-    role: string
-    org?: {
-        uuid: string
-        name: string
-    }
-    token?: string
-    created_at?: string
-    [key: string]: any
+    email: string
+    username: string
+    language: string
+    uuid: string
+    is_active: boolean
+    is_superuser: boolean
+    system_role: number
+    // model.UserStatus.Name()，如 active / invited / dormant / disabled
+    status: string
+    first_name: string
+    last_name: string
+    remark: string
+    created_at: string
 }
 
-export interface CreateUserPayload {
-    username: string
-    password?: string
+// cpgateway/src/apis/user_mgmt.go 的 UpdateUser（PUT /users/:uuid）绑定结构。
+// username 传入与当前不同的值一律 400（用户名创建后不可更改）；
+// role 是调用方当前组织内的角色名：admin / writer / reader / member / user，owner 表示不改
+export interface UpdateUserPayload {
+    username?: string
     email?: string
     role?: string
 }
 
+// user_mgmt.go 中 enable/disable/demote/delete/profile/password 一类接口的响应：gin.H{"status": "ok"}
+export interface UserActionResponse {
+    status: string
+    new_status?: string
+}
+
+export interface UserListResponse {
+    total: number
+    users: User[]
+}
+
 export const usersApi = {
-    // List users
-    fetchUsers() {
-        return client.get('/users')
+    /** GET /users —— 服务端分页 + 用户名/邮箱搜索，返回 { total, users } */
+    async fetchUsers(params?: ListParams): Promise<UserListResponse> {
+        const response = await client.get<UserListResponse>('/users', { params })
+        return response.data
     },
 
     // Get single user
-    getUser(uuid: string) {
-        return client.get(`/users/${uuid}`)
+    async getUser(uuid: string): Promise<User> {
+        const response = await client.get<User>(`/users/${uuid}`)
+        return response.data
     },
 
-    // Create user
-    createUser(payload: CreateUserPayload) {
-        return client.post('/users', payload)
+    // Update user（PUT /users/:uuid，返回更新后的用户）
+    async updateUser(uuid: string, payload: UpdateUserPayload): Promise<User> {
+        const response = await client.put<User>(`/users/${uuid}`, payload)
+        return response.data
     },
 
-    // Update user
-    updateUser(uuid: string, payload: Partial<CreateUserPayload>) {
-        return client.put(`/users/${uuid}`, payload)
-    },
-
-    // Delete user
-    deleteUser(uuid: string) {
-        return client.delete(`/users/${uuid}`)
+    // Delete user（返回 200 与 {"status": "ok"}，不是 204）
+    async deleteUser(uuid: string): Promise<UserActionResponse> {
+        const response = await client.delete<UserActionResponse>(`/users/${uuid}`)
+        return response.data
     },
 }

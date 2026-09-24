@@ -9,6 +9,7 @@ package apis
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"strconv"
@@ -18,6 +19,7 @@ import (
 	"api/src/services"
 
 	"github.com/gin-gonic/gin"
+	"github.com/gin-gonic/gin/binding"
 )
 
 var volumeAPI = &VolumeAPI{}
@@ -26,47 +28,42 @@ var volumeAdmin = &services.VolumeAdmin{}
 type VolumeAPI struct{}
 
 type VolumePayload struct {
-	Count     int    `json:"count" binding:"omitempty,gte=1,lte=16"`
-	Name      string `json:"name" binding:"required"`
-	Size      int32  `json:"size" binding:"required"`
-	PoolID    string `json:"pool_id" binding:"omitempty"`
-	IopsLimit int32  `json:"iops_limit" binding:"omitempty,gte=0,lte=10000000"`
-	IopsBurst int32  `json:"iops_burst" binding:"omitempty,gte=0"`
-	BpsLimit  int32  `json:"bps_limit" binding:"omitempty,gte=0,lte=102400"` // in MB/s
-	BpsBurst  int32  `json:"bps_burst" binding:"omitempty,gte=0"`
+	Count int    `json:"count" binding:"omitempty,gte=1,lte=16"`
+	Name  string `json:"name" binding:"required"`
+	Size  int32  `json:"size" binding:"required"`
+	// Storage pool of the volume; the default pool when left out
+	StoragePool *BaseReference `json:"storage_pool" binding:"omitempty"`
 }
 
-type VolumeQosPayload struct {
-	IopsLimit int32 `json:"iops_limit" binding:"omitempty,gte=0,lte=10000000"`
-	BpsLimit  int32 `json:"bps_limit" binding:"omitempty,gte=0,lte=102400"` // in MB/s
-}
-
+// VolumePatchPayload renames and/or attaches a volume. Capacity changes go through POST /volumes/{id}/resize.
 type VolumePatchPayload struct {
-	Name     string  `json:"name" binding:"omitempty"`
-	Size     int32   `json:"size" binding:"omitempty"`
+	Name string `json:"name" binding:"omitempty"`
+	// Attach to this instance; null detaches, and leaving the field out keeps the attachment as it is
 	Instance *BaseID `json:"instance" binding:"omitempty"`
 }
 
 type VolumeResponse struct {
 	*ResourceReference
-	Path      string         `json:"path"`
-	Size      int32          `json:"size"`
-	Format    string         `json:"format"`
-	Status    string         `json:"status"`
-	Target    string         `json:"target"`
-	Href      string         `json:"href"`
-	Booting   bool           `json:"booting"`
-	Instance  *BaseReference `json:"instance"`
-	IopsLimit int32          `json:"iops_limit"`
-	IopsBurst int32          `json:"iops_burst"`
-	BpsLimit  int32          `json:"bps_limit"`
-	BpsBurst  int32          `json:"bps_burst"`
+	Path        string             `json:"path"`
+	Size        int32              `json:"size"`
+	Format      string             `json:"format"`
+	Status      string             `json:"status"`
+	Reason      string             `json:"reason"`
+	Target      string             `json:"target"`
+	Href        string             `json:"href"`
+	Booting     bool               `json:"booting"`
+	Instance    *BaseReference     `json:"instance"`
+	StoragePool *ResourceReference `json:"storage_pool"`
+	// Host holding the file of the volume, for system admins; empty until the volume is attached the first time
+	Hyper *ResourceReference `json:"hypervisor,omitempty"`
 }
 
 type VolumeInfoResponse struct {
 	*ResourceReference
-	Target  string `json:"target"`
-	Booting bool   `json:"booting"`
+	Target string `json:"target"`
+	// Size in GB; the instance detail page shows it next to each attached volume
+	Size    int32 `json:"size"`
+	Booting bool  `json:"booting"`
 }
 
 type VolumeListResponse struct {
@@ -93,10 +90,10 @@ type VolumeResizePayload struct {
 func (v *VolumeAPI) Get(c *gin.Context) {
 	ctx := c.Request.Context()
 	uuID := c.Param("id")
-	logger.Debugf("Get volume by uuid: %s", uuID)
+	logger.Ctx(ctx).Debugf("Get volume by uuid: %s", uuID)
 	volume, err := volumeAdmin.GetVolumeByUUID(ctx, uuID)
 	if err != nil {
-		logger.Errorf("Failed to get volume by uuid: %s, %+v", uuID, err)
+		logger.Ctx(ctx).Errorf("Failed to get volume by uuid: %s, %+v", uuID, err)
 		ErrorResponse(c, http.StatusBadRequest, "Invalid volume query", err)
 		return
 	}
@@ -105,43 +102,7 @@ func (v *VolumeAPI) Get(c *gin.Context) {
 		ErrorResponse(c, http.StatusInternalServerError, "Internal error", err)
 		return
 	}
-	logger.Debugf("Got volume : %+v", volumeResp)
-	c.JSON(http.StatusOK, volumeResp)
-}
-
-// @Summary update qos of a volume
-// @Description update iops and bps limit of a volume
-// @tags Volume
-// @Accept  json
-// @Produce json
-// @Param   message	body   VolumeQosPayload  true   "Volume qos payload"
-// @Success 200 {object} VolumeResponse
-// @Failure 400 {object} common.APIError "Bad request"
-// @Failure 401 {object} common.APIError "Not authorized"
-// @Router /volumes/{id}/qos [put]
-func (v *VolumeAPI) UpdateQos(c *gin.Context) {
-	ctx := c.Request.Context()
-	uuID := c.Param("id")
-	payload := &VolumeQosPayload{}
-	err := c.ShouldBindJSON(payload)
-	if err != nil {
-		logger.Errorf("Failed to bind json: %+v", err)
-		ErrorResponse(c, http.StatusBadRequest, "Invalid input JSON", err)
-		return
-	}
-	logger.Debugf("Updating qos of volume %s with %+v", uuID, payload)
-	volume, err := volumeAdmin.UpdateQosByUUID(ctx, uuID, payload.IopsLimit, payload.BpsLimit)
-	if err != nil {
-		logger.Errorf("Failed to update qos of volume %s, %+v", uuID, err)
-		ErrorResponse(c, http.StatusBadRequest, "Failed to update qos of volume", err)
-		return
-	}
-	volumeResp, err := v.getVolumeResponse(ctx, volume)
-	if err != nil {
-		ErrorResponse(c, http.StatusInternalServerError, "Failed to update qos of volume response", err)
-		return
-	}
-	logger.Debugf("Updated qos of volume successfully, %s, %+v", uuID, volumeResp)
+	logger.Ctx(ctx).Debugf("Got volume : %+v", volumeResp)
 	c.JSON(http.StatusOK, volumeResp)
 }
 
@@ -159,29 +120,46 @@ func (v *VolumeAPI) Patch(c *gin.Context) {
 	ctx := c.Request.Context()
 	uuID := c.Param("id")
 	payload := &VolumePatchPayload{}
-	err := c.ShouldBindJSON(payload)
+	// Keep the body: "instance": null (detach) and an omitted instance both bind to nil
+	err := c.ShouldBindBodyWith(payload, binding.JSON)
 	if err != nil {
-		logger.Errorf("Failed to bind json: %+v", err)
+		logger.Ctx(ctx).Errorf("Failed to bind json: %+v", err)
 		ErrorResponse(c, http.StatusBadRequest, "Invalid input JSON", err)
 		return
 	}
-	logger.Debugf("Patching volume %s with %+v", uuID, payload)
-	instanceID := int64(0)
-	if payload.Instance != nil {
-		var instance *model.Instance
-		instance, err = instanceAdmin.GetInstanceByUUID(ctx, payload.Instance.ID)
-		if err != nil {
-			logger.Errorf("Failed to get instance, %+v", err)
-			ErrorResponse(c, http.StatusBadRequest, "Failed to get instance", err)
-			return
+	logger.Ctx(ctx).Debugf("Patching volume %s with %+v", uuID, payload)
+	var fields map[string]json.RawMessage
+	if raw, ok := c.Get(gin.BodyBytesKey); ok {
+		_ = json.Unmarshal(raw.([]byte), &fields)
+	}
+	// nil keeps the attachment, 0 detaches, anything else attaches to that instance
+	var instanceID *int64
+	if _, set := fields["instance"]; set {
+		id := int64(0)
+		if payload.Instance != nil {
+			SetAuditAction(c, "volume.attach")
+			var instance *model.Instance
+			instance, err = instanceAdmin.GetInstanceByUUID(ctx, payload.Instance.ID)
+			if err != nil {
+				logger.Ctx(ctx).Errorf("Failed to get instance, %+v", err)
+				ErrorResponse(c, http.StatusBadRequest, "Failed to get instance", err)
+				return
+			}
+			id = instance.ID
+		} else {
+			SetAuditAction(c, "volume.detach")
 		}
-		instanceID = instance.ID
+		instanceID = &id
 	}
 
 	volume, err := volumeAdmin.UpdateByUUID(ctx, uuID, payload.Name, instanceID)
 	if err != nil {
-		logger.Errorf("Failed to update volume %s, %+v", uuID, err)
+		logger.Ctx(ctx).Errorf("Failed to update volume %s, %+v", uuID, err)
 		ErrorResponse(c, http.StatusBadRequest, "Failed to update volume", err)
+		return
+	}
+	if volume, err = volumeAdmin.GetVolumeByUUID(ctx, volume.UUID); err != nil {
+		ErrorResponse(c, http.StatusInternalServerError, "Failed to update volume response", err)
 		return
 	}
 	volumeResp, err := v.getVolumeResponse(ctx, volume)
@@ -189,15 +167,16 @@ func (v *VolumeAPI) Patch(c *gin.Context) {
 		ErrorResponse(c, http.StatusInternalServerError, "Failed to update volume response", err)
 		return
 	}
-	logger.Debugf("Patch volume successfully, %s, %+v", uuID, volumeResp)
+	logger.Ctx(ctx).Debugf("Patch volume successfully, %s, %+v", uuID, volumeResp)
 	c.JSON(http.StatusOK, volumeResp)
 }
 
 // @Summary delete a volume
-// @Description delete a volume
+// @Description delete a volume. A volume written on a host is deleted by the host first: the request returns 202 and the volume stays "deleting" until the host confirms.
 // @tags Volume
 // @Accept  json
 // @Produce json
+// @Success 202
 // @Success 204
 // @Failure 400 {object} common.APIError "Bad request"
 // @Failure 401 {object} common.APIError "Not authorized"
@@ -205,15 +184,52 @@ func (v *VolumeAPI) Patch(c *gin.Context) {
 func (v *VolumeAPI) Delete(c *gin.Context) {
 	ctx := c.Request.Context()
 	uuID := c.Param("id")
-	logger.Debugf("Deleting volume %s", uuID)
-	err := volumeAdmin.DeleteVolumeByUUID(ctx, uuID)
+	logger.Ctx(ctx).Debugf("Deleting volume %s", uuID)
+	deferred, err := volumeAdmin.DeleteVolumeByUUID(ctx, uuID)
 	if err != nil {
-		logger.Errorf("Failed to delete volume %s, %+v", uuID, err)
+		logger.Ctx(ctx).Errorf("Failed to delete volume %s, %+v", uuID, err)
 		ErrorResponse(c, http.StatusBadRequest, "Failed to delete volume", err)
 		return
 	}
-	logger.Debugf("Deleted volume %s successfully", uuID)
+	logger.Ctx(ctx).Debugf("Deleted volume %s successfully (deferred %t)", uuID, deferred)
+	if deferred {
+		c.JSON(http.StatusAccepted, nil)
+		return
+	}
 	c.JSON(http.StatusNoContent, nil)
+}
+
+// @Summary detach a volume of a lost pool by force
+// @Description remove a volume whose storage pool was declared lost from its instance, without touching the file
+// @tags Volume
+// @Accept  json
+// @Produce json
+// @Success 200 {object} VolumeResponse
+// @Failure 400 {object} common.APIError "Bad request"
+// @Failure 401 {object} common.APIError "Not authorized"
+// @Router /volumes/{id}/force_detach [post]
+func (v *VolumeAPI) ForceDetach(c *gin.Context) {
+	ctx := c.Request.Context()
+	uuID := c.Param("id")
+	volume, err := volumeAdmin.GetVolumeByUUID(ctx, uuID)
+	if err != nil {
+		ErrorResponse(c, http.StatusBadRequest, "Invalid volume query", err)
+		return
+	}
+	if err = volumeAdmin.ForceDetach(ctx, volume); err != nil {
+		ErrorResponse(c, http.StatusBadRequest, "Failed to detach the volume", err)
+		return
+	}
+	if volume, err = volumeAdmin.GetVolumeByUUID(ctx, uuID); err != nil {
+		ErrorResponse(c, http.StatusInternalServerError, "Internal error", err)
+		return
+	}
+	volumeResp, err := v.getVolumeResponse(ctx, volume)
+	if err != nil {
+		ErrorResponse(c, http.StatusInternalServerError, "Internal error", err)
+		return
+	}
+	c.JSON(http.StatusOK, volumeResp)
 }
 
 // @Summary create a volume
@@ -231,15 +247,19 @@ func (v *VolumeAPI) Create(c *gin.Context) {
 	payload := &VolumePayload{}
 	err := c.ShouldBindJSON(payload)
 	if err != nil {
-		logger.Errorf("Failed to bind json: %+v", err)
+		logger.Ctx(ctx).Errorf("Failed to bind json: %+v", err)
 		ErrorResponse(c, http.StatusBadRequest, "Invalid input JSON", err)
 		return
 	}
-	logger.Debugf("Creating volume with %+v", payload)
-	volume, err := volumeAdmin.Create(ctx, payload.Name, payload.Size,
-		payload.IopsLimit, payload.IopsBurst, payload.BpsLimit, payload.BpsBurst, payload.PoolID)
+	logger.Ctx(ctx).Debugf("Creating volume with %+v", payload)
+	pool, err := storagePoolAdmin.Resolve(ctx, payload.StoragePool)
 	if err != nil {
-		logger.Errorf("Failed to create volume: %+v", err)
+		ErrorResponse(c, http.StatusBadRequest, "Invalid storage pool", err)
+		return
+	}
+	volume, err := volumeAdmin.Create(ctx, payload.Name, payload.Size, pool)
+	if err != nil {
+		logger.Ctx(ctx).Errorf("Failed to create volume: %+v", err)
 		ErrorResponse(c, http.StatusBadRequest, "Failed to create volume", err)
 		return
 	}
@@ -248,7 +268,7 @@ func (v *VolumeAPI) Create(c *gin.Context) {
 		ErrorResponse(c, http.StatusInternalServerError, "Failed to create volume response", err)
 		return
 	}
-	logger.Debugf("Created volume successfully, %+v", volumeResp)
+	logger.Ctx(ctx).Debugf("Created volume successfully, %+v", volumeResp)
 	c.JSON(http.StatusOK, volumeResp)
 }
 
@@ -264,33 +284,34 @@ func (v *VolumeAPI) List(c *gin.Context) {
 	ctx := c.Request.Context()
 	offsetStr := c.DefaultQuery("offset", "0")
 	limitStr := c.DefaultQuery("limit", "50")
+	orderStr := c.DefaultQuery("order", "-created_at")
 	nameStr := c.DefaultQuery("name", "")
 
 	// type: all, data, boot
 	// default data
 	typeStr := c.DefaultQuery("type", "data")
-	logger.Debugf("List volumes, offset:%s, limit:%s, name:%s, type:%s", offsetStr, limitStr, nameStr, typeStr)
+	logger.Ctx(ctx).Debugf("List volumes, offset:%s, limit:%s, name:%s, type:%s", offsetStr, limitStr, nameStr, typeStr)
 	offset, err := strconv.Atoi(offsetStr)
 	if err != nil {
-		logger.Errorf("Invalid query offset: %s, %+v", offsetStr, err)
+		logger.Ctx(ctx).Errorf("Invalid query offset: %s, %+v", offsetStr, err)
 		ErrorResponse(c, http.StatusBadRequest, "Invalid query offset: "+offsetStr, err)
 		return
 	}
 	limit, err := strconv.Atoi(limitStr)
 	if err != nil {
-		logger.Errorf("Invalid query limit: %s, %+v", limitStr, err)
+		logger.Ctx(ctx).Errorf("Invalid query limit: %s, %+v", limitStr, err)
 		ErrorResponse(c, http.StatusBadRequest, "Invalid query limit: "+limitStr, err)
 		return
 	}
 	if offset < 0 || limit < 0 {
 		errStr := "Invalid query offset or limit, cannot be negative"
-		logger.Errorf(errStr)
+		logger.Ctx(ctx).Errorf(errStr)
 		ErrorResponse(c, http.StatusBadRequest, "Invalid query offset or limit", errors.New(errStr))
 		return
 	}
-	total, volumes, err := volumeAdmin.ListVolume(ctx, int64(offset), int64(limit), "-created_at", nameStr, typeStr)
+	total, volumes, err := volumeAdmin.ListVolume(ctx, int64(offset), int64(limit), orderStr, nameStr, typeStr)
 	if err != nil {
-		logger.Errorf("Failed to list volumes, %+v", err)
+		logger.Ctx(ctx).Errorf("Failed to list volumes, %+v", err)
 		ErrorResponse(c, http.StatusBadRequest, "Failed to list volumes", err)
 		return
 	}
@@ -310,7 +331,7 @@ func (v *VolumeAPI) List(c *gin.Context) {
 	}
 
 	volumeListResp.Volumes = volumeList
-	logger.Debugf("List volumes successfully, %+v", volumeListResp)
+	logger.Ctx(ctx).Debugf("List volumes successfully, %+v", volumeListResp)
 	c.JSON(http.StatusOK, volumeListResp)
 }
 
@@ -329,21 +350,21 @@ func (v *VolumeAPI) Resize(c *gin.Context) {
 	uuID := c.Param("id")
 	volume, err := volumeAdmin.GetVolumeByUUID(ctx, uuID)
 	if err != nil {
-		logger.Errorf("Failed to get volume by uuid: %s, %+v", uuID, err)
+		logger.Ctx(ctx).Errorf("Failed to get volume by uuid: %s, %+v", uuID, err)
 		ErrorResponse(c, http.StatusBadRequest, "Invalid volume query", err)
 		return
 	}
 	payload := &VolumeResizePayload{}
 	err = c.ShouldBindJSON(payload)
 	if err != nil {
-		logger.Errorf("Failed to bind json: %+v", err)
+		logger.Ctx(ctx).Errorf("Failed to bind json: %+v", err)
 		ErrorResponse(c, http.StatusBadRequest, "Invalid input JSON", err)
 		return
 	}
-	logger.Debugf("Resizing volume %s with size %d", uuID, payload.Size)
+	logger.Ctx(ctx).Debugf("Resizing volume %s with size %d", uuID, payload.Size)
 	err = volumeAdmin.Resize(ctx, volume, payload.Size)
 	if err != nil {
-		logger.Errorf("Failed to resize volume %s, %+v", uuID, err)
+		logger.Ctx(ctx).Errorf("Failed to resize volume %s, %+v", uuID, err)
 		ErrorResponse(c, http.StatusBadRequest, "Failed to resize volume", err)
 		return
 	}
@@ -357,27 +378,31 @@ func (v *VolumeAPI) getVolumeResponse(ctx context.Context, volume *model.Volume)
 			ID:        volume.UUID,
 			Name:      volume.Name,
 			Owner:     owner,
+			OwnerUUID: orgAdmin.GetOrgUUID(ctx, volume.Owner),
 			CreatedAt: volume.CreatedAt.Format(TimeStringForMat),
 			UpdatedAt: volume.UpdatedAt.Format(TimeStringForMat),
 		},
-		Path:      volume.Path,
-		Size:      volume.Size,
-		Format:    volume.Format,
-		Status:    volume.Status.String(),
-		Target:    volume.Target,
-		Href:      volume.Href,
-		IopsLimit: volume.IopsLimit,
-		IopsBurst: volume.IopsBurst,
-		BpsLimit:  volume.BpsLimit,
-		BpsBurst:  volume.BpsBurst,
-		Booting:   volume.Booting,
+		Path:    volume.Path,
+		Size:    volume.Size,
+		Format:  volume.Format,
+		Status:  volume.Status.String(),
+		Reason:  volume.Reason,
+		Target:  volume.Target,
+		Href:    volume.Href,
+		Booting: volume.Booting,
 	}
-	if volume.Instance == nil {
-		volumeResp.Instance = nil
-	} else {
+	if volume.Instance != nil {
 		volumeResp.Instance = &BaseReference{
 			ID:   volume.Instance.UUID,
 			Name: volume.Instance.Hostname,
+		}
+	}
+	if pool, err := services.VolumePool(ctx, volume); err == nil {
+		volumeResp.StoragePool = &ResourceReference{ID: pool.UUID, Name: pool.Name}
+	}
+	if volume.Hyper > 0 && GetMemberShip(ctx).IsSystemAdmin() {
+		if hyper, err := hyperAdmin.GetHyperByHostid(ctx, volume.Hyper); err == nil {
+			volumeResp.Hyper = &ResourceReference{ID: hyper.UUID, Name: hyper.Hostname}
 		}
 	}
 	return volumeResp, nil

@@ -54,13 +54,16 @@ func Authorize() gin.HandlerFunc {
 			}
 		}
 
-		orgIDStr := c.Request.Header.Get("X-Org-ID")
+		// 组织以 UUID 传入，再解析成本区域的组织 ID：两侧组织表的自增主键各自独立，
+		// 此前直接把控制面的 ID 当本地 ID 用，靠"同步时强行用同一个 ID 作主键"维持一致，
+		// 一旦错位，资源会静默挂到别的组织名下。解析结果有内存缓存，不是每请求都查库
+		orgUUID := c.Request.Header.Get("X-Org-UUID")
 		var oid int64
-		if orgIDStr != "" {
+		if orgUUID != "" {
 			var err error
-			oid, err = strconv.ParseInt(orgIDStr, 10, 64)
+			oid, err = orgAdmin.GetOrgIDByUUID(SetContextDB(c.Request.Context(), DB()), orgUUID)
 			if err != nil {
-				ErrorResponse(c, http.StatusBadRequest, "Invalid X-Org-ID value", err)
+				ErrorResponse(c, http.StatusForbidden, "Organization is not available in this region", err)
 				c.Abort()
 				return
 			}
@@ -85,7 +88,8 @@ func Authorize() gin.HandlerFunc {
 		}
 
 		isOwner := c.Request.Header.Get("X-Is-Owner") == "true"
-		userEmail := c.Request.Header.Get("X-User-Email")
+		userName := c.Request.Header.Get("X-User-Name")
+		userUUID := c.Request.Header.Get("X-User-UUID")
 		orgName := c.Request.Header.Get("X-Org-Name")
 		if c.Query("all_orgs") == "true" && systemRole != model.SystemAdmin {
 			ErrorResponse(c, http.StatusForbidden, "all_orgs is only available to system admins", nil)
@@ -97,7 +101,8 @@ func Authorize() gin.HandlerFunc {
 		// 3. Build MemberShip from headers (no DB query)
 		memberShip := &MemberShip{
 			UserID:     uid,
-			UserEmail:  userEmail,
+			UserName:   userName,
+			UserUUID:   userUUID,
 			SystemRole: systemRole,
 			OrgID:      oid,
 			OrgName:    orgName,
@@ -106,7 +111,7 @@ func Authorize() gin.HandlerFunc {
 			AllOrgs:    allOrgs,
 		}
 
-		logger.Infof("MemberShip from headers: %v\n", memberShip)
+		logger.Ctx(c).Infof("MemberShip from headers: %v\n", memberShip)
 		// Store in Gin's Keys so c.Value("membership") works when gin.Context
 		// is passed as context.Context to service functions (gin's Value() only
 		// checks c.Keys, not c.Request.Context()).

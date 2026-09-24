@@ -1,6 +1,8 @@
 <script setup lang="ts">
+import { cssVar } from '../../utils/cssVar'
 import { ref, watch } from 'vue'
 import { hypervisorsApi } from '../../api/hypervisors'
+import type { ChartData } from 'chart.js'
 import { Line } from 'vue-chartjs'
 import { useI18n } from 'vue-i18n'
 import { Activity, Clock, RefreshCw } from 'lucide-vue-next'
@@ -12,8 +14,19 @@ const props = defineProps<{
 
 const { t } = useI18n()
 
-const cpuData = ref<any>(null)
-const memData = ref<any>(null)
+type LineData = ChartData<'line'>
+
+// 取某条曲线的最新一个点用于图表标题。数据点存的是数字（原先内存图存的是
+// toFixed(2) 出来的字符串，和 <Line> 的 data 类型对不上），小数位在这里补
+const lastValue = (data: LineData | null, index: number, digits?: number) => {
+    const points = data?.datasets[index]?.data
+    const value = points?.[points.length - 1]
+    if (typeof value !== 'number') return '-'
+    return digits === undefined ? String(value) : value.toFixed(digits)
+}
+
+const cpuData = ref<LineData | null>(null)
+const memData = ref<LineData | null>(null)
 
 const fetchData = async () => {
     if (!props.hostname) return
@@ -31,61 +44,62 @@ const fetchData = async () => {
         hostname: [props.hostname],
         start: range.startTs.toString(),
         end: range.endTs.toString(),
-        step: step.value
+        step: step.value,
     }
 
     try {
         const [cpuRes, memRes] = await Promise.all([
             hypervisorsApi.getCPUMetrics(commonPayload),
-            hypervisorsApi.getMemoryMetrics(commonPayload)
+            hypervisorsApi.getMemoryMetrics(commonPayload),
         ])
 
         // Parse CPU
-        const cpuResult = cpuRes.data?.data?.result?.[0]
+        const cpuResult = cpuRes.data?.result?.[0]
         if (cpuResult?.values?.length) {
             cpuData.value = {
-                labels: cpuResult.values.map((v: any) => formatTimestamp(v.time)),
-                datasets: [{
-                    label: t('dashboard.monitoring.cpuUsage'),
-                    data: cpuResult.values.map((v: any) => parseFloat(v.value)),
-                    borderColor: '#3b82f6',
-                    backgroundColor: 'rgba(59, 130, 246, 0.1)',
-                    fill: true,
-                }]
+                labels: cpuResult.values.map((v) => formatTimestamp(v.time)),
+                datasets: [
+                    {
+                        label: t('dashboard.monitoring.cpuUsage'),
+                        data: cpuResult.values.map((v) => parseFloat(v.value)),
+                        borderColor: cssVar('--primary-color'),
+                        backgroundColor: 'rgba(14, 165, 233, 0.1)',
+                        fill: true,
+                    },
+                ],
             }
         }
 
         // Parse Memory — mergeMemoryResults returns values as [totalValues, usedValues]
-        const memResult = memRes.data?.data?.result?.[0]
+        const memResult = memRes.data?.result?.[0]
         if (memResult?.values && Array.isArray(memResult.values) && memResult.values.length >= 2) {
             const totalSamples = memResult.values[0]
             const usedSamples = memResult.values[1]
 
             if (Array.isArray(totalSamples) && totalSamples.length > 0 && Array.isArray(usedSamples)) {
-                const labels = totalSamples.map((v: any) => formatTimestamp(v.time))
+                const labels = totalSamples.map((v) => formatTimestamp(v.time))
                 memData.value = {
                     labels,
                     datasets: [
                         {
                             label: t('dashboard.monitoring.total'),
-                            data: totalSamples.map((v: any) => (parseFloat(v.value) / 1024 / 1024).toFixed(2)),
-                            borderColor: '#94a3b8',
+                            data: totalSamples.map((v) => Number((parseFloat(v.value) / 1024 / 1024).toFixed(2))),
+                            borderColor: cssVar('--gray-400'),
                             borderDash: [5, 5],
                             fill: false,
                         },
                         {
                             label: t('dashboard.monitoring.used'),
-                            data: usedSamples.map((v: any) => (parseFloat(v.value) / 1024 / 1024).toFixed(2)),
-                            borderColor: '#10b981',
+                            data: usedSamples.map((v) => Number((parseFloat(v.value) / 1024 / 1024).toFixed(2))),
+                            borderColor: cssVar('--success-color'),
                             backgroundColor: 'rgba(16, 185, 129, 0.1)',
                             fill: true,
-                        }
-                    ]
+                        },
+                    ],
                 }
             }
         }
-
-    } catch (err: any) {
+    } catch (err) {
         console.error('Failed to fetch host metrics:', err)
         error.value = t('dashboard.monitoring.loadError')
     } finally {
@@ -94,8 +108,16 @@ const fetchData = async () => {
 }
 
 const {
-    timeRange, step, customStart, customEnd, loading, error,
-    formatTimestamp, getTimeRange, setRange, toggleCustom,
+    timeRange,
+    step,
+    customStart,
+    customEnd,
+    loading,
+    error,
+    formatTimestamp,
+    getTimeRange,
+    setRange,
+    toggleCustom,
 } = useMonitoring(fetchData)
 
 watch(() => props.hostname, fetchData)
@@ -127,8 +149,15 @@ watch(() => props.hostname, fetchData)
                         {{ t('dashboard.monitoring.custom') }}
                     </button>
                 </div>
-                <button class="btn btn-ghost btn-xs" @click="fetchData" :disabled="loading">
-                    <RefreshCw :size="14" :class="{ 'animate-spin': loading }" />
+                <button
+                    class="btn btn-ghost btn-xs"
+                    :title="t('actions.refresh')"
+                    :aria-label="t('actions.refresh')"
+                    @click="fetchData"
+                    :disabled="loading"
+                >
+                    <!-- was the Tailwind class animate-spin, which this project does not have: it never spun -->
+                    <RefreshCw :size="14" :class="{ spinning: loading }" />
                 </button>
             </div>
         </div>
@@ -155,13 +184,11 @@ watch(() => props.hostname, fetchData)
             <div class="chart-box">
                 <div class="chart-header">
                     <h4>{{ t('dashboard.monitoring.cpuUsage') }}</h4>
-                    <span v-if="cpuData" class="current-value">
-                        {{ cpuData.datasets[0].data[cpuData.datasets[0].data.length - 1] }}%
-                    </span>
+                    <span v-if="cpuData" class="current-value"> {{ lastValue(cpuData, 0) }}% </span>
                 </div>
                 <div class="chart-body">
                     <Line v-if="cpuData" :data="cpuData" :options="CHART_OPTIONS" />
-                    <div v-else-if="loading" class="chart-loading">Loading...</div>
+                    <div v-else-if="loading" class="chart-loading">{{ t('messages.loading') }}</div>
                     <div v-else class="chart-empty">{{ t('dashboard.monitoring.noCpuData') }}</div>
                 </div>
             </div>
@@ -170,12 +197,12 @@ watch(() => props.hostname, fetchData)
                 <div class="chart-header">
                     <h4>{{ t('dashboard.monitoring.memoryUsage') }}</h4>
                     <span v-if="memData" class="current-value">
-                        {{ memData.datasets[1].data[memData.datasets[1].data.length - 1] }} GB / {{ memData.datasets[0].data[memData.datasets[0].data.length - 1] }} GB
+                        {{ lastValue(memData, 1, 2) }} GB / {{ lastValue(memData, 0, 2) }} GB
                     </span>
                 </div>
                 <div class="chart-body">
                     <Line v-if="memData" :data="memData" :options="CHART_OPTIONS" />
-                    <div v-else-if="loading" class="chart-loading">Loading...</div>
+                    <div v-else-if="loading" class="chart-loading">{{ t('messages.loading') }}</div>
                     <div v-else class="chart-empty">{{ t('dashboard.monitoring.noMemoryData') }}</div>
                 </div>
             </div>
@@ -220,7 +247,7 @@ watch(() => props.hostname, fetchData)
     background: var(--bg-secondary);
     padding: 2px;
     border-radius: var(--radius-md);
-    border: 1px solid var(--border-color);
+    border: 1px solid var(--border-default);
 }
 
 .range-selector .btn {
@@ -264,7 +291,25 @@ watch(() => props.hostname, fetchData)
     height: 32px;
     padding: 0 8px;
     font-size: 0.85rem;
+    color: var(--text-primary);
     background: var(--bg-primary);
+    /* .form-select 没有全局定义，这里若不显式指定边框，datetime-local 会退回浏览器
+       默认的深灰边框（Chrome 约 var(--gray-500)），在浅色和深色主题下都突兀 */
+    border: 1px solid var(--border-light);
+    border-radius: var(--radius-sm);
+    transition:
+        border-color var(--transition-fast),
+        box-shadow var(--transition-fast);
+}
+
+.filter-group .form-select:hover {
+    border-color: var(--border-default);
+}
+
+.filter-group .form-select:focus {
+    outline: none;
+    border-color: var(--primary-color);
+    box-shadow: 0 0 0 3px var(--primary-100);
 }
 
 .charts-grid {
@@ -275,7 +320,7 @@ watch(() => props.hostname, fetchData)
 
 .chart-box {
     background: var(--bg-primary);
-    border: 1px solid var(--border-color);
+    border: 1px solid var(--border-default);
     border-radius: var(--radius-lg);
     padding: var(--spacing-4);
     display: flex;
@@ -312,7 +357,8 @@ watch(() => props.hostname, fetchData)
     min-height: 0;
 }
 
-.chart-loading, .chart-empty {
+.chart-loading,
+.chart-empty {
     position: absolute;
     inset: 0;
     display: flex;
@@ -324,11 +370,11 @@ watch(() => props.hostname, fetchData)
 
 .monitor-error {
     padding: var(--spacing-3);
-    background: #fef2f2;
-    color: #ef4444;
+    background: var(--error-light);
+    color: var(--error-color);
     border-radius: var(--radius-md);
     font-size: 0.85rem;
-    border: 1px solid #fee2e2;
+    border: 1px solid var(--error-light);
 }
 
 @media (max-width: 768px) {

@@ -15,24 +15,6 @@
   set_fact:
     cland_ips: "{{ groups['cland'] | map('extract', hostvars, 'ansible_host') | list }}"
 
-- name: Validate WDS configuration
-  fail:
-    msg: "wds_address must be configured with a valid value when wds group exists"
-  when:
-    - "'wds' in groups"
-    - "wds_address | default('') | length == 0 or wds_admin | default('') | length == 0 or wds_pass | default('') | length == 0"
-
-- name: Extract WDS monitor server credentials
-  set_fact:
-    wds_monitor_server_ip: "{{ wds_address | regex_replace('^(?:https?://)?([0-9.]+)(?:.*)$', '\\1') }}"
-    wds_monitor_server_admin: "{{ wds_admin }}"
-    wds_monitor_server_pass: "{{ wds_pass }}"
-  when:
-    - "'wds' in groups"
-    - "wds_address is defined and wds_address | length > 0"
-    - "wds_admin is defined and wds_admin | length > 0"
-    - "wds_pass is defined and wds_pass | length > 0"
-
 - name: Generate node exporters config block
   set_fact:
     node_exporters_block: |

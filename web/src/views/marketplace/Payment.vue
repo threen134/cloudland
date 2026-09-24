@@ -1,10 +1,12 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
+import { useI18n } from 'vue-i18n'
 import { useAuthStore } from '../../stores/auth'
 import Navbar from '../../components/Navbar.vue'
 import { CheckCircle, CreditCard, Loader2 } from 'lucide-vue-next'
 
+const { t } = useI18n()
 const route = useRoute()
 const router = useRouter()
 const auth = useAuthStore()
@@ -21,7 +23,7 @@ onMounted(() => {
 const handleConfirmPayment = async () => {
     status.value = 'processing'
     // TODO: Integrate actual payment gateway API (Stripe, etc.)
-    await new Promise(resolve => setTimeout(resolve, 2000))
+    await new Promise((resolve) => setTimeout(resolve, 2000))
     status.value = 'success'
     // Redirect to dashboard after success
     setTimeout(() => router.push('/dashboard/instances'), 2000)
@@ -29,138 +31,133 @@ const handleConfirmPayment = async () => {
 </script>
 
 <template>
-  <div class="payment-page">
-    <Navbar />
-    <div class="payment-container">
-        <div class="card payment-card">
-        <template v-if="status === 'confirm'">
-            <h2 class="title">Complete Purchase</h2>
-            <div class="order-summary">
-                <div class="label">Product</div>
-                <div class="value">{{ productId }}</div>
-                <hr class="divider" />
-                <div class="total-row">
-                    <span>Total Due Today</span>
-                    <span class="total-amount">$0.00 (Trial)</span>
-                </div>
-            </div>
-            
-            <button class="btn btn-primary btn-block btn-lg" @click="handleConfirmPayment">
-                <CreditCard :size="20" class="btn-icon" /> Conform & Pay
-            </button>
-        </template>
+    <div class="payment-page">
+        <Navbar />
+        <div class="payment-container">
+            <div class="card payment-card">
+                <template v-if="status === 'confirm'">
+                    <h2 class="title">{{ t('payment.title') }}</h2>
+                    <div class="order-summary">
+                        <div class="label">{{ t('payment.product') }}</div>
+                        <div class="value">{{ productId }}</div>
+                        <hr class="divider" />
+                        <div class="total-row">
+                            <span>{{ t('payment.totalDue') }}</span>
+                            <span class="total-amount">{{ t('payment.trialAmount') }}</span>
+                        </div>
+                    </div>
 
-        <template v-if="status === 'processing'">
-            <div class="status-view">
-                <div class="spinner">
-                    <Loader2 :size="48" color="var(--primary-color)" />
-                </div>
-                <h3>Processing Payment...</h3>
-                <p>Please do not close this window.</p>
-            </div>
-        </template>
+                    <button class="btn btn-primary btn-block btn-lg" @click="handleConfirmPayment">
+                        <CreditCard :size="20" class="btn-icon" /> {{ t('payment.confirmAndPay') }}
+                    </button>
+                </template>
 
-        <template v-if="status === 'success'">
-            <div class="status-view">
-                <div class="success-icon">
-                    <CheckCircle :size="64" />
-                </div>
-                <h3>Payment Successful!</h3>
-                <p>Redirecting to your dashboard...</p>
+                <template v-if="status === 'processing'">
+                    <div class="status-view">
+                        <div class="spinner">
+                            <Loader2 :size="48" color="var(--primary-color)" />
+                        </div>
+                        <h3>{{ t('payment.processing') }}</h3>
+                        <p>{{ t('payment.doNotClose') }}</p>
+                    </div>
+                </template>
+
+                <template v-if="status === 'success'">
+                    <div class="status-view">
+                        <div class="success-icon">
+                            <CheckCircle :size="64" />
+                        </div>
+                        <h3>{{ t('payment.success') }}</h3>
+                        <p>{{ t('payment.redirecting') }}</p>
+                    </div>
+                </template>
             </div>
-        </template>
         </div>
     </div>
-  </div>
 </template>
 
 <style scoped>
 .payment-page {
-  min-height: 100vh;
-  background-color: #f1f5f9;
+    min-height: 100vh;
+    background-color: var(--bg-tertiary);
 }
 
 .payment-container {
-  min-height: calc(100vh - 80px);
-  display: flex;
-  align-items: center;
-  justify-content: center;
+    min-height: calc(100vh - 80px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
 }
 
 .payment-card {
-  width: 100%;
-  max-width: 500px;
-  padding: 40px;
-  text-align: center;
+    width: 100%;
+    max-width: 500px;
+    padding: 40px;
+    text-align: center;
 }
 
 .title {
-  margin-bottom: 24px;
+    margin-bottom: 24px;
 }
 
 .order-summary {
-  background-color: #f8fafc;
-  padding: 24px;
-  border-radius: 12px;
-  margin-bottom: 24px;
-  text-align: left;
+    background-color: var(--bg-secondary);
+    padding: 24px;
+    border-radius: 12px;
+    margin-bottom: 24px;
+    text-align: left;
 }
 
 .label {
-  margin-bottom: 8px;
-  color: var(--text-secondary);
+    margin-bottom: 8px;
+    color: var(--text-secondary);
 }
 
 .value {
-  font-size: 1.25rem;
-  font-weight: bold;
+    font-size: 1.25rem;
+    font-weight: bold;
 }
 
 .divider {
-  border: none;
-  border-top: 1px solid #e2e8f0;
-  margin: 16px 0;
+    border: none;
+    border-top: 1px solid var(--border-default);
+    margin: 16px 0;
 }
 
 .total-row {
-  display: flex;
-  justify-content: space-between;
+    display: flex;
+    justify-content: space-between;
 }
 
 .total-amount {
-  font-weight: bold;
+    font-weight: bold;
 }
 
 .btn-block {
-  width: 100%;
+    width: 100%;
 }
 
 .btn-lg {
-  font-size: 1.1rem;
-  padding: 16px;
+    font-size: 1.1rem;
+    padding: 16px;
 }
 
 .btn-icon {
-  margin-right: 8px;
+    margin-right: 8px;
 }
 
 .status-view {
-  padding: 40px 0;
+    padding: 40px 0;
 }
 
 .spinner {
-  display: inline-block;
-  margin-bottom: 24px;
-  animation: spin 1s linear infinite;
-}
-
-@keyframes spin { 
-    0% { transform: rotate(0deg); } 
-    100% { transform: rotate(360deg); } 
+    display: inline-block;
+    margin-bottom: 24px;
+    animation: spin 1s linear infinite;
 }
 
 .success-icon {
-    color: #16a34a;
+    color: var(--success-dark);
     margin-bottom: 24px;
     display: flex;
     justify-content: center; /* flex center helpful for icon container */
