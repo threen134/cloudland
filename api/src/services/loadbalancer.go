@@ -18,6 +18,7 @@ import (
 	"api/src/model"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 var (
@@ -92,7 +93,7 @@ func CreateVrrpConf(ctx context.Context, loadBalancer *model.LoadBalancer) (err 
 	}
 	if vrrpIface1.Hyper >= 0 {
 		control := fmt.Sprintf("inter=%d", vrrpIface1.Hyper)
-		command := fmt.Sprintf("/opt/cloudland/scripts/backend/create_keepalived_conf.sh '%d' '%d' '%d' '%s' '%s' '%s' '%s' 'MASTER'<<'EOF'\n%s\nEOF", routerID, vrrpID, vrrpVlan, ShellEscape(vrrpIface1.Address.Address), ShellEscape(vrrpIface1.MacAddr), ShellEscape(vrrpIface2.Address.Address), ShellEscape(vrrpIface2.MacAddr), jsonData)
+		command := fmt.Sprintf("/opt/cloudland/scripts/backend/create_keepalived_conf.sh '%d' '%d' '%d' '%s' '%s' '%s' '%s' 'MASTER' '%d'<<'EOF'\n%s\nEOF", routerID, vrrpID, vrrpVlan, ShellEscape(vrrpIface1.Address.Address), ShellEscape(vrrpIface1.MacAddr), ShellEscape(vrrpIface2.Address.Address), ShellEscape(vrrpIface2.MacAddr), loadBalancer.VrrpInstance.Vrid, jsonData)
 		err = HyperExecute(ctx, control, command)
 		if err != nil {
 			logger.Ctx(ctx).Error("Execute MASTER keepalived conf failed", err)
@@ -101,7 +102,7 @@ func CreateVrrpConf(ctx context.Context, loadBalancer *model.LoadBalancer) (err 
 	}
 	if vrrpIface2.Hyper >= 0 {
 		control := fmt.Sprintf("inter=%d", vrrpIface2.Hyper)
-		command := fmt.Sprintf("/opt/cloudland/scripts/backend/create_keepalived_conf.sh '%d' '%d' '%d' '%s' '%s' '%s' '%s' 'BACKUP'<<'EOF'\n%s\nEOF", routerID, vrrpID, vrrpVlan, ShellEscape(vrrpIface2.Address.Address), ShellEscape(vrrpIface2.MacAddr), ShellEscape(vrrpIface1.Address.Address), ShellEscape(vrrpIface1.MacAddr), jsonData)
+		command := fmt.Sprintf("/opt/cloudland/scripts/backend/create_keepalived_conf.sh '%d' '%d' '%d' '%s' '%s' '%s' '%s' 'BACKUP' '%d'<<'EOF'\n%s\nEOF", routerID, vrrpID, vrrpVlan, ShellEscape(vrrpIface2.Address.Address), ShellEscape(vrrpIface2.MacAddr), ShellEscape(vrrpIface1.Address.Address), ShellEscape(vrrpIface1.MacAddr), loadBalancer.VrrpInstance.Vrid, jsonData)
 		err = HyperExecute(ctx, control, command)
 		if err != nil {
 			logger.Ctx(ctx).Error("Execute BACKUP create keepalived conf failed", err)
@@ -109,6 +110,30 @@ func CreateVrrpConf(ctx context.Context, loadBalancer *model.LoadBalancer) (err 
 		}
 	}
 	return
+}
+
+// allocateVrid picks the lowest free VRRP virtual router id (1-255) in a VRRP subnet. The id must be
+// unique per layer-2 domain, which for unicast VRRP inside one router netns is the VRRP subnet; the
+// instance primary key used to be written into keepalived.conf and overflows after 255 instances.
+func allocateVrid(ctx context.Context, subnetID int64) (vrid int, err error) {
+	ctx, db := GetContextDB(ctx)
+	used := []int{}
+	if err = db.Model(&model.VrrpInstance{}).Where("vrrp_subnet_id = ?", subnetID).Pluck("vrid", &used).Error; err != nil {
+		logger.Ctx(ctx).Error("Failed to query vrrp ids", err)
+		return
+	}
+	taken := map[int]bool{}
+	for _, v := range used {
+		if v > 0 {
+			taken[v] = true
+		}
+	}
+	for v := 1; v <= 255; v++ {
+		if !taken[v] {
+			return v, nil
+		}
+	}
+	return 0, NewCLError(ErrVrrpInstanceCreateFailed, "No free VRRP virtual router id in this VPC (255 max)", nil)
 }
 
 func CreateVrrpInstance(ctx context.Context, name string, router *model.Router, zone *model.Zone) (vrrpInstance *model.VrrpInstance, err error) {
@@ -143,7 +168,17 @@ func CreateVrrpInstance(ctx context.Context, name string, router *model.Router, 
 		}
 	}
 	memberShip := GetMemberShip(ctx)
-	vrrpInstance = &model.VrrpInstance{Model: model.Model{Creater: memberShip.UserID}, Owner: memberShip.OrgID, VrrpSubnetID: vrrpSubnet.ID, ZoneID: zone.ID, RouterID: router.ID}
+	// Serialize the VRID allocation per VPC: two concurrent creates would read the same used set and
+	// share a VRID on one L2 domain (the partial unique index on the table is the backstop)
+	if err = db.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ?", router.ID).Take(&model.Router{}).Error; err != nil {
+		logger.Ctx(ctx).Error("Failed to lock the router for vrid allocation", err)
+		return
+	}
+	vrid, err := allocateVrid(ctx, vrrpSubnet.ID)
+	if err != nil {
+		return
+	}
+	vrrpInstance = &model.VrrpInstance{Model: model.Model{Creater: memberShip.UserID}, Owner: memberShip.OrgID, VrrpSubnetID: vrrpSubnet.ID, ZoneID: zone.ID, RouterID: router.ID, Vrid: vrid}
 	err = db.Create(vrrpInstance).Error
 	if err != nil {
 		logger.Ctx(ctx).Error("DB failed to create vrrp instance ", err)
@@ -408,50 +443,6 @@ func (a *LoadBalancerAdmin) Delete(ctx context.Context, loadBalancer *model.Load
 		}
 	}
 	loadBalancer.Listeners = nil
-	vrrpInstance := loadBalancer.VrrpInstance
-	vrrpSubnet := vrrpInstance.VrrpSubnet
-	routerID := loadBalancer.RouterID
-	vrrpIface1, vrrpIface2, err := GetVrrpInterfaces(ctx, vrrpInstance.ID)
-	if err != nil {
-		logger.Ctx(ctx).Error("Failed to get vrrp interfaces", err)
-		err = NewCLError(ErrInterfaceDeleteFailed, "Failed to delete vrrp interface 2", err)
-		return
-	}
-	if vrrpIface1.Hyper >= 0 {
-		control := fmt.Sprintf("inter=%d", vrrpIface1.Hyper)
-		command := fmt.Sprintf("/opt/cloudland/scripts/backend/clear_vrrp_ip.sh '%d' '%d' '%d' '%s' '%s' '%s' '%s'", routerID, vrrpInstance.ID, vrrpSubnet.Vlan, ShellEscape(vrrpIface1.Address.Address), ShellEscape(vrrpIface1.MacAddr), ShellEscape(vrrpIface2.Address.Address), ShellEscape(vrrpIface2.MacAddr))
-		err = HyperExecute(ctx, control, command)
-		if err != nil {
-			logger.Ctx(ctx).Error("Set vrrp ip command execution failed ", err)
-			return
-		}
-	}
-	if vrrpIface2.Hyper >= 0 {
-		control := fmt.Sprintf("inter=%d", vrrpIface2.Hyper)
-		command := fmt.Sprintf("/opt/cloudland/scripts/backend/clear_vrrp_ip.sh '%d' '%d' '%d' '%s' '%s' '%s' '%s'", routerID, vrrpInstance.ID, vrrpSubnet.Vlan, ShellEscape(vrrpIface2.Address.Address), ShellEscape(vrrpIface2.MacAddr), ShellEscape(vrrpIface1.Address.Address), ShellEscape(vrrpIface1.MacAddr))
-		err = HyperExecute(ctx, control, command)
-		if err != nil {
-			logger.Ctx(ctx).Error("Set vrrp ip command execution failed ", err)
-			return
-		}
-	}
-	err = DeleteInterface(ctx, vrrpIface1)
-	if err != nil {
-		logger.Ctx(ctx).Error("DB failed to delete vrrp interface 1", err)
-		err = NewCLError(ErrInterfaceDeleteFailed, "Failed to delete vrrp interface 1", err)
-		return
-	}
-	err = DeleteInterface(ctx, vrrpIface2)
-	if err != nil {
-		logger.Ctx(ctx).Error("DB failed to delete vrrp interface 2", err)
-		err = NewCLError(ErrInterfaceDeleteFailed, "Failed to delete vrrp interface 2", err)
-		return
-	}
-	if err = db.Delete(loadBalancer.VrrpInstance).Error; err != nil {
-		logger.Ctx(ctx).Error("DB failed to delete vrrp instance", err)
-		err = NewCLError(ErrLoadBalancerDeleteFailed, "Failed to delete vrrp instance", err)
-		return
-	}
 	if err = db.Delete(loadBalancer).Error; err != nil {
 		logger.Ctx(ctx).Error("DB failed to delete load balancer", err)
 		err = NewCLError(ErrLoadBalancerDeleteFailed, "Failed to delete load balancer", err)
@@ -464,21 +455,8 @@ func (a *LoadBalancerAdmin) Delete(ctx context.Context, loadBalancer *model.Load
 		err = NewCLError(ErrLoadBalancerUpdateFailed, "Failed to update loadBalancer name", err)
 		return
 	}
-	var count int64
-	err = db.Model(&model.LoadBalancer{}).Where("router_id = ?", loadBalancer.RouterID).Count(&count).Error
-	if err != nil {
-		logger.Ctx(ctx).Error("Failed to count load balancer")
-		err = NewCLError(ErrDatabaseError, "Failed to count load balancer in the router", err)
-		return
-	}
-	if count == 0 {
-		err = subnetAdmin.Delete(ctx, loadBalancer.VrrpInstance.VrrpSubnet)
-		if err != nil {
-			logger.Ctx(ctx).Error("Failed to delete vrrp subnet", err)
-			err = NewCLError(ErrSubnetDeleteFailed, "Failed to delete vrrp subnet", err)
-			return
-		}
-	}
+	// Shared with VPN gateways: the VRRP subnet is released only when the router has no VRRP instance left
+	err = deleteVrrpInstance(ctx, loadBalancer.RouterID, loadBalancer.VrrpInstance)
 	return
 }
 

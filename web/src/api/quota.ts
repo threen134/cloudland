@@ -11,6 +11,7 @@ export interface QuotaFields {
     max_disk_gb: number
     max_vpcs: number
     max_load_balancers: number
+    max_vpn_gateways: number
     max_images: number
 }
 
@@ -21,6 +22,7 @@ export interface ConsumptionFields {
     disk_gb: number
     vpcs: number
     load_balancers: number
+    vpn_gateways: number
     images: number
 }
 
@@ -33,6 +35,7 @@ export const QUOTA_ROWS: { key: keyof ConsumptionFields; qkey: keyof QuotaFields
     { key: 'public_ips', qkey: 'max_public_ips', label: 'quota.publicIps' },
     { key: 'vpcs', qkey: 'max_vpcs', label: 'quota.vpcs' },
     { key: 'load_balancers', qkey: 'max_load_balancers', label: 'quota.loadBalancers' },
+    { key: 'vpn_gateways', qkey: 'max_vpn_gateways', label: 'quota.vpnGateways' },
     { key: 'images', qkey: 'max_images', label: 'quota.images' },
 ]
 
@@ -43,6 +46,7 @@ export interface OrgResourceQuotaUpdate {
     max_disk_gb?: number
     max_vpcs?: number
     max_load_balancers?: number
+    max_vpn_gateways?: number
     max_images?: number
 }
 

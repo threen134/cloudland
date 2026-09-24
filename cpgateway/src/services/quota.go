@@ -38,6 +38,7 @@ var quotaRules = map[string]quotaRule{
 	"POST load_balancers/{id}/floating_ips": {"consume", "lb_floating_ip"},
 	"POST vpcs":                             {"consume", "vpc"},
 	"POST load_balancers":                   {"consume", "load_balancer"},
+	"POST vpn_gateways":                     {"consume", "vpn_gateway"},
 	"POST images":                           {"consume", "image"},
 	"DELETE instances/{id}":                 {"release", "instance"},
 	"DELETE volumes/{id}":                   {"release", "volume"},
@@ -45,16 +46,17 @@ var quotaRules = map[string]quotaRule{
 	"DELETE load_balancers/{id}/floating_ips/{floating_ip_id}": {"release", "lb_floating_ip"},
 	"DELETE vpcs/{id}":           {"release", "vpc"},
 	"DELETE load_balancers/{id}": {"release", "load_balancer"},
+	"DELETE vpn_gateways/{id}":   {"release", "vpn_gateway"},
 	"DELETE images/{id}":         {"release", "image"},
 	"POST instances/{id}/resize": {"resize", "instance"},
 	"POST volumes/{id}/resize":   {"resize", "volume"},
 }
 
 // QuotaResourceFields lists the consumption fields in check order; the quota column of each is "max_" + field.
-var QuotaResourceFields = []string{"cpu_cores", "ram_gb", "disk_gb", "public_ips", "vpcs", "load_balancers", "images"}
+var QuotaResourceFields = []string{"cpu_cores", "ram_gb", "disk_gb", "public_ips", "vpcs", "load_balancers", "images", "vpn_gateways"}
 
 // integerQuotaFields are counted per object and stored as integers.
-var integerQuotaFields = map[string]bool{"public_ips": true, "vpcs": true, "load_balancers": true, "images": true}
+var integerQuotaFields = map[string]bool{"public_ips": true, "vpcs": true, "load_balancers": true, "images": true, "vpn_gateways": true}
 
 // IsIntegerQuotaField reports whether a consumption field is an integer count.
 func IsIntegerQuotaField(field string) bool {
@@ -97,6 +99,7 @@ const (
 	DefaultQuotaVPCs          = 5
 	DefaultQuotaLoadBalancers = 5
 	DefaultQuotaImages        = 10
+	DefaultQuotaVpnGateways   = 1
 )
 
 // DefaultQuotaValues reads default quotas from system settings (DB → config → hardcoded).
@@ -109,6 +112,7 @@ func DefaultQuotaValues(db *gorm.DB) model.OrgResourceQuota {
 		MaxVPCs:          int(settingFloat(db, "DEFAULT_VPCS", configFloat("quota.defaults.vpcs", DefaultQuotaVPCs))),
 		MaxLoadBalancers: int(settingFloat(db, "DEFAULT_LOAD_BALANCERS", configFloat("quota.defaults.load_balancers", DefaultQuotaLoadBalancers))),
 		MaxImages:        int(settingFloat(db, "DEFAULT_IMAGES", configFloat("quota.defaults.images", DefaultQuotaImages))),
+		MaxVpnGateways:   int(settingFloat(db, "DEFAULT_VPN_GATEWAYS", configFloat("quota.defaults.vpn_gateways", DefaultQuotaVpnGateways))),
 	}
 }
 
@@ -180,14 +184,14 @@ func quotaExceeded(resource string, requested, available, limit float64, region 
 func consumptionValues(c *model.OrgResourceConsumption) map[string]float64 {
 	return map[string]float64{
 		"cpu_cores": c.CPUCores, "ram_gb": c.RAMGB, "public_ips": float64(c.PublicIPs), "disk_gb": c.DiskGB,
-		"vpcs": float64(c.VPCs), "load_balancers": float64(c.LoadBalancers), "images": float64(c.Images),
+		"vpcs": float64(c.VPCs), "load_balancers": float64(c.LoadBalancers), "images": float64(c.Images), "vpn_gateways": float64(c.VpnGateways),
 	}
 }
 
 func quotaLimits(q *model.OrgResourceQuota) map[string]float64 {
 	return map[string]float64{
 		"cpu_cores": q.MaxCPUCores, "ram_gb": q.MaxRAMGB, "public_ips": float64(q.MaxPublicIPs), "disk_gb": q.MaxDiskGB,
-		"vpcs": float64(q.MaxVPCs), "load_balancers": float64(q.MaxLoadBalancers), "images": float64(q.MaxImages),
+		"vpcs": float64(q.MaxVPCs), "load_balancers": float64(q.MaxLoadBalancers), "images": float64(q.MaxImages), "vpn_gateways": float64(q.MaxVpnGateways),
 	}
 }
 
@@ -371,6 +375,13 @@ func QueryResourceAmount(ctx context.Context, region *model.Region, resource, ap
 			amount["public_ips"] = float64(len(fips))
 		}
 		return amount, nil
+	case "vpn_gateway":
+		// A VPN gateway always owns exactly one public address, released with it
+		amount := ResourceAmount{"vpn_gateways": 1}
+		if fips, ok := data["floating_ips"].([]interface{}); ok && len(fips) > 0 {
+			amount["public_ips"] = float64(len(fips))
+		}
+		return amount, nil
 	case "image":
 		// Only private images count against the org quota; public platform images are not charged
 		if public, _ := data["public"].(bool); public {
@@ -517,6 +528,9 @@ func PrepareQuota(ctx context.Context, orgID int64, region *model.Region, method
 			amount = ResourceAmount{"vpcs": 1}
 		case "load_balancer":
 			amount = ResourceAmount{"load_balancers": 1}
+		case "vpn_gateway":
+			// The gateway and the public address it is created with
+			amount = ResourceAmount{"vpn_gateways": 1, "public_ips": 1}
 		case "image":
 			// clapi makes every image a system admin creates public; public platform images are not charged
 			if headers["X-System-Role"] != systemAdminRole {

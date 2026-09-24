@@ -26,112 +26,10 @@ func init() {
 	Add("launch_vm", LaunchVM)
 }
 
-type FdbRule struct {
-	Instance string `json:"instance"`
-	Vni      int64  `json:"vni"`
-	InnerIP  string `json:"inner_ip"`
-	InnerMac string `json:"inner_mac"`
-	OuterIP  string `json:"outer_ip"`
-	Gateway  string `json:"gateway"`
-	Router   int64  `json:"router"`
-}
-
+// sendFdbRules is kept as a thin wrapper: the implementation lives in common so the services package
+// (load balancer and VPN gateway deletion) can resend entries too
 func sendFdbRules(ctx context.Context, instance *model.Instance, vrrpInstance *model.VrrpInstance, instIface *model.Interface) (err error) {
-	if instance != nil && instance.RouterID == 0 {
-		// 经典网络（无 VPC 路由器）不需要下发 fdb，属于正常分支
-		logger.Ctx(ctx).Debug("No need to send fdb for classic")
-		return
-	}
-	ctx, db := GetContextDB(ctx)
-	localRules := []*FdbRule{}
-	spreadRules := []*FdbRule{}
-	hyperNode := int32(-1)
-	var interfaces []*model.Interface
-	routerID := int64(0)
-	if instance != nil {
-		hyperNode = instance.Hyper
-		interfaces = instance.Interfaces
-		routerID = instance.RouterID
-	} else if vrrpInstance != nil {
-		routerID = vrrpInstance.RouterID
-	}
-	if instIface != nil {
-		hyperNode = instIface.Hyper
-		interfaces = []*model.Interface{instIface}
-	}
-	if hyperNode == -1 {
-		logger.Ctx(ctx).Error("Invalid hyper node")
-		return
-	}
-	hyper := &model.Hyper{}
-	err = db.Where("hostid = ?", hyperNode).Take(hyper).Error
-	if err != nil || hyper.Hostid < 0 {
-		logger.Ctx(ctx).Error("Failed to query hypervisor")
-		return
-	}
-	for _, iface := range interfaces {
-		subnetType := iface.Address.Subnet.Type
-		if subnetType != string(Public) && subnetType != string(Private) {
-			spreadRules = append(spreadRules, &FdbRule{Instance: iface.Name, Vni: iface.Address.Subnet.Vlan, InnerIP: iface.Address.Address, InnerMac: iface.MacAddr, OuterIP: hyper.HostIP, Gateway: iface.Address.Subnet.Gateway, Router: iface.Address.Subnet.RouterID})
-		}
-	}
-	allIfaces := []*model.Interface{}
-	hyperSet := make(map[int32]struct{})
-	err = db.Preload("Address").Preload("Address.Subnet").Preload("Address.Subnet.Router").Where("router_id = ? and type <> 'gateway' and hyper <> ?", routerID, hyperNode).Find(&allIfaces).Error
-	if err != nil {
-		logger.Ctx(ctx).Error("Failed to query all interfaces", err)
-		return
-	}
-	for _, iface := range allIfaces {
-		subnetType := iface.Address.Subnet.Type
-		if iface.Address == nil || iface.Address.Subnet == nil || subnetType == "public" || subnetType == "private" {
-			continue
-		}
-		if iface.Hyper == -1 {
-			continue
-		}
-		hyper := &model.Hyper{}
-		hyperErr := db.Where("hostid = ? and hostid != ?", iface.Hyper, hyperNode).Take(hyper).Error
-		if hyperErr != nil {
-			logger.Ctx(ctx).Error("Failed to query hypervisor", hyperErr)
-			continue
-		}
-		if iface.Hyper >= 0 {
-			hyperSet[iface.Hyper] = struct{}{}
-		}
-		localRules = append(localRules, &FdbRule{Instance: iface.Name, Vni: iface.Address.Subnet.Vlan, InnerIP: iface.Address.Address, InnerMac: iface.MacAddr, OuterIP: hyper.HostIP, Gateway: iface.Address.Subnet.Gateway, Router: iface.Address.Subnet.RouterID})
-	}
-	if len(hyperSet) > 0 && len(spreadRules) > 0 {
-		hyperList := fmt.Sprintf("group-fdb-%d", hyperNode)
-		i := 0
-		for key := range hyperSet {
-			if i == 0 {
-				hyperList = fmt.Sprintf("%s:%d", hyperList, key)
-			} else {
-				hyperList = fmt.Sprintf("%s,%d", hyperList, key)
-			}
-			i++
-		}
-		fdbJson, _ := json.Marshal(spreadRules)
-		control := "toall=" + hyperList
-		command := fmt.Sprintf("/opt/cloudland/scripts/backend/add_fwrule.sh <<'EOF'\n%s\nEOF", fdbJson)
-		err = HyperExecute(ctx, control, command)
-		if err != nil {
-			logger.Ctx(ctx).Error("Add_fwrule execution failed", err)
-			return
-		}
-	}
-	if len(localRules) > 0 {
-		fdbJson, _ := json.Marshal(localRules)
-		control := fmt.Sprintf("inter=%d", hyperNode)
-		command := fmt.Sprintf("/opt/cloudland/scripts/backend/add_fwrule.sh <<'EOF'\n%s\nEOF", fdbJson)
-		err = HyperExecute(ctx, control, command)
-		if err != nil {
-			logger.Ctx(ctx).Error("Add_fwrule execution failed", err)
-			return
-		}
-	}
-	return
+	return SendFdbRules(ctx, instance, vrrpInstance, instIface)
 }
 
 func LaunchVM(ctx context.Context, args []string) (status string, err error) {
@@ -244,6 +142,13 @@ func LaunchVM(ctx context.Context, args []string) (status string, err error) {
 			if err != nil {
 				logger.Ctx(ctx).Error("Failed to sync floating ip", err)
 			}
+		}
+	}
+	// The node may host this VPC for the first time, or have rebuilt its router after a reboot (sync):
+	// give it the VPN gateway routes. Idempotent and cheap, so it runs on every report.
+	if instance.RouterID > 0 && instance.Status != model.InstanceStatusMigrating {
+		if verr := services.VpnResyncNode(ctx, instance.RouterID, int32(hyperID)); verr != nil {
+			logger.Ctx(ctx).Warningf("Failed to sync VPN routes to hyper %d, %v", hyperID, verr)
 		}
 	}
 	return

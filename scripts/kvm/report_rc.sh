@@ -223,6 +223,31 @@ function check_lb_process()
     sudo bash $base_dir/check_lb_process.sh >/dev/null 2>&1
 }
 
+function recover_vpn_gateway()
+{
+    # Same boot_id logic as recover_loadbalancer: after a reboot clapi re-pushes every VPN gateway of
+    # which this node is a VRRP member. Nodes that only host instances of such a VPC get their routes
+    # back through the launch_vm sync callbacks.
+    vpn_flag_file=$run_dir/need_to_sync_vpn
+    boot_file=/proc/sys/kernel/random/boot_id
+    diff $vpn_flag_file $boot_file >/dev/null 2>&1 && return
+    echo "|:-COMMAND-:| recover_vpn_gateway.sh '$NODE_ID'"
+    sudo cp $boot_file $vpn_flag_file
+}
+
+function check_vpn_process()
+{
+    # charon / FRR watchdog in both directions (start on the floating IP holder, stop elsewhere)
+    sudo -E bash $base_dir/check_vpn_process.sh >/dev/null 2>&1
+}
+
+function report_vpn_status()
+{
+    # Master identity, tunnel, client and BGP state; only |:-COMMAND-:| lines reach stdout.
+    # -E keeps NODE_ID: the callbacks carry it and clapi rejects them without it
+    sudo -E bash $base_dir/report_vpn_status.sh 2>/dev/null
+}
+
 function report_lb_health()
 {
     # Backend health check results of the load balancers this node is master of; prints callback lines only
@@ -448,6 +473,9 @@ pending_start
 recover_loadbalancer
 check_lb_process
 report_lb_health
+recover_vpn_gateway
+check_vpn_process
+report_vpn_status
 sync_delayed_job
 check_system_router
 #probe_arp >/dev/null 2>&1

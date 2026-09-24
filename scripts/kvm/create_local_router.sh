@@ -94,6 +94,11 @@ ip netns exec $router iptables -t nat -C POSTROUTING -m set --match-set nonat sr
 
 # 开启内核IP转发（核心：允许router netns转发IP数据包）
 ip netns exec $router bash -c "echo 1 >/proc/sys/net/ipv4/ip_forward"
+# Loose reverse path filtering: a VPN gateway master receives traffic of instances on other nodes over
+# ns-<vrrp vlan> while their source route points to ns-<vni>; strict mode would drop it. New netns copy
+# the host values, this makes the router independent of them. Redirects are noise on that path.
+ip netns exec $router sysctl -qw net.ipv4.conf.all.rp_filter=2 net.ipv4.conf.default.rp_filter=2 \
+    net.ipv4.conf.all.send_redirects=0 net.ipv4.conf.default.send_redirects=0 >/dev/null 2>&1
 
 # ipset（nonat）：Linux 内核的 IP 集合工具，用于批量管理 IP / 网段，这里标记 “不需要 NAT 的地址”。
 # SNAT（源地址转换）：修改出站数据包的源 IP 为 local_ip，确保外部网络能正确回包；脚本中仅对 “源在 nonat、目标不在 nonat” 的流量做 SNAT，实现精准的 NAT 控制。

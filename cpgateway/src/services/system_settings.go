@@ -68,6 +68,7 @@ var SettingsMetadata = []SettingMeta{
 	{"DEFAULT_PUBLIC_IPS", "number", "quota", "默认公网 IP 配额", false, cfgInt("quota.defaults.public_ips", 2)},
 	{"DEFAULT_VPCS", "number", "quota", "默认 VPC 配额（个）", false, cfgInt("quota.defaults.vpcs", DefaultQuotaVPCs)},
 	{"DEFAULT_LOAD_BALANCERS", "number", "quota", "默认负载均衡配额（个）", false, cfgInt("quota.defaults.load_balancers", DefaultQuotaLoadBalancers)},
+	{"DEFAULT_VPN_GATEWAYS", "number", "quota", "默认 VPN 网关配额（个）", false, cfgInt("quota.defaults.vpn_gateways", DefaultQuotaVpnGateways)},
 	{"DEFAULT_IMAGES", "number", "quota", "默认镜像配额（个）", false, cfgInt("quota.defaults.images", DefaultQuotaImages)},
 	{"NOTIFICATION_CHANNELS", "json", "notification", "启用的通知渠道列表", false, constant([]interface{}{"email"})},
 	{"SMTP_HOST", "string", "notification", "SMTP 主机", false, cfgString("smtp.host", "")},
@@ -109,6 +110,7 @@ var settingRanges = map[string]settingRange{
 	"DEFAULT_PUBLIC_IPS":        {0, 1e5, true},
 	"DEFAULT_VPCS":              {0, 1e5, true},
 	"DEFAULT_LOAD_BALANCERS":    {0, 1e5, true},
+	"DEFAULT_VPN_GATEWAYS":      {0, 1e5, true},
 	"DEFAULT_IMAGES":            {0, 1e5, true},
 }
 

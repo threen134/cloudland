@@ -3,7 +3,7 @@
 cd `dirname $0`
 source ../cloudrc
 
-[ $# -lt 8 ] && die "$0 <router> <vrrp_ID> <vrrp_vlan> <local_ip> <local_mac> <peer_ip> <peer_mac> <role>"
+[ $# -lt 8 ] && die "$0 <router> <vrrp_ID> <vrrp_vlan> <local_ip> <local_mac> <peer_ip> <peer_mac> <role> [vrid]"
 
 ID=$1
 router=router-$ID
@@ -14,6 +14,10 @@ local_mac=$5
 peer_ip=$6
 peer_mac=$7
 role=$8
+# VRRP virtual router id (1-255) allocated per VRRP subnet by clapi; instances created before the
+# column existed keep their primary key as the id
+vrid=$9
+[ -z "$vrid" -o "$vrid" = "0" ] && vrid=$vrrp_ID
 
 vrrp_dir=$router_dir/$router/vrrp-$vrrp_ID
 mkdir -p $vrrp_dir
@@ -61,7 +65,7 @@ cat >$vrrp_dir/keepalived.conf.new <<EOF
 vrrp_instance load_balancer_${vrrp_ID} {
     state BACKUP
     interface ns-$vrrp_vlan
-    virtual_router_id ${vrrp_ID}
+    virtual_router_id ${vrid}
     priority $priority
     advert_int 1
     nopreempt

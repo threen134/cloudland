@@ -24,9 +24,12 @@ const VARIANTS: Record<StatusVariant, string[]> = {
         'healthy',
         'ready',
         'resolved',
+        // VPN tunnel established
+        'up',
     ],
     neutral: ['stopped', 'shutoff', 'shut_off', 'inactive', 'disabled', 'offline', 'unknown'],
-    warning: ['paused', 'maintenance', 'degraded', 'warning', 'suspended'],
+    // A VPN tunnel that is configured but not established; a configuration failure is reported as error
+    warning: ['paused', 'maintenance', 'degraded', 'warning', 'suspended', 'down'],
     error: ['error', 'failed', 'not_supported', 'timeout', 'rollback', 'source_rollback', 'firing'],
     pending: [
         'pending',

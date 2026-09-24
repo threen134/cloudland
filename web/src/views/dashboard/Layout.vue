@@ -49,6 +49,7 @@ import {
     BellRing,
     MessageSquare,
     ShieldAlert,
+    ShieldCheck,
 } from 'lucide-vue-next'
 
 const auth = useAuthStore()
@@ -153,6 +154,8 @@ const pageTitle = computed(() => {
         'security-group-detail': t('dashboard.securityGroups'),
         'load-balancers': t('dashboard.loadBalancers'),
         'load-balancer-detail': t('dashboard.loadBalancers'),
+        'vpn-gateways': t('dashboard.vpnGateways'),
+        'vpn-gateway-detail': t('dashboard.vpnGateways'),
         'ssh-keys': t('dashboard.sshKeys'),
         users: t('dashboard.users'),
         'user-detail': t('dashboard.users'),
@@ -340,6 +343,10 @@ onUnmounted(() => {
                         <RouterLink to="/dashboard/load-balancers" class="nav-item" active-class="active">
                             <GitFork :size="18" />
                             <span>{{ $t('dashboard.loadBalancers') }}</span>
+                        </RouterLink>
+                        <RouterLink to="/dashboard/vpn-gateways" class="nav-item" active-class="active">
+                            <ShieldCheck :size="18" />
+                            <span>{{ $t('dashboard.vpnGateways') }}</span>
                         </RouterLink>
                     </div>
                 </div>

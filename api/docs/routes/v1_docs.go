@@ -7316,6 +7316,622 @@ const docTemplatev1 = `{
                 }
             }
         },
+        "/vpn_gateways": {
+            "get": {
+                "description": "list VPN gateways",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "VPN Gateway"
+                ],
+                "summary": "list VPN gateways",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apis.VpnGatewayListResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "description": "create a VPN gateway in a VPC with a public address",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "VPN Gateway"
+                ],
+                "summary": "create a VPN gateway",
+                "parameters": [
+                    {
+                        "description": "VPN gateway create payload",
+                        "name": "message",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/apis.VpnGatewayPayload"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apis.VpnGatewayResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            }
+        },
+        "/vpn_gateways/{id}": {
+            "get": {
+                "description": "get a VPN gateway with its connections, clients and routed prefixes",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "VPN Gateway"
+                ],
+                "summary": "get a VPN gateway",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apis.VpnGatewayResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "description": "delete a VPN gateway with its connections and clients",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "VPN Gateway"
+                ],
+                "summary": "delete a VPN gateway",
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            },
+            "patch": {
+                "description": "patch a VPN gateway",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "VPN Gateway"
+                ],
+                "summary": "patch a VPN gateway",
+                "parameters": [
+                    {
+                        "description": "VPN gateway patch payload",
+                        "name": "message",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/apis.VpnGatewayPatchPayload"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apis.VpnGatewayResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            }
+        },
+        "/vpn_gateways/{id}/clients": {
+            "get": {
+                "description": "list the WireGuard clients of a VPN gateway",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "VPN Gateway"
+                ],
+                "summary": "list VPN clients",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apis.VpnClientListResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "description": "create a WireGuard client; the response carries the generated private key and full config exactly once",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "VPN Gateway"
+                ],
+                "summary": "create a VPN client",
+                "parameters": [
+                    {
+                        "description": "VPN client create payload",
+                        "name": "message",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/apis.VpnClientPayload"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apis.VpnClientCreateResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            }
+        },
+        "/vpn_gateways/{id}/clients/{client_id}": {
+            "get": {
+                "description": "get a WireGuard client (never includes a private key)",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "VPN Gateway"
+                ],
+                "summary": "get a VPN client",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apis.VpnClientResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "description": "delete a WireGuard client and release its address",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "VPN Gateway"
+                ],
+                "summary": "delete a VPN client",
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            },
+            "patch": {
+                "description": "rename, describe or enable/disable a WireGuard client",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "VPN Gateway"
+                ],
+                "summary": "patch a VPN client",
+                "parameters": [
+                    {
+                        "description": "VPN client patch payload",
+                        "name": "message",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/apis.VpnClientPatchPayload"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apis.VpnClientResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            }
+        },
+        "/vpn_gateways/{id}/clients/{client_id}/config": {
+            "get": {
+                "description": "WireGuard configuration of a client without the private key",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "VPN Gateway"
+                ],
+                "summary": "get a VPN client configuration template",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apis.VpnClientConfigResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            }
+        },
+        "/vpn_gateways/{id}/connections": {
+            "get": {
+                "description": "list the site-to-site connections of a VPN gateway",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "VPN Gateway"
+                ],
+                "summary": "list VPN connections",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apis.VpnConnectionListResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "description": "create a site-to-site IPsec connection (static or BGP routed)",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "VPN Gateway"
+                ],
+                "summary": "create a VPN connection",
+                "parameters": [
+                    {
+                        "description": "VPN connection create payload",
+                        "name": "message",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/apis.VpnConnectionPayload"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apis.VpnConnectionResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            }
+        },
+        "/vpn_gateways/{id}/connections/{conn_id}": {
+            "get": {
+                "description": "get a site-to-site connection",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "VPN Gateway"
+                ],
+                "summary": "get a VPN connection",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apis.VpnConnectionResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "description": "delete a site-to-site connection",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "VPN Gateway"
+                ],
+                "summary": "delete a VPN connection",
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            },
+            "patch": {
+                "description": "patch a site-to-site connection; changed fields are pushed to the gateway",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "VPN Gateway"
+                ],
+                "summary": "patch a VPN connection",
+                "parameters": [
+                    {
+                        "description": "VPN connection patch payload",
+                        "name": "message",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/apis.VpnConnectionPatchPayload"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apis.VpnConnectionResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            }
+        },
+        "/vpn_gateways/{id}/connections/{conn_id}/restart": {
+            "post": {
+                "description": "terminate and re-initiate the IKE SA of a connection",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "VPN Gateway"
+                ],
+                "summary": "restart a VPN connection",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apis.VpnConnectionResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            }
+        },
         "/zones": {
             "get": {
                 "description": "list zones",
@@ -11276,6 +11892,840 @@ const docTemplatev1 = `{
                 }
             }
         },
+        "apis.VpnClientConfigResponse": {
+            "type": "object",
+            "properties": {
+                "config": {
+                    "type": "string"
+                }
+            }
+        },
+        "apis.VpnClientCreateResponse": {
+            "type": "object",
+            "properties": {
+                "bytes_in": {
+                    "type": "integer"
+                },
+                "bytes_out": {
+                    "type": "integer"
+                },
+                "config": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "enabled": {
+                    "type": "boolean"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "ip_address": {
+                    "type": "string"
+                },
+                "last_handshake_at": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "owner": {
+                    "type": "string"
+                },
+                "owner_uuid": {
+                    "description": "OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to\nrelease quota only when the caller's org actually owns the deleted resource",
+                    "type": "string"
+                },
+                "preshared_key_set": {
+                    "type": "boolean"
+                },
+                "private_key": {
+                    "type": "string"
+                },
+                "protocol": {
+                    "type": "string"
+                },
+                "public_key": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "apis.VpnClientListResponse": {
+            "type": "object",
+            "properties": {
+                "clients": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/apis.VpnClientResponse"
+                    }
+                },
+                "total": {
+                    "type": "integer"
+                }
+            }
+        },
+        "apis.VpnClientPatchPayload": {
+            "type": "object",
+            "properties": {
+                "description": {
+                    "type": "string",
+                    "maxLength": 255
+                },
+                "enabled": {
+                    "type": "boolean"
+                },
+                "name": {
+                    "type": "string",
+                    "maxLength": 32,
+                    "minLength": 2
+                }
+            }
+        },
+        "apis.VpnClientPayload": {
+            "type": "object",
+            "required": [
+                "name"
+            ],
+            "properties": {
+                "description": {
+                    "type": "string",
+                    "maxLength": 255
+                },
+                "enabled": {
+                    "type": "boolean"
+                },
+                "name": {
+                    "type": "string",
+                    "maxLength": 32,
+                    "minLength": 2
+                },
+                "preshared_key": {
+                    "type": "boolean"
+                },
+                "public_key": {
+                    "type": "string",
+                    "maxLength": 64
+                }
+            }
+        },
+        "apis.VpnClientResponse": {
+            "type": "object",
+            "properties": {
+                "bytes_in": {
+                    "type": "integer"
+                },
+                "bytes_out": {
+                    "type": "integer"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "enabled": {
+                    "type": "boolean"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "ip_address": {
+                    "type": "string"
+                },
+                "last_handshake_at": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "owner": {
+                    "type": "string"
+                },
+                "owner_uuid": {
+                    "description": "OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to\nrelease quota only when the caller's org actually owns the deleted resource",
+                    "type": "string"
+                },
+                "preshared_key_set": {
+                    "type": "boolean"
+                },
+                "protocol": {
+                    "type": "string"
+                },
+                "public_key": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "apis.VpnConnectionListResponse": {
+            "type": "object",
+            "properties": {
+                "connections": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/apis.VpnConnectionResponse"
+                    }
+                },
+                "total": {
+                    "type": "integer"
+                }
+            }
+        },
+        "apis.VpnConnectionPatchPayload": {
+            "type": "object",
+            "properties": {
+                "bgp_hold": {
+                    "type": "integer",
+                    "maximum": 10800,
+                    "minimum": 3
+                },
+                "bgp_keepalive": {
+                    "type": "integer",
+                    "maximum": 3600,
+                    "minimum": 1
+                },
+                "bgp_password": {
+                    "type": "string",
+                    "maxLength": 80
+                },
+                "description": {
+                    "type": "string",
+                    "maxLength": 255
+                },
+                "dpd_action": {
+                    "type": "string",
+                    "enum": [
+                        "restart",
+                        "clear",
+                        "none"
+                    ]
+                },
+                "dpd_delay": {
+                    "type": "integer",
+                    "maximum": 3600,
+                    "minimum": 5
+                },
+                "esp_lifetime": {
+                    "type": "integer",
+                    "maximum": 86400,
+                    "minimum": 300
+                },
+                "esp_proposal": {
+                    "type": "string",
+                    "maxLength": 128
+                },
+                "ike_lifetime": {
+                    "type": "integer",
+                    "maximum": 604800,
+                    "minimum": 300
+                },
+                "ike_proposal": {
+                    "type": "string",
+                    "maxLength": 128
+                },
+                "initiator": {
+                    "type": "boolean"
+                },
+                "local_asn": {
+                    "type": "integer",
+                    "maximum": 4294967295,
+                    "minimum": 1
+                },
+                "local_cidrs": {
+                    "type": "string",
+                    "maxLength": 512
+                },
+                "local_id": {
+                    "type": "string",
+                    "maxLength": 128
+                },
+                "max_prefixes": {
+                    "type": "integer",
+                    "maximum": 100000,
+                    "minimum": 1
+                },
+                "name": {
+                    "type": "string",
+                    "maxLength": 32,
+                    "minLength": 2
+                },
+                "peer_asn": {
+                    "type": "integer",
+                    "maximum": 4294967295,
+                    "minimum": 1
+                },
+                "psk": {
+                    "type": "string",
+                    "maxLength": 128
+                },
+                "remote_cidrs": {
+                    "type": "string",
+                    "maxLength": 512
+                },
+                "remote_gateway": {
+                    "type": "string",
+                    "maxLength": 64
+                },
+                "remote_id": {
+                    "type": "string",
+                    "maxLength": 128
+                },
+                "remote_summary_cidrs": {
+                    "type": "string",
+                    "maxLength": 512
+                },
+                "route_mode": {
+                    "type": "string",
+                    "enum": [
+                        "static",
+                        "bgp"
+                    ]
+                },
+                "tunnel_local_ip": {
+                    "type": "string",
+                    "maxLength": 64
+                },
+                "tunnel_peer_ip": {
+                    "type": "string",
+                    "maxLength": 64
+                }
+            }
+        },
+        "apis.VpnConnectionPayload": {
+            "type": "object",
+            "required": [
+                "name"
+            ],
+            "properties": {
+                "bgp_hold": {
+                    "type": "integer",
+                    "maximum": 10800,
+                    "minimum": 3
+                },
+                "bgp_keepalive": {
+                    "type": "integer",
+                    "maximum": 3600,
+                    "minimum": 1
+                },
+                "bgp_password": {
+                    "type": "string",
+                    "maxLength": 80
+                },
+                "description": {
+                    "type": "string",
+                    "maxLength": 255
+                },
+                "dpd_action": {
+                    "type": "string",
+                    "enum": [
+                        "restart",
+                        "clear",
+                        "none"
+                    ]
+                },
+                "dpd_delay": {
+                    "type": "integer",
+                    "maximum": 3600,
+                    "minimum": 5
+                },
+                "esp_lifetime": {
+                    "type": "integer",
+                    "maximum": 86400,
+                    "minimum": 300
+                },
+                "esp_proposal": {
+                    "type": "string",
+                    "maxLength": 128
+                },
+                "ike_lifetime": {
+                    "type": "integer",
+                    "maximum": 604800,
+                    "minimum": 300
+                },
+                "ike_proposal": {
+                    "type": "string",
+                    "maxLength": 128
+                },
+                "initiator": {
+                    "type": "boolean"
+                },
+                "local_asn": {
+                    "type": "integer",
+                    "maximum": 4294967295,
+                    "minimum": 1
+                },
+                "local_cidrs": {
+                    "type": "string",
+                    "maxLength": 512
+                },
+                "local_id": {
+                    "type": "string",
+                    "maxLength": 128
+                },
+                "max_prefixes": {
+                    "type": "integer",
+                    "maximum": 100000,
+                    "minimum": 1
+                },
+                "name": {
+                    "type": "string",
+                    "maxLength": 32,
+                    "minLength": 2
+                },
+                "peer_asn": {
+                    "type": "integer",
+                    "maximum": 4294967295,
+                    "minimum": 1
+                },
+                "psk": {
+                    "type": "string",
+                    "maxLength": 128
+                },
+                "remote_cidrs": {
+                    "type": "string",
+                    "maxLength": 512
+                },
+                "remote_gateway": {
+                    "type": "string"
+                },
+                "remote_id": {
+                    "type": "string",
+                    "maxLength": 128
+                },
+                "remote_summary_cidrs": {
+                    "type": "string",
+                    "maxLength": 512
+                },
+                "route_mode": {
+                    "type": "string",
+                    "enum": [
+                        "static",
+                        "bgp"
+                    ]
+                },
+                "tunnel_local_ip": {
+                    "type": "string"
+                },
+                "tunnel_peer_ip": {
+                    "type": "string"
+                }
+            }
+        },
+        "apis.VpnConnectionResponse": {
+            "type": "object",
+            "properties": {
+                "auth_method": {
+                    "type": "string"
+                },
+                "bgp": {
+                    "$ref": "#/definitions/services.VpnBgpReport"
+                },
+                "bgp_hold": {
+                    "type": "integer"
+                },
+                "bgp_keepalive": {
+                    "type": "integer"
+                },
+                "bgp_password_set": {
+                    "type": "boolean"
+                },
+                "bgp_reported_at": {
+                    "type": "string"
+                },
+                "bytes_in": {
+                    "type": "integer"
+                },
+                "bytes_out": {
+                    "type": "integer"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "dpd_action": {
+                    "type": "string"
+                },
+                "dpd_delay": {
+                    "type": "integer"
+                },
+                "effective_local_cidrs": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "esp_lifetime": {
+                    "type": "integer"
+                },
+                "esp_proposal": {
+                    "type": "string"
+                },
+                "established_at": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "if_id": {
+                    "type": "integer"
+                },
+                "ike_lifetime": {
+                    "type": "integer"
+                },
+                "ike_proposal": {
+                    "type": "string"
+                },
+                "ike_version": {
+                    "type": "integer"
+                },
+                "initiator": {
+                    "type": "boolean"
+                },
+                "last_error": {
+                    "type": "string"
+                },
+                "local_asn": {
+                    "type": "integer"
+                },
+                "local_cidrs": {
+                    "type": "string"
+                },
+                "local_id": {
+                    "type": "string"
+                },
+                "max_prefixes": {
+                    "type": "integer"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "owner": {
+                    "type": "string"
+                },
+                "owner_uuid": {
+                    "description": "OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to\nrelease quota only when the caller's org actually owns the deleted resource",
+                    "type": "string"
+                },
+                "peer_asn": {
+                    "type": "integer"
+                },
+                "psk_set": {
+                    "type": "boolean"
+                },
+                "remote_cidrs": {
+                    "type": "string"
+                },
+                "remote_gateway": {
+                    "type": "string"
+                },
+                "remote_id": {
+                    "type": "string"
+                },
+                "remote_summary_cidrs": {
+                    "type": "string"
+                },
+                "route_mode": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "tunnel_local_ip": {
+                    "type": "string"
+                },
+                "tunnel_peer_ip": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "apis.VpnGatewayListResponse": {
+            "type": "object",
+            "properties": {
+                "limit": {
+                    "type": "integer"
+                },
+                "offset": {
+                    "type": "integer"
+                },
+                "total": {
+                    "type": "integer"
+                },
+                "vpn_gateways": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/apis.VpnGatewayResponse"
+                    }
+                }
+            }
+        },
+        "apis.VpnGatewayPatchPayload": {
+            "type": "object",
+            "properties": {
+                "client_cidr": {
+                    "type": "string",
+                    "maxLength": 64
+                },
+                "client_dns": {
+                    "type": "string",
+                    "maxLength": 128
+                },
+                "client_enabled": {
+                    "type": "boolean"
+                },
+                "client_port": {
+                    "type": "integer",
+                    "maximum": 65535,
+                    "minimum": 1
+                },
+                "client_routes": {
+                    "type": "string",
+                    "maxLength": 512
+                },
+                "description": {
+                    "type": "string",
+                    "maxLength": 255
+                },
+                "enabled": {
+                    "description": "false pauses the whole gateway (tunnels, BGP, WireGuard) while keeping its public IP and configuration",
+                    "type": "boolean"
+                },
+                "ipsec_enabled": {
+                    "type": "boolean"
+                },
+                "name": {
+                    "type": "string",
+                    "maxLength": 32,
+                    "minLength": 2
+                }
+            }
+        },
+        "apis.VpnGatewayPayload": {
+            "type": "object",
+            "required": [
+                "name",
+                "vpc"
+            ],
+            "properties": {
+                "client_cidr": {
+                    "type": "string",
+                    "maxLength": 64
+                },
+                "client_dns": {
+                    "type": "string",
+                    "maxLength": 128
+                },
+                "client_enabled": {
+                    "type": "boolean"
+                },
+                "client_port": {
+                    "type": "integer",
+                    "maximum": 65535,
+                    "minimum": 1
+                },
+                "client_routes": {
+                    "type": "string",
+                    "maxLength": 512
+                },
+                "description": {
+                    "type": "string",
+                    "maxLength": 255
+                },
+                "inbound": {
+                    "type": "integer",
+                    "maximum": 20000,
+                    "minimum": 1
+                },
+                "ipsec_enabled": {
+                    "type": "boolean"
+                },
+                "name": {
+                    "type": "string",
+                    "maxLength": 32,
+                    "minLength": 2
+                },
+                "outbound": {
+                    "type": "integer",
+                    "maximum": 20000,
+                    "minimum": 1
+                },
+                "public_ip": {
+                    "type": "string"
+                },
+                "public_subnet": {
+                    "$ref": "#/definitions/common.BaseReference"
+                },
+                "vpc": {
+                    "$ref": "#/definitions/common.BaseReference"
+                },
+                "zone": {
+                    "type": "string",
+                    "maxLength": 32,
+                    "minLength": 1
+                }
+            }
+        },
+        "apis.VpnGatewayResponse": {
+            "type": "object",
+            "properties": {
+                "client_cidr": {
+                    "type": "string"
+                },
+                "client_count": {
+                    "type": "integer"
+                },
+                "client_dns": {
+                    "type": "string"
+                },
+                "client_enabled": {
+                    "type": "boolean"
+                },
+                "client_port": {
+                    "type": "integer"
+                },
+                "client_protocol": {
+                    "type": "string"
+                },
+                "client_public_key": {
+                    "type": "string"
+                },
+                "client_routes": {
+                    "type": "string"
+                },
+                "clients": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/apis.VpnClientResponse"
+                    }
+                },
+                "connection_count": {
+                    "type": "integer"
+                },
+                "connections": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/apis.VpnConnectionResponse"
+                    }
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "effective_client_routes": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "enabled": {
+                    "type": "boolean"
+                },
+                "floating_ips": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/apis.FloatingIpInfo"
+                    }
+                },
+                "id": {
+                    "type": "string"
+                },
+                "ipsec_enabled": {
+                    "type": "boolean"
+                },
+                "master_hostname": {
+                    "type": "string"
+                },
+                "master_hyper": {
+                    "type": "integer"
+                },
+                "master_reported_at": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "nodes": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/apis.VpnNodeInfo"
+                    }
+                },
+                "owner": {
+                    "type": "string"
+                },
+                "owner_uuid": {
+                    "description": "OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to\nrelease quota only when the caller's org actually owns the deleted resource",
+                    "type": "string"
+                },
+                "public_ip": {
+                    "type": "string"
+                },
+                "remote_prefixes": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/apis.VpnPrefixResponse"
+                    }
+                },
+                "status": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "vpc": {
+                    "$ref": "#/definitions/common.ResourceReference"
+                },
+                "zone": {
+                    "type": "string"
+                }
+            }
+        },
+        "apis.VpnNodeInfo": {
+            "type": "object",
+            "properties": {
+                "hostid": {
+                    "type": "integer"
+                },
+                "hostname": {
+                    "type": "string"
+                },
+                "master": {
+                    "type": "boolean"
+                },
+                "role": {
+                    "type": "string"
+                }
+            }
+        },
+        "apis.VpnPrefixResponse": {
+            "type": "object",
+            "properties": {
+                "cidr": {
+                    "type": "string"
+                },
+                "ref_id": {
+                    "type": "integer"
+                },
+                "source": {
+                    "type": "string"
+                }
+            }
+        },
         "apis.ZoneListResponse": {
             "type": "object",
             "properties": {
@@ -11616,6 +13066,47 @@ const docTemplatev1 = `{
                     "type": "string"
                 },
                 "volume_uuid": {
+                    "type": "string"
+                }
+            }
+        },
+        "services.VpnBgpReport": {
+            "type": "object",
+            "properties": {
+                "accepted": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "advertised": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "name": {
+                    "type": "string"
+                },
+                "prefixes_received": {
+                    "type": "integer"
+                },
+                "prefixes_sent": {
+                    "type": "integer"
+                },
+                "rejected": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "state": {
+                    "type": "string"
+                },
+                "truncated": {
+                    "type": "boolean"
+                },
+                "uptime": {
                     "type": "string"
                 }
             }

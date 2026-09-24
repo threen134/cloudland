@@ -209,6 +209,10 @@ func doConsumptionSync(ctx context.Context, orgID int64, orgUUID string, regionI
 	if err != nil {
 		return fmt.Errorf("failed to count load_balancers for org=%d", orgID)
 	}
+	vpns, err := fetchResourceCount(ctx, client, base+"/vpn_gateways", "", headers)
+	if err != nil {
+		return fmt.Errorf("failed to count vpn_gateways for org=%d", orgID)
+	}
 	// Private images owned by the org. The plain list also returns other orgs' public images (and every org's
 	// images for a system admin, the role used here); public platform images are not charged to any org.
 	images, err := fetchResourceCount(ctx, client, base+"/images", "owned=true&visibility=private", headers)
@@ -230,6 +234,7 @@ func doConsumptionSync(ctx context.Context, orgID int64, orgUUID string, regionI
 		"vpcs":           vpcs,
 		"load_balancers": lbs,
 		"images":         images,
+		"vpn_gateways":   vpns,
 	}).Error; err != nil {
 		tx.Rollback()
 		return err
@@ -238,7 +243,7 @@ func doConsumptionSync(ctx context.Context, orgID int64, orgUUID string, regionI
 		return err
 	}
 
-	log.WithContext(ctx).Infof("ConsumptionSync: org=%d, region=%d -> cpu=%v, ram=%.2fGB, disk=%vGB, public_ips=%d, vpcs=%d, load_balancers=%d, images=%d",
-		orgID, regionID, cpu, ram, disk, fips, vpcs, lbs, images)
+	log.WithContext(ctx).Infof("ConsumptionSync: org=%d, region=%d -> cpu=%v, ram=%.2fGB, disk=%vGB, public_ips=%d, vpcs=%d, load_balancers=%d, images=%d, vpn_gateways=%d",
+		orgID, regionID, cpu, ram, disk, fips, vpcs, lbs, images, vpns)
 	return nil
 }

@@ -26,6 +26,10 @@
         "keepalived",
         "haproxy",
         "socat",
+        "strongswan-swanctl",
+        "strongswan-charon",
+        "wireguard-tools",
+        "frr",
         "lvm2",
         "mdadm",
         "xfsprogs",
@@ -44,6 +48,77 @@
     state: present
   ignore_errors: yes
   tags: [be_pkg]
+
+# VPN gateways: strongSwan, WireGuard and FRR run per gateway inside the router netns, started by the
+# vpn scripts; the packaged services would grab /etc/swanctl, /run/frr and the IKE ports
+- name: disable packaged vpn services
+  systemd:
+    name: "{{ item }}"
+    enabled: false
+    state: stopped
+  with_items:
+    - "strongswan-starter"
+    - "strongswan"
+    - "ipsec"
+    - "frr"
+  ignore_errors: yes
+  when: not ansible_check_mode
+  tags: [be_pkg, vpn]
+
+# Ubuntu confines charon, swanctl, bgpd, staticd and wg with AppArmor to their packaged paths; allow the
+# per-gateway directories (same overrides as deploy-compute-node.sh)
+- name: apparmor overrides for vpn gateways
+  copy:
+    dest: "/etc/apparmor.d/local/{{ item.name }}"
+    content: "{{ item.content }}"
+    owner: root
+    group: root
+    mode: "0644"
+  with_items:
+    - name: usr.lib.ipsec.charon
+      content: |
+        # CloudLand VPN gateways: one charon per VPC router netns, config and logs under the router cache dir
+          /opt/cloudland/cache/router/router-*/vpn-*/ r,
+          /opt/cloudland/cache/router/router-*/vpn-*/** rwk,
+    - name: usr.sbin.swanctl
+      content: |
+        # CloudLand VPN gateways: per-gateway swanctl.conf and vici socket
+          /opt/cloudland/cache/router/router-*/vpn-*/ r,
+          /opt/cloudland/cache/router/router-*/vpn-*/** rw,
+    - name: bgpd
+      content: |
+        # CloudLand VPN gateways: one FRR pathspace per gateway (-N vpn-<id>)
+          @{run}/frr/vpn-*/ rw,
+          @{run}/frr/vpn-*/** rwk,
+          /etc/frr/vpn-*/ r,
+          /etc/frr/vpn-*/* rw,
+          owner @{PROC}/@{pid}/task/@{tid}/comm rw,
+    - name: staticd
+      content: |
+        # CloudLand VPN gateways: one FRR pathspace per gateway (-N vpn-<id>)
+          @{run}/frr/vpn-*/ rw,
+          @{run}/frr/vpn-*/** rwk,
+          /etc/frr/vpn-*/ r,
+          /etc/frr/vpn-*/* rw,
+          owner @{PROC}/@{pid}/task/@{tid}/comm rw,
+    - name: wg
+      content: |
+        # CloudLand VPN gateways: wg reads the per-gateway configuration and key
+          /opt/cloudland/cache/router/router-*/vpn-*/ r,
+          /opt/cloudland/cache/router/router-*/vpn-*/** r,
+  tags: [be_pkg, vpn]
+
+- name: reload apparmor profiles for vpn gateways
+  shell: "[ -f /etc/apparmor.d/{{ item }} ] && apparmor_parser -r /etc/apparmor.d/{{ item }} || true"
+  with_items:
+    - usr.lib.ipsec.charon
+    - usr.sbin.swanctl
+    - bgpd
+    - staticd
+    - wg
+  ignore_errors: yes
+  when: not ansible_check_mode
+  tags: [be_pkg, vpn]
 
 - name: install pyparsing
   apt:

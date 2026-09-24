@@ -10,6 +10,7 @@ import ActivityEntry from '../../components/activity/ActivityEntry.vue'
 import { volumesApi, type Volume } from '../../api/volumes'
 import { imagesApi } from '../../api/images'
 import { vpcsApi, floatingIpsApi, loadBalancersApi } from '../../api/networks'
+import { vpnGatewaysApi } from '../../api/vpn'
 import { quotaApi, type QuotaFields } from '../../api/quota'
 import { usageColor } from '../../utils/usageColor'
 import { useToast } from '../../composables/useToast'
@@ -69,6 +70,7 @@ const buildUsageBars = (
         publicIps: number
         vpcs: number
         loadBalancers: number
+        vpnGateways: number
         images: number
     },
     quota?: Partial<QuotaFields> | null
@@ -91,6 +93,7 @@ const buildUsageBars = (
         bar('public_ips', 'dashboard.overview.publicIp', u.publicIps, quota?.max_public_ips, count),
         bar('vpcs', 'dashboard.overview.vpc', u.vpcs, quota?.max_vpcs, count),
         bar('load_balancers', 'dashboard.overview.loadBalancer', u.loadBalancers, quota?.max_load_balancers, count),
+        bar('vpn_gateways', 'dashboard.overview.vpnGateway', u.vpnGateways, quota?.max_vpn_gateways, count),
         bar('images', 'dashboard.overview.images', u.images, quota?.max_images, count),
     ]
 }
@@ -111,7 +114,7 @@ onMounted(async () => {
         const orgUuid = auth.user?.current_org_uuid || ''
         const regionUuid = regionStore.currentRegionId || ''
 
-        const [instRes, volRes, imgRes, vpcRes, fipRes, lbRes, quotaRes] = await Promise.all([
+        const [instRes, volRes, imgRes, vpcRes, fipRes, lbRes, vpnRes, quotaRes] = await Promise.all([
             instancesApi.fetchInstances().catch((err) => {
                 console.warn('Instances fetch failed:', err)
                 return { offset: 0, total: 0, limit: 0, instances: [] }
@@ -135,6 +138,11 @@ onMounted(async () => {
             // Only the total is needed for the load balancer card
             loadBalancersApi.list({ limit: 1 }).catch((err) => {
                 console.warn('Load balancers fetch failed:', err)
+                return null
+            }),
+            // Only the total is needed for the VPN gateway usage bar
+            vpnGatewaysApi.list({ limit: 1 }).catch((err) => {
+                console.warn('VPN gateways fetch failed:', err)
                 return null
             }),
             orgUuid && regionUuid
@@ -190,6 +198,7 @@ onMounted(async () => {
                 publicIps: usedPublicIps,
                 vpcs: consumption?.vpcs ?? vpcCount,
                 loadBalancers: consumption?.load_balancers ?? lbRes?.total ?? 0,
+                vpnGateways: consumption?.vpn_gateways ?? vpnRes?.total ?? 0,
                 images: consumption?.images ?? 0,
             },
             quota
@@ -200,7 +209,7 @@ onMounted(async () => {
         toast.error(t('messages.error'))
         stats.value = emptyStats
         usageBars.value = buildUsageBars(
-            { cpu: 0, memGB: 0, diskGB: 0, publicIps: 0, vpcs: 0, loadBalancers: 0, images: 0 },
+            { cpu: 0, memGB: 0, diskGB: 0, publicIps: 0, vpcs: 0, loadBalancers: 0, vpnGateways: 0, images: 0 },
             null
         )
     } finally {
@@ -692,5 +701,4 @@ a.stat-card:focus-visible {
     animation: spin 1s linear infinite;
     margin-bottom: 16px;
 }
-
 </style>

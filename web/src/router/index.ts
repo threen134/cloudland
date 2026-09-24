@@ -210,6 +210,16 @@ const router = createRouter({
                     name: 'load-balancer-detail',
                     component: () => import('../views/dashboard/LoadBalancerDetail.vue'),
                 },
+                {
+                    path: 'vpn-gateways',
+                    name: 'vpn-gateways',
+                    component: () => import('../views/dashboard/VpnGateways.vue'),
+                },
+                {
+                    path: 'vpn-gateways/:id',
+                    name: 'vpn-gateway-detail',
+                    component: () => import('../views/dashboard/VpnGatewayDetail.vue'),
+                },
                 // Administration (Superadmin only)
                 {
                     path: 'regions',

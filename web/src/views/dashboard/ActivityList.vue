@@ -48,6 +48,7 @@ const RESOURCE_TYPES = [
     'security_group',
     'floating_ip',
     'load_balancer',
+    'vpn_gateway',
     'zone',
     'hyper',
     'migration',

@@ -13,6 +13,7 @@ import (
 
 	. "api/src/common"
 	"api/src/model"
+	"api/src/services"
 )
 
 func init() {
@@ -145,6 +146,12 @@ func SetVrrpIp(ctx context.Context, args []string) (status string, err error) {
 		err = UpdateLoadBalancerStatus(ctx, vrrpInstance)
 		if err != nil {
 			logger.Ctx(ctx).Error("Failed to update load balancer", err)
+			return
+		}
+		// A VPN gateway sharing this VRRP instance can only be pushed to its pair now that both
+		// interfaces know their node
+		if err = services.VpnGatewayVrrpReady(ctx, vrrpInstance.ID); err != nil {
+			logger.Ctx(ctx).Error("Failed to dispatch VPN gateway", err)
 			return
 		}
 	}

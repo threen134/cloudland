@@ -318,6 +318,17 @@ func (a *RouterAdmin) Delete(ctx context.Context, router *model.Router) (err err
 		err = NewCLError(ErrRouterHasPortmaps, "There are associated load balancers", nil)
 		return
 	}
+	err = db.Model(&model.VpnGateway{}).Where("router_id = ?", router.ID).Count(&count).Error
+	if err != nil {
+		logger.Ctx(ctx).Error("Failed to count VPN gateways")
+		err = NewCLError(ErrDatabaseError, "Failed to count VPN gateways in the router", err)
+		return
+	}
+	if count > 0 {
+		logger.Ctx(ctx).Error("There is a VPN gateway")
+		err = NewCLError(ErrRouterHasVpnGateway, "Delete the VPN gateway first", nil)
+		return
+	}
 	control := "toall="
 	command := fmt.Sprintf("/opt/cloudland/scripts/backend/clear_local_router.sh '%d'", router.ID)
 	err = HyperExecute(ctx, control, command)

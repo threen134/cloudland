@@ -246,14 +246,15 @@ func DeleteRegion(c *gin.Context) {
 		VPCs          float64 `gorm:"column:vpcs"`
 		LoadBalancers float64 `gorm:"column:load_balancers"`
 		Images        float64 `gorm:"column:images"`
+		VpnGateways   float64 `gorm:"column:vpn_gateways"`
 	}
 	db.Model(&model.OrgResourceConsumption{}).
 		Select("COALESCE(SUM(cpu_cores),0) AS cpu, COALESCE(SUM(ram_gb),0) AS ram, COALESCE(SUM(disk_gb),0) AS disk, COALESCE(SUM(public_ips),0) AS ips, "+
-			"COALESCE(SUM(vpcs),0) AS vpcs, COALESCE(SUM(load_balancers),0) AS load_balancers, COALESCE(SUM(images),0) AS images").
+			"COALESCE(SUM(vpcs),0) AS vpcs, COALESCE(SUM(load_balancers),0) AS load_balancers, COALESCE(SUM(images),0) AS images, COALESCE(SUM(vpn_gateways),0) AS vpn_gateways").
 		Where("region_id = ?", region.ID).Scan(&usage)
-	if usage.CPU > 0 || usage.RAM > 0 || usage.Disk > 0 || usage.IPs > 0 || usage.VPCs > 0 || usage.LoadBalancers > 0 || usage.Images > 0 {
+	if usage.CPU > 0 || usage.RAM > 0 || usage.Disk > 0 || usage.IPs > 0 || usage.VPCs > 0 || usage.LoadBalancers > 0 || usage.Images > 0 || usage.VpnGateways > 0 {
 		common.AbortWithDetail(c, http.StatusBadRequest, fmt.Sprintf(
-			"Cannot delete region '%s': There are still active resources (VMs, volumes, floating IPs, VPCs, load balancers or images). Please delete all resources in this region first.", region.Name))
+			"Cannot delete region '%s': There are still active resources (VMs, volumes, floating IPs, VPCs, load balancers, VPN gateways or images). Please delete all resources in this region first.", region.Name))
 		return
 	}
 

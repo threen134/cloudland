@@ -191,6 +191,8 @@ services:
       CLAPI_HOSTNAME: ${CLAPI_HOSTNAME:-clapi.cloudland.internal}
       CLAPI_INTERNAL_URL: ${CLAPI_INTERNAL_URL:-}
       CAPTURE_UPLOAD_SECRET: ${CAPTURE_UPLOAD_SECRET:-}
+      # VPN gateway credentials (IPsec PSKs, WireGuard keys) are encrypted at rest with a key derived from this
+      VPN_SECRET_KEY: ${VPN_SECRET_KEY:-}
       # 访问 cland-go 的共享令牌，同时写入计算节点 deploy_command
       GRPC_AUTH_TOKEN: ${GRPC_AUTH_TOKEN:-}
       # 计算节点 deploy_command 使用的代码分支与脚本地址（DEPLOY_SCRIPT_URL 为空时按 REPO_BRANCH 拼接）

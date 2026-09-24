@@ -6,6 +6,7 @@ import { useCopyId } from '../../composables/useCopyId'
 import { useRegionStore } from '../../stores/region'
 import { loadBalancersApi, vpcsApi, type LoadBalancer, type VPC, type LoadBalancerPayload } from '../../api/networks'
 import { isValidName } from '../../utils/validation'
+import { zonesApi, type Zone } from '../../api/zones'
 
 import { GitFork, Plus, Trash2, Search, Pencil, RefreshCw, Check, Copy } from 'lucide-vue-next'
 import { quotaErrorMessage } from '../../utils/quotaError'
@@ -156,9 +157,22 @@ const onSearchInput = () => {
 // 搜索框改用 PageToolbar 的 v-model:search，这里接回原来的防抖逻辑
 watch(searchQuery, onSearchInput)
 
+// Zones for the create modal dropdown; empty means the default zone
+const zones = ref<Zone[]>([])
+const fetchZones = async () => {
+    try {
+        const res = await zonesApi.fetchZones({ limit: 500 })
+        zones.value = res.zones || []
+    } catch (err) {
+        console.error('Failed to fetch zones:', err)
+        zones.value = []
+    }
+}
+
 const openCreateModal = () => {
     newLBForm.value = { name: '', description: '', vpc_id: vpcs.value[0]?.id || '', zone: '' }
     createModalVisible.value = true
+    fetchZones()
 }
 
 const closeCreateModal = () => {
@@ -416,12 +430,14 @@ onUnmounted(() => {
                 <label class="form-label"
                     >{{ $t('dashboard.forms.zone') }}（{{ $t('dashboard.forms.optional') }}）</label
                 >
-                <input
-                    v-model="newLBForm.zone"
-                    type="text"
-                    class="form-input"
-                    :placeholder="$t('dashboard.forms.placeholder.zoneExample')"
-                />
+                <div class="select-wrapper">
+                    <select v-model="newLBForm.zone" class="form-input">
+                        <option value="">{{ $t('dashboard.forms.zoneAuto') }}</option>
+                        <option v-for="z in zones" :key="z.id" :value="z.name">
+                            {{ z.name }}{{ z.default ? ` · ${$t('dashboard.forms.zoneDefaultTag')}` : '' }}
+                        </option>
+                    </select>
+                </div>
             </div>
 
             <div v-if="createError" class="modal-error text-error">

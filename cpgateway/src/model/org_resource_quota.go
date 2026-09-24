@@ -20,6 +20,7 @@ type OrgResourceQuota struct {
 	MaxVPCs          int       `gorm:"column:max_vpcs;default:0;not null" json:"max_vpcs"`
 	MaxLoadBalancers int       `gorm:"default:0;not null" json:"max_load_balancers"`
 	MaxImages        int       `gorm:"default:0;not null" json:"max_images"`
+	MaxVpnGateways   int       `gorm:"default:0;not null" json:"max_vpn_gateways"`
 	CreatedAt        time.Time `json:"created_at"`
 	UpdatedAt        time.Time `json:"updated_at"`
 }

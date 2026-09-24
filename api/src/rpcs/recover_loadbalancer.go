@@ -187,9 +187,9 @@ func RecoverLoadbalancer(ctx context.Context, args []string) (status string, err
 			}
 			logger.Ctx(ctx).Infof("LB %d - Creating MASTER keepalived config on hyper %d", loadBalancer.ID, hyperID)
 			control = fmt.Sprintf("inter=%d", vrrpIface1.Hyper)
-			command = fmt.Sprintf("/opt/cloudland/scripts/backend/create_keepalived_conf.sh '%d' '%d' '%d' '%s' '%s' '%s' '%s' 'MASTER'<<'EOF'\n%s\nEOF",
+			command = fmt.Sprintf("/opt/cloudland/scripts/backend/create_keepalived_conf.sh '%d' '%d' '%d' '%s' '%s' '%s' '%s' 'MASTER' '%d'<<'EOF'\n%s\nEOF",
 				routerID, vrrpID, vrrpVlan, ShellEscape(vrrpIface1.Address.Address), ShellEscape(vrrpIface1.MacAddr),
-				ShellEscape(vrrpIface2.Address.Address), ShellEscape(vrrpIface2.MacAddr), jsonData)
+				ShellEscape(vrrpIface2.Address.Address), ShellEscape(vrrpIface2.MacAddr), loadBalancer.VrrpInstance.Vrid, jsonData)
 			err = HyperExecute(ctx, control, command)
 			if err != nil {
 				logger.Ctx(ctx).Errorf("LB %d - Execute MASTER keepalived conf failed: %v", loadBalancer.ID, err)
@@ -215,9 +215,9 @@ func RecoverLoadbalancer(ctx context.Context, args []string) (status string, err
 			}
 			logger.Ctx(ctx).Infof("LB %d - Creating BACKUP keepalived config on hyper %d", loadBalancer.ID, hyperID)
 			control = fmt.Sprintf("inter=%d", vrrpIface2.Hyper)
-			command = fmt.Sprintf("/opt/cloudland/scripts/backend/create_keepalived_conf.sh '%d' '%d' '%d' '%s' '%s' '%s' '%s' 'BACKUP'<<'EOF'\n%s\nEOF",
+			command = fmt.Sprintf("/opt/cloudland/scripts/backend/create_keepalived_conf.sh '%d' '%d' '%d' '%s' '%s' '%s' '%s' 'BACKUP' '%d'<<'EOF'\n%s\nEOF",
 				routerID, vrrpID, vrrpVlan, ShellEscape(vrrpIface2.Address.Address), ShellEscape(vrrpIface2.MacAddr),
-				ShellEscape(vrrpIface1.Address.Address), ShellEscape(vrrpIface1.MacAddr), jsonData)
+				ShellEscape(vrrpIface1.Address.Address), ShellEscape(vrrpIface1.MacAddr), loadBalancer.VrrpInstance.Vrid, jsonData)
 			err = HyperExecute(ctx, control, command)
 			if err != nil {
 				logger.Ctx(ctx).Errorf("LB %d - Execute BACKUP keepalived conf failed: %v", loadBalancer.ID, err)

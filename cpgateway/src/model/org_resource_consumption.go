@@ -17,6 +17,7 @@ type OrgResourceConsumption struct {
 	VPCs          int       `gorm:"column:vpcs;default:0;not null" json:"vpcs"`
 	LoadBalancers int       `gorm:"default:0;not null" json:"load_balancers"`
 	Images        int       `gorm:"default:0;not null" json:"images"`
+	VpnGateways   int       `gorm:"default:0;not null" json:"vpn_gateways"`
 	CreatedAt     time.Time `json:"created_at"`
 	UpdatedAt     time.Time `json:"updated_at"`
 }

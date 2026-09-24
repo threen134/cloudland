@@ -237,6 +237,45 @@ apt-get install -y lvm2 mdadm xfsprogs rsync libxml2-utils
 # 负载均衡的 haproxy 由 create_haproxy_conf.sh 在路由器 netns 内按实例启动，不需要系统自带的服务
 systemctl disable --now haproxy 2>/dev/null || true
 
+# VPN gateways: strongSwan (IKEv2), WireGuard and FRR (BGP) run per gateway inside the router netns,
+# started by the vpn scripts; the system services would grab /etc/swanctl, /run/frr and the IKE ports
+apt-get install -y strongswan-swanctl strongswan-charon wireguard-tools frr
+systemctl disable --now strongswan-starter strongswan ipsec frr 2>/dev/null || true
+# Ubuntu confines charon, swanctl and bgpd with AppArmor to their packaged paths; allow the per-gateway
+# directories (charon's pid dir is compiled in, the scripts bind-mount a private one over /run)
+mkdir -p /etc/apparmor.d/local
+cat > /etc/apparmor.d/local/usr.lib.ipsec.charon <<'EOF'
+# CloudLand VPN gateways: one charon per VPC router netns, config and logs under the router cache dir
+  /opt/cloudland/cache/router/router-*/vpn-*/ r,
+  /opt/cloudland/cache/router/router-*/vpn-*/** rwk,
+EOF
+cat > /etc/apparmor.d/local/usr.sbin.swanctl <<'EOF'
+# CloudLand VPN gateways: per-gateway swanctl.conf and vici socket
+  /opt/cloudland/cache/router/router-*/vpn-*/ r,
+  /opt/cloudland/cache/router/router-*/vpn-*/** rw,
+EOF
+for daemon in bgpd staticd; do
+cat > /etc/apparmor.d/local/$daemon <<'EOF'
+# CloudLand VPN gateways: one FRR pathspace per gateway (-N vpn-<id>)
+  @{run}/frr/vpn-*/ rw,
+  @{run}/frr/vpn-*/** rwk,
+  /etc/frr/vpn-*/ r,
+  /etc/frr/vpn-*/* rw,
+  # thread naming, denied by the stock profile (harmless, only log noise)
+  owner @{PROC}/@{pid}/task/@{tid}/comm rw,
+EOF
+done
+cat > /etc/apparmor.d/local/wg <<'EOF'
+# CloudLand VPN gateways: wg reads the per-gateway configuration and key
+  /opt/cloudland/cache/router/router-*/vpn-*/ r,
+  /opt/cloudland/cache/router/router-*/vpn-*/** r,
+EOF
+if command -v apparmor_parser >/dev/null 2>&1 && [ -d /sys/kernel/security/apparmor ]; then
+    for profile in usr.lib.ipsec.charon usr.sbin.swanctl bgpd staticd wg; do
+        [ -f /etc/apparmor.d/$profile ] && apparmor_parser -r /etc/apparmor.d/$profile || true
+    done
+fi
+
 # Docker（用于跑 libvirt-exporter 和 promtail-agent 监控容器）
 if ! command -v docker &>/dev/null; then
     log "安装 Docker (docker.io)..."

@@ -24,6 +24,7 @@ export function useQuota() {
                     max_disk_gb: region.quota.max_disk_gb,
                     max_vpcs: region.quota.max_vpcs,
                     max_load_balancers: region.quota.max_load_balancers,
+                    max_vpn_gateways: region.quota.max_vpn_gateways,
                     max_images: region.quota.max_images,
                 }
             }

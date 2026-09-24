@@ -53,7 +53,13 @@ const sectionLayout: Record<'general' | 'quota', Array<{ key: string; fields: st
         { key: 'quotaCompute', fields: ['DEFAULT_CPU_CORES', 'DEFAULT_RAM_GB', 'DEFAULT_DISK_GB'] },
         {
             key: 'quotaOther',
-            fields: ['DEFAULT_PUBLIC_IPS', 'DEFAULT_VPCS', 'DEFAULT_LOAD_BALANCERS', 'DEFAULT_IMAGES'],
+            fields: [
+                'DEFAULT_PUBLIC_IPS',
+                'DEFAULT_VPCS',
+                'DEFAULT_LOAD_BALANCERS',
+                'DEFAULT_VPN_GATEWAYS',
+                'DEFAULT_IMAGES',
+            ],
         },
     ],
 }
@@ -80,6 +86,7 @@ const numberRanges: Record<string, { min: number; max: number; integer: boolean 
     DEFAULT_PUBLIC_IPS: { min: 0, max: 1e5, integer: true },
     DEFAULT_VPCS: { min: 0, max: 1e5, integer: true },
     DEFAULT_LOAD_BALANCERS: { min: 0, max: 1e5, integer: true },
+    DEFAULT_VPN_GATEWAYS: { min: 0, max: 1e5, integer: true },
     DEFAULT_IMAGES: { min: 0, max: 1e5, integer: true },
 }
 

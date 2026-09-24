@@ -212,6 +212,28 @@ const (
 	ErrBackendUpdateFailed      = 131518
 	ErrBackendDeleteFailed      = 131519
 
+	// VPN gateway related errors (1320xx)
+	ErrVpnGatewayNotFound        ErrCode = 132001
+	ErrVpnGatewayCreateFailed    ErrCode = 132002
+	ErrVpnGatewayUpdateFailed    ErrCode = 132003
+	ErrVpnGatewayDeleteFailed    ErrCode = 132004
+	ErrVpnGatewayExists          ErrCode = 132005 // the VPC already has a gateway
+	ErrVpnGatewayNotReady        ErrCode = 132006 // the gateway is still being built or is in error
+	ErrVpnGatewayInUse           ErrCode = 132007 // connections or clients still exist
+	ErrVpnGatewayDisabled        ErrCode = 132008 // the gateway is disabled
+	ErrVpnConnectionNotFound     ErrCode = 132011
+	ErrVpnConnectionCreateFailed ErrCode = 132012
+	ErrVpnConnectionUpdateFailed ErrCode = 132013
+	ErrVpnConnectionDeleteFailed ErrCode = 132014
+	ErrVpnClientNotFound         ErrCode = 132021
+	ErrVpnClientCreateFailed     ErrCode = 132022
+	ErrVpnClientUpdateFailed     ErrCode = 132023
+	ErrVpnClientDeleteFailed     ErrCode = 132024
+	ErrVpnClientPoolExhausted    ErrCode = 132025
+	ErrVpnSecretUnavailable      ErrCode = 132031 // VPN_SECRET_KEY missing or cannot decrypt stored credentials
+	ErrVpnCidrConflict           ErrCode = 132032 // overlaps a VPC subnet, the VRRP subnet, the router links or another prefix
+	ErrRouterHasVpnGateway       ErrCode = 132033
+
 	// Security related errors (141xxx)
 	ErrSecurityGroupNotFound       ErrCode = 141001
 	ErrSecurityGroupCreateFailed   ErrCode = 141002
@@ -278,6 +300,14 @@ func (c ErrCode) ToHTTPStatus() int {
 		return 400
 	case c == ErrResourceNotFound || (c >= 100200 && c <= 100207 && c%2 == 0) || c == ErrZoneNotFound || c == ErrHypervisorNotFound || c == ErrStoragePoolNotFound:
 		return 404
+	case c == ErrVpnGatewayNotFound || c == ErrVpnConnectionNotFound || c == ErrVpnClientNotFound:
+		return 404
+	case c == ErrVpnGatewayExists || c == ErrVpnGatewayInUse || c == ErrVpnClientPoolExhausted || c == ErrRouterHasVpnGateway:
+		return 409
+	case c == ErrVpnCidrConflict || c == ErrVpnGatewayNotReady || c == ErrVpnGatewayDisabled:
+		return 400
+	case c == ErrVpnSecretUnavailable:
+		return 503
 	case c == ErrStorageCapacityExceeded || c == ErrStoragePoolInUse:
 		return 409
 	case c == ErrInsufficientResource || c == ErrInsufficientAddress || c == ErrEmailConflict || c == ErrOrgHasResources || c == ErrOrgHasMembers || c == ErrSlugConflict || c == ErrSlugReserved:

@@ -39,6 +39,7 @@ public_ips = 2
 vpcs = 5
 load_balancers = 5
 images = 10
+vpn_gateways = 1
 disk_gb = 50.0
 
 [heartbeat]

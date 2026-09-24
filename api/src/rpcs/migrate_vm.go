@@ -415,6 +415,10 @@ func MigrateVM(ctx context.Context, args []string) (status string, err error) {
 		if perr := prewarmTargetFdb(ctx, instance, targetHyper); perr != nil {
 			logger.Ctx(ctx).Warningf("Failed to prewarm target fdb, %v", perr)
 		}
+		// The target may host this VPC for the first time: give its router the VPN gateway routes
+		if verr := services.VpnResyncNode(ctx, instance.RouterID, targetHyper.Hostid); verr != nil {
+			logger.Ctx(ctx).Warningf("Failed to sync VPN routes to migration target, %v", verr)
+		}
 		err = execSourceMigrate(ctx, instance, migration, task2.ID, "/opt/cloudland/scripts/backend/source_migration.sh", migration.Type)
 		if err != nil {
 			logger.Ctx(ctx).Error("Failed to exec source migration", err)

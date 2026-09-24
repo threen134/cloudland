@@ -570,6 +570,11 @@ func (a *SubnetAdmin) Create(ctx context.Context, vlan int, name, network, gatew
 			logger.Ctx(ctx).Error("Failed to set routing for subnet")
 			return
 		}
+		// The VPN gateway's default local networks, BGP network statements and client routes follow the VPC
+		if err = VpnResyncRouter(ctx, subnet.RouterID); err != nil {
+			logger.Ctx(ctx).Error("Failed to resync the VPN gateway after adding a subnet", err)
+			return
+		}
 	}
 	return
 }
@@ -613,6 +618,12 @@ func (a *SubnetAdmin) Delete(ctx context.Context, subnet *model.Subnet) (err err
 		if count > 0 {
 			err = NewCLError(ErrAddressInUse, "Some addresses of this subnet are still in use", nil)
 			logger.Ctx(ctx).Error("Some addresses of this subnet are still in use")
+			return
+		}
+	}
+	if subnet.RouterID > 0 {
+		if err = vpnSubnetInUse(ctx, subnet); err != nil {
+			logger.Ctx(ctx).Error("Subnet is referenced by a VPN connection", err)
 			return
 		}
 	}
@@ -677,6 +688,31 @@ func (a *SubnetAdmin) Delete(ctx context.Context, subnet *model.Subnet) (err err
 		if err != nil {
 			logger.Ctx(ctx).Error("Failed to set routing for subnet")
 			return
+		}
+		if err = VpnResyncRouter(ctx, subnet.RouterID); err != nil {
+			logger.Ctx(ctx).Error("Failed to resync the VPN gateway after deleting a subnet", err)
+			return
+		}
+	}
+	return
+}
+
+// vpnSubnetInUse reports whether a static VPN connection of the VPC lists the subnet explicitly in its
+// local networks: deleting it would silently leave a traffic selector for a network that no longer exists
+func vpnSubnetInUse(ctx context.Context, subnet *model.Subnet) (err error) {
+	gateway, err := vpnGatewayOfRouter(ctx, subnet.RouterID)
+	if err != nil || gateway == nil {
+		return
+	}
+	for _, conn := range gateway.Connections {
+		cidrs, perr := ParseCidrList(conn.LocalCidrs)
+		if perr != nil {
+			continue
+		}
+		for _, cidr := range cidrs {
+			if cidrsOverlap(cidr, subnet.Network) {
+				return NewCLError(ErrAddressInUse, fmt.Sprintf("Subnet is listed in the local networks of VPN connection %s", conn.Name), nil)
+			}
 		}
 	}
 	return

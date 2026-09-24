@@ -147,6 +147,7 @@ type quotaFields struct {
 	MaxVPCs          int     `json:"max_vpcs"`
 	MaxLoadBalancers int     `json:"max_load_balancers"`
 	MaxImages        int     `json:"max_images"`
+	MaxVpnGateways   int     `json:"max_vpn_gateways"`
 }
 
 type consumptionFields struct {
@@ -157,14 +158,15 @@ type consumptionFields struct {
 	VPCs          int     `json:"vpcs"`
 	LoadBalancers int     `json:"load_balancers"`
 	Images        int     `json:"images"`
+	VpnGateways   int     `json:"vpn_gateways"`
 }
 
 func toQuotaFields(q *model.OrgResourceQuota) quotaFields {
-	return quotaFields{q.MaxCPUCores, q.MaxRAMGB, q.MaxPublicIPs, q.MaxDiskGB, q.MaxVPCs, q.MaxLoadBalancers, q.MaxImages}
+	return quotaFields{q.MaxCPUCores, q.MaxRAMGB, q.MaxPublicIPs, q.MaxDiskGB, q.MaxVPCs, q.MaxLoadBalancers, q.MaxImages, q.MaxVpnGateways}
 }
 
 func toConsumptionFields(c *model.OrgResourceConsumption) consumptionFields {
-	return consumptionFields{c.CPUCores, c.RAMGB, c.PublicIPs, c.DiskGB, c.VPCs, c.LoadBalancers, c.Images}
+	return consumptionFields{c.CPUCores, c.RAMGB, c.PublicIPs, c.DiskGB, c.VPCs, c.LoadBalancers, c.Images, c.VpnGateways}
 }
 
 type quotaOut struct {

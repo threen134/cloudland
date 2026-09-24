@@ -244,6 +244,26 @@ func Register() (r *gin.Engine) {
 		authGroup.DELETE("/load_balancers/:id/listeners/:listener_id/backends/:backend_id", backendAPI.Delete)
 		authGroup.PATCH("/load_balancers/:id/listeners/:listener_id/backends/:backend_id", backendAPI.Patch)
 
+		authGroup.GET("/vpn_gateways", vpnGatewayAPI.List)
+		authGroup.POST("/vpn_gateways", vpnGatewayAPI.Create)
+		authGroup.GET("/vpn_gateways/:id", vpnGatewayAPI.Get)
+		authGroup.DELETE("/vpn_gateways/:id", vpnGatewayAPI.Delete)
+		authGroup.PATCH("/vpn_gateways/:id", vpnGatewayAPI.Patch)
+
+		authGroup.GET("/vpn_gateways/:id/connections", vpnConnectionAPI.List)
+		authGroup.POST("/vpn_gateways/:id/connections", vpnConnectionAPI.Create)
+		authGroup.GET("/vpn_gateways/:id/connections/:conn_id", vpnConnectionAPI.Get)
+		authGroup.DELETE("/vpn_gateways/:id/connections/:conn_id", vpnConnectionAPI.Delete)
+		authGroup.PATCH("/vpn_gateways/:id/connections/:conn_id", vpnConnectionAPI.Patch)
+		authGroup.POST("/vpn_gateways/:id/connections/:conn_id/restart", vpnConnectionAPI.Restart)
+
+		authGroup.GET("/vpn_gateways/:id/clients", vpnClientAPI.List)
+		authGroup.POST("/vpn_gateways/:id/clients", vpnClientAPI.Create)
+		authGroup.GET("/vpn_gateways/:id/clients/:client_id", vpnClientAPI.Get)
+		authGroup.DELETE("/vpn_gateways/:id/clients/:client_id", vpnClientAPI.Delete)
+		authGroup.PATCH("/vpn_gateways/:id/clients/:client_id", vpnClientAPI.Patch)
+		authGroup.GET("/vpn_gateways/:id/clients/:client_id/config", vpnClientAPI.Config)
+
 		authGroup.GET("/floating_ips", floatingIpAPI.List)
 		authGroup.POST("/floating_ips", floatingIpAPI.Create)
 		authGroup.GET("/floating_ips/:id", floatingIpAPI.Get)

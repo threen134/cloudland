@@ -114,7 +114,7 @@ mkdir -p volumes/prometheus/node_templates volumes/prometheus/general_rules volu
 cp -f ../roles/monitor/templates/*.yml.j2 volumes/prometheus/node_templates/
 
 # 定义需要注入的环境变量
-vars=("PUBLIC_IP" "INTERNAL_IP" "MANAGEMENT_VIP" "NETWORK_DEVICE" "DB_LISTEN_IP" "POSTGRES_USER" "POSTGRES_PASSWORD" "POSTGRES_DB" "ADMIN_PASSWORD" "ADMIN_EMAIL" "COMPOSE_PROFILES" "DB_HOST" "DB_PORT" "CPGATEWAY_SECRET_KEY" "FEISHU_WEBHOOK_URL" "FEISHU_SECRET" "S3_ENDPOINT" "S3_ACCESS_KEY" "S3_SECRET_KEY" "S3_BUCKET" "S3_REGION" "S3_USE_SSL" "S3_UPLOAD_TIMEOUT_MINUTES" "MINIO_HOSTNAME" "CLAPI_HOSTNAME" "CAPTURE_UPLOAD_SECRET" "GRAFANA_ADMIN_PASSWORD" "DNS_UPSTREAM" "MINIO_ROOT_USER" "MINIO_ROOT_PASSWORD" "GRPC_AUTH_TOKEN" "GRPC_LISTEN" "TELEMETRY_LISTEN_IP" "REPO_BRANCH" "DEPLOY_SCRIPT_URL")
+vars=("PUBLIC_IP" "INTERNAL_IP" "MANAGEMENT_VIP" "NETWORK_DEVICE" "DB_LISTEN_IP" "POSTGRES_USER" "POSTGRES_PASSWORD" "POSTGRES_DB" "ADMIN_PASSWORD" "ADMIN_EMAIL" "COMPOSE_PROFILES" "DB_HOST" "DB_PORT" "CPGATEWAY_SECRET_KEY" "FEISHU_WEBHOOK_URL" "FEISHU_SECRET" "S3_ENDPOINT" "S3_ACCESS_KEY" "S3_SECRET_KEY" "S3_BUCKET" "S3_REGION" "S3_USE_SSL" "S3_UPLOAD_TIMEOUT_MINUTES" "MINIO_HOSTNAME" "CLAPI_HOSTNAME" "CAPTURE_UPLOAD_SECRET" "VPN_SECRET_KEY" "GRAFANA_ADMIN_PASSWORD" "DNS_UPSTREAM" "MINIO_ROOT_USER" "MINIO_ROOT_PASSWORD" "GRPC_AUTH_TOKEN" "GRPC_LISTEN" "TELEMETRY_LISTEN_IP" "REPO_BRANCH" "DEPLOY_SCRIPT_URL")
 
 # 注入环境变量到 .env (如果当前 Shell 环境中有定义)
 for var in "${vars[@]}"; do
@@ -191,6 +191,14 @@ if [ -z "$(grep '^CAPTURE_UPLOAD_SECRET=' .env | cut -d'=' -f2- || true)" ]; the
     sed -i '/^CAPTURE_UPLOAD_SECRET=/d' .env
     echo "CAPTURE_UPLOAD_SECRET=$(openssl rand -hex 32)" >> .env
     log "已生成 CAPTURE_UPLOAD_SECRET 并写入 .env"
+fi
+
+# VPN 网关凭据（IPsec PSK、WireGuard 密钥）的加密密钥：只在从未设置过时生成一次；
+# 一旦库里有了密文，这个值丢失就再也解不开，所以不要删掉 .env 里的这一行
+if ! grep -q '^VPN_SECRET_KEY=' .env || [ -z "$(grep '^VPN_SECRET_KEY=' .env | cut -d'=' -f2- || true)" ]; then
+    sed -i '/^VPN_SECRET_KEY=/d' .env
+    echo "VPN_SECRET_KEY=$(openssl rand -hex 32)" >> .env
+    log "已生成 VPN_SECRET_KEY 并写入 .env（请妥善备份，丢失后已存储的 VPN 凭据无法解密）"
 fi
 
 # 显示当前使用的关键配置摘要 (脱敏)
