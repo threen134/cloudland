@@ -157,7 +157,7 @@ func VpnConnStatus(ctx context.Context, args []string) (status string, err error
 	}
 	now := time.Now()
 	for _, conn := range gateway.Connections {
-		r, ok := byName[fmt.Sprintf("c%d", conn.ID)]
+		r, ok := byName[services.VpnConnName(conn)]
 		newStatus := model.VpnConnectionStatusDown
 		updates := map[string]interface{}{}
 		if ok {
@@ -271,7 +271,7 @@ func VpnBgpStatus(ctx context.Context, args []string) (status string, err error)
 		if conn.RouteMode != model.VpnRouteModeBgp {
 			continue
 		}
-		r, ok := byName[fmt.Sprintf("c%d", conn.ID)]
+		r, ok := byName[services.VpnConnName(conn)]
 		if !ok {
 			continue
 		}

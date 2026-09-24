@@ -3073,7 +3073,8 @@ definitions:
         maxLength: 255
         type: string
       enabled:
-        description: 'false pauses the whole gateway (tunnels, BGP, WireGuard) while keeping its public IP and configuration'
+        description: false pauses the whole gateway (tunnels, BGP, WireGuard) while
+          keeping its public IP and configuration
         type: boolean
       ipsec_enabled:
         type: boolean
@@ -3229,6 +3230,44 @@ definitions:
         type: integer
       source:
         type: string
+    type: object
+  apis.VpnTrafficResponse:
+    properties:
+      clients:
+        items:
+          $ref: '#/definitions/apis.VpnTrafficSeries'
+        type: array
+      connections:
+        items:
+          $ref: '#/definitions/apis.VpnTrafficSeries'
+        type: array
+      end:
+        type: integer
+      start:
+        type: integer
+      step:
+        type: string
+      timestamps:
+        items:
+          type: integer
+        type: array
+    type: object
+  apis.VpnTrafficSeries:
+    properties:
+      id:
+        type: string
+      in:
+        description: from the site / from the client
+        items:
+          type: number
+        type: array
+      name:
+        type: string
+      out:
+        description: to the site / to the client
+        items:
+          type: number
+        type: array
     type: object
   apis.ZoneListResponse:
     properties:
@@ -8824,6 +8863,50 @@ paths:
           schema:
             $ref: '#/definitions/common.APIError'
       summary: restart a VPN connection
+      tags:
+      - VPN Gateway
+  /vpn_gateways/{id}/traffic:
+    get:
+      description: Rate of every site connection and WireGuard client of the gateway
+        in bits per second, from the tunnel counters the gateway master exports to
+        Prometheus. Deleted connections and clients are left out.
+      parameters:
+      - description: VPN gateway UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Start, unix seconds
+        in: query
+        name: start
+        required: true
+        type: string
+      - description: End, unix seconds
+        in: query
+        name: end
+        required: true
+        type: string
+      - description: Resolution as a duration, e.g. 60s or 5m
+        in: query
+        name: step
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.VpnTrafficResponse'
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: VPN gateway traffic history
       tags:
       - VPN Gateway
   /zones:

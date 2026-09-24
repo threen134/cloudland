@@ -260,6 +260,30 @@ export const vpnGatewaysApi = {
     delete: async (id: string): Promise<void> => {
         await client.delete(`/vpn_gateways/${id}`)
     },
+    /** Traffic history in bits per second (GET /vpn_gateways/:id/traffic); start / end in unix seconds */
+    traffic: async (id: string, params: { start: number; end: number; step: string }): Promise<VpnTrafficResponse> => {
+        const response = await client.get(`/vpn_gateways/${id}/traffic`, { params })
+        return response.data
+    },
+}
+
+/** One site connection or client: rates aligned with VpnTrafficResponse.timestamps, null where no sample */
+export interface VpnTrafficSeries {
+    id: string
+    name: string
+    /** from the site / from the client, bits per second */
+    in: Array<number | null>
+    /** to the site / to the client, bits per second */
+    out: Array<number | null>
+}
+
+export interface VpnTrafficResponse {
+    start: number
+    end: number
+    step: string
+    timestamps: number[]
+    connections: VpnTrafficSeries[]
+    clients: VpnTrafficSeries[]
 }
 
 export const vpnConnectionsApi = {

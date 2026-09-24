@@ -116,7 +116,9 @@ func vpnVrrpGateway(gateway *model.VpnGateway) string {
 	return ""
 }
 
-func vpnConnName(conn *model.VpnConnection) string {
+// VpnConnName is the name of a site connection on the nodes: the swanctl block, the status reports and the
+// traffic metrics all use it
+func VpnConnName(conn *model.VpnConnection) string {
 	return fmt.Sprintf("c%d", conn.ID)
 }
 
@@ -256,7 +258,7 @@ func buildVpnIpsecConfig(ctx context.Context, gateway *model.VpnGateway) (cfg *v
 			remoteID = conn.RemoteGateway
 		}
 		cfg.Connections = append(cfg.Connections, &vpnIpsecConnection{
-			Name: vpnConnName(conn), IfID: conn.IfID, RemoteGateway: conn.RemoteGateway, RemoteID: remoteID, LocalID: localID,
+			Name: VpnConnName(conn), IfID: conn.IfID, RemoteGateway: conn.RemoteGateway, RemoteID: remoteID, LocalID: localID,
 			RouteMode: conn.RouteMode, LocalCidrs: localCidrs, RemoteCidrs: remoteCidrs, Psk: psk,
 			IkeProposal: conn.IkeProposal, EspProposal: conn.EspProposal, IkeLifetime: conn.IkeLifetime, EspLifetime: conn.EspLifetime,
 			DpdAction: conn.DpdAction, DpdDelay: conn.DpdDelay, Initiator: conn.Initiator,
@@ -309,7 +311,7 @@ func buildVpnBgpConfig(ctx context.Context, gateway *model.VpnGateway) (cfg *vpn
 			return nil, serr
 		}
 		cfg.Connections = append(cfg.Connections, &vpnBgpConnection{
-			Name: vpnConnName(conn), LocalAsn: conn.LocalAsn, PeerAsn: conn.PeerAsn,
+			Name: VpnConnName(conn), LocalAsn: conn.LocalAsn, PeerAsn: conn.PeerAsn,
 			TunnelLocalIP: conn.TunnelLocalIP, TunnelPeerIP: conn.TunnelPeerIP, Password: password,
 			Keepalive: conn.BgpKeepalive, Hold: conn.BgpHold, MaxPrefixes: conn.MaxPrefixes,
 			LocalCidrs: localCidrs, RemoteSummaryCidrs: summary,
@@ -552,7 +554,7 @@ func dispatchVpnRestart(ctx context.Context, gateway *model.VpnGateway, conn *mo
 	if err != nil {
 		return
 	}
-	command := fmt.Sprintf(vpnScriptDir+"restart_vpn_conn.sh '%d' '%d' '%s'", gateway.RouterID, gateway.ID, ShellEscape(vpnConnName(conn)))
+	command := fmt.Sprintf(vpnScriptDir+"restart_vpn_conn.sh '%d' '%d' '%s'", gateway.RouterID, gateway.ID, ShellEscape(VpnConnName(conn)))
 	if err = HyperExecute(ctx, control, command); err != nil {
 		logger.Ctx(ctx).Errorf("Failed to restart connection %d of VPN gateway %d: %v", conn.ID, gateway.ID, err)
 	}

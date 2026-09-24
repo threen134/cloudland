@@ -17,6 +17,7 @@ import {
     Power,
     FileText,
     Activity as ActivityIcon,
+    ChartLine,
 } from 'lucide-vue-next'
 import {
     vpnGatewaysApi,
@@ -44,6 +45,7 @@ import ActivityEntry from '../../components/activity/ActivityEntry.vue'
 import VpnConnectionModal from '../../components/vpn/VpnConnectionModal.vue'
 import VpnClientModal from '../../components/vpn/VpnClientModal.vue'
 import VpnClientConfigBox from '../../components/vpn/VpnClientConfigBox.vue'
+import VpnTrafficCharts from '../../components/vpn/VpnTrafficCharts.vue'
 
 const { t, te } = useI18n()
 const toast = useToast()
@@ -57,7 +59,7 @@ const gateway = ref<VpnGateway | null>(null)
 const loading = ref(true)
 const error = ref('')
 
-type TabId = 'overview' | 'connections' | 'clients' | 'activity'
+type TabId = 'overview' | 'connections' | 'clients' | 'monitoring' | 'activity'
 const activeTab = ref<TabId>('overview')
 
 const connections = computed(() => gateway.value?.connections || [])
@@ -72,6 +74,7 @@ const tabs = computed(() => [
         count: connections.value.length,
     },
     { id: 'clients', label: t('dashboard.vpnGateway.clientsTab'), icon: Laptop, count: clients.value.length },
+    { id: 'monitoring', label: t('dashboard.vpnGateway.monitoringTab'), icon: ChartLine },
     { id: 'activity', label: t('dashboard.vpnGateway.activity'), icon: ActivityIcon },
 ])
 
@@ -1184,6 +1187,14 @@ onMounted(() => {
                     </template>
                 </DataTable>
             </div>
+
+            <!-- ── Traffic history ── -->
+            <VpnTrafficCharts
+                v-else-if="activeTab === 'monitoring'"
+                :gateway-id="gatewayId"
+                :ipsec-enabled="gateway.ipsec_enabled"
+                :client-enabled="gateway.client_enabled"
+            />
 
             <!-- ── Activity ── -->
             <div v-else-if="activeTab === 'activity'" class="card activity-card">

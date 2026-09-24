@@ -59,6 +59,7 @@ umask 077
 conf=$vpn_dir/swanctl.conf.new
 : >$conf
 : >$vpn_dir/conn_names.new
+: >$vpn_dir/conn_ifids.new
 echo "connections {" >>$conf
 i=0
 while [ $i -lt $nconn ]; do
@@ -83,6 +84,8 @@ while [ $i -lt $nconn ]; do
     none) dpd_action=clear ;;
     esac
     echo "$name" >>$vpn_dir/conn_names.new
+    # the tunnel interface of the connection, for the traffic counters (report_vpn_status.sh)
+    echo "$name $if_id" >>$vpn_dir/conn_ifids.new
     cat >>$conf <<EOF
     $name {
         local_addrs = $floating_ip
@@ -175,6 +178,7 @@ fi
     flock 9
     mv -f $conf $vpn_dir/swanctl.conf
     mv -f $vpn_dir/conn_names.new $vpn_dir/conn_names
+    mv -f $vpn_dir/conn_ifids.new $vpn_dir/conn_ifids
     rm -f $vpn_dir/status.reported
     if vpn_holds_vip $router $vpn_dir; then
         if vpn_charon_alive $vpn_dir; then

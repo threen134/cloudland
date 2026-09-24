@@ -7932,6 +7932,68 @@ const docTemplatev1 = `{
                 }
             }
         },
+        "/vpn_gateways/{id}/traffic": {
+            "get": {
+                "description": "Rate of every site connection and WireGuard client of the gateway in bits per second, from the tunnel counters the gateway master exports to Prometheus. Deleted connections and clients are left out.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "VPN Gateway"
+                ],
+                "summary": "VPN gateway traffic history",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "VPN gateway UUID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Start, unix seconds",
+                        "name": "start",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "End, unix seconds",
+                        "name": "end",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Resolution as a duration, e.g. 60s or 5m",
+                        "name": "step",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apis.VpnTrafficResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            }
+        },
         "/zones": {
             "get": {
                 "description": "list zones",
@@ -12723,6 +12785,63 @@ const docTemplatev1 = `{
                 },
                 "source": {
                     "type": "string"
+                }
+            }
+        },
+        "apis.VpnTrafficResponse": {
+            "type": "object",
+            "properties": {
+                "clients": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/apis.VpnTrafficSeries"
+                    }
+                },
+                "connections": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/apis.VpnTrafficSeries"
+                    }
+                },
+                "end": {
+                    "type": "integer"
+                },
+                "start": {
+                    "type": "integer"
+                },
+                "step": {
+                    "type": "string"
+                },
+                "timestamps": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                }
+            }
+        },
+        "apis.VpnTrafficSeries": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "string"
+                },
+                "in": {
+                    "description": "from the site / from the client",
+                    "type": "array",
+                    "items": {
+                        "type": "number"
+                    }
+                },
+                "name": {
+                    "type": "string"
+                },
+                "out": {
+                    "description": "to the site / to the client",
+                    "type": "array",
+                    "items": {
+                        "type": "number"
+                    }
                 }
             }
         },

@@ -82,6 +82,7 @@ var proxyRoutes = []proxyRoute{
 	{"GET", "/vpn_gateways/:id", "/vpn_gateways/{id}", false},
 	{"DELETE", "/vpn_gateways/:id", "/vpn_gateways/{id}", false},
 	{"PATCH", "/vpn_gateways/:id", "/vpn_gateways/{id}", false},
+	{"GET", "/vpn_gateways/:id/traffic", "/vpn_gateways/{id}/traffic", false},
 	{"GET", "/vpn_gateways/:id/connections", "/vpn_gateways/{id}/connections", false},
 	{"POST", "/vpn_gateways/:id/connections", "/vpn_gateways/{id}/connections", false},
 	{"GET", "/vpn_gateways/:id/connections/:conn_id", "/vpn_gateways/{id}/connections/{conn_id}", false},

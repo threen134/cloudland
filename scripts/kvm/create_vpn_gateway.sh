@@ -92,13 +92,8 @@ fi
 if [ "$client_enabled" = "true" ] && [ "$now_disabled" = "false" ]; then
     ip netns exec $router iptables -A INPUT -p udp -d $ext_ip --dport $client_port -j ACCEPT
 fi
-# TCP inside the tunnels: clamp the MSS to the tunnel MTU (1360 for IPsec, 1390 for WireGuard)
-for dev in ipsec+ wg+; do
-    for dir in -i -o; do
-        ip netns exec $router iptables -t mangle -C FORWARD $dir $dev -p tcp --syn -j TCPMSS --clamp-mss-to-pmtu 2>/dev/null ||
-            ip netns exec $router iptables -t mangle -A FORWARD $dir $dev -p tcp --syn -j TCPMSS --clamp-mss-to-pmtu
-    done
-done
+# TCP inside the tunnels: MSS that fits the tunnel MTU in both directions (vpn_lib.sh)
+vpn_mss_rules $router add
 # VPN clients and remote sites must never reach each other through the gateway, in either direction:
 # whatever the routes (client AllowedIPs, BGP-learned prefixes, a local network list that covers the
 # client pool) a packet between a WireGuard and an IPsec interface is dropped. Rules go first in FORWARD

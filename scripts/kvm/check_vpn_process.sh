@@ -21,8 +21,9 @@ for vpn_dir in $router_dir/router-*/vpn-*; do
     router=$(basename $(dirname $vpn_dir))
     gw=${vpn_dir##*/vpn-}
     [ -f /var/run/netns/$router ] || continue
-    # Client / site isolation holds whatever the state, paused or not
-    vpn_isolate_rules $router add
+    # Client / site isolation and the MSS rules hold whatever the state, paused or not; repaired only when
+    # the cheap check finds something missing
+    vpn_forward_rules_ok $router || { vpn_isolate_rules $router add; vpn_mss_rules $router add; }
     if vpn_disabled $vpn_dir; then
         # Paused: make sure nothing runs and every tunnel route is a blackhole, on both nodes
         vpn_charon_alive $vpn_dir && vpn_stop_charon $vpn_dir

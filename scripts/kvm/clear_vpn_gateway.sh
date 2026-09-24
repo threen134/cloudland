@@ -42,11 +42,7 @@ if [ -f /var/run/netns/$router ]; then
     # MSS clamping and isolation match every ipsec+ / wg+ device of the router: keep them while another
     # gateway directory exists here (a replacement created before this clear ran)
     if ! vpn_router_has_other $router $vpn_dir; then
-        for dev in ipsec+ wg+; do
-            for dir in -i -o; do
-                ip netns exec $router iptables -t mangle -D FORWARD $dir $dev -p tcp --syn -j TCPMSS --clamp-mss-to-pmtu 2>/dev/null
-            done
-        done
+        vpn_mss_rules $router del
         vpn_isolate_rules $router del
     fi
     vip=$(cat $vpn_dir/vip 2>/dev/null)

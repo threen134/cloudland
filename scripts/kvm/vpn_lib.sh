@@ -106,6 +106,120 @@ vpn_disabled()
     [ -f $1/disabled ]
 }
 
+# TCP MSS inside the tunnels: vpn_mss_rules <router> add|del. Handshakes (SYN and SYN-ACK) leaving through
+# a tunnel are clamped to its path MTU (IPsec 1360, WireGuard 1390); those coming out of a tunnel get the value set
+# explicitly: --clamp-mss-to-pmtu would use the MTU of the interface towards the instance (1450), the
+# instance then sent segments the tunnel cannot carry and relied on PMTU discovery, losing the first full
+# segments of every connection and again each time its PMTU cache expired (found against IBM Cloud VPN).
+# Re-asserted by the watchdog, which also replaces the old inbound rules of existing gateways.
+vpn_mss_rules()
+{
+    local router=$1 op=$2 rule
+    # SYN and SYN-ACK: --syn only matches a SYN without ACK, so the MSS a peer announced in its SYN-ACK
+    # reached the instance untouched (1360 from IBM Cloud, 1460 from a peer that does not clamp)
+    local rules=(
+        "-o ipsec+ -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu"
+        "-i ipsec+ -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --set-mss 1320"
+        "-o wg+ -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu"
+        "-i wg+ -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --set-mss 1350"
+    )
+    local stale=(
+        "-o ipsec+ -p tcp --syn -j TCPMSS --clamp-mss-to-pmtu"
+        "-i ipsec+ -p tcp --syn -j TCPMSS --clamp-mss-to-pmtu"
+        "-i ipsec+ -p tcp --syn -j TCPMSS --set-mss 1320"
+        "-o wg+ -p tcp --syn -j TCPMSS --clamp-mss-to-pmtu"
+        "-i wg+ -p tcp --syn -j TCPMSS --clamp-mss-to-pmtu"
+        "-i wg+ -p tcp --syn -j TCPMSS --set-mss 1350"
+    )
+    if [ "$op" = "add" ]; then
+        for rule in "${stale[@]}"; do
+            while ip netns exec $router iptables -t mangle -D FORWARD $rule 2>/dev/null; do :; done
+        done
+        for rule in "${rules[@]}"; do
+            ip netns exec $router iptables -t mangle -C FORWARD $rule 2>/dev/null ||
+                ip netns exec $router iptables -t mangle -A FORWARD $rule ||
+                log_debug "$(basename $0)" "vpn: failed to add the MSS rule '$rule' in $router"
+        done
+    else
+        for rule in "${rules[@]}" "${stale[@]}"; do
+            while ip netns exec $router iptables -t mangle -D FORWARD $rule 2>/dev/null; do :; done
+        done
+    fi
+}
+
+# Tunnel traffic is read from the XFRM interfaces, whose counters survive CHILD_SA rekeys (the SA counters
+# restart at every esp_lifetime). What is reported is the traffic since charon started on this node (a
+# takeover, a restart): vpn_start_charon calls vpn_traffic_baseline and vpn_traffic_since_base subtracts it.
+# vpn_dev_bytes <router> <dev> -> "<rx bytes> <tx bytes>"
+# Fails without output when the counters cannot be read: a 0 would look like a counter reset to Prometheus
+# and the next real value like the whole lifetime of the device transferred at once
+vpn_dev_bytes()
+{
+    local out
+    out=$(ip netns exec $1 cat /sys/class/net/$2/statistics/rx_bytes /sys/class/net/$2/statistics/tx_bytes 2>/dev/null) || return 1
+    set -- $out
+    [ $# -eq 2 ] || return 1
+    echo "$1 $2"
+}
+
+# vpn_traffic_baseline <router> <vpn_dir>: snapshot every tunnel interface of the gateway
+vpn_traffic_baseline()
+{
+    local router=$1 vpn_dir=$2 dev cur
+    : >$vpn_dir/traffic.base.new
+    for dev in $(cat $vpn_dir/ifaces 2>/dev/null); do
+        cur=$(vpn_dev_bytes $router $dev) && echo "$dev $cur" >>$vpn_dir/traffic.base.new
+    done
+    mv -f $vpn_dir/traffic.base.new $vpn_dir/traffic.base
+}
+
+# XFRM interface id of a connection: vpn_conn_ifid <vpn_dir> <connection name>
+vpn_conn_ifid()
+{
+    local vpn_dir=$1 name=$2 if_id
+    if_id=$(awk -v n=$name '$1 == n {print $2}' $vpn_dir/conn_ifids 2>/dev/null)
+    # gateways configured before conn_ifids existed: the if_id sits in the connection block
+    [ -n "$if_id" ] || if_id=$(awk -v n="    $name {" '$0 == n {f = 1} f && /if_id_in = / {print $3; exit} f && /^    }$/ {exit}' $vpn_dir/swanctl.conf 2>/dev/null)
+    echo $if_id
+}
+
+# vpn_traffic_since_base <vpn_dir> <dev> <rx> <tx> -> "<bytes in> <bytes out>" since charon started here,
+# from counters the caller already read. An interface without a baseline was created after that (its
+# counters started at 0 here); one whose counters went below the baseline was recreated: both count from 0.
+vpn_traffic_since_base()
+{
+    local vpn_dir=$1 dev=$2 rx=$3 tx=$4 base brx btx
+    base=$(awk -v d=$dev '$1 == d {print $2, $3}' $vpn_dir/traffic.base 2>/dev/null)
+    brx=${base% *}
+    btx=${base#* }
+    if [ -z "$base" ] || [ "$rx" -lt "$brx" ] || [ "$tx" -lt "$btx" ]; then
+        brx=0
+        btx=0
+    fi
+    echo "$(($rx - $brx)) $(($tx - $btx))"
+}
+
+# True when the isolation and MSS rules of the router are all in place and no old MSS rule is left:
+# vpn_forward_rules_ok <router>. Two iptables calls instead of the dozen the add functions need, so the
+# watchdog only repairs when something is missing (it holds the lb lock that failovers wait for)
+vpn_forward_rules_ok()
+{
+    local router=$1 filter mangle rule
+    filter=$(ip netns exec $router iptables -S FORWARD 2>/dev/null) || return 1
+    mangle=$(ip netns exec $router iptables -t mangle -S FORWARD 2>/dev/null) || return 1
+    for rule in "-A FORWARD -i wg+ -o ipsec+ -j DROP" "-A FORWARD -i ipsec+ -o wg+ -j DROP"; do
+        grep -qxF -- "$rule" <<<"$filter" || return 1
+    done
+    for rule in "-o ipsec+ -p tcp -m tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu" \
+        "-i ipsec+ -p tcp -m tcp --tcp-flags SYN,RST SYN -j TCPMSS --set-mss 1320" \
+        "-o wg+ -p tcp -m tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu" \
+        "-i wg+ -p tcp -m tcp --tcp-flags SYN,RST SYN -j TCPMSS --set-mss 1350"; do
+        grep -qxF -- "-A FORWARD $rule" <<<"$mangle" || return 1
+    done
+    # the --syn rules of older versions
+    ! grep -q -- "--tcp-flags FIN,SYN,RST,ACK SYN -j TCPMSS" <<<"$mangle"
+}
+
 # True when the router carries another gateway directory than <vpn_dir>: vpn_router_has_other <router> <vpn_dir>.
 # One gateway per VPC, but a replacement can be created before the old one is cleared on this node (the
 # directory of the old one is removed last), and the router-wide wildcard rules belong to both.
@@ -179,6 +293,10 @@ vpn_start_charon()
     vpn_disabled $vpn_dir && return 0
     vpn_charon_alive $vpn_dir && return 0
     rm -f $vpn_dir/run/charon.pid $vpn_dir/run/charon.vici $vpn_dir/run/charon.ctl
+    # The reported tunnel traffic restarts with charon on this node, like the establishment time. Every
+    # path that brings charon up comes through here: the notify script, the watchdog (which can win the
+    # race after a failover) and the config scripts
+    vpn_traffic_baseline $router $vpn_dir
     vpn_trace "charon: spawning"
     STRONGSWAN_CONF=$vpn_dir/strongswan.conf ip netns exec $router unshare -m sh -c "mount --bind $vpn_dir/run /run && exec $charon_bin" >/dev/null 2>&1 9>&- &
     for i in {1..20}; do

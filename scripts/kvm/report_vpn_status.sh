@@ -12,6 +12,12 @@ source ../cloudrc
 source ./vpn_lib.sh
 
 report_interval=300
+# Traffic history: every master writes the raw tunnel counters of its gateways as node_exporter textfile
+# metrics, Prometheus scrapes them and clapi queries rates from there (GET /vpn_gateways/:id/traffic).
+# Raw counters on purpose: rate() handles resets and a new master simply continues the series.
+metrics_dir=/var/lib/node_exporter
+conn_metrics=""
+client_metrics=""
 # Master identity is re-sent every 20 s: clapi accepts a new master only after the previous one has been
 # silent for 30 s, so this interval bounds the failover delay of the other nodes' routes
 master_interval=20
@@ -20,6 +26,23 @@ now=$(date +%s)
 # service configuration as fallback when the caller dropped it
 [ -n "$NODE_ID" ] || NODE_ID=$(sed -n 's/^NODE_ID=//p' /etc/sysconfig/cloudlet 2>/dev/null | tr -d '"')
 [ -n "$NODE_ID" ] || exit 0
+
+# Byte counters move on every heartbeat while traffic flows: they ride along with a state change, or with a
+# refresh at most once a minute (the history comes from Prometheus, the counters only feed the tables)
+traffic_interval=60
+
+# Like report_if_changed below, but only <key> (the payload with its byte counters zeroed) decides whether
+# something changed; the full line goes out on a change or when the last one is older than <interval>
+report_if_key_changed()
+{
+    local cache=$1 key=$2 interval=$3 line=$4
+    if [ -f $cache ] && [ "$(cat $cache)" = "$key" ] && [ $(($now - $(stat -c %Y $cache))) -lt $interval ]; then
+        return
+    fi
+    echo "$line"
+    echo "$key" >$cache
+}
+zero_bytes() { sed -E 's/"bytes_(in|out)":[0-9]+/"bytes_\1":0/g'; }
 
 # Emit a callback when the payload differs from the cached one or the cache is older than $3 seconds
 report_if_changed()
@@ -59,12 +82,45 @@ for vpn_dir in $router_dir/router-*/vpn-*; do
         rm -f $vpn_dir/status.reported $vpn_dir/wg.reported $vpn_dir/bgp.reported
         continue
     fi
+    traffic_every=$traffic_interval
+    [ $status_interval -eq 0 ] && traffic_every=0
 
-    # IPsec: parse swanctl --list-sas (name, state, age, per-child byte counters)
+    # Every counter is read once per heartbeat and used for both the metric lines and the status reports.
+    # A counter that cannot be read is left out rather than exported as 0.
+    traffic=""
+    for name in $(cat $vpn_dir/conn_names 2>/dev/null); do
+        if_id=$(vpn_conn_ifid $vpn_dir $name)
+        [ -n "$if_id" ] || continue
+        cur=$(vpn_dev_bytes $router ipsec-$if_id) || continue
+        read rx tx <<<"$cur"
+        conn_metrics="$conn_metrics
+cloudland_vpn_connection_bytes_total{gateway_id=\"$gw\",connection=\"$name\",direction=\"in\"} $rx
+cloudland_vpn_connection_bytes_total{gateway_id=\"$gw\",connection=\"$name\",direction=\"out\"} $tx"
+        traffic="$traffic $name:$(vpn_traffic_since_base $vpn_dir ipsec-$if_id $rx $tx | tr ' ' ':')"
+    done
+    # wg show dump: the interface line, then one peer per line: pubkey psk endpoint allowed-ips handshake rx tx keepalive
+    wgdump=""
+    if [ -f $vpn_dir/wg.conf ] && ip netns exec $router ip link show wg-$gw >/dev/null 2>&1; then
+        wgdump=$(timeout 10 ip netns exec $router wg show wg-$gw dump 2>/dev/null | tail -n +2)
+        while read key psk endpoint allowed handshake rx tx keepalive; do
+            [ -n "$tx" ] || continue
+            client_metrics="$client_metrics
+cloudland_vpn_client_bytes_total{gateway_id=\"$gw\",client_key=\"$key\",direction=\"in\"} $rx
+cloudland_vpn_client_bytes_total{gateway_id=\"$gw\",client_key=\"$key\",direction=\"out\"} $tx"
+        done <<<"$wgdump"
+    fi
+
+    # IPsec: state and age from swanctl --list-sas; traffic from the tunnel interfaces (read above).
+    # The byte counters of the SAs were never used: they restart at every rekey, and the swanctl lines of
+    # an SA bound to an XFRM interface carry "(-|0x...)" after the SPI, which the old pattern did not allow
     if [ -f $vpn_dir/conn_names ] && vpn_charon_alive $vpn_dir; then
         sas=$(timeout 10 ip netns exec $router swanctl --list-sas --uri unix://$vpn_dir/run/charon.vici 2>/dev/null)
-        payload=$(awk -v now=$now -v names="$(tr '\n' ' ' <$vpn_dir/conn_names)" '
-            BEGIN { n = split(names, list, " ") }
+        payload=$(awk -v now=$now -v names="$(tr '\n' ' ' <$vpn_dir/conn_names)" -v traffic="$traffic" '
+            BEGIN {
+                n = split(names, list, " ")
+                m = split(traffic, t, " ")
+                for (i = 1; i <= m; i++) { split(t[i], f, ":"); bin[f[1]] = f[2]; bout[f[1]] = f[3] }
+            }
             /^[A-Za-z0-9_-]+: #[0-9]+, / {
                 name = $1; sub(":$", "", name)
                 st = $3; sub(",$", "", st)
@@ -72,30 +128,28 @@ for vpn_dir in $router_dir/router-*/vpn-*; do
                 cur = name
             }
             /^ +established [0-9]+s ago/ { for (i = 1; i <= NF; i++) if ($i == "established") { est[cur] = now - substr($(i+1), 1, length($(i+1)) - 1) } }
-            /^ +in +c[0-9a-f]+, +[0-9]+ bytes/ { bin[cur] += $3 }
-            /^ +out +c[0-9a-f]+, +[0-9]+ bytes/ { bout[cur] += $3 }
             END {
                 printf "["
                 for (i = 1; i <= n; i++) {
                     name = list[i]; if (name == "") continue
                     if (i > 1) printf ","
-                    printf "{\"name\":\"%s\",\"state\":\"%s\",\"established_at\":%d,\"bytes_in\":%d,\"bytes_out\":%d,\"error\":\"\"}", name, (name in up) ? "up" : "down", est[name] + 0, bin[name] + 0, bout[name] + 0
+                    printf "{\"name\":\"%s\",\"state\":\"%s\",\"established_at\":%d,\"bytes_in\":%.0f,\"bytes_out\":%.0f,\"error\":\"\"}", name, (name in up) ? "up" : "down", est[name] + 0, bin[name] + 0, bout[name] + 0
                 }
                 printf "]"
             }' <<<"$sas")
         encoded=$(echo -n "$payload" | base64 -w0)
-        report_if_changed $vpn_dir/status.reported "$encoded" $status_interval "|:-COMMAND-:| vpn_conn_status.sh '$gw' '$NODE_ID' '$encoded'"
+        report_if_key_changed $vpn_dir/status.reported "$(zero_bytes <<<"$payload")" $traffic_every "|:-COMMAND-:| vpn_conn_status.sh '$gw' '$NODE_ID' '$encoded'"
     fi
 
-    # WireGuard: wg show dump gives one peer per line: pubkey psk endpoint allowed-ips handshake rx tx keepalive
+    # WireGuard: the peers of the dump read above
     if [ -f $vpn_dir/wg.conf ] && ip netns exec $router ip link show wg-$gw >/dev/null 2>&1; then
-        payload=$(timeout 10 ip netns exec $router wg show wg-$gw dump 2>/dev/null | awk 'NR > 1 {
+        payload=$(awk 'NF >= 7 {
                 if (n++) printf ","
-                printf "{\"public_key\":\"%s\",\"last_handshake\":%d,\"bytes_in\":%d,\"bytes_out\":%d}", $1, $5, $6, $7
-            } BEGIN { printf "[" } END { printf "]" }')
+                printf "{\"public_key\":\"%s\",\"last_handshake\":%d,\"bytes_in\":%.0f,\"bytes_out\":%.0f}", $1, $5, $6, $7
+            } BEGIN { printf "[" } END { printf "]" }' <<<"$wgdump")
         encoded=$(echo -n "$payload" | base64 -w0)
-        # Counters move on every heartbeat while traffic flows; the handshake time is what matters
-        report_if_changed $vpn_dir/wg.reported "$encoded" $interval "|:-COMMAND-:| vpn_client_status.sh '$gw' '$NODE_ID' '$encoded'"
+        # The handshake time is what matters; the counters ride along (traffic_interval)
+        report_if_key_changed $vpn_dir/wg.reported "$(zero_bytes <<<"$payload")" $traffic_every "|:-COMMAND-:| vpn_client_status.sh '$gw' '$NODE_ID' '$encoded'"
     fi
 
     # BGP: neighbor state, accepted / filtered / advertised prefixes (limited, display only)
@@ -129,4 +183,16 @@ for vpn_dir in $router_dir/router-*/vpn-*; do
         report_if_changed $vpn_dir/bgp.reported "$encoded" $status_interval "|:-COMMAND-:| vpn_bgp_status.sh '$gw' '$NODE_ID' '$encoded'"
     fi
 done
+
+# Written on every node every heartbeat, so a former master stops exporting at once; atomic for the collector
+if [ -d $metrics_dir ]; then
+    {
+        echo "# HELP cloudland_vpn_connection_bytes_total Bytes through the tunnel interface of a VPN site connection on the gateway master (in: from the site)."
+        echo "# TYPE cloudland_vpn_connection_bytes_total counter"
+        if [ -n "$conn_metrics" ]; then echo "${conn_metrics#?}"; fi
+        echo "# HELP cloudland_vpn_client_bytes_total Bytes exchanged with a WireGuard client of a VPN gateway on its master (in: from the client)."
+        echo "# TYPE cloudland_vpn_client_bytes_total counter"
+        if [ -n "$client_metrics" ]; then echo "${client_metrics#?}"; fi
+    } >$metrics_dir/.cloudland_vpn.prom.$$ && mv -f $metrics_dir/.cloudland_vpn.prom.$$ $metrics_dir/cloudland_vpn.prom
+fi
 exit 0

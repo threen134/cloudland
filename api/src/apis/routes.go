@@ -249,6 +249,7 @@ func Register() (r *gin.Engine) {
 		authGroup.GET("/vpn_gateways/:id", vpnGatewayAPI.Get)
 		authGroup.DELETE("/vpn_gateways/:id", vpnGatewayAPI.Delete)
 		authGroup.PATCH("/vpn_gateways/:id", vpnGatewayAPI.Patch)
+		authGroup.GET("/vpn_gateways/:id/traffic", vpnGatewayAPI.Traffic)
 
 		authGroup.GET("/vpn_gateways/:id/connections", vpnConnectionAPI.List)
 		authGroup.POST("/vpn_gateways/:id/connections", vpnConnectionAPI.Create)
