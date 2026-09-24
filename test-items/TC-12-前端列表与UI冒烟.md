@@ -32,7 +32,7 @@ docker run --rm --network host -v /root/console-test:/work -w /work -e ADMIN_PAS
 | security-groups | 行 > 0 | audit-logs | 行 ≥ 0 |
 | load-balancers | 行 ≥ 1 | settings | 卡片 ≥ 5 |
 | hypervisors | 行 = 3 | quota | — |
-| zones | 行 ≥ 1 | | |
+| zones | 行 ≥ 1 | vpn-gateways | 行 ≥ 0（脚本尚未覆盖，用 `TC-17` VPN-07 的 `vpn-ui.js`） |
 
 检查项：
 
@@ -45,6 +45,7 @@ docker run --rm --network host -v /root/console-test:/work -w /work -e ADMIN_PAS
 | 现象 | 根因 |
 |---|---|
 | 组织列表页改用 `useListQuery` 后完全空白 | 误以为 `useListQuery` 会自动加载，把 `onMounted(fetchOrgs)` 删了。**它不会自动加载**，必须显式触发 |
+| VPN 网关列表页永远「未发现 VPN 网关」（2026-09-23） | 同一根因：`VpnGateways.vue` 的 `onMounted` 只调了 `fetchVpcs()`。typecheck / lint 全过，只有真跑冒烟才发现——**新列表页一律要跑一次 UI 冒烟** |
 | 安全组列表里超过 50 个的组看不到 | 前端没传 `limit`，后端默认只回 50 条，前端还在本地过滤 |
 | 安全组列表的 `vpc` 列显示的是另一条安全组的名字 | 后端 `SecgroupAdmin.List` 查路由器时复用了列表语句（GORM Statement 复用），详情接口正常、只有列表错 |
 

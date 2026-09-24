@@ -32,6 +32,7 @@
 | [`TC-14-节点重启与高可用.md`](TC-14-节点重启与高可用.md) | HA | P2 | **重启节点** | 60 min |
 | [`TC-15-用户注册与邀请.md`](TC-15-用户注册与邀请.md) | REG/INV/MEM/USR | P1 | 建数据 | 20 min |
 | [`TC-16-本地存储池.md`](TC-16-本地存储池.md) | STO | P1 | 建池 / 建资源 | 60 min |
+| [`TC-17-VPN网关.md`](TC-17-VPN网关.md) | VPN | P1 | 建资源，节点上起 charon / FRR / wg | 60 min（含主备切换 90 min） |
 
 ## 通过标准
 
