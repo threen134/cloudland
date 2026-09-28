@@ -24,3 +24,6 @@ export const isValidCIDRv4 = (cidr: string): boolean => {
     const prefix = Number(match[5])
     return prefix >= 0 && prefix <= 32
 }
+
+/** A comma separated CIDR list holds a default route (any x.x.x.x/0): clapi refuses it in the VPN client routes */
+export const hasDefaultRoute = (list: string): boolean => list.split(',').some((cidr) => /\/0+$/.test(cidr.trim()))

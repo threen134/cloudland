@@ -403,6 +403,12 @@ onMounted(async () => {
                                 :status="lb.status || 'inactive'"
                                 :label="statusText(lb.status || 'inactive')"
                             />
+                            <span
+                                v-if="lb.single_node"
+                                class="badge badge-warning"
+                                :title="$t('dashboard.loadBalancerDetail.singleNodeNotice')"
+                                >{{ $t('dashboard.loadBalancerDetail.singleNode') }}</span
+                            >
                         </h2>
                         <div class="resource-id-row">
                             <span class="resource-id-text">{{ lb.id }}</span>

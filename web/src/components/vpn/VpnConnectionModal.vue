@@ -1,10 +1,15 @@
 <script setup lang="ts">
 // Create or edit a site-to-site IPsec connection of a VPN gateway.
 //
-// The form switches by route mode: static routing needs the remote networks, BGP needs the ASNs,
-// the tunnel /30 pair and the summary networks the peer may advertise. IKE / ESP proposals,
-// lifetimes, DPD, initiator and IKE identities live in a collapsed "advanced" section.
-// psk and bgp_password are write-only: on edit an empty field keeps the stored secret.
+// A connection has one to four tunnels (two on an active_active gateway: one per node). Each tunnel has its
+// own local public address, peer address, peer identity and optionally its own pre-shared key; in BGP mode
+// each tunnel also carries its own BGP session over a /30 link pair. With several tunnels the traffic
+// policy says how they share the traffic: preferred (a primary, the others stand by in order) or ecmp
+// (every tunnel that is up carries traffic). The rest of the form switches by route mode: static routing
+// needs the remote networks, BGP needs the ASNs, the summary networks the peer may advertise and optionally
+// BFD. IKE / ESP proposals, lifetimes, DPD, initiator and the local IKE identity live in a collapsed
+// "advanced" section.
+// psk, the tunnel keys and bgp_password are write-only: on edit an empty field keeps the stored secret.
 import { ref, computed, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ChevronDown, ChevronRight } from 'lucide-vue-next'
@@ -15,16 +20,26 @@ import {
     type VpnConnectionPayload,
     type VpnConnectionPatchPayload,
     type VpnDpdAction,
+    type VpnEndpoint,
+    type VpnPublicIp,
     type VpnRouteMode,
+    type VpnTrafficPolicy,
+    type VpnTunnel,
+    type VpnTunnelPayload,
 } from '../../api/vpn'
 import { isValidName, isValidCIDRv4 } from '../../utils/validation'
 import { errorMessage } from '../../utils/error'
+import { endpointLabel, tunnelEndpoints } from '../../utils/vpnEndpoint'
 
 const props = defineProps<{
     show: boolean
     gatewayId: string
     /** Edit this connection; omitted or null creates a new one */
     connection?: VpnConnection | null
+    /** Public addresses of the gateway: each tunnel starts from one of its tunnel addresses */
+    publicIps?: VpnPublicIp[]
+    /** HA mode of the gateway: active_active runs at most one tunnel on each node */
+    haMode?: string
 }>()
 
 const emit = defineEmits<{
@@ -39,24 +54,50 @@ const IPV4 = /^(\d{1,3}\.){3}\d{1,3}$/
 const BGP_PASSWORD = /^[A-Za-z0-9._-]{1,80}$/
 const IKE_ID = /^[A-Za-z0-9._@:-]{1,128}$/
 const ASN_MAX = 4294967295
+// The most tunnels a connection has (active_standby: two local addresses times two peer addresses)
+const MAX_TUNNELS = 4
+const ENDPOINTS: VpnEndpoint[] = ['vip1', 'vip2', 'node1', 'node2']
+
+// One tunnel of the form. Its pre-shared key is write-only: empty uses the connection's key on create
+// and keeps the key stored for the slot on edit
+interface TunnelForm {
+    endpoint: VpnEndpoint
+    remote_gateway: string
+    remote_id: string
+    psk: string
+    // Edit only: remove the tunnel-specific key of this slot so it falls back to the connection's key
+    clear_psk: boolean
+    tunnel_local_ip: string
+    tunnel_peer_ip: string
+}
 
 // Numbers are kept as number | null: null (or '' after clearing a number input) means "use the default"
 interface ConnectionForm {
     name: string
     description: string
-    remote_gateway: string
     route_mode: VpnRouteMode
+    // How many of the tunnel entries are used
+    tunnel_count: number
+    // Only matters with more than one tunnel
+    traffic_policy: VpnTrafficPolicy
+    // Slot of the primary tunnel with the preferred policy; 0 lets clapi pick it (active_active: the
+    // tunnel on the node that carries fewer primaries)
+    primary_slot: number
+    // Always MAX_TUNNELS entries in slot order; the first tunnel_count are used
+    tunnels: TunnelForm[]
     local_cidrs: string
     remote_cidrs: string
     remote_summary_cidrs: string
     max_prefixes: number | null
     local_asn: number | null
     peer_asn: number | null
-    tunnel_local_ip: string
-    tunnel_peer_ip: string
     bgp_password: string
     bgp_keepalive: number | null
     bgp_hold: number | null
+    as_path_prepend: number | null
+    bfd_enabled: boolean
+    bfd_interval: number | null
+    bfd_multiplier: number | null
     psk: string
     ike_proposal: string
     esp_proposal: string
@@ -66,25 +107,55 @@ interface ConnectionForm {
     dpd_delay: number | null
     initiator: boolean
     local_id: string
-    remote_id: string
 }
+
+const isActiveActive = computed(() => props.haMode === 'active_active')
+// The addresses a tunnel can start from: vip1 / vip2, or the node addresses of an active_active gateway
+const endpoints = computed(() => tunnelEndpoints(props.publicIps || [], props.haMode))
+const maxTunnels = computed(() => (isActiveActive.value ? 2 : MAX_TUNNELS))
+const countOptions = computed(() => Array.from({ length: maxTunnels.value }, (_, i) => i + 1))
+const endpointOption = (p: VpnPublicIp) => `${endpointLabel(t, p, props.haMode, true)} · ${p.address}`
+// Like clapi: the tunnels take the gateway's tunnel addresses in turn
+const defaultEndpoint = (index: number): VpnEndpoint => {
+    const list = endpoints.value
+    if (list.length) return list[index % list.length].endpoint as VpnEndpoint
+    if (isActiveActive.value) return index % 2 ? 'node2' : 'node1'
+    return 'vip1'
+}
+
+const emptyTunnel = (endpoint: VpnEndpoint): TunnelForm => ({
+    endpoint,
+    remote_gateway: '',
+    remote_id: '',
+    psk: '',
+    clear_psk: false,
+    tunnel_local_ip: '',
+    tunnel_peer_ip: '',
+})
+
+const emptyTunnels = () => Array.from({ length: MAX_TUNNELS }, (_, i) => emptyTunnel(defaultEndpoint(i)))
 
 const emptyForm = (): ConnectionForm => ({
     name: '',
     description: '',
-    remote_gateway: '',
     route_mode: 'static',
+    tunnel_count: 1,
+    traffic_policy: 'preferred',
+    primary_slot: isActiveActive.value ? 0 : 1,
+    tunnels: emptyTunnels(),
     local_cidrs: '',
     remote_cidrs: '',
     remote_summary_cidrs: '',
     max_prefixes: null,
     local_asn: null,
     peer_asn: null,
-    tunnel_local_ip: '',
-    tunnel_peer_ip: '',
     bgp_password: '',
     bgp_keepalive: null,
     bgp_hold: null,
+    as_path_prepend: null,
+    bfd_enabled: false,
+    bfd_interval: null,
+    bfd_multiplier: null,
     psk: '',
     ike_proposal: '',
     esp_proposal: '',
@@ -94,41 +165,67 @@ const emptyForm = (): ConnectionForm => ({
     dpd_delay: null,
     initiator: true,
     local_id: '',
-    remote_id: '',
 })
 
 // Stored zero means "not set" for the optional numbers
 const orNull = (v: number | undefined) => (v ? v : null)
 
-const fromConnection = (c: VpnConnection): ConnectionForm => ({
-    name: c.name,
-    description: c.description || '',
-    remote_gateway: c.remote_gateway || '',
-    route_mode: c.route_mode === 'bgp' ? 'bgp' : 'static',
-    local_cidrs: c.local_cidrs || '',
-    remote_cidrs: c.remote_cidrs || '',
-    remote_summary_cidrs: c.remote_summary_cidrs || '',
-    max_prefixes: orNull(c.max_prefixes),
-    local_asn: orNull(c.local_asn),
-    peer_asn: orNull(c.peer_asn),
-    tunnel_local_ip: c.tunnel_local_ip || '',
-    tunnel_peer_ip: c.tunnel_peer_ip || '',
-    bgp_password: '',
-    bgp_keepalive: orNull(c.bgp_keepalive),
-    bgp_hold: orNull(c.bgp_hold),
+const tunnelsBySlot = (c?: VpnConnection | null): VpnTunnel[] => [...(c?.tunnels || [])].sort((a, b) => a.slot - b.slot)
+
+const tunnelFromApi = (tun: VpnTunnel, index: number): TunnelForm => ({
+    endpoint: ENDPOINTS.includes(tun.endpoint as VpnEndpoint) ? (tun.endpoint as VpnEndpoint) : defaultEndpoint(index),
+    remote_gateway: tun.remote_gateway || '',
+    remote_id: tun.remote_id || '',
     psk: '',
-    ike_proposal: c.ike_proposal || '',
-    esp_proposal: c.esp_proposal || '',
-    ike_lifetime: orNull(c.ike_lifetime),
-    esp_lifetime: orNull(c.esp_lifetime),
-    dpd_action: (['restart', 'clear', 'none'] as const).includes(c.dpd_action as VpnDpdAction)
-        ? (c.dpd_action as VpnDpdAction)
-        : 'restart',
-    dpd_delay: orNull(c.dpd_delay),
-    initiator: c.initiator !== false,
-    local_id: c.local_id || '',
-    remote_id: c.remote_id || '',
+    clear_psk: false,
+    tunnel_local_ip: tun.tunnel_local_ip || '',
+    tunnel_peer_ip: tun.tunnel_peer_ip || '',
 })
+
+const fromConnection = (c: VpnConnection): ConnectionForm => {
+    const slots = tunnelsBySlot(c).slice(0, MAX_TUNNELS)
+    // ecmp stores every tunnel as primary: the first one then becomes the primary if the policy is switched
+    const primaryIndex = slots.findIndex((s) => s.priority === 'primary')
+    return {
+        name: c.name,
+        description: c.description || '',
+        route_mode: c.route_mode === 'bgp' ? 'bgp' : 'static',
+        tunnel_count: Math.max(1, slots.length),
+        traffic_policy: c.traffic_policy === 'ecmp' ? 'ecmp' : 'preferred',
+        primary_slot: primaryIndex >= 0 ? primaryIndex + 1 : 1,
+        tunnels: Array.from({ length: MAX_TUNNELS }, (_, i) =>
+            slots[i] ? tunnelFromApi(slots[i], i) : emptyTunnel(defaultEndpoint(i))
+        ),
+        local_cidrs: c.local_cidrs || '',
+        remote_cidrs: c.remote_cidrs || '',
+        remote_summary_cidrs: c.remote_summary_cidrs || '',
+        max_prefixes: orNull(c.max_prefixes),
+        local_asn: orNull(c.local_asn),
+        peer_asn: orNull(c.peer_asn),
+        bgp_password: '',
+        bgp_keepalive: orNull(c.bgp_keepalive),
+        bgp_hold: orNull(c.bgp_hold),
+        // Zero is a real value here (no prepending)
+        as_path_prepend: c.as_path_prepend ?? null,
+        bfd_enabled: !!c.bfd_enabled,
+        bfd_interval: orNull(c.bfd_interval),
+        bfd_multiplier: orNull(c.bfd_multiplier),
+        psk: '',
+        ike_proposal: c.ike_proposal || '',
+        esp_proposal: c.esp_proposal || '',
+        ike_lifetime: orNull(c.ike_lifetime),
+        esp_lifetime: orNull(c.esp_lifetime),
+        dpd_action: (['restart', 'clear', 'none'] as const).includes(c.dpd_action as VpnDpdAction)
+            ? (c.dpd_action as VpnDpdAction)
+            : 'restart',
+        dpd_delay: orNull(c.dpd_delay),
+        initiator: c.initiator !== false,
+        local_id: c.local_id || '',
+    }
+}
+
+// A deep copy: the tunnel entries are edited in place, a shallow snapshot would follow the edits
+const snapshot = (f: ConnectionForm): ConnectionForm => JSON.parse(JSON.stringify(f))
 
 const form = ref<ConnectionForm>(emptyForm())
 // Snapshot taken when the modal opens; on edit only the changed fields are sent
@@ -140,6 +237,24 @@ const error = ref('')
 const showAdvanced = ref(false)
 
 const isNameValid = computed(() => isValidName(form.value.name))
+const activeTunnels = computed(() => form.value.tunnels.slice(0, form.value.tunnel_count))
+// The traffic policy of the form as it is sent: one tunnel has nothing to share
+const effectivePolicy = (f: ConnectionForm): VpnTrafficPolicy => (f.tunnel_count > 1 ? f.traffic_policy : 'preferred')
+const isEcmp = computed(() => effectivePolicy(form.value) === 'ecmp')
+// Primary / standby exist only with several tunnels under the preferred policy
+const hasStandby = computed(() => form.value.tunnel_count > 1 && !isEcmp.value)
+const isPrimary = (index: number) => form.value.primary_slot === index + 1
+// The primary / standby badge of a tunnel; none while clapi picks the primary
+const showRole = computed(() => hasStandby.value && form.value.primary_slot > 0)
+// Edit: whether the slot currently has a tunnel-specific key
+const storedPskSet = (index: number) => !!tunnelsBySlot(props.connection)[index]?.psk_set
+const tunnelCountHint = computed(() =>
+    isActiveActive.value
+        ? t('dashboard.vpnGateway.tunnelCountHintActiveActive')
+        : t('dashboard.vpnGateway.tunnelCountHint')
+)
+// Example /30 link pair of tunnel i: 169.254.10.1/.2, .5/.6, .9/.10, .13/.14
+const linkExample = (index: number, peer: boolean) => `169.254.10.${index * 4 + (peer ? 2 : 1)}`
 
 watch(
     () => props.show,
@@ -148,7 +263,15 @@ watch(
         error.value = ''
         showAdvanced.value = false
         form.value = props.connection ? fromConnection(props.connection) : emptyForm()
-        original = { ...form.value }
+        original = snapshot(form.value)
+    }
+)
+
+// Fewer tunnels than the chosen primary: the first one becomes the primary
+watch(
+    () => form.value.tunnel_count,
+    (count) => {
+        if (form.value.primary_slot > count) form.value.primary_slot = 1
     }
 )
 
@@ -165,10 +288,60 @@ const cidrListValid = (value: string) =>
 const inRange = (v: number | null, min: number, max: number) =>
     v === null || (Number.isInteger(v) && v >= min && v <= max)
 
+const pskValid = (psk: string) => psk.length >= 8 && psk.length <= 128 && !/[^\x21-\x7e]|["'\\]/.test(psk)
+
+// The /30 network of an IPv4 address: the BGP link pairs of the tunnels must not share one
+const slash30 = (ip: string) => {
+    const parts = ip.trim().split('.').map(Number)
+    return `${parts[0]}.${parts[1]}.${parts[2]}.${parts[3] & 252}`
+}
+
+const allDifferent = (values: string[]) => new Set(values).size === values.length
+
+// The tunnel rules clapi applies, checked here so the message is translated
+const validateTunnels = (f: ConnectionForm): string | null => {
+    const tunnels = f.tunnels.slice(0, f.tunnel_count)
+    for (const tun of tunnels) {
+        const peer = tun.remote_gateway.trim()
+        const remoteId = tun.remote_id.trim()
+        if (peer && !IPV4.test(peer)) return t('dashboard.vpnGateway.invalidIp')
+        if (remoteId && !IKE_ID.test(remoteId)) return t('dashboard.vpnGateway.invalidIkeId')
+        if (!peer) {
+            // Without a peer address the tunnel waits for the peer, which must then be told apart by its identity
+            if (!remoteId) return t('dashboard.vpnGateway.remoteIdRequired')
+            if (f.initiator) return t('dashboard.vpnGateway.responderNotInitiator')
+        }
+        if (!tun.clear_psk && tun.psk && !pskValid(tun.psk)) return t('dashboard.vpnGateway.invalidPsk')
+        if (
+            f.route_mode === 'bgp' &&
+            (!IPV4.test(tun.tunnel_local_ip.trim()) || !IPV4.test(tun.tunnel_peer_ip.trim()))
+        ) {
+            return t('dashboard.vpnGateway.invalidTunnelIp')
+        }
+    }
+    if (tunnels.length < 2) return null
+    // active_active: one tunnel per node
+    if (isActiveActive.value && !allDifferent(tunnels.map((tun) => tun.endpoint))) {
+        return t('dashboard.vpnGateway.tunnelsOnDifferentNodes')
+    }
+    if (!allDifferent(tunnels.map((tun) => `${tun.endpoint}|${tun.remote_gateway.trim()}`))) {
+        return t('dashboard.vpnGateway.tunnelsMustDiffer')
+    }
+    if (
+        f.route_mode === 'bgp' &&
+        (!allDifferent(tunnels.map((tun) => slash30(tun.tunnel_local_ip))) ||
+            !allDifferent(tunnels.map((tun) => tun.tunnel_peer_ip.trim())))
+    ) {
+        return t('dashboard.vpnGateway.tunnelLinksMustDiffer')
+    }
+    return null
+}
+
 const validate = (): string | null => {
     const f = form.value
     if (!f.name || !isNameValid.value) return t('messages.invalidHostname')
-    if (f.remote_gateway && !IPV4.test(f.remote_gateway.trim())) return t('dashboard.vpnGateway.invalidIp')
+    const tunnelProblem = validateTunnels(f)
+    if (tunnelProblem) return tunnelProblem
     if (f.local_cidrs && !cidrListValid(f.local_cidrs)) return t('dashboard.vpnGateway.invalidCidrList')
     if (f.route_mode === 'static') {
         if (!f.remote_cidrs.trim() || !cidrListValid(f.remote_cidrs))
@@ -177,9 +350,6 @@ const validate = (): string | null => {
         if (!num(f.local_asn) || !num(f.peer_asn)) return t('dashboard.vpnGateway.asnRequired')
         if (!inRange(num(f.local_asn), 1, ASN_MAX) || !inRange(num(f.peer_asn), 1, ASN_MAX)) {
             return t('dashboard.vpnGateway.invalidAsn')
-        }
-        if (!IPV4.test(f.tunnel_local_ip.trim()) || !IPV4.test(f.tunnel_peer_ip.trim())) {
-            return t('dashboard.vpnGateway.invalidTunnelIp')
         }
         if (!f.remote_summary_cidrs.trim() || !cidrListValid(f.remote_summary_cidrs)) {
             return t('dashboard.vpnGateway.remoteSummaryRequired')
@@ -190,19 +360,47 @@ const validate = (): string | null => {
         if (!inRange(num(f.bgp_keepalive), 1, 3600))
             return t('dashboard.vpnGateway.invalidRange', { min: 1, max: 3600 })
         if (!inRange(num(f.bgp_hold), 3, 10800)) return t('dashboard.vpnGateway.invalidRange', { min: 3, max: 10800 })
+        if (f.bfd_enabled) {
+            if (!inRange(num(f.bfd_interval), 300, 60000))
+                return t('dashboard.vpnGateway.invalidRange', { min: 300, max: 60000 })
+            if (!inRange(num(f.bfd_multiplier), 2, 50))
+                return t('dashboard.vpnGateway.invalidRange', { min: 2, max: 50 })
+        }
+        if (hasStandby.value && !inRange(num(f.as_path_prepend), 0, 10))
+            return t('dashboard.vpnGateway.invalidRange', { min: 0, max: 10 })
     }
     if (!isEdit.value && !f.psk) return t('dashboard.vpnGateway.pskRequired')
-    if (f.psk && (f.psk.length < 8 || f.psk.length > 128 || /[^\x21-\x7e]|["'\\]/.test(f.psk))) {
-        return t('dashboard.vpnGateway.invalidPsk')
-    }
+    if (f.psk && !pskValid(f.psk)) return t('dashboard.vpnGateway.invalidPsk')
     if (!inRange(num(f.ike_lifetime), 300, 604800))
         return t('dashboard.vpnGateway.invalidRange', { min: 300, max: 604800 })
     if (!inRange(num(f.esp_lifetime), 300, 86400))
         return t('dashboard.vpnGateway.invalidRange', { min: 300, max: 86400 })
     if (!inRange(num(f.dpd_delay), 5, 3600)) return t('dashboard.vpnGateway.invalidRange', { min: 5, max: 3600 })
     if (f.local_id && !IKE_ID.test(f.local_id)) return t('dashboard.vpnGateway.invalidIkeId')
-    if (f.remote_id && !IKE_ID.test(f.remote_id)) return t('dashboard.vpnGateway.invalidIkeId')
     return null
+}
+
+// The tunnel list as the API takes it, in slot order with an explicit endpoint. The priority is left out
+// with ecmp (clapi makes every tunnel primary) and when clapi picks the primary (primary_slot 0). A typed
+// key is sent; clear_psk sends an empty key (fall back to the connection's); otherwise no key, which keeps
+// the key stored for the slot on update
+const tunnelsPayload = (f: ConnectionForm): VpnTunnelPayload[] => {
+    const multi = f.tunnel_count > 1
+    const ecmp = effectivePolicy(f) === 'ecmp'
+    return f.tunnels.slice(0, f.tunnel_count).map((tun, i) => {
+        const entry: VpnTunnelPayload = { endpoint: tun.endpoint }
+        if (!multi) entry.priority = 'primary'
+        else if (!ecmp && f.primary_slot > 0) entry.priority = f.primary_slot === i + 1 ? 'primary' : 'standby'
+        if (tun.remote_gateway.trim()) entry.remote_gateway = tun.remote_gateway.trim()
+        if (tun.remote_id.trim()) entry.remote_id = tun.remote_id.trim()
+        if (f.route_mode === 'bgp') {
+            entry.tunnel_local_ip = tun.tunnel_local_ip.trim()
+            entry.tunnel_peer_ip = tun.tunnel_peer_ip.trim()
+        }
+        if (tun.clear_psk) entry.psk = ''
+        else if (tun.psk) entry.psk = tun.psk
+        return entry
+    })
 }
 
 // Everything the form holds, as the API payload (empty strings and null numbers left out)
@@ -213,6 +411,8 @@ const toPayload = (f: ConnectionForm): VpnConnectionPayload => {
         route_mode: f.route_mode,
         initiator: f.initiator,
         dpd_action: f.dpd_action,
+        traffic_policy: effectivePolicy(f),
+        tunnels: tunnelsPayload(f),
     }
     const str = (key: keyof VpnConnectionPayload, value: string) => {
         if (value.trim()) p[key] = value.trim()
@@ -222,12 +422,10 @@ const toPayload = (f: ConnectionForm): VpnConnectionPayload => {
         if (v !== null) p[key] = v
     }
     str('description', f.description)
-    str('remote_gateway', f.remote_gateway)
     str('local_cidrs', f.local_cidrs)
     str('ike_proposal', f.ike_proposal)
     str('esp_proposal', f.esp_proposal)
     str('local_id', f.local_id)
-    str('remote_id', f.remote_id)
     int('ike_lifetime', f.ike_lifetime)
     int('esp_lifetime', f.esp_lifetime)
     int('dpd_delay', f.dpd_delay)
@@ -235,13 +433,18 @@ const toPayload = (f: ConnectionForm): VpnConnectionPayload => {
         str('remote_cidrs', f.remote_cidrs)
     } else {
         str('remote_summary_cidrs', f.remote_summary_cidrs)
-        str('tunnel_local_ip', f.tunnel_local_ip)
-        str('tunnel_peer_ip', f.tunnel_peer_ip)
         int('local_asn', f.local_asn)
         int('peer_asn', f.peer_asn)
         int('max_prefixes', f.max_prefixes)
         int('bgp_keepalive', f.bgp_keepalive)
         int('bgp_hold', f.bgp_hold)
+        p.bfd_enabled = f.bfd_enabled
+        if (f.bfd_enabled) {
+            int('bfd_interval', f.bfd_interval)
+            int('bfd_multiplier', f.bfd_multiplier)
+        }
+        // The standby tunnels advertise with the prepended path; ecmp has no standby
+        if (f.tunnel_count > 1 && effectivePolicy(f) === 'preferred') int('as_path_prepend', f.as_path_prepend)
     }
     return p as unknown as VpnConnectionPayload
 }
@@ -250,14 +453,12 @@ const toPayload = (f: ConnectionForm): VpnConnectionPayload => {
 // cleared, so those are compared as strings and sent even when empty
 const CLEARABLE: Array<keyof ConnectionForm> = [
     'description',
-    'remote_gateway',
     'local_cidrs',
     'remote_cidrs',
     'remote_summary_cidrs',
     'ike_proposal',
     'esp_proposal',
     'local_id',
-    'remote_id',
 ]
 
 // Optional numbers: a cleared input cannot unset the stored value (an omitted field keeps it), so
@@ -268,28 +469,43 @@ const NUMERIC: Array<keyof ConnectionForm> = [
     'peer_asn',
     'bgp_keepalive',
     'bgp_hold',
+    'as_path_prepend',
+    'bfd_interval',
+    'bfd_multiplier',
     'ike_lifetime',
     'esp_lifetime',
     'dpd_delay',
 ]
 
+// Secrets are added by submit; the tunnel fields and the traffic policy are compared below
+const SKIPPED: Array<keyof ConnectionForm> = [
+    'psk',
+    'bgp_password',
+    'tunnel_count',
+    'traffic_policy',
+    'primary_slot',
+    'tunnels',
+]
+
 const MODE_FIELDS = [
     'remote_cidrs',
     'remote_summary_cidrs',
-    'tunnel_local_ip',
-    'tunnel_peer_ip',
     'local_asn',
     'peer_asn',
     'max_prefixes',
     'bgp_keepalive',
     'bgp_hold',
+    'bfd_enabled',
+    'bfd_interval',
+    'bfd_multiplier',
+    'as_path_prepend',
 ] as const
 
 const toPatch = (f: ConnectionForm): VpnConnectionPatchPayload => {
     const full = toPayload(f) as unknown as Record<string, unknown>
     const patch: Record<string, unknown> = {}
     for (const key of Object.keys(f) as Array<keyof ConnectionForm>) {
-        if (key === 'psk' || key === 'bgp_password') continue
+        if (SKIPPED.includes(key)) continue
         const before = original[key]
         const after = f[key]
         if (NUMERIC.includes(key)) {
@@ -305,6 +521,14 @@ const toPatch = (f: ConnectionForm): VpnConnectionPatchPayload => {
         for (const key of MODE_FIELDS) {
             if (key in full) patch[key] = full[key]
         }
+    }
+    if (effectivePolicy(f) !== effectivePolicy(original)) patch.traffic_policy = effectivePolicy(f)
+    // tunnels replaces the stored list slot by slot, so it goes as a whole once anything in it changed
+    // (a new tunnel key, a cleared one, the primary, the count, the policy, or the link pairs of a new
+    // route mode)
+    const tunnels = tunnelsPayload(f)
+    if (f.route_mode !== original.route_mode || JSON.stringify(tunnels) !== JSON.stringify(tunnelsPayload(original))) {
+        patch.tunnels = tunnels
     }
     return patch as VpnConnectionPatchPayload
 }
@@ -380,9 +604,17 @@ const close = () => {
 
         <div class="form-row">
             <div class="form-group form-group-grow">
-                <label class="form-label">{{ t('dashboard.vpnGateway.remoteGateway') }}</label>
-                <input v-model="form.remote_gateway" type="text" class="form-input mono" placeholder="198.51.100.1" />
-                <div class="form-hint">{{ t('dashboard.vpnGateway.remoteGatewayHint') }}</div>
+                <label class="form-label">{{ t('dashboard.vpnGateway.psk') }}{{ isEdit ? '' : ' *' }}</label>
+                <input
+                    v-model="form.psk"
+                    type="password"
+                    class="form-input mono"
+                    autocomplete="new-password"
+                    :placeholder="isEdit && connection?.psk_set ? '••••••••' : ''"
+                />
+                <div class="form-hint">
+                    {{ isEdit ? t('dashboard.vpnGateway.pskKeepHint') : t('dashboard.vpnGateway.pskHint') }}
+                </div>
             </div>
             <div class="form-group form-group-fixed">
                 <label class="form-label">{{ t('dashboard.vpnGateway.routeMode') }}</label>
@@ -395,18 +627,157 @@ const close = () => {
             </div>
         </div>
 
+        <!-- Tunnels: how many, and how they share the traffic -->
         <div class="form-group">
-            <label class="form-label">{{ t('dashboard.vpnGateway.psk') }}{{ isEdit ? '' : ' *' }}</label>
-            <input
-                v-model="form.psk"
-                type="password"
-                class="form-input mono"
-                autocomplete="new-password"
-                :placeholder="isEdit && connection?.psk_set ? '••••••••' : ''"
-            />
-            <div class="form-hint">
-                {{ isEdit ? t('dashboard.vpnGateway.pskKeepHint') : t('dashboard.vpnGateway.pskHint') }}
+            <label class="form-label">{{ t('dashboard.vpnGateway.tunnelCount') }}</label>
+            <div class="radio-group">
+                <label v-for="n in countOptions" :key="n" class="radio-label">
+                    <input v-model="form.tunnel_count" type="radio" :value="n" />
+                    {{ n }}
+                </label>
             </div>
+            <div class="form-hint">{{ tunnelCountHint }}</div>
+        </div>
+
+        <div v-if="form.tunnel_count > 1" class="form-group">
+            <label class="form-label">{{ t('dashboard.vpnGateway.trafficPolicy') }}</label>
+            <div class="radio-group">
+                <label class="radio-label">
+                    <input v-model="form.traffic_policy" type="radio" value="preferred" />
+                    {{ t('dashboard.vpnGateway.trafficPolicyPreferred') }}
+                </label>
+                <label class="radio-label">
+                    <input v-model="form.traffic_policy" type="radio" value="ecmp" />
+                    {{ t('dashboard.vpnGateway.trafficPolicyEcmp') }}
+                </label>
+            </div>
+            <div class="form-hint">
+                {{
+                    isEcmp
+                        ? t('dashboard.vpnGateway.trafficPolicyEcmpHint')
+                        : t('dashboard.vpnGateway.trafficPolicyPreferredHint')
+                }}
+            </div>
+        </div>
+
+        <!-- ecmp has no primary: every tunnel that is up carries traffic -->
+        <div v-if="hasStandby" class="form-group">
+            <label class="form-label">{{ t('dashboard.vpnGateway.primaryTunnel') }}</label>
+            <div class="radio-group">
+                <label v-if="isActiveActive" class="radio-label">
+                    <input v-model="form.primary_slot" type="radio" :value="0" />
+                    {{ t('dashboard.vpnGateway.primaryAuto') }}
+                </label>
+                <label v-for="n in form.tunnel_count" :key="n" class="radio-label">
+                    <input v-model="form.primary_slot" type="radio" :value="n" />
+                    {{ t('dashboard.vpnGateway.tunnelN', { n }) }}
+                </label>
+            </div>
+        </div>
+
+        <div v-if="hasStandby && form.route_mode === 'static'" class="mode-notice">
+            {{ t('dashboard.vpnGateway.staticDualHint') }}
+        </div>
+
+        <div v-for="(tun, i) in activeTunnels" :key="i" class="tunnel-block">
+            <div class="tunnel-block-head">
+                <span class="tunnel-title">{{ t('dashboard.vpnGateway.tunnelN', { n: i + 1 }) }}</span>
+                <span v-if="showRole" class="badge" :class="isPrimary(i) ? 'badge-primary' : 'badge-secondary'">{{
+                    isPrimary(i) ? t('dashboard.vpnGateway.priorityPrimary') : t('dashboard.vpnGateway.priorityStandby')
+                }}</span>
+            </div>
+
+            <div class="form-row">
+                <!-- The local address: vip1 / vip2, or the node (and its address) of an active_active gateway -->
+                <div v-if="endpoints.length > 1" class="form-group form-group-grow">
+                    <label class="form-label">{{
+                        isActiveActive ? t('dashboard.vpnGateway.node') : t('dashboard.vpnGateway.localAddress')
+                    }}</label>
+                    <div class="select-wrapper">
+                        <select v-model="tun.endpoint" class="form-input">
+                            <option v-for="p in endpoints" :key="p.endpoint" :value="p.endpoint">
+                                {{ endpointOption(p) }}
+                            </option>
+                        </select>
+                    </div>
+                </div>
+                <div class="form-group form-group-grow">
+                    <label class="form-label">{{ t('dashboard.vpnGateway.peerAddress') }}</label>
+                    <input
+                        v-model="tun.remote_gateway"
+                        type="text"
+                        class="form-input mono"
+                        :placeholder="`198.51.100.${i + 1}`"
+                    />
+                    <div class="form-hint">{{ t('dashboard.vpnGateway.remoteGatewayHint') }}</div>
+                </div>
+            </div>
+
+            <div class="form-row">
+                <div class="form-group form-group-grow">
+                    <label class="form-label">{{ t('dashboard.vpnGateway.remoteId') }}</label>
+                    <input
+                        v-model="tun.remote_id"
+                        type="text"
+                        class="form-input mono"
+                        :placeholder="t('dashboard.forms.placeholder.domainExample')"
+                    />
+                    <div class="form-hint">{{ t('dashboard.vpnGateway.peerIdHint') }}</div>
+                </div>
+                <div class="form-group form-group-grow">
+                    <label class="form-label">{{ t('dashboard.vpnGateway.tunnelPsk') }}</label>
+                    <input
+                        v-model="tun.psk"
+                        type="password"
+                        class="form-input mono"
+                        autocomplete="new-password"
+                        :disabled="tun.clear_psk"
+                        :placeholder="
+                            isEdit && storedPskSet(i)
+                                ? t('dashboard.vpnGateway.tunnelPskKeepPlaceholder')
+                                : t('dashboard.vpnGateway.tunnelPskPlaceholder')
+                        "
+                    />
+                    <label v-if="isEdit && storedPskSet(i)" class="checkbox-label checkbox-small">
+                        <input v-model="tun.clear_psk" type="checkbox" />
+                        {{ t('dashboard.vpnGateway.tunnelPskClear') }}
+                    </label>
+                </div>
+            </div>
+
+            <!-- BGP: the session of this tunnel runs over its own /30 pair -->
+            <template v-if="form.route_mode === 'bgp'">
+                <div class="form-row">
+                    <div class="form-group form-group-grow">
+                        <label class="form-label">{{ t('dashboard.vpnGateway.tunnelLocalIp') }} *</label>
+                        <input
+                            v-model="tun.tunnel_local_ip"
+                            type="text"
+                            class="form-input mono"
+                            :placeholder="linkExample(i, false)"
+                        />
+                    </div>
+                    <div class="form-group form-group-grow">
+                        <label class="form-label">{{ t('dashboard.vpnGateway.tunnelPeerIp') }} *</label>
+                        <input
+                            v-model="tun.tunnel_peer_ip"
+                            type="text"
+                            class="form-input mono"
+                            :placeholder="linkExample(i, true)"
+                        />
+                    </div>
+                </div>
+                <div class="form-hint form-hint-block">
+                    {{
+                        i === 0
+                            ? t('dashboard.vpnGateway.tunnelIpHint')
+                            : t('dashboard.vpnGateway.tunnelIpHint2', {
+                                  local: linkExample(i, false),
+                                  peer: linkExample(i, true),
+                              })
+                    }}
+                </div>
+            </template>
         </div>
 
         <div class="form-group">
@@ -458,27 +829,6 @@ const close = () => {
                     />
                 </div>
             </div>
-            <div class="form-row">
-                <div class="form-group form-group-grow">
-                    <label class="form-label">{{ t('dashboard.vpnGateway.tunnelLocalIp') }} *</label>
-                    <input
-                        v-model="form.tunnel_local_ip"
-                        type="text"
-                        class="form-input mono"
-                        placeholder="169.254.10.1"
-                    />
-                </div>
-                <div class="form-group form-group-grow">
-                    <label class="form-label">{{ t('dashboard.vpnGateway.tunnelPeerIp') }} *</label>
-                    <input
-                        v-model="form.tunnel_peer_ip"
-                        type="text"
-                        class="form-input mono"
-                        placeholder="169.254.10.2"
-                    />
-                </div>
-            </div>
-            <div class="form-hint form-hint-block">{{ t('dashboard.vpnGateway.tunnelIpHint') }}</div>
 
             <div class="form-group">
                 <label class="form-label">{{ t('dashboard.vpnGateway.remoteSummaryCidrs') }} *</label>
@@ -548,9 +898,58 @@ const close = () => {
                     </div>
                 </div>
             </div>
+
+            <!-- Standby tunnels advertise with the local ASN repeated so the peer prefers the primary -->
+            <div v-if="hasStandby" class="form-group">
+                <label class="form-label">{{ t('dashboard.vpnGateway.asPathPrepend') }}</label>
+                <input
+                    v-model.number="form.as_path_prepend"
+                    type="number"
+                    min="0"
+                    max="10"
+                    class="form-input input-narrow"
+                    :placeholder="t('dashboard.vpnGateway.defaultHint')"
+                />
+                <div class="form-hint">{{ t('dashboard.vpnGateway.asPathPrependHint') }}</div>
+            </div>
+
+            <div class="form-group">
+                <label class="checkbox-label">
+                    <input v-model="form.bfd_enabled" type="checkbox" />
+                    {{ t('dashboard.vpnGateway.bfdEnabled') }}
+                </label>
+                <div class="form-hint">{{ t('dashboard.vpnGateway.bfdHint') }}</div>
+            </div>
+            <div v-if="form.bfd_enabled" class="form-row">
+                <div class="form-group form-group-grow">
+                    <label class="form-label">{{ t('dashboard.vpnGateway.bfdInterval') }}</label>
+                    <div class="input-with-suffix">
+                        <input
+                            v-model.number="form.bfd_interval"
+                            type="number"
+                            min="300"
+                            max="60000"
+                            class="form-input"
+                            :placeholder="t('dashboard.vpnGateway.defaultHint')"
+                        />
+                        <span class="input-suffix">{{ t('dashboard.vpnGateway.milliseconds') }}</span>
+                    </div>
+                </div>
+                <div class="form-group form-group-grow">
+                    <label class="form-label">{{ t('dashboard.vpnGateway.bfdMultiplier') }}</label>
+                    <input
+                        v-model.number="form.bfd_multiplier"
+                        type="number"
+                        min="2"
+                        max="50"
+                        class="form-input"
+                        :placeholder="t('dashboard.vpnGateway.defaultHint')"
+                    />
+                </div>
+            </div>
         </template>
 
-        <!-- Advanced: proposals, lifetimes, DPD, initiator, IKE identities -->
+        <!-- Advanced: proposals, lifetimes, DPD, initiator, local IKE identity -->
         <button type="button" class="advanced-toggle" @click="showAdvanced = !showAdvanced">
             <component :is="showAdvanced ? ChevronDown : ChevronRight" :size="14" />
             {{ t('dashboard.vpnGateway.advanced') }}
@@ -636,27 +1035,16 @@ const close = () => {
                 </div>
             </div>
 
-            <div class="form-row">
-                <div class="form-group form-group-grow">
-                    <label class="form-label">{{ t('dashboard.vpnGateway.localId') }}</label>
-                    <input
-                        v-model="form.local_id"
-                        type="text"
-                        class="form-input mono"
-                        :placeholder="t('dashboard.forms.placeholder.domainExample')"
-                    />
-                </div>
-                <div class="form-group form-group-grow">
-                    <label class="form-label">{{ t('dashboard.vpnGateway.remoteId') }}</label>
-                    <input
-                        v-model="form.remote_id"
-                        type="text"
-                        class="form-input mono"
-                        :placeholder="t('dashboard.forms.placeholder.domainExample')"
-                    />
-                </div>
+            <div class="form-group">
+                <label class="form-label">{{ t('dashboard.vpnGateway.localId') }}</label>
+                <input
+                    v-model="form.local_id"
+                    type="text"
+                    class="form-input mono"
+                    :placeholder="t('dashboard.forms.placeholder.domainExample')"
+                />
+                <div class="form-hint">{{ t('dashboard.vpnGateway.localIdHint') }}</div>
             </div>
-            <div class="form-hint form-hint-block">{{ t('dashboard.vpnGateway.idHint') }}</div>
 
             <div class="form-group">
                 <label class="checkbox-label">
@@ -706,6 +1094,22 @@ const close = () => {
     flex-shrink: 0;
 }
 
+/* Phones: the paired fields one above the other */
+@media (max-width: 560px) {
+    .form-row {
+        flex-direction: column;
+        gap: 0;
+    }
+
+    .form-group-fixed {
+        width: auto;
+    }
+
+    .tunnel-block {
+        padding: var(--spacing-3) var(--spacing-3) 0;
+    }
+}
+
 .form-hint {
     font-size: var(--font-size-xs);
     color: var(--text-tertiary);
@@ -729,6 +1133,63 @@ const close = () => {
     font-size: var(--font-size-sm);
     color: var(--text-primary);
     cursor: pointer;
+}
+
+/* The "remove the tunnel key" checkbox under the key input */
+.checkbox-small {
+    margin-top: 6px;
+    font-size: var(--font-size-xs);
+    color: var(--text-secondary);
+}
+
+.radio-group {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--spacing-5);
+}
+
+.radio-label {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--spacing-2);
+    font-size: var(--font-size-sm);
+    color: var(--text-primary);
+    cursor: pointer;
+}
+
+.input-narrow {
+    max-width: 200px;
+}
+
+/* One box per tunnel */
+.tunnel-block {
+    margin-bottom: var(--spacing-4);
+    padding: var(--spacing-4) var(--spacing-4) 0;
+    border: 1px solid var(--border-light);
+    border-radius: var(--radius-md);
+}
+
+.tunnel-block-head {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-2);
+    margin-bottom: var(--spacing-3);
+}
+
+.tunnel-title {
+    font-size: var(--font-size-sm);
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.mode-notice {
+    margin-bottom: var(--spacing-4);
+    padding: var(--spacing-3);
+    border-radius: var(--radius-sm);
+    background: var(--warning-light);
+    color: var(--warning-dark);
+    font-size: var(--font-size-xs);
+    line-height: 1.6;
 }
 
 .input-with-suffix {

@@ -1,14 +1,21 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, watch } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useToast } from '../../composables/useToast'
 import { useCopyId } from '../../composables/useCopyId'
 import { useListQuery } from '../../composables/useListQuery'
 import { useRegionStore } from '../../stores/region'
-import { vpcsApi, subnetsApi, type VPC, type Subnet, type SubnetAddress } from '../../api/networks'
+import { vpcsApi, subnetsApi, type VPC, type Subnet } from '../../api/networks'
 import { zonesApi, type Zone } from '../../api/zones'
-import { vpnGatewaysApi, type VpnGateway, type VpnGatewayPayload } from '../../api/vpn'
-import { isValidName, isValidCIDRv4 } from '../../utils/validation'
+import {
+    vpnGatewaysApi,
+    type VpnGateway,
+    type VpnGatewayPayload,
+    type VpnHaMode,
+    type VpnPublicIpPayload,
+} from '../../api/vpn'
+import { endpointLabel, isActiveActive, isSingleNode } from '../../utils/vpnEndpoint'
+import { isValidName, isValidCIDRv4, hasDefaultRoute } from '../../utils/validation'
 import { quotaErrorMessage } from '../../utils/quotaError'
 import { errorMessage } from '../../utils/error'
 import { formatToMinute } from '../../utils/format'
@@ -19,6 +26,7 @@ import PageToolbar from '../../components/base/PageToolbar.vue'
 import StatusBadge from '../../components/base/StatusBadge.vue'
 import DataTable, { type Column } from '../../components/base/DataTable.vue'
 import PaginationBar from '../../components/base/PaginationBar.vue'
+import VpnPublicAddressPicker from '../../components/vpn/VpnPublicAddressPicker.vue'
 
 const { t, te } = useI18n()
 const toast = useToast()
@@ -33,6 +41,9 @@ const gatewayBadge = (gw: VpnGateway) =>
     gw.enabled === false && gw.status === 'available'
         ? { status: 'disabled', label: t('dashboard.vpnGateway.disabled') }
         : { status: gw.status, label: statusText(gw.status) }
+// Gateways created before HA modes existed have no ha_mode: they are active_standby
+const haModeText = (gw: VpnGateway) =>
+    isActiveActive(gw) ? t('dashboard.vpnGateway.haModeActiveActive') : t('dashboard.vpnGateway.haModeActiveStandby')
 
 const vpcs = ref<VPC[]>([])
 
@@ -41,6 +52,7 @@ const vpcs = ref<VPC[]>([])
 const columns = computed<Column[]>(() => [
     { key: 'name', label: t('dashboard.table.nameId'), sortable: true },
     { key: 'vpc', label: t('dashboard.table.vpc') },
+    { key: 'ha_mode', label: t('dashboard.vpnGateway.haMode'), hideBelow: 1024 },
     { key: 'public_ip', label: t('dashboard.vpnGateway.publicIp') },
     { key: 'status', label: t('dashboard.table.status'), sortable: true },
     { key: 'nodes', label: t('dashboard.vpnGateway.masterNode'), hideBelow: 1280 },
@@ -90,13 +102,28 @@ const createModalVisible = ref(false)
 const creating = ref(false)
 const createError = ref('')
 const publicSubnets = ref<Subnet[]>([])
-const newForm = ref({
+// One entry per public address; empty strings let clapi pick the subnet / the address
+interface PublicAddressForm {
+    subnet_id: string
+    ip: string
+}
+// Three entries, the most a gateway takes at creation (active_active with client VPN); how many are used
+// depends on the HA mode (see activeAddresses)
+const emptyAddresses = (): PublicAddressForm[] => [
+    { subnet_id: '', ip: '' },
+    { subnet_id: '', ip: '' },
+    { subnet_id: '', ip: '' },
+]
+const emptyForm = () => ({
     name: '',
     description: '',
     vpc_id: '',
     zone: '',
-    public_subnet_id: '',
-    public_ip: '',
+    ha_mode: 'active_standby' as VpnHaMode,
+    // active_standby only: two addresses let one connection build a primary and a standby tunnel towards a
+    // single peer address
+    address_count: 1 as 1 | 2,
+    public_ips: emptyAddresses(),
     ipsec_enabled: true,
     client_enabled: false,
     client_cidr: '10.8.0.0/24',
@@ -104,11 +131,13 @@ const newForm = ref({
     client_dns: '',
     client_routes: '',
 })
+const newForm = ref(emptyForm())
 const isNameValid = computed(() => isValidName(newForm.value.name))
 const isClientCidrValid = computed(() => !newForm.value.client_enabled || isValidCIDRv4(newForm.value.client_cidr))
 const IPV4 = /^(\d{1,3}\.){3}\d{1,3}$/
+const isNewActiveActive = computed(() => newForm.value.ha_mode === 'active_active')
 
-// Zones and the free addresses of the chosen public subnet feed the two dropdowns of the create modal
+// Zones feed the zone dropdown of the create modal
 const zones = ref<Zone[]>([])
 const fetchZones = async () => {
     try {
@@ -119,36 +148,39 @@ const fetchZones = async () => {
         zones.value = []
     }
 }
-const freeAddresses = ref<string[]>([])
-const addressesLoading = ref(false)
-const fetchFreeAddresses = async (subnetId: string) => {
-    freeAddresses.value = []
-    if (!subnetId) return
-    addressesLoading.value = true
-    try {
-        const res = await subnetsApi.listAddresses(subnetId)
-        // Only the answer for the subnet still selected counts
-        if (newForm.value.public_subnet_id !== subnetId) return
-        // The subnet gateway has an address row that is never marked allocated, and clapi does not refuse it
-        // when it is asked for by name: taking it would hijack the upstream gateway of the whole subnet
-        const gatewayIp = publicSubnets.value.find((s) => s.id === subnetId)?.gateway?.split('/')[0]
-        freeAddresses.value = (res.addresses || [])
-            .filter((a: SubnetAddress) => !a.allocated && !a.reserved)
-            .map((a: SubnetAddress) => a.address.split('/')[0])
-            .filter((ip) => ip !== gatewayIp)
-    } catch (err) {
-        console.error('Failed to fetch subnet addresses:', err)
-    } finally {
-        addressesLoading.value = false
-    }
+
+// The two HA modes with what each protects against (radio cards of the create modal)
+const HA_MODES: Array<{ value: VpnHaMode; title: string; hint: string }> = [
+    {
+        value: 'active_standby',
+        title: 'dashboard.vpnGateway.haModeActiveStandby',
+        hint: 'dashboard.vpnGateway.haModeActiveStandbyHint',
+    },
+    {
+        value: 'active_active',
+        title: 'dashboard.vpnGateway.haModeActiveActive',
+        hint: 'dashboard.vpnGateway.haModeActiveActiveHint',
+    },
+]
+
+// The addresses the gateway takes, each one a public IP of the quota. active_standby: vip1 and optionally
+// vip2. active_active: one fixed address per node, plus the floating address of the client VPN
+const activeAddresses = computed(() => {
+    const f = newForm.value
+    const count = f.ha_mode === 'active_active' ? (f.client_enabled ? 3 : 2) : f.address_count
+    return f.public_ips.slice(0, count)
+})
+const addressTitle = (index: number) => {
+    if (!isNewActiveActive.value) return t('dashboard.vpnGateway.publicAddressN', { n: index + 1 })
+    return index < 2 ? t('dashboard.vpnGateway.nodeN', { n: index + 1 }) : t('dashboard.vpnGateway.clientVpnAddress')
 }
-watch(
-    () => newForm.value.public_subnet_id,
-    (subnetId) => {
-        newForm.value.public_ip = ''
-        fetchFreeAddresses(subnetId)
-    }
-)
+// The address picked for another entry is left out, so two entries cannot take the same address
+const excludedAddresses = (index: number) =>
+    activeAddresses.value.filter((a, i) => i !== index && a.ip).map((a) => a.ip)
+// active_active: an entry without a subnet takes the subnet of the first one (clapi does the same for the
+// entries it fills in itself)
+const autoSubnetLabel = (index: number) =>
+    isNewActiveActive.value && index > 0 ? t('dashboard.vpnGateway.publicSubnetSameAsFirst') : ''
 
 const fetchPublicSubnets = async () => {
     try {
@@ -176,23 +208,9 @@ const fetchVpcsWithGateway = async () => {
 }
 
 const openCreateModal = async () => {
-    newForm.value = {
-        name: '',
-        description: '',
-        vpc_id: '',
-        zone: '',
-        public_subnet_id: '',
-        public_ip: '',
-        ipsec_enabled: true,
-        client_enabled: false,
-        client_cidr: '10.8.0.0/24',
-        client_port: 51820,
-        client_dns: '',
-        client_routes: '',
-    }
+    newForm.value = emptyForm()
     createError.value = ''
     createModalVisible.value = true
-    freeAddresses.value = []
     fetchPublicSubnets()
     fetchZones()
     await fetchVpcsWithGateway()
@@ -219,8 +237,14 @@ const handleCreate = async () => {
         createError.value = t('dashboard.vpnGateway.needOneAccess')
         return
     }
-    if (form.public_ip && !IPV4.test(form.public_ip)) {
+    const addresses = activeAddresses.value
+    if (addresses.some((a) => a.ip && !IPV4.test(a.ip))) {
         createError.value = t('dashboard.vpnGateway.invalidIp')
+        return
+    }
+    const picked = addresses.map((a) => a.ip).filter(Boolean)
+    if (new Set(picked).size !== picked.length) {
+        createError.value = t('dashboard.vpnGateway.publicIpsMustDiffer')
         return
     }
     if (form.client_enabled) {
@@ -238,6 +262,10 @@ const handleCreate = async () => {
             createError.value = t('dashboard.vpnGateway.invalidDns')
             return
         }
+        if (form.client_routes && hasDefaultRoute(form.client_routes)) {
+            createError.value = t('dashboard.vpnGateway.clientRoutesNoDefault')
+            return
+        }
     }
 
     creating.value = true
@@ -250,8 +278,23 @@ const handleCreate = async () => {
         }
         if (form.description) payload.description = form.description
         if (form.zone) payload.zone = form.zone
-        if (form.public_subnet_id) payload.public_subnet = { id: form.public_subnet_id }
-        if (form.public_ip) payload.public_ip = form.public_ip
+        if (form.ha_mode === 'active_active') payload.ha_mode = 'active_active'
+        if (addresses.length === 1) {
+            // One address: the short form clapi has always accepted
+            if (addresses[0].subnet_id) payload.public_subnet = { id: addresses[0].subnet_id }
+            if (addresses[0].ip) payload.public_ip = addresses[0].ip
+        } else {
+            // An entry sent without a subnet lets clapi pick any public subnet: on an active_active gateway
+            // it takes the subnet of the first entry instead, as the form says
+            const firstSubnet = form.ha_mode === 'active_active' ? addresses[0].subnet_id : ''
+            payload.public_ips = addresses.map((a) => {
+                const entry: VpnPublicIpPayload = {}
+                const subnetId = a.subnet_id || firstSubnet
+                if (subnetId) entry.public_subnet = { id: subnetId }
+                if (a.ip) entry.public_ip = a.ip
+                return entry
+            })
+        }
         if (form.client_enabled) {
             payload.client_cidr = form.client_cidr
             if (form.client_port) payload.client_port = form.client_port
@@ -270,6 +313,9 @@ const handleCreate = async () => {
             // ErrVpnGatewayExists: someone created one in the meantime
             createError.value = t('dashboard.vpnGateway.vpcHasGateway')
             fetchVpcsWithGateway()
+        } else if (code === 132009) {
+            // ErrVpnGatewayNeedsNodes: the zone has no available node, or one for an active-active gateway
+            createError.value = t('dashboard.vpnGateway.zoneNeedsNodes')
         } else {
             createError.value = quotaErrorMessage(err, t, te) || errorMessage(err, t('messages.error'))
         }
@@ -395,12 +441,31 @@ onMounted(() => {
                 <span v-else>-</span>
             </template>
 
+            <template #cell-ha_mode="{ row: gw }">
+                <span class="badge mode-badge" :class="isActiveActive(gw) ? 'badge-info' : 'badge-secondary'">{{
+                    haModeText(gw)
+                }}</span>
+            </template>
+
+            <!-- One line per address; with more than one, each says which it is (and the node of a fixed one) -->
             <template #cell-public_ip="{ row: gw }">
-                <code class="ip-address">{{ gw.public_ip || '-' }}</code>
+                <div v-if="gw.public_ips?.length" class="ip-list">
+                    <div v-for="p in gw.public_ips" :key="p.endpoint" class="ip-line">
+                        <code class="ip-address">{{ p.address }}</code>
+                        <span v-if="gw.public_ips.length > 1 || isActiveActive(gw)" class="ip-endpoint">{{
+                            endpointLabel(t, p, gw.ha_mode)
+                        }}</span>
+                    </div>
+                </div>
+                <code v-else class="ip-address">{{ gw.public_ip || '-' }}</code>
             </template>
 
             <template #cell-status="{ row: gw }">
-                <StatusBadge :status="gatewayBadge(gw).status" :label="gatewayBadge(gw).label" />
+                <StatusBadge
+                    :status="gatewayBadge(gw).status"
+                    :label="gatewayBadge(gw).label"
+                    :title="gw.status === 'error' ? gw.status_reason : undefined"
+                />
             </template>
 
             <template #cell-nodes="{ row: gw }">
@@ -409,6 +474,12 @@ onMounted(() => {
                 <span v-if="(gw.nodes?.length || 0) > 1" class="text-tertiary text-xs">
                     {{ ' ' }}(+{{ (gw.nodes?.length || 1) - 1 }})
                 </span>
+                <span
+                    v-if="isSingleNode(gw)"
+                    class="badge badge-warning single-node"
+                    :title="$t('dashboard.vpnGateway.singleNodeNotice')"
+                    >{{ $t('dashboard.vpnGateway.singleNode') }}</span
+                >
             </template>
 
             <template #cell-connections="{ row: gw }">{{ gw.connection_count ?? 0 }}</template>
@@ -516,44 +587,58 @@ onMounted(() => {
                 </div>
             </div>
 
-            <div class="form-row">
-                <div class="form-group form-group-grow">
-                    <label class="form-label"
-                        >{{ $t('dashboard.vpnGateway.publicSubnet') }}（{{ $t('dashboard.forms.optional') }}）</label
+            <!-- HA mode: fixed at creation; it decides how many public addresses the gateway takes -->
+            <div class="form-group">
+                <label class="form-label">{{ $t('dashboard.vpnGateway.haMode') }}</label>
+                <div class="mode-options">
+                    <label
+                        v-for="mode in HA_MODES"
+                        :key="mode.value"
+                        class="mode-option"
+                        :class="{ selected: newForm.ha_mode === mode.value }"
                     >
-                    <div class="select-wrapper">
-                        <select v-model="newForm.public_subnet_id" class="form-input">
-                            <option value="">{{ $t('dashboard.vpnGateway.publicSubnetAuto') }}</option>
-                            <option v-for="s in publicSubnets" :key="s.id" :value="s.id">
-                                {{ s.name }} ({{ s.network_cidr || s.network }})
-                            </option>
-                        </select>
-                    </div>
+                        <input v-model="newForm.ha_mode" type="radio" :value="mode.value" />
+                        <span class="mode-option-body">
+                            <span class="mode-option-title">{{ $t(mode.title) }}</span>
+                            <span class="mode-option-desc">{{ $t(mode.hint) }}</span>
+                        </span>
+                    </label>
                 </div>
-                <div class="form-group form-group-grow">
-                    <label class="form-label"
-                        >{{ $t('dashboard.vpnGateway.publicIp') }}（{{ $t('dashboard.forms.optional') }}）</label
-                    >
-                    <div class="select-wrapper">
-                        <select
-                            v-model="newForm.public_ip"
-                            class="form-input"
-                            :disabled="!newForm.public_subnet_id || addressesLoading"
-                        >
-                            <option value="">{{ $t('dashboard.vpnGateway.publicIpAuto') }}</option>
-                            <option v-for="ip in freeAddresses" :key="ip" :value="ip">{{ ip }}</option>
-                        </select>
-                    </div>
-                    <div class="form-hint">
-                        {{
-                            !newForm.public_subnet_id
-                                ? $t('dashboard.vpnGateway.publicIpNeedSubnet')
-                                : !addressesLoading && !freeAddresses.length
-                                  ? $t('dashboard.vpnGateway.publicIpNoFree')
-                                  : $t('dashboard.vpnGateway.publicIpHint')
-                        }}
-                    </div>
+            </div>
+
+            <div v-if="!isNewActiveActive" class="form-group">
+                <label class="form-label">{{ $t('dashboard.vpnGateway.publicAddressCount') }}</label>
+                <div class="radio-group">
+                    <label class="radio-label">
+                        <input v-model="newForm.address_count" type="radio" :value="1" />
+                        {{ $t('dashboard.vpnGateway.publicAddressOne') }}
+                    </label>
+                    <label class="radio-label">
+                        <input v-model="newForm.address_count" type="radio" :value="2" />
+                        {{ $t('dashboard.vpnGateway.publicAddressTwo') }}
+                    </label>
                 </div>
+                <div v-if="newForm.address_count === 2" class="form-hint">
+                    {{ $t('dashboard.vpnGateway.publicAddressTwoHint') }}
+                </div>
+            </div>
+            <div v-else class="form-group">
+                <label class="form-label">{{ $t('dashboard.vpnGateway.publicAddressCount') }}</label>
+                <div class="form-hint form-hint-top">{{ $t('dashboard.vpnGateway.activeActiveAddressHint') }}</div>
+            </div>
+
+            <template v-for="(entry, i) in activeAddresses" :key="i">
+                <div v-if="activeAddresses.length > 1" class="address-title">{{ addressTitle(i) }}</div>
+                <VpnPublicAddressPicker
+                    v-model:subnet-id="entry.subnet_id"
+                    v-model:ip="entry.ip"
+                    :subnets="publicSubnets"
+                    :exclude="excludedAddresses(i)"
+                    :auto-subnet-label="autoSubnetLabel(i)"
+                />
+            </template>
+            <div class="quota-note">
+                {{ $t('dashboard.vpnGateway.publicIpQuotaUse', { n: activeAddresses.length }) }}
             </div>
 
             <div class="form-group">
@@ -570,6 +655,9 @@ onMounted(() => {
                     {{ $t('dashboard.vpnGateway.clientEnabled') }}
                 </label>
                 <div class="form-hint">{{ $t('dashboard.vpnGateway.clientEnabledHint') }}</div>
+                <div v-if="isNewActiveActive" class="form-hint">
+                    {{ $t('dashboard.vpnGateway.clientAddressActiveActiveHint') }}
+                </div>
             </div>
 
             <template v-if="newForm.client_enabled">
@@ -600,12 +688,7 @@ onMounted(() => {
                     <label class="form-label"
                         >{{ $t('dashboard.vpnGateway.clientDns') }}（{{ $t('dashboard.forms.optional') }}）</label
                     >
-                    <input
-                        v-model="newForm.client_dns"
-                        type="text"
-                        class="form-input"
-                        placeholder="10.0.0.2, 8.8.8.8"
-                    />
+                    <input v-model="newForm.client_dns" type="text" class="form-input" placeholder="192.168.1.53" />
                     <div class="form-hint">{{ $t('dashboard.vpnGateway.clientDnsHint') }}</div>
                 </div>
                 <div class="form-group">
@@ -686,6 +769,112 @@ onMounted(() => {
     font-size: var(--font-size-sm);
 }
 
+/* A gateway with two public addresses lists them one per line */
+.ip-list {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+/* Endpoint name under an address when a gateway has several (Node 1 (work-02), Public address 2) */
+.ip-line {
+    display: flex;
+    align-items: baseline;
+    gap: var(--spacing-2);
+    white-space: nowrap;
+}
+
+.ip-endpoint {
+    font-size: var(--font-size-xs);
+    color: var(--text-tertiary);
+}
+
+.mode-badge {
+    white-space: nowrap;
+}
+
+/* HA mode: two radio cards with what each mode protects against */
+.mode-options {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: var(--spacing-3);
+}
+
+.mode-option {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--spacing-2);
+    padding: var(--spacing-3);
+    border: 1px solid var(--border-default);
+    border-radius: var(--radius-md);
+    cursor: pointer;
+    transition: border-color 0.15s;
+}
+
+.mode-option:hover {
+    border-color: var(--primary-color);
+}
+
+.mode-option.selected {
+    border-color: var(--primary-color);
+    background: var(--primary-50);
+}
+
+.mode-option input {
+    margin-top: 3px;
+    flex-shrink: 0;
+}
+
+.mode-option-body {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 0;
+}
+
+.mode-option-title {
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-medium);
+    color: var(--text-primary);
+}
+
+.mode-option-desc {
+    font-size: var(--font-size-xs);
+    line-height: 1.5;
+    color: var(--text-secondary);
+}
+
+.form-hint-top {
+    margin-top: 0;
+}
+
+.quota-note {
+    margin: calc(-1 * var(--spacing-2)) 0 var(--spacing-4);
+    font-size: var(--font-size-xs);
+    color: var(--text-secondary);
+}
+
+.address-title {
+    margin-bottom: var(--spacing-2);
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-medium);
+    color: var(--text-secondary);
+}
+
+.radio-group {
+    display: flex;
+    gap: var(--spacing-5);
+}
+
+.radio-label {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--spacing-2);
+    font-size: var(--font-size-sm);
+    color: var(--text-primary);
+    cursor: pointer;
+}
+
 .modal-error {
     margin-top: var(--spacing-4);
     font-size: var(--font-size-sm);
@@ -710,6 +899,24 @@ onMounted(() => {
     flex-shrink: 0;
 }
 
+/* Phones: the mode cards and the paired fields one above the other */
+@media (max-width: 640px) {
+    .mode-options {
+        grid-template-columns: 1fr;
+    }
+}
+
+@media (max-width: 480px) {
+    .form-row {
+        flex-direction: column;
+        gap: 0;
+    }
+
+    .form-group-fixed {
+        width: auto;
+    }
+}
+
 .form-hint {
     font-size: var(--font-size-xs);
     color: var(--text-tertiary);
@@ -723,5 +930,9 @@ onMounted(() => {
     font-size: var(--font-size-sm);
     color: var(--text-primary);
     cursor: pointer;
+}
+
+.single-node {
+    margin-left: var(--spacing-2);
 }
 </style>

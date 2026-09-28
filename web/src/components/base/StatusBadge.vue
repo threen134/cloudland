@@ -16,6 +16,11 @@ const props = defineProps<{
      * strings such as "available" untranslated, and vue-tsc now catches a missing label
      */
     label: string
+    /**
+     * Only the coloured dot, the text moves to the tooltip: for a cell that repeats a status on every
+     * line where the text would make the table too wide (the full text is shown elsewhere)
+     */
+    dotOnly?: boolean
 }>()
 
 const variantClass = computed(() => `status-${props.variant ?? statusVariant(props.status)}`)
@@ -23,9 +28,15 @@ const text = computed(() => props.label || '-')
 </script>
 
 <template>
-    <span class="status-badge" :class="variantClass">
+    <span
+        class="status-badge"
+        :class="[variantClass, { 'dot-only': dotOnly }]"
+        :title="dotOnly ? text : undefined"
+        :role="dotOnly ? 'img' : undefined"
+        :aria-label="dotOnly ? text : undefined"
+    >
         <span class="status-dot" aria-hidden="true"></span>
-        {{ text }}
+        <template v-if="!dotOnly">{{ text }}</template>
     </span>
 </template>
 
@@ -48,6 +59,16 @@ const text = computed(() => props.label || '-')
     border-radius: 50%;
     background: currentColor;
     flex-shrink: 0;
+}
+
+.status-badge.dot-only {
+    padding: 4px;
+    cursor: default;
+}
+
+.dot-only .status-dot {
+    width: 8px;
+    height: 8px;
 }
 
 .status-success {

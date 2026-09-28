@@ -18,6 +18,7 @@ import {
     FileText,
     Activity as ActivityIcon,
     ChartLine,
+    AlertTriangle,
 } from 'lucide-vue-next'
 import {
     vpnGatewaysApi,
@@ -25,16 +26,22 @@ import {
     vpnClientsApi,
     type VpnGateway,
     type VpnConnection,
+    type VpnTunnel,
+    type VpnPublicIp,
     type VpnClient,
     type VpnGatewayPatchPayload,
+    type VpnPublicIpPayload,
 } from '../../api/vpn'
+import { subnetsApi, type Subnet } from '../../api/networks'
 import { activitiesApi, type Activity } from '../../api/activities'
 import { useToast } from '../../composables/useToast'
 import { useGoBack } from '../../composables/useGoBack'
 import { useCopyId } from '../../composables/useCopyId'
 import { errorMessage } from '../../utils/error'
+import { quotaErrorMessage } from '../../utils/quotaError'
 import { formatBytes } from '../../utils/format'
-import { isValidName, isValidCIDRv4 } from '../../utils/validation'
+import { isValidName, isValidCIDRv4, hasDefaultRoute } from '../../utils/validation'
+import { endpointName, isActiveActive, isSingleNode, removableEndpoint, tunnelEndpoints } from '../../utils/vpnEndpoint'
 import BaseModal from '../../components/modals/BaseModal.vue'
 import DeleteModal from '../../components/modals/DeleteModal.vue'
 import StatusBadge from '../../components/base/StatusBadge.vue'
@@ -43,9 +50,12 @@ import DetailTabs from '../../components/base/DetailTabs.vue'
 import DataTable, { type Column } from '../../components/base/DataTable.vue'
 import ActivityEntry from '../../components/activity/ActivityEntry.vue'
 import VpnConnectionModal from '../../components/vpn/VpnConnectionModal.vue'
+import VpnPeerConfigModal from '../../components/vpn/VpnPeerConfigModal.vue'
+import VpnSecretValue from '../../components/vpn/VpnSecretValue.vue'
 import VpnClientModal from '../../components/vpn/VpnClientModal.vue'
 import VpnClientConfigBox from '../../components/vpn/VpnClientConfigBox.vue'
 import VpnTrafficCharts from '../../components/vpn/VpnTrafficCharts.vue'
+import VpnPublicAddressPicker from '../../components/vpn/VpnPublicAddressPicker.vue'
 
 const { t, te } = useI18n()
 const toast = useToast()
@@ -95,6 +105,85 @@ const connectionStatusText = (status?: string) =>
         : status || '-'
 const routeModeText = (mode?: string) =>
     mode === 'bgp' ? t('dashboard.vpnGateway.routeModeBgp') : t('dashboard.vpnGateway.routeModeStatic')
+
+// HA mode: gateways created before HA modes existed have none and are active_standby
+const isAA = computed(() => isActiveActive(gateway.value))
+const haModeText = computed(() =>
+    isAA.value ? t('dashboard.vpnGateway.haModeActiveActive') : t('dashboard.vpnGateway.haModeActiveStandby')
+)
+const haModeHint = computed(() =>
+    isAA.value ? t('dashboard.vpnGateway.haModeActiveActiveHint') : t('dashboard.vpnGateway.haModeActiveStandbyHint')
+)
+const singleNode = computed(() => isSingleNode(gateway.value))
+
+// Public addresses of the gateway; public_ip alone when the answer carries no list
+const publicAddresses = computed<VpnPublicIp[]>(() => {
+    const g = gateway.value
+    if (!g) return []
+    if (g.public_ips?.length) return g.public_ips
+    return g.public_ip ? [{ endpoint: 'vip1', address: g.public_ip }] : []
+})
+// The address the gateway can still take, and the one it may release (the backend has the last word)
+const addableEndpoint = computed(() => gateway.value?.addable_endpoint || '')
+// Each address is named once there is more than one (including the one that can be added), or when the
+// addresses belong to nodes
+const nameAddresses = computed(() => publicAddresses.value.length > 1 || isAA.value || !!addableEndpoint.value)
+const addressName = (endpoint: string) => endpointName(t, endpoint, gateway.value?.ha_mode)
+const removableAddress = computed(() => (gateway.value ? removableEndpoint(gateway.value) : ''))
+// Addresses change only on an available gateway or one in error: the backend refuses otherwise, since a
+// change made while the gateway is being built would not reach its nodes
+const addressChangeAllowed = computed(() => gateway.value?.status === 'available' || gateway.value?.status === 'error')
+// The fixed address of a node of an active_active gateway (HA nodes card)
+const nodeAddress = (hostid: number) => publicAddresses.value.find((p) => p.hostid === hostid && p.hostid >= 0)
+// active_active: the VRRP master only matters for the client VPN address, when the gateway has one
+const hasClientAddress = computed(() => publicAddresses.value.some((p) => p.endpoint === 'vip1'))
+const nodeLabel = (node: { hostid: number; role: string }) => {
+    const fixed = isAA.value ? nodeAddress(node.hostid) : undefined
+    if (fixed) return addressName(fixed.endpoint)
+    return node.role === 'MASTER' ? t('dashboard.vpnGateway.roleMaster') : t('dashboard.vpnGateway.roleBackup')
+}
+
+// Tunnels of a connection, primary first; tunnelsBySlot keeps the slot order (restart menu)
+const tunnelCount = (conn: VpnConnection) => conn.tunnels?.length || 0
+const orderedTunnels = (conn: VpnConnection): VpnTunnel[] =>
+    [...(conn.tunnels || [])].sort(
+        (a, b) => Number(a.priority !== 'primary') - Number(b.priority !== 'primary') || a.slot - b.slot
+    )
+const tunnelsBySlot = (conn: VpnConnection): VpnTunnel[] => [...(conn.tunnels || [])].sort((a, b) => a.slot - b.slot)
+const priorityText = (tun: VpnTunnel) =>
+    tun.priority === 'standby' ? t('dashboard.vpnGateway.priorityStandby') : t('dashboard.vpnGateway.priorityPrimary')
+// ecmp: every tunnel that is up carries traffic, so there is no primary / standby to show
+const isEcmp = (conn: VpnConnection) => conn.traffic_policy === 'ecmp'
+const showPriority = (conn: VpnConnection) => tunnelCount(conn) > 1 && !isEcmp(conn)
+const trafficPolicyText = (conn: VpnConnection) =>
+    isEcmp(conn) ? t('dashboard.vpnGateway.trafficPolicyEcmp') : t('dashboard.vpnGateway.trafficPolicyPreferred')
+const degradedTitle = (conn: VpnConnection) => {
+    if (conn.status !== 'degraded') return undefined
+    return isEcmp(conn) ? t('dashboard.vpnGateway.degradedEcmpHint') : t('dashboard.vpnGateway.degradedHint')
+}
+// The local address of a tunnel is worth naming only when the gateway offers more than one
+const showTunnelEndpoint = computed(() => tunnelEndpoints(publicAddresses.value, gateway.value?.ha_mode).length > 1)
+const tunnelEndpointText = (tun: VpnTunnel) => endpointName(t, tun.endpoint, gateway.value?.ha_mode, true)
+const restartTunnelText = (conn: VpnConnection, tun: VpnTunnel) => {
+    const text = showPriority(conn)
+        ? t('dashboard.vpnGateway.restartTunnelN', { n: tun.slot, role: priorityText(tun) })
+        : t('dashboard.vpnGateway.restartTunnelPlain', { n: tun.slot })
+    return tun.hostname ? `${text} · ${tun.hostname}` : text
+}
+// The BFD state is reported on the tunnel and inside the BGP report; either may be missing
+const bfdState = (tun: VpnTunnel) => tun.bfd_state || tun.bgp?.bfd || ''
+// BGP badge on a tunnel line: green once the session is up, amber while it is not, grey before any report
+const bgpChipClass = (tun: VpnTunnel) => {
+    if (!tun.bgp) return 'badge-secondary'
+    return (tun.bgp.state || '').toLowerCase() === 'established' ? 'badge-success' : 'badge-warning'
+}
+const bgpChipTitle = (conn: VpnConnection, tun: VpnTunnel) => {
+    const text = tun.bgp
+        ? t('dashboard.vpnGateway.bgpStateTitle', { state: tun.bgp.state || '-' })
+        : t('dashboard.vpnGateway.noBgpReport')
+    const bfd = conn.bfd_enabled ? bfdState(tun) : ''
+    return bfd ? `${text} · ${t('dashboard.vpnGateway.bfdStateShort', { state: bfd })}` : text
+}
 const prefixSourceText = (source: string) =>
     te(`dashboard.vpnGateway.prefixSources.${source}`) ? t(`dashboard.vpnGateway.prefixSources.${source}`) : source
 // clapi timestamps are "YYYY-MM-DD HH:mm:ss.ffffff": drop the fraction
@@ -152,18 +241,26 @@ const closeActionMenu = () => {
     showActionMenu.value = false
 }
 
-// Shared delete confirm modal (gateway, connection, client)
+// Shared delete confirm modal (gateway, connection, client, public address). title / confirmLabel replace
+// "Delete" where the action is not a deletion (releasing a public address)
 const deleteModal = ref<{
     visible: boolean
     name: string
     message: string
+    title?: string
+    confirmLabel?: string
     loading: boolean
     error: string
     onConfirm: () => Promise<void>
 }>({ visible: false, name: '', message: '', loading: false, error: '', onConfirm: async () => {} })
 
-const openDeleteModal = (name: string, message: string, onConfirm: () => Promise<void>) => {
-    deleteModal.value = { visible: true, name, message, loading: false, error: '', onConfirm }
+const openDeleteModal = (
+    name: string,
+    message: string,
+    onConfirm: () => Promise<void>,
+    labels: { title?: string; confirmLabel?: string } = {}
+) => {
+    deleteModal.value = { visible: true, name, message, ...labels, loading: false, error: '', onConfirm }
 }
 const closeDeleteModal = () => {
     deleteModal.value.visible = false
@@ -227,6 +324,76 @@ const handleDeleteGateway = () => {
     })
 }
 
+// ─── Public addresses ────────────────────────────────────────────────────────
+// Add the addable address: the second floating IP of an active_standby gateway, or the client VPN address
+// of an active_active one. Each takes one public IP of the quota
+const publicSubnets = ref<Subnet[]>([])
+const showAddAddressModal = ref(false)
+const addingAddress = ref(false)
+const addAddressError = ref('')
+const addAddressForm = ref({ subnet_id: '', ip: '' })
+// Remembered when the modal opens, so the text does not change under the user once the address is added
+const addAddressEndpoint = ref('')
+
+const fetchPublicSubnets = async () => {
+    try {
+        const res = await subnetsApi.list({ limit: 200 })
+        publicSubnets.value = (res.subnets || []).filter((s) => s.type === 'public')
+    } catch (err) {
+        console.error('Failed to fetch subnets:', err)
+        publicSubnets.value = []
+    }
+}
+
+const openAddAddress = () => {
+    closeActionMenu()
+    // Offered from the edit modal too, when the client VPN of an active_active gateway needs its address
+    showEditModal.value = false
+    addAddressEndpoint.value = addableEndpoint.value
+    addAddressForm.value = { subnet_id: '', ip: '' }
+    addAddressError.value = ''
+    showAddAddressModal.value = true
+    fetchPublicSubnets()
+}
+
+const handleAddAddress = async () => {
+    const f = addAddressForm.value
+    const payload: VpnPublicIpPayload = {}
+    if (f.subnet_id) payload.public_subnet = { id: f.subnet_id }
+    if (f.ip) payload.public_ip = f.ip
+    addingAddress.value = true
+    addAddressError.value = ''
+    try {
+        // The answer is the gateway detail with the new address
+        gateway.value = await vpnGatewaysApi.addPublicIp(gatewayId, payload)
+        showAddAddressModal.value = false
+        toast.success(t('dashboard.vpnGateway.addPublicIpSuccess'))
+    } catch (err) {
+        addAddressError.value = quotaErrorMessage(err, t, te) || errorMessage(err, t('messages.error'))
+    } finally {
+        addingAddress.value = false
+    }
+}
+
+// Release the removable address. clapi refuses while a tunnel still uses vip2 or the client VPN of an
+// active_active gateway is on; the refusal shows in the confirm modal
+const handleRemoveAddress = (p: VpnPublicIp) => {
+    const message =
+        p.endpoint === 'vip1'
+            ? t('dashboard.vpnGateway.removeClientAddressWarning')
+            : t('dashboard.vpnGateway.removePublicIpWarning')
+    openDeleteModal(
+        `${addressName(p.endpoint)} · ${p.address}`,
+        message,
+        async () => {
+            await vpnGatewaysApi.removePublicIp(gatewayId, p.endpoint)
+            toast.success(t('dashboard.vpnGateway.removePublicIpSuccess'))
+            await fetchGateway(true)
+        },
+        { title: t('dashboard.vpnGateway.removePublicIp'), confirmLabel: t('actions.release') }
+    )
+}
+
 // ─── Edit gateway ────────────────────────────────────────────────────────────
 const showEditModal = ref(false)
 const editing = ref(false)
@@ -243,6 +410,11 @@ const editForm = ref({
 })
 const isEditNameValid = computed(() => isValidName(editForm.value.name))
 const IPV4 = /^(\d{1,3}\.){3}\d{1,3}$/
+// The client VPN of an active_active gateway runs on its own floating address (vip1), which the gateway may
+// not have: clapi refuses to turn the client VPN on until that address is added
+const clientNeedsAddress = computed(
+    () => isAA.value && !gateway.value?.client_enabled && !publicAddresses.value.some((p) => p.endpoint === 'vip1')
+)
 
 const openEditModal = () => {
     const g = gateway.value
@@ -275,6 +447,10 @@ const handleEdit = async () => {
         editError.value = t('dashboard.vpnGateway.needOneAccess')
         return
     }
+    if (f.client_enabled && clientNeedsAddress.value) {
+        editError.value = t('dashboard.vpnGateway.clientNeedsAddress')
+        return
+    }
     if (!f.ipsec_enabled && g.ipsec_enabled && connections.value.length > 0) {
         editError.value = t('dashboard.vpnGateway.ipsecHasConnections')
         return
@@ -295,6 +471,10 @@ const handleEdit = async () => {
         }
         if (f.client_dns && !splitList(f.client_dns).every((d) => IPV4.test(d))) {
             editError.value = t('dashboard.vpnGateway.invalidDns')
+            return
+        }
+        if (f.client_routes && hasDefaultRoute(f.client_routes)) {
+            editError.value = t('dashboard.vpnGateway.clientRoutesNoDefault')
             return
         }
     }
@@ -329,13 +509,16 @@ const handleEdit = async () => {
 // ─── Site-to-site connections ────────────────────────────────────────────────
 const connectionColumns = computed<Column[]>(() => [
     { key: 'name', label: t('dashboard.table.name') },
-    { key: 'route_mode', label: t('dashboard.vpnGateway.routeMode') },
-    { key: 'remote_gateway', label: t('dashboard.vpnGateway.remoteGateway') },
+    // Below 1280 its badges move under the name (.route-inline) and the tunnel lines may wrap, so that the
+    // table fits the ~780px of a 1024 viewport too
+    { key: 'route_mode', label: t('dashboard.vpnGateway.routeMode'), hideBelow: 1280 },
+    { key: 'tunnels', label: t('dashboard.vpnGateway.tunnels') },
     { key: 'status', label: t('dashboard.table.status') },
-    { key: 'remote', label: t('dashboard.vpnGateway.remoteNetworks'), hideBelow: 1280 },
-    { key: 'traffic', label: t('dashboard.vpnGateway.traffic'), hideBelow: 1024 },
-    { key: 'established_at', label: t('dashboard.vpnGateway.establishedAt'), hideBelow: 1280 },
-    { key: 'bgp', label: t('dashboard.vpnGateway.bgpState'), hideBelow: 1024 },
+    // The table must fit the ~1110px a 1440 viewport leaves and the ~1040px of a 1366 one: the BGP state
+    // is a badge on each tunnel line, the traffic sum goes below 1600 and the remote networks below 1440
+    // (the expanded row has both)
+    { key: 'remote', label: t('dashboard.vpnGateway.remoteNetworks'), hideBelow: 1440 },
+    { key: 'traffic', label: t('dashboard.vpnGateway.traffic'), hideBelow: 1600 },
     { key: 'actions', label: t('dashboard.table.actions'), align: 'center' },
 ])
 
@@ -351,15 +534,26 @@ const openEditConnection = (conn: VpnConnection) => {
     connectionToEdit.value = conn
     showConnectionModal.value = true
 }
+// Peer configuration: looked up by id so a background refresh of the gateway updates the open modal
+const peerConfigId = ref('')
+const peerConfigConnection = computed(() => connections.value.find((c) => c.id === peerConfigId.value) ?? null)
 const onConnectionSaved = async () => {
     toast.success(t('messages.success'))
     await fetchGateway(true)
 }
 
-const handleRestartConnection = async (conn: VpnConnection) => {
+// With two tunnels the restart button opens a menu: all tunnels or one of them
+const restartMenuId = ref('')
+const toggleRestartMenu = (conn: VpnConnection) => {
+    restartMenuId.value = restartMenuId.value === conn.id ? '' : conn.id
+}
+
+// slot: restart only that tunnel; omitted restarts every tunnel of the connection
+const handleRestartConnection = async (conn: VpnConnection, slot?: number) => {
+    restartMenuId.value = ''
     restartingId.value = conn.id
     try {
-        await vpnConnectionsApi.restart(gatewayId, conn.id)
+        await vpnConnectionsApi.restart(gatewayId, conn.id, slot)
         toast.success(t('dashboard.vpnGateway.restartRequested'))
         await fetchGateway(true)
     } catch (err) {
@@ -377,9 +571,11 @@ const handleDeleteConnection = (conn: VpnConnection) => {
     })
 }
 
-// Local networks of a BGP connection that the gateway actually advertises to the peer;
-// a subnet without any instance is not advertised yet
-const isAdvertised = (conn: VpnConnection, cidr: string) => (conn.bgp?.advertised || []).includes(cidr)
+// Local networks of a BGP connection that the gateway actually advertises to the peer (on any of its
+// tunnels); a subnet without any instance is not advertised yet
+const hasBgpReport = (conn: VpnConnection) => (conn.tunnels || []).some((tun) => !!tun.bgp)
+const isAdvertised = (conn: VpnConnection, cidr: string) =>
+    (conn.tunnels || []).some((tun) => (tun.bgp?.advertised || []).includes(cidr))
 
 // ─── WireGuard clients ───────────────────────────────────────────────────────
 const clientColumns = computed<Column[]>(() => [
@@ -531,6 +727,15 @@ onMounted(() => {
                         <h2 class="resource-title">
                             {{ gateway.name }}
                             <StatusBadge :status="gatewayBadge.status" :label="gatewayBadge.label" />
+                            <span class="badge" :class="isAA ? 'badge-info' : 'badge-secondary'" :title="haModeHint">{{
+                                haModeText
+                            }}</span>
+                            <span
+                                v-if="singleNode"
+                                class="badge badge-warning"
+                                :title="$t('dashboard.vpnGateway.singleNodeNotice')"
+                                >{{ $t('dashboard.vpnGateway.singleNode') }}</span
+                            >
                         </h2>
                         <div class="resource-id-row">
                             <span class="resource-id-text">{{ gateway.id }}</span>
@@ -562,6 +767,17 @@ onMounted(() => {
                             <div v-if="showActionMenu" class="dropdown-menu" @click="closeActionMenu">
                                 <button class="dropdown-item" @click="openEditModal">
                                     <Pencil :size="14" /> {{ $t('actions.edit') }}
+                                </button>
+                                <button
+                                    v-if="addableEndpoint"
+                                    class="dropdown-item"
+                                    :disabled="!addressChangeAllowed"
+                                    :title="
+                                        addressChangeAllowed ? undefined : $t('dashboard.vpnGateway.addressChangeWait')
+                                    "
+                                    @click="openAddAddress"
+                                >
+                                    <Plus :size="14" /> {{ $t('dashboard.vpnGateway.addPublicIp') }}
                                 </button>
                                 <button
                                     class="dropdown-item"
@@ -597,6 +813,14 @@ onMounted(() => {
                     {{ $t('dashboard.vpnGateway.enableGateway') }}
                 </button>
             </div>
+            <div v-if="gateway.status === 'error' && gateway.status_reason" class="disabled-banner error-banner">
+                <AlertTriangle :size="16" />
+                <span>{{ $t('dashboard.vpnGateway.errorReason', { reason: gateway.status_reason }) }}</span>
+            </div>
+            <div v-if="singleNode" class="disabled-banner">
+                <AlertTriangle :size="16" />
+                <span>{{ $t('dashboard.vpnGateway.singleNodeNotice') }}</span>
+            </div>
 
             <DetailTabs v-model="activeTab" :tabs="tabs" />
 
@@ -623,17 +847,57 @@ onMounted(() => {
                                 </router-link>
                                 <span v-else>-</span>
                             </InfoRow>
-                            <InfoRow :label="$t('dashboard.vpnGateway.publicIp')" mono>
-                                <span>{{ gateway.public_ip || '-' }}</span>
+                            <InfoRow :label="$t('dashboard.vpnGateway.haMode')">
+                                <span
+                                    class="badge"
+                                    :class="isAA ? 'badge-info' : 'badge-secondary'"
+                                    :title="haModeHint"
+                                    >{{ haModeText }}</span
+                                >
+                            </InfoRow>
+                            <!-- One row per public address: which one it is, the node of a fixed one, and the
+                                 add / release actions for the one address a gateway can take or give back -->
+                            <InfoRow
+                                v-for="p in publicAddresses"
+                                :key="p.endpoint"
+                                :label="nameAddresses ? addressName(p.endpoint) : $t('dashboard.vpnGateway.publicIp')"
+                                mono
+                            >
+                                <span class="nowrap-text">{{ p.address || '-' }}</span>
+                                <span v-if="p.hostname" class="address-node">{{ p.hostname }}</span>
                                 <button
-                                    v-if="gateway.public_ip"
+                                    v-if="p.address"
                                     class="copy-btn"
                                     :title="$t('actions.copy')"
                                     :aria-label="$t('actions.copy')"
-                                    @click="copyId(gateway.public_ip, 'ip')"
+                                    @click="copyId(p.address, `ip-${p.endpoint}`)"
                                 >
-                                    <Check v-if="copiedId === 'ip'" :size="12" class="copied-icon" />
+                                    <Check v-if="copiedId === `ip-${p.endpoint}`" :size="12" class="copied-icon" />
                                     <Copy v-else :size="12" />
+                                </button>
+                                <button
+                                    v-if="p.endpoint === removableAddress"
+                                    class="copy-btn address-remove"
+                                    :title="$t('dashboard.vpnGateway.removePublicIp')"
+                                    :aria-label="$t('dashboard.vpnGateway.removePublicIp')"
+                                    :disabled="!addressChangeAllowed"
+                                    @click="handleRemoveAddress(p)"
+                                >
+                                    <Trash2 :size="12" />
+                                </button>
+                            </InfoRow>
+                            <InfoRow v-if="addableEndpoint" :label="addressName(addableEndpoint)">
+                                <span class="text-tertiary">{{ $t('dashboard.vpnGateway.notAssigned') }}</span>
+                                <button
+                                    type="button"
+                                    class="link-btn add-address-btn"
+                                    :disabled="!addressChangeAllowed"
+                                    :title="
+                                        addressChangeAllowed ? undefined : $t('dashboard.vpnGateway.addressChangeWait')
+                                    "
+                                    @click="openAddAddress"
+                                >
+                                    <Plus :size="12" /> {{ $t('actions.add') }}
                                 </button>
                             </InfoRow>
                             <InfoRow :label="$t('dashboard.table.zone')">{{ gateway.zone || '-' }}</InfoRow>
@@ -645,27 +909,33 @@ onMounted(() => {
 
                     <div class="card info-card">
                         <h3>{{ $t('dashboard.vpnGateway.haNodes') }}</h3>
+                        <p class="card-hint">{{ haModeHint }}</p>
                         <div class="key-value-list">
-                            <InfoRow :label="$t('dashboard.vpnGateway.masterNode')">
+                            <InfoRow
+                                v-if="!isAA || hasClientAddress"
+                                :label="
+                                    isAA
+                                        ? $t('dashboard.vpnGateway.clientAddressHolder')
+                                        : $t('dashboard.vpnGateway.masterNode')
+                                "
+                            >
                                 <span>{{ gateway.master_hostname || '-' }}</span>
                                 <span v-if="gateway.master_reported_at" class="text-tertiary text-xs">
                                     ({{ $t('dashboard.vpnGateway.reportedAt') }}
                                     {{ fmtTime(gateway.master_reported_at) }})
                                 </span>
                             </InfoRow>
-                            <InfoRow
-                                v-for="node in gateway.nodes || []"
-                                :key="node.hostid"
-                                :label="
-                                    node.role === 'MASTER'
-                                        ? $t('dashboard.vpnGateway.roleMaster')
-                                        : $t('dashboard.vpnGateway.roleBackup')
-                                "
-                            >
+                            <InfoRow v-for="node in gateway.nodes || []" :key="node.hostid" :label="nodeLabel(node)">
                                 <span>{{ node.hostname || `#${node.hostid}` }}</span>
-                                <span v-if="node.master" class="badge badge-success">{{
-                                    $t('dashboard.vpnGateway.activeNode')
+                                <span v-if="node.master && (!isAA || hasClientAddress)" class="badge badge-success">{{
+                                    isAA
+                                        ? $t('dashboard.vpnGateway.clientVpnAddress')
+                                        : $t('dashboard.vpnGateway.activeNode')
                                 }}</span>
+                                <!-- active_active: each node runs the tunnels of its own address -->
+                                <code v-if="nodeAddress(node.hostid)" class="node-address">{{
+                                    nodeAddress(node.hostid)?.address
+                                }}</code>
                             </InfoRow>
                             <div v-if="!gateway.nodes?.length" class="empty-hint">
                                 {{ $t('dashboard.vpnGateway.noNodes') }}
@@ -812,7 +1082,7 @@ onMounted(() => {
                     </button>
                 </div>
 
-                <DataTable :columns="connectionColumns" :rows="connections" row-key="id" expandable>
+                <DataTable :columns="connectionColumns" :rows="connections" row-key="id" expandable allow-overflow>
                     <template #empty>
                         <div>
                             <Network :size="48" style="opacity: 0.3; margin-bottom: 16px" />
@@ -823,16 +1093,66 @@ onMounted(() => {
                     <template #cell-name="{ row: conn }">
                         <div class="cell-name">{{ conn.name }}</div>
                         <div v-if="conn.description" class="cell-desc">{{ conn.description }}</div>
+                        <div class="route-inline">
+                            <span class="badge badge-secondary route-badge">{{ routeModeText(conn.route_mode) }}</span>
+                            <span
+                                v-if="isEcmp(conn) && tunnelCount(conn) > 1"
+                                class="badge badge-info route-badge"
+                                :title="$t('dashboard.vpnGateway.trafficPolicyEcmpHint')"
+                                >{{ $t('dashboard.vpnGateway.trafficPolicyEcmpShort') }}</span
+                            >
+                        </div>
                     </template>
                     <template #cell-route_mode="{ row: conn }">
-                        <span class="badge badge-secondary">{{ routeModeText(conn.route_mode) }}</span>
+                        <div class="badge-row">
+                            <span class="badge badge-secondary route-badge">{{ routeModeText(conn.route_mode) }}</span>
+                            <span
+                                v-if="isEcmp(conn) && tunnelCount(conn) > 1"
+                                class="badge badge-info route-badge"
+                                :title="$t('dashboard.vpnGateway.trafficPolicyEcmpHint')"
+                                >{{ $t('dashboard.vpnGateway.trafficPolicyEcmpShort') }}</span
+                            >
+                        </div>
                     </template>
-                    <template #cell-remote_gateway="{ row: conn }">
-                        <code v-if="conn.remote_gateway" class="mono">{{ conn.remote_gateway }}</code>
-                        <span v-else class="text-tertiary">{{ $t('dashboard.vpnGateway.responderOnly') }}</span>
+                    <!-- One line per tunnel, primary first: our address (and its node) -> peer address -->
+                    <template #cell-tunnels="{ row: conn }">
+                        <div class="tunnel-lines">
+                            <div v-for="tun in orderedTunnels(conn)" :key="tun.id" class="tunnel-line">
+                                <span
+                                    v-if="showPriority(conn)"
+                                    class="badge"
+                                    :class="tun.priority === 'standby' ? 'badge-secondary' : 'badge-primary'"
+                                    >{{ priorityText(tun) }}</span
+                                >
+                                <code class="mono text-sm">{{ tun.public_ip || '-' }}</code>
+                                <span v-if="tun.hostname" class="text-tertiary text-xs">({{ tun.hostname }})</span>
+                                <span class="text-tertiary">→</span>
+                                <code v-if="tun.remote_gateway" class="mono text-sm">{{ tun.remote_gateway }}</code>
+                                <span v-else class="text-tertiary text-sm">{{
+                                    $t('dashboard.vpnGateway.responderOnly')
+                                }}</span>
+                                <StatusBadge
+                                    v-if="tunnelCount(conn) > 1"
+                                    dot-only
+                                    :status="tun.status"
+                                    :label="connectionStatusText(tun.status)"
+                                />
+                                <span
+                                    v-if="conn.route_mode === 'bgp'"
+                                    class="badge bgp-chip"
+                                    :class="bgpChipClass(tun)"
+                                    :title="bgpChipTitle(conn, tun)"
+                                    >BGP</span
+                                >
+                            </div>
+                        </div>
                     </template>
                     <template #cell-status="{ row: conn }">
-                        <StatusBadge :status="conn.status" :label="connectionStatusText(conn.status)" />
+                        <StatusBadge
+                            :status="conn.status"
+                            :label="connectionStatusText(conn.status)"
+                            :title="degradedTitle(conn)"
+                        />
                     </template>
                     <template #cell-remote="{ row: conn }">
                         <span class="mono text-sm">{{
@@ -840,23 +1160,49 @@ onMounted(() => {
                         }}</span>
                     </template>
                     <template #cell-traffic="{ row: conn }">
-                        <span class="text-sm">↓ {{ traffic(conn.bytes_in) }} · ↑ {{ traffic(conn.bytes_out) }}</span>
-                    </template>
-                    <template #cell-established_at="{ row: conn }">
-                        <span class="cell-time">{{ fmtTime(conn.established_at) }}</span>
-                    </template>
-                    <template #cell-bgp="{ row: conn }">
-                        <template v-if="conn.route_mode === 'bgp'">
-                            <span v-if="conn.bgp" class="text-sm">{{ conn.bgp.state || '-' }}</span>
-                            <span v-else class="text-tertiary text-sm">{{
-                                $t('dashboard.vpnGateway.noBgpReport')
-                            }}</span>
-                        </template>
-                        <span v-else class="text-tertiary">-</span>
+                        <span class="text-sm nowrap-text"
+                            >↓ {{ traffic(conn.bytes_in) }} · ↑ {{ traffic(conn.bytes_out) }}</span
+                        >
                     </template>
                     <template #cell-actions="{ row: conn }">
                         <div class="row-actions" @click.stop>
+                            <div v-if="tunnelCount(conn) > 1" class="action-dropdown">
+                                <button
+                                    class="icon-btn-table"
+                                    :title="
+                                        gateway.enabled === false
+                                            ? $t('dashboard.vpnGateway.restartDisabled')
+                                            : $t('actions.restart')
+                                    "
+                                    :disabled="restartingId === conn.id || gateway.enabled === false"
+                                    @click="toggleRestartMenu(conn)"
+                                >
+                                    <RefreshCw :size="16" :class="{ spinning: restartingId === conn.id }" />
+                                </button>
+                                <Transition name="dropdown">
+                                    <div v-if="restartMenuId === conn.id" class="dropdown-menu">
+                                        <button class="dropdown-item" @click="handleRestartConnection(conn)">
+                                            {{ $t('dashboard.vpnGateway.restartAllTunnels') }}
+                                        </button>
+                                        <div class="dropdown-divider"></div>
+                                        <button
+                                            v-for="tun in tunnelsBySlot(conn)"
+                                            :key="tun.id"
+                                            class="dropdown-item"
+                                            @click="handleRestartConnection(conn, tun.slot)"
+                                        >
+                                            {{ restartTunnelText(conn, tun) }}
+                                        </button>
+                                    </div>
+                                </Transition>
+                                <div
+                                    v-if="restartMenuId === conn.id"
+                                    class="dropdown-backdrop"
+                                    @click="restartMenuId = ''"
+                                ></div>
+                            </div>
                             <button
+                                v-else
                                 class="icon-btn-table"
                                 :title="
                                     gateway.enabled === false
@@ -867,6 +1213,13 @@ onMounted(() => {
                                 @click="handleRestartConnection(conn)"
                             >
                                 <RefreshCw :size="16" :class="{ spinning: restartingId === conn.id }" />
+                            </button>
+                            <button
+                                class="icon-btn-table"
+                                :title="$t('dashboard.vpnGateway.peerConfig.button')"
+                                @click="peerConfigId = conn.id"
+                            >
+                                <FileText :size="16" />
                             </button>
                             <button
                                 class="icon-btn-table"
@@ -885,11 +1238,176 @@ onMounted(() => {
                         </div>
                     </template>
 
-                    <!-- Expanded row: effective networks, BGP report, IKE parameters -->
+                    <!-- Expanded row: one card per tunnel (with its BGP session), effective networks, IKE parameters -->
                     <template #expanded="{ row: conn }">
                         <div class="conn-panel">
-                            <div v-if="conn.last_error" class="conn-error">
-                                <strong>{{ $t('dashboard.vpnGateway.lastError') }}:</strong> {{ conn.last_error }}
+                            <div class="tunnel-grid">
+                                <div v-for="tun in orderedTunnels(conn)" :key="tun.id" class="tunnel-card">
+                                    <div class="tunnel-card-head">
+                                        <h4>{{ $t('dashboard.vpnGateway.tunnelN', { n: tun.slot }) }}</h4>
+                                        <span
+                                            v-if="showPriority(conn)"
+                                            class="badge"
+                                            :class="tun.priority === 'standby' ? 'badge-secondary' : 'badge-primary'"
+                                            >{{ priorityText(tun) }}</span
+                                        >
+                                        <StatusBadge :status="tun.status" :label="connectionStatusText(tun.status)" />
+                                    </div>
+                                    <div v-if="tun.last_error" class="conn-error">
+                                        <strong>{{ $t('dashboard.vpnGateway.lastError') }}:</strong>
+                                        {{ tun.last_error }}
+                                    </div>
+                                    <div class="kv">
+                                        <div class="kv-row">
+                                            <span class="kv-label">{{ $t('dashboard.vpnGateway.localAddress') }}</span>
+                                            <span class="mono text-sm"
+                                                >{{ tun.public_ip || '-' }}
+                                                <span v-if="showTunnelEndpoint" class="text-tertiary"
+                                                    >({{ tunnelEndpointText(tun) }})</span
+                                                ></span
+                                            >
+                                        </div>
+                                        <!-- active_active: the node that runs this tunnel -->
+                                        <div v-if="tun.hostname" class="kv-row">
+                                            <span class="kv-label">{{ $t('dashboard.vpnGateway.node') }}</span>
+                                            <span class="text-sm">{{ tun.hostname }}</span>
+                                        </div>
+                                        <div class="kv-row">
+                                            <span class="kv-label">{{ $t('dashboard.vpnGateway.peerAddress') }}</span>
+                                            <span v-if="tun.remote_gateway" class="mono text-sm">{{
+                                                tun.remote_gateway
+                                            }}</span>
+                                            <span v-else class="text-tertiary text-sm">{{
+                                                $t('dashboard.vpnGateway.responderOnly')
+                                            }}</span>
+                                        </div>
+                                        <div class="kv-row">
+                                            <span class="kv-label">{{ $t('dashboard.vpnGateway.identities') }}</span>
+                                            <span class="mono text-sm"
+                                                >{{ conn.local_id || '-' }} → {{ tun.remote_id || '-' }}</span
+                                            >
+                                        </div>
+                                        <div class="kv-row">
+                                            <span class="kv-label">{{ $t('dashboard.vpnGateway.psk') }}</span>
+                                            <VpnSecretValue v-if="tun.psk" :value="tun.psk" />
+                                            <span v-else class="text-sm">{{
+                                                tun.psk_set
+                                                    ? $t('dashboard.vpnGateway.tunnelPskOwn')
+                                                    : $t('dashboard.vpnGateway.tunnelPskShared')
+                                            }}</span>
+                                        </div>
+                                        <div class="kv-row">
+                                            <span class="kv-label">{{ $t('dashboard.vpnGateway.establishedAt') }}</span>
+                                            <span class="text-sm">{{ fmtTime(tun.established_at) }}</span>
+                                        </div>
+                                        <div class="kv-row">
+                                            <span class="kv-label">{{ $t('dashboard.vpnGateway.traffic') }}</span>
+                                            <span class="text-sm"
+                                                >↓ {{ traffic(tun.bytes_in) }} · ↑ {{ traffic(tun.bytes_out) }}</span
+                                            >
+                                        </div>
+                                        <div class="kv-row">
+                                            <span class="kv-label">{{ $t('dashboard.vpnGateway.ifId') }}</span>
+                                            <span class="mono text-sm">{{ tun.if_id || '-' }}</span>
+                                        </div>
+                                    </div>
+
+                                    <template v-if="conn.route_mode === 'bgp'">
+                                        <h5 class="tunnel-sub">
+                                            {{ $t('dashboard.vpnGateway.bgpReport') }}
+                                            <span v-if="tun.bgp_reported_at" class="text-tertiary text-xs">
+                                                ({{ $t('dashboard.vpnGateway.reportedAt') }}
+                                                {{ fmtTime(tun.bgp_reported_at) }})
+                                            </span>
+                                        </h5>
+                                        <div class="kv">
+                                            <div class="kv-row">
+                                                <span class="kv-label">{{
+                                                    $t('dashboard.vpnGateway.bgpSession')
+                                                }}</span>
+                                                <span class="mono text-sm"
+                                                    >AS{{ conn.local_asn }} {{ tun.tunnel_local_ip || '-' }} ↔ AS{{
+                                                        conn.peer_asn
+                                                    }}
+                                                    {{ tun.tunnel_peer_ip || '-' }}</span
+                                                >
+                                            </div>
+                                            <template v-if="tun.bgp">
+                                                <div class="kv-row">
+                                                    <span class="kv-label">{{
+                                                        $t('dashboard.vpnGateway.bgpState')
+                                                    }}</span>
+                                                    <span>{{ tun.bgp.state || '-' }}</span>
+                                                </div>
+                                                <div class="kv-row">
+                                                    <span class="kv-label">{{
+                                                        $t('dashboard.vpnGateway.bgpUptime')
+                                                    }}</span>
+                                                    <span>{{ tun.bgp.uptime || '-' }}</span>
+                                                </div>
+                                                <div v-if="conn.bfd_enabled" class="kv-row">
+                                                    <span class="kv-label">{{
+                                                        $t('dashboard.vpnGateway.bfdState')
+                                                    }}</span>
+                                                    <span>{{ bfdState(tun) || '-' }}</span>
+                                                </div>
+                                                <div class="kv-row">
+                                                    <span class="kv-label">{{
+                                                        $t('dashboard.vpnGateway.prefixesReceived')
+                                                    }}</span>
+                                                    <span
+                                                        >{{ tun.bgp.prefixes_received }} /
+                                                        {{ conn.max_prefixes || '-' }}</span
+                                                    >
+                                                </div>
+                                                <div class="kv-row">
+                                                    <span class="kv-label">{{
+                                                        $t('dashboard.vpnGateway.prefixesSent')
+                                                    }}</span>
+                                                    <span>{{ tun.bgp.prefixes_sent }}</span>
+                                                </div>
+                                                <div class="kv-row">
+                                                    <span class="kv-label">{{
+                                                        $t('dashboard.vpnGateway.accepted')
+                                                    }}</span>
+                                                    <div v-if="tun.bgp.accepted?.length" class="cidr-list">
+                                                        <code
+                                                            v-for="cidr in tun.bgp.accepted"
+                                                            :key="cidr"
+                                                            class="cidr-chip"
+                                                            >{{ cidr }}</code
+                                                        >
+                                                    </div>
+                                                    <span v-else>-</span>
+                                                </div>
+                                                <div v-if="tun.bgp.rejected?.length" class="rejected-box">
+                                                    <div class="rejected-title">
+                                                        {{ $t('dashboard.vpnGateway.rejected') }} ({{
+                                                            tun.bgp.rejected.length
+                                                        }})
+                                                    </div>
+                                                    <div class="cidr-list">
+                                                        <code
+                                                            v-for="cidr in tun.bgp.rejected"
+                                                            :key="cidr"
+                                                            class="cidr-chip chip-error"
+                                                            >{{ cidr }}</code
+                                                        >
+                                                    </div>
+                                                    <p class="rejected-hint">
+                                                        {{ $t('dashboard.vpnGateway.rejectedHint') }}
+                                                    </p>
+                                                </div>
+                                                <p v-if="tun.bgp.truncated" class="section-hint">
+                                                    {{ $t('dashboard.vpnGateway.bgpTruncated') }}
+                                                </p>
+                                            </template>
+                                            <span v-else class="text-tertiary text-sm">{{
+                                                $t('dashboard.vpnGateway.noBgpReport')
+                                            }}</span>
+                                        </div>
+                                    </template>
+                                </div>
                             </div>
 
                             <div class="conn-grid">
@@ -899,7 +1417,7 @@ onMounted(() => {
                                         <span v-for="cidr in conn.effective_local_cidrs" :key="cidr" class="cidr-row">
                                             <code class="cidr-chip">{{ cidr }}</code>
                                             <span
-                                                v-if="conn.route_mode === 'bgp' && conn.bgp"
+                                                v-if="conn.route_mode === 'bgp' && hasBgpReport(conn)"
                                                 class="badge"
                                                 :class="isAdvertised(conn, cidr) ? 'badge-success' : 'badge-secondary'"
                                                 :title="
@@ -916,7 +1434,7 @@ onMounted(() => {
                                         </span>
                                     </div>
                                     <span v-else class="text-tertiary text-sm">-</span>
-                                    <p v-if="conn.route_mode === 'bgp' && conn.bgp" class="section-hint">
+                                    <p v-if="conn.route_mode === 'bgp' && hasBgpReport(conn)" class="section-hint">
                                         {{ $t('dashboard.vpnGateway.notAdvertisedHint') }}
                                     </p>
                                     <h4 class="mt">
@@ -938,78 +1456,6 @@ onMounted(() => {
                                             >{{ cidr }}</code
                                         >
                                     </div>
-                                </div>
-
-                                <div v-if="conn.route_mode === 'bgp'" class="conn-section">
-                                    <h4>
-                                        {{ $t('dashboard.vpnGateway.bgpReport') }}
-                                        <span v-if="conn.bgp_reported_at" class="text-tertiary text-xs">
-                                            ({{ $t('dashboard.vpnGateway.reportedAt') }}
-                                            {{ fmtTime(conn.bgp_reported_at) }})
-                                        </span>
-                                    </h4>
-                                    <div v-if="conn.bgp" class="kv">
-                                        <div class="kv-row">
-                                            <span class="kv-label">{{ $t('dashboard.vpnGateway.bgpState') }}</span>
-                                            <span>{{ conn.bgp.state || '-' }}</span>
-                                        </div>
-                                        <div class="kv-row">
-                                            <span class="kv-label">{{ $t('dashboard.vpnGateway.bgpUptime') }}</span>
-                                            <span>{{ conn.bgp.uptime || '-' }}</span>
-                                        </div>
-                                        <div class="kv-row">
-                                            <span class="kv-label">{{ $t('dashboard.vpnGateway.bgpSession') }}</span>
-                                            <span class="mono text-sm"
-                                                >AS{{ conn.local_asn }} {{ conn.tunnel_local_ip }} ↔ AS{{
-                                                    conn.peer_asn
-                                                }}
-                                                {{ conn.tunnel_peer_ip }}</span
-                                            >
-                                        </div>
-                                        <div class="kv-row">
-                                            <span class="kv-label">{{
-                                                $t('dashboard.vpnGateway.prefixesReceived')
-                                            }}</span>
-                                            <span
-                                                >{{ conn.bgp.prefixes_received }} / {{ conn.max_prefixes || '-' }}</span
-                                            >
-                                        </div>
-                                        <div class="kv-row">
-                                            <span class="kv-label">{{ $t('dashboard.vpnGateway.prefixesSent') }}</span>
-                                            <span>{{ conn.bgp.prefixes_sent }}</span>
-                                        </div>
-                                        <div class="kv-row">
-                                            <span class="kv-label">{{ $t('dashboard.vpnGateway.accepted') }}</span>
-                                            <div v-if="conn.bgp.accepted?.length" class="cidr-list">
-                                                <code v-for="cidr in conn.bgp.accepted" :key="cidr" class="cidr-chip">{{
-                                                    cidr
-                                                }}</code>
-                                            </div>
-                                            <span v-else>-</span>
-                                        </div>
-                                        <div v-if="conn.bgp.rejected?.length" class="rejected-box">
-                                            <div class="rejected-title">
-                                                {{ $t('dashboard.vpnGateway.rejected') }} ({{
-                                                    conn.bgp.rejected.length
-                                                }})
-                                            </div>
-                                            <div class="cidr-list">
-                                                <code
-                                                    v-for="cidr in conn.bgp.rejected"
-                                                    :key="cidr"
-                                                    class="cidr-chip chip-error"
-                                                    >{{ cidr }}</code
-                                                >
-                                            </div>
-                                            <p class="rejected-hint">{{ $t('dashboard.vpnGateway.rejectedHint') }}</p>
-                                        </div>
-                                        <p v-if="conn.bgp.truncated" class="section-hint">
-                                            {{ $t('dashboard.vpnGateway.bgpTruncated') }}
-                                        </p>
-                                    </div>
-                                    <span v-else class="text-tertiary text-sm">{{
-                                        $t('dashboard.vpnGateway.noBgpReport')
-                                    }}</span>
                                 </div>
 
                                 <div class="conn-section">
@@ -1045,18 +1491,13 @@ onMounted(() => {
                                             >
                                         </div>
                                         <div class="kv-row">
-                                            <span class="kv-label">{{ $t('dashboard.vpnGateway.identities') }}</span>
-                                            <span class="mono text-sm"
-                                                >{{ conn.local_id || '-' }} → {{ conn.remote_id || '-' }}</span
-                                            >
-                                        </div>
-                                        <div class="kv-row">
                                             <span class="kv-label">{{ $t('dashboard.vpnGateway.initiator') }}</span>
                                             <span>{{ yesNo(conn.initiator) }}</span>
                                         </div>
                                         <div class="kv-row">
                                             <span class="kv-label">{{ $t('dashboard.vpnGateway.psk') }}</span>
-                                            <span>{{
+                                            <VpnSecretValue v-if="conn.psk" :value="conn.psk" />
+                                            <span v-else>{{
                                                 conn.psk_set
                                                     ? $t('dashboard.vpnGateway.secretSet')
                                                     : $t('dashboard.vpnGateway.secretNotSet')
@@ -1064,15 +1505,35 @@ onMounted(() => {
                                         </div>
                                         <div v-if="conn.route_mode === 'bgp'" class="kv-row">
                                             <span class="kv-label">{{ $t('dashboard.vpnGateway.bgpPassword') }}</span>
-                                            <span>{{
+                                            <VpnSecretValue v-if="conn.bgp_password" :value="conn.bgp_password" />
+                                            <span v-else>{{
                                                 conn.bgp_password_set
                                                     ? $t('dashboard.vpnGateway.secretSet')
                                                     : $t('dashboard.vpnGateway.secretNotSet')
                                             }}</span>
                                         </div>
-                                        <div class="kv-row">
-                                            <span class="kv-label">{{ $t('dashboard.vpnGateway.ifId') }}</span>
-                                            <span class="mono text-sm">{{ conn.if_id || '-' }}</span>
+                                        <template v-if="conn.route_mode === 'bgp'">
+                                            <div class="kv-row">
+                                                <span class="kv-label">{{ $t('dashboard.vpnGateway.bfd') }}</span>
+                                                <span class="text-sm">{{
+                                                    conn.bfd_enabled
+                                                        ? $t('dashboard.vpnGateway.bfdValue', {
+                                                              interval: conn.bfd_interval,
+                                                              multiplier: conn.bfd_multiplier,
+                                                          })
+                                                        : $t('dashboard.vpnGateway.disabledState')
+                                                }}</span>
+                                            </div>
+                                            <div v-if="showPriority(conn)" class="kv-row">
+                                                <span class="kv-label">{{
+                                                    $t('dashboard.vpnGateway.asPathPrepend')
+                                                }}</span>
+                                                <span class="text-sm">{{ conn.as_path_prepend }}</span>
+                                            </div>
+                                        </template>
+                                        <div v-if="tunnelCount(conn) > 1" class="kv-row">
+                                            <span class="kv-label">{{ $t('dashboard.vpnGateway.trafficPolicy') }}</span>
+                                            <span class="text-sm">{{ trafficPolicyText(conn) }}</span>
                                         </div>
                                         <div class="kv-row">
                                             <span class="kv-label">{{ $t('dashboard.table.createdAt') }}</span>
@@ -1194,6 +1655,7 @@ onMounted(() => {
                 :gateway-id="gatewayId"
                 :ipsec-enabled="gateway.ipsec_enabled"
                 :client-enabled="gateway.client_enabled"
+                :connections="connections"
             />
 
             <!-- ── Activity ── -->
@@ -1265,11 +1727,23 @@ onMounted(() => {
                 <div class="form-hint">{{ $t('dashboard.vpnGateway.ipsecEnabledHint') }}</div>
             </div>
             <div class="form-group">
-                <label class="checkbox-label">
-                    <input v-model="editForm.client_enabled" type="checkbox" />
+                <label class="checkbox-label" :class="{ 'is-disabled': clientNeedsAddress }">
+                    <input v-model="editForm.client_enabled" type="checkbox" :disabled="clientNeedsAddress" />
                     {{ $t('dashboard.vpnGateway.clientEnabled') }}
                 </label>
                 <div class="form-hint">{{ $t('dashboard.vpnGateway.clientEnabledHint') }}</div>
+                <!-- active_active without its client VPN address: add the address first, then turn the VPN on -->
+                <div v-if="clientNeedsAddress" class="address-needed">
+                    <span>{{ $t('dashboard.vpnGateway.clientNeedsAddress') }}</span>
+                    <button
+                        type="button"
+                        class="btn btn-secondary btn-sm"
+                        :disabled="editing || !addressChangeAllowed"
+                        @click="openAddAddress"
+                    >
+                        <Plus :size="14" /> {{ $t('dashboard.vpnGateway.addPublicIp') }}
+                    </button>
+                </div>
             </div>
             <template v-if="editForm.client_enabled">
                 <div class="form-row">
@@ -1301,7 +1775,7 @@ onMounted(() => {
                         v-model="editForm.client_dns"
                         type="text"
                         class="form-input mono"
-                        placeholder="10.0.0.2, 8.8.8.8"
+                        placeholder="192.168.1.53"
                     />
                     <div class="form-hint">{{ $t('dashboard.vpnGateway.clientDnsHint') }}</div>
                 </div>
@@ -1337,9 +1811,62 @@ onMounted(() => {
             :show="showConnectionModal"
             :gateway-id="gatewayId"
             :connection="connectionToEdit"
+            :public-ips="publicAddresses"
+            :ha-mode="gateway?.ha_mode"
             @close="showConnectionModal = false"
             @saved="onConnectionSaved"
         />
+
+        <VpnPeerConfigModal
+            :show="!!peerConfigConnection"
+            :gateway="gateway"
+            :connection="peerConfigConnection"
+            @close="peerConfigId = ''"
+        />
+
+        <!-- Add the public address the gateway can still take (addable_endpoint) -->
+        <BaseModal
+            :show="showAddAddressModal"
+            :title="$t('dashboard.vpnGateway.addPublicIp')"
+            :loading="addingAddress"
+            size="lg"
+            form
+            @close="showAddAddressModal = false"
+            @submit="handleAddAddress"
+        >
+            <p class="modal-intro">
+                {{
+                    addAddressEndpoint === 'vip1'
+                        ? $t('dashboard.vpnGateway.addClientAddressHint')
+                        : $t('dashboard.vpnGateway.addSecondAddressHint')
+                }}
+            </p>
+            <VpnPublicAddressPicker
+                v-model:subnet-id="addAddressForm.subnet_id"
+                v-model:ip="addAddressForm.ip"
+                :subnets="publicSubnets"
+            />
+            <div class="quota-note">{{ $t('dashboard.vpnGateway.publicIpQuotaUse', { n: 1 }) }}</div>
+            <template #footer>
+                <div v-if="addAddressError" class="modal-error footer-error">{{ addAddressError }}</div>
+                <button
+                    type="button"
+                    class="btn btn-secondary"
+                    :disabled="addingAddress"
+                    @click="showAddAddressModal = false"
+                >
+                    {{ $t('actions.cancel') }}
+                </button>
+                <button type="submit" class="btn btn-primary" :disabled="addingAddress">
+                    <span
+                        v-if="addingAddress"
+                        class="loading-spinner"
+                        style="width: 16px; height: 16px; border-width: 2px"
+                    ></span>
+                    {{ addingAddress ? $t('messages.saving') : $t('dashboard.vpnGateway.addPublicIp') }}
+                </button>
+            </template>
+        </BaseModal>
 
         <VpnClientModal
             :show="showClientModal"
@@ -1403,6 +1930,8 @@ onMounted(() => {
 
         <DeleteModal
             :show="deleteModal.visible"
+            :title="deleteModal.title"
+            :confirm-label="deleteModal.confirmLabel"
             :message="deleteModal.message"
             :resource-name="deleteModal.name"
             :loading="deleteModal.loading"
@@ -1506,6 +2035,83 @@ onMounted(() => {
     white-space: nowrap;
 }
 
+/* Public addresses: the node of a fixed address, release / add actions */
+.address-node {
+    font-family: var(--font-family);
+    font-size: var(--font-size-xs);
+    font-weight: normal;
+    color: var(--text-tertiary);
+    white-space: nowrap;
+}
+
+/* An address or a traffic figure never breaks in the middle */
+.nowrap-text {
+    white-space: nowrap;
+}
+
+/* The global .copy-btn look only covers the title bar; the icon buttons of the info cards get the same */
+.info-card .copy-btn {
+    display: inline-flex;
+    align-items: center;
+    padding: 2px;
+    border: none;
+    border-radius: var(--radius-sm);
+    background: none;
+    color: var(--text-light);
+    cursor: pointer;
+}
+
+.info-card .copy-btn:hover:not(:disabled) {
+    color: var(--primary-color);
+    background: var(--primary-50);
+}
+
+.info-card .copy-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.info-card .copied-icon {
+    color: var(--success-color);
+}
+
+.info-card .address-remove:hover:not(:disabled) {
+    color: var(--error-color);
+    background: var(--error-light);
+}
+
+.add-address-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+}
+
+.add-address-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.node-address {
+    font-family: var(--font-family-mono);
+    font-size: var(--font-size-xs);
+    color: var(--text-tertiary);
+}
+
+.card-hint {
+    margin: calc(-1 * var(--spacing-2)) 0 var(--spacing-3);
+    font-size: var(--font-size-xs);
+    line-height: 1.5;
+    color: var(--text-tertiary);
+}
+
+/* Route mode with the ECMP badge under it: side by side they made the column wider than the table has room for */
+.badge-row {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 4px;
+}
+
 .cidr-list {
     display: flex;
     flex-wrap: wrap;
@@ -1567,6 +2173,12 @@ onMounted(() => {
 
 .cell-name {
     font-weight: var(--font-weight-medium);
+    white-space: nowrap;
+}
+
+/* the tunnel column takes the room: short cells must not wrap */
+.route-badge {
+    white-space: nowrap;
 }
 
 .cell-desc {
@@ -1581,10 +2193,89 @@ onMounted(() => {
     gap: var(--spacing-1);
 }
 
+/* Tunnel lines in the table: one per tunnel, with its status and BGP badges */
+.tunnel-lines {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.tunnel-line {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-2);
+    min-height: 22px;
+    white-space: nowrap;
+}
+
+/* Below 1280 the route mode column is hidden (connectionColumns): its badges sit under the name, and the
+   tunnel lines may wrap */
+.route-inline {
+    display: none;
+}
+
+@media (max-width: 1279px) {
+    .route-inline {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 4px;
+        margin-top: 4px;
+    }
+
+    .tunnel-line {
+        flex-wrap: wrap;
+        row-gap: 2px;
+        white-space: normal;
+    }
+}
+
+/* BGP session of a tunnel line: the state is in the title, the full report in the expanded row */
+.bgp-chip {
+    padding: 0 6px;
+    cursor: default;
+}
+
 /* Expanded connection row */
 .conn-panel {
     padding: var(--spacing-4) var(--spacing-5);
     cursor: default;
+}
+
+.tunnel-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+    gap: var(--spacing-4);
+    margin-bottom: var(--spacing-5);
+}
+
+.tunnel-card {
+    padding: var(--spacing-4);
+    border: 1px solid var(--border-light);
+    border-radius: var(--radius-md);
+    background: var(--bg-primary);
+}
+
+.tunnel-card-head {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-2);
+    margin-bottom: var(--spacing-3);
+}
+
+.tunnel-card-head h4 {
+    margin: 0;
+    font-size: var(--font-size-sm);
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.tunnel-sub {
+    margin: var(--spacing-4) 0 var(--spacing-2);
+    padding-top: var(--spacing-3);
+    border-top: 1px solid var(--border-light);
+    font-size: var(--font-size-sm);
+    font-weight: 600;
+    color: var(--text-primary);
 }
 
 .conn-error {
@@ -1628,6 +2319,11 @@ onMounted(() => {
 
 .disabled-banner span {
     flex: 1;
+}
+
+.error-banner {
+    background: var(--error-light);
+    color: var(--error-dark);
 }
 
 .disable-warning {
@@ -1748,6 +2444,43 @@ onMounted(() => {
     font-size: var(--font-size-sm);
     color: var(--text-primary);
     cursor: pointer;
+}
+
+.checkbox-label.is-disabled {
+    color: var(--text-tertiary);
+    cursor: not-allowed;
+}
+
+/* Edit modal: the client VPN of an active_active gateway waits for its address */
+.address-needed {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: var(--spacing-2) var(--spacing-3);
+    margin-top: var(--spacing-2);
+    padding: var(--spacing-3);
+    border-radius: var(--radius-sm);
+    background: var(--warning-light);
+    color: var(--warning-dark);
+    font-size: var(--font-size-xs);
+    line-height: 1.5;
+}
+
+.address-needed span {
+    flex: 1;
+    min-width: 200px;
+}
+
+.modal-intro {
+    margin: 0 0 var(--spacing-4);
+    font-size: var(--font-size-sm);
+    line-height: 1.6;
+    color: var(--text-secondary);
+}
+
+.quota-note {
+    font-size: var(--font-size-xs);
+    color: var(--text-secondary);
 }
 
 /* Action dropdown */

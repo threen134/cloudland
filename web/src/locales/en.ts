@@ -702,6 +702,9 @@ export default {
         },
         loadBalancerDetail: {
             title: 'Load Balancer Details',
+            singleNode: 'Single node',
+            singleNodeNotice:
+                'This load balancer runs on a single node, without high availability: if that node fails, the service stops. Its zone had only this available compute node when it was created; it gets a standby node automatically once the zone has a second one.',
             loadError: 'Failed to load load balancer details.',
             retry: 'Retry',
             generalInfo: 'General Information',
@@ -768,7 +771,7 @@ export default {
             noSiteTraffic: 'No site connection traffic yet',
             noClientTraffic: 'No client traffic yet',
             trafficHint:
-                '↓ into the VPC (from the peer site or the clients), ↑ out of the VPC. Rates come from the tunnel counters the master records on every heartbeat; data appears about a minute after a tunnel is established, stays continuous across a failover and is kept for 30 days.',
+                '↓ into the VPC (from the peer site or the clients), ↑ out of the VPC. Rates come from the tunnel counters the gateway nodes record on every heartbeat; data appears about a minute after a tunnel is established, stays continuous across a failover and is kept for 30 days.',
             disabled: 'Disabled',
             disableGateway: 'Disable',
             enableGateway: 'Enable',
@@ -794,7 +797,17 @@ export default {
             publicIpNoFree: 'This subnet has no free address; pick another subnet',
             publicSubnet: 'Public subnet',
             publicSubnetAuto: 'Automatic',
+            // Public addresses (a gateway has one or two)
+            publicAddressCount: 'Public addresses',
+            publicAddressOne: 'One',
+            publicAddressTwo: 'Two',
+            publicAddressTwoHint:
+                'With two public addresses a connection can build a primary and a standby tunnel even when the peer has a single address. Both addresses move together with the gateway master.',
+            publicAddressN: 'Public address {n}',
+            addressN: 'Address {n}',
+            publicIpsMustDiffer: 'The public addresses must differ.',
             masterNode: 'Master node',
+            clientAddressHolder: 'Client VPN address on',
             haNodes: 'HA nodes',
             reportedAt: 'reported',
             roleMaster: 'Master',
@@ -819,7 +832,8 @@ export default {
                 'Changing the pool re-addresses every client; their configurations must be downloaded again',
             clientPort: 'Listen port',
             clientDns: 'Client DNS',
-            clientDnsHint: 'DNS servers pushed to the clients, comma separated',
+            clientDnsHint:
+                "Comma separated; leave empty to keep the client's own DNS. To resolve names inside the VPC, use a DNS server in a VPC subnet (its security group must allow port 53 from the client address pool). Public servers such as 8.8.8.8 are reached outside the VPN and only replace the client's system DNS. Subnet gateway addresses do not serve DNS",
             clientRoutes: 'Client routes',
             clientRoutesHint:
                 'Networks routed through the VPN on the clients, comma separated; empty means all internal subnets of the VPC',
@@ -840,11 +854,19 @@ export default {
             invalidIp: 'Please enter a valid IPv4 address.',
             invalidClientCidr: 'The client address pool must be a valid IPv4 CIDR, e.g. 10.8.0.0/24.',
             invalidDns: 'Client DNS must be IPv4 addresses separated by commas.',
+            singleNode: 'Single node',
+            singleNodeNotice:
+                'This gateway runs on a single node, without high availability: if that node fails, the VPN stops until it is back. Its zone had only this available compute node when it was created; the gateway gets a standby node automatically once the zone has a second one.',
+            errorReason: 'The gateway is in error: {reason}',
+            addressChangeWait: 'Add or remove public addresses once the gateway is available',
+            zoneNeedsNodes:
+                'The selected zone does not have enough available compute nodes: an active-standby gateway needs at least one, an active-active gateway needs two.',
+            clientRoutesNoDefault:
+                'Client routes cannot include 0.0.0.0/0: full-tunnel mode is not supported, clients only reach the VPC networks through the VPN.',
             // Site-to-site connections
             addConnection: 'Add Connection',
             editConnection: 'Edit Connection',
             noConnections: 'No site connections. Add one to connect a remote site over IPsec.',
-            remoteGateway: 'Remote gateway',
             remoteGatewayHint:
                 'Public IPv4 address of the peer; leave empty to only accept connections initiated by the peer',
             responderOnly: 'Responder only',
@@ -902,7 +924,6 @@ export default {
             dpdDelay: 'DPD delay',
             localId: 'Local IKE identity',
             remoteId: 'Remote IKE identity',
-            idHint: 'Defaults to the public addresses of both ends',
             identities: 'IKE identities',
             invalidIkeId:
                 'IKE identities may only contain letters, digits, dots, underscores, at signs, colons and hyphens.',
@@ -928,11 +949,53 @@ export default {
                 'The peer advertised these prefixes outside the remote summary networks. Widen the summary networks to accept them.',
             bgpTruncated: 'The lists are truncated; the peer advertises more prefixes than shown.',
             noBgpReport: 'No BGP report yet',
+            bgpStateTitle: 'BGP state: {state}',
             ikeDetails: 'IPsec parameters',
             secretSet: 'Set',
             secretNotSet: 'Not set',
             ifId: 'XFRM interface ID',
             ikeVersion: 'IKEv{version}',
+            // Tunnels of a site connection (single, or primary + standby)
+            tunnels: 'Tunnels',
+            tunnelN: 'Tunnel {n}',
+            primaryTunnel: 'Primary tunnel',
+            priorityPrimary: 'Primary',
+            priorityStandby: 'Standby',
+            localAddress: 'Local address',
+            peerAddress: 'Peer address',
+            peerIdHint: 'Defaults to the peer address; required when the peer address is empty',
+            tunnelPsk: 'Tunnel pre-shared key',
+            tunnelPskPlaceholder: "Empty: use the connection's key",
+            tunnelPskKeepPlaceholder: "Empty: keep this tunnel's key",
+            tunnelPskClear: "Remove the tunnel key and use the connection's key",
+            tunnelPskOwn: 'Tunnel-specific',
+            tunnelPskShared: "Connection's key",
+            tunnelIpHint2: 'Another /30 pair, not overlapping those of the other tunnels, e.g. {local} and {peer}',
+            staticDualHint:
+                'With static routing the peer must be a route-based VPN and must itself give the tunnels different route priorities: static mode has no protocol to tell the peer which tunnel is the primary.',
+            tunnelsMustDiffer:
+                'Every tunnel must differ from the others in the local address, the peer address or both.',
+            tunnelLinksMustDiffer: 'The tunnel IPs of each tunnel must be in a different /30 network.',
+            remoteIdRequired: 'A tunnel without a peer address needs the remote IKE identity.',
+            responderNotInitiator:
+                'A tunnel without a peer address can only be initiated by the peer: enter the peer address or uncheck "Initiate the tunnel from this gateway" in the advanced settings.',
+            localIdHint: 'Defaults to the local public address',
+            asPathPrepend: 'AS path prepend',
+            asPathPrependHint:
+                'The standby tunnel advertises with the local ASN repeated this many times so the peer prefers the primary; 0 turns it off',
+            bfd: 'BFD',
+            bfdEnabled: 'Enable BFD',
+            bfdHint:
+                'Detects a broken BGP session inside the tunnel within seconds, much faster than the BGP hold time; the peer must enable BFD too',
+            bfdInterval: 'BFD interval',
+            bfdMultiplier: 'BFD multiplier',
+            bfdValue: '{interval} ms × {multiplier}',
+            bfdState: 'BFD state',
+            bfdStateShort: 'BFD {state}',
+            milliseconds: 'ms',
+            degradedHint: 'The primary tunnel is down; traffic flows through the standby',
+            restartAllTunnels: 'Restart all tunnels',
+            restartTunnelN: 'Restart tunnel {n} ({role})',
             // WireGuard clients
             addClient: 'Add Client',
             noClients: 'No clients. Add one to get a WireGuard configuration.',
@@ -967,6 +1030,171 @@ export default {
                 'The private key is not stored on the platform: replace <your private key> with the key held on the device.',
             downloadConfig: 'Download .conf',
             noActivity: 'No operations on this gateway in the last 90 days',
+            // HA mode, public addresses, traffic policy of the tunnels
+            haMode: 'HA mode',
+            haModeActiveStandby: 'Active-standby',
+            haModeActiveActive: 'Active-active',
+            haModeActiveStandbyHint:
+                'One node runs every tunnel from floating public IPs. If it fails, all tunnels move to the other node, with a few seconds of outage.',
+            haModeActiveActiveHint:
+                'Both nodes run tunnels from their own public address and share routes over iBGP; if a node fails, only its own traffic moves. One peer connection must accept both of our addresses, or the peer must switch quickly between two connections, ideally with BFD. For peers that accept one address per connection, such as IBM Cloud, choose active-standby.',
+            activeActiveAddressHint:
+                'Each node gets its own fixed public address for its tunnels. An entry left on automatic takes the subnet of node 1.',
+            clientAddressActiveActiveHint:
+                'On an active-active gateway the client VPN takes one more public IP: a floating address that follows the master node.',
+            publicIpQuotaUse: 'Public IPs used from the quota: {n}',
+            publicSubnetSameAsFirst: 'Same as node 1',
+            nodeN: 'Node {n}',
+            node: 'Node',
+            clientVpnAddress: 'Client VPN address',
+            notAssigned: 'Not assigned',
+            addPublicIp: 'Add public address',
+            addSecondAddressHint:
+                'A second floating IP moves with the master together with the first one. Connections can then run a standby (or ECMP) tunnel from a second local address, even towards a peer with a single address.',
+            addClientAddressHint:
+                'The client VPN of an active-active gateway needs a floating IP that follows the master node; the fixed node addresses cannot be used. Once it is added, enable the client VPN in the gateway settings.',
+            addPublicIpSuccess: 'Public address added',
+            removePublicIp: 'Release public address',
+            removePublicIpWarning:
+                'Release this public address from the gateway? It goes back to the public IP pool and to the quota. Connections with a tunnel on it must be changed or deleted first.',
+            removeClientAddressWarning:
+                'Release the client VPN address from the gateway? It goes back to the public IP pool and to the quota. The client VPN must be disabled first.',
+            removePublicIpSuccess: 'Public address released',
+            clientNeedsAddress:
+                'An active-active gateway needs a public address for the client VPN before the client VPN can be enabled.',
+            tunnelCount: 'Number of tunnels',
+            tunnelCountHint:
+                'Every tunnel needs its own pair of local and peer addresses. With two local and two peer addresses, four tunnels make a full mesh.',
+            tunnelCountHintActiveActive:
+                'An active-active gateway runs at most one tunnel on each node; two tunnels keep the connection up when a node fails.',
+            trafficPolicy: 'Traffic distribution',
+            trafficPolicyPreferred: 'Primary first',
+            trafficPolicyEcmp: 'Shared (ECMP)',
+            trafficPolicyEcmpShort: 'ECMP',
+            trafficPolicyPreferredHint:
+                'The primary tunnel carries the traffic; when it goes down, the standby tunnels take over in order.',
+            trafficPolicyEcmpHint:
+                'Every tunnel that is up carries traffic, with flows spread by addresses and ports. The peer should spread its traffic over the tunnels too (e.g. "distribute traffic" on IBM Cloud).',
+            primaryAuto: 'Automatic (the node with fewer primaries)',
+            tunnelsOnDifferentNodes: 'The two tunnels of an active-active gateway must run on different nodes.',
+            degradedEcmpHint: 'Some tunnels are down; the tunnels still up carry the traffic',
+            restartTunnelPlain: 'Restart tunnel {n}',
+            tunnelSeries: '{conn} · tunnel {n}',
+            trafficByTunnel: 'Per tunnel',
+            trafficAllConnections: 'All connections',
+            showSecret: 'Show',
+            hideSecret: 'Hide',
+            peerConfig: {
+                button: 'Peer configuration',
+                title: 'Peer configuration · {name}',
+                textTitle: 'VPN peer configuration',
+                gatewayLabel: 'Gateway',
+                connectionLabel: 'Connection',
+                intro: 'Configure the peer device with the parameters below. "Our" refers to this VPN gateway and "peer" to the other device: on the peer device, its local address and identity are the "peer" values here, and its remote address and identity are "our" values.',
+                pskHidden:
+                    'Pre-shared keys are shown to editors and higher roles only. Both sides must use the key entered when the connection was created.',
+                pskPerTunnel: 'Tunnel {list} uses a key of its own.',
+                copyAll: 'Copy all',
+                download: 'Download .txt',
+                pair: '{label}: {value}',
+                withNote: '{value} ({note})',
+                listSep: ', ',
+                heading: '== {title} ==',
+                sectionTunnels: 'Tunnels',
+                sectionIke: 'IKE / IPsec',
+                sectionRouting: 'Routing',
+                sectionPrimary: 'Primary, standby and load sharing',
+                sectionAdvice: 'Recommendations',
+                roleShared: 'load sharing',
+                rolePrimary: 'primary',
+                roleStandby: 'standby',
+                colLocalAddr: 'Our public address',
+                colRemoteAddr: 'Peer public address',
+                colLocalId: 'Our IKE ID',
+                colRemoteId: 'Peer IKE ID',
+                colLocalInner: 'Our tunnel address',
+                colPeerInner: 'Peer tunnel address',
+                colPsk: 'Pre-shared key',
+                keysIncluded:
+                    'The copied and downloaded text contains the keys in clear: hand it over through a secure channel.',
+                anyAddress: 'Any (we only respond)',
+                ikeVersion: 'IKE version',
+                auth: 'Authentication',
+                authPsk: 'Pre-shared key (PSK)',
+                ikeProposal: 'IKE proposal',
+                espProposal: 'ESP proposal',
+                pfs: 'PFS',
+                pfsOn: 'On (DH group {group})',
+                pfsOff: 'Off',
+                ikeLifetime: 'IKE lifetime',
+                espLifetime: 'ESP lifetime',
+                secondsValue: '{n} s',
+                mode: 'Encapsulation',
+                modeTunnel: 'Tunnel mode',
+                natt: 'NAT traversal',
+                nattAuto: 'Automatic (UDP 4500 once NAT is detected)',
+                fragmentation: 'IKE fragmentation',
+                fragmentationOn: 'On',
+                mtu: 'Tunnel MTU',
+                mtuValue: '1360; TCP MSS through the tunnel is clamped to 1320 (clamp on the peer as well)',
+                dpd: 'Dead peer detection (DPD)',
+                dpdValue: 'Every {n} s; enable it on the peer as well',
+                initiator: 'Initiated by',
+                initiatorUs: 'Us (the peer may initiate too)',
+                initiatorPeer: 'The peer only',
+                routeMode: 'Routing',
+                trafficSelectors: 'Traffic selectors',
+                bgpTsValue: '0.0.0.0/0 ↔ 0.0.0.0/0',
+                bgpTsNote:
+                    'BGP uses route-based tunnels (VTI): configure the peer as route-based, with the tunnel addresses below on its tunnel interface.',
+                localAsn: 'Our ASN',
+                peerAsn: 'Peer ASN',
+                timers: 'BGP timers',
+                timersValue: 'keepalive {keepalive} s, hold {hold} s (the lower value of both sides applies)',
+                bgpPassword: 'BGP password (TCP MD5)',
+                bgpPasswordSet: 'Set (shown to editors and higher roles only); configure the same password on the peer',
+                bgpPasswordNone: 'Not set',
+                bfd: 'BFD',
+                bfdValue: 'Every {interval} ms, down after {multiplier} misses (single hop, UDP 3784)',
+                bfdOff: 'Off',
+                advertised: 'Networks we advertise',
+                acceptedRange: 'Range we accept',
+                acceptedRangeNote:
+                    'Prefixes the peer advertises must fall within these networks (more specific is fine); anything else is dropped.',
+                maxPrefixes: 'Prefix limit',
+                maxPrefixesValue: '{n} (exceeding it only logs a warning, the session stays up)',
+                localNets: 'Our networks',
+                remoteNets: 'Peer networks',
+                staticTsNote:
+                    'Each pair of networks is one child SA; configure the same pairs on the peer. A route-based peer (0.0.0.0/0) is narrowed to these pairs by our side.',
+                ecmp: 'We send traffic over all tunnels at once, split per flow (5-tuple). The peer should share the load over the same tunnels, otherwise return traffic uses only one of them; the two directions may take different tunnels, so the peer must not enforce strict reverse path checks.',
+                primaryIs:
+                    'The primary tunnel is tunnel {n} (our {local} ↔ peer {remote}); the others are standby. Our traffic prefers the primary tunnel.',
+                primaryStatic:
+                    'On the peer, give the route over the primary tunnel a higher priority and tie the routes to the tunnel state, so traffic moves to the standby tunnel when the primary goes down.',
+                primaryBgp:
+                    'On the standby tunnels we prepend our ASN {n} times (one more for each tunnel further down), so the peer picks the primary tunnel by AS path length. Do not override it with local-preference or weight on the peer.',
+                primaryBgpNoPrepend:
+                    'This connection has no AS path prepending, so the peer cannot tell primary from standby by the routes. Prefer the primary tunnel on the peer by hand, or the two directions may take different tunnels.',
+                adviceBgpTimers:
+                    'The hold time is {hold} s: when a node fails, the peer may take that long to move away. Use keepalive 3 s and hold 9 s on both sides, or enable BFD.',
+                adviceStatic:
+                    'With static routing, a tunnel is found down by DPD and failover takes about 20 s. For faster failover use BGP with BFD.',
+                adviceActiveActive:
+                    'The tunnels of an active-active gateway start from the fixed addresses of two nodes, and the peer must accept connections from both. For devices that accept one peer address per connection (such as IBM Cloud VPN), use an active-standby gateway instead.',
+                adviceTwoLocal:
+                    'This connection uses several of our public addresses. If the peer device accepts one peer address per connection (such as IBM Cloud VPN), create one connection per address there.',
+                adviceSmallest:
+                    'The peer has several public addresses. Some devices (such as IBM Cloud VPN) always send return traffic from the member with the lower address, so point the primary tunnel at {addr}.',
+                adviceSmallestWarn:
+                    'The primary tunnel points at {current}, not at the lower address {smallest}: if the peer always returns traffic from the lower address, the two directions take different tunnels.',
+                adviceResponder:
+                    'We do not initiate negotiation: configure the peer to initiate (bring the tunnel up immediately).',
+                adviceAnyPeer:
+                    'Tunnel {list} accepts any peer address: the peer must initiate with the peer IKE ID shown here, which is how we recognize the connection.',
+                adviceSecurityGroup:
+                    'Allow the peer networks in the security groups of our servers, otherwise traffic is still blocked once the tunnel is up.',
+            },
         },
         vmAlarmRules: {
             title: 'VM Alarm Rules',
@@ -1199,6 +1427,8 @@ export default {
                     client_update: 'modified a client of VPN gateway {name}',
                     enable: 'enabled VPN gateway {name}',
                     disable: 'disabled VPN gateway {name}',
+                    public_ip_add: 'added a public address to VPN gateway {name}',
+                    public_ip_remove: 'released a public address of VPN gateway {name}',
                 },
                 image: {
                     create: 'created image {name}',
@@ -1330,6 +1560,8 @@ export default {
                     client_update: 'failed to modify a client of VPN gateway {name}',
                     enable: 'failed to enable VPN gateway {name}',
                     disable: 'failed to disable VPN gateway {name}',
+                    public_ip_add: 'failed to add a public address to VPN gateway {name}',
+                    public_ip_remove: 'failed to release a public address of VPN gateway {name}',
                 },
                 image: {
                     create: 'failed to create image {name}',
@@ -1637,6 +1869,7 @@ export default {
             pending: 'Pending',
             down: 'Down',
             up: 'Up',
+            degraded: 'Degraded',
             error: 'Error',
             disabled: 'Disabled',
         },

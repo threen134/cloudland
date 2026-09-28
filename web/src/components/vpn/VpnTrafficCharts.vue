@@ -1,21 +1,34 @@
 <script setup lang="ts">
 // Traffic history of a VPN gateway: site connections or WireGuard clients, one full-width chart at a time
-// (the switch only when the gateway offers both). Rates come from GET /vpn_gateways/:id/traffic.
-import { computed, ref, shallowRef } from 'vue'
+// (the switch only when the gateway offers both). Rates come from GET /vpn_gateways/:id/traffic. The site
+// view can split every connection into its tunnels (by=tunnel), optionally for one connection only.
+import { computed, ref, shallowRef, watch } from 'vue'
 import type { ChartData, ChartOptions } from 'chart.js'
 import { Line } from 'vue-chartjs'
 import { useI18n } from 'vue-i18n'
 import { ChartLine } from 'lucide-vue-next'
 import MonitoringPanel from '../monitoring/MonitoringPanel.vue'
 import { useMonitoring, CHART_OPTIONS } from '../../composables/useMonitoring'
-import { vpnGatewaysApi, type VpnTrafficResponse } from '../../api/vpn'
+import { vpnGatewaysApi, type VpnConnection, type VpnTrafficResponse, type VpnTrafficSeries } from '../../api/vpn'
 import { cssVar } from '../../utils/cssVar'
 import { errorMessage } from '../../utils/error'
 
-const props = defineProps<{ gatewayId: string; ipsecEnabled: boolean; clientEnabled: boolean }>()
+const props = defineProps<{
+    gatewayId: string
+    ipsecEnabled: boolean
+    clientEnabled: boolean
+    /** Connections of the gateway, for the names of the per-tunnel series */
+    connections?: VpnConnection[]
+}>()
 const { t } = useI18n()
 
 const traffic = shallowRef<VpnTrafficResponse | null>(null)
+// Site view: one series per tunnel instead of one per connection
+const byTunnel = ref(false)
+// Whether the data on screen was queried per tunnel: it lags byTunnel until the new answer arrives
+const trafficByTunnel = ref(false)
+// Per tunnel: the connection whose tunnels are drawn, '' for all of them
+const tunnelConnection = ref('')
 
 // Only the latest request may write: range clicks, Apply and the auto refresh can overlap, and a slow 30d
 // query answering after a quick 1h one would otherwise replace it
@@ -27,6 +40,7 @@ const fetchData = async () => {
         return
     }
     const mine = ++generation
+    const perTunnel = byTunnel.value
     loading.value = true
     error.value = ''
     try {
@@ -34,8 +48,12 @@ const fetchData = async () => {
             start: range.startTs,
             end: range.endTs,
             step: step.value,
+            by: perTunnel ? 'tunnel' : undefined,
         })
-        if (mine === generation) traffic.value = data
+        if (mine === generation) {
+            traffic.value = data
+            trafficByTunnel.value = perTunnel
+        }
     } catch (err) {
         if (mine !== generation) return
         console.error('Failed to fetch VPN traffic:', err)
@@ -57,6 +75,8 @@ const {
     setRange,
     toggleCustom,
 } = useMonitoring(fetchData)
+
+watch(byTunnel, () => fetchData())
 
 // bits per second, scaled to the largest value of a chart
 const UNITS = ['bps', 'Kbps', 'Mbps', 'Gbps', 'Tbps']
@@ -138,6 +158,33 @@ const activeView = computed<View>(() => (views.value.includes(selected.value) ? 
 
 type Series = { name: string; in: Array<number | null>; out: Array<number | null> }
 
+// "<connection> · tunnel N"; the connection name is taken from the gateway, the series name ("<name> / tN")
+// is the fallback
+const connectionName = (id?: string) => props.connections?.find((c) => c.id === id)?.name
+const seriesName = (s: VpnTrafficSeries) =>
+    s.connection_id && s.slot
+        ? t('dashboard.vpnGateway.tunnelSeries', {
+              conn: connectionName(s.connection_id) || s.name.replace(/ \/ t\d+$/, ''),
+              n: s.slot,
+          })
+        : s.name
+
+// Connections present in the per-tunnel answer, for the connection filter
+const tunnelConnections = computed(() => {
+    if (!trafficByTunnel.value) return []
+    const seen = new Map<string, string>()
+    for (const s of traffic.value?.connections || []) {
+        if (s.connection_id && !seen.has(s.connection_id)) {
+            seen.set(s.connection_id, connectionName(s.connection_id) || s.name.replace(/ \/ t\d+$/, ''))
+        }
+    }
+    return [...seen].map(([id, name]) => ({ id, name }))
+})
+// A connection that is gone from the answer falls back to all of them
+const selectedConnection = computed(() =>
+    tunnelConnections.value.some((c) => c.id === tunnelConnection.value) ? tunnelConnection.value : ''
+)
+
 // ↓ in (solid) and ↑ out (dashed), a colour pair per series
 const lineChart = (series: Series[]) => {
     const n = traffic.value?.timestamps.length || 0
@@ -188,7 +235,10 @@ const chart = computed(() => {
     const data = traffic.value
     if (!data) return null
     if (activeView.value === 'site') {
-        return data.connections.length ? lineChart(data.connections) : null
+        const series = selectedConnection.value
+            ? data.connections.filter((s) => s.connection_id === selectedConnection.value)
+            : data.connections
+        return series.length ? lineChart(series.map((s) => ({ ...s, name: seriesName(s) }))) : null
     }
     if (!data.clients.length) return null
     if (data.clients.length <= MAX_CLIENT_LINES) return lineChart(data.clients)
@@ -251,7 +301,25 @@ const emptyText = computed(() =>
                 </button>
             </div>
             <h4 v-else class="traffic-title">{{ chartTitle }}</h4>
-            <span class="current-value">{{ currentText }}</span>
+            <div class="toolbar-right">
+                <!-- Site view: split the connections into their tunnels, optionally one connection only -->
+                <template v-if="activeView === 'site'">
+                    <label class="tunnel-toggle">
+                        <input v-model="byTunnel" type="checkbox" />
+                        {{ t('dashboard.vpnGateway.trafficByTunnel') }}
+                    </label>
+                    <select
+                        v-if="byTunnel && tunnelConnections.length > 1"
+                        v-model="tunnelConnection"
+                        class="form-input tunnel-filter"
+                        :aria-label="t('dashboard.vpnGateway.connections')"
+                    >
+                        <option value="">{{ t('dashboard.vpnGateway.trafficAllConnections') }}</option>
+                        <option v-for="c in tunnelConnections" :key="c.id" :value="c.id">{{ c.name }}</option>
+                    </select>
+                </template>
+                <span class="current-value">{{ currentText }}</span>
+            </div>
         </div>
 
         <div v-if="chart" class="traffic-chart">
@@ -271,6 +339,33 @@ const emptyText = computed(() =>
     flex-wrap: wrap;
     gap: var(--spacing-2);
     margin-bottom: var(--spacing-3);
+}
+
+.toolbar-right {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: var(--spacing-3);
+    margin-left: auto;
+}
+
+.tunnel-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--spacing-1);
+    font-size: var(--font-size-xs);
+    color: var(--text-secondary);
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+/* Compact select next to the toggle */
+.tunnel-filter {
+    width: auto;
+    max-width: 200px;
+    padding: 2px 8px;
+    font-size: var(--font-size-xs);
+    border-radius: var(--radius-md);
 }
 
 .current-value {

@@ -36,9 +36,11 @@ export interface Column {
     /**
      * Hide this column when the viewport is narrower than this. With many columns a narrow screen
      * makes the table overflow and scroll sideways; hiding secondary columns that the detail page
-     * also shows reads better. Pick one of the standard breakpoints (1280 / 1024 / 768)
+     * also shows reads better. Pick one of the standard breakpoints (1280 / 1024 / 768); 1600 and 1440
+     * are for wide tables on detail pages, where the sidebar leaves about 1110px at a 1440 viewport and
+     * about 1040px at 1366 (a common laptop width)
      */
-    hideBelow?: 1280 | 1024 | 768
+    hideBelow?: 1600 | 1440 | 1280 | 1024 | 768
 }
 
 const props = withDefaults(
@@ -284,6 +286,18 @@ th.sortable:hover {
 
 /* Column.hideBelow: secondary columns (also shown on the detail page) are hidden on narrow
    screens, which reads better than a table scrolling sideways */
+@media (max-width: 1599px) {
+    .data-table :is(th, td).hide-below-1600 {
+        display: none;
+    }
+}
+
+@media (max-width: 1439px) {
+    .data-table :is(th, td).hide-below-1440 {
+        display: none;
+    }
+}
+
 @media (max-width: 1279px) {
     .data-table :is(th, td).hide-below-1280 {
         display: none;

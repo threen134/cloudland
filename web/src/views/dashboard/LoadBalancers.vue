@@ -335,6 +335,12 @@ onUnmounted(() => {
 
             <template #cell-status="{ row: lb }">
                 <StatusBadge :status="lb.status" :label="statusText(lb.status)" />
+                <span
+                    v-if="lb.single_node"
+                    class="badge badge-warning single-node"
+                    :title="$t('dashboard.loadBalancerDetail.singleNodeNotice')"
+                    >{{ $t('dashboard.loadBalancerDetail.singleNode') }}</span
+                >
             </template>
 
             <template #cell-ip="{ row: lb }">
@@ -559,5 +565,9 @@ onUnmounted(() => {
     font-size: var(--font-size-xs);
     color: var(--text-tertiary);
     margin-top: 2px;
+}
+
+.single-node {
+    margin-left: var(--spacing-2);
 }
 </style>
