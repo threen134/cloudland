@@ -33,6 +33,9 @@ type LoadBalancerResponse struct {
 	Listeners   []*ListenerResponse `json:"listeners,omitempty"`
 	VPC         *ResourceReference  `json:"vpc,omitempty"`
 	Status      string              `json:"status"`
+	// Available on its MASTER node alone, without high availability: its zone had no second available node.
+	// The BACKUP node is added once the zone has one
+	SingleNode bool `json:"single_node,omitempty"`
 }
 
 type LoadBalancerListResponse struct {
@@ -223,6 +226,9 @@ func (v *LoadBalancerAPI) getLoadBalancerResponse(ctx context.Context, loadBalan
 		},
 		Description: loadBalancer.Description,
 		Status:      loadBalancer.Status,
+	}
+	if vi := loadBalancer.VrrpInstance; vi != nil && loadBalancer.Status == "available" {
+		loadBalancerResp.SingleNode = vi.Hyper >= 0 && vi.Peer < 0
 	}
 	if loadBalancer.Router != nil {
 		loadBalancerResp.VPC = &ResourceReference{

@@ -49,10 +49,22 @@ type VpnGatewayParams struct {
 	ClientPort    int32
 	ClientDns     string
 	ClientRoutes  string
-	PublicSubnets []*model.Subnet
-	PublicIp      string
-	Inbound       int32
-	Outbound      int32
+	// VpnHaModeActiveStandby (default) or VpnHaModeActiveActive
+	HaMode string
+	// active_standby: one or two floating IPs (vip1, vip2), both held by keepalived on the master; the second
+	// lets a connection run two tunnels towards a single peer address (the peer sees two gateways).
+	// active_active: the fixed address of each node (node1, node2), then the client VPN floating IP (vip1)
+	// when client access is enabled; missing entries are allocated from the subnets of the first one.
+	PublicIps []*VpnPublicIpParams
+	Inbound   int32
+	Outbound  int32
+}
+
+// VpnPublicIpParams picks one public address: from these subnets (any public subnet when empty), the
+// given address when not empty
+type VpnPublicIpParams struct {
+	Subnets []*model.Subnet
+	Address string
 }
 
 // VpnGatewayPatch carries the updatable fields; nil means unchanged
@@ -94,7 +106,8 @@ func generateWgPresharedKey() (string, error) {
 func vpnPreload(db *gorm.DB) *gorm.DB {
 	return db.Preload("Router").Preload("VrrpInstance").Preload("VrrpInstance.VrrpSubnet").
 		Preload("FloatingIps").Preload("FloatingIps.Subnet").
-		Preload("Connections", dbs.OrderByID).Preload("Clients", dbs.OrderByID)
+		Preload("Connections", dbs.OrderByID).Preload("Connections.Tunnels", func(db *gorm.DB) *gorm.DB { return db.Order("slot") }).
+		Preload("Clients", dbs.OrderByID)
 }
 
 // loadVpnGateway reloads a gateway with everything the dispatch code needs, without an org filter
@@ -273,15 +286,69 @@ func (a *VpnGatewayAdmin) Create(ctx context.Context, params *VpnGatewayParams, 
 		}
 	}
 	if params.ClientRoutes != "" {
-		if _, err = ParseCidrList(params.ClientRoutes); err != nil {
+		if err = validateClientRoutes(params.ClientRoutes); err != nil {
 			return
 		}
 	}
-	// The public address first: allocating it can fail (no public subnet, pool exhausted, address in use),
-	// and CreateVrrpInstance already pushes set_vrrp_ip.sh to a node, which a rollback would not undo
-	fips, err := (&FloatingIpAdminService{}).Create(ctx, nil, params.PublicSubnets, params.PublicIp, params.Name, params.Inbound, params.Outbound, 1, nil, nil, nil)
+	haMode := params.HaMode
+	if haMode == "" {
+		haMode = model.VpnHaModeActiveStandby
+	}
+	// The VRRP nodes come from the zone. An active_active gateway needs two; an active_standby one runs on
+	// a single node when the zone has no second, and gets the BACKUP node once it has (PlaceMissingVrrpBackups)
+	nodeCount, err := vpnZoneNodeCount(ctx, zone.ID, -1)
 	if err != nil {
 		return
+	}
+	need := int64(1)
+	if haMode == model.VpnHaModeActiveActive {
+		need = 2
+	}
+	if nodeCount < need {
+		err = NewCLError(ErrVpnGatewayNeedsNodes, fmt.Sprintf("Zone %s has %d available compute node(s), a gateway in this mode needs %d", zone.Name, nodeCount, need), nil)
+		return
+	}
+	// The public addresses first: allocating one can fail (no public subnet, pool exhausted, address in use),
+	// and CreateVrrpInstance already pushes set_vrrp_ip.sh to a node, which a rollback would not undo
+	publicIps := params.PublicIps
+	endpoints := []string{model.VpnEndpointVip1, model.VpnEndpointVip2}
+	switch haMode {
+	case model.VpnHaModeActiveStandby:
+		if len(publicIps) == 0 {
+			publicIps = []*VpnPublicIpParams{{}}
+		}
+		if len(publicIps) > 2 {
+			err = NewCLError(ErrInvalidParameter, "An active-standby VPN gateway has at most two public addresses", nil)
+			return
+		}
+	case model.VpnHaModeActiveActive:
+		endpoints = []string{model.VpnEndpointNode1, model.VpnEndpointNode2, model.VpnEndpointVip1}
+		if len(publicIps) == 0 {
+			publicIps = []*VpnPublicIpParams{{}}
+		}
+		want := 2
+		if params.ClientEnabled {
+			want = 3
+		}
+		if len(publicIps) > want {
+			err = NewCLError(ErrInvalidParameter, "An active-active VPN gateway has one address per node, and a third one only for its client VPN", nil)
+			return
+		}
+		for len(publicIps) < want {
+			publicIps = append(publicIps, &VpnPublicIpParams{Subnets: publicIps[0].Subnets})
+		}
+	default:
+		err = NewCLError(ErrInvalidParameter, "ha_mode must be active_standby or active_active", nil)
+		return
+	}
+	endpointFips := map[string][]*model.FloatingIp{}
+	for i, p := range publicIps {
+		endpoint := endpoints[i]
+		var allocated []*model.FloatingIp
+		if allocated, err = (&FloatingIpAdminService{}).Create(ctx, nil, p.Subnets, p.Address, params.Name, params.Inbound, params.Outbound, 1, nil, nil, nil); err != nil {
+			return
+		}
+		endpointFips[endpoint] = allocated
 	}
 	vrrpInstance, err := CreateVrrpInstance(ctx, params.Name, router, zone)
 	if err != nil {
@@ -294,18 +361,20 @@ func (a *VpnGatewayAdmin) Create(ctx context.Context, params *VpnGatewayParams, 
 		RouterID: router.ID, VrrpInstanceID: vrrpInstance.ID, ZoneID: zone.ID,
 		IpsecEnabled: params.IpsecEnabled, ClientEnabled: params.ClientEnabled, ClientProtocol: model.VpnClientProtocolWireguard,
 		ClientCidr: clientCidr, ClientPort: clientPort, ClientPrivateKey: privateKey, ClientPublicKey: publicKey,
-		ClientDns: params.ClientDns, ClientRoutes: params.ClientRoutes, MasterHyper: -1,
+		ClientDns: params.ClientDns, ClientRoutes: params.ClientRoutes, MasterHyper: -1, HaMode: haMode,
 	}
 	if err = db.Create(gateway).Error; err != nil {
 		err = NewCLError(ErrVpnGatewayCreateFailed, "Failed to create VPN gateway", err)
 		return
 	}
-	// Tie the public address to the gateway
-	for _, fip := range fips {
-		if err = db.Model(&model.FloatingIp{Model: model.Model{ID: fip.ID}}).Updates(map[string]interface{}{
-			"vpn_gateway_id": gateway.ID, "router_id": router.ID, "type": string(PublicVpnGateway)}).Error; err != nil {
-			err = NewCLError(ErrVpnGatewayCreateFailed, "Failed to attach the public address", err)
-			return
+	// Tie the public addresses to the gateway
+	for endpoint, fips := range endpointFips {
+		for _, fip := range fips {
+			if err = db.Model(&model.FloatingIp{Model: model.Model{ID: fip.ID}}).Updates(map[string]interface{}{
+				"vpn_gateway_id": gateway.ID, "router_id": router.ID, "type": string(PublicVpnGateway), "vpn_endpoint": endpoint}).Error; err != nil {
+				err = NewCLError(ErrVpnGatewayCreateFailed, "Failed to attach the public address", err)
+				return
+			}
 		}
 	}
 	if _, err = rebuildRemotePrefixes(ctx, gateway); err != nil {
@@ -340,7 +409,7 @@ func (a *VpnGatewayAdmin) Update(ctx context.Context, gateway *model.VpnGateway,
 	}
 	if patch.ClientRoutes != nil && *patch.ClientRoutes != gateway.ClientRoutes {
 		if *patch.ClientRoutes != "" {
-			if _, err = ParseCidrList(*patch.ClientRoutes); err != nil {
+			if err = validateClientRoutes(*patch.ClientRoutes); err != nil {
 				return
 			}
 		}
@@ -358,6 +427,11 @@ func (a *VpnGatewayAdmin) Update(ctx context.Context, gateway *model.VpnGateway,
 	clientEnabled := gateway.ClientEnabled
 	if patch.ClientEnabled != nil {
 		clientEnabled = *patch.ClientEnabled
+	}
+	// The client VPN of an active_active gateway needs its own floating IP: the node addresses do not move
+	if clientEnabled && !gateway.ClientEnabled && VpnIsActiveActive(gateway) && vpnEndpointFips(gateway)[model.VpnEndpointVip1] == nil {
+		err = NewCLError(ErrInvalidParameter, "Add a public address for the client VPN first", nil)
+		return
 	}
 	clientCidr := gateway.ClientCidr
 	if patch.ClientCidr != nil && *patch.ClientCidr != gateway.ClientCidr {
@@ -425,16 +499,16 @@ func (a *VpnGatewayAdmin) Update(ctx context.Context, gateway *model.VpnGateway,
 		return
 	}
 	// A gateway in error is re-pushed by any PATCH: it goes back to pending and the ready callbacks settle
-	// it again, which is the way out of error. Pushing needs the VRRP pair: before the set_vrrp_ip callbacks
-	// chose the nodes, VpnGatewayVrrpReady pushes whatever is stored by then
+	// it again, which is the way out of error. Pushing needs the VRRP nodes (vpnGatewayPlaced): before the
+	// set_vrrp_ip callbacks chose them, VpnGatewayVrrpReady pushes whatever is stored by then
 	if gateway.Status == model.VpnGatewayStatusError {
 		redispatch = true
 	}
 	if redispatch && updated.Status != model.VpnGatewayStatusDeleting {
 		nodes, nerr := vpnGatewayVrrpNodes(ctx, updated)
-		if nerr == nil && len(nodes) == 2 {
+		if nerr == nil && vpnGatewayPlaced(updated, nodes) {
 			if updated.Status == model.VpnGatewayStatusError {
-				if err = db.Model(&model.VpnGateway{Model: model.Model{ID: updated.ID}}).Update("status", model.VpnGatewayStatusPending).Error; err != nil {
+				if err = vpnSetStatus(ctx, updated.ID, model.VpnGatewayStatusPending, ""); err != nil {
 					return
 				}
 				updated.Status = model.VpnGatewayStatusPending
@@ -444,6 +518,134 @@ func (a *VpnGatewayAdmin) Update(ctx context.Context, gateway *model.VpnGateway,
 			}
 		}
 	}
+	return
+}
+
+// vpnAddableEndpoint is the public address a gateway can still take: the second floating IP of an
+// active_standby gateway, the client VPN floating IP of an active_active one
+func vpnAddableEndpoint(gateway *model.VpnGateway) string {
+	if VpnIsActiveActive(gateway) {
+		return model.VpnEndpointVip1
+	}
+	return model.VpnEndpointVip2
+}
+
+// AddPublicIp allocates the address vpnAddableEndpoint names and pushes the gateway again, so that
+// keepalived holds it (or, for the client VPN of an active_active gateway, starts holding it)
+func (a *VpnGatewayAdmin) AddPublicIp(ctx context.Context, gateway *model.VpnGateway, params *VpnPublicIpParams) (updated *model.VpnGateway, err error) {
+	memberShip := GetMemberShip(ctx)
+	if !memberShip.CheckResourceOrg(model.OrgWriter, gateway.Owner) {
+		err = NewCLError(ErrPermissionDenied, "Not authorized to update the VPN gateway", nil)
+		return
+	}
+	if err = vpnAddressChangeAllowed(gateway); err != nil {
+		return
+	}
+	endpoint := vpnAddableEndpoint(gateway)
+	fips := vpnEndpointFips(gateway)
+	if fips[endpoint] != nil {
+		err = NewCLError(ErrInvalidParameter, "The gateway already has all the public addresses it can use", nil)
+		return
+	}
+	ctx, db, newTransaction := StartTransaction(ctx)
+	defer func() {
+		if newTransaction {
+			EndTransaction(ctx, err)
+		}
+	}()
+	inbound, outbound := int32(0), int32(0)
+	for _, f := range gateway.FloatingIps {
+		inbound, outbound = f.Inbound, f.Outbound
+		break
+	}
+	allocated, err := (&FloatingIpAdminService{}).Create(ctx, nil, params.Subnets, params.Address, gateway.Name, inbound, outbound, 1, nil, nil, nil)
+	if err != nil {
+		return
+	}
+	for _, fip := range allocated {
+		if err = db.Model(&model.FloatingIp{Model: model.Model{ID: fip.ID}}).Updates(map[string]interface{}{
+			"vpn_gateway_id": gateway.ID, "router_id": gateway.RouterID, "type": string(PublicVpnGateway), "vpn_endpoint": endpoint}).Error; err != nil {
+			err = NewCLError(ErrVpnGatewayUpdateFailed, "Failed to attach the public address", err)
+			return
+		}
+	}
+	return vpnRepushAfterAddressChange(ctx, gateway.ID)
+}
+
+// RemovePublicIp releases the address vpnAddableEndpoint names, once nothing uses it: no tunnel on vip2, no
+// client VPN on the vip1 of an active_active gateway. The first address of a gateway cannot be removed.
+func (a *VpnGatewayAdmin) RemovePublicIp(ctx context.Context, gateway *model.VpnGateway, endpoint string) (updated *model.VpnGateway, err error) {
+	memberShip := GetMemberShip(ctx)
+	if !memberShip.CheckResourceOrg(model.OrgWriter, gateway.Owner) {
+		err = NewCLError(ErrPermissionDenied, "Not authorized to update the VPN gateway", nil)
+		return
+	}
+	if err = vpnAddressChangeAllowed(gateway); err != nil {
+		return
+	}
+	if endpoint != vpnAddableEndpoint(gateway) {
+		err = NewCLError(ErrInvalidParameter, "This public address cannot be removed from the gateway", nil)
+		return
+	}
+	fip := vpnEndpointFips(gateway)[endpoint]
+	if fip == nil {
+		err = NewCLError(ErrInvalidParameter, "The gateway has no such public address", nil)
+		return
+	}
+	for _, conn := range gateway.Connections {
+		for _, t := range conn.Tunnels {
+			if t.Endpoint == endpoint {
+				err = NewCLError(ErrVpnGatewayInUse, fmt.Sprintf("Connection %s still has a tunnel on this address", conn.Name), nil)
+				return
+			}
+		}
+	}
+	if VpnIsActiveActive(gateway) && gateway.ClientEnabled {
+		err = NewCLError(ErrVpnGatewayInUse, "Disable the client VPN before removing its address", nil)
+		return
+	}
+	ctx, db, newTransaction := StartTransaction(ctx)
+	defer func() {
+		if newTransaction {
+			EndTransaction(ctx, err)
+		}
+	}()
+	if err = db.Model(&model.FloatingIp{Model: model.Model{ID: fip.ID}}).Updates(map[string]interface{}{
+		"vpn_gateway_id": 0, "router_id": 0, "type": string(PublicFloating), "vpn_endpoint": ""}).Error; err != nil {
+		err = NewCLError(ErrVpnGatewayUpdateFailed, "Failed to detach the public address", err)
+		return
+	}
+	fip.VpnGatewayID, fip.RouterID, fip.Type = 0, 0, string(PublicFloating)
+	if err = (&FloatingIpAdminService{}).Delete(ctx, fip); err != nil {
+		return
+	}
+	return vpnRepushAfterAddressChange(ctx, gateway.ID)
+}
+
+// vpnAddressChangeAllowed refuses to add or remove a public address unless the gateway is available or in
+// error: the change is pushed to the nodes right away (vpnRepushAfterAddressChange), which is skipped while
+// the gateway is being built or deleted, and nothing would push it later. The nodes would keep the old
+// addresses while the database has the new ones, and a released address could be handed out elsewhere.
+func vpnAddressChangeAllowed(gateway *model.VpnGateway) error {
+	if gateway.Status == model.VpnGatewayStatusAvailable || gateway.Status == model.VpnGatewayStatusError {
+		return nil
+	}
+	return NewCLError(ErrVpnGatewayNotReady, "Change the public addresses once the gateway is available", nil)
+}
+
+// vpnRepushAfterAddressChange reloads a gateway whose public addresses changed and pushes it to its nodes
+// (create_vpn_gateway.sh drops an address that is gone together with its rules)
+func vpnRepushAfterAddressChange(ctx context.Context, gatewayID int64) (updated *model.VpnGateway, err error) {
+	if updated, err = loadVpnGateway(ctx, gatewayID); err != nil {
+		return
+	}
+	if updated.Status != model.VpnGatewayStatusAvailable && updated.Status != model.VpnGatewayStatusError {
+		return
+	}
+	if nodes, nerr := vpnGatewayVrrpNodes(ctx, updated); nerr != nil || !vpnGatewayPlaced(updated, nodes) {
+		return
+	}
+	err = dispatchVpnAll(ctx, updated, -1)
 	return
 }
 
@@ -458,10 +660,13 @@ func vpnSetGatewayDisabled(ctx context.Context, gateway *model.VpnGateway, disab
 	if disabled {
 		status = model.VpnConnectionStatusDisabled
 	}
-	// The BGP snapshot goes too: the page reads the neighbor state from it
-	updates := map[string]interface{}{"status": status, "established_at": nil, "bgp_state": "", "bgp_status": "", "bgp_reported_at": nil}
-	if err = db.Model(&model.VpnConnection{}).Where("vpn_gateway_id = ?", gateway.ID).Updates(updates).Error; err != nil {
+	if err = db.Model(&model.VpnConnection{}).Where("vpn_gateway_id = ?", gateway.ID).Update("status", status).Error; err != nil {
 		return NewCLError(ErrVpnGatewayUpdateFailed, "Failed to update the connections of the VPN gateway", err)
+	}
+	// The BGP snapshot goes too: the page reads the neighbor state from it
+	updates := map[string]interface{}{"status": status, "established_at": nil, "bgp_state": "", "bgp_status": "", "bgp_reported_at": nil, "bfd_state": ""}
+	if err = db.Model(&model.VpnTunnel{}).Where("vpn_gateway_id = ?", gateway.ID).Updates(updates).Error; err != nil {
+		return NewCLError(ErrVpnGatewayUpdateFailed, "Failed to update the tunnels of the VPN gateway", err)
 	}
 	if disabled {
 		now := time.Now()
@@ -469,10 +674,18 @@ func vpnSetGatewayDisabled(ctx context.Context, gateway *model.VpnGateway, disab
 			if conn.Status == model.VpnConnectionStatusDown {
 				NotifyVpnConnectionState(ctx, gateway, conn, true, now)
 			}
+			for _, t := range conn.Tunnels {
+				if len(conn.Tunnels) > 1 && t.Status == model.VpnConnectionStatusDown {
+					NotifyVpnTunnelState(ctx, gateway, conn, t, true, now)
+				}
+			}
 		}
 	}
 	for _, conn := range gateway.Connections {
-		conn.Status, conn.EstablishedAt, conn.BgpState, conn.BgpStatus, conn.BgpReportedAt = status, nil, "", "", nil
+		conn.Status = status
+		for _, t := range conn.Tunnels {
+			t.Status, t.EstablishedAt, t.BgpState, t.BgpStatus, t.BgpReportedAt, t.BfdState = status, nil, "", "", nil, ""
+		}
 	}
 	gateway.Disabled = disabled
 	return
@@ -568,6 +781,11 @@ func (a *VpnGatewayAdmin) Delete(ctx context.Context, gateway *model.VpnGateway)
 			return
 		}
 	}
+	// The tunnels of the connections go with them, as when a single connection is deleted
+	if err = db.Where("vpn_gateway_id = ?", gateway.ID).Delete(&model.VpnTunnel{}).Error; err != nil {
+		err = NewCLError(ErrVpnGatewayDeleteFailed, "Failed to delete VPN tunnels", err)
+		return
+	}
 	if err = db.Where("vpn_gateway_id = ?", gateway.ID).Delete(&model.VpnRemotePrefix{}).Error; err != nil {
 		err = NewCLError(ErrDatabaseError, "Failed to clear VPN prefixes", err)
 		return
@@ -595,6 +813,9 @@ func (a *VpnGatewayAdmin) Delete(ctx context.Context, gateway *model.VpnGateway)
 	}
 	if err = softDeleteRenamed(ctx, &model.VpnGateway{}, gateway.ID, gateway.Name, gateway.CreatedAt); err != nil {
 		return
+	}
+	for _, conn := range gateway.Connections {
+		resolveVpnAlarmsOf(ctx, gateway, conn, conn.Tunnels, true)
 	}
 	return
 }
@@ -632,7 +853,88 @@ func VpnGatewayVrrpReady(ctx context.Context, vrrpInstanceID int64) (err error) 
 		// Recorded on the gateway and swallowed: returning it would roll the caller's transaction back,
 		// together with the BACKUP interface's node and this very marker, leaving the gateway pending forever
 		logger.Ctx(ctx).Errorf("Failed to dispatch VPN gateway %d after vrrp ready: %v", gateway.ID, err)
-		err = db.Model(&model.VpnGateway{Model: model.Model{ID: gateway.ID}}).Update("status", model.VpnGatewayStatusError).Error
+		err = vpnSetStatus(ctx, gateway.ID, model.VpnGatewayStatusError, fmt.Sprintf("Failed to push the gateway to its nodes: %v", err))
+	}
+	return
+}
+
+// vpnSetStatus changes the status of a gateway together with the reason shown next to it: set for
+// error, empty (cleared) for every other status
+func vpnSetStatus(ctx context.Context, gatewayID int64, status, reason string) error {
+	_, db := GetContextDB(ctx)
+	if status != model.VpnGatewayStatusError {
+		reason = ""
+	}
+	if r := []rune(reason); len(r) > 255 {
+		reason = string(r[:255])
+	}
+	return db.Model(&model.VpnGateway{Model: model.Model{ID: gatewayID}}).Updates(map[string]interface{}{
+		"status": status, "status_reason": reason}).Error
+}
+
+// vpnGatewayOfVrrp returns the gateway built on a VRRP instance, nil when the instance belongs to a load balancer
+func vpnGatewayOfVrrp(ctx context.Context, vrrpInstanceID int64) (gateway *model.VpnGateway, err error) {
+	_, db := GetContextDB(ctx)
+	gateway = &model.VpnGateway{}
+	if err = db.Where("vrrp_instance_id = ?", vrrpInstanceID).Take(gateway).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return
+}
+
+// VpnGatewayBackupUnplaced is called when the BACKUP interface of a VRRP instance found no node: its zone
+// has no other available node, or none of them is connected. An active_standby gateway still being built
+// goes on with its MASTER node alone, without high availability; the watchdog gives it the BACKUP node once
+// the zone has one (PlaceMissingVrrpBackups). An active_active gateway cannot run on one node.
+func VpnGatewayBackupUnplaced(ctx context.Context, vrrpInstanceID int64, why string) (err error) {
+	gateway, err := vpnGatewayOfVrrp(ctx, vrrpInstanceID)
+	if err != nil || gateway == nil {
+		return
+	}
+	if VpnIsActiveActive(gateway) {
+		return vpnSetStatus(ctx, gateway.ID, model.VpnGatewayStatusError, "An active-active gateway needs two nodes: "+why)
+	}
+	// A failed attempt of the watchdog on a gateway already running on one node changes nothing
+	if gateway.Status != model.VpnGatewayStatusPending {
+		logger.Ctx(ctx).Warningf("VPN gateway %d still has a single node: %s", gateway.ID, why)
+		return
+	}
+	logger.Ctx(ctx).Warningf("VPN gateway %d runs on a single node, without high availability: %s", gateway.ID, why)
+	return VpnGatewayVrrpReady(ctx, vrrpInstanceID)
+}
+
+// VpnGatewayUnplaced is called when not even the MASTER interface of a VRRP instance found a node
+func VpnGatewayUnplaced(ctx context.Context, vrrpInstanceID int64, why string) (err error) {
+	gateway, err := vpnGatewayOfVrrp(ctx, vrrpInstanceID)
+	if err != nil || gateway == nil || gateway.Status != model.VpnGatewayStatusPending {
+		return
+	}
+	return vpnSetStatus(ctx, gateway.ID, model.VpnGatewayStatusError, "No node for the gateway: "+why)
+}
+
+// vpnGatewayPlaced tells whether the VRRP nodes of a gateway are known, so that it can be pushed: both
+// for an active_active gateway, at least one for an active_standby gateway, which runs on a single node
+// when its zone has no second one
+func vpnGatewayPlaced(gateway *model.VpnGateway, nodes []int32) bool {
+	if VpnIsActiveActive(gateway) {
+		return len(nodes) == 2
+	}
+	return len(nodes) >= 1
+}
+
+// vpnZoneNodeCount counts the nodes a VRRP interface of the zone can be placed on, with the conditions of
+// GetHyperGroup (skipHyper excluded, -1 for none)
+func vpnZoneNodeCount(ctx context.Context, zoneID int64, skipHyper int32) (count int64, err error) {
+	_, db := GetContextDB(ctx)
+	query := db.Model(&model.Hyper{}).Where("status = 1 AND hostid >= 0 AND hostid <> ?", skipHyper)
+	if zoneID > 0 {
+		query = query.Where("zone_id = ?", zoneID)
+	}
+	if err = query.Count(&count).Error; err != nil {
+		err = NewCLError(ErrDatabaseError, "Failed to count the compute nodes of the zone", err)
 	}
 	return
 }
@@ -673,7 +975,6 @@ func VpnGatewayReady(ctx context.Context, gatewayID int64, hostid int32, state s
 		logger.Ctx(ctx).Warningf("VPN gateway %d state reported by unexpected node %d", gatewayID, hostid)
 		return
 	}
-	ctx, db := GetContextDB(ctx)
 	status := model.VpnGatewayStatusAvailable
 	if state != "ready" {
 		status = model.VpnGatewayStatusError
@@ -685,7 +986,17 @@ func VpnGatewayReady(ctx context.Context, gatewayID int64, hostid int32, state s
 	if status == model.VpnGatewayStatusAvailable && gateway.Status == model.VpnGatewayStatusError {
 		return
 	}
-	return db.Model(&model.VpnGateway{Model: model.Model{ID: gatewayID}}).Update("status", status).Error
+	return vpnSetStatus(ctx, gatewayID, status, fmt.Sprintf("Node %s failed to build the gateway (see its cloudlet log)", vpnHostName(ctx, hostid)))
+}
+
+// vpnHostName is the host name of a node for messages, its ID when it cannot be found
+func vpnHostName(ctx context.Context, hostid int32) string {
+	_, db := GetContextDB(ctx)
+	hyper := &model.Hyper{}
+	if db.Select("hostname").Where("hostid = ?", hostid).Take(hyper).Error != nil || hyper.Hostname == "" {
+		return fmt.Sprint(hostid)
+	}
+	return hyper.Hostname
 }
 
 // VpnGatewayMaster records which node holds the floating IP and, when it changed, re-points the routes
@@ -703,18 +1014,41 @@ func VpnGatewayMaster(ctx context.Context, gatewayID int64, hostid int32) (err e
 	ctx, db := GetContextDB(ctx)
 	now := time.Now()
 	if gateway.MasterHyper == hostid {
+		// A claim that left the node before its own release but is handled after it (the heartbeat and the
+		// fast path report concurrently, and cland forwards callbacks in parallel) must not wipe the release
+		// and refresh the claim time: the peer's takeover would wait for the split-brain window. A node that
+		// really holds the address again claims it at every heartbeat of its first minute.
+		if vpnReleasedRecently(gatewayID, hostid) {
+			logger.Ctx(ctx).Infof("VPN gateway %d: ignoring a master claim of node %d sent before it released the address", gatewayID, hostid)
+			return
+		}
+		vpnForgetClaim(gatewayID)
 		return db.Model(&model.VpnGateway{Model: model.Model{ID: gatewayID}}).Update("master_reported_at", now).Error
 	}
 	if gateway.MasterHyper >= 0 && gateway.MasterReportedAt != nil && now.Sub(*gateway.MasterReportedAt) < vpnMasterFlapWindow {
+		// The window guards against a split brain; a second, independent witness that the old master is
+		// gone lets the takeover through at once (vpn-gateway-plan.md §8.2, F4)
+		if reason := vpnOldMasterGone(gateway.ID, gateway.MasterHyper, *gateway.MasterReportedAt); reason != "" {
+			logger.Ctx(ctx).Infof("VPN gateway %d: node %d takes over from node %d at once (%s)", gatewayID, hostid, gateway.MasterHyper, reason)
+			return vpnAcceptMaster(ctx, gateway, hostid)
+		}
+		vpnRecordClaim(gatewayID, hostid)
 		logger.Ctx(ctx).Errorf("VPN gateway %d: node %d claims master while node %d reported %s ago, possible split brain, keeping routes",
 			gatewayID, hostid, gateway.MasterHyper, now.Sub(*gateway.MasterReportedAt).Round(time.Second))
 		return
 	}
-	logger.Ctx(ctx).Infof("VPN gateway %d master changed from %d to %d", gatewayID, gateway.MasterHyper, hostid)
-	if err = db.Model(&model.VpnGateway{Model: model.Model{ID: gatewayID}}).Updates(map[string]interface{}{
-		"master_hyper": hostid, "master_reported_at": now}).Error; err != nil {
+	return vpnAcceptMaster(ctx, gateway, hostid)
+}
+
+// vpnAcceptMaster records the new master and re-points the routes of the other nodes
+func vpnAcceptMaster(ctx context.Context, gateway *model.VpnGateway, hostid int32) (err error) {
+	ctx, db := GetContextDB(ctx)
+	logger.Ctx(ctx).Infof("VPN gateway %d master changed from %d to %d", gateway.ID, gateway.MasterHyper, hostid)
+	if err = db.Model(&model.VpnGateway{Model: model.Model{ID: gateway.ID}}).Updates(map[string]interface{}{
+		"master_hyper": hostid, "master_reported_at": time.Now()}).Error; err != nil {
 		return
 	}
+	vpnForgetClaim(gateway.ID)
 	gateway.MasterHyper = hostid
 	if gateway.Status == model.VpnGatewayStatusAvailable {
 		err = dispatchVpnRoutes(ctx, gateway, -1)

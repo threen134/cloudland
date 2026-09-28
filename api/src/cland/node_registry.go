@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"sort"
 	"sync"
+	"sync/atomic"
 
 	pb "api/src/proto/cloudlandpb"
 )
@@ -26,6 +27,8 @@ type ConnectedNode struct {
 	Cancel    context.CancelFunc
 	sendMu    sync.Mutex // serialize Stream.Send() calls
 	closed    bool
+	lastSeen  atomic.Int64 // unix nanoseconds of the last message from the node (LivenessMonitor)
+	alive     atomic.Bool  // the node sends AliveCallback messages
 }
 
 // Send serializes writes to the gRPC stream (Send is not goroutine-safe).

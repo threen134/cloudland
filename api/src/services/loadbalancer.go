@@ -10,6 +10,7 @@ package services
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
@@ -207,6 +208,112 @@ func CreateVrrpInstance(ctx context.Context, name string, router *model.Router, 
 		return
 	}
 	return
+}
+
+// PlaceVrrpBackup sends set_vrrp_ip.sh for the BACKUP interface of a VRRP instance to a node of its zone
+// other than the MASTER one; the node's callback records where it landed. The error of GetHyperGroup
+// (ErrNoQualifiedHypervisor when the zone has no other available node) is returned as is.
+func PlaceVrrpBackup(ctx context.Context, vrrpInstance *model.VrrpInstance, master, backup *model.Interface) (err error) {
+	hyperGroup, err := GetHyperGroup(ctx, vrrpInstance.ZoneID, master.Hyper)
+	if err != nil {
+		return
+	}
+	control := "select=" + hyperGroup
+	command := fmt.Sprintf("/opt/cloudland/scripts/backend/set_vrrp_ip.sh '%d' '%d' '%d' '%s' '%s' '%s' '%s' 'BACKUP' 'true'", vrrpInstance.RouterID, vrrpInstance.ID, vrrpInstance.VrrpSubnet.Vlan, ShellEscape(backup.MacAddr), ShellEscape(backup.Address.Address), ShellEscape(master.MacAddr), ShellEscape(master.Address.Address))
+	return HyperExecute(ctx, control, command)
+}
+
+// Spacing of the attempts to give a single-node VRRP instance its BACKUP node, across all clapi replicas (it
+// is kept on the interface row): the set_vrrp_ip.sh callback of an attempt normally comes back within seconds
+const vrrpBackupRetry = 5 * time.Minute
+
+// PlaceMissingVrrpBackups gives a VRRP instance running on its MASTER node alone (its zone had no second
+// available node when it was built, or none was connected) its BACKUP node once the zone has one. It covers
+// the available load balancers and active_standby VPN gateways; set_vrrp_ip.sh goes to another node of the
+// zone, and its callback pushes the load balancer or the gateway to the pair (LoadBalancerBackupPlaced,
+// VpnGatewayVrrpReady). The node already running it only reloads the same configuration, keepalived there
+// stays master (nopreempt). Run by the VPN watchdog every 20 s; usually the first query finds nothing.
+func PlaceMissingVrrpBackups(ctx context.Context) {
+	ctx, db := GetContextDB(ctx)
+	missing := []int64{}
+	if err := db.Model(&model.Interface{}).Where("type = 'vrrp' AND name = 'BACKUP' AND hyper < 0").Pluck("device", &missing).Error; err != nil {
+		logger.Ctx(ctx).Errorf("Failed to query the VRRP interfaces without a node: %v", err)
+		return
+	}
+	if len(missing) == 0 {
+		return
+	}
+	// Only instances whose owner is up and running: a load balancer or gateway still being built has no
+	// BACKUP node for a moment too, and an active_active gateway does not run on one node
+	owned, gatewayOwned := []int64{}, []int64{}
+	if err := db.Model(&model.LoadBalancer{}).Where("vrrp_instance_id IN ? AND status = ?", missing, "available").Pluck("vrrp_instance_id", &owned).Error; err != nil {
+		logger.Ctx(ctx).Errorf("Failed to query the load balancers without a BACKUP node: %v", err)
+		return
+	}
+	if err := db.Model(&model.VpnGateway{}).Where("vrrp_instance_id IN ? AND status = ? AND (ha_mode = ? OR ha_mode = '' OR ha_mode IS NULL)",
+		missing, model.VpnGatewayStatusAvailable, model.VpnHaModeActiveStandby).Pluck("vrrp_instance_id", &gatewayOwned).Error; err != nil {
+		logger.Ctx(ctx).Errorf("Failed to query the VPN gateways without a BACKUP node: %v", err)
+		return
+	}
+	owned = append(owned, gatewayOwned...)
+	if len(owned) == 0 {
+		return
+	}
+	instances := []*model.VrrpInstance{}
+	if err := db.Preload("VrrpSubnet").Where("id IN ?", owned).Find(&instances).Error; err != nil {
+		logger.Ctx(ctx).Errorf("Failed to query the VRRP instances without a BACKUP node: %v", err)
+		return
+	}
+	for _, instance := range instances {
+		if instance.VrrpSubnet == nil {
+			continue
+		}
+		master, backup, err := GetVrrpInterfaces(ctx, instance.ID)
+		if err != nil || master.Hyper < 0 || backup.Hyper >= 0 || master.Address == nil || backup.Address == nil {
+			continue
+		}
+		// Nothing to do while the zone still has no other available node
+		if others, cerr := vpnZoneNodeCount(ctx, instance.ZoneID, master.Hyper); cerr != nil || others == 0 {
+			continue
+		}
+		// The attempt is claimed in the database, not in memory: every clapi replica runs the watchdog, and
+		// two placements of the same BACKUP interface could land on two different nodes, both building its
+		// address and MAC. The claim is the interface row's updated_at: one attempt per vrrpBackupRetry across
+		// all replicas, and the conditional update lets only one of two concurrent replicas through.
+		now := time.Now()
+		claim := db.Model(&model.Interface{}).Where("id = ? AND hyper < 0 AND updated_at < ?", backup.ID, now.Add(-vrrpBackupRetry)).
+			Update("updated_at", now)
+		if claim.Error != nil || claim.RowsAffected == 0 {
+			continue
+		}
+		logger.Ctx(ctx).Infof("VRRP instance %d runs on node %d alone, placing its BACKUP node in zone %d", instance.ID, master.Hyper, instance.ZoneID)
+		if err = PlaceVrrpBackup(ctx, instance, master, backup); err != nil {
+			logger.Ctx(ctx).Errorf("Failed to place the BACKUP node of VRRP instance %d: %v", instance.ID, err)
+		}
+	}
+}
+
+// LoadBalancerBackupPlaced pushes a load balancer to both of its nodes once its BACKUP node came late
+// (PlaceMissingVrrpBackups). Without floating IPs there is nothing to push: keepalived and haproxy only
+// start with the first floating IP, which pushes to every node then (CreateVrrpConf).
+func LoadBalancerBackupPlaced(ctx context.Context, vrrpInstanceID int64) (err error) {
+	ctx, db := GetContextDB(ctx)
+	loadBalancer := &model.LoadBalancer{}
+	if err = db.Preload("FloatingIps").Preload("VrrpInstance").Preload("VrrpInstance.VrrpSubnet").Preload("Listeners", dbs.OrderByID).
+		Preload("Listeners.Backends", dbs.OrderByID).Where("vrrp_instance_id = ?", vrrpInstanceID).Take(loadBalancer).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil
+		}
+		return
+	}
+	if loadBalancer.Status != "available" || len(loadBalancer.FloatingIps) == 0 {
+		return nil
+	}
+	logger.Ctx(ctx).Infof("Load balancer %d has its BACKUP node now, pushing it to both nodes", loadBalancer.ID)
+	if err = CreateVrrpConf(ctx, loadBalancer); err != nil {
+		return
+	}
+	return backendAdmin.CreateHaproxyConf(ctx, nil, loadBalancer)
 }
 
 func (a *LoadBalancerAdmin) Create(ctx context.Context, name, description string, router *model.Router, zone *model.Zone) (loadBalancer *model.LoadBalancer, err error) {

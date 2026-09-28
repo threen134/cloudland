@@ -221,6 +221,7 @@ const (
 	ErrVpnGatewayNotReady        ErrCode = 132006 // the gateway is still being built or is in error
 	ErrVpnGatewayInUse           ErrCode = 132007 // connections or clients still exist
 	ErrVpnGatewayDisabled        ErrCode = 132008 // the gateway is disabled
+	ErrVpnGatewayNeedsNodes      ErrCode = 132009 // the zone has too few available compute nodes for the gateway
 	ErrVpnConnectionNotFound     ErrCode = 132011
 	ErrVpnConnectionCreateFailed ErrCode = 132012
 	ErrVpnConnectionUpdateFailed ErrCode = 132013
@@ -304,7 +305,7 @@ func (c ErrCode) ToHTTPStatus() int {
 		return 404
 	case c == ErrVpnGatewayExists || c == ErrVpnGatewayInUse || c == ErrVpnClientPoolExhausted || c == ErrRouterHasVpnGateway:
 		return 409
-	case c == ErrVpnCidrConflict || c == ErrVpnGatewayNotReady || c == ErrVpnGatewayDisabled:
+	case c == ErrVpnCidrConflict || c == ErrVpnGatewayNotReady || c == ErrVpnGatewayDisabled || c == ErrVpnGatewayNeedsNodes:
 		return 400
 	case c == ErrVpnSecretUnavailable:
 		return 503

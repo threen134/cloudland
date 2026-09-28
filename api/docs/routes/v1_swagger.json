@@ -7338,7 +7338,7 @@
                 }
             },
             "post": {
-                "description": "create a VPN gateway in a VPC with a public address",
+                "description": "create a VPN gateway in a VPC with a public address. Its two nodes come from the zone: an active_active gateway needs two available compute nodes there; an active_standby gateway runs on a single node, without high availability, when the zone has only one, and gets its second node once the zone has another (error code 132009 when the zone has too few nodes)",
                 "consumes": [
                     "application/json"
                 ],
@@ -7368,7 +7368,7 @@
                         }
                     },
                     "400": {
-                        "description": "Bad request",
+                        "description": "Bad request, or too few available compute nodes in the zone (132009)",
                         "schema": {
                             "$ref": "#/definitions/common.APIError"
                         }
@@ -7384,7 +7384,7 @@
         },
         "/vpn_gateways/{id}": {
             "get": {
-                "description": "get a VPN gateway with its connections, clients and routed prefixes",
+                "description": "get a VPN gateway with its connections, clients and routed prefixes; the connection keys (psk, bgp_password) are included for members with write permission",
                 "consumes": [
                     "application/json"
                 ],
@@ -7675,7 +7675,7 @@
         },
         "/vpn_gateways/{id}/clients/{client_id}/config": {
             "get": {
-                "description": "WireGuard configuration of a client without the private key",
+                "description": "WireGuard configuration of a client without the private key; the preshared key is filled in for members with write permission",
                 "consumes": [
                     "application/json"
                 ],
@@ -7710,7 +7710,7 @@
         },
         "/vpn_gateways/{id}/connections": {
             "get": {
-                "description": "list the site-to-site connections of a VPN gateway",
+                "description": "list the site-to-site connections of a VPN gateway; psk and bgp_password are included for members with write permission",
                 "consumes": [
                     "application/json"
                 ],
@@ -7783,7 +7783,7 @@
         },
         "/vpn_gateways/{id}/connections/{conn_id}": {
             "get": {
-                "description": "get a site-to-site connection",
+                "description": "get a site-to-site connection; psk and bgp_password are included for members with write permission",
                 "consumes": [
                     "application/json"
                 ],
@@ -7892,7 +7892,7 @@
         },
         "/vpn_gateways/{id}/connections/{conn_id}/restart": {
             "post": {
-                "description": "terminate and re-initiate the IKE SA of a connection",
+                "description": "terminate and re-initiate the IKE SAs of a connection: every tunnel, or only the one in the given slot",
                 "consumes": [
                     "application/json"
                 ],
@@ -7903,12 +7903,125 @@
                     "VPN Gateway"
                 ],
                 "summary": "restart a VPN connection",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Slot of the tunnel to restart (1 to 4); all tunnels when omitted",
+                        "name": "tunnel",
+                        "in": "query"
+                    }
+                ],
                 "responses": {
                     "200": {
                         "description": "OK",
                         "schema": {
                             "$ref": "#/definitions/apis.VpnConnectionResponse"
                         }
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            }
+        },
+        "/vpn_gateways/{id}/public_ips": {
+            "post": {
+                "description": "give an active-standby gateway its second floating IP (vip2), or an active-active gateway the floating IP of its client VPN (vip1); see addable_endpoint of the gateway",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "VPN Gateway"
+                ],
+                "summary": "add a public address to a VPN gateway",
+                "parameters": [
+                    {
+                        "description": "public subnet and / or address, both optional",
+                        "name": "message",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/apis.VpnPublicIpPayload"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apis.VpnGatewayResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            }
+        },
+        "/vpn_gateways/{id}/public_ips/{endpoint}": {
+            "get": {
+                "description": "get one public address of a VPN gateway by endpoint (vip1, vip2, node1, node2)",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "VPN Gateway"
+                ],
+                "summary": "get a public address of a VPN gateway",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apis.VpnPublicIpResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "description": "release the second floating IP of an active-standby gateway (no tunnel may use it) or the client VPN floating IP of an active-active gateway (client VPN disabled)",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "VPN Gateway"
+                ],
+                "summary": "remove a public address from a VPN gateway",
+                "responses": {
+                    "204": {
+                        "description": "No Content"
                     },
                     "400": {
                         "description": "Bad request",
@@ -7963,6 +8076,12 @@
                         "name": "step",
                         "in": "query",
                         "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "connection (default): one series per connection; tunnel: one per tunnel",
+                        "name": "by",
+                        "in": "query"
                     }
                 ],
                 "responses": {
@@ -10663,6 +10782,10 @@
                     "description": "OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to\nrelease quota only when the caller's org actually owns the deleted resource",
                     "type": "string"
                 },
+                "single_node": {
+                    "description": "Available on its MASTER node alone, without high availability: its zone had no second available node.\nThe BACKUP node is added once the zone has one",
+                    "type": "boolean"
+                },
                 "status": {
                     "type": "string"
                 },
@@ -12138,6 +12261,24 @@
         "apis.VpnConnectionPatchPayload": {
             "type": "object",
             "properties": {
+                "as_path_prepend": {
+                    "type": "integer",
+                    "maximum": 10,
+                    "minimum": 0
+                },
+                "bfd_enabled": {
+                    "type": "boolean"
+                },
+                "bfd_interval": {
+                    "type": "integer",
+                    "maximum": 60000,
+                    "minimum": 300
+                },
+                "bfd_multiplier": {
+                    "type": "integer",
+                    "maximum": 50,
+                    "minimum": 2
+                },
                 "bgp_hold": {
                     "type": "integer",
                     "maximum": 10800,
@@ -12245,6 +12386,13 @@
                         "bgp"
                     ]
                 },
+                "traffic_policy": {
+                    "type": "string",
+                    "enum": [
+                        "preferred",
+                        "ecmp"
+                    ]
+                },
                 "tunnel_local_ip": {
                     "type": "string",
                     "maxLength": 64
@@ -12252,6 +12400,13 @@
                 "tunnel_peer_ip": {
                     "type": "string",
                     "maxLength": 64
+                },
+                "tunnels": {
+                    "type": "array",
+                    "maxItems": 4,
+                    "items": {
+                        "$ref": "#/definitions/apis.VpnTunnelPayload"
+                    }
                 }
             }
         },
@@ -12261,6 +12416,24 @@
                 "name"
             ],
             "properties": {
+                "as_path_prepend": {
+                    "type": "integer",
+                    "maximum": 10,
+                    "minimum": 0
+                },
+                "bfd_enabled": {
+                    "type": "boolean"
+                },
+                "bfd_interval": {
+                    "type": "integer",
+                    "maximum": 60000,
+                    "minimum": 300
+                },
+                "bfd_multiplier": {
+                    "type": "integer",
+                    "maximum": 50,
+                    "minimum": 2
+                },
                 "bgp_hold": {
                     "type": "integer",
                     "maximum": 10800,
@@ -12367,22 +12540,46 @@
                         "bgp"
                     ]
                 },
+                "traffic_policy": {
+                    "description": "preferred (default): the primary tunnel carries the traffic; ecmp: every tunnel that is up shares it",
+                    "type": "string",
+                    "enum": [
+                        "preferred",
+                        "ecmp"
+                    ]
+                },
                 "tunnel_local_ip": {
                     "type": "string"
                 },
                 "tunnel_peer_ip": {
                     "type": "string"
+                },
+                "tunnels": {
+                    "type": "array",
+                    "maxItems": 4,
+                    "items": {
+                        "$ref": "#/definitions/apis.VpnTunnelPayload"
+                    }
                 }
             }
         },
         "apis.VpnConnectionResponse": {
             "type": "object",
             "properties": {
+                "as_path_prepend": {
+                    "type": "integer"
+                },
                 "auth_method": {
                     "type": "string"
                 },
-                "bgp": {
-                    "$ref": "#/definitions/services.VpnBgpReport"
+                "bfd_enabled": {
+                    "type": "boolean"
+                },
+                "bfd_interval": {
+                    "type": "integer"
+                },
+                "bfd_multiplier": {
+                    "type": "integer"
                 },
                 "bgp_hold": {
                     "type": "integer"
@@ -12390,16 +12587,18 @@
                 "bgp_keepalive": {
                     "type": "integer"
                 },
+                "bgp_password": {
+                    "type": "string"
+                },
                 "bgp_password_set": {
                     "type": "boolean"
                 },
-                "bgp_reported_at": {
-                    "type": "string"
-                },
                 "bytes_in": {
+                    "description": "sum over the tunnels",
                     "type": "integer"
                 },
                 "bytes_out": {
+                    "description": "sum over the tunnels",
                     "type": "integer"
                 },
                 "created_at": {
@@ -12426,14 +12625,8 @@
                 "esp_proposal": {
                     "type": "string"
                 },
-                "established_at": {
-                    "type": "string"
-                },
                 "id": {
                     "type": "string"
-                },
-                "if_id": {
-                    "type": "integer"
                 },
                 "ike_lifetime": {
                     "type": "integer"
@@ -12446,9 +12639,6 @@
                 },
                 "initiator": {
                     "type": "boolean"
-                },
-                "last_error": {
-                    "type": "string"
                 },
                 "local_asn": {
                     "type": "integer"
@@ -12475,16 +12665,14 @@
                 "peer_asn": {
                     "type": "integer"
                 },
+                "psk": {
+                    "description": "The keys themselves, only for members with write permission on the gateway (vpnSecretsVisible)",
+                    "type": "string"
+                },
                 "psk_set": {
                     "type": "boolean"
                 },
                 "remote_cidrs": {
-                    "type": "string"
-                },
-                "remote_gateway": {
-                    "type": "string"
-                },
-                "remote_id": {
                     "type": "string"
                 },
                 "remote_summary_cidrs": {
@@ -12494,13 +12682,18 @@
                     "type": "string"
                 },
                 "status": {
+                    "description": "pending, up, degraded (only a standby tunnel is up), down, disabled",
                     "type": "string"
                 },
-                "tunnel_local_ip": {
+                "traffic_policy": {
+                    "description": "preferred or ecmp",
                     "type": "string"
                 },
-                "tunnel_peer_ip": {
-                    "type": "string"
+                "tunnels": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/apis.VpnTunnelResponse"
+                    }
                 },
                 "updated_at": {
                     "type": "string"
@@ -12599,6 +12792,14 @@
                     "type": "string",
                     "maxLength": 255
                 },
+                "ha_mode": {
+                    "description": "active_standby (default): the VRRP master runs every tunnel from one or two floating IPs.\nactive_active: each of the two nodes runs its own tunnels from a fixed address, both carry traffic",
+                    "type": "string",
+                    "enum": [
+                        "active_standby",
+                        "active_active"
+                    ]
+                },
                 "inbound": {
                     "type": "integer",
                     "maximum": 20000,
@@ -12620,6 +12821,14 @@
                 "public_ip": {
                     "type": "string"
                 },
+                "public_ips": {
+                    "description": "active_standby: one or two entries (vip1, vip2). active_active: node1, node2 and, with client VPN, the\nclient floating IP; missing entries come from the subnet of the first one. public_subnet / public_ip\nabove are the short form of a single entry and are ignored when this is given",
+                    "type": "array",
+                    "maxItems": 3,
+                    "items": {
+                        "$ref": "#/definitions/apis.VpnPublicIpPayload"
+                    }
+                },
                 "public_subnet": {
                     "$ref": "#/definitions/common.BaseReference"
                 },
@@ -12636,6 +12845,10 @@
         "apis.VpnGatewayResponse": {
             "type": "object",
             "properties": {
+                "addable_endpoint": {
+                    "description": "The public address POST /vpn_gateways/{id}/public_ips would add (vip2, or vip1 for the client VPN of an\nactive_active gateway), empty when the gateway has it already",
+                    "type": "string"
+                },
                 "client_cidr": {
                     "type": "string"
                 },
@@ -12696,6 +12909,10 @@
                         "$ref": "#/definitions/apis.FloatingIpInfo"
                     }
                 },
+                "ha_mode": {
+                    "description": "active_standby or active_active",
+                    "type": "string"
+                },
                 "id": {
                     "type": "string"
                 },
@@ -12728,7 +12945,15 @@
                     "type": "string"
                 },
                 "public_ip": {
+                    "description": "vip1, or node1 on an active_active gateway without client VPN",
                     "type": "string"
+                },
+                "public_ips": {
+                    "description": "every address with its endpoint name",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/apis.VpnPublicIpInfo"
+                    }
                 },
                 "remote_prefixes": {
                     "type": "array",
@@ -12737,6 +12962,10 @@
                     }
                 },
                 "status": {
+                    "type": "string"
+                },
+                "status_reason": {
+                    "description": "why the gateway is in error; empty otherwise",
                     "type": "string"
                 },
                 "updated_at": {
@@ -12781,6 +13010,60 @@
                 }
             }
         },
+        "apis.VpnPublicIpInfo": {
+            "type": "object",
+            "properties": {
+                "address": {
+                    "type": "string"
+                },
+                "endpoint": {
+                    "description": "vip1 / vip2 (floating), node1 / node2 (fixed on one node of an active_active gateway)",
+                    "type": "string"
+                },
+                "hostid": {
+                    "description": "the node of a fixed address, -1 for a floating one",
+                    "type": "integer"
+                },
+                "hostname": {
+                    "description": "the node of a fixed address",
+                    "type": "string"
+                }
+            }
+        },
+        "apis.VpnPublicIpPayload": {
+            "type": "object",
+            "properties": {
+                "public_ip": {
+                    "type": "string"
+                },
+                "public_subnet": {
+                    "$ref": "#/definitions/common.BaseReference"
+                }
+            }
+        },
+        "apis.VpnPublicIpResponse": {
+            "type": "object",
+            "properties": {
+                "address": {
+                    "type": "string"
+                },
+                "endpoint": {
+                    "description": "vip1 / vip2 (floating), node1 / node2 (fixed on one node of an active_active gateway)",
+                    "type": "string"
+                },
+                "hostid": {
+                    "description": "the node of a fixed address, -1 for a floating one",
+                    "type": "integer"
+                },
+                "hostname": {
+                    "description": "the node of a fixed address",
+                    "type": "string"
+                },
+                "owner_uuid": {
+                    "type": "string"
+                }
+            }
+        },
         "apis.VpnTrafficResponse": {
             "type": "object",
             "properties": {
@@ -12816,6 +13099,10 @@
         "apis.VpnTrafficSeries": {
             "type": "object",
             "properties": {
+                "connection_id": {
+                    "description": "by=tunnel: the series is one tunnel (ID is the tunnel) of this connection, in this slot",
+                    "type": "string"
+                },
                 "id": {
                     "type": "string"
                 },
@@ -12835,6 +13122,124 @@
                     "items": {
                         "type": "number"
                     }
+                },
+                "slot": {
+                    "type": "integer"
+                }
+            }
+        },
+        "apis.VpnTunnelPayload": {
+            "type": "object",
+            "properties": {
+                "endpoint": {
+                    "type": "string",
+                    "enum": [
+                        "vip1",
+                        "vip2",
+                        "node1",
+                        "node2"
+                    ]
+                },
+                "priority": {
+                    "type": "string",
+                    "enum": [
+                        "primary",
+                        "standby"
+                    ]
+                },
+                "psk": {
+                    "type": "string",
+                    "maxLength": 128
+                },
+                "remote_gateway": {
+                    "type": "string"
+                },
+                "remote_id": {
+                    "type": "string",
+                    "maxLength": 128
+                },
+                "tunnel_local_ip": {
+                    "type": "string"
+                },
+                "tunnel_peer_ip": {
+                    "type": "string"
+                }
+            }
+        },
+        "apis.VpnTunnelResponse": {
+            "type": "object",
+            "properties": {
+                "bfd_state": {
+                    "type": "string"
+                },
+                "bgp": {
+                    "$ref": "#/definitions/services.VpnBgpReport"
+                },
+                "bgp_reported_at": {
+                    "type": "string"
+                },
+                "bytes_in": {
+                    "type": "integer"
+                },
+                "bytes_out": {
+                    "type": "integer"
+                },
+                "endpoint": {
+                    "description": "vip1 / vip2, or node1 / node2 on an active_active gateway",
+                    "type": "string"
+                },
+                "established_at": {
+                    "type": "string"
+                },
+                "hostid": {
+                    "description": "the node running it on an active_active gateway, -1 otherwise (the master)",
+                    "type": "integer"
+                },
+                "hostname": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "if_id": {
+                    "type": "integer"
+                },
+                "last_error": {
+                    "type": "string"
+                },
+                "priority": {
+                    "description": "primary or standby (every tunnel is primary with traffic_policy ecmp)",
+                    "type": "string"
+                },
+                "psk": {
+                    "description": "The tunnel-specific key, only for members with write permission on the gateway",
+                    "type": "string"
+                },
+                "psk_set": {
+                    "description": "a tunnel-specific key; otherwise the connection's",
+                    "type": "boolean"
+                },
+                "public_ip": {
+                    "description": "our address of this tunnel",
+                    "type": "string"
+                },
+                "remote_gateway": {
+                    "type": "string"
+                },
+                "remote_id": {
+                    "type": "string"
+                },
+                "slot": {
+                    "type": "integer"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "tunnel_local_ip": {
+                    "type": "string"
+                },
+                "tunnel_peer_ip": {
+                    "type": "string"
                 }
             }
         },
@@ -13196,6 +13601,10 @@
                     "items": {
                         "type": "string"
                     }
+                },
+                "bfd": {
+                    "description": "BFD session state (up, down, init) when BFD is on",
+                    "type": "string"
                 },
                 "name": {
                     "type": "string"

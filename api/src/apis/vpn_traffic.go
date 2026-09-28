@@ -16,6 +16,7 @@ import (
 	"time"
 
 	. "api/src/common"
+	"api/src/model"
 	"api/src/services"
 
 	"github.com/gin-gonic/gin"
@@ -36,6 +37,9 @@ type VpnTrafficSeries struct {
 	Name string     `json:"name"`
 	In   []*float64 `json:"in"`  // from the site / from the client
 	Out  []*float64 `json:"out"` // to the site / to the client
+	// by=tunnel: the series is one tunnel (ID is the tunnel) of this connection, in this slot
+	ConnectionID string `json:"connection_id,omitempty"`
+	Slot         int32  `json:"slot,omitempty"`
 }
 
 type VpnTrafficResponse struct {
@@ -55,6 +59,7 @@ type VpnTrafficResponse struct {
 // @Param   start query string true "Start, unix seconds"
 // @Param   end   query string true "End, unix seconds"
 // @Param   step  query string true "Resolution as a duration, e.g. 60s or 5m"
+// @Param   by    query string false "connection (default): one series per connection; tunnel: one per tunnel"
 // @Success 200 {object} VpnTrafficResponse
 // @Failure 400 {object} common.APIError "Bad request"
 // @Failure 401 {object} common.APIError "Not authorized"
@@ -97,8 +102,22 @@ func (v *VpnGatewayAPI) Traffic(c *gin.Context) {
 	if window < 120 {
 		window = 120
 	}
+	byTunnel := false
+	switch c.DefaultQuery("by", "connection") {
+	case "connection":
+	case "tunnel":
+		byTunnel = true
+	default:
+		ErrorResponse(c, http.StatusBadRequest, "by must be connection or tunnel", nil)
+		return
+	}
+	// Both nodes of an active_active gateway export the tunnels they run: the sums add them up
+	connGroup := "connection"
+	if byTunnel {
+		connGroup = "connection, tunnel"
+	}
 	queries := map[string]string{
-		"connection": fmt.Sprintf(`sum by (connection, direction) (rate(cloudland_vpn_connection_bytes_total{gateway_id="%d"}[%ds])) * 8`, gateway.ID, window),
+		"connection": fmt.Sprintf(`sum by (%s, direction) (rate(cloudland_vpn_connection_bytes_total{gateway_id="%d"}[%ds])) * 8`, connGroup, gateway.ID, window),
 		"client_key": fmt.Sprintf(`sum by (client_key, direction) (rate(cloudland_vpn_client_bytes_total{gateway_id="%d"}[%ds])) * 8`, gateway.ID, window),
 	}
 	resp := &VpnTrafficResponse{Start: start, End: end, Step: promStep, Connections: []*VpnTrafficSeries{}, Clients: []*VpnTrafficSeries{}}
@@ -108,10 +127,20 @@ func (v *VpnGatewayAPI) Traffic(c *gin.Context) {
 		resp.Timestamps = append(resp.Timestamps, t)
 	}
 
-	// Names of the objects that still exist, by the label the node exports
+	// Names of the objects that still exist, by the label the node exports (connection, or connection/tunnel)
 	names := map[string]map[string][2]string{"connection": {}, "client_key": {}}
+	tunnelOf := map[string]*model.VpnTunnel{}
+	connOf := map[string]*model.VpnConnection{}
 	for _, conn := range gateway.Connections {
-		names["connection"][services.VpnConnName(conn)] = [2]string{conn.UUID, conn.Name}
+		if !byTunnel {
+			names["connection"][services.VpnConnName(conn)] = [2]string{conn.UUID, conn.Name}
+			continue
+		}
+		for _, t := range conn.Tunnels {
+			key := fmt.Sprintf("%s/t%d", services.VpnConnName(conn), t.Slot)
+			names["connection"][key] = [2]string{t.UUID, fmt.Sprintf("%s / t%d", conn.Name, t.Slot)}
+			tunnelOf[t.UUID], connOf[t.UUID] = t, conn
+		}
 	}
 	for _, client := range gateway.Clients {
 		names["client_key"][client.PublicKey] = [2]string{client.UUID, client.Name}
@@ -125,13 +154,20 @@ func (v *VpnGatewayAPI) Traffic(c *gin.Context) {
 		}
 		series := map[string]*VpnTrafficSeries{}
 		for _, r := range result.Data.Result {
-			ref, ok := names[label][r.Metric[label]]
+			key := r.Metric[label]
+			if label == "connection" && byTunnel {
+				key = key + "/" + r.Metric["tunnel"]
+			}
+			ref, ok := names[label][key]
 			if !ok {
 				continue
 			}
 			s := series[ref[0]]
 			if s == nil {
 				s = &VpnTrafficSeries{ID: ref[0], Name: ref[1], In: make([]*float64, len(resp.Timestamps)), Out: make([]*float64, len(resp.Timestamps))}
+				if t := tunnelOf[ref[0]]; t != nil {
+					s.ConnectionID, s.Slot = connOf[ref[0]].UUID, t.Slot
+				}
 				series[ref[0]] = s
 			}
 			target := s.In

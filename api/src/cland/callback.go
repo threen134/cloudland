@@ -91,6 +91,12 @@ func (f *CallbackForwarder) Enqueue(ctx context.Context, msgID, nodeID int32, co
 	f.queue <- callbackJob{ctx: ctx, msgID: msgID, nodeID: nodeID, control: control, command: command}
 }
 
+// Congested reports a callback queue at least half full: the stream readers block in Enqueue once it is
+// full, so their silence says nothing about the nodes then (LivenessMonitor)
+func (f *CallbackForwarder) Congested() bool {
+	return len(f.queue) >= cap(f.queue)/2
+}
+
 // TryEnqueue queues a callback without blocking, for periodic reports that must not stall
 // their ticker. done, if not nil, is called from a worker with the delivery result.
 // It returns false, without calling done, when the queue is full.

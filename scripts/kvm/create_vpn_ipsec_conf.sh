@@ -1,10 +1,15 @@
 #!/bin/bash
 
 # Rewrite swanctl.conf of a VPN gateway from the full connection list and reconcile the XFRM interfaces.
-# Runs on both VRRP nodes; only the node holding the floating IP has charon running and reloads it.
-# Routes are not touched here (vpn_notify.sh owns them, see the plan §2.3).
+# Runs on both VRRP nodes; the nodes that run the tunnels have charon running and reload it: the floating IP
+# holder of an active_standby gateway, both nodes of an active_active one.
+# Routes are not touched here (vpn_notify.sh owns them, see the plan §6.3).
 #
-# stdin JSON: {"floating_ip": "a.b.c.d", "connections": [{"name","if_id","remote_gateway","remote_id","local_id",
+# Each entry of "connections" is one tunnel (a connection with several tunnels has an entry each, c<ID>-t<slot>),
+# bound to one public address of the gateway (local_addr; the first address when missing). On an
+# active_active gateway an entry only concerns the node its host names: the others leave it out.
+#
+# stdin JSON: {"ha_mode", "floating_ip": "a.b.c.d", "connections": [{"name","host","if_id","local_addr","remote_gateway","remote_id","local_id",
 #   "route_mode","local_cidrs":[],"remote_cidrs":[],"psk","ike_proposal","esp_proposal","ike_lifetime","esp_lifetime",
 #   "dpd_action","dpd_delay","initiator","tunnel_local_ip","tunnel_peer_ip"}]}
 
@@ -22,7 +27,9 @@ vpn_dir=$(vpn_dir_of $ID $gw)
 [ -f /var/run/netns/$router ] || die "Router $router does not exist"
 
 content=$(cat)
-floating_ip=$(jq -r '.floating_ip' <<<$content)
+# Only the tunnels of this node: every one of an active_standby gateway (host -1), the own ones otherwise
+content=$(jq -c --arg me "$NODE_ID" '(.connections //= []) | .connections |= map(select(((.host // -1) | tostring) == "-1" or ((.host // -1) | tostring) == $me))' <<<$content)
+floating_ip=$(jq -r '.floating_ip // empty' <<<$content)
 nconn=$(jq '.connections | length' <<<$content)
 
 # XFRM interfaces: one per connection, keyed by if_id; policies bind to the id, not to the device name
@@ -64,11 +71,12 @@ echo "connections {" >>$conf
 i=0
 while [ $i -lt $nconn ]; do
     conn=$(jq -c ".connections[$i]" <<<$content)
-    vpn_json_read "$conn" name=.name if_id=.if_id remote_gateway=.remote_gateway remote_id=.remote_id local_id=.local_id route_mode=.route_mode \
+    vpn_json_read "$conn" name=.name if_id=.if_id local_addr=.local_addr remote_gateway=.remote_gateway remote_id=.remote_id local_id=.local_id route_mode=.route_mode \
         ike_proposal=.ike_proposal esp_proposal=.esp_proposal ike_lifetime=.ike_lifetime esp_lifetime=.esp_lifetime dpd_action=.dpd_action dpd_delay=.dpd_delay initiator=.initiator
     remote_addrs=$remote_gateway
     [ -z "$remote_addrs" -o "$remote_addrs" = "null" ] && remote_addrs="%any"
-    [ -z "$local_id" -o "$local_id" = "null" ] && local_id=$floating_ip
+    [ -z "$local_addr" -o "$local_addr" = "null" ] && local_addr=$floating_ip
+    [ -z "$local_id" -o "$local_id" = "null" ] && local_id=$local_addr
     [ -z "$remote_id" -o "$remote_id" = "null" ] && remote_id=$remote_gateway
     # close_action stays none on purpose: with start, charon re-creates every CHILD_SA the peer closed with
     # the selectors that SA had, not with the current configuration, so after a change of route mode or
@@ -88,7 +96,7 @@ while [ $i -lt $nconn ]; do
     echo "$name $if_id" >>$vpn_dir/conn_ifids.new
     cat >>$conf <<EOF
     $name {
-        local_addrs = $floating_ip
+        local_addrs = $local_addr
         remote_addrs = $remote_addrs
         version = 2
         proposals = $ike_proposal
@@ -145,12 +153,18 @@ echo "}" >>$conf
 echo "secrets {" >>$conf
 i=0
 while [ $i -lt $nconn ]; do
-    vpn_json_read "$content" name=.connections[$i].name remote_id=.connections[$i].remote_id remote_gateway=.connections[$i].remote_gateway
+    vpn_json_read "$content" name=.connections[$i].name remote_id=.connections[$i].remote_id remote_gateway=.connections[$i].remote_gateway \
+        local_id=.connections[$i].local_id local_addr=.connections[$i].local_addr
     psk=$(jq -r ".connections[$i].psk" <<<$content)
     [ -z "$remote_id" -o "$remote_id" = "null" ] && remote_id=$remote_gateway
+    [ -z "$local_addr" -o "$local_addr" = "null" ] && local_addr=$floating_ip
+    [ -z "$local_id" -o "$local_id" = "null" ] && local_id=$local_addr
+    # Both identities: two tunnels towards the same peer identity from two public addresses may use
+    # different keys, and a key bound to the peer identity alone would be ambiguous
     cat >>$conf <<EOF
     ike-$name {
-        id = $remote_id
+        id-local = $local_id
+        id-remote = $remote_id
         secret = "$psk"
     }
 EOF
@@ -173,6 +187,12 @@ if [ -f $vpn_dir/swanctl.conf ]; then
         [ -n "$old" ] && [ "$old" != "$(conn_block $conf $name)" ] && changed="$changed $name"
     done
 fi
+# Tunnels that are gone (a connection or a tunnel deleted, a tunnel renamed): unloading the configuration
+# leaves an established SA in place, terminate it after the reload
+removed=""
+for name in $(cat $vpn_dir/conn_names 2>/dev/null); do
+    grep -qxF "$name" $vpn_dir/conn_names.new || removed="$removed $name"
+done
 
 (
     flock 9
@@ -180,9 +200,12 @@ fi
     mv -f $vpn_dir/conn_names.new $vpn_dir/conn_names
     mv -f $vpn_dir/conn_ifids.new $vpn_dir/conn_ifids
     rm -f $vpn_dir/status.reported
-    if vpn_holds_vip $router $vpn_dir; then
+    if vpn_runs_tunnels $router $vpn_dir; then
         if vpn_charon_alive $vpn_dir; then
             vpn_load_swanctl $router $vpn_dir
+            for name in $removed; do
+                vpn_swanctl $router $vpn_dir --terminate --ike $name --force --timeout 10 >/dev/null
+            done
             for name in $changed; do
                 vpn_swanctl $router $vpn_dir --terminate --ike $name --force --timeout 10 >/dev/null
                 # start_action sits deep in the block (past the ike / local / remote sections): check the block itself

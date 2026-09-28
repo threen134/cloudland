@@ -254,7 +254,7 @@ cat > /etc/apparmor.d/local/usr.sbin.swanctl <<'EOF'
   /opt/cloudland/cache/router/router-*/vpn-*/ r,
   /opt/cloudland/cache/router/router-*/vpn-*/** rw,
 EOF
-for daemon in bgpd staticd; do
+for daemon in bgpd staticd bfdd; do
 cat > /etc/apparmor.d/local/$daemon <<'EOF'
 # CloudLand VPN gateways: one FRR pathspace per gateway (-N vpn-<id>)
   @{run}/frr/vpn-*/ rw,
@@ -271,7 +271,7 @@ cat > /etc/apparmor.d/local/wg <<'EOF'
   /opt/cloudland/cache/router/router-*/vpn-*/** r,
 EOF
 if command -v apparmor_parser >/dev/null 2>&1 && [ -d /sys/kernel/security/apparmor ]; then
-    for profile in usr.lib.ipsec.charon usr.sbin.swanctl bgpd staticd wg; do
+    for profile in usr.lib.ipsec.charon usr.sbin.swanctl bgpd staticd bfdd wg; do
         [ -f /etc/apparmor.d/$profile ] && apparmor_parser -r /etc/apparmor.d/$profile || true
     done
 fi

@@ -3,6 +3,8 @@
 # Report VPN gateway state to clapi, called by report_rc.sh on every heartbeat. Only the node holding the
 # floating IP reports (the master), and each report is sent when its content changed or the last one is
 # older than $report_interval, so a lost callback is eventually corrected without flooding clapi.
+# active_active gateway: both nodes report the tunnels (IPsec and BGP) they run; the master claim and the
+# WireGuard peers stay with the holder of the client VPN floating IP.
 # Four callbacks: the master identity (drives the routes of the other nodes), the IKE SA state of every
 # connection, the WireGuard peer counters and the BGP neighbor snapshot. Payloads are base64 JSON.
 # stdout is the callback protocol: print nothing except |:-COMMAND-:| lines.
@@ -57,25 +59,37 @@ report_if_changed()
 
 for vpn_dir in $router_dir/router-*/vpn-*; do
     [ -d "$vpn_dir" ] || continue
-    [ -f $vpn_dir/vip ] || continue
+    # A VRRP node of the gateway (the other nodes only carry its routes)
+    [ -f $vpn_dir/vrrp_id ] || continue
     router=$(basename $(dirname $vpn_dir))
     gw=${vpn_dir##*/vpn-}
     [ -f /var/run/netns/$router ] || continue
-    if ! vpn_holds_vip $router $vpn_dir; then
-        # Report immediately after taking over
-        rm -f $vpn_dir/master.reported $vpn_dir/master.since $vpn_dir/status.reported $vpn_dir/wg.reported $vpn_dir/bgp.reported
-        continue
-    fi
-    # clapi rejects a master claim while the previous master's report is younger than its flap window, and
-    # the node never learns about it: re-send on every heartbeat during the first minute after taking over
-    # so the claim gets through as soon as the window has elapsed
-    [ -f $vpn_dir/master.since ] || echo $now >$vpn_dir/master.since
-    interval=$master_interval
+    aa=false
+    vpn_is_aa $vpn_dir && aa=true
+    holds=false
+    vpn_holds_vip $router $vpn_dir && holds=true
     status_interval=$report_interval
-    # The status reports of that minute are rejected too until the master claim went through (clapi only
-    # takes them from the recorded master), and their cache would otherwise hold them back for 5 minutes
-    [ $(($now - $(cat $vpn_dir/master.since))) -lt 60 ] && interval=0 && status_interval=0
-    report_if_changed $vpn_dir/master.reported "$NODE_ID" $interval "|:-COMMAND-:| vpn_master.sh '$gw' '$NODE_ID'"
+    if ! $holds; then
+        # Just gave the address up: say so once, it lets the peer's master claim through at once (clapi
+        # otherwise waits for this node to stay silent for its split-brain window)
+        [ -f $vpn_dir/master.reported ] && echo "|:-COMMAND-:| vpn_backup.sh '$gw' '$NODE_ID'"
+        # Report immediately after taking over
+        rm -f $vpn_dir/master.reported $vpn_dir/master.since $vpn_dir/wg.reported
+        if ! $aa; then
+            rm -f $vpn_dir/status.reported $vpn_dir/bgp.reported
+            continue
+        fi
+    else
+        # clapi rejects a master claim while the previous master's report is younger than its flap window, and
+        # the node never learns about it: re-send on every heartbeat during the first minute after taking over
+        # so the claim gets through as soon as the window has elapsed
+        [ -f $vpn_dir/master.since ] || echo $now >$vpn_dir/master.since
+        interval=$master_interval
+        # The status reports of that minute are rejected too until the master claim went through (clapi only
+        # takes them from the recorded master), and their cache would otherwise hold them back for 5 minutes
+        [ $(($now - $(cat $vpn_dir/master.since))) -lt 60 ] && interval=0 && status_interval=0
+        report_if_changed $vpn_dir/master.reported "$NODE_ID" $interval "|:-COMMAND-:| vpn_master.sh '$gw' '$NODE_ID'"
+    fi
     if vpn_disabled $vpn_dir; then
         # Paused: no tunnel state to report (clapi shows the connections as disabled). Drop the caches so
         # that the first heartbeat after re-enabling reports at once
@@ -93,14 +107,19 @@ for vpn_dir in $router_dir/router-*/vpn-*; do
         [ -n "$if_id" ] || continue
         cur=$(vpn_dev_bytes $router ipsec-$if_id) || continue
         read rx tx <<<"$cur"
+        # tunnel names are c<connection>-t<slot>: the connection label stays what it was with one tunnel
+        conn=${name%-t*}
+        tunnel=t${name##*-t}
+        [ "$conn" = "$name" ] && tunnel=t1
         conn_metrics="$conn_metrics
-cloudland_vpn_connection_bytes_total{gateway_id=\"$gw\",connection=\"$name\",direction=\"in\"} $rx
-cloudland_vpn_connection_bytes_total{gateway_id=\"$gw\",connection=\"$name\",direction=\"out\"} $tx"
+cloudland_vpn_connection_bytes_total{gateway_id=\"$gw\",connection=\"$conn\",tunnel=\"$tunnel\",direction=\"in\"} $rx
+cloudland_vpn_connection_bytes_total{gateway_id=\"$gw\",connection=\"$conn\",tunnel=\"$tunnel\",direction=\"out\"} $tx"
         traffic="$traffic $name:$(vpn_traffic_since_base $vpn_dir ipsec-$if_id $rx $tx | tr ' ' ':')"
     done
     # wg show dump: the interface line, then one peer per line: pubkey psk endpoint allowed-ips handshake rx tx keepalive
+    # (the client VPN runs on the floating IP holder only)
     wgdump=""
-    if [ -f $vpn_dir/wg.conf ] && ip netns exec $router ip link show wg-$gw >/dev/null 2>&1; then
+    if $holds && [ -f $vpn_dir/wg.conf ] && ip netns exec $router ip link show wg-$gw >/dev/null 2>&1; then
         wgdump=$(timeout 10 ip netns exec $router wg show wg-$gw dump 2>/dev/null | tail -n +2)
         while read key psk endpoint allowed handshake rx tx keepalive; do
             [ -n "$tx" ] || continue
@@ -142,7 +161,7 @@ cloudland_vpn_client_bytes_total{gateway_id=\"$gw\",client_key=\"$key\",directio
     fi
 
     # WireGuard: the peers of the dump read above
-    if [ -f $vpn_dir/wg.conf ] && ip netns exec $router ip link show wg-$gw >/dev/null 2>&1; then
+    if $holds && [ -f $vpn_dir/wg.conf ] && ip netns exec $router ip link show wg-$gw >/dev/null 2>&1; then
         payload=$(awk 'NF >= 7 {
                 if (n++) printf ","
                 printf "{\"public_key\":\"%s\",\"last_handshake\":%d,\"bytes_in\":%.0f,\"bytes_out\":%.0f}", $1, $5, $6, $7
@@ -157,22 +176,24 @@ cloudland_vpn_client_bytes_total{gateway_id=\"$gw\",client_key=\"$key\",directio
         ns=$(vpn_frr_ns $gw)
         payload="["
         first=true
+        bfd=$(timeout 10 vtysh -N $ns -c "show bfd peers json" 2>/dev/null)
         while read name peer; do
             [ -n "$peer" ] || continue
             summary=$(timeout 10 vtysh -N $ns -c "show bgp ipv4 unicast summary json" 2>/dev/null)
             accepted=$(timeout 10 vtysh -N $ns -c "show bgp ipv4 unicast neighbors $peer routes json" 2>/dev/null)
             rejected=$(timeout 10 vtysh -N $ns -c "show bgp ipv4 unicast neighbors $peer filtered-routes json" 2>/dev/null)
             advertised=$(timeout 10 vtysh -N $ns -c "show bgp ipv4 unicast neighbors $peer advertised-routes json" 2>/dev/null)
-            item=$(jq -n -c --arg name "$name" --arg peer "$peer" \
+            item=$(jq -n -c --arg name "$name" --arg peer "$peer" --argjson bfd "${bfd:-[]}" \
                 --argjson summary "${summary:-{\}}" --argjson accepted "${accepted:-{\}}" --argjson rejected "${rejected:-{\}}" --argjson advertised "${advertised:-{\}}" '
                 ($summary.peers[$peer] // {}) as $p
+                | ([$bfd[]? | select(.peer == $peer) | .status][0] // "") as $b
                 | ($accepted.routes // {} | keys) as $acc
                 | ($rejected.routes // {} | keys) as $rej
                 | ($advertised.advertisedRoutes // {} | keys) as $adv
                 | {name: $name, state: ($p.state // "Idle"), uptime: ($p.peerUptime // ""),
                    prefixes_received: ($p.pfxRcd // 0), prefixes_sent: ($p.pfxSnt // 0),
                    accepted: $acc[:200], rejected: $rej[:200], advertised: $adv[:200],
-                   truncated: (($acc | length) > 200 or ($rej | length) > 200 or ($adv | length) > 200)}' 2>/dev/null)
+                   truncated: (($acc | length) > 200 or ($rej | length) > 200 or ($adv | length) > 200), bfd: $b}' 2>/dev/null)
             [ -n "$item" ] || continue
             $first || payload="$payload,"
             first=false

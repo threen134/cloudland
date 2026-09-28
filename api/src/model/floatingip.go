@@ -22,6 +22,7 @@ type FloatingIp struct {
 	LoadBalancer   *LoadBalancer `gorm:"foreignKey:LoadBalancerID;PRELOAD:false" json:"load_balancer"`
 	VpnGatewayID   int64
 	VpnGateway     *VpnGateway `gorm:"foreignKey:VpnGatewayID;PRELOAD:false" json:"vpn_gateway"`
+	VpnEndpoint    string      `gorm:"type:varchar(16)"` /* public address of a VPN gateway: vip1 / vip2; empty (older rows) means vip1 */
 	Interface      *Interface  `gorm:"foreignkey:FloatingIp"`
 	RouterID       int64
 	Inbound        int32

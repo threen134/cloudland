@@ -153,6 +153,22 @@ func validateVpnPrefixes(ctx context.Context, routerID, gatewayID int64, cidrs [
 	return
 }
 
+// validateClientRoutes checks the networks a client is told to send through the tunnel (its AllowedIPs).
+// A default route would put the client in full-tunnel mode, which the gateway does not support
+// (vpn-gateway-plan.md §7.5): the client's internet traffic has no proper way out of the VPC.
+func validateClientRoutes(value string) error {
+	cidrs, err := ParseCidrList(value)
+	if err != nil {
+		return err
+	}
+	for _, cidr := range cidrs {
+		if cidr == "0.0.0.0/0" {
+			return NewCLError(ErrInvalidParameter, "0.0.0.0/0 is not allowed in client_routes: full-tunnel mode is not supported", nil)
+		}
+	}
+	return nil
+}
+
 // validateTunnelLink checks the pair of addresses a BGP session runs on inside the tunnel. Unlike remote
 // networks they may sit in 169.254.0.0/16 (public cloud VPN gateways require it); only the VPC subnets
 // and the VRRP subnet are off limits. The node rejects a /31 that collides with its own router link.
@@ -254,6 +270,11 @@ func EffectiveClientRoutes(ctx context.Context, gateway *model.VpnGateway) ([]st
 
 func EffectiveLocalCidrs(ctx context.Context, gateway *model.VpnGateway, conn *model.VpnConnection) ([]string, error) {
 	return effectiveLocalCidrs(ctx, gateway, conn)
+}
+
+// VpcInternalCidrs are the local networks of every connection of the VPC that names none (effectiveLocalCidrs)
+func VpcInternalCidrs(ctx context.Context, routerID int64) ([]string, error) {
+	return vpcInternalCidrs(ctx, routerID)
 }
 
 func LoadRemotePrefixes(ctx context.Context, gatewayID int64) ([]*model.VpnRemotePrefix, error) {

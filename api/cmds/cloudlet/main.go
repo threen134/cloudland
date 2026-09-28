@@ -94,6 +94,9 @@ func main() {
 	sender := cloudlet.NewStreamSender()
 	queue := cloudlet.NewCommandQueue(concurrency)
 	go cloudlet.NewHealthReporter(client, sender, nodeID, hostname).Run(context.Background())
+	// Fast VPN takeover: per-second liveness for cland, immediate VPN status reports on request
+	go cloudlet.RunAlive(context.Background(), sender, nodeID)
+	go cloudlet.RunVpnReportTrigger(context.Background(), sender, nodeID)
 
 	retry := backoff{base: time.Second, max: time.Minute}
 	for {

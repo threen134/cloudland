@@ -1736,6 +1736,11 @@ definitions:
           OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to
           release quota only when the caller's org actually owns the deleted resource
         type: string
+      single_node:
+        description: |-
+          Available on its MASTER node alone, without high availability: its zone had no second available node.
+          The BACKUP node is added once the zone has one
+        type: boolean
       status:
         type: string
       updated_at:
@@ -2770,6 +2775,20 @@ definitions:
     type: object
   apis.VpnConnectionPatchPayload:
     properties:
+      as_path_prepend:
+        maximum: 10
+        minimum: 0
+        type: integer
+      bfd_enabled:
+        type: boolean
+      bfd_interval:
+        maximum: 60000
+        minimum: 300
+        type: integer
+      bfd_multiplier:
+        maximum: 50
+        minimum: 2
+        type: integer
       bgp_hold:
         maximum: 10800
         minimum: 3
@@ -2852,15 +2871,39 @@ definitions:
         - static
         - bgp
         type: string
+      traffic_policy:
+        enum:
+        - preferred
+        - ecmp
+        type: string
       tunnel_local_ip:
         maxLength: 64
         type: string
       tunnel_peer_ip:
         maxLength: 64
         type: string
+      tunnels:
+        items:
+          $ref: '#/definitions/apis.VpnTunnelPayload'
+        maxItems: 4
+        type: array
     type: object
   apis.VpnConnectionPayload:
     properties:
+      as_path_prepend:
+        maximum: 10
+        minimum: 0
+        type: integer
+      bfd_enabled:
+        type: boolean
+      bfd_interval:
+        maximum: 60000
+        minimum: 300
+        type: integer
+      bfd_multiplier:
+        maximum: 50
+        minimum: 2
+        type: integer
       bgp_hold:
         maximum: 10800
         minimum: 3
@@ -2942,30 +2985,50 @@ definitions:
         - static
         - bgp
         type: string
+      traffic_policy:
+        description: 'preferred (default): the primary tunnel carries the traffic;
+          ecmp: every tunnel that is up shares it'
+        enum:
+        - preferred
+        - ecmp
+        type: string
       tunnel_local_ip:
         type: string
       tunnel_peer_ip:
         type: string
+      tunnels:
+        items:
+          $ref: '#/definitions/apis.VpnTunnelPayload'
+        maxItems: 4
+        type: array
     required:
     - name
     type: object
   apis.VpnConnectionResponse:
     properties:
+      as_path_prepend:
+        type: integer
       auth_method:
         type: string
-      bgp:
-        $ref: '#/definitions/services.VpnBgpReport'
+      bfd_enabled:
+        type: boolean
+      bfd_interval:
+        type: integer
+      bfd_multiplier:
+        type: integer
       bgp_hold:
         type: integer
       bgp_keepalive:
         type: integer
+      bgp_password:
+        type: string
       bgp_password_set:
         type: boolean
-      bgp_reported_at:
-        type: string
       bytes_in:
+        description: sum over the tunnels
         type: integer
       bytes_out:
+        description: sum over the tunnels
         type: integer
       created_at:
         type: string
@@ -2983,12 +3046,8 @@ definitions:
         type: integer
       esp_proposal:
         type: string
-      established_at:
-        type: string
       id:
         type: string
-      if_id:
-        type: integer
       ike_lifetime:
         type: integer
       ike_proposal:
@@ -2997,8 +3056,6 @@ definitions:
         type: integer
       initiator:
         type: boolean
-      last_error:
-        type: string
       local_asn:
         type: integer
       local_cidrs:
@@ -3018,24 +3075,28 @@ definitions:
         type: string
       peer_asn:
         type: integer
+      psk:
+        description: The keys themselves, only for members with write permission on
+          the gateway (vpnSecretsVisible)
+        type: string
       psk_set:
         type: boolean
       remote_cidrs:
-        type: string
-      remote_gateway:
-        type: string
-      remote_id:
         type: string
       remote_summary_cidrs:
         type: string
       route_mode:
         type: string
       status:
+        description: pending, up, degraded (only a standby tunnel is up), down, disabled
         type: string
-      tunnel_local_ip:
+      traffic_policy:
+        description: preferred or ecmp
         type: string
-      tunnel_peer_ip:
-        type: string
+      tunnels:
+        items:
+          $ref: '#/definitions/apis.VpnTunnelResponse'
+        type: array
       updated_at:
         type: string
     type: object
@@ -3103,6 +3164,14 @@ definitions:
       description:
         maxLength: 255
         type: string
+      ha_mode:
+        description: |-
+          active_standby (default): the VRRP master runs every tunnel from one or two floating IPs.
+          active_active: each of the two nodes runs its own tunnels from a fixed address, both carry traffic
+        enum:
+        - active_standby
+        - active_active
+        type: string
       inbound:
         maximum: 20000
         minimum: 1
@@ -3119,6 +3188,15 @@ definitions:
         type: integer
       public_ip:
         type: string
+      public_ips:
+        description: |-
+          active_standby: one or two entries (vip1, vip2). active_active: node1, node2 and, with client VPN, the
+          client floating IP; missing entries come from the subnet of the first one. public_subnet / public_ip
+          above are the short form of a single entry and are ignored when this is given
+        items:
+          $ref: '#/definitions/apis.VpnPublicIpPayload'
+        maxItems: 3
+        type: array
       public_subnet:
         $ref: '#/definitions/common.BaseReference'
       vpc:
@@ -3133,6 +3211,11 @@ definitions:
     type: object
   apis.VpnGatewayResponse:
     properties:
+      addable_endpoint:
+        description: |-
+          The public address POST /vpn_gateways/{id}/public_ips would add (vip2, or vip1 for the client VPN of an
+          active_active gateway), empty when the gateway has it already
+        type: string
       client_cidr:
         type: string
       client_count:
@@ -3173,6 +3256,9 @@ definitions:
         items:
           $ref: '#/definitions/apis.FloatingIpInfo'
         type: array
+      ha_mode:
+        description: active_standby or active_active
+        type: string
       id:
         type: string
       ipsec_enabled:
@@ -3197,12 +3283,21 @@ definitions:
           release quota only when the caller's org actually owns the deleted resource
         type: string
       public_ip:
+        description: vip1, or node1 on an active_active gateway without client VPN
         type: string
+      public_ips:
+        description: every address with its endpoint name
+        items:
+          $ref: '#/definitions/apis.VpnPublicIpInfo'
+        type: array
       remote_prefixes:
         items:
           $ref: '#/definitions/apis.VpnPrefixResponse'
         type: array
       status:
+        type: string
+      status_reason:
+        description: why the gateway is in error; empty otherwise
         type: string
       updated_at:
         type: string
@@ -3231,6 +3326,45 @@ definitions:
       source:
         type: string
     type: object
+  apis.VpnPublicIpInfo:
+    properties:
+      address:
+        type: string
+      endpoint:
+        description: vip1 / vip2 (floating), node1 / node2 (fixed on one node of an
+          active_active gateway)
+        type: string
+      hostid:
+        description: the node of a fixed address, -1 for a floating one
+        type: integer
+      hostname:
+        description: the node of a fixed address
+        type: string
+    type: object
+  apis.VpnPublicIpPayload:
+    properties:
+      public_ip:
+        type: string
+      public_subnet:
+        $ref: '#/definitions/common.BaseReference'
+    type: object
+  apis.VpnPublicIpResponse:
+    properties:
+      address:
+        type: string
+      endpoint:
+        description: vip1 / vip2 (floating), node1 / node2 (fixed on one node of an
+          active_active gateway)
+        type: string
+      hostid:
+        description: the node of a fixed address, -1 for a floating one
+        type: integer
+      hostname:
+        description: the node of a fixed address
+        type: string
+      owner_uuid:
+        type: string
+    type: object
   apis.VpnTrafficResponse:
     properties:
       clients:
@@ -3254,6 +3388,10 @@ definitions:
     type: object
   apis.VpnTrafficSeries:
     properties:
+      connection_id:
+        description: 'by=tunnel: the series is one tunnel (ID is the tunnel) of this
+          connection, in this slot'
+        type: string
       id:
         type: string
       in:
@@ -3268,6 +3406,91 @@ definitions:
         items:
           type: number
         type: array
+      slot:
+        type: integer
+    type: object
+  apis.VpnTunnelPayload:
+    properties:
+      endpoint:
+        enum:
+        - vip1
+        - vip2
+        - node1
+        - node2
+        type: string
+      priority:
+        enum:
+        - primary
+        - standby
+        type: string
+      psk:
+        maxLength: 128
+        type: string
+      remote_gateway:
+        type: string
+      remote_id:
+        maxLength: 128
+        type: string
+      tunnel_local_ip:
+        type: string
+      tunnel_peer_ip:
+        type: string
+    type: object
+  apis.VpnTunnelResponse:
+    properties:
+      bfd_state:
+        type: string
+      bgp:
+        $ref: '#/definitions/services.VpnBgpReport'
+      bgp_reported_at:
+        type: string
+      bytes_in:
+        type: integer
+      bytes_out:
+        type: integer
+      endpoint:
+        description: vip1 / vip2, or node1 / node2 on an active_active gateway
+        type: string
+      established_at:
+        type: string
+      hostid:
+        description: the node running it on an active_active gateway, -1 otherwise
+          (the master)
+        type: integer
+      hostname:
+        type: string
+      id:
+        type: string
+      if_id:
+        type: integer
+      last_error:
+        type: string
+      priority:
+        description: primary or standby (every tunnel is primary with traffic_policy
+          ecmp)
+        type: string
+      psk:
+        description: The tunnel-specific key, only for members with write permission
+          on the gateway
+        type: string
+      psk_set:
+        description: a tunnel-specific key; otherwise the connection's
+        type: boolean
+      public_ip:
+        description: our address of this tunnel
+        type: string
+      remote_gateway:
+        type: string
+      remote_id:
+        type: string
+      slot:
+        type: integer
+      status:
+        type: string
+      tunnel_local_ip:
+        type: string
+      tunnel_peer_ip:
+        type: string
     type: object
   apis.ZoneListResponse:
     properties:
@@ -3517,6 +3740,9 @@ definitions:
         items:
           type: string
         type: array
+      bfd:
+        description: BFD session state (up, down, init) when BFD is on
+        type: string
       name:
         type: string
       prefixes_received:
@@ -8479,7 +8705,11 @@ paths:
     post:
       consumes:
       - application/json
-      description: create a VPN gateway in a VPC with a public address
+      description: 'create a VPN gateway in a VPC with a public address. Its two nodes
+        come from the zone: an active_active gateway needs two available compute nodes
+        there; an active_standby gateway runs on a single node, without high availability,
+        when the zone has only one, and gets its second node once the zone has another
+        (error code 132009 when the zone has too few nodes)'
       parameters:
       - description: VPN gateway create payload
         in: body
@@ -8495,7 +8725,8 @@ paths:
           schema:
             $ref: '#/definitions/apis.VpnGatewayResponse'
         "400":
-          description: Bad request
+          description: Bad request, or too few available compute nodes in the zone
+            (132009)
           schema:
             $ref: '#/definitions/common.APIError'
         "401":
@@ -8529,7 +8760,9 @@ paths:
     get:
       consumes:
       - application/json
-      description: get a VPN gateway with its connections, clients and routed prefixes
+      description: get a VPN gateway with its connections, clients and routed prefixes;
+        the connection keys (psk, bgp_password) are included for members with write
+        permission
       produces:
       - application/json
       responses:
@@ -8702,7 +8935,8 @@ paths:
     get:
       consumes:
       - application/json
-      description: WireGuard configuration of a client without the private key
+      description: WireGuard configuration of a client without the private key; the
+        preshared key is filled in for members with write permission
       produces:
       - application/json
       responses:
@@ -8725,7 +8959,8 @@ paths:
     get:
       consumes:
       - application/json
-      description: list the site-to-site connections of a VPN gateway
+      description: list the site-to-site connections of a VPN gateway; psk and bgp_password
+        are included for members with write permission
       produces:
       - application/json
       responses:
@@ -8793,7 +9028,8 @@ paths:
     get:
       consumes:
       - application/json
-      description: get a site-to-site connection
+      description: get a site-to-site connection; psk and bgp_password are included
+        for members with write permission
       produces:
       - application/json
       responses:
@@ -8846,7 +9082,13 @@ paths:
     post:
       consumes:
       - application/json
-      description: terminate and re-initiate the IKE SA of a connection
+      description: 'terminate and re-initiate the IKE SAs of a connection: every tunnel,
+        or only the one in the given slot'
+      parameters:
+      - description: Slot of the tunnel to restart (1 to 4); all tunnels when omitted
+        in: query
+        name: tunnel
+        type: integer
       produces:
       - application/json
       responses:
@@ -8863,6 +9105,80 @@ paths:
           schema:
             $ref: '#/definitions/common.APIError'
       summary: restart a VPN connection
+      tags:
+      - VPN Gateway
+  /vpn_gateways/{id}/public_ips:
+    post:
+      consumes:
+      - application/json
+      description: give an active-standby gateway its second floating IP (vip2), or
+        an active-active gateway the floating IP of its client VPN (vip1); see addable_endpoint
+        of the gateway
+      parameters:
+      - description: public subnet and / or address, both optional
+        in: body
+        name: message
+        required: true
+        schema:
+          $ref: '#/definitions/apis.VpnPublicIpPayload'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.VpnGatewayResponse'
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: add a public address to a VPN gateway
+      tags:
+      - VPN Gateway
+  /vpn_gateways/{id}/public_ips/{endpoint}:
+    delete:
+      description: release the second floating IP of an active-standby gateway (no
+        tunnel may use it) or the client VPN floating IP of an active-active gateway
+        (client VPN disabled)
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: remove a public address from a VPN gateway
+      tags:
+      - VPN Gateway
+    get:
+      description: get one public address of a VPN gateway by endpoint (vip1, vip2,
+        node1, node2)
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.VpnPublicIpResponse'
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: get a public address of a VPN gateway
       tags:
       - VPN Gateway
   /vpn_gateways/{id}/traffic:
@@ -8890,6 +9206,11 @@ paths:
         in: query
         name: step
         required: true
+        type: string
+      - description: 'connection (default): one series per connection; tunnel: one
+          per tunnel'
+        in: query
+        name: by
         type: string
       produces:
       - application/json

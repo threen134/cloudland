@@ -153,3 +153,23 @@ func TestPrepareQuotaWithoutReservation(t *testing.T) {
 		t.Fatalf("PATCH vpcs: expected no action, got %+v %+v", plan, herr)
 	}
 }
+
+func TestVpnGatewayPublicIps(t *testing.T) {
+	list := func(n int) []interface{} { return make([]interface{}, n) }
+	cases := []struct {
+		name string
+		body map[string]interface{}
+		want float64
+	}{
+		{"default", map[string]interface{}{}, 1},
+		{"active_standby, two addresses", map[string]interface{}{"public_ips": list(2)}, 2},
+		{"active_active", map[string]interface{}{"ha_mode": "active_active"}, 2},
+		{"active_active with client VPN", map[string]interface{}{"ha_mode": "active_active", "client_enabled": true, "public_ips": list(1)}, 3},
+		{"active_active, all given", map[string]interface{}{"ha_mode": "active_active", "public_ips": list(2)}, 2},
+	}
+	for _, c := range cases {
+		if got := vpnGatewayPublicIps(c.body); got != c.want {
+			t.Errorf("%s: got %v, want %v", c.name, got, c.want)
+		}
+	}
+}

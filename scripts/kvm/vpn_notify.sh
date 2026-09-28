@@ -9,6 +9,9 @@
 # fault:   blackhole the routes (the peer's state is unknown), stop the processes
 # sync:    do whichever of master/backup matches the floating IP right now
 #
+# active_active gateway: the tunnels, charon and FRR belong to both nodes whatever the role; the role only
+# moves the client VPN floating IP (its policy routing and the route to the client pool).
+#
 # This runs as a child of keepalived: its stdout is not a callback channel, nothing is reported here.
 # The lb lock serializes it with the config scripts and the watchdog.
 
@@ -61,7 +64,32 @@ if vpn_disabled $vpn_dir; then
     # zebra withdraws what it installed when it exits: make sure the blackholes are ours afterwards
     vpn_apply_routes $router $vpn_dir disabled
     ip netns exec $router ip link set wg-$gw down >/dev/null 2>&1
+    vpn_watch_stop $vpn_dir
     vlog "disabled: routes blackholed, processes stopped"
+    exit 0
+fi
+
+if vpn_is_aa $vpn_dir; then
+    case $mode in
+    master)
+        if [ -f $vrrp_dir/routes ]; then
+            ROUTES_FILE=$vrrp_dir/routes KEEPALIVE_CONF=$vrrp_dir/keepalived.conf timeout 60 ip netns exec $router ./set_route_table.sh >/dev/null 2>&1
+        fi
+        vpn_apply_routes $router $vpn_dir master
+        ;;
+    backup)
+        vpn_apply_routes $router $vpn_dir backup
+        ;;
+    *)
+        vpn_apply_routes $router $vpn_dir fault
+        ;;
+    esac
+    vpn_start_charon $router $vpn_dir
+    vpn_start_frr $router $gw
+    vpn_frr_statics $router $vpn_dir
+    vpn_watch_start $vpn_dir
+    vpn_trigger_report
+    vlog "done (active_active)"
     exit 0
 fi
 
@@ -83,17 +111,24 @@ master)
     vlog "frr started (rc=$?)"
     # FRR up: hand the summary blackholes over to staticd (see vpn_apply_routes)
     vpn_apply_routes $router $vpn_dir master
+    vpn_watch_start $vpn_dir
+    vlog "watch loop started"
     ;;
 backup)
+    vpn_watch_stop $vpn_dir
     vpn_apply_routes $router $vpn_dir backup
     vpn_stop_charon $vpn_dir
     vpn_stop_frr $gw
     ;;
 *)
+    vpn_watch_stop $vpn_dir
     vpn_apply_routes $router $vpn_dir fault
     vpn_stop_charon $vpn_dir
     vpn_stop_frr $gw
     ;;
 esac
+# Tell clapi now (master claim, or the release that lets the peer's claim through) rather than at the
+# next heartbeat
+vpn_trigger_report
 vlog "done"
 exit 0

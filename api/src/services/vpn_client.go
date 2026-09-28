@@ -269,12 +269,17 @@ func (a *VpnClientAdmin) Delete(ctx context.Context, gateway *model.VpnGateway, 
 	return
 }
 
-// Config renders the configuration template of an existing client: never a private key, and the
-// preshared key only because it lives on the gateway side too
+// Config renders the configuration template of an existing client: never a private key (it is not
+// stored). The preshared key lives on the gateway side too and is filled in for members with write
+// permission, like the site keys; read-only members get a placeholder
 func (a *VpnClientAdmin) Config(ctx context.Context, gateway *model.VpnGateway, client *model.VpnClient) (config string, err error) {
-	presharedKey, err := DecryptSecret(client.PresharedKey)
-	if err != nil {
-		return
+	presharedKey := ""
+	if client.PresharedKey != "" {
+		if !GetMemberShip(ctx).CheckResourceOrg(model.OrgWriter, gateway.Owner) {
+			presharedKey = "<preshared key>"
+		} else if presharedKey, err = DecryptSecret(client.PresharedKey); err != nil {
+			return
+		}
 	}
 	return buildClientConfig(ctx, gateway, client, "", presharedKey)
 }

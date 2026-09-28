@@ -65,7 +65,7 @@
   when: not ansible_check_mode
   tags: [be_pkg, vpn]
 
-# Ubuntu confines charon, swanctl, bgpd, staticd and wg with AppArmor to their packaged paths; allow the
+# Ubuntu confines charon, swanctl, bgpd, staticd, bfdd and wg with AppArmor to their packaged paths; allow the
 # per-gateway directories (same overrides as deploy-compute-node.sh)
 - name: apparmor overrides for vpn gateways
   copy:
@@ -101,6 +101,14 @@
           /etc/frr/vpn-*/ r,
           /etc/frr/vpn-*/* rw,
           owner @{PROC}/@{pid}/task/@{tid}/comm rw,
+    - name: bfdd
+      content: |
+        # CloudLand VPN gateways: one FRR pathspace per gateway (-N vpn-<id>)
+          @{run}/frr/vpn-*/ rw,
+          @{run}/frr/vpn-*/** rwk,
+          /etc/frr/vpn-*/ r,
+          /etc/frr/vpn-*/* rw,
+          owner @{PROC}/@{pid}/task/@{tid}/comm rw,
     - name: wg
       content: |
         # CloudLand VPN gateways: wg reads the per-gateway configuration and key
@@ -115,6 +123,7 @@
     - usr.sbin.swanctl
     - bgpd
     - staticd
+    - bfdd
     - wg
   ignore_errors: yes
   when: not ansible_check_mode

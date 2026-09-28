@@ -39,17 +39,19 @@ var quotaRules = map[string]quotaRule{
 	"POST vpcs":                             {"consume", "vpc"},
 	"POST load_balancers":                   {"consume", "load_balancer"},
 	"POST vpn_gateways":                     {"consume", "vpn_gateway"},
+	"POST vpn_gateways/{id}/public_ips":     {"consume", "vpn_public_ip"},
 	"POST images":                           {"consume", "image"},
 	"DELETE instances/{id}":                 {"release", "instance"},
 	"DELETE volumes/{id}":                   {"release", "volume"},
 	"DELETE floating_ips/{id}":              {"release", "floating_ip"},
 	"DELETE load_balancers/{id}/floating_ips/{floating_ip_id}": {"release", "lb_floating_ip"},
-	"DELETE vpcs/{id}":           {"release", "vpc"},
-	"DELETE load_balancers/{id}": {"release", "load_balancer"},
-	"DELETE vpn_gateways/{id}":   {"release", "vpn_gateway"},
-	"DELETE images/{id}":         {"release", "image"},
-	"POST instances/{id}/resize": {"resize", "instance"},
-	"POST volumes/{id}/resize":   {"resize", "volume"},
+	"DELETE vpcs/{id}":                               {"release", "vpc"},
+	"DELETE load_balancers/{id}":                     {"release", "load_balancer"},
+	"DELETE vpn_gateways/{id}":                       {"release", "vpn_gateway"},
+	"DELETE vpn_gateways/{id}/public_ips/{endpoint}": {"release", "vpn_public_ip"},
+	"DELETE images/{id}":                             {"release", "image"},
+	"POST instances/{id}/resize":                     {"resize", "instance"},
+	"POST volumes/{id}/resize":                       {"resize", "volume"},
 }
 
 // QuotaResourceFields lists the consumption fields in check order; the quota column of each is "max_" + field.
@@ -364,7 +366,7 @@ func QueryResourceAmount(ctx context.Context, region *model.Region, resource, ap
 		return ResourceAmount{}, nil
 	case "volume":
 		return ResourceAmount{"disk_gb": floatOrZero(data["size"])}, nil
-	case "floating_ip", "lb_floating_ip":
+	case "floating_ip", "lb_floating_ip", "vpn_public_ip":
 		return ResourceAmount{"public_ips": 1}, nil
 	case "vpc":
 		return ResourceAmount{"vpcs": 1}, nil
@@ -376,7 +378,7 @@ func QueryResourceAmount(ctx context.Context, region *model.Region, resource, ap
 		}
 		return amount, nil
 	case "vpn_gateway":
-		// A VPN gateway always owns exactly one public address, released with it
+		// A VPN gateway owns one or two public addresses, released with it
 		amount := ResourceAmount{"vpn_gateways": 1}
 		if fips, ok := data["floating_ips"].([]interface{}); ok && len(fips) > 0 {
 			amount["public_ips"] = float64(len(fips))
@@ -524,13 +526,14 @@ func PrepareQuota(ctx context.Context, orgID int64, region *model.Region, method
 		case "floating_ip", "lb_floating_ip":
 			plan.Unit, plan.Count = ResourceAmount{"public_ips": 1}, floatingIPCount(body)
 			amount = scaleAmount(plan.Unit, plan.Count)
+		case "vpn_public_ip":
+			amount = ResourceAmount{"public_ips": 1}
 		case "vpc":
 			amount = ResourceAmount{"vpcs": 1}
 		case "load_balancer":
 			amount = ResourceAmount{"load_balancers": 1}
 		case "vpn_gateway":
-			// The gateway and the public address it is created with
-			amount = ResourceAmount{"vpn_gateways": 1, "public_ips": 1}
+			amount = ResourceAmount{"vpn_gateways": 1, "public_ips": vpnGatewayPublicIps(body)}
 		case "image":
 			// clapi makes every image a system admin creates public; public platform images are not charged
 			if headers["X-System-Role"] != systemAdminRole {
@@ -640,4 +643,28 @@ func FinishQuota(orgID, regionID int64, plan *QuotaPlan, status int, respBody []
 	if plan.Reserved {
 		Release(orgID, regionID, plan.Amount)
 	}
+}
+
+// vpnGatewayPublicIps is the number of public addresses a VPN gateway is created with: one or two
+// (public_ips) for an active_standby gateway; one per node for an active_active gateway, plus one for its
+// client VPN, whatever part of them public_ips spells out (clapi allocates the rest)
+func vpnGatewayPublicIps(body map[string]interface{}) float64 {
+	given := 0
+	if list, ok := body["public_ips"].([]interface{}); ok {
+		given = len(list)
+	}
+	if mode, _ := body["ha_mode"].(string); mode == "active_active" {
+		want := 2
+		if client, _ := body["client_enabled"].(bool); client {
+			want = 3
+		}
+		if given > want {
+			return float64(given)
+		}
+		return float64(want)
+	}
+	if given > 1 {
+		return float64(given)
+	}
+	return 1
 }

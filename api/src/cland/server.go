@@ -38,6 +38,7 @@ type Server struct {
 	Dispatcher *Dispatcher
 	Callback   *CallbackForwarder
 	Status     *StatusReporter
+	Liveness   *LivenessMonitor
 
 	validNodes *nodeCache // hostids known to clapi, for node validation
 }
@@ -62,6 +63,7 @@ func NewServer(cfg *Config) *Server {
 		Dispatcher: dispatcher,
 		Callback:   callback,
 		Status:     statusReporter,
+		Liveness:   NewLivenessMonitor(registry, callback),
 		validNodes: newNodeCache(),
 	}
 }

@@ -8,20 +8,26 @@ cd `dirname $0`
 source ../cloudrc
 source ./vpn_lib.sh
 
-[ $# -lt 2 ] && die "$0 <router> <gw_ID> [<ext_ip> <ext_vlan> <mark_id>]"
+[ $# -lt 2 ] && die "$0 <router> <gw_ID> [<ext_ip> <ext_vlan> <mark_id>]..."
 
 ID=$1
 router=router-$ID
 gw=$2
-ext_ip=$3
-ext_vlan=$4
-mark_id=$5
+shift 2
+# Every public address as "ip vlan mark" triplets
+public_addrs=""
+while [ $# -ge 3 ]; do
+    public_addrs="$public_addrs$1 $2 $3
+"
+    shift 3
+done
 vpn_dir=$(vpn_dir_of $ID $gw)
 ns=$(vpn_frr_ns $gw)
 
 exec 9>$lb_lock_file
 flock 9
 
+vpn_watch_stop $vpn_dir 2>/dev/null
 vpn_stop_charon $vpn_dir 2>/dev/null
 vpn_stop_frr $gw 2>/dev/null
 rm -rf /etc/frr/$ns
@@ -35,23 +41,24 @@ if [ -f /var/run/netns/$router ]; then
     done
     for rule in $(cat $vpn_dir/bgp_rules 2>/dev/null); do
         ip netns exec $router iptables -D INPUT -p tcp -s ${rule%>*} -d ${rule#*>} --dport 179 -j ACCEPT 2>/dev/null
+        ip netns exec $router iptables -D INPUT -p udp -s ${rule%>*} -d ${rule#*>} --dport 3784 -j ACCEPT 2>/dev/null
     done
     for dev in $(cat $vpn_dir/ifaces 2>/dev/null) wg-$gw; do
         ip netns exec $router ip link del $dev >/dev/null 2>&1
     done
+    vpn_isolate_pool_rules $router $vpn_dir del
     # MSS clamping and isolation match every ipsec+ / wg+ device of the router: keep them while another
     # gateway directory exists here (a replacement created before this clear ran)
     if ! vpn_router_has_other $router $vpn_dir; then
         vpn_mss_rules $router del
         vpn_isolate_rules $router del
     fi
-    vip=$(cat $vpn_dir/vip 2>/dev/null)
-    [ -n "$vip" ] || vip=${ext_ip%/*}
-    if [ -n "$vip" -a "$vip" != "-" ]; then
+    for vip in $(echo $(cat $vpn_dir/vips $vpn_dir/vip 2>/dev/null) $(awk '{sub("/.*", "", $1); print $1}' <<<"$public_addrs") | tr ' ' '\n' | sort -u); do
+        [ "$vip" = "-" ] && continue
         for num in $(ip netns exec $router iptables -n -L INPUT --line-numbers | grep "\<$vip\>" | awk '{print $1}' | sort -nr); do
             ip netns exec $router iptables -D INPUT $num
         done
-    fi
+    done
 fi
 
 # keepalived and its directory
@@ -65,10 +72,13 @@ if [ -n "$vrrp_ID" ]; then
     rm -rf $vrrp_dir
 fi
 
-# The public port: address, policy routing and the veth when nothing else uses it
-if [ -n "$ext_ip" -a "$ext_ip" != "-" ] && [ -f /var/run/netns/$router ]; then
-    ip netns exec $router ip addr del $ext_ip dev te-$ID-$ext_vlan >/dev/null 2>&1
-    ./clear_lb_floating.sh $ID $ext_ip $ext_vlan $mark_id >/dev/null 2>&1
+# The public ports: address, policy routing and the veth when nothing else uses it
+if [ -f /var/run/netns/$router ]; then
+    while read ext_ip ext_vlan mark_id; do
+        [ -n "$ext_ip" -a "$ext_ip" != "-" ] || continue
+        ip netns exec $router ip addr del $ext_ip dev te-$ID-$ext_vlan >/dev/null 2>&1
+        ./clear_lb_floating.sh $ID $ext_ip $ext_vlan $mark_id >/dev/null 2>&1
+    done <<<"$public_addrs"
 fi
 
 rm -rf $vpn_dir

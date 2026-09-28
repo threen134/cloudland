@@ -55,6 +55,7 @@ func main() {
 	defer stop()
 	go server.SyncValidNodes(ctx)
 	go server.Status.Run(ctx)
+	go server.Liveness.Run(ctx)
 
 	opts := []grpc.ServerOption{
 		// CommandStream 为长连接、ReportHealth 为周期上报，不产生 span；单条命令由 dispatcher/executor 手动创建 span

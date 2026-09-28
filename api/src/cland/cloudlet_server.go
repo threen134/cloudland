@@ -183,6 +183,7 @@ func (s *Server) CommandStream(stream pb.CloudletService_CommandStreamServer) er
 		Stream:    stream,
 		Cancel:    cancel,
 	}
+	node.touch()
 
 	// Register and acknowledge under the node's send lock: the ack is the first message
 	// the cloudlet receives (dispatched commands wait on the lock), and the node is
@@ -226,7 +227,8 @@ func (s *Server) CommandStream(stream pb.CloudletService_CommandStreamServer) er
 				recvErr <- err
 				return
 			}
-			s.handleCloudletMessage(node.ID, msg)
+			node.touch()
+			s.handleCloudletMessage(node, msg)
 		}
 	}()
 
@@ -258,7 +260,8 @@ func rejectRegistration(stream pb.CloudletService_CommandStreamServer, reason st
 
 // handleCloudletMessage forwards cloudlet output to clapi. The node ID comes from the
 // registered stream, not the message, so a cloudlet cannot report as another node.
-func (s *Server) handleCloudletMessage(nodeID int32, msg *pb.CloudletMessage) {
+func (s *Server) handleCloudletMessage(node *ConnectedNode, msg *pb.CloudletMessage) {
+	nodeID := node.ID
 	switch p := msg.Payload.(type) {
 	case *pb.CloudletMessage_Result:
 		// Plain stdout line: frontHandler "callback" control without |:-COMMAND-:|
@@ -266,6 +269,10 @@ func (s *Server) handleCloudletMessage(nodeID int32, msg *pb.CloudletMessage) {
 		s.Callback.Enqueue(tracing.Extract(context.Background(), r.TraceContext), r.MsgId, nodeID, r.Control, r.Output)
 	case *pb.CloudletMessage_Callback:
 		cb := p.Callback
+		if cb.Command == AliveCallback {
+			node.alive.Store(true)
+			return
+		}
 		s.Callback.Enqueue(tracing.Extract(context.Background(), cb.TraceContext), cb.MsgId, nodeID, "callback", cb.Command)
 	case *pb.CloudletMessage_Error:
 		e := p.Error
@@ -292,6 +299,7 @@ func (s *Server) ReportHealth(ctx context.Context, r *pb.HealthReport) (*pb.Heal
 	if !ok || !sessionMatches(ctx, node.SessionID) {
 		return nil, status.Errorf(codes.PermissionDenied, "health report for node %d does not match its command stream", r.NodeId)
 	}
+	node.touch()
 
 	s.Scheduler.UpdateResource(r.NodeId, &Resource{
 		CPU:          r.CpuAvailable,

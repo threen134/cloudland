@@ -6,14 +6,18 @@ source ../cloudrc
 routes_file=$ROUTES_FILE
 [ ! -f $routes_file ] && exit 0
 
+# Every line must go through: each is the default route of one fip table, and two floating IPs in two
+# VLANs have two tables. A line fails while its floating IP is not on the port yet: retry for up to 5 minutes
+pending=$(sort -u $routes_file)
 for i in {1..150}; do
+    left=""
     while read line; do
-        if eval $line; then
-       	    pass="true"
-	    break
-	fi
-    done <$routes_file
-    [ "$pass" = "true" ] && break
+        [ -n "$line" ] || continue
+        eval $line || left="$left$line
+"
+    done <<<"$pending"
+    pending=$left
+    [ -z "$pending" ] && break
     sleep 2
 done
 

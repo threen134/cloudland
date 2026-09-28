@@ -2,7 +2,7 @@
 
 # Rewrite wg.conf of a VPN gateway from the full peer list and apply it with wg syncconf (adding or
 # removing a peer does not disturb the sessions of the others). Runs on both VRRP nodes: the interface
-# exists on both, only the floating IP holder receives traffic. No route is installed here (plan §4.4).
+# exists on both, only the floating IP holder receives traffic. No route is installed here (plan §6.3).
 #
 # stdin JSON: {"port", "address", "private_key", "peers": [{"name","public_key","preshared_key","allowed_ips"}]}
 

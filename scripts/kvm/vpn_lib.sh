@@ -1,7 +1,7 @@
 #!/bin/bash
 # Shared helpers for the VPN gateway scripts. Source after cloudrc (needs router_dir, lb_lock_file, NODE_ID).
 #
-# Layout on a node, per gateway (see docs/architecture/plan/vpn-gateway-plan.md §4.1):
+# Layout on a node, per gateway (see docs/architecture/plan/vpn-gateway-plan.md §3.4):
 #   $router_dir/router-<N>/vrrp-<vrrp id>/   keepalived (same layout as a load balancer, so check_lb_process.sh
 #                                             restarts it)
 #   $router_dir/router-<N>/vpn-<gw id>/      strongswan.conf, swanctl.conf, run/ (charon pid + vici socket,
@@ -10,7 +10,12 @@
 #   /etc/frr/vpn-<gw id>/                    FRR pathspace config (frr.conf, vtysh.conf); daemons run with -N
 #   /var/run/frr/vpn-<gw id>/                FRR pid files and sockets
 #
-# Routes on the VRRP pair are owned by vpn_notify.sh (role dependent): nothing else installs them.
+# Routes on the VRRP pair are owned by vpn_notify.sh (role dependent): nothing else installs them. On an
+# active_active gateway (ha_mode file) FRR owns the tunnel prefixes on both nodes instead, and the role
+# only decides where the client VPN pool goes.
+#
+# Other nodes of the VPC route through the gateway nodes (set_vpn_route.sh); vpn_nexthop_watch.sh probes
+# those nodes and moves the routes to the next one when a node stops answering (plan §8.2, F7).
 
 vpn_scripts=$(cd $(dirname ${BASH_SOURCE[0]}) && pwd)
 charon_bin=/usr/lib/ipsec/charon
@@ -71,7 +76,8 @@ vpn_conn_pairs()
 # the floating IP holder; a connection is re-initiated at most once a minute
 vpn_ipsec_reconcile()
 {
-    local router=$1 vpn_dir=$2 conf=$vpn_dir/swanctl.conf name want have stamp child now
+    local router=$1 vpn_dir=$2
+    local conf=$vpn_dir/swanctl.conf name want have stamp child now
     [ -f $vpn_dir/conn_names ] || return 0
     vpn_charon_alive $vpn_dir || return 0
     now=$(date +%s)
@@ -104,6 +110,50 @@ vpn_ipsec_reconcile()
 vpn_disabled()
 {
     [ -f $1/disabled ]
+}
+
+# An active_active gateway (create_vpn_gateway.sh writes ha_mode): each node runs the tunnels of its own
+# fixed address, charon and FRR stay up whatever the VRRP role, the two nodes exchange routes over iBGP,
+# and the role only moves the client VPN floating IP (plan §4.2)
+vpn_is_aa()
+{
+    [ "$(cat $1/ha_mode 2>/dev/null)" = "active_active" ]
+}
+
+# True when this node runs the tunnels of the gateway: both nodes of an active_active gateway, the floating
+# IP holder of an active_standby one: vpn_runs_tunnels <router> <vpn_dir>
+vpn_runs_tunnels()
+{
+    vpn_is_aa $2 || vpn_holds_vip $1 $2
+}
+
+# Address-based client / site isolation: vpn_isolate_pool_rules <router> <vpn_dir> add|del. The interface
+# rules of vpn_isolate_rules only see a packet that goes from wg- to ipsec- on one node; on an active_active
+# gateway a client packet enters the floating IP holder and may leave through a tunnel of the other node,
+# where it arrives on the VRRP NIC. These rules match the client pool itself (client_cidr, written by
+# create_vpn_gateway.sh while the client VPN is on) and sit on both nodes; client_cidr.rules is what is installed.
+vpn_isolate_pool_rules()
+{
+    local router=$1 vpn_dir=$2 op=$3 old new cidr
+    old=$(cat $vpn_dir/client_cidr.rules 2>/dev/null)
+    new=""
+    [ "$op" = "add" ] && new=$(cat $vpn_dir/client_cidr 2>/dev/null)
+    for cidr in $old; do
+        [ "$cidr" = "$new" ] && continue
+        while ip netns exec $router iptables -D FORWARD -s $cidr -o ipsec+ -j DROP 2>/dev/null; do :; done
+        while ip netns exec $router iptables -D FORWARD -i ipsec+ -d $cidr -j DROP 2>/dev/null; do :; done
+    done
+    if [ -n "$new" ]; then
+        ip netns exec $router iptables -C FORWARD -s $new -o ipsec+ -j DROP 2>/dev/null ||
+            ip netns exec $router iptables -I FORWARD 1 -s $new -o ipsec+ -j DROP ||
+            log_debug "$(basename $0)" "vpn: failed to add the pool isolation rule for $new in $router"
+        ip netns exec $router iptables -C FORWARD -i ipsec+ -d $new -j DROP 2>/dev/null ||
+            ip netns exec $router iptables -I FORWARD 1 -i ipsec+ -d $new -j DROP ||
+            log_debug "$(basename $0)" "vpn: failed to add the pool isolation rule for $new in $router"
+        echo $new >$vpn_dir/client_cidr.rules
+    else
+        rm -f $vpn_dir/client_cidr.rules
+    fi
 }
 
 # TCP MSS inside the tunnels: vpn_mss_rules <router> add|del. Handshakes (SYN and SYN-ACK) leaving through
@@ -297,6 +347,8 @@ vpn_start_charon()
     # path that brings charon up comes through here: the notify script, the watchdog (which can win the
     # race after a failover) and the config scripts
     vpn_traffic_baseline $router $vpn_dir
+    # No SA survives a charon restart: the watch loop sees the tunnels come up again from here
+    : >$vpn_dir/tunnels.up
     vpn_trace "charon: spawning"
     STRONGSWAN_CONF=$vpn_dir/strongswan.conf ip netns exec $router unshare -m sh -c "mount --bind $vpn_dir/run /run && exec $charon_bin" >/dev/null 2>&1 9>&- &
     for i in {1..20}; do
@@ -339,11 +391,13 @@ vpn_frr_ns()
 vpn_frr_alive()
 {
     local ns=$(vpn_frr_ns $1)
-    vpn_pid_alive /var/run/frr/$ns/zebra.pid zebra && vpn_pid_alive /var/run/frr/$ns/mgmtd.pid mgmtd && vpn_pid_alive /var/run/frr/$ns/staticd.pid staticd && vpn_pid_alive /var/run/frr/$ns/bgpd.pid bgpd
+    vpn_pid_alive /var/run/frr/$ns/zebra.pid zebra && vpn_pid_alive /var/run/frr/$ns/mgmtd.pid mgmtd && vpn_pid_alive /var/run/frr/$ns/staticd.pid staticd &&
+        vpn_pid_alive /var/run/frr/$ns/bfdd.pid bfdd && vpn_pid_alive /var/run/frr/$ns/bgpd.pid bgpd
 }
 
-# Start zebra + mgmtd + staticd + bgpd for a gateway in the router netns under their own pathspace, then
-# load the integrated config. zebra must be up before the others or learned routes never reach the kernel;
+# Start zebra + mgmtd + staticd + bfdd + bgpd for a gateway in the router netns under their own pathspace,
+# then load the integrated config. bfdd runs even without a BFD peer: bgpd registers its sessions with it.
+# Load the integrated config. zebra must be up before the others or learned routes never reach the kernel;
 # since FRR 9 static routes are configured through mgmtd, without it "ip route" is silently dropped.
 # staticd owns the summary blackholes (distance 250): a kernel blackhole for the same prefix would win
 # zebra's route selection (distance 0) and the BGP route for that prefix would never be installed.
@@ -379,16 +433,80 @@ vpn_start_frr()
         [ -S /var/run/frr/$ns/mgmtd.vty ] && break
         sleep 0.25
     done
-    vpn_trace "frr: mgmtd $([ -S /var/run/frr/$ns/mgmtd.vty ] && echo up || echo NOT UP), launching staticd and bgpd"
+    vpn_trace "frr: mgmtd $([ -S /var/run/frr/$ns/mgmtd.vty ] && echo up || echo NOT UP), launching staticd, bfdd and bgpd"
     ip netns exec $router $frr_bin_dir/staticd -N $ns -d >/dev/null 2>&1 9>&-
+    ip netns exec $router $frr_bin_dir/bfdd -N $ns -d >/dev/null 2>&1 9>&-
     ip netns exec $router $frr_bin_dir/bgpd -N $ns -d >/dev/null 2>&1 9>&-
     for i in {1..20}; do
-        [ -S /var/run/frr/$ns/bgpd.vty ] && [ -S /var/run/frr/$ns/staticd.vty ] && break
+        [ -S /var/run/frr/$ns/bgpd.vty ] && [ -S /var/run/frr/$ns/staticd.vty ] && [ -S /var/run/frr/$ns/bfdd.vty ] && break
         sleep 0.25
     done
     vpn_trace "frr: bgpd/staticd $([ -S /var/run/frr/$ns/bgpd.vty ] && [ -S /var/run/frr/$ns/staticd.vty ] && echo up || echo NOT UP), loading config"
     timeout 30 vtysh -N $ns -b >/dev/null 2>&1
     vpn_trace "frr: config loaded (rc=$?)"
+    # The static tunnel routes of an active_active gateway follow the SAs: frr.conf only had the ones up
+    # when it was written, bring them in line now
+    vpn_frr_statics $router $router_dir/$router/vpn-$gw
+}
+
+# The staticd command of a tunnel route: vpn_static_cmd <cidr> <if_id> <tag> <distance>. The default
+# distance is left out, as FRR prints it (the running config and frr.conf must match line by line)
+vpn_static_cmd()
+{
+    local cmd="ip route $1 ipsec-$2 tag $3"
+    [ "$4" != "1" ] && cmd="$cmd $4"
+    echo "$cmd"
+}
+
+# The tunnel routes that should exist on this node of an active_active gateway, sorted: one per remote
+# network of every static tunnel whose SA is installed. static_tunnels (create_vpn_bgp_conf.sh) has one line
+# per tunnel of this node: <name> <if_id> <tag> <distance> <cidr>...
+vpn_static_wanted()
+{
+    local vpn_dir=$1 name if_id tag distance cidrs cidr up
+    up=" $(tr '\n' ' ' <$vpn_dir/tunnels.up 2>/dev/null) "
+    [ -f $vpn_dir/static_tunnels ] || return 0
+    while read name if_id tag distance cidrs; do
+        [ -n "$cidrs" ] || continue
+        case "$up" in
+        *" $name "*) ;;
+        *) continue ;;
+        esac
+        for cidr in $cidrs; do
+            vpn_static_cmd $cidr $if_id $tag $distance
+        done
+    done <$vpn_dir/static_tunnels | sort
+}
+
+# Keep the staticd routes of the static tunnels of an active_active gateway in line with their SAs:
+# vpn_frr_statics <router> <vpn_dir>. A tunnel that is up routes its remote networks through its interface
+# (the best tunnel with distance 1, a lesser one above the iBGP distance of 200, so that the other node's
+# better tunnel wins while it lasts); redistributed into iBGP with the local preference of its rank, the
+# other node learns them. What exists is read from the running config: a static route through an ipsec-
+# interface with a tag is always one of these (the summary and last-resort routes go to Null0).
+vpn_frr_statics()
+{
+    local router=$1 vpn_dir=$2 gw=${2##*/vpn-} ns want have line cmds=()
+    vpn_is_aa $vpn_dir || return 0
+    vpn_disabled $vpn_dir && return 0
+    vpn_frr_alive $gw || return 0
+    ns=$(vpn_frr_ns $gw)
+    want=$(vpn_static_wanted $vpn_dir)
+    have=$(timeout 10 vtysh -N $ns -c "show running-config" 2>/dev/null) || return 1
+    have=$(grep -E '^ip route [0-9./]+ ipsec-[0-9]+ tag [0-9]+( [0-9]+)?$' <<<"$have" | sort)
+    [ "$want" = "$have" ] && return 0
+    while read line; do
+        [ -n "$line" ] && cmds+=(-c "$line")
+    done < <(comm -13 <(echo "$have") <(echo "$want"))
+    while read line; do
+        [ -n "$line" ] && cmds+=(-c "no $line")
+    done < <(comm -23 <(echo "$have") <(echo "$want"))
+    if [ ${#cmds[@]} -gt 0 ]; then
+        timeout 10 vtysh -N $ns -c "configure terminal" "${cmds[@]}" >/dev/null 2>&1 || {
+            log_debug "$(basename $0)" "vpn: failed to update the tunnel routes of gateway $gw in FRR"
+            return 1
+        }
+    fi
 }
 
 # Apply a changed frr.conf: hot reload when the daemons run, otherwise start them
@@ -410,19 +528,22 @@ vpn_reload_frr()
 vpn_stop_frr()
 {
     local ns=$(vpn_frr_ns $1) d pid i
-    for d in bgpd staticd mgmtd zebra; do
+    for d in bgpd bfdd staticd mgmtd zebra; do
         pid=$(cat /var/run/frr/$ns/$d.pid 2>/dev/null)
         [ -n "$pid" ] && [ -d /proc/$pid ] && kill -TERM $pid 2>/dev/null
     done
     for i in {1..20}; do
-        vpn_pid_alive /var/run/frr/$ns/bgpd.pid bgpd || vpn_pid_alive /var/run/frr/$ns/staticd.pid staticd || vpn_pid_alive /var/run/frr/$ns/mgmtd.pid mgmtd || vpn_pid_alive /var/run/frr/$ns/zebra.pid zebra || break
+        vpn_pid_alive /var/run/frr/$ns/bgpd.pid bgpd || vpn_pid_alive /var/run/frr/$ns/bfdd.pid bfdd || vpn_pid_alive /var/run/frr/$ns/staticd.pid staticd ||
+            vpn_pid_alive /var/run/frr/$ns/mgmtd.pid mgmtd || vpn_pid_alive /var/run/frr/$ns/zebra.pid zebra || break
         sleep 0.25
     done
     rm -rf /var/run/frr/$ns
 }
 
 # Install the tunnel routes of a VRRP node according to its role. tunnel_routes has three columns:
-# <cidr> <static|bgp|client> <target on the master>. master: static/client go to the tunnel interface,
+# <cidr> <static|bgp|client> <target on the master>. master: static/client go to the tunnel interface
+# (a static connection with two tunnels lists both, primary first: the first one whose SA is installed
+# according to tunnels.up wins, the primary when none is),
 # bgp summaries become a blackhole (learned prefixes win; without the blackhole a withdrawn prefix would
 # leak to the internet through the default route). While FRR runs, its staticd owns that blackhole with
 # distance 250 and the kernel one (proto boot) is removed: zebra would otherwise prefer the kernel route
@@ -431,17 +552,24 @@ vpn_stop_frr()
 # routes.installed remembers what was installed so removed prefixes are withdrawn.
 vpn_apply_routes()
 {
-    local router=$1 vpn_dir=$2 role=$3 peer_ip vrrp_vlan cidr type target installed new gw_id
+    local router=$1 vpn_dir=$2 role=$3 peer_ip vrrp_vlan cidr type target installed new gw_id aa=false dev args
     gw_id=${vpn_dir##*/vpn-}
     peer_ip=$(cat $vpn_dir/peer_ip 2>/dev/null)
     vrrp_vlan=$(cat $vpn_dir/vrrp_vlan 2>/dev/null)
     installed=$(cat $vpn_dir/routes.installed 2>/dev/null)
+    vpn_is_aa $vpn_dir && aa=true
     # A paused gateway drops everything on both nodes, whatever the VRRP role
     vpn_disabled $vpn_dir && role=disabled
     new=""
     if [ -f $vpn_dir/tunnel_routes ]; then
         while read cidr type target; do
             [ -n "$cidr" ] || continue
+            # active_active: FRR owns the tunnel prefixes on both nodes (staticd for the static connections,
+            # BGP for the others, iBGP between the nodes); a kernel route would win zebra's selection
+            if $aa && [ "$role" != "disabled" ] && [ "$type" != "client" ]; then
+                ip netns exec $router ip route del $cidr proto boot >/dev/null 2>&1
+                continue
+            fi
             case $role in
             master)
                 if [ "$target" = "blackhole" ]; then
@@ -449,6 +577,17 @@ vpn_apply_routes()
                     # or not), drop ours: zebra only installs its own route when no kernel route competes
                     if [ "$type" = "bgp" ] && vpn_frr_alive $gw_id && timeout 5 vtysh -N $(vpn_frr_ns $gw_id) -c "show ip route $cidr" 2>/dev/null | grep -q 'Known via "static"'; then
                         ip netns exec $router ip route del blackhole $cidr proto boot 2>/dev/null
+                    else
+                        ip netns exec $router ip route replace blackhole $cidr
+                    fi
+                elif target=$(vpn_pick_target $vpn_dir $target) && [ "${target//+/}" != "$target" ]; then
+                    # ecmp: every tunnel that is up shares the prefix, flows hashed on addresses and ports
+                    args=""
+                    for dev in ${target//+/ }; do
+                        ip netns exec $router ip link show $dev >/dev/null 2>&1 && args="$args nexthop dev $dev"
+                    done
+                    if [ -n "$args" ]; then
+                        ip netns exec $router ip route replace $cidr $args
                     else
                         ip netns exec $router ip route replace blackhole $cidr
                     fi
@@ -482,8 +621,80 @@ vpn_apply_routes()
     echo $new >$vpn_dir/routes.installed
 }
 
+# vpn_pick_target <vpn_dir> <dev[,dev...]|dev[+dev...]>: with commas the first interface whose tunnel is
+# up (the first one otherwise); with "+" (ecmp) every interface whose tunnel is up, joined by "+" (all of
+# them otherwise)
+vpn_pick_target()
+{
+    local vpn_dir=$1 list=$2 dev name up=""
+    case $list in
+    *+*)
+        for dev in ${list//+/ }; do
+            name=$(awk -v i=${dev#ipsec-} '$2 == i {print $1}' $vpn_dir/conn_ifids 2>/dev/null)
+            [ -n "$name" ] && grep -qxF "$name" $vpn_dir/tunnels.up 2>/dev/null && up="$up+$dev"
+        done
+        if [ -n "$up" ]; then echo ${up#+}; else echo $list; fi
+        return 0
+        ;;
+    *,*) ;;
+    *) echo $list; return 0 ;;
+    esac
+    for dev in ${list//,/ }; do
+        name=$(awk -v i=${dev#ipsec-} '$2 == i {print $1}' $vpn_dir/conn_ifids 2>/dev/null)
+        [ -n "$name" ] && grep -qxF "$name" $vpn_dir/tunnels.up 2>/dev/null && { echo $dev; return 0; }
+    done
+    echo ${list%%,*}
+}
+
+# vpn_tunnels_up <router> <vpn_dir>: names of the tunnels with an established IKE SA and an installed
+# CHILD_SA, one per line, sorted; also written to tunnels.up for vpn_apply_routes. Fails when charon does not answer.
+vpn_tunnels_up()
+{
+    local router=$1 vpn_dir=$2 sas up
+    vpn_charon_alive $vpn_dir || return 1
+    sas=$(timeout 5 ip netns exec $router swanctl --list-sas --uri unix://$vpn_dir/run/charon.vici 2>/dev/null) || return 1
+    up=$(awk '
+        /^[A-Za-z0-9_-]+: #[0-9]+, / { cur = $1; sub(":$", "", cur); est = ($3 == "ESTABLISHED,") }
+        /^  [A-Za-z0-9_-]+: #[0-9]+, reqid [0-9]+, INSTALLED,/ { if (est) up[cur] = 1 }
+        END { for (n in up) print n }' <<<"$sas" | sort)
+    [ "$up" = "$(cat $vpn_dir/tunnels.up 2>/dev/null)" ] || echo "$up" >$vpn_dir/tunnels.up
+    echo "$up"
+}
+
+# Ask cloudlet for an immediate VPN status report instead of the next heartbeat (1-20 s): it watches this
+# file and runs report_vpn_status.sh when it changes (plan §8.2, F3). A cloudlet that does not
+# know about it simply ignores the file.
+vpn_trigger_report()
+{
+    mkdir -p /run/cloudland 2>/dev/null && touch /run/cloudland/vpn-report.trigger 2>/dev/null
+    return 0
+}
+
+# The per-gateway watch loop on the master (vpn_watch.sh): alive when the pid runs that script for this gateway
+vpn_watch_alive()
+{
+    local vpn_dir=$1 gw=${1##*/vpn-} pid
+    pid=$(cat $vpn_dir/watch.pid 2>/dev/null)
+    [ -n "$pid" ] && [ -r /proc/$pid/cmdline ] && tr '\0' ' ' </proc/$pid/cmdline | grep -q "vpn_watch.sh $gw\b"
+}
+
+vpn_watch_start()
+{
+    local vpn_dir=$1 gw=${1##*/vpn-}
+    vpn_watch_alive $vpn_dir && return 0
+    vpn_disabled $vpn_dir && return 0
+    setsid $vpn_scripts/vpn_watch.sh $gw >/dev/null 2>&1 9>&- </dev/null &
+}
+
+vpn_watch_stop()
+{
+    local vpn_dir=$1
+    vpn_watch_alive $vpn_dir && kill $(cat $vpn_dir/watch.pid) 2>/dev/null
+    rm -f $vpn_dir/watch.pid
+}
+
 # Make sure the WireGuard interface exists with the current key, port and address (no route: that is
-# the notify script's job, see the plan §4.4). Peers come from wg.conf via syncconf.
+# the notify script's job, see the plan §6.3). Peers come from wg.conf via syncconf.
 vpn_apply_wg()
 {
     local router=$1 vpn_dir=$2 gw=$3 dev=wg-$3 address port
@@ -498,4 +709,74 @@ vpn_apply_wg()
     else
         ip netns exec $router ip link set $dev mtu 1390 up
     fi
+}
+
+# ---- Other nodes of the VPC: routes through the gateway nodes (set_vpn_route.sh, vpn_nexthop_watch.sh) ----
+# nexthops: <cidr> <ecmp 0|1> <vrrp ip>[,<vrrp ip>...] in order of preference; nexthop_hosts: <vrrp ip> <host
+# ip> (the gateway node's own address, which the watcher probes). A node the watcher found dead is marked
+# in $vpn_nexthop_state/<host ip> ("down"); anything else counts as reachable.
+vpn_nexthop_state=/run/cloudland/vpn-nexthop
+vpn_nexthop_lock=$run_dir/vpn_nexthop.lock
+
+vpn_hop_reachable()
+{
+    local vpn_dir=$1 hop=$2 host
+    host=$(awk -v h=$hop '$1 == h {print $2}' $vpn_dir/nexthop_hosts 2>/dev/null)
+    [ -n "$host" ] || return 0
+    [ "$(cat $vpn_nexthop_state/$host 2>/dev/null)" != "down" ]
+}
+
+# Install the routes of the other nodes: vpn_apply_nexthops <router> <vpn_dir>. The first reachable gateway
+# node of every prefix, or with ecmp all the reachable ones; the preferred one when none is reachable (the
+# probe may be what failed, and there is nothing better). routes.current is what is installed. Callers hold
+# $vpn_nexthop_lock.
+vpn_apply_nexthops()
+{
+    local router=$1 vpn_dir=$2 vrrp_vlan cidr ecmp hops hop chosen args installed new=""
+    vrrp_vlan=$(cat $vpn_dir/vrrp_vlan 2>/dev/null)
+    installed=$(cat $vpn_dir/routes.current 2>/dev/null)
+    if [ -n "$vrrp_vlan" ] && [ -f $vpn_dir/nexthops ] && ip netns exec $router ip link show ns-$vrrp_vlan >/dev/null 2>&1; then
+        while read cidr ecmp hops; do
+            [ -n "$hops" ] || continue
+            chosen=""
+            for hop in ${hops//,/ }; do
+                vpn_hop_reachable $vpn_dir $hop || continue
+                chosen="$chosen $hop"
+                [ "$ecmp" = "1" ] || break
+            done
+            [ -n "$chosen" ] || chosen=${hops%%,*}
+            set -- $chosen
+            if [ $# -gt 1 ]; then
+                args=""
+                for hop in $chosen; do
+                    args="$args nexthop via $hop dev ns-$vrrp_vlan onlink"
+                done
+                ip netns exec $router ip route replace $cidr $args
+            else
+                ip netns exec $router ip route replace $cidr via $1 dev ns-$vrrp_vlan onlink
+            fi
+            new="$new $cidr"
+        done <$vpn_dir/nexthops
+    fi
+    for cidr in $installed; do
+        case " $new " in
+        *" $cidr "*) ;;
+        *) ip netns exec $router ip route del $cidr >/dev/null 2>&1 ;;
+        esac
+    done
+    echo $new >$vpn_dir/routes.current
+}
+
+vpn_nexthop_watch_alive()
+{
+    local pid
+    pid=$(cat $vpn_nexthop_state/watch.pid 2>/dev/null)
+    [ -n "$pid" ] && [ -r /proc/$pid/cmdline ] && tr '\0' ' ' </proc/$pid/cmdline | grep -q "vpn_nexthop_watch.sh"
+}
+
+vpn_nexthop_watch_start()
+{
+    vpn_nexthop_watch_alive && return 0
+    mkdir -p $vpn_nexthop_state
+    setsid $vpn_scripts/vpn_nexthop_watch.sh >/dev/null 2>&1 9>&- </dev/null &
 }
