@@ -12,12 +12,16 @@ graph TD
     VPC --> SUBNET[子网 Subnet]
     VPC --> SG[安全组 Security Group]
     VPC --> LB[负载均衡 Load Balancer]
+    VPC --> VPN[VPN 网关 VPN Gateway]
     SUBNET --> INST[实例 Instance]
     SUBNET --> FIP[浮动 IP Floating IP]
     INST --> VOL[存储卷 Volume]
     INST --> KEY[SSH 密钥]
     SG --> RULE[安全组规则]
     LB --> LISTENER[监听器 Listener]
+    VPN --> CONN[站点连接 Connection]
+    VPN --> CLIENT[VPN 客户端 Client]
+    CONN --> TUNNEL[隧道 Tunnel]
 ```
 
 ## 实例状态机

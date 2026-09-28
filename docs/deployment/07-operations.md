@@ -150,6 +150,31 @@ journalctl -u keepalived -f
 ssh -o BatchMode=yes root@<对端IP> true
 ```
 
+### 8. VPN 网关排查
+
+网关的进程与配置在承载它的两个计算节点上，目录是 `/opt/cloudland/cache/router/router-<N>/vpn-<网关 ID>/`（下称 `<vpn_dir>`，`router-<N>` 是 VPC 路由器的网络命名空间）。
+
+```bash
+# 1. IPsec 隧道（在主节点上；双活网关两个节点都要看）
+ip netns exec router-<N> swanctl --list-sas --uri unix://<vpn_dir>/run/charon.vici
+tail -n 100 <vpn_dir>/charon.log
+
+# 2. BGP / BFD 会话
+vtysh -N vpn-<网关 ID> -c 'show bgp summary'
+vtysh -N vpn-<网关 ID> -c 'show bfd peers'
+
+# 3. 主备切换过程（每次角色变化记分步时间戳，正常 2 秒内从 master start 走到 done）
+tail -n 50 <vpn_dir>/notify.log
+
+# 4. 莫名的 Permission denied：多半是 AppArmor
+journalctl -k | grep DENIED
+```
+
+- **VPN 相关接口返回 503**：控制节点 `.env` 里没有 `VPN_SECRET_KEY`，或者被换过（已保存的凭据解不开）。
+- **网关一直「创建中」**：可用区里只有一个可用节点，备节点放不下。
+- **流量曲线没有数据**：先看 Prometheus 目标里计算节点的 node_exporter 是否 up（`curl http://<INTERNAL_IP>:9090/api/v1/targets`）。
+- **模拟断网测试切换**：用 `tc qdisc add dev <公网网卡> root netem loss 100%`，不要用 iptables。iptables 拦不住 ARP，被隔离的节点继续回应公网地址，测出来的切换时间是假的。
+
 ---
 
 ## 性能与维护建议
@@ -158,6 +183,7 @@ ssh -o BatchMode=yes root@<对端IP> true
 - **备份**:
   - **核心数据库**: 建议定期执行 `pg_dump` 备份 `cloudland` 和 `cloudland_cpgateway` 数据库。
   - **SSH 密钥**: 备份 `/opt/cloudland/deploy/.ssh` 目录，这是控制计算节点的唯一凭证。
+  - **`.env`**: 备份 `deploy/docker/.env`。其中的 `VPN_SECRET_KEY` 要和数据库备份配套保存：只恢复数据库而密钥不对时，VPN 凭据全部解不开。
   - **SSL 证书**: 备份 `volumes/certs/` 目录，更换节点时可复用。
 - **升级**:
   1. 执行 `git pull` 拉取代码。

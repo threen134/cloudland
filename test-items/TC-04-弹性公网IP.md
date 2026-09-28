@@ -31,6 +31,7 @@ docker run --rm --network host -v /root/console-test:/work -w /work -e ADMIN_PAS
 
 - [ ] 表格行数 +1，`toast` 无错误，无 4xx/5xx
 - [ ] 分配到的地址落在 `52.117.101.146–158` 内且未与既有地址冲突
+- [ ] 「公网 IP」下拉**不含子网网关 `.145`**（clapi 返回的地址列表里网关那一行是空闲的，靠前端排除）；接口带 `public_ip: "52.117.101.145"` 申请 → 400，`addresses` 表里 `.145` 仍是 `allocated = false`（`gw-exclude.js` 覆盖下拉，接口这项要在后端部署后手工跑）
 - [ ] **未挂载的行上有「挂载」按钮**（挂载后应变成「卸载」）
 - [ ] `pageerrors: none`
 
@@ -144,6 +145,7 @@ ssh work-0X "ip netns exec router-$RT iptables -t nat -S | grep -c $FIP; ip netn
 | 3 | `create_lb_floating.sh` 未设带宽限制时删 tc 规则输出 `invalid priority value` | **既有噪音**，不影响功能 | 不要当故障 |
 | 4 | 删除负载均衡时它挂的弹性 IP 配额没释放 | 网关删除 LB 时要连带释放 | `TC-06` 里核对 |
 | 5 | 浮动 IP 在热迁移时中断 ~0.6 秒，completed 阶段再断 ~1.1 秒 | **设计取舍，决定不改**（2026-09-15）。只丢包不断连接 | 见 `TC-07` |
+| 6 | 子网网关地址能被指定分配（2026-09-24 发现，2026-09-27 修） | 地址列表把网关行当空闲返回，`AllocateAddress` 指定地址时不排除网关；选中就把公网网关占掉、整个子网断网。弹性 IP、云服务器（TC-02 创建弹窗）、VPN 三处下拉同源 | FIP-01 的下拉与接口两项 |
 
 ---
 

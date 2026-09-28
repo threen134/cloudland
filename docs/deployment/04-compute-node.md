@@ -236,6 +236,18 @@ Private VLAN   = bond2   ← 东西向私有 VLAN（独立隔离）
 
 ---
 
+## VPN 网关依赖
+
+VPN 网关跑在计算节点上（每个网关占两个节点，互为备份），部署脚本已经自动完成下面几件事，这里列出来供排查时对照：
+
+- 安装 `strongswan-swanctl`、`strongswan-charon`、`wireguard-tools`、`frr`（负载均衡用的 `keepalived`、`haproxy` 也在这一步），并**停用**系统自带的 strongswan / ipsec / frr 服务。这些进程由平台在 VPC 路由器的网络命名空间里按网关单独启动；系统服务会占用 IKE 端口、改宿主机路由表。
+- 写入 AppArmor 本地规则 `/etc/apparmor.d/local/{usr.lib.ipsec.charon,usr.sbin.swanctl,bgpd,staticd,bfdd,wg}`，放行网关的工作目录（Ubuntu 26.04 把这些程序限制在打包路径里）。
+- VPN 流量历史依赖节点上的 node_exporter，它要保持运行。
+
+一个可用区里至少要有**两个**可用的计算节点，否则 VPN 网关（以及负载均衡）的备节点放不下，会一直停在「创建中」。
+
+---
+
 ## 常见问题
 
 - **节点状态停留在 DEPLOYING**：SSH 到计算节点查看部署脚本输出，确认是否有报错。
