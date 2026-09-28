@@ -103,8 +103,8 @@ export interface SubnetPayload {
     priority?: number
 }
 
-// GET /addresses/:subnet 的返回项。allocated / reserved 的地址不能再分配出去，
-// 创建虚拟机与浮动 IP 的下拉都按这两个标记过滤
+// An item of GET /addresses/:subnet. Allocated or reserved addresses cannot be handed out again; the
+// address dropdowns all filter through assignableAddresses
 export interface SubnetAddress {
     address: string
     allocated?: boolean
@@ -114,6 +114,14 @@ export interface SubnetAddress {
 export interface SubnetAddressListResponse {
     total: number
     addresses: SubnetAddress[]
+}
+
+// The addresses of a subnet that can be picked by name: not allocated, not reserved, and not the subnet
+// gateway. The gateway has an address row that is never marked allocated on a public subnet (it is the
+// upstream router); clapi refuses it, and the dropdowns do not offer it.
+export const assignableAddresses = (addresses: SubnetAddress[] | undefined, gateway?: string): SubnetAddress[] => {
+    const gatewayIp = gateway?.split('/')[0]
+    return (addresses || []).filter((a) => !a.allocated && !a.reserved && a.address.split('/')[0] !== gatewayIp)
 }
 
 export interface SubnetListResponse {
@@ -397,6 +405,8 @@ export interface LoadBalancer {
     created_at?: string
     updated_at?: string
     owner?: string
+    // Available on one node without high availability: its zone had no second node (the backup comes later)
+    single_node?: boolean
 }
 
 export interface LoadBalancerPayload {

@@ -280,8 +280,23 @@ func DerivePublicInterface(ctx context.Context, instance *model.Instance, iface 
 	return
 }
 
+// ClaimsSubnetGateway tells whether an interface of that type asks for the gateway address of the subnet.
+// The gateway has an address row like any other that the automatic allocation skips, and on a public
+// subnet nothing ever marks it allocated (the gateway is the upstream router): handed out by name to an
+// instance or a floating IP, it would hijack the gateway of the whole subnet. Only the gateway port of the
+// subnet itself ("gateway" interfaces, subnet.go) may take it.
+func ClaimsSubnetGateway(subnet *model.Subnet, address, ifType string) bool {
+	if address == "" || subnet == nil || subnet.Gateway == "" || strings.HasPrefix(ifType, "gateway") {
+		return false
+	}
+	return strings.Split(address, "/")[0] == strings.Split(subnet.Gateway, "/")[0]
+}
+
 func CreateInterface(ctx context.Context, subnet *model.Subnet, ID, owner int64, hyper int32, inbound, outbound int32, address, mac, ifaceName, ifType string, secgroups []*model.SecurityGroup, allowSpoofing bool) (iface *model.Interface, err error) {
 	ctx, db := GetContextDB(ctx)
+	if ClaimsSubnetGateway(subnet, address, ifType) {
+		return nil, NewCLError(ErrInvalidParameter, fmt.Sprintf("%s is the gateway of subnet %s and cannot be assigned", strings.Split(address, "/")[0], subnet.Name), nil)
+	}
 	primary := false
 	if ifaceName == "eth0" {
 		primary = true

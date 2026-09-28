@@ -15,6 +15,7 @@ import {
     subnetsApi,
     securityGroupsApi,
     floatingIpsApi,
+    assignableAddresses,
     type VPC,
     type Subnet,
     type SecurityGroup,
@@ -389,8 +390,8 @@ const fetchSubnetAddresses = async (subnetId: string) => {
     addressesLoading.value[subnetId] = true
     try {
         const response = await subnetsApi.listAddresses(subnetId)
-        // Filter for available IPs
-        subnetAddresses.value[subnetId] = (response.addresses || []).filter((a) => !a.allocated && !a.reserved)
+        const gateway = availableSubnets.value.find((s) => s.id === subnetId)?.gateway
+        subnetAddresses.value[subnetId] = assignableAddresses(response.addresses, gateway)
     } catch (err) {
         console.error('Failed to fetch subnet addresses:', err)
     } finally {
