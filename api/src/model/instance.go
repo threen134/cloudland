@@ -80,6 +80,13 @@ type Instance struct {
 	RouterID       int64 `gorm:"uniqueIndex:idx_router_instance"`
 	Router         *Router
 	OwnerInfo      *Organization `gorm:"-"` /* Transient: populated for SystemAdmin list view */
+	// 0: not in a placement group
+	PlacementGroupID int64           `gorm:"index"`
+	PlacementGroup   *PlacementGroup `gorm:"foreignkey:PlacementGroupID"`
+	// Host clapi chose for a member of a placement group. Only read while hyper is -1 and the instance is
+	// provisioning or deleting: hyper is written by the launch_vm callback once the host created it. No default tag,
+	// 0 is a host id
+	PlacementHyper int32
 }
 
 func init() {

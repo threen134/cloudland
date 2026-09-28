@@ -27,6 +27,8 @@ type MigrationOptions struct {
 	AllowPoolFallback bool
 	// Skip the capacity checks (system admin, audited)
 	IgnoreCapacity bool
+	// Skip the rules of the placement group of the instance (system admin, kept on the migration record)
+	IgnorePlacement bool
 }
 
 // instanceDisks loads the disks of an instance that have to move with it, each with its pool
@@ -304,6 +306,11 @@ type MigrationTarget struct {
 	Usable   bool          `json:"usable"`
 	Reason   string        `json:"reason,omitempty"`
 	Disks    []*DiskTarget `json:"disks"`
+	// A rule of a best-effort placement group this target breaks, or a note on the members of a strict pack group
+	// that must move in the same request
+	PlacementWarning string `json:"placement_warning,omitempty"`
+	// Not usable only because of the rule of a strict placement group: usable with ignore_placement
+	PlacementBlocked bool `json:"placement_blocked"`
 }
 
 // MigrationTargets lists the hosts of the zone and, for each, where every local disk of the instance could go
@@ -362,5 +369,6 @@ func MigrationTargets(ctx context.Context, instance *model.Instance) (targets []
 		}
 		targets = append(targets, t)
 	}
+	err = annotatePlacementTargets(db, instance, targets)
 	return
 }

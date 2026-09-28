@@ -102,6 +102,16 @@ const (
 	ErrMigrationDeleteFailed ErrCode = 111804
 	ErrMigrationInProgress   ErrCode = 111805
 
+	// placement group related errors (1117xx)
+	ErrPlacementGroupNotFound ErrCode = 111701
+	ErrPlacementGroupExists   ErrCode = 111702
+	ErrPlacementGroupInUse    ErrCode = 111703
+	ErrPlacementGroupNoHost   ErrCode = 111704 // strict spread: no host without a member
+	ErrPlacementGroupHostFull ErrCode = 111705 // strict pack: the host of the group can not take more, or is not usable
+	ErrPlacementGroupConflict ErrCode = 111706 // a given host or target, or the zone, breaks the rules of a strict group
+	ErrPlacementGroupLimit    ErrCode = 111707
+	ErrPlacementGroupBusy     ErrCode = 111708 // strict pack: members are migrating
+
 	// Volume related errors (121xxx)
 	ErrVolumeNotFound         ErrCode = 121001
 	ErrVolumeCreationFailed   ErrCode = 121002
@@ -309,6 +319,13 @@ func (c ErrCode) ToHTTPStatus() int {
 		return 400
 	case c == ErrVpnSecretUnavailable:
 		return 503
+	case c == ErrPlacementGroupNotFound:
+		return 404
+	case c == ErrPlacementGroupExists || c == ErrPlacementGroupInUse || c == ErrPlacementGroupNoHost ||
+		c == ErrPlacementGroupHostFull || c == ErrPlacementGroupLimit || c == ErrPlacementGroupBusy:
+		return 409
+	case c == ErrPlacementGroupConflict:
+		return 400
 	case c == ErrStorageCapacityExceeded || c == ErrStoragePoolInUse:
 		return 409
 	case c == ErrInsufficientResource || c == ErrInsufficientAddress || c == ErrEmailConflict || c == ErrOrgHasResources || c == ErrOrgHasMembers || c == ErrSlugConflict || c == ErrSlugReserved:

@@ -36,6 +36,12 @@ type Migration struct {
 	DiskRequests      string `gorm:"type:text"`
 	AllowPoolFallback bool   // no gorm default tag, false is meaningful
 	IgnoreCapacity    bool
+	// The system admin skipped the placement group checks (no default tag, like IgnoreCapacity)
+	IgnorePlacement bool
+	// Status of the instance before the migration, restored when cland refuses the target
+	PriorStatus string `gorm:"type:varchar(32)"`
+	// Transient: the best-effort placement group rule this migration breaks, for the create response
+	PlacementWarning string `gorm:"-"`
 }
 
 // DiskPlanItem is where one local disk of a migrating instance goes

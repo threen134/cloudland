@@ -71,7 +71,8 @@ type InstancePayload struct {
 	Userdata            string              `json:"userdata,omitempty"`
 	UserdataType        string              `json:"userdata_type,omitempty"`
 	NestedEnable        bool                `json:"nested_enable,omitempty"`
-	StoragePool         *BaseReference      `json:"storage_pool" binding:"omitempty"` // pool of the boot disk; the default pool when left out
+	StoragePool         *BaseReference      `json:"storage_pool" binding:"omitempty"`    // pool of the boot disk; the default pool when left out
+	PlacementGroup      *BaseReference      `json:"placement_group" binding:"omitempty"` // group of the organization in the same zone
 	Vendordata          string              `json:"vendordata,omitempty"`
 	Vendordatatype      string              `json:"vendordatatype,omitempty"`
 }
@@ -95,6 +96,8 @@ type InstanceResponse struct {
 	VPC         *ResourceReference    `json:"vpc,omitempty"`
 	Hypervisor  string                `json:"hypervisor,omitempty"`
 	Reason      string                `json:"reason"`
+	// Left out when the instance is not in a placement group
+	PlacementGroup *PlacementGroupRef `json:"placement_group,omitempty"`
 	// Pools usable on the host of the instance: a volume not created yet can only be attached when its pool is one of them
 	AvailableStoragePools []string `json:"available_storage_pools"`
 }
@@ -633,11 +636,21 @@ func (v *InstanceAPI) Create(c *gin.Context) {
 		ErrorResponse(c, http.StatusBadRequest, "Invalid storage pool", err)
 		return
 	}
-	instances, err := instanceAdmin.Create(ctx, count, hostname, userdata, userdataType, vendorData, vendorDataType, image, zone, routerID, primaryIface, secondaryIfaces, keys, rootPasswd, payload.LoginPort, hypervisor, payload.Cpu, payload.Memory, payload.Disk, payload.NestedEnable, bootPool)
+	var group *model.PlacementGroup
+	if payload.PlacementGroup != nil {
+		if group, err = placementGroupAdmin.GetForMember(ctx, payload.PlacementGroup); err != nil {
+			ErrorResponse(c, http.StatusNotFound, "Invalid placement group", err)
+			return
+		}
+	}
+	instances, err := instanceAdmin.Create(ctx, count, hostname, userdata, userdataType, vendorData, vendorDataType, image, zone, routerID, primaryIface, secondaryIfaces, keys, rootPasswd, payload.LoginPort, hypervisor, payload.Cpu, payload.Memory, payload.Disk, payload.NestedEnable, bootPool, group)
 	if err != nil {
 		logger.Ctx(ctx).Errorf("Failed to create instances, %+v", err)
 		ErrorResponse(c, http.StatusBadRequest, "Failed to create instances", err)
 		return
+	}
+	for _, instance := range instances {
+		instance.PlacementGroup = group
 	}
 	logger.Ctx(ctx).Debugf("Created %d instances, %+v", len(instances), instances)
 	instancesResp := make([]*InstanceResponse, len(instances))
@@ -704,6 +717,9 @@ func (v *InstanceAPI) getInstanceResponse(ctx context.Context, instance *model.I
 	}
 	if instance.Zone != nil {
 		instanceResp.Zone = instance.Zone.Name
+	}
+	if instance.PlacementGroupID > 0 {
+		instanceResp.PlacementGroup = placementGroupRef(instance.PlacementGroup)
 	}
 	keys := make([]*ResourceReference, len(instance.Keys))
 	for i, key := range instance.Keys {

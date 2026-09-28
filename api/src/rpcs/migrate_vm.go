@@ -20,6 +20,89 @@ import (
 
 func init() {
 	Add("migrate_vm", MigrateVM)
+	Add("target_migration", TargetMigrationRefused)
+}
+
+// TargetMigrationRefused handles target_migration.sh coming back from cland with error=resource: no host of the
+// select= could take the migration (the candidates, or the single host a placement group chose), so nothing ran
+// anywhere. The script itself calls back as migrate_vm.sh, so this name only ever carries refusals. Without this
+// handler the refusal found no command, the migration stayed in_progress for good and its target stayed taken in the
+// placement group (placement-group-plan.md appendix B item 2).
+//
+//	target_migration.sh '<migration ID>' '<task ID>' '<instance ID>' ...
+func TargetMigrationRefused(ctx context.Context, args []string) (status string, err error) {
+	if ctx.Value("error") == nil {
+		logger.Ctx(ctx).Errorf("Unexpected target_migration callback: %v", args)
+		return
+	}
+	if len(args) < 4 {
+		return "", fmt.Errorf("Wrong params")
+	}
+	migrationID, err := strconv.ParseInt(args[1], 10, 64)
+	if err != nil {
+		return "", fmt.Errorf("Invalid migration ID %s", args[1])
+	}
+	instID, err := strconv.ParseInt(args[3], 10, 64)
+	if err != nil {
+		return "", fmt.Errorf("Invalid instance ID %s", args[3])
+	}
+	outerCtx := ctx
+	ctx, db, newTransaction := StartTransaction(ctx)
+	released := false
+	defer func() {
+		if newTransaction {
+			EndTransaction(ctx, err)
+		}
+		// After the transaction, like MigrateVM: a rollback would undo the release
+		if released && err == nil {
+			services.ReleaseReservations(outerCtx, migrationID, 0, model.ReservationMigration)
+		}
+	}()
+	migration := &model.Migration{Model: model.Model{ID: migrationID}}
+	if err = db.Take(migration).Error; err != nil {
+		logger.Ctx(ctx).Error("Failed to get migration record", err)
+		return
+	}
+	instance := &model.Instance{Model: model.Model{ID: instID}}
+	if err = db.Take(instance).Error; err != nil {
+		logger.Ctx(ctx).Error("Invalid instance ID", err)
+		return
+	}
+	if err = migrationRefused(ctx, migration, instance); err == nil {
+		released = true
+	}
+	return
+}
+
+// migrationRefused ends a migration cland refused: the command never reached a host and the instance did not move,
+// so it gets back the status it had before the migration. rollback, written before, kept it out of new migrations
+// until the heartbeat reported it again. Records without the prior status keep that old behaviour. cland retries the
+// callback, so a migration already past in_progress is left alone.
+func migrationRefused(ctx context.Context, migration *model.Migration, instance *model.Instance) (err error) {
+	ctx, db := GetContextDB(ctx)
+	if migration.Status != "in_progress" {
+		logger.Ctx(ctx).Infof("Migration %d refused by the scheduler is %s already", migration.ID, migration.Status)
+		return
+	}
+	updates := map[string]interface{}{"status": "rollback", "reason": "Resource is not enough"}
+	if migration.PriorStatus != "" {
+		updates = map[string]interface{}{"status": migration.PriorStatus}
+	}
+	if instance.Status == model.InstanceStatusMigrating {
+		if err = db.Model(&model.Instance{}).Where("id = ?", instance.ID).Updates(updates).Error; err != nil {
+			logger.Ctx(ctx).Error("Failed to update instance", err)
+			return
+		}
+	}
+	if err = db.Model(&model.Migration{}).Where("id = ?", migration.ID).Update("status", "failed").Error; err != nil {
+		logger.Ctx(ctx).Error("Failed to update migration", err)
+		return
+	}
+	if err = db.Model(&model.Task{}).Where("mission = ? AND status = ?", migration.ID, "in_progress").
+		Updates(map[string]interface{}{"status": "failed", "message": "No target host has enough resources"}).Error; err != nil {
+		logger.Ctx(ctx).Error("Failed to update the tasks of the migration", err)
+	}
+	return
 }
 
 func execSourceMigrate(ctx context.Context, instance *model.Instance, migration *model.Migration, taskID int64, migrationScript, migrationType string) (err error) {
@@ -185,7 +268,8 @@ func MigrateVM(ctx context.Context, args []string) (status string, err error) {
 		}
 	}()
 	argn := len(args)
-	if argn < 5 {
+	// args[0] is the script name and the status is args[5]
+	if argn < 6 {
 		err = fmt.Errorf("Wrong params")
 		logger.Ctx(ctx).Error("Invalid args", err)
 		return
@@ -230,18 +314,9 @@ func MigrateVM(ctx context.Context, args []string) (status string, err error) {
 	}
 	errHndl := ctx.Value("error")
 	if errHndl != nil {
-		reason := "Resource is not enough"
-		err = db.Model(instance).Updates(map[string]interface{}{
-			"status": "rollback",
-			"reason": reason}).Error
-		if err != nil {
-			logger.Ctx(ctx).Error("Failed to update instance", err)
+		if err = migrationRefused(ctx, migration, instance); err == nil {
+			releaseMigration = migration.ID
 		}
-		err = db.Model(migration).Updates(map[string]interface{}{"status": "failed"}).Error
-		if err != nil {
-			logger.Ctx(ctx).Error("Failed to update migration", err)
-		}
-		releaseMigration = migration.ID
 		return
 	}
 

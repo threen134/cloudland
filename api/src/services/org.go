@@ -482,6 +482,7 @@ func (a *OrgAdmin) Delete(ctx context.Context, org *model.Organization) (err err
 		{&model.FloatingIp{}, "owner = ?"},
 		{&model.SecurityGroup{}, "owner = ?"},
 		{&model.Key{}, "owner = ?"},
+		{&model.PlacementGroup{}, "owner = ?"},
 		{&model.LoadBalancer{}, "owner = ?"},
 		{&model.Router{}, "owner = ?"},
 		{&model.Image{}, "owner = ?"},

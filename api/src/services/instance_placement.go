@@ -9,6 +9,8 @@ package services
 import (
 	"context"
 	"fmt"
+	"strings"
+	"time"
 
 	. "api/src/common"
 	"api/src/model"
@@ -38,22 +40,30 @@ func builtinDiskGB(ctx context.Context, volumes []*model.Volume) (sizeGB int64) 
 // instanceHyperGroup is the select= group for new instances whose boot disk goes to the built-in pool: the active
 // hosts of the zone, without those whose built-in pool is too full to take more (§6.1)
 func instanceHyperGroup(tx *gorm.DB, zoneID int64) (group string, err error) {
+	hostids, err := instanceHyperIDs(tx, zoneID)
+	if err != nil {
+		return "", err
+	}
+	return hyperGroupOf(zoneID, hostids), nil
+}
+
+// instanceHyperIDs lists the hosts of instanceHyperGroup
+func instanceHyperIDs(tx *gorm.DB, zoneID int64) (hostids []int32, err error) {
 	hypers := []*model.Hyper{}
 	q := tx.Where("status = 1 AND hostid >= 0")
 	if zoneID > 0 {
 		q = q.Where("zone_id = ?", zoneID)
 	}
 	if err = q.Order("hostid").Find(&hypers).Error; err != nil {
-		return "", NewCLError(ErrSQLSyntaxError, "Failed to query hypervisors", err)
+		return nil, NewCLError(ErrSQLSyntaxError, "Failed to query hypervisors", err)
 	}
 	if len(hypers) == 0 {
-		return "", NewCLError(ErrNoQualifiedHypervisor, "No qualified hypervisor found", nil)
+		return nil, NewCLError(ErrNoQualifiedHypervisor, "No qualified hypervisor found", nil)
 	}
 	builtin := &model.StoragePool{}
 	if err = tx.Where("builtin = ?", true).Take(builtin).Error; err != nil {
-		return "", NewCLError(ErrStoragePoolNotFound, "Built-in storage pool not found", err)
+		return nil, NewCLError(ErrStoragePoolNotFound, "Built-in storage pool not found", err)
 	}
-	hostids := []int32{}
 	for _, h := range hypers {
 		hsp, gerr := getHyperPool(tx, h.Hostid, builtin.ID, false)
 		if gerr == nil && hsp.CapacityAt != nil && hsp.UsageRatio() >= poolAdmitUsageLimit {
@@ -63,9 +73,134 @@ func instanceHyperGroup(tx *gorm.DB, zoneID int64) (group string, err error) {
 		hostids = append(hostids, h.Hostid)
 	}
 	if len(hostids) == 0 {
-		return "", NewCLError(ErrNoQualifiedHypervisor, "No hypervisor available: built-in storage is full on every host", nil)
+		return nil, NewCLError(ErrNoQualifiedHypervisor, "No hypervisor available: built-in storage is full on every host", nil)
 	}
-	return hyperGroupOf(zoneID, hostids), nil
+	return
+}
+
+// creationPlacement places the instances of one creation request in a placement group, one after the other, under
+// the lock of the group (placement-group-plan.md §6.2)
+type creationPlacement struct {
+	group *model.PlacementGroup
+	state *placementState
+	zone  string
+	slots []*HostSlot
+	need  Demand
+	count int
+	left  int
+	// The host the admin gave: only the rules are checked (§6.2), -1 otherwise
+	fixedHost int32
+}
+
+// startCreationPlacement locks the group and reads its occupancy. Candidates are what the code without groups
+// would consider (§3.4): the active hosts of the zone whose built-in pool is not too full, or those where the pool of
+// the boot disk admits the disk. bootHost is left as it is: instances outside groups keep choosing hosts as before.
+func startCreationPlacement(tx *gorm.DB, group *model.PlacementGroup, zone *model.Zone, bootPool *model.StoragePool, hyperID, count int, cpu, memoryMB, diskGB int32) (p *creationPlacement, err error) {
+	if group, err = lockPlacementGroup(tx, group.ID); err != nil {
+		return
+	}
+	if group.ZoneID != zone.ID {
+		return nil, NewCLError(ErrPlacementGroupConflict, fmt.Sprintf("Placement group %s is in another zone than %s", group.Name, zone.Name), nil)
+	}
+	st, err := loadPlacementState(tx, group, nil, time.Now())
+	if err != nil {
+		return
+	}
+	// The anchor of a strict pack group is between two hosts while its members migrate: a new member could go the
+	// other way than the group (§6.2)
+	if group.Policy == model.PlacementPolicyPack && group.Strict && len(st.Migrating) > 0 {
+		names := []string{}
+		for _, m := range st.Migrating {
+			note := m.Instance.Hostname
+			if m.StaleMigration {
+				note += fmt.Sprintf(" (migration %s has not moved for over %s)", m.Migration.UUID, placementStaleAfter)
+			}
+			names = append(names, note)
+		}
+		return nil, NewCLError(ErrPlacementGroupBusy, fmt.Sprintf("Members of strict pack placement group %s are migrating (%s); retry once they are done",
+			group.Name, strings.Join(names, ", ")), nil)
+	}
+	p = &creationPlacement{group: group, state: st, zone: zone.Name, count: count, left: count, fixedHost: -1,
+		need: Demand{Cpu: int64(cpu), MemKiB: int64(memoryMB) * 1024, DiskBytes: int64(diskGB) * gib}}
+	if hyperID >= 0 {
+		if rule := placementViolation(group, st.Occ, int32(hyperID), count, hostLabeler(tx, true)); rule != "" && group.Strict {
+			return nil, NewCLError(ErrPlacementGroupConflict, "The given hypervisor breaks the placement group: "+rule, nil)
+		}
+		// A best-effort group accepts it: the admin chose the host on purpose, the group detail shows it is broken
+		p.fixedHost = int32(hyperID)
+		return
+	}
+	if bootPool.Builtin {
+		var hostids []int32
+		if hostids, err = instanceHyperIDs(tx, zone.ID); err != nil {
+			return nil, err
+		}
+		p.slots, err = hostSlots(tx, hostids)
+		return
+	}
+	// The pool of the boot disk bounds the disk; the pending disks of the members are in the pool's reservations
+	// already (§5), so only their CPU and memory stay pending
+	for host, d := range st.Pending {
+		d.DiskBytes = 0
+		st.Pending[host] = d
+	}
+	hypers := []*model.Hyper{}
+	if err = tx.Where("status = 1 AND hostid >= 0 AND zone_id = ?", zone.ID).Order("hostid").Find(&hypers).Error; err != nil {
+		return nil, NewCLError(ErrSQLSyntaxError, "Failed to query hypervisors", err)
+	}
+	hostids := []int32{}
+	for _, h := range hypers {
+		hostids = append(hostids, h.Hostid)
+	}
+	slots, err := hostSlots(tx, hostids)
+	if err != nil {
+		return nil, err
+	}
+	var admitErr error
+	for _, s := range slots {
+		hsp, aerr := admit(tx, bootPool, s.Hostid, int64(diskGB), false)
+		if aerr != nil {
+			admitErr = aerr
+			continue
+		}
+		allocated, aerr := allocatedBytes(tx, s.Hostid, bootPool.ID)
+		if aerr != nil {
+			return nil, NewCLError(ErrSQLSyntaxError, "Failed to sum the allocations of the pool", aerr)
+		}
+		s.FreeDiskBytes = capacityLimit(bootPool, hsp) - allocated
+		p.slots = append(p.slots, s)
+	}
+	// The pool refuses the disk everywhere: say why, like bootHost does for instances outside groups, rather than a
+	// message about the group that would send the user to look at the wrong thing
+	if len(p.slots) == 0 && admitErr != nil {
+		return nil, admitErr
+	}
+	return
+}
+
+// next picks the host of the next instance and counts it in the group
+func (p *creationPlacement) next() (host int32, err error) {
+	if p.fixedHost >= 0 {
+		host = p.fixedHost
+	} else if host, err = Place(p.group, p.slots, p.state.Occ, p.state.Pending, p.need, p.need.Times(int64(p.left))); err != nil {
+		return -1, explainPlacement(p.state, p.zone, p.what(), false, err)
+	}
+	p.state.Occ[host]++
+	p.state.Pending[host] = p.state.Pending[host].Add(p.need)
+	p.left--
+	return
+}
+
+// what names the instances next places, for the messages: the members placed earlier by the same request count
+// in the group already, and a strict pack group needs room for all that are left at once
+func (p *creationPlacement) what() string {
+	switch {
+	case p.count == 1:
+		return "the instance"
+	case p.group.Policy == model.PlacementPolicyPack && p.group.Strict:
+		return fmt.Sprintf("the %d remaining instance(s) of this request", p.left)
+	}
+	return fmt.Sprintf("instance %d of the %d in this request", p.count-p.left+1, p.count)
 }
 
 // bootHost chooses the host of a new instance whose boot disk goes to a local pool other than the built-in one

@@ -146,6 +146,11 @@ var proxyRoutes = []proxyRoute{
 	{"GET", "/keys/:id", "/keys/{id}", false},
 	{"DELETE", "/keys/:id", "/keys/{id}", false},
 	{"PATCH", "/keys/:id", "/keys/{id}", false},
+	{"GET", "/placement_groups", "/placement_groups", false},
+	{"POST", "/placement_groups", "/placement_groups", false},
+	{"GET", "/placement_groups/:id", "/placement_groups/{id}", false},
+	{"PATCH", "/placement_groups/:id", "/placement_groups/{id}", false},
+	{"DELETE", "/placement_groups/:id", "/placement_groups/{id}", false},
 	// zone.py
 	{"GET", "/zones", "/zones", false},
 	{"POST", "/zones", "/zones", false},

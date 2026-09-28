@@ -51,6 +51,9 @@ func generateRandomPassword(length int) (string, error) {
 type ExecutionCommand struct {
 	Control string
 	Command string
+	// The instance a launch command creates and its boot volume, marked failed when the command is not sent
+	InstanceID   int64
+	BootVolumeID int64
 }
 
 type NetworkLink struct {
@@ -90,7 +93,8 @@ type InstancesData struct {
 
 func (a *InstanceAdmin) Create(ctx context.Context, count int, prefix, userdata string, userdataType string, vendorData string, vendorDataType string, image *model.Image,
 	zone *model.Zone, routerID int64, primaryIface *InterfaceInfo, secondaryIfaces []*InterfaceInfo,
-	keys []*model.Key, rootPasswd string, loginPort, hyperID int, cpu int32, memory int32, disk int32, nestedEnable bool, bootPool *model.StoragePool) (instances []*model.Instance, err error) {
+	keys []*model.Key, rootPasswd string, loginPort, hyperID int, cpu int32, memory int32, disk int32, nestedEnable bool, bootPool *model.StoragePool,
+	group *model.PlacementGroup) (instances []*model.Instance, err error) {
 	logger.Ctx(ctx).Infof("ENTER InstanceAdmin.Create: count=%d, prefix=%s, image=%s, zone=%s, routerID=%d", count, prefix, image.Name, zone.Name, routerID)
 	defer func() {
 		if err != nil {
@@ -168,6 +172,17 @@ func (a *InstanceAdmin) Create(ctx context.Context, count int, prefix, userdata 
 	if bootPool.Status != model.StoragePoolActive {
 		return nil, NewCLError(ErrStoragePoolUnavailable, fmt.Sprintf("Storage pool %s is disabled", bootPool.Name), nil)
 	}
+	// Members of a placement group: clapi picks every host under the lock of the group, which is taken before any
+	// storage pool row (placement-group-plan.md §3.2, §6.2)
+	var placement *creationPlacement
+	if group != nil {
+		if group.Owner != memberShip.OrgID {
+			return nil, NewCLError(ErrPlacementGroupNotFound, "Placement group not found", nil)
+		}
+		if placement, err = startCreationPlacement(db, group, zone, bootPool, hyperID, count, cpu, memory, disk); err != nil {
+			return
+		}
+	}
 	// Boot disks in the built-in pool: cland picks among the hosts whose built-in pool is not too full.
 	// A host given by the admin is checked against the pool like any other allocation (§6).
 	hyperGroup := ""
@@ -176,9 +191,12 @@ func (a *InstanceAdmin) Create(ctx context.Context, count int, prefix, userdata 
 			if _, err = admitLocked(db, bootPool, int32(hyperID), int64(disk)*int64(count)); err != nil {
 				return
 			}
-		} else if hyperGroup, err = instanceHyperGroup(db, zoneID); err != nil {
-			logger.Ctx(ctx).Error("No valid hypervisor", err)
-			return
+		} else if placement == nil {
+			// Members of a placement group get a single-host group of their own below
+			if hyperGroup, err = instanceHyperGroup(db, zoneID); err != nil {
+				logger.Ctx(ctx).Error("No valid hypervisor", err)
+				return
+			}
 		}
 	}
 
@@ -200,6 +218,12 @@ func (a *InstanceAdmin) Create(ctx context.Context, count int, prefix, userdata 
 			return nil, NewCLError(ErrSQLSyntaxError, "Failed to query total instances with the image", err)
 		}
 		snapshot := total/MaxmumSnapshot + 1 // Same snapshot reference can not be over 128, so use 96 here
+		pick := int32(-1)
+		if placement != nil {
+			if pick, err = placement.next(); err != nil {
+				return nil, err
+			}
+		}
 		instance := &model.Instance{
 			Model:          model.Model{Creater: memberShip.UserID},
 			Owner:          memberShip.OrgID,
@@ -220,6 +244,9 @@ func (a *InstanceAdmin) Create(ctx context.Context, count int, prefix, userdata 
 			Cpu:            cpu,
 			Memory:         memory,
 			Disk:           disk,
+		}
+		if placement != nil {
+			instance.PlacementGroupID, instance.PlacementHyper = group.ID, pick
 		}
 		err = db.Create(instance).Error
 		if err != nil {
@@ -269,7 +296,13 @@ func (a *InstanceAdmin) Create(ctx context.Context, count int, prefix, userdata 
 		if !bootPool.Builtin {
 			// Boot disk in a local pool (L4): clapi picks the host and holds the room until the disk is created
 			var host int32
-			if host, err = bootHost(db, bootPool, zoneID, hyperID, instance.Disk, instance.Cpu, instance.Memory); err != nil {
+			if placement != nil && hyperID < 0 {
+				// The placement chose the host; the admission under the row lock is still the authoritative check
+				host = pick
+				if _, err = admitLocked(db, bootPool, host, int64(instance.Disk)); err != nil {
+					return
+				}
+			} else if host, err = bootHost(db, bootPool, zoneID, hyperID, instance.Disk, instance.Cpu, instance.Memory); err != nil {
 				return
 			}
 			if _, err = reserve(db, host, bootPool.ID, bootVolume.ID, 0, model.ReservationBoot, instance.Disk, reservationTTL); err != nil {
@@ -284,11 +317,16 @@ func (a *InstanceAdmin) Create(ctx context.Context, count int, prefix, userdata 
 				return nil, NewCLError(ErrSQLSyntaxError, "Failed to reserve storage for the boot disk", err)
 			}
 			control = fmt.Sprintf("inter=%d %s", hyperID, rcNeeded)
+		} else if placement != nil {
+			// A member goes to the host the placement chose; cland only checks the resources there
+			control = fmt.Sprintf("select=%s %s", hyperGroupOf(zoneID, []int32{pick}), rcNeeded)
 		}
 		command := fmt.Sprintf("/opt/cloudland/scripts/backend/launch_vm.sh '%d' '%s.%s' '%t' '%d' '%s' '%d' '%d' '%d' '%d' '%t' '%s' '%s' '%s' '%s' '%s'<<'EOF'\n%s\nEOF", instance.ID, ShellEscape(imagePrefix), ShellEscape(image.Format), image.QAEnabled, snapshot, ShellEscape(hostname), instance.Cpu, instance.Memory, instance.Disk, bootVolume.ID, nestedEnable, ShellEscape(image.BootLoader), ShellEscape(instance.UUID), ShellEscape(imageDownloadURLB64), ShellEscape(PoolScriptID(bootPool)), ShellEscape(bootVolume.Path), base64.StdEncoding.EncodeToString([]byte(metadata)))
 		execCommands = append(execCommands, &ExecutionCommand{
-			Control: control,
-			Command: command,
+			Control:      control,
+			Command:      command,
+			InstanceID:   instance.ID,
+			BootVolumeID: bootVolume.ID,
 		})
 		instances = append(instances, instance)
 		i++
@@ -408,7 +446,27 @@ func (a *InstanceAdmin) executeCommandList(ctx context.Context, cmdList []*Execu
 		err = HyperExecute(ctx, cmd.Control, cmd.Command)
 		if err != nil {
 			logger.Ctx(ctx).Error("Command execution failed", err)
+			if cmd.InstanceID > 0 {
+				a.launchNotSent(ctx, cmd, err)
+			}
 		}
+	}
+}
+
+// launchNotSent fails an instance whose launch command could not be sent: no host will ever call back for it, and it
+// would stay provisioning for good, holding its host in a placement group (placement-group-plan.md appendix B item 4).
+// It does what the launch_vm callback does when cland refuses the command. The commands go out after the commit of
+// the creation, so a fresh session is used, not the transaction in ctx. A gRPC timeout after cland did send the
+// command is taken for a failure too; the launch_vm callback then sets the status and the host right again.
+func (a *InstanceAdmin) launchNotSent(ctx context.Context, cmd *ExecutionCommand, sendErr error) {
+	plainCtx := SetContextDB(ctx, dbs.DBContext(ctx))
+	_, db := GetContextDB(plainCtx)
+	if err := db.Model(&model.Instance{}).Where("id = ? AND status = ?", cmd.InstanceID, model.InstanceStatusProvisioning).
+		Updates(map[string]interface{}{"status": "error", "reason": "The launch command could not be sent to the hosts: " + sendErr.Error()}).Error; err != nil {
+		logger.Ctx(ctx).Errorf("Failed to mark instance %d failed after its launch command was not sent: %v", cmd.InstanceID, err)
+	}
+	if cmd.BootVolumeID > 0 {
+		ReleaseReservations(plainCtx, 0, cmd.BootVolumeID, model.ReservationBoot)
 	}
 }
 
@@ -1293,7 +1351,7 @@ func (a *InstanceAdmin) Get(ctx context.Context, id int64) (instance *model.Inst
 	memberShip := GetMemberShip(ctx)
 	where, args := memberShip.GetOrgFilter()
 	instance = &model.Instance{Model: model.Model{ID: id}}
-	if err = db.Preload("Volumes").Preload("Image").Preload("Zone").Preload("Flavor").Preload("Keys").Where(where, args...).Take(instance).Error; err != nil {
+	if err = db.Preload("Volumes").Preload("Image").Preload("Zone").Preload("Flavor").Preload("Keys").Preload("PlacementGroup").Where(where, args...).Take(instance).Error; err != nil {
 		logger.Ctx(ctx).Errorf("Failed to query instance, %v", err)
 		return nil, NewCLError(ErrInstanceNotFound, "Instance not found", err)
 	}
@@ -1498,7 +1556,7 @@ func (a *InstanceAdmin) List(ctx context.Context, offset, limit int64, order, qu
 	if routerID > 0 {
 		listQuery = listQuery.Where("router_id = ?", routerID)
 	}
-	listQuery = listQuery.Preload("Volumes").Preload("Image").Preload("Zone").Preload("Flavor").Preload("Keys")
+	listQuery = listQuery.Preload("Volumes").Preload("Image").Preload("Zone").Preload("Flavor").Preload("Keys").Preload("PlacementGroup")
 	if err = listQuery.Find(&instances).Error; err != nil {
 		logger.Ctx(ctx).Errorf("Failed to query instances, %v", err)
 		return 0, nil, NewCLError(ErrSQLSyntaxError, "Failed to query instances", err)

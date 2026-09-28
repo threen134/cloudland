@@ -286,6 +286,12 @@ func Register() (r *gin.Engine) {
 		authGroup.GET("/keys/:id", keyAPI.Get)
 		authGroup.DELETE("/keys/:id", keyAPI.Delete)
 
+		authGroup.GET("/placement_groups", placementGroupAPI.List)
+		authGroup.POST("/placement_groups", placementGroupAPI.Create)
+		authGroup.GET("/placement_groups/:id", placementGroupAPI.Get)
+		authGroup.PATCH("/placement_groups/:id", placementGroupAPI.Patch)
+		authGroup.DELETE("/placement_groups/:id", placementGroupAPI.Delete)
+
 		authGroup.GET("/flavors", flavorAPI.List)
 		authGroup.POST("/flavors", flavorAPI.Create)
 		authGroup.GET("/flavors/:name", flavorAPI.Get)

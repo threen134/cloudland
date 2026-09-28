@@ -9,6 +9,7 @@ package services
 
 import (
 	"context"
+	"fmt"
 
 	. "api/src/common"
 	"api/src/dbs"
@@ -254,6 +255,16 @@ func (a *ZoneAdmin) Delete(ctx context.Context, zone *model.Zone) (err error) {
 	if hyperCount > 0 {
 		logger.Ctx(ctx).Error("Zone cannot be deleted while hypervisors belong to this zone")
 		err = NewCLError(ErrHypersInZone, "Zone cannot be deleted while hypervisors belong to this zone", nil)
+		return
+	}
+	// A placement group stays bound to its zone: without it no member could be created any more
+	groupCount := int64(0)
+	if err = db.Model(&model.PlacementGroup{}).Where("zone_id = ?", zone.ID).Count(&groupCount).Error; err != nil {
+		logger.Ctx(ctx).Error("Failed to count placement groups in zone", err)
+		return
+	}
+	if groupCount > 0 {
+		err = NewCLError(ErrPlacementGroupInUse, fmt.Sprintf("Zone cannot be deleted while %d placement group(s) belong to it", groupCount), nil)
 		return
 	}
 

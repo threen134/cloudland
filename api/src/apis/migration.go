@@ -55,6 +55,9 @@ type MigrationResponse struct {
 	DiskPlan          []*DiskPlanResponse `json:"disk_plan"`
 	AllowPoolFallback bool                `json:"allow_pool_fallback"`
 	IgnoreCapacity    bool                `json:"ignore_capacity"`
+	IgnorePlacement   bool                `json:"ignore_placement"`
+	// The rule of a best-effort placement group the given target breaks; only in the create response
+	PlacementWarning string `json:"placement_warning,omitempty"`
 }
 
 // DiskPlanResponse is one disk of a migration plan
@@ -87,6 +90,8 @@ type MigrationPayload struct {
 	AllowPoolFallback *bool `json:"allow_pool_fallback"`
 	// Skip the capacity checks of the target, to evacuate a host when every other one is nearly full
 	IgnoreCapacity bool `json:"ignore_capacity"`
+	// Skip the rules of the placement groups of the instances; a strict group may end up broken
+	IgnorePlacement bool `json:"ignore_placement"`
 }
 
 type MigrationDiskPayload struct {
@@ -164,7 +169,7 @@ func (v *MigrationAPI) Create(c *gin.Context) {
 	if payload.TargetHyper != nil {
 		targetHyper = *payload.TargetHyper
 	}
-	opts := &services.MigrationOptions{AllowPoolFallback: true, IgnoreCapacity: payload.IgnoreCapacity, Disks: map[int64]int64{}}
+	opts := &services.MigrationOptions{AllowPoolFallback: true, IgnoreCapacity: payload.IgnoreCapacity, IgnorePlacement: payload.IgnorePlacement, Disks: map[int64]int64{}}
 	if payload.AllowPoolFallback != nil {
 		opts.AllowPoolFallback = *payload.AllowPoolFallback
 	}
@@ -244,6 +249,8 @@ func (v *MigrationAPI) getMigrationResponse(ctx context.Context, migration *mode
 	}
 	migrationResp.AllowPoolFallback = migration.AllowPoolFallback
 	migrationResp.IgnoreCapacity = migration.IgnoreCapacity
+	migrationResp.IgnorePlacement = migration.IgnorePlacement
+	migrationResp.PlacementWarning = migration.PlacementWarning
 	migrationResp.DiskPlan = v.diskPlanResponse(migration, planNames)
 	migrationResp.Phases = make([]*TaskResponse, len(migration.Phases))
 	for i, task := range migration.Phases {
@@ -321,7 +328,7 @@ func (v *MigrationAPI) List(c *gin.Context) {
 }
 
 // @Summary list the hosts an instance can migrate to
-// @Description for every host of the zone, whether each local disk can stay in its pool, the pool of its fallback group that would replace it, and all usable pools with their free space
+// @Description for every host of the zone, whether each local disk can stay in its pool, the pool of its fallback group that would replace it, and all usable pools with their free space. A host that breaks the rule of a strict placement group of the instance is not usable (reason says why); one that breaks a best-effort group carries placement_warning
 // @tags Administration,Migration
 // @Produce json
 // @Param   id  path  string  true  "Instance UUID"

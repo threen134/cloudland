@@ -80,6 +80,10 @@ func (a *MigrationAdmin) Create(ctx context.Context, name string, instances []*m
 			return
 		}
 	}
+	call := &migrationCall{ids: map[int64]bool{}, started: map[int64]bool{}, failed: map[int64]bool{}}
+	for _, instance := range instances {
+		call.ids[instance.ID] = true
+	}
 	for _, instance := range instances {
 		if instance.Status != model.InstanceStatusShutoff && instance.Status != model.InstanceStatusRunning && instance.Status != model.InstanceStatusPaused {
 			continue
@@ -88,7 +92,7 @@ func (a *MigrationAdmin) Create(ctx context.Context, name string, instances []*m
 			logger.Ctx(ctx).Error("No need to migrate if source and target hypervisors are the same")
 			continue
 		}
-		migration, merr := a.createOne(ctx, name, instance, tgtHyper, opts, batch)
+		migration, merr := a.createOne(ctx, name, instance, tgtHyper, opts, batch, call)
 		results = append(results, &MigrationResult{Instance: instance, Migration: migration, Error: merr})
 		if merr != nil && !batch {
 			err = merr
@@ -97,11 +101,24 @@ func (a *MigrationAdmin) Create(ctx context.Context, name string, instances []*m
 		if migration != nil {
 			migrations = append(migrations, migration)
 		}
+		if merr == nil {
+			call.started[instance.ID] = true
+		} else {
+			call.failed[instance.ID] = true
+		}
 	}
 	return
 }
 
-func (a *MigrationAdmin) createOne(ctx context.Context, name string, instance *model.Instance, tgtHyper int32, opts *MigrationOptions, batch bool) (migration *model.Migration, err error) {
+// migrationCall is what one Create call knows about its instances, for the members of a strict pack placement group
+// that have to move together (placement-group-plan.md §6.3). Where the started ones go is read from the database.
+type migrationCall struct {
+	ids     map[int64]bool // every instance of the call
+	started map[int64]bool // instances whose migration was created and sent
+	failed  map[int64]bool // instances whose migration could not be created or sent: they stay where they are
+}
+
+func (a *MigrationAdmin) createOne(ctx context.Context, name string, instance *model.Instance, tgtHyper int32, opts *MigrationOptions, batch bool, call *migrationCall) (migration *model.Migration, err error) {
 	memberShip := GetMemberShip(ctx)
 	// An instance paused because its pool is full would stay paused on the target, and the reason would be lost
 	if instance.Status == model.InstanceStatusPaused && instance.Reason == InstanceReasonStorageFull {
@@ -142,6 +159,8 @@ func (a *MigrationAdmin) createOne(ctx context.Context, name string, instance *m
 		DiskRequests:      string(requests),
 		AllowPoolFallback: opts.AllowPoolFallback,
 		IgnoreCapacity:    opts.IgnoreCapacity,
+		IgnorePlacement:   opts.IgnorePlacement && instance.PlacementGroupID > 0,
+		PriorStatus:       string(instance.Status),
 	}
 	migration.Instance = instance
 	if err = tx.Create(migration).Error; err != nil {
@@ -149,10 +168,33 @@ func (a *MigrationAdmin) createOne(ctx context.Context, name string, instance *m
 	}
 	control := fmt.Sprintf("inter=%d", tgtHyper)
 	var planErr error
-	if tgtHyper >= 0 {
+	// Members of a placement group: the group decides or checks the target, under its lock (placement-group-plan.md §6.3)
+	placed := false
+	if instance.PlacementGroupID > 0 {
+		var target int32
+		target, migration.PlacementWarning, planErr = placeMigration(txCtx, tx, instance, tgtHyper, opts, call)
+		if planErr == nil && tgtHyper < 0 && target >= 0 {
+			// Chosen here, so handled like a given target from now on. It must be written, not only set in memory:
+			// the callbacks and the occupancy of the group read target_hyper from the database
+			placed, tgtHyper, migration.TargetHyper = true, target, target
+			if uerr := tx.Model(&model.Migration{}).Where("id = ?", migration.ID).Update("target_hyper", target).Error; uerr != nil {
+				planErr = NewCLError(ErrMigrationUpdateFailed, "Failed to save the target of the migration", uerr)
+			}
+		}
+	}
+	if planErr == nil && tgtHyper >= 0 {
 		// Target known: plan, check and reserve now, a failure is returned at once
 		_, planErr = PlanMigrationTarget(txCtx, migration, instance, tgtHyper)
-	} else {
+		control = fmt.Sprintf("inter=%d", tgtHyper)
+		if planErr == nil && placed {
+			// cland still checks CPU and memory, on that single host
+			var volumes []*model.Volume
+			if volumes, planErr = instanceDisks(tx, txCtx, instance); planErr == nil {
+				rcNeeded := schedulerResources(instance.Cpu, instance.Memory, builtinDiskGB(txCtx, volumes))
+				control = "select=" + hyperGroupOf(instance.ZoneID, []int32{tgtHyper}) + " " + rcNeeded
+			}
+		}
+	} else if planErr == nil {
 		// Prefer hosts where every disk keeps its pool; hosts needing a fallback pool only when there are none
 		var g1, g2 []int32
 		g1, g2, planErr = migrationCandidates(tx, txCtx, instance, opts)

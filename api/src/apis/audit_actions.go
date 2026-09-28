@@ -93,6 +93,10 @@ var auditRoutes = map[string]auditRoute{
 	"POST /keys":       {"key", "key.create", "", false},
 	"DELETE /keys/:id": {"key", "key.delete", "id", false},
 
+	"POST /placement_groups":       {"placement_group", "placement_group.create", "", false},
+	"PATCH /placement_groups/:id":  {"placement_group", "placement_group.update", "id", false},
+	"DELETE /placement_groups/:id": {"placement_group", "placement_group.delete", "id", false},
+
 	"POST /flavors":         {"flavor", "flavor.create", "", false},
 	"DELETE /flavors/:name": {"flavor", "flavor.delete", "name", true},
 
@@ -137,18 +141,19 @@ var auditRoutes = map[string]auditRoute{
 
 // auditNameColumns 资源类型 -> 表名与名称列，用于在操作前快照资源名
 var auditNameColumns = map[string][2]string{
-	"instance":       {"instances", "hostname"},
-	"hyper":          {"hypers", "hostname"},
-	"vpc":            {"routers", "name"},
-	"vpn_gateway":    {"vpn_gateways", "name"},
-	"subnet":         {"subnets", "name"},
-	"security_group": {"security_groups", "name"},
-	"load_balancer":  {"load_balancers", "name"},
-	"floating_ip":    {"floating_ips", "name"},
-	"key":            {"keys", "name"},
-	"image":          {"images", "name"},
-	"volume":         {"volumes", "name"},
-	"storage_pool":   {"storage_pools", "name"},
+	"instance":        {"instances", "hostname"},
+	"hyper":           {"hypers", "hostname"},
+	"vpc":             {"routers", "name"},
+	"vpn_gateway":     {"vpn_gateways", "name"},
+	"subnet":          {"subnets", "name"},
+	"security_group":  {"security_groups", "name"},
+	"load_balancer":   {"load_balancers", "name"},
+	"floating_ip":     {"floating_ips", "name"},
+	"key":             {"keys", "name"},
+	"placement_group": {"placement_groups", "name"},
+	"image":           {"images", "name"},
+	"volume":          {"volumes", "name"},
+	"storage_pool":    {"storage_pools", "name"},
 }
 
 // SetAuditAction 供接口按请求体细化动作名，例如 PATCH /instances/:id 区分开机、关机与改名

@@ -1186,6 +1186,10 @@ definitions:
         type: integer
       nested_enable:
         type: boolean
+      placement_group:
+        allOf:
+        - $ref: '#/definitions/common.BaseReference'
+        description: group of the organization in the same zone
       primary_interface:
         $ref: '#/definitions/apis.InterfacePayload'
       root_passwd:
@@ -1310,6 +1314,10 @@ definitions:
         type: string
       passwd_login:
         type: boolean
+      placement_group:
+        allOf:
+        - $ref: '#/definitions/apis.PlacementGroupRef'
+        description: Left out when the instance is not in a placement group
       reason:
         type: string
       root_passwd:
@@ -1838,6 +1846,10 @@ definitions:
         description: Skip the capacity checks of the target, to evacuate a host when
           every other one is nearly full
         type: boolean
+      ignore_placement:
+        description: Skip the rules of the placement groups of the instances; a strict
+          group may end up broken
+        type: boolean
       instances:
         items:
           $ref: '#/definitions/common.BaseID'
@@ -1878,6 +1890,8 @@ definitions:
         type: string
       ignore_capacity:
         type: boolean
+      ignore_placement:
+        type: boolean
       instance:
         $ref: '#/definitions/apis.InstanceInfo'
       name:
@@ -1893,6 +1907,10 @@ definitions:
         items:
           $ref: '#/definitions/apis.TaskResponse'
         type: array
+      placement_warning:
+        description: The rule of a best-effort placement group the given target breaks;
+          only in the create response
+        type: string
       progress:
         description: 迁移进度：百分比与已传输 / 总字节数（内存 + 本地磁盘合计），由源节点上报
         type: integer
@@ -1914,6 +1932,141 @@ definitions:
       type:
         type: string
       updated_at:
+        type: string
+    type: object
+  apis.PlacementGroupListResponse:
+    properties:
+      limit:
+        type: integer
+      offset:
+        type: integer
+      placement_groups:
+        items:
+          $ref: '#/definitions/apis.PlacementGroupResponse'
+        type: array
+      total:
+        type: integer
+    type: object
+  apis.PlacementGroupMemberResponse:
+    properties:
+      host_slot:
+        description: |-
+          Number of the host inside the group: members on the same host have the same number, 0 when it has no host yet.
+          Everyone sees it; the host name is for system admins only
+        type: integer
+      hostname:
+        type: string
+      hypervisor:
+        type: string
+      id:
+        type: string
+      ignored_placement:
+        type: boolean
+      last_migration_failed:
+        description: 'Its latest migration failed, or was done ignoring the rules:
+          why a strict group may be split'
+        type: boolean
+      migration_id:
+        type: string
+      stale_migration:
+        description: 'A migration of it has not moved for an hour: it keeps holding
+          its target until an admin repairs it'
+        type: boolean
+      stale_provisioning:
+        description: 'Still being created after an hour: it keeps holding its host,
+          deleting it frees the host'
+        type: boolean
+      status:
+        type: string
+      target_slot:
+        description: Host of an in-flight migration, 0 when none
+        type: integer
+    type: object
+  apis.PlacementGroupPatchPayload:
+    properties:
+      description:
+        maxLength: 255
+        type: string
+      name:
+        maxLength: 32
+        minLength: 2
+        type: string
+    type: object
+  apis.PlacementGroupPayload:
+    properties:
+      description:
+        maxLength: 255
+        type: string
+      name:
+        maxLength: 32
+        minLength: 2
+        type: string
+      policy:
+        enum:
+        - spread
+        - pack
+        type: string
+      strict:
+        description: Defaults to true for spread and false for pack
+        type: boolean
+      zone:
+        description: zone name, the default zone when left out
+        maxLength: 32
+        minLength: 1
+        type: string
+    required:
+    - name
+    - policy
+    type: object
+  apis.PlacementGroupRef:
+    properties:
+      id:
+        type: string
+      name:
+        type: string
+      policy:
+        type: string
+      strict:
+        type: boolean
+    type: object
+  apis.PlacementGroupResponse:
+    properties:
+      compliant:
+        type: boolean
+      created_at:
+        type: string
+      description:
+        type: string
+      host_count:
+        description: Number of distinct hosts the members are on (or are being created
+          on)
+        type: integer
+      id:
+        type: string
+      member_count:
+        type: integer
+      members:
+        description: Detail only
+        items:
+          $ref: '#/definitions/apis.PlacementGroupMemberResponse'
+        type: array
+      name:
+        type: string
+      owner:
+        type: string
+      owner_uuid:
+        description: |-
+          OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to
+          release quota only when the caller's org actually owns the deleted resource
+        type: string
+      policy:
+        description: spread | pack
+        type: string
+      strict:
+        type: boolean
+      updated_at:
+        type: string
+      zone:
         type: string
     type: object
   apis.SecruleListResponse:
@@ -3673,6 +3826,15 @@ definitions:
       hostid:
         type: integer
       hostname:
+        type: string
+      placement_blocked:
+        description: 'Not usable only because of the rule of a strict placement group:
+          usable with ignore_placement'
+        type: boolean
+      placement_warning:
+        description: |-
+          A rule of a best-effort placement group this target breaks, or a note on the members of a strict pack group
+          that must move in the same request
         type: string
       reason:
         type: string
@@ -5603,7 +5765,9 @@ paths:
     get:
       description: for every host of the zone, whether each local disk can stay in
         its pool, the pool of its fallback group that would replace it, and all usable
-        pools with their free space
+        pools with their free space. A host that breaks the rule of a strict placement
+        group of the instance is not usable (reason says why); one that breaks a best-effort
+        group carries placement_warning
       parameters:
       - description: Instance UUID
         in: path
@@ -7762,6 +7926,141 @@ paths:
       summary: Get available metric subjects
       tags:
       - OpenMeter
+  /placement_groups:
+    get:
+      consumes:
+      - application/json
+      description: list the placement groups of the organization, each with its member
+        count, the number of hosts they are on and whether the group keeps its rule
+      parameters:
+      - description: Zone name
+        in: query
+        name: zone
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.PlacementGroupListResponse'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: list placement groups
+      tags:
+      - Placement Group
+    post:
+      consumes:
+      - application/json
+      description: create a placement group in a zone. spread keeps the members on
+        different hosts, pack on one host; a strict group refuses what breaks its
+        rule, a best-effort one relaxes it. An organization has at most 50 groups
+      parameters:
+      - description: Placement group create payload
+        in: body
+        name: message
+        required: true
+        schema:
+          $ref: '#/definitions/apis.PlacementGroupPayload'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.PlacementGroupResponse'
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "409":
+          description: Name taken (111702) or too many groups (111707)
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: create a placement group
+      tags:
+      - Placement Group
+  /placement_groups/{id}:
+    delete:
+      consumes:
+      - application/json
+      description: delete an empty placement group (409 while it has members, being
+        deleted ones included)
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: No Content
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "409":
+          description: The group has members (111703)
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: delete a placement group
+      tags:
+      - Placement Group
+    get:
+      consumes:
+      - application/json
+      description: get a placement group with its members; host_slot numbers the hosts
+        inside the group, the host names are for system admins only
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.PlacementGroupResponse'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "404":
+          description: Not found
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: get a placement group
+      tags:
+      - Placement Group
+    patch:
+      consumes:
+      - application/json
+      description: change the name or the description of a placement group; its policy,
+        strictness and zone can not change (400)
+      parameters:
+      - description: Placement group patch payload
+        in: body
+        name: message
+        required: true
+        schema:
+          $ref: '#/definitions/apis.PlacementGroupPatchPayload'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.PlacementGroupResponse'
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: patch a placement group
+      tags:
+      - Placement Group
   /rules/links:
     get:
       consumes:

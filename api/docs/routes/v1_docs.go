@@ -2795,7 +2795,7 @@ const docTemplatev1 = `{
         },
         "/instances/{id}/migration_targets": {
             "get": {
-                "description": "for every host of the zone, whether each local disk can stay in its pool, the pool of its fallback group that would replace it, and all usable pools with their free space",
+                "description": "for every host of the zone, whether each local disk can stay in its pool, the pool of its fallback group that would replace it, and all usable pools with their free space. A host that breaks the rule of a strict placement group of the instance is not usable (reason says why); one that breaks a best-effort group carries placement_warning",
                 "produces": [
                     "application/json"
                 ],
@@ -5926,6 +5926,202 @@ const docTemplatev1 = `{
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/placement_groups": {
+            "get": {
+                "description": "list the placement groups of the organization, each with its member count, the number of hosts they are on and whether the group keeps its rule",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Placement Group"
+                ],
+                "summary": "list placement groups",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Zone name",
+                        "name": "zone",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apis.PlacementGroupListResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "description": "create a placement group in a zone. spread keeps the members on different hosts, pack on one host; a strict group refuses what breaks its rule, a best-effort one relaxes it. An organization has at most 50 groups",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Placement Group"
+                ],
+                "summary": "create a placement group",
+                "parameters": [
+                    {
+                        "description": "Placement group create payload",
+                        "name": "message",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/apis.PlacementGroupPayload"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apis.PlacementGroupResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "409": {
+                        "description": "Name taken (111702) or too many groups (111707)",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            }
+        },
+        "/placement_groups/{id}": {
+            "get": {
+                "description": "get a placement group with its members; host_slot numbers the hosts inside the group, the host names are for system admins only",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Placement Group"
+                ],
+                "summary": "get a placement group",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apis.PlacementGroupResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "404": {
+                        "description": "Not found",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "description": "delete an empty placement group (409 while it has members, being deleted ones included)",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Placement Group"
+                ],
+                "summary": "delete a placement group",
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "409": {
+                        "description": "The group has members (111703)",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            },
+            "patch": {
+                "description": "change the name or the description of a placement group; its policy, strictness and zone can not change (400)",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Placement Group"
+                ],
+                "summary": "patch a placement group",
+                "parameters": [
+                    {
+                        "description": "Placement group patch payload",
+                        "name": "message",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/apis.PlacementGroupPatchPayload"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apis.PlacementGroupResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
                         }
                     }
                 }
@@ -10015,6 +10211,14 @@ const docTemplatev1 = `{
                 "nested_enable": {
                     "type": "boolean"
                 },
+                "placement_group": {
+                    "description": "group of the organization in the same zone",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/common.BaseReference"
+                        }
+                    ]
+                },
                 "primary_interface": {
                     "$ref": "#/definitions/apis.InterfacePayload"
                 },
@@ -10183,6 +10387,14 @@ const docTemplatev1 = `{
                 },
                 "passwd_login": {
                     "type": "boolean"
+                },
+                "placement_group": {
+                    "description": "Left out when the instance is not in a placement group",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/apis.PlacementGroupRef"
+                        }
+                    ]
                 },
                 "reason": {
                     "type": "string"
@@ -10939,6 +11151,10 @@ const docTemplatev1 = `{
                     "description": "Skip the capacity checks of the target, to evacuate a host when every other one is nearly full",
                     "type": "boolean"
                 },
+                "ignore_placement": {
+                    "description": "Skip the rules of the placement groups of the instances; a strict group may end up broken",
+                    "type": "boolean"
+                },
                 "instances": {
                     "type": "array",
                     "minItems": 1,
@@ -10990,6 +11206,9 @@ const docTemplatev1 = `{
                 "ignore_capacity": {
                     "type": "boolean"
                 },
+                "ignore_placement": {
+                    "type": "boolean"
+                },
                 "instance": {
                     "$ref": "#/definitions/apis.InstanceInfo"
                 },
@@ -11008,6 +11227,10 @@ const docTemplatev1 = `{
                     "items": {
                         "$ref": "#/definitions/apis.TaskResponse"
                     }
+                },
+                "placement_warning": {
+                    "description": "The rule of a best-effort placement group the given target breaks; only in the create response",
+                    "type": "string"
                 },
                 "progress": {
                     "description": "迁移进度：百分比与已传输 / 总字节数（内存 + 本地磁盘合计），由源节点上报",
@@ -11039,6 +11262,189 @@ const docTemplatev1 = `{
                     "type": "string"
                 },
                 "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "apis.PlacementGroupListResponse": {
+            "type": "object",
+            "properties": {
+                "limit": {
+                    "type": "integer"
+                },
+                "offset": {
+                    "type": "integer"
+                },
+                "placement_groups": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/apis.PlacementGroupResponse"
+                    }
+                },
+                "total": {
+                    "type": "integer"
+                }
+            }
+        },
+        "apis.PlacementGroupMemberResponse": {
+            "type": "object",
+            "properties": {
+                "host_slot": {
+                    "description": "Number of the host inside the group: members on the same host have the same number, 0 when it has no host yet.\nEveryone sees it; the host name is for system admins only",
+                    "type": "integer"
+                },
+                "hostname": {
+                    "type": "string"
+                },
+                "hypervisor": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "ignored_placement": {
+                    "type": "boolean"
+                },
+                "last_migration_failed": {
+                    "description": "Its latest migration failed, or was done ignoring the rules: why a strict group may be split",
+                    "type": "boolean"
+                },
+                "migration_id": {
+                    "type": "string"
+                },
+                "stale_migration": {
+                    "description": "A migration of it has not moved for an hour: it keeps holding its target until an admin repairs it",
+                    "type": "boolean"
+                },
+                "stale_provisioning": {
+                    "description": "Still being created after an hour: it keeps holding its host, deleting it frees the host",
+                    "type": "boolean"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "target_slot": {
+                    "description": "Host of an in-flight migration, 0 when none",
+                    "type": "integer"
+                }
+            }
+        },
+        "apis.PlacementGroupPatchPayload": {
+            "type": "object",
+            "properties": {
+                "description": {
+                    "type": "string",
+                    "maxLength": 255
+                },
+                "name": {
+                    "type": "string",
+                    "maxLength": 32,
+                    "minLength": 2
+                }
+            }
+        },
+        "apis.PlacementGroupPayload": {
+            "type": "object",
+            "required": [
+                "name",
+                "policy"
+            ],
+            "properties": {
+                "description": {
+                    "type": "string",
+                    "maxLength": 255
+                },
+                "name": {
+                    "type": "string",
+                    "maxLength": 32,
+                    "minLength": 2
+                },
+                "policy": {
+                    "type": "string",
+                    "enum": [
+                        "spread",
+                        "pack"
+                    ]
+                },
+                "strict": {
+                    "description": "Defaults to true for spread and false for pack",
+                    "type": "boolean"
+                },
+                "zone": {
+                    "description": "zone name, the default zone when left out",
+                    "type": "string",
+                    "maxLength": 32,
+                    "minLength": 1
+                }
+            }
+        },
+        "apis.PlacementGroupRef": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "policy": {
+                    "type": "string"
+                },
+                "strict": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "apis.PlacementGroupResponse": {
+            "type": "object",
+            "properties": {
+                "compliant": {
+                    "type": "boolean"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "host_count": {
+                    "description": "Number of distinct hosts the members are on (or are being created on)",
+                    "type": "integer"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "member_count": {
+                    "type": "integer"
+                },
+                "members": {
+                    "description": "Detail only",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/apis.PlacementGroupMemberResponse"
+                    }
+                },
+                "name": {
+                    "type": "string"
+                },
+                "owner": {
+                    "type": "string"
+                },
+                "owner_uuid": {
+                    "description": "OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to\nrelease quota only when the caller's org actually owns the deleted resource",
+                    "type": "string"
+                },
+                "policy": {
+                    "description": "spread | pack",
+                    "type": "string"
+                },
+                "strict": {
+                    "type": "boolean"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "zone": {
                     "type": "string"
                 }
             }
@@ -13506,6 +13912,14 @@ const docTemplatev1 = `{
                     "type": "integer"
                 },
                 "hostname": {
+                    "type": "string"
+                },
+                "placement_blocked": {
+                    "description": "Not usable only because of the rule of a strict placement group: usable with ignore_placement",
+                    "type": "boolean"
+                },
+                "placement_warning": {
+                    "description": "A rule of a best-effort placement group this target breaks, or a note on the members of a strict pack group\nthat must move in the same request",
                     "type": "string"
                 },
                 "reason": {
