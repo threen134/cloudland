@@ -251,7 +251,7 @@ curl -k https://localhost:8255/api/v1/
 | Web 管理界面 | `https://<PUBLIC_IP>:443` | admin / `ADMIN_PASSWORD` | 完整模式 |
 | REST API (通过 cpgateway) | `https://<PUBLIC_IP>:443/api/v1/` | JWT Token | 完整模式 |
 | Control Plane Gateway API (开发模式) | `http://<INTERNAL_IP>:8000/api/v1/` | JWT Token | 开发模式 |
-| REST API 直接访问 | `http://<INTERNAL_IP>:8255/api/v1/` | - | 仅区域控制面 |
+| REST API 直接访问 | `https://<INTERNAL_IP>:8255/api/v1/` | - | 仅区域控制面 |
 | Grafana 看板 | `http://<PUBLIC_IP>:3000` | admin / `GRAFANA_ADMIN_PASSWORD` | 所有模式 |
 | Prometheus | `http://<PUBLIC_IP>:9090` | - | 所有模式 |
 

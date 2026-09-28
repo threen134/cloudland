@@ -32,7 +32,9 @@ if [ -s "$image" ]; then
         # S3/MinIO: POST to clapi /internal/images/:id/upload.
         # No retry here: sending an N GB file again is expensive, and retrying a 5xx from clapi would flip the
         # record between error and available. A failed capture is started again by the user.
-        http_code=$(curl -sS -o /dev/null -w "%{http_code}" --max-time 7200 \
+        # -k: clapi's certificate is self-signed and not on the nodes (CLAUDE.md A6, to be replaced by a CA the
+        # nodes trust). The upload is authenticated by the per-image, expiring capture token; TLS only encrypts it.
+        http_code=$(curl -k -sS -o /dev/null -w "%{http_code}" --max-time 7200 \
             -X POST \
             -H "X-Capture-Token: $capture_token" \
             -H "Content-Type: application/octet-stream" \
