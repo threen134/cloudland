@@ -26,12 +26,15 @@ import { flavorsApi, type Flavor } from '../../api/flavors'
 import { zonesApi, type Zone } from '../../api/zones'
 import { hypervisorsApi, type Hypervisor } from '../../api/hypervisors'
 import { storagePoolsApi, type StoragePool } from '../../api/storagePools'
+import { placementGroupsApi, type PlacementGroup } from '../../api/placementGroups'
+import { ruleText, ruleHint } from '../../utils/placementGroup'
 import { isValidName } from '../../utils/validation'
 import { quotaErrorMessage } from '../../utils/quotaError'
 import { errorMessage } from '../../utils/error'
 import { formatMemory } from '../../utils/format'
 import { useToast } from '../../composables/useToast'
 import { useAuthStore } from '../../stores/auth'
+import { useTenantStore } from '../../stores/tenant'
 import BaseModal from '../modals/BaseModal.vue'
 
 const props = defineProps<{ show: boolean }>()
@@ -40,6 +43,7 @@ const emit = defineEmits<{ close: []; created: [] }>()
 const { t, te } = useI18n()
 const toast = useToast()
 const authStore = useAuthStore()
+const tenantStore = useTenantStore()
 const isSystemAdmin = computed(() => authStore.user?.role === 'admin' || authStore.user?.is_superuser === true)
 const availablePools = ref<StoragePool[]>([])
 // With a host given, only the pools of that host (their names are listed in its disk summary)
@@ -82,6 +86,39 @@ const availableKeys = ref<SSHKey[]>([])
 const availableFloatingIps = ref<FloatingIP[]>([])
 const availableZones = ref<Zone[]>([])
 const availableHypers = ref<Hypervisor[]>([])
+
+// Placement groups of the selected zone (a group is bound to one zone); reloaded when the zone changes
+const availablePlacementGroups = ref<PlacementGroup[]>([])
+const placementGroupsLoading = ref(false)
+const placementGroupsError = ref(false)
+let placementGroupsGeneration = 0
+const fetchPlacementGroups = async () => {
+    const current = ++placementGroupsGeneration
+    const zone = newInstanceForm.value.zone
+    placementGroupsLoading.value = true
+    placementGroupsError.value = false
+    try {
+        // Switcher-style list: one page of up to 500 like the other dropdowns
+        const res = await placementGroupsApi.list({ zone: zone || undefined, limit: 500 })
+        if (current !== placementGroupsGeneration) return
+        // A system admin lists the groups of every organization, but an instance can only join a group of its
+        // own organization (another one answers 404)
+        const org = tenantStore.currentOrgId
+        availablePlacementGroups.value = (res.placement_groups || []).filter(
+            (g) => !org || !g.owner_uuid || g.owner_uuid === org
+        )
+    } catch (err) {
+        if (current !== placementGroupsGeneration) return
+        console.error('Failed to fetch placement groups:', err)
+        availablePlacementGroups.value = []
+        placementGroupsError.value = true
+    } finally {
+        if (current === placementGroupsGeneration) placementGroupsLoading.value = false
+    }
+}
+const selectedPlacementGroup = computed(
+    () => availablePlacementGroups.value.find((g) => g.id === newInstanceForm.value.placement_group) || null
+)
 const sshKeysDropdownOpen = ref(false)
 
 const tempPassword = ref('')
@@ -133,6 +170,8 @@ const newInstanceForm = ref({
     hypervisor: null as string | null,
     // Pool of the boot disk; empty keeps the default pool
     storage_pool: '' as string,
+    // Placement group id; empty joins none
+    placement_group: '' as string,
     primary_interface: {
         network_type: 'vpc' as const,
         vpc_id: '',
@@ -184,6 +223,7 @@ const resetForm = () => {
         nested_enable: false,
         hypervisor: null,
         storage_pool: '',
+        placement_group: '',
         primary_interface: {
             network_type: 'vpc',
             vpc_id: '',
@@ -297,6 +337,7 @@ const fetchResources = async () => {
     } finally {
         resourcesLoading.value = false
     }
+    fetchPlacementGroups()
 }
 
 const getFilteredSubnets = (vpcId: string) => {
@@ -452,6 +493,10 @@ watch(
         if (current != null && !hypersForZone.value.some((h) => h.uuid === current)) {
             newInstanceForm.value.hypervisor = null
         }
+        // A placement group belongs to one zone: another zone means another list
+        newInstanceForm.value.placement_group = ''
+        // While the resources load the zone is set more than once; fetchResources loads the groups at its end
+        if (!resourcesLoading.value) fetchPlacementGroups()
     }
 )
 
@@ -569,6 +614,10 @@ const handleCreateInstance = async () => {
         }
         if (form.storage_pool) {
             payload.storage_pool = { id: form.storage_pool }
+        }
+        // The batch size is not checked here: the server knows the hosts and answers 409 when the group can not take it
+        if (form.placement_group) {
+            payload.placement_group = { id: form.placement_group }
         }
         await instancesApi.createInstance(payload)
         // 列表按创建时间倒序，新建的在第一页
@@ -710,6 +759,41 @@ watch(
                                 max="16"
                             />
                         </div>
+                    </div>
+
+                    <!-- Placement group: optional, only the groups of the selected zone -->
+                    <div class="form-group">
+                        <label class="form-label" for="placementGroup"
+                            >{{ t('dashboard.placementGroup.field') }} ({{ t('dashboard.forms.optional') }})</label
+                        >
+                        <select
+                            id="placementGroup"
+                            name="placementGroup"
+                            v-model="newInstanceForm.placement_group"
+                            class="form-select"
+                            :disabled="placementGroupsLoading && !availablePlacementGroups.length"
+                        >
+                            <option value="">{{ t('dashboard.placementGroup.none') }}</option>
+                            <option v-for="g in availablePlacementGroups" :key="g.id" :value="g.id">
+                                {{ g.name }} · {{ ruleText(t, te, g) }}
+                            </option>
+                        </select>
+                        <small v-if="selectedPlacementGroup" class="placement-hint">{{
+                            t('dashboard.placementGroup.instanceHint', {
+                                rule: ruleText(t, te, selectedPlacementGroup),
+                                hint: ruleHint(t, te, selectedPlacementGroup),
+                                n: selectedPlacementGroup.member_count ?? 0,
+                            })
+                        }}</small>
+                        <small v-else-if="placementGroupsError" class="placement-hint text-error">{{
+                            t('dashboard.placementGroup.loadFailed')
+                        }}</small>
+                        <small
+                            v-else-if="!placementGroupsLoading && !availablePlacementGroups.length"
+                            class="placement-hint"
+                            >{{ t('dashboard.placementGroup.noGroupsInZone') }}</small
+                        >
+                        <small v-else class="placement-hint">{{ t('dashboard.placementGroup.fieldHint') }}</small>
                     </div>
 
                     <div class="form-group">
@@ -1393,11 +1477,9 @@ watch(
             </div>
         </div>
 
-        <div v-if="createError" class="modal-error text-error">
-            {{ createError }}
-        </div>
-
         <template #footer>
+            <!-- In the footer next to the buttons: at the end of this long form it was out of sight -->
+            <div v-if="createError" class="modal-error text-error footer-error">{{ createError }}</div>
             <button type="button" class="btn btn-secondary" @click="closeCreateModal" :disabled="creatingInstance">
                 {{ t('actions.cancel') }}
             </button>
@@ -1446,6 +1528,21 @@ watch(
     background: var(--error-light);
     padding: var(--spacing-2);
     border-radius: var(--radius-sm);
+}
+.modal-error.footer-error {
+    flex: 1;
+    align-self: center;
+    margin: 0;
+}
+.placement-hint {
+    display: block;
+    margin-top: 4px;
+    font-size: var(--font-size-xs);
+    line-height: 1.5;
+    color: var(--text-secondary);
+}
+.placement-hint.text-error {
+    color: var(--error-color);
 }
 .mini-data-table {
     width: 100%;

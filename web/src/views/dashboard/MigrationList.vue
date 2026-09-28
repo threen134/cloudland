@@ -17,6 +17,9 @@ import { useI18n } from 'vue-i18n'
 import { useRegionStore } from '../../stores/region'
 import { formatDateTime, formatBytes } from '../../utils/format'
 import { errorMessage } from '../../utils/error'
+import { ruleText } from '../../utils/placementGroup'
+import { placementGroupsApi, type PlacementGroupMember } from '../../api/placementGroups'
+import { useAuthStore } from '../../stores/auth'
 import BaseModal from '../../components/modals/BaseModal.vue'
 import PageToolbar from '../../components/base/PageToolbar.vue'
 import StatusBadge from '../../components/base/StatusBadge.vue'
@@ -26,6 +29,8 @@ import PaginationBar from '../../components/base/PaginationBar.vue'
 const { t, te } = useI18n()
 const region = useRegionStore()
 const toast = useToast()
+const authStore = useAuthStore()
+const isSystemAdmin = computed(() => authStore.user?.role === 'admin' || authStore.user?.is_superuser === true)
 
 const { copiedId, copyId } = useCopyId()
 
@@ -69,6 +74,8 @@ const targetsLoading = ref(false)
 const diskPools = ref<Record<string, string>>({})
 const allowFallback = ref(true)
 const ignoreCapacity = ref(false)
+// Skip the rule of a strict placement group (system admins): the group may become non-compliant
+const ignorePlacement = ref(false)
 const selectedTarget = computed(() =>
     newMigrationForm.value.target_hyper === ''
         ? null
@@ -78,6 +85,10 @@ const targetBlocked = (hostid: number) => {
     const target = targets.value.find((x) => x.hostid === hostid)
     return target && !target.usable ? target.reason || '' : ''
 }
+// A usable host that breaks a best-effort placement group, or needs the rest of a strict pack group to move too.
+// The second is what this form does by itself (companions below), so it is not repeated then
+const targetPlacementWarning = (hostid: number) =>
+    companions.value.length ? '' : targets.value.find((x) => x.hostid === hostid)?.placement_warning || ''
 watch(
     () => newMigrationForm.value.instance_id,
     async (id) => {
@@ -110,6 +121,62 @@ watch(selectedTarget, (target) => {
 const selectedInstanceHyper = computed(() => {
     const inst = availableInstances.value.find((i) => i.id === newMigrationForm.value.instance_id)
     return inst?.hypervisor || ''
+})
+
+// Placement group of the chosen instance; only a strict group can refuse a target, so only then can a system
+// admin choose to ignore it (ignore_placement means nothing for the other instances)
+const selectedGroup = computed(
+    () => availableInstances.value.find((i) => i.id === newMigrationForm.value.instance_id)?.placement_group || null
+)
+const canIgnorePlacement = computed(() => isSystemAdmin.value && !!selectedGroup.value?.strict)
+const placementIgnored = computed(() => canIgnorePlacement.value && ignorePlacement.value)
+
+// A strict pack group migrates as a whole: the server refuses one member alone while others stay on its host. The
+// other members on the same host are read from the group (the instance list is paged, the group is not) and sent in
+// the same request, unless the rule is ignored
+const groupMembers = ref<PlacementGroupMember[]>([])
+let groupMembersGeneration = 0
+watch(
+    () => newMigrationForm.value.instance_id,
+    async () => {
+        const current = ++groupMembersGeneration
+        groupMembers.value = []
+        const group = selectedGroup.value
+        if (!group || group.policy !== 'pack' || !group.strict) return
+        try {
+            const detail = await placementGroupsApi.get(group.id)
+            if (current === groupMembersGeneration) groupMembers.value = detail.members || []
+        } catch (err) {
+            console.error('Failed to load the members of the placement group:', err)
+        }
+    }
+)
+const companions = computed(() =>
+    placementIgnored.value || !selectedInstanceHyper.value
+        ? []
+        : groupMembers.value.filter(
+              (m) => m.id !== newMigrationForm.value.instance_id && m.hypervisor === selectedInstanceHyper.value
+          )
+)
+// Members in a state the server does not migrate (rescuing, error...) make it refuse the whole group
+const MOVABLE_STATUSES = ['running', 'shut_off', 'paused']
+const blockedCompanions = computed(() => companions.value.filter((m) => !MOVABLE_STATUSES.includes(m.status)))
+// With the rule ignored, a host refused only by the placement group can be chosen; one also refused for its disks
+// or capacity stays disabled
+const placementOnly = (hostid: number) => !!targets.value.find((x) => x.hostid === hostid)?.placement_blocked
+const targetDisabled = (hostid: number, hostname: string) =>
+    (!!selectedInstanceHyper.value && hostname === selectedInstanceHyper.value) ||
+    (!!targetBlocked(hostid) && !(placementIgnored.value && placementOnly(hostid)))
+watch(
+    () => newMigrationForm.value.instance_id,
+    () => {
+        ignorePlacement.value = false
+    }
+)
+// Unticked again: a refused host picked meanwhile can not stay selected
+watch(placementIgnored, (ignored) => {
+    const target = newMigrationForm.value.target_hyper
+    if (!ignored && target !== '' && targetBlocked(target)) newMigrationForm.value.target_hyper = ''
 })
 
 // 换实例后，原先选中的目标节点可能正是新实例所在节点，这里清掉避免提交到无效目标
@@ -207,6 +274,7 @@ const openCreateModal = () => {
         target_hyper: '',
     }
     instanceHyperFilter.value = ''
+    ignorePlacement.value = false
     createModalVisible.value = true
     fetchResources()
 }
@@ -248,7 +316,7 @@ const handleCreateMigration = async () => {
         const inst = availableInstances.value.find((i) => i.id === newMigrationForm.value.instance_id)
         const payload: CreateMigrationPayload = {
             name: `ui-${(inst?.hostname || 'migration').slice(0, 20)}-${Date.now().toString().slice(-6)}`,
-            instances: [{ id: newMigrationForm.value.instance_id }],
+            instances: [{ id: newMigrationForm.value.instance_id }, ...companions.value.map((m) => ({ id: m.id }))],
         }
         if (newMigrationForm.value.target_hyper !== '') {
             payload.target_hyper = Number(newMigrationForm.value.target_hyper)
@@ -258,7 +326,8 @@ const handleCreateMigration = async () => {
                 const stay = d.choices.find((c) => c.name === d.source_pool)
                 return chosen && (!stay || chosen !== stay.uuid) && chosen !== d.fallback?.uuid
             })
-            if (moved.length) {
+            // Target pools per disk are for one instance only: a group keeps the default rules
+            if (moved.length && !companions.value.length) {
                 payload.disks = moved.map((d) => ({
                     volume: { id: d.volume_uuid },
                     storage_pool: { id: diskPools.value[d.volume_uuid] },
@@ -268,7 +337,13 @@ const handleCreateMigration = async () => {
 
         payload.allow_pool_fallback = allowFallback.value
         if (ignoreCapacity.value) payload.ignore_capacity = true
-        await migrationsApi.createMigration(payload)
+        if (placementIgnored.value) payload.ignore_placement = true
+        const created = await migrationsApi.createMigration(payload)
+        // A best-effort placement group the migration breaks: created anyway, but say so
+        const warnings = new Set((created || []).map((m) => m.placement_warning).filter((w): w is string => !!w))
+        for (const warning of warnings) {
+            toast.warning(t('dashboard.placementGroup.placementWarning', { message: warning }))
+        }
         // 列表按创建时间倒序，新建的在第一页
         await reloadMigrations()
         closeCreateModal()
@@ -452,6 +527,22 @@ onUnmounted(() => {
                             }}<template v-if="inst.hypervisor"> · {{ inst.hypervisor }}</template> ({{ inst.id }})
                         </option>
                     </select>
+                    <small v-if="selectedGroup" class="field-note">{{
+                        $t('dashboard.placementGroup.memberOf', {
+                            name: selectedGroup.name,
+                            rule: ruleText(t, te, selectedGroup),
+                        })
+                    }}</small>
+                    <small v-if="companions.length" class="field-note note-warning">{{
+                        $t('dashboard.placementGroup.movingTogether', {
+                            names: companions.map((m) => m.hostname).join(', '),
+                        })
+                    }}</small>
+                    <small v-if="blockedCompanions.length" class="field-note text-error">{{
+                        $t('dashboard.placementGroup.movingTogetherBlocked', {
+                            names: blockedCompanions.map((m) => `${m.hostname} (${m.status})`).join(', '),
+                        })
+                    }}</small>
                 </div>
 
                 <div class="form-group row-gap">
@@ -462,10 +553,7 @@ onUnmounted(() => {
                             v-for="hyp in availableHypervisors"
                             :key="hyp.uuid"
                             :value="hyp.hostid"
-                            :disabled="
-                                (!!selectedInstanceHyper && hyp.hostname === selectedInstanceHyper) ||
-                                !!targetBlocked(hyp.hostid)
-                            "
+                            :disabled="targetDisabled(hyp.hostid, hyp.hostname)"
                         >
                             {{ hyp.hostname }} ({{ hyp.hostid }})<template
                                 v-if="hyp.hostname === selectedInstanceHyper"
@@ -473,15 +561,30 @@ onUnmounted(() => {
                                 — {{ $t('dashboard.migrationForm.currentNode') }}</template
                             ><template v-else-if="targetBlocked(hyp.hostid)">
                                 — {{ targetBlocked(hyp.hostid) }}</template
+                            ><template v-else-if="targetPlacementWarning(hyp.hostid)">
+                                — {{ targetPlacementWarning(hyp.hostid) }}</template
                             >
                         </option>
                     </select>
+                    <!-- The option text is cut off in narrow selects: the reason of the chosen host in full -->
+                    <small v-if="selectedTarget && !selectedTarget.usable" class="field-note text-error">{{
+                        selectedTarget.reason
+                    }}</small>
+                    <small v-else-if="selectedTarget?.placement_warning" class="field-note note-warning">{{
+                        selectedTarget.placement_warning
+                    }}</small>
                     <small class="text-secondary" style="display: block; margin-top: 4px">{{
                         $t('messages.placementRouteHint')
                     }}</small>
                 </div>
 
-                <div v-if="selectedTarget && selectedTarget.disks.length" class="form-group row-gap">
+                <div
+                    v-if="selectedTarget && selectedTarget.disks.length && companions.length"
+                    class="form-group row-gap"
+                >
+                    <small class="text-secondary">{{ $t('dashboard.placementGroup.movingTogetherDisks') }}</small>
+                </div>
+                <div v-else-if="selectedTarget && selectedTarget.disks.length" class="form-group row-gap">
                     <label class="form-label">{{ $t('storage.diskTargets') }}</label>
                     <div v-for="d in selectedTarget.disks" :key="d.volume_uuid" class="disk-target">
                         <span class="disk-target-name" :title="d.volume_name"
@@ -507,6 +610,15 @@ onUnmounted(() => {
                     <label class="checkbox-inline">
                         <input v-model="ignoreCapacity" type="checkbox" /> {{ $t('storage.ignoreCapacity') }}
                     </label>
+                    <template v-if="canIgnorePlacement">
+                        <label class="checkbox-inline">
+                            <input v-model="ignorePlacement" type="checkbox" />
+                            {{ $t('dashboard.placementGroup.ignorePlacement') }}
+                        </label>
+                        <small v-if="ignorePlacement" class="field-note text-error">{{
+                            $t('dashboard.placementGroup.ignorePlacementWarning')
+                        }}</small>
+                    </template>
                 </div>
 
                 <div class="form-group row-gap">
@@ -556,6 +668,23 @@ onUnmounted(() => {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+}
+
+/* A line under a field: the placement group of the instance, the reason of the chosen host */
+.field-note {
+    display: block;
+    margin-top: 4px;
+    font-size: var(--font-size-xs);
+    line-height: 1.5;
+    color: var(--text-secondary);
+}
+
+.field-note.text-error {
+    color: var(--error-color);
+}
+
+.field-note.note-warning {
+    color: var(--warning-dark);
 }
 
 .checkbox-inline {

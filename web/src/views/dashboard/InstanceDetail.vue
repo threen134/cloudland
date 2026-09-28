@@ -54,11 +54,12 @@ import DetailTabs from '../../components/base/DetailTabs.vue'
 import { useCopyId } from '../../composables/useCopyId'
 import { useGoBack } from '../../composables/useGoBack'
 import { formatMemory } from '../../utils/format'
+import { ruleText } from '../../utils/placementGroup'
 import { errorMessage } from '../../utils/error'
 
 const route = useRoute()
 const router = useRouter()
-const { t } = useI18n()
+const { t, te } = useI18n()
 const { storageReason } = useStorageReason()
 const instanceId = route.params.id as string
 const { copiedId: copiedField, copyId: copyToClipboard } = useCopyId()
@@ -772,6 +773,17 @@ onUnmounted(() => {
                         <div class="key-value-list">
                             <InfoRow :label="$t('dashboard.table.createdAt')">{{ instance.created_at || '-' }}</InfoRow>
                             <InfoRow :label="$t('dashboard.table.zone')">{{ instance.zone || '-' }}</InfoRow>
+                            <InfoRow v-if="instance.placement_group" :label="$t('dashboard.placementGroup.field')">
+                                <router-link
+                                    :to="{
+                                        name: 'placement-group-detail',
+                                        params: { id: instance.placement_group.id },
+                                    }"
+                                    class="resource-link"
+                                    >{{ instance.placement_group.name }}</router-link
+                                >
+                                <span class="placement-rule">{{ ruleText(t, te, instance.placement_group) }}</span>
+                            </InfoRow>
                             <InfoRow :label="$t('dashboard.table.hyper')">{{ instance.hypervisor || '-' }}</InfoRow>
                             <InfoRow v-if="instance.root_passwd" :label="$t('dashboard.instanceDetail.rootPassword')">
                                 <span class="password-value">
@@ -1534,6 +1546,13 @@ onUnmounted(() => {
 
 .interface-detail :deep(.info-label) {
     padding-left: 20px;
+}
+
+/* Rule of the placement group next to its link */
+.placement-rule {
+    font-size: var(--font-size-xs);
+    font-weight: normal;
+    color: var(--text-tertiary);
 }
 
 /* Resource Links */

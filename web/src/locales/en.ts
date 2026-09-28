@@ -424,6 +424,7 @@ export default {
         securityGroups: 'Security Groups',
         loadBalancers: 'Network Load Balancers',
         vpnGateways: 'VPN Gateways',
+        placementGroups: 'Placement Groups',
         settings: 'Settings',
         compute: 'Compute',
         network: 'Network',
@@ -1243,6 +1244,102 @@ export default {
             ruleCreatedButLinkFailed: 'Alarm rule created, but VM binding failed.',
             targetDeviceRequired: 'Please fill in the network interface name (e.g. eth0) for all selected VMs.',
         },
+        // Placement groups: spread instances over hosts or pack them on one host
+        placementGroup: {
+            create: 'Create Placement Group',
+            editTitle: 'Edit placement group {name}',
+            policy: 'Policy',
+            strictness: 'Strictness',
+            strict: 'Strict',
+            bestEffort: 'Best effort',
+            policies: {
+                spread: 'Spread',
+                pack: 'Pack',
+            },
+            rules: {
+                spreadStrict: 'Strict spread',
+                spreadSoft: 'Best-effort spread',
+                packStrict: 'Strict pack',
+                packSoft: 'Best-effort pack',
+            },
+            ruleHints: {
+                spreadStrict: 'Every instance on a different host; creation fails when no free host is left.',
+                spreadSoft:
+                    'Instances on different hosts where possible; otherwise on the host with the fewest members.',
+                packStrict: 'All instances on one host; creation fails when that host has no room left.',
+                packSoft: 'Instances on one host where possible; otherwise on another host.',
+            },
+            policyDesc: {
+                spread: 'Every instance of the group on a different host: a host failure takes down only one of them.',
+                pack: 'All instances of the group on the same host, for the lowest latency between them.',
+            },
+            policyUseCase: {
+                spread: 'For: database primary and replica, replicas of a cluster, anything that must stay available.',
+                pack: 'For: applications that talk to each other a lot and are sensitive to network latency.',
+            },
+            packRisk: 'All members sit on one host: when that host fails, the whole group goes down.',
+            strictHints: {
+                spreadStrict: 'On: when no free host is left, creating an instance fails.',
+                spreadSoft:
+                    'Off: when no free host is left, the rule is relaxed and the instance goes to the host with the fewest members.',
+                packStrict: 'On: when the host of the members has no room left, creating an instance fails.',
+                packSoft: 'Off: when the host of the members has no room left, the instance goes to another host.',
+            },
+            zoneHint:
+                'Members can only be created in this zone. After creation only the name and the description can change; the policy, the strictness and the zone cannot.',
+            immutableHint:
+                'The policy, the strictness and the zone cannot change after creation; create a new placement group to change them.',
+            namePlaceholder: 'e.g. db-ha',
+            allZones: 'All zones',
+            empty: 'No placement groups yet',
+            emptyHint: 'A placement group spreads a set of instances over different hosts, or packs them on one host.',
+            memberCount: 'Members',
+            distribution: 'Distribution',
+            hostCount: '{n} host(s)',
+            compliant: 'Compliant',
+            notCompliant: 'Not compliant',
+            deleteHasMembers: 'The group still has {n} instance(s); delete them before deleting the placement group',
+            ruleTitle: 'Placement Rule',
+            members: 'Members',
+            hostSlotColumn: 'Host',
+            hostSlot: 'Host {n}',
+            hostSlotHint:
+                '"Host N" numbers the hosts inside this group: members with the same number are on the same host.',
+            noLocation: 'None yet',
+            noLocationHint: 'Not placed on any host yet (for example the creation failed)',
+            notes: 'Notes',
+            noMembers: 'No instances in this group yet. Choose the group when creating an instance to add it.',
+            notCompliantSpread:
+                '{n} members share a host with other members of the group, which breaks the spread rule.',
+            notCompliantPack: 'The members are on {n} hosts, which breaks the pack rule.',
+            notCompliantGeneric: 'The members are not placed as the rule requires.',
+            noAutoFix: 'The platform does not fix this by itself; migrate one of the members to restore the rule.',
+            causeMigrationFailed: 'The latest migration of member {name} failed, so the group did not move as a whole.',
+            causeIgnoredPlacement: 'An administrator ignored the placement group when migrating {name}.',
+            listSeparator: ', ',
+            staleMigration: 'Migration record stuck',
+            staleMigrationHint:
+                'This migration record has not changed for over an hour and its target still counts as taken; a system administrator has to recover it by hand.',
+            staleProvisioning: 'Still being created after more than 1 hour; delete it and create it again',
+            lastMigrationFailed: 'Latest migration failed',
+            ignoredPlacement: 'Migrated ignoring the placement group',
+            field: 'Placement Group',
+            none: 'No placement group',
+            noGroupsInZone: 'This zone has no placement group yet.',
+            fieldHint:
+                'Only the placement groups of the selected zone are listed. An instance joins a group when it is created and cannot change it later.',
+            instanceHint: '{rule}: {hint} The group has {n} member(s).',
+            loadFailed: 'Failed to load the placement groups',
+            memberOf: 'Member of placement group {name} ({rule})',
+            ignorePlacement: 'Ignore the placement group',
+            ignorePlacementWarning:
+                'The migration will not check the placement group rule and may break it (for example two members of a strict spread group on one host). The platform does not repair this afterwards.',
+            placementWarning: 'Placement group: {message}',
+            movingTogether: 'A strict pack group migrates as a whole. These members on the same host move too: {names}',
+            movingTogetherBlocked: '{names} can not migrate now, so the group migration will be refused.',
+            movingTogetherDisks:
+                'Disk target pools can not be chosen when a group migrates: every disk stays in its pool, or moves to a pool of its fallback group when its pool is not usable.',
+        },
         // Activity page: all operations of the current organization in the current region
         activityPage: {
             title: 'Activity',
@@ -1268,6 +1365,7 @@ export default {
             failed: 'Failed',
             resourceTypes: {
                 instance: 'Instance',
+                placement_group: 'Placement group',
                 volume: 'Volume',
                 storage_pool: 'Storage pool',
                 image: 'Image',
@@ -1346,6 +1444,11 @@ export default {
             activityActionUnknownFailed: 'failed to perform {action} {name}',
             // Keyed by the action returned by the API (resource_type.verb); {name} renders the resource name (linked to its detail page)
             activityActions: {
+                placement_group: {
+                    create: 'created placement group {name}',
+                    update: 'updated placement group {name}',
+                    delete: 'deleted placement group {name}',
+                },
                 instance: {
                     create: 'created instance {name}',
                     delete: 'deleted instance {name}',
@@ -1479,6 +1582,11 @@ export default {
             },
             // Failed actions: completed-form wording ("deleted ...") would contradict the failure, so they have their own set
             activityActionsFailed: {
+                placement_group: {
+                    create: 'create placement group {name}',
+                    update: 'update placement group {name}',
+                    delete: 'delete placement group {name}',
+                },
                 instance: {
                     create: 'failed to create instance {name}',
                     delete: 'failed to delete instance {name}',

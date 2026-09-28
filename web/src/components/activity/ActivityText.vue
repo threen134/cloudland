@@ -11,6 +11,7 @@ const { te } = useI18n()
 // Resource type -> detail route. Types without a detail page (keys, flavors) show the name only.
 const detailRoutes: Record<string, string> = {
     instance: 'instance-detail',
+    placement_group: 'placement-group-detail',
     volume: 'volume-detail',
     vpc: 'vpc-detail',
     subnet: 'subnet-detail',

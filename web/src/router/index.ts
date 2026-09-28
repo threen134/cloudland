@@ -130,6 +130,16 @@ const router = createRouter({
                     component: () => import('../views/dashboard/InstanceDetail.vue'),
                 },
                 {
+                    path: 'placement-groups',
+                    name: 'placement-groups',
+                    component: () => import('../views/dashboard/PlacementGroupList.vue'),
+                },
+                {
+                    path: 'placement-groups/:id',
+                    name: 'placement-group-detail',
+                    component: () => import('../views/dashboard/PlacementGroupDetail.vue'),
+                },
+                {
                     path: 'volumes',
                     name: 'volumes',
                     component: () => import('../views/dashboard/VolumeList.vue'),

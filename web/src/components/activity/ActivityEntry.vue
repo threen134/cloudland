@@ -19,6 +19,7 @@ import {
     MapPin,
     Box,
     ShieldCheck,
+    Boxes,
 } from 'lucide-vue-next'
 import type { Activity as ActivityItem } from '../../api/activities'
 import ActivityText from './ActivityText.vue'
@@ -30,6 +31,7 @@ const { relativeTime, absoluteTime } = useActivityTime()
 
 const icons: Record<string, Component> = {
     instance: Server,
+    placement_group: Boxes,
     volume: HardDrive,
     storage_pool: Database,
     vpc: Layers,
@@ -47,6 +49,7 @@ const icons: Record<string, Component> = {
 }
 const iconClass: Record<string, string> = {
     instance: 'bg-blue-light text-blue',
+    placement_group: 'bg-blue-light text-blue',
     volume: 'bg-teal-light text-teal',
     storage_pool: 'bg-teal-light text-teal',
     vpc: 'bg-purple-light text-purple',

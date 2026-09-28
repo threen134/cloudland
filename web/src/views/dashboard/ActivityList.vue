@@ -38,6 +38,7 @@ const result = ref<'' | 'success' | 'failed'>('')
 
 const RESOURCE_TYPES = [
     'instance',
+    'placement_group',
     'volume',
     'storage_pool',
     'image',

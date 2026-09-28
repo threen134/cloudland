@@ -50,6 +50,7 @@ import {
     MessageSquare,
     ShieldAlert,
     ShieldCheck,
+    Boxes,
 } from 'lucide-vue-next'
 
 const auth = useAuthStore()
@@ -140,6 +141,8 @@ const pageTitle = computed(() => {
         activities: t('dashboard.activityPage.title'),
         instances: t('dashboard.instances'),
         'instance-detail': t('dashboard.instances'),
+        'placement-groups': t('dashboard.placementGroups'),
+        'placement-group-detail': t('dashboard.placementGroups'),
         volumes: t('dashboard.volumes'),
         'volume-detail': t('dashboard.volumes'),
         images: t('dashboard.images'),
@@ -293,6 +296,10 @@ onUnmounted(() => {
                         <RouterLink to="/dashboard/instances" class="nav-item" active-class="active">
                             <Monitor :size="18" />
                             <span>{{ $t('dashboard.instances') }}</span>
+                        </RouterLink>
+                        <RouterLink to="/dashboard/placement-groups" class="nav-item" active-class="active">
+                            <Boxes :size="18" />
+                            <span>{{ $t('dashboard.placementGroups') }}</span>
                         </RouterLink>
                         <RouterLink to="/dashboard/volumes" class="nav-item" active-class="active">
                             <HardDrive :size="18" />

@@ -1,4 +1,5 @@
 import client from './client'
+import type { PlacementGroupRef } from './placementGroups'
 
 // 对应 api/src/common/http.go 的 BaseReference
 export interface BaseReference {
@@ -91,6 +92,8 @@ export interface Instance extends ResourceReference {
     reason: string
     // Pools usable on the host of the instance (uuids): a volume in another pool can not be attached to it
     available_storage_pools?: string[]
+    // Placement group the instance belongs to; omitted when it is in none
+    placement_group?: PlacementGroupRef
 }
 
 export interface InstanceListResponse {
@@ -148,6 +151,8 @@ export interface CreateInstancePayload {
     userdata_type?: string
     nested_enable?: boolean
     pool_id?: string
+    // Placement group to join; only at creation, it must be in the same zone
+    placement_group?: BaseReference
 }
 
 // 监控指标：对应 api/src/apis/monitor.go 的 CPUResponse / MemoryResponse / DiskResponse / NetworkResponse

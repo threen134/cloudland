@@ -50,6 +50,10 @@ export interface Migration {
     disk_plan?: DiskPlanItem[]
     allow_pool_fallback?: boolean
     ignore_capacity?: boolean
+    // Created with ignore_placement: the placement group rule of the instance was not checked
+    ignore_placement?: boolean
+    // Set when the migration breaks the rule of a best-effort placement group
+    placement_warning?: string
 }
 
 // One disk of a migration plan (migration.go DiskPlanResponse)
@@ -89,7 +93,13 @@ export interface MigrationTarget {
     hostid: number
     hostname: string
     usable: boolean
+    // Why the host can not take the instance; includes violations of a strict placement group
     reason?: string
+    // The host breaks the rule of a best-effort placement group, or the other members of a strict pack group
+    // have to move in the same request (usable stays true)
+    placement_warning?: string
+    // Not usable only because of a strict placement group: ignore_placement makes it usable
+    placement_blocked?: boolean
     disks: DiskTarget[]
 }
 
@@ -117,6 +127,8 @@ export interface CreateMigrationPayload {
     allow_pool_fallback?: boolean
     // Skip the capacity checks of the target (system admins, audited)
     ignore_capacity?: boolean
+    // Skip the placement group rule of the instance (system admins; the group may become non-compliant)
+    ignore_placement?: boolean
 }
 
 // 迁移进行中的状态，前端据此自动刷新
