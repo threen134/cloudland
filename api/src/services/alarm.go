@@ -677,25 +677,6 @@ func (a *AlarmOperator) BatchLinkVMs(ctx context.Context, GroupUUID string, vmUU
 	})
 }
 
-func (a *AlarmOperator) DeleteRuleGroup(ctx context.Context, groupUUID, ruleType string) (err error) {
-	logger.Ctx(ctx).Infof("ENTER AlarmOperator.DeleteRuleGroup: groupUUID=%s, ruleType=%s", groupUUID, ruleType)
-	defer func() {
-		if err != nil {
-			logger.Ctx(ctx).Errorf("EXIT AlarmOperator.DeleteRuleGroup: error=%v", err)
-		} else {
-			logger.Ctx(ctx).Info("EXIT AlarmOperator.DeleteRuleGroup: success")
-		}
-	}()
-	ctx, db := common.GetContextDB(ctx)
-	result := db.Where("uuid = ? AND type = ?", groupUUID, ruleType).
-		Delete(&model.RuleGroupV2{})
-	if result.Error != nil {
-		logger.Ctx(ctx).Errorf("delete rule failed: groupUUID=%s, type=%s, error=%v",
-			groupUUID, ruleType, result.Error)
-	}
-	return result.Error
-}
-
 func (a *AlarmOperator) DeleteVMLink(ctx context.Context, groupUUID, vmUUID, iface string) (rowsAffected int64, err error) {
 	logger.Ctx(ctx).Infof("ENTER AlarmOperator.DeleteVMLink: groupUUID=%s, vmUUID=%s, iface=%s", groupUUID, vmUUID, iface)
 	defer func() {
@@ -1152,24 +1133,6 @@ func Paginate(page, pageSize int) func(db *gorm.DB) *gorm.DB {
 		offset := (page - 1) * pageSize
 		return db.Offset(offset).Limit(pageSize)
 	}
-}
-
-func (a *AlarmOperator) DeleteCPURulesByGroup(ctx context.Context, groupID string) (err error) {
-	logger.Ctx(ctx).Infof("ENTER AlarmOperator.DeleteCPURulesByGroup: groupID=%s", groupID)
-	defer func() {
-		if err != nil {
-			logger.Ctx(ctx).Errorf("EXIT AlarmOperator.DeleteCPURulesByGroup: error=%v", err)
-		} else {
-			logger.Ctx(ctx).Info("EXIT AlarmOperator.DeleteCPURulesByGroup: success")
-		}
-	}()
-	ctx, db := common.GetContextDB(ctx)
-	if err = db.Where("group_uuid = ?", groupID).
-		Delete(&CPURule{}).Error; err != nil {
-		logger.Ctx(ctx).Errorf("CPU rule delete failed: groupID=%s, error=%v", groupID, err)
-		return err
-	}
-	return nil
 }
 
 func (a *AlarmOperator) ListRuleGroups(ctx context.Context, params ListRuleGroupsParams) (groups []model.RuleGroupV2, total int64, err error) {
