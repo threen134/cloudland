@@ -38,6 +38,7 @@ import { useRegionStore } from '../../stores/region'
 import { quotaErrorMessage } from '../../utils/quotaError'
 import { errorMessage } from '../../utils/error'
 import { primaryIp } from '../../utils/instance'
+import { OPTION_LIST_LIMIT } from '../../api/listParams'
 
 const region = useRegionStore()
 
@@ -86,7 +87,7 @@ const fetchSubnetAddresses = async (subnetId: string) => {
 // 排序在服务端做（sortField 是数据库列名，和列 key 不一定同名）。
 // 「挂载到」的虚拟机名在 instances 表里，浮动 IP 表上没有对应列，不提供排序
 const columns = computed<Column[]>(() => [
-    { key: 'name', label: t('dashboard.table.userName'), sortable: true },
+    { key: 'name', label: t('dashboard.table.nameId'), sortable: true },
     { key: 'ip', label: t('dashboard.table.ipAddress'), sortable: true, sortField: 'fip_address' },
     { key: 'type', label: t('dashboard.table.type'), sortable: true },
     { key: 'attachedTo', label: t('dashboard.table.attachedTo') },
@@ -117,7 +118,7 @@ const {
 // 新建弹窗里的子网下拉；原先随列表一起拉，分页后改为挂载时和打开弹窗时各拉一次
 const fetchSubnetOptions = async () => {
     try {
-        const subnetsResponse = await subnetsApi.list()
+        const subnetsResponse = await subnetsApi.list({ limit: OPTION_LIST_LIMIT })
         const allSubnets = subnetsResponse.subnets || []
         siteSubnets.value = allSubnets.filter((s) => s.type === 'site')
         publicSubnets.value = allSubnets.filter((s) => s.type === 'public')
@@ -130,7 +131,7 @@ const fetchSubnetOptions = async () => {
 
 const fetchInstances = async () => {
     try {
-        const response = await instancesApi.fetchInstances()
+        const response = await instancesApi.fetchInstances({ limit: OPTION_LIST_LIMIT })
         instances.value = (response?.instances || []).filter(
             (inst: Instance) =>
                 inst.vpc && inst.status !== 'provisioning' && inst.interfaces?.some((iface) => iface.is_primary)

@@ -20,6 +20,7 @@ import InfoRow from '../../components/base/InfoRow.vue'
 import { useGoBack } from '../../composables/useGoBack'
 import { useCopyId } from '../../composables/useCopyId'
 import { errorMessage } from '../../utils/error'
+import { OPTION_LIST_LIMIT } from '../../api/listParams'
 
 const { t, te } = useI18n()
 const toast = useToast()
@@ -362,7 +363,7 @@ onMounted(async () => {
     fetchLB()
     loadingSubnets.value = true
     try {
-        const res = await subnetsApi.list({ limit: 200 })
+        const res = await subnetsApi.list({ limit: OPTION_LIST_LIMIT })
         publicSubnets.value = (res.subnets || []).filter((s) => s.type === 'public')
     } catch {
         // subnets unavailable; FIP binding will be disabled

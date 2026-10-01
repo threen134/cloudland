@@ -31,6 +31,7 @@ import { errorMessage } from '../../utils/error'
 import PageToolbar from '../../components/base/PageToolbar.vue'
 import DataTable, { type Column } from '../../components/base/DataTable.vue'
 import BaseModal from '../../components/modals/BaseModal.vue'
+import { OPTION_LIST_LIMIT } from '../../api/listParams'
 
 const { t } = useI18n()
 const toast = useToast()
@@ -95,7 +96,10 @@ const fetchRegions = async () => {
     loadError.value = ''
     try {
         // 区域数量很少，这里一次取满上限即可（列表页不再做前端过滤，搜索交给服务端）
-        const data = await regionsApi.fetchRegions({ limit: 500, query: searchQuery.value.trim() || undefined })
+        const data = await regionsApi.fetchRegions({
+            limit: OPTION_LIST_LIMIT,
+            query: searchQuery.value.trim() || undefined,
+        })
         regions.value = data.regions || []
     } catch (err) {
         console.error('Failed to fetch regions:', err)

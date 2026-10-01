@@ -13,6 +13,7 @@ import { errorMessage } from '../../utils/error'
 import { quotaErrorMessage } from '../../utils/quotaError'
 import { formatDisk } from '../../utils/format'
 import { primaryIp } from '../../utils/instance'
+import { OPTION_LIST_LIMIT } from '../../api/listParams'
 
 const emit = defineEmits<{ changed: [volumeId: string] }>()
 
@@ -77,7 +78,7 @@ const openAttach = async (volume: Volume) => {
     instancesLoading.value = true
     try {
         // The list endpoint defaults to 50 rows
-        const res = await instancesApi.fetchInstances({ limit: 500 })
+        const res = await instancesApi.fetchInstances({ limit: OPTION_LIST_LIMIT })
         if (seq !== openSeq) return
         instances.value = (res.instances || []).filter((inst) =>
             ATTACHABLE_STATUSES.includes(inst.status?.toLowerCase())

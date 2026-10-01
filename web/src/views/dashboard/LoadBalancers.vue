@@ -17,6 +17,7 @@ import PageToolbar from '../../components/base/PageToolbar.vue'
 import StatusBadge from '../../components/base/StatusBadge.vue'
 import DataTable, { type Column } from '../../components/base/DataTable.vue'
 import PaginationBar from '../../components/base/PaginationBar.vue'
+import { OPTION_LIST_LIMIT } from '../../api/listParams'
 
 const loadBalancers = ref<LoadBalancer[]>([])
 const loading = ref(false)
@@ -116,7 +117,7 @@ const fetchLoadBalancers = async () => {
                 limit: pageSize.value,
                 query: searchQuery.value.trim() || undefined,
             }),
-            vpcsApi.list(),
+            vpcsApi.list({ limit: OPTION_LIST_LIMIT }),
         ])
         if (generation !== fetchGeneration) return
         loadBalancers.value = lbResponse.load_balancers || []
@@ -161,7 +162,7 @@ watch(searchQuery, onSearchInput)
 const zones = ref<Zone[]>([])
 const fetchZones = async () => {
     try {
-        const res = await zonesApi.fetchZones({ limit: 500 })
+        const res = await zonesApi.fetchZones({ limit: OPTION_LIST_LIMIT })
         zones.value = res.zones || []
     } catch (err) {
         console.error('Failed to fetch zones:', err)
@@ -446,11 +447,8 @@ onUnmounted(() => {
                 </div>
             </div>
 
-            <div v-if="createError" class="modal-error text-error">
-                {{ createError }}
-            </div>
-
             <template #footer>
+                <div v-if="createError" class="footer-error">{{ createError }}</div>
                 <button type="button" class="btn btn-secondary" @click="closeCreateModal" :disabled="creating">
                     {{ $t('actions.cancel') }}
                 </button>
@@ -494,11 +492,8 @@ onUnmounted(() => {
                 />
             </div>
 
-            <div v-if="editError" class="modal-error text-error">
-                {{ editError }}
-            </div>
-
             <template #footer>
+                <div v-if="editError" class="footer-error">{{ editError }}</div>
                 <button type="button" class="btn btn-secondary" @click="closeEditModal" :disabled="editing">
                     {{ $t('actions.cancel') }}
                 </button>
@@ -540,16 +535,6 @@ onUnmounted(() => {
 .resource-link:hover .resource-name {
     color: var(--primary-600);
     text-decoration: underline;
-}
-
-/* Modal Styles */
-
-.modal-error {
-    margin-top: var(--spacing-4);
-    font-size: var(--font-size-sm);
-    background: var(--error-light);
-    padding: var(--spacing-2);
-    border-radius: var(--radius-sm);
 }
 
 .resource-link {

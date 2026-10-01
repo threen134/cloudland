@@ -22,6 +22,7 @@ import StatusBadge from '../../components/base/StatusBadge.vue'
 import BaseModal from '../../components/modals/BaseModal.vue'
 import DeleteModal from '../../components/modals/DeleteModal.vue'
 import PlacementGroupEditModal from '../../components/placementGroup/PlacementGroupEditModal.vue'
+import { OPTION_LIST_LIMIT } from '../../api/listParams'
 
 const { t, te } = useI18n()
 const toast = useToast()
@@ -33,7 +34,7 @@ const zones = ref<Zone[]>([])
 const zoneFilter = ref('')
 const fetchZones = async () => {
     try {
-        const res = await zonesApi.fetchZones({ limit: 500 })
+        const res = await zonesApi.fetchZones({ limit: OPTION_LIST_LIMIT })
         zones.value = res.zones || []
     } catch (err) {
         console.error('Failed to fetch zones:', err)

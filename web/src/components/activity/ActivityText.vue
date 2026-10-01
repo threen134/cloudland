@@ -3,10 +3,12 @@
 // The actor is not included, so the overview card and the activity table can lay it out differently.
 import { useI18n } from 'vue-i18n'
 import type { Activity } from '../../api/activities'
+import { useAuthStore } from '../../stores/auth'
 
 const props = defineProps<{ activity: Activity }>()
 
 const { te } = useI18n()
+const authStore = useAuthStore()
 
 // Resource type -> detail route. Types without a detail page (keys, flavors) show the name only.
 const detailRoutes: Record<string, string> = {
@@ -40,10 +42,14 @@ const resourceLabel = () => {
     return a.resource_name || (a.resource_id ? a.resource_id.slice(0, 8) : '')
 }
 
+// Detail pages only a system admin may open (the router sends anyone else back to the overview)
+const adminOnlyTypes = new Set(['hyper', 'migration', 'zone'])
+
 // No link for deleted or failed actions: the detail page most likely does not exist.
 const resourceLink = () => {
     const a = props.activity
     if (!a.success || a.action.endsWith('.delete')) return null
+    if (adminOnlyTypes.has(a.resource_type) && !authStore.user?.is_superuser) return null
     if (a.resource_type === 'zone' && a.resource_name) {
         return { name: 'zone-detail', params: { name: a.resource_name } }
     }

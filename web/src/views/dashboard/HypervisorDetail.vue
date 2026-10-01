@@ -38,6 +38,7 @@ import InfoRow from '../../components/base/InfoRow.vue'
 import DetailTabs from '../../components/base/DetailTabs.vue'
 import { useCopyId } from '../../composables/useCopyId'
 import { useGoBack } from '../../composables/useGoBack'
+import { OPTION_LIST_LIMIT } from '../../api/listParams'
 
 const { t, te } = useI18n()
 const toast = useToast()
@@ -106,7 +107,7 @@ const hyperInstancesLoading = ref(false)
 const fetchHyperInstances = async (hostid: number) => {
     hyperInstancesLoading.value = true
     try {
-        const resp = await instancesApi.fetchInstances({ hyper: hostid, limit: 200 })
+        const resp = await instancesApi.fetchInstances({ hyper: hostid, limit: OPTION_LIST_LIMIT })
         const data = resp as InstanceListResponse | Instance[]
         hyperInstances.value = Array.isArray(data) ? data : data.instances || []
     } catch (err) {
@@ -199,7 +200,7 @@ const toggleEdit = async () => {
     closeActionMenu()
     editMode.value = true
     try {
-        const resp = await zonesApi.fetchZones()
+        const resp = await zonesApi.fetchZones({ limit: OPTION_LIST_LIMIT })
         const data = resp as ZoneListResponse | Zone[]
         zoneList.value = Array.isArray(data) ? data : data.zones || []
     } catch {
@@ -250,7 +251,7 @@ const openMaintainModal = async () => {
     maintainForm.value = { migrate: true, target_hyper: -1 }
     showMaintainModal.value = true
     try {
-        const resp = await hypervisorsApi.fetchHypervisors()
+        const resp = await hypervisorsApi.fetchHypervisors({ limit: OPTION_LIST_LIMIT })
         const data = resp as HyperListResponse | Hypervisor[]
         const list = Array.isArray(data) ? data : data.hypers || []
         maintainTargetOptions.value = list.filter((h) => h.status === 1 && h.hostid !== hypervisor.value?.hostid)

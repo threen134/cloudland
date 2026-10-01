@@ -8,6 +8,7 @@ import { FitAddon } from '@xterm/addon-fit'
 import '@xterm/xterm/css/xterm.css'
 import { instancesApi } from '../../api/instances'
 import { hypervisorsApi } from '../../api/hypervisors'
+import { useAuthStore } from '../../stores/auth'
 import { errorMessage as apiErrorText, errorStatus } from '../../utils/error'
 import {
     SquareTerminal,
@@ -26,6 +27,7 @@ import {
 
 const route = useRoute()
 const router = useRouter()
+const authStore = useAuthStore()
 const { t } = useI18n()
 const instanceId = route.params.id as string
 const isHost = route.name === 'host-console'
@@ -267,9 +269,19 @@ const connectHost = async () => {
     }
 }
 
+// Only a system admin may open a host console. Anyone else gets the error page straight away: the gateway
+// refuses with a 403 without an error code, which reads like a wrong password and kept asking for it
+const canOpenHost = () => authStore.user?.is_superuser === true
+
 // Every attempt starts without a password: a console that does not ask for one connects right away
 const connectHostFromStart = () => {
     password.value = ''
+    if (!canOpenHost()) {
+        detachSocket()
+        status.value = 'error'
+        errorMessage.value = t('dashboard.console.host.notAllowed')
+        return
+    }
     return connectHost()
 }
 
@@ -285,12 +297,14 @@ onMounted(() => {
         return
     }
     instanceName.value = instanceId
-    hypervisorsApi
-        .getHypervisor(instanceId)
-        .then((res) => {
-            if (res.hostname) instanceName.value = res.hostname
-        })
-        .catch(() => {})
+    if (canOpenHost()) {
+        hypervisorsApi
+            .getHypervisor(instanceId)
+            .then((res) => {
+                if (res.hostname) instanceName.value = res.hostname
+            })
+            .catch(() => {})
+    }
     connectHostFromStart()
 })
 
@@ -371,7 +385,8 @@ onUnmounted(() => {
                     <AlertTriangle :size="48" class="text-error" />
                     <h2>{{ t('dashboard.console.error') }}</h2>
                     <p>{{ errorMessage }}</p>
-                    <button class="btn-primary mt-4" @click="connect">
+                    <!-- Retrying does not help an account that may not open a host console -->
+                    <button v-if="!isHost || canOpenHost()" class="btn-primary mt-4" @click="connect">
                         <RefreshCw :size="16" /> {{ t('dashboard.console.tryAgain') }}
                     </button>
                 </div>

@@ -25,6 +25,7 @@ import PageToolbar from '../../components/base/PageToolbar.vue'
 import StatusBadge from '../../components/base/StatusBadge.vue'
 import DataTable, { type Column } from '../../components/base/DataTable.vue'
 import PaginationBar from '../../components/base/PaginationBar.vue'
+import { OPTION_LIST_LIMIT } from '../../api/listParams'
 
 const { t, te } = useI18n()
 const region = useRegionStore()
@@ -286,7 +287,10 @@ const closeCreateModal = () => {
 const fetchResources = async () => {
     resourcesLoading.value = true
     try {
-        const [instRes, hypRes] = await Promise.all([instancesApi.fetchInstances(), hypervisorsApi.fetchHypervisors()])
+        const [instRes, hypRes] = await Promise.all([
+            instancesApi.fetchInstances({ limit: OPTION_LIST_LIMIT }),
+            hypervisorsApi.fetchHypervisors({ limit: OPTION_LIST_LIMIT }),
+        ])
 
         const instData = instRes as InstanceListResponse | Instance[]
         availableInstances.value = Array.isArray(instData) ? instData : instData.instances || []

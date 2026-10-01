@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted, onUnmounted } from 'vue'
+import { ref, reactive, computed, onMounted, onUnmounted, toRaw } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { instancesApi } from '../../api/instances'
@@ -73,34 +73,48 @@ const connectVnc = (url: string) => {
     if (!container.value) return
 
     try {
-        rfb.value = new RFB(container.value, url, {
+        const current = new RFB(container.value, url, {
             credentials: { password: '' },
         })
-        traceVncConnection(rfb.value)
+        rfb.value = current
+        traceVncConnection(current)
+        // Whether this connection ever got through the VNC handshake
+        let handshakeDone = false
 
-        rfb.value.addEventListener('connect', () => {
+        current.addEventListener('connect', () => {
+            handshakeDone = true
             status.value = 'connected'
             console.log('VNC Connected')
         })
 
-        rfb.value.addEventListener('disconnect', (e: Event) => {
+        current.addEventListener('disconnect', (e: Event) => {
+            // A connection replaced by a reconnect closes late: it must not overwrite the state of the new one
+            // (rfb is a deep ref: compare the raw object, the ref hands back a reactive proxy)
+            if (toRaw(rfb.value) !== current) return
             // The server side drops pressed keys with the connection
             resetModifiers()
             cancelTyping()
             if (status.value !== 'error') {
-                status.value = 'disconnected'
+                if (handshakeDone) {
+                    status.value = 'disconnected'
+                } else {
+                    // Closed before the handshake: the console proxy refused the token, most often because the
+                    // node could not set the console password of an instance started before it was required
+                    status.value = 'error'
+                    errorMessage.value = t('dashboard.console.vncRefused')
+                }
             }
             console.log('VNC Disconnected', e)
         })
 
-        rfb.value.addEventListener('credentialsrequired', () => {
+        current.addEventListener('credentialsrequired', () => {
             // Usually not needed for these proxied consoles as token is in URL
-            rfb.value?.sendCredentials({ password: '' })
+            current.sendCredentials({ password: '' })
         })
 
-        rfb.value.scaleViewport = true
+        current.scaleViewport = true
         // QEMU's VNC server rejects resize requests ("Invalid screen layout"); scaling is done locally instead
-        rfb.value.resizeSession = false
+        current.resizeSession = false
     } catch (err) {
         console.error('VNC Connection error:', err)
         status.value = 'error'
@@ -440,8 +454,15 @@ const switchToSerial = () => {
 
 const reload = () => {
     if (rfb.value) {
-        rfb.value.disconnect()
+        const old = rfb.value
+        // Detach first: the late disconnect event of the old connection is then ignored, so the cleanup it does
+        // on a disconnect is done here (the guest drops pressed keys with the connection, the toolbar must not
+        // keep showing locked modifiers)
+        rfb.value = null
+        old.disconnect()
     }
+    resetModifiers()
+    cancelTyping()
     fetchConsoleInfo()
 }
 
@@ -572,9 +593,14 @@ onUnmounted(() => {
                     <AlertTriangle :size="48" class="text-error" />
                     <h2>{{ t('dashboard.console.error') }}</h2>
                     <p>{{ errorMessage }}</p>
-                    <button class="btn btn-primary mt-4" @click="reload">
-                        <RefreshCw :size="16" /> {{ t('dashboard.console.tryAgain') }}
-                    </button>
+                    <div class="error-actions mt-4">
+                        <button class="btn btn-primary" @click="reload">
+                            <RefreshCw :size="16" /> {{ t('dashboard.console.tryAgain') }}
+                        </button>
+                        <button class="btn btn-secondary" @click="switchToSerial">
+                            <SquareTerminal :size="16" /> {{ t('dashboard.console.openSerial') }}
+                        </button>
+                    </div>
                 </div>
             </div>
 
@@ -882,6 +908,13 @@ onUnmounted(() => {
 .error-content p {
     color: var(--text-tertiary);
     font-size: 14px;
+}
+
+.error-actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 8px;
 }
 
 .loading-content {

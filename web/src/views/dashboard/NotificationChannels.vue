@@ -12,6 +12,7 @@ import PageToolbar from '../../components/base/PageToolbar.vue'
 import DataTable, { type Column } from '../../components/base/DataTable.vue'
 import BaseModal from '../../components/modals/BaseModal.vue'
 import DeleteModal from '../../components/modals/DeleteModal.vue'
+import { OPTION_LIST_LIMIT } from '../../api/listParams'
 
 const { t } = useI18n()
 const toast = useToast()
@@ -51,7 +52,10 @@ const fetchChannels = async () => {
     loading.value = true
     loadError.value = ''
     try {
-        const res = await notificationsApi.list({ limit: 500, query: searchQuery.value.trim() || undefined })
+        const res = await notificationsApi.list({
+            limit: OPTION_LIST_LIMIT,
+            query: searchQuery.value.trim() || undefined,
+        })
         channels.value = res.channels || []
     } catch (err) {
         console.error('Failed to fetch channels:', err)
@@ -223,7 +227,7 @@ onMounted(fetchChannels)
         <Teleport to="body">
             <BaseModal
                 :show="showCreateModal"
-                :title="`${editTarget ? t('actions.edit') : t('actions.create')} ${t('dashboard.notificationChannel')}`"
+                :title="editTarget ? t('dashboard.editNotificationChannel') : t('dashboard.createNotificationChannel')"
                 size="lg"
                 form
                 @close="showCreateModal = false"

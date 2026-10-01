@@ -8,6 +8,7 @@ import { useQuota } from '../../composables/useQuota'
 import { useToast } from '../../composables/useToast'
 import { useCopyId } from '../../composables/useCopyId'
 import { errorMessage } from '../../utils/error'
+import { formatDateTime } from '../../utils/format'
 import {
     Plus,
     Building2,
@@ -57,28 +58,21 @@ const editOrgForm = ref({
     description: '',
 })
 
-// 状态列显示的是翻译后的文案，排序按原始状态码；属主列优先按显示的名字排
+// Sorting is done by cpgateway (order=<column> / -<column>, whitelist name, slug, status, created_at): the table
+// only holds the current page, so a local sort would only reorder that page. Description and owner are not in
+// the whitelist (the owner comes from another table) and are not sortable
 const columns = computed<Column[]>(() => [
     { key: 'name', label: t('dashboard.table.nameId'), sortable: true },
-    {
-        key: 'description',
-        label: t('dashboard.table.description'),
-        sortable: true,
-        sortValue: (o) => o.description || '',
-    },
-    { key: 'status', label: t('dashboard.table.status'), sortable: true, sortValue: (o) => o.status ?? 0 },
-    {
-        key: 'owner',
-        label: t('dashboard.table.owner'),
-        sortable: true,
-        sortValue: (o) => o.owner_name || o.owner_email || o.owner_uuid || '',
-    },
-    { key: 'created', label: t('dashboard.table.created'), sortable: true, sortValue: (o) => o.created_at || '' },
+    { key: 'description', label: t('dashboard.table.description') },
+    { key: 'status', label: t('dashboard.table.status'), sortable: true },
+    { key: 'owner', label: t('dashboard.table.owner') },
+    { key: 'created', label: t('dashboard.table.created'), sortable: true, sortField: 'created_at' },
     { key: 'actions', label: t('dashboard.table.actions'), align: 'center' },
 ])
 
-// 分页和搜索都在服务端（cpgateway 的 GET /orgs 收 offset/limit/query）。
-// 原先是一次拉全量再在前端按名称/UUID 过滤
+// 分页、搜索、排序都在服务端（cpgateway 的 GET /orgs 收 offset/limit/query/order）。
+// 原先是一次拉全量再在前端按名称/UUID 过滤。
+// No default order: the gateway keeps its own (creation order) until a header is clicked
 const {
     items: orgs,
     total,
@@ -87,12 +81,17 @@ const {
     loading,
     error: loadError,
     search: searchQuery,
+    order,
+    toggleSort,
     load: fetchOrgs,
     reload: reloadOrgs,
-} = useListQuery<Organization>(async ({ offset, limit, query }) => {
-    const res = await orgsApi.fetchOrgs({ offset, limit, query: query || undefined })
-    return { items: res.orgs || [], total: res.total ?? 0 }
-})
+} = useListQuery<Organization>(
+    async ({ offset, limit, query, order }) => {
+        const res = await orgsApi.fetchOrgs({ offset, limit, query: query || undefined, order: order || undefined })
+        return { items: res.orgs || [], total: res.total ?? 0 }
+    },
+    { defaultOrder: '' }
+)
 onMounted(() => fetchOrgs())
 
 const openCreateModal = () => {
@@ -285,6 +284,8 @@ const handleUpdateStatus = async (orgId: string, status: number) => {
             row-key="uuid"
             :loading="loading"
             :error="loadError"
+            :order="order"
+            @update:order="toggleSort"
             @retry="() => fetchOrgs()"
         >
             <template #empty>
@@ -378,7 +379,7 @@ const handleUpdateStatus = async (orgId: string, status: number) => {
                 <span v-else>-</span>
             </template>
 
-            <template #cell-created="{ row: org }">{{ org.created_at || '-' }}</template>
+            <template #cell-created="{ row: org }">{{ formatDateTime(org.created_at) }}</template>
 
             <template #cell-actions="{ row: org }">
                 <div class="row-actions">

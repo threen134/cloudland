@@ -76,7 +76,15 @@ const drawCaptcha = (code: string) => {
         ctx.rotate(angle)
 
         // Random color
-        const colors = [cssVar('--gray-900'), cssVar('--gray-800'), cssVar('--gray-700'), cssVar('--gray-600'), cssVar('--primary-hover'), cssVar('--accent-purple'), cssVar('--accent-rose')]
+        const colors = [
+            cssVar('--gray-900'),
+            cssVar('--gray-800'),
+            cssVar('--gray-700'),
+            cssVar('--gray-600'),
+            cssVar('--primary-hover'),
+            cssVar('--accent-purple'),
+            cssVar('--accent-rose'),
+        ]
         ctx.fillStyle = colors[Math.floor(Math.random() * colors.length)]
 
         ctx.fillText(char, 0, 0)

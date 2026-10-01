@@ -31,6 +31,7 @@ import { useQuota } from '../../composables/useQuota'
 import { useToast } from '../../composables/useToast'
 import { formatDate, formatDateTime } from '../../utils/format'
 import { errorMessage } from '../../utils/error'
+import { OPTION_LIST_LIMIT } from '../../api/listParams'
 
 const { t } = useI18n()
 const toast = useToast()
@@ -148,7 +149,7 @@ const fetchMembers = async () => {
     try {
         // GET /orgs/:uuid/members 直接返回数组，没有 { members: ... } 外层包装
         // 详情页展示的是这个组织的全部成员，一次取满上限（列表页那边才分页）
-        members.value = (await orgsApi.fetchMembers(orgId, { limit: 500 })).members || []
+        members.value = (await orgsApi.fetchMembers(orgId, { limit: OPTION_LIST_LIMIT })).members || []
     } catch (err) {
         console.error('Failed to fetch members:', err)
     } finally {

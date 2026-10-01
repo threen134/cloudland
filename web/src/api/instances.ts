@@ -256,39 +256,41 @@ export const instancesApi = {
         return response.data
     },
 
-    // Instance Actions
-    async startInstance(id: string, hostname: string = ''): Promise<Instance> {
-        const response = await client.patch<Instance>(`/instances/${id}`, { hostname, power_action: 'start' })
+    // Instance Actions. The PATCH carries no hostname: an empty or missing one keeps the name, while sending the
+    // current one gets it validated again (2-32 characters), which a name made by a batch create ("-N" appended)
+    // may no longer pass, so the power action would be refused
+    async startInstance(id: string): Promise<Instance> {
+        const response = await client.patch<Instance>(`/instances/${id}`, { power_action: 'start' })
         return response.data
     },
 
-    async stopInstance(id: string, hostname: string = ''): Promise<Instance> {
-        const response = await client.patch<Instance>(`/instances/${id}`, { hostname, power_action: 'stop' })
+    async stopInstance(id: string): Promise<Instance> {
+        const response = await client.patch<Instance>(`/instances/${id}`, { power_action: 'stop' })
         return response.data
     },
 
-    async rebootInstance(id: string, hostname: string = ''): Promise<Instance> {
-        const response = await client.patch<Instance>(`/instances/${id}`, { hostname, power_action: 'restart' })
+    async rebootInstance(id: string): Promise<Instance> {
+        const response = await client.patch<Instance>(`/instances/${id}`, { power_action: 'restart' })
         return response.data
     },
 
-    async hardStopInstance(id: string, hostname: string = ''): Promise<Instance> {
-        const response = await client.patch<Instance>(`/instances/${id}`, { hostname, power_action: 'hard_stop' })
+    async hardStopInstance(id: string): Promise<Instance> {
+        const response = await client.patch<Instance>(`/instances/${id}`, { power_action: 'hard_stop' })
         return response.data
     },
 
-    async hardRebootInstance(id: string, hostname: string = ''): Promise<Instance> {
-        const response = await client.patch<Instance>(`/instances/${id}`, { hostname, power_action: 'hard_restart' })
+    async hardRebootInstance(id: string): Promise<Instance> {
+        const response = await client.patch<Instance>(`/instances/${id}`, { power_action: 'hard_restart' })
         return response.data
     },
 
-    async pauseInstance(id: string, hostname: string = ''): Promise<Instance> {
-        const response = await client.patch<Instance>(`/instances/${id}`, { hostname, power_action: 'pause' })
+    async pauseInstance(id: string): Promise<Instance> {
+        const response = await client.patch<Instance>(`/instances/${id}`, { power_action: 'pause' })
         return response.data
     },
 
-    async resumeInstance(id: string, hostname: string = ''): Promise<Instance> {
-        const response = await client.patch<Instance>(`/instances/${id}`, { hostname, power_action: 'resume' })
+    async resumeInstance(id: string): Promise<Instance> {
+        const response = await client.patch<Instance>(`/instances/${id}`, { power_action: 'resume' })
         return response.data
     },
 

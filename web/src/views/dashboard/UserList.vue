@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, computed, watch } from 'vue'
+import { ref, onMounted, computed, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { usersApi } from '../../api/users'
 import { orgsApi } from '../../api/orgs'
@@ -14,6 +14,7 @@ import DeleteModal from '../../components/modals/DeleteModal.vue'
 import PageToolbar from '../../components/base/PageToolbar.vue'
 import DataTable, { type Column } from '../../components/base/DataTable.vue'
 import PaginationBar from '../../components/base/PaginationBar.vue'
+import { useListQuery } from '../../composables/useListQuery'
 
 const { t } = useI18n()
 const tenantStore = useTenantStore()
@@ -41,14 +42,6 @@ interface UserRow {
     user?: { uuid: string; name: string }
 }
 
-const users = ref<UserRow[]>([])
-const loading = ref(false)
-const loadError = ref('')
-const searchQuery = ref('')
-// 服务端分页：页码和每页条数变了就重新取，搜索防抖后回到第一页
-const page = ref(1)
-const pageSize = ref(20)
-const total = ref(0)
 const inviteForm = ref({
     email: '',
     org_role: 1,
@@ -71,36 +64,46 @@ const creatingResource = ref(false)
 const editModalVisible = ref(false)
 const editError = ref('')
 
-const fetchUsers = async () => {
-    loading.value = true
-    loadError.value = ''
-    try {
-        // Wait for tenant store to finish loading if needed
-        if (tenantStore.isLoading) {
-            await new Promise<void>((resolve) => {
-                const unwatch = watch(
-                    () => tenantStore.isLoading,
-                    (val) => {
-                        if (!val) {
-                            unwatch()
-                            resolve()
-                        }
-                    }
-                )
-            })
-        }
+const waitForTenant = async () => {
+    if (!tenantStore.isLoading) return
+    await new Promise<void>((resolve) => {
+        const unwatch = watch(
+            () => tenantStore.isLoading,
+            (val) => {
+                if (!val) {
+                    unwatch()
+                    resolve()
+                }
+            }
+        )
+    })
+}
+
+// Paging, search and sorting are all done by cpgateway (offset / limit / query / order). The sortable columns are
+// the ones in its whitelist; the others would only reorder the current page.
+// No default order: the gateway keeps its own until a header is clicked
+const {
+    items: users,
+    total,
+    page,
+    pageSize,
+    loading,
+    error: loadError,
+    search: searchQuery,
+    order,
+    toggleSort,
+    load: loadUsers,
+} = useListQuery<UserRow>(
+    async ({ offset, limit, query, order }) => {
+        await waitForTenant()
+        const params = { offset, limit, query: query || undefined, order: order || undefined }
         const orgId = tenantStore.currentOrgId
         if (orgId) {
             // 成员列表分页与搜索都在服务端；这一页显示的是「当前组织的成员」，
             // 只有系统管理员在没有组织上下文时才会走下面的全局用户分支
-            const response = await orgsApi.fetchMembers(orgId, {
-                offset: (page.value - 1) * pageSize.value,
-                limit: pageSize.value,
-                query: searchQuery.value.trim() || undefined,
-            })
+            const response = await orgsApi.fetchMembers(orgId, params)
             const members = response.members || []
-            total.value = response.total ?? members.length
-            users.value = members.map((m) => ({
+            const rows: UserRow[] = members.map((m) => ({
                 user: {
                     uuid: m.user_uuid,
                     name: m.user_email || m.user_uuid,
@@ -122,50 +125,30 @@ const fetchUsers = async () => {
                 status: m.invitation_status === 0 ? 'invited' : 'active',
                 created_at: m.created_at,
             }))
-        } else {
-            // 没有组织上下文时（系统管理员）列全局用户，同样走服务端分页
-            const res = await usersApi.fetchUsers({
-                offset: (page.value - 1) * pageSize.value,
-                limit: pageSize.value,
-                query: searchQuery.value.trim() || undefined,
-            })
-            users.value = res.users || []
-            total.value = res.total ?? users.value.length
+            return { items: rows, total: response.total ?? members.length }
         }
-    } catch (error) {
-        console.error('Failed to fetch users:', error)
-        users.value = []
-        loadError.value = t('messages.error')
-    } finally {
-        loading.value = false
-    }
-}
+        // 没有组织上下文时（系统管理员）列全局用户，同样走服务端分页
+        const res = await usersApi.fetchUsers(params)
+        const rows: UserRow[] = res.users || []
+        return { items: rows, total: res.total ?? rows.length }
+    },
+    { defaultOrder: '' }
+)
 
-// 翻页 / 改每页条数直接重取；搜索防抖 400ms 后回到第一页
-watch([page, pageSize], () => fetchUsers())
-let searchTimer: ReturnType<typeof setTimeout> | null = null
-watch(searchQuery, () => {
-    if (searchTimer) clearTimeout(searchTimer)
-    searchTimer = setTimeout(() => {
-        if (page.value === 1) fetchUsers()
-        else page.value = 1
-    }, 400)
-})
-onUnmounted(() => {
-    if (searchTimer) clearTimeout(searchTimer)
-})
+const fetchUsers = () => loadUsers()
 
 const getUserStatus = (status: string | undefined): string => {
     return status || 'active'
 }
 
-// 创建时间列显示的是格式化后的文案，排序要按原始值；状态列空值按 active 处理
+// Only the columns in the gateway whitelist are sortable (username, email, created_at: both GET /users and
+// GET /orgs/:uuid/members take them). Role and status are not in both whitelists
 const columns = computed<Column[]>(() => [
     { key: 'username', label: t('dashboard.table.userName'), sortable: true },
     { key: 'email', label: t('dashboard.table.email'), sortable: true },
-    { key: 'role', label: t('dashboard.table.role'), sortable: true, sortValue: (u) => u.role || 'member' },
-    { key: 'status', label: t('dashboard.table.status'), sortable: true, sortValue: (u) => getUserStatus(u.status) },
-    { key: 'created', label: t('dashboard.table.created'), sortable: true, sortValue: (u) => u.created_at || '' },
+    { key: 'role', label: t('dashboard.table.role') },
+    { key: 'status', label: t('dashboard.table.status') },
+    { key: 'created', label: t('dashboard.table.created'), sortable: true, sortField: 'created_at' },
     { key: 'actions', label: t('dashboard.table.actions'), align: 'center' },
 ])
 
@@ -285,7 +268,7 @@ const confirmDelete = async () => {
     }
 }
 
-onMounted(fetchUsers)
+onMounted(() => fetchUsers())
 </script>
 
 <template>
@@ -307,7 +290,9 @@ onMounted(fetchUsers)
             row-key="uuid"
             :loading="loading"
             :error="loadError"
-            @retry="fetchUsers"
+            :order="order"
+            @update:order="toggleSort"
+            @retry="() => fetchUsers()"
         >
             <template #empty>
                 <div v-if="searchQuery">

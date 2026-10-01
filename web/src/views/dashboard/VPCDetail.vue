@@ -173,7 +173,7 @@ const handleCreateSubnet = async () => {
         return
     }
     if (!isSubnetNameValid.value) {
-        createSubnetError.value = t('messages.invalidHostname')
+        createSubnetError.value = t('messages.invalidSubnetName')
         return
     }
 
@@ -503,7 +503,7 @@ onMounted(() => {
                         :placeholder="$t('dashboard.forms.placeholder.subnetNameExample')"
                     />
                     <div v-if="newSubnetForm.name && !isSubnetNameValid" class="text-error text-xs mt-1">
-                        {{ $t('messages.invalidHostname') }}
+                        {{ $t('messages.invalidSubnetName') }}
                     </div>
                 </div>
 

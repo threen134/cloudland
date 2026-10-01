@@ -5,7 +5,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
-import { Boxes, Pencil, Trash2, RefreshCw, Copy, Check, AlertTriangle } from 'lucide-vue-next'
+import { ArrowLeft, Boxes, Pencil, Trash2, RefreshCw, Copy, Check, AlertTriangle } from 'lucide-vue-next'
 import { placementGroupsApi, type PlacementGroup, type PlacementGroupMember } from '../../api/placementGroups'
 import { useAuthStore } from '../../stores/auth'
 import { useToast } from '../../composables/useToast'
@@ -156,7 +156,10 @@ onMounted(() => fetchGroup())
 <template>
     <div class="detail-page">
         <div class="detail-header">
-            <button class="btn btn-ghost btn-sm" @click="goBack">← {{ $t('actions.back') }}</button>
+            <button class="btn btn-ghost btn-sm" @click="goBack">
+                <ArrowLeft :size="16" />
+                <span>{{ $t('actions.back') }}</span>
+            </button>
         </div>
 
         <div v-if="loading && !group" class="loading-container">

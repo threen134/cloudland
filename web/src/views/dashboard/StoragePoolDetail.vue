@@ -3,7 +3,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
-import { Database, RefreshCw, Loader2, Copy, Check } from 'lucide-vue-next'
+import { ArrowLeft, Database, RefreshCw, Loader2, Copy, Check } from 'lucide-vue-next'
 import { storagePoolsApi, type StoragePool, type HostPool } from '../../api/storagePools'
 import { errorMessage } from '../../utils/error'
 import { useToast } from '../../composables/useToast'
@@ -77,7 +77,10 @@ const abandon = async () => {
 <template>
     <div class="detail-page">
         <div class="detail-header">
-            <button class="btn btn-ghost btn-sm" @click="goBack">← {{ t('actions.back') }}</button>
+            <button class="btn btn-ghost btn-sm" @click="goBack">
+                <ArrowLeft :size="16" />
+                <span>{{ t('actions.back') }}</span>
+            </button>
         </div>
         <div v-if="loading && !pool" class="loading-container"><Loader2 :size="24" class="spinning" /></div>
         <div v-else-if="error" class="error-container">

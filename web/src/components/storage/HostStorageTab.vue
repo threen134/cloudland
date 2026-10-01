@@ -34,6 +34,7 @@ import { formatBytes } from '../../utils/format'
 import { errorMessage } from '../../utils/error'
 import { useToast } from '../../composables/useToast'
 import type { StatusVariant } from '../../utils/status'
+import { OPTION_LIST_LIMIT } from '../../api/listParams'
 
 const props = defineProps<{ hypervisor: Hypervisor }>()
 
@@ -83,7 +84,7 @@ const schedulePoll = () => {
 onMounted(async () => {
     await load()
     try {
-        allPools.value = (await storagePoolsApi.list({ limit: 200 })).storage_pools
+        allPools.value = (await storagePoolsApi.list({ limit: OPTION_LIST_LIMIT })).storage_pools
     } catch {
         allPools.value = []
     }

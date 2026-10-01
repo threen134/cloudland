@@ -15,6 +15,7 @@ import { quotaApi, type QuotaFields } from '../../api/quota'
 import { usageColor } from '../../utils/usageColor'
 import { useToast } from '../../composables/useToast'
 import { useI18n } from 'vue-i18n'
+import { OPTION_LIST_LIMIT } from '../../api/listParams'
 
 const { t } = useI18n()
 const toast = useToast()
@@ -115,25 +116,27 @@ onMounted(async () => {
         const regionUuid = regionStore.currentRegionId || ''
 
         const [instRes, volRes, imgRes, vpcRes, fipRes, lbRes, vpnRes, quotaRes] = await Promise.all([
-            instancesApi.fetchInstances().catch((err) => {
+            // The lists are summed up when the quota API gives no consumption, so they are fetched in full;
+            // the counts come from `total` (a page stops at its limit)
+            instancesApi.fetchInstances({ limit: OPTION_LIST_LIMIT }).catch((err) => {
                 console.warn('Instances fetch failed:', err)
                 return { offset: 0, total: 0, limit: 0, instances: [] }
             }),
-            volumesApi.list({ limit: 100, type: 'all' }).catch((err) => {
+            volumesApi.list({ limit: OPTION_LIST_LIMIT, type: 'all' }).catch((err) => {
                 console.warn('Volumes fetch failed:', err)
                 return { volumes: [] }
             }),
-            imagesApi.fetchImages().catch((err) => {
+            imagesApi.fetchImages({ limit: 1 }).catch((err) => {
                 console.warn('Images fetch failed:', err)
                 return { offset: 0, total: 0, limit: 0, images: [] }
             }),
-            vpcsApi.list({ limit: 100 }).catch((err) => {
+            vpcsApi.list({ limit: 1 }).catch((err) => {
                 console.warn('VPCs fetch failed:', err)
-                return { vpcs: [] }
+                return { vpcs: [], total: 0 }
             }),
-            floatingIpsApi.list({ limit: 100 }).catch((err) => {
+            floatingIpsApi.list({ limit: 1 }).catch((err) => {
                 console.warn('FIPs fetch failed:', err)
-                return { floating_ips: [] }
+                return { floating_ips: [], total: 0 }
             }),
             // Only the total is needed for the load balancer card
             loadBalancersApi.list({ limit: 1 }).catch((err) => {
@@ -155,9 +158,6 @@ onMounted(async () => {
 
         const instances = instRes.instances || []
         const volumes = volRes.volumes || []
-        const images = imgRes.images || []
-        const vpcs = vpcRes.vpcs || []
-        const fips = fipRes.floating_ips || []
 
         // Get quota and consumption from API (fallback to client-side calculation)
         const quota = quotaRes?.quota
@@ -175,11 +175,11 @@ onMounted(async () => {
         const usedDiskGB =
             consumption?.disk_gb ??
             (Array.isArray(volumes) ? volumes.reduce((acc: number, vol: Volume) => acc + (vol.size || 0), 0) : 0)
-        const usedPublicIps = consumption?.public_ips ?? (Array.isArray(fips) ? fips.length : 0)
+        const usedPublicIps = consumption?.public_ips ?? fipRes.total ?? 0
 
-        const instanceCount = Array.isArray(instances) ? instances.length : 0
-        const imageCount = Array.isArray(images) ? images.length : 0
-        const vpcCount = Array.isArray(vpcs) ? vpcs.length : 0
+        const instanceCount = instRes.total ?? instances.length
+        const imageCount = imgRes.total ?? 0
+        const vpcCount = vpcRes.total ?? 0
 
         stats.value = {
             instances: { used: instanceCount, total: 0, percentage: 0 },

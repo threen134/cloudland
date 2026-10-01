@@ -365,6 +365,9 @@ export default {
             disconnected: 'Disconnected',
             error: 'Connection Failed',
             errorSubtitle: 'Could not connect to the remote console.',
+            vncRefused:
+                'Could not connect to the graphical console. If the instance is running but the console keeps failing, stop and start the instance, then open the graphical console again; the text console is not affected.',
+            openSerial: 'Open the text console',
             tryAgain: 'Try Again',
             cad: 'Send Ctrl+Alt+Del',
             reconnect: 'Reconnect',
@@ -411,6 +414,7 @@ export default {
                 authFailed: 'Verification failed',
                 hint: 'Root shell on the hypervisor: the session output is recorded on the node and the session closes after {minutes} idle minutes; reconnecting asks for the password again.',
                 idleHint: 'Closes after {minutes} idle minutes',
+                notAllowed: 'Only system administrators can open a host terminal.',
             },
         },
         instances: 'Instances',
@@ -479,6 +483,8 @@ export default {
         alarmEvents: 'Alarm Events',
         notificationChannels: 'Notification Channels',
         notificationChannel: 'Notification Channel',
+        createNotificationChannel: 'Create Notification Channel',
+        editNotificationChannel: 'Edit Notification Channel',
         notificationChannelType: 'Channel Type',
         notificationSecret: 'Signing Secret',
         notificationSecretPlaceholder: 'Optional signing secret',
@@ -656,7 +662,13 @@ export default {
             count: 'Count',
             sshLogin: 'Use SSH Key Login',
             setPassword: 'Set Root Password',
-            invalidHostname: 'Invalid hostname format',
+            invalidHostname:
+                'The hostname may contain only letters, digits, hyphens (-) and dots (.) and must be 2 to 32 characters long; it starts with a letter and ends with a letter or digit (e.g. web-01), or, when it starts with a digit, is written as a domain name (e.g. 1web.example.com).',
+            hostnameTooLongForCount:
+                'Creating {count} instances appends -1 to -{count} to the hostname, so it can be at most {max} characters long.',
+            reasonPasswordFailed: 'Password not set',
+            reasonPasswordFailedHint:
+                'Setting the guest password failed; the guest agent (qemu-guest-agent) may not be ready yet. Try again later; this notice clears once it succeeds.',
             start: 'Start',
             stop: 'Stop',
             restart: 'Restart',
@@ -1865,7 +1877,7 @@ export default {
             failed: 'Failed',
             not_supported: 'Not Supported',
             timeout: 'Timed Out',
-            rollback: 'Rolling Back',
+            rollback: 'Rolled Back',
             source_rollback: 'Source Rollback',
             not_doing: 'Not Started',
         },
@@ -2523,6 +2535,8 @@ export default {
         tryAdjustingFilters: 'Try adjusting your filters or search query',
         invalidHostname:
             'Must start with a letter, contain only letters, numbers, underscores (_) and hyphens (-), and be 2 to 32 characters long.',
+        invalidSubnetName:
+            'Must start with a letter, contain only letters, numbers, underscores (_) and hyphens (-), and be 2 to 64 characters long.',
         invalidPort: 'Port must be a number between 1 and 65535.',
         sshKeyInUse: 'Key cannot be deleted if there are instances using it.',
         vpcHasFloatingIPs: 'VPC cannot be deleted because it has associated Floating IPs.',
@@ -2561,6 +2575,22 @@ export default {
         enabledSuccess: 'Rule enabled successfully.',
         disabledSuccess: 'Rule disabled successfully.',
         operationFailed: 'Operation failed, please try again.',
+    },
+    // Messages for clapi error codes (utils/error.ts); the English original is shown for codes not listed there
+    errorCodes: {
+        placementGroupExists: 'A placement group with this name already exists.',
+        insufficientAddress: 'The subnet does not have enough free addresses.',
+        vpcHasSubnets: 'The VPC still has subnets; delete them first.',
+        vpnGatewayExists: 'This VPC already has a VPN gateway.',
+        vpnClientPoolExhausted: 'No free address is left in the client pool.',
+        vpcHasVpnGateway: 'The VPC has a VPN gateway; delete the gateway first.',
+        defaultSecurityGroup: 'The default security group cannot be deleted.',
+        securityGroupHasInterfaces:
+            'The security group is still associated with network interfaces and cannot be deleted.',
+        imageInUse: 'The image is used by instances and cannot be deleted.',
+        flavorInUse: 'The flavor is used by instances and cannot be deleted.',
+        volumeAttached: 'The volume is attached; detach it first.',
+        zoneHasHypervisors: 'The zone still has compute nodes and cannot be deleted.',
     },
     roles: {
         owner: 'Owner',

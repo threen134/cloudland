@@ -15,6 +15,7 @@ import BaseModal from '../../components/modals/BaseModal.vue'
 import DeleteModal from '../../components/modals/DeleteModal.vue'
 import DataTable, { type Column } from '../../components/base/DataTable.vue'
 import PaginationBar from '../../components/base/PaginationBar.vue'
+import { OPTION_LIST_LIMIT } from '../../api/listParams'
 
 const region = useRegionStore()
 const { t } = useI18n()
@@ -79,7 +80,7 @@ const fetchSecurityGroups = async () => {
 
 const fetchVpcs = async () => {
     try {
-        const response = await vpcsApi.list()
+        const response = await vpcsApi.list({ limit: OPTION_LIST_LIMIT })
         vpcs.value = response.vpcs || []
     } catch (err) {
         console.error('Failed to fetch VPCs:', err)

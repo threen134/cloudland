@@ -1033,6 +1033,19 @@ button:disabled {
     border-top: 1px solid var(--border-light);
 }
 
+/* Submit error of a form dialog, in the footer next to the buttons: in the body of a long form it ends up
+   below the fold and the click looks like it did nothing */
+.modal-footer .footer-error {
+    flex: 1;
+    align-self: center;
+    margin: 0;
+    padding: var(--spacing-2) var(--spacing-3);
+    border-radius: var(--radius-sm);
+    background: var(--error-light);
+    color: var(--error-color);
+    font-size: var(--font-size-sm);
+}
+
 .icon-btn {
     padding: 4px;
 }

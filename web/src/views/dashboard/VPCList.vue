@@ -217,7 +217,7 @@ const newSubnetForm = ref<SubnetPayload>({
     dns: '',
     base_domain: '',
 })
-const isSubnetNameValid = computed(() => isValidName(newSubnetForm.value.name))
+const isSubnetNameValid = computed(() => isValidName(newSubnetForm.value.name, 64))
 
 const getStatusText = (status: string | undefined) => {
     return t(`dashboard.vpcStatus.${status?.toLowerCase() || 'active'}`)
@@ -256,7 +256,7 @@ const handleCreateSubnet = async () => {
         return
     }
     if (!isSubnetNameValid.value) {
-        createSubnetError.value = t('messages.invalidHostname')
+        createSubnetError.value = t('messages.invalidSubnetName')
         return
     }
 
@@ -590,7 +590,7 @@ onMounted(() => {
                     :placeholder="$t('dashboard.forms.placeholder.subnetNameExample')"
                 />
                 <div v-if="newSubnetForm.name && !isSubnetNameValid" class="text-error text-xs mt-1">
-                    {{ $t('messages.invalidHostname') }}
+                    {{ $t('messages.invalidSubnetName') }}
                 </div>
             </div>
 

@@ -43,6 +43,50 @@ const onKeydown = (e: KeyboardEvent) => {
     if (e.key === 'Escape') requestClose()
 }
 
+// Initial focus: the element marked autofocus, else the first visible form control of the body, else the
+// dialog itself. Never a button: the close button in the header comes first in document order, and Enter on
+// it closed the dialog right after it opened. Nor a checkbox, radio or file input: Enter on a checkbox submits
+// the form in Chromium (a maintenance dialog starts with one), so when one of them comes first the dialog
+// itself takes the focus.
+const FIELD_SELECTOR = [
+    'input:not([type="hidden"]):not([type="button"]):not([type="submit"]):not([type="reset"]):not([type="image"]):not([disabled]):not([readonly])',
+    'select:not([disabled])',
+    'textarea:not([disabled]):not([readonly])',
+].join(', ')
+const NO_INITIAL_FOCUS_TYPES = new Set(['checkbox', 'radio', 'file'])
+
+const isVisible = (el: HTMLElement) => el.getClientRects().length > 0 && getComputedStyle(el).visibility !== 'hidden'
+
+const focusInitial = () => {
+    const root = contentRef.value
+    if (!root) return
+    const marked = root.querySelector<HTMLElement>('[autofocus]')
+    const first =
+        marked && isVisible(marked)
+            ? marked
+            : Array.from(root.querySelectorAll<HTMLElement>(FIELD_SELECTOR)).find(
+                  (el) => !el.closest('.modal-header') && el.tabIndex >= 0 && isVisible(el)
+              )
+    const field = first instanceof HTMLInputElement && NO_INITIAL_FOCUS_TYPES.has(first.type) ? undefined : first
+    const target = field ?? root
+    target.focus()
+}
+
+// Enter in a field of a form dialog submits it (implicit submission). It does so only once the user has changed
+// something in the dialog: the initial focus is in the first field now, and Enter right after opening must not
+// send the prefilled or default values (an unchanged resize still stops and starts the instance). Enter on a
+// checkbox or radio never submits. Clicking the submit button is not affected.
+let edited = false
+const onFieldEdit = () => {
+    edited = true
+}
+const onEnterKey = (e: KeyboardEvent) => {
+    if (!props.form || e.isComposing) return
+    const el = e.target
+    if (!(el instanceof HTMLInputElement)) return
+    if (!edited || el.type === 'checkbox' || el.type === 'radio') e.preventDefault()
+}
+
 // 打开时锁住背景滚动，关闭或组件销毁时恢复。
 // 记录原值而不是直接清空，避免与其他也改过 overflow 的代码互相覆盖。
 let previousOverflow: string | null = null
@@ -65,14 +109,12 @@ watch(
     () => props.show,
     async (visible) => {
         if (visible) {
+            edited = false
             lockScroll()
             document.addEventListener('keydown', onKeydown)
             // 焦点移入弹窗，否则键盘用户仍停留在背景页面上
             await nextTick()
-            const focusable = contentRef.value?.querySelector<HTMLElement>(
-                'input:not([type="hidden"]):not([disabled]), select:not([disabled]), textarea:not([disabled]), button:not([disabled])'
-            )
-            focusable?.focus()
+            focusInitial()
         } else {
             unlockScroll()
             document.removeEventListener('keydown', onKeydown)
@@ -98,7 +140,11 @@ const onSubmit = () => emit('submit')
             :class="[`modal-${size}`, contentClass]"
             role="dialog"
             aria-modal="true"
+            tabindex="-1"
             @submit.prevent="onSubmit"
+            @keydown.enter="onEnterKey"
+            @input="onFieldEdit"
+            @change="onFieldEdit"
         >
             <div v-if="title || $slots.header || !hideClose" class="modal-header">
                 <slot name="header">
@@ -141,5 +187,9 @@ const onSubmit = () => emit('submit')
 }
 .modal-xl {
     max-width: min(800px, 92vw);
+}
+/* The dialog takes the focus itself when it has no form control; no focus ring around the whole card */
+.modal-content:focus {
+    outline: none;
 }
 </style>

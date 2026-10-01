@@ -12,6 +12,7 @@ import InfoRow from '../../components/base/InfoRow.vue'
 import { useCopyId } from '../../composables/useCopyId'
 import { useGoBack } from '../../composables/useGoBack'
 import { errorMessage } from '../../utils/error'
+import { OPTION_LIST_LIMIT } from '../../api/listParams'
 
 const route = useRoute()
 const router = useRouter()
@@ -63,7 +64,7 @@ const fetchAssociatedHypervisors = async () => {
     if (!zone.value) return
     loadingHypers.value = true
     try {
-        const response = await hypervisorsApi.fetchHypervisors({ limit: 200 })
+        const response = await hypervisorsApi.fetchHypervisors({ limit: OPTION_LIST_LIMIT })
         const allHypers = response.hypers || []
         hypervisors.value = allHypers.filter((h) => h.zone_name === zone.value!.name)
     } catch {

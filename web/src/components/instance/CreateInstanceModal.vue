@@ -5,7 +5,7 @@
 //
 // 用法：<CreateInstanceModal :show="visible" @close="visible = false" @created="reload()" />
 // 打开时自行拉取镜像 / 规格 / VPC / 子网 / 安全组 / 密钥 / 可用区 / 计算节点。
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, nextTick } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ChevronDown, ChevronUp, PlusCircle, MinusCircle, Eye, EyeOff, Shuffle, HelpCircle } from 'lucide-vue-next'
 import { instancesApi, type CreateInstancePayload, type InterfacePayload } from '../../api/instances'
@@ -28,7 +28,7 @@ import { hypervisorsApi, type Hypervisor } from '../../api/hypervisors'
 import { storagePoolsApi, type StoragePool } from '../../api/storagePools'
 import { placementGroupsApi, type PlacementGroup } from '../../api/placementGroups'
 import { ruleText, ruleHint } from '../../utils/placementGroup'
-import { isValidName } from '../../utils/validation'
+import { isValidHostname, hostnameMaxLength } from '../../utils/validation'
 import { quotaErrorMessage } from '../../utils/quotaError'
 import { errorMessage } from '../../utils/error'
 import { formatMemory } from '../../utils/format'
@@ -36,6 +36,7 @@ import { useToast } from '../../composables/useToast'
 import { useAuthStore } from '../../stores/auth'
 import { useTenantStore } from '../../stores/tenant'
 import BaseModal from '../modals/BaseModal.vue'
+import { OPTION_LIST_LIMIT } from '../../api/listParams'
 
 const props = defineProps<{ show: boolean }>()
 const emit = defineEmits<{ close: []; created: [] }>()
@@ -99,7 +100,7 @@ const fetchPlacementGroups = async () => {
     placementGroupsError.value = false
     try {
         // Switcher-style list: one page of up to 500 like the other dropdowns
-        const res = await placementGroupsApi.list({ zone: zone || undefined, limit: 500 })
+        const res = await placementGroupsApi.list({ zone: zone || undefined, limit: OPTION_LIST_LIMIT })
         if (current !== placementGroupsGeneration) return
         // A system admin lists the groups of every organization, but an instance can only join a group of its
         // own organization (another one answers 404)
@@ -137,7 +138,19 @@ const generateRandomPassword = () => {
     showCreatePassword.value = true
 }
 
-const isHostnameValid = computed(() => isValidName(newInstanceForm.value.hostname))
+// A batch create appends "-1" .. "-<count>" to the hostname, so the room left for it shrinks with the count
+const hostnameLimit = computed(() => hostnameMaxLength(Number(newInstanceForm.value.count) || 1))
+const hostnameError = computed(() => {
+    const name = newInstanceForm.value.hostname
+    if (!isValidHostname(name)) return t('dashboard.instanceDetail.invalidHostname')
+    if (!isValidHostname(name, hostnameLimit.value))
+        return t('dashboard.instanceDetail.hostnameTooLongForCount', {
+            count: newInstanceForm.value.count,
+            max: hostnameLimit.value,
+        })
+    return ''
+})
+const isHostnameValid = computed(() => !hostnameError.value)
 
 const hypersForZone = computed(() => {
     const zone = newInstanceForm.value.zone
@@ -277,14 +290,14 @@ const fetchResources = async () => {
     subnetAddresses.value = {}
     try {
         const [imgsRes, vpcsRes, sgsRes, keysRes, subnetsRes, fipsRes, flavorsRes, zonesRes] = await Promise.all([
-            imagesApi.fetchImages(),
-            vpcsApi.list(),
-            securityGroupsApi.list(),
-            keysApi.fetchKeys(),
-            subnetsApi.list(),
-            floatingIpsApi.list(),
-            flavorsApi.fetchFlavors(),
-            zonesApi.fetchZones(),
+            imagesApi.fetchImages({ limit: OPTION_LIST_LIMIT }),
+            vpcsApi.list({ limit: OPTION_LIST_LIMIT }),
+            securityGroupsApi.list({ limit: OPTION_LIST_LIMIT }),
+            keysApi.fetchKeys({ limit: OPTION_LIST_LIMIT }),
+            subnetsApi.list({ limit: OPTION_LIST_LIMIT }),
+            floatingIpsApi.list({ limit: OPTION_LIST_LIMIT }),
+            flavorsApi.fetchFlavors({ limit: OPTION_LIST_LIMIT }),
+            zonesApi.fetchZones({ limit: OPTION_LIST_LIMIT }),
         ])
 
         availableImages.value = imgsRes.images || []
@@ -303,7 +316,7 @@ const fetchResources = async () => {
         }
 
         try {
-            availablePools.value = (await storagePoolsApi.list({ limit: 200 })).storage_pools.filter(
+            availablePools.value = (await storagePoolsApi.list({ limit: OPTION_LIST_LIMIT })).storage_pools.filter(
                 (p) => !p.status || p.status === 'active'
             )
         } catch {
@@ -312,7 +325,7 @@ const fetchResources = async () => {
 
         if (isSystemAdmin.value) {
             try {
-                const hypersRes = await hypervisorsApi.fetchHypervisors({ limit: 500 })
+                const hypersRes = await hypervisorsApi.fetchHypervisors({ limit: OPTION_LIST_LIMIT })
                 availableHypers.value = hypersRes.hypers || []
             } catch (err) {
                 console.error('Failed to fetch hypervisors:', err)
@@ -337,6 +350,10 @@ const fetchResources = async () => {
     } finally {
         resourcesLoading.value = false
     }
+    // The dialog takes the focus while the lists load (there is no field yet); hand it to the hostname once the
+    // form is there, unless the user has moved it meanwhile
+    await nextTick()
+    if (document.activeElement?.classList.contains('modal-content')) document.getElementById('hostname')?.focus()
     fetchPlacementGroups()
 }
 
@@ -520,7 +537,7 @@ const handleCreateInstance = async () => {
     }
 
     if (!isHostnameValid.value) {
-        createError.value = t('dashboard.instanceDetail.invalidHostname')
+        createError.value = hostnameError.value
         return
     }
 
@@ -691,7 +708,7 @@ watch(
                             :placeholder="t('dashboard.forms.placeholder.nameExample')"
                         />
                         <div v-if="!isHostnameValid" class="text-error text-xs mt-1">
-                            {{ t('dashboard.instanceDetail.invalidHostname') }}
+                            {{ hostnameError }}
                         </div>
                     </div>
 

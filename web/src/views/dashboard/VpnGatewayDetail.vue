@@ -56,6 +56,7 @@ import VpnClientModal from '../../components/vpn/VpnClientModal.vue'
 import VpnClientConfigBox from '../../components/vpn/VpnClientConfigBox.vue'
 import VpnTrafficCharts from '../../components/vpn/VpnTrafficCharts.vue'
 import VpnPublicAddressPicker from '../../components/vpn/VpnPublicAddressPicker.vue'
+import { OPTION_LIST_LIMIT } from '../../api/listParams'
 
 const { t, te } = useI18n()
 const toast = useToast()
@@ -337,7 +338,7 @@ const addAddressEndpoint = ref('')
 
 const fetchPublicSubnets = async () => {
     try {
-        const res = await subnetsApi.list({ limit: 200 })
+        const res = await subnetsApi.list({ limit: OPTION_LIST_LIMIT })
         publicSubnets.value = (res.subnets || []).filter((s) => s.type === 'public')
     } catch (err) {
         console.error('Failed to fetch subnets:', err)

@@ -56,6 +56,7 @@ import { useGoBack } from '../../composables/useGoBack'
 import { formatMemory } from '../../utils/format'
 import { ruleText } from '../../utils/placementGroup'
 import { errorMessage } from '../../utils/error'
+import { isValidHostname } from '../../utils/validation'
 
 const route = useRoute()
 const router = useRouter()
@@ -139,28 +140,27 @@ const handleAction = async (
 
     actionLoading.value = action
     try {
-        const hostname = instance.value.hostname
         switch (action) {
             case 'start':
-                await instancesApi.startInstance(instanceId, hostname)
+                await instancesApi.startInstance(instanceId)
                 break
             case 'stop':
-                await instancesApi.stopInstance(instanceId, hostname)
+                await instancesApi.stopInstance(instanceId)
                 break
             case 'restart':
-                await instancesApi.rebootInstance(instanceId, hostname)
+                await instancesApi.rebootInstance(instanceId)
                 break
             case 'hard_stop':
-                await instancesApi.hardStopInstance(instanceId, hostname)
+                await instancesApi.hardStopInstance(instanceId)
                 break
             case 'hard_restart':
-                await instancesApi.hardRebootInstance(instanceId, hostname)
+                await instancesApi.hardRebootInstance(instanceId)
                 break
             case 'pause':
-                await instancesApi.pauseInstance(instanceId, hostname)
+                await instancesApi.pauseInstance(instanceId)
                 break
             case 'resume':
-                await instancesApi.resumeInstance(instanceId, hostname)
+                await instancesApi.resumeInstance(instanceId)
                 break
         }
 
@@ -406,17 +406,24 @@ const showResizeModal = ref(false)
 const resizeForm = ref({ cpu: 0, memory: 0 })
 const resizeLoading = ref(false)
 const resizeError = ref('')
+// The size the dialog opened with: submitting it unchanged would still stop and start the instance
+const resizeOrigin = ref({ cpu: 0, memory: 0 })
+const resizeUnchanged = computed(
+    () => resizeForm.value.cpu === resizeOrigin.value.cpu && resizeForm.value.memory === resizeOrigin.value.memory
+)
 
 const openResizeModal = () => {
     resizeForm.value = {
         cpu: instance.value?.cpu || 0,
         memory: instance.value?.memory || 0,
     }
+    resizeOrigin.value = { ...resizeForm.value }
     resizeError.value = ''
     showResizeModal.value = true
 }
 
 const confirmResize = async () => {
+    if (resizeLoading.value || resizeUnchanged.value) return
     if (resizeForm.value.cpu < 1 || resizeForm.value.memory < 1) {
         resizeError.value = t('dashboard.instanceDetail.resizeInvalid')
         return
@@ -447,15 +454,22 @@ const openRenameModal = () => {
     showRenameModal.value = true
 }
 
+// Same rule as the create form and the API (hostname|fqdn, 2-32 characters)
+const isRenameValid = computed(() => isValidHostname(renameForm.value.hostname.trim()))
+
 const confirmRename = async () => {
     if (!renameForm.value.hostname.trim()) {
         renameError.value = t('dashboard.instanceDetail.hostnameRequired')
         return
     }
+    if (!isRenameValid.value) {
+        renameError.value = t('dashboard.instanceDetail.invalidHostname')
+        return
+    }
     renameLoading.value = true
     renameError.value = ''
     try {
-        await instancesApi.renameInstance(instanceId, renameForm.value.hostname)
+        await instancesApi.renameInstance(instanceId, renameForm.value.hostname.trim())
         showRenameModal.value = false
         toast.success(t('dashboard.instanceDetail.renameSuccess'))
         await fetchInstance(false)
@@ -1290,7 +1304,7 @@ onUnmounted(() => {
                 <button type="button" class="btn btn-secondary btn-sm" @click="showResizeModal = false">
                     {{ $t('actions.cancel') }}
                 </button>
-                <button type="submit" class="btn btn-primary btn-sm" :disabled="resizeLoading">
+                <button type="submit" class="btn btn-primary btn-sm" :disabled="resizeLoading || resizeUnchanged">
                     <span v-if="resizeLoading" class="loading-spinner small"></span>
                     {{ $t('actions.confirm') }}
                 </button>
@@ -1306,17 +1320,24 @@ onUnmounted(() => {
             @close="showRenameModal = false"
             @submit="confirmRename"
         >
-            <div v-if="renameError" class="modal-error">{{ renameError }}</div>
             <div class="form-group">
                 <label>{{ $t('dashboard.instanceDetail.hostname') }}</label>
-                <input v-model="renameForm.hostname" type="text" class="form-input" />
+                <input
+                    v-model="renameForm.hostname"
+                    type="text"
+                    :class="['form-input', { 'input-error': !isRenameValid }]"
+                />
+                <div v-if="!isRenameValid" class="field-error">
+                    {{ $t('dashboard.instanceDetail.invalidHostname') }}
+                </div>
             </div>
 
             <template #footer>
+                <div v-if="renameError" class="footer-error">{{ renameError }}</div>
                 <button type="button" class="btn btn-secondary btn-sm" @click="showRenameModal = false">
                     {{ $t('actions.cancel') }}
                 </button>
-                <button type="submit" class="btn btn-primary btn-sm" :disabled="renameLoading">
+                <button type="submit" class="btn btn-primary btn-sm" :disabled="renameLoading || !isRenameValid">
                     <span v-if="renameLoading" class="loading-spinner small"></span>
                     {{ $t('actions.confirm') }}
                 </button>
@@ -1855,6 +1876,16 @@ onUnmounted(() => {
     outline: none;
     border-color: var(--primary-color);
     box-shadow: 0 0 0 2px var(--primary-50);
+}
+
+.form-input.input-error {
+    border-color: var(--error-color);
+}
+
+.field-error {
+    margin-top: 4px;
+    font-size: var(--font-size-xs);
+    color: var(--error-color);
 }
 
 .modal-error {

@@ -27,6 +27,7 @@ import StatusBadge from '../../components/base/StatusBadge.vue'
 import DataTable, { type Column } from '../../components/base/DataTable.vue'
 import PaginationBar from '../../components/base/PaginationBar.vue'
 import VpnPublicAddressPicker from '../../components/vpn/VpnPublicAddressPicker.vue'
+import { OPTION_LIST_LIMIT } from '../../api/listParams'
 
 const { t, te } = useI18n()
 const toast = useToast()
@@ -89,7 +90,7 @@ const {
 
 const fetchVpcs = async () => {
     try {
-        const response = await vpcsApi.list({ limit: 500 })
+        const response = await vpcsApi.list({ limit: OPTION_LIST_LIMIT })
         vpcs.value = response.vpcs || []
     } catch (err) {
         console.error('Failed to fetch VPCs:', err)
@@ -141,7 +142,7 @@ const isNewActiveActive = computed(() => newForm.value.ha_mode === 'active_activ
 const zones = ref<Zone[]>([])
 const fetchZones = async () => {
     try {
-        const res = await zonesApi.fetchZones({ limit: 500 })
+        const res = await zonesApi.fetchZones({ limit: OPTION_LIST_LIMIT })
         zones.value = res.zones || []
     } catch (err) {
         console.error('Failed to fetch zones:', err)
@@ -184,7 +185,7 @@ const autoSubnetLabel = (index: number) =>
 
 const fetchPublicSubnets = async () => {
     try {
-        const res = await subnetsApi.list({ limit: 200 })
+        const res = await subnetsApi.list({ limit: OPTION_LIST_LIMIT })
         publicSubnets.value = (res.subnets || []).filter((s) => s.type === 'public')
     } catch (err) {
         console.error('Failed to fetch subnets:', err)
@@ -197,7 +198,7 @@ const vpcsWithGateway = ref<Set<string>>(new Set())
 const availableVpcs = computed(() => vpcs.value.filter((vpc) => !vpcsWithGateway.value.has(vpc.id)))
 const fetchVpcsWithGateway = async () => {
     try {
-        const response = await vpnGatewaysApi.list({ limit: 500 })
+        const response = await vpnGatewaysApi.list({ limit: OPTION_LIST_LIMIT })
         vpcsWithGateway.value = new Set(
             (response.vpn_gateways || []).map((gw) => gw.vpc?.id).filter((id): id is string => !!id)
         )

@@ -9,9 +9,12 @@
  * detail 可能是字符串，也可能是 FastAPI 风格的数组（[{msg}]）或配额超限那种对象，
  * 后者交给 quotaErrorMessage 处理，这里只认字符串和数组。
  */
+import i18n from '../locales'
+
 interface ApiErrorShape {
     response?: {
         data?: {
+            error_code?: unknown
             error_message?: unknown
             error?: unknown
             detail?: unknown
@@ -19,6 +22,42 @@ interface ApiErrorShape {
         }
     }
     message?: unknown
+}
+
+/**
+ * clapi error codes (api/src/common/error_codes.go) shown in the user's language instead of the English
+ * error_message. Only codes whose message says no more than the code itself are listed: a message with
+ * specifics (a pool name, sizes, a limit, the members that are stuck or migrating, which connection still uses an
+ * address) is more useful than a generic translation and stays as it is, and so does any code not listed here.
+ * A code that also has messages with specifics is translated only when the message matches `only`.
+ */
+const ERROR_CODE_MESSAGES: Record<number, string | { key: string; only: RegExp }> = {
+    111702: 'errorCodes.placementGroupExists',
+    111905: 'errorCodes.flavorInUse',
+    121012: 'errorCodes.volumeAttached',
+    // "Only N addresses can be allocated" keeps its number
+    131004: { key: 'errorCodes.insufficientAddress', only: /Not enough idle addresses|No idle addresses/ },
+    131307: 'messages.vpcHasFloatingIPs',
+    131308: 'errorCodes.vpcHasSubnets',
+    132005: 'errorCodes.vpnGatewayExists',
+    132025: 'errorCodes.vpnClientPoolExhausted',
+    132033: 'errorCodes.vpcHasVpnGateway',
+    141007: 'errorCodes.defaultSecurityGroup',
+    141008: 'errorCodes.securityGroupHasInterfaces',
+    151001: 'errorCodes.imageInUse',
+    161006: 'messages.sshKeyInUse',
+    171011: 'errorCodes.zoneHasHypervisors',
+}
+
+/** The localized message for a known clapi error code, or null */
+export function errorCodeMessage(err: unknown): string | null {
+    const data = (err as ApiErrorShape)?.response?.data
+    const entry = typeof data?.error_code === 'number' ? ERROR_CODE_MESSAGES[data.error_code] : undefined
+    if (!entry) return null
+    if (typeof entry !== 'string' && !entry.only.test(String(data?.error_message ?? ''))) return null
+    const key = typeof entry === 'string' ? entry : entry.key
+    if (!i18n.global.te(key)) return null
+    return i18n.global.t(key)
 }
 
 const firstString = (...values: unknown[]): string | null => {
@@ -39,10 +78,14 @@ export function errorStatus(err: unknown): number | undefined {
     return typeof status === 'number' ? status : undefined
 }
 
-/** 取接口返回的错误文案，取不到时返回 fallback（通常是 t('messages.error')） */
+/**
+ * 取接口返回的错误文案，取不到时返回 fallback（通常是 t('messages.error')）。
+ * A known clapi error code gives the localized message (see ERROR_CODE_MESSAGES)
+ */
 export function errorMessage(err: unknown, fallback: string): string {
     const data = (err as ApiErrorShape)?.response?.data
     return (
+        errorCodeMessage(err) ??
         firstString(data?.error_message, data?.error, data?.detail, data?.message, (err as ApiErrorShape)?.message) ??
         fallback
     )

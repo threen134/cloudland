@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { X } from 'lucide-vue-next'
+import BaseModal from '../modals/BaseModal.vue'
 import { securityGroupsApi, type SecurityRule } from '../../api/networks'
 import {
     newSecurityRuleForm,
@@ -42,7 +42,7 @@ const close = () => {
 }
 
 const save = async () => {
-    if (formError.value) return
+    if (saving.value || formError.value) return
     saving.value = true
     submitError.value = ''
     try {
@@ -63,126 +63,124 @@ const save = async () => {
 </script>
 
 <template>
-    <div v-if="show" class="modal-overlay" @click.self="close">
-        <div class="modal-content card">
-            <div class="modal-header">
-                <h3>{{ rule ? $t('actions.edit') : $t('dashboard.buttons.addRule') }}</h3>
-                <button class="btn btn-ghost btn-sm icon-btn" @click="close"><X :size="20" /></button>
+    <!-- Not a form: Enter in a field must not save. The defaults of a new rule (ingress TCP 80 from 0.0.0.0/0)
+         pass validation, and an edited rule is pushed to every node of the group; saving takes the button -->
+    <BaseModal
+        :show="show"
+        :title="rule ? $t('actions.edit') : $t('dashboard.buttons.addRule')"
+        :loading="saving"
+        @close="close"
+    >
+        <div class="form-group">
+            <label class="form-label">{{ $t('dashboard.table.name') }}</label>
+            <input
+                v-model="form.name"
+                type="text"
+                class="form-input"
+                :placeholder="$t('dashboard.forms.placeholder.nameExample')"
+            />
+        </div>
+        <div class="form-row">
+            <div class="form-group flex-1">
+                <label class="form-label">{{ $t('dashboard.table.direction') }}</label>
+                <div class="select-wrapper">
+                    <select v-model="form.direction" class="form-input">
+                        <option value="ingress">{{ $t('dashboard.table.ingress') }}</option>
+                        <option value="egress">{{ $t('dashboard.table.egress') }}</option>
+                    </select>
+                </div>
             </div>
-            <div class="modal-body">
-                <div class="form-group">
-                    <label class="form-label">{{ $t('dashboard.table.name') }}</label>
-                    <input
-                        v-model="form.name"
-                        type="text"
-                        class="form-input"
-                        :placeholder="$t('dashboard.forms.placeholder.nameExample')"
-                    />
+            <div class="form-group flex-1">
+                <label class="form-label">{{ $t('dashboard.table.protocol') }}</label>
+                <div class="select-wrapper">
+                    <select v-model="form.protocol" class="form-input">
+                        <option value="tcp">TCP</option>
+                        <option value="udp">UDP</option>
+                        <option value="icmp">ICMP</option>
+                    </select>
                 </div>
-                <div class="form-row">
-                    <div class="form-group flex-1">
-                        <label class="form-label">{{ $t('dashboard.table.direction') }}</label>
-                        <div class="select-wrapper">
-                            <select v-model="form.direction" class="form-input">
-                                <option value="ingress">{{ $t('dashboard.table.ingress') }}</option>
-                                <option value="egress">{{ $t('dashboard.table.egress') }}</option>
-                            </select>
-                        </div>
-                    </div>
-                    <div class="form-group flex-1">
-                        <label class="form-label">{{ $t('dashboard.table.protocol') }}</label>
-                        <div class="select-wrapper">
-                            <select v-model="form.protocol" class="form-input">
-                                <option value="tcp">TCP</option>
-                                <option value="udp">UDP</option>
-                                <option value="icmp">ICMP</option>
-                            </select>
-                        </div>
-                    </div>
-                </div>
-                <div v-if="form.protocol !== 'icmp'" class="form-row">
-                    <div class="form-group flex-1">
-                        <label class="form-label">{{ $t('dashboard.table.portMin') }}</label>
-                        <input
-                            v-model.number="form.port_min"
-                            type="number"
-                            class="form-input"
-                            :class="{ 'input-error': !!formError }"
-                            min="1"
-                            max="65535"
-                        />
-                    </div>
-                    <div class="form-group flex-1">
-                        <label class="form-label">{{ $t('dashboard.table.portMax') }}</label>
-                        <input
-                            v-model.number="form.port_max"
-                            type="number"
-                            class="form-input"
-                            :class="{ 'input-error': !!formError }"
-                            min="1"
-                            max="65535"
-                        />
-                    </div>
-                </div>
-                <div v-else class="form-row">
-                    <div class="form-group flex-1">
-                        <label class="form-label">{{ $t('dashboard.securityGroupDetail.icmpType') }}</label>
-                        <input
-                            v-model.number="form.icmp_type"
-                            type="number"
-                            class="form-input"
-                            :class="{ 'input-error': !!formError }"
-                            min="0"
-                            max="254"
-                            :placeholder="$t('dashboard.securityGroupDetail.icmpAnyPlaceholder')"
-                        />
-                    </div>
-                    <div class="form-group flex-1">
-                        <label class="form-label">{{ $t('dashboard.securityGroupDetail.icmpCode') }}</label>
-                        <input
-                            v-model.number="form.icmp_code"
-                            type="number"
-                            class="form-input"
-                            :class="{ 'input-error': !!formError }"
-                            min="0"
-                            max="255"
-                            :placeholder="$t('dashboard.securityGroupDetail.icmpAnyPlaceholder')"
-                        />
-                    </div>
-                </div>
-                <div v-if="formError" class="field-error">{{ formError }}</div>
-                <div class="form-group">
-                    <label class="form-label">{{ $t('dashboard.table.remoteCidr') }}</label>
-                    <input
-                        v-model="form.remote_cidr"
-                        type="text"
-                        class="form-input"
-                        :placeholder="$t('dashboard.forms.placeholder.cidrExample')"
-                    />
-                </div>
-                <div v-if="submitError" class="submit-error">{{ submitError }}</div>
-            </div>
-            <div class="modal-footer">
-                <button class="btn btn-secondary" @click="close" :disabled="saving">{{ $t('actions.cancel') }}</button>
-                <button class="btn btn-primary" @click="save" :disabled="saving || !!formError">
-                    <span
-                        v-if="saving"
-                        class="loading-spinner"
-                        style="width: 16px; height: 16px; border-width: 2px"
-                    ></span>
-                    {{
-                        saving
-                            ? rule
-                                ? $t('messages.saving')
-                                : $t('messages.creating')
-                            : rule
-                              ? $t('actions.save')
-                              : $t('dashboard.buttons.addRule')
-                    }}
-                </button>
             </div>
         </div>
-    </div>
+        <div v-if="form.protocol !== 'icmp'" class="form-row">
+            <div class="form-group flex-1">
+                <label class="form-label">{{ $t('dashboard.table.portMin') }}</label>
+                <input
+                    v-model.number="form.port_min"
+                    type="number"
+                    class="form-input"
+                    :class="{ 'input-error': !!formError }"
+                    min="1"
+                    max="65535"
+                />
+            </div>
+            <div class="form-group flex-1">
+                <label class="form-label">{{ $t('dashboard.table.portMax') }}</label>
+                <input
+                    v-model.number="form.port_max"
+                    type="number"
+                    class="form-input"
+                    :class="{ 'input-error': !!formError }"
+                    min="1"
+                    max="65535"
+                />
+            </div>
+        </div>
+        <div v-else class="form-row">
+            <div class="form-group flex-1">
+                <label class="form-label">{{ $t('dashboard.securityGroupDetail.icmpType') }}</label>
+                <input
+                    v-model.number="form.icmp_type"
+                    type="number"
+                    class="form-input"
+                    :class="{ 'input-error': !!formError }"
+                    min="0"
+                    max="254"
+                    :placeholder="$t('dashboard.securityGroupDetail.icmpAnyPlaceholder')"
+                />
+            </div>
+            <div class="form-group flex-1">
+                <label class="form-label">{{ $t('dashboard.securityGroupDetail.icmpCode') }}</label>
+                <input
+                    v-model.number="form.icmp_code"
+                    type="number"
+                    class="form-input"
+                    :class="{ 'input-error': !!formError }"
+                    min="0"
+                    max="255"
+                    :placeholder="$t('dashboard.securityGroupDetail.icmpAnyPlaceholder')"
+                />
+            </div>
+        </div>
+        <div v-if="formError" class="field-error">{{ formError }}</div>
+        <div class="form-group">
+            <label class="form-label">{{ $t('dashboard.table.remoteCidr') }}</label>
+            <input
+                v-model="form.remote_cidr"
+                type="text"
+                class="form-input"
+                :placeholder="$t('dashboard.forms.placeholder.cidrExample')"
+            />
+        </div>
+
+        <template #footer>
+            <div v-if="submitError" class="footer-error">{{ submitError }}</div>
+            <button type="button" class="btn btn-secondary" @click="close" :disabled="saving">
+                {{ $t('actions.cancel') }}
+            </button>
+            <button type="button" class="btn btn-primary" :disabled="saving || !!formError" @click="save">
+                <span v-if="saving" class="loading-spinner" style="width: 16px; height: 16px; border-width: 2px"></span>
+                {{
+                    saving
+                        ? rule
+                            ? $t('messages.saving')
+                            : $t('messages.creating')
+                        : rule
+                          ? $t('actions.save')
+                          : $t('dashboard.buttons.addRule')
+                }}
+            </button>
+        </template>
+    </BaseModal>
 </template>
 
 <style scoped>
@@ -206,13 +204,5 @@ const save = async () => {
     color: var(--error-color);
     margin-top: calc(-1 * var(--spacing-3));
     margin-bottom: var(--spacing-2);
-}
-
-.submit-error {
-    color: var(--error-color);
-    font-size: var(--font-size-sm);
-    background: var(--error-light);
-    padding: var(--spacing-2);
-    border-radius: var(--radius-sm);
 }
 </style>

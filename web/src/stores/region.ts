@@ -3,6 +3,7 @@ import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import { regionsApi, type RegionPublic } from '../api/regions'
 import { errorMessage } from '../utils/error'
+import { OPTION_LIST_LIMIT } from '../api/listParams'
 
 export interface Region {
     id: string
@@ -44,7 +45,7 @@ export const useRegionStore = defineStore('region', () => {
         try {
             // 走 api 层，不再自己拼 client.get（返回约定统一在 api/regions.ts 里）。
             // 这里要的是完整列表（顶栏的区域切换器），所以显式顶到上限，不用默认的一页
-            const data: RegionPublic[] = (await regionsApi.fetchRegions({ limit: 500 })).regions || []
+            const data: RegionPublic[] = (await regionsApi.fetchRegions({ limit: OPTION_LIST_LIMIT })).regions || []
 
             // Map API response to Region interface
             // API now returns uuid instead of id

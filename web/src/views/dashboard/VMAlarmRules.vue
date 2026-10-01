@@ -27,6 +27,7 @@ import { errorMessage } from '../../utils/error'
 import { useRegionStore } from '../../stores/region'
 import { useToast } from '../../composables/useToast'
 import { useCopyId } from '../../composables/useCopyId'
+import { OPTION_LIST_LIMIT } from '../../api/listParams'
 
 const { t } = useI18n()
 const toast = useToast()
@@ -98,7 +99,7 @@ const onExpandRule = async (id: string) => {
     if (id in ruleChannels.value) return
     try {
         const [channelsRes, bindingsRes] = await Promise.all([
-            notificationsApi.list(),
+            notificationsApi.list({ limit: OPTION_LIST_LIMIT }),
             alarmEventsApi.getRuleChannels(id),
         ])
         const allCh: NotificationChannel[] = channelsRes.channels || []
@@ -184,7 +185,7 @@ const levelBadgeClass = (level: string) =>
 
 const fetchAllVMs = async () => {
     try {
-        const res = await instancesApi.fetchInstances()
+        const res = await instancesApi.fetchInstances({ limit: OPTION_LIST_LIMIT })
         const data = res as InstanceListResponse | Instance[]
         allVMs.value = Array.isArray(data) ? data : data.instances || []
     } catch (err) {
@@ -266,7 +267,7 @@ const openCreate = async () => {
     if (allVMs.value.length === 0) {
         vmsLoading.value = true
         try {
-            const res = await instancesApi.fetchInstances()
+            const res = await instancesApi.fetchInstances({ limit: OPTION_LIST_LIMIT })
             const data = res as InstanceListResponse | Instance[]
             allVMs.value = Array.isArray(data) ? data : data.instances || []
         } catch (err) {
@@ -278,7 +279,7 @@ const openCreate = async () => {
     if (allChannels.value.length === 0) {
         createChannelsLoading.value = true
         try {
-            const res = await notificationsApi.list()
+            const res = await notificationsApi.list({ limit: OPTION_LIST_LIMIT })
             allChannels.value = res.channels || []
         } catch (err) {
             console.error('Failed to fetch channels:', err)
@@ -453,7 +454,7 @@ const openBindChannels = async (rule: VMAlarmRuleGroup) => {
     showBindModal.value = true
     try {
         const [channelsRes, bindingsRes] = await Promise.all([
-            notificationsApi.list(),
+            notificationsApi.list({ limit: OPTION_LIST_LIMIT }),
             alarmEventsApi.getRuleChannels(rule.uuid),
         ])
         allChannels.value = channelsRes.channels || []
@@ -505,7 +506,7 @@ const openBindVMs = async (rule: VMAlarmRuleGroup) => {
     vmsLoading.value = true
     vmSearchQuery.value = ''
     try {
-        const res = await instancesApi.fetchInstances()
+        const res = await instancesApi.fetchInstances({ limit: OPTION_LIST_LIMIT })
         const data = res as InstanceListResponse | Instance[]
         allVMs.value = Array.isArray(data) ? data : data.instances || []
     } catch (err) {

@@ -9,6 +9,7 @@ import { isValidName } from '../../utils/validation'
 import { errorMessage } from '../../utils/error'
 import { useAuthStore } from '../../stores/auth'
 import { useRegionStore } from '../../stores/region'
+import { OPTION_LIST_LIMIT } from '../../api/listParams'
 
 const region = useRegionStore()
 
@@ -84,7 +85,7 @@ const {
 // 新建子网弹窗里的 VPC 下拉；打开弹窗时也会重新拉一次
 const fetchVpcs = async () => {
     try {
-        const response = await vpcsApi.list()
+        const response = await vpcsApi.list({ limit: OPTION_LIST_LIMIT })
         vpcs.value = response.vpcs || []
         if (vpcs.value.length > 0 && !newSubnetForm.value.vpc?.id) {
             newSubnetForm.value.vpc = { id: vpcs.value[0].id }
@@ -130,7 +131,7 @@ const handleCreateSubnet = async () => {
         return
     }
     if (!isNameValid.value) {
-        createError.value = t('messages.invalidHostname')
+        createError.value = t('messages.invalidSubnetName')
         return
     }
     if (requiresVpc.value && !newSubnetForm.value.vpc?.id) {
@@ -237,7 +238,7 @@ const closeEditModal = () => {
 const handleEditSubnet = async () => {
     if (!editTarget.value) return
     if (!isEditNameValid.value) {
-        editError.value = t('messages.invalidHostname')
+        editError.value = t('messages.invalidSubnetName')
         return
     }
     if (!isEditPriorityValid.value) {
@@ -499,7 +500,7 @@ onMounted(() => {
                             :placeholder="$t('dashboard.forms.placeholder.subnetNameExample')"
                         />
                         <div v-if="!isNameValid" class="text-error text-xs mt-1">
-                            {{ $t('messages.invalidHostname') }}
+                            {{ $t('messages.invalidSubnetName') }}
                         </div>
                     </div>
 
@@ -670,21 +671,8 @@ onMounted(() => {
                 </div>
             </div>
 
-            <div
-                v-if="createError"
-                class="text-error"
-                style="
-                    margin-top: var(--spacing-4);
-                    font-size: var(--font-size-sm);
-                    background: var(--error-light);
-                    padding: var(--spacing-2);
-                    border-radius: var(--radius-sm);
-                "
-            >
-                {{ createError }}
-            </div>
-
             <template #footer>
+                <div v-if="createError" class="footer-error">{{ createError }}</div>
                 <button type="button" class="btn btn-secondary" @click="closeCreateModal" :disabled="creating">
                     {{ $t('actions.cancel') }}
                 </button>
@@ -717,7 +705,7 @@ onMounted(() => {
                     :class="['form-input', { 'input-error': !isEditNameValid }]"
                 />
                 <div v-if="!isEditNameValid" class="text-error text-xs mt-1">
-                    {{ $t('messages.invalidHostname') }}
+                    {{ $t('messages.invalidSubnetName') }}
                 </div>
             </div>
             <div v-if="showPriority" class="form-group">
@@ -737,20 +725,8 @@ onMounted(() => {
                 </div>
             </div>
 
-            <div
-                v-if="editError"
-                class="text-error"
-                style="
-                    font-size: var(--font-size-sm);
-                    background: var(--error-light);
-                    padding: var(--spacing-2);
-                    border-radius: var(--radius-sm);
-                "
-            >
-                {{ editError }}
-            </div>
-
             <template #footer>
+                <div v-if="editError" class="footer-error">{{ editError }}</div>
                 <button type="button" class="btn btn-secondary" @click="closeEditModal" :disabled="editing">
                     {{ $t('actions.cancel') }}
                 </button>

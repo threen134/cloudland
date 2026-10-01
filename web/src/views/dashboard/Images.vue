@@ -426,11 +426,8 @@ onMounted(async () => {
                 </div>
             </div>
 
-            <div v-if="createError" class="modal-error text-error">
-                {{ createError }}
-            </div>
-
             <template #footer>
+                <div v-if="createError" class="footer-error">{{ createError }}</div>
                 <button type="button" class="btn btn-secondary" @click="closeCreateModal" :disabled="creating">
                     {{ $t('actions.cancel') }}
                 </button>
@@ -534,13 +531,5 @@ onMounted(async () => {
 .form-input:focus {
     outline: none;
     border-color: var(--primary-color);
-}
-
-.modal-error {
-    margin-top: var(--spacing-4);
-    font-size: var(--font-size-sm);
-    background: var(--error-light);
-    padding: var(--spacing-2);
-    border-radius: var(--radius-sm);
 }
 </style>

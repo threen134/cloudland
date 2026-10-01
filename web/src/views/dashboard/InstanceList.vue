@@ -42,6 +42,7 @@ import { useRegionStore } from '../../stores/region'
 import { errorMessage } from '../../utils/error'
 import { usageColor } from '../../utils/usageColor'
 import { formatMemory } from '../../utils/format'
+import { isValidHostname } from '../../utils/validation'
 
 const region = useRegionStore()
 
@@ -202,28 +203,27 @@ const handleAction = async (
     actionLoading.value[instance.id] = action
     closeActionMenu()
     try {
-        const hostname = instance.hostname
         switch (action) {
             case 'start':
-                await instancesApi.startInstance(instance.id, hostname)
+                await instancesApi.startInstance(instance.id)
                 break
             case 'stop':
-                await instancesApi.stopInstance(instance.id, hostname)
+                await instancesApi.stopInstance(instance.id)
                 break
             case 'restart':
-                await instancesApi.rebootInstance(instance.id, hostname)
+                await instancesApi.rebootInstance(instance.id)
                 break
             case 'hard_stop':
-                await instancesApi.hardStopInstance(instance.id, hostname)
+                await instancesApi.hardStopInstance(instance.id)
                 break
             case 'hard_restart':
-                await instancesApi.hardRebootInstance(instance.id, hostname)
+                await instancesApi.hardRebootInstance(instance.id)
                 break
             case 'pause':
-                await instancesApi.pauseInstance(instance.id, hostname)
+                await instancesApi.pauseInstance(instance.id)
                 break
             case 'resume':
-                await instancesApi.resumeInstance(instance.id, hostname)
+                await instancesApi.resumeInstance(instance.id)
                 break
         }
 
@@ -279,21 +279,28 @@ const openRenameModal = (instance: Instance) => {
     closeActionMenu()
 }
 
+// Same rule as the create form and the API (hostname|fqdn, 2-32 characters)
+const isRenameValid = computed(() => isValidHostname(renameForm.value.hostname.trim()))
+
 const confirmRename = async () => {
     if (!selectedInstance.value) return
     if (!renameForm.value.hostname.trim()) {
         renameError.value = t('dashboard.instanceDetail.hostnameRequired')
         return
     }
+    if (!isRenameValid.value) {
+        renameError.value = t('dashboard.instanceDetail.invalidHostname')
+        return
+    }
     renameLoading.value = true
     renameError.value = ''
     try {
-        await instancesApi.renameInstance(selectedInstance.value.id, renameForm.value.hostname)
+        await instancesApi.renameInstance(selectedInstance.value.id, renameForm.value.hostname.trim())
         await fetchInstances(false)
         renameModalVisible.value = false
         toast.success(t('dashboard.instanceDetail.renameSuccess'))
     } catch (err) {
-        renameError.value = errorMessage(err, t('dashboard.userDetail.loadError'))
+        renameError.value = errorMessage(err, t('messages.error'))
     } finally {
         renameLoading.value = false
     }
@@ -357,6 +364,11 @@ const resizeModalVisible = ref(false)
 const resizeForm = ref({ cpu: 0, memory: 0 })
 const resizeLoading = ref(false)
 const resizeError = ref('')
+// The size the dialog opened with: submitting it unchanged would still stop and start the instance
+const resizeOrigin = ref({ cpu: 0, memory: 0 })
+const resizeUnchanged = computed(
+    () => resizeForm.value.cpu === resizeOrigin.value.cpu && resizeForm.value.memory === resizeOrigin.value.memory
+)
 
 const openResizeModal = (instance: Instance) => {
     selectedInstance.value = instance
@@ -364,13 +376,14 @@ const openResizeModal = (instance: Instance) => {
         cpu: instance.cpu || 0,
         memory: instance.memory || 0,
     }
+    resizeOrigin.value = { ...resizeForm.value }
     resizeError.value = ''
     resizeModalVisible.value = true
     closeActionMenu()
 }
 
 const confirmResize = async () => {
-    if (!selectedInstance.value) return
+    if (!selectedInstance.value || resizeLoading.value || resizeUnchanged.value) return
     if (resizeForm.value.cpu < 1 || resizeForm.value.memory < 1) {
         resizeError.value = t('dashboard.instanceDetail.resizeInvalid')
         return
@@ -383,7 +396,7 @@ const confirmResize = async () => {
         toast.success(t('dashboard.instanceDetail.resizeSuccess'))
         await fetchInstances(false)
     } catch (err) {
-        resizeError.value = errorMessage(err, t('dashboard.userDetail.loadError'))
+        resizeError.value = errorMessage(err, t('messages.error'))
     } finally {
         resizeLoading.value = false
     }
@@ -834,17 +847,20 @@ onUnmounted(() => {
                     name="hostname"
                     v-model="renameForm.hostname"
                     type="text"
-                    class="form-input"
+                    :class="['form-input', { 'input-error': !isRenameValid }]"
                     :placeholder="t('dashboard.table.hostname')"
                 />
+                <div v-if="!isRenameValid" class="text-error text-xs mt-1">
+                    {{ t('dashboard.instanceDetail.invalidHostname') }}
+                </div>
             </div>
-            <div v-if="renameError" class="text-error mt-2">{{ renameError }}</div>
 
             <template #footer>
+                <div v-if="renameError" class="footer-error">{{ renameError }}</div>
                 <button type="button" class="btn btn-ghost" @click="renameModalVisible = false">
                     {{ t('dashboard.buttons.cancel') }}
                 </button>
-                <button type="submit" class="btn btn-primary" :disabled="renameLoading">
+                <button type="submit" class="btn btn-primary" :disabled="renameLoading || !isRenameValid">
                     <span v-if="renameLoading" class="loading-spinner small"></span>
                     {{ t('dashboard.buttons.confirm') }}
                 </button>
@@ -943,7 +959,7 @@ onUnmounted(() => {
                 <button type="button" class="btn btn-ghost" @click="resizeModalVisible = false">
                     {{ t('dashboard.buttons.cancel') }}
                 </button>
-                <button type="submit" class="btn btn-primary" :disabled="resizeLoading">
+                <button type="submit" class="btn btn-primary" :disabled="resizeLoading || resizeUnchanged">
                     <span v-if="resizeLoading" class="loading-spinner small"></span>
                     {{ t('dashboard.buttons.confirm') }}
                 </button>

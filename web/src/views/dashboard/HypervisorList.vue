@@ -11,6 +11,7 @@ import { instancesApi, type Instance, type InstanceListResponse } from '../../ap
 import { zonesApi, type Zone, type ZoneListResponse } from '../../api/zones'
 import { errorMessage } from '../../utils/error'
 import { useRegionStore } from '../../stores/region'
+import { OPTION_LIST_LIMIT } from '../../api/listParams'
 
 const region = useRegionStore()
 import {
@@ -73,7 +74,7 @@ const loadHyperInstances = async (h: Hypervisor) => {
     hyperInstancesLoading.value[h.hostid] = true
     try {
         // limit 取较大值：悬浮是为了看清都有哪些虚拟机，分页会让列表看起来缺失
-        const resp = await instancesApi.fetchInstances({ hyper: h.hostid, limit: 200 })
+        const resp = await instancesApi.fetchInstances({ hyper: h.hostid, limit: OPTION_LIST_LIMIT })
         const data = resp as InstanceListResponse | Instance[]
         hyperInstances.value[h.hostid] = Array.isArray(data) ? data : data.instances || []
     } catch (err) {
@@ -95,16 +96,18 @@ const loading = ref(false)
 const loadError = ref('')
 const searchQuery = ref('')
 
-// 列表是后端分页（offset/limit），前端排序只会打乱当前页，所以所有列都不排序
+// 列表是后端分页（offset/limit），前端排序只会打乱当前页，所以所有列都不排序。
+// The table has allowOverflow (the action menu drops down out of it), so it cannot scroll by itself: the columns
+// also shown on the detail page give way on narrow screens, or the action column ends up off screen
 const columns = computed<Column[]>(() => [
     { key: 'name', label: t('dashboard.table.nameId') },
-    { key: 'hostIp', label: t('dashboard.table.hostIp') },
+    { key: 'hostIp', label: t('dashboard.table.hostIp'), hideBelow: 1440 },
     { key: 'status', label: t('dashboard.table.status') },
-    { key: 'instanceCount', label: t('dashboard.table.instanceCount') },
+    { key: 'instanceCount', label: t('dashboard.table.instanceCount'), hideBelow: 1280 },
     { key: 'cpu', label: `${t('dashboard.table.vcpus')} (${t('dashboard.table.available')})` },
     { key: 'memory', label: `${t('dashboard.table.memory')} (${t('dashboard.table.available')})` },
     { key: 'disk', label: `${t('dashboard.table.disk')} (${t('storage.allocatedOfTotal')})` },
-    { key: 'zone', label: t('dashboard.table.zone') },
+    { key: 'zone', label: t('dashboard.table.zone'), hideBelow: 1440 },
     { key: 'actions', label: t('dashboard.table.actions'), width: '80px', align: 'center' },
 ])
 
@@ -287,7 +290,7 @@ const openDeployModal = async () => {
     deployResult.value = null
     showDeployModal.value = true
     try {
-        const resp = await zonesApi.fetchZones()
+        const resp = await zonesApi.fetchZones({ limit: OPTION_LIST_LIMIT })
         const data = resp as ZoneListResponse | Zone[]
         zoneList.value = Array.isArray(data) ? data : data.zones || []
     } catch {
@@ -362,7 +365,7 @@ const openEditModal = async (h: Hypervisor) => {
 
     if (zoneList.value.length === 0) {
         try {
-            const resp = await zonesApi.fetchZones()
+            const resp = await zonesApi.fetchZones({ limit: OPTION_LIST_LIMIT })
             const data = resp as ZoneListResponse | Zone[]
             zoneList.value = Array.isArray(data) ? data : data.zones || []
         } catch {
@@ -1090,6 +1093,13 @@ onUnmounted(() => {
     gap: 4px;
     font-size: var(--font-size-xs);
     min-width: 120px;
+}
+
+/* Three usage columns at 120px keep the action column off a 1024px screen */
+@media (max-width: 1279px) {
+    .usage-cell {
+        min-width: 96px;
+    }
 }
 
 .usage-bar {

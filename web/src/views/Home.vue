@@ -327,7 +327,13 @@ const goToMarketplace = () => {
 .hero {
     padding: var(--spacing-20) 0 var(--spacing-24);
     text-align: center;
-    background: linear-gradient(160deg, var(--bg-dark) 0%, var(--primary-900) 30%, var(--primary-color) 70%, var(--accent-teal) 100%);
+    background: linear-gradient(
+        160deg,
+        var(--bg-dark) 0%,
+        var(--primary-900) 30%,
+        var(--primary-color) 70%,
+        var(--accent-teal) 100%
+    );
     color: var(--text-inverse);
     position: relative;
     overflow: hidden;
