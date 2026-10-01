@@ -123,20 +123,21 @@ func forwardToRegion(c *gin.Context, template string, body []byte) {
 	}
 
 	resolvedPath := resolveTemplate(c, template)
+	query := c.Request.URL.Query()
+	query.Del("region")
+	encodedQuery := query.Encode()
 	var plan *services.QuotaPlan
 	if orgID != 0 {
 		var herr *common.HTTPError
-		if plan, herr = services.PrepareQuota(c.Request.Context(), orgID, &region, method, template, resolvedPath, body, forwarded); herr != nil {
+		if plan, herr = services.PrepareQuota(c.Request.Context(), orgID, &region, method, template, resolvedPath, encodedQuery, body, forwarded); herr != nil {
 			common.AbortWithError(c, herr)
 			return
 		}
 	}
 
 	backendURL := services.BuildBackendURL(region.InternalEndpoint, strings.TrimLeft(resolvedPath, "/"))
-	query := c.Request.URL.Query()
-	query.Del("region")
-	if encoded := query.Encode(); encoded != "" {
-		backendURL += "?" + encoded
+	if encodedQuery != "" {
+		backendURL += "?" + encodedQuery
 	}
 	log.WithContext(c).Infof("Proxy: %s -> %s (user=%s, org=%s)", method, backendURL, claims.Subject, claims.OrgID)
 

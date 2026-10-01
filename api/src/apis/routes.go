@@ -427,6 +427,8 @@ func Register() (r *gin.Engine) {
 
 		// 内部同步接口（CPGateway 推送 org 记录，保持 organizations 表一致）
 		authGroup.POST("/internal/orgs/sync", SyncOrg)
+		// Org deleted in the control plane: soft-delete it here so its UUID stops resolving
+		authGroup.POST("/internal/orgs/delete", DeleteOrg)
 
 		// 内部告警事件查询（CPGateway 全局汇总用）
 		authGroup.GET("/internal/alarm/events", notificationAPI.InternalListAlarmEvents)

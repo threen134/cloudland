@@ -16,6 +16,7 @@ import (
 	"api/src/model"
 
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 )
 
 // auditRoute 描述一个改动型接口对应的用户可见动作
@@ -139,21 +140,22 @@ var auditRoutes = map[string]auditRoute{
 	"PATCH /instances/:id/interfaces/:interface_id":  {"instance", "instance.interface_update", "id", false},
 }
 
-// auditNameColumns 资源类型 -> 表名与名称列，用于在操作前快照资源名
-var auditNameColumns = map[string][2]string{
-	"instance":        {"instances", "hostname"},
-	"hyper":           {"hypers", "hostname"},
-	"vpc":             {"routers", "name"},
-	"vpn_gateway":     {"vpn_gateways", "name"},
-	"subnet":          {"subnets", "name"},
-	"security_group":  {"security_groups", "name"},
-	"load_balancer":   {"load_balancers", "name"},
-	"floating_ip":     {"floating_ips", "name"},
-	"key":             {"keys", "name"},
-	"placement_group": {"placement_groups", "name"},
-	"image":           {"images", "name"},
-	"volume":          {"volumes", "name"},
-	"storage_pool":    {"storage_pools", "name"},
+// auditNameColumns 资源类型 -> 表名、名称列、属主列，用于在操作前快照资源名。属主列为空的表
+// （计算节点、存储池）只有系统管理员的接口用到
+var auditNameColumns = map[string][3]string{
+	"instance":        {"instances", "hostname", "owner"},
+	"hyper":           {"hypers", "hostname", ""},
+	"vpc":             {"routers", "name", "owner"},
+	"vpn_gateway":     {"vpn_gateways", "name", "owner"},
+	"subnet":          {"subnets", "name", "owner"},
+	"security_group":  {"security_groups", "name", "owner"},
+	"load_balancer":   {"load_balancers", "name", "owner"},
+	"floating_ip":     {"floating_ips", "name", "owner"},
+	"key":             {"keys", "name", "owner"},
+	"placement_group": {"placement_groups", "name", "owner"},
+	"image":           {"images", "name", "owner"},
+	"volume":          {"volumes", "name", "owner"},
+	"storage_pool":    {"storage_pools", "name", ""},
 }
 
 // SetAuditAction 供接口按请求体细化动作名，例如 PATCH /instances/:id 区分开机、关机与改名
@@ -167,15 +169,30 @@ func lookupAuditRoute(c *gin.Context) (route auditRoute, ok bool) {
 	return
 }
 
-// lookupResourceName 在接口执行前查资源名：删除后资源会被软删并可能改名，事后查不到原名
+// lookupResourceName 在接口执行前查资源名：删除后资源会被软删并可能改名，事后查不到原名。
+// Only a resource the caller may see gives its name: the lookup runs before the handler checks access, and the
+// entry lands in the caller's activity feed, so another organization's resource (refused with 400, 403 or 404
+// depending on the handler) must not show its name there. Public images and the public / private subnets are
+// shared by every organization
 func lookupResourceName(ctx context.Context, resourceType, uuid string) string {
 	column, ok := auditNameColumns[resourceType]
 	if !ok || uuid == "" {
 		return ""
 	}
 	_, db := GetContextDB(ctx)
+	query := db.Table(column[0]).Where("uuid = ?", uuid)
+	if memberShip := GetMemberShip(ctx); column[2] != "" && !memberShip.IsSystemAdmin() {
+		visible := db.Session(&gorm.Session{NewDB: true}).Where(column[2]+" = ?", memberShip.OrgID)
+		switch resourceType {
+		case "image":
+			visible = visible.Or("visibility = ?", model.ImageVisibilityPublic)
+		case "subnet":
+			visible = visible.Or("type IN ?", []string{"public", "private"})
+		}
+		query = query.Where(visible)
+	}
 	var names []string
-	if err := db.Table(column[0]).Where("uuid = ?", uuid).Limit(1).Pluck(column[1], &names).Error; err != nil || len(names) == 0 {
+	if err := query.Limit(1).Pluck(column[1], &names).Error; err != nil || len(names) == 0 {
 		return ""
 	}
 	return names[0]

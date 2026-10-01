@@ -34,16 +34,16 @@ func toUserOut(u *model.User) userOut {
 }
 
 type orgOut struct {
-	UUID       string    `json:"uuid"`
-	Name       string    `json:"name"`
-	Slug       string    `json:"slug"`
-	OrgType    int       `json:"org_type"`
-	Status     int       `json:"status"`
-	OwnerUUID  string    `json:"owner_uuid"`
-	OwnerName  *string   `json:"owner_name"`
-	OwnerEmail *string   `json:"owner_email"`
-	Description string   `json:"description"`
-	CreatedAt  time.Time `json:"created_at"`
+	UUID        string    `json:"uuid"`
+	Name        string    `json:"name"`
+	Slug        string    `json:"slug"`
+	OrgType     int       `json:"org_type"`
+	Status      int       `json:"status"`
+	OwnerUUID   string    `json:"owner_uuid"`
+	OwnerName   *string   `json:"owner_name"`
+	OwnerEmail  *string   `json:"owner_email"`
+	Description string    `json:"description"`
+	CreatedAt   time.Time `json:"created_at"`
 }
 
 func toOrgOut(org *model.Organization, owner *model.User) orgOut {

@@ -136,19 +136,19 @@ func TestPrepareQuotaWithoutReservation(t *testing.T) {
 	ctx := context.Background()
 
 	// A system admin's image is public: nothing is charged
-	plan, herr := PrepareQuota(ctx, 1, region, "POST", "/images", "/images", []byte(`{"name":"img"}`), map[string]string{"X-System-Role": "1"})
+	plan, herr := PrepareQuota(ctx, 1, region, "POST", "/images", "/images", "", []byte(`{"name":"img"}`), map[string]string{"X-System-Role": "1"})
 	if herr != nil || plan.Action != "consume" || plan.Reserved {
 		t.Fatalf("system admin image: expected no reservation, got %+v %+v", plan, herr)
 	}
 	// A body that is not a JSON object is rejected by clapi with 400; the gateway must not turn it into 500
 	for _, raw := range []string{``, `[]`, `not json`} {
-		plan, herr = PrepareQuota(ctx, 1, region, "POST", "/vpcs", "/vpcs", []byte(raw), nil)
+		plan, herr = PrepareQuota(ctx, 1, region, "POST", "/vpcs", "/vpcs", "", []byte(raw), nil)
 		if herr != nil || plan.Reserved {
 			t.Fatalf("body %q: expected no reservation and no error, got %+v %+v", raw, plan, herr)
 		}
 	}
 	// Routes without a rule
-	plan, herr = PrepareQuota(ctx, 1, region, "PATCH", "/vpcs/{id}", "/vpcs/x", []byte(`{}`), nil)
+	plan, herr = PrepareQuota(ctx, 1, region, "PATCH", "/vpcs/{id}", "/vpcs/x", "", []byte(`{}`), nil)
 	if herr != nil || plan.Action != "" {
 		t.Fatalf("PATCH vpcs: expected no action, got %+v %+v", plan, herr)
 	}
@@ -171,5 +171,58 @@ func TestVpnGatewayPublicIps(t *testing.T) {
 		if got := vpnGatewayPublicIps(c.body); got != c.want {
 			t.Errorf("%s: got %v, want %v", c.name, got, c.want)
 		}
+	}
+}
+
+// D10: the GET that measures a resource before deleting or resizing it dropped the query string, so a system
+// admin could not delete another org's resource through the gateway (the backend answers 400 record not found
+// without all_orgs=true, and the gateway aborted the deletion).
+func TestPrepareQuotaKeepsQueryString(t *testing.T) {
+	var seen []string
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		seen = append(seen, r.Method+" "+r.URL.RequestURI())
+		if r.URL.Query().Get("all_orgs") != "true" {
+			w.WriteHeader(http.StatusBadRequest)
+			w.Write([]byte(`{"error_code":100100,"error_message":"Failed to query floatingIp (Details: record not found)"}`))
+			return
+		}
+		switch r.URL.Path {
+		case "/api/v1/floating_ips/fip":
+			w.Write([]byte(`{"id":"fip","owner_uuid":"org-b"}`))
+		case "/api/v1/volumes/vol":
+			w.Write([]byte(`{"id":"vol","size":10,"owner_uuid":"org-b"}`))
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer backend.Close()
+	region := &model.Region{InternalEndpoint: backend.URL}
+	ctx := context.Background()
+	headers := map[string]string{"X-Org-UUID": testOrgUUID, "X-System-Role": systemAdminRole}
+
+	plan, herr := PrepareQuota(ctx, 1, region, "DELETE", "/floating_ips/{id}", "/floating_ips/fip", "all_orgs=true", nil, headers)
+	if herr != nil {
+		t.Fatalf("delete with all_orgs: %+v (backend saw %v)", herr, seen)
+	}
+	// Another org's floating IP: the caller's quota is not released
+	if plan.Action != "release" || len(plan.Amount) != 0 {
+		t.Fatalf("unexpected plan %+v", plan)
+	}
+	if seen[len(seen)-1] != "GET /api/v1/floating_ips/fip?all_orgs=true" {
+		t.Fatalf("backend saw %v", seen)
+	}
+
+	// Resizing another org's volume measures it with the same parameters
+	plan, herr = PrepareQuota(ctx, 1, region, "POST", "/volumes/{id}/resize", "/volumes/vol/resize", "all_orgs=true", []byte(`{"size":20}`), headers)
+	if herr != nil || plan.Reserved {
+		t.Fatalf("resize with all_orgs: %+v %+v (backend saw %v)", plan, herr, seen)
+	}
+	if seen[len(seen)-1] != "GET /api/v1/volumes/vol?all_orgs=true" {
+		t.Fatalf("backend saw %v", seen)
+	}
+
+	// Without the parameter the backend still refuses and the gateway passes its answer through
+	if _, herr = PrepareQuota(ctx, 1, region, "DELETE", "/floating_ips/{id}", "/floating_ips/fip", "", nil, headers); herr == nil || herr.Status != http.StatusBadRequest {
+		t.Fatalf("delete without all_orgs: %+v", herr)
 	}
 }

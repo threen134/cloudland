@@ -37,9 +37,10 @@ var proxyRoutes = []proxyRoute{
 	{"POST", "/instances/:id/rescue", "/instances/{id}/rescue", false},
 	{"POST", "/instances/:id/resize", "/instances/{id}/resize", false},
 	{"POST", "/instances/:id/set_user_password", "/instances/{id}/set_user_password", false},
-	{"GET", "/migrations", "/migrations", false},
-	{"POST", "/migrations", "/migrations", false},
-	{"GET", "/migrations/:id", "/migrations/{id}", false},
+	// Migrations name instances of every organization and the hosts: system admins only, like clapi
+	{"GET", "/migrations", "/migrations", true},
+	{"POST", "/migrations", "/migrations", true},
+	{"GET", "/migrations/:id", "/migrations/{id}", true},
 	{"GET", "/instances/:id/migration_targets", "/instances/{id}/migration_targets", true},
 	// storage pools: members list the active ones, everything else is for system admins
 	{"GET", "/storage_pools", "/storage_pools", false},

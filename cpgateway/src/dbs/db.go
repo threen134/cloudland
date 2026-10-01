@@ -4,6 +4,7 @@ import (
 	"context"
 	"log"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
@@ -26,6 +27,7 @@ var (
 	grades        = map[string]func(*gorm.DB) error{}
 	needToUpgrade = false
 	needToMigrate = false
+	testDBDir     string
 )
 
 func openDB() (db *gorm.DB) {
@@ -33,12 +35,12 @@ func openDB() (db *gorm.DB) {
 	dbUrl := getDBUri()
 
 	if testMode {
-		// Tests use in-memory SQLite unless CPGATEWAY_TEST_DB_URI points at a PostgreSQL database.
+		// Tests use a throwaway SQLite database unless CPGATEWAY_TEST_DB_URI points at a PostgreSQL database.
 		if uri := os.Getenv("CPGATEWAY_TEST_DB_URI"); uri != "" {
 			dbType, dbUrl = "postgres", uri
 		} else {
 			dbType = "sqlite3"
-			dbUrl = "file::memory:?cache=shared"
+			dbUrl = testSQLiteURI()
 		}
 	}
 	if dbType == "" {
@@ -93,6 +95,40 @@ func openDB() (db *gorm.DB) {
 	sqlDB.SetConnMaxLifetime(time.Minute * time.Duration(getDBLifetime()))
 
 	return db
+}
+
+// testSQLiteURI creates the SQLite database of a test process. It used to be an in-memory database, which the
+// connection pool can only share with cache=shared, and shared-cache SQLite locks whole tables: a background
+// goroutine reading a table (region provisioning, org sync) made a concurrent write fail at once with
+// "database table is locked", an error busy_timeout does not cover. A file in WAL mode lets readers run beside
+// a writer, busy_timeout makes writers wait for each other, and _txlock=immediate takes the write lock when a
+// transaction begins, so a transaction that reads before it writes cannot fail upgrading its lock.
+func testSQLiteURI() string {
+	dir, err := os.MkdirTemp("", "cpgateway-test-")
+	if err != nil {
+		logrus.Fatalf("Failed to create the test database directory: %v", err)
+	}
+	testDBDir = dir
+	return "file:" + filepath.ToSlash(filepath.Join(dir, "test.db")) +
+		"?_busy_timeout=10000&_journal_mode=WAL&_txlock=immediate&_sync=OFF"
+}
+
+// RemoveTestDB closes and deletes the SQLite database of a test process, if one was created. A TestMain calls
+// it after the tests ran.
+func RemoveTestDB() {
+	locker.Lock()
+	defer locker.Unlock()
+	if testDBDir == "" {
+		return
+	}
+	if dbm != nil {
+		if sqlDB, err := dbm.DB(); err == nil {
+			sqlDB.Close()
+		}
+		dbm = nil
+	}
+	os.RemoveAll(testDBDir)
+	testDBDir = ""
 }
 
 func newDB() *gorm.DB {

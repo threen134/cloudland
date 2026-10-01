@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -121,11 +122,27 @@ func CreateOrg(c *gin.Context) {
 		return
 	}
 
-	go services.SyncOrgToAllRegions(context.WithoutCancel(c.Request.Context()), org.UUID, org.Name, org.Slug)
+	go services.SyncOrgToAllRegions(context.WithoutCancel(c.Request.Context()), org)
 	c.JSON(http.StatusCreated, toOrgOut(&org, me))
 }
 
-// GET /orgs?offset=&limit=&query= — admins list all orgs, other users their own.
+// orgOrderColumns are the fields GET /orgs can be sorted by (the order parameter)
+var orgOrderColumns = map[string]string{
+	"name":       "organizations.name",
+	"slug":       "organizations.slug",
+	"status":     "organizations.status",
+	"created_at": "organizations.created_at",
+}
+
+// memberOrderColumns are the fields GET /orgs/:uuid/members can be sorted by
+var memberOrderColumns = map[string]string{
+	"username":   "users.username",
+	"email":      "users.email",
+	"org_role":   "members.org_role",
+	"created_at": "members.created_at",
+}
+
+// GET /orgs?offset=&limit=&query=&order= — admins list all orgs, other users their own.
 func ListOrgs(c *gin.Context) {
 	p, ok := parseListParams(c)
 	if !ok {
@@ -141,7 +158,7 @@ func ListOrgs(c *gin.Context) {
 			Scopes(model.ActiveMembers)
 	}
 	var orgs []model.Organization
-	total, ok := countAndPage(c, q.Order("organizations.id ASC"), p, &orgs)
+	total, ok := countAndPage(c, q.Order(orderBy(p.Order, orgOrderColumns, "organizations.id")), p, &orgs)
 	if !ok {
 		return
 	}
@@ -207,6 +224,10 @@ func UpdateOrg(c *gin.Context) {
 		}
 	}
 	db.Where("id = ?", org.ID).First(org)
+	if in.Name != nil {
+		// The regions show the org name on resources and in the activity feed
+		go services.SyncOrgToAllRegions(context.WithoutCancel(c.Request.Context()), *org)
+	}
 	c.JSON(http.StatusOK, toOrgOut(org, loadUserByID(org.OwnerUserID)))
 }
 
@@ -223,15 +244,80 @@ func DeleteOrg(c *gin.Context) {
 		common.AbortWithDetail(c, http.StatusBadRequest, "Cannot delete system organization")
 		return
 	}
-	now := time.Now().UTC()
-	if err := dbs.DBContext(c.Request.Context()).Model(org).Updates(map[string]interface{}{
-		"slug":       fmt.Sprintf("%s_del%d", org.Slug, now.Unix()),
-		"deleted_at": now,
-	}).Error; err != nil {
+	// The regions refuse to delete an org that still owns resources there, so deleting it here first would
+	// leave them orphaned under an org nobody can use any more
+	inUse, err := orgResourcesInUse(dbs.DBContext(c.Request.Context()), org.ID)
+	if err != nil {
 		internalServerError(c, err)
 		return
 	}
+	if len(inUse) > 0 {
+		common.AbortWithDetail(c, http.StatusBadRequest, fmt.Sprintf(
+			"Cannot delete organization '%s': There are still active resources (%s). Please delete all resources of this organization in every region first. "+
+				"If they are already deleted, log in to the organization again to refresh its usage.", org.Name, strings.Join(inUse, ", ")))
+		return
+	}
+	now := time.Now().UTC()
+	// The org's notification channels go with it: once the org is deleted nobody can open it to delete them
+	var channelUUIDs []string
+	if err := dbs.DBContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Model(org).Updates(map[string]interface{}{
+			"slug":       fmt.Sprintf("%s_del%d", org.Slug, now.Unix()),
+			"deleted_at": now,
+		}).Error; err != nil {
+			return err
+		}
+		if err := tx.Model(&model.NotificationChannel{}).Where("org_id = ?", org.ID).Pluck("uuid", &channelUUIDs).Error; err != nil {
+			return err
+		}
+		return tx.Where("org_id = ?", org.ID).Delete(&model.NotificationChannel{}).Error
+	}); err != nil {
+		internalServerError(c, err)
+		return
+	}
+	// Without this the region kept the org under its old slug, and a new org reusing the slug took over its
+	// row and resources there. A region that misses the push is told again when it is provisioned.
+	ctx := context.WithoutCancel(c.Request.Context())
+	go services.DeleteOrgFromAllRegions(ctx, *org)
+	for _, channelUUID := range channelUUIDs {
+		go services.PushChannelDeleteToAllRegions(ctx, channelUUID)
+	}
 	c.Status(http.StatusNoContent)
+}
+
+// orgResourcesInUse lists the resource types (consumption fields) an org still uses, summed over all regions.
+// It reads the tracked usage, which the consumption sync of a login corrects when it drifted.
+func orgResourcesInUse(db *gorm.DB, orgID int64) ([]string, error) {
+	var usage struct {
+		CPU           float64 `gorm:"column:cpu_cores"`
+		RAM           float64 `gorm:"column:ram_gb"`
+		Disk          float64 `gorm:"column:disk_gb"`
+		IPs           float64 `gorm:"column:public_ips"`
+		VPCs          float64 `gorm:"column:vpcs"`
+		LoadBalancers float64 `gorm:"column:load_balancers"`
+		Images        float64 `gorm:"column:images"`
+		VpnGateways   float64 `gorm:"column:vpn_gateways"`
+	}
+	if err := db.Model(&model.OrgResourceConsumption{}).
+		Select("COALESCE(SUM(cpu_cores),0) AS cpu_cores, COALESCE(SUM(ram_gb),0) AS ram_gb, COALESCE(SUM(disk_gb),0) AS disk_gb, "+
+			"COALESCE(SUM(public_ips),0) AS public_ips, COALESCE(SUM(vpcs),0) AS vpcs, COALESCE(SUM(load_balancers),0) AS load_balancers, "+
+			"COALESCE(SUM(images),0) AS images, COALESCE(SUM(vpn_gateways),0) AS vpn_gateways").
+		Where("org_id = ?", orgID).Scan(&usage).Error; err != nil {
+		return nil, err
+	}
+	var inUse []string
+	for _, u := range []struct {
+		name  string
+		value float64
+	}{
+		{"cpu_cores", usage.CPU}, {"ram_gb", usage.RAM}, {"disk_gb", usage.Disk}, {"public_ips", usage.IPs},
+		{"vpcs", usage.VPCs}, {"load_balancers", usage.LoadBalancers}, {"images", usage.Images}, {"vpn_gateways", usage.VpnGateways},
+	} {
+		if u.value > 0 {
+			inUse = append(inUse, u.name)
+		}
+	}
+	return inUse, nil
 }
 
 // PATCH /orgs/:uuid/status (superuser) — PENDING cannot be set manually.
@@ -267,6 +353,9 @@ func UpdateOrgStatus(c *gin.Context) {
 		return
 	}
 	org.Status = model.OrgStatus(status)
+	// Approving a self-registered org must make it usable in the regions even if the push at registration
+	// failed (the regions do not store the status, so the push is the same for every status change)
+	go services.SyncOrgToAllRegions(context.WithoutCancel(c.Request.Context()), *org)
 	c.JSON(http.StatusOK, toOrgOut(org, loadUserByID(org.OwnerUserID)))
 }
 
@@ -325,7 +414,7 @@ func ListMembers(c *gin.Context) {
 		Joins("JOIN users ON users.id = members.user_id").
 		Where("members.org_id = ?", org.ID).
 		Scopes(searchScope(p.Query, "users.username", "users.email"))
-	total, ok := countAndPage(c, q.Order("members.id ASC"), p, &members)
+	total, ok := countAndPage(c, q.Order(orderBy(p.Order, memberOrderColumns, "members.id")), p, &members)
 	if !ok {
 		return
 	}

@@ -130,14 +130,19 @@ func notifyVpnState(ctx context.Context, gateway *model.VpnGateway, alertName, f
 				logger.Ctx(ctx).Errorf("Failed to resolve VPN alarm event: %v", err)
 				continue
 			}
-			todo = append(todo, pending{event, notifyType})
+			// "" is an event that did not change (resolved already): nothing to tell
+			if notifyType != "" {
+				todo = append(todo, pending{event, notifyType})
+			}
 		}
 	}
 	if len(todo) == 0 {
 		return
 	}
-	channels := []*model.NotificationChannel{}
-	if err := db.Where("org_id = ? and enabled = ?", gateway.Owner, true).Find(&channels).Error; err != nil {
+	// The gateway's organization by its local ID, which the channel mirror resolves from the organization
+	// UUID CPGateway sends (it used to hold CPGateway's own organization ID, a different number)
+	channels, err := admin.EnabledChannelsOfOrg(ctx, gateway.Owner)
+	if err != nil {
 		logger.Ctx(ctx).Errorf("Failed to query notification channels: %v", err)
 		return
 	}

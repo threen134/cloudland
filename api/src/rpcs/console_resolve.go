@@ -142,7 +142,8 @@ func (a *ConsoleAdmin) ConsoleResolve(c *macaron.Context) {
 		return
 	}
 
-	// set_vnc_passwd.sh reports the VNC address through its callback, which recreates the record
+	// set_vnc_passwd.sh reports the VNC address through its callback, which recreates the record; the record has
+	// no address when the node could not set the password (SetVncPasswd)
 	vnc := &model.Vnc{}
 	for i := 0; i < 10; i++ {
 		time.Sleep(time.Duration(i) * time.Second)
@@ -153,8 +154,14 @@ func (a *ConsoleAdmin) ConsoleResolve(c *macaron.Context) {
 			break
 		}
 	}
-	if vnc.LocalAddress == "" {
+	if err != nil {
 		logger.Ctx(ctx).Error("Failed to get VNC record", err)
+		c.JSON(http.StatusInternalServerError, &APIError{ErrorMessage: "Internal error"})
+		return
+	}
+	if vnc.LocalAddress == "" {
+		// Never hand out a password that is not in effect
+		logger.Ctx(ctx).Errorf("VNC password of instance %d could not be set, console refused", instanceID)
 		c.JSON(http.StatusInternalServerError, &APIError{ErrorMessage: "Internal error"})
 		return
 	}

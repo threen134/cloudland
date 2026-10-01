@@ -24,7 +24,15 @@ func findUserOr404(c *gin.Context, uuid, detail string) (*model.User, bool) {
 	return &user, true
 }
 
-// GET /users?is_active= (superuser)
+// userOrderColumns are the fields GET /users can be sorted by (the order parameter)
+var userOrderColumns = map[string]string{
+	"username":   "username",
+	"email":      "email",
+	"status":     "status",
+	"created_at": "created_at",
+}
+
+// GET /users?is_active=&offset=&limit=&query=&order= (superuser)
 func ListUsers(c *gin.Context) {
 	p, ok := parseListParams(c)
 	if !ok {
@@ -41,7 +49,7 @@ func ListUsers(c *gin.Context) {
 		q = q.Where("is_active = ?", b)
 	}
 	var users []model.User
-	total, ok := countAndPage(c, q.Order("id ASC"), p, &users)
+	total, ok := countAndPage(c, q.Order(orderBy(p.Order, userOrderColumns, "id")), p, &users)
 	if !ok {
 		return
 	}

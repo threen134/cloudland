@@ -7,6 +7,7 @@ SPDX-License-Identifier: Apache-2.0
 package apis
 
 import (
+	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
@@ -183,5 +184,27 @@ func TestAuditBodyWriterTruncates(t *testing.T) {
 	w.Write([]byte(strings.Repeat("y", 20)))
 	if !w.truncated || w.body.Len() != auditBodyLimit {
 		t.Fatalf("expected truncation at %d, got truncated=%v len=%d", auditBodyLimit, w.truncated, w.body.Len())
+	}
+}
+
+// A request that another organization's resource refused or did not find must not record that resource's name
+func TestAuditKeepsSnapshotName(t *testing.T) {
+	cases := []struct {
+		status int
+		byName bool
+		want   bool
+	}{
+		{http.StatusOK, false, true},
+		{http.StatusNoContent, false, true},
+		{http.StatusBadRequest, false, true},
+		{http.StatusConflict, false, true},
+		{http.StatusNotFound, false, false},
+		{http.StatusForbidden, false, false},
+		{http.StatusNotFound, true, true},
+	}
+	for _, c := range cases {
+		if got := auditKeepsSnapshotName(c.status, c.byName); got != c.want {
+			t.Errorf("status %d byName %v: got %v, want %v", c.status, c.byName, got, c.want)
+		}
 	}
 }

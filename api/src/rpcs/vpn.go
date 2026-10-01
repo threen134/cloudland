@@ -12,6 +12,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strconv"
+	"strings"
 	"time"
 
 	. "api/src/common"
@@ -156,6 +157,23 @@ type vpnConnReport struct {
 	Error         string `json:"error"`
 }
 
+// vpnTunnelLastErrorMax is the size of vpn_tunnels.last_error (varchar(512), in characters)
+const vpnTunnelLastErrorMax = 512
+
+// vpnTunnelLastError is what a report leaves in last_error: the failure charon logged for a tunnel that is
+// down (report_vpn_status.sh), nothing for one that is up. Cut to the column size, since a longer text
+// would fail the update and with it the status of every tunnel of the report.
+func vpnTunnelLastError(r *vpnConnReport) string {
+	if r.State == "up" {
+		return ""
+	}
+	text := strings.TrimSpace(r.Error)
+	if runes := []rune(text); len(runes) > vpnTunnelLastErrorMax {
+		text = string(runes[:vpnTunnelLastErrorMax])
+	}
+	return text
+}
+
 // VpnConnStatus stores the IKE SA state of every tunnel (one entry per tunnel name) and derives the
 // status of each connection from its tunnels
 // |:-COMMAND-:| vpn_conn_status.sh '<gateway ID>' '<hostid>' '<base64 json array>'
@@ -218,8 +236,8 @@ func VpnConnStatus(ctx context.Context, args []string) (status string, err error
 				if r.EstablishedAt > 0 {
 					updates["established_at"] = time.Unix(r.EstablishedAt, 0)
 				}
-				if r.Error != "" || tunnel.LastError != "" {
-					updates["last_error"] = r.Error
+				if lastError := vpnTunnelLastError(r); lastError != tunnel.LastError {
+					updates["last_error"] = lastError
 				}
 			}
 			if newStatus != tunnel.Status {

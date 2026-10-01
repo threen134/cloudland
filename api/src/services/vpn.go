@@ -511,7 +511,8 @@ func (a *VpnGatewayAdmin) Update(ctx context.Context, gateway *model.VpnGateway,
 				if err = vpnSetStatus(ctx, updated.ID, model.VpnGatewayStatusPending, ""); err != nil {
 					return
 				}
-				updated.Status = model.VpnGatewayStatusPending
+				// The response is built from updated: it must show what was just stored, the reason included
+				vpnApplyStatus(updated, model.VpnGatewayStatusPending, "")
 			}
 			if err = dispatchVpnAll(ctx, updated, -1); err != nil {
 				return
@@ -862,14 +863,25 @@ func VpnGatewayVrrpReady(ctx context.Context, vrrpInstanceID int64) (err error) 
 // error, empty (cleared) for every other status
 func vpnSetStatus(ctx context.Context, gatewayID int64, status, reason string) error {
 	_, db := GetContextDB(ctx)
-	if status != model.VpnGatewayStatusError {
-		reason = ""
-	}
-	if r := []rune(reason); len(r) > 255 {
-		reason = string(r[:255])
-	}
+	reason = vpnStatusReason(status, reason)
 	return db.Model(&model.VpnGateway{Model: model.Model{ID: gatewayID}}).Updates(map[string]interface{}{
 		"status": status, "status_reason": reason}).Error
+}
+
+// vpnStatusReason is the reason stored with a status: only an error keeps one, cut to the size of the column
+func vpnStatusReason(status, reason string) string {
+	if status != model.VpnGatewayStatusError {
+		return ""
+	}
+	if r := []rune(reason); len(r) > 255 {
+		return string(r[:255])
+	}
+	return reason
+}
+
+// vpnApplyStatus sets on a loaded gateway what vpnSetStatus stored
+func vpnApplyStatus(gateway *model.VpnGateway, status, reason string) {
+	gateway.Status, gateway.StatusReason = status, vpnStatusReason(status, reason)
 }
 
 // vpnGatewayOfVrrp returns the gateway built on a VRRP instance, nil when the instance belongs to a load balancer

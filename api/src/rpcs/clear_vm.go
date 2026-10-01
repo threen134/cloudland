@@ -14,6 +14,7 @@ import (
 
 	. "api/src/common"
 	"api/src/model"
+	"api/src/services"
 )
 
 func init() {
@@ -160,10 +161,18 @@ func updateAttachedVolumes(ctx context.Context, instanceID int64) (err error) {
 
 func ClearVM(ctx context.Context, args []string) (status string, err error) {
 	//|:-COMMAND-:| clear_vm.sh '127'
+	outerCtx := ctx
+	// The boot volume record is gone already (the delete request removed it); a reservation still held for its disk,
+	// the instance never having got that far, is dropped once the host confirms. After the transaction, like in
+	// LaunchVM: a rollback would undo a release made inside it
+	releaseBootVolume := int64(0)
 	ctx, db, newTransaction := StartTransaction(ctx)
 	defer func() {
 		if newTransaction {
 			EndTransaction(ctx, err)
+		}
+		if err == nil && releaseBootVolume > 0 {
+			services.ReleaseReservations(outerCtx, 0, releaseBootVolume, model.ReservationBoot)
 		}
 	}()
 	argn := len(args)
@@ -203,6 +212,10 @@ func ClearVM(ctx context.Context, args []string) (status string, err error) {
 	if err = updateAttachedVolumes(ctx, instance.ID); err != nil {
 		logger.Ctx(ctx).Error("Failed to update attached volumes", err)
 		return
+	}
+	bootVolume := &model.Volume{}
+	if db.Unscoped().Where("instance_id = ? AND booting = ?", instance.ID, true).Take(bootVolume).Error == nil {
+		releaseBootVolume = bootVolume.ID
 	}
 	// Unscoped update
 	err = db.Model(&model.Instance{}).Unscoped().Where("id = ?", instance.ID).Updates(map[string]interface{}{

@@ -2118,6 +2118,13 @@ func (a *AlarmAPI) CreateNodeAlarmRule(c *gin.Context) {
 			})
 			return
 		}
+		// An unknown rule type, config keys the templates do not use, values they need but did not get:
+		// the caller's mistake, not a server failure
+		if services.IsAlarmRuleInputError(err) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		tracing.Logf(c, "Failed to create node alarm rule: error=%v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -2158,8 +2165,9 @@ func (a *AlarmAPI) UpdateNodeAlarmRule(c *gin.Context) {
 			c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
 			return
 		}
-		// A config whose keys do not match the rule template is the caller's mistake
-		if strings.Contains(err.Error(), "config") || strings.Contains(err.Error(), "template") {
+		// A config whose keys do not match the rule template is the caller's mistake. Matching the message
+		// on "config" / "template" used to answer 400 for a missing template file as well
+		if services.IsAlarmRuleInputError(err) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}

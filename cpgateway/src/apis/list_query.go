@@ -13,6 +13,7 @@ import (
 //
 // 约定与 clapi 对齐：offset / limit / query 三个参数，返回 {total, <资源>}，
 // total 是过滤之后的总数（不是当前页的条数）。
+// Sorting is server side too, like clapi: order=<field> ascending, order=-<field> descending, see orderBy.
 const (
 	defaultListLimit = 50
 	maxListLimit     = 500
@@ -22,6 +23,7 @@ type listParams struct {
 	Offset int
 	Limit  int
 	Query  string
+	Order  string
 }
 
 func parseListParams(c *gin.Context) (listParams, bool) {
@@ -43,7 +45,28 @@ func parseListParams(c *gin.Context) (listParams, bool) {
 	if limit > maxListLimit {
 		limit = maxListLimit
 	}
-	return listParams{Offset: offset, Limit: limit, Query: strings.TrimSpace(c.Query("query"))}, true
+	return listParams{
+		Offset: offset, Limit: limit,
+		Query: strings.TrimSpace(c.Query("query")),
+		Order: strings.TrimSpace(c.Query("order")),
+	}, true
+}
+
+// orderBy turns the order parameter into an ORDER BY clause: "<field>" sorts ascending, "-<field>"
+// descending. Only the fields in columns (API field name -> column) are accepted, so nothing from the request
+// reaches the SQL; any other value keeps the default order, idColumn ascending. idColumn is also appended as a
+// tie-breaker, otherwise rows with equal sort values could move between pages.
+func orderBy(order string, columns map[string]string, idColumn string) string {
+	byID := idColumn + " ASC"
+	field, desc := strings.CutPrefix(order, "-")
+	column, ok := columns[field]
+	if !ok {
+		return byID
+	}
+	if desc {
+		return column + " DESC, " + byID
+	}
+	return column + " ASC, " + byID
 }
 
 // searchScope 生成对若干列的模糊匹配。`%` `_` `\` 会被转义，避免用户输入的通配符改变语义
@@ -85,4 +108,3 @@ func countAndPage(c *gin.Context, q *gorm.DB, p listParams, dest interface{}) (i
 	}
 	return total, true
 }
-

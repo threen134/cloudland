@@ -87,6 +87,9 @@ type Instance struct {
 	// provisioning or deleting: hyper is written by the launch_vm callback once the host created it. No default tag,
 	// 0 is a host id
 	PlacementHyper int32
+	// A root password sent to the guest and not confirmed yet: it replaces RootPasswd when the node reports
+	// success (services.SettleUserPassword) and is dropped when it reports a failure. Never returned
+	PendingRootPasswd string `gorm:"type:varchar(128)" json:"-"`
 }
 
 func init() {

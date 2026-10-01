@@ -231,6 +231,13 @@ func (a *RouterAdmin) Update(ctx context.Context, id int64, name string, descrip
 		err = NewCLError(ErrRouterNotFound, "Failed to find router", err)
 		return
 	}
+	// Same rule as Create and Delete: a writer of the organization owning the VPC
+	memberShip := GetMemberShip(ctx)
+	if !memberShip.CheckResourceOrg(model.OrgWriter, router.Owner) {
+		logger.Ctx(ctx).Error("Not authorized to update the router")
+		err = NewCLError(ErrPermissionDenied, "Not authorized to update the router", nil)
+		return
+	}
 	updates := map[string]interface{}{}
 	if router.Name != name {
 		router.Name = name
@@ -259,20 +266,36 @@ func (a *RouterAdmin) Delete(ctx context.Context, router *model.Router) (err err
 			logger.Ctx(ctx).Info("EXIT RouterAdmin.Delete: success")
 		}
 	}()
+	// A writer is needed, checked before anything else: the security groups of the VPC are deleted at the end with
+	// the same rule, and a reader stopped only there had already sent clear_local_router.sh to every host
+	memberShip := GetMemberShip(ctx)
+	permit := memberShip.CheckResourceOrg(model.OrgWriter, router.Owner)
+	if !permit {
+		logger.Ctx(ctx).Error("Not authorized to delete the router")
+		err = NewCLError(ErrPermissionDenied, "Not authorized to delete the router", nil)
+		return
+	}
 	ctx, db, newTransaction := StartTransaction(ctx)
 	defer func() {
 		if newTransaction {
 			EndTransaction(ctx, err)
 		}
 	}()
-	memberShip := GetMemberShip(ctx)
-	permit := memberShip.CheckResourceOrg(model.OrgReader, router.Owner)
-	if !permit {
-		logger.Ctx(ctx).Error("Not authorized to delete the router")
-		err = NewCLError(ErrPermissionDenied, "Not authorized to delete the router", nil)
+	var count int64
+	// The gateway is checked first: its public addresses are floating IPs of the router, so the check below would
+	// otherwise answer for it with a less helpful error
+	err = db.Model(&model.VpnGateway{}).Where("router_id = ?", router.ID).Count(&count).Error
+	if err != nil {
+		logger.Ctx(ctx).Error("Failed to count VPN gateways")
+		err = NewCLError(ErrDatabaseError, "Failed to count VPN gateways in the router", err)
 		return
 	}
-	var count int64
+	if count > 0 {
+		logger.Ctx(ctx).Error("There is a VPN gateway")
+		err = NewCLError(ErrRouterHasVpnGateway, "Delete the VPN gateway first", nil)
+		return
+	}
+	count = 0
 	err = db.Model(&model.FloatingIp{}).Where("router_id = ?", router.ID).Count(&count).Error
 	if err != nil {
 		logger.Ctx(ctx).Error("Failed to count floating ip")
@@ -316,17 +339,6 @@ func (a *RouterAdmin) Delete(ctx context.Context, router *model.Router) (err err
 	if count > 0 {
 		logger.Ctx(ctx).Error("There are associated load balancers")
 		err = NewCLError(ErrRouterHasPortmaps, "There are associated load balancers", nil)
-		return
-	}
-	err = db.Model(&model.VpnGateway{}).Where("router_id = ?", router.ID).Count(&count).Error
-	if err != nil {
-		logger.Ctx(ctx).Error("Failed to count VPN gateways")
-		err = NewCLError(ErrDatabaseError, "Failed to count VPN gateways in the router", err)
-		return
-	}
-	if count > 0 {
-		logger.Ctx(ctx).Error("There is a VPN gateway")
-		err = NewCLError(ErrRouterHasVpnGateway, "Delete the VPN gateway first", nil)
 		return
 	}
 	control := "toall="

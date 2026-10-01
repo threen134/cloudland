@@ -263,7 +263,21 @@ func (a *MigrationAdmin) createOne(ctx context.Context, name string, instance *m
 	return migration, nil
 }
 
+// requireMigrationAdmin refuses everyone but system admins. Migrations are not scoped to an organization: a record
+// names instances of any organization and the hosts they move between, so reading one is an admin operation like
+// creating one. Checked before any query, so that other users can not tell whether a migration exists
+func requireMigrationAdmin(ctx context.Context) error {
+	if !GetMemberShip(ctx).CheckSystemPermission() {
+		logger.Ctx(ctx).Error("Not authorized to get migration")
+		return NewCLError(ErrPermissionDenied, "Not authorized to get migration", nil)
+	}
+	return nil
+}
+
 func (a *MigrationAdmin) GetMigrationByUUID(ctx context.Context, uuID string) (migration *model.Migration, err error) {
+	if err = requireMigrationAdmin(ctx); err != nil {
+		return
+	}
 	ctx, db := GetContextDB(ctx)
 	migration = &model.Migration{}
 	err = db.Preload("Instance").Preload("Phases").Where("uuid = ?", uuID).Take(migration).Error
@@ -272,30 +286,19 @@ func (a *MigrationAdmin) GetMigrationByUUID(ctx context.Context, uuID string) (m
 		err = NewCLError(ErrMigrationNotFound, "Failed to find migration", err)
 		return
 	}
-	memberShip := GetMemberShip(ctx)
-	permit := memberShip.CheckSystemPermission()
-	if !permit {
-		logger.Ctx(ctx).Error("Not authorized to get migration")
-		err = NewCLError(ErrPermissionDenied, "Not authorized to get migration", nil)
-		return
-	}
 	return
 }
 
 func (a *MigrationAdmin) GetMigrationByName(ctx context.Context, name string) (migration *model.Migration, err error) {
+	if err = requireMigrationAdmin(ctx); err != nil {
+		return
+	}
 	ctx, db := GetContextDB(ctx)
 	migration = &model.Migration{}
 	err = db.Where("name = ?", name).Take(migration).Error
 	if err != nil {
 		logger.Ctx(ctx).Error("Failed to query migration, %v", err)
 		err = NewCLError(ErrMigrationNotFound, "Failed to find migration", err)
-		return
-	}
-	memberShip := GetMemberShip(ctx)
-	permit := memberShip.CheckSystemPermission()
-	if !permit {
-		logger.Ctx(ctx).Error("Not authorized to get migration")
-		err = NewCLError(ErrPermissionDenied, "Not authorized to get migration", nil)
 		return
 	}
 	return
@@ -307,19 +310,15 @@ func (a *MigrationAdmin) Get(ctx context.Context, id int64) (migration *model.Mi
 		logger.Ctx(ctx).Error(err)
 		return
 	}
+	if err = requireMigrationAdmin(ctx); err != nil {
+		return
+	}
 	ctx, db := GetContextDB(ctx)
 	migration = &model.Migration{Model: model.Model{ID: id}}
 	err = db.Take(migration).Error
 	if err != nil {
 		logger.Ctx(ctx).Error("DB failed to query migration, %v", err)
 		err = NewCLError(ErrMigrationNotFound, "Failed to find migration", err)
-		return
-	}
-	memberShip := GetMemberShip(ctx)
-	permit := memberShip.CheckSystemPermission()
-	if !permit {
-		logger.Ctx(ctx).Error("Not authorized to get migration")
-		err = NewCLError(ErrPermissionDenied, "Not authorized to get migration", nil)
 		return
 	}
 	return
@@ -342,6 +341,10 @@ func (a *MigrationAdmin) GetMigration(ctx context.Context, reference *BaseRefere
 }
 
 func (a *MigrationAdmin) List(ctx context.Context, offset, limit int64, order, query string) (total int64, migrations []*model.Migration, err error) {
+	// The records are not filtered by organization: the list is for system admins only, like a single record
+	if err = requireMigrationAdmin(ctx); err != nil {
+		return
+	}
 	ctx, db := GetContextDB(ctx)
 	if limit == 0 {
 		limit = 16
@@ -356,7 +359,14 @@ func (a *MigrationAdmin) List(ctx context.Context, offset, limit int64, order, q
 		err = NewCLError(ErrSQLSyntaxError, "Failed to count migrations", err)
 		return
 	}
-	db = dbs.Sortby(db.Offset(int(offset)).Limit(int(limit)), order)
+	db = db.Offset(int(offset)).Limit(int(limit))
+	for _, o := range dbs.NewOrders(order) {
+		// Records from before the progress column existed have NULL progress; keep them last in both directions
+		if o == "progress" || o == "progress DESC" {
+			o += " NULLS LAST"
+		}
+		db = db.Order(o)
+	}
 	if err = db.Preload("Instance").Preload("Phases").Scopes(dbs.Contains(query, "name")).Find(&migrations).Error; err != nil {
 		err = NewCLError(ErrSQLSyntaxError, "Failed to query migrations", err)
 		return

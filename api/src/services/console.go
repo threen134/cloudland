@@ -48,8 +48,8 @@ func MakeToken(ctx context.Context, instance *model.Instance, consoleType string
 	memberShip := GetMemberShip(ctx)
 	permit := memberShip.CheckOrgPermission(model.OrgWriter)
 	if !permit {
-		logger.Ctx(ctx).Error("Not authorized to create interface in public subnet")
-		return "", NewCLError(ErrPermissionDenied, "Not authorized to create interface in public subnet", nil)
+		logger.Ctx(ctx).Errorf("Not authorized to open the console of instance %d", instance.ID)
+		return "", NewCLError(ErrPermissionDenied, "Not authorized to open the console of the instance", nil)
 	}
 	secret := RandomStr()
 	tkClaim := TokenClaim{

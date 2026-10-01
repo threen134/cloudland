@@ -95,6 +95,8 @@ func Register(ctx context.Context, in *RegisterInput) (*model.User, *common.HTTP
 	}
 
 	var user model.User
+	var org model.Organization
+	var discarded []model.Organization
 	herr := func() *common.HTTPError {
 		tx := db.Begin()
 		fail := func(err error) *common.HTTPError {
@@ -134,7 +136,8 @@ func Register(ctx context.Context, in *RegisterInput) (*model.User, *common.HTTP
 		if emailHit {
 			// The latest registration wins: pending orgs of earlier unactivated registrations would
 			// otherwise keep their slugs and be activated together with the new org.
-			if err := discardPendingOrgs(tx, byEmail.ID); err != nil {
+			var err error
+			if discarded, err = discardPendingOrgs(tx, byEmail.ID); err != nil {
 				return fail(err)
 			}
 		}
@@ -177,7 +180,7 @@ func Register(ctx context.Context, in *RegisterInput) (*model.User, *common.HTTP
 			}
 		}
 
-		org := model.Organization{
+		org = model.Organization{
 			Name:        in.OrgName,
 			Slug:        in.OrgSlug,
 			OrgType:     model.OrgTeam,
@@ -201,6 +204,13 @@ func Register(ctx context.Context, in *RegisterInput) (*model.User, *common.HTTP
 	if herr != nil {
 		return nil, herr
 	}
+	// The regions learn about the org right away, like an org created by an admin: its approval must not
+	// depend on a later region provisioning. A failed push does not fail the registration.
+	bg := context.WithoutCancel(ctx)
+	go SyncOrgToAllRegions(bg, org)
+	for _, o := range discarded {
+		go DeleteOrgFromAllRegions(bg, o)
+	}
 
 	db.Where("id = ?", user.ID).First(&user)
 	token, err := common.CreateActivationToken(user.UUID)
@@ -213,27 +223,34 @@ func Register(ctx context.Context, in *RegisterInput) (*model.User, *common.HTTP
 }
 
 // discardPendingOrgs soft-deletes the PENDING orgs owned by an unactivated user together with their
-// memberships and (never used) quota rows. Soft deletion alone frees the slug: uniqueness only
-// covers rows with deleted_at IS NULL.
-func discardPendingOrgs(tx *gorm.DB, userID int64) error {
-	var orgIDs []int64
-	if err := tx.Model(&model.Organization{}).Where("owner_user_id = ? AND status = ?", userID, model.OrgPending).
-		Pluck("id", &orgIDs).Error; err != nil {
-		return err
+// memberships and (never used) quota rows, and returns them so the regions can be told. Soft
+// deletion alone frees the slug: uniqueness only covers rows with deleted_at IS NULL.
+func discardPendingOrgs(tx *gorm.DB, userID int64) ([]model.Organization, error) {
+	var pending []model.Organization
+	if err := tx.Select("id", "uuid", "name").Where("owner_user_id = ? AND status = ?", userID, model.OrgPending).
+		Find(&pending).Error; err != nil {
+		return nil, err
 	}
-	if len(orgIDs) == 0 {
-		return nil
+	if len(pending) == 0 {
+		return nil, nil
+	}
+	orgIDs := make([]int64, 0, len(pending))
+	for _, o := range pending {
+		orgIDs = append(orgIDs, o.ID)
 	}
 	if err := tx.Where("org_id IN ?", orgIDs).Delete(&model.Member{}).Error; err != nil {
-		return err
+		return nil, err
 	}
 	if err := tx.Where("org_id IN ?", orgIDs).Delete(&model.OrgResourceQuota{}).Error; err != nil {
-		return err
+		return nil, err
 	}
 	if err := tx.Where("org_id IN ?", orgIDs).Delete(&model.OrgResourceConsumption{}).Error; err != nil {
-		return err
+		return nil, err
 	}
-	return tx.Where("id IN ?", orgIDs).Delete(&model.Organization{}).Error
+	if err := tx.Where("id IN ?", orgIDs).Delete(&model.Organization{}).Error; err != nil {
+		return nil, err
+	}
+	return pending, nil
 }
 
 // Activate activates the account and its PENDING orgs. Returns the success message. Soft-deleted
@@ -253,11 +270,15 @@ func Activate(token string) (string, *common.HTTPError) {
 		return "Account already activated", nil
 	}
 
+	var activated []model.Organization
 	txErr := db.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Model(&user).Updates(map[string]interface{}{
 			"is_active": true,
 			"status":    model.UserActive,
 		}).Error; err != nil {
+			return err
+		}
+		if err := tx.Where("owner_user_id = ? AND status = ?", user.ID, model.OrgPending).Find(&activated).Error; err != nil {
 			return err
 		}
 		return tx.Model(&model.Organization{}).
@@ -267,6 +288,10 @@ func Activate(token string) (string, *common.HTTPError) {
 	if txErr != nil {
 		log.Errorf("Activation error: %v", txErr)
 		return "", common.NewHTTPError(http.StatusInternalServerError, "Internal server error during activation")
+	}
+	// Push the activated orgs again: the push at registration may have failed or found no region
+	for i := range activated {
+		go SyncOrgToAllRegions(context.Background(), activated[i])
 	}
 	return "Account activated", nil
 }

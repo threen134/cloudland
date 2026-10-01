@@ -25,8 +25,9 @@ const (
 // startupRebuildAttempts bounds the retries of the startup rule rebuild (one round a minute).
 const startupRebuildAttempts = 10
 
-// RebuildAlarmRulesOnStartup re-renders the rule files of every enabled VM alarm rule group and,
-// since 2026-09-21, every enabled resource auto-adjust rule group, so they survive a clapi or
+// RebuildAlarmRulesOnStartup re-renders the rule files of every enabled VM alarm rule group,
+// since 2026-09-21 every enabled resource auto-adjust rule group and since 2026-09-30 every enabled
+// node alarm rule, so they survive a clapi or
 // Prometheus restart and a reset Prometheus volume (the VM <-> rule group mapping file is kept up
 // to date separately by StartVMRuleMappingReconciler).
 // It runs in the background and retries: clapi does not wait for alarm-rules-manager, which itself
@@ -57,10 +58,11 @@ func rebuildAllRuleFiles() int {
 
 	alarmRebuilt, alarmFailed := rebuildAlarmRuleFiles(ctx)
 	adjustRebuilt, adjustFailed := rebuildAdjustRuleFiles(ctx)
-	failed := alarmFailed + adjustFailed
+	nodeRebuilt, nodeFailed := rebuildNodeAlarmRuleFiles(ctx)
+	failed := alarmFailed + adjustFailed + nodeFailed
 
 	// Rule files only take effect on a reload: one reload once everything is written
-	if alarmRebuilt+adjustRebuilt > 0 {
+	if alarmRebuilt+adjustRebuilt+nodeRebuilt > 0 {
 		if err := ReloadPrometheusViaHTTP(ctx); err != nil {
 			logger.Ctx(ctx).Errorf("Failed to reload Prometheus after rule rebuild: %v", err)
 			failed++
@@ -143,6 +145,33 @@ func rebuildAdjustRuleFiles(ctx context.Context) (rebuilt, failed int) {
 		rebuilt++
 	}
 	logger.Ctx(ctx).Infof("Adjust rules rebuild complete: %d/%d rule groups rebuilt", rebuilt, len(groups))
+	return rebuilt, failed
+}
+
+// rebuildNodeAlarmRuleFiles re-renders every enabled node alarm rule. Besides surviving a reset Prometheus
+// volume, this is what brings the rule files of existing rules up to date with their templates: the files
+// were only written when a rule was created or edited, so the owner and rule_group labels the node
+// templates gained on 2026-09-30 would otherwise never reach the rules already in place.
+func rebuildNodeAlarmRuleFiles(ctx context.Context) (rebuilt, failed int) {
+	rules, err := (&AlarmOperator{}).GetNodeAlarmRules(ctx, "")
+	if err != nil {
+		logger.Ctx(ctx).Errorf("Failed to query node alarm rules on startup: %v", err)
+		return 0, 1
+	}
+	enabled := 0
+	for i := range rules {
+		if !rules[i].Enabled {
+			continue
+		}
+		enabled++
+		if err := applyNodeAlarmRuleFiles(ctx, &rules[i]); err != nil {
+			logger.Ctx(ctx).Errorf("Failed to rebuild node alarm rule %s (type=%s): %v", rules[i].UUID, rules[i].RuleType, err)
+			failed++
+			continue
+		}
+		rebuilt++
+	}
+	logger.Ctx(ctx).Infof("Node alarm rules rebuild complete: %d/%d rules rebuilt", rebuilt, enabled)
 	return rebuilt, failed
 }
 

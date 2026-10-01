@@ -209,6 +209,36 @@ func CommandEnv(nodeID int32, extra ...string) []string {
 	return append(env, extra...)
 }
 
+// commandEnvName is the environment variable that carries a command to the root shell.
+const commandEnvName = "CLOUDLAND_COMMAND"
+
+// commandShellExit is the exit code of the root shell when the command did not reach it.
+const commandShellExit = 126
+
+// commandShell is the script of the root shell: it runs the command in commandEnvName. The variable is
+// no longer exported once read, so the scripts and the daemons they start do not keep a copy of the
+// command. A sudo that does not keep the environment (sudo-rs ignores -E) drops the variable: fail
+// instead of running nothing and exiting 0.
+var commandShell = `if [ -z "${` + commandEnvName + `+set}" ]; then ` +
+	`echo "cloudlet: the command did not reach the root shell, sudo must keep the environment (-E)" >&2; ` +
+	`exit ` + strconv.Itoa(commandShellExit) + `; fi; ` +
+	`export -n ` + commandEnvName + `; eval "$` + commandEnvName + `"`
+
+// rootPrefix runs the command shell as root, keeping the environment (NODE_ID, TRACEPARENT and the
+// command). Tests replace it.
+var rootPrefix = []string{"sudo", "-E"}
+
+// shellCommand builds the process that runs command as root with env. The command is passed in the
+// environment, never on the command line: sudo logs its command line to the journal and every user of
+// the node can read it in /proc/<pid>/cmdline, while commands carry guest and VNC passwords.
+func shellCommand(command string, env []string) *exec.Cmd {
+	args := append(append([]string{}, rootPrefix...), "bash", "-c", commandShell)
+	cmd := exec.Command(args[0], args[1:]...)
+	// Appended last: exec uses the last value of a duplicated key
+	cmd.Env = append(append([]string{}, env...), commandEnvName+"="+command)
+	return cmd
+}
+
 // scanLines calls fn for every line of r and always drains r, so an over-long line
 // cannot leave the child process blocked on a full pipe.
 func scanLines(r io.Reader, fn func(line string)) {
@@ -223,10 +253,10 @@ func scanLines(r io.Reader, fn func(line string)) {
 	}
 }
 
-// ExecuteCommand runs a command via sudo -E and streams |:-COMMAND-:| callback
-// lines back through the gRPC stream as CallbackLine messages. Other output
-// (including stderr, which is merged like the C++ "2>&1") is only logged locally:
-// clapi cannot parse it and answered 400 for every such line.
+// ExecuteCommand runs a command as root (sudo -E bash, see shellCommand) and streams
+// |:-COMMAND-:| callback lines back through the gRPC stream as CallbackLine messages.
+// Other output (including stderr, which is merged like the C++ "2>&1") is only logged
+// locally: clapi cannot parse it and answered 400 for every such line.
 // Ported from cloudlet.cpp backHandler lines 103-162.
 func ExecuteCommand(sender *StreamSender, req *pb.CommandRequest, nodeID int32) {
 	if !ShouldExecute(req) {
@@ -249,8 +279,7 @@ func ExecuteCommand(sender *StreamSender, req *pb.CommandRequest, nodeID int32) 
 		}
 	}
 
-	cmd := exec.Command("sudo", "-E", "bash", "-c", req.Command)
-	cmd.Env = CommandEnv(nodeID, "TRACEPARENT="+traceContext["traceparent"])
+	cmd := shellCommand(req.Command, CommandEnv(nodeID, "TRACEPARENT="+traceContext["traceparent"]))
 
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {

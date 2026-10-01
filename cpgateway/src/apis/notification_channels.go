@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	log "github.com/sirupsen/logrus"
@@ -65,7 +66,24 @@ func getOrgChannelOr404(c *gin.Context, orgID int64) (*model.NotificationChannel
 	return &ch, true
 }
 
-// GET /notification-channels
+// channelOrderColumns are the fields GET /notification-channels can be sorted by (the order parameter)
+var channelOrderColumns = map[string]string{
+	"name":       "name",
+	"type":       "type",
+	"enabled":    "enabled",
+	"created_at": "created_at",
+}
+
+// channelListOrder is the ORDER BY of the channel list: the requested field when it is one of
+// channelOrderColumns, otherwise the default, newest first
+func channelListOrder(order string) string {
+	if _, ok := channelOrderColumns[strings.TrimPrefix(order, "-")]; ok {
+		return orderBy(order, channelOrderColumns, "id")
+	}
+	return "created_at DESC, id DESC"
+}
+
+// GET /notification-channels?offset=&limit=&query=&order=
 func ListChannels(c *gin.Context) {
 	p, ok := parseListParams(c)
 	if !ok {
@@ -77,7 +95,7 @@ func ListChannels(c *gin.Context) {
 		Where("org_id = ?", org.ID).
 		Scopes(searchScope(p.Query, "name", "type"))
 	// total 是过滤后的总数，原先返回的是当前页条数（当时也没有分页，所以看不出区别）
-	total, ok := countAndPage(c, q.Order("created_at DESC"), p, &channels)
+	total, ok := countAndPage(c, q.Order(channelListOrder(p.Order)), p, &channels)
 	if !ok {
 		return
 	}

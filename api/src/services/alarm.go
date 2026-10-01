@@ -9,6 +9,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -47,6 +48,18 @@ const (
 	RulesNode              = "/etc/prometheus/node_rules"
 	RuleTemplate           = "/etc/prometheus/node_templates"
 )
+
+// RuleTemplateDir is where the rule templates are read from (RuleTemplate; tests point it at the repository)
+var RuleTemplateDir = RuleTemplate
+
+// UseLocalRuleTemplates reads the rule templates from dir, and does every rule file operation on the local
+// disk whatever monitor.host says; it returns what undoes it. For tests: without a monitor.host setting clapi
+// takes Prometheus for remote.
+func UseLocalRuleTemplates(dir string) (restore func()) {
+	savedDir, savedRemote := RuleTemplateDir, isRemotePrometheus
+	RuleTemplateDir, isRemotePrometheus = dir, false
+	return func() { RuleTemplateDir, isRemotePrometheus = savedDir, savedRemote }
+}
 
 var (
 	alarmPrometheusIP      string
@@ -2129,30 +2142,38 @@ func ProcessTemplate(ctx context.Context, templateFile, outputFile string, data 
 			logger.Ctx(ctx).Info("EXIT ProcessTemplate: success")
 		}
 	}()
+	renderedContent, err := renderRuleTemplate(ctx, templateFile, data)
+	if err != nil {
+		return err
+	}
+	return writeRuleFile(ctx, outputFile, renderedContent)
+}
 
-	templatePath := filepath.Join(RuleTemplate, templateFile)
-
-	// All rule files are now stored in RulesGeneral directory (simplified from previous owner-based separation)
-	outputPath := filepath.Join(RulesGeneral, outputFile)
-
-	// Read template content
+// renderRuleTemplate reads a rule template and renders it with data, without writing anything.
+func renderRuleTemplate(ctx context.Context, templateFile string, data map[string]interface{}) (string, error) {
+	templatePath := filepath.Join(RuleTemplateDir, templateFile)
 	templateContent, err := ReadFile(ctx, templatePath)
 	if err != nil {
 		logger.Ctx(ctx).Errorf("Failed to read template file: path=%s, error=%v", templatePath, err)
-		return fmt.Errorf("failed to read template file %s: %w", templatePath, err)
+		return "", fmt.Errorf("failed to read template file %s: %w", templatePath, err)
 	}
-	logger.Ctx(ctx).Debugf("ProcessTemplate templateContent: %s,  templatePath: %s", templateContent, templatePath)
+	logger.Ctx(ctx).Debugf("renderRuleTemplate templateContent: %s,  templatePath: %s", templateContent, templatePath)
+	return renderRuleContent(ctx, templateFile, string(templateContent), data)
+}
 
+// renderRuleContent renders the content of templateFile. A template variable the data does not fill is the
+// caller's mistake (a config key that does not match the template) and is reported as an AlarmRuleInputError.
+func renderRuleContent(ctx context.Context, templateFile, templateContent string, data map[string]interface{}) (string, error) {
 	var renderedContent string
-	if strings.Contains(string(templateContent), "name: compute-network-resources") {
-		renderedContent, err = renderNetworkResourcesTemplate(ctx, data)
+	var err error
+	if strings.Contains(templateContent, "name: compute-network-resources") {
+		renderedContent, err = renderNetworkResourcesTemplate(ctx, templateContent, data)
 	} else {
-		renderedContent, err = renderTemplateContent(ctx, string(templateContent), data)
+		renderedContent, err = renderTemplateContent(ctx, templateContent, data)
 	}
-	logger.Ctx(ctx).Debugf("ProcessTemplate templateContent: %s,  err: %s", templateContent, err)
 	if err != nil {
 		logger.Ctx(ctx).Errorf("Failed to render template: template=%s, error=%v", templateFile, err)
-		return fmt.Errorf("failed to render template %s: %w", templateFile, err)
+		return "", fmt.Errorf("failed to render template %s: %w", templateFile, err)
 	}
 	// A config key that does not match the template leaves the placeholder as-is
 	// (only `{{ x | default(y) }}` forms fall back). The literal `{{ x }}` then lands in
@@ -2160,10 +2181,15 @@ func ProcessTemplate(ctx context.Context, templateFile, outputFile string, data 
 	// the previous one — one bad rule silently freezes every alarm rule. Fail here instead.
 	if missing := unresolvedPlaceholders(renderedContent); len(missing) > 0 {
 		logger.Ctx(ctx).Errorf("Template %s has unresolved variables: %v", templateFile, missing)
-		return fmt.Errorf("config is missing values for %s: %s", templateFile, strings.Join(missing, ", "))
+		return "", alarmRuleInputErrorf("config is missing values for %s: %s", templateFile, strings.Join(missing, ", "))
 	}
-	logger.Ctx(ctx).Debugf("ProcessTemplate templateContent: %s,  outputPath: %s", templateContent, outputPath)
-	// Write rendered content to output file
+	return renderedContent, nil
+}
+
+// writeRuleFile writes a rendered rule file into the general rules directory and enables it.
+func writeRuleFile(ctx context.Context, outputFile, renderedContent string) error {
+	// All rule files are now stored in RulesGeneral directory (simplified from previous owner-based separation)
+	outputPath := filepath.Join(RulesGeneral, outputFile)
 	if err := WriteFile(ctx, outputPath, []byte(renderedContent), 0640); err != nil {
 		logger.Ctx(ctx).Errorf("Failed to write output file: path=%s, error=%v", outputPath, err)
 		return fmt.Errorf("failed to write output file %s: %w", outputPath, err)
@@ -2178,6 +2204,27 @@ func ProcessTemplate(ctx context.Context, templateFile, outputFile string, data 
 	}
 
 	return nil
+}
+
+// AlarmRuleInputError marks an alarm rule rejected because of what the caller sent (an unknown rule type,
+// config keys the rule's templates do not use, values they need but did not get), as opposed to a failure on
+// this side (a template file missing, a rule file that cannot be written, the database). Handlers answer the
+// first with 400 and the second with 500.
+type AlarmRuleInputError struct {
+	Err error
+}
+
+func (e *AlarmRuleInputError) Error() string { return e.Err.Error() }
+func (e *AlarmRuleInputError) Unwrap() error { return e.Err }
+
+func alarmRuleInputErrorf(format string, args ...interface{}) error {
+	return &AlarmRuleInputError{Err: fmt.Errorf(format, args...)}
+}
+
+// IsAlarmRuleInputError tells whether err, or an error it wraps, is an AlarmRuleInputError.
+func IsAlarmRuleInputError(err error) bool {
+	var inputErr *AlarmRuleInputError
+	return errors.As(err, &inputErr)
 }
 
 // Placeholders left over after rendering, e.g. `{{ vcpu_usage_threshold }}`. Prometheus'
@@ -2206,7 +2253,7 @@ func unresolvedPlaceholders(content string) []string {
 	return names
 }
 
-func renderNetworkResourcesTemplate(ctx context.Context, data map[string]interface{}) (renderedContent string, err error) {
+func renderNetworkResourcesTemplate(ctx context.Context, templateStr string, data map[string]interface{}) (renderedContent string, err error) {
 	logger.Ctx(ctx).Info("ENTER renderNetworkResourcesTemplate")
 	defer func() {
 		if err != nil {
@@ -2216,13 +2263,6 @@ func renderNetworkResourcesTemplate(ctx context.Context, data map[string]interfa
 		}
 	}()
 
-	templatePath := filepath.Join(RuleTemplate, "compute-network-resources.yml.j2")
-	templateContent, err := ReadFile(ctx, templatePath)
-	if err != nil {
-		return "", fmt.Errorf("failed to read network resources template: %w", err)
-	}
-
-	templateStr := string(templateContent)
 	ruleTemplate := ""
 	if strings.Contains(templateStr, "{% for net_type, params in network_types.items() %}") {
 		parts := strings.Split(templateStr, "{% for net_type, params in network_types.items() %}")
@@ -2240,7 +2280,7 @@ func renderNetworkResourcesTemplate(ctx context.Context, data map[string]interfa
 
 	networkTypes, ok := data["network_types"].(map[string]interface{})
 	if !ok {
-		return "", fmt.Errorf("network_types not found in data")
+		return "", alarmRuleInputErrorf("network_types not found in data")
 	}
 
 	for netType, params := range networkTypes {
@@ -2375,22 +2415,22 @@ func validateNodeAlarmRule(rule *model.NodeAlarmRule) error {
 	logger.Infof("ENTER validateNodeAlarmRule: ruleType=%s, name=%s", rule.RuleType, rule.Name)
 	defer logger.Info("EXIT validateNodeAlarmRule")
 	if rule.RuleType == "" {
-		return fmt.Errorf("rule_type is required")
+		return alarmRuleInputErrorf("rule_type is required")
 	}
 	if rule.Name == "" {
-		return fmt.Errorf("name is required")
+		return alarmRuleInputErrorf("name is required")
 	}
 	if rule.Owner == "" {
-		return fmt.Errorf("owner is required")
+		return alarmRuleInputErrorf("owner is required")
 	}
 	if len(rule.Config.RawMessage) == 0 {
-		return fmt.Errorf("config is required")
+		return alarmRuleInputErrorf("config is required")
 	}
 
 	// Validate if config is valid JSON
 	var temp interface{}
 	if err := json.Unmarshal(rule.Config.RawMessage, &temp); err != nil {
-		return fmt.Errorf("config must be valid JSON: %w", err)
+		return alarmRuleInputErrorf("config must be valid JSON: %w", err)
 	}
 	return nil
 }
@@ -2425,6 +2465,12 @@ func nodeAlarmTemplates(ruleType string) []string {
 var templateVarRE = regexp.MustCompile(`{{\s*([a-z][a-z0-9_]*)\s*(?:\||}})`)
 var templateLoopRE = regexp.MustCompile(`{%\s*for\s+[a-z0-9_,\s]+\s+in\s+([a-z][a-z0-9_]*)\.items\(\)`)
 
+// Template variables of the node alarm templates that clapi fills itself, never from the rule's config:
+// every node alert is labelled with the organization it belongs to (owner, which the alarm event list is
+// filtered by) and with the rule it comes from (rule_group, which notification channels are bound to).
+// Without these labels a node alert was an event nobody could see and nobody was notified of.
+var nodeAlarmReservedKeys = map[string]bool{"owner": true, "rule_group": true}
+
 // nodeAlarmAllowedKeys reads the rule type's templates and returns the config keys they
 // actually use. A key that is not among them does nothing: the template falls back to its
 // default and the value the user typed is silently ignored — which is how every threshold
@@ -2432,12 +2478,12 @@ var templateLoopRE = regexp.MustCompile(`{%\s*for\s+[a-z0-9_,\s]+\s+in\s+([a-z][
 func nodeAlarmAllowedKeys(ctx context.Context, ruleType string) (map[string]bool, error) {
 	allowed := map[string]bool{}
 	for _, templateFile := range nodeAlarmTemplates(ruleType) {
-		content, err := ReadFile(ctx, filepath.Join(RuleTemplate, templateFile))
+		content, err := ReadFile(ctx, filepath.Join(RuleTemplateDir, templateFile))
 		if err != nil {
 			return nil, fmt.Errorf("failed to read template file %s: %w", templateFile, err)
 		}
 		for _, m := range templateVarRE.FindAllStringSubmatch(string(content), -1) {
-			if !templateKeywords[m[1]] {
+			if !templateKeywords[m[1]] && !nodeAlarmReservedKeys[m[1]] {
 				allowed[m[1]] = true
 			}
 		}
@@ -2453,7 +2499,7 @@ func nodeAlarmAllowedKeys(ctx context.Context, ruleType string) (map[string]bool
 // config that only blows up later, when someone enables it.
 func validateNodeAlarmConfig(ctx context.Context, rule *model.NodeAlarmRule) error {
 	if len(nodeAlarmTemplates(rule.RuleType)) == 0 {
-		return fmt.Errorf("unsupported rule type: %s", rule.RuleType)
+		return alarmRuleInputErrorf("unsupported rule type: %s", rule.RuleType)
 	}
 	allowed, err := nodeAlarmAllowedKeys(ctx, rule.RuleType)
 	if err != nil {
@@ -2461,7 +2507,7 @@ func validateNodeAlarmConfig(ctx context.Context, rule *model.NodeAlarmRule) err
 	}
 	var config map[string]interface{}
 	if err := json.Unmarshal(rule.Config.RawMessage, &config); err != nil {
-		return fmt.Errorf("failed to parse config JSON: %v", err)
+		return alarmRuleInputErrorf("failed to parse config JSON: %v", err)
 	}
 	unknown := []string{}
 	for key := range config {
@@ -2476,39 +2522,74 @@ func validateNodeAlarmConfig(ctx context.Context, rule *model.NodeAlarmRule) err
 			known = append(known, key)
 		}
 		sort.Strings(known)
-		return fmt.Errorf("config keys not used by %s rules: %s (supported: %s)",
+		return alarmRuleInputErrorf("config keys not used by %s rules: %s (supported: %s)",
 			rule.RuleType, strings.Join(unknown, ", "), strings.Join(known, ", "))
 	}
 	return nil
 }
 
-// applyNodeAlarmRuleFiles renders a rule's Prometheus rule files. Shared by create and
-// update so both go through the same validation.
+// applyNodeAlarmRuleFiles renders a rule's Prometheus rule files and writes them. Shared by create,
+// update and the startup rebuild so all go through the same validation. Every file is rendered before
+// any is written: a rule type with two templates is not left half updated.
 func applyNodeAlarmRuleFiles(ctx context.Context, rule *model.NodeAlarmRule) error {
-	if err := validateNodeAlarmConfig(ctx, rule); err != nil {
+	files, err := renderNodeAlarmRuleFiles(ctx, rule, nodeAlarmOwner(ctx, rule))
+	if err != nil {
 		return err
 	}
 	for _, templateFile := range nodeAlarmTemplates(rule.RuleType) {
+		outputFile := strings.TrimSuffix(templateFile, ".j2")
+		if err := writeRuleFile(ctx, outputFile, files[outputFile]); err != nil {
+			return fmt.Errorf("failed to process template %s: %w", templateFile, err)
+		}
+	}
+	return nil
+}
+
+// renderNodeAlarmRuleFiles validates a rule's config and renders its rule files (output file name ->
+// content) without writing them. owner is the organization the alerts are labelled with.
+func renderNodeAlarmRuleFiles(ctx context.Context, rule *model.NodeAlarmRule, owner string) (map[string]string, error) {
+	if err := validateNodeAlarmConfig(ctx, rule); err != nil {
+		return nil, err
+	}
+	files := map[string]string{}
+	for _, templateFile := range nodeAlarmTemplates(rule.RuleType) {
 		var configData map[string]interface{}
 		if err := json.Unmarshal(rule.Config.RawMessage, &configData); err != nil {
-			return fmt.Errorf("failed to parse config JSON: %v", err)
+			return nil, alarmRuleInputErrorf("failed to parse config JSON: %v", err)
 		}
 		if rule.RuleType == RuleTypeAvailable {
 			if nodeDownDuration, ok := configData["node_down_duration"].(string); ok {
 				duration, err := time.ParseDuration(nodeDownDuration)
 				if err != nil {
-					return fmt.Errorf("invalid node_down_duration format: %v", err)
+					return nil, alarmRuleInputErrorf("invalid node_down_duration format: %v", err)
 				}
 				configData["node_down_duration_minutes"] = int(duration.Minutes())
 			} else {
 				configData["node_down_duration_minutes"] = 5
 			}
 		}
-		if err := ProcessTemplate(ctx, templateFile, strings.TrimSuffix(templateFile, ".j2"), configData); err != nil {
-			return fmt.Errorf("failed to process template %s: %v", templateFile, err)
+		// Set after the config: validateNodeAlarmConfig already refuses these keys, and whatever the
+		// config says, these labels are clapi's
+		configData["owner"] = owner
+		configData["rule_group"] = rule.UUID
+		rendered, err := renderRuleTemplate(ctx, templateFile, configData)
+		if err != nil {
+			return nil, fmt.Errorf("failed to process template %s: %w", templateFile, err)
 		}
+		files[strings.TrimSuffix(templateFile, ".j2")] = rendered
 	}
-	return nil
+	return files, nil
+}
+
+// nodeAlarmOwner is the organization node alerts are labelled with: the system organization. Node alarm
+// rules watch the platform (nodes, zones, pools, address groups), not any tenant's resources, so their
+// events belong to the platform's operators, whichever organization the system admin who wrote the rule
+// was acting in. Falls back to the rule's own owner when the system organization cannot be read.
+func nodeAlarmOwner(ctx context.Context, rule *model.NodeAlarmRule) string {
+	if id := platformOrgID(ctx); id > 0 {
+		return strconv.FormatInt(id, 10)
+	}
+	return rule.Owner
 }
 
 // removeNodeAlarmRuleFiles drops a rule type's generated files and the symlinks that
@@ -2541,6 +2622,26 @@ func createNodeAlarmRuleInternal(ctx context.Context, rule *model.NodeAlarmRule)
 		return nil, err
 	}
 
+	newRule := &model.NodeAlarmRule{
+		RuleType:    rule.RuleType,
+		Name:        rule.Name,
+		Config:      rule.Config,
+		Description: rule.Description,
+		Owner:       rule.Owner,
+		Enabled:     rule.Enabled,
+	}
+	// Validated before the database is touched, disabled rules included. An enabled rule is also
+	// rendered once, so that a value its templates need but the config lacks is reported as the caller's
+	// mistake before a row is written (the owner label does not affect whether the rule renders)
+	if err = validateNodeAlarmConfig(ctx, newRule); err != nil {
+		return nil, err
+	}
+	if newRule.Enabled {
+		if _, err = renderNodeAlarmRuleFiles(ctx, newRule, newRule.Owner); err != nil {
+			return nil, err
+		}
+	}
+
 	operator := &AlarmOperator{}
 	existingRules, err := operator.GetNodeAlarmRulesByType(ctx, rule.RuleType)
 	if err != nil {
@@ -2550,18 +2651,6 @@ func createNodeAlarmRuleInternal(ctx context.Context, rule *model.NodeAlarmRule)
 		return nil, fmt.Errorf("rule type %s already exists, only one rule per type is allowed", rule.RuleType)
 	}
 
-	newRule := &model.NodeAlarmRule{
-		RuleType:    rule.RuleType,
-		Name:        rule.Name,
-		Config:      rule.Config,
-		Description: rule.Description,
-		Owner:       rule.Owner,
-		Enabled:     rule.Enabled,
-	}
-	// Validated before the row is written, disabled rules included
-	if err = validateNodeAlarmConfig(ctx, newRule); err != nil {
-		return nil, err
-	}
 	err = operator.CreateNodeAlarmRules(ctx, newRule)
 	if err != nil {
 		return nil, fmt.Errorf("failed to save rule to database: %v", err)
@@ -2615,7 +2704,7 @@ func updateNodeAlarmRuleInternal(ctx context.Context, uuID string, name, descrip
 	if config != nil && len(config.RawMessage) > 0 {
 		var temp interface{}
 		if err = json.Unmarshal(config.RawMessage, &temp); err != nil {
-			return nil, fmt.Errorf("config must be valid JSON: %w", err)
+			return nil, alarmRuleInputErrorf("config must be valid JSON: %w", err)
 		}
 		rule.Config = *config
 		updates["config"] = *config

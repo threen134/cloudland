@@ -37,12 +37,15 @@ func (a *SecgroupAdmin) Switch(ctx context.Context, newSg *model.SecurityGroup, 
 	ctx, db := GetContextDB(ctx)
 	oldSg := &model.SecurityGroup{}
 	if router != nil {
-		oldSg.ID = router.DefaultSG
-		err = db.Take(oldSg).Error
-		if err != nil {
-			logger.Ctx(ctx).Error("Failed to query default security group", err)
-			err = NewCLError(ErrSecurityGroupNotFound, "Failed to find default security group", err)
-			return
+		// Without a default group yet (the native group of a new VPC), Take on ID 0 would pick any group
+		if router.DefaultSG > 0 {
+			oldSg.ID = router.DefaultSG
+			err = db.Take(oldSg).Error
+			if err != nil {
+				logger.Ctx(ctx).Error("Failed to query default security group", err)
+				err = NewCLError(ErrSecurityGroupNotFound, "Failed to find default security group", err)
+				return
+			}
 		}
 		router.DefaultSG = newSg.ID
 		err = db.Model(router).Update("default_sg", router.DefaultSG).Error
@@ -52,9 +55,9 @@ func (a *SecgroupAdmin) Switch(ctx context.Context, newSg *model.SecurityGroup, 
 			return
 		}
 	} else {
-		memberShip := GetMemberShip(ctx)
+		// The organization owning the group, which is not the caller's when a system admin works on another one
 		var org *model.Organization
-		org, err = orgAdmin.Get(ctx, memberShip.OrgID)
+		org, err = orgAdmin.Get(ctx, newSg.Owner)
 		if err != nil {
 			logger.Ctx(ctx).Error("Failed to query organization ", err)
 			err = NewCLError(ErrOrgNotFound, "Failed to find organization", err)
@@ -106,6 +109,21 @@ func (a *SecgroupAdmin) Update(ctx context.Context, secgroup *model.SecurityGrou
 			logger.Ctx(ctx).Info("EXIT SecgroupAdmin.Update: success")
 		}
 	}()
+	// Same rule as Delete: a writer of the organization owning the group
+	memberShip := GetMemberShip(ctx)
+	if !memberShip.CheckResourceOrg(model.OrgWriter, secgroup.Owner) {
+		logger.Ctx(ctx).Error("Not authorized to update the security group")
+		err = NewCLError(ErrPermissionDenied, "Not authorized to update the security group", nil)
+		return
+	}
+	switchDefault := isDefault != nil && *isDefault && !secgroup.IsDefault
+	// The default group of the organization (a group outside any VPC) is what instances get when no group is given:
+	// choosing it is kept for organization admins, who are the only ones able to create such groups
+	if switchDefault && secgroup.RouterID == 0 && !memberShip.CheckOrgPermission(model.OrgAdmin) {
+		logger.Ctx(ctx).Error("Not authorized to change the default security group of the organization")
+		err = NewCLError(ErrPermissionDenied, "Not authorized to change the default security group of the organization", nil)
+		return
+	}
 	ctx, db, newTransaction := StartTransaction(ctx)
 	defer func() {
 		if newTransaction {
@@ -118,9 +136,11 @@ func (a *SecgroupAdmin) Update(ctx context.Context, secgroup *model.SecurityGrou
 	if description != nil {
 		secgroup.Description = *description
 	}
-	if isDefault != nil && *isDefault && !secgroup.IsDefault {
+	if switchDefault {
 		secgroup.IsDefault = true
-		a.Switch(ctx, secgroup, secgroup.Router)
+		if err = a.Switch(ctx, secgroup, secgroup.Router); err != nil {
+			return
+		}
 	}
 	err = db.Model(&model.SecurityGroup{}).Where("id = ?", secgroup.ID).Updates(map[string]interface{}{"name": secgroup.Name, "description": secgroup.Description, "is_default": secgroup.IsDefault}).Error
 	if err != nil {

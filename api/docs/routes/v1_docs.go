@@ -414,7 +414,14 @@ const docTemplatev1 = `{
                         }
                     },
                     "403": {
-                        "description": "Channel not owned",
+                        "description": "Channel or rule group not owned",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "404": {
+                        "description": "Rule group not found",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -462,6 +469,20 @@ const docTemplatev1 = `{
                 "responses": {
                     "200": {
                         "description": "Rule channel bindings",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "403": {
+                        "description": "Rule group not owned",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "404": {
+                        "description": "Rule group not found",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -1213,7 +1234,7 @@ const docTemplatev1 = `{
                 }
             },
             "patch": {
-                "description": "patch a floating ip",
+                "description": "patch a floating ip. \"instance\": {\"id\"} attaches it to that instance and \"instance\": null detaches it; without an instance or load_balancer key the attachment is kept, so a body with only inbound / outbound changes the bandwidth of the attached floating ip in place",
                 "consumes": [
                     "application/json"
                 ],
@@ -9285,9 +9306,10 @@ const docTemplatev1 = `{
                     "$ref": "#/definitions/common.BaseID"
                 },
                 "inbound": {
+                    "description": "0 removes the limit (set_floating_bandwidth.sh), so a limit set once can be lifted again",
                     "type": "integer",
                     "maximum": 20000,
-                    "minimum": 1
+                    "minimum": 0
                 },
                 "instance": {
                     "$ref": "#/definitions/common.BaseID"
@@ -9298,7 +9320,7 @@ const docTemplatev1 = `{
                 "outbound": {
                     "type": "integer",
                     "maximum": 20000,
-                    "minimum": 1
+                    "minimum": 0
                 }
             }
         },
@@ -10134,7 +10156,10 @@ const docTemplatev1 = `{
             "type": "object",
             "properties": {
                 "hostname": {
-                    "type": "string"
+                    "description": "same rule as InstancePayload",
+                    "type": "string",
+                    "maxLength": 32,
+                    "minLength": 2
                 },
                 "power_action": {
                     "enum": [
@@ -10182,7 +10207,9 @@ const docTemplatev1 = `{
                     "minLength": 1
                 },
                 "hostname": {
-                    "type": "string"
+                    "type": "string",
+                    "maxLength": 32,
+                    "minLength": 2
                 },
                 "hypervisor": {
                     "description": "system admins only",

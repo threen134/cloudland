@@ -108,7 +108,14 @@ func CreateRegion(c *gin.Context) {
 	c.JSON(http.StatusCreated, regionCreatedOut{toRegionAdmin(&region), region.InternalSecret})
 }
 
-// GET /regions?offset=&limit=&query= — public, no internal endpoint or secret.
+// regionOrderColumns are the fields GET /regions can be sorted by (the order parameter)
+var regionOrderColumns = map[string]string{
+	"name":         "name",
+	"display_name": "display_name",
+	"created_at":   "created_at",
+}
+
+// GET /regions?offset=&limit=&query=&order= — public, no internal endpoint or secret.
 func ListRegions(c *gin.Context) {
 	p, ok := parseListParams(c)
 	if !ok {
@@ -117,7 +124,7 @@ func ListRegions(c *gin.Context) {
 	var regions []model.Region
 	q := dbs.DBContext(c.Request.Context()).Model(&model.Region{}).
 		Scopes(searchScope(p.Query, "name", "description"))
-	total, ok := countAndPage(c, q.Order("id ASC"), p, &regions)
+	total, ok := countAndPage(c, q.Order(orderBy(p.Order, regionOrderColumns, "id")), p, &regions)
 	if !ok {
 		return
 	}

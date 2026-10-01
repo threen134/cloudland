@@ -134,6 +134,9 @@ func Audit() gin.HandlerFunc {
 			if action := c.GetString(auditActionKey); action != "" {
 				entry.Action = action
 			}
+			if !auditKeepsSnapshotName(entry.Status, route.ByName) {
+				resourceName = ""
+			}
 			if entry.Status < 400 && !writer.truncated {
 				// 集合操作（创建）取响应里的新资源；针对单个资源的操作只在响应描述的就是
 				// 该资源时采用其名称（子资源接口如添加安全组规则，响应是规则而不是安全组）
@@ -423,4 +426,13 @@ func (v *AuditAPI) Activities(c *gin.Context) {
 		})
 	}
 	c.JSON(http.StatusOK, resp)
+}
+
+// auditKeepsSnapshotName tells whether the resource name looked up by UUID before the handler ran may be
+// recorded. The lookup happens before the handler checks who may see the resource: when the request was
+// refused or found nothing, the resource may belong to another organization, and the entry would show its
+// name in the caller's activity feed. Then only the UUID the caller sent is kept. A name taken from the path
+// (route.ByName) is the caller's own input and is always kept
+func auditKeepsSnapshotName(status int, byName bool) bool {
+	return byName || (status != http.StatusNotFound && status != http.StatusForbidden)
 }

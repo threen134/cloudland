@@ -493,8 +493,18 @@ func explicitInstanceSpec(body map[string]interface{}) (ResourceAmount, bool) {
 	}, true
 }
 
-// PrepareQuota runs the pre-forward quota step: reserve for create/expand, measure for delete.
-func PrepareQuota(ctx context.Context, orgID int64, region *model.Region, method, proxyTemplate, resolvedPath string, rawBody []byte, headers map[string]string) (*QuotaPlan, *common.HTTPError) {
+// withQuery appends the encoded query string of the proxied request to a backend path.
+func withQuery(apiPath, rawQuery string) string {
+	if rawQuery == "" {
+		return apiPath
+	}
+	return apiPath + "?" + rawQuery
+}
+
+// PrepareQuota runs the pre-forward quota step: reserve for create/expand, measure for delete. rawQuery is
+// the encoded query string forwarded with the request: the GET that measures a resource before deleting or
+// resizing it needs the same parameters, for a system admin acting on another org's resource all_orgs=true.
+func PrepareQuota(ctx context.Context, orgID int64, region *model.Region, method, proxyTemplate, resolvedPath, rawQuery string, rawBody []byte, headers map[string]string) (*QuotaPlan, *common.HTTPError) {
 	rule, _ := lookupQuotaRule(method, proxyTemplate)
 	plan := &QuotaPlan{Action: rule.Action}
 
@@ -548,7 +558,7 @@ func PrepareQuota(ctx context.Context, orgID int64, region *model.Region, method
 		}
 
 	case "release":
-		amount, herr := QueryResourceAmount(ctx, region, rule.Resource, strings.Trim(resolvedPath, "/"), headers)
+		amount, herr := QueryResourceAmount(ctx, region, rule.Resource, withQuery(strings.Trim(resolvedPath, "/"), rawQuery), headers)
 		if herr != nil {
 			return nil, herr
 		}
@@ -559,7 +569,7 @@ func PrepareQuota(ctx context.Context, orgID int64, region *model.Region, method
 		if body == nil {
 			break
 		}
-		apiPath := strings.TrimSuffix(strings.Trim(resolvedPath, "/"), "/resize")
+		apiPath := withQuery(strings.TrimSuffix(strings.Trim(resolvedPath, "/"), "/resize"), rawQuery)
 		diff := ResourceAmount{}
 		switch rule.Resource {
 		case "instance":

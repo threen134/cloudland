@@ -91,3 +91,24 @@ func TestOrgListPaginationAndSearch(t *testing.T) {
 		t.Fatalf("empty search should return nothing: %v", none)
 	}
 }
+
+// The order parameter only ever selects a column from the endpoint's whitelist; anything else keeps the
+// default order. The ID is always the last key so that pages cannot overlap.
+func TestOrderBy(t *testing.T) {
+	cols := map[string]string{"name": "organizations.name", "created_at": "organizations.created_at"}
+	for _, tc := range []struct{ order, want string }{
+		{"", "organizations.id ASC"},
+		{"name", "organizations.name ASC, organizations.id ASC"},
+		{"-name", "organizations.name DESC, organizations.id ASC"},
+		{"-created_at", "organizations.created_at DESC, organizations.id ASC"},
+		{"owner_user_id", "organizations.id ASC"},
+		{"name DESC", "organizations.id ASC"},
+		{"name;DROP TABLE organizations", "organizations.id ASC"},
+		{"--name", "organizations.id ASC"},
+		{"-", "organizations.id ASC"},
+	} {
+		if got := orderBy(tc.order, cols, "organizations.id"); got != tc.want {
+			t.Errorf("orderBy(%q) = %q, want %q", tc.order, got, tc.want)
+		}
+	}
+}

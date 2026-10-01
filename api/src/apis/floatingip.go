@@ -9,6 +9,7 @@ package apis
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -19,6 +20,7 @@ import (
 	"api/src/services"
 
 	"github.com/gin-gonic/gin"
+	"github.com/gin-gonic/gin/binding"
 )
 
 var floatingIpAPI = &FloatingIpAPI{}
@@ -83,9 +85,10 @@ type FloatingIpPayload struct {
 type FloatingIpPatchPayload struct {
 	Instance     *BaseID `json:"instance" binding:"omitempty"`
 	LoadBalancer *BaseID `json:"load_balancer" binding:"omitempty"`
-	Inbound      *int32  `json:"inbound" binding:"omitempty,min=1,max=20000"`
-	Outbound     *int32  `json:"outbound" binding:"omitempty,min=1,max=20000"`
-	Group        *BaseID `json:"group" binding:"omitempty"`
+	// 0 removes the limit (set_floating_bandwidth.sh), so a limit set once can be lifted again
+	Inbound  *int32  `json:"inbound" binding:"omitempty,min=0,max=20000"`
+	Outbound *int32  `json:"outbound" binding:"omitempty,min=0,max=20000"`
+	Group    *BaseID `json:"group" binding:"omitempty"`
 }
 
 // SiteAttachPayload represents the payload for site attach floating IPs
@@ -128,7 +131,7 @@ func (v *FloatingIpAPI) Get(c *gin.Context) {
 }
 
 // @Summary patch a floating ip
-// @Description patch a floating ip
+// @Description patch a floating ip. "instance": {"id"} attaches it to that instance and "instance": null detaches it; without an instance or load_balancer key the attachment is kept, so a body with only inbound / outbound changes the bandwidth of the attached floating ip in place
 // @tags Floating IP
 // @Accept  json
 // @Produce json
@@ -153,48 +156,47 @@ func (v *FloatingIpAPI) Patch(c *gin.Context) {
 		return
 	}
 	payload := &FloatingIpPatchPayload{}
-	err = c.ShouldBindJSON(payload)
+	// Keep the body: "instance": null (detach) and an omitted instance both bind to nil
+	err = c.ShouldBindBodyWith(payload, binding.JSON)
 	if err != nil {
 		logger.Ctx(ctx).Errorf("Invalid input JSON %+v", err)
 		ErrorResponse(c, http.StatusBadRequest, "Invalid input JSON", err)
 		return
 	}
 	logger.Ctx(ctx).Debugf("Patching floating ip %s with %+v", uuID, payload)
-	if payload.Inbound != nil {
-		floatingIp.Inbound = *payload.Inbound
+	var fields map[string]json.RawMessage
+	if raw, ok := c.Get(gin.BodyBytesKey); ok {
+		_ = json.Unmarshal(raw.([]byte), &fields)
 	}
-	if payload.Outbound != nil {
-		floatingIp.Outbound = *payload.Outbound
-	}
-	var instance *model.Instance
-	var loadBalancer *model.LoadBalancer
-	if payload.Instance != nil {
-		instance, err = instanceAdmin.GetInstanceByUUID(ctx, payload.Instance.ID)
-		if err != nil {
-			logger.Ctx(ctx).Errorf("Failed to get instance %+v", err)
-			ErrorResponse(c, http.StatusBadRequest, "Failed to get instance", err)
-			return
-		}
-	} else if payload.LoadBalancer != nil {
-		loadBalancer, err = loadBalancerAdmin.GetLoadBalancerByUUID(ctx, payload.LoadBalancer.ID)
-		if err != nil {
-			logger.Ctx(ctx).Errorf("Failed to get load balancer %+v", err)
-			ErrorResponse(c, http.StatusBadRequest, "Failed to get load balancer", err)
-			return
+	change := floatingIpChange(fields, payload)
+	if change.Retarget {
+		if payload.Instance != nil {
+			change.Instance, err = instanceAdmin.GetInstanceByUUID(ctx, payload.Instance.ID)
+			if err != nil {
+				logger.Ctx(ctx).Errorf("Failed to get instance %+v", err)
+				ErrorResponse(c, http.StatusBadRequest, "Failed to get instance", err)
+				return
+			}
+		} else if payload.LoadBalancer != nil {
+			change.LoadBalancer, err = loadBalancerAdmin.GetLoadBalancerByUUID(ctx, payload.LoadBalancer.ID)
+			if err != nil {
+				logger.Ctx(ctx).Errorf("Failed to get load balancer %+v", err)
+				ErrorResponse(c, http.StatusBadRequest, "Failed to get load balancer", err)
+				return
+			}
 		}
 	}
 
-	var group *model.IpGroup
 	if payload.Group != nil {
-		group, err = ipGroupAdmin.GetIpGroupByUUID(ctx, payload.Group.ID)
+		change.Group, err = ipGroupAdmin.GetIpGroupByUUID(ctx, payload.Group.ID)
 		if err != nil {
 			logger.Ctx(ctx).Errorf("Failed to get ip group %+v", err)
 			ErrorResponse(c, http.StatusBadRequest, "Failed to get ip group", err)
 			return
 		}
 	}
-	logger.Ctx(ctx).Debugf("Updating floating ip %s with instance %s, group %s", uuID, instance, group)
-	floatingIp, err = floatingIpAdmin.Update(ctx, floatingIp, instance, group, loadBalancer)
+	logger.Ctx(ctx).Debugf("Updating floating ip %s with %+v", uuID, change)
+	floatingIp, err = floatingIpAdmin.Update(ctx, floatingIp, change)
 	if err != nil {
 		logger.Ctx(ctx).Errorf("Failed to update floating ip %+v", err)
 		ErrorResponse(c, http.StatusBadRequest, "Failed to update floating ip", err)
@@ -209,6 +211,19 @@ func (v *FloatingIpAPI) Patch(c *gin.Context) {
 	}
 	logger.Ctx(ctx).Debugf("Patched floating ip %s, response: %+v", uuID, floatingIpResp)
 	c.JSON(http.StatusOK, floatingIpResp)
+}
+
+// floatingIpChange reads what a PATCH asks for. The attachment only changes when the body has an "instance" or a
+// "load_balancer" key: an object moves the floating IP there, null detaches it. A body with neither, such as one
+// that only sets the bandwidth, keeps it attached where it is
+func floatingIpChange(fields map[string]json.RawMessage, payload *FloatingIpPatchPayload) *services.FloatingIpChange {
+	_, instanceSet := fields["instance"]
+	_, lbSet := fields["load_balancer"]
+	return &services.FloatingIpChange{
+		Retarget: instanceSet || lbSet,
+		Inbound:  payload.Inbound,
+		Outbound: payload.Outbound,
+	}
 }
 
 // @Summary delete a floating ip

@@ -25,7 +25,7 @@ var instanceAdmin = &services.InstanceAdmin{}
 type InstanceAPI struct{}
 
 type InstancePatchPayload struct {
-	Hostname    string      `json:"hostname" binding:"omitempty,hostname|fqdn"`
+	Hostname    string      `json:"hostname" binding:"omitempty,min=2,max=32,hostname|fqdn"` // same rule as InstancePayload
 	PowerAction PowerAction `json:"power_action" binding:"omitempty,oneof=stop hard_stop start restart hard_restart pause resume"`
 }
 
@@ -55,7 +55,7 @@ type InstanceRescuePayload struct {
 type InstancePayload struct {
 	Count               int                 `json:"count" binding:"omitempty,gte=1,lte=16"`
 	Hypervisor          *string             `json:"hypervisor" binding:"omitempty,uuid"` // system admins only
-	Hostname            string              `json:"hostname" binding:"required,hostname|fqdn"`
+	Hostname            string              `json:"hostname" binding:"required,min=2,max=32,hostname|fqdn"`
 	Keys                []*BaseReference    `json:"keys" binding:"omitempty,gte=0,lte=16"`
 	RootPasswd          string              `json:"root_passwd" binding:"omitempty,min=8,max=32"`
 	LoginPort           int                 `json:"login_port" binding:"omitempty,min=0,max=65535"`
@@ -643,7 +643,7 @@ func (v *InstanceAPI) Create(c *gin.Context) {
 			return
 		}
 	}
-	instances, err := instanceAdmin.Create(ctx, count, hostname, userdata, userdataType, vendorData, vendorDataType, image, zone, routerID, primaryIface, secondaryIfaces, keys, rootPasswd, payload.LoginPort, hypervisor, payload.Cpu, payload.Memory, payload.Disk, payload.NestedEnable, bootPool, group)
+	instances, err := instanceAdmin.Create(ctx, count, hostname, userdata, userdataType, vendorData, vendorDataType, image, zone, routerID, primaryIface, secondaryIfaces, keys, rootPasswd, payload.LoginPort, hypervisor, payload.Cpu, payload.Memory, payload.Disk, payload.NestedEnable, bootPool, group, flavor)
 	if err != nil {
 		logger.Ctx(ctx).Errorf("Failed to create instances, %+v", err)
 		ErrorResponse(c, http.StatusBadRequest, "Failed to create instances", err)

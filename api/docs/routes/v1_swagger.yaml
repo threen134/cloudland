@@ -546,8 +546,10 @@ definitions:
       group:
         $ref: '#/definitions/common.BaseID'
       inbound:
+        description: 0 removes the limit (set_floating_bandwidth.sh), so a limit set
+          once can be lifted again
         maximum: 20000
-        minimum: 1
+        minimum: 0
         type: integer
       instance:
         $ref: '#/definitions/common.BaseID'
@@ -555,7 +557,7 @@ definitions:
         $ref: '#/definitions/common.BaseID'
       outbound:
         maximum: 20000
-        minimum: 1
+        minimum: 0
         type: integer
     type: object
   apis.FloatingIpPayload:
@@ -1135,6 +1137,9 @@ definitions:
   apis.InstancePatchPayload:
     properties:
       hostname:
+        description: same rule as InstancePayload
+        maxLength: 32
+        minLength: 2
         type: string
       power_action:
         allOf:
@@ -1165,6 +1170,8 @@ definitions:
         minLength: 1
         type: string
       hostname:
+        maxLength: 32
+        minLength: 2
         type: string
       hypervisor:
         description: system admins only
@@ -4197,7 +4204,12 @@ paths:
             additionalProperties: true
             type: object
         "403":
-          description: Channel not owned
+          description: Channel or rule group not owned
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: Rule group not found
           schema:
             additionalProperties: true
             type: object
@@ -4231,6 +4243,16 @@ paths:
       responses:
         "200":
           description: Rule channel bindings
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: Rule group not owned
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: Rule group not found
           schema:
             additionalProperties: true
             type: object
@@ -4675,7 +4697,10 @@ paths:
     patch:
       consumes:
       - application/json
-      description: patch a floating ip
+      description: 'patch a floating ip. "instance": {"id"} attaches it to that instance
+        and "instance": null detaches it; without an instance or load_balancer key
+        the attachment is kept, so a body with only inbound / outbound changes the
+        bandwidth of the attached floating ip in place'
       parameters:
       - description: Floating ip patch payload
         in: body

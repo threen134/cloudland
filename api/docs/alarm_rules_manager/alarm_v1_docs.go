@@ -410,7 +410,14 @@ const docTemplatealarm_v1 = `{
                         }
                     },
                     "403": {
-                        "description": "Channel not owned",
+                        "description": "Channel or rule group not owned",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "404": {
+                        "description": "Rule group not found",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -458,6 +465,20 @@ const docTemplatealarm_v1 = `{
                 "responses": {
                     "200": {
                         "description": "Rule channel bindings",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "403": {
+                        "description": "Rule group not owned",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "404": {
+                        "description": "Rule group not found",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -1274,7 +1295,7 @@ const docTemplatealarm_v1 = `{
                 }
             },
             "patch": {
-                "description": "patch a floating ip",
+                "description": "patch a floating ip. \"instance\": {\"id\"} attaches it to that instance and \"instance\": null detaches it; without an instance or load_balancer key the attachment is kept, so a body with only inbound / outbound changes the bandwidth of the attached floating ip in place",
                 "consumes": [
                     "application/json"
                 ],
@@ -2856,7 +2877,7 @@ const docTemplatealarm_v1 = `{
         },
         "/instances/{id}/migration_targets": {
             "get": {
-                "description": "for every host of the zone, whether each local disk can stay in its pool, the pool of its fallback group that would replace it, and all usable pools with their free space",
+                "description": "for every host of the zone, whether each local disk can stay in its pool, the pool of its fallback group that would replace it, and all usable pools with their free space. A host that breaks the rule of a strict placement group of the instance is not usable (reason says why); one that breaks a best-effort group carries placement_warning",
                 "produces": [
                     "application/json"
                 ],
@@ -5992,6 +6013,202 @@ const docTemplatealarm_v1 = `{
                 }
             }
         },
+        "/placement_groups": {
+            "get": {
+                "description": "list the placement groups of the organization, each with its member count, the number of hosts they are on and whether the group keeps its rule",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Placement Group"
+                ],
+                "summary": "list placement groups",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Zone name",
+                        "name": "zone",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apis.PlacementGroupListResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "description": "create a placement group in a zone. spread keeps the members on different hosts, pack on one host; a strict group refuses what breaks its rule, a best-effort one relaxes it. An organization has at most 50 groups",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Placement Group"
+                ],
+                "summary": "create a placement group",
+                "parameters": [
+                    {
+                        "description": "Placement group create payload",
+                        "name": "message",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/apis.PlacementGroupPayload"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apis.PlacementGroupResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "409": {
+                        "description": "Name taken (111702) or too many groups (111707)",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            }
+        },
+        "/placement_groups/{id}": {
+            "get": {
+                "description": "get a placement group with its members; host_slot numbers the hosts inside the group, the host names are for system admins only",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Placement Group"
+                ],
+                "summary": "get a placement group",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apis.PlacementGroupResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "404": {
+                        "description": "Not found",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "description": "delete an empty placement group (409 while it has members, being deleted ones included)",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Placement Group"
+                ],
+                "summary": "delete a placement group",
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "409": {
+                        "description": "The group has members (111703)",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            },
+            "patch": {
+                "description": "change the name or the description of a placement group; its policy, strictness and zone can not change (400)",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Placement Group"
+                ],
+                "summary": "patch a placement group",
+                "parameters": [
+                    {
+                        "description": "Placement group patch payload",
+                        "name": "message",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/apis.PlacementGroupPatchPayload"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apis.PlacementGroupResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            }
+        },
         "/rules/links": {
             "get": {
                 "description": "Get VM link information for alarm or adjustment rules by rule_id or UUID",
@@ -7377,6 +7594,803 @@ const docTemplatealarm_v1 = `{
                 }
             }
         },
+        "/vpn_gateways": {
+            "get": {
+                "description": "list VPN gateways",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "VPN Gateway"
+                ],
+                "summary": "list VPN gateways",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apis.VpnGatewayListResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "description": "create a VPN gateway in a VPC with a public address. Its two nodes come from the zone: an active_active gateway needs two available compute nodes there; an active_standby gateway runs on a single node, without high availability, when the zone has only one, and gets its second node once the zone has another (error code 132009 when the zone has too few nodes)",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "VPN Gateway"
+                ],
+                "summary": "create a VPN gateway",
+                "parameters": [
+                    {
+                        "description": "VPN gateway create payload",
+                        "name": "message",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/apis.VpnGatewayPayload"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apis.VpnGatewayResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request, or too few available compute nodes in the zone (132009)",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            }
+        },
+        "/vpn_gateways/{id}": {
+            "get": {
+                "description": "get a VPN gateway with its connections, clients and routed prefixes; the connection keys (psk, bgp_password) are included for members with write permission",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "VPN Gateway"
+                ],
+                "summary": "get a VPN gateway",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apis.VpnGatewayResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "description": "delete a VPN gateway with its connections and clients",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "VPN Gateway"
+                ],
+                "summary": "delete a VPN gateway",
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            },
+            "patch": {
+                "description": "patch a VPN gateway",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "VPN Gateway"
+                ],
+                "summary": "patch a VPN gateway",
+                "parameters": [
+                    {
+                        "description": "VPN gateway patch payload",
+                        "name": "message",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/apis.VpnGatewayPatchPayload"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apis.VpnGatewayResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            }
+        },
+        "/vpn_gateways/{id}/clients": {
+            "get": {
+                "description": "list the WireGuard clients of a VPN gateway",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "VPN Gateway"
+                ],
+                "summary": "list VPN clients",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apis.VpnClientListResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "description": "create a WireGuard client; the response carries the generated private key and full config exactly once",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "VPN Gateway"
+                ],
+                "summary": "create a VPN client",
+                "parameters": [
+                    {
+                        "description": "VPN client create payload",
+                        "name": "message",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/apis.VpnClientPayload"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apis.VpnClientCreateResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            }
+        },
+        "/vpn_gateways/{id}/clients/{client_id}": {
+            "get": {
+                "description": "get a WireGuard client (never includes a private key)",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "VPN Gateway"
+                ],
+                "summary": "get a VPN client",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apis.VpnClientResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "description": "delete a WireGuard client and release its address",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "VPN Gateway"
+                ],
+                "summary": "delete a VPN client",
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            },
+            "patch": {
+                "description": "rename, describe or enable/disable a WireGuard client",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "VPN Gateway"
+                ],
+                "summary": "patch a VPN client",
+                "parameters": [
+                    {
+                        "description": "VPN client patch payload",
+                        "name": "message",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/apis.VpnClientPatchPayload"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apis.VpnClientResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            }
+        },
+        "/vpn_gateways/{id}/clients/{client_id}/config": {
+            "get": {
+                "description": "WireGuard configuration of a client without the private key; the preshared key is filled in for members with write permission",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "VPN Gateway"
+                ],
+                "summary": "get a VPN client configuration template",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apis.VpnClientConfigResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            }
+        },
+        "/vpn_gateways/{id}/connections": {
+            "get": {
+                "description": "list the site-to-site connections of a VPN gateway; psk and bgp_password are included for members with write permission",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "VPN Gateway"
+                ],
+                "summary": "list VPN connections",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apis.VpnConnectionListResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "description": "create a site-to-site IPsec connection (static or BGP routed)",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "VPN Gateway"
+                ],
+                "summary": "create a VPN connection",
+                "parameters": [
+                    {
+                        "description": "VPN connection create payload",
+                        "name": "message",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/apis.VpnConnectionPayload"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apis.VpnConnectionResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            }
+        },
+        "/vpn_gateways/{id}/connections/{conn_id}": {
+            "get": {
+                "description": "get a site-to-site connection; psk and bgp_password are included for members with write permission",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "VPN Gateway"
+                ],
+                "summary": "get a VPN connection",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apis.VpnConnectionResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "description": "delete a site-to-site connection",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "VPN Gateway"
+                ],
+                "summary": "delete a VPN connection",
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            },
+            "patch": {
+                "description": "patch a site-to-site connection; changed fields are pushed to the gateway",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "VPN Gateway"
+                ],
+                "summary": "patch a VPN connection",
+                "parameters": [
+                    {
+                        "description": "VPN connection patch payload",
+                        "name": "message",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/apis.VpnConnectionPatchPayload"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apis.VpnConnectionResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            }
+        },
+        "/vpn_gateways/{id}/connections/{conn_id}/restart": {
+            "post": {
+                "description": "terminate and re-initiate the IKE SAs of a connection: every tunnel, or only the one in the given slot",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "VPN Gateway"
+                ],
+                "summary": "restart a VPN connection",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Slot of the tunnel to restart (1 to 4); all tunnels when omitted",
+                        "name": "tunnel",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apis.VpnConnectionResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            }
+        },
+        "/vpn_gateways/{id}/public_ips": {
+            "post": {
+                "description": "give an active-standby gateway its second floating IP (vip2), or an active-active gateway the floating IP of its client VPN (vip1); see addable_endpoint of the gateway",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "VPN Gateway"
+                ],
+                "summary": "add a public address to a VPN gateway",
+                "parameters": [
+                    {
+                        "description": "public subnet and / or address, both optional",
+                        "name": "message",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/apis.VpnPublicIpPayload"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apis.VpnGatewayResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            }
+        },
+        "/vpn_gateways/{id}/public_ips/{endpoint}": {
+            "get": {
+                "description": "get one public address of a VPN gateway by endpoint (vip1, vip2, node1, node2)",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "VPN Gateway"
+                ],
+                "summary": "get a public address of a VPN gateway",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apis.VpnPublicIpResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "description": "release the second floating IP of an active-standby gateway (no tunnel may use it) or the client VPN floating IP of an active-active gateway (client VPN disabled)",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "VPN Gateway"
+                ],
+                "summary": "remove a public address from a VPN gateway",
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            }
+        },
+        "/vpn_gateways/{id}/traffic": {
+            "get": {
+                "description": "Rate of every site connection and WireGuard client of the gateway in bits per second, from the tunnel counters the gateway master exports to Prometheus. Deleted connections and clients are left out.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "VPN Gateway"
+                ],
+                "summary": "VPN gateway traffic history",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "VPN gateway UUID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Start, unix seconds",
+                        "name": "start",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "End, unix seconds",
+                        "name": "end",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Resolution as a duration, e.g. 60s or 5m",
+                        "name": "step",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "connection (default): one series per connection; tunnel: one per tunnel",
+                        "name": "by",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apis.VpnTrafficResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            }
+        },
         "/zones": {
             "get": {
                 "description": "list zones",
@@ -8353,9 +9367,10 @@ const docTemplatealarm_v1 = `{
                     "$ref": "#/definitions/common.BaseID"
                 },
                 "inbound": {
+                    "description": "0 removes the limit (set_floating_bandwidth.sh), so a limit set once can be lifted again",
                     "type": "integer",
                     "maximum": 20000,
-                    "minimum": 1
+                    "minimum": 0
                 },
                 "instance": {
                     "$ref": "#/definitions/common.BaseID"
@@ -8366,7 +9381,7 @@ const docTemplatealarm_v1 = `{
                 "outbound": {
                     "type": "integer",
                     "maximum": 20000,
-                    "minimum": 1
+                    "minimum": 0
                 }
             }
         },
@@ -9202,7 +10217,10 @@ const docTemplatealarm_v1 = `{
             "type": "object",
             "properties": {
                 "hostname": {
-                    "type": "string"
+                    "description": "same rule as InstancePayload",
+                    "type": "string",
+                    "maxLength": 32,
+                    "minLength": 2
                 },
                 "power_action": {
                     "enum": [
@@ -9250,7 +10268,9 @@ const docTemplatealarm_v1 = `{
                     "minLength": 1
                 },
                 "hostname": {
-                    "type": "string"
+                    "type": "string",
+                    "maxLength": 32,
+                    "minLength": 2
                 },
                 "hypervisor": {
                     "description": "system admins only",
@@ -9278,6 +10298,14 @@ const docTemplatealarm_v1 = `{
                 },
                 "nested_enable": {
                     "type": "boolean"
+                },
+                "placement_group": {
+                    "description": "group of the organization in the same zone",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/common.BaseReference"
+                        }
+                    ]
                 },
                 "primary_interface": {
                     "$ref": "#/definitions/apis.InterfacePayload"
@@ -9447,6 +10475,14 @@ const docTemplatealarm_v1 = `{
                 },
                 "passwd_login": {
                     "type": "boolean"
+                },
+                "placement_group": {
+                    "description": "Left out when the instance is not in a placement group",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/apis.PlacementGroupRef"
+                        }
+                    ]
                 },
                 "reason": {
                     "type": "string"
@@ -10053,6 +11089,10 @@ const docTemplatealarm_v1 = `{
                     "description": "OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to\nrelease quota only when the caller's org actually owns the deleted resource",
                     "type": "string"
                 },
+                "single_node": {
+                    "description": "Available on its MASTER node alone, without high availability: its zone had no second available node.\nThe BACKUP node is added once the zone has one",
+                    "type": "boolean"
+                },
                 "status": {
                     "type": "string"
                 },
@@ -10199,6 +11239,10 @@ const docTemplatealarm_v1 = `{
                     "description": "Skip the capacity checks of the target, to evacuate a host when every other one is nearly full",
                     "type": "boolean"
                 },
+                "ignore_placement": {
+                    "description": "Skip the rules of the placement groups of the instances; a strict group may end up broken",
+                    "type": "boolean"
+                },
                 "instances": {
                     "type": "array",
                     "minItems": 1,
@@ -10250,6 +11294,9 @@ const docTemplatealarm_v1 = `{
                 "ignore_capacity": {
                     "type": "boolean"
                 },
+                "ignore_placement": {
+                    "type": "boolean"
+                },
                 "instance": {
                     "$ref": "#/definitions/apis.InstanceInfo"
                 },
@@ -10268,6 +11315,10 @@ const docTemplatealarm_v1 = `{
                     "items": {
                         "$ref": "#/definitions/apis.TaskResponse"
                     }
+                },
+                "placement_warning": {
+                    "description": "The rule of a best-effort placement group the given target breaks; only in the create response",
+                    "type": "string"
                 },
                 "progress": {
                     "description": "迁移进度：百分比与已传输 / 总字节数（内存 + 本地磁盘合计），由源节点上报",
@@ -10299,6 +11350,189 @@ const docTemplatealarm_v1 = `{
                     "type": "string"
                 },
                 "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "apis.PlacementGroupListResponse": {
+            "type": "object",
+            "properties": {
+                "limit": {
+                    "type": "integer"
+                },
+                "offset": {
+                    "type": "integer"
+                },
+                "placement_groups": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/apis.PlacementGroupResponse"
+                    }
+                },
+                "total": {
+                    "type": "integer"
+                }
+            }
+        },
+        "apis.PlacementGroupMemberResponse": {
+            "type": "object",
+            "properties": {
+                "host_slot": {
+                    "description": "Number of the host inside the group: members on the same host have the same number, 0 when it has no host yet.\nEveryone sees it; the host name is for system admins only",
+                    "type": "integer"
+                },
+                "hostname": {
+                    "type": "string"
+                },
+                "hypervisor": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "ignored_placement": {
+                    "type": "boolean"
+                },
+                "last_migration_failed": {
+                    "description": "Its latest migration failed, or was done ignoring the rules: why a strict group may be split",
+                    "type": "boolean"
+                },
+                "migration_id": {
+                    "type": "string"
+                },
+                "stale_migration": {
+                    "description": "A migration of it has not moved for an hour: it keeps holding its target until an admin repairs it",
+                    "type": "boolean"
+                },
+                "stale_provisioning": {
+                    "description": "Still being created after an hour: it keeps holding its host, deleting it frees the host",
+                    "type": "boolean"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "target_slot": {
+                    "description": "Host of an in-flight migration, 0 when none",
+                    "type": "integer"
+                }
+            }
+        },
+        "apis.PlacementGroupPatchPayload": {
+            "type": "object",
+            "properties": {
+                "description": {
+                    "type": "string",
+                    "maxLength": 255
+                },
+                "name": {
+                    "type": "string",
+                    "maxLength": 32,
+                    "minLength": 2
+                }
+            }
+        },
+        "apis.PlacementGroupPayload": {
+            "type": "object",
+            "required": [
+                "name",
+                "policy"
+            ],
+            "properties": {
+                "description": {
+                    "type": "string",
+                    "maxLength": 255
+                },
+                "name": {
+                    "type": "string",
+                    "maxLength": 32,
+                    "minLength": 2
+                },
+                "policy": {
+                    "type": "string",
+                    "enum": [
+                        "spread",
+                        "pack"
+                    ]
+                },
+                "strict": {
+                    "description": "Defaults to true for spread and false for pack",
+                    "type": "boolean"
+                },
+                "zone": {
+                    "description": "zone name, the default zone when left out",
+                    "type": "string",
+                    "maxLength": 32,
+                    "minLength": 1
+                }
+            }
+        },
+        "apis.PlacementGroupRef": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "policy": {
+                    "type": "string"
+                },
+                "strict": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "apis.PlacementGroupResponse": {
+            "type": "object",
+            "properties": {
+                "compliant": {
+                    "type": "boolean"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "host_count": {
+                    "description": "Number of distinct hosts the members are on (or are being created on)",
+                    "type": "integer"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "member_count": {
+                    "type": "integer"
+                },
+                "members": {
+                    "description": "Detail only",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/apis.PlacementGroupMemberResponse"
+                    }
+                },
+                "name": {
+                    "type": "string"
+                },
+                "owner": {
+                    "type": "string"
+                },
+                "owner_uuid": {
+                    "description": "OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to\nrelease quota only when the caller's org actually owns the deleted resource",
+                    "type": "string"
+                },
+                "policy": {
+                    "description": "spread | pack",
+                    "type": "string"
+                },
+                "strict": {
+                    "type": "boolean"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "zone": {
                     "type": "string"
                 }
             }
@@ -11337,6 +12571,1179 @@ const docTemplatealarm_v1 = `{
                 }
             }
         },
+        "apis.VpnClientConfigResponse": {
+            "type": "object",
+            "properties": {
+                "config": {
+                    "type": "string"
+                }
+            }
+        },
+        "apis.VpnClientCreateResponse": {
+            "type": "object",
+            "properties": {
+                "bytes_in": {
+                    "type": "integer"
+                },
+                "bytes_out": {
+                    "type": "integer"
+                },
+                "config": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "enabled": {
+                    "type": "boolean"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "ip_address": {
+                    "type": "string"
+                },
+                "last_handshake_at": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "owner": {
+                    "type": "string"
+                },
+                "owner_uuid": {
+                    "description": "OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to\nrelease quota only when the caller's org actually owns the deleted resource",
+                    "type": "string"
+                },
+                "preshared_key_set": {
+                    "type": "boolean"
+                },
+                "private_key": {
+                    "type": "string"
+                },
+                "protocol": {
+                    "type": "string"
+                },
+                "public_key": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "apis.VpnClientListResponse": {
+            "type": "object",
+            "properties": {
+                "clients": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/apis.VpnClientResponse"
+                    }
+                },
+                "total": {
+                    "type": "integer"
+                }
+            }
+        },
+        "apis.VpnClientPatchPayload": {
+            "type": "object",
+            "properties": {
+                "description": {
+                    "type": "string",
+                    "maxLength": 255
+                },
+                "enabled": {
+                    "type": "boolean"
+                },
+                "name": {
+                    "type": "string",
+                    "maxLength": 32,
+                    "minLength": 2
+                }
+            }
+        },
+        "apis.VpnClientPayload": {
+            "type": "object",
+            "required": [
+                "name"
+            ],
+            "properties": {
+                "description": {
+                    "type": "string",
+                    "maxLength": 255
+                },
+                "enabled": {
+                    "type": "boolean"
+                },
+                "name": {
+                    "type": "string",
+                    "maxLength": 32,
+                    "minLength": 2
+                },
+                "preshared_key": {
+                    "type": "boolean"
+                },
+                "public_key": {
+                    "type": "string",
+                    "maxLength": 64
+                }
+            }
+        },
+        "apis.VpnClientResponse": {
+            "type": "object",
+            "properties": {
+                "bytes_in": {
+                    "type": "integer"
+                },
+                "bytes_out": {
+                    "type": "integer"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "enabled": {
+                    "type": "boolean"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "ip_address": {
+                    "type": "string"
+                },
+                "last_handshake_at": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "owner": {
+                    "type": "string"
+                },
+                "owner_uuid": {
+                    "description": "OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to\nrelease quota only when the caller's org actually owns the deleted resource",
+                    "type": "string"
+                },
+                "preshared_key_set": {
+                    "type": "boolean"
+                },
+                "protocol": {
+                    "type": "string"
+                },
+                "public_key": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "apis.VpnConnectionListResponse": {
+            "type": "object",
+            "properties": {
+                "connections": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/apis.VpnConnectionResponse"
+                    }
+                },
+                "total": {
+                    "type": "integer"
+                }
+            }
+        },
+        "apis.VpnConnectionPatchPayload": {
+            "type": "object",
+            "properties": {
+                "as_path_prepend": {
+                    "type": "integer",
+                    "maximum": 10,
+                    "minimum": 0
+                },
+                "bfd_enabled": {
+                    "type": "boolean"
+                },
+                "bfd_interval": {
+                    "type": "integer",
+                    "maximum": 60000,
+                    "minimum": 300
+                },
+                "bfd_multiplier": {
+                    "type": "integer",
+                    "maximum": 50,
+                    "minimum": 2
+                },
+                "bgp_hold": {
+                    "type": "integer",
+                    "maximum": 10800,
+                    "minimum": 3
+                },
+                "bgp_keepalive": {
+                    "type": "integer",
+                    "maximum": 3600,
+                    "minimum": 1
+                },
+                "bgp_password": {
+                    "type": "string",
+                    "maxLength": 80
+                },
+                "description": {
+                    "type": "string",
+                    "maxLength": 255
+                },
+                "dpd_action": {
+                    "type": "string",
+                    "enum": [
+                        "restart",
+                        "clear",
+                        "none"
+                    ]
+                },
+                "dpd_delay": {
+                    "type": "integer",
+                    "maximum": 3600,
+                    "minimum": 5
+                },
+                "esp_lifetime": {
+                    "type": "integer",
+                    "maximum": 86400,
+                    "minimum": 300
+                },
+                "esp_proposal": {
+                    "type": "string",
+                    "maxLength": 128
+                },
+                "ike_lifetime": {
+                    "type": "integer",
+                    "maximum": 604800,
+                    "minimum": 300
+                },
+                "ike_proposal": {
+                    "type": "string",
+                    "maxLength": 128
+                },
+                "initiator": {
+                    "type": "boolean"
+                },
+                "local_asn": {
+                    "type": "integer",
+                    "maximum": 4294967295,
+                    "minimum": 1
+                },
+                "local_cidrs": {
+                    "type": "string",
+                    "maxLength": 512
+                },
+                "local_id": {
+                    "type": "string",
+                    "maxLength": 128
+                },
+                "max_prefixes": {
+                    "type": "integer",
+                    "maximum": 100000,
+                    "minimum": 1
+                },
+                "name": {
+                    "type": "string",
+                    "maxLength": 32,
+                    "minLength": 2
+                },
+                "peer_asn": {
+                    "type": "integer",
+                    "maximum": 4294967295,
+                    "minimum": 1
+                },
+                "psk": {
+                    "type": "string",
+                    "maxLength": 128
+                },
+                "remote_cidrs": {
+                    "type": "string",
+                    "maxLength": 512
+                },
+                "remote_gateway": {
+                    "type": "string",
+                    "maxLength": 64
+                },
+                "remote_id": {
+                    "type": "string",
+                    "maxLength": 128
+                },
+                "remote_summary_cidrs": {
+                    "type": "string",
+                    "maxLength": 512
+                },
+                "route_mode": {
+                    "type": "string",
+                    "enum": [
+                        "static",
+                        "bgp"
+                    ]
+                },
+                "traffic_policy": {
+                    "type": "string",
+                    "enum": [
+                        "preferred",
+                        "ecmp"
+                    ]
+                },
+                "tunnel_local_ip": {
+                    "type": "string",
+                    "maxLength": 64
+                },
+                "tunnel_peer_ip": {
+                    "type": "string",
+                    "maxLength": 64
+                },
+                "tunnels": {
+                    "type": "array",
+                    "maxItems": 4,
+                    "items": {
+                        "$ref": "#/definitions/apis.VpnTunnelPayload"
+                    }
+                }
+            }
+        },
+        "apis.VpnConnectionPayload": {
+            "type": "object",
+            "required": [
+                "name"
+            ],
+            "properties": {
+                "as_path_prepend": {
+                    "type": "integer",
+                    "maximum": 10,
+                    "minimum": 0
+                },
+                "bfd_enabled": {
+                    "type": "boolean"
+                },
+                "bfd_interval": {
+                    "type": "integer",
+                    "maximum": 60000,
+                    "minimum": 300
+                },
+                "bfd_multiplier": {
+                    "type": "integer",
+                    "maximum": 50,
+                    "minimum": 2
+                },
+                "bgp_hold": {
+                    "type": "integer",
+                    "maximum": 10800,
+                    "minimum": 3
+                },
+                "bgp_keepalive": {
+                    "type": "integer",
+                    "maximum": 3600,
+                    "minimum": 1
+                },
+                "bgp_password": {
+                    "type": "string",
+                    "maxLength": 80
+                },
+                "description": {
+                    "type": "string",
+                    "maxLength": 255
+                },
+                "dpd_action": {
+                    "type": "string",
+                    "enum": [
+                        "restart",
+                        "clear",
+                        "none"
+                    ]
+                },
+                "dpd_delay": {
+                    "type": "integer",
+                    "maximum": 3600,
+                    "minimum": 5
+                },
+                "esp_lifetime": {
+                    "type": "integer",
+                    "maximum": 86400,
+                    "minimum": 300
+                },
+                "esp_proposal": {
+                    "type": "string",
+                    "maxLength": 128
+                },
+                "ike_lifetime": {
+                    "type": "integer",
+                    "maximum": 604800,
+                    "minimum": 300
+                },
+                "ike_proposal": {
+                    "type": "string",
+                    "maxLength": 128
+                },
+                "initiator": {
+                    "type": "boolean"
+                },
+                "local_asn": {
+                    "type": "integer",
+                    "maximum": 4294967295,
+                    "minimum": 1
+                },
+                "local_cidrs": {
+                    "type": "string",
+                    "maxLength": 512
+                },
+                "local_id": {
+                    "type": "string",
+                    "maxLength": 128
+                },
+                "max_prefixes": {
+                    "type": "integer",
+                    "maximum": 100000,
+                    "minimum": 1
+                },
+                "name": {
+                    "type": "string",
+                    "maxLength": 32,
+                    "minLength": 2
+                },
+                "peer_asn": {
+                    "type": "integer",
+                    "maximum": 4294967295,
+                    "minimum": 1
+                },
+                "psk": {
+                    "type": "string",
+                    "maxLength": 128
+                },
+                "remote_cidrs": {
+                    "type": "string",
+                    "maxLength": 512
+                },
+                "remote_gateway": {
+                    "type": "string"
+                },
+                "remote_id": {
+                    "type": "string",
+                    "maxLength": 128
+                },
+                "remote_summary_cidrs": {
+                    "type": "string",
+                    "maxLength": 512
+                },
+                "route_mode": {
+                    "type": "string",
+                    "enum": [
+                        "static",
+                        "bgp"
+                    ]
+                },
+                "traffic_policy": {
+                    "description": "preferred (default): the primary tunnel carries the traffic; ecmp: every tunnel that is up shares it",
+                    "type": "string",
+                    "enum": [
+                        "preferred",
+                        "ecmp"
+                    ]
+                },
+                "tunnel_local_ip": {
+                    "type": "string"
+                },
+                "tunnel_peer_ip": {
+                    "type": "string"
+                },
+                "tunnels": {
+                    "type": "array",
+                    "maxItems": 4,
+                    "items": {
+                        "$ref": "#/definitions/apis.VpnTunnelPayload"
+                    }
+                }
+            }
+        },
+        "apis.VpnConnectionResponse": {
+            "type": "object",
+            "properties": {
+                "as_path_prepend": {
+                    "type": "integer"
+                },
+                "auth_method": {
+                    "type": "string"
+                },
+                "bfd_enabled": {
+                    "type": "boolean"
+                },
+                "bfd_interval": {
+                    "type": "integer"
+                },
+                "bfd_multiplier": {
+                    "type": "integer"
+                },
+                "bgp_hold": {
+                    "type": "integer"
+                },
+                "bgp_keepalive": {
+                    "type": "integer"
+                },
+                "bgp_password": {
+                    "type": "string"
+                },
+                "bgp_password_set": {
+                    "type": "boolean"
+                },
+                "bytes_in": {
+                    "description": "sum over the tunnels",
+                    "type": "integer"
+                },
+                "bytes_out": {
+                    "description": "sum over the tunnels",
+                    "type": "integer"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "dpd_action": {
+                    "type": "string"
+                },
+                "dpd_delay": {
+                    "type": "integer"
+                },
+                "effective_local_cidrs": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "esp_lifetime": {
+                    "type": "integer"
+                },
+                "esp_proposal": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "ike_lifetime": {
+                    "type": "integer"
+                },
+                "ike_proposal": {
+                    "type": "string"
+                },
+                "ike_version": {
+                    "type": "integer"
+                },
+                "initiator": {
+                    "type": "boolean"
+                },
+                "local_asn": {
+                    "type": "integer"
+                },
+                "local_cidrs": {
+                    "type": "string"
+                },
+                "local_id": {
+                    "type": "string"
+                },
+                "max_prefixes": {
+                    "type": "integer"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "owner": {
+                    "type": "string"
+                },
+                "owner_uuid": {
+                    "description": "OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to\nrelease quota only when the caller's org actually owns the deleted resource",
+                    "type": "string"
+                },
+                "peer_asn": {
+                    "type": "integer"
+                },
+                "psk": {
+                    "description": "The keys themselves, only for members with write permission on the gateway (vpnSecretsVisible)",
+                    "type": "string"
+                },
+                "psk_set": {
+                    "type": "boolean"
+                },
+                "remote_cidrs": {
+                    "type": "string"
+                },
+                "remote_summary_cidrs": {
+                    "type": "string"
+                },
+                "route_mode": {
+                    "type": "string"
+                },
+                "status": {
+                    "description": "pending, up, degraded (only a standby tunnel is up), down, disabled",
+                    "type": "string"
+                },
+                "traffic_policy": {
+                    "description": "preferred or ecmp",
+                    "type": "string"
+                },
+                "tunnels": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/apis.VpnTunnelResponse"
+                    }
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "apis.VpnGatewayListResponse": {
+            "type": "object",
+            "properties": {
+                "limit": {
+                    "type": "integer"
+                },
+                "offset": {
+                    "type": "integer"
+                },
+                "total": {
+                    "type": "integer"
+                },
+                "vpn_gateways": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/apis.VpnGatewayResponse"
+                    }
+                }
+            }
+        },
+        "apis.VpnGatewayPatchPayload": {
+            "type": "object",
+            "properties": {
+                "client_cidr": {
+                    "type": "string",
+                    "maxLength": 64
+                },
+                "client_dns": {
+                    "type": "string",
+                    "maxLength": 128
+                },
+                "client_enabled": {
+                    "type": "boolean"
+                },
+                "client_port": {
+                    "type": "integer",
+                    "maximum": 65535,
+                    "minimum": 1
+                },
+                "client_routes": {
+                    "type": "string",
+                    "maxLength": 512
+                },
+                "description": {
+                    "type": "string",
+                    "maxLength": 255
+                },
+                "enabled": {
+                    "description": "false pauses the whole gateway (tunnels, BGP, WireGuard) while keeping its public IP and configuration",
+                    "type": "boolean"
+                },
+                "ipsec_enabled": {
+                    "type": "boolean"
+                },
+                "name": {
+                    "type": "string",
+                    "maxLength": 32,
+                    "minLength": 2
+                }
+            }
+        },
+        "apis.VpnGatewayPayload": {
+            "type": "object",
+            "required": [
+                "name",
+                "vpc"
+            ],
+            "properties": {
+                "client_cidr": {
+                    "type": "string",
+                    "maxLength": 64
+                },
+                "client_dns": {
+                    "type": "string",
+                    "maxLength": 128
+                },
+                "client_enabled": {
+                    "type": "boolean"
+                },
+                "client_port": {
+                    "type": "integer",
+                    "maximum": 65535,
+                    "minimum": 1
+                },
+                "client_routes": {
+                    "type": "string",
+                    "maxLength": 512
+                },
+                "description": {
+                    "type": "string",
+                    "maxLength": 255
+                },
+                "ha_mode": {
+                    "description": "active_standby (default): the VRRP master runs every tunnel from one or two floating IPs.\nactive_active: each of the two nodes runs its own tunnels from a fixed address, both carry traffic",
+                    "type": "string",
+                    "enum": [
+                        "active_standby",
+                        "active_active"
+                    ]
+                },
+                "inbound": {
+                    "type": "integer",
+                    "maximum": 20000,
+                    "minimum": 1
+                },
+                "ipsec_enabled": {
+                    "type": "boolean"
+                },
+                "name": {
+                    "type": "string",
+                    "maxLength": 32,
+                    "minLength": 2
+                },
+                "outbound": {
+                    "type": "integer",
+                    "maximum": 20000,
+                    "minimum": 1
+                },
+                "public_ip": {
+                    "type": "string"
+                },
+                "public_ips": {
+                    "description": "active_standby: one or two entries (vip1, vip2). active_active: node1, node2 and, with client VPN, the\nclient floating IP; missing entries come from the subnet of the first one. public_subnet / public_ip\nabove are the short form of a single entry and are ignored when this is given",
+                    "type": "array",
+                    "maxItems": 3,
+                    "items": {
+                        "$ref": "#/definitions/apis.VpnPublicIpPayload"
+                    }
+                },
+                "public_subnet": {
+                    "$ref": "#/definitions/common.BaseReference"
+                },
+                "vpc": {
+                    "$ref": "#/definitions/common.BaseReference"
+                },
+                "zone": {
+                    "type": "string",
+                    "maxLength": 32,
+                    "minLength": 1
+                }
+            }
+        },
+        "apis.VpnGatewayResponse": {
+            "type": "object",
+            "properties": {
+                "addable_endpoint": {
+                    "description": "The public address POST /vpn_gateways/{id}/public_ips would add (vip2, or vip1 for the client VPN of an\nactive_active gateway), empty when the gateway has it already",
+                    "type": "string"
+                },
+                "client_cidr": {
+                    "type": "string"
+                },
+                "client_count": {
+                    "type": "integer"
+                },
+                "client_dns": {
+                    "type": "string"
+                },
+                "client_enabled": {
+                    "type": "boolean"
+                },
+                "client_port": {
+                    "type": "integer"
+                },
+                "client_protocol": {
+                    "type": "string"
+                },
+                "client_public_key": {
+                    "type": "string"
+                },
+                "client_routes": {
+                    "type": "string"
+                },
+                "clients": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/apis.VpnClientResponse"
+                    }
+                },
+                "connection_count": {
+                    "type": "integer"
+                },
+                "connections": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/apis.VpnConnectionResponse"
+                    }
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "effective_client_routes": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "enabled": {
+                    "type": "boolean"
+                },
+                "floating_ips": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/apis.FloatingIpInfo"
+                    }
+                },
+                "ha_mode": {
+                    "description": "active_standby or active_active",
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "ipsec_enabled": {
+                    "type": "boolean"
+                },
+                "master_hostname": {
+                    "type": "string"
+                },
+                "master_hyper": {
+                    "type": "integer"
+                },
+                "master_reported_at": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "nodes": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/apis.VpnNodeInfo"
+                    }
+                },
+                "owner": {
+                    "type": "string"
+                },
+                "owner_uuid": {
+                    "description": "OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to\nrelease quota only when the caller's org actually owns the deleted resource",
+                    "type": "string"
+                },
+                "public_ip": {
+                    "description": "vip1, or node1 on an active_active gateway without client VPN",
+                    "type": "string"
+                },
+                "public_ips": {
+                    "description": "every address with its endpoint name",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/apis.VpnPublicIpInfo"
+                    }
+                },
+                "remote_prefixes": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/apis.VpnPrefixResponse"
+                    }
+                },
+                "status": {
+                    "type": "string"
+                },
+                "status_reason": {
+                    "description": "why the gateway is in error; empty otherwise",
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "vpc": {
+                    "$ref": "#/definitions/common.ResourceReference"
+                },
+                "zone": {
+                    "type": "string"
+                }
+            }
+        },
+        "apis.VpnNodeInfo": {
+            "type": "object",
+            "properties": {
+                "hostid": {
+                    "type": "integer"
+                },
+                "hostname": {
+                    "type": "string"
+                },
+                "master": {
+                    "type": "boolean"
+                },
+                "role": {
+                    "type": "string"
+                }
+            }
+        },
+        "apis.VpnPrefixResponse": {
+            "type": "object",
+            "properties": {
+                "cidr": {
+                    "type": "string"
+                },
+                "ref_id": {
+                    "type": "integer"
+                },
+                "source": {
+                    "type": "string"
+                }
+            }
+        },
+        "apis.VpnPublicIpInfo": {
+            "type": "object",
+            "properties": {
+                "address": {
+                    "type": "string"
+                },
+                "endpoint": {
+                    "description": "vip1 / vip2 (floating), node1 / node2 (fixed on one node of an active_active gateway)",
+                    "type": "string"
+                },
+                "hostid": {
+                    "description": "the node of a fixed address, -1 for a floating one",
+                    "type": "integer"
+                },
+                "hostname": {
+                    "description": "the node of a fixed address",
+                    "type": "string"
+                }
+            }
+        },
+        "apis.VpnPublicIpPayload": {
+            "type": "object",
+            "properties": {
+                "public_ip": {
+                    "type": "string"
+                },
+                "public_subnet": {
+                    "$ref": "#/definitions/common.BaseReference"
+                }
+            }
+        },
+        "apis.VpnPublicIpResponse": {
+            "type": "object",
+            "properties": {
+                "address": {
+                    "type": "string"
+                },
+                "endpoint": {
+                    "description": "vip1 / vip2 (floating), node1 / node2 (fixed on one node of an active_active gateway)",
+                    "type": "string"
+                },
+                "hostid": {
+                    "description": "the node of a fixed address, -1 for a floating one",
+                    "type": "integer"
+                },
+                "hostname": {
+                    "description": "the node of a fixed address",
+                    "type": "string"
+                },
+                "owner_uuid": {
+                    "type": "string"
+                }
+            }
+        },
+        "apis.VpnTrafficResponse": {
+            "type": "object",
+            "properties": {
+                "clients": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/apis.VpnTrafficSeries"
+                    }
+                },
+                "connections": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/apis.VpnTrafficSeries"
+                    }
+                },
+                "end": {
+                    "type": "integer"
+                },
+                "start": {
+                    "type": "integer"
+                },
+                "step": {
+                    "type": "string"
+                },
+                "timestamps": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                }
+            }
+        },
+        "apis.VpnTrafficSeries": {
+            "type": "object",
+            "properties": {
+                "connection_id": {
+                    "description": "by=tunnel: the series is one tunnel (ID is the tunnel) of this connection, in this slot",
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "in": {
+                    "description": "from the site / from the client",
+                    "type": "array",
+                    "items": {
+                        "type": "number"
+                    }
+                },
+                "name": {
+                    "type": "string"
+                },
+                "out": {
+                    "description": "to the site / to the client",
+                    "type": "array",
+                    "items": {
+                        "type": "number"
+                    }
+                },
+                "slot": {
+                    "type": "integer"
+                }
+            }
+        },
+        "apis.VpnTunnelPayload": {
+            "type": "object",
+            "properties": {
+                "endpoint": {
+                    "type": "string",
+                    "enum": [
+                        "vip1",
+                        "vip2",
+                        "node1",
+                        "node2"
+                    ]
+                },
+                "priority": {
+                    "type": "string",
+                    "enum": [
+                        "primary",
+                        "standby"
+                    ]
+                },
+                "psk": {
+                    "type": "string",
+                    "maxLength": 128
+                },
+                "remote_gateway": {
+                    "type": "string"
+                },
+                "remote_id": {
+                    "type": "string",
+                    "maxLength": 128
+                },
+                "tunnel_local_ip": {
+                    "type": "string"
+                },
+                "tunnel_peer_ip": {
+                    "type": "string"
+                }
+            }
+        },
+        "apis.VpnTunnelResponse": {
+            "type": "object",
+            "properties": {
+                "bfd_state": {
+                    "type": "string"
+                },
+                "bgp": {
+                    "$ref": "#/definitions/services.VpnBgpReport"
+                },
+                "bgp_reported_at": {
+                    "type": "string"
+                },
+                "bytes_in": {
+                    "type": "integer"
+                },
+                "bytes_out": {
+                    "type": "integer"
+                },
+                "endpoint": {
+                    "description": "vip1 / vip2, or node1 / node2 on an active_active gateway",
+                    "type": "string"
+                },
+                "established_at": {
+                    "type": "string"
+                },
+                "hostid": {
+                    "description": "the node running it on an active_active gateway, -1 otherwise (the master)",
+                    "type": "integer"
+                },
+                "hostname": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "if_id": {
+                    "type": "integer"
+                },
+                "last_error": {
+                    "type": "string"
+                },
+                "priority": {
+                    "description": "primary or standby (every tunnel is primary with traffic_policy ecmp)",
+                    "type": "string"
+                },
+                "psk": {
+                    "description": "The tunnel-specific key, only for members with write permission on the gateway",
+                    "type": "string"
+                },
+                "psk_set": {
+                    "description": "a tunnel-specific key; otherwise the connection's",
+                    "type": "boolean"
+                },
+                "public_ip": {
+                    "description": "our address of this tunnel",
+                    "type": "string"
+                },
+                "remote_gateway": {
+                    "type": "string"
+                },
+                "remote_id": {
+                    "type": "string"
+                },
+                "slot": {
+                    "type": "integer"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "tunnel_local_ip": {
+                    "type": "string"
+                },
+                "tunnel_peer_ip": {
+                    "type": "string"
+                }
+            }
+        },
         "apis.ZoneListResponse": {
             "type": "object",
             "properties": {
@@ -11621,6 +14028,14 @@ const docTemplatealarm_v1 = `{
                 "hostname": {
                     "type": "string"
                 },
+                "placement_blocked": {
+                    "description": "Not usable only because of the rule of a strict placement group: usable with ignore_placement",
+                    "type": "boolean"
+                },
+                "placement_warning": {
+                    "description": "A rule of a best-effort placement group this target breaks, or a note on the members of a strict pack group\nthat must move in the same request",
+                    "type": "string"
+                },
                 "reason": {
                     "type": "string"
                 },
@@ -11703,6 +14118,51 @@ const docTemplatealarm_v1 = `{
                     "type": "string"
                 },
                 "volume_uuid": {
+                    "type": "string"
+                }
+            }
+        },
+        "services.VpnBgpReport": {
+            "type": "object",
+            "properties": {
+                "accepted": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "advertised": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "bfd": {
+                    "description": "BFD session state (up, down, init) when BFD is on",
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "prefixes_received": {
+                    "type": "integer"
+                },
+                "prefixes_sent": {
+                    "type": "integer"
+                },
+                "rejected": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "state": {
+                    "type": "string"
+                },
+                "truncated": {
+                    "type": "boolean"
+                },
+                "uptime": {
                     "type": "string"
                 }
             }

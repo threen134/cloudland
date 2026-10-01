@@ -546,8 +546,10 @@ definitions:
       group:
         $ref: '#/definitions/common.BaseID'
       inbound:
+        description: 0 removes the limit (set_floating_bandwidth.sh), so a limit set
+          once can be lifted again
         maximum: 20000
-        minimum: 1
+        minimum: 0
         type: integer
       instance:
         $ref: '#/definitions/common.BaseID'
@@ -555,7 +557,7 @@ definitions:
         $ref: '#/definitions/common.BaseID'
       outbound:
         maximum: 20000
-        minimum: 1
+        minimum: 0
         type: integer
     type: object
   apis.FloatingIpPayload:
@@ -1135,6 +1137,9 @@ definitions:
   apis.InstancePatchPayload:
     properties:
       hostname:
+        description: same rule as InstancePayload
+        maxLength: 32
+        minLength: 2
         type: string
       power_action:
         allOf:
@@ -1165,6 +1170,8 @@ definitions:
         minLength: 1
         type: string
       hostname:
+        maxLength: 32
+        minLength: 2
         type: string
       hypervisor:
         description: system admins only
@@ -1186,6 +1193,10 @@ definitions:
         type: integer
       nested_enable:
         type: boolean
+      placement_group:
+        allOf:
+        - $ref: '#/definitions/common.BaseReference'
+        description: group of the organization in the same zone
       primary_interface:
         $ref: '#/definitions/apis.InterfacePayload'
       root_passwd:
@@ -1310,6 +1321,10 @@ definitions:
         type: string
       passwd_login:
         type: boolean
+      placement_group:
+        allOf:
+        - $ref: '#/definitions/apis.PlacementGroupRef'
+        description: Left out when the instance is not in a placement group
       reason:
         type: string
       root_passwd:
@@ -1736,6 +1751,11 @@ definitions:
           OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to
           release quota only when the caller's org actually owns the deleted resource
         type: string
+      single_node:
+        description: |-
+          Available on its MASTER node alone, without high availability: its zone had no second available node.
+          The BACKUP node is added once the zone has one
+        type: boolean
       status:
         type: string
       updated_at:
@@ -1833,6 +1853,10 @@ definitions:
         description: Skip the capacity checks of the target, to evacuate a host when
           every other one is nearly full
         type: boolean
+      ignore_placement:
+        description: Skip the rules of the placement groups of the instances; a strict
+          group may end up broken
+        type: boolean
       instances:
         items:
           $ref: '#/definitions/common.BaseID'
@@ -1873,6 +1897,8 @@ definitions:
         type: string
       ignore_capacity:
         type: boolean
+      ignore_placement:
+        type: boolean
       instance:
         $ref: '#/definitions/apis.InstanceInfo'
       name:
@@ -1888,6 +1914,10 @@ definitions:
         items:
           $ref: '#/definitions/apis.TaskResponse'
         type: array
+      placement_warning:
+        description: The rule of a best-effort placement group the given target breaks;
+          only in the create response
+        type: string
       progress:
         description: 迁移进度：百分比与已传输 / 总字节数（内存 + 本地磁盘合计），由源节点上报
         type: integer
@@ -1909,6 +1939,141 @@ definitions:
       type:
         type: string
       updated_at:
+        type: string
+    type: object
+  apis.PlacementGroupListResponse:
+    properties:
+      limit:
+        type: integer
+      offset:
+        type: integer
+      placement_groups:
+        items:
+          $ref: '#/definitions/apis.PlacementGroupResponse'
+        type: array
+      total:
+        type: integer
+    type: object
+  apis.PlacementGroupMemberResponse:
+    properties:
+      host_slot:
+        description: |-
+          Number of the host inside the group: members on the same host have the same number, 0 when it has no host yet.
+          Everyone sees it; the host name is for system admins only
+        type: integer
+      hostname:
+        type: string
+      hypervisor:
+        type: string
+      id:
+        type: string
+      ignored_placement:
+        type: boolean
+      last_migration_failed:
+        description: 'Its latest migration failed, or was done ignoring the rules:
+          why a strict group may be split'
+        type: boolean
+      migration_id:
+        type: string
+      stale_migration:
+        description: 'A migration of it has not moved for an hour: it keeps holding
+          its target until an admin repairs it'
+        type: boolean
+      stale_provisioning:
+        description: 'Still being created after an hour: it keeps holding its host,
+          deleting it frees the host'
+        type: boolean
+      status:
+        type: string
+      target_slot:
+        description: Host of an in-flight migration, 0 when none
+        type: integer
+    type: object
+  apis.PlacementGroupPatchPayload:
+    properties:
+      description:
+        maxLength: 255
+        type: string
+      name:
+        maxLength: 32
+        minLength: 2
+        type: string
+    type: object
+  apis.PlacementGroupPayload:
+    properties:
+      description:
+        maxLength: 255
+        type: string
+      name:
+        maxLength: 32
+        minLength: 2
+        type: string
+      policy:
+        enum:
+        - spread
+        - pack
+        type: string
+      strict:
+        description: Defaults to true for spread and false for pack
+        type: boolean
+      zone:
+        description: zone name, the default zone when left out
+        maxLength: 32
+        minLength: 1
+        type: string
+    required:
+    - name
+    - policy
+    type: object
+  apis.PlacementGroupRef:
+    properties:
+      id:
+        type: string
+      name:
+        type: string
+      policy:
+        type: string
+      strict:
+        type: boolean
+    type: object
+  apis.PlacementGroupResponse:
+    properties:
+      compliant:
+        type: boolean
+      created_at:
+        type: string
+      description:
+        type: string
+      host_count:
+        description: Number of distinct hosts the members are on (or are being created
+          on)
+        type: integer
+      id:
+        type: string
+      member_count:
+        type: integer
+      members:
+        description: Detail only
+        items:
+          $ref: '#/definitions/apis.PlacementGroupMemberResponse'
+        type: array
+      name:
+        type: string
+      owner:
+        type: string
+      owner_uuid:
+        description: |-
+          OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to
+          release quota only when the caller's org actually owns the deleted resource
+        type: string
+      policy:
+        description: spread | pack
+        type: string
+      strict:
+        type: boolean
+      updated_at:
+        type: string
+      zone:
         type: string
     type: object
   apis.SecruleListResponse:
@@ -2638,6 +2803,855 @@ definitions:
       updated_at:
         type: string
     type: object
+  apis.VpnClientConfigResponse:
+    properties:
+      config:
+        type: string
+    type: object
+  apis.VpnClientCreateResponse:
+    properties:
+      bytes_in:
+        type: integer
+      bytes_out:
+        type: integer
+      config:
+        type: string
+      created_at:
+        type: string
+      description:
+        type: string
+      enabled:
+        type: boolean
+      id:
+        type: string
+      ip_address:
+        type: string
+      last_handshake_at:
+        type: string
+      name:
+        type: string
+      owner:
+        type: string
+      owner_uuid:
+        description: |-
+          OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to
+          release quota only when the caller's org actually owns the deleted resource
+        type: string
+      preshared_key_set:
+        type: boolean
+      private_key:
+        type: string
+      protocol:
+        type: string
+      public_key:
+        type: string
+      updated_at:
+        type: string
+    type: object
+  apis.VpnClientListResponse:
+    properties:
+      clients:
+        items:
+          $ref: '#/definitions/apis.VpnClientResponse'
+        type: array
+      total:
+        type: integer
+    type: object
+  apis.VpnClientPatchPayload:
+    properties:
+      description:
+        maxLength: 255
+        type: string
+      enabled:
+        type: boolean
+      name:
+        maxLength: 32
+        minLength: 2
+        type: string
+    type: object
+  apis.VpnClientPayload:
+    properties:
+      description:
+        maxLength: 255
+        type: string
+      enabled:
+        type: boolean
+      name:
+        maxLength: 32
+        minLength: 2
+        type: string
+      preshared_key:
+        type: boolean
+      public_key:
+        maxLength: 64
+        type: string
+    required:
+    - name
+    type: object
+  apis.VpnClientResponse:
+    properties:
+      bytes_in:
+        type: integer
+      bytes_out:
+        type: integer
+      created_at:
+        type: string
+      description:
+        type: string
+      enabled:
+        type: boolean
+      id:
+        type: string
+      ip_address:
+        type: string
+      last_handshake_at:
+        type: string
+      name:
+        type: string
+      owner:
+        type: string
+      owner_uuid:
+        description: |-
+          OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to
+          release quota only when the caller's org actually owns the deleted resource
+        type: string
+      preshared_key_set:
+        type: boolean
+      protocol:
+        type: string
+      public_key:
+        type: string
+      updated_at:
+        type: string
+    type: object
+  apis.VpnConnectionListResponse:
+    properties:
+      connections:
+        items:
+          $ref: '#/definitions/apis.VpnConnectionResponse'
+        type: array
+      total:
+        type: integer
+    type: object
+  apis.VpnConnectionPatchPayload:
+    properties:
+      as_path_prepend:
+        maximum: 10
+        minimum: 0
+        type: integer
+      bfd_enabled:
+        type: boolean
+      bfd_interval:
+        maximum: 60000
+        minimum: 300
+        type: integer
+      bfd_multiplier:
+        maximum: 50
+        minimum: 2
+        type: integer
+      bgp_hold:
+        maximum: 10800
+        minimum: 3
+        type: integer
+      bgp_keepalive:
+        maximum: 3600
+        minimum: 1
+        type: integer
+      bgp_password:
+        maxLength: 80
+        type: string
+      description:
+        maxLength: 255
+        type: string
+      dpd_action:
+        enum:
+        - restart
+        - clear
+        - none
+        type: string
+      dpd_delay:
+        maximum: 3600
+        minimum: 5
+        type: integer
+      esp_lifetime:
+        maximum: 86400
+        minimum: 300
+        type: integer
+      esp_proposal:
+        maxLength: 128
+        type: string
+      ike_lifetime:
+        maximum: 604800
+        minimum: 300
+        type: integer
+      ike_proposal:
+        maxLength: 128
+        type: string
+      initiator:
+        type: boolean
+      local_asn:
+        maximum: 4294967295
+        minimum: 1
+        type: integer
+      local_cidrs:
+        maxLength: 512
+        type: string
+      local_id:
+        maxLength: 128
+        type: string
+      max_prefixes:
+        maximum: 100000
+        minimum: 1
+        type: integer
+      name:
+        maxLength: 32
+        minLength: 2
+        type: string
+      peer_asn:
+        maximum: 4294967295
+        minimum: 1
+        type: integer
+      psk:
+        maxLength: 128
+        type: string
+      remote_cidrs:
+        maxLength: 512
+        type: string
+      remote_gateway:
+        maxLength: 64
+        type: string
+      remote_id:
+        maxLength: 128
+        type: string
+      remote_summary_cidrs:
+        maxLength: 512
+        type: string
+      route_mode:
+        enum:
+        - static
+        - bgp
+        type: string
+      traffic_policy:
+        enum:
+        - preferred
+        - ecmp
+        type: string
+      tunnel_local_ip:
+        maxLength: 64
+        type: string
+      tunnel_peer_ip:
+        maxLength: 64
+        type: string
+      tunnels:
+        items:
+          $ref: '#/definitions/apis.VpnTunnelPayload'
+        maxItems: 4
+        type: array
+    type: object
+  apis.VpnConnectionPayload:
+    properties:
+      as_path_prepend:
+        maximum: 10
+        minimum: 0
+        type: integer
+      bfd_enabled:
+        type: boolean
+      bfd_interval:
+        maximum: 60000
+        minimum: 300
+        type: integer
+      bfd_multiplier:
+        maximum: 50
+        minimum: 2
+        type: integer
+      bgp_hold:
+        maximum: 10800
+        minimum: 3
+        type: integer
+      bgp_keepalive:
+        maximum: 3600
+        minimum: 1
+        type: integer
+      bgp_password:
+        maxLength: 80
+        type: string
+      description:
+        maxLength: 255
+        type: string
+      dpd_action:
+        enum:
+        - restart
+        - clear
+        - none
+        type: string
+      dpd_delay:
+        maximum: 3600
+        minimum: 5
+        type: integer
+      esp_lifetime:
+        maximum: 86400
+        minimum: 300
+        type: integer
+      esp_proposal:
+        maxLength: 128
+        type: string
+      ike_lifetime:
+        maximum: 604800
+        minimum: 300
+        type: integer
+      ike_proposal:
+        maxLength: 128
+        type: string
+      initiator:
+        type: boolean
+      local_asn:
+        maximum: 4294967295
+        minimum: 1
+        type: integer
+      local_cidrs:
+        maxLength: 512
+        type: string
+      local_id:
+        maxLength: 128
+        type: string
+      max_prefixes:
+        maximum: 100000
+        minimum: 1
+        type: integer
+      name:
+        maxLength: 32
+        minLength: 2
+        type: string
+      peer_asn:
+        maximum: 4294967295
+        minimum: 1
+        type: integer
+      psk:
+        maxLength: 128
+        type: string
+      remote_cidrs:
+        maxLength: 512
+        type: string
+      remote_gateway:
+        type: string
+      remote_id:
+        maxLength: 128
+        type: string
+      remote_summary_cidrs:
+        maxLength: 512
+        type: string
+      route_mode:
+        enum:
+        - static
+        - bgp
+        type: string
+      traffic_policy:
+        description: 'preferred (default): the primary tunnel carries the traffic;
+          ecmp: every tunnel that is up shares it'
+        enum:
+        - preferred
+        - ecmp
+        type: string
+      tunnel_local_ip:
+        type: string
+      tunnel_peer_ip:
+        type: string
+      tunnels:
+        items:
+          $ref: '#/definitions/apis.VpnTunnelPayload'
+        maxItems: 4
+        type: array
+    required:
+    - name
+    type: object
+  apis.VpnConnectionResponse:
+    properties:
+      as_path_prepend:
+        type: integer
+      auth_method:
+        type: string
+      bfd_enabled:
+        type: boolean
+      bfd_interval:
+        type: integer
+      bfd_multiplier:
+        type: integer
+      bgp_hold:
+        type: integer
+      bgp_keepalive:
+        type: integer
+      bgp_password:
+        type: string
+      bgp_password_set:
+        type: boolean
+      bytes_in:
+        description: sum over the tunnels
+        type: integer
+      bytes_out:
+        description: sum over the tunnels
+        type: integer
+      created_at:
+        type: string
+      description:
+        type: string
+      dpd_action:
+        type: string
+      dpd_delay:
+        type: integer
+      effective_local_cidrs:
+        items:
+          type: string
+        type: array
+      esp_lifetime:
+        type: integer
+      esp_proposal:
+        type: string
+      id:
+        type: string
+      ike_lifetime:
+        type: integer
+      ike_proposal:
+        type: string
+      ike_version:
+        type: integer
+      initiator:
+        type: boolean
+      local_asn:
+        type: integer
+      local_cidrs:
+        type: string
+      local_id:
+        type: string
+      max_prefixes:
+        type: integer
+      name:
+        type: string
+      owner:
+        type: string
+      owner_uuid:
+        description: |-
+          OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to
+          release quota only when the caller's org actually owns the deleted resource
+        type: string
+      peer_asn:
+        type: integer
+      psk:
+        description: The keys themselves, only for members with write permission on
+          the gateway (vpnSecretsVisible)
+        type: string
+      psk_set:
+        type: boolean
+      remote_cidrs:
+        type: string
+      remote_summary_cidrs:
+        type: string
+      route_mode:
+        type: string
+      status:
+        description: pending, up, degraded (only a standby tunnel is up), down, disabled
+        type: string
+      traffic_policy:
+        description: preferred or ecmp
+        type: string
+      tunnels:
+        items:
+          $ref: '#/definitions/apis.VpnTunnelResponse'
+        type: array
+      updated_at:
+        type: string
+    type: object
+  apis.VpnGatewayListResponse:
+    properties:
+      limit:
+        type: integer
+      offset:
+        type: integer
+      total:
+        type: integer
+      vpn_gateways:
+        items:
+          $ref: '#/definitions/apis.VpnGatewayResponse'
+        type: array
+    type: object
+  apis.VpnGatewayPatchPayload:
+    properties:
+      client_cidr:
+        maxLength: 64
+        type: string
+      client_dns:
+        maxLength: 128
+        type: string
+      client_enabled:
+        type: boolean
+      client_port:
+        maximum: 65535
+        minimum: 1
+        type: integer
+      client_routes:
+        maxLength: 512
+        type: string
+      description:
+        maxLength: 255
+        type: string
+      enabled:
+        description: false pauses the whole gateway (tunnels, BGP, WireGuard) while
+          keeping its public IP and configuration
+        type: boolean
+      ipsec_enabled:
+        type: boolean
+      name:
+        maxLength: 32
+        minLength: 2
+        type: string
+    type: object
+  apis.VpnGatewayPayload:
+    properties:
+      client_cidr:
+        maxLength: 64
+        type: string
+      client_dns:
+        maxLength: 128
+        type: string
+      client_enabled:
+        type: boolean
+      client_port:
+        maximum: 65535
+        minimum: 1
+        type: integer
+      client_routes:
+        maxLength: 512
+        type: string
+      description:
+        maxLength: 255
+        type: string
+      ha_mode:
+        description: |-
+          active_standby (default): the VRRP master runs every tunnel from one or two floating IPs.
+          active_active: each of the two nodes runs its own tunnels from a fixed address, both carry traffic
+        enum:
+        - active_standby
+        - active_active
+        type: string
+      inbound:
+        maximum: 20000
+        minimum: 1
+        type: integer
+      ipsec_enabled:
+        type: boolean
+      name:
+        maxLength: 32
+        minLength: 2
+        type: string
+      outbound:
+        maximum: 20000
+        minimum: 1
+        type: integer
+      public_ip:
+        type: string
+      public_ips:
+        description: |-
+          active_standby: one or two entries (vip1, vip2). active_active: node1, node2 and, with client VPN, the
+          client floating IP; missing entries come from the subnet of the first one. public_subnet / public_ip
+          above are the short form of a single entry and are ignored when this is given
+        items:
+          $ref: '#/definitions/apis.VpnPublicIpPayload'
+        maxItems: 3
+        type: array
+      public_subnet:
+        $ref: '#/definitions/common.BaseReference'
+      vpc:
+        $ref: '#/definitions/common.BaseReference'
+      zone:
+        maxLength: 32
+        minLength: 1
+        type: string
+    required:
+    - name
+    - vpc
+    type: object
+  apis.VpnGatewayResponse:
+    properties:
+      addable_endpoint:
+        description: |-
+          The public address POST /vpn_gateways/{id}/public_ips would add (vip2, or vip1 for the client VPN of an
+          active_active gateway), empty when the gateway has it already
+        type: string
+      client_cidr:
+        type: string
+      client_count:
+        type: integer
+      client_dns:
+        type: string
+      client_enabled:
+        type: boolean
+      client_port:
+        type: integer
+      client_protocol:
+        type: string
+      client_public_key:
+        type: string
+      client_routes:
+        type: string
+      clients:
+        items:
+          $ref: '#/definitions/apis.VpnClientResponse'
+        type: array
+      connection_count:
+        type: integer
+      connections:
+        items:
+          $ref: '#/definitions/apis.VpnConnectionResponse'
+        type: array
+      created_at:
+        type: string
+      description:
+        type: string
+      effective_client_routes:
+        items:
+          type: string
+        type: array
+      enabled:
+        type: boolean
+      floating_ips:
+        items:
+          $ref: '#/definitions/apis.FloatingIpInfo'
+        type: array
+      ha_mode:
+        description: active_standby or active_active
+        type: string
+      id:
+        type: string
+      ipsec_enabled:
+        type: boolean
+      master_hostname:
+        type: string
+      master_hyper:
+        type: integer
+      master_reported_at:
+        type: string
+      name:
+        type: string
+      nodes:
+        items:
+          $ref: '#/definitions/apis.VpnNodeInfo'
+        type: array
+      owner:
+        type: string
+      owner_uuid:
+        description: |-
+          OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to
+          release quota only when the caller's org actually owns the deleted resource
+        type: string
+      public_ip:
+        description: vip1, or node1 on an active_active gateway without client VPN
+        type: string
+      public_ips:
+        description: every address with its endpoint name
+        items:
+          $ref: '#/definitions/apis.VpnPublicIpInfo'
+        type: array
+      remote_prefixes:
+        items:
+          $ref: '#/definitions/apis.VpnPrefixResponse'
+        type: array
+      status:
+        type: string
+      status_reason:
+        description: why the gateway is in error; empty otherwise
+        type: string
+      updated_at:
+        type: string
+      vpc:
+        $ref: '#/definitions/common.ResourceReference'
+      zone:
+        type: string
+    type: object
+  apis.VpnNodeInfo:
+    properties:
+      hostid:
+        type: integer
+      hostname:
+        type: string
+      master:
+        type: boolean
+      role:
+        type: string
+    type: object
+  apis.VpnPrefixResponse:
+    properties:
+      cidr:
+        type: string
+      ref_id:
+        type: integer
+      source:
+        type: string
+    type: object
+  apis.VpnPublicIpInfo:
+    properties:
+      address:
+        type: string
+      endpoint:
+        description: vip1 / vip2 (floating), node1 / node2 (fixed on one node of an
+          active_active gateway)
+        type: string
+      hostid:
+        description: the node of a fixed address, -1 for a floating one
+        type: integer
+      hostname:
+        description: the node of a fixed address
+        type: string
+    type: object
+  apis.VpnPublicIpPayload:
+    properties:
+      public_ip:
+        type: string
+      public_subnet:
+        $ref: '#/definitions/common.BaseReference'
+    type: object
+  apis.VpnPublicIpResponse:
+    properties:
+      address:
+        type: string
+      endpoint:
+        description: vip1 / vip2 (floating), node1 / node2 (fixed on one node of an
+          active_active gateway)
+        type: string
+      hostid:
+        description: the node of a fixed address, -1 for a floating one
+        type: integer
+      hostname:
+        description: the node of a fixed address
+        type: string
+      owner_uuid:
+        type: string
+    type: object
+  apis.VpnTrafficResponse:
+    properties:
+      clients:
+        items:
+          $ref: '#/definitions/apis.VpnTrafficSeries'
+        type: array
+      connections:
+        items:
+          $ref: '#/definitions/apis.VpnTrafficSeries'
+        type: array
+      end:
+        type: integer
+      start:
+        type: integer
+      step:
+        type: string
+      timestamps:
+        items:
+          type: integer
+        type: array
+    type: object
+  apis.VpnTrafficSeries:
+    properties:
+      connection_id:
+        description: 'by=tunnel: the series is one tunnel (ID is the tunnel) of this
+          connection, in this slot'
+        type: string
+      id:
+        type: string
+      in:
+        description: from the site / from the client
+        items:
+          type: number
+        type: array
+      name:
+        type: string
+      out:
+        description: to the site / to the client
+        items:
+          type: number
+        type: array
+      slot:
+        type: integer
+    type: object
+  apis.VpnTunnelPayload:
+    properties:
+      endpoint:
+        enum:
+        - vip1
+        - vip2
+        - node1
+        - node2
+        type: string
+      priority:
+        enum:
+        - primary
+        - standby
+        type: string
+      psk:
+        maxLength: 128
+        type: string
+      remote_gateway:
+        type: string
+      remote_id:
+        maxLength: 128
+        type: string
+      tunnel_local_ip:
+        type: string
+      tunnel_peer_ip:
+        type: string
+    type: object
+  apis.VpnTunnelResponse:
+    properties:
+      bfd_state:
+        type: string
+      bgp:
+        $ref: '#/definitions/services.VpnBgpReport'
+      bgp_reported_at:
+        type: string
+      bytes_in:
+        type: integer
+      bytes_out:
+        type: integer
+      endpoint:
+        description: vip1 / vip2, or node1 / node2 on an active_active gateway
+        type: string
+      established_at:
+        type: string
+      hostid:
+        description: the node running it on an active_active gateway, -1 otherwise
+          (the master)
+        type: integer
+      hostname:
+        type: string
+      id:
+        type: string
+      if_id:
+        type: integer
+      last_error:
+        type: string
+      priority:
+        description: primary or standby (every tunnel is primary with traffic_policy
+          ecmp)
+        type: string
+      psk:
+        description: The tunnel-specific key, only for members with write permission
+          on the gateway
+        type: string
+      psk_set:
+        description: a tunnel-specific key; otherwise the connection's
+        type: boolean
+      public_ip:
+        description: our address of this tunnel
+        type: string
+      remote_gateway:
+        type: string
+      remote_id:
+        type: string
+      slot:
+        type: integer
+      status:
+        type: string
+      tunnel_local_ip:
+        type: string
+      tunnel_peer_ip:
+        type: string
+    type: object
   apis.ZoneListResponse:
     properties:
       limit:
@@ -2852,6 +3866,15 @@ definitions:
         type: integer
       hostname:
         type: string
+      placement_blocked:
+        description: 'Not usable only because of the rule of a strict placement group:
+          usable with ignore_placement'
+        type: boolean
+      placement_warning:
+        description: |-
+          A rule of a best-effort placement group this target breaks, or a note on the members of a strict pack group
+          that must move in the same request
+        type: string
       reason:
         type: string
       usable:
@@ -2906,6 +3929,36 @@ definitions:
       volume_name:
         type: string
       volume_uuid:
+        type: string
+    type: object
+  services.VpnBgpReport:
+    properties:
+      accepted:
+        items:
+          type: string
+        type: array
+      advertised:
+        items:
+          type: string
+        type: array
+      bfd:
+        description: BFD session state (up, down, init) when BFD is on
+        type: string
+      name:
+        type: string
+      prefixes_received:
+        type: integer
+      prefixes_sent:
+        type: integer
+      rejected:
+        items:
+          type: string
+        type: array
+      state:
+        type: string
+      truncated:
+        type: boolean
+      uptime:
         type: string
     type: object
 host: localhost:8256
@@ -3181,7 +4234,12 @@ paths:
             additionalProperties: true
             type: object
         "403":
-          description: Channel not owned
+          description: Channel or rule group not owned
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: Rule group not found
           schema:
             additionalProperties: true
             type: object
@@ -3215,6 +4273,16 @@ paths:
       responses:
         "200":
           description: Rule channel bindings
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: Rule group not owned
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: Rule group not found
           schema:
             additionalProperties: true
             type: object
@@ -3704,7 +4772,10 @@ paths:
     patch:
       consumes:
       - application/json
-      description: patch a floating ip
+      description: 'patch a floating ip. "instance": {"id"} attaches it to that instance
+        and "instance": null detaches it; without an instance or load_balancer key
+        the attachment is kept, so a body with only inbound / outbound changes the
+        bandwidth of the attached floating ip in place'
       parameters:
       - description: Floating ip patch payload
         in: body
@@ -4794,7 +5865,9 @@ paths:
     get:
       description: for every host of the zone, whether each local disk can stay in
         its pool, the pool of its fallback group that would replace it, and all usable
-        pools with their free space
+        pools with their free space. A host that breaks the rule of a strict placement
+        group of the instance is not usable (reason says why); one that breaks a best-effort
+        group carries placement_warning
       parameters:
       - description: Instance UUID
         in: path
@@ -6953,6 +8026,141 @@ paths:
       summary: Get available metric subjects
       tags:
       - OpenMeter
+  /placement_groups:
+    get:
+      consumes:
+      - application/json
+      description: list the placement groups of the organization, each with its member
+        count, the number of hosts they are on and whether the group keeps its rule
+      parameters:
+      - description: Zone name
+        in: query
+        name: zone
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.PlacementGroupListResponse'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: list placement groups
+      tags:
+      - Placement Group
+    post:
+      consumes:
+      - application/json
+      description: create a placement group in a zone. spread keeps the members on
+        different hosts, pack on one host; a strict group refuses what breaks its
+        rule, a best-effort one relaxes it. An organization has at most 50 groups
+      parameters:
+      - description: Placement group create payload
+        in: body
+        name: message
+        required: true
+        schema:
+          $ref: '#/definitions/apis.PlacementGroupPayload'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.PlacementGroupResponse'
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "409":
+          description: Name taken (111702) or too many groups (111707)
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: create a placement group
+      tags:
+      - Placement Group
+  /placement_groups/{id}:
+    delete:
+      consumes:
+      - application/json
+      description: delete an empty placement group (409 while it has members, being
+        deleted ones included)
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: No Content
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "409":
+          description: The group has members (111703)
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: delete a placement group
+      tags:
+      - Placement Group
+    get:
+      consumes:
+      - application/json
+      description: get a placement group with its members; host_slot numbers the hosts
+        inside the group, the host names are for system admins only
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.PlacementGroupResponse'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "404":
+          description: Not found
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: get a placement group
+      tags:
+      - Placement Group
+    patch:
+      consumes:
+      - application/json
+      description: change the name or the description of a placement group; its policy,
+        strictness and zone can not change (400)
+      parameters:
+      - description: Placement group patch payload
+        in: body
+        name: message
+        required: true
+        schema:
+          $ref: '#/definitions/apis.PlacementGroupPatchPayload'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.PlacementGroupResponse'
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: patch a placement group
+      tags:
+      - Placement Group
   /rules/links:
     get:
       consumes:
@@ -7874,6 +9082,553 @@ paths:
       summary: patch a vpc
       tags:
       - VPC
+  /vpn_gateways:
+    get:
+      consumes:
+      - application/json
+      description: list VPN gateways
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.VpnGatewayListResponse'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: list VPN gateways
+      tags:
+      - VPN Gateway
+    post:
+      consumes:
+      - application/json
+      description: 'create a VPN gateway in a VPC with a public address. Its two nodes
+        come from the zone: an active_active gateway needs two available compute nodes
+        there; an active_standby gateway runs on a single node, without high availability,
+        when the zone has only one, and gets its second node once the zone has another
+        (error code 132009 when the zone has too few nodes)'
+      parameters:
+      - description: VPN gateway create payload
+        in: body
+        name: message
+        required: true
+        schema:
+          $ref: '#/definitions/apis.VpnGatewayPayload'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.VpnGatewayResponse'
+        "400":
+          description: Bad request, or too few available compute nodes in the zone
+            (132009)
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: create a VPN gateway
+      tags:
+      - VPN Gateway
+  /vpn_gateways/{id}:
+    delete:
+      consumes:
+      - application/json
+      description: delete a VPN gateway with its connections and clients
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: delete a VPN gateway
+      tags:
+      - VPN Gateway
+    get:
+      consumes:
+      - application/json
+      description: get a VPN gateway with its connections, clients and routed prefixes;
+        the connection keys (psk, bgp_password) are included for members with write
+        permission
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.VpnGatewayResponse'
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: get a VPN gateway
+      tags:
+      - VPN Gateway
+    patch:
+      consumes:
+      - application/json
+      description: patch a VPN gateway
+      parameters:
+      - description: VPN gateway patch payload
+        in: body
+        name: message
+        required: true
+        schema:
+          $ref: '#/definitions/apis.VpnGatewayPatchPayload'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.VpnGatewayResponse'
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: patch a VPN gateway
+      tags:
+      - VPN Gateway
+  /vpn_gateways/{id}/clients:
+    get:
+      consumes:
+      - application/json
+      description: list the WireGuard clients of a VPN gateway
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.VpnClientListResponse'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: list VPN clients
+      tags:
+      - VPN Gateway
+    post:
+      consumes:
+      - application/json
+      description: create a WireGuard client; the response carries the generated private
+        key and full config exactly once
+      parameters:
+      - description: VPN client create payload
+        in: body
+        name: message
+        required: true
+        schema:
+          $ref: '#/definitions/apis.VpnClientPayload'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.VpnClientCreateResponse'
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: create a VPN client
+      tags:
+      - VPN Gateway
+  /vpn_gateways/{id}/clients/{client_id}:
+    delete:
+      consumes:
+      - application/json
+      description: delete a WireGuard client and release its address
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: delete a VPN client
+      tags:
+      - VPN Gateway
+    get:
+      consumes:
+      - application/json
+      description: get a WireGuard client (never includes a private key)
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.VpnClientResponse'
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: get a VPN client
+      tags:
+      - VPN Gateway
+    patch:
+      consumes:
+      - application/json
+      description: rename, describe or enable/disable a WireGuard client
+      parameters:
+      - description: VPN client patch payload
+        in: body
+        name: message
+        required: true
+        schema:
+          $ref: '#/definitions/apis.VpnClientPatchPayload'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.VpnClientResponse'
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: patch a VPN client
+      tags:
+      - VPN Gateway
+  /vpn_gateways/{id}/clients/{client_id}/config:
+    get:
+      consumes:
+      - application/json
+      description: WireGuard configuration of a client without the private key; the
+        preshared key is filled in for members with write permission
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.VpnClientConfigResponse'
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: get a VPN client configuration template
+      tags:
+      - VPN Gateway
+  /vpn_gateways/{id}/connections:
+    get:
+      consumes:
+      - application/json
+      description: list the site-to-site connections of a VPN gateway; psk and bgp_password
+        are included for members with write permission
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.VpnConnectionListResponse'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: list VPN connections
+      tags:
+      - VPN Gateway
+    post:
+      consumes:
+      - application/json
+      description: create a site-to-site IPsec connection (static or BGP routed)
+      parameters:
+      - description: VPN connection create payload
+        in: body
+        name: message
+        required: true
+        schema:
+          $ref: '#/definitions/apis.VpnConnectionPayload'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.VpnConnectionResponse'
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: create a VPN connection
+      tags:
+      - VPN Gateway
+  /vpn_gateways/{id}/connections/{conn_id}:
+    delete:
+      consumes:
+      - application/json
+      description: delete a site-to-site connection
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: delete a VPN connection
+      tags:
+      - VPN Gateway
+    get:
+      consumes:
+      - application/json
+      description: get a site-to-site connection; psk and bgp_password are included
+        for members with write permission
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.VpnConnectionResponse'
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: get a VPN connection
+      tags:
+      - VPN Gateway
+    patch:
+      consumes:
+      - application/json
+      description: patch a site-to-site connection; changed fields are pushed to the
+        gateway
+      parameters:
+      - description: VPN connection patch payload
+        in: body
+        name: message
+        required: true
+        schema:
+          $ref: '#/definitions/apis.VpnConnectionPatchPayload'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.VpnConnectionResponse'
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: patch a VPN connection
+      tags:
+      - VPN Gateway
+  /vpn_gateways/{id}/connections/{conn_id}/restart:
+    post:
+      consumes:
+      - application/json
+      description: 'terminate and re-initiate the IKE SAs of a connection: every tunnel,
+        or only the one in the given slot'
+      parameters:
+      - description: Slot of the tunnel to restart (1 to 4); all tunnels when omitted
+        in: query
+        name: tunnel
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.VpnConnectionResponse'
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: restart a VPN connection
+      tags:
+      - VPN Gateway
+  /vpn_gateways/{id}/public_ips:
+    post:
+      consumes:
+      - application/json
+      description: give an active-standby gateway its second floating IP (vip2), or
+        an active-active gateway the floating IP of its client VPN (vip1); see addable_endpoint
+        of the gateway
+      parameters:
+      - description: public subnet and / or address, both optional
+        in: body
+        name: message
+        required: true
+        schema:
+          $ref: '#/definitions/apis.VpnPublicIpPayload'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.VpnGatewayResponse'
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: add a public address to a VPN gateway
+      tags:
+      - VPN Gateway
+  /vpn_gateways/{id}/public_ips/{endpoint}:
+    delete:
+      description: release the second floating IP of an active-standby gateway (no
+        tunnel may use it) or the client VPN floating IP of an active-active gateway
+        (client VPN disabled)
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: remove a public address from a VPN gateway
+      tags:
+      - VPN Gateway
+    get:
+      description: get one public address of a VPN gateway by endpoint (vip1, vip2,
+        node1, node2)
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.VpnPublicIpResponse'
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: get a public address of a VPN gateway
+      tags:
+      - VPN Gateway
+  /vpn_gateways/{id}/traffic:
+    get:
+      description: Rate of every site connection and WireGuard client of the gateway
+        in bits per second, from the tunnel counters the gateway master exports to
+        Prometheus. Deleted connections and clients are left out.
+      parameters:
+      - description: VPN gateway UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Start, unix seconds
+        in: query
+        name: start
+        required: true
+        type: string
+      - description: End, unix seconds
+        in: query
+        name: end
+        required: true
+        type: string
+      - description: Resolution as a duration, e.g. 60s or 5m
+        in: query
+        name: step
+        required: true
+        type: string
+      - description: 'connection (default): one series per connection; tunnel: one
+          per tunnel'
+        in: query
+        name: by
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.VpnTrafficResponse'
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: VPN gateway traffic history
+      tags:
+      - VPN Gateway
   /zones:
     get:
       consumes:

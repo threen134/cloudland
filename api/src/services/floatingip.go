@@ -333,43 +333,14 @@ func (a *FloatingIpAdminService) Attach(ctx context.Context, floatingIp *model.F
 		err = NewCLError(ErrInvalidParameter, fmt.Sprintf("Cannot attach floating IP of type %s, only PublicFloating and PublicSite types are supported for attachment", floatingIp.Type), nil)
 		return
 	}
-	memberShip := GetMemberShip(ctx)
-	permit := memberShip.CheckOrgPermission(model.OrgWriter)
-	if !permit {
-		logger.Ctx(ctx).Error("Not authorized for this operation")
-		err = NewCLError(ErrPermissionDenied, "Not authorized for this operation", nil)
+	if err = a.checkWritable(ctx, floatingIp); err != nil {
+		return
+	}
+	router, primaryIface, err := a.attachTarget(ctx, instance)
+	if err != nil {
 		return
 	}
 	ctx, db := GetContextDB(ctx)
-	if instance == nil || (instance.Status == model.InstanceStatusProvisioning) {
-		logger.Ctx(ctx).Error("Instance is not running")
-		err = NewCLError(ErrInstanceInvalidState, "Instance is not running", nil)
-		return
-	}
-	instID := instance.ID
-	routerID := instance.RouterID
-	if routerID == 0 {
-		logger.Ctx(ctx).Error("Instance has no router")
-		err = NewCLError(ErrInstanceNoRouter, "Instance has no router", nil)
-		return
-	}
-	router := &model.Router{Model: model.Model{ID: routerID}}
-	err = db.Take(router).Error
-	if err != nil {
-		logger.Ctx(ctx).Error("DB failed to query router", err)
-		return NewCLError(ErrRouterNotFound, "DB failed to query router", err)
-	}
-	var primaryIface *model.Interface
-	for i, iface := range instance.Interfaces {
-		if iface.PrimaryIf {
-			primaryIface = instance.Interfaces[i]
-			break
-		}
-	}
-	if primaryIface == nil {
-		err = NewCLError(ErrInstanceNoPrimaryInterface, fmt.Sprintf("No primary interface for the instance, %d", instID), nil)
-		return
-	}
 	floatingIp.IntAddress = primaryIface.Address.Address
 	floatingIp.InstanceID = instance.ID
 	floatingIp.RouterID = instance.RouterID
@@ -387,12 +358,107 @@ func (a *FloatingIpAdminService) Attach(ctx context.Context, floatingIp *model.F
 
 	pubSubnet := floatingIp.Interface.Address.Subnet
 	control := fmt.Sprintf("inter=%d", instance.Hyper)
-	command := fmt.Sprintf("/opt/cloudland/scripts/backend/create_floating.sh '%d' '%s' '%s' '%d' '%s' '%d' '%d' '%d' '%d'", router.ID, ShellEscape(floatingIp.FipAddress), ShellEscape(pubSubnet.Gateway), pubSubnet.Vlan, ShellEscape(primaryIface.Address.Address), primaryIface.Address.Subnet.Vlan, floatingIp.ID, floatingIp.Inbound, floatingIp.Outbound)
+	command := createFloatingCommand(router.ID, floatingIp, pubSubnet, primaryIface, floatingIp.Inbound, floatingIp.Outbound)
 	err = HyperExecute(ctx, control, command)
 	if err != nil {
 		logger.Ctx(ctx).Error("Execute floating ip failed", err)
 		return
 	}
+	return
+}
+
+// checkWritable refuses changes to a floating IP by anyone but a writer of the organization owning it
+func (a *FloatingIpAdminService) checkWritable(ctx context.Context, floatingIp *model.FloatingIp) error {
+	if !GetMemberShip(ctx).CheckResourceOrg(model.OrgWriter, floatingIp.Owner) {
+		logger.Ctx(ctx).Error("Not authorized to update the floating ip")
+		return NewCLError(ErrPermissionDenied, "Not authorized to update the floating ip", nil)
+	}
+	return nil
+}
+
+// checkDetachable lets a writer of the organization owning the floating IP take it off or release it, and also a
+// writer of the organization owning the instance or load balancer it is attached to. Deleting an instance or a load
+// balancer takes its floating IPs off on the way, and a system admin may have attached one of another organization:
+// that delete must not be refused. The requests on a floating IP itself only find those of the caller's organization
+func (a *FloatingIpAdminService) checkDetachable(ctx context.Context, floatingIp *model.FloatingIp) error {
+	m := GetMemberShip(ctx)
+	if m.CheckResourceOrg(model.OrgWriter, floatingIp.Owner) ||
+		(floatingIp.Instance != nil && m.CheckResourceOrg(model.OrgWriter, floatingIp.Instance.Owner)) ||
+		(floatingIp.LoadBalancer != nil && m.CheckResourceOrg(model.OrgWriter, floatingIp.LoadBalancer.Owner)) {
+		return nil
+	}
+	logger.Ctx(ctx).Error("Not authorized to detach the floating ip")
+	return NewCLError(ErrPermissionDenied, "Not authorized to detach the floating ip", nil)
+}
+
+// attachTarget checks that a floating IP can be attached to instance and returns the router and the primary
+// interface the address goes to. It sends nothing, so it can be asked before a floating IP is moved away
+func (a *FloatingIpAdminService) attachTarget(ctx context.Context, instance *model.Instance) (router *model.Router, primaryIface *model.Interface, err error) {
+	if instance == nil || (instance.Status == model.InstanceStatusProvisioning) {
+		logger.Ctx(ctx).Error("Instance is not running")
+		err = NewCLError(ErrInstanceInvalidState, "Instance is not running", nil)
+		return
+	}
+	if !GetMemberShip(ctx).CheckResourceOrg(model.OrgWriter, instance.Owner) {
+		logger.Ctx(ctx).Error("Not authorized to attach a floating ip to the instance")
+		err = NewCLError(ErrPermissionDenied, "Not authorized to attach a floating ip to the instance", nil)
+		return
+	}
+	if instance.RouterID == 0 {
+		logger.Ctx(ctx).Error("Instance has no router")
+		err = NewCLError(ErrInstanceNoRouter, "Instance has no router", nil)
+		return
+	}
+	_, db := GetContextDB(ctx)
+	router = &model.Router{Model: model.Model{ID: instance.RouterID}}
+	if err = db.Take(router).Error; err != nil {
+		logger.Ctx(ctx).Error("DB failed to query router", err)
+		err = NewCLError(ErrRouterNotFound, "DB failed to query router", err)
+		return
+	}
+	for i, iface := range instance.Interfaces {
+		if iface.PrimaryIf {
+			primaryIface = instance.Interfaces[i]
+			break
+		}
+	}
+	if primaryIface == nil {
+		err = NewCLError(ErrInstanceNoPrimaryInterface, fmt.Sprintf("No primary interface for the instance, %d", instance.ID), nil)
+		return
+	}
+	return
+}
+
+// createFloatingCommand is the create_floating.sh call that sets up floatingIp on routerID for the primary interface
+// of an instance, with the given bandwidth limits in Mbit/s (0 = no limit)
+func createFloatingCommand(routerID int64, floatingIp *model.FloatingIp, pubSubnet *model.Subnet, primaryIface *model.Interface, inbound, outbound int32) string {
+	return fmt.Sprintf("/opt/cloudland/scripts/backend/create_floating.sh '%d' '%s' '%s' '%d' '%s' '%d' '%d' '%d' '%d'", routerID, ShellEscape(floatingIp.FipAddress), ShellEscape(pubSubnet.Gateway), pubSubnet.Vlan, ShellEscape(primaryIface.Address.Address), primaryIface.Address.Subnet.Vlan, floatingIp.ID, inbound, outbound)
+}
+
+// setBandwidthCommand changes the limits of a floating IP attached to an instance, keeping it attached.
+// set_floating_bandwidth.sh only replaces the tc classes and filters: create_floating.sh can not be run again for
+// that, its "ip rule add" would add the policy rules twice and clear_floating.sh only removes them once
+func setBandwidthCommand(floatingIp *model.FloatingIp) (control, command string, err error) {
+	instance := floatingIp.Instance
+	var primaryIface *model.Interface
+	for _, iface := range instance.Interfaces {
+		if iface.PrimaryIf {
+			primaryIface = iface
+			break
+		}
+	}
+	if primaryIface == nil || primaryIface.Address == nil || primaryIface.Address.Subnet == nil {
+		err = NewCLError(ErrInstanceNoPrimaryInterface, fmt.Sprintf("No primary interface for the instance, %d", instance.ID), nil)
+		return
+	}
+	if floatingIp.Interface == nil || floatingIp.Interface.Address == nil || floatingIp.Interface.Address.Subnet == nil {
+		err = NewCLError(ErrFIPUpdateFailed, "The floating ip has no public address", nil)
+		return
+	}
+	pubSubnet := floatingIp.Interface.Address.Subnet
+	control = fmt.Sprintf("inter=%d", instance.Hyper)
+	command = fmt.Sprintf("/opt/cloudland/scripts/backend/set_floating_bandwidth.sh '%d' '%s' '%d' '%d' '%d' '%d' '%d'", floatingIp.RouterID,
+		ShellEscape(floatingIp.FipAddress), pubSubnet.Vlan, primaryIface.Address.Subnet.Vlan, floatingIp.ID, floatingIp.Inbound, floatingIp.Outbound)
 	return
 }
 
@@ -527,6 +593,9 @@ func (a *FloatingIpAdminService) Detach(ctx context.Context, floatingIp *model.F
 			logger.Ctx(ctx).Info("EXIT FloatingIpAdmin.Detach: success")
 		}
 	}()
+	if err = a.checkDetachable(ctx, floatingIp); err != nil {
+		return
+	}
 	ctx, db, newTransaction := StartTransaction(ctx)
 	defer func() {
 		if newTransaction {
@@ -633,7 +702,36 @@ func (a *FloatingIpAdminService) Detach(ctx context.Context, floatingIp *model.F
 	return
 }
 
-func (a *FloatingIpAdminService) Update(ctx context.Context, floatingIp *model.FloatingIp, instance *model.Instance, group *model.IpGroup, loadBalancer *model.LoadBalancer) (floatingIpTemp *model.FloatingIp, err error) {
+// FloatingIpChange is what a PATCH of a floating IP asks for. Nil fields are left alone
+type FloatingIpChange struct {
+	// Retarget is set when the request names the target: the floating IP is moved to Instance or LoadBalancer, or
+	// detached when both are nil. Without it the attachment is kept whatever else changes
+	Retarget     bool
+	Instance     *model.Instance
+	LoadBalancer *model.LoadBalancer
+	Inbound      *int32 // Mbit/s
+	Outbound     *int32 // Mbit/s
+	Group        *model.IpGroup
+}
+
+// bandwidthChangeAllowed refuses new limits for a floating IP whose limits this request can not apply: only a
+// floating IP of an instance (or not attached yet, to be applied when it is) gets them on the host. The address of a
+// load balancer, a native address or one being moved to a load balancer would keep running at the old limits while
+// the new ones were stored and shown
+func bandwidthChangeAllowed(floatingIp *model.FloatingIp, change *FloatingIpChange) error {
+	changed := (change.Inbound != nil && *change.Inbound != floatingIp.Inbound) ||
+		(change.Outbound != nil && *change.Outbound != floatingIp.Outbound)
+	if !changed {
+		return nil
+	}
+	toLoadBalancer := change.Retarget && change.Instance == nil && change.LoadBalancer != nil
+	if toLoadBalancer || (!change.Retarget && floatingIp.Type != string(PublicFloating)) {
+		return NewCLError(ErrInvalidParameter, "The bandwidth can only be changed for a floating ip of an instance", nil)
+	}
+	return nil
+}
+
+func (a *FloatingIpAdminService) Update(ctx context.Context, floatingIp *model.FloatingIp, change *FloatingIpChange) (floatingIpTemp *model.FloatingIp, err error) {
 	logger.Ctx(ctx).Infof("ENTER FloatingIpAdmin.Update: floatingIpID=%d, name=%s", floatingIp.ID, floatingIp.Name)
 	defer func() {
 		if err != nil {
@@ -642,6 +740,27 @@ func (a *FloatingIpAdminService) Update(ctx context.Context, floatingIp *model.F
 			logger.Ctx(ctx).Info("EXIT FloatingIpAdmin.Update: success")
 		}
 	}()
+	if change == nil {
+		change = &FloatingIpChange{}
+	}
+	// Everything that can refuse the request is checked before a command goes to a host: a refused attach used to
+	// come after the detach had already been carried out on the host
+	if err = a.checkWritable(ctx, floatingIp); err != nil {
+		return
+	}
+	instance, loadBalancer := change.Instance, change.LoadBalancer
+	if change.Retarget && instance != nil {
+		if _, _, err = a.attachTarget(ctx, instance); err != nil {
+			return
+		}
+	}
+	if change.Retarget && instance == nil && loadBalancer != nil && !GetMemberShip(ctx).CheckResourceOrg(model.OrgWriter, loadBalancer.Owner) {
+		err = NewCLError(ErrPermissionDenied, "Not authorized to attach a floating ip to the load balancer", nil)
+		return
+	}
+	if err = bandwidthChangeAllowed(floatingIp, change); err != nil {
+		return
+	}
 	ctx, db, newTransaction := StartTransaction(ctx)
 	defer func() {
 		if newTransaction {
@@ -649,24 +768,58 @@ func (a *FloatingIpAdminService) Update(ctx context.Context, floatingIp *model.F
 		}
 	}()
 
-	err = a.Detach(ctx, floatingIp)
-	if err != nil {
-		logger.Ctx(ctx).Errorf("Failed to detach floating ip %+v", err)
-		return
+	bandwidth := map[string]interface{}{}
+	if change.Inbound != nil && *change.Inbound != floatingIp.Inbound {
+		floatingIp.Inbound = *change.Inbound
+		bandwidth["inbound"] = floatingIp.Inbound
+	}
+	if change.Outbound != nil && *change.Outbound != floatingIp.Outbound {
+		floatingIp.Outbound = *change.Outbound
+		bandwidth["outbound"] = floatingIp.Outbound
+	}
+	if len(bandwidth) > 0 {
+		if err = db.Model(&model.FloatingIp{}).Where("id = ?", floatingIp.ID).Updates(bandwidth).Error; err != nil {
+			logger.Ctx(ctx).Error("Failed to update the bandwidth of the floating ip", err)
+			return nil, NewCLError(ErrFIPUpdateFailed, "Failed to update the bandwidth of the floating ip", err)
+		}
 	}
 
-	if instance != nil {
-		err = a.Attach(ctx, floatingIp, instance)
-		if err != nil {
-			logger.Ctx(ctx).Errorf("Failed to attach floating ip %+v", err)
+	if !change.Retarget {
+		// The attachment is kept. New limits are applied on the host when the floating IP is attached to an
+		// instance; an unattached one gets them from the database when it is attached
+		if len(bandwidth) > 0 && floatingIp.Instance != nil {
+			var control, command string
+			if control, command, err = setBandwidthCommand(floatingIp); err != nil {
+				return
+			}
+			if err = HyperExecute(ctx, control, command); err != nil {
+				logger.Ctx(ctx).Error("Failed to set the bandwidth of the floating ip", err)
+				return
+			}
+		}
+	} else {
+		// Moved or detached: the new place gets the limits stored above
+		if err = a.Detach(ctx, floatingIp); err != nil {
+			logger.Ctx(ctx).Errorf("Failed to detach floating ip %+v", err)
 			return
 		}
-	} else if loadBalancer != nil {
+		if instance != nil {
+			if err = a.Attach(ctx, floatingIp, instance); err != nil {
+				logger.Ctx(ctx).Errorf("Failed to attach floating ip %+v", err)
+				return
+			}
+		}
+	}
+	if change.Retarget && instance == nil && loadBalancer != nil {
 		err = db.Model(&model.FloatingIp{Model: model.Model{ID: floatingIp.ID}}).Updates(map[string]interface{}{
 			"load_balancer_id": loadBalancer.ID,
 			"router_id":        loadBalancer.RouterID,
 			"type":             PublicLoadBalancer,
 		}).Error
+		if err != nil {
+			logger.Ctx(ctx).Error("Failed to attach floating ip to the load balancer", err)
+			return nil, NewCLError(ErrFIPUpdateFailed, "Failed to attach floating ip to the load balancer", err)
+		}
 		err = CreateVrrpConf(ctx, loadBalancer)
 		if err != nil {
 			err = NewCLError(ErrVrrpInstanceCreateFailed, "Recreate keepalived config failed", err)
@@ -680,7 +833,7 @@ func (a *FloatingIpAdminService) Update(ctx context.Context, floatingIp *model.F
 		}
 	}
 
-	if group != nil {
+	if change.Group != nil {
 		groupID := int64(0)
 
 		err = db.Model(&model.FloatingIp{Model: model.Model{ID: floatingIp.ID}}).Update("group_id", groupID).Error
@@ -712,6 +865,9 @@ func (a *FloatingIpAdminService) Delete(ctx context.Context, floatingIp *model.F
 		errorStr := fmt.Sprintf("Cannot delete floating IP of type %s, only PublicFloating or PublicLoadBalancer type is supported for deletion", floatingIp.Type)
 		logger.Ctx(ctx).Info(errorStr)
 		err = NewCLError(ErrInvalidParameter, errorStr, nil)
+		return
+	}
+	if err = a.checkDetachable(ctx, floatingIp); err != nil {
 		return
 	}
 	ctx, _, newTransaction := StartTransaction(ctx)

@@ -94,7 +94,7 @@ type InstancesData struct {
 func (a *InstanceAdmin) Create(ctx context.Context, count int, prefix, userdata string, userdataType string, vendorData string, vendorDataType string, image *model.Image,
 	zone *model.Zone, routerID int64, primaryIface *InterfaceInfo, secondaryIfaces []*InterfaceInfo,
 	keys []*model.Key, rootPasswd string, loginPort, hyperID int, cpu int32, memory int32, disk int32, nestedEnable bool, bootPool *model.StoragePool,
-	group *model.PlacementGroup) (instances []*model.Instance, err error) {
+	group *model.PlacementGroup, flavor *model.Flavor) (instances []*model.Instance, err error) {
 	logger.Ctx(ctx).Infof("ENTER InstanceAdmin.Create: count=%d, prefix=%s, image=%s, zone=%s, routerID=%d", count, prefix, image.Name, zone.Name, routerID)
 	defer func() {
 		if err != nil {
@@ -105,6 +105,9 @@ func (a *InstanceAdmin) Create(ctx context.Context, count int, prefix, userdata 
 	}()
 	if count > 1 && len(primaryIface.PublicIps) > 0 {
 		err = NewCLError(ErrInvalidParameter, "Public addresses are not allowed to set when count > 1", nil)
+		return
+	}
+	if err = batchHostnameValid(prefix, count); err != nil {
 		return
 	}
 	var execCommands []*ExecutionCommand
@@ -206,6 +209,7 @@ func (a *InstanceAdmin) Create(ctx context.Context, count int, prefix, userdata 
 		return nil, err
 	}
 	execCommands = []*ExecutionCommand{}
+	flavorID := instanceFlavorID(flavor, cpu, memory, disk)
 	i := 0
 	hostname := prefix
 	for i < count {
@@ -244,6 +248,7 @@ func (a *InstanceAdmin) Create(ctx context.Context, count int, prefix, userdata 
 			Cpu:            cpu,
 			Memory:         memory,
 			Disk:           disk,
+			FlavorID:       flavorID,
 		}
 		if placement != nil {
 			instance.PlacementGroupID, instance.PlacementHyper = group.ID, pick
@@ -255,6 +260,9 @@ func (a *InstanceAdmin) Create(ctx context.Context, count int, prefix, userdata 
 		}
 		instance.Image = image
 		instance.Zone = zone
+		if flavorID > 0 {
+			instance.Flavor = flavor
+		}
 		var bootVolume *model.Volume
 		imagePrefix := fmt.Sprintf("image-%d-%s", image.ID, strings.Split(image.UUID, "-")[0])
 		// boot volume name format: instance-15-boot-volume-10
@@ -332,6 +340,31 @@ func (a *InstanceAdmin) Create(ctx context.Context, count int, prefix, userdata 
 		i++
 	}
 	return
+}
+
+// maxHostnameLength is the longest instance name, the limit of the create and rename requests
+const maxHostnameLength = 32
+
+// batchHostnameValid refuses a prefix whose longest name in a batch would pass the limit: count > 1 names the
+// instances <prefix>-1 .. <prefix>-<count>, and a rename later refuses a name longer than the limit
+func batchHostnameValid(prefix string, count int) error {
+	if count <= 1 {
+		return nil
+	}
+	if longest := len(prefix) + len("-") + len(strconv.Itoa(count)); longest > maxHostnameLength {
+		return NewCLError(ErrInvalidParameter, fmt.Sprintf("Hostname %s-%d would be %d characters long, the limit is %d: use a shorter hostname",
+			prefix, count, longest, maxHostnameLength), nil)
+	}
+	return nil
+}
+
+// instanceFlavorID is the flavor recorded for a new instance: the one its size came from, or none (0) when no flavor
+// was given or the size given with it differs, since the flavor would then name the wrong size
+func instanceFlavorID(flavor *model.Flavor, cpu, memory, disk int32) int64 {
+	if flavor == nil || flavor.ID <= 0 || flavor.Cpu != cpu || flavor.Memory != memory || flavor.Disk != disk {
+		return 0
+	}
+	return flavor.ID
 }
 
 func (a *InstanceAdmin) Rescue(ctx context.Context, instance *model.Instance, rescueImage *model.Image, rootPasswd string) (err error) {
@@ -711,8 +744,10 @@ func (a *InstanceAdmin) Reinstall(ctx context.Context, instance *model.Instance,
 		logger.Ctx(ctx).Error("Failed to save instance", err)
 		return NewCLError(ErrInstanceUpdateFailed, "Failed to save instance", err)
 	}
+	// The reinstalled system gets rootPasswd: a password change still waiting for its callback no longer applies
 	err = db.Model(&model.Instance{}).Where("id = ?", instance.ID).Updates(map[string]interface{}{
-		"flavor_id": 0,
+		"flavor_id":           0,
+		"pending_root_passwd": "",
 	}).Error
 	if err != nil {
 		logger.Ctx(ctx).Error("Failed to save instance", err)
@@ -794,20 +829,48 @@ func (a *InstanceAdmin) SetUserPassword(ctx context.Context, id int64, user, pas
 		logger.Ctx(ctx).Error(err)
 		return
 	}
+	// The stored root password only changes once the node reports that the guest took it (SettleUserPassword, from
+	// the set_user_passwd callback); until then the new one waits aside. It is written before the command goes out:
+	// the callback can arrive before HyperExecute returns
+	pending := user == "root"
+	if pending {
+		if err = db.Model(&model.Instance{}).Where("id = ?", instance.ID).Update("pending_root_passwd", password).Error; err != nil {
+			logger.Ctx(ctx).Error("Failed to keep the new root password", err)
+			return NewCLError(ErrInstanceUpdateFailed, "Failed to keep the new root password", err)
+		}
+	}
 	control := fmt.Sprintf("inter=%d", instance.Hyper)
 	command := fmt.Sprintf("/opt/cloudland/scripts/backend/set_user_passwd.sh '%d' '%s' '%s'", instance.ID, ShellEscape(user), ShellEscape(password))
 	err = HyperExecute(ctx, control, command)
 	if err != nil {
 		logger.Ctx(ctx).Error("Set password command execution failed", err)
+		if pending {
+			// Never sent: drop it, unless a later request replaced it meanwhile
+			if cerr := db.Model(&model.Instance{}).Where("id = ? AND pending_root_passwd = ?", instance.ID, password).
+				Update("pending_root_passwd", "").Error; cerr != nil {
+				logger.Ctx(ctx).Error("Failed to drop the unsent root password", cerr)
+			}
+		}
 		return
 	}
-	if user == "root" {
-		if err = db.Model(instance).Update("root_passwd", password).Error; err != nil {
-			logger.Ctx(ctx).Error("Failed to update root password in database", err)
-			return
-		}
-	}
 	return
+}
+
+// SettleUserPassword finishes a guest password change once the node reported it: on success the pending root
+// password becomes the stored one, on failure it is dropped and the stored one stays what the guest still has.
+// Only root passwords are stored, so for other users nothing is pending and nothing changes. The callback carries
+// no password; it runs in the transaction of the callback when ctx has one
+func SettleUserPassword(ctx context.Context, instanceID int64, succeeded bool) error {
+	_, db := GetContextDB(ctx)
+	updates := map[string]interface{}{"pending_root_passwd": ""}
+	if succeeded {
+		// Every SET expression reads the row as it was, so root_passwd takes the pending value being cleared
+		updates["root_passwd"] = gorm.Expr("pending_root_passwd")
+	}
+	if err := db.Model(&model.Instance{}).Where("id = ? AND pending_root_passwd <> ''", instanceID).Updates(updates).Error; err != nil {
+		return NewCLError(ErrInstanceUpdateFailed, "Failed to settle the root password", err)
+	}
+	return nil
 }
 
 func (a *InstanceAdmin) deleteInterfaces(ctx context.Context, instance *model.Instance) (err error) {
@@ -1235,10 +1298,17 @@ func (a *InstanceAdmin) Delete(ctx context.Context, instance *model.Instance) (e
 		err = NewCLError(ErrInstanceInvalidState, "Instance is not in a valid state", nil)
 		return
 	}
+	outerCtx := ctx
+	// The room held for a boot disk not created yet (an instance stuck in provisioning) goes with the instance.
+	// Released after the commit, with a context outside the transaction: released inside, a rollback would undo it
+	releaseBootVolume := int64(0)
 	ctx, db, newTransaction := StartTransaction(ctx)
 	defer func() {
 		if newTransaction {
 			EndTransaction(ctx, err)
+			if err == nil && releaseBootVolume > 0 {
+				ReleaseReservations(outerCtx, 0, releaseBootVolume, model.ReservationBoot)
+			}
 		}
 	}()
 	memberShip := GetMemberShip(ctx)
@@ -1299,6 +1369,7 @@ func (a *InstanceAdmin) Delete(ctx context.Context, instance *model.Instance) (e
 					logger.Ctx(ctx).Error("DB: delete boot volume failed", err)
 					return NewCLError(ErrBootVolumeDeleteFailed, "Delete boot volume failed", err)
 				}
+				releaseBootVolume = volume.ID
 			}
 		}
 		instance.Volumes = nil
