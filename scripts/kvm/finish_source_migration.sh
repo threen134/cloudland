@@ -70,7 +70,7 @@ for (( i=1; i <= $count; i++ )); do
     vif_dev=$(echo $vm_xml | xmllint --xpath "string(/domain/devices/interface[$i]/target/@dev)" -)
     ./clear_sg_chain.sh $vif_dev >/dev/null 2>&1
 done
-./clear_local_router.sh $router >/dev/null 2>&1
+./clear_local_router.sh $router $ID >/dev/null 2>&1
 
 ./generate_vm_instance_map.sh remove $vm_ID >/dev/null 2>&1
 

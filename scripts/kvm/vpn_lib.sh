@@ -67,40 +67,108 @@ vpn_conn_pairs()
     awk -v n="    $2 {" '$0 == n {f = 1; next} f && /^    }/ {exit} f && /^ +local_ts = / {l = $3} f && /^ +remote_ts = / {print l "|" $3}' $1 | sort -u
 }
 
+# True when this node initiates the connection block <name> of <conf> (start_action = start, which sits deep
+# in the block, past the ike / local / remote sections): vpn_conn_initiator <conf> <name>
+vpn_conn_initiator()
+{
+    awk -v n="    $2 {" '$0 == n {f = 1} f && /start_action = start/ {found = 1} f && /^    }/ {exit} END {exit !found}' $1
+}
+
 # Bring the installed CHILD_SAs of every connection back to the configured traffic selectors:
 # vpn_ipsec_reconcile <router> <vpn_dir>. Both sides of a site connection are reconfigured at different
 # moments, and close_action = start makes each side re-create its children with whatever configuration
 # it has at that instant, so after a change of route mode or networks a tunnel can be left with the old
 # selectors on both ends (the BGP link address is then outside every SA). close_action is therefore none
 # and this also re-initiates a tunnel the peer closed (initiator side only). Called from the watchdog on
-# the floating IP holder; a connection is re-initiated at most once a minute
+# the nodes running the tunnels; a connection is re-initiated at most once a minute.
+# The work runs in the background (vpn_initiate.sh reconcile, one per gateway at a time): an initiate waits
+# for the peer, 20 s per child and longer while an unreachable peer is retransmitted to, and the watchdog
+# holds the lb lock. Under the lock three unreachable peers kept it for a minute: the configuration scripts
+# of the node waited behind it with the whole cloudlet queue, and check_lb_process.sh skipped its rounds.
 vpn_ipsec_reconcile()
 {
     local router=$1 vpn_dir=$2
-    local conf=$vpn_dir/swanctl.conf name want have stamp child now
     [ -f $vpn_dir/conn_names ] || return 0
     vpn_charon_alive $vpn_dir || return 0
-    now=$(date +%s)
+    setsid bash $vpn_scripts/vpn_initiate.sh reconcile ${router#router-} ${vpn_dir##*/vpn-} >/dev/null 2>&1 9>&- </dev/null &
+}
+
+# The reconciliation itself, run by vpn_initiate.sh: vpn_ipsec_reconcile_now <router> <vpn_dir>. Every tunnel
+# is looked at in parallel under its own lock (initiate-<name>.lock, shared with vpn_initiate.sh initiate); one
+# that another process is bringing up (a configuration change) is left to it.
+vpn_ipsec_reconcile_now()
+{
+    local router=$1 vpn_dir=$2 name
+    [ -f $vpn_dir/conn_names ] || return 0
     for name in $(cat $vpn_dir/conn_names); do
-        want=$(vpn_conn_pairs $conf $name)
-        have=$(vpn_swanctl $router $vpn_dir --list-sas --ike $name 2>/dev/null | awk '/^    local  [0-9]/ {l = $2} /^    remote [0-9]/ {print l "|" $2}' | sort -u)
-        [ "$have" = "$want" ] && continue
-        # nothing installed and we are not the initiator: only the peer can bring it up
-        if [ -z "$have" ] && ! awk -v n="    $name {" '$0 == n {f = 1} f && /start_action = start/ {found = 1} f && /^    }/ {exit} END {exit !found}' $conf; then
-            continue
-        fi
-        stamp=$vpn_dir/reconcile-$name
-        if [ -f $stamp ] && [ $(($now - $(stat -c %Y $stamp))) -lt 60 ]; then
-            continue
-        fi
-        touch $stamp
-        log_debug "$(basename $0)" "vpn: connection $name has selectors [$(echo $have)] but is configured for [$(echo $want)], re-initiating"
-        [ -n "$have" ] && vpn_swanctl $router $vpn_dir --terminate --ike $name --force --timeout 10 >/dev/null 2>&1
-        if awk -v n="    $name {" '$0 == n {f = 1} f && /start_action = start/ {found = 1} f && /^    }/ {exit} END {exit !found}' $conf; then
-            for child in $(vpn_conn_children $conf $name); do
-                vpn_swanctl $router $vpn_dir --initiate --ike $name --child $child --timeout 20 >/dev/null 2>&1
-            done
-        fi
+        vpn_disabled $vpn_dir && break
+        vpn_charon_alive $vpn_dir || break
+        (
+            flock -n 7 || exit 0
+            vpn_tunnel_reconcile $router $vpn_dir $name
+        ) 7>$vpn_dir/initiate-$name.lock 2>/dev/null &
+    done
+    wait
+}
+
+# The swanctl listing of the SAs of a tunnel: vpn_tunnel_sas <router> <vpn_dir> <name>. Fails when charon
+# does not answer.
+vpn_tunnel_sas()
+{
+    timeout 5 ip netns exec $1 swanctl --list-sas --ike $3 --uri unix://$2/run/charon.vici 2>/dev/null
+    [ $? -ne 124 ]
+}
+
+# One tunnel of vpn_ipsec_reconcile_now, the caller holding its lock: vpn_tunnel_reconcile <router> <vpn_dir> <name>.
+# Decided under the lock, so a reload and initiate that ran meanwhile is seen; at most once a minute.
+vpn_tunnel_reconcile()
+{
+    local router=$1 vpn_dir=$2 name=$3 conf=$2/swanctl.conf want have sas stamp terminate=no
+    want=$(vpn_conn_pairs $conf $name)
+    sas=$(vpn_tunnel_sas $router $vpn_dir $name) || return 0
+    have=$(awk '/^    local  [0-9]/ {l = $2} /^    remote [0-9]/ {print l "|" $2}' <<<"$sas" | sort -u)
+    [ "$have" = "$want" ] && return 0
+    # nothing installed and we are not the initiator: only the peer can bring it up
+    [ -z "$have" ] && ! vpn_conn_initiator $conf $name && return 0
+    stamp=$vpn_dir/reconcile-$name
+    [ -f $stamp ] && [ $(($(date +%s) - $(stat -c %Y $stamp))) -lt 60 ] && return 0
+    touch $stamp
+    log_debug "$(basename $0)" "vpn: connection $name has selectors [$(echo $have)] but is configured for [$(echo $want)], re-initiating"
+    [ -n "$have" ] && terminate=yes
+    vpn_tunnel_run $router $vpn_dir $name $terminate
+}
+
+# Terminate (when told to) and initiate the children of a tunnel: vpn_tunnel_run <router> <vpn_dir> <name> yes|no.
+# Only the initiator side initiates; the caller holds the initiate lock of the tunnel. Stops as soon as the
+# gateway is paused or charon went away (a failover, a deletion): nothing here starts charon. A child that is
+# installed, or whose IKE SA charon is already bringing up (keyingtries = 0 retries for ever, a reload with
+# start_action = start initiates by itself), is left alone: a second initiate queues a duplicate CHILD_SA.
+vpn_tunnel_run()
+{
+    local router=$1 vpn_dir=$2 name=$3 terminate=$4 child sas
+    vpn_charon_alive $vpn_dir || return 0
+    if [ "$terminate" = "yes" ]; then
+        timeout 20 ip netns exec $router swanctl --terminate --ike $name --force --timeout 10 --uri unix://$vpn_dir/run/charon.vici >/dev/null 2>&1
+    fi
+    vpn_conn_initiator $vpn_dir/swanctl.conf $name || return 0
+    for child in $(vpn_conn_children $vpn_dir/swanctl.conf $name); do
+        vpn_disabled $vpn_dir && return 0
+        vpn_charon_alive $vpn_dir || return 0
+        sas=$(vpn_tunnel_sas $router $vpn_dir $name) || return 0
+        grep -qE "^  $child: #[0-9]+, reqid [0-9]+, INSTALLED," <<<"$sas" && continue
+        grep -qE "^$name: #[0-9]+, (CREATED|CONNECTING)," <<<"$sas" && continue
+        timeout 30 ip netns exec $router swanctl --initiate --ike $name --child $child --timeout 20 --uri unix://$vpn_dir/run/charon.vici >/dev/null 2>&1
+    done
+}
+
+# Initiate tunnels in the background, outside the lb lock: vpn_initiate_bg <router> <vpn_dir> <name>...
+# (vpn_initiate.sh initiate: one process per tunnel, waiting for a reconciliation of the same tunnel to end)
+vpn_initiate_bg()
+{
+    local router=$1 vpn_dir=$2 name
+    shift 2
+    for name in "$@"; do
+        setsid bash $vpn_scripts/vpn_initiate.sh initiate ${router#router-} ${vpn_dir##*/vpn-} $name >/dev/null 2>&1 9>&- </dev/null &
     done
 }
 
@@ -659,6 +727,47 @@ vpn_tunnels_up()
         END { for (n in up) print n }' <<<"$sas" | sort)
     [ "$up" = "$(cat $vpn_dir/tunnels.up 2>/dev/null)" ] || echo "$up" >$vpn_dir/tunnels.up
     echo "$up"
+}
+
+# The last thing charon logged about each tunnel, read from the tail of charon.log: vpn_tunnel_events <vpn_dir>
+# -> "<tunnel name><TAB><failure message>" per tunnel seen there, the message empty when the last event was an
+# established SA, and a line "*" when charon started within the tail (what was known before is stale).
+# With ike_name = yes every line of an IKE_SA carries "<name|unique id>" (failures before a peer config was
+# picked carry no name and cannot be told apart). Only known failure messages count, with the per-SA
+# numbers ([3], {5}) and retry counters dropped: every retry of an unreachable peer logs the same text, and the status report
+# is only re-sent when it changes. Quotes and non-printable characters are replaced (the text goes into JSON).
+vpn_tunnel_events()
+{
+    local log=$1/charon.log
+    [ -f $log ] || return 0
+    tail -c 524288 $log 2>/dev/null | LC_ALL=C tr -c '\n -~' ' ' | awk '
+        /Starting IKE charon daemon/ { delete ev; delete seen; restart = 1; next }
+        {
+            tag = ""
+            for (i = 1; i <= NF && i <= 8; i++) if ($i ~ /^<[^|<>]+\|[0-9]+>$/) { tag = $i; break }
+            if (tag == "") next
+            name = substr(tag, 2, index(tag, "|") - 2)
+            msg = substr($0, index($0, tag " ") + length(tag) + 1)
+            if (msg ~ /^IKE_SA [^ ]+ established between / || msg ~ /^CHILD_SA [^ ]+ established /) {
+                ev[name] = ""; seen[name] = 1
+                next
+            }
+            if (msg ~ /giving up after [0-9]+ retransmits|peer not responding|received [A-Z0-9_]+ notify error|notify, no CHILD_SA built|failed to establish CHILD_SA|MAC mismatched|no shared key found|authentication of .* failed|no (matching|acceptable) proposal|unable to (resolve|install|allocate|initiate)|constraint check failed|initiate failed/) {
+                gsub(/\[[0-9]+\]|\{[0-9]+\}/, "", msg)
+                # counters of the retries: "trying again (3/0)" (keyingtries = 0 retries for ever), "retransmit 2 of
+                # request message ID 0, seq 1"
+                gsub(/ *\([0-9]+\/[0-9]+\)/, "", msg)
+                gsub(/retransmit [0-9]+ of/, "retransmit of", msg)
+                gsub(/message ID [0-9]+, seq [0-9]+/, "message", msg)
+                gsub(/["\\]/, "'"'"'", msg)
+                sub(/ +$/, "", msg)
+                ev[name] = substr(msg, 1, 200); seen[name] = 1
+            }
+        }
+        END {
+            if (restart) print "*"
+            for (n in seen) print n "\t" ev[n]
+        }'
 }
 
 # Ask cloudlet for an immediate VPN status report instead of the next heartbeat (1-20 s): it watches this

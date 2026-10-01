@@ -9,6 +9,8 @@
 # follow the floating IP.
 # keepalived itself is restarted by check_lb_process.sh (the vrrp-* directory layout is shared). On the other
 # nodes of the VPCs, the next-hop watcher (vpn_nexthop_watch.sh) is kept running while they have routes.
+# Nothing here may wait for a peer: the lb lock is held throughout, and tunnels are (re)initiated in the
+# background (vpn_ipsec_reconcile).
 # stdout is the callback protocol: the caller redirects everything.
 
 cd `dirname $0`

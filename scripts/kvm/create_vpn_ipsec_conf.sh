@@ -208,14 +208,10 @@ done
             done
             for name in $changed; do
                 vpn_swanctl $router $vpn_dir --terminate --ike $name --force --timeout 10 >/dev/null
-                # start_action sits deep in the block (past the ike / local / remote sections): check the block itself
-                if awk -v n="    $name {" '$0 == n {f = 1} f && /start_action = start/ {found = 1} f && /^    }/ {exit} END {exit !found}' $vpn_dir/swanctl.conf; then
-                    # every child: a static connection has one per (local, remote) pair
-                    for child in $(vpn_conn_children $vpn_dir/swanctl.conf $name); do
-                        vpn_swanctl $router $vpn_dir --initiate --ike $name --child $child --timeout 20 >/dev/null
-                    done
-                fi
             done
+            # Initiating every child (a static connection has one per (local, remote) pair) waits for the
+            # peer: in the background, outside the lock (vpn_initiate.sh), on the initiator side only
+            vpn_initiate_bg $router $vpn_dir $changed
         else
             vpn_start_charon $router $vpn_dir
         fi

@@ -8,6 +8,8 @@ groups:
       severity: warning
       node_type: management
       alert_type: "node-cpu"
+      owner: "{{ owner }}"
+      rule_group: "{{ rule_group }}"
     annotations:
       summary: "Management node {{ $labels.instance }} high CPU usage"
       description: "Management node {{ $labels.instance }} CPU usage exceeds {{ cpu_usage_threshold | default(80) }}% for {{ cpu_alert_duration | default("10m") }} minutes"
@@ -19,6 +21,8 @@ groups:
       severity: warning
       node_type: management
       alert_type: "node-memory"
+      owner: "{{ owner }}"
+      rule_group: "{{ rule_group }}"
     annotations:
       summary: "Management node {{ $labels.instance }} high memory usage"
       description: "Management node {{ $labels.instance }} memory usage exceeds {{ memory_usage_threshold | default(80) }}% for {{ memory_alert_duration | default("10m") }} minutes"
@@ -30,6 +34,8 @@ groups:
       severity: warning
       node_type: management
       alert_type: "node-disk"
+      owner: "{{ owner }}"
+      rule_group: "{{ rule_group }}"
     annotations:
       summary: "Management node {{ $labels.instance }} device {{ $labels.device }} low disk space"
       description: "Management node {{ $labels.instance }} device {{ $labels.device }} disk space remaining less than {{ disk_space_threshold | default(20) }}% for {{ disk_alert_duration | default("10m") }} minutes"
@@ -42,6 +48,8 @@ groups:
       severity: warning
       node_type: management
       alert_type: "node-network"
+      owner: "{{ owner }}"
+      rule_group: "{{ rule_group }}"
     annotations:
       summary: "Management node {{ $labels.instance }} high network traffic on device {{ $labels.device }}"
       description: "Management node {{ $labels.instance }} network device {{ $labels.device }} receive/transmit rate exceeds {{ network_traffic_threshold_gb | default(5) }}Gbps for {{ network_alert_duration | default("10m") }} minutes"

@@ -40,8 +40,10 @@ i=0
 while [ $i -lt $nvip ]; do
     vip=$(jq -r .[$i].address <<< $vips)
     ext_ip=${vip%/*}
-    for num in $(ip netns exec $router iptables -n -L --line-numbers | grep "\<$ext_ip\>" | awk '{print $1}' | sort -nr); do
-        ip netns exec $router iptables -D INPUT $num
+    # The INPUT rules of this address, deleted by their own specification: rule numbers listed over every
+    # chain deleted unrelated INPUT rules (the VRRP address, DHCP), and numbers shift under a concurrent change
+    ip netns exec $router iptables -S INPUT | grep -F -- "-d $ext_ip/32 " | sed 's/^-A /-D /' | while read -r spec; do
+        ip netns exec $router iptables $spec
     done
     j=0
     while [ $j -lt $nport ]; do
@@ -54,7 +56,9 @@ while [ $i -lt $nvip ]; do
 done
 
 ip netns exec $router ip addr show ns-$vrrp_vlan | grep -q $local_ip
-[ $? -ne 0 ] && ./set_vrrp_ip.sh $@
+# set_vrrp_ip.sh takes the MAC before the address (passing our own arguments through set the address as
+# the MAC and the VRID as its reply flag)
+[ $? -ne 0 ] && ./set_vrrp_ip.sh $ID $vrrp_ID $vrrp_vlan $local_mac $local_ip $peer_mac $peer_ip $role
 
 # 两端都以 BACKUP 启动、用优先级决定首次选主：nopreempt 只对初始状态为 BACKUP 的实例生效。
 # 若按角色写 state MASTER，该节点 keepalived 重启（进程守护拉起、节点重启恢复）时会抢回主，浮动 IP 多切换一次

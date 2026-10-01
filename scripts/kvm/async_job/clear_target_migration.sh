@@ -38,7 +38,7 @@ fi
 for mac in $macs; do
     ./clear_sg_chain.sh tap$(echo $mac | cut -d: -f4- | tr -d :) true >/dev/null 2>&1
 done
-[ -n "$router" ] && [ "$router" != "0" ] && ../clear_local_router.sh $router >/dev/null 2>&1
+[ -n "$router" ] && [ "$router" != "0" ] && ../clear_local_router.sh $router $ID >/dev/null 2>&1
 ../generate_vm_instance_map.sh remove $vm_ID >/dev/null 2>&1
 rm -f ${image_dir}/${vm_ID}_VARS.fd
 rm -f ${cache_dir}/meta/${vm_ID}.iso

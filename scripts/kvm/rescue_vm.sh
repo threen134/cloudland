@@ -3,6 +3,7 @@
 cd $(dirname $0)
 source ../cloudrc
 source ./storage_lib.sh
+source ./vnc_lib.sh
 
 [ $# -lt 11 ] && die "$0 <vm_ID> <image> <name> <cpu> <memory> <disk_size> <disk_id> <boot_loader> <instance_uuid> <image_download_url_b64> <boot_disk_path>"
 
@@ -31,8 +32,10 @@ snapshot=1
 vm_rescue=$vm_ID-rescue
 
 pending_start_remove $ID
-./action_vm.sh $ID stop
-./action_vm.sh $ID hard_stop
+# Only this script reports: the action_vm.sh callbacks would set the instance running, then shut_off,
+# while clapi keeps it rescuing (rescue_vm callback below)
+./action_vm.sh $ID stop >/dev/null
+./action_vm.sh $ID hard_stop >/dev/null
 md=$(cat)
 metadata=$(echo $md | base64 -d)
 ./build_meta.sh "$vm_ID" "$vm_name-rescue" "true" <<< $md >/dev/null 2>&1
@@ -63,6 +66,8 @@ disk_template=$template_dir/volume.xml
 let vm_mem=${vm_mem%[m|M]}*1024
 vm_QA="$qemu_agent_dir/$vm_rescue.agent"
 vm_xml=$xml_dir/$vm_ID/$vm_rescue.xml
+# The definitions saved here carry the VNC password
+mkdir -p $xml_dir/$vm_ID && chmod 700 $xml_dir/$vm_ID
 cp $template $vm_xml
 cpu_vendor=$(lscpu | grep "Vendor ID" | awk -F ':' '{print $2}' | tr -d ' ')
 if [ "$cpu_vendor" = "GenuineIntel" ]; then
@@ -100,6 +105,12 @@ else
     -e "s/VM_VIRT_FEATURE/$vm_virt_feature/g" \
     -e "s/INSTANCE_UUID/$instance_uuid/g" \
     $vm_xml
+fi
+# A random VNC password of its own: QEMU accepts the password of the console only when started with one
+if ! vnc_xml_set_passwd $vm_xml; then
+    rm -f $vm_img $vm_nvram
+    echo "|:-COMMAND-:| $(basename $0) '$ID' '$state' '$NODE_ID' 'failed'"
+    exit -1
 fi
 
 virsh define $vm_xml

@@ -10,6 +10,8 @@ groups:
         severity: {{ severity | default("warning") }}
         component: network
         alert_type: ip_blocked
+        owner: "{{ owner }}"
+        rule_group: "{{ rule_group }}"
         ip: "{{ $labels.ip }}"
         hostname: "{{ $labels.hostname }}"
         block_type: "{{ $labels.block_type }}"

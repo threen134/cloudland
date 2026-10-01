@@ -47,7 +47,8 @@ function fail()
 
 pending_start_remove $ID
 log_debug $ID "source_migration.sh: Dumping XML for $vm_ID"
-virsh dumpxml $vm_ID >$xml_dir/$vm_ID/${vm_ID}.xml
+# --security-info: a rollback defines the instance again from this file, with its VNC password
+virsh dumpxml --security-info $vm_ID >$xml_dir/$vm_ID/${vm_ID}.xml
 if [ "$migration_type" != "warm" ]; then
     rm -rf $work_dir
     report not_supported "cold migration requires shared storage"

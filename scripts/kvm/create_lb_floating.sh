@@ -2,6 +2,7 @@
 
 cd `dirname $0`
 source ../cloudrc
+source ./fip_lib.sh
 
 [ $# -lt 7 ] && echo "$0 <router> <ext_ip> <ext_gw> <ext_vlan> <mark_id> <inbound> <outbound>" && exit -1
 
@@ -37,20 +38,5 @@ ip netns exec $router ip rule add from $ext_ip lookup $table
 ip netns exec $router ip rule del to $ext_ip lookup $table
 ip netns exec $router ip rule add to $ext_ip lookup $table
 
-if [ "$inbound" -gt 0 ]; then
-    ip netns exec $router tc qdisc add dev $ext_dev root handle 1: htb default 10
-    ip netns exec $router tc class add dev $ext_dev parent 1: classid 1:$mark_id htb rate ${inbound}mbit burst ${inbound}kbit
-    ip netns exec $router tc filter add dev $ext_dev protocol ip parent 1:0 prio $mark_id u32 match ip dst $ext_ip/32 flowid 1:$mark_id
-else
-    ip netns exec $router tc filter del dev $ext_dev protocol ip parent 1:0 prio $mark_id u32 match ip dst $ext_ip/32 flowid 1:$mark_id
-    ip netns exec $router tc class del dev $ext_dev parent 1: classid 1:$mark_id
-fi
-let mark_id=$mark_id+2147483647
-if [ "$outbound" -gt 0 ]; then
-    ip netns exec $router tc qdisc add dev $ext_dev root handle 1: htb default 10
-    ip netns exec $router tc class add dev $ext_dev parent 1: classid 1:$mark_id htb rate ${outbound}mbit burst ${outbound}kbit
-    ip netns exec $router tc filter add dev $ext_dev protocol ip parent 1:0 prio $mark_id u32 match ip src $ext_ip/32 flowid 1:$mark_id
-else
-    ip netns exec $router tc filter del dev $ext_dev protocol ip parent 1:0 prio $mark_id u32 match ip src $ext_ip/32 flowid 1:$mark_id
-    ip netns exec $router tc class del dev $ext_dev parent 1: classid 1:$mark_id
-fi
+# Bandwidth limits (numbering in fip_lib.sh): inbound on the host side of the port, outbound on te-
+fip_vip_limits $ID $ext_ip $ext_vlan $5 $inbound $outbound

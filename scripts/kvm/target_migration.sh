@@ -30,6 +30,8 @@ if [ "$migration_type" != "warm" ]; then
     exit 0
 fi
 mkdir -p $xml_dir/$vm_ID
+# The definitions saved here (complete_migration.sh) carry the VNC password
+chmod 700 $xml_dir/$vm_ID
 ./build_meta.sh "$vm_ID" "$vm_name" <<< $md >/dev/null 2>&1
 # Template only: source_migration.sh copies the real NVRAM (boot entries, Secure Boot state) over it
 [ "$boot_loader" = "uefi" ] && [ ! -f $image_dir/${vm_ID}_VARS.fd ] && cp $nvram_template $image_dir/${vm_ID}_VARS.fd

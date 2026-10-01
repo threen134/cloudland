@@ -3,6 +3,9 @@
 #
 # Nothing here may print to stdout: every stdout line of a node script is sent to clapi as a callback.
 
+# vnc_ensure_domain_passwd for try_start_instance (the scripts source this file from different directories)
+source "$(dirname "${BASH_SOURCE[0]}")/vnc_lib.sh"
+
 pools_dir=/opt/cloudland/pools
 pool_state_dir=$run_dir/pools
 pool_lock_dir=/var/lock
@@ -444,6 +447,9 @@ function try_start_instance()
 {
     local id=$1 err
     date +%s >$run_dir/start_attempt-$id
+    # A cold start (after a host reboot, or once its pools are back): a domain defined without a VNC password
+    # gets one now, as with action_vm.sh start
+    vnc_ensure_domain_passwd inst-$id
     if err=$(timeout 120 sudo virsh start inst-$id 2>&1 >/dev/null); then
         rm -f $run_dir/start_attempt-$id $run_dir/start_failed-$id
         return 0

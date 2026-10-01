@@ -10,6 +10,8 @@ groups:
         severity: {{ severity | default("warning") }}
         component: storage
         alert_type: local_pool
+        owner: "{{ owner }}"
+        rule_group: "{{ rule_group }}"
         pool: "{{ $labels.pool }}"
       annotations:
         summary: "Local storage pool {{ $labels.pool }} on {{ $labels.instance }} is degraded"
@@ -21,6 +23,8 @@ groups:
         severity: critical
         component: storage
         alert_type: local_pool
+        owner: "{{ owner }}"
+        rule_group: "{{ rule_group }}"
         pool: "{{ $labels.pool }}"
       annotations:
         summary: "Local storage pool {{ $labels.pool }} on {{ $labels.instance }} is unavailable"
@@ -32,6 +36,8 @@ groups:
         severity: {{ severity | default("warning") }}
         component: storage
         alert_type: local_pool
+        owner: "{{ owner }}"
+        rule_group: "{{ rule_group }}"
         pool: "{{ $labels.pool }}"
       annotations:
         summary: "Local storage pool {{ $labels.pool }} on {{ $labels.instance }} is nearly full"

@@ -2,6 +2,7 @@
 
 cd $(dirname $0)
 source ../../cloudrc
+source ../vnc_lib.sh
 
 [ $# -lt 6 ] && die "$0 <migration_ID> <task_ID> <vm_ID> <router> <target_hyper> <migration_type> [target_hostid]"
 
@@ -18,5 +19,7 @@ migration_type=$6
 vm_xml=$xml_dir/$vm_ID/$vm_ID.xml
 virsh define $vm_xml >/dev/null 2>&1
 virsh autostart $vm_ID --disable >/dev/null 2>&1
+# A cold start when the domain was not running: a domain defined without a VNC password gets one now
+vnc_ensure_domain_passwd $vm_ID
 virsh start $vm_ID >/dev/null 2>&1
 sync_vm $ID

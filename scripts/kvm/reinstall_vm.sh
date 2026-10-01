@@ -3,6 +3,7 @@
 cd $(dirname $0)
 source ../cloudrc
 source ./storage_lib.sh
+source ./vnc_lib.sh
 
 [ $# -lt 13 ] && die "$0 <vm_ID> <image> <snapshot> <volume_id> <cpu> <memory> <disk_size> <hostname> <boot_loader> <instance_uuid> <image_download_url_b64> <pool_uuid|builtin> <boot_disk_relpath>"
 
@@ -58,8 +59,12 @@ vsize=$(qemu-img info $new_img | grep 'virtual size:' | cut -d' ' -f5 | tr -d '(
 qemu-img resize -q $new_img "${disk_size}G" &>/dev/null || disk_fail "failed to resize the new boot disk to ${disk_size}G"
 
 vm_xml=$xml_dir/$vm_ID/${vm_ID}.xml
+# The definition and its backups carry the VNC password: instances defined before it existed have an open directory
+chmod 700 $xml_dir/$vm_ID 2>/dev/null
 mv $vm_xml $vm_xml-$(date +'%s.%N')
-virsh dumpxml $vm_ID >$vm_xml
+# --security-info keeps the VNC password in the definition written again below
+virsh dumpxml --security-info $vm_ID >$vm_xml
+vnc_xml_ensure_passwd $vm_xml
 virsh destroy $vm_ID >/dev/null 2>&1
 virsh undefine --nvram $vm_ID >/dev/null 2>&1
 mv -f "$new_img" "$vm_img" || disk_fail "failed to replace $vm_img"

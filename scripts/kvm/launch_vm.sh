@@ -3,6 +3,7 @@
 cd $(dirname $0)
 source ../cloudrc
 source ./storage_lib.sh
+source ./vnc_lib.sh
 
 [ $# -lt 15 ] && die "$0 <vm_ID> <image> <qa_enabled> <snapshot> <name> <cpu> <memory> <disk_size> <volume_id> <nested_enable> <boot_loader> <instance_uuid> <image_download_url_b64> <pool_uuid|builtin> <boot_disk_relpath>"
 
@@ -91,6 +92,8 @@ fi
 [ -z "$vm_cpu" ] && vm_cpu=1
 let vm_mem=${vm_mem%[m|M]}*1024
 mkdir -p $xml_dir/$vm_ID
+# The definitions saved here carry the VNC password
+chmod 700 $xml_dir/$vm_ID
 vm_QA="$qemu_agent_dir/$vm_ID.agent"
 vm_xml=$xml_dir/$vm_ID/${vm_ID}.xml
 cp $template $vm_xml
@@ -124,6 +127,11 @@ sed -i \
     -e "s#VM_NVRAM#$vm_nvram#g" \
     -e "s/INSTANCE_UUID/$instance_uuid/g" \
     $vm_xml
+# A random VNC password of its own: QEMU accepts the password of the console only when started with one
+if ! vnc_xml_set_passwd $vm_xml; then
+    echo "|:-COMMAND-:| $(basename $0) '$ID' '$state' '$NODE_ID' 'init'"
+    exit -1
+fi
 
 virsh define $vm_xml
 # Map the libvirt domain to its instance id for the Prometheus metrics

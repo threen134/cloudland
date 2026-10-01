@@ -13,7 +13,6 @@ vm_ip=$4
 vm_mac=$5
 nic_name=tap$(echo $vm_mac | cut -d: -f4- | tr -d :)
 vm_br=br$vlan
-./clear_link.sh $vlan
 interface_xml=$xml_dir/$vm_ID/$nic_name.xml
 if [ ! -f "$interface_xml" ]; then
     template=$template_dir/interface.xml
@@ -24,6 +23,9 @@ fi
 virsh detach-device $vm_ID $interface_xml --live --persistent
 [ $? -ne 0 ] && virsh detach-device $vm_ID $interface_xml --config
 rm -f $interface_xml
+# After the detach: before it the definition of this instance still named the bridge, and a stopped
+# instance's bridge was never cleared (clear_link.sh keeps a bridge any definition names)
+./clear_link.sh $vlan
 ./clear_sg_chain.sh $nic_name
 
 meta_file="$async_job_dir/$nic_name"

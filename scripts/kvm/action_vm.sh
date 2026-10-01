@@ -2,6 +2,7 @@
 
 cd `dirname $0`
 source ../cloudrc
+source ./vnc_lib.sh
 
 [ $# -lt 2 ] && die "$0 <vm_ID> <action>"
 
@@ -10,6 +11,8 @@ action=$2
 if [ "$action" = "restart" ]; then
     virsh reboot $vm_ID
 elif [ "$action" = "start" ]; then
+    # A cold start: a domain defined without a VNC password gets one now
+    vnc_ensure_domain_passwd $vm_ID
     virsh start $vm_ID
 elif [ "$action" = "stop" ]; then
     virsh shutdown $vm_ID
@@ -17,6 +20,7 @@ elif [ "$action" = "hard_stop" ]; then
     virsh destroy $vm_ID
 elif [ "$action" = "hard_restart" ]; then
     virsh destroy $vm_ID
+    vnc_ensure_domain_passwd $vm_ID
     virsh start $vm_ID
 elif [ "$action" = "pause" ]; then
     virsh suspend $vm_ID

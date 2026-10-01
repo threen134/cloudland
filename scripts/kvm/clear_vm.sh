@@ -42,7 +42,6 @@ for (( i=1; i <= $count; i++ )); do
     meta_file="$async_job_dir/$vif_dev"
     [ -f "$meta_file" ] && rm -f "$meta_file"
 done
-./clear_local_router.sh $router
 
 rm -f ${image_dir}/${vm_ID}_VARS.fd
 rm -f ${cache_dir}/meta/${vm_ID}.iso
@@ -63,4 +62,6 @@ if [ "$boot_pool" != "-" ] && [ -n "$boot_relpath" ]; then
 fi
 # Leftovers of the builtin pool from before the pools (meta, rescue copies)
 rm -f ${image_dir}/${vm_ID}.*
+# Last, once the rescue domain is gone too: the router stays while anything else here uses it
+./clear_local_router.sh $router $ID
 echo "|:-COMMAND-:| $(basename $0) '$ID'"

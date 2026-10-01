@@ -8,6 +8,8 @@ groups:
       severity: warning
       node_type: compute
       alert_type: "node-cpu"
+      owner: "{{ owner }}"
+      rule_group: "{{ rule_group }}"
     annotations:
       summary: "Compute node {{ $labels.instance }} high CPU usage"
       description: "Compute node {{ $labels.instance }} CPU usage exceeds {{ cpu_usage_threshold | default(80) }}% for {{ cpu_alert_duration | default(10) }} minutes"
@@ -19,6 +21,8 @@ groups:
       severity: warning
       node_type: compute
       alert_type: "node-memory"
+      owner: "{{ owner }}"
+      rule_group: "{{ rule_group }}"
     annotations:
       summary: "Compute node {{ $labels.instance }} high memory usage"
       description: "Compute node {{ $labels.instance }} memory usage exceeds {{ memory_usage_threshold | default(80) }}% for {{ memory_alert_duration | default(10) }} minutes"
@@ -30,6 +34,8 @@ groups:
       severity: warning
       node_type: compute
       alert_type: "node-disk"
+      owner: "{{ owner }}"
+      rule_group: "{{ rule_group }}"
     annotations:
       summary: "Compute node {{ $labels.instance }} low disk space"
       description: "Compute node {{ $labels.instance }} device {{ $labels.device }} at {{ $labels.mountpoint }} space remaining less than {{ disk_space_threshold | default(10) }}% for {{ disk_alert_duration | default(20) }} minutes"
@@ -42,6 +48,8 @@ groups:
       severity: warning
       node_type: compute
       alert_type: "node-network"
+      owner: "{{ owner }}"
+      rule_group: "{{ rule_group }}"
     annotations:
       summary: "Compute node {{ $labels.instance }} high network traffic"
       description: "Compute node {{ $labels.instance }} network receive/transmit rate exceeds {{ network_traffic_threshold_gb | default(25) }}Gbps for {{ network_alert_duration | default(5) }} minutes"

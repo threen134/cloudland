@@ -131,14 +131,28 @@ cloudland_vpn_client_bytes_total{gateway_id=\"$gw\",client_key=\"$key\",directio
 
     # IPsec: state and age from swanctl --list-sas; traffic from the tunnel interfaces (read above).
     # The byte counters of the SAs were never used: they restart at every rekey, and the swanctl lines of
-    # an SA bound to an XFRM interface carry "(-|0x...)" after the SPI, which the old pattern did not allow
+    # an SA bound to an XFRM interface carry "(-|0x...)" after the SPI, which the old pattern did not allow.
+    # error: the last failure charon logged for a tunnel that is down, empty once it is up. tunnel_errors
+    # keeps it for the tunnels whose lines left the tail of the log (a responder-only tunnel logs nothing
+    # until its peer tries again); written only when it changes.
     if [ -f $vpn_dir/conn_names ] && vpn_charon_alive $vpn_dir; then
         sas=$(timeout 10 ip netns exec $router swanctl --list-sas --uri unix://$vpn_dir/run/charon.vici 2>/dev/null)
-        payload=$(awk -v now=$now -v names="$(tr '\n' ' ' <$vpn_dir/conn_names)" -v traffic="$traffic" '
+        : >$vpn_dir/tunnel_errors.new
+        payload=$(VPN_EVENTS="$(vpn_tunnel_events $vpn_dir)" VPN_ERRORS="$(cat $vpn_dir/tunnel_errors 2>/dev/null)" \
+            awk -v now=$now -v names="$(tr '\n' ' ' <$vpn_dir/conn_names)" -v traffic="$traffic" -v errfile=$vpn_dir/tunnel_errors.new '
             BEGIN {
                 n = split(names, list, " ")
                 m = split(traffic, t, " ")
                 for (i = 1; i <= m; i++) { split(t[i], f, ":"); bin[f[1]] = f[2]; bout[f[1]] = f[3] }
+                # what was known, then what the log says now ("*": charon restarted, forget the rest)
+                m = split(ENVIRON["VPN_EVENTS"], t, "\n")
+                restart = 0
+                for (i = 1; i <= m; i++) if (t[i] == "*") restart = 1
+                if (!restart) {
+                    k = split(ENVIRON["VPN_ERRORS"], o, "\n")
+                    for (i = 1; i <= k; i++) if ((p = index(o[i], "\t")) > 1) err[substr(o[i], 1, p - 1)] = substr(o[i], p + 1)
+                }
+                for (i = 1; i <= m; i++) if ((p = index(t[i], "\t")) > 1) err[substr(t[i], 1, p - 1)] = substr(t[i], p + 1)
             }
             /^[A-Za-z0-9_-]+: #[0-9]+, / {
                 name = $1; sub(":$", "", name)
@@ -152,10 +166,17 @@ cloudland_vpn_client_bytes_total{gateway_id=\"$gw\",client_key=\"$key\",directio
                 for (i = 1; i <= n; i++) {
                     name = list[i]; if (name == "") continue
                     if (i > 1) printf ","
-                    printf "{\"name\":\"%s\",\"state\":\"%s\",\"established_at\":%d,\"bytes_in\":%.0f,\"bytes_out\":%.0f,\"error\":\"\"}", name, (name in up) ? "up" : "down", est[name] + 0, bin[name] + 0, bout[name] + 0
+                    e = (name in up) ? "" : err[name]
+                    if (e != "") print name "\t" e > errfile
+                    printf "{\"name\":\"%s\",\"state\":\"%s\",\"established_at\":%d,\"bytes_in\":%.0f,\"bytes_out\":%.0f,\"error\":\"%s\"}", name, (name in up) ? "up" : "down", est[name] + 0, bin[name] + 0, bout[name] + 0, e
                 }
                 printf "]"
             }' <<<"$sas")
+        if cmp -s $vpn_dir/tunnel_errors.new $vpn_dir/tunnel_errors; then
+            rm -f $vpn_dir/tunnel_errors.new
+        else
+            mv -f $vpn_dir/tunnel_errors.new $vpn_dir/tunnel_errors
+        fi
         encoded=$(echo -n "$payload" | base64 -w0)
         report_if_key_changed $vpn_dir/status.reported "$(zero_bytes <<<"$payload")" $traffic_every "|:-COMMAND-:| vpn_conn_status.sh '$gw' '$NODE_ID' '$encoded'"
     fi
