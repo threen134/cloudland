@@ -27,11 +27,12 @@ import { formatDateTime } from '../../utils/format'
 import { useCopyId } from '../../composables/useCopyId'
 import { useGoBack } from '../../composables/useGoBack'
 import { errorMessage } from '../../utils/error'
+import { attachmentStatusText } from '../../utils/transitGateway'
 
 const route = useRoute()
 const router = useRouter()
 const region = useRegionStore()
-const { t } = useI18n()
+const { t, te } = useI18n()
 const { copiedId: copiedField, copyId: copyToClipboard } = useCopyId()
 const goBack = useGoBack('vpcs')
 
@@ -341,6 +342,17 @@ onMounted(() => {
                                 <StatusBadge :status="vpc.status || 'active'" :label="getStatusText(vpc.status)" />
                             </InfoRow>
                             <InfoRow :label="$t('dashboard.table.description')">{{ vpc.description || '-' }}</InfoRow>
+                            <InfoRow v-if="vpc.transit_gateway" :label="$t('dashboard.transitGateway.vpcRowLabel')">
+                                <router-link
+                                    :to="{ name: 'transit-gateway-detail', params: { id: vpc.transit_gateway.id } }"
+                                    class="text-link"
+                                    >{{ vpc.transit_gateway.name }}</router-link
+                                >
+                                <StatusBadge
+                                    :status="vpc.transit_gateway.attachment_status"
+                                    :label="attachmentStatusText(t, te, vpc.transit_gateway.attachment_status)"
+                                />
+                            </InfoRow>
                         </div>
                     </div>
                 </div>
@@ -650,6 +662,15 @@ onMounted(() => {
 </template>
 
 <style scoped>
+.text-link {
+    color: var(--primary-600);
+    text-decoration: none;
+}
+
+.text-link:hover {
+    text-decoration: underline;
+}
+
 .detail-header {
     margin-bottom: var(--spacing-4);
 }

@@ -42,6 +42,14 @@ const ERROR_CODE_MESSAGES: Record<number, string | { key: string; only: RegExp }
     132005: 'errorCodes.vpnGatewayExists',
     132025: 'errorCodes.vpnClientPoolExhausted',
     132033: 'errorCodes.vpcHasVpnGateway',
+    133002: 'errorCodes.transitGatewayExists',
+    // The VPC is the one just picked: its name adds nothing
+    133012: 'errorCodes.vpcAttachedToTransitGateway',
+    133015: 'errorCodes.tgwAttachmentBusy',
+    // "Route table X is associated with N attachment(s)" keeps its specifics
+    133023: { key: 'errorCodes.tgwDefaultRouteTable', only: /default route table can not be deleted/ },
+    133042: 'errorCodes.tgwPropagationExists',
+    133051: 'errorCodes.vpcHasTransitGateway',
     141007: 'errorCodes.defaultSecurityGroup',
     141008: 'errorCodes.securityGroupHasInterfaces',
     151001: 'errorCodes.imageInUse',

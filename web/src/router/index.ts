@@ -230,6 +230,16 @@ const router = createRouter({
                     name: 'vpn-gateway-detail',
                     component: () => import('../views/dashboard/VpnGatewayDetail.vue'),
                 },
+                {
+                    path: 'transit-gateways',
+                    name: 'transit-gateways',
+                    component: () => import('../views/dashboard/TransitGatewayList.vue'),
+                },
+                {
+                    path: 'transit-gateways/:id',
+                    name: 'transit-gateway-detail',
+                    component: () => import('../views/dashboard/TransitGatewayDetail.vue'),
+                },
                 // Administration (Superadmin only)
                 {
                     path: 'regions',

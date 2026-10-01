@@ -20,6 +20,7 @@ import {
     Box,
     ShieldCheck,
     Boxes,
+    Waypoints,
 } from 'lucide-vue-next'
 import type { Activity as ActivityItem } from '../../api/activities'
 import ActivityText from './ActivityText.vue'
@@ -40,6 +41,7 @@ const icons: Record<string, Component> = {
     floating_ip: Globe,
     load_balancer: Network,
     vpn_gateway: ShieldCheck,
+    transit_gateway: Waypoints,
     image: Disc,
     key: Key,
     flavor: Box,
@@ -58,6 +60,7 @@ const iconClass: Record<string, string> = {
     floating_ip: 'bg-blue-light text-blue',
     load_balancer: 'bg-purple-light text-purple',
     vpn_gateway: 'bg-purple-light text-purple',
+    transit_gateway: 'bg-purple-light text-purple',
     image: 'bg-rose-light text-rose',
 }
 </script>

@@ -12,6 +12,16 @@ export interface VPC {
     created_at?: string
     updated_at?: string
     owner?: string
+    // The transit gateway the VPC is attached to (detail and list); left out when it has none
+    transit_gateway?: VPCTransitGatewayRef
+}
+
+export interface VPCTransitGatewayRef {
+    id: string
+    name: string
+    attachment_id: string
+    // attaching | available | detaching | error
+    attachment_status: string
 }
 
 export interface VPCPayload {

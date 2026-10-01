@@ -21,6 +21,7 @@ const detailRoutes: Record<string, string> = {
     floating_ip: 'floating-ip-detail',
     load_balancer: 'load-balancer-detail',
     vpn_gateway: 'vpn-gateway-detail',
+    transit_gateway: 'transit-gateway-detail',
     image: 'image-detail',
     hyper: 'hypervisor-detail',
     migration: 'migration-detail',

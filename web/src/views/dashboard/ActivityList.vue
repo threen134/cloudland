@@ -50,6 +50,7 @@ const RESOURCE_TYPES = [
     'floating_ip',
     'load_balancer',
     'vpn_gateway',
+    'transit_gateway',
     'zone',
     'hyper',
     'migration',

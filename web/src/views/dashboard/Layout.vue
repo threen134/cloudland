@@ -51,6 +51,7 @@ import {
     ShieldAlert,
     ShieldCheck,
     Boxes,
+    Waypoints,
 } from 'lucide-vue-next'
 
 const auth = useAuthStore()
@@ -159,6 +160,8 @@ const pageTitle = computed(() => {
         'load-balancer-detail': t('dashboard.loadBalancers'),
         'vpn-gateways': t('dashboard.vpnGateways'),
         'vpn-gateway-detail': t('dashboard.vpnGateways'),
+        'transit-gateways': t('dashboard.transitGateways'),
+        'transit-gateway-detail': t('dashboard.transitGateways'),
         'ssh-keys': t('dashboard.sshKeys'),
         users: t('dashboard.users'),
         'user-detail': t('dashboard.users'),
@@ -354,6 +357,10 @@ onUnmounted(() => {
                         <RouterLink to="/dashboard/vpn-gateways" class="nav-item" active-class="active">
                             <ShieldCheck :size="18" />
                             <span>{{ $t('dashboard.vpnGateways') }}</span>
+                        </RouterLink>
+                        <RouterLink to="/dashboard/transit-gateways" class="nav-item" active-class="active">
+                            <Waypoints :size="18" />
+                            <span>{{ $t('dashboard.transitGateways') }}</span>
                         </RouterLink>
                     </div>
                 </div>
