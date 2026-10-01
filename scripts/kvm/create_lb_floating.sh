@@ -34,9 +34,9 @@ ip netns exec $router ip -o addr | grep "ns-.* inet " | awk '{print $2, $4}' | w
     ip netns exec $router ip route add $ip_net dev $ns_link table $table
 done
 ip netns exec $router ip rule del from $ext_ip lookup $table
-ip netns exec $router ip rule add from $ext_ip lookup $table
+ip netns exec $router ip rule add pref $fip_rule_pref from $ext_ip lookup $table
 ip netns exec $router ip rule del to $ext_ip lookup $table
-ip netns exec $router ip rule add to $ext_ip lookup $table
+ip netns exec $router ip rule add pref $fip_rule_pref to $ext_ip lookup $table
 
 # Bandwidth limits (numbering in fip_lib.sh): inbound on the host side of the port, outbound on te-
 fip_vip_limits $ID $ext_ip $ext_vlan $5 $inbound $outbound

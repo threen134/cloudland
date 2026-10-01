@@ -40,6 +40,16 @@ function pending_nic_bridges()
     done | sort -u
 }
 
+# The transit gateway attachment of router <router> on this node (veth tr-<att>, apply_tgw.sh), nothing when
+# none: router_tgw_user <router>. The router then forwards between the VPCs of the gateway even with no instance
+# of its own VPC here; apply_tgw.sh removes the veth and calls clear_local_router.sh when the node leaves the gateway.
+function router_tgw_user()
+{
+    local dev
+    dev=$(ip netns exec $1 ip -o link show 2>/dev/null | awk -F': ' '{print $2}' | sed -n 's/^\(tr-[0-9][0-9]*\)\(@.*\)\{0,1\}$/\1/p' | head -1)
+    [ -n "$dev" ] && echo "transit gateway attachment $dev"
+}
+
 # What of a load balancer or VPN gateway uses router <router> on this node, nothing when none:
 # router_vrrp_user <router>. Their processes run in the router netns and reach backends and peers through its
 # gateway ports; the configuration lives in the router directory.

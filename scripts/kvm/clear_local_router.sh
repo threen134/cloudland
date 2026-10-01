@@ -7,7 +7,9 @@
 # The router is shared by everything of the VPC on this node: instances, running or shut off (a shut off one
 # has no tap on the bridge, but needs the bridge to start again), load balancers and VPN gateways (their VRRP
 # NIC is a gateway port of the router, keepalived / haproxy / charon run inside the netns and keep their
-# configuration under the router directory). Only the last user takes it down.
+# configuration under the router directory). Only the last user takes it down. A transit gateway attachment
+# (veth tr-<att>) counts too: the router forwards between the member VPCs even without an instance of its own
+# VPC here, and apply_tgw.sh calls this again once it removed the attachment.
 
 cd $(dirname $0)
 source ../cloudrc
@@ -22,6 +24,13 @@ leaving=$2
 
 [[ "$ID" =~ ^[0-9]+$ ]] && [ "$ID" != "0" ] || exit 1
 
+# Checking the users and removing the router is one step: apply_tgw.sh plugs an attachment in under the same lock
+exec 8>$(router_lock_file $router)
+if ! flock -w 60 8; then
+    log_debug $router "clear_local_router.sh: $router kept, its lock is busy"
+    exit 0
+fi
+
 # The VNIs of the router here: its gateway ports ns-<vni>, and the DHCP directories that stay on disk when
 # the netns is gone (after a reboot, before the instances are synced)
 vlans=$( { ip netns exec $router ip -o link show 2>/dev/null | awk -F': ' '{print $2}' | sed -n 's/^ns-\([0-9][0-9]*\)\(@.*\)\{0,1\}$/\1/p'
@@ -32,6 +41,8 @@ function router_user()
 {
     local vlan slaves bridges user
     user=$(router_vrrp_user $router)
+    [ -n "$user" ] && echo "$user" && return
+    user=$(router_tgw_user $router)
     [ -n "$user" ] && echo "$user" && return
     [ -n "$vlans" ] || return
     for vlan in $vlans; do

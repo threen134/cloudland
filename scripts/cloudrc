@@ -44,6 +44,28 @@ function ensure_fip_table()
     done
     echo "$rtID $table" >>$rt_file
 }
+
+# Routing table of the transit gateway routes in a VPC router (apply_tgw.sh), looked up by "ip rule pref 100"
+# before the floating IP tables and the main table. ensure_fip_table only hands out 2-251, so 252 stays free.
+tgw_table=252
+# Priority of the floating IP policy rules (create_floating.sh, create_lb_floating.sh). It must be given: a rule
+# added without one gets the priority of the first rule after "local" minus one, which ahead of the transit
+# gateway rule (pref 100) is 99, and the floating IP table would then take the traffic to the other VPCs
+fip_rule_pref=32000
+function ensure_tgw_table()
+{
+    mkdir -p $(dirname $rt_file) && touch $rt_file
+    grep -qE "^$tgw_table[[:space:]]+tgw$" $rt_file || echo "$tgw_table tgw" >>$rt_file
+}
+
+# Lock of the structure of a VPC router on this node: create_local_router.sh, clear_local_router.sh and
+# apply_tgw.sh. Without it clear_local_router.sh can find a router unused and remove it while apply_tgw.sh
+# plugs it into a transit gateway, or two scripts create the same router. Holders start no daemon.
+function router_lock_file()
+{
+    mkdir -p $run_dir/lock
+    echo $run_dir/lock/router-${1#router-}.lock
+}
 function die()
 {
     echo $1

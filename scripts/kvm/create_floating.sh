@@ -35,8 +35,8 @@ ip netns exec $router ip -o addr | grep "ns-.* inet " | awk '{print $2, $4}' | w
     ip_net=$(ipcalc -b $ns_gw | grep Network | awk '{print $2}')
     ip netns exec $router ip route add $ip_net dev $ns_link table $table
 done
-ip netns exec $router ip rule add from $int_ip lookup $table
-ip netns exec $router ip rule add to $int_ip lookup $table
+ip netns exec $router ip rule add pref $fip_rule_pref from $int_ip lookup $table
+ip netns exec $router ip rule add pref $fip_rule_pref to $int_ip lookup $table
 ip netns exec $router iptables -t nat -C PREROUTING -d $ext_ip -j DNAT --to-destination $int_ip
 [ $? -ne 0 ] && ip netns exec $router iptables -t nat -I PREROUTING -d $ext_ip -j DNAT --to-destination $int_ip
 ip netns exec $router iptables -t nat -C POSTROUTING -s $int_ip -m set ! --match-set nonat dst -j SNAT --to-source $ext_ip

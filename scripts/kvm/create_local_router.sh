@@ -17,6 +17,12 @@ router=$1
 [ "${router/router-/}" = "$router" ] && router=router-$1
 # 校验router名称合法性：空值或"router-0"直接退出（router-0是默认核心路由器，不允许重复创建）
 [ -z "$router" -o "$router" = "router-0" ] && exit 1
+# Callers race (add_fwrule.sh, apply_tgw.sh, clear_local_router.sh): checking and creating is one step
+exec 8>$(router_lock_file $router)
+if ! flock -w 120 8; then
+    log_debug $router "create_local_router.sh: lock of $router busy, not created"
+    exit 1
+fi
 # 校验router对应的netns是否已存在：存在则退出（避免重复创建）
 [ -f "/var/run/netns/$router" ] && exit 0
 # 脚本首先做基础的参数和环境校验，确保输入合法、目标路由器未被创建，同时加载外部配置。
