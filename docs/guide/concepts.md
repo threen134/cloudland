@@ -9,6 +9,10 @@ graph TD
     ORG[组织 Organization] --> USER[用户 User]
     ORG --> QUOTA[配额 Quota]
     ORG --> VPC[VPC 虚拟私有云]
+    ORG --> TGW[中转网关 Transit Gateway]
+    TGW --> ATT[挂载 Attachment]
+    TGW --> RT[路由表 Route Table]
+    ATT --> VPC
     VPC --> SUBNET[子网 Subnet]
     VPC --> SG[安全组 Security Group]
     VPC --> LB[负载均衡 Load Balancer]
