@@ -29,6 +29,8 @@ type VPCResponse struct {
 	*ResourceReference
 	Description string            `json:"description,omitempty"`
 	Subnets     []*SubnetResponse `json:"subnets,omitempty"`
+	// The transit gateway the VPC is attached to, if any
+	TransitGateway *VPCTransitGatewayRef `json:"transit_gateway,omitempty"`
 }
 
 type VPCListResponse struct {
@@ -72,6 +74,7 @@ func (v *VPCAPI) Get(c *gin.Context) {
 		ErrorResponse(c, http.StatusInternalServerError, "Internal error", err)
 		return
 	}
+	vpcResp.TransitGateway = vpcTransitGateway(ctx, router.ID)
 	logger.Ctx(ctx).Debugf("Get vpc by uuid: %s, %+v", uuID, vpcResp)
 	c.JSON(http.StatusOK, vpcResp)
 }
@@ -250,11 +253,25 @@ func (v *VPCAPI) List(c *gin.Context) {
 		Limit:  len(routers),
 	}
 	vpcListResp.VPCs = make([]*VPCResponse, vpcListResp.Limit)
+	routerIDs := make([]int64, len(routers))
+	for i, router := range routers {
+		routerIDs[i] = router.ID
+	}
+	// The transit gateway of each VPC, for the pickers that offer only free VPCs: two queries for the whole page
+	atts, tgws, err := tgwAdmin.AttachmentsOfRouters(ctx, routerIDs)
+	if err != nil {
+		ErrorResponse(c, http.StatusInternalServerError, "Internal error", err)
+		return
+	}
 	for i, router := range routers {
 		vpcListResp.VPCs[i], err = v.getVPCResponse(ctx, router)
 		if err != nil {
 			ErrorResponse(c, http.StatusInternalServerError, "Internal error", err)
 			return
+		}
+		if att := atts[router.ID]; att != nil && tgws[att.TgwID] != nil {
+			tgw := tgws[att.TgwID]
+			vpcListResp.VPCs[i].TransitGateway = &VPCTransitGatewayRef{ID: tgw.UUID, Name: tgw.Name, AttachmentID: att.UUID, AttachmentStatus: att.Status}
 		}
 	}
 	logger.Ctx(ctx).Debugf("List vpcs successfully, %+v", vpcListResp)

@@ -13,6 +13,7 @@ import (
 
 	. "api/src/common"
 	"api/src/model"
+	"api/src/services"
 )
 
 func init() {
@@ -66,6 +67,14 @@ func AttachInterface(ctx context.Context, args []string) (status string, err err
 	if err != nil {
 		logger.Ctx(ctx).Error("Failed to send fdb rules for interface", err)
 		return
+	}
+	// The NIC may bring a transit gateway member VPC to this node for the first time
+	routerID := iface.RouterID
+	if routerID == 0 {
+		routerID = instance.RouterID
+	}
+	if terr := services.TgwResyncNode(ctx, routerID, int32(hyperID)); terr != nil {
+		logger.Ctx(ctx).Warningf("Failed to sync the transit gateway to hyper %d, %v", hyperID, terr)
 	}
 	return
 }

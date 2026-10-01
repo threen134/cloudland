@@ -50,7 +50,12 @@ func deleteInterfaces(ctx context.Context, instance *model.Instance, vrrpInstanc
 		logger.Ctx(ctx).Infof("Skipping hyper lookup for hyperNode=%d (instance never placed on a hypervisor)", hyperNode)
 	}
 	if routerID > 0 {
-		err = db.Where("router_id = ?", routerID).Find(&instances).Error
+		// The nodes of the other transit gateway members hold the entries of this VPC too (common.SendFdbRules)
+		scope := []int64{routerID}
+		if vrrpInstance == nil {
+			scope = RouterScope(ctx, routerID)
+		}
+		err = db.Where("router_id IN ?", scope).Find(&instances).Error
 		if err != nil {
 			logger.Ctx(ctx).Error("Failed to query all instances", err)
 			return
@@ -61,7 +66,7 @@ func deleteInterfaces(ctx context.Context, instance *model.Instance, vrrpInstanc
 			}
 		}
 		vrrpIfaces := []*model.Interface{}
-		err = db.Where("router_id = ?", routerID).Find(&vrrpIfaces).Error
+		err = db.Where("router_id = ? or (router_id IN ? and type = 'instance')", routerID, scope).Find(&vrrpIfaces).Error
 		if err != nil {
 			logger.Ctx(ctx).Error("Failed to query all instances", err)
 			return
@@ -208,6 +213,10 @@ func ClearVM(ctx context.Context, args []string) (status string, err error) {
 	if err = db.Delete(instance).Error; err != nil {
 		logger.Ctx(ctx).Error("Failed to delete instance, %v", err)
 		return
+	}
+	// The node may host no member of the VPC's transit gateway any more
+	if terr := services.TgwNodeCheckLeave(ctx, instance.RouterID, instance.Hyper); terr != nil {
+		logger.Ctx(ctx).Warningf("Failed to check the transit gateway of hyper %d, %v", instance.Hyper, terr)
 	}
 	if err = updateAttachedVolumes(ctx, instance.ID); err != nil {
 		logger.Ctx(ctx).Error("Failed to update attached volumes", err)

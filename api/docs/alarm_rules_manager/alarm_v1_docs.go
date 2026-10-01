@@ -7105,6 +7105,796 @@ const docTemplatealarm_v1 = `{
                 }
             }
         },
+        "/transit_gateways": {
+            "get": {
+                "description": "list the transit gateways of the organization with the number of attached VPCs",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Transit Gateway"
+                ],
+                "summary": "list transit gateways",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apis.TransitGatewayListResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "description": "create a transit gateway with a default route table; VPCs attached to it reach each other",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Transit Gateway"
+                ],
+                "summary": "create a transit gateway",
+                "parameters": [
+                    {
+                        "description": "Transit gateway create payload",
+                        "name": "message",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/apis.TransitGatewayPayload"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apis.TransitGatewayResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "409": {
+                        "description": "Name taken (133002)",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            }
+        },
+        "/transit_gateways/{id}": {
+            "get": {
+                "description": "get a transit gateway with the state of its nodes; host names are for system admins only",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Transit Gateway"
+                ],
+                "summary": "get a transit gateway",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apis.TransitGatewayResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "404": {
+                        "description": "Not found",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "description": "delete a transit gateway without attachments (409 while VPCs are attached or being detached)",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Transit Gateway"
+                ],
+                "summary": "delete a transit gateway",
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "409": {
+                        "description": "VPCs are attached (133003)",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            },
+            "patch": {
+                "description": "change the name or the description of a transit gateway",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Transit Gateway"
+                ],
+                "summary": "patch a transit gateway",
+                "parameters": [
+                    {
+                        "description": "Transit gateway patch payload",
+                        "name": "message",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/apis.TransitGatewayPatchPayload"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apis.TransitGatewayResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            }
+        },
+        "/transit_gateways/{id}/attachments": {
+            "get": {
+                "description": "list the VPCs attached to a transit gateway, the ones being detached included",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Transit Gateway"
+                ],
+                "summary": "list the attachments of a transit gateway",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apis.TgwAttachmentListResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "description": "attach a VPC of the same organization. Its internal subnets may not overlap those of the other members, 192.168.196.0/24 (VRRP subnet) or 169.254.254.0/24 (gateway links), nor the networks of the members' VPN gateways (400, 133014). The attachment is available once every node applied it",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Transit Gateway"
+                ],
+                "summary": "attach a VPC to a transit gateway",
+                "parameters": [
+                    {
+                        "description": "Attachment payload",
+                        "name": "message",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/apis.TgwAttachmentPayload"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apis.TgwAttachmentResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request, overlapping networks (133014)",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "409": {
+                        "description": "VPC attached already (133012) or too many attachments (133013)",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            }
+        },
+        "/transit_gateways/{id}/attachments/{att_id}": {
+            "get": {
+                "description": "get one VPC attachment of a transit gateway",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Transit Gateway"
+                ],
+                "summary": "get an attachment of a transit gateway",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apis.TgwAttachmentResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "404": {
+                        "description": "Not found",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "description": "detach a VPC; its propagations and the static routes towards it are removed. The attachment stays as detaching until every node applied the change; detaching again retries",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Transit Gateway"
+                ],
+                "summary": "detach a VPC from a transit gateway",
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "404": {
+                        "description": "Not found",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            },
+            "patch": {
+                "description": "associate the attachment with another route table of the gateway",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Transit Gateway"
+                ],
+                "summary": "change the route table of an attachment",
+                "parameters": [
+                    {
+                        "description": "Attachment patch payload",
+                        "name": "message",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/apis.TgwAttachmentPatchPayload"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apis.TgwAttachmentResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            }
+        },
+        "/transit_gateways/{id}/resync": {
+            "post": {
+                "description": "send the current state of the transit gateway to all of its nodes again",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Transit Gateway"
+                ],
+                "summary": "resync a transit gateway",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apis.TransitGatewayResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            }
+        },
+        "/transit_gateways/{id}/route_tables": {
+            "get": {
+                "description": "list the route tables with their associations, propagations and static routes",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Transit Gateway"
+                ],
+                "summary": "list the route tables of a transit gateway",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apis.TgwRouteTableListResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "description": "create an empty route table; attachments associated with it reach what its propagations and routes give",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Transit Gateway"
+                ],
+                "summary": "create a route table",
+                "parameters": [
+                    {
+                        "description": "Route table payload",
+                        "name": "message",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/apis.TgwRouteTablePayload"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apis.TgwRouteTableResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "409": {
+                        "description": "Name taken or too many tables (133022)",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            }
+        },
+        "/transit_gateways/{id}/route_tables/{rt_id}": {
+            "get": {
+                "description": "get a route table with its associations, propagations and static routes",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Transit Gateway"
+                ],
+                "summary": "get a route table of a transit gateway",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apis.TgwRouteTableResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "404": {
+                        "description": "Not found",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "description": "delete a route table no attachment is associated with; the default table can not be deleted (409, 133023)",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Transit Gateway"
+                ],
+                "summary": "delete a route table",
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "409": {
+                        "description": "In use (133023)",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            },
+            "patch": {
+                "description": "rename a route table",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Transit Gateway"
+                ],
+                "summary": "rename a route table",
+                "parameters": [
+                    {
+                        "description": "Route table payload",
+                        "name": "message",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/apis.TgwRouteTablePayload"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apis.TgwRouteTableResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "409": {
+                        "description": "Name taken (133022)",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            }
+        },
+        "/transit_gateways/{id}/route_tables/{rt_id}/effective_routes": {
+            "get": {
+                "description": "the routes of a route table as the nodes install them: propagated subnets (filtered by the allow lists), static routes and blackholes",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Transit Gateway"
+                ],
+                "summary": "effective routes of a route table",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apis.TgwEffectiveRouteListResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "404": {
+                        "description": "Not found",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            }
+        },
+        "/transit_gateways/{id}/route_tables/{rt_id}/propagations": {
+            "post": {
+                "description": "make the internal subnets of an attachment's VPC appear in a route table; with prefixes only the parts of the subnets inside them. Each prefix must overlap a subnet of that VPC",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Transit Gateway"
+                ],
+                "summary": "add a propagation",
+                "parameters": [
+                    {
+                        "description": "Propagation payload",
+                        "name": "message",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/apis.TgwPropagationPayload"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apis.TgwRouteTableResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "409": {
+                        "description": "Exists already (133042)",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            }
+        },
+        "/transit_gateways/{id}/route_tables/{rt_id}/propagations/{prop_id}": {
+            "delete": {
+                "description": "stop propagating the subnets of an attachment into a route table",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Transit Gateway"
+                ],
+                "summary": "remove a propagation",
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "404": {
+                        "description": "Not found",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            }
+        },
+        "/transit_gateways/{id}/route_tables/{rt_id}/routes": {
+            "post": {
+                "description": "add a static route to a route table: a destination towards an attachment, or dropped with blackhole. It replaces a propagated route with the same destination. A default route is refused, and so is a destination overlapping the networks of a member's VPN gateway",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Transit Gateway"
+                ],
+                "summary": "add a static route",
+                "parameters": [
+                    {
+                        "description": "Route payload",
+                        "name": "message",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/apis.TgwRoutePayload"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apis.TgwRouteTableResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request (133014)",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "409": {
+                        "description": "Exists already (133032)",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            }
+        },
+        "/transit_gateways/{id}/route_tables/{rt_id}/routes/{route_id}": {
+            "delete": {
+                "description": "delete a static route of a route table",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Transit Gateway"
+                ],
+                "summary": "delete a static route",
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "404": {
+                        "description": "Not found",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            }
+        },
         "/version": {
             "get": {
                 "description": "get version",
@@ -12304,6 +13094,411 @@ const docTemplatealarm_v1 = `{
                 }
             }
         },
+        "apis.TgwAsymmetryResponse": {
+            "type": "object",
+            "properties": {
+                "from": {
+                    "$ref": "#/definitions/apis.TgwAttachmentRef"
+                },
+                "to": {
+                    "$ref": "#/definitions/apis.TgwAttachmentRef"
+                }
+            }
+        },
+        "apis.TgwAttachmentListResponse": {
+            "type": "object",
+            "properties": {
+                "attachments": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/apis.TgwAttachmentResponse"
+                    }
+                }
+            }
+        },
+        "apis.TgwAttachmentPatchPayload": {
+            "type": "object",
+            "required": [
+                "route_table"
+            ],
+            "properties": {
+                "route_table": {
+                    "$ref": "#/definitions/common.BaseID"
+                }
+            }
+        },
+        "apis.TgwAttachmentPayload": {
+            "type": "object",
+            "required": [
+                "vpc"
+            ],
+            "properties": {
+                "propagate": {
+                    "description": "Add the subnets of the VPC to the default route table (true when left out)",
+                    "type": "boolean"
+                },
+                "route_table": {
+                    "description": "The route table the traffic of the VPC is routed by, the default table when left out",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/common.BaseID"
+                        }
+                    ]
+                },
+                "vpc": {
+                    "$ref": "#/definitions/common.BaseReference"
+                }
+            }
+        },
+        "apis.TgwAttachmentRef": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "string"
+                },
+                "vpc": {
+                    "$ref": "#/definitions/apis.TgwNamedRef"
+                }
+            }
+        },
+        "apis.TgwAttachmentResponse": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "type": "string"
+                },
+                "gateway_address": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "route_table": {
+                    "$ref": "#/definitions/apis.TgwNamedRef"
+                },
+                "router_address": {
+                    "description": "The /31 of the attachment: the address in the VPC router (tr-) and in the gateway (ta-)",
+                    "type": "string"
+                },
+                "status": {
+                    "description": "attaching | available | detaching | error",
+                    "type": "string"
+                },
+                "status_reason": {
+                    "type": "string"
+                },
+                "subnets": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "vpc": {
+                    "$ref": "#/definitions/apis.TgwNamedRef"
+                }
+            }
+        },
+        "apis.TgwEffectiveRouteListResponse": {
+            "type": "object",
+            "properties": {
+                "routes": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/apis.TgwEffectiveRouteResponse"
+                    }
+                }
+            }
+        },
+        "apis.TgwEffectiveRouteResponse": {
+            "type": "object",
+            "properties": {
+                "attachment": {
+                    "$ref": "#/definitions/apis.TgwAttachmentRef"
+                },
+                "destination": {
+                    "type": "string"
+                },
+                "type": {
+                    "description": "propagated | static | blackhole",
+                    "type": "string"
+                }
+            }
+        },
+        "apis.TgwNamedRef": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                }
+            }
+        },
+        "apis.TgwNodeResponse": {
+            "type": "object",
+            "properties": {
+                "generation": {
+                    "type": "integer"
+                },
+                "hypervisor": {
+                    "description": "system admins only",
+                    "type": "string"
+                },
+                "index": {
+                    "description": "Number of the node in this list (1, 2, …); the reasons of the attachments name the nodes by it for members\nwho are not system admins",
+                    "type": "integer"
+                },
+                "reason": {
+                    "type": "string"
+                },
+                "status": {
+                    "description": "ok | error | pending | leaving (left the gateway, removal not confirmed yet)",
+                    "type": "string"
+                }
+            }
+        },
+        "apis.TgwPropagationPayload": {
+            "type": "object",
+            "required": [
+                "attachment"
+            ],
+            "properties": {
+                "attachment": {
+                    "$ref": "#/definitions/common.BaseID"
+                },
+                "prefixes": {
+                    "description": "Allow list: only the parts of the subnets inside these networks are propagated; empty propagates them all",
+                    "type": "array",
+                    "maxItems": 16,
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
+        "apis.TgwPropagationResponse": {
+            "type": "object",
+            "properties": {
+                "attachment": {
+                    "$ref": "#/definitions/apis.TgwAttachmentRef"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "prefixes": {
+                    "description": "empty: every subnet of the VPC",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
+        "apis.TgwRoutePayload": {
+            "type": "object",
+            "required": [
+                "destination"
+            ],
+            "properties": {
+                "attachment": {
+                    "description": "Where the destination goes; leave out with blackhole true to drop it",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/common.BaseID"
+                        }
+                    ]
+                },
+                "blackhole": {
+                    "type": "boolean"
+                },
+                "destination": {
+                    "type": "string",
+                    "maxLength": 64
+                }
+            }
+        },
+        "apis.TgwRouteResponse": {
+            "type": "object",
+            "properties": {
+                "attachment": {
+                    "$ref": "#/definitions/apis.TgwAttachmentRef"
+                },
+                "destination": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "type": {
+                    "description": "static | blackhole",
+                    "type": "string"
+                }
+            }
+        },
+        "apis.TgwRouteTableListResponse": {
+            "type": "object",
+            "properties": {
+                "route_tables": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/apis.TgwRouteTableResponse"
+                    }
+                }
+            }
+        },
+        "apis.TgwRouteTablePayload": {
+            "type": "object",
+            "required": [
+                "name"
+            ],
+            "properties": {
+                "name": {
+                    "type": "string",
+                    "maxLength": 32,
+                    "minLength": 2
+                }
+            }
+        },
+        "apis.TgwRouteTableResponse": {
+            "type": "object",
+            "properties": {
+                "associations": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/apis.TgwAttachmentRef"
+                    }
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "is_default": {
+                    "type": "boolean"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "propagations": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/apis.TgwPropagationResponse"
+                    }
+                },
+                "routes": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/apis.TgwRouteResponse"
+                    }
+                }
+            }
+        },
+        "apis.TransitGatewayListResponse": {
+            "type": "object",
+            "properties": {
+                "limit": {
+                    "type": "integer"
+                },
+                "offset": {
+                    "type": "integer"
+                },
+                "total": {
+                    "type": "integer"
+                },
+                "transit_gateways": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/apis.TransitGatewayResponse"
+                    }
+                }
+            }
+        },
+        "apis.TransitGatewayPatchPayload": {
+            "type": "object",
+            "properties": {
+                "description": {
+                    "type": "string",
+                    "maxLength": 255
+                },
+                "name": {
+                    "type": "string",
+                    "maxLength": 32,
+                    "minLength": 2
+                }
+            }
+        },
+        "apis.TransitGatewayPayload": {
+            "type": "object",
+            "required": [
+                "name"
+            ],
+            "properties": {
+                "description": {
+                    "type": "string",
+                    "maxLength": 255
+                },
+                "name": {
+                    "type": "string",
+                    "maxLength": 32,
+                    "minLength": 2
+                }
+            }
+        },
+        "apis.TransitGatewayResponse": {
+            "type": "object",
+            "properties": {
+                "asymmetric_routes": {
+                    "description": "Detail only: members that reach another member which has no route back (replies are dropped)",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/apis.TgwAsymmetryResponse"
+                    }
+                },
+                "attachment_count": {
+                    "type": "integer"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "generation": {
+                    "type": "integer"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "nodes": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/apis.TgwNodeResponse"
+                    }
+                },
+                "owner": {
+                    "type": "string"
+                },
+                "owner_uuid": {
+                    "description": "OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to\nrelease quota only when the caller's org actually owns the deleted resource",
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "sync_status": {
+                    "description": "Detail only. synced: every node of the gateway applied the latest change; syncing: some did not yet; error:\na node failed (see nodes)",
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
         "apis.VPCListResponse": {
             "type": "object",
             "properties": {
@@ -12386,7 +13581,32 @@ const docTemplatealarm_v1 = `{
                         "$ref": "#/definitions/apis.SubnetResponse"
                     }
                 },
+                "transit_gateway": {
+                    "description": "The transit gateway the VPC is attached to, if any",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/apis.VPCTransitGatewayRef"
+                        }
+                    ]
+                },
                 "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "apis.VPCTransitGatewayRef": {
+            "type": "object",
+            "properties": {
+                "attachment_id": {
+                    "type": "string"
+                },
+                "attachment_status": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "name": {
                     "type": "string"
                 }
             }

@@ -422,10 +422,18 @@ func (a *SubnetAdmin) Create(ctx context.Context, vlan int, name, network, gatew
 		}
 	}()
 	memberShip := GetMemberShip(ctx)
+	// The transit gateway of the VPC learns about the subnet once it is committed
+	outerCtx := ctx
+	var tgwAfter func(context.Context)
 	ctx, db, newTransaction := StartTransaction(ctx)
 	defer func() {
 		if newTransaction {
 			EndTransaction(ctx, err)
+			if err == nil && tgwAfter != nil {
+				tgwAfter(outerCtx)
+			}
+		} else if err == nil && tgwAfter != nil {
+			tgwAfter(ctx)
 		}
 	}()
 	permit := memberShip.CheckOrgPermission(model.OrgWriter)
@@ -484,6 +492,12 @@ func (a *SubnetAdmin) Create(ctx context.Context, vlan int, name, network, gatew
 	}
 	if rtype == "" {
 		rtype = "internal"
+	}
+	// A VPC on a transit gateway shares its address space with the other members (the VRRP subnet is per VPC)
+	if routerID > 0 && rtype != "vrrp" {
+		if err = ValidateTgwNewSubnet(ctx, routerID, ipNet.String()); err != nil {
+			return
+		}
 	}
 	first, last := cidr.AddressRange(ipNet)
 	preSize, _ := ipNet.Mask.Size()
@@ -575,6 +589,13 @@ func (a *SubnetAdmin) Create(ctx context.Context, vlan int, name, network, gatew
 			logger.Ctx(ctx).Error("Failed to resync the VPN gateway after adding a subnet", err)
 			return
 		}
+		// So do the routes of its transit gateway
+		if rtype != "vrrp" {
+			if tgwAfter, err = TgwRouterChanged(ctx, subnet.RouterID); err != nil {
+				logger.Ctx(ctx).Error("Failed to resync the transit gateway after adding a subnet", err)
+				return
+			}
+		}
 	}
 	return
 }
@@ -588,10 +609,17 @@ func (a *SubnetAdmin) Delete(ctx context.Context, subnet *model.Subnet) (err err
 			logger.Ctx(ctx).Info("EXIT SubnetAdmin.Delete: success")
 		}
 	}()
+	outerCtx := ctx
+	var tgwAfter func(context.Context)
 	ctx, db, newTransaction := StartTransaction(ctx)
 	defer func() {
 		if newTransaction {
 			EndTransaction(ctx, err)
+			if err == nil && tgwAfter != nil {
+				tgwAfter(outerCtx)
+			}
+		} else if err == nil && tgwAfter != nil {
+			tgwAfter(ctx)
 		}
 	}()
 	memberShip := GetMemberShip(ctx)
@@ -692,6 +720,12 @@ func (a *SubnetAdmin) Delete(ctx context.Context, subnet *model.Subnet) (err err
 		if err = VpnResyncRouter(ctx, subnet.RouterID); err != nil {
 			logger.Ctx(ctx).Error("Failed to resync the VPN gateway after deleting a subnet", err)
 			return
+		}
+		if subnet.Type != "vrrp" {
+			if tgwAfter, err = TgwRouterChanged(ctx, subnet.RouterID); err != nil {
+				logger.Ctx(ctx).Error("Failed to resync the transit gateway after deleting a subnet", err)
+				return
+			}
 		}
 	}
 	return

@@ -295,6 +295,23 @@ func (a *RouterAdmin) Delete(ctx context.Context, router *model.Router) (err err
 		err = NewCLError(ErrRouterHasVpnGateway, "Delete the VPN gateway first", nil)
 		return
 	}
+	// Its routers on the nodes of the other members carry the veth of the transit gateway: detach first. The VPC row
+	// is locked so that an attach running at the same time either sees it gone or is seen here
+	if err = lockTgwRouter(db, router.ID); err != nil {
+		return
+	}
+	count = 0
+	err = db.Model(&model.TgwAttachment{}).Where("router_id = ?", router.ID).Count(&count).Error
+	if err != nil {
+		logger.Ctx(ctx).Error("Failed to count transit gateway attachments")
+		err = NewCLError(ErrDatabaseError, "Failed to count transit gateway attachments of the router", err)
+		return
+	}
+	if count > 0 {
+		logger.Ctx(ctx).Error("The VPC is attached to a transit gateway")
+		err = NewCLError(ErrRouterHasTgwAttachment, "Detach the VPC from its transit gateway first", nil)
+		return
+	}
 	count = 0
 	err = db.Model(&model.FloatingIp{}).Where("router_id = ?", router.ID).Count(&count).Error
 	if err != nil {

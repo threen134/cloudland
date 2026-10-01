@@ -150,7 +150,8 @@ func validateVpnPrefixes(ctx context.Context, routerID, gatewayID int64, cidrs [
 			}
 		}
 	}
-	return
+	// The subnets of the other VPCs on the same transit gateway are looked up before the VPN routes
+	return tgwCheckVpnPrefixes(ctx, routerID, cidrs)
 }
 
 // validateClientRoutes checks the networks a client is told to send through the tunnel (its AllowedIPs).
@@ -170,8 +171,8 @@ func validateClientRoutes(value string) error {
 }
 
 // validateTunnelLink checks the pair of addresses a BGP session runs on inside the tunnel. Unlike remote
-// networks they may sit in 169.254.0.0/16 (public cloud VPN gateways require it); only the VPC subnets
-// and the VRRP subnet are off limits. The node rejects a /31 that collides with its own router link.
+// networks they may sit in 169.254.0.0/16 (public cloud VPN gateways require it); only the VPC subnets,
+// the VRRP subnet and the transit gateway link range are off limits. The node rejects a /31 that collides with its own router link.
 func validateTunnelLink(ctx context.Context, routerID int64, localIP, peerIP string) (err error) {
 	local := net.ParseIP(localIP)
 	peer := net.ParseIP(peerIP)
@@ -189,7 +190,8 @@ func validateTunnelLink(ctx context.Context, routerID int64, localIP, peerIP str
 	if err != nil {
 		return
 	}
-	for _, vpc := range append(vpcCidrs, vrrpSubnetCidr) {
+	// The transit gateway links (veth tr-<att>) live in the same router netns as the tunnel
+	for _, vpc := range append(vpcCidrs, vrrpSubnetCidr, TgwLinkCidr) {
 		_, ipNet, _ := net.ParseCIDR(vpc)
 		if ipNet != nil && (ipNet.Contains(local) || ipNet.Contains(peer)) {
 			return NewCLError(ErrVpnCidrConflict, "Tunnel link addresses overlap "+vpc, nil)

@@ -90,7 +90,19 @@ func SendFdbRules(ctx context.Context, instance *model.Instance, vrrpInstance *m
 	}
 	allIfaces := []*model.Interface{}
 	hyperSet := make(map[int32]struct{})
-	err = db.Preload("Address").Preload("Address.Subnet").Preload("Address.Subnet.Router").Where("router_id = ? and type <> 'gateway' and hyper <> ?", routerID, hyperNode).Find(&allIfaces).Error
+	// An instance NIC of a transit gateway member also trades entries with the instance NICs of the other members:
+	// both ends route between the VPCs on their own node. VRRP NICs stay within their VPC
+	others := []int64{}
+	if vrrpInstance == nil {
+		others = OtherRouters(RouterScope(ctx, routerID), routerID)
+	}
+	q := db.Preload("Address").Preload("Address.Subnet").Preload("Address.Subnet.Router")
+	if len(others) > 0 {
+		q = q.Where("((router_id = ? and type <> 'gateway') or (router_id IN ? and type = 'instance')) and hyper <> ?", routerID, others, hyperNode)
+	} else {
+		q = q.Where("router_id = ? and type <> 'gateway' and hyper <> ?", routerID, hyperNode)
+	}
+	err = q.Find(&allIfaces).Error
 	if err != nil {
 		logger.Ctx(ctx).Error("Failed to query all interfaces", err)
 		return

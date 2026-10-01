@@ -150,6 +150,10 @@ func LaunchVM(ctx context.Context, args []string) (status string, err error) {
 		if verr := services.VpnResyncNode(ctx, instance.RouterID, int32(hyperID)); verr != nil {
 			logger.Ctx(ctx).Warningf("Failed to sync VPN routes to hyper %d, %v", hyperID, verr)
 		}
+		// Same for the transit gateway of the VPC: the node routes to the other member VPCs by itself
+		if terr := services.TgwResyncNode(ctx, instance.RouterID, int32(hyperID)); terr != nil {
+			logger.Ctx(ctx).Warningf("Failed to sync the transit gateway to hyper %d, %v", hyperID, terr)
+		}
 	}
 	return
 }

@@ -155,7 +155,10 @@ func prewarmTargetFdb(ctx context.Context, instance *model.Instance, targetHyper
 	}
 	ctx, db := GetContextDB(ctx)
 	ifaces := []*model.Interface{}
-	err = db.Preload("Address").Preload("Address.Subnet").Where("router_id = ? and type <> 'gateway' and hyper <> ? and instance <> ?", instance.RouterID, targetHyper.Hostid, instance.ID).Find(&ifaces).Error
+	// With a transit gateway the target routes to the other member VPCs on its own as well: their instance NICs too
+	others := OtherRouters(RouterScope(ctx, instance.RouterID), instance.RouterID)
+	err = db.Preload("Address").Preload("Address.Subnet").Where("((router_id = ? and type <> 'gateway') or (router_id IN ? and type = 'instance')) and hyper <> ? and instance <> ?",
+		instance.RouterID, others, targetHyper.Hostid, instance.ID).Find(&ifaces).Error
 	if err != nil {
 		logger.Ctx(ctx).Error("Failed to query interfaces of the router", err)
 		return
@@ -392,6 +395,10 @@ func MigrateVM(ctx context.Context, args []string) (status string, err error) {
 		if err != nil {
 			return
 		}
+		// The NICs are on the target now: the source may host no member of the transit gateway any more
+		if terr := services.TgwNodeCheckLeave(ctx, instance.RouterID, migration.SourceHyper); terr != nil {
+			logger.Ctx(ctx).Warningf("Failed to check the transit gateway of the migration source, %v", terr)
+		}
 		err = execSourceMigrate(ctx, instance, migration, taskID, "/opt/cloudland/scripts/backend/finish_source_migration.sh", migration.Type)
 		if err != nil {
 			logger.Ctx(ctx).Error("Failed to exec finish source migration", err)
@@ -419,6 +426,12 @@ func MigrateVM(ctx context.Context, args []string) (status string, err error) {
 		if err != nil {
 			logger.Ctx(ctx).Error("Failed to update instance status to unknown, %v", err)
 			return
+		}
+		// A target that got the transit gateway at target_prepared keeps it only if another member is there
+		if migration.TargetHyper >= 0 && migration.TargetHyper != migration.SourceHyper {
+			if terr := services.TgwNodeCheckLeave(ctx, instance.RouterID, migration.TargetHyper, migration.ID); terr != nil {
+				logger.Ctx(ctx).Warningf("Failed to check the transit gateway of the migration target, %v", terr)
+			}
 		}
 	} else if status == "target_prepared" {
 		// 目标节点等于源节点时必须立即中止：继续下去 source_migration.sh 会把虚拟机迁往
@@ -494,6 +507,11 @@ func MigrateVM(ctx context.Context, args []string) (status string, err error) {
 		if verr := services.VpnResyncNode(ctx, instance.RouterID, targetHyper.Hostid); verr != nil {
 			logger.Ctx(ctx).Warningf("Failed to sync VPN routes to migration target, %v", verr)
 		}
+		// And its transit gateway, before the switch-over: the instance reaches the other member VPCs through the
+		// target's routers from the moment it runs there
+		if terr := services.TgwResyncNode(ctx, instance.RouterID, targetHyper.Hostid); terr != nil {
+			logger.Ctx(ctx).Warningf("Failed to sync the transit gateway to migration target, %v", terr)
+		}
 		err = execSourceMigrate(ctx, instance, migration, task2.ID, "/opt/cloudland/scripts/backend/source_migration.sh", migration.Type)
 		if err != nil {
 			logger.Ctx(ctx).Error("Failed to exec source migration", err)
@@ -558,6 +576,11 @@ func rollbackTarget(ctx context.Context, migration *model.Migration, instance *m
 	command := fmt.Sprintf("/opt/cloudland/scripts/backend/clear_target_migration.sh '%d' '%d' '%d' '%d' '%s'<<'EOF'\n%s\nEOF", migration.ID, task3.ID, instance.ID, instance.RouterID, ShellEscape(strings.Join(macs, " ")), planJson)
 	if err = HyperExecute(ctx, control, command); err != nil {
 		logger.Ctx(ctx).Error("Execute clear target failed", err)
+		return
+	}
+	// The target got the transit gateway at target_prepared; it keeps it only if another member is there
+	if terr := services.TgwNodeCheckLeave(ctx, instance.RouterID, migration.TargetHyper, migration.ID); terr != nil {
+		logger.Ctx(ctx).Warningf("Failed to check the transit gateway of the migration target, %v", terr)
 	}
 	return
 }

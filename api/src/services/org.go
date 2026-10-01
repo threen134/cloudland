@@ -888,6 +888,7 @@ var orgBlockingResources = []struct {
 	{"load balancers", &model.LoadBalancer{}, "owner = ?"},
 	{"listeners", &model.Listener{}, "owner = ?"},
 	{"VPN gateways", &model.VpnGateway{}, "owner = ?"},
+	{"transit gateways", &model.TransitGateway{}, "owner = ?"},
 	{"images", &model.Image{}, "owner = ?"},
 	{"placement groups", &model.PlacementGroup{}, "owner = ?"},
 	{"tasks", &model.Task{}, "owner = ?"},

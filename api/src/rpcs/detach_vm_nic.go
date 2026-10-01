@@ -13,6 +13,7 @@ import (
 
 	. "api/src/common"
 	"api/src/model"
+	"api/src/services"
 )
 
 func init() {
@@ -59,6 +60,9 @@ func DetachInterface(ctx context.Context, args []string) (status string, err err
 	if err != nil {
 		logger.Ctx(ctx).Error("Failed to delete interface", err)
 		return
+	}
+	if terr := services.TgwNodeCheckLeave(ctx, iface.RouterID, iface.Hyper); terr != nil {
+		logger.Ctx(ctx).Warningf("Failed to check the transit gateway of hyper %d, %v", iface.Hyper, terr)
 	}
 	var tmpIfaces []*model.Interface
 	if err = db.Model(&model.Interface{}).Preload("Address").Preload("Address.Subnet").Where("instance = ? and router_id > 0", instance.ID).Find(&tmpIfaces).Error; err != nil {

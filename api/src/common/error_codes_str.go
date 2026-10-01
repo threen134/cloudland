@@ -177,6 +177,22 @@ func _() {
 	_ = x[ErrVpnSecretUnavailable-132031]
 	_ = x[ErrVpnCidrConflict-132032]
 	_ = x[ErrRouterHasVpnGateway-132033]
+	_ = x[ErrTgwNotFound-133001]
+	_ = x[ErrTgwExists-133002]
+	_ = x[ErrTgwInUse-133003]
+	_ = x[ErrTgwAttachmentNotFound-133011]
+	_ = x[ErrTgwAttachmentExists-133012]
+	_ = x[ErrTgwAttachmentLimit-133013]
+	_ = x[ErrTgwCidrConflict-133014]
+	_ = x[ErrTgwAttachmentBusy-133015]
+	_ = x[ErrTgwRouteTableNotFound-133021]
+	_ = x[ErrTgwRouteTableExists-133022]
+	_ = x[ErrTgwRouteTableInUse-133023]
+	_ = x[ErrTgwRouteNotFound-133031]
+	_ = x[ErrTgwRouteExists-133032]
+	_ = x[ErrTgwPropagationNotFound-133041]
+	_ = x[ErrTgwPropagationExists-133042]
+	_ = x[ErrRouterHasTgwAttachment-133051]
 	_ = x[ErrSecurityGroupNotFound-141001]
 	_ = x[ErrSecurityGroupCreateFailed-141002]
 	_ = x[ErrSecurityGroupUpdateFailed-141003]
@@ -222,7 +238,7 @@ func _() {
 	_ = x[ErrDictionaryDeleteFailed-199804]
 }
 
-const _ErrCode_name = "UnknownInsufficientResourceResourceNotFoundInvalidParameterPermissionDeniedExecuteOnHyperFailedOwnerNotFoundEncryptionFailedJSONMarshalFailedResourcesInOrgInvalidCIDRCIDRTooBigOperationNotSupportedDatabaseErrorSQLSyntaxErrorUserNotFoundUserCreationFailedUserUpdateFailedUserDeleteFailedOrgNotFoundOrgCreationFailedOrgUpdateFailedOrgDeleteFailedNoRoleOnUserPasswordHashFailedPasswordMismatchNoOrgMembershipUserDisabledCannotRemoveOwnerEmailConflictLastSystemAdminCannotSelfDemoteMissingOrgContextOrgHasResourcesOrgHasMembersSlugConflictSlugImmutableSlugInvalidSlugReservedMemberNotFoundMemberCreationFailedMemberUpdateFailedMemberDeleteFailedInstanceNotFoundInstanceCreationFailedInstanceUpdateFailedInstanceDeleteFailedInstanceInvalidStateInstanceInvalidConfigInstancePowerActionFailInstanceNoRouterInstanceNoPrimaryInterfaceInvalidDomainFormatConsoleCreateFailedConsoleNotFoundInvalidConsoleTokenInvalidMetadataPlacementGroupNotFoundPlacementGroupExistsPlacementGroupInUsePlacementGroupNoHostPlacementGroupHostFullPlacementGroupConflictPlacementGroupLimitPlacementGroupBusyMigrationNotFoundMigrationCreateFailedMigrationUpdateFailedMigrationDeleteFailedMigrationInProgressFlavorNotFoundFlavorCreateFailedFlavorUpdateFailedFlavorDeleteFailedFlavorInUseDiskTooSmallVolumeNotFoundVolumeCreationFailedVolumeUpdateFailedVolumeDeleteFailedVolumeAttachFailedVolumeDetachFailedVolumeInvalidStateVolumeInvalidSizeBootVolumeNotFoundBootVolumeUpdateFailedBootVolumeDeleteFailedVolumeIsInUseBootVolumeCannotDetachVolumeIsBusyStoragePoolNotFoundStoragePoolUnavailableStorageCapacityExceededStoragePoolInUseStorageDiskNotAllowedStorageMediaMismatchStoragePoolInvalidStateStorageConfirmMismatchAddressNotFoundAddressUpdateFailedAddressDeleteFailedInsufficientAddressAddressCreateFailedAddressInUseSubnetNotFoundSubnetCreateFailedSubnetUpdateFailedSubnetDeleteFailedSubnetShouldBePublicSubnetShouldBeSitePublicSubnetNotFoundSiteSubnetUpdateFailedSubnetsCrossVPCInOneInstancePublicSubnetCannotInVPCInterfaceNotFoundInterfaceCreateFailedInterfaceUpdateFailedNotAllowInterfaceInSiteSubnetInterfaceDeleteFailedCannotDeletePrimaryInterfaceTooManyInterfacesInterfaceInvalidSubnetFIPInUseDummyFIPCreateFailedUpdateGroupIDFailedFIPListFailedRouterNotFoundRouterCreateFailedRouterUpdateFailedRouterUpdateDefaultSGFailedRouterDeleteFailedRouterInUseRouterHasFloatingIPsRouterHasSubnetsRouterHasPortmapsIpGroupNotFoundIpGroupCreateFailedIpGroupUpdateFailedIpGroupDeleteFailedIpGroupInUseVpnGatewayNotFoundVpnGatewayCreateFailedVpnGatewayUpdateFailedVpnGatewayDeleteFailedVpnGatewayExistsVpnGatewayNotReadyVpnGatewayInUseVpnGatewayDisabledVpnGatewayNeedsNodesVpnConnectionNotFoundVpnConnectionCreateFailedVpnConnectionUpdateFailedVpnConnectionDeleteFailedVpnClientNotFoundVpnClientCreateFailedVpnClientUpdateFailedVpnClientDeleteFailedVpnClientPoolExhaustedVpnSecretUnavailableVpnCidrConflictRouterHasVpnGatewaySecurityGroupNotFoundSecurityGroupCreateFailedSecurityGroupUpdateFailedSecurityGroupDeleteFailedAssociateSG2InterfaceFailedAtLeastOneSGRequiredCannotDeleteDefaultSGSGHasInterfacesSecurityRuleNotFoundSecurityRuleInvalidSecurityRuleDeleteFailedSecurityRuleCreateFailedSecurityRuleUpdateFailedImageNotFoundImageInUseImageNoQAImageCreateFailedImageUpdateFailedImageDeleteFailedImageNotAvailableRescueImageNotFoundSSHKeyNotFoundSSHKeyCreateFailedSSHKeyUpdateFailedSSHKeyDeleteFailedSSHKeyGenerateFailedSSHKeyInUseNoQualifiedHypervisorHypervisorNotFoundHypervisorUpdateFailedHypervisorDeleteFailedHypervisorInvalidStateZoneNotFoundUnsetDefaultZoneFailedZoneCreationFailedZoneUpdateFailedZoneDeleteFailedHypersInZoneTaskNotFoundDictionaryRecordsNotFoundDictionaryCreateFailedDictionaryUpdateFailedDictionaryDeleteFailed"
+const _ErrCode_name = "UnknownInsufficientResourceResourceNotFoundInvalidParameterPermissionDeniedExecuteOnHyperFailedOwnerNotFoundEncryptionFailedJSONMarshalFailedResourcesInOrgInvalidCIDRCIDRTooBigOperationNotSupportedDatabaseErrorSQLSyntaxErrorUserNotFoundUserCreationFailedUserUpdateFailedUserDeleteFailedOrgNotFoundOrgCreationFailedOrgUpdateFailedOrgDeleteFailedNoRoleOnUserPasswordHashFailedPasswordMismatchNoOrgMembershipUserDisabledCannotRemoveOwnerEmailConflictLastSystemAdminCannotSelfDemoteMissingOrgContextOrgHasResourcesOrgHasMembersSlugConflictSlugImmutableSlugInvalidSlugReservedMemberNotFoundMemberCreationFailedMemberUpdateFailedMemberDeleteFailedInstanceNotFoundInstanceCreationFailedInstanceUpdateFailedInstanceDeleteFailedInstanceInvalidStateInstanceInvalidConfigInstancePowerActionFailInstanceNoRouterInstanceNoPrimaryInterfaceInvalidDomainFormatConsoleCreateFailedConsoleNotFoundInvalidConsoleTokenInvalidMetadataPlacementGroupNotFoundPlacementGroupExistsPlacementGroupInUsePlacementGroupNoHostPlacementGroupHostFullPlacementGroupConflictPlacementGroupLimitPlacementGroupBusyMigrationNotFoundMigrationCreateFailedMigrationUpdateFailedMigrationDeleteFailedMigrationInProgressFlavorNotFoundFlavorCreateFailedFlavorUpdateFailedFlavorDeleteFailedFlavorInUseDiskTooSmallVolumeNotFoundVolumeCreationFailedVolumeUpdateFailedVolumeDeleteFailedVolumeAttachFailedVolumeDetachFailedVolumeInvalidStateVolumeInvalidSizeBootVolumeNotFoundBootVolumeUpdateFailedBootVolumeDeleteFailedVolumeIsInUseBootVolumeCannotDetachVolumeIsBusyStoragePoolNotFoundStoragePoolUnavailableStorageCapacityExceededStoragePoolInUseStorageDiskNotAllowedStorageMediaMismatchStoragePoolInvalidStateStorageConfirmMismatchAddressNotFoundAddressUpdateFailedAddressDeleteFailedInsufficientAddressAddressCreateFailedAddressInUseSubnetNotFoundSubnetCreateFailedSubnetUpdateFailedSubnetDeleteFailedSubnetShouldBePublicSubnetShouldBeSitePublicSubnetNotFoundSiteSubnetUpdateFailedSubnetsCrossVPCInOneInstancePublicSubnetCannotInVPCInterfaceNotFoundInterfaceCreateFailedInterfaceUpdateFailedNotAllowInterfaceInSiteSubnetInterfaceDeleteFailedCannotDeletePrimaryInterfaceTooManyInterfacesInterfaceInvalidSubnetFIPInUseDummyFIPCreateFailedUpdateGroupIDFailedFIPListFailedRouterNotFoundRouterCreateFailedRouterUpdateFailedRouterUpdateDefaultSGFailedRouterDeleteFailedRouterInUseRouterHasFloatingIPsRouterHasSubnetsRouterHasPortmapsIpGroupNotFoundIpGroupCreateFailedIpGroupUpdateFailedIpGroupDeleteFailedIpGroupInUseVpnGatewayNotFoundVpnGatewayCreateFailedVpnGatewayUpdateFailedVpnGatewayDeleteFailedVpnGatewayExistsVpnGatewayNotReadyVpnGatewayInUseVpnGatewayDisabledVpnGatewayNeedsNodesVpnConnectionNotFoundVpnConnectionCreateFailedVpnConnectionUpdateFailedVpnConnectionDeleteFailedVpnClientNotFoundVpnClientCreateFailedVpnClientUpdateFailedVpnClientDeleteFailedVpnClientPoolExhaustedVpnSecretUnavailableVpnCidrConflictRouterHasVpnGatewayTgwNotFoundTgwExistsTgwInUseTgwAttachmentNotFoundTgwAttachmentExistsTgwAttachmentLimitTgwCidrConflictTgwAttachmentBusyTgwRouteTableNotFoundTgwRouteTableExistsTgwRouteTableInUseTgwRouteNotFoundTgwRouteExistsTgwPropagationNotFoundTgwPropagationExistsRouterHasTgwAttachmentSecurityGroupNotFoundSecurityGroupCreateFailedSecurityGroupUpdateFailedSecurityGroupDeleteFailedAssociateSG2InterfaceFailedAtLeastOneSGRequiredCannotDeleteDefaultSGSGHasInterfacesSecurityRuleNotFoundSecurityRuleInvalidSecurityRuleDeleteFailedSecurityRuleCreateFailedSecurityRuleUpdateFailedImageNotFoundImageInUseImageNoQAImageCreateFailedImageUpdateFailedImageDeleteFailedImageNotAvailableRescueImageNotFoundSSHKeyNotFoundSSHKeyCreateFailedSSHKeyUpdateFailedSSHKeyDeleteFailedSSHKeyGenerateFailedSSHKeyInUseNoQualifiedHypervisorHypervisorNotFoundHypervisorUpdateFailedHypervisorDeleteFailedHypervisorInvalidStateZoneNotFoundUnsetDefaultZoneFailedZoneCreationFailedZoneUpdateFailedZoneDeleteFailedHypersInZoneTaskNotFoundDictionaryRecordsNotFoundDictionaryCreateFailedDictionaryUpdateFailedDictionaryDeleteFailed"
 
 var _ErrCode_map = map[ErrCode]string{
 	100000: _ErrCode_name[0:7],
@@ -386,49 +402,65 @@ var _ErrCode_map = map[ErrCode]string{
 	132031: _ErrCode_name[2830:2850],
 	132032: _ErrCode_name[2850:2865],
 	132033: _ErrCode_name[2865:2884],
-	141001: _ErrCode_name[2884:2905],
-	141002: _ErrCode_name[2905:2930],
-	141003: _ErrCode_name[2930:2955],
-	141004: _ErrCode_name[2955:2980],
-	141005: _ErrCode_name[2980:3007],
-	141006: _ErrCode_name[3007:3027],
-	141007: _ErrCode_name[3027:3048],
-	141008: _ErrCode_name[3048:3063],
-	141009: _ErrCode_name[3063:3083],
-	141010: _ErrCode_name[3083:3102],
-	141011: _ErrCode_name[3102:3126],
-	141012: _ErrCode_name[3126:3150],
-	141013: _ErrCode_name[3150:3174],
-	151000: _ErrCode_name[3174:3187],
-	151001: _ErrCode_name[3187:3197],
-	151002: _ErrCode_name[3197:3206],
-	151003: _ErrCode_name[3206:3223],
-	151004: _ErrCode_name[3223:3240],
-	151005: _ErrCode_name[3240:3257],
-	151006: _ErrCode_name[3257:3274],
-	151011: _ErrCode_name[3274:3293],
-	161001: _ErrCode_name[3293:3307],
-	161002: _ErrCode_name[3307:3325],
-	161003: _ErrCode_name[3325:3343],
-	161004: _ErrCode_name[3343:3361],
-	161005: _ErrCode_name[3361:3381],
-	161006: _ErrCode_name[3381:3392],
-	171001: _ErrCode_name[3392:3413],
-	171002: _ErrCode_name[3413:3431],
-	171003: _ErrCode_name[3431:3453],
-	171004: _ErrCode_name[3453:3475],
-	171005: _ErrCode_name[3475:3497],
-	171006: _ErrCode_name[3497:3509],
-	171007: _ErrCode_name[3509:3531],
-	171008: _ErrCode_name[3531:3549],
-	171009: _ErrCode_name[3549:3565],
-	171010: _ErrCode_name[3565:3581],
-	171011: _ErrCode_name[3581:3593],
-	181001: _ErrCode_name[3593:3605],
-	199801: _ErrCode_name[3605:3630],
-	199802: _ErrCode_name[3630:3652],
-	199803: _ErrCode_name[3652:3674],
-	199804: _ErrCode_name[3674:3696],
+	133001: _ErrCode_name[2884:2895],
+	133002: _ErrCode_name[2895:2904],
+	133003: _ErrCode_name[2904:2912],
+	133011: _ErrCode_name[2912:2933],
+	133012: _ErrCode_name[2933:2952],
+	133013: _ErrCode_name[2952:2970],
+	133014: _ErrCode_name[2970:2985],
+	133015: _ErrCode_name[2985:3002],
+	133021: _ErrCode_name[3002:3023],
+	133022: _ErrCode_name[3023:3042],
+	133023: _ErrCode_name[3042:3060],
+	133031: _ErrCode_name[3060:3076],
+	133032: _ErrCode_name[3076:3090],
+	133041: _ErrCode_name[3090:3112],
+	133042: _ErrCode_name[3112:3132],
+	133051: _ErrCode_name[3132:3154],
+	141001: _ErrCode_name[3154:3175],
+	141002: _ErrCode_name[3175:3200],
+	141003: _ErrCode_name[3200:3225],
+	141004: _ErrCode_name[3225:3250],
+	141005: _ErrCode_name[3250:3277],
+	141006: _ErrCode_name[3277:3297],
+	141007: _ErrCode_name[3297:3318],
+	141008: _ErrCode_name[3318:3333],
+	141009: _ErrCode_name[3333:3353],
+	141010: _ErrCode_name[3353:3372],
+	141011: _ErrCode_name[3372:3396],
+	141012: _ErrCode_name[3396:3420],
+	141013: _ErrCode_name[3420:3444],
+	151000: _ErrCode_name[3444:3457],
+	151001: _ErrCode_name[3457:3467],
+	151002: _ErrCode_name[3467:3476],
+	151003: _ErrCode_name[3476:3493],
+	151004: _ErrCode_name[3493:3510],
+	151005: _ErrCode_name[3510:3527],
+	151006: _ErrCode_name[3527:3544],
+	151011: _ErrCode_name[3544:3563],
+	161001: _ErrCode_name[3563:3577],
+	161002: _ErrCode_name[3577:3595],
+	161003: _ErrCode_name[3595:3613],
+	161004: _ErrCode_name[3613:3631],
+	161005: _ErrCode_name[3631:3651],
+	161006: _ErrCode_name[3651:3662],
+	171001: _ErrCode_name[3662:3683],
+	171002: _ErrCode_name[3683:3701],
+	171003: _ErrCode_name[3701:3723],
+	171004: _ErrCode_name[3723:3745],
+	171005: _ErrCode_name[3745:3767],
+	171006: _ErrCode_name[3767:3779],
+	171007: _ErrCode_name[3779:3801],
+	171008: _ErrCode_name[3801:3819],
+	171009: _ErrCode_name[3819:3835],
+	171010: _ErrCode_name[3835:3851],
+	171011: _ErrCode_name[3851:3863],
+	181001: _ErrCode_name[3863:3875],
+	199801: _ErrCode_name[3875:3900],
+	199802: _ErrCode_name[3900:3922],
+	199803: _ErrCode_name[3922:3944],
+	199804: _ErrCode_name[3944:3966],
 }
 
 func (i ErrCode) String() string {

@@ -245,6 +245,24 @@ const (
 	ErrVpnCidrConflict           ErrCode = 132032 // overlaps a VPC subnet, the VRRP subnet, the router links or another prefix
 	ErrRouterHasVpnGateway       ErrCode = 132033
 
+	// Transit gateway related errors (1330xx)
+	ErrTgwNotFound            ErrCode = 133001
+	ErrTgwExists              ErrCode = 133002 // the name is taken in the organization
+	ErrTgwInUse               ErrCode = 133003 // VPCs are still attached
+	ErrTgwAttachmentNotFound  ErrCode = 133011
+	ErrTgwAttachmentExists    ErrCode = 133012 // the VPC is attached to a transit gateway already
+	ErrTgwAttachmentLimit     ErrCode = 133013
+	ErrTgwCidrConflict        ErrCode = 133014 // member networks overlap each other, a reserved range or a VPN network
+	ErrTgwAttachmentBusy      ErrCode = 133015 // the attachment is being detached
+	ErrTgwRouteTableNotFound  ErrCode = 133021
+	ErrTgwRouteTableExists    ErrCode = 133022
+	ErrTgwRouteTableInUse     ErrCode = 133023 // attachments are associated with it, or it is the default table
+	ErrTgwRouteNotFound       ErrCode = 133031
+	ErrTgwRouteExists         ErrCode = 133032
+	ErrTgwPropagationNotFound ErrCode = 133041
+	ErrTgwPropagationExists   ErrCode = 133042
+	ErrRouterHasTgwAttachment ErrCode = 133051
+
 	// Security related errors (141xxx)
 	ErrSecurityGroupNotFound       ErrCode = 141001
 	ErrSecurityGroupCreateFailed   ErrCode = 141002
@@ -319,6 +337,13 @@ func (c ErrCode) ToHTTPStatus() int {
 		return 400
 	case c == ErrVpnSecretUnavailable:
 		return 503
+	case c == ErrTgwNotFound || c == ErrTgwAttachmentNotFound || c == ErrTgwRouteTableNotFound || c == ErrTgwRouteNotFound || c == ErrTgwPropagationNotFound:
+		return 404
+	case c == ErrTgwExists || c == ErrTgwInUse || c == ErrTgwAttachmentExists || c == ErrTgwAttachmentLimit || c == ErrTgwAttachmentBusy ||
+		c == ErrTgwRouteTableExists || c == ErrTgwRouteTableInUse || c == ErrTgwRouteExists || c == ErrTgwPropagationExists || c == ErrRouterHasTgwAttachment:
+		return 409
+	case c == ErrTgwCidrConflict:
+		return 400
 	case c == ErrPlacementGroupNotFound:
 		return 404
 	case c == ErrPlacementGroupExists || c == ErrPlacementGroupInUse || c == ErrPlacementGroupNoHost ||
