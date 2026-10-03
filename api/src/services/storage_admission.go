@@ -214,3 +214,95 @@ func instanceBusyForVolumes(instance *model.Instance) error {
 	}
 	return nil
 }
+
+// admitShared decides whether addGB more may be allocated in a shared pool (shared-storage-design.md §9.5): the
+// volumes of the pool, with those of the pools sharing its capacity (CapacityGroup), plus addGB stay within the
+// capacity times the over ratio of the pool, and the pool is less than 90% used. With lock it must run in a
+// transaction: the rows of the pools are locked, in id order, so concurrent admissions see each other's volumes once
+// the caller writes them in the same transaction. A capacity no host reported yet is refused: a full Ceph cluster
+// blocks every pool, there is no "allow for now"
+func admitShared(tx *gorm.DB, pool *model.StoragePool, addGB int64, lock bool) (err error) {
+	if pool.Status != model.StoragePoolActive {
+		return NewCLError(ErrStoragePoolUnavailable, fmt.Sprintf("Storage pool %s is %s", pool.Name, pool.Status), nil)
+	}
+	d, err := poolDriverOf(pool)
+	if err != nil {
+		return
+	}
+	q := tx
+	if lock {
+		q = q.Clauses(clause.Locking{Strength: "UPDATE"})
+	}
+	candidates := []*model.StoragePool{}
+	key := d.CapacityGroup(pool)
+	if key == "" {
+		err = q.Where("id = ?", pool.ID).Find(&candidates).Error
+	} else {
+		err = q.Where("cluster_id = ? AND driver = ? AND quota_bytes = 0", pool.ClusterID, pool.Driver).Order("id").Find(&candidates).Error
+	}
+	if err != nil {
+		return NewCLError(ErrSQLSyntaxError, "Failed to lock the storage pools", err)
+	}
+	var cur *model.StoragePool
+	ids := []int64{}
+	for _, c := range candidates {
+		if c.ID == pool.ID {
+			cur = c
+		}
+		if c.ID == pool.ID || (key != "" && d.CapacityGroup(c) == key) {
+			ids = append(ids, c.ID)
+		}
+	}
+	if cur == nil {
+		return NewCLError(ErrStoragePoolNotFound, fmt.Sprintf("Storage pool %s not found", pool.Name), nil)
+	}
+	if cur.Status != model.StoragePoolActive {
+		return NewCLError(ErrStoragePoolUnavailable, fmt.Sprintf("Storage pool %s is %s", cur.Name, cur.Status), nil)
+	}
+	if cur.CapacityAt == nil || cur.CapacityBytes <= 0 {
+		return NewCLError(ErrStoragePoolUnavailable, fmt.Sprintf("Capacity of storage pool %s is not known yet", cur.Name), nil)
+	}
+	if ratio := cur.UsageRatio(); ratio >= poolAdmitUsageLimit {
+		return NewCLError(ErrStorageCapacityExceeded, fmt.Sprintf("Storage pool %s is %.0f%% full", cur.Name, ratio*100), nil)
+	}
+	var allocatedGB int64
+	if err = tx.Model(&model.Volume{}).Where("storage_pool_id IN ?", ids).Select("COALESCE(SUM(size), 0)").Scan(&allocatedGB).Error; err != nil {
+		return NewCLError(ErrSQLSyntaxError, "Failed to sum the volumes of the pool", err)
+	}
+	ratio := cur.OverRatio
+	if ratio <= 0 {
+		ratio = 1
+	}
+	limit := int64(float64(cur.CapacityBytes) * ratio)
+	if (allocatedGB+addGB)*gib > limit {
+		shared := ""
+		if len(ids) > 1 {
+			shared = fmt.Sprintf(" (with %d pools sharing its disks)", len(ids)-1)
+		}
+		return NewCLError(ErrStorageCapacityExceeded, fmt.Sprintf("Storage pool %s can not take %d GB more: %d of %d GB allocated%s",
+			cur.Name, addGB, allocatedGB, limit/gib, shared), nil)
+	}
+	return
+}
+
+// sharedAllocatedBytes is what the volumes of a shared pool take
+func sharedAllocatedBytes(db *gorm.DB, poolID int64) (total int64) {
+	var gb int64
+	db.Model(&model.Volume{}).Where("storage_pool_id = ?", poolID).Select("COALESCE(SUM(size), 0)").Scan(&gb)
+	return gb * gib
+}
+
+// sharedAllocatedByPool is sharedAllocatedBytes of many pools in one grouped query
+func sharedAllocatedByPool(db *gorm.DB, poolIDs []int64) map[int64]int64 {
+	rows := []struct {
+		StoragePoolID int64
+		GB            int64 `gorm:"column:gb"`
+	}{}
+	db.Model(&model.Volume{}).Where("storage_pool_id IN ?", poolIDs).Select("storage_pool_id, COALESCE(SUM(size), 0) AS gb").
+		Group("storage_pool_id").Scan(&rows)
+	total := make(map[int64]int64, len(rows))
+	for _, r := range rows {
+		total[r.StoragePoolID] = r.GB * gib
+	}
+	return total
+}

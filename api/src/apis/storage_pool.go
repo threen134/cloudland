@@ -32,6 +32,12 @@ type StoragePoolPayload struct {
 	OverRatio     float64 `json:"over_ratio" binding:"omitempty,gte=0,lte=20"`
 	IsDefault     bool    `json:"is_default"`
 	Description   string  `json:"description" binding:"omitempty,max=256"`
+	// A shared pool on this storage cluster (shared-storage-design.md §7.4); without it a local pool
+	Cluster *BaseReference `json:"cluster" binding:"omitempty"`
+	// Shared pools: quota of the pool in GB, 0 = none
+	QuotaGB int64 `json:"quota_gb" binding:"omitempty,gte=0"`
+	// Shared pools: parameters of the kind of the cluster (gpfs: filesystem, inode_limit)
+	Params json.RawMessage `json:"params" swaggertype:"object"`
 }
 
 type StoragePoolPatchPayload struct {
@@ -42,6 +48,14 @@ type StoragePoolPatchPayload struct {
 	Status        *string  `json:"status" binding:"omitempty,oneof=active disabled"`
 	IsDefault     *bool    `json:"is_default" binding:"omitempty"`
 	Description   *string  `json:"description" binding:"omitempty,max=256"`
+	// Shared pools: a new quota in GB (0 = none), set on the cluster by a task
+	QuotaGB *int64 `json:"quota_gb" binding:"omitempty,gte=0"`
+}
+
+// StoragePoolTaskResponse is a pool with the storage task working on it (shared pools)
+type StoragePoolTaskResponse struct {
+	StoragePool *StoragePoolResponse `json:"storage_pool,omitempty"`
+	Task        *StorageTaskResponse `json:"task,omitempty"`
 }
 
 type StoragePoolResponse struct {
@@ -61,6 +75,12 @@ type StoragePoolResponse struct {
 	CapacityBytes  int64   `json:"capacity_bytes,omitempty"`
 	UsedBytes      int64   `json:"used_bytes,omitempty"`
 	AllocatedBytes int64   `json:"allocated_bytes,omitempty"`
+	// Shared pools: the kind of storage behind them, for everybody; the cluster and the rest for system admins
+	ClusterKind  string             `json:"cluster_kind,omitempty"`
+	Cluster      *ResourceReference `json:"cluster,omitempty"`
+	QuotaBytes   int64              `json:"quota_bytes,omitempty"`
+	CapacityAt   string             `json:"capacity_at,omitempty"`
+	DriverParams json.RawMessage    `json:"driver_params,omitempty" swaggertype:"object"`
 }
 
 type StoragePoolListResponse struct {
@@ -72,9 +92,11 @@ type StoragePoolListResponse struct {
 
 // HostPoolResponse is a pool set up on a host
 type HostPoolResponse struct {
-	StoragePool       *ResourceReference     `json:"storage_pool"`
-	Hypervisor        *ResourceReference     `json:"hypervisor"`
-	Builtin           bool                   `json:"builtin"`
+	StoragePool *ResourceReference `json:"storage_pool"`
+	Hypervisor  *ResourceReference `json:"hypervisor"`
+	Builtin     bool               `json:"builtin"`
+	// A shared pool: the row only tells whether the host reaches it; it is managed on its storage cluster
+	Shared            bool                   `json:"shared"`
 	Media             string                 `json:"media"`
 	Status            string                 `json:"status"`
 	Reason            string                 `json:"reason"`
@@ -188,7 +210,18 @@ func (v *StoragePoolAPI) poolResponse(ctx context.Context, pool *model.StoragePo
 		IsDefault:         pool.IsDefault,
 		AvailableHosts:    summary.AvailableHosts,
 	}
+	// From the summary: the list loads the clusters of a page at once
+	cluster := summary.Cluster
+	if cluster != nil {
+		resp.ClusterKind = cluster.Kind
+	}
 	if GetMemberShip(ctx).IsSystemAdmin() {
+		if cluster != nil {
+			resp.Cluster = &ResourceReference{ID: cluster.UUID, Name: cluster.Name}
+		}
+		resp.QuotaBytes = pool.QuotaBytes
+		resp.CapacityAt = formatTimePtr(pool.CapacityAt)
+		resp.DriverParams = rawAttrs(pool.DriverParams)
 		resp.CreatedAt = pool.CreatedAt.Format(TimeStringForMat)
 		resp.UpdatedAt = pool.UpdatedAt.Format(TimeStringForMat)
 		resp.FallbackGroup = pool.FallbackGroup
@@ -209,6 +242,7 @@ func hostPoolResponse(view *services.HyperPoolView) *HostPoolResponse {
 	resp := &HostPoolResponse{
 		StoragePool:       &ResourceReference{ID: view.Pool.UUID, Name: view.Pool.Name},
 		Builtin:           view.Pool.Builtin,
+		Shared:            view.Pool.Shared(),
 		Media:             view.Pool.Media,
 		Status:            row.Status,
 		Reason:            row.Reason,
@@ -293,18 +327,39 @@ func (v *StoragePoolAPI) Get(c *gin.Context) {
 }
 
 // @Summary create a storage pool
-// @Description create a local storage pool. Its directory on every host is /opt/cloudland/pools/<uuid>; nothing is written on any host until the pool is set up there
+// @Description create a local storage pool: its directory on every host is /opt/cloudland/pools/<uuid>, nothing is written on any host until the pool is set up there. With a cluster, a shared pool on that storage cluster: 202, the pool is creating until the task (task) made it there (shared-storage-design.md §7.4)
 // @tags StoragePool
 // @Accept  json
 // @Produce json
 // @Param   message  body  StoragePoolPayload  true  "Storage pool"
 // @Success 200 {object} StoragePoolResponse
+// @Success 202 {object} StoragePoolTaskResponse
 // @Router /storage_pools [post]
 func (v *StoragePoolAPI) Create(c *gin.Context) {
 	ctx := c.Request.Context()
 	payload := &StoragePoolPayload{}
 	if err := c.ShouldBindJSON(payload); err != nil {
 		ErrorResponse(c, http.StatusBadRequest, "Invalid input JSON", err)
+		return
+	}
+	if payload.Cluster != nil && payload.Cluster.ID != "" {
+		if payload.FallbackGroup != "" {
+			ErrorResponse(c, http.StatusBadRequest, "A shared pool has no fallback group", nil)
+			return
+		}
+		pool, task, err := storagePoolAdmin.CreateShared(ctx, &services.SharedPoolCreate{Name: payload.Name, ClusterUUID: payload.Cluster.ID,
+			Media: payload.Media, QuotaGB: payload.QuotaGB, OverRatio: payload.OverRatio, IsDefault: payload.IsDefault,
+			Description: payload.Description, Params: payload.Params})
+		if err != nil {
+			ErrorResponse(c, http.StatusBadRequest, "Failed to create storage pool", err)
+			return
+		}
+		c.JSON(http.StatusAccepted, &StoragePoolTaskResponse{StoragePool: v.poolResponse(ctx, pool, hyperStorage.Summary(ctx, pool)),
+			Task: storageTaskResponse(task, nil)})
+		return
+	}
+	if payload.QuotaGB > 0 || len(payload.Params) > 0 && string(payload.Params) != "null" {
+		ErrorResponse(c, http.StatusBadRequest, "A quota and parameters are for shared pools only", nil)
 		return
 	}
 	pool, err := storagePoolAdmin.Create(ctx, payload.Name, payload.Media, payload.FallbackGroup, payload.OverRatio, payload.IsDefault, payload.Description)
@@ -316,12 +371,14 @@ func (v *StoragePoolAPI) Create(c *gin.Context) {
 }
 
 // @Summary update a storage pool
+// @Description quota_gb (shared pools only) is changed on its own: a task sets it on the storage cluster (202); with other fields in the same request it is refused before anything changes
 // @tags StoragePool
 // @Accept  json
 // @Produce json
 // @Param   id       path  string                   true  "Storage pool UUID"
 // @Param   message  body  StoragePoolPatchPayload  true  "Fields to change"
 // @Success 200 {object} StoragePoolResponse
+// @Success 202 {object} StoragePoolTaskResponse
 // @Router /storage_pools/{id} [patch]
 func (v *StoragePoolAPI) Patch(c *gin.Context) {
 	ctx := c.Request.Context()
@@ -333,6 +390,27 @@ func (v *StoragePoolAPI) Patch(c *gin.Context) {
 	payload := &StoragePoolPatchPayload{}
 	if err = c.ShouldBindJSON(payload); err != nil {
 		ErrorResponse(c, http.StatusBadRequest, "Invalid input JSON", err)
+		return
+	}
+	if payload.QuotaGB != nil {
+		// The quota lives on the storage cluster and a task sets it there, which can not share a transaction with
+		// the other fields: it is changed on its own, and refused before anything is
+		if !pool.Shared() {
+			ErrorResponse(c, http.StatusBadRequest, "A quota is for shared pools only", nil)
+			return
+		}
+		if payload.Name != nil || payload.Media != nil || payload.FallbackGroup != nil || payload.OverRatio != nil ||
+			payload.Status != nil || payload.IsDefault != nil || payload.Description != nil {
+			ErrorResponse(c, http.StatusBadRequest, "Change the quota on its own, not with other fields", nil)
+			return
+		}
+		task, err := storagePoolAdmin.UpdateSharedQuota(ctx, pool, *payload.QuotaGB)
+		if err != nil {
+			ErrorResponse(c, http.StatusBadRequest, "Failed to change the quota of the storage pool", err)
+			return
+		}
+		c.JSON(http.StatusAccepted, &StoragePoolTaskResponse{StoragePool: v.poolResponse(ctx, pool, hyperStorage.Summary(ctx, pool)),
+			Task: storageTaskResponse(task, nil)})
 		return
 	}
 	err = storagePoolAdmin.Update(ctx, pool, &services.StoragePoolUpdate{
@@ -348,15 +426,26 @@ func (v *StoragePoolAPI) Patch(c *gin.Context) {
 }
 
 // @Summary delete a storage pool
+// @Description a shared pool is removed from its storage cluster by a task (202): refused while it holds volumes
 // @tags StoragePool
 // @Param   id  path  string  true  "Storage pool UUID"
 // @Success 204
+// @Success 202 {object} StoragePoolTaskResponse
 // @Router /storage_pools/{id} [delete]
 func (v *StoragePoolAPI) Delete(c *gin.Context) {
 	ctx := c.Request.Context()
 	pool, err := storagePoolAdmin.GetByUUID(ctx, c.Param("id"))
 	if err != nil {
 		ErrorResponse(c, http.StatusBadRequest, "Invalid storage pool", err)
+		return
+	}
+	if pool.Shared() {
+		task, err := storagePoolAdmin.DeleteShared(ctx, pool)
+		if err != nil {
+			ErrorResponse(c, http.StatusBadRequest, "Failed to delete storage pool", err)
+			return
+		}
+		c.JSON(http.StatusAccepted, &StoragePoolTaskResponse{Task: storageTaskResponse(task, nil)})
 		return
 	}
 	if err = storagePoolAdmin.Delete(ctx, pool); err != nil {

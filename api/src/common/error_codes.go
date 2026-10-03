@@ -138,6 +138,16 @@ const (
 	ErrStoragePoolInvalidState ErrCode = 122007
 	ErrStorageConfirmMismatch  ErrCode = 122008 // the typed confirmation does not match the host or pool name
 
+	// Storage cluster related errors (123xxx)
+	ErrStorageClusterNotFound ErrCode = 123001
+	ErrStorageClusterBusy     ErrCode = 123002 // another task holds the cluster
+	ErrStorageTaskNotFound    ErrCode = 123003
+	ErrStorageTaskState       ErrCode = 123004 // the task can not be retried or aborted in its state
+	ErrStoragePackageNotFound ErrCode = 123011
+	ErrStoragePackageState    ErrCode = 123012 // not ready, license not accepted, upload out of order, still in use
+	ErrStorageNeedsS3         ErrCode = 123013 // packages are kept in S3, which is not configured or not reachable
+	ErrStorageInvalidPlan     ErrCode = 123021 // roles, hosts or disks of a request do not make a valid cluster
+
 	// Network related errors (131xxx)
 	// IP Address related errors (1310xx)
 	ErrAddressNotFound     ErrCode = 131001
@@ -241,7 +251,7 @@ const (
 	ErrVpnClientUpdateFailed     ErrCode = 132023
 	ErrVpnClientDeleteFailed     ErrCode = 132024
 	ErrVpnClientPoolExhausted    ErrCode = 132025
-	ErrVpnSecretUnavailable      ErrCode = 132031 // VPN_SECRET_KEY missing or cannot decrypt stored credentials
+	ErrSecretUnavailable         ErrCode = 132031 // VPN_SECRET_KEY missing or cannot decrypt stored credentials (VPN and storage clusters)
 	ErrVpnCidrConflict           ErrCode = 132032 // overlaps a VPC subnet, the VRRP subnet, the router links or another prefix
 	ErrRouterHasVpnGateway       ErrCode = 132033
 
@@ -335,7 +345,7 @@ func (c ErrCode) ToHTTPStatus() int {
 		return 409
 	case c == ErrVpnCidrConflict || c == ErrVpnGatewayNotReady || c == ErrVpnGatewayDisabled || c == ErrVpnGatewayNeedsNodes:
 		return 400
-	case c == ErrVpnSecretUnavailable:
+	case c == ErrSecretUnavailable:
 		return 503
 	case c == ErrTgwNotFound || c == ErrTgwAttachmentNotFound || c == ErrTgwRouteTableNotFound || c == ErrTgwRouteNotFound || c == ErrTgwPropagationNotFound:
 		return 404
@@ -353,6 +363,12 @@ func (c ErrCode) ToHTTPStatus() int {
 		return 400
 	case c == ErrStorageCapacityExceeded || c == ErrStoragePoolInUse:
 		return 409
+	case c == ErrStorageClusterNotFound || c == ErrStorageTaskNotFound || c == ErrStoragePackageNotFound:
+		return 404
+	case c == ErrStorageClusterBusy || c == ErrStorageTaskState || c == ErrStoragePackageState:
+		return 409
+	case c == ErrStorageNeedsS3 || c == ErrStorageInvalidPlan:
+		return 400
 	case c == ErrInsufficientResource || c == ErrInsufficientAddress || c == ErrEmailConflict || c == ErrOrgHasResources || c == ErrOrgHasMembers || c == ErrSlugConflict || c == ErrSlugReserved:
 		return 409
 	default:

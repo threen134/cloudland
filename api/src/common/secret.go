@@ -23,9 +23,9 @@ import (
 )
 
 // Credentials that must be sent to the compute nodes (IPsec PSKs, the gateway WireGuard private key,
-// WireGuard preshared keys, BGP TCP-MD5 passwords) are stored encrypted with a key derived from
-// VPN_SECRET_KEY. The ciphertext carries a version prefix so a future key management change can tell
-// which rows need re-encryption.
+// WireGuard preshared keys, BGP TCP-MD5 passwords, the SSH keys and Ceph client keys of storage clusters)
+// are stored encrypted with a key derived from VPN_SECRET_KEY. The ciphertext carries a version prefix so
+// a future key management change can tell which rows need re-encryption.
 const secretVersionPrefix = "v1:"
 
 var (
@@ -55,7 +55,7 @@ func loadSecretKey() ([]byte, error) {
 // SecretStoreReady reports whether encrypted credentials can be written and read back.
 func SecretStoreReady() error {
 	if _, err := loadSecretKey(); err != nil {
-		return NewCLError(ErrVpnSecretUnavailable, "VPN credential store is unavailable: "+err.Error(), err)
+		return NewCLError(ErrSecretUnavailable, "Credential store is unavailable: "+err.Error(), err)
 	}
 	return nil
 }
@@ -67,7 +67,7 @@ func EncryptSecret(plain string) (string, error) {
 	}
 	key, err := loadSecretKey()
 	if err != nil {
-		return "", NewCLError(ErrVpnSecretUnavailable, "VPN credential store is unavailable", err)
+		return "", NewCLError(ErrSecretUnavailable, "Credential store is unavailable", err)
 	}
 	block, err := aes.NewCipher(key)
 	if err != nil {
@@ -96,7 +96,7 @@ func DecryptSecret(enc string) (string, error) {
 	}
 	key, err := loadSecretKey()
 	if err != nil {
-		return "", NewCLError(ErrVpnSecretUnavailable, "VPN credential store is unavailable", err)
+		return "", NewCLError(ErrSecretUnavailable, "Credential store is unavailable", err)
 	}
 	data, err := base64.StdEncoding.DecodeString(strings.TrimPrefix(enc, secretVersionPrefix))
 	if err != nil {
@@ -115,7 +115,7 @@ func DecryptSecret(enc string) (string, error) {
 	}
 	plain, err := gcm.Open(nil, data[:gcm.NonceSize()], data[gcm.NonceSize():], nil)
 	if err != nil {
-		return "", NewCLError(ErrVpnSecretUnavailable, "VPN credential cannot be decrypted with the configured VPN_SECRET_KEY", err)
+		return "", NewCLError(ErrSecretUnavailable, "Credential cannot be decrypted with the configured VPN_SECRET_KEY", err)
 	}
 	return string(plain), nil
 }

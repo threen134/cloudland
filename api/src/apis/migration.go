@@ -70,6 +70,8 @@ type DiskPlanResponse struct {
 	TargetPool *ResourceReference `json:"target_pool"`
 	Auto       bool               `json:"auto"`
 	Reason     string             `json:"reason,omitempty"`
+	// A disk of a shared pool: not copied, the target opens it where it is
+	Shared bool `json:"shared,omitempty"`
 }
 
 type MigrationListResponse struct {
@@ -409,7 +411,7 @@ func (v *MigrationAPI) diskPlanResponse(migration *model.Migration, names *diskP
 	for _, item := range services.MigrationPlan(migration) {
 		resp = append(resp, &DiskPlanResponse{Volume: names.volume(item.VolumeID), Device: item.Device,
 			Booting: item.Booting, SizeGB: item.SizeGB, SourcePool: names.pool(item.SrcPoolID),
-			TargetPool: names.pool(item.DstPoolID), Auto: item.Auto, Reason: item.Reason})
+			TargetPool: names.pool(item.DstPoolID), Auto: item.Auto, Reason: item.Reason, Shared: item.Shared})
 	}
 	return resp
 }

@@ -48,6 +48,14 @@ func (a *ImageAdminService) Create(ctx context.Context, osCode, name, osVersion,
 		return nil, err
 	}
 	memberShip := GetMemberShip(ctx)
+	// The S3 upload loads the image row in its own session: start it only once the row is committed, deferred
+	// before the transaction so that it runs after EndTransaction
+	var startUpload func()
+	defer func() {
+		if err == nil && startUpload != nil {
+			startUpload()
+		}
+	}()
 	ctx, db, newTransaction := StartTransaction(ctx)
 	defer func() {
 		if newTransaction {
@@ -139,11 +147,14 @@ func (a *ImageAdminService) Create(ctx context.Context, osCode, name, osVersion,
 			// 普通上传：在独立 goroutine 里异步拉远端 URL → PutObject，立即返回
 			// WithoutCancel 保留 trace 上下文，但不随请求结束而取消上传
 			imageID := image.ID
-			uploadCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), S3UploadTimeout())
-			go func() {
-				defer cancel()
-				a.uploadImageToS3(uploadCtx, imageID, url)
-			}()
+			uploadCtx := context.WithoutCancel(ctx)
+			startUpload = func() {
+				go func() {
+					c, cancel := context.WithTimeout(uploadCtx, S3UploadTimeout())
+					defer cancel()
+					a.uploadImageToS3(c, imageID, url)
+				}()
+			}
 			return
 		}
 		// capture：派发给该 VM 所在 hyper 执行脚本，脚本完成后 POST 回 clapi

@@ -74,7 +74,8 @@ func fallbackPool(db *gorm.DB, src *model.StoragePool, hostid int32) (pool *mode
 		return nil
 	}
 	candidates := []*model.StoragePool{}
-	db.Where("fallback_group = ? AND builtin = ? AND status = ? AND id <> ?", src.FallbackGroup, false, model.StoragePoolActive, src.ID).Find(&candidates)
+	db.Where("fallback_group = ? AND builtin = ? AND status = ? AND id <> ? AND driver = ?", src.FallbackGroup, false, model.StoragePoolActive, src.ID,
+		model.StorageDriverLocal).Find(&candidates)
 	var best int64 = -1
 	for _, c := range candidates {
 		hsp, err := poolUsableOn(db, c, hostid, false)
@@ -100,11 +101,29 @@ func planDisks(db *gorm.DB, ctx context.Context, instance *model.Instance, targe
 			VolumeID: v.ID, Device: v.Target, Booting: v.Booting, SizeGB: v.Size,
 			SrcPoolID: src.ID, SrcPath: VolumeAbsPath(src, v),
 		}
+		if src.Shared() {
+			// The target opens the disk where it is: it only has to reach the pool (shared-storage-design.md §10)
+			if poolID, ok := opts.Disks[v.ID]; ok && poolID != src.ID {
+				return nil, NewCLError(ErrStoragePoolUnavailable, fmt.Sprintf("Volume %s is in shared pool %s and stays there", v.Name, src.Name), nil)
+			}
+			if _, err = poolUsableOn(db, src, target, false); err != nil {
+				return
+			}
+			item.Shared = true
+			item.DstPoolID, item.DstPoolUUID, item.DstPoolRoot = src.ID, src.UUID, src.Root()
+			item.DstRelPath, item.DstPath = v.Path, item.SrcPath
+			item.NVRAM = v.Booting
+			items = append(items, item)
+			continue
+		}
 		var dst *model.StoragePool
 		if poolID, ok := opts.Disks[v.ID]; ok {
 			dst = &model.StoragePool{}
 			if err = db.Take(dst, poolID).Error; err != nil {
 				return nil, NewCLError(ErrStoragePoolNotFound, fmt.Sprintf("Storage pool asked for volume %s not found", v.Name), err)
+			}
+			if dst.Shared() {
+				return nil, NewCLError(ErrStoragePoolUnavailable, fmt.Sprintf("Volume %s can not move into shared pool %s on migration", v.Name, dst.Name), nil)
 			}
 			if _, err = poolUsableOn(db, dst, target, false); err != nil {
 				return
@@ -143,7 +162,10 @@ func planDisks(db *gorm.DB, ctx context.Context, instance *model.Instance, targe
 func admitPlan(tx *gorm.DB, migration *model.Migration, items []*model.DiskPlanItem, target int32, lock bool) (err error) {
 	perPool := map[int64]int64{}
 	for _, item := range items {
-		perPool[item.DstPoolID] += int64(item.SizeGB)
+		// A shared disk takes no room on the target
+		if !item.Shared {
+			perPool[item.DstPoolID] += int64(item.SizeGB)
+		}
 	}
 	poolIDs := make([]int64, 0, len(perPool))
 	for id := range perPool {
@@ -170,6 +192,9 @@ func admitPlan(tx *gorm.DB, migration *model.Migration, items []*model.DiskPlanI
 		return
 	}
 	for _, item := range items {
+		if item.Shared {
+			continue
+		}
 		if _, err = reserve(tx, target, item.DstPoolID, item.VolumeID, migration.ID, model.ReservationMigration, item.SizeGB, reservationTTL); err != nil {
 			return NewCLError(ErrSQLSyntaxError, "Failed to reserve storage for the migration", err)
 		}
@@ -251,10 +276,14 @@ func ApplyMigrationPlan(ctx context.Context, migration *model.Migration, instanc
 	_, db := GetContextDB(ctx)
 	items := MigrationPlan(migration)
 	if len(items) == 0 {
-		// Migrations created before the plans existed: the files kept their path
-		err = db.Model(&model.Volume{}).Where("instance_id = ?", instanceID).Update("hyper", target).Error
+		// Migrations created before the plans existed: the files kept their path. A shared volume has no host
+		err = db.Model(&model.Volume{}).Where("instance_id = ?", instanceID).
+			Where("storage_pool_id NOT IN (SELECT id FROM storage_pools WHERE driver <> ?)", model.StorageDriverLocal).Update("hyper", target).Error
 	}
 	for _, item := range items {
+		if item.Shared {
+			continue
+		}
 		if err = db.Model(&model.Volume{}).Where("id = ?", item.VolumeID).Updates(map[string]interface{}{
 			"hyper": target, "storage_pool_id": item.DstPoolID, "path": item.DstRelPath,
 		}).Error; err != nil {
@@ -289,14 +318,16 @@ type PoolChoice struct {
 
 // DiskTarget tells where one disk of an instance can go on a target host
 type DiskTarget struct {
-	VolumeUUID string        `json:"volume_uuid"`
-	VolumeName string        `json:"volume_name"`
-	Booting    bool          `json:"booting"`
-	SizeGB     int32         `json:"size_gb"`
-	SourcePool string        `json:"source_pool"`
-	CanStay    bool          `json:"can_stay"`
-	Fallback   *PoolChoice   `json:"fallback,omitempty"`
-	Choices    []*PoolChoice `json:"choices"`
+	VolumeUUID string `json:"volume_uuid"`
+	VolumeName string `json:"volume_name"`
+	Booting    bool   `json:"booting"`
+	SizeGB     int32  `json:"size_gb"`
+	SourcePool string `json:"source_pool"`
+	CanStay    bool   `json:"can_stay"`
+	// In a shared pool: not copied, it stays where it is
+	Shared   bool          `json:"shared,omitempty"`
+	Fallback *PoolChoice   `json:"fallback,omitempty"`
+	Choices  []*PoolChoice `json:"choices"`
 }
 
 // MigrationTarget is one host an instance could move to (§8.1 migration_targets)
@@ -338,6 +369,19 @@ func MigrationTargets(ctx context.Context, instance *model.Instance) (targets []
 		t := &MigrationTarget{Hostid: h.Hostid, Hostname: h.Hostname, Usable: true, Disks: []*DiskTarget{}}
 		for _, v := range volumes {
 			d := &DiskTarget{VolumeUUID: v.UUID, VolumeName: v.Name, Booting: v.Booting, SizeGB: v.Size, SourcePool: v.StoragePool.Name, Choices: []*PoolChoice{}}
+			if v.StoragePool.Shared() {
+				// Stays where it is: the target only has to reach the pool
+				d.Shared = true
+				if _, uerr := poolUsableOn(db, v.StoragePool, h.Hostid, false); uerr == nil {
+					d.CanStay = true
+					d.Choices = append(d.Choices, &PoolChoice{UUID: v.StoragePool.UUID, Name: v.StoragePool.Name, Fits: true})
+				} else if t.Usable {
+					t.Usable = false
+					t.Reason = fmt.Sprintf("shared pool %s of volume %s is not usable on %s", v.StoragePool.Name, v.Name, h.Hostname)
+				}
+				t.Disks = append(t.Disks, d)
+				continue
+			}
 			for _, p := range pools {
 				hsp, uerr := poolUsableOn(db, p, h.Hostid, false)
 				if uerr != nil {

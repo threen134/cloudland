@@ -6552,6 +6552,624 @@
                 }
             }
         },
+        "/storage_backends": {
+            "get": {
+                "description": "the kinds CloudLand can deploy or import, with the roles, disk role, suggested roles and host requirements of each (shared-storage-design.md §4.5)",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "StorageCluster"
+                ],
+                "summary": "list the kinds of storage clusters",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apis.StorageBackendListResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/storage_clusters": {
+            "get": {
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "StorageCluster"
+                ],
+                "summary": "list storage clusters",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apis.StorageClusterListResponse"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "description": "records the cluster with its hosts and disks and starts its deployment (shared-storage-design.md §7.2); follow the task in active_task. The disks are claimed at once",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "StorageCluster"
+                ],
+                "summary": "create a managed storage cluster",
+                "parameters": [
+                    {
+                        "description": "Cluster",
+                        "name": "message",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/apis.StorageClusterCreatePayload"
+                        }
+                    }
+                ],
+                "responses": {
+                    "202": {
+                        "description": "Accepted",
+                        "schema": {
+                            "$ref": "#/definitions/apis.StorageClusterResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/storage_clusters/import": {
+            "post": {
+                "description": "record a cluster its own admins run and that the given hosts are members of already (shared-storage-design.md §7.8): every host is checked, nothing of the cluster is changed. Pools are then registered on directories that exist (POST /storage_pools with the cluster and params.path)",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "StorageCluster"
+                ],
+                "summary": "import a storage cluster",
+                "parameters": [
+                    {
+                        "description": "Cluster",
+                        "name": "message",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/apis.StorageClusterImportPayload"
+                        }
+                    }
+                ],
+                "responses": {
+                    "202": {
+                        "description": "Accepted",
+                        "schema": {
+                            "$ref": "#/definitions/apis.StorageClusterResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/storage_clusters/precheck": {
+            "post": {
+                "description": "run the precheck of a storage cluster plan on its hosts (shared-storage-design.md §6.5); nothing is installed. Returns the precheck task",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "StorageCluster"
+                ],
+                "summary": "check hosts and disks for a storage cluster",
+                "parameters": [
+                    {
+                        "description": "Plan to check",
+                        "name": "message",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/apis.StoragePrecheckPayload"
+                        }
+                    }
+                ],
+                "responses": {
+                    "202": {
+                        "description": "Accepted",
+                        "schema": {
+                            "$ref": "#/definitions/apis.StorageTaskResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/storage_clusters/{id}": {
+            "get": {
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "StorageCluster"
+                ],
+                "summary": "get a storage cluster",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Cluster UUID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apis.StorageClusterResponse"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "description": "tears the storage software down, wipes the disks of the cluster and cleans every host, then removes the records (shared-storage-design.md §7.6). Refused while the cluster has storage pools or a task holds it",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "StorageCluster"
+                ],
+                "summary": "delete a storage cluster",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Cluster UUID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "The name of the cluster, typed to confirm: its disks are wiped",
+                        "name": "confirm_name",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "Remove the storage software from the hosts too",
+                        "name": "purge_packages",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "202": {
+                        "description": "Accepted",
+                        "schema": {
+                            "$ref": "#/definitions/apis.StorageTaskResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/storage_clusters/{id}/disks": {
+            "post": {
+                "description": "disks of member hosts join the cluster: they become NSDs of its file system (shared-storage-design.md §7.5). Rebalancing is a separate task",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "StorageCluster"
+                ],
+                "summary": "add disks to a storage cluster",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Cluster UUID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Disks (nodes must be empty)",
+                        "name": "message",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/apis.StorageExpandPayload"
+                        }
+                    }
+                ],
+                "responses": {
+                    "202": {
+                        "description": "Accepted",
+                        "schema": {
+                            "$ref": "#/definitions/apis.StorageTaskResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/storage_clusters/{id}/disks/{disk_id}": {
+            "delete": {
+                "description": "the data of the disk moves to the other disks, then it is wiped and given back to its host (shared-storage-design.md §7.5). Refused when the cluster would have too few failure groups for its replicas",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "StorageCluster"
+                ],
+                "summary": "remove a disk from a storage cluster",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Cluster UUID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Disk UUID (the id of a disk of the cluster)",
+                        "name": "disk_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "202": {
+                        "description": "Accepted",
+                        "schema": {
+                            "$ref": "#/definitions/apis.StorageTaskResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/storage_clusters/{id}/nodes": {
+            "post": {
+                "description": "hosts join a managed cluster with their disks, or none (shared-storage-design.md §7.5): prechecked, installed and added; their disks go into the file system. Rebalancing is a separate task",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "StorageCluster"
+                ],
+                "summary": "add hosts to a storage cluster",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Cluster UUID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Hosts and their disks",
+                        "name": "message",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/apis.StorageExpandPayload"
+                        }
+                    }
+                ],
+                "responses": {
+                    "202": {
+                        "description": "Accepted",
+                        "schema": {
+                            "$ref": "#/definitions/apis.StorageTaskResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/storage_clusters/{id}/nodes/{hypervisor}": {
+            "delete": {
+                "description": "the disks of the host leave first (their data moves to the other disks), then the host leaves and is cleaned. offline=true removes a host that is gone for good: nothing runs on it, its disks are dropped without moving their data; confirm must be its name (shared-storage-design.md §7.5)",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "StorageCluster"
+                ],
+                "summary": "remove a host from a storage cluster",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Cluster UUID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Hypervisor UUID",
+                        "name": "hypervisor",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "The host is gone for good",
+                        "name": "offline",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "The host name, for an offline removal",
+                        "name": "confirm",
+                        "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "Remove the storage software from the host too",
+                        "name": "purge_packages",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "202": {
+                        "description": "Accepted",
+                        "schema": {
+                            "$ref": "#/definitions/apis.StorageTaskResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/storage_clusters/{id}/rebalance": {
+            "post": {
+                "description": "spread the data over all disks (gpfs mmrestripefs -b): long and I/O heavy, best started at a quiet time",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "StorageCluster"
+                ],
+                "summary": "rebalance a file system of a storage cluster",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Cluster UUID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "File system",
+                        "name": "message",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/apis.StorageRebalancePayload"
+                        }
+                    }
+                ],
+                "responses": {
+                    "202": {
+                        "description": "Accepted",
+                        "schema": {
+                            "$ref": "#/definitions/apis.StorageTaskResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/storage_packages": {
+            "get": {
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "StoragePackage"
+                ],
+                "summary": "list storage packages",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apis.StoragePackageListResponse"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "description": "upload an installer in parts (file_name and size_bytes; then PUT the parts and POST complete), or have clapi download it (url). The package is verified in the background and needs its license accepted before a deployment can use it",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "StoragePackage"
+                ],
+                "summary": "start a storage package",
+                "parameters": [
+                    {
+                        "description": "Package",
+                        "name": "message",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/apis.StoragePackagePayload"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/apis.StoragePackageResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/storage_packages/{id}": {
+            "get": {
+                "description": "with the license text and the number of packages its manifest lists",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "StoragePackage"
+                ],
+                "summary": "get a storage package",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Package UUID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apis.StoragePackageResponse"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "description": "refused while a storage cluster uses it; an unfinished upload is aborted in S3",
+                "tags": [
+                    "StoragePackage"
+                ],
+                "summary": "delete a storage package",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Package UUID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    }
+                }
+            }
+        },
+        "/storage_packages/{id}/accept_license": {
+            "post": {
+                "description": "records who accepted it and when; a deployment can only use a package whose license is accepted",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "StoragePackage"
+                ],
+                "summary": "accept the license of a storage package",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Package UUID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apis.StoragePackageResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/storage_packages/{id}/complete": {
+            "post": {
+                "description": "joins the parts once all are uploaded and starts the verification",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "StoragePackage"
+                ],
+                "summary": "complete the upload of a storage package",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Package UUID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "202": {
+                        "description": "Accepted",
+                        "schema": {
+                            "$ref": "#/definitions/apis.StoragePackageResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/storage_packages/{id}/parts/{n}": {
+            "put": {
+                "description": "the body is the bytes of part n (from 1), part_size bytes but the last; parts go in order, and the last one may be sent again when its answer was lost",
+                "consumes": [
+                    "application/octet-stream"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "StoragePackage"
+                ],
+                "summary": "upload a part of a storage package",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Package UUID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Part number, from 1",
+                        "name": "n",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apis.StoragePackageResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/storage_pools": {
             "get": {
                 "description": "list storage pools. Members see the active pools with their media and how many hosts can use them; system admins see everything",
@@ -6572,7 +7190,7 @@
                 }
             },
             "post": {
-                "description": "create a local storage pool. Its directory on every host is /opt/cloudland/pools/\u003cuuid\u003e; nothing is written on any host until the pool is set up there",
+                "description": "create a local storage pool: its directory on every host is /opt/cloudland/pools/\u003cuuid\u003e, nothing is written on any host until the pool is set up there. With a cluster, a shared pool on that storage cluster: 202, the pool is creating until the task (task) made it there (shared-storage-design.md §7.4)",
                 "consumes": [
                     "application/json"
                 ],
@@ -6599,6 +7217,12 @@
                         "description": "OK",
                         "schema": {
                             "$ref": "#/definitions/apis.StoragePoolResponse"
+                        }
+                    },
+                    "202": {
+                        "description": "Accepted",
+                        "schema": {
+                            "$ref": "#/definitions/apis.StoragePoolTaskResponse"
                         }
                     }
                 }
@@ -6632,6 +7256,7 @@
                 }
             },
             "delete": {
+                "description": "a shared pool is removed from its storage cluster by a task (202): refused while it holds volumes",
                 "tags": [
                     "StoragePool"
                 ],
@@ -6646,12 +7271,19 @@
                     }
                 ],
                 "responses": {
+                    "202": {
+                        "description": "Accepted",
+                        "schema": {
+                            "$ref": "#/definitions/apis.StoragePoolTaskResponse"
+                        }
+                    },
                     "204": {
                         "description": "No Content"
                     }
                 }
             },
             "patch": {
+                "description": "quota_gb (shared pools only) is changed on its own: a task sets it on the storage cluster (202); with other fields in the same request it is refused before anything changes",
                 "consumes": [
                     "application/json"
                 ],
@@ -6685,6 +7317,12 @@
                         "description": "OK",
                         "schema": {
                             "$ref": "#/definitions/apis.StoragePoolResponse"
+                        }
+                    },
+                    "202": {
+                        "description": "Accepted",
+                        "schema": {
+                            "$ref": "#/definitions/apis.StoragePoolTaskResponse"
                         }
                     }
                 }
@@ -6749,6 +7387,161 @@
                 "responses": {
                     "200": {
                         "description": "OK"
+                    }
+                }
+            }
+        },
+        "/storage_tasks": {
+            "get": {
+                "description": "cluster_id is the UUID of a cluster; 0 lists the tasks not tied to a cluster (precheck, selftest); without it every task is listed",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "StorageCluster"
+                ],
+                "summary": "list storage tasks",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Cluster UUID, or 0",
+                        "name": "cluster_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "running, failed, aborting, succeeded or aborted",
+                        "name": "status",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apis.StorageTaskListResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/storage_tasks/selftest": {
+            "post": {
+                "description": "run a task whose steps only sleep, report progress and fail on demand, to check the storage task path to the hosts (shared-storage-design.md §16 S1)",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "StorageCluster"
+                ],
+                "summary": "run a selftest task",
+                "parameters": [
+                    {
+                        "description": "Selftest",
+                        "name": "message",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/apis.StorageSelftestPayload"
+                        }
+                    }
+                ],
+                "responses": {
+                    "202": {
+                        "description": "Accepted",
+                        "schema": {
+                            "$ref": "#/definitions/apis.StorageTaskResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/storage_tasks/{id}": {
+            "get": {
+                "description": "a task with its steps and every run of every step, with the log tail each host sent",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "StorageCluster"
+                ],
+                "summary": "get a storage task",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Task UUID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apis.StorageTaskResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/storage_tasks/{id}/abort": {
+            "post": {
+                "description": "stop a running or failed task; jobs still running on hosts are killed first, then the task ends and frees its cluster",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "StorageCluster"
+                ],
+                "summary": "abort a storage task",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Task UUID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "202": {
+                        "description": "Accepted",
+                        "schema": {
+                            "$ref": "#/definitions/apis.StorageTaskResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/storage_tasks/{id}/retry": {
+            "post": {
+                "description": "run the failed step again on the hosts it failed on (or from the step it depends on)",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "StorageCluster"
+                ],
+                "summary": "retry a failed storage task",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Task UUID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "202": {
+                        "description": "Accepted",
+                        "schema": {
+                            "$ref": "#/definitions/apis.StorageTaskResponse"
+                        }
                     }
                 }
             }
@@ -9941,6 +10734,10 @@
                 "reason": {
                     "type": "string"
                 },
+                "shared": {
+                    "description": "A disk of a shared pool: not copied, the target opens it where it is",
+                    "type": "boolean"
+                },
                 "size_gb": {
                     "type": "integer"
                 },
@@ -10513,6 +11310,10 @@
                 },
                 "reserved_bytes": {
                     "type": "integer"
+                },
+                "shared": {
+                    "description": "A shared pool: the row only tells whether the host reaches it; it is managed on its storage cluster",
+                    "type": "boolean"
                 },
                 "status": {
                     "type": "string"
@@ -12596,6 +13397,629 @@
                 }
             }
         },
+        "apis.StorageBackendListResponse": {
+            "type": "object",
+            "properties": {
+                "storage_backends": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/apis.StorageBackendResponse"
+                    }
+                }
+            }
+        },
+        "apis.StorageBackendResponse": {
+            "type": "object",
+            "properties": {
+                "capabilities": {
+                    "description": "Operations of the kind; the interface offers only these",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/services.StorageCapabilities"
+                        }
+                    ]
+                },
+                "containers": {
+                    "type": "boolean"
+                },
+                "default_once_roles": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "default_roles": {
+                    "description": "Suggested roles of one more host: default_roles always, plus each of default_once_roles while no host has it",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "disk_role": {
+                    "description": "Role of the hosts that give disks; empty when the kind takes no disks",
+                    "type": "string"
+                },
+                "kernel_module": {
+                    "type": "boolean"
+                },
+                "kind": {
+                    "type": "string"
+                },
+                "package": {
+                    "description": "Installs from an uploaded package (GET /storage_packages) rather than from the distribution",
+                    "type": "boolean"
+                },
+                "pool_driver": {
+                    "description": "Driver of the CloudLand pools on clusters of the kind",
+                    "type": "string"
+                },
+                "roles": {
+                    "description": "Roles a host may have, in the order forms show them",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "systems": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/services.StorageOSRule"
+                    }
+                }
+            }
+        },
+        "apis.StorageClusterCreatePayload": {
+            "type": "object",
+            "required": [
+                "kind",
+                "name",
+                "nodes"
+            ],
+            "properties": {
+                "allow_unsupported": {
+                    "type": "boolean"
+                },
+                "description": {
+                    "type": "string",
+                    "maxLength": 256
+                },
+                "disks": {
+                    "type": "array",
+                    "maxItems": 512,
+                    "items": {
+                        "$ref": "#/definitions/apis.StorageDiskPayload"
+                    }
+                },
+                "kind": {
+                    "description": "A kind from GET /storage_backends",
+                    "type": "string",
+                    "maxLength": 16
+                },
+                "name": {
+                    "type": "string",
+                    "maxLength": 63
+                },
+                "nodes": {
+                    "type": "array",
+                    "maxItems": 64,
+                    "minItems": 1,
+                    "items": {
+                        "$ref": "#/definitions/apis.StorageNodePayload"
+                    }
+                },
+                "package_id": {
+                    "description": "UUID of a verified package whose license is accepted, for kinds that install from one (gpfs)",
+                    "type": "string"
+                },
+                "params": {
+                    "description": "Parameters of the kind, checked by its backend; every kind takes \"test\" (the single host test layout)",
+                    "type": "object"
+                }
+            }
+        },
+        "apis.StorageClusterDiskResponse": {
+            "type": "object",
+            "properties": {
+                "attrs": {
+                    "description": "Kind specific attributes, e.g. the usage and storage pool of a GPFS NSD",
+                    "type": "object"
+                },
+                "disk_id": {
+                    "type": "string"
+                },
+                "hypervisor": {
+                    "$ref": "#/definitions/common.ResourceReference"
+                },
+                "id": {
+                    "description": "UUID of the disk in the cluster, for removing it",
+                    "type": "string"
+                },
+                "media": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "reason": {
+                    "type": "string"
+                },
+                "role": {
+                    "type": "string"
+                },
+                "serial": {
+                    "type": "string"
+                },
+                "size_bytes": {
+                    "type": "integer"
+                },
+                "status": {
+                    "type": "string"
+                }
+            }
+        },
+        "apis.StorageClusterImportPayload": {
+            "type": "object",
+            "required": [
+                "hypervisors",
+                "kind",
+                "name"
+            ],
+            "properties": {
+                "description": {
+                    "type": "string",
+                    "maxLength": 256
+                },
+                "hypervisors": {
+                    "description": "The hosts that use the cluster: members of it already",
+                    "type": "array",
+                    "maxItems": 64,
+                    "minItems": 1,
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "kind": {
+                    "description": "A kind from GET /storage_backends whose capabilities include external",
+                    "type": "string",
+                    "maxLength": 16
+                },
+                "name": {
+                    "type": "string",
+                    "maxLength": 63
+                },
+                "params": {
+                    "description": "What the kind must know to use the cluster (gpfs: fs_name, mount_point)",
+                    "type": "object"
+                }
+            }
+        },
+        "apis.StorageClusterListResponse": {
+            "type": "object",
+            "properties": {
+                "limit": {
+                    "type": "integer"
+                },
+                "offset": {
+                    "type": "integer"
+                },
+                "storage_clusters": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/apis.StorageClusterResponse"
+                    }
+                },
+                "total": {
+                    "type": "integer"
+                }
+            }
+        },
+        "apis.StorageClusterNodeResponse": {
+            "type": "object",
+            "properties": {
+                "attrs": {
+                    "description": "Kind specific attributes, e.g. the failure group of a GPFS host",
+                    "type": "object"
+                },
+                "hypervisor": {
+                    "$ref": "#/definitions/common.ResourceReference"
+                },
+                "reason": {
+                    "type": "string"
+                },
+                "reserved_mem_mb": {
+                    "type": "integer"
+                },
+                "roles": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "state": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                }
+            }
+        },
+        "apis.StorageClusterPoolResponse": {
+            "type": "object",
+            "properties": {
+                "allocated_bytes": {
+                    "description": "Sum of the volumes of the pool",
+                    "type": "integer"
+                },
+                "capacity_bytes": {
+                    "type": "integer"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "driver": {
+                    "type": "string"
+                },
+                "driver_params": {
+                    "description": "json read by the driver: the gpfs fileset, file system and storage pool",
+                    "type": "object"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "media": {
+                    "type": "string"
+                },
+                "mount_path": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "owner": {
+                    "type": "string"
+                },
+                "owner_uuid": {
+                    "description": "OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to\nrelease quota only when the caller's org actually owns the deleted resource",
+                    "type": "string"
+                },
+                "quota_bytes": {
+                    "type": "integer"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "used_bytes": {
+                    "type": "integer"
+                }
+            }
+        },
+        "apis.StorageClusterResponse": {
+            "type": "object",
+            "properties": {
+                "active_pool_task": {
+                    "type": "string"
+                },
+                "active_task": {
+                    "description": "Tasks holding the slots of the cluster (§6.2.1): structural changes, pool changes",
+                    "type": "string"
+                },
+                "allocated_bytes": {
+                    "description": "Sum of the volumes in the pools of the cluster",
+                    "type": "integer"
+                },
+                "capacity_bytes": {
+                    "type": "integer"
+                },
+                "cluster_ref": {
+                    "description": "The storage software's own id of the cluster: GPFS cluster name and id, Ceph fsid",
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "disk_count": {
+                    "type": "integer"
+                },
+                "disks": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/apis.StorageClusterDiskResponse"
+                    }
+                },
+                "filesystems": {
+                    "description": "Detail only: the file systems (kinds with that layer) and the CloudLand pools of the cluster",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/apis.StorageFilesystemResponse"
+                    }
+                },
+                "free_bytes": {
+                    "type": "integer"
+                },
+                "health": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "kind": {
+                    "type": "string"
+                },
+                "layout": {
+                    "type": "string"
+                },
+                "mode": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "node_count": {
+                    "description": "Counts and capacity, in the list and the detail",
+                    "type": "integer"
+                },
+                "nodes": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/apis.StorageClusterNodeResponse"
+                    }
+                },
+                "owner": {
+                    "type": "string"
+                },
+                "owner_uuid": {
+                    "description": "OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to\nrelease quota only when the caller's org actually owns the deleted resource",
+                    "type": "string"
+                },
+                "pool_count": {
+                    "type": "integer"
+                },
+                "pools": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/apis.StorageClusterPoolResponse"
+                    }
+                },
+                "status": {
+                    "type": "string"
+                },
+                "unsupported": {
+                    "type": "boolean"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "version": {
+                    "type": "string"
+                }
+            }
+        },
+        "apis.StorageDiskPayload": {
+            "type": "object",
+            "required": [
+                "disk_id",
+                "hypervisor"
+            ],
+            "properties": {
+                "disk_id": {
+                    "type": "string",
+                    "maxLength": 256
+                },
+                "hypervisor": {
+                    "type": "string"
+                },
+                "media": {
+                    "type": "string",
+                    "enum": [
+                        "ssd",
+                        "hdd",
+                        "nvme"
+                    ]
+                },
+                "wipe": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "apis.StorageExpandPayload": {
+            "type": "object",
+            "properties": {
+                "allow_unsupported": {
+                    "type": "boolean"
+                },
+                "disks": {
+                    "type": "array",
+                    "maxItems": 512,
+                    "items": {
+                        "$ref": "#/definitions/apis.StorageDiskPayload"
+                    }
+                },
+                "nodes": {
+                    "type": "array",
+                    "maxItems": 64,
+                    "items": {
+                        "$ref": "#/definitions/apis.StorageNodePayload"
+                    }
+                }
+            }
+        },
+        "apis.StorageFilesystemResponse": {
+            "type": "object",
+            "properties": {
+                "block_size": {
+                    "type": "string"
+                },
+                "capacity_at": {
+                    "type": "string"
+                },
+                "capacity_bytes": {
+                    "type": "integer"
+                },
+                "data_replicas": {
+                    "type": "integer"
+                },
+                "free_bytes": {
+                    "type": "integer"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "meta_replicas": {
+                    "type": "integer"
+                },
+                "mount_point": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                }
+            }
+        },
+        "apis.StorageNodePayload": {
+            "type": "object",
+            "required": [
+                "hypervisor"
+            ],
+            "properties": {
+                "hypervisor": {
+                    "type": "string"
+                },
+                "roles": {
+                    "description": "Roles of the kind (GET /storage_backends); the backend refuses ones it does not have",
+                    "type": "array",
+                    "maxItems": 8,
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
+        "apis.StoragePackageListResponse": {
+            "type": "object",
+            "properties": {
+                "limit": {
+                    "type": "integer"
+                },
+                "offset": {
+                    "type": "integer"
+                },
+                "storage_packages": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/apis.StoragePackageResponse"
+                    }
+                },
+                "total": {
+                    "type": "integer"
+                }
+            }
+        },
+        "apis.StoragePackagePayload": {
+            "type": "object",
+            "required": [
+                "kind"
+            ],
+            "properties": {
+                "file_name": {
+                    "description": "Upload in parts: the file name and size; or have clapi download it: url",
+                    "type": "string",
+                    "maxLength": 200
+                },
+                "kind": {
+                    "description": "A kind whose backend installs from a package (GET /storage_backends): gpfs",
+                    "type": "string",
+                    "maxLength": 16
+                },
+                "size_bytes": {
+                    "type": "integer",
+                    "minimum": 1
+                },
+                "url": {
+                    "type": "string",
+                    "maxLength": 1024
+                }
+            }
+        },
+        "apis.StoragePackageResponse": {
+            "type": "object",
+            "properties": {
+                "accepted_at": {
+                    "type": "string"
+                },
+                "accepted_by": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "distros": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "edition": {
+                    "type": "string"
+                },
+                "file_name": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "kind": {
+                    "type": "string"
+                },
+                "license": {
+                    "description": "Detail only: the license text by language (en, zh, zh_TW) and how many packages the manifest lists",
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                },
+                "manifest_count": {
+                    "type": "integer"
+                },
+                "part_size": {
+                    "description": "Upload progress: parts are part_size bytes, the last one less; upload part parts_done+1 next",
+                    "type": "integer"
+                },
+                "parts_done": {
+                    "type": "integer"
+                },
+                "reason": {
+                    "type": "string"
+                },
+                "sha256": {
+                    "type": "string"
+                },
+                "size_bytes": {
+                    "type": "integer"
+                },
+                "source_url": {
+                    "type": "string"
+                },
+                "status": {
+                    "description": "uploading | verifying | ready | error",
+                    "type": "string"
+                },
+                "total_parts": {
+                    "type": "integer"
+                },
+                "version": {
+                    "type": "string"
+                }
+            }
+        },
         "apis.StoragePoolListResponse": {
             "type": "object",
             "properties": {
@@ -12643,6 +14067,11 @@
                     "maximum": 20,
                     "minimum": 0
                 },
+                "quota_gb": {
+                    "description": "Shared pools: a new quota in GB (0 = none), set on the cluster by a task",
+                    "type": "integer",
+                    "minimum": 0
+                },
                 "status": {
                     "type": "string",
                     "enum": [
@@ -12658,6 +14087,14 @@
                 "name"
             ],
             "properties": {
+                "cluster": {
+                    "description": "A shared pool on this storage cluster (shared-storage-design.md §7.4); without it a local pool",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/common.BaseReference"
+                        }
+                    ]
+                },
                 "description": {
                     "type": "string",
                     "maxLength": 256
@@ -12686,6 +14123,15 @@
                     "type": "number",
                     "maximum": 20,
                     "minimum": 0
+                },
+                "params": {
+                    "description": "Shared pools: parameters of the kind of the cluster (gpfs: filesystem, inode_limit)",
+                    "type": "object"
+                },
+                "quota_gb": {
+                    "description": "Shared pools: quota of the pool in GB, 0 = none",
+                    "type": "integer",
+                    "minimum": 0
                 }
             }
         },
@@ -12701,8 +14147,18 @@
                 "builtin": {
                     "type": "boolean"
                 },
+                "capacity_at": {
+                    "type": "string"
+                },
                 "capacity_bytes": {
                     "type": "integer"
+                },
+                "cluster": {
+                    "$ref": "#/definitions/common.ResourceReference"
+                },
+                "cluster_kind": {
+                    "description": "Shared pools: the kind of storage behind them, for everybody; the cluster and the rest for system admins",
+                    "type": "string"
                 },
                 "created_at": {
                     "type": "string"
@@ -12712,6 +14168,9 @@
                 },
                 "driver": {
                     "type": "string"
+                },
+                "driver_params": {
+                    "type": "object"
                 },
                 "fallback_group": {
                     "type": "string"
@@ -12744,6 +14203,9 @@
                     "description": "OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to\nrelease quota only when the caller's org actually owns the deleted resource",
                     "type": "string"
                 },
+                "quota_bytes": {
+                    "type": "integer"
+                },
                 "shared": {
                     "type": "boolean"
                 },
@@ -12755,6 +14217,251 @@
                 },
                 "used_bytes": {
                     "type": "integer"
+                }
+            }
+        },
+        "apis.StoragePoolTaskResponse": {
+            "type": "object",
+            "properties": {
+                "storage_pool": {
+                    "$ref": "#/definitions/apis.StoragePoolResponse"
+                },
+                "task": {
+                    "$ref": "#/definitions/apis.StorageTaskResponse"
+                }
+            }
+        },
+        "apis.StoragePrecheckPayload": {
+            "type": "object",
+            "required": [
+                "kind",
+                "nodes"
+            ],
+            "properties": {
+                "allow_unsupported": {
+                    "type": "boolean"
+                },
+                "disks": {
+                    "type": "array",
+                    "maxItems": 512,
+                    "items": {
+                        "$ref": "#/definitions/apis.StorageDiskPayload"
+                    }
+                },
+                "kind": {
+                    "description": "A kind from GET /storage_backends",
+                    "type": "string",
+                    "maxLength": 16
+                },
+                "nodes": {
+                    "type": "array",
+                    "maxItems": 64,
+                    "minItems": 1,
+                    "items": {
+                        "$ref": "#/definitions/apis.StorageNodePayload"
+                    }
+                },
+                "params": {
+                    "description": "Parameters of the kind, checked by its backend; every kind takes \"test\" (the single host test layout)",
+                    "type": "object"
+                }
+            }
+        },
+        "apis.StorageRebalancePayload": {
+            "type": "object",
+            "properties": {
+                "filesystem": {
+                    "description": "Name of the file system; the first one of the cluster when empty",
+                    "type": "string",
+                    "maxLength": 32
+                }
+            }
+        },
+        "apis.StorageRunResponse": {
+            "type": "object",
+            "properties": {
+                "attempt": {
+                    "type": "integer"
+                },
+                "dispatches": {
+                    "type": "integer"
+                },
+                "hostid": {
+                    "type": "integer"
+                },
+                "hypervisor": {
+                    "$ref": "#/definitions/common.ResourceReference"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "log_tail": {
+                    "type": "string"
+                },
+                "message": {
+                    "type": "string"
+                },
+                "progress": {
+                    "type": "integer"
+                },
+                "result": {
+                    "type": "object"
+                },
+                "started_at": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "apis.StorageSelftestPayload": {
+            "type": "object",
+            "required": [
+                "hypervisors",
+                "steps"
+            ],
+            "properties": {
+                "fail_attempts": {
+                    "type": "integer",
+                    "maximum": 10,
+                    "minimum": 0
+                },
+                "fail_hypervisors": {
+                    "type": "array",
+                    "maxItems": 64,
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "fail_step": {
+                    "type": "integer",
+                    "maximum": 10,
+                    "minimum": 0
+                },
+                "hypervisors": {
+                    "type": "array",
+                    "maxItems": 64,
+                    "minItems": 1,
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "lock": {
+                    "type": "string",
+                    "maxLength": 32
+                },
+                "sleep_sec": {
+                    "type": "integer",
+                    "maximum": 3600,
+                    "minimum": 0
+                },
+                "steps": {
+                    "type": "integer",
+                    "maximum": 10,
+                    "minimum": 1
+                },
+                "timeout_sec": {
+                    "type": "integer",
+                    "maximum": 86400,
+                    "minimum": 0
+                }
+            }
+        },
+        "apis.StorageStepResponse": {
+            "type": "object",
+            "properties": {
+                "finished_at": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "runs": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/apis.StorageRunResponse"
+                    }
+                },
+                "scope": {
+                    "type": "string"
+                },
+                "seq": {
+                    "type": "integer"
+                },
+                "started_at": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "timeout_sec": {
+                    "type": "integer"
+                }
+            }
+        },
+        "apis.StorageTaskListResponse": {
+            "type": "object",
+            "properties": {
+                "limit": {
+                    "type": "integer"
+                },
+                "offset": {
+                    "type": "integer"
+                },
+                "tasks": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/apis.StorageTaskResponse"
+                    }
+                },
+                "total": {
+                    "type": "integer"
+                }
+            }
+        },
+        "apis.StorageTaskResponse": {
+            "type": "object",
+            "properties": {
+                "backend": {
+                    "description": "Kind of storage the task works on (gpfs, ceph); empty for the tasks every kind shares",
+                    "type": "string"
+                },
+                "cluster": {
+                    "$ref": "#/definitions/common.ResourceReference"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "creator": {
+                    "type": "string"
+                },
+                "current_step": {
+                    "type": "integer"
+                },
+                "finished_at": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "kind": {
+                    "type": "string"
+                },
+                "message": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "steps": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/apis.StorageStepResponse"
+                    }
                 }
             }
         },
@@ -15096,6 +16803,10 @@
                 "fallback": {
                     "$ref": "#/definitions/services.PoolChoice"
                 },
+                "shared": {
+                    "description": "In a shared pool: not copied, it stays where it is",
+                    "type": "boolean"
+                },
                 "size_gb": {
                     "type": "integer"
                 },
@@ -15216,6 +16927,64 @@
                 },
                 "size_bytes": {
                     "type": "integer"
+                }
+            }
+        },
+        "services.StorageCapabilities": {
+            "type": "object",
+            "properties": {
+                "add_disks": {
+                    "type": "boolean"
+                },
+                "add_nodes": {
+                    "type": "boolean"
+                },
+                "clients": {
+                    "description": "Clients: hosts join as clients on their own (ceph); a gpfs client is a member like any other",
+                    "type": "boolean"
+                },
+                "external": {
+                    "type": "boolean"
+                },
+                "filesystems": {
+                    "description": "Filesystems: the kind has file systems between the cluster and the pools (gpfs)",
+                    "type": "boolean"
+                },
+                "managed": {
+                    "description": "Managed: CloudLand deploys and deletes clusters of the kind; External: it imports clusters set up by others",
+                    "type": "boolean"
+                },
+                "pools": {
+                    "description": "Pools: CloudLand pools can be made on clusters of the kind",
+                    "type": "boolean"
+                },
+                "rebalance": {
+                    "type": "boolean"
+                },
+                "remove_disk": {
+                    "type": "boolean"
+                },
+                "remove_node": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "services.StorageOSRule": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "description": "ID of /etc/os-release",
+                    "type": "string"
+                },
+                "kernel_prefix": {
+                    "type": "string"
+                },
+                "kernel_suffix": {
+                    "type": "string"
+                },
+                "version": {
+                    "description": "VERSION_ID of /etc/os-release",
+                    "type": "string"
                 }
             }
         },

@@ -626,9 +626,19 @@ func (a *HyperAdmin) Delete(ctx context.Context, hostID int32, keepPools bool) (
 // keep them for adoption by the host that will come back: volumes of other pools wait as orphaned under the old host
 // id, volumes of the built-in pool are lost (the root file system does not survive a reinstall).
 func (a *HyperAdmin) releaseStorage(db *gorm.DB, hostID int32, keepPools bool) (err error) {
+	// A member of a storage cluster leaves the cluster first, online or offline (shared-storage-design.md §5.2)
+	var members int64
+	if err = db.Model(&model.StorageClusterNode{}).Where("hostid = ?", hostID).Count(&members).Error; err != nil {
+		return NewCLError(ErrSQLSyntaxError, "Failed to count the storage clusters of the host", err)
+	}
+	if members > 0 {
+		return NewCLError(ErrHypervisorInvalidState, "Hypervisor is a member of a storage cluster: remove it from the cluster first", nil)
+	}
 	var pools, volumes int64
+	// Only local pools live on the host; rows of shared pools only say whether the host can reach them
 	if err = db.Model(&model.HyperStoragePool{}).Joins("JOIN storage_pools ON storage_pools.id = hyper_storage_pools.pool_id").
-		Where("hyper_storage_pools.hostid = ? AND storage_pools.builtin = ? AND hyper_storage_pools.status <> ?", hostID, false, model.HyperPoolLost).
+		Where("hyper_storage_pools.hostid = ? AND storage_pools.builtin = ? AND storage_pools.driver = ? AND hyper_storage_pools.status <> ?",
+			hostID, false, model.StorageDriverLocal, model.HyperPoolLost).
 		Count(&pools).Error; err != nil {
 		return NewCLError(ErrSQLSyntaxError, "Failed to count the storage pools of the host", err)
 	}

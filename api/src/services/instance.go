@@ -175,6 +175,10 @@ func (a *InstanceAdmin) Create(ctx context.Context, count int, prefix, userdata 
 	if bootPool.Status != model.StoragePoolActive {
 		return nil, NewCLError(ErrStoragePoolUnavailable, fmt.Sprintf("Storage pool %s is disabled", bootPool.Name), nil)
 	}
+	if bootPool.Shared() {
+		// Boot disks in shared pools (image copies in the pool, clones) come with stage S4 (shared-storage-design.md §9.7)
+		return nil, NewCLError(ErrStoragePoolUnavailable, fmt.Sprintf("Storage pool %s is shared: it holds data volumes only for now", bootPool.Name), nil)
+	}
 	// Members of a placement group: clapi picks every host under the lock of the group, which is taken before any
 	// storage pool row (placement-group-plan.md §3.2, §6.2)
 	var placement *creationPlacement

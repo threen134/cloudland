@@ -111,9 +111,19 @@ func (a *VolumeAdmin) CreateVolume(ctx context.Context, name string, size int32,
 	}
 	target := ""
 	status := model.VolumeStatusAvailable
+	format := "qcow2"
 	if booting {
 		target = "vda"
 		status = model.VolumeStatusPending
+	}
+	var driver PoolDriver
+	if pool.Shared() {
+		// Written by a host right away, pending until it confirms (§9.1)
+		if driver, err = poolDriverOf(pool); err != nil {
+			return
+		}
+		status = model.VolumeStatusPending
+		format = driver.Format()
 	}
 	memberShip := GetMemberShip(ctx)
 	volume = &model.Volume{
@@ -122,7 +132,7 @@ func (a *VolumeAdmin) CreateVolume(ctx context.Context, name string, size int32,
 		Name:          name,
 		InstanceID:    instanceID,
 		Booting:       booting,
-		Format:        "qcow2",
+		Format:        format,
 		Target:        target,
 		Size:          int32(size),
 		Status:        status,
@@ -135,6 +145,9 @@ func (a *VolumeAdmin) CreateVolume(ctx context.Context, name string, size int32,
 	}
 	volume.StoragePool = pool
 	volume.Path = PoolRelPath(pool, volume)
+	if driver != nil {
+		volume.Path = driver.VolumeRef(pool, volume)
+	}
 	if err = db.Model(&model.Volume{}).Where("id = ?", volume.ID).Update("path", volume.Path).Error; err != nil {
 		err = NewCLError(ErrVolumeCreationFailed, "Failed to create volume", err)
 	}
@@ -158,8 +171,16 @@ func (a *VolumeAdmin) Create(ctx context.Context, name string, size int32, pool 
 		err = NewCLError(ErrPermissionDenied, "Not authorized to create volume", nil)
 		return
 	}
-	if pool != nil && pool.Status != model.StoragePoolActive {
-		return nil, NewCLError(ErrStoragePoolUnavailable, fmt.Sprintf("Storage pool %s is disabled", pool.Name), nil)
+	if pool == nil {
+		if pool, err = storagePoolAdmin.GetDefaultPool(ctx); err != nil {
+			return
+		}
+	}
+	if pool.Status != model.StoragePoolActive {
+		return nil, NewCLError(ErrStoragePoolUnavailable, fmt.Sprintf("Storage pool %s is %s", pool.Name, pool.Status), nil)
+	}
+	if pool.Shared() {
+		return a.createShared(ctx, name, size, pool)
 	}
 	return a.CreateVolume(ctx, name, size, 0, false, pool)
 }
@@ -305,32 +326,13 @@ func (a *VolumeAdmin) Update(ctx context.Context, id int64, name string, instIDA
 		if err = instanceBusyForVolumes(instance); err != nil {
 			return
 		}
-		mode := "existing"
-		if volume.Hyper > 0 {
-			// The file of a local volume lives on one host only
-			if volume.Hyper != instance.Hyper {
-				err = NewCLError(ErrVolumeInvalidState, fmt.Sprintf("Local volume %s is on %s, it can not be attached to an instance on %s",
-					volume.UUID, hostName(tx, volume.Hyper), hostName(tx, instance.Hyper)), nil)
+		if pool.Shared() {
+			// Reachable from every host of the cluster: nothing to admit, nothing to create
+			if cmd, err = attachSharedCommand(tx, pool, volume, instance); err != nil {
 				return
 			}
-			if _, err = poolUsableOn(tx, pool, instance.Hyper, false); err != nil {
-				return
-			}
-		} else {
-			// First attachment: the file is created on the host of the instance. Admit it and count it there
-			// right away (§5.2), so no reservation is needed and a lost callback can not lose track of it.
-			if _, err = admitLocked(tx, pool, instance.Hyper, int64(volume.Size)); err != nil {
-				return
-			}
-			volume.Hyper = instance.Hyper
-			mode = "new"
-			firstAttach = true
-		}
-		cmd = &volumeCommand{
-			control: fmt.Sprintf("inter=%d", instance.Hyper),
-			command: fmt.Sprintf("/opt/cloudland/scripts/backend/attach_volume_local.sh '%d' '%d' '%s' '%s' '%d' '%s' '%d' '%s'",
-				instance.ID, volume.ID, ShellEscape(VolumeAbsPath(pool, volume)), ShellEscape(volume.UUID), volume.Size,
-				ShellEscape(PoolScriptID(pool)), instance.Hyper, ShellEscape(mode)),
+		} else if cmd, firstAttach, err = attachLocalCommand(tx, pool, volume, instance); err != nil {
+			return
 		}
 		volume.Status = model.VolumeStatusAttaching
 	}
@@ -343,6 +345,39 @@ func (a *VolumeAdmin) Update(ctx context.Context, id int64, name string, instIDA
 		logger.Ctx(ctx).Error("DB: update volume failed", err)
 		err = NewCLError(ErrVolumeUpdateFailed, "Failed to update volume", err)
 		return
+	}
+	return
+}
+
+// attachLocalCommand is the attachment of a local volume: the host of its file, or the host of the instance when the
+// file is created by this first attachment (firstAttach)
+func attachLocalCommand(tx *gorm.DB, pool *model.StoragePool, volume *model.Volume, instance *model.Instance) (cmd *volumeCommand, firstAttach bool, err error) {
+	mode := "existing"
+	if volume.Hyper > 0 {
+		// The file of a local volume lives on one host only
+		if volume.Hyper != instance.Hyper {
+			err = NewCLError(ErrVolumeInvalidState, fmt.Sprintf("Local volume %s is on %s, it can not be attached to an instance on %s",
+				volume.UUID, hostName(tx, volume.Hyper), hostName(tx, instance.Hyper)), nil)
+			return
+		}
+		if _, err = poolUsableOn(tx, pool, instance.Hyper, false); err != nil {
+			return
+		}
+	} else {
+		// First attachment: the file is created on the host of the instance. Admit it and count it there
+		// right away (§5.2), so no reservation is needed and a lost callback can not lose track of it.
+		if _, err = admitLocked(tx, pool, instance.Hyper, int64(volume.Size)); err != nil {
+			return
+		}
+		volume.Hyper = instance.Hyper
+		mode = "new"
+		firstAttach = true
+	}
+	cmd = &volumeCommand{
+		control: fmt.Sprintf("inter=%d", instance.Hyper),
+		command: fmt.Sprintf("/opt/cloudland/scripts/backend/attach_volume_local.sh '%d' '%d' '%s' '%s' '%d' '%s' '%d' '%s'",
+			instance.ID, volume.ID, ShellEscape(VolumeAbsPath(pool, volume)), ShellEscape(volume.UUID), volume.Size,
+			ShellEscape(PoolScriptID(pool)), instance.Hyper, ShellEscape(mode)),
 	}
 	return
 }
@@ -427,6 +462,21 @@ func (a *VolumeAdmin) Delete(ctx context.Context, volume *model.Volume) (deferre
 	if volume.IsBusy() {
 		logger.Ctx(ctx).Errorf("Volume is busy, cannot be deleted %+v", volume)
 		err = NewCLError(ErrVolumeIsBusy, fmt.Sprintf("Volume[%s](%s) is busy, cannot be deleted", volume.Name, volume.UUID), nil)
+		return
+	}
+	if shared, serr := VolumePool(txCtx, volume); serr == nil && shared.Shared() {
+		// Written when it was created, whatever its status says now (a lost callback leaves error): a host that
+		// reaches the pool removes the file, if it is there
+		if cmd, err = deleteSharedCommand(tx, shared, volume); err != nil {
+			return
+		}
+		if err = tx.Model(&model.Volume{}).Where("id = ?", volume.ID).Updates(map[string]interface{}{
+			"status": model.VolumeStatusDeleting, "reason": "",
+		}).Error; err != nil {
+			err = NewCLError(ErrVolumeDeleteFailed, "Failed to delete volume", err)
+			return
+		}
+		deferred = true
 		return
 	}
 	if volume.Hyper <= 0 {
@@ -601,6 +651,19 @@ func (a *VolumeAdmin) Resize(ctx context.Context, volume *model.Volume, size int
 	}
 	pool, err := VolumePool(txCtx, volume)
 	if err != nil {
+		return
+	}
+	if pool.Shared() {
+		if cmd, err = resizeSharedCommand(tx, pool, volume, size, oldSize); err != nil {
+			return
+		}
+		if err = tx.Model(&model.Volume{}).Where("id = ?", volume.ID).Updates(map[string]interface{}{
+			"size": size, "status": model.VolumeStatusResizing, "reason": "",
+		}).Error; err != nil {
+			err = NewCLError(ErrVolumeUpdateFailed, "Failed to update volume", err)
+			return
+		}
+		// Boot disks in shared pools come with stage S4
 		return
 	}
 	if volume.Hyper > 0 {

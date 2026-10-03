@@ -131,6 +131,22 @@ var auditRoutes = map[string]auditRoute{
 	"DELETE /storage_pools/:id":               {"storage_pool", "storage_pool.delete", "id", false},
 	"POST /storage_pools/:id/orphans/abandon": {"storage_pool", "storage_pool.orphans_abandon", "id", false},
 
+	"POST /storage_clusters/precheck":                {"storage_cluster", "storage_cluster.precheck", "", false},
+	"POST /storage_clusters":                         {"storage_cluster", "storage_cluster.create", "", false},
+	"DELETE /storage_clusters/:id":                   {"storage_cluster", "storage_cluster.delete", "id", false},
+	"POST /storage_clusters/import":                  {"storage_cluster", "storage_cluster.import", "", false},
+	"POST /storage_clusters/:id/nodes":               {"storage_cluster", "storage_cluster.add_nodes", "id", false},
+	"DELETE /storage_clusters/:id/nodes/:hypervisor": {"storage_cluster", "storage_cluster.remove_node", "id", false},
+	"POST /storage_clusters/:id/disks":               {"storage_cluster", "storage_cluster.add_disks", "id", false},
+	"DELETE /storage_clusters/:id/disks/:disk_id":    {"storage_cluster", "storage_cluster.remove_disk", "id", false},
+	"POST /storage_clusters/:id/rebalance":           {"storage_cluster", "storage_cluster.rebalance", "id", false},
+	"POST /storage_packages":                         {"storage_package", "storage_package.upload", "", false},
+	"POST /storage_packages/:id/accept_license":      {"storage_package", "storage_package.accept_license", "id", false},
+	"DELETE /storage_packages/:id":                   {"storage_package", "storage_package.delete", "id", false},
+	"POST /storage_tasks/selftest":                   {"storage_task", "storage_task.selftest", "", false},
+	"POST /storage_tasks/:id/retry":                  {"storage_task", "storage_task.retry", "id", false},
+	"POST /storage_tasks/:id/abort":                  {"storage_task", "storage_task.abort", "id", false},
+
 	"POST /hypers/:uuid/disks/scan":                          {"hyper", "hyper.disks_scan", "uuid", false},
 	"PATCH /hypers/:uuid/disks/:id":                          {"hyper", "hyper.disk_update", "uuid", false},
 	"POST /hypers/:uuid/storage_pools":                       {"hyper", "hyper.storage_pool_create", "uuid", false},
@@ -172,6 +188,9 @@ var auditNameColumns = map[string][3]string{
 	"image":           {"images", "name", "owner"},
 	"volume":          {"volumes", "name", "owner"},
 	"storage_pool":    {"storage_pools", "name", ""},
+	"storage_cluster": {"storage_clusters", "name", ""},
+	"storage_task":    {"storage_tasks", "kind", ""},
+	"storage_package": {"storage_packages", "file_name", ""},
 }
 
 // SetAuditAction 供接口按请求体细化动作名，例如 PATCH /instances/:id 区分开机、关机与改名

@@ -14,6 +14,9 @@ import (
 
 const (
 	StorageDriverLocal = "local"
+	// Drivers of shared pools (shared-storage-design.md §4.5.2)
+	StorageDriverGPFS    = "gpfs"
+	StorageDriverCephRBD = "ceph_rbd"
 
 	// Built-in local pool: every host has it, rooted at the node cache directory
 	BuiltinPoolName = "local"
@@ -23,6 +26,11 @@ const (
 
 	StoragePoolActive   = "active"
 	StoragePoolDisabled = "disabled"
+	// Shared pools only: the task making the pool on its cluster runs, it failed and was aborted, or the task
+	// removing it runs (§7.4). None of them can be chosen for a volume
+	StoragePoolCreating = "creating"
+	StoragePoolError    = "error"
+	StoragePoolDeleting = "deleting"
 )
 
 // StoragePool is where volume files live. Every volume belongs to exactly one pool.
@@ -34,10 +42,22 @@ type StoragePool struct {
 	Builtin       bool    // the built-in local pool; no gorm default tag, false is meaningful
 	Media         string  `gorm:"type:varchar(16)"` // ssd | hdd | nvme | empty, display and allocation checks only
 	FallbackGroup string  `gorm:"type:varchar(64)"` // pools sharing a non-empty group may replace each other on migration
-	Status        string  `gorm:"type:varchar(32)"` // active | disabled
+	Status        string  `gorm:"type:varchar(32)"` // active | disabled; shared pools also creating | error | deleting
 	IsDefault     bool    // no gorm default tag, false is meaningful
-	OverRatio     float64 // max allocated/capacity per host, qcow2 is thin
+	OverRatio     float64 // max allocated/capacity per host (shared pools: of the pool), qcow2 is thin
 	Description   string  `gorm:"type:varchar(256)"`
+	// Shared pools (shared-storage-design.md §5.5); all zero for local pools
+	ClusterID    int64 `gorm:"index"`
+	FilesystemID int64 // file system of the cluster the pool is in, for kinds with that layer (gpfs)
+	// json read and written by the pool driver only: the gpfs fileset and storage pool, the ceph pool name
+	DriverParams string `gorm:"type:text"`
+	Replicas     int32  // ceph pools; gpfs keeps its replicas on the file system
+	QuotaBytes   int64  // 0 = no quota
+	CloneMode    string `gorm:"type:varchar(16)"` // clone | copy, how boot disks are made from an image (§9.6)
+	// Capacity of the whole pool as the hosts report it (§9.5); local pools are counted per host instead
+	CapacityBytes int64
+	UsedBytes     int64
+	CapacityAt    *time.Time
 }
 
 // Shared reports whether volumes of the pool are reachable from every host
@@ -45,7 +65,16 @@ func (p *StoragePool) Shared() bool {
 	return p.Driver != StorageDriverLocal
 }
 
-// Root is the absolute directory of the pool on a host
+// UsageRatio is the used part of the capacity of a shared pool
+func (p *StoragePool) UsageRatio() float64 {
+	if p.CapacityBytes <= 0 {
+		return 0
+	}
+	return float64(p.UsedBytes) / float64(p.CapacityBytes)
+}
+
+// Root is the absolute directory of the pool on a host: the built-in cache, the mount point of a local pool, the
+// fileset junction of a gpfs pool; empty for block pools
 func (p *StoragePool) Root() string {
 	if p.Builtin {
 		return BuiltinPoolRoot
@@ -126,6 +155,9 @@ const (
 	DiskCloudlandPool = "cloudland_pool"
 	DiskUnknownMember = "unknown_member"
 	DiskShared        = "shared"
+	// Disks of storage clusters (shared-storage-design.md §6.4)
+	DiskGpfsNSD = "gpfs_nsd"
+	DiskCephOSD = "ceph_osd"
 )
 
 // HyperDisk is a block device found by the last disk scan of a host

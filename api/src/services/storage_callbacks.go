@@ -227,7 +227,8 @@ func HandleClearVolume(ctx context.Context, hostid int32, volumeID int64, result
 		// Repeated or late callback
 		return nil
 	}
-	if hostid > 0 && volume.Hyper != hostid {
+	// A shared volume is removed by whichever host reaches its pool (pickPoolHost); a local one by its host only
+	if pool, perr := VolumePool(ctx, volume); (perr != nil || !pool.Shared()) && hostid > 0 && volume.Hyper != hostid {
 		logger.Ctx(ctx).Warningf("clear_volume for volume %d from host %d, but the volume is on host %d", volumeID, hostid, volume.Hyper)
 		return nil
 	}
@@ -319,4 +320,5 @@ func maintainStorage(ctx context.Context) {
 
 	db.Model(&model.Volume{}).Where("status = ? AND updated_at < ?", model.VolumeStatusDeleting, now.Add(-volumeDeleteTimeout)).
 		Updates(map[string]interface{}{"status": model.VolumeStatusDeleteFailed, "reason": "the host did not confirm the deletion"})
+	maintainSharedPools(ctx, now)
 }

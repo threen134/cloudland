@@ -139,22 +139,27 @@ type PoolSummary struct {
 	CapacityBytes  int64
 	UsedBytes      int64
 	AllocatedBytes int64
+	// The storage cluster of a shared pool, deleted ones too
+	Cluster *model.StorageCluster
 }
 
 func (a *HyperStorageAdmin) Summary(ctx context.Context, pool *model.StoragePool) (s *PoolSummary) {
 	return a.Summaries(ctx, []*model.StoragePool{pool})[pool.ID]
 }
 
-// Summaries builds the summaries of many pools with three queries (the host rows, and the allocations summed per
-// host and pool), so the pool list does not query twice per pool and host. Every pool asked for gets a summary
+// Summaries builds the summaries of many pools with a fixed number of queries (the host rows, the allocations summed
+// per host and pool, those of the shared pools, their clusters), so the pool list does not query per pool or per
+// host. Every pool asked for gets a summary
 func (a *HyperStorageAdmin) Summaries(ctx context.Context, pools []*model.StoragePool) map[int64]*PoolSummary {
 	db := dbs.DBContext(ctx)
 	summaries := make(map[int64]*PoolSummary, len(pools))
 	builtin := map[int64]bool{}
+	shared := map[int64]bool{}
 	poolIDs := make([]int64, 0, len(pools))
 	for _, pool := range pools {
 		summaries[pool.ID] = &PoolSummary{}
 		builtin[pool.ID] = pool.Builtin
+		shared[pool.ID] = pool.Shared()
 		poolIDs = append(poolIDs, pool.ID)
 	}
 	if len(poolIDs) == 0 {
@@ -172,9 +177,36 @@ func (a *HyperStorageAdmin) Summaries(ctx context.Context, pools []*model.Storag
 		if row.Available() || (builtin[row.PoolID] && row.CapacityAt == nil) {
 			s.AvailableHosts++
 		}
+		if shared[row.PoolID] {
+			// Every host sees the same pool: its capacity is counted once, below
+			continue
+		}
 		s.CapacityBytes += row.CapacityBytes
 		s.UsedBytes += row.UsedBytes
 		s.AllocatedBytes += alloc[[2]int64{int64(row.Hostid), row.PoolID}]
+	}
+	sharedIDs, clusterIDs := []int64{}, []int64{}
+	for _, pool := range pools {
+		if pool.Shared() {
+			sharedIDs = append(sharedIDs, pool.ID)
+		}
+		if pool.ClusterID > 0 {
+			clusterIDs = append(clusterIDs, pool.ClusterID)
+		}
+	}
+	sharedAlloc := map[int64]int64{}
+	if len(sharedIDs) > 0 {
+		sharedAlloc = sharedAllocatedByPool(db, sharedIDs)
+	}
+	clusters := (&StorageClusterAdmin{}).ClustersByID(ctx, clusterIDs)
+	for _, pool := range pools {
+		s := summaries[pool.ID]
+		if pool.Shared() {
+			s.CapacityBytes, s.UsedBytes, s.AllocatedBytes = pool.CapacityBytes, pool.UsedBytes, sharedAlloc[pool.ID]
+		}
+		if pool.ClusterID > 0 {
+			s.Cluster = clusters[pool.ClusterID]
+		}
 	}
 	return summaries
 }
@@ -327,6 +359,20 @@ func SaveScannedDisks(ctx context.Context, hostid int32, disks []*ScannedDisk) (
 		for _, d := range existing {
 			byID[d.DiskID] = d
 		}
+		// A disk a storage cluster claimed shows as such whatever the scan saw on it: a GPFS NSD may look
+		// like a blank disk (shared-storage-design.md §6.4)
+		claims := map[string]string{}
+		claimRows := []*model.StorageClusterDisk{}
+		if err := tx.Where("hostid = ?", hostid).Find(&claimRows).Error; err != nil {
+			return err
+		}
+		for _, c := range claimRows {
+			state := model.DiskGpfsNSD
+			if c.Role == model.StorageDiskRoleOSD {
+				state = model.DiskCephOSD
+			}
+			claims[c.DiskID] = state
+		}
 		now := time.Now()
 		seen := map[string]bool{}
 		for _, s := range disks {
@@ -341,6 +387,9 @@ func SaveScannedDisks(ctx context.Context, hostid int32, disks []*ScannedDisk) (
 			d.Name, d.Path, d.Serial, d.DiskModel = s.Name, s.Path, s.Serial, s.Model
 			d.SizeBytes, d.Transport, d.DetectedMedia = s.SizeBytes, s.Transport, s.Media
 			d.State, d.Detail, d.PoolUUID, d.OwnerHostid, d.ScannedAt = s.State, s.Detail, s.PoolUUID, s.OwnerHostid, now
+			if state, claimed := claims[s.ID]; claimed && d.State != state {
+				d.State, d.Detail = state, "claimed by a storage cluster"
+			}
 			if d.MediaSource != "manual" {
 				d.Media = s.Media
 				d.MediaSource = "auto"
@@ -384,6 +433,15 @@ func newVgName(pool *model.StoragePool) string {
 	return fmt.Sprintf("cl_%s_%s", pool.UUID[:8], hex.EncodeToString(b))
 }
 
+// localPoolOnly refuses the host operations of local pools on a shared pool: a shared pool lives on its storage
+// cluster and its host rows only tell whether a host reaches it
+func localPoolOnly(pool *model.StoragePool) error {
+	if pool.Shared() {
+		return NewCLError(ErrStoragePoolInvalidState, fmt.Sprintf("Storage pool %s is on a storage cluster: it is managed there, not on a host", pool.Name), nil)
+	}
+	return nil
+}
+
 func checkConfirm(hyper *model.Hyper, confirm string) error {
 	if confirm != hyper.Hostname {
 		return NewCLError(ErrStorageConfirmMismatch, "Type the host name to confirm", nil)
@@ -408,6 +466,10 @@ func (a *HyperStorageAdmin) pickDisks(tx *gorm.DB, hyper *model.Hyper, req *Pool
 		}
 		if time.Since(disk.ScannedAt) > diskScanValidity {
 			return nil, NewCLError(ErrStorageDiskNotAllowed, fmt.Sprintf("The scan result of disk %s is too old; scan the disks again", disk.Name), nil)
+		}
+		// The scan may predate the claim
+		if claim, _ := storageDiskClaim(tx, hyper.Hostid, id); claim != nil {
+			return nil, NewCLError(ErrStorageDiskNotAllowed, fmt.Sprintf("Disk %s belongs to storage cluster %d", disk.Name, claim.ClusterID), nil)
 		}
 		switch disk.State {
 		case model.DiskFree:
@@ -536,6 +598,9 @@ func (a *HyperStorageAdmin) CreatePool(ctx context.Context, hyper *model.Hyper, 
 	if err = requireSystemAdmin(ctx); err != nil {
 		return
 	}
+	if err = localPoolOnly(pool); err != nil {
+		return
+	}
 	if pool.Builtin {
 		return nil, nil, NewCLError(ErrInvalidParameter, "The built-in pool exists on every host already", nil)
 	}
@@ -635,6 +700,9 @@ func (a *HyperStorageAdmin) ExtendPool(ctx context.Context, hyper *model.Hyper, 
 	if err = requireSystemAdmin(ctx); err != nil {
 		return
 	}
+	if err = localPoolOnly(pool); err != nil {
+		return
+	}
 	if err = checkConfirm(hyper, req.Confirm); err != nil {
 		return
 	}
@@ -699,6 +767,9 @@ func (a *HyperStorageAdmin) ExtendPool(ctx context.Context, hyper *model.Hyper, 
 // ReplaceDisk swaps a failed member of a RAID1 pool for a new disk (§4.9)
 func (a *HyperStorageAdmin) ReplaceDisk(ctx context.Context, hyper *model.Hyper, pool *model.StoragePool, failedDisk string, req *PoolDiskRequest) (err error) {
 	if err = requireSystemAdmin(ctx); err != nil {
+		return
+	}
+	if err = localPoolOnly(pool); err != nil {
 		return
 	}
 	if err = checkConfirm(hyper, req.Confirm); err != nil {
@@ -777,6 +848,9 @@ func (a *HyperStorageAdmin) RemovePool(ctx context.Context, hyper *model.Hyper, 
 	if err = requireSystemAdmin(ctx); err != nil {
 		return
 	}
+	if err = localPoolOnly(pool); err != nil {
+		return
+	}
 	if pool.Builtin {
 		return NewCLError(ErrInvalidParameter, "The built-in pool can not be removed", nil)
 	}
@@ -842,6 +916,9 @@ func (a *HyperStorageAdmin) SetMaintenance(ctx context.Context, hyper *model.Hyp
 	if err = requireSystemAdmin(ctx); err != nil {
 		return
 	}
+	if err = localPoolOnly(pool); err != nil {
+		return
+	}
 	if pool.Builtin {
 		return NewCLError(ErrInvalidParameter, "The built-in pool has no maintenance mode", nil)
 	}
@@ -892,6 +969,9 @@ func (a *HyperStorageAdmin) DeclareLost(ctx context.Context, hyper *model.Hyper,
 	if err = requireSystemAdmin(ctx); err != nil {
 		return
 	}
+	if err = localPoolOnly(pool); err != nil {
+		return
+	}
 	if pool.Builtin {
 		return 0, NewCLError(ErrInvalidParameter, "The built-in pool can not be declared lost", nil)
 	}
@@ -925,6 +1005,9 @@ func (a *HyperStorageAdmin) DeclareLost(ctx context.Context, hyper *model.Hyper,
 // Restore takes back a pool declared lost when its host reports it healthy again (§5.8)
 func (a *HyperStorageAdmin) Restore(ctx context.Context, hyper *model.Hyper, pool *model.StoragePool) (restored int64, err error) {
 	if err = requireSystemAdmin(ctx); err != nil {
+		return
+	}
+	if err = localPoolOnly(pool); err != nil {
 		return
 	}
 	db := dbs.DBContext(ctx)
@@ -985,6 +1068,9 @@ func fileName(path string) string {
 // Adopt takes over a pool left on the disks of a host that was registered again (§5.9)
 func (a *HyperStorageAdmin) Adopt(ctx context.Context, hyper *model.Hyper, pool *model.StoragePool, confirm string) (err error) {
 	if err = requireSystemAdmin(ctx); err != nil {
+		return
+	}
+	if err = localPoolOnly(pool); err != nil {
 		return
 	}
 	if err = checkConfirm(hyper, confirm); err != nil {
@@ -1054,6 +1140,9 @@ func (a *HyperStorageAdmin) AbandonOrphans(ctx context.Context, pool *model.Stor
 	if err = requireSystemAdmin(ctx); err != nil {
 		return
 	}
+	if err = localPoolOnly(pool); err != nil {
+		return
+	}
 	if confirm != pool.Name {
 		return 0, NewCLError(ErrStorageConfirmMismatch, "Type the pool name to confirm", nil)
 	}
@@ -1065,6 +1154,9 @@ func (a *HyperStorageAdmin) AbandonOrphans(ctx context.Context, pool *model.Stor
 // ScanUsage asks a host to list the actual usage of the files of a pool (§6.1)
 func (a *HyperStorageAdmin) ScanUsage(ctx context.Context, hyper *model.Hyper, pool *model.StoragePool) (err error) {
 	if err = requireSystemAdmin(ctx); err != nil {
+		return
+	}
+	if err = localPoolOnly(pool); err != nil {
 		return
 	}
 	db := dbs.DBContext(ctx)

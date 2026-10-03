@@ -44,7 +44,7 @@ type Migration struct {
 	PlacementWarning string `gorm:"-"`
 }
 
-// DiskPlanItem is where one local disk of a migrating instance goes
+// DiskPlanItem is where one disk of a migrating instance goes
 type DiskPlanItem struct {
 	VolumeID   int64  `json:"volume_id"`
 	Device     string `json:"device"`
@@ -61,6 +61,9 @@ type DiskPlanItem struct {
 	Auto        bool   `json:"auto"`
 	Reason      string `json:"reason"`
 	NVRAM       bool   `json:"nvram,omitempty"`
+	// A disk of a shared pool: the target reaches it where it is, so it is neither copied nor made nor cleaned up
+	// (shared-storage-design.md §10)
+	Shared bool `json:"shared,omitempty"`
 }
 
 func init() {

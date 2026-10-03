@@ -236,6 +236,20 @@ func (a *StoragePoolAdmin) Resolve(ctx context.Context, reference *BaseReference
 	return
 }
 
+// ResolveBoot is the pool of the boot disk of a new instance. The default pool may be a shared one, there for data
+// volumes: boot disks in shared pools come with stage S4 (shared-storage-design.md §9.7), so a request that names no
+// pool puts the boot disk in the builtin pool instead of being refused. A shared pool named outright is returned as it
+// is, for the instance creation to refuse with its reason
+func (a *StoragePoolAdmin) ResolveBoot(ctx context.Context, reference *BaseReference) (pool *model.StoragePool, err error) {
+	if pool, err = a.Resolve(ctx, reference); err != nil {
+		return
+	}
+	if (reference == nil || (reference.ID == "" && reference.Name == "")) && pool.Shared() {
+		return BuiltinPool(ctx)
+	}
+	return
+}
+
 func (a *StoragePoolAdmin) GetByUUID(ctx context.Context, uuid string) (pool *model.StoragePool, err error) {
 	return a.Resolve(ctx, &BaseReference{ID: uuid})
 }
@@ -384,6 +398,15 @@ func (a *StoragePoolAdmin) Update(ctx context.Context, pool *model.StoragePool, 
 	if u.Name != nil && *u.Name != pool.Name {
 		updates["name"] = *u.Name
 	}
+	if pool.Shared() && (u.Media != nil || u.FallbackGroup != nil) {
+		// The media of a shared pool is where its fileset or pool places the data, fixed when it was made; a volume
+		// never moves between a shared pool and another by fallback
+		return NewCLError(ErrInvalidParameter, "Media and fallback group of a shared pool are fixed", nil)
+	}
+	if pool.Shared() && pool.Status != model.StoragePoolActive && pool.Status != model.StoragePoolDisabled &&
+		(u.Status != nil || (u.IsDefault != nil && *u.IsDefault)) {
+		return NewCLError(ErrStoragePoolInvalidState, fmt.Sprintf("Storage pool %s is %s", pool.Name, pool.Status), nil)
+	}
 	if !pool.Builtin {
 		if u.Media != nil {
 			updates["media"] = media
@@ -458,6 +481,10 @@ func (a *StoragePoolAdmin) Delete(ctx context.Context, pool *model.StoragePool) 
 	}
 	if pool.Builtin {
 		return NewCLError(ErrInvalidParameter, "The built-in pool can not be deleted", nil)
+	}
+	if pool.Shared() {
+		// Removed from its cluster by a task: DeleteShared
+		return NewCLError(ErrStoragePoolInvalidState, fmt.Sprintf("Storage pool %s is on a storage cluster and is removed from it by a task", pool.Name), nil)
 	}
 	ctx, db, newTransaction := StartTransaction(ctx)
 	defer func() {
