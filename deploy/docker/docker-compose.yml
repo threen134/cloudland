@@ -574,7 +574,10 @@ services:
   # ---------- MinIO 镜像仓库（内置模式，profile: minio）----------
   # 外部 S3 模式不加 minio profile，容器不启动
   minio:
-    image: quay.io/minio/minio:latest
+    # MinIO no longer publishes community images (Docker Hub and quay.io both refused pulls on 2026-10-02);
+    # Chainguard builds them from source. The -dev variant carries mc and sh, which the health check and
+    # minio-init need. Its /data is world writable, so the image's non-root user can use a new volume
+    image: cgr.dev/chainguard/minio:latest-dev
     container_name: cloudland-minio
     restart: unless-stopped
     profiles:
@@ -599,7 +602,7 @@ services:
 
   # ---------- MinIO Bucket 初始化（一次性作业）----------
   minio-init:
-    image: quay.io/minio/mc:latest
+    image: cgr.dev/chainguard/minio-client:latest-dev
     container_name: cloudland-minio-init
     profiles:
       - minio
