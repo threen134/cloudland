@@ -191,6 +191,9 @@ onUnmounted(() => {
                                 <td>{{ d.source_pool.name || '-' }}</td>
                                 <td>
                                     {{ d.target_pool.name || '-' }}
+                                    <span v-if="d.shared" class="badge badge-secondary">{{
+                                        $t('storage.sharedNoCopyShort')
+                                    }}</span>
                                     <span v-if="d.auto" class="badge badge-warning">{{
                                         $t('storage.autoChosen')
                                     }}</span>

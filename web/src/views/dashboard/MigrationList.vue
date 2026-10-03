@@ -594,7 +594,12 @@ onUnmounted(() => {
                         <span class="disk-target-name" :title="d.volume_name"
                             >{{ d.volume_name }} ({{ d.size_gb }} GB)</span
                         >
-                        <select v-model="diskPools[d.volume_uuid]" class="form-input">
+                        <span v-if="d.shared" class="disk-target-shared">{{
+                            d.can_stay
+                                ? $t('storage.sharedNoCopy', { pool: d.source_pool })
+                                : $t('storage.sharedUnreachable', { pool: d.source_pool })
+                        }}</span>
+                        <select v-else v-model="diskPools[d.volume_uuid]" class="form-input">
                             <option v-for="c in d.choices" :key="c.uuid" :value="c.uuid" :disabled="!c.fits">
                                 {{ c.name === d.source_pool ? $t('storage.stayInPool', { pool: c.name }) : c.name }}
                                 <template v-if="d.fallback?.uuid === c.uuid">
@@ -665,6 +670,11 @@ onUnmounted(() => {
     gap: 8px;
     align-items: center;
     margin-bottom: 6px;
+}
+
+.disk-target-shared {
+    font-size: var(--font-size-sm);
+    color: var(--text-secondary);
 }
 
 .disk-target-name {

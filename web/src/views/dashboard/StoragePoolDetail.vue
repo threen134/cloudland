@@ -13,6 +13,7 @@ import InfoRow from '../../components/base/InfoRow.vue'
 import StatusBadge from '../../components/base/StatusBadge.vue'
 import BaseModal from '../../components/modals/BaseModal.vue'
 import CapacityBar from '../../components/storage/CapacityBar.vue'
+import { formatBytes } from '../../utils/format'
 import type { StatusVariant } from '../../utils/status'
 
 const { t, te } = useI18n()
@@ -112,7 +113,12 @@ const abandon = async () => {
                     <button class="btn btn-secondary btn-sm" @click="load">
                         <RefreshCw :size="14" :class="{ spinning: loading }" />
                     </button>
-                    <button class="btn btn-secondary btn-sm" :disabled="pool.builtin" @click="showAbandon = true">
+                    <button
+                        v-if="!pool.shared"
+                        class="btn btn-secondary btn-sm"
+                        :disabled="pool.builtin"
+                        @click="showAbandon = true"
+                    >
                         {{ t('storage.abandonOrphans') }}
                     </button>
                 </div>
@@ -123,6 +129,28 @@ const abandon = async () => {
                 <div class="info-rows">
                     <InfoRow :label="t('storage.type')">{{
                         pool.shared ? t('storage.shared') : t('storage.local')
+                    }}</InfoRow>
+                    <InfoRow v-if="pool.cluster?.id" :label="t('storage.cluster.cluster')">
+                        <router-link
+                            :to="{ name: 'storage-cluster-detail', params: { id: pool.cluster.id } }"
+                            class="resource-link"
+                            >{{ pool.cluster.name }}</router-link
+                        >
+                    </InfoRow>
+                    <InfoRow v-if="pool.shared" :label="t('storage.sharedPool.quotaShort')">{{
+                        pool.quota_bytes ? formatBytes(pool.quota_bytes) : t('storage.sharedPool.noQuota')
+                    }}</InfoRow>
+                    <InfoRow v-if="pool.shared" :label="t('storage.capacity')">
+                        <CapacityBar
+                            v-if="pool.capacity_bytes"
+                            :capacity="pool.capacity_bytes"
+                            :used="pool.used_bytes || 0"
+                            :allocated="pool.allocated_bytes || 0"
+                        />
+                        <span v-else class="text-secondary">{{ t('storage.sharedPool.capacityUnknown') }}</span>
+                    </InfoRow>
+                    <InfoRow v-if="pool.driver_params?.fileset" :label="t('storage.sharedPool.fileset')">{{
+                        String(pool.driver_params.fileset)
                     }}</InfoRow>
                     <InfoRow :label="t('storage.media')">{{
                         pool.builtin ? '-' : (pool.media || '-').toUpperCase()

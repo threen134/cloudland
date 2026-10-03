@@ -488,11 +488,14 @@ const scanUsage = async () => {
                                 </router-link>
                                 <div class="cell-sub">
                                     <span v-if="p.builtin">{{ t('storage.builtinNote') }}</span>
+                                    <span v-else-if="p.shared">{{ t('storage.shared') }}</span>
                                     <span v-else-if="p.media">{{ p.media.toUpperCase() }}</span>
                                 </div>
                             </td>
-                            <td>{{ p.builtin ? '-' : layoutText(p.layout) }}</td>
-                            <td class="cell-members" :title="membersText(p)">{{ p.builtin ? '-' : membersText(p) }}</td>
+                            <td>{{ p.builtin || p.shared ? '-' : layoutText(p.layout) }}</td>
+                            <td class="cell-members" :title="membersText(p)">
+                                {{ p.builtin || p.shared ? '-' : membersText(p) }}
+                            </td>
                             <td>
                                 <CapacityBar
                                     v-if="p.capacity_bytes"
@@ -523,6 +526,7 @@ const scanUsage = async () => {
                             <td>
                                 <div class="row-actions">
                                     <button
+                                        v-if="!p.shared"
                                         type="button"
                                         class="icon-btn-table"
                                         :title="t('storage.actions.usage')"
@@ -530,7 +534,7 @@ const scanUsage = async () => {
                                     >
                                         <BarChart3 :size="16" />
                                     </button>
-                                    <template v-if="!p.builtin">
+                                    <template v-if="!p.builtin && !p.shared">
                                         <button
                                             type="button"
                                             class="icon-btn-table"

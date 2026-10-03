@@ -316,8 +316,9 @@ const fetchResources = async () => {
         }
 
         try {
+            // Boot disks can not go to a shared pool yet (stage S4 of the shared storage design)
             availablePools.value = (await storagePoolsApi.list({ limit: OPTION_LIST_LIMIT })).storage_pools.filter(
-                (p) => !p.status || p.status === 'active'
+                (p) => (!p.status || p.status === 'active') && !p.shared
             )
         } catch {
             availablePools.value = []

@@ -67,6 +67,8 @@ export interface DiskPlanItem {
     // Chosen from the fallback group because the source pool is missing on the target
     auto: boolean
     reason?: string
+    // A disk of a shared pool: not copied, the target opens it where it is
+    shared?: boolean
 }
 
 // GET /instances/:id/migration_targets (services.MigrationTarget)
@@ -85,6 +87,8 @@ export interface DiskTarget {
     size_gb: number
     source_pool: string
     can_stay: boolean
+    // In a shared pool: not copied, it stays where it is
+    shared?: boolean
     fallback?: PoolChoice
     choices: PoolChoice[]
 }

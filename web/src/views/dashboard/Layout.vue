@@ -52,6 +52,8 @@ import {
     ShieldCheck,
     Boxes,
     Waypoints,
+    ServerCog,
+    Package,
 } from 'lucide-vue-next'
 
 const auth = useAuthStore()
@@ -81,7 +83,7 @@ watch(isSidebarCollapsed, (collapsed) => {
 const currentLang = computed(() => getCurrentLanguage())
 
 // Collapsible menu sections
-const expandedSections = ref<string[]>(['auth', 'compute', 'network', 'alerting', 'admin'])
+const expandedSections = ref<string[]>(['auth', 'compute', 'network', 'storage', 'alerting', 'admin'])
 const activeDropdown = ref<string | null>(null)
 
 const toggleSection = (section: string) => {
@@ -175,6 +177,11 @@ const pageTitle = computed(() => {
         'hypervisor-detail': t('dashboard.hypervisors'),
         'storage-pools': t('storage.poolsPage'),
         'storage-pool-detail': t('storage.poolsPage'),
+        'storage-clusters': t('storage.clustersPage'),
+        'storage-task-detail': t('storage.clustersPage'),
+        'storage-cluster-create': t('storage.clustersPage'),
+        'storage-cluster-detail': t('storage.clustersPage'),
+        'storage-packages': t('storage.packagesPage'),
         migrations: t('dashboard.migrations'),
         'migration-detail': t('dashboard.migrations'),
         alarms: t('dashboard.alarms'),
@@ -365,6 +372,43 @@ onUnmounted(() => {
                     </div>
                 </div>
 
+                <!-- Storage Section (Superadmin Only) -->
+                <div class="nav-section" v-if="auth.user?.is_superuser">
+                    <button class="section-header" @click="toggleSection('storage')">
+                        <span class="section-title">{{ $t('storage.title') }}</span>
+                        <component
+                            :is="isExpanded('storage') ? ChevronDown : ChevronRight"
+                            :size="14"
+                            class="section-chevron"
+                        />
+                    </button>
+                    <div v-show="isExpanded('storage') || isSidebarCollapsed" class="section-items">
+                        <RouterLink to="/dashboard/storage-pools" class="nav-item" active-class="active">
+                            <Database :size="18" />
+                            <span>{{ $t('storage.poolsPage') }}</span>
+                        </RouterLink>
+                        <RouterLink
+                            to="/dashboard/storage-clusters"
+                            class="nav-item"
+                            :class="{
+                                active: [
+                                    'storage-task-detail',
+                                    'storage-cluster-create',
+                                    'storage-cluster-detail',
+                                ].includes(String(route.name)),
+                            }"
+                            active-class="active"
+                        >
+                            <ServerCog :size="18" />
+                            <span>{{ $t('storage.clustersPage') }}</span>
+                        </RouterLink>
+                        <RouterLink to="/dashboard/storage-packages" class="nav-item" active-class="active">
+                            <Package :size="18" />
+                            <span>{{ $t('storage.packagesPage') }}</span>
+                        </RouterLink>
+                    </div>
+                </div>
+
                 <!-- Alerting Section -->
                 <div class="nav-section">
                     <button class="section-header" @click="toggleSection('alerting')">
@@ -416,10 +460,6 @@ onUnmounted(() => {
                         <RouterLink to="/dashboard/hypervisors" class="nav-item" active-class="active">
                             <Server :size="18" />
                             <span>{{ $t('dashboard.hypervisors') }}</span>
-                        </RouterLink>
-                        <RouterLink to="/dashboard/storage-pools" class="nav-item" active-class="active">
-                            <Database :size="18" />
-                            <span>{{ $t('storage.poolsPage') }}</span>
                         </RouterLink>
                         <RouterLink to="/dashboard/migrations" class="nav-item" active-class="active">
                             <ArrowRightLeft :size="18" />

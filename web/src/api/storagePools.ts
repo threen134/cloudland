@@ -1,4 +1,5 @@
 import client from './client'
+import type { StorageTask } from './storageClusters'
 
 /**
  * Storage pools and the storage of hosts. Mirrors api/src/apis/storage_pool.go.
@@ -26,9 +27,12 @@ export interface StoragePool extends ResourceRef {
     is_default: boolean
     /** Hosts where the pool is usable now */
     available_hosts: number
+    /** Shared pools: the kind of storage behind them (gpfs, ceph) */
+    cluster_kind?: string
     // --- system admins ---
     fallback_group?: string
-    status?: 'active' | 'disabled'
+    /** Shared pools also: creating (its task runs), error (its making failed), deleting */
+    status?: 'active' | 'disabled' | 'creating' | 'error' | 'deleting'
     over_ratio?: number
     mount_path?: string
     description?: string
@@ -36,6 +40,11 @@ export interface StoragePool extends ResourceRef {
     capacity_bytes?: number
     used_bytes?: number
     allocated_bytes?: number
+    /** Shared pools */
+    cluster?: { id: string; name: string }
+    quota_bytes?: number
+    capacity_at?: string
+    driver_params?: Record<string, unknown>
 }
 
 export interface StoragePoolListResponse {
@@ -52,6 +61,18 @@ export interface StoragePoolPayload {
     over_ratio?: number
     is_default?: boolean
     description?: string
+    /** A shared pool on this storage cluster; without it a local pool */
+    cluster?: { id: string }
+    /** Shared pools: quota in GB, 0 = none */
+    quota_gb?: number
+    /** Shared pools: parameters of the kind (gpfs: filesystem, inode_limit; imported gpfs: path, fileset) */
+    params?: Record<string, unknown>
+}
+
+/** A shared pool with the task making, changing or removing it */
+export interface StoragePoolTask {
+    storage_pool?: StoragePool
+    task?: StorageTask
 }
 
 export interface StoragePoolPatch {
@@ -62,6 +83,8 @@ export interface StoragePoolPatch {
     status?: 'active' | 'disabled'
     is_default?: boolean
     description?: string
+    /** Shared pools: a new quota in GB, set on the cluster by a task */
+    quota_gb?: number
 }
 
 /** Status of a pool on one host (model.HyperPool* in api/src/model/storage_pool.go) */
@@ -99,6 +122,8 @@ export interface HostPool {
     storage_pool: { id: string; name: string }
     hypervisor: { id: string; name: string } | null
     builtin: boolean
+    /** A shared pool: the row only tells whether the host reaches it */
+    shared?: boolean
     media: string
     status: HostPoolStatus
     reason: string
@@ -132,7 +157,17 @@ export interface HostPoolListResponse {
     pending_instances: { id: string; name: string }[]
 }
 
-export type DiskState = 'free' | 'dirty' | 'in_use' | 'system' | 'cloudland_pool' | 'unknown_member' | 'shared'
+export type DiskState =
+    | 'free'
+    | 'dirty'
+    | 'in_use'
+    | 'system'
+    | 'cloudland_pool'
+    | 'unknown_member'
+    | 'shared'
+    // Disks of a storage cluster: claimed by one of ours, or found holding a Ceph OSD
+    | 'gpfs_nsd'
+    | 'ceph_osd'
 
 export interface HostDisk {
     /** hyper_disks record id, used in PATCH /hypers/:uuid/disks/:id */
@@ -204,12 +239,24 @@ export const storagePoolsApi = {
         const response = await client.post<StoragePool>('/storage_pools', payload)
         return response.data
     },
+    /** A pool on a storage cluster: made there by a task (202) */
+    createShared: async (payload: StoragePoolPayload): Promise<StoragePoolTask> => {
+        const response = await client.post<StoragePoolTask>('/storage_pools', payload)
+        return response.data
+    },
     update: async (id: string, payload: StoragePoolPatch): Promise<StoragePool> => {
         const response = await client.patch<StoragePool>(`/storage_pools/${id}`, payload)
         return response.data
     },
-    delete: async (id: string): Promise<void> => {
-        await client.delete(`/storage_pools/${id}`)
+    /** The quota of a shared pool: set on its cluster by a task (202) */
+    setQuota: async (id: string, quotaGB: number): Promise<StoragePoolTask> => {
+        const response = await client.patch<StoragePoolTask>(`/storage_pools/${id}`, { quota_gb: quotaGB })
+        return response.data
+    },
+    /** A shared pool is removed from its cluster by a task (202 with the task); a local one at once (204) */
+    delete: async (id: string): Promise<StoragePoolTask | undefined> => {
+        const response = await client.delete<StoragePoolTask>(`/storage_pools/${id}`)
+        return response.status === 202 ? response.data : undefined
     },
     hosts: async (id: string): Promise<HostPoolListResponse> => {
         const response = await client.get<HostPoolListResponse>(`/storage_pools/${id}/hypers`)

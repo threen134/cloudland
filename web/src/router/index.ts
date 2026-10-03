@@ -284,6 +284,36 @@ const router = createRouter({
                     meta: { requiresSuperAdmin: true },
                 },
                 {
+                    path: 'storage-clusters',
+                    name: 'storage-clusters',
+                    component: () => import('../views/dashboard/StorageClusters.vue'),
+                    meta: { requiresSuperAdmin: true },
+                },
+                {
+                    path: 'storage-clusters/new',
+                    name: 'storage-cluster-create',
+                    component: () => import('../views/dashboard/StorageClusterCreate.vue'),
+                    meta: { requiresSuperAdmin: true },
+                },
+                {
+                    path: 'storage-clusters/:id',
+                    name: 'storage-cluster-detail',
+                    component: () => import('../views/dashboard/StorageClusterDetail.vue'),
+                    meta: { requiresSuperAdmin: true },
+                },
+                {
+                    path: 'storage-packages',
+                    name: 'storage-packages',
+                    component: () => import('../views/dashboard/StoragePackages.vue'),
+                    meta: { requiresSuperAdmin: true },
+                },
+                {
+                    path: 'storage-tasks/:id',
+                    name: 'storage-task-detail',
+                    component: () => import('../views/dashboard/StorageTaskDetail.vue'),
+                    meta: { requiresSuperAdmin: true },
+                },
+                {
                     path: 'migrations',
                     name: 'migrations',
                     component: () => import('../views/dashboard/MigrationList.vue'),
