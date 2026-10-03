@@ -73,7 +73,13 @@ migrate_disks=""
 prep="[]"
 moved=""
 for (( i=0; i < ndisk; i++ )); do
-    read -r src dst dst_pool < <(jq -r ".[$i] | \"\(.src_path) \(.dst_path) \(.dst_pool_uuid)\"" <<<"$plan")
+    read -r src dst dst_pool shared < <(jq -r ".[$i] | \"\(.src_path) \(.dst_path) \(.dst_pool_uuid) \(.shared // false)\"" <<<"$plan")
+    if [ "$shared" = "true" ]; then
+        # A disk of a shared pool: the target opens it where it is, nothing is checked, made or copied there
+        # (shared-storage-design.md §10). An RBD disk is no file, so it is not in the list of file disks
+        [ "$src" = "$dst" ] || fail "shared disk $src can not move to $dst"
+        continue
+    fi
     dev=$(awk -v p="$src" '$2 == p {print $1}' <<<"$blklist")
     [ -z "$dev" ] && fail "disk $src of the plan is not a disk of the instance"
     info=$(qemu-img info -U --output=json "$src" 2>/dev/null)
@@ -90,13 +96,16 @@ done
 # On the target: check the pools and the free space, refuse to overwrite a file, create the empty images of a live copy
 prep_mode=live
 [ "$vm_state" = "shut off" ] && prep_mode=offline
-prepared=1
-result=$(ssh $ssh_opts $target_hyper /opt/cloudland/scripts/backend/prepare_migration_disks.sh prepare $migration_ID $target_hostid $prep_mode <<<"$prep" 2>/dev/null | tail -1)
-[ "$result" = "OK" ] || fail "${result#ERROR }"
+if [ "$(jq length <<<"$prep")" -gt 0 ]; then
+    prepared=1
+    result=$(ssh $ssh_opts $target_hyper /opt/cloudland/scripts/backend/prepare_migration_disks.sh prepare $migration_ID $target_hostid $prep_mode <<<"$prep" 2>/dev/null | tail -1)
+    [ "$result" = "OK" ] || fail "${result#ERROR }"
+fi
 if [ "$vm_state" = "shut off" ]; then
     # rsync --sparse keeps the holes of the images: scp would write them out and fill the space discard gave back
     for (( i=0; i < ndisk; i++ )); do
-        read -r src dst < <(jq -r ".[$i] | \"\(.src_path) \(.dst_path)\"" <<<"$plan")
+        read -r src dst shared < <(jq -r ".[$i] | \"\(.src_path) \(.dst_path) \(.shared // false)\"" <<<"$plan")
+        [ "$shared" = "true" ] && continue
         rsync -S -e "ssh $ssh_opts" "$src" "$target_hyper:$dst" >/dev/null 2>&1 || fail "failed to copy disk $src to the target"
     done
 fi
@@ -188,8 +197,13 @@ progress_pid=$!
 if [ "$vm_state" = "shut off" ]; then
     log_debug $ID "source_migration.sh: Starting offline migration to $target_hyper"
     virsh migrate --undefinesource --persistent --offline $xml_opts $vm_ID $target_uri
+elif [ -z "$migrate_disks" ]; then
+    # Every disk is in a shared pool: only the memory moves
+    log_debug $ID "source_migration.sh: Starting live migration with shared storage to $target_hyper"
+    virsh migrate --undefinesource --persistent --live --migrateuri tcp://$target_hyper $xml_opts $vm_ID $target_uri
 else
-    # No --suspend: QEMU resumes on the target right after the switch (libvirt pauses the source before it)
+    # No --suspend: QEMU resumes on the target right after the switch (libvirt pauses the source before it). Disks of
+    # shared pools are not in --migrate-disks: libvirt leaves them to the target as they are
     log_debug $ID "source_migration.sh: Starting live migration with local storage to $target_hyper, disks ${migrate_disks#,}"
     virsh migrate --undefinesource --persistent --live --copy-storage-all --migrate-disks ${migrate_disks#,} \
         --migrateuri tcp://$target_hyper --disks-uri tcp://$target_hyper $xml_opts $vm_ID $target_uri

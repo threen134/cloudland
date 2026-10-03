@@ -54,7 +54,8 @@ function delete_disk()
 
 ndisk=$(jq length <<<"$plan" 2>/dev/null)
 if [ -n "$ndisk" ] && [ "$ndisk" -gt 0 ]; then
-    for path in $(jq -r '.[].src_path' <<<"$plan"); do
+    # Disks of shared pools are where the instance runs now, never deleted here
+    for path in $(jq -r '.[] | select(.shared != true) | .src_path' <<<"$plan"); do
         delete_disk $path
     done
 else

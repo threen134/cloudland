@@ -16,6 +16,10 @@ if [ -z "$system_reserved_memory" ]; then
     [ $system_reserved_memory -gt 64000000 ] && system_reserved_memory=64000000
 fi
 total_memory=$(( $(free | grep 'Mem:' | awk '{print $2}') - $system_reserved_memory ))
+# Memory held back for the daemons of storage clusters on this host, in KiB (shared-storage-design.md §6.7)
+storage_reserved_memory=$(cat $run_dir/storage_reserved_memory 2>/dev/null)
+[[ "$storage_reserved_memory" =~ ^[0-9]+$ ]] || storage_reserved_memory=0
+total_memory=$((total_memory - storage_reserved_memory))
 disk=0
 total_disk=0
 network=0
@@ -308,16 +312,34 @@ function pool_state_ok()
     [ "${ts:-0}" -ge "$(boot_time)" ]
 }
 
-# Pools holding the disks of an instance, from its definition: <instance id>
+# Pools holding the disks of an instance, from its definition: <instance id>. A disk under the root of a shared pool
+# of this host's lists belongs to that pool, an RBD disk to the pool of its RBD pool and configuration file
+# (shared-storage-design.md §9.9)
 function instance_pools()
 {
-    local xml=$xml_dir/inst-$1/inst-$1.xml src p
-    for src in $(xmllint --xpath '//devices/disk[@device="disk"]/source/@file' $xml 2>/dev/null | grep -o '"[^"]*"' | tr -d '"'); do
-        case "$src" in
-            $pools_dir/*) p=${src#$pools_dir/}; echo ${p%%/*} ;;
-            *) echo builtin ;;
-        esac
-    done | sort -u
+    local xml=$xml_dir/inst-$1/inst-$1.xml src p shared="" n i name conf
+    {
+        for src in $(xmllint --xpath '//devices/disk[@device="disk"]/source/@file' $xml 2>/dev/null | grep -o '"[^"]*"' | tr -d '"'); do
+            case "$src" in
+                $pools_dir/*) p=${src#$pools_dir/}; echo ${p%%/*} ;;
+                $cache_dir/*) echo builtin ;;
+                *)
+                    [ -z "$shared" ] && shared=$(shared_pools_all)
+                    p=$(shared_pool_of_path "$src" "$shared")
+                    echo ${p:-builtin}
+                    ;;
+            esac
+        done
+        n=$(xmllint --xpath 'count(//devices/disk[@device="disk"]/source[@protocol="rbd"])' $xml 2>/dev/null)
+        for (( i=1; i <= ${n:-0}; i++ )); do
+            name=$(xmllint --xpath "string((//devices/disk[@device='disk']/source[@protocol='rbd'])[$i]/@name)" $xml 2>/dev/null)
+            conf=$(xmllint --xpath "string((//devices/disk[@device='disk']/source[@protocol='rbd'])[$i]/config/@file)" $xml 2>/dev/null)
+            [ -z "$shared" ] && shared=$(shared_pools_all)
+            p=$(jq -r --arg n "${name%%/*}" --arg c "$conf" '.[] | select(.ceph_pool == $n and .conf == $c) | .pool' <<<"$shared" 2>/dev/null | head -1)
+            # A disk of a pool this host does not list waits like one whose pool is not ready
+            echo ${p:-unknown-rbd}
+        done
+    } | sort -u
 }
 
 function instance_pools_ok()
@@ -397,6 +419,53 @@ function pool_report()
     done
 }
 
+# Keep one background probe per shared pool of this host's lists and report them together (shared-storage-design.md
+# §9.2): when something changed, or every 5 minutes. The heartbeat only reads the state files; a probe still running
+# after 2 minutes is hanging on its storage, which is what an unavailable pool looks like
+function shared_pool_report()
+{
+    local now=$(date +%s) pools n i pool cluster st pid_file ts items="" status reason item sig last_ts last_sig
+    pools=$(shared_pools_all)
+    n=$(jq length <<<"$pools" 2>/dev/null)
+    [ "${n:-0}" -gt 0 ] || return 0
+    mkdir -p $pool_state_dir
+    for (( i=0; i < n; i++ )); do
+        read -r pool cluster < <(jq -r ".[$i] | \"\(.pool) \(.cluster)\"" <<<"$pools")
+        valid_uuid "$pool" && valid_uuid "$cluster" || continue
+        st=$pool_state_dir/$pool.state
+        pid_file=$pool_state_dir/$pool.pid
+        ts=$(jq -r '.ts // 0' $st 2>/dev/null)
+        if probe_alive "$(cat $pid_file 2>/dev/null)" $pool; then
+            if [ $((now - $(stat -c %Y $pid_file))) -gt 120 ]; then
+                item=$(jq -cn --arg p "$pool" '{pool: $p, status: "unavailable", reason: "probe stuck: the storage does not answer"}')
+                items="$items$item"$'\n'
+                continue
+            fi
+        elif [ $((now - ${ts:-0})) -ge 30 ]; then
+            setsid $script_dir/shared_pool_probe.sh $pool $cluster </dev/null >/dev/null 2>&1 &
+            echo $! >$pid_file
+        fi
+        [ -f $st ] || continue
+        item=$(jq -c --arg p "$pool" '{pool: $p, status: .status, reason: (.reason // ""), size: (.size // 0), used: (.used // 0), avail: (.avail // 0)}' $st 2>/dev/null)
+        # A state from before this boot says nothing yet; one no probe refreshed for 2 minutes is not trusted
+        if [ "${ts:-0}" -lt "$(boot_time)" ]; then
+            item=$(jq -c '.status = "unavailable" | .reason = "not checked yet since the host started"' <<<"$item")
+        elif [ $((now - ${ts:-0})) -gt 120 ]; then
+            item=$(jq -c '.status = "unavailable" | .reason = "probe stuck: no result for 2 minutes"' <<<"$item")
+        fi
+        items="$items$item"$'\n'
+    done
+    items=$(printf '%s' "$items" | jq -cs '.')
+    # Crossing 80%, 85% or 90% of use is a change, like a status change
+    sig=$(jq -c 'map({pool, status, reason, b: (if .size > 0 then (.used * 100 / .size | floor) else 0 end
+        | if . >= 90 then 3 elif . >= 85 then 2 elif . >= 80 then 1 else 0 end)})' <<<"$items" | md5sum | cut -d' ' -f1)
+    read last_ts last_sig < <(cat $pool_state_dir/shared.reported 2>/dev/null)
+    if [ "$sig" != "$last_sig" ] || [ $((now - ${last_ts:-0})) -ge 300 ]; then
+        echo "|:-COMMAND-:| shared_pool_status '$NODE_ID' '$(echo -n "$items" | base64 -w0)'"
+        echo "$now $sig" >$pool_state_dir/shared.reported
+    fi
+}
+
 function sync_delayed_job()
 {
     for f in $(ls $async_job_dir/*.done); do
@@ -444,6 +513,8 @@ function calc_resource()
     memory=$(echo "$total_memory-$virtual_memory" | bc)
     memory=${memory%.*}
     free_mem=$(cat /proc/meminfo | grep -i MemFree | awk '{print $2}')
+    # Storage daemons that just started have not taken their memory yet: keep it out of the free memory too
+    free_mem=$((free_mem - storage_reserved_memory))
     [ $memory -lt $free_mem ] && memory=$free_mem
     if [ $(( $(date +"%s") % 10 )) -gt 7 ]; then
 	rm -f $run_dir/old_resource_list
@@ -468,6 +539,7 @@ function calc_resource()
 
 calc_resource
 pool_report
+shared_pool_report
 sync_instance
 pending_start
 recover_loadbalancer

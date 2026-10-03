@@ -8,6 +8,9 @@ source "$(dirname "${BASH_SOURCE[0]}")/vnc_lib.sh"
 
 pools_dir=/opt/cloudland/pools
 pool_state_dir=$run_dir/pools
+# Partition type of a GPFS NSD of the newer format, and how much of the head of a disk tells it is blank
+gpfs_part_type=37affc90-ef7d-4e96-91c3-2d7ae055b174
+disk_head_bytes=4194304
 pool_lock_dir=/var/lock
 disks_lock=$pool_lock_dir/cloudland-disks.lock
 
@@ -207,6 +210,8 @@ function disk_tags()
     tag_host=""
     lvm_member=0
     raid_member=0
+    ceph_osd_id=""
+    ceph_fsid=""
     for part in $(lsblk -nlpo NAME $dev 2>/dev/null); do
         fstype=$(blkid -p -o value -s TYPE $part 2>/dev/null)
         case $fstype in
@@ -214,6 +219,11 @@ function disk_tags()
                 lvm_member=1
                 out=$(timeout 20 pvs --devicesfile "" --devices $part --noheadings -o vg_name,vg_tags 2>/dev/null | head -1)
                 parse_vg_tags "$out"
+                # A Ceph OSD: volume group ceph-<uuid>, its logical volume tagged with the OSD id and cluster fsid
+                if [[ "$(awk '{print $1}' <<<"$out")" == ceph-* ]]; then
+                    parse_ceph_tags "$(timeout 20 lvs --devicesfile "" --devices $part --noheadings -o lv_tags 2>/dev/null | head -1)"
+                    [ -z "$ceph_osd_id" ] && ceph_osd_id="?"
+                fi
                 ;;
             linux_raid_member)
                 raid_member=1
@@ -231,6 +241,17 @@ function disk_tags()
         parse_vg_tags "$out"
     done
     return 0
+}
+
+function parse_ceph_tags()
+{
+    local t
+    for t in ${1//,/ }; do
+        case $t in
+            ceph.osd_id=*) ceph_osd_id=${t#ceph.osd_id=} ;;
+            ceph.cluster_fsid=*) ceph_fsid=${t#ceph.cluster_fsid=} ;;
+        esac
+    done
 }
 
 function parse_vg_tags()
@@ -293,6 +314,11 @@ function classify_disk()
         disk_detail="mounted at $mounts"
         return
     fi
+    if [ -n "$ceph_osd_id" ]; then
+        disk_state=ceph_osd
+        disk_detail="Ceph OSD $ceph_osd_id of cluster ${ceph_fsid:-unknown}"
+        return
+    fi
     if [ $lvm_member -eq 1 ] || [ $raid_member -eq 1 ]; then
         disk_state=unknown_member
         disk_detail="LVM or md member whose owner can not be read"
@@ -303,13 +329,66 @@ function classify_disk()
         disk_detail="used by $holders"
         return
     fi
+    # An NSD of the newer GPFS format is a GPT disk with one partition of the GPFS type: not just a disk with a
+    # partition table that a wipe may take (shared-storage-design.md §6.4)
+    if lsblk -nlo PARTTYPE $dev 2>/dev/null | grep -qix "$gpfs_part_type"; then
+        disk_state=unknown_member
+        disk_detail="GPFS NSD (a partition of the GPFS type)"
+        return
+    fi
     sig=$(lsblk -nlpo NAME $dev 2>/dev/null | while read p; do wipefs -n $p 2>/dev/null | tail -n +2; done)
     if [ -n "$sig" ] || [ $(lsblk -nlo NAME $dev 2>/dev/null | wc -l) -gt 1 ]; then
         disk_state=dirty
         disk_detail="has a partition table or file system"
         return
     fi
+    # An NSD of the older GPFS format carries no signature blkid knows, only its descriptor at the start of the disk:
+    # on a host with GPFS installed a disk with data in its first MiBs may well be an NSD of a cluster CloudLand does
+    # not manage (§6.4). A disk zero there is blank (new, or wiped by wipe_disk)
+    if [ -x /usr/lpp/mmfs/bin/mmfsd ] && ! timeout 30 cmp -s -n $disk_head_bytes $dev /dev/zero; then
+        disk_state=unknown_member
+        disk_detail="has data in its first $((disk_head_bytes / 1048576)) MiB and GPFS is installed on this host: it may be a GPFS NSD"
+        return
+    fi
     disk_state=free
+}
+
+# Find a disk by its stable identifier and check it is the disk that was claimed (shared-storage-design.md §6.4):
+# <stable id> <serial> <wwn> <size in bytes>. Empty expected values are not checked. Sets identity_path, or
+# identity_error and returns 1. Scripts writing a disk call this right before they do, never trusting a device name
+# found earlier: names like /dev/sdb move between reboots
+function disk_identity()
+{
+    local id=$1 serial=$2 wwn=$3 size=$4 path have
+    identity_path=""
+    identity_error=""
+    path=$(disk_path_of "$id")
+    if [ -z "$path" ] || [ ! -b "$path" ]; then
+        identity_error="disk $id is not on this host"
+        return 1
+    fi
+    if [ -n "$serial" ]; then
+        have=$(lsblk -dno SERIAL $path 2>/dev/null | xargs)
+        if [ "$have" != "$serial" ]; then
+            identity_error="disk $id ($path) has serial '$have', expected '$serial'"
+            return 1
+        fi
+    fi
+    if [ -n "$wwn" ]; then
+        have=$(lsblk -dno WWN $path 2>/dev/null | xargs)
+        if [ "${have#0x}" != "${wwn#0x}" ]; then
+            identity_error="disk $id ($path) has WWN '$have', expected '$wwn'"
+            return 1
+        fi
+    fi
+    if [ -n "$size" ] && [ "$size" != "0" ]; then
+        have=$(lsblk -dbno SIZE $path 2>/dev/null | xargs)
+        if [ "$have" != "$size" ]; then
+            identity_error="disk $id ($path) is $have bytes, expected $size"
+            return 1
+        fi
+    fi
+    identity_path=$path
 }
 
 # Wipe every partition, then the whole disk, and make the kernel drop the partitions: <device path>
@@ -317,13 +396,27 @@ function classify_disk()
 # logical volume, and lvcreate / mkfs refuse to go on
 function wipe_disk()
 {
-    local dev=$1 p
+    local dev=$1 p mib
     for p in $(lsblk -nlpo NAME,TYPE $dev | awk '$2 == "part" {print $1}' | sort -r); do
         wipefs -a -q $p || return 1
     done
     wipefs -a -q $dev || return 1
+    # Zero 10 MiB at both ends too (shared-storage-design.md §6.4): what a partition left at the head (the descriptor
+    # of an NSD) would make classify_disk take the disk for a GPFS NSD on a host with GPFS installed
+    mib=$(( $(blockdev --getsize64 $dev) / 1048576 ))
+    if [ $mib -le 20 ]; then
+        dd if=/dev/zero of=$dev bs=1M count=$mib oflag=direct conv=fsync status=none || return 1
+    else
+        dd if=/dev/zero of=$dev bs=1M count=10 oflag=direct conv=fsync status=none || return 1
+        dd if=/dev/zero of=$dev bs=1M count=10 seek=$((mib - 10)) oflag=direct conv=fsync status=none || return 1
+    fi
     blockdev --rereadpt $dev 2>/dev/null
     udevadm settle 2>/dev/null
+    # BLKRRPART fails on a busy disk and on a loop device without partition scanning: drop what is left by hand
+    if [ $(lsblk -nlo NAME $dev | wc -l) -gt 1 ]; then
+        partx -d $dev 2>/dev/null
+        udevadm settle 2>/dev/null
+    fi
     [ $(lsblk -nlo NAME $dev | wc -l) -eq 1 ]
 }
 
@@ -464,4 +557,87 @@ function try_start_instance()
 function probe_alive()
 {
     [ -n "$1" ] && [ -r /proc/$1/cmdline ] && tr '\0' ' ' </proc/$1/cmdline | grep -qF "pool_probe.sh $2 "
+}
+
+# ---- shared pools (shared-storage-design.md §4.5.2, §9.2) ----
+# A host keeps the pools of each storage cluster it is in at $shared_storage_dir/<cluster uuid>/shared_pools.json,
+# written by sync_shared_pools.sh and stc_pools.sh: [{driver, pool, root, fs_type}]. Each pool has a background probe
+# (shared_pool_probe.sh) whose state file sits next to those of the local pools ($pool_state_dir/<pool uuid>.state),
+# marked as shared by <pool uuid>.shared (holding the cluster uuid).
+
+shared_storage_dir=$run_dir/storage
+
+# drv_load <json>: source the driver named in the JSON of a shared pool (scripts/kvm/storage/drivers/<driver>.sh)
+# and read the pool from it (drv_pool, drv_root, drv_fs_type...). Sets guard_error on failure
+function drv_load()
+{
+    local json=$1 driver file
+    guard_error=""
+    driver=$(jq -r '.driver // empty' <<<"$json" 2>/dev/null)
+    if ! [[ "$driver" =~ ^[a-z][a-z0-9_]*$ ]]; then
+        guard_error="invalid pool driver '$driver'"
+        return 1
+    fi
+    file=$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/storage/drivers/$driver.sh
+    if [ ! -f "$file" ]; then
+        guard_error="this host has no pool driver $driver"
+        return 1
+    fi
+    source "$file"
+    drv_init "$json"
+}
+
+# shared_pools_apply <cluster uuid> <json array>: keep the pool list of a cluster and stop the probes of the pools no
+# list holds any more. Sets guard_error on failure
+function shared_pools_apply()
+{
+    local cluster=$1 list=$2 dir
+    guard_error=""
+    if ! valid_uuid "$cluster"; then
+        guard_error="invalid cluster uuid $cluster"
+        return 1
+    fi
+    if ! jq -e 'type == "array" and all(.[]; (.pool | type) == "string" and (.driver | type) == "string")' >/dev/null 2>&1 <<<"$list"; then
+        guard_error="invalid pool list"
+        return 1
+    fi
+    dir=$shared_storage_dir/$cluster
+    mkdir -p $dir
+    printf '%s\n' "$list" >$dir/shared_pools.json.tmp && mv -f $dir/shared_pools.json.tmp $dir/shared_pools.json
+    shared_pools_prune
+}
+
+# shared_pools_all: the pools of every cluster this host is in, one JSON array, each pool with its cluster
+function shared_pools_all()
+{
+    local f c
+    for f in $shared_storage_dir/*/shared_pools.json; do
+        [ -f "$f" ] || continue
+        c=$(basename "$(dirname "$f")")
+        valid_uuid "$c" || continue
+        jq -c --arg c "$c" '.[]? | . + {cluster: $c}' "$f" 2>/dev/null
+    done | jq -cs '.'
+}
+
+# shared_pools_prune: stop the probe of every shared pool no list holds any more and drop its state
+function shared_pools_prune()
+{
+    local keep f pool pid
+    keep=$(shared_pools_all | jq -r '.[].pool')
+    for f in $pool_state_dir/*.shared; do
+        [ -f "$f" ] || continue
+        pool=$(basename "$f" .shared)
+        grep -qx "$pool" <<<"$keep" && continue
+        pid=$(cat $pool_state_dir/$pool.pid 2>/dev/null)
+        probe_alive "$pid" $pool && kill $pid 2>/dev/null
+        rm -f $pool_state_dir/$pool.state $pool_state_dir/$pool.pid $pool_state_dir/$pool.reported "$f"
+    done
+    return 0
+}
+
+# shared_pool_of_path <path> [pools json]: the shared pool whose root holds a file, from the lists of this host
+function shared_pool_of_path()
+{
+    local pools=${2:-$(shared_pools_all)}
+    jq -r --arg p "$1" '.[] | (.root // "") as $r | select($r != "" and ($p | startswith($r + "/"))) | .pool' <<<"$pools" 2>/dev/null | head -1
 }
